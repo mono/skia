@@ -36,20 +36,20 @@ public:
         fBench->perCanvasPreDraw(fOffScreen->getCanvas());
     }
     void onPreDraw(SkCanvas* canvas) override {
-        SkASSERT(fOffScreen.get());
+        SkASSERT(fOffScreen);
         fBench->preDraw(fOffScreen->getCanvas());
     }
     void onPostDraw(SkCanvas* canvas) override {
-        SkASSERT(fOffScreen.get());
+        SkASSERT(fOffScreen);
         fBench->postDraw(fOffScreen->getCanvas());
     }
     void onPerCanvasPostDraw(SkCanvas* canvas) override {
-        SkASSERT(fOffScreen.get());
+        SkASSERT(fOffScreen);
         fBench->perCanvasPostDraw(fOffScreen->getCanvas());
     }
 
     void onDraw(int loops, SkCanvas* canvas) override {
-        SkASSERT(fOffScreen.get());
+        SkASSERT(fOffScreen);
         fBench->draw(loops, fOffScreen->getCanvas());
         this->blitToScreen(canvas);
     }
@@ -68,7 +68,7 @@ protected:
     virtual void onBlitToScreen(SkCanvas* canvas, int w, int h) = 0;
 
     SkSurfaceProps          fSurfaceProps;
-    SkAutoTUnref<SkSurface> fOffScreen;
+    sk_sp<SkSurface>        fOffScreen;
     SkAutoTUnref<Benchmark> fBench;
 };
 
@@ -80,14 +80,14 @@ public:
 
 private:
     void setupOffScreen(SkCanvas* canvas) override {
-        fOffScreen.reset(SkSurface::NewRaster(canvas->imageInfo(), &this->surfaceProps()));
+        fOffScreen = SkSurface::MakeRaster(canvas->imageInfo(), &this->surfaceProps());
     }
 
     void onBlitToScreen(SkCanvas* canvas, int w, int h) override {
-        SkAutoTUnref<SkImage> image(fOffScreen->newImageSnapshot());
+        sk_sp<SkImage> image(fOffScreen->makeImageSnapshot());
         SkPaint blitPaint;
         blitPaint.setXfermodeMode(SkXfermode::kSrc_Mode);
-        canvas->drawImageRect(image, SkIRect::MakeWH(w, h),
+        canvas->drawImageRect(image.get(), SkIRect::MakeWH(w, h),
                               SkRect::MakeWH(SkIntToScalar(w), SkIntToScalar(h)), &blitPaint);
     }
 
@@ -104,11 +104,11 @@ public:
 
 private:
     void setupOffScreen(SkCanvas* canvas) override {
-        fOffScreen.reset(SkSurface::NewRenderTarget(canvas->getGrContext(),
-                                                    SkSurface::kNo_Budgeted,
+        fOffScreen = SkSurface::MakeRenderTarget(canvas->getGrContext(),
+                                                    SkBudgeted::kNo,
                                                     canvas->imageInfo(),
                                                     fNumSamples,
-                                                    &this->surfaceProps()));
+                                                    &this->surfaceProps());
     }
 
     void onBlitToScreen(SkCanvas* canvas, int w, int h) override {

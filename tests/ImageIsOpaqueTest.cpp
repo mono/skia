@@ -48,32 +48,32 @@ DEF_TEST(ImageInfo_flattening, reporter) {
     }
 }
 
-static void check_isopaque(skiatest::Reporter* reporter, SkSurface* surface, bool expectedOpaque) {
-    SkAutoTUnref<SkImage> image(surface->newImageSnapshot());
+static void check_isopaque(skiatest::Reporter* reporter, const sk_sp<SkSurface>& surface,
+                           bool expectedOpaque) {
+    sk_sp<SkImage> image(surface->makeImageSnapshot());
     REPORTER_ASSERT(reporter, image->isOpaque() == expectedOpaque);
 }
 
 DEF_TEST(ImageIsOpaqueTest, reporter) {
     SkImageInfo infoTransparent = SkImageInfo::MakeN32Premul(5, 5);
-    SkAutoTUnref<SkSurface> surfaceTransparent(SkSurface::NewRaster(infoTransparent));
+    auto surfaceTransparent(SkSurface::MakeRaster(infoTransparent));
     check_isopaque(reporter, surfaceTransparent, false);
 
     SkImageInfo infoOpaque = SkImageInfo::MakeN32(5, 5, kOpaque_SkAlphaType);
-    SkAutoTUnref<SkSurface> surfaceOpaque(SkSurface::NewRaster(infoOpaque));
+    auto surfaceOpaque(SkSurface::MakeRaster(infoOpaque));
     check_isopaque(reporter, surfaceOpaque, true);
 }
 
 #if SK_SUPPORT_GPU
 
-DEF_GPUTEST_FOR_RENDERING_CONTEXTS(ImageIsOpaqueTest_Gpu, reporter, context) {
+DEF_GPUTEST_FOR_GL_RENDERING_CONTEXTS(ImageIsOpaqueTest_Gpu, reporter, ctxInfo) {
+    GrContext* context = ctxInfo.fGrContext;
     SkImageInfo infoTransparent = SkImageInfo::MakeN32Premul(5, 5);
-    SkAutoTUnref<SkSurface> surfaceTransparent(
-        SkSurface::NewRenderTarget(context, SkSurface::kNo_Budgeted, infoTransparent));
+    auto surfaceTransparent(SkSurface::MakeRenderTarget(context, SkBudgeted::kNo, infoTransparent));
     check_isopaque(reporter, surfaceTransparent, false);
 
     SkImageInfo infoOpaque = SkImageInfo::MakeN32(5, 5, kOpaque_SkAlphaType);
-    SkAutoTUnref<SkSurface> surfaceOpaque(
-        SkSurface::NewRenderTarget(context,SkSurface::kNo_Budgeted, infoOpaque));
+    auto surfaceOpaque(SkSurface::MakeRenderTarget(context,SkBudgeted::kNo, infoOpaque));
 
     check_isopaque(reporter, surfaceOpaque, true);
 }

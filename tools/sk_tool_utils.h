@@ -92,7 +92,7 @@ namespace sk_tool_utils {
     SkTypeface* create_font(const char* name, SkTypeface::Style);
 
     /** Returns a newly created CheckerboardShader. */
-    SkShader* create_checkerboard_shader(SkColor c1, SkColor c2, int size);
+    sk_sp<SkShader> create_checkerboard_shader(SkColor c1, SkColor c2, int size);
 
     /** Draw a checkerboard pattern in the current canvas, restricted to
         the current clip, using SkXfermode::kSrc_Mode. */
@@ -167,13 +167,13 @@ namespace sk_tool_utils {
         static void SetTempMark(TopoTestNode* node) { node->fTempMark = true; }
         static void ResetTempMark(TopoTestNode* node) { node->fTempMark = false; }
         static bool IsTempMarked(TopoTestNode* node) { return node->fTempMark; }
-        static void Output(TopoTestNode* node, int outputPos) { 
+        static void Output(TopoTestNode* node, int outputPos) {
             SkASSERT(-1 != outputPos);
-            node->fOutputPos = outputPos; 
+            node->fOutputPos = outputPos;
         }
         static bool WasOutput(TopoTestNode* node) { return (-1 != node->fOutputPos); }
         static int NumDependencies(TopoTestNode* node) { return node->fDependencies.count(); }
-        static TopoTestNode* Dependency(TopoTestNode* node, int index) { 
+        static TopoTestNode* Dependency(TopoTestNode* node, int index) {
             return node->fDependencies[index];
         }
 

@@ -16,7 +16,7 @@
     '../src/pdf',
     '../src/ports',
     '../src/utils',
-    '../src/utils/debugger',
+    '../tools/debugger',
   ],
   'dependencies': [
     'experimental.gyp:experimental',
@@ -32,11 +32,6 @@
     [ 'skia_os not in ["linux", "freebsd", "openbsd", "solaris", "chromeos", "android"]', {
         'sources!': [ '../tests/FontMgrAndroidParserTest.cpp', ],
     }],
-    [ 'skia_android_framework == 1', {
-      'libraries': [
-        '-ldl',
-      ],
-    }],
     [ 'not skia_pdf', {
       'dependencies!': [ 'pdf.gyp:pdf', 'zlib.gyp:zlib' ],
       'dependencies': [ 'pdf.gyp:nopdf' ],
@@ -51,12 +46,14 @@
   'sources': [
     '../tests/Test.h',
     '<!@(python find.py ../tests "*.c*")',
-    '../src/utils/debugger/SkDrawCommand.h',
-    '../src/utils/debugger/SkDrawCommand.cpp',
-    '../src/utils/debugger/SkDebugCanvas.h',
-    '../src/utils/debugger/SkDebugCanvas.cpp',
-    '../src/utils/debugger/SkObjectParser.h',
-    '../src/utils/debugger/SkObjectParser.cpp',
+    '../tools/debugger/SkDrawCommand.h',
+    '../tools/debugger/SkDrawCommand.cpp',
+    '../tools/debugger/SkDebugCanvas.h',
+    '../tools/debugger/SkDebugCanvas.cpp',
+    '../tools/debugger/SkObjectParser.h',
+    '../tools/debugger/SkObjectParser.cpp',
+    '../tools/debugger/SkOverdrawMode.h',
+    '../tools/debugger/SkOverdrawMode.cpp',
   ],
   'sources!': [
     '../tests/SkpSkGrTest.cpp',

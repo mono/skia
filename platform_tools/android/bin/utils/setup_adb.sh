@@ -5,6 +5,12 @@
 
 UTIL_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
+if [ $PYADB ] && [ -a "$PYADB" ]; then
+  echo "Python ADB detected, going to use that"
+  ADB="python ${PYADB}"
+  return
+fi
+
 if [ "$(which adb)" != "" ]; then
     ADB="$(which adb)"
 elif [ -d "$ANDROID_SDK_ROOT" ]; then
@@ -21,7 +27,7 @@ if [ ! -x $ADB ]; then
 fi
 
 if [ $(uname) == "Linux" ]; then
-  ADB_REQUIRED="1.0.32"
+  ADB_REQUIRED="1.0.32 or 1.0.35"
 elif [ $(uname) == "Darwin" ]; then
   ADB_REQUIRED="1.0.31 or 1.0.32"
 fi

@@ -5,18 +5,16 @@
  * found in the LICENSE file.
  */
 
-#include "LazyDecodeBitmap.h"
 #include "SkBitmap.h"
 #include "SkCanvas.h"
 #include "SkGraphics.h"
 #include "SkOSFile.h"
-#include "SkImageDecoder.h"
 #include "SkPicture.h"
 #include "SkStream.h"
 #include "SkString.h"
 #include "SkDumpCanvas.h"
 
-static SkPicture* inspect(const char path[]) {
+static sk_sp<SkPicture> inspect(const char path[]) {
     SkFILEStream stream(path);
     if (!stream.isValid()) {
         printf("-- Can't open '%s'\n", path);
@@ -35,12 +33,12 @@ static SkPicture* inspect(const char path[]) {
     }
 
     stream.rewind();
-    SkPicture* pic = SkPicture::CreateFromStream(&stream, &sk_tools::LazyDecodeBitmap);
+    auto pic = SkPicture::MakeFromStream(&stream);
     if (nullptr == pic) {
         SkDebugf("Could not create SkPicture: %s\n", path);
         return nullptr;
     }
-    printf("picture cullRect: [%f %f %f %f]\n", 
+    printf("picture cullRect: [%f %f %f %f]\n",
            pic->cullRect().fLeft, pic->cullRect().fTop,
            pic->cullRect().fRight, pic->cullRect().fBottom);
     return pic;
@@ -73,9 +71,9 @@ int tool_main(int argc, char** argv) {
     }
 
     for (; index < argc; ++index) {
-        SkAutoTUnref<SkPicture> pic(inspect(argv[index]));
+        auto pic(inspect(argv[index]));
         if (doDumpOps) {
-            dumpOps(pic);
+            dumpOps(pic.get());
         }
         if (index < argc - 1) {
             printf("\n");

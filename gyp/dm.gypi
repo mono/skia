@@ -13,7 +13,7 @@
     '../src/images',
     '../src/lazy',
     '../src/utils',
-    '../src/utils/debugger',
+    '../tools/debugger',
     '../tests',
   ],
   'dependencies': [
@@ -26,6 +26,7 @@
     'tools.gyp:crash_handler',
     'tools.gyp:proc_stats',
     'tools.gyp:sk_tool_utils',
+    'tools.gyp:url_data_manager',
     'tools.gyp:timer',
     'xml.gyp:xml',
     'xps.gyp:xps',
@@ -41,13 +42,16 @@
     '../dm/DMJsonWriter.cpp',
     '../gm/gm.cpp',
 
-    '../src/utils/debugger/SkDebugCanvas.cpp',
-    '../src/utils/debugger/SkDrawCommand.cpp',
-    '../src/utils/debugger/SkObjectParser.cpp',
+    '../tools/debugger/SkDebugCanvas.cpp',
+    '../tools/debugger/SkDrawCommand.cpp',
+    '../tools/debugger/SkObjectParser.cpp',
+    '../tools/debugger/SkOverdrawMode.h',
+    '../tools/debugger/SkOverdrawMode.cpp',
   ],
   'conditions': [
     [ 'skia_gpu == 1', {
       'dependencies': [ 'gputest.gyp:skgputest' ],
     }],
+    [ 'skia_mojo', { 'dependencies': [ 'skmojo.gyp:skmojo' ], } ],
   ],
 }

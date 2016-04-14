@@ -29,13 +29,20 @@
         'visualbench.gyp:visualbench',
         'fuzz.gyp:fuzz',
         'kilobench.gyp:kilobench',
+        'vulkanviewer.gyp:vulkanviewer',
       ],
       'conditions': [
         [ 'skia_gpu == 0', {
           'dependencies!': [
             'visualbench.gyp:visualbench',
             'kilobench.gyp:kilobench',
+            'vulkanviewer.gyp:vulkanviewer',
           ]
+        }],
+        [ 'skia_os != "android" and skia_os != "linux"', {
+          'dependencies!': [
+            'kilobench.gyp:kilobench',
+          ],
         }],
         [ 'skia_gpu == 0 or skia_os == "android"', {
           'dependencies!': [
@@ -63,7 +70,15 @@
           'dependencies': ['iOSShell.gyp:iOSShell' ],
         }],
         ['skia_os == "mac" or skia_os == "linux"', {
-          'dependencies': [ 'nanomsg.gyp:*' ],
+          'dependencies': [ 
+            'nanomsg.gyp:*' ,
+            'skiaserve.gyp:skiaserve',
+          ],
+        }],
+        [ 'skia_vulkan == 0 or skia_os != "win"', {
+          'dependencies!': [
+            'vulkanviewer.gyp:vulkanviewer',
+          ],
         }],
         [ 'skia_skip_gui',
           {
@@ -73,7 +88,7 @@
               'visualbench.gyp:visualbench',
             ]
           }
-        ]
+        ],
       ],
     },
   ],

@@ -91,7 +91,7 @@ void emoji_typeface(SkAutoTUnref<SkTypeface>* tf) {
 const char* emoji_sample_text() {
     if (!strcmp(sk_tool_utils::platform_os_emoji(), "CBDT")) {
         return "Hamburgefons";
-    } 
+    }
     if (!strcmp(sk_tool_utils::platform_os_emoji(), "SBIX")) {
         return "\xF0\x9F\x92\xB0" "\xF0\x9F\x8F\xA1" "\xF0\x9F\x8E\x85"  // 💰🏡🎅
                "\xF0\x9F\x8D\xAA" "\xF0\x9F\x8D\x95" "\xF0\x9F\x9A\x80"  // 🍪🍕🚀
@@ -167,7 +167,7 @@ void set_portable_typeface(SkPaint* paint, const char* name, SkTypeface::Style s
     SkTypeface* face = create_font(name, style);
     SkSafeUnref(paint->setTypeface(face));
 }
-    
+
 void write_pixels(SkCanvas* canvas, const SkBitmap& bitmap, int x, int y,
                   SkColorType colorType, SkAlphaType alphaType) {
     SkBitmap tmp(bitmap);
@@ -178,13 +178,13 @@ void write_pixels(SkCanvas* canvas, const SkBitmap& bitmap, int x, int y,
     canvas->writePixels(info, tmp.getPixels(), tmp.rowBytes(), x, y);
 }
 
-SkShader* create_checkerboard_shader(SkColor c1, SkColor c2, int size) {
+sk_sp<SkShader> create_checkerboard_shader(SkColor c1, SkColor c2, int size) {
     SkBitmap bm;
     bm.allocN32Pixels(2 * size, 2 * size);
     bm.eraseColor(c1);
     bm.eraseArea(SkIRect::MakeLTRB(0, 0, size, size), c2);
     bm.eraseArea(SkIRect::MakeLTRB(size, size, 2 * size, 2 * size), c2);
-    return SkShader::CreateBitmapShader(
+    return SkShader::MakeBitmapShader(
             bm, SkShader::kRepeat_TileMode, SkShader::kRepeat_TileMode);
 }
 
@@ -199,7 +199,7 @@ SkBitmap create_checkerboard_bitmap(int w, int h, SkColor c1, SkColor c2, int ch
 
 void draw_checkerboard(SkCanvas* canvas, SkColor c1, SkColor c2, int size) {
     SkPaint paint;
-    paint.setShader(create_checkerboard_shader(c1, c2, size))->unref();
+    paint.setShader(create_checkerboard_shader(c1, c2, size));
     paint.setXfermodeMode(SkXfermode::kSrc_Mode);
     canvas->drawPaint(paint);
 }
@@ -256,7 +256,7 @@ void create_hemi_normal_map(SkBitmap* bm, const SkIRect& dst) {
         for (int x = dst.fLeft; x < dst.fRight; ++x) {
             norm.fX = (x + 0.5f - center.fX) / halfSize.fX;
             norm.fY = (y + 0.5f - center.fY) / halfSize.fY;
-            
+
             SkScalar tmp = norm.fX * norm.fX + norm.fY * norm.fY;
             if (tmp >= 1.0f) {
                 norm.set(0.0f, 0.0f, 1.0f);
@@ -295,13 +295,13 @@ void create_frustum_normal_map(SkBitmap* bm, const SkIRect& dst) {
                         norm = locX >= locY ? right : down;   // LR corner
                     } else {
                         norm = locX > -locY ? right : up;     // UR corner
-                    }    
+                    }
                 } else {
                     if (locY > 0.0f) {
                         norm = -locX > locY ? left : down;    // LL corner
                     } else {
                         norm = locX > locY ? up : left;       // UL corner
-                    }    
+                    }
                 }
             }
 
@@ -331,13 +331,13 @@ void create_tetra_normal_map(SkBitmap* bm, const SkIRect& dst) {
                     norm = locX >= locY ? rightUp : down;   // LR corner
                 } else {
                     norm = rightUp;
-                }    
+                }
             } else {
                 if (locY > 0.0f) {
                     norm = -locX > locY ? leftUp : down;    // LL corner
                 } else {
                     norm = leftUp;
-                }    
+                }
             }
 
             norm_to_rgb(bm, x, y, norm);
@@ -439,7 +439,7 @@ SkBitmap slow_blur(const SkBitmap& src, float sigma) {
             *dst.getAddr32(x, y) = blur_pixel(src, x, y, kernel.get(), wh);
         }
     }
- 
+
     return dst;
 }
 

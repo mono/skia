@@ -6,6 +6,7 @@
  */
 
 #include "SkCommonFlags.h"
+#include "SkOSFile.h"
 
 DEFINE_bool(cpu, true, "master switch for running CPU-bound work.");
 
@@ -14,7 +15,8 @@ DEFINE_bool(dryRun, false,
 
 DEFINE_bool(gpu, true, "master switch for running GPU-bound work.");
 
-DEFINE_string(images, "", "Directory of images to decode.");
+DEFINE_string(images, "", "List of images and/or directories to decode. A directory with no images"
+                          " is treated as a fatal error.");
 
 DEFINE_string2(match, m, nullptr,
                "[~][^]substring[$] [...] of GM name to run.\n"
@@ -28,9 +30,13 @@ DEFINE_string2(match, m, nullptr,
 
 DEFINE_bool2(quiet, q, false, "if true, don't print status updates.");
 
-DEFINE_bool(preAbandonGpuContext, false, "Abandons the GrContext before running the test.");
+DEFINE_bool(preAbandonGpuContext, false, "Test abandoning the GrContext before running the test.");
 
-DEFINE_bool(abandonGpuContext, false, "Abandon the GrContext after running each test.");
+DEFINE_bool(abandonGpuContext, false, "Test abandoning the GrContext after running each test.");
+
+DEFINE_bool(releaseAndAbandonGpuContext, false,
+            "Test releasing all gpu resources and abandoning the GrContext after running each "
+            "test");
 
 DEFINE_string(skps, "skps", "Directory to read skps from.");
 
@@ -47,4 +53,46 @@ DEFINE_string(key, "",
               "Space-separated key/value pairs to add to JSON identifying this builder.");
 DEFINE_string(properties, "",
               "Space-separated key/value pairs to add to JSON identifying this run.");
+DEFINE_bool2(pre_log, p, false, "Log before running each test. May be incomprehensible when threading");
 
+bool CollectImages(SkTArray<SkString>* output) {
+    SkASSERT(output);
+
+    static const char* const exts[] = {
+        "bmp", "gif", "jpg", "jpeg", "png", "webp", "ktx", "astc", "wbmp", "ico",
+        "BMP", "GIF", "JPG", "JPEG", "PNG", "WEBP", "KTX", "ASTC", "WBMP", "ICO",
+#ifdef SK_CODEC_DECODES_RAW
+        "arw", "cr2", "dng", "nef", "nrw", "orf", "raf", "rw2", "pef", "srw",
+        "ARW", "CR2", "DNG", "NEF", "NRW", "ORF", "RAF", "RW2", "PEF", "SRW",
+#endif
+    };
+
+    for (int i = 0; i < FLAGS_images.count(); ++i) {
+        const char* flag = FLAGS_images[i];
+        if (!sk_exists(flag)) {
+            SkDebugf("%s does not exist!\n", flag);
+            return false;
+        }
+
+        if (sk_isdir(flag)) {
+            // If the value passed in is a directory, add all the images
+            bool foundAnImage = false;
+            for (const char* ext : exts) {
+                SkOSFile::Iter it(flag, ext);
+                SkString file;
+                while (it.next(&file)) {
+                    foundAnImage = true;
+                    output->push_back() = SkOSPath::Join(flag, file.c_str());
+                }
+            }
+            if (!foundAnImage) {
+                SkDebugf("No supported images found in %s!\n", flag);
+                return false;
+            }
+        } else {
+            // Also add the value if it is a single image
+            output->push_back() = flag;
+        }
+    }
+    return true;
+}

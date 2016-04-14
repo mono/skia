@@ -8,7 +8,7 @@
 #include "gm.h"
 #if SK_SUPPORT_GPU
 #include "GrContext.h"
-#include "GrDrawContext.h"
+#include "GrDrawContextPriv.h"
 #include "GrPipelineBuilder.h"
 #include "SkDevice.h"
 #include "SkRRect.h"
@@ -74,7 +74,7 @@ protected:
         for (size_t et = 0; et < SK_ARRAY_COUNT(kEdgeTypes); ++et) {
             GrPrimitiveEdgeType edgeType = kEdgeTypes[et];
             canvas->save();
-                canvas->translate(SkIntToScalar(x), SkIntToScalar(y));                
+                canvas->translate(SkIntToScalar(x), SkIntToScalar(y));
 
                 // Draw a background for the test case
                 SkPaint paint;
@@ -99,7 +99,7 @@ protected:
                     SkAutoTUnref<GrDrawBatch> batch(
                             GrRectBatchFactory::CreateNonAAFill(0xff000000, SkMatrix::I(), bounds,
                                                                 nullptr, nullptr));
-                    drawContext->internal_drawBatch(pipelineBuilder, batch);
+                    drawContext->drawContextPriv().testingOnly_drawBatch(pipelineBuilder, batch);
                 }
             canvas->restore();
             x = x + fTestOffsetX;

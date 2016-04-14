@@ -35,8 +35,7 @@ function default_toolchain() {
   TOOLCHAINS=${SCRIPT_DIR}/../toolchains
 
   ANDROID_ARCH=${ANDROID_ARCH-arm}
-  LLVM=3.6
-  NDK=r10e
+  NDK=r11c
 
   if [[ $ANDROID_ARCH == *64* ]]; then
       API=21  # Android 5.0
@@ -52,17 +51,18 @@ function default_toolchain() {
   if [ ! -d "$ANDROID_TOOLCHAIN" ]; then
     mkdir -p $TOOLCHAINS
     pushd $TOOLCHAINS
-    curl -o $NDK.bin https://dl.google.com/android/ndk/android-ndk-$NDK-$HOST-x86_64.bin
-    chmod +x $NDK.bin
-    ./$NDK.bin -y
-    ./android-ndk-$NDK/build/tools/make-standalone-toolchain.sh \
+    curl -o $NDK.zip https://dl.google.com/android/repository/android-ndk-$NDK-$HOST-x86_64.zip
+    unzip $NDK.zip
+    UNZIPPED=android-ndk-$NDK
+    ./$UNZIPPED/build/tools/make-standalone-toolchain.sh \
+        --use-llvm              \
         --arch=$ANDROID_ARCH    \
-        --llvm-version=$LLVM    \
         --platform=android-$API \
         --install_dir=$TOOLCHAIN
-    cp android-ndk-$NDK/prebuilt/android-$ANDROID_ARCH/gdbserver/gdbserver $TOOLCHAIN
-    rm $NDK.bin
-    rm -rf android-ndk-$NDK
+    cp $UNZIPPED/prebuilt/android-$ANDROID_ARCH/gdbserver/gdbserver $TOOLCHAIN
+    cp -r $UNZIPPED/prebuilt/${HOST}-x86_64 $TOOLCHAIN/host_prebuilt
+    rm $NDK.zip
+    rm -rf $UNZIPPED
     popd
   fi
 
@@ -99,7 +99,7 @@ CCACHE=${ANDROID_MAKE_CCACHE-$(which ccache || true)}
 # should be compiled on Linux for performance reasons.
 # TODO (msarett): Collect more information about this.
 if [ $(uname) == "Linux" ]; then
-  if [ -z $USE_CLANG ]; then
+  if [ "$USE_CLANG" != "true" ]; then
     exportVar CC_target "$CCACHE $ANDROID_TOOLCHAIN_PREFIX-gcc"
     exportVar CXX_target "$CCACHE $ANDROID_TOOLCHAIN_PREFIX-g++"
     exportVar LINK_target "$CCACHE $ANDROID_TOOLCHAIN_PREFIX-gcc"
@@ -107,8 +107,6 @@ if [ $(uname) == "Linux" ]; then
     exportVar CXX_host "$CCACHE c++"
     exportVar LINK_host "$CCACHE cc"
   else
-    # temporarily disable ccache as it is generating errors
-    CCACHE=""
     exportVar CC_target "$CCACHE $ANDROID_TOOLCHAIN_PREFIX-clang"
     exportVar CXX_target "$CCACHE $ANDROID_TOOLCHAIN_PREFIX-clang++"
     exportVar LINK_target "$CCACHE $ANDROID_TOOLCHAIN_PREFIX-clang"
@@ -126,13 +124,11 @@ if [ $(uname) == "Linux" ]; then
   exportVar OBJCOPY_host "objcopy"
   exportVar STRIP_host "strip"
 else
-  if [ -z $USE_CLANG ]; then
+  if [ "$USE_CLANG" != "true" ]; then
     exportVar CC "$CCACHE $ANDROID_TOOLCHAIN_PREFIX-gcc"
     exportVar CXX "$CCACHE $ANDROID_TOOLCHAIN_PREFIX-g++"
     exportVar LINK "$CCACHE $ANDROID_TOOLCHAIN_PREFIX-gcc"
   else
-    # temporarily disable ccache as it is generating errors
-    CCACHE=""
     exportVar CC "$CCACHE $ANDROID_TOOLCHAIN_PREFIX-clang"
     exportVar CXX "$CCACHE $ANDROID_TOOLCHAIN_PREFIX-clang++"
     exportVar LINK "$CCACHE $ANDROID_TOOLCHAIN_PREFIX-clang"

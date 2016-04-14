@@ -107,7 +107,7 @@ static void lock_layer(skiatest::Reporter* reporter,
 // In particular it checks its interaction with the resource cache (w.r.t.
 // locking & unlocking textures).
 // TODO: need to add checks on VRAM usage!
-DEF_GPUTEST_FOR_RENDERING_CONTEXTS(GpuLayerCache, reporter, context) {
+DEF_GPUTEST_FOR_GL_RENDERING_CONTEXTS(GpuLayerCache, reporter, ctxInfo) {
     // Add one more layer than can fit in the atlas
     static const int kInitialNumLayers = TestingAccess::NumPlots() + 1;
 
@@ -115,7 +115,7 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(GpuLayerCache, reporter, context) {
     GrResourceCache::Stats stats;
 #endif
 
-    SkAutoTUnref<const SkPicture> picture;
+    sk_sp<SkPicture> picture;
 
     {
         SkPictureRecorder recorder;
@@ -123,12 +123,12 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(GpuLayerCache, reporter, context) {
         // Draw something, anything, to prevent an empty-picture optimization,
         // which is a singleton and never purged.
         c->drawRect(SkRect::MakeWH(1,1), SkPaint());
-        picture.reset(recorder.endRecording());
+        picture = recorder.finishRecordingAsPicture();
     }
 
-    GrResourceCache* resourceCache = context->getResourceCache();
+    GrResourceCache* resourceCache = ctxInfo.fGrContext->getResourceCache();
 
-    GrLayerCache cache(context);
+    GrLayerCache cache(ctxInfo.fGrContext);
 
     create_layers(reporter, &cache, *picture, kInitialNumLayers, 0);
 

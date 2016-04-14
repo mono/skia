@@ -20,7 +20,10 @@
         '../include/private',
         '../src/core',
         '../src/effects',
+        '../src/gpu',
         '../src/images',
+        '../src/image',
+        '../src/pdf',
       ],
       'sources': [
         '../gm/gm.cpp',
@@ -37,10 +40,12 @@
         'flags.gyp:flags',
         'jsoncpp.gyp:jsoncpp',
         'gputest.gyp:skgputest',
+        'pdf.gyp:pdf',
         'skia_lib.gyp:skia_lib',
         'tools.gyp:proc_stats',
         'tools.gyp:sk_tool_utils',
         'tools.gyp:timer',
+        'tools.gyp:url_data_manager',
         'views.gyp:views',
       ],
       'conditions' : [
