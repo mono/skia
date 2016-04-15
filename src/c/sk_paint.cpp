@@ -6,6 +6,7 @@
  */
 
 #include "SkMaskFilter.h"
+#include "SkColorFilter.h"
 #include "SkPaint.h"
 #include "SkShader.h"
 
@@ -67,7 +68,7 @@ sk_maskfilter_t* sk_paint_get_maskfilter(sk_paint_t* cpaint) {
 }
 
 void sk_paint_set_colorfilter(sk_paint_t* cpaint, sk_colorfilter_t* cfilter) {
-    AsPaint(cpaint)->setColorFilter(AsColorFilter(cfilter));
+    AsPaint(cpaint)->setColorFilter(sk_ref_sp(AsColorFilter(cfilter)));
 }
 
 sk_colorfilter_t* sk_paint_get_colorfilter(sk_paint_t* cpaint) {
