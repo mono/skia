@@ -39,7 +39,7 @@ SK_API void sk_canvas_discard(sk_canvas_t*);
     balancing call to sk_canvas_restore() is made, the previous matrix
     and clip are restored.
 */
-SK_API int sk_canvas_save(sk_canvas_t*);
+SK_API void sk_canvas_save(sk_canvas_t*);
 /**
     This behaves the same as sk_canvas_save(), but in addition it
     allocates an offscreen surface. All drawing calls are directed
@@ -56,7 +56,7 @@ SK_API int sk_canvas_save(sk_canvas_t*);
                        to the offscreen when sk_canvas_restore() is
                        called.
 */
-SK_API int sk_canvas_save_layer(sk_canvas_t*, const sk_rect_t*, const sk_paint_t*);
+SK_API void sk_canvas_save_layer(sk_canvas_t*, const sk_rect_t*, const sk_paint_t*);
 /**
     This call balances a previous call to sk_canvas_save() or
     sk_canvas_save_layer(), and is used to remove all modifications to
@@ -169,6 +169,11 @@ SK_API void sk_canvas_draw_line(sk_canvas_t* ccanvas, float x0, float y0, float 
     paint.
 */
 SK_API void sk_canvas_draw_rect(sk_canvas_t*, const sk_rect_t*, const sk_paint_t*);
+/**
+ *  Draw the circle centered at (cx, cy) with radius rad using the specified paint.
+ *  The circle will be filled or framed based on the style in the paint
+ */
+SK_API void sk_canvas_draw_circle(sk_canvas_t*, float cx, float cy, float rad, const sk_paint_t*);
 /**
     Draw the specified oval using the specified paint. The oval will be
     filled or framed based on the style in the paint

@@ -15,7 +15,6 @@
         '<(skia_include_path)/utils/SkFrontBufferedStream.h',
         '<(skia_include_path)/utils/SkCamera.h',
         '<(skia_include_path)/utils/SkCanvasStateUtils.h',
-        '<(skia_include_path)/utils/SkDebugUtils.h',
         '<(skia_include_path)/utils/SkDumpCanvas.h',
         '<(skia_include_path)/utils/SkEventTracer.h',
         '<(skia_include_path)/utils/SkInterpolator.h',
@@ -36,8 +35,6 @@
 
         '<(skia_src_path)/utils/SkBase64.cpp',
         '<(skia_src_path)/utils/SkBase64.h',
-        '<(skia_src_path)/utils/SkBitmapHasher.cpp',
-        '<(skia_src_path)/utils/SkBitmapHasher.h',
         '<(skia_src_path)/utils/SkBitmapSourceDeserializer.cpp',
         '<(skia_src_path)/utils/SkBitmapSourceDeserializer.h',
         '<(skia_src_path)/utils/SkBitSet.cpp',
@@ -53,7 +50,6 @@
         '<(skia_src_path)/utils/SkDumpCanvas.cpp',
         '<(skia_src_path)/utils/SkEventTracer.cpp',
         '<(skia_src_path)/utils/SkFloatUtils.h',
-        '<(skia_src_path)/utils/SkImageGeneratorUtils.cpp',
         '<(skia_src_path)/utils/SkInterpolator.cpp',
         '<(skia_src_path)/utils/SkLayer.cpp',
         '<(skia_src_path)/utils/SkMatrix22.cpp',
@@ -74,8 +70,8 @@
         '<(skia_src_path)/utils/SkPatchGrid.h',
         '<(skia_src_path)/utils/SkPatchUtils.cpp',
         '<(skia_src_path)/utils/SkPatchUtils.h',
-        '<(skia_src_path)/utils/SkSHA1.cpp',
-        '<(skia_src_path)/utils/SkSHA1.h',
+        '<(skia_src_path)/utils/SkRGBAToYUV.cpp',
+        '<(skia_src_path)/utils/SkRGBAToYUV.h',
         '<(skia_src_path)/utils/SkRTConf.cpp',
         '<(skia_src_path)/utils/SkTextBox.cpp',
         '<(skia_src_path)/utils/SkTextureCompressor.cpp',
@@ -93,7 +89,6 @@
         '<(skia_src_path)/utils/SkThreadUtils_pthread.h',
         '<(skia_src_path)/utils/SkThreadUtils_win.cpp',
         '<(skia_src_path)/utils/SkThreadUtils_win.h',
-        '<(skia_src_path)/utils/SkTFitsIn.h',
         '<(skia_src_path)/utils/SkWhitelistTypefaces.cpp',
 
         #mac

@@ -70,12 +70,14 @@ BASE_SRCS_ALL = struct(
     ],
     exclude = [
         # Exclude platform-dependent files.
+        "src/android/*",
         "src/codec/*",
         "src/device/xps/*",  # Windows-only. Move to ports?
         "src/doc/*_XPS.cpp",  # Windows-only. Move to ports?
         "src/fonts/SkFontMgr_fontconfig.cpp",
         "src/gpu/gl/android/*",
         "src/gpu/gl/egl/*",
+        "src/gpu/gl/glfw/*",
         "src/gpu/gl/glx/*",
         "src/gpu/gl/iOS/*",
         "src/gpu/gl/mac/*",
@@ -93,13 +95,12 @@ BASE_SRCS_ALL = struct(
 
         # Exclude multiple definitions.
         # TODO(mtklein): Move to opts?
-        "src/doc/SkDocument_PDF_None.cpp",  # We use SkDocument_PDF.cpp.
+        "src/pdf/SkDocument_PDF_None.cpp",  # We use src/pdf/SkPDFDocument.cpp.
         "src/gpu/gl/GrGLCreateNativeInterface_none.cpp",
         "src/gpu/gl/GrGLDefaultInterface_native.cpp",
+        "src/gpu/gl/GrGLDefaultInterface_none.cpp",
 
         # Exclude files that don't compile with the current DEFINES.
-        "src/gpu/gl/angle/*",  # Requires SK_ANGLE define.
-        "src/gpu/gl/command_buffer/*",  # unknown type name 'HMODULE'
         "src/gpu/gl/mesa/*",  # Requires SK_MESA define.
         "src/svg/parser/*",  # Missing SkSVG.h.
 
@@ -112,14 +113,19 @@ BASE_SRCS_ALL = struct(
         "src/xml/SkBML_Verbs.h",
         "src/xml/SkBML_XMLParser.cpp",
         "src/xml/SkXMLPullParser.cpp",
+
+        # Currently exclude all vulkan specific files
+        "src/gpu/vk/*",
     ],
 )
 
 # Platform-dependent SRCS for google3-default platform.
 BASE_SRCS_UNIX = struct(
     include = [
+        "src/android/*",
         "src/codec/*",
         "src/fonts/SkFontMgr_fontconfig.cpp",
+        "src/gpu/gl/GrGLDefaultInterface_none.cpp",
         "src/images/*",
         "src/opts/**/*.cpp",
         "src/opts/**/*.h",
@@ -127,7 +133,6 @@ BASE_SRCS_UNIX = struct(
         "src/ports/**/*.h",
     ],
     exclude = [
-        "src/codec/SkJpegCodec.cpp",  # libjpeg_turbo version mismatch.
         "src/opts/*arm*",
         "src/opts/*mips*",
         "src/opts/*NEON*",
@@ -143,6 +148,8 @@ BASE_SRCS_UNIX = struct(
         "src/opts/SkBitmapProcState_opts_none.cpp",
         "src/opts/SkBlitMask_opts_none.cpp",
         "src/opts/SkBlitRow_opts_none.cpp",
+        "src/ports/*CG*",
+        "src/ports/*WIC*",
         "src/ports/*android*",
         "src/ports/*chromium*",
         "src/ports/*mac*",
@@ -152,12 +159,11 @@ BASE_SRCS_UNIX = struct(
         "src/ports/SkFontConfigInterface_direct_factory.cpp",
         "src/ports/SkFontMgr_custom_directory_factory.cpp",
         "src/ports/SkFontMgr_custom_embedded_factory.cpp",
+        "src/ports/SkFontMgr_custom_empty_factory.cpp",
         "src/ports/SkFontMgr_empty_factory.cpp",
         "src/ports/SkFontMgr_fontconfig.cpp",
-        "src/ports/SkImageDecoder_CG.cpp",
         "src/ports/SkFontMgr_fontconfig_factory.cpp",
-        "src/ports/SkImageDecoder_WIC.cpp",
-        "src/ports/SkImageDecoder_empty.cpp",
+        "src/ports/SkImageEncoder_none.cpp",
         "src/ports/SkImageGenerator_none.cpp",
         "src/ports/SkTLS_none.cpp",
     ],
@@ -166,7 +172,9 @@ BASE_SRCS_UNIX = struct(
 # Platform-dependent SRCS for google3-default Android.
 BASE_SRCS_ANDROID = struct(
     include = [
+        "src/android/*",
         "src/codec/*",
+        "src/gpu/gl/GrGLDefaultInterface_none.cpp",
         "src/images/*",
         # TODO(benjaminwagner): Figure out how to compile with EGL.
         "src/opts/**/*.cpp",
@@ -175,7 +183,6 @@ BASE_SRCS_ANDROID = struct(
         "src/ports/**/*.h",
     ],
     exclude = [
-        "src/codec/SkJpegCodec.cpp",  # libjpeg_turbo version mismatch.
         "src/opts/*mips*",
         "src/opts/*SSE2*",
         "src/opts/*SSSE3*",
@@ -187,9 +194,11 @@ BASE_SRCS_ANDROID = struct(
         "src/opts/SkBitmapProcState_opts_none.cpp",
         "src/opts/SkBlitMask_opts_none.cpp",
         "src/opts/SkBlitRow_opts_none.cpp",
+        "src/ports/*CG*",
+        "src/ports/*FontConfig*",
+        "src/ports/*WIC*",
         "src/ports/*chromium*",
         "src/ports/*fontconfig*",
-        "src/ports/*FontConfig*",
         "src/ports/*mac*",
         "src/ports/*mozalloc*",
         "src/ports/*nacl*",
@@ -199,10 +208,9 @@ BASE_SRCS_ANDROID = struct(
         "src/ports/SkFontConfigInterface_direct_google3_factory.cpp",
         "src/ports/SkFontMgr_custom_directory_factory.cpp",
         "src/ports/SkFontMgr_custom_embedded_factory.cpp",
+        "src/ports/SkFontMgr_custom_empty_factory.cpp",
         "src/ports/SkFontMgr_empty_factory.cpp",
-        "src/ports/SkImageDecoder_CG.cpp",
-        "src/ports/SkImageDecoder_WIC.cpp",
-        "src/ports/SkImageDecoder_empty.cpp",
+        "src/ports/SkImageEncoder_none.cpp",
         "src/ports/SkImageGenerator_none.cpp",
         "src/ports/SkTLS_none.cpp",
     ],
@@ -211,12 +219,23 @@ BASE_SRCS_ANDROID = struct(
 # Platform-dependent SRCS for google3-default iOS.
 BASE_SRCS_IOS = struct(
     include = [
+        "src/android/*",
+        "src/codec/*",
+        "src/gpu/gl/GrGLDefaultInterface_native.cpp",
+        "src/gpu/gl/iOS/GrGLCreateNativeInterface_iOS.cpp",
         "src/opts/**/*.cpp",
         "src/opts/**/*.h",
         "src/ports/**/*.cpp",
         "src/ports/**/*.h",
+        "src/utils/mac/*.cpp",
     ],
     exclude = [
+        "src/codec/*Gif*.cpp",
+        "src/codec/*Ico*.cpp",
+        "src/codec/*Jpeg*.cpp",
+        "src/codec/*Webp*.cpp",
+        "src/codec/*Png*",
+        "src/codec/*Raw*.cpp",
         "src/opts/*mips*",
         "src/opts/*NEON*",
         "src/opts/*neon*",
@@ -228,26 +247,25 @@ BASE_SRCS_IOS = struct(
         "src/opts/*avx*",
         "src/opts/*x86*",
         "src/opts/SkBitmapProcState_opts_none.cpp",
-        "src/opts/SkBlitMask_opts_none.cpp",
-        "src/opts/SkBlitRow_opts_none.cpp",
+        "src/opts/SkBlitMask_opts_arm*.cpp",
+        "src/opts/SkBlitRow_opts_arm*.cpp",
+        "src/ports/*CG*",
+        "src/ports/*FontConfig*",
+        "src/ports/*FreeType*",
+        "src/ports/*WIC*",
         "src/ports/*android*",
         "src/ports/*chromium*",
         "src/ports/*fontconfig*",
-        "src/ports/*FontConfig*",
-        "src/ports/*FreeType*",
         "src/ports/*mozalloc*",
         "src/ports/*nacl*",
         "src/ports/*win*",
-        "src/ports/SkDebug_stdio.cpp",
         "src/ports/SkFontMgr_custom.cpp",
         "src/ports/SkFontConfigInterface_direct_factory.cpp",
         "src/ports/SkFontConfigInterface_direct_google3_factory.cpp",
         "src/ports/SkFontMgr_custom_directory_factory.cpp",
         "src/ports/SkFontMgr_custom_embedded_factory.cpp",
+        "src/ports/SkFontMgr_custom_empty_factory.cpp",
         "src/ports/SkFontMgr_empty_factory.cpp",
-        "src/ports/SkImageDecoder_CG.cpp",
-        "src/ports/SkImageDecoder_WIC.cpp",
-        "src/ports/SkImageDecoder_empty.cpp",
         "src/ports/SkImageGenerator_none.cpp",
         "src/ports/SkTLS_none.cpp",
     ],
@@ -261,23 +279,27 @@ SSSE3_SRCS = struct(
     include = [
         "src/opts/*SSSE3*.cpp",
         "src/opts/*ssse3*.cpp",
-    ])
+    ],
+)
 
 SSE4_SRCS = struct(
     include = [
         "src/opts/*SSE4*.cpp",
         "src/opts/*sse4*.cpp",
-    ])
+    ],
+)
 
 AVX_SRCS = struct(
     include = [
         "src/opts/*_avx.cpp",
-    ])
+    ],
+)
 
 AVX2_SRCS = struct(
     include = [
         "src/opts/*_avx2.cpp",
-    ])
+    ],
+)
 
 ################################################################################
 ## BASE_HDRS
@@ -286,6 +308,7 @@ AVX2_SRCS = struct(
 BASE_HDRS = struct(
     include = [
         "include/**/*.h",
+        "src/utils/SkWhitelistChecksums.cpp",
     ],
     exclude = [
         "include/private/**/*",
@@ -295,7 +318,8 @@ BASE_HDRS = struct(
         "include/views/**/*",
         "include/xml/SkBML_WXMLParser.h",
         "include/xml/SkBML_XMLParser.h",
-    ])
+    ],
+)
 
 ################################################################################
 ## BASE_DEPS
@@ -322,6 +346,7 @@ BASE_DEPS_IOS = []
 INCLUDES = [
     "include/android",
     "include/c",
+    "include/client/android",
     "include/codec",
     "include/config",
     "include/core",
@@ -366,22 +391,16 @@ DM_SRCS_ALL = struct(
         "tests/*.h",
         "tools/CrashHandler.cpp",
         "tools/CrashHandler.h",
-        "tools/LazyDecodeBitmap.cpp",
-        "tools/LazyDecodeBitmap.h",
         "tools/ProcStats.cpp",
         "tools/ProcStats.h",
         "tools/Resources.cpp",
         "tools/Resources.h",
-        "tools/SkBitmapRegionCanvas.cpp",
-        "tools/SkBitmapRegionCanvas.h",
-        "tools/SkBitmapRegionCodec.cpp",
-        "tools/SkBitmapRegionCodec.h",
-        "tools/SkBitmapRegionDecoder.cpp",
-        "tools/SkBitmapRegionDecoder.h",
-        "tools/SkBitmapRegionSampler.cpp",
-        "tools/SkBitmapRegionSampler.h",
         "tools/flags/*.cpp",
         "tools/flags/*.h",
+        "tools/gpu/**/*.cpp",
+        "tools/gpu/**/*.h",
+        "tools/random_parse_path.cpp",
+        "tools/random_parse_path.h",
         "tools/sk_tool_utils.cpp",
         "tools/sk_tool_utils.h",
         "tools/sk_tool_utils_font.cpp",
@@ -394,39 +413,60 @@ DM_SRCS_ALL = struct(
         "tests/PathOpsSkpClipTest.cpp",  # Alternate main.
         "tests/skia_test.cpp",  # Old main.
         "tests/SkpSkGrTest.cpp",  # Alternate main.
+        "tools/gpu/gl/angle/*",
+        "tools/gpu/gl/command_buffer/*",
+        "tools/gpu/gl/egl/*",
+        "tools/gpu/gl/glx/*",
+        "tools/gpu/gl/iOS/*",
+        "tools/gpu/gl/mac/*",
+        "tools/gpu/gl/mesa/*",
+        "tools/gpu/gl/win/*",
         "tools/timer/SysTimer_mach.cpp",
         "tools/timer/SysTimer_windows.cpp",
     ],
 )
 
-DM_SRCS_UNIX = struct()
+DM_SRCS_UNIX = struct(
+    include = [
+        "tools/gpu/gl/CreatePlatformGLContext_none.cpp",
+    ],
+)
 
 DM_SRCS_ANDROID = struct(
     include = [
         # Depends on Android HWUI library that is not available in google3.
         #"dm/DMSrcSinkAndroid.cpp",
         "tests/FontMgrAndroidParserTest.cpp",
+        # TODO(benjaminwagner): Figure out how to compile with EGL.
+        "tools/gpu/gl/CreatePlatformGLContext_none.cpp",
     ],
 )
 
-DM_SRCS_IOS = struct()
+DM_SRCS_IOS = struct(
+    include = [
+        "tools/gpu/iOS/CreatePlatformGLContext_iOS.cpp",
+    ],
+)
 
 ################################################################################
 ## DM_INCLUDES
 ################################################################################
 
 DM_INCLUDES = [
+    "dm",
     "gm",
     "src/codec",
     "src/effects",
+    "src/effects/gradients",
     "src/fonts",
     "src/pathops",
     "src/pipe/utils",
     "src/ports",
-    "src/utils/debugger",
+    "tools/debugger",
     "tests",
     "tools",
     "tools/flags",
+    "tools/gpu",
     "tools/timer",
 ]
 
@@ -439,7 +479,7 @@ def DM_ARGS(base_dir):
         "--nogpu",
         "--verbose",
         # TODO(mtklein): maybe investigate why these fail?
-        "--match ~FontMgr ~Scalar ~Canvas ~Codec_stripes ~Codec_Dimensions ~Codec ~Stream ~skps ~RecordDraw_TextBounds",
+        "--match ~FontMgr ~Scalar ~Canvas ~Codec_stripes ~Codec_Dimensions ~Codec ~Stream ~skps ~RecordDraw_TextBounds ~PaintBreakText",
         "--resourcePath %s/resources" % base_dir,
         "--images %s/resources" % base_dir,
     ]
@@ -464,20 +504,30 @@ COPTS_ALL = []
 ################################################################################
 
 DEFINES_UNIX = [
+    "PNG_SKIP_SETJMP_CHECK",
     "SK_BUILD_FOR_UNIX",
     "SK_SAMPLES_FOR_X",
     "SK_SFNTLY_SUBSETTER",
+    "SK_CODEC_DECODES_GIF",
+    "SK_CODEC_DECODES_JPEG",
+    "SK_CODEC_DECODES_PNG",
+    "SK_CODEC_DECODES_RAW",
+    "SK_CODEC_DECODES_WEBP",
 ]
 
 DEFINES_ANDROID = [
     "SK_BUILD_FOR_ANDROID",
-    # TODO(benjaminwagner): Try to get png library updated?
-    "SK_PNG_NO_INDEX_SUPPORTED",
+    "SK_CODEC_DECODES_GIF",
+    "SK_CODEC_DECODES_JPEG",
+    "SK_CODEC_DECODES_PNG",
+    "SK_CODEC_DECODES_RAW",
+    "SK_CODEC_DECODES_WEBP",
 ]
 
 DEFINES_IOS = [
     "SK_BUILD_FOR_IOS",
     "SK_IGNORE_ETC1_SUPPORT",
+    "SKNX_NO_SIMD",
 ]
 
 DEFINES_ALL = [
@@ -486,6 +536,16 @@ DEFINES_ALL = [
     "SK_USE_FREETYPE_EMBOLDEN",
     # Turn on a few Google3-specific build fixes.
     "GOOGLE3",
+    # Staging flags for API changes
+    "SK_SUPPORT_LEGACY_COLORFILTER_PTR",
+    "SK_SUPPORT_LEGACY_CREATESHADER_PTR",
+    "SK_SUPPORT_LEGACY_IMAGEFILTER_PTR",
+    "SK_SUPPORT_LEGACY_MINOR_EFFECT_PTR",
+    "SK_SUPPORT_LEGACY_NEW_SURFACE_API",
+    "SK_SUPPORT_LEGACY_PATHEFFECT_PTR",
+    "SK_SUPPORT_LEGACY_PICTURE_PTR",
+    "SK_SUPPORT_LEGACY_MASKFILTER_PTR",
+    "SK_SUPPORT_LEGACY_XFERMODE_PTR",
 ]
 
 ################################################################################
@@ -503,4 +563,3 @@ LINKOPTS_IOS = []
 LINKOPTS_ALL = [
     "-ldl",
 ]
-

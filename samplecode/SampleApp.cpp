@@ -33,14 +33,36 @@
 #include "sk_tool_utils.h"
 
 #if SK_SUPPORT_GPU
-#include "gl/GrGLInterface.h"
-#include "gl/GrGLUtil.h"
-#include "GrRenderTarget.h"
-#include "GrContext.h"
-#include "SkGpuDevice.h"
+#   include "gl/GrGLInterface.h"
+#   include "gl/GrGLUtil.h"
+#   include "GrRenderTarget.h"
+#   include "GrContext.h"
+#   include "SkGpuDevice.h"
+#   if SK_ANGLE
+#       include "gl/angle/GLTestContext_angle.h"
+#   endif
 #else
 class GrContext;
 #endif
+
+const struct {
+    SkColorType         fColorType;
+    SkColorProfileType  fProfileType;
+    const char*         fName;
+} gConfig[] = {
+    { kN32_SkColorType,      kLinear_SkColorProfileType, "L32" },
+    { kN32_SkColorType,        kSRGB_SkColorProfileType, "S32" },
+    { kRGBA_F16_SkColorType, kLinear_SkColorProfileType, "F16" },
+};
+
+static const char* find_config_name(const SkImageInfo& info) {
+    for (const auto& config : gConfig) {
+        if (config.fColorType == info.colorType() && config.fProfileType == info.profileType()) {
+            return config.fName;
+        }
+    }
+    return "???";
+}
 
 // Should be 3x + 1
 #define kMaxFatBitsScale    28
@@ -214,7 +236,7 @@ public:
                 break;
 #if SK_ANGLE
             case kANGLE_DeviceType:
-                glInterface.reset(GrGLCreateANGLEInterface());
+                glInterface.reset(sk_gpu_test::CreateANGLEGLInterface());
                 break;
 #endif // SK_ANGLE
 #if SK_COMMAND_BUFFER
@@ -242,7 +264,7 @@ public:
             fCurIntf = nullptr;
             SkDebugf("Failed to setup 3D");
 
-            win->detach();
+            win->release();
         }
 #endif // SK_SUPPORT_GPU
         // call windowSizeChanged to create the render target
@@ -264,7 +286,7 @@ public:
         SkSafeUnref(fCurRenderTarget);
         fCurRenderTarget = nullptr;
 #endif
-        win->detach();
+        win->release();
         fBackend = kNone_BackEndType;
     }
 
@@ -272,7 +294,7 @@ public:
 #if SK_SUPPORT_GPU
         if (IsGpuDeviceType(dType) && fCurContext) {
             SkSurfaceProps props(win->getSurfaceProps());
-            return SkSurface::NewRenderTargetDirect(fCurRenderTarget, &props);
+            return SkSurface::MakeRenderTargetDirect(fCurRenderTarget, &props).release();
         }
 #endif
         return nullptr;
@@ -291,7 +313,8 @@ public:
                 fCurRenderTarget->writePixels(0, 0, bm.width(), bm.height(),
                                              SkImageInfo2GrPixelConfig(bm.colorType(),
                                                                        bm.alphaType(),
-                                                                       bm.profileType()),
+                                                                       bm.profileType(),
+                                                                       *fCurContext->caps()),
                                              bm.getPixels(),
                                              bm.rowBytes(),
                                              GrContext::kFlushWrites_PixelOp);
@@ -446,6 +469,20 @@ static HintingState gHintingStates[] = {
     {SkPaint::kSlight_Hinting, "Slight", "Hs " },
     {SkPaint::kNormal_Hinting, "Normal", "Hn " },
     {SkPaint::kFull_Hinting, "Full", "Hf " },
+};
+
+struct PixelGeometryState {
+    SkPixelGeometry pixelGeometry;
+    const char* name;
+    const char* label;
+};
+static PixelGeometryState gPixelGeometryStates[] = {
+    {SkPixelGeometry::kUnknown_SkPixelGeometry, "Mixed", nullptr },
+    {SkPixelGeometry::kUnknown_SkPixelGeometry, "Flat",  "{Flat} "  },
+    {SkPixelGeometry::kRGB_H_SkPixelGeometry,   "RGB H", "{RGB H} " },
+    {SkPixelGeometry::kBGR_H_SkPixelGeometry,   "BGR H", "{BGR H} " },
+    {SkPixelGeometry::kRGB_V_SkPixelGeometry,   "RGB_V", "{RGB V} " },
+    {SkPixelGeometry::kBGR_V_SkPixelGeometry,   "BGR_V", "{BGR V} " },
 };
 
 struct FilterQualityState {
@@ -725,6 +762,7 @@ DEFINE_string(sequence, "", "Path to file containing the desired samples/gms to 
 DEFINE_bool(sort, false, "Sort samples by title.");
 DEFINE_bool(list, false, "List samples?");
 DEFINE_bool(gpu, false, "Start up with gpu?");
+DEFINE_bool(redraw, false, "Force continuous redrawing, for profiling or debugging tools.");
 DEFINE_string(key, "", "");  // dummy to enable gm tests that have platform-specific names
 #ifdef SAMPLE_PDF_FILE_VIEWER
 DEFINE_string(pdfPath, "", "Path to direcotry of pdf files.");
@@ -831,7 +869,7 @@ SampleWindow::SampleWindow(void* hwnd, int argc, char** argv, DeviceManager* dev
         fDeviceType = kGPU_DeviceType;
     }
 #endif
-        
+
 #if DEFAULT_TO_GPU
     fDeviceType = kGPU_DeviceType;
 #endif
@@ -854,9 +892,9 @@ SampleWindow::SampleWindow(void* hwnd, int argc, char** argv, DeviceManager* dev
     fAAState = SkOSMenu::kMixedState;
     fSubpixelState = SkOSMenu::kMixedState;
     fHintingState = 0;
+    fPixelGeometryIndex = 0;
     fFilterQualityIndex = 0;
     fFlipAxis = 0;
-    fScrollTestX = fScrollTestY = 0;
 
     fMouseX = fMouseY = 0;
     fFatBitsScale = 8;
@@ -865,6 +903,7 @@ SampleWindow::SampleWindow(void* hwnd, int argc, char** argv, DeviceManager* dev
 
     fZoomLevel = 0;
     fZoomScale = SK_Scalar1;
+    fOffset = { 0, 0 };
 
     fMagnify = false;
 
@@ -875,6 +914,10 @@ SampleWindow::SampleWindow(void* hwnd, int argc, char** argv, DeviceManager* dev
     fAppMenu = new SkOSMenu;
     fAppMenu->setTitle("Global Settings");
     int itemID;
+
+    itemID = fAppMenu->appendList("ColorType", "ColorType", sinkID, 0,
+                                  gConfig[0].fName, gConfig[1].fName, gConfig[2].fName, nullptr);
+    fAppMenu->assignKeyEquivalentToItem(itemID, 'C');
 
     itemID = fAppMenu->appendList("Device Type", "Device Type", sinkID, 0,
                                   "Raster",
@@ -909,6 +952,16 @@ SampleWindow::SampleWindow(void* hwnd, int argc, char** argv, DeviceManager* dev
                                   gHintingStates[4].name,
                                   nullptr);
     fAppMenu->assignKeyEquivalentToItem(itemID, 'h');
+
+    itemID = fAppMenu->appendList("Pixel Geometry", "Pixel Geometry", sinkID, fPixelGeometryIndex,
+                                  gPixelGeometryStates[0].name,
+                                  gPixelGeometryStates[1].name,
+                                  gPixelGeometryStates[2].name,
+                                  gPixelGeometryStates[3].name,
+                                  gPixelGeometryStates[4].name,
+                                  gPixelGeometryStates[5].name,
+                                  nullptr);
+    fAppMenu->assignKeyEquivalentToItem(itemID, 'P');
 
     itemID =fAppMenu->appendList("Tiling", "Tiling", sinkID, fTilingMode,
                                  gTilingInfo[kNo_Tiling].label,
@@ -1038,14 +1091,14 @@ void SampleWindow::draw(SkCanvas* canvas) {
     if (kNo_Tiling == fTilingMode) {
         this->INHERITED::draw(canvas); // no looping or surfaces needed
     } else {
-        const int w = SkScalarRoundToInt(tile.width());
-        const int h = SkScalarRoundToInt(tile.height());
-        SkImageInfo info = SkImageInfo::MakeN32Premul(w, h);
-        SkAutoTUnref<SkSurface> surface(canvas->newSurface(info));
+        const SkScalar w = SkScalarCeilToScalar(tile.width());
+        const SkScalar h = SkScalarCeilToScalar(tile.height());
+        SkImageInfo info = SkImageInfo::MakeN32Premul(SkScalarTruncToInt(w), SkScalarTruncToInt(h));
+        auto surface(canvas->makeSurface(info));
         SkCanvas* tileCanvas = surface->getCanvas();
 
-        for (SkScalar y = 0; y < height(); y += tile.height()) {
-            for (SkScalar x = 0; x < width(); x += tile.width()) {
+        for (SkScalar y = 0; y < height(); y += h) {
+            for (SkScalar x = 0; x < width(); x += w) {
                 SkAutoCanvasRestore acr(tileCanvas, true);
                 tileCanvas->translate(-x, -y);
                 tileCanvas->clear(0);
@@ -1078,7 +1131,7 @@ void SampleWindow::draw(SkCanvas* canvas) {
         this->postInvalDelay();
     }
 
-    if (this->sendAnimatePulse()) {
+    if (this->sendAnimatePulse() || FLAGS_redraw) {
         this->inval(nullptr);
     }
 
@@ -1365,7 +1418,7 @@ void SampleWindow::afterChildren(SkCanvas* orig) {
     }
 
     if (fSaveToSKP) {
-        SkAutoTUnref<const SkPicture> picture(fRecorder.endRecording());
+        sk_sp<SkPicture> picture(fRecorder.finishRecordingAsPicture());
         SkFILEWStream stream("sample_app.skp");
         picture->serialize(&stream);
         fSaveToSKP = false;
@@ -1374,7 +1427,7 @@ void SampleWindow::afterChildren(SkCanvas* orig) {
     }
 
     if (fUsePicture) {
-        SkAutoTUnref<const SkPicture> picture(fRecorder.endRecording());
+        sk_sp<SkPicture> picture(fRecorder.finishRecordingAsPicture());
 
         // serialize/deserialize?
         if (false) {
@@ -1382,9 +1435,9 @@ void SampleWindow::afterChildren(SkCanvas* orig) {
             picture->serialize(&wstream);
 
             SkAutoTDelete<SkStream> rstream(wstream.detachAsStream());
-            picture.reset(SkPicture::CreateFromStream(rstream));
+            picture = SkPicture::MakeFromStream(rstream);
         }
-        orig->drawPicture(picture);
+        orig->drawPicture(picture.get());
     }
 
     // Do this after presentGL and other finishing, rather than in afterChild
@@ -1438,6 +1491,11 @@ void SampleWindow::beforeChild(SkView* child, SkCanvas* canvas) {
     }
 }
 
+void SampleWindow::changeOffset(SkVector delta) {
+    fOffset += delta;
+    this->updateMatrix();
+}
+
 void SampleWindow::changeZoomLevel(float delta) {
     fZoomLevel += delta;
     if (fZoomLevel > 0) {
@@ -1455,6 +1513,7 @@ void SampleWindow::changeZoomLevel(float delta) {
 void SampleWindow::updateMatrix(){
     SkMatrix m;
     m.reset();
+
     if (fZoomLevel) {
         SkPoint center;
         //m = this->getLocalMatrix();//.invert(&m);
@@ -1466,6 +1525,8 @@ void SampleWindow::updateMatrix(){
         m.postScale(fZoomScale, fZoomScale);
         m.postTranslate(cx, cy);
     }
+
+    m.postTranslate(fOffset.fX, fOffset.fY);
 
     if (fFlipAxis) {
         m.preTranslate(fZoomCenterX, fZoomCenterY);
@@ -1557,6 +1618,10 @@ bool SampleWindow::onEvent(const SkEvent& evt) {
         this->setDeviceType((DeviceType)selected);
         return true;
     }
+    if (SkOSMenu::FindListIndex(evt, "ColorType", &selected)) {
+        this->setDeviceColorType(gConfig[selected].fColorType, gConfig[selected].fProfileType);
+        return true;
+    }
     if (SkOSMenu::FindSwitchState(evt, "Slide Show", nullptr)) {
         this->toggleSlideshow();
         return true;
@@ -1572,6 +1637,10 @@ bool SampleWindow::onEvent(const SkEvent& evt) {
     {
         this->inval(nullptr);
         this->updateTitle();
+        return true;
+    }
+    if (SkOSMenu::FindListIndex(evt, "Pixel Geometry", &fPixelGeometryIndex)) {
+        this->setPixelGeometry(fPixelGeometryIndex);
         return true;
     }
     if (SkOSMenu::FindListIndex(evt, "Tiling", &fTilingMode)) {
@@ -1657,13 +1726,7 @@ bool SampleWindow::onHandleChar(SkUnichar uni) {
     }
 
     if (0xFF != dx && 0xFF != dy) {
-        if ((dx | dy) == 0) {
-            fScrollTestX = fScrollTestY = 0;
-        } else {
-            fScrollTestX += dx;
-            fScrollTestY += dy;
-        }
-        this->inval(nullptr);
+        this->changeOffset({SkIntToScalar(dx / 32.0f), SkIntToScalar(dy / 32.0f)});
         return true;
     }
 
@@ -1763,9 +1826,17 @@ void SampleWindow::setDeviceType(DeviceType type) {
         return;
 
     fDevManager->tearDownBackend(this);
-
     fDeviceType = type;
+    fDevManager->setUpBackend(this, fMSAASampleCount);
 
+    this->updateTitle();
+    this->inval(nullptr);
+}
+
+void SampleWindow::setDeviceColorType(SkColorType ct, SkColorProfileType pt) {
+    this->setColorType(ct, pt);
+
+    fDevManager->tearDownBackend(this);
     fDevManager->setUpBackend(this, fMSAASampleCount);
 
     this->updateTitle();
@@ -1803,6 +1874,23 @@ void SampleWindow::toggleDistanceFieldFonts() {
     this->inval(nullptr);
 }
 
+void SampleWindow::setPixelGeometry(int pixelGeometryIndex) {
+    // reset backend
+    fDevManager->tearDownBackend(this);
+    fDevManager->setUpBackend(this, fMSAASampleCount);
+
+    const SkSurfaceProps& oldProps = this->getSurfaceProps();
+    SkSurfaceProps newProps(oldProps.flags(), SkSurfaceProps::kLegacyFontHost_InitType);
+    if (pixelGeometryIndex > 0) {
+        newProps = SkSurfaceProps(oldProps.flags(),
+                                  gPixelGeometryStates[pixelGeometryIndex].pixelGeometry);
+    }
+    this->setSurfaceProps(newProps);
+
+    this->updateTitle();
+    this->inval(nullptr);
+}
+
 #include "SkDumpCanvas.h"
 
 bool SampleWindow::onHandleKey(SkKey key) {
@@ -1816,6 +1904,10 @@ bool SampleWindow::onHandleKey(SkKey key) {
             }
         }
     }
+
+    int dx = 0xFF;
+    int dy = 0xFF;
+
     switch (key) {
         case kRight_SkKey:
             if (this->nextSample()) {
@@ -1843,9 +1935,26 @@ bool SampleWindow::onHandleKey(SkKey key) {
         case kBack_SkKey:
             this->showOverview();
             return true;
+
+        case k5_SkKey: dx =  0; dy =  0; break;
+        case k8_SkKey: dx =  0; dy = -1; break;
+        case k6_SkKey: dx =  1; dy =  0; break;
+        case k2_SkKey: dx =  0; dy =  1; break;
+        case k4_SkKey: dx = -1; dy =  0; break;
+        case k7_SkKey: dx = -1; dy = -1; break;
+        case k9_SkKey: dx =  1; dy = -1; break;
+        case k3_SkKey: dx =  1; dy =  1; break;
+        case k1_SkKey: dx = -1; dy =  1; break;
+
         default:
             break;
     }
+
+    if (0xFF != dx && 0xFF != dy) {
+        this->changeOffset({SkIntToScalar(dx / 32.0f), SkIntToScalar(dy / 32.0f)});
+        return true;
+    }
+
     return this->INHERITED::onHandleKey(key);
 }
 
@@ -1982,9 +2091,6 @@ void SampleWindow::updateTitle() {
 
     title.prepend(gDeviceTypePrefix[fDeviceType]);
 
-    title.prepend(" ");
-    title.prepend(sk_tool_utils::colortype_name(this->getBitmap().colorType()));
-
     if (fTilingMode != kNo_Tiling) {
         title.prependf("<T: %s> ", gTilingInfo[fTilingMode].label);
     }
@@ -2011,7 +2117,11 @@ void SampleWindow::updateTitle() {
     title.prepend(fFlipAxis & kFlipAxis_X ? "X " : nullptr);
     title.prepend(fFlipAxis & kFlipAxis_Y ? "Y " : nullptr);
     title.prepend(gHintingStates[fHintingState].label);
+    title.prepend(gPixelGeometryStates[fPixelGeometryIndex].label);
 
+    if (fOffset.fX || fOffset.fY) {
+        title.prependf("(%.2f, %.2f) ", SkScalarToFloat(fOffset.fX), SkScalarToFloat(fOffset.fY));
+    }
     if (fZoomLevel) {
         title.prependf("{%.2f} ", SkScalarToFloat(fZoomLevel));
     }
@@ -2029,6 +2139,8 @@ void SampleWindow::updateTitle() {
                        fDevManager->getGrRenderTarget()->numColorSamples());
     }
 #endif
+
+    title.appendf(" %s", find_config_name(this->info()));
 
     this->setTitle(title.c_str());
 }

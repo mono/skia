@@ -12,7 +12,6 @@
 #include "SkCornerPathEffect.h"
 #include "SkGradientShader.h"
 #include "SkGraphics.h"
-#include "SkImageDecoder.h"
 #include "SkPath.h"
 #include "SkRandom.h"
 #include "SkRegion.h"
@@ -25,9 +24,7 @@
 #include "SkXfermode.h"
 
 #include "SkStream.h"
-#include "SkXMLParser.h"
 #include "SkColorPriv.h"
-#include "SkImageDecoder.h"
 #include "SkBlurMaskFilter.h"
 
 static void setNamedTypeface(SkPaint* paint, const char name[]) {
@@ -42,13 +39,12 @@ class XfermodesBlurView : public SampleView {
     SkBitmap    fBG;
     SkBitmap    fSrcB, fDstB;
 
-    void draw_mode(SkCanvas* canvas, SkXfermode* mode, int alpha,
+    void draw_mode(SkCanvas* canvas, sk_sp<SkXfermode> mode, int alpha,
                    SkScalar x, SkScalar y) {
         SkPaint p;
-        SkMaskFilter* mf = SkBlurMaskFilter::Create(kNormal_SkBlurStyle,
-                                       SkBlurMask::ConvertRadiusToSigma(SkIntToScalar(5)),
-                                       SkBlurMaskFilter::kNone_BlurFlag);
-        p.setMaskFilter(mf)->unref();
+        p.setMaskFilter(SkBlurMaskFilter::Make(kNormal_SkBlurStyle,
+                                               SkBlurMask::ConvertRadiusToSigma(5),
+                                               SkBlurMaskFilter::kNone_BlurFlag));
 
         SkScalar ww = SkIntToScalar(W);
         SkScalar hh = SkIntToScalar(H);
@@ -61,7 +57,7 @@ class XfermodesBlurView : public SampleView {
         r.offset(x, y);
         canvas->drawOval(r, p);
 
-        p.setXfermode(mode);
+        p.setXfermode(std::move(mode));
 
         // draw a square overlapping the circle
         // in the lower right of the canvas
@@ -151,10 +147,8 @@ protected:
         const SkScalar h = SkIntToScalar(H);
         SkMatrix m;
         m.setScale(SkIntToScalar(6), SkIntToScalar(6));
-        SkShader* s = SkShader::CreateBitmapShader(fBG,
-                                                   SkShader::kRepeat_TileMode,
-                                                   SkShader::kRepeat_TileMode,
-                                                   &m);
+        auto s = SkShader::MakeBitmapShader(fBG, SkShader::kRepeat_TileMode,
+                                            SkShader::kRepeat_TileMode, &m);
 
         SkPaint labelP;
         labelP.setAntiAlias(true);
@@ -168,8 +162,6 @@ protected:
         for (int twice = 0; twice < 2; twice++) {
             SkScalar x = x0, y = 0;
             for (size_t i = 0; i < SK_ARRAY_COUNT(gModes); i++) {
-                SkXfermode* mode = SkXfermode::Create(gModes[i].fMode);
-                SkAutoUnref aur(mode);
                 SkRect r;
                 r.set(x, y, x+w, y+h);
 
@@ -179,7 +171,8 @@ protected:
                 canvas->drawRect(r, p);
 
                 canvas->saveLayer(&r, nullptr);
-                draw_mode(canvas, mode, twice ? 0x88 : 0xFF, r.fLeft, r.fTop);
+                draw_mode(canvas, SkXfermode::Make(gModes[i].fMode),
+                          twice ? 0x88 : 0xFF, r.fLeft, r.fTop);
                 canvas->restore();
 
                 r.inset(-SK_ScalarHalf, -SK_ScalarHalf);
@@ -197,7 +190,6 @@ protected:
             }
             x0 += SkIntToScalar(400);
         }
-        s->unref();
     }
 
 private:

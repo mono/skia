@@ -5,7 +5,10 @@
  * found in the LICENSE file.
  */
 
+#include "SkMaskFilter.h"
+#include "SkColorFilter.h"
 #include "SkPaint.h"
+#include "SkShader.h"
 
 #include "sk_paint.h"
 #include "sk_types_priv.h"
@@ -49,7 +52,7 @@ void sk_paint_set_color(sk_paint_t* cpaint, sk_color_t c) {
 }
 
 void sk_paint_set_shader(sk_paint_t* cpaint, sk_shader_t* cshader) {
-    AsPaint(cpaint)->setShader(AsShader(cshader));
+    AsPaint(cpaint)->setShader(sk_ref_sp(AsShader(cshader)));
 }
 
 sk_shader_t* sk_paint_get_shader(sk_paint_t* cpaint) {
@@ -57,7 +60,7 @@ sk_shader_t* sk_paint_get_shader(sk_paint_t* cpaint) {
 }
 
 void sk_paint_set_maskfilter(sk_paint_t* cpaint, sk_maskfilter_t* cfilter) {
-    AsPaint(cpaint)->setMaskFilter(AsMaskFilter(cfilter));
+    AsPaint(cpaint)->setMaskFilter(sk_ref_sp(AsMaskFilter(cfilter)));
 }
 
 sk_maskfilter_t* sk_paint_get_maskfilter(sk_paint_t* cpaint) {
@@ -65,7 +68,7 @@ sk_maskfilter_t* sk_paint_get_maskfilter(sk_paint_t* cpaint) {
 }
 
 void sk_paint_set_colorfilter(sk_paint_t* cpaint, sk_colorfilter_t* cfilter) {
-    AsPaint(cpaint)->setColorFilter(AsColorFilter(cfilter));
+    AsPaint(cpaint)->setColorFilter(sk_ref_sp(AsColorFilter(cfilter)));
 }
 
 sk_colorfilter_t* sk_paint_get_colorfilter(sk_paint_t* cpaint) {

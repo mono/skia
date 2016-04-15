@@ -13,11 +13,12 @@
         '../src/core',
         '../src/effects', #needed for BlurMask.h
         '../src/gpu', # needed by SkLua.cpp
+        '../src/image',
         '../src/images',
         '../src/lazy',
         '../gm',       # needed to pull gm.h
         '../samplecode', # To pull SampleApp.h and SampleCode.h
-        '../src/utils/debugger',
+        '../tools/debugger',
         '../tools',
         '../experimental',
       ],
@@ -85,6 +86,7 @@
         '../samplecode/SampleLua.cpp',
         '../samplecode/SampleManyRects.cpp',
         '../samplecode/SampleMeasure.cpp',
+        '../samplecode/SampleMegaStroke.cpp',
         '../samplecode/SamplePatch.cpp',
         '../samplecode/SamplePath.cpp',
         '../samplecode/SamplePathClip.cpp',
@@ -147,14 +149,16 @@
         'etc1.gyp:libetc1',
         'experimental.gyp:experimental',
         'flags.gyp:flags',
+        'jsoncpp.gyp:jsoncpp',
         'lua.gyp:lua',
         'pdf.gyp:pdf',
         'skia_lib.gyp:skia_lib',
+        'gputest.gyp:skgputest',
         'tools.gyp:resources',
         'tools.gyp:sk_tool_utils',
         'tools.gyp:timer',
+        'tools.gyp:url_data_manager',
         'views.gyp:views',
-        'views_animated.gyp:views_animated',
         'xml.gyp:xml',
       ],
       'msvs_settings': {

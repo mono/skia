@@ -44,24 +44,24 @@ protected:
     }
 
     void onOnceBeforeDraw() override {
-        fCheckerboard.reset(SkImage::NewFromBitmap(
-            sk_tool_utils::create_checkerboard_bitmap(64, 64, 0xFFA0A0A0, 0xFF404040, 8)));
-        fGradientCircle.reset(MakeGradientCircle(64, 64));
+        fCheckerboard = SkImage::MakeFromBitmap(
+            sk_tool_utils::create_checkerboard_bitmap(64, 64, 0xFFA0A0A0, 0xFF404040, 8));
+        fGradientCircle = MakeGradientCircle(64, 64);
     }
 
     void onDraw(SkCanvas* canvas) override {
         canvas->clear(SK_ColorBLACK);
 
-        SkAutoTUnref<SkImageFilter> gradient(SkImageSource::Create(fGradientCircle));
-        SkAutoTUnref<SkImageFilter> checkerboard(SkImageSource::Create(fCheckerboard));
-        SkAutoTUnref<SkShader> noise(SkPerlinNoiseShader::CreateFractalNoise(
+        sk_sp<SkImageFilter> gradient(SkImageSource::Make(fGradientCircle));
+        sk_sp<SkImageFilter> checkerboard(SkImageSource::Make(fCheckerboard));
+        sk_sp<SkShader> noise(SkPerlinNoiseShader::MakeFractalNoise(
             SkDoubleToScalar(0.1), SkDoubleToScalar(0.05), 1, 0));
         SkPaint noisePaint;
         noisePaint.setShader(noise);
 
         SkPoint3 pointLocation = SkPoint3::Make(0, 0, SkIntToScalar(10));
-        SkPoint3 spotLocation = SkPoint3::Make(SkIntToScalar(-10), 
-                                               SkIntToScalar(-10), 
+        SkPoint3 spotLocation = SkPoint3::Make(SkIntToScalar(-10),
+                                               SkIntToScalar(-10),
                                                SkIntToScalar(20));
         SkPoint3 spotTarget = SkPoint3::Make(SkIntToScalar(40), SkIntToScalar(40), 0);
         SkScalar spotExponent = SK_Scalar1;
@@ -73,20 +73,20 @@ protected:
         resizeMatrix.setScale(RESIZE_FACTOR, RESIZE_FACTOR);
 
         SkImageFilter* filters[] = {
-            SkBlurImageFilter::Create(SkIntToScalar(4), SkIntToScalar(4)),
-            SkDropShadowImageFilter::Create(SkIntToScalar(5), SkIntToScalar(10),
+            SkBlurImageFilter::Make(SkIntToScalar(4), SkIntToScalar(4), nullptr).release(),
+            SkDropShadowImageFilter::Make(SkIntToScalar(5), SkIntToScalar(10),
                 SkIntToScalar(3), SkIntToScalar(3), SK_ColorYELLOW,
-                SkDropShadowImageFilter::kDrawShadowAndForeground_ShadowMode),
+                SkDropShadowImageFilter::kDrawShadowAndForeground_ShadowMode, nullptr).release(),
             SkDisplacementMapEffect::Create(SkDisplacementMapEffect::kR_ChannelSelectorType,
                                             SkDisplacementMapEffect::kR_ChannelSelectorType,
                                             SkIntToScalar(12),
                                             gradient.get(),
                                             checkerboard.get()),
-            SkDilateImageFilter::Create(1, 1, checkerboard.get()),
-            SkErodeImageFilter::Create(1, 1, checkerboard.get()),
-            SkOffsetImageFilter::Create(SkIntToScalar(32), 0),
-            SkImageFilter::CreateMatrixFilter(resizeMatrix, kNone_SkFilterQuality),
-            SkPaintImageFilter::Create(noisePaint),
+            SkDilateImageFilter::Make(1, 1, checkerboard).release(),
+            SkErodeImageFilter::Make(1, 1, checkerboard).release(),
+            SkOffsetImageFilter::Make(SkIntToScalar(32), 0, nullptr).release(),
+            SkImageFilter::MakeMatrixFilter(resizeMatrix, kNone_SkFilterQuality, nullptr).release(),
+            SkPaintImageFilter::Make(noisePaint).release(),
             SkLightingImageFilter::CreatePointLitDiffuse(pointLocation, white, surfaceScale, kd),
             SkLightingImageFilter::CreateSpotLitDiffuse(spotLocation, spotTarget, spotExponent,
                                                         cutoffAngle, white, surfaceScale, kd),
@@ -135,28 +135,25 @@ protected:
     }
 
 private:
-    static SkImage* MakeGradientCircle(int width, int height) {
+    static sk_sp<SkImage> MakeGradientCircle(int width, int height) {
         SkScalar x = SkIntToScalar(width / 2);
         SkScalar y = SkIntToScalar(height / 2);
         SkScalar radius = SkScalarMul(SkMinScalar(x, y), SkIntToScalar(4) / SkIntToScalar(5));
-        SkAutoTUnref<SkSurface> surface(SkSurface::NewRasterN32Premul(width, height));
+        auto surface(SkSurface::MakeRasterN32Premul(width, height));
         SkCanvas* canvas = surface->getCanvas();
         canvas->clear(0x00000000);
         SkColor colors[2];
         colors[0] = SK_ColorWHITE;
         colors[1] = SK_ColorBLACK;
-        SkAutoTUnref<SkShader> shader(
-            SkGradientShader::CreateRadial(SkPoint::Make(x, y), radius, colors, nullptr, 2,
-                                           SkShader::kClamp_TileMode)
-        );
         SkPaint paint;
-        paint.setShader(shader);
+        paint.setShader(SkGradientShader::MakeRadial(SkPoint::Make(x, y), radius, colors, nullptr,
+                                                     2, SkShader::kClamp_TileMode));
         canvas->drawCircle(x, y, radius, paint);
 
-        return surface->newImageSnapshot();
+        return surface->makeImageSnapshot();
     }
 
-    SkAutoTUnref<SkImage> fCheckerboard, fGradientCircle;
+    sk_sp<SkImage> fCheckerboard, fGradientCircle;
 
     typedef GM INHERITED;
 };

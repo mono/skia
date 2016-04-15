@@ -1,4 +1,3 @@
-
 /*
  * Copyright 2011 Google Inc.
  *
@@ -102,10 +101,10 @@ private:
     typedef Sk2DPathEffect INHERITED;
 };
 
-SkFlattenable* Dot2DPathEffect::CreateProc(SkReadBuffer& buffer) {
+sk_sp<SkFlattenable> Dot2DPathEffect::CreateProc(SkReadBuffer& buffer) {
     SkMatrix matrix;
     buffer.readMatrix(&matrix);
-    return new Dot2DPathEffect(buffer.readScalar(), matrix, nullptr);
+    return sk_make_sp<Dot2DPathEffect>(buffer.readScalar(), matrix, nullptr);
 }
 
 class InverseFillPE : public SkPathEffect {
@@ -130,18 +129,20 @@ private:
     typedef SkPathEffect INHERITED;
 };
 
-SkFlattenable* InverseFillPE::CreateProc(SkReadBuffer& buffer) { return new InverseFillPE; }
+sk_sp<SkFlattenable> InverseFillPE::CreateProc(SkReadBuffer& buffer) {
+    return sk_make_sp<InverseFillPE>();
+}
 
-static SkPathEffect* makepe(float interp, SkTDArray<SkPoint>* pts) {
+static sk_sp<SkPathEffect> makepe(float interp, SkTDArray<SkPoint>* pts) {
     SkMatrix    lattice;
     SkScalar    rad = 3 + SkIntToScalar(4) * (1 - interp);
     lattice.setScale(rad*2, rad*2, 0, 0);
     lattice.postSkew(SK_Scalar1/3, 0, 0, 0);
-    return new Dot2DPathEffect(rad, lattice, pts);
+    return sk_make_sp<Dot2DPathEffect>(rad, lattice, pts);
 }
 
 static void r7(SkLayerRasterizer::Builder* rastBuilder, SkPaint& p, SkScalar interp) {
-    p.setPathEffect(makepe(SkScalarToFloat(interp), nullptr))->unref();
+    p.setPathEffect(makepe(SkScalarToFloat(interp), nullptr));
     rastBuilder->addLayer(p);
 #if 0
     p.setPathEffect(new InverseFillPE())->unref();
@@ -163,7 +164,7 @@ static void apply_shader(SkPaint* paint, float scale)
 
     p.setAntiAlias(true);
     r7(&rastBuilder, p, scale);
-    paint->setRasterizer(rastBuilder.detachRasterizer())->unref();
+    paint->setRasterizer(rastBuilder.detach());
 
     paint->setColor(SK_ColorBLUE);
 }
@@ -201,7 +202,7 @@ protected:
 
     static void drawdots(SkCanvas* canvas, const SkPaint& orig) {
         SkTDArray<SkPoint> pts;
-        SkPathEffect* pe = makepe(0, &pts);
+        auto pe = makepe(0, &pts);
 
         SkStrokeRec rec(SkStrokeRec::kFill_InitStyle);
         SkPath path, dstPath;
@@ -212,8 +213,7 @@ protected:
         p.setAntiAlias(true);
         p.setStrokeWidth(10);
         p.setColor(SK_ColorRED);
-        canvas->drawPoints(SkCanvas::kPoints_PointMode, pts.count(), pts.begin(),
-                           p);
+        canvas->drawPoints(SkCanvas::kPoints_PointMode, pts.count(), pts.begin(), p);
     }
 
     virtual void onDraw(SkCanvas* canvas) {

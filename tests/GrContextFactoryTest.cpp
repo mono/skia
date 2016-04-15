@@ -13,15 +13,17 @@
 #include "GrCaps.h"
 #include "Test.h"
 
+using namespace sk_gpu_test;
+
 DEF_GPUTEST(GrContextFactory_NVPRContextOptionHasPathRenderingSupport, reporter, /*factory*/) {
     // Test that if NVPR is requested, the context always has path rendering
     // or the context creation fails.
     GrContextFactory testFactory;
     // Test that if NVPR is possible, caps are in sync.
-    for (int i = 0; i < GrContextFactory::kGLContextTypeCnt; ++i) {
-        GrContextFactory::GLContextType glCtxType = static_cast<GrContextFactory::GLContextType>(i);
-        GrContext* context = testFactory.get(glCtxType,
-                                             GrContextFactory::kEnableNVPR_GLContextOptions);
+    for (int i = 0; i < GrContextFactory::kContextTypeCnt; ++i) {
+        GrContextFactory::ContextType ctxType = static_cast<GrContextFactory::ContextType>(i);
+        GrContext* context = testFactory.get(ctxType,
+                                             GrContextFactory::kEnableNVPR_ContextOptions);
         if (!context) {
             continue;
         }
@@ -35,9 +37,9 @@ DEF_GPUTEST(GrContextFactory_NoPathRenderingUnlessNVPRRequested, reporter, /*fac
     // Test that if NVPR is not requested, the context never has path rendering support.
 
     GrContextFactory testFactory;
-    for (int i = 0; i <= GrContextFactory::kLastGLContextType; ++i) {
-        GrContextFactory::GLContextType glCtxType = (GrContextFactory::GLContextType)i;
-        GrContext* context = testFactory.get(glCtxType);
+    for (int i = 0; i <= GrContextFactory::kLastContextType; ++i) {
+        GrContextFactory::ContextType ctxType = (GrContextFactory::ContextType)i;
+        GrContext* context = testFactory.get(ctxType);
         if (context) {
             REPORTER_ASSERT(
                 reporter,
@@ -46,12 +48,33 @@ DEF_GPUTEST(GrContextFactory_NoPathRenderingUnlessNVPRRequested, reporter, /*fac
     }
 }
 
+DEF_GPUTEST(GrContextFactory_RequiredSRGBSupport, reporter, /*factory*/) {
+    // Test that if sRGB support is requested, the context always has that capability
+    // or the context creation fails. Also test that if the creation fails, a context
+    // created without that flag would not have had sRGB support.
+    GrContextFactory testFactory;
+    // Test that if sRGB is requested, caps are in sync.
+    for (int i = 0; i < GrContextFactory::kContextTypeCnt; ++i) {
+        GrContextFactory::ContextType ctxType = static_cast<GrContextFactory::ContextType>(i);
+        GrContext* context =
+            testFactory.get(ctxType, GrContextFactory::kRequireSRGBSupport_ContextOptions);
+
+        if (context) {
+            REPORTER_ASSERT(reporter, context->caps()->srgbSupport());
+        } else {
+            context = testFactory.get(ctxType);
+            if (context) {
+                REPORTER_ASSERT(reporter, !context->caps()->srgbSupport());
+            }
+        }
+    }
+}
+
 DEF_GPUTEST(GrContextFactory_abandon, reporter, /*factory*/) {
     GrContextFactory testFactory;
-    for (int i = 0; i < GrContextFactory::kGLContextTypeCnt; ++i) {
-        GrContextFactory::GLContextType glCtxType = (GrContextFactory::GLContextType) i;
-        GrContextFactory::ContextInfo info1 =
-                testFactory.getContextInfo(glCtxType);
+    for (int i = 0; i < GrContextFactory::kContextTypeCnt; ++i) {
+        GrContextFactory::ContextType ctxType = (GrContextFactory::ContextType) i;
+        ContextInfo info1 = testFactory.getContextInfo(ctxType);
         if (!info1.fGrContext) {
             continue;
         }
@@ -61,8 +84,7 @@ DEF_GPUTEST(GrContextFactory_abandon, reporter, /*factory*/) {
         testFactory.abandonContexts();
 
         // Test that we get different context after abandon.
-        GrContextFactory::ContextInfo info2 =
-                testFactory.getContextInfo(glCtxType);
+        ContextInfo info2 = testFactory.getContextInfo(ctxType);
         REPORTER_ASSERT(reporter, info2.fGrContext);
         REPORTER_ASSERT(reporter, info2.fGLContext);
         REPORTER_ASSERT(reporter, info1.fGrContext != info2.fGrContext);

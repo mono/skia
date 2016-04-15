@@ -5,7 +5,6 @@
  * found in the LICENSE file.
  */
 
-#include "LazyDecodeBitmap.h"
 #include "SkCommandLineFlags.h"
 #include "SkPicture.h"
 #include "SkPictureRecorder.h"
@@ -42,10 +41,8 @@ int tool_main(int argc, char** argv) {
         return kError;
     }
 
-    SkPicture::InstallPixelRefProc proc = &sk_tools::LazyDecodeBitmap;
-
-    SkAutoTUnref<SkPicture> picture(SkPicture::CreateFromStream(&inputStream, proc));
-    if (nullptr == picture.get()) {
+    sk_sp<SkPicture> picture(SkPicture::MakeFromStream(&inputStream));
+    if (nullptr == picture) {
         if (!FLAGS_quiet) {
             SkDebugf("Could not read the SkPicture\n");
         }
@@ -55,10 +52,10 @@ int tool_main(int argc, char** argv) {
     // The SkPicture tracking information is only generated during recording
     // an isn't serialized. Replay the picture to regenerated the tracking data.
     SkPictureRecorder recorder;
-    picture->playback(recorder.beginRecording(picture->cullRect().width(), 
-                                              picture->cullRect().height(), 
+    picture->playback(recorder.beginRecording(picture->cullRect().width(),
+                                              picture->cullRect().height(),
                                               nullptr, 0));
-    SkAutoTUnref<SkPicture> recorded(recorder.endRecording());
+    sk_sp<SkPicture> recorded(recorder.finishRecordingAsPicture());
 
     if (recorded->suitableForGpuRasterization(nullptr)) {
         SkDebugf("suitable\n");

@@ -415,9 +415,8 @@ static void DrawVerticesShaderTestStep(SkCanvas* canvas, const TestData& d,
     pts[2].set(SkIntToScalar(d.fWidth), SkIntToScalar(d.fHeight));
     pts[3].set(0, SkIntToScalar(d.fHeight));
     SkPaint paint;
-    SkShader* shader = SkShader::CreateBitmapShader(d.fBitmap,
-        SkShader::kClamp_TileMode, SkShader::kClamp_TileMode);
-    paint.setShader(shader)->unref();
+    paint.setShader(SkShader::MakeBitmapShader(d.fBitmap, SkShader::kClamp_TileMode,
+                                               SkShader::kClamp_TileMode));
     canvas->drawVertices(SkCanvas::kTriangleFan_VertexMode, 4, pts, pts,
                          nullptr, nullptr, nullptr, 0, paint);
 }
@@ -432,9 +431,8 @@ static void DrawPictureTestStep(SkCanvas* canvas, const TestData& d,
     testCanvas->scale(SkIntToScalar(2), SkIntToScalar(1));
     testCanvas->clipRect(d.fRect);
     testCanvas->drawRect(d.fRect, d.fPaint);
-    SkAutoTUnref<SkPicture> testPicture(recorder.endRecording());
 
-    canvas->drawPicture(testPicture);
+    canvas->drawPicture(recorder.finishRecordingAsPicture());
 }
 TEST_STEP(DrawPicture, DrawPictureTestStep);
 
@@ -515,8 +513,11 @@ static void AssertCanvasStatesEqual(skiatest::Reporter* reporter, const TestData
     REPORTER_ASSERT_MESSAGE(reporter, bounds1 == bounds2,
                             testStep->assertMessage());
 
+#ifdef SK_SUPPORT_LEGACY_DRAWFILTER
     REPORTER_ASSERT_MESSAGE(reporter, canvas1->getDrawFilter() ==
         canvas2->getDrawFilter(), testStep->assertMessage());
+#endif
+
     SkIRect deviceBounds1, deviceBounds2;
     REPORTER_ASSERT_MESSAGE(reporter,
         canvas1->getClipDeviceBounds(&deviceBounds1) ==
@@ -643,17 +644,16 @@ static void test_newraster(skiatest::Reporter* reporter) {
     SkCanvas* canvas = SkCanvas::NewRasterDirect(info, baseAddr, minRowBytes);
     REPORTER_ASSERT(reporter, canvas);
 
-    SkImageInfo info2;
-    size_t rowBytes;
-    const SkPMColor* addr = (const SkPMColor*)canvas->peekPixels(&info2, &rowBytes);
+    SkPixmap pmap;
+    const SkPMColor* addr = canvas->peekPixels(&pmap) ? pmap.addr32() : nullptr;
     REPORTER_ASSERT(reporter, addr);
-    REPORTER_ASSERT(reporter, info == info2);
-    REPORTER_ASSERT(reporter, minRowBytes == rowBytes);
+    REPORTER_ASSERT(reporter, info == pmap.info());
+    REPORTER_ASSERT(reporter, minRowBytes == pmap.rowBytes());
     for (int y = 0; y < info.height(); ++y) {
         for (int x = 0; x < info.width(); ++x) {
             REPORTER_ASSERT(reporter, 0 == addr[x]);
         }
-        addr = (const SkPMColor*)((const char*)addr + rowBytes);
+        addr = (const SkPMColor*)((const char*)addr + pmap.rowBytes());
     }
     delete canvas;
 
@@ -700,7 +700,7 @@ DEF_TEST(Canvas_SaveState, reporter) {
     n = canvas.saveLayer(nullptr, nullptr);
     REPORTER_ASSERT(reporter, 2 == n);
     REPORTER_ASSERT(reporter, 3 == canvas.getSaveCount());
-    
+
     canvas.restore();
     REPORTER_ASSERT(reporter, 2 == canvas.getSaveCount());
     canvas.restore();

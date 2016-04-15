@@ -271,7 +271,7 @@ static void check_alphabet_stream(skiatest::Reporter* reporter, SkStream* stream
 static void check_alphabet_buffer(skiatest::Reporter* reporter, const SkROBuffer* reader) {
     size_t size = reader->size();
     REPORTER_ASSERT(reporter, size % 26 == 0);
-    
+
     SkAutoTMalloc<char> storage(size);
     SkROBuffer::Iter iter(reader);
     size_t offset = 0;
@@ -327,4 +327,11 @@ DEF_TEST(RWBuffer_size, r) {
     // There is only one block in this buffer.
     REPORTER_ASSERT(r, !iter.next());
     REPORTER_ASSERT(r, 0 == iter.size());
+}
+
+// Tests that it is safe to destruct an SkRWBuffer without appending
+// anything to it.
+DEF_TEST(RWBuffer_noAppend, r) {
+    SkRWBuffer buffer;
+    REPORTER_ASSERT(r, 0 == buffer.size());
 }
