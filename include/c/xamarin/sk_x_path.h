@@ -75,6 +75,43 @@ SK_API void sk_path_transform(sk_path_t* cpath, const sk_matrix_t* cmatrix);
     Creates a copy of the path
 */
 SK_API sk_path_t* sk_path_clone(const sk_path_t* cpath);
+
+/** 
+    Return the number of verbs in the path
+*/
+SK_API int sk_path_count_verbs(const sk_path_t* cpath);
+
+/**
+	Create a new path iterator.
+*/
+SK_API sk_path_iter_t* sk_path_iter_new(const sk_path_t* cpath);
+
+/**
+	Delete the path iterator.
+*/
+SK_API void sk_path_iter_delete(sk_path_iter_t* citer);
+
+/** Return the next verb in this iteration of the path. When all
+segments have been visited, return kDone_Verb.
+
+@param  pts The points representing the current verb and/or segment
+This must not be NULL.
+@return The verb for the current segment
+*/
+SK_API sk_path_verb_t sk_path_iter_next(sk_path_iter_t *citer, sk_point_t cpts[4]);
+
+/** Return what the next verb will be, but do not visit the next segment.
+
+@return The verb for the next segment
+*/
+SK_API sk_path_verb_t sk_path_iter_peek(const sk_path_iter_t *citer);
+
+/**
+*  Return the weight for the current conic. Only valid if the current
+*  segment return by next() was a conic.
+*/
+SK_API float sk_path_iter_conic_weight(const sk_path_iter_t *citer);
+
 SK_C_PLUS_PLUS_END_GUARD
 
 #endif

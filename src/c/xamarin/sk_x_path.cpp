@@ -74,3 +74,38 @@ sk_path_t* sk_path_clone(const sk_path_t* cpath)
     return (sk_path_t*)new SkPath(AsPath(*cpath));
 }
 
+int sk_path_count_verbs(const sk_path_t* cpath)
+{
+    return AsPath(*cpath).countVerbs();
+}
+
+sk_path_iter_t* sk_path_iter_new(const sk_path_t* cpath)
+{
+	SkPath::RawIter* iter = new SkPath::RawIter(AsPath(*cpath));
+	return ToPathIter(iter);
+}
+
+void sk_path_iter_delete(sk_path_iter_t* citer)
+{
+	delete AsPathIter(citer);
+}
+
+sk_path_verb_t sk_path_iter_next(sk_path_iter_t* citer, sk_point_t cpts[4])
+{
+	SkPath::RawIter *iter = AsPathIter(citer);
+	SkPoint *pts = AsPoint(cpts);
+	SkPath::Verb verb = iter->next(pts);
+	return (sk_path_verb_t)verb;
+}
+
+sk_path_verb_t sk_path_iter_peek(const sk_path_iter_t* citer)
+{
+	const SkPath::RawIter *iter = AsPathIter(citer);
+	return (sk_path_verb_t)iter->peek();
+}
+
+float sk_path_iter_conic_weight(const sk_path_iter_t* citer)
+{
+	const SkPath::RawIter *iter = AsPathIter(citer);
+	return iter->conicWeight();
+}

@@ -584,6 +584,10 @@ static inline const SkPoint* AsPoint(const sk_point_t* p) {
     return reinterpret_cast<const SkPoint*>(p);
 }
 
+static inline SkPoint* AsPoint(sk_point_t* p) {
+	return reinterpret_cast<SkPoint*>(p);
+}
+
 static inline const SkIPoint& AsIPoint(const sk_ipoint_t& p) {
     return reinterpret_cast<const SkIPoint&>(p);
 }
@@ -632,4 +636,15 @@ static inline sk_fontmetrics_t* ToFontMetrics(SkPaint::FontMetrics* p) {
     return reinterpret_cast<sk_fontmetrics_t*>(p);
 }
 
+static inline SkPath::RawIter* AsPathIter(sk_path_iter_t* iter) {
+	return reinterpret_cast<SkPath::RawIter*>(iter);
+}
+
+static inline const SkPath::RawIter* AsPathIter(const sk_path_iter_t* iter) {
+	return reinterpret_cast<const SkPath::RawIter*>(iter);
+}
+
+static inline sk_path_iter_t* ToPathIter(SkPath::RawIter* iter) {
+	return reinterpret_cast<sk_path_iter_t*>(iter);
+}
 #endif

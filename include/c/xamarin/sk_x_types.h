@@ -196,6 +196,10 @@ typedef enum {
     CLAMP_TO_BLACK_SK_MATRIX_CONVOLUTION_TILEMODE,
 } sk_matrix_convolution_tilemode_t;
 
+typedef int sk_path_verb_t;
+
+typedef struct sk_path_iter_t sk_path_iter_t;
+
 SK_C_PLUS_PLUS_END_GUARD
 
 #endif
