@@ -602,6 +602,10 @@ static inline sk_stream_t* ToStream(SkStream* cstream) {
 	return reinterpret_cast<sk_stream_t*>(cstream);
 }
 
+static inline sk_stream_asset_t* ToStreamAsset(SkStreamAsset* cstream) {
+	return reinterpret_cast<sk_stream_asset_t*>(cstream);
+}
+
 static inline SkFILEWStream* AsFileWStream(sk_wstream_filestream_t* cfilestream) {
     return reinterpret_cast<SkFILEWStream*>(cfilestream);
 }

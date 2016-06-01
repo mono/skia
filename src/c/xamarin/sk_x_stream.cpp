@@ -141,9 +141,9 @@ sk_data_t* sk_dynamicmemorywstream_copy_to_data(sk_wstream_dynamicmemorystream_t
     return ToData(AsDynamicMemoryWStream(cstream)->copyToData());
 }
 
-sk_stream_t* sk_dynamicmemorywstream_detach_as_stream(sk_wstream_dynamicmemorystream_t* cstream)
+sk_stream_asset_t* sk_dynamicmemorywstream_detach_as_stream(sk_wstream_dynamicmemorystream_t* cstream)
 {
-    return ToStream(AsDynamicMemoryWStream(cstream)->detachAsStream());
+    return ToStreamAsset(AsDynamicMemoryWStream(cstream)->detachAsStream());
 }
 
 bool sk_wstream_write(sk_wstream_t* cstream, const void* buffer, size_t size)

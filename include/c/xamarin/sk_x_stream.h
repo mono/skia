@@ -60,7 +60,7 @@ SK_API sk_wstream_filestream_t* sk_filewstream_new(const char* path);
 
 SK_API sk_wstream_dynamicmemorystream_t* sk_dynamicmemorywstream_new();
 SK_API sk_data_t* sk_dynamicmemorywstream_copy_to_data(sk_wstream_dynamicmemorystream_t* cstream);
-SK_API sk_stream_t* sk_dynamicmemorywstream_detach_as_stream(sk_wstream_dynamicmemorystream_t* cstream);
+SK_API sk_stream_asset_t* sk_dynamicmemorywstream_detach_as_stream(sk_wstream_dynamicmemorystream_t* cstream);
 
 ////////////////////////////////////////////////////////////////////////////////
 
