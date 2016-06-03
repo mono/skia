@@ -16,11 +16,12 @@
 
 SK_C_PLUS_PLUS_BEGIN_GUARD
 
-SK_API void sk_stream_destroy(sk_stream_t* cstream);
+SK_API void sk_stream_asset_destroy(sk_stream_asset_t* cstream);
 
 ////////////////////////////////////////////////////////////////////////////////
 
 SK_API sk_stream_filestream_t* sk_filestream_new(const char* path);
+SK_API void sk_filestream_destroy(sk_stream_filestream_t* cstream);
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -29,6 +30,7 @@ SK_API sk_stream_memorystream_t* sk_memorystream_new_with_length(size_t length);
 SK_API sk_stream_memorystream_t* sk_memorystream_new_with_data(const void* data, size_t length, bool copyData);
 SK_API sk_stream_memorystream_t* sk_memorystream_new_with_skdata(sk_data_t* data);
 SK_API void sk_memorystream_set_memory(sk_stream_memorystream_t* cmemorystream, const void* data, size_t length, bool copyData);
+SK_API void sk_memorystream_destroy(sk_stream_memorystream_t* cstream);
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -52,15 +54,13 @@ SK_API size_t sk_stream_get_length(sk_stream_t* cstream);
 
 ////////////////////////////////////////////////////////////////////////////////
 
-SK_API void sk_wstream_destroy(sk_wstream_t* cstream);
-
-////////////////////////////////////////////////////////////////////////////////
-
 SK_API sk_wstream_filestream_t* sk_filewstream_new(const char* path);
+SK_API void sk_filewstream_destroy(sk_wstream_filestream_t* cstream);
 
 SK_API sk_wstream_dynamicmemorystream_t* sk_dynamicmemorywstream_new();
 SK_API sk_data_t* sk_dynamicmemorywstream_copy_to_data(sk_wstream_dynamicmemorystream_t* cstream);
 SK_API sk_stream_asset_t* sk_dynamicmemorywstream_detach_as_stream(sk_wstream_dynamicmemorystream_t* cstream);
+SK_API void sk_dynamicmemorywstream_destroy(sk_wstream_dynamicmemorystream_t* cstream);
 
 ////////////////////////////////////////////////////////////////////////////////
 

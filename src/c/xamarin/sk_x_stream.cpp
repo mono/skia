@@ -12,9 +12,19 @@
 #include "../sk_types_priv.h"
 #include "sk_x_types_priv.h"
 
-void sk_stream_destroy(sk_stream_t* cstream)
+void sk_stream_asset_destroy(sk_stream_asset_t* cstream)
 {
-    delete AsStream(cstream);
+    delete AsStreamAsset(cstream);
+}
+
+void sk_filestream_destroy(sk_stream_filestream_t* cstream)
+{
+    delete AsFileStream(cstream);
+}
+
+void sk_memorystream_destroy(sk_stream_memorystream_t* cstream)
+{
+    delete AsMemoryStream(cstream);
 }
 
 sk_stream_filestream_t* sk_filestream_new (const char* path)
@@ -121,9 +131,14 @@ size_t sk_stream_get_length (sk_stream_t* cstream)
     return AsStream(cstream)->getLength();
 }
 
-void sk_wstream_destroy(sk_wstream_t* cstream)
+void sk_filewstream_destroy(sk_wstream_filestream_t* cstream)
 {
-    delete AsWStream(cstream);
+    delete AsFileWStream(cstream);
+}
+
+void sk_dynamicmemorywstream_destroy(sk_wstream_dynamicmemorystream_t* cstream)
+{
+    delete AsDynamicMemoryWStream(cstream);
 }
 
 sk_wstream_filestream_t* sk_filewstream_new(const char* path)
