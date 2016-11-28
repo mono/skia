@@ -7,6 +7,7 @@
 
 #include "Test.h"
 
+#include "sk_bitmap.h"
 #include "sk_canvas.h"
 #include "sk_paint.h"
 #include "sk_surface.h"
@@ -73,7 +74,7 @@ static void test_c(skiatest::Reporter* reporter) {
     sk_canvas_draw_paint(canvas, paint);
     REPORTER_ASSERT(reporter, 0xFFFFFFFF == pixel[0]);
 
-    sk_paint_set_xfermode_mode(paint, SRC_SK_XFERMODE_MODE);
+    sk_paint_set_blendmode(paint, SRC_SK_BLENDMODE);
     sk_paint_set_color(paint, sk_color_set_argb(0x80, 0x80, 0x80, 0x80));
     sk_canvas_draw_paint(canvas, paint);
     REPORTER_ASSERT(reporter, 0x80404040 == pixel[0]);
@@ -82,7 +83,21 @@ static void test_c(skiatest::Reporter* reporter) {
     sk_surface_unref(surface);
 }
 
+static void bitmap_resize_test(skiatest::Reporter* reporter) {
+    const sk_imageinfo_t srcInfo = {64, 64, (sk_colortype_t)SkColorType::kN32_SkColorType, PREMUL_SK_ALPHATYPE};
+    const sk_imageinfo_t dstInfo = {128, 128, (sk_colortype_t)SkColorType::kN32_SkColorType, PREMUL_SK_ALPHATYPE};
+
+    sk_bitmap_t* bitmap_src = sk_bitmap_new();
+    sk_bitmap_t* bitmap_dst = sk_bitmap_new();
+    REPORTER_ASSERT(reporter, sk_bitmap_try_alloc_pixels(bitmap_src, &srcInfo, srcInfo.width * 4));
+    REPORTER_ASSERT(reporter, sk_bitmap_try_alloc_pixels(bitmap_dst, &dstInfo, dstInfo.width * 4));
+    REPORTER_ASSERT(reporter, sk_bitmap_resize(bitmap_dst, bitmap_src, RESIZE_BOX));
+
+    REPORTER_ASSERT(reporter, bitmap_dst != nullptr);
+}
+
 DEF_TEST(C_API, reporter) {
     test_c(reporter);
     shader_test(reporter);
+    bitmap_resize_test(reporter);
 }

@@ -186,6 +186,15 @@ typedef struct sk_surface_t sk_surface_t;
 */
 typedef struct sk_region_t sk_region_t;
 
+typedef enum  {
+    RESIZE_BOX,
+    RESIZE_TRIANGLE,
+    RESIZE_LANCZOS3,
+    RESIZE_HAMMING,
+    RESIZE_MITCHELL,
+    RESIZE_FirstMethod = RESIZE_BOX,
+    RESIZE_LastMethod = RESIZE_MITCHELL,
+} sk_resize_mode_t;
 
 typedef enum {
     CLEAR_SK_XFERMODE_MODE,
