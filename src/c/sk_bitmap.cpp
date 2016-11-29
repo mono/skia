@@ -346,7 +346,8 @@ bool sk_bitmap_resize(sk_bitmap_t* cbitmap_dst, sk_bitmap_t* cbitmap_src, const 
 {
     SkBitmap* dstBmp = AsBitmap(cbitmap_dst);
     SkBitmap* srcBmp = AsBitmap(cbitmap_src);
-    SkPixmap srcPixMap = SkPixmap(srcBmp->info(), srcBmp->getPixels(), srcBmp->getSize(), srcBmp->getColorTable());
-    SkPixmap dstPixMap = SkPixmap(dstBmp->info(), dstBmp->getPixels(), dstBmp->getSize(), dstBmp->getColorTable());
-    return (SkBitmapScaler::Resize(dstPixMap, srcPixMap, (SkBitmapScaler::ResizeMethod)mode) && dstBmp->installPixels(dstPixMap));
+    SkPixmap srcPix, dstPix;
+    srcBmp->peekPixels(&srcPix);
+    dstBmp->peekPixels(&dstPix);
+    return (SkBitmapScaler::Resize(dstPix, srcPix, (SkBitmapScaler::ResizeMethod)mode) && dstBmp->installPixels(dstPix));
 }
