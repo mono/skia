@@ -12,11 +12,13 @@
 #include "sk_paint.h"
 #include "sk_surface.h"
 #include "sk_shader.h"
+#include "SkCanvas.h"
 
 static void shader_test(skiatest::Reporter* reporter) {
     sk_imageinfo_t info =
         {64, 64, sk_colortype_get_default_8888(), PREMUL_SK_ALPHATYPE};
-    sk_surface_t* surface  = sk_surface_new_raster(&info, nullptr);
+    sk_surfaceprops_t surfaceProps = { RGB_H_SK_PIXELGEOMETRY, USE_DEVICE_INDEPENDENT_FONTS_GR_SURFACE_PROPS_FLAGS };
+    sk_surface_t* surface  = sk_surface_new_raster(&info, &surfaceProps);
     sk_canvas_t* canvas = sk_surface_get_canvas(surface);
     sk_paint_t* paint = sk_paint_new();
 
@@ -61,7 +63,6 @@ static void test_c(skiatest::Reporter* reporter) {
     };
     uint32_t pixel[1] = { 0 };
     sk_surfaceprops_t surfaceProps = { UNKNOWN_SK_PIXELGEOMETRY, USE_DEVICE_INDEPENDENT_FONTS_GR_SURFACE_PROPS_FLAGS };
-
     sk_surface_t* surface = sk_surface_new_raster_direct(&info, pixel, sizeof(uint32_t),
                                                          &surfaceProps);
     sk_paint_t* paint = sk_paint_new();
@@ -91,9 +92,20 @@ static void bitmap_resize_test(skiatest::Reporter* reporter) {
     sk_bitmap_t* bitmap_dst = sk_bitmap_new();
     REPORTER_ASSERT(reporter, sk_bitmap_try_alloc_pixels(bitmap_src, &srcInfo, srcInfo.width * 4));
     REPORTER_ASSERT(reporter, sk_bitmap_try_alloc_pixels(bitmap_dst, &dstInfo, dstInfo.width * 4));
+
+    SkCanvas* canvas = new SkCanvas(*(reinterpret_cast<SkBitmap*>(bitmap_dst)));
+
+    canvas->drawARGB(255, 255, 255, 255);
+    SkBitmap* bmp = reinterpret_cast<SkBitmap*>(bitmap_dst);
+    uint32_t color = 4294967296;
+    REPORTER_ASSERT(reporter, bmp->getColor(100, 100) != color);
+    REPORTER_ASSERT(reporter, bmp->getColor(50, 50) != color);
+
     REPORTER_ASSERT(reporter, sk_bitmap_resize(bitmap_dst, bitmap_src, RESIZE_BOX));
 
-    REPORTER_ASSERT(reporter, bitmap_dst != nullptr);
+    REPORTER_ASSERT(reporter, bmp->getColor(100, 100) == color);
+    REPORTER_ASSERT(reporter, bmp->getColor(50, 50) == color);
+    free(canvas);
 }
 
 DEF_TEST(C_API, reporter) {
