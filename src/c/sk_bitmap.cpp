@@ -12,6 +12,7 @@
 #include "SkImageInfo.h"
 #include "SkMath.h"
 #include "SkUnPreMultiply.h"
+#include "SkBitmapScaler.h"
 
 #include "sk_bitmap.h"
 
@@ -339,4 +340,14 @@ void sk_bitmap_set_pixels(sk_bitmap_t* cbitmap, void* pixels, sk_colortable_t* c
 {
     SkBitmap* bmp = AsBitmap(cbitmap);
     bmp->setPixels(pixels, AsColorTable(ctable));
+}
+
+bool sk_bitmap_resize(sk_bitmap_t* cbitmap_dst, sk_bitmap_t* cbitmap_src, const sk_resize_mode_t mode)
+{
+    SkBitmap* dstBmp = AsBitmap(cbitmap_dst);
+    SkBitmap* srcBmp = AsBitmap(cbitmap_src);
+    SkPixmap srcPix, dstPix;
+    srcBmp->peekPixels(&srcPix);
+    dstBmp->peekPixels(&dstPix);
+    return (SkBitmapScaler::Resize(dstPix, srcPix, (SkBitmapScaler::ResizeMethod)mode) && dstBmp->installPixels(dstPix));
 }
