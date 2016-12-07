@@ -23,6 +23,7 @@
 #include "SkDisplacementMapEffect.h"
 #include "SkDropShadowImageFilter.h"
 #include "SkMatrixConvolutionImageFilter.h"
+#include "SkMask.h"
 #include "Sk1DPathEffect.h"
 #include "SkFontStyle.h"
 #include "GrContext.h"
@@ -128,6 +129,22 @@ static inline const SkBitmap& AsBitmap(const sk_bitmap_t& cbitmap) {
 
 static inline SkBitmap* AsBitmap(sk_bitmap_t* cbitmap) {
     return reinterpret_cast<SkBitmap*>(cbitmap);
+}
+
+static inline const SkMask* AsMask(const sk_mask_t* cmask) {
+    return reinterpret_cast<const SkMask*>(cmask);
+}
+
+static inline const SkMask& AsMask(const sk_mask_t& cmask) {
+    return reinterpret_cast<const SkMask&>(cmask);
+}
+
+static inline SkMask* AsMask(sk_mask_t* cmask) {
+    return reinterpret_cast<SkMask*>(cmask);
+}
+
+static inline sk_mask_t* ToMask(SkMask* mask) {
+    return reinterpret_cast<sk_mask_t*>(mask);
 }
 
 static inline SkData* AsData(const sk_data_t* cdata) {

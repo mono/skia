@@ -308,6 +308,17 @@ typedef struct sk_colorfilter_t sk_colorfilter_t;
 typedef struct sk_imagefilter_t sk_imagefilter_t;
 typedef struct sk_imagefilter_croprect_t sk_imagefilter_croprect_t;
 /**
+    A bitmap mask used for blitting.
+*/
+typedef struct sk_mask_t sk_mask_t;
+typedef enum {
+    BW_FORMAT,          //!< 1bit per pixel mask (e.g. monochrome)
+    ALPHA8_FORMAT,      //!< 8bits per pixel mask (e.g. antialiasing)
+    THREE_D_FORMAT,          //!< 3 8bit per pixl planes: alpha, mul, add
+    ARGB32_FORMAT,      //!< SkPMColor
+    LCD16_FORMAT,       //!< 565 alpha for r/g/b
+} sk_mask_format_t;
+/**
    A sk_typeface_t pecifies the typeface and intrinsic style of a font.
     This is used in the paint, along with optionally algorithmic settings like
     textSize, textSkewX, textScaleX, kFakeBoldText_Mask, to specify
