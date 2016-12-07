@@ -11,7 +11,9 @@
 #include "SkDither.h"
 #include "SkImageInfo.h"
 #include "SkMath.h"
+#include "SkMask.h"
 #include "SkUnPreMultiply.h"
+#include "SkCoreBlitters.h"
 
 #include "sk_bitmap.h"
 
@@ -339,4 +341,31 @@ void sk_bitmap_set_pixels(sk_bitmap_t* cbitmap, void* pixels, sk_colortable_t* c
 {
     SkBitmap* bmp = AsBitmap(cbitmap);
     bmp->setPixels(pixels, AsColorTable(ctable));
+}
+
+void sk_bitmap_blit_mask(sk_bitmap_t* cbitmap, sk_mask_t* cmask, const sk_rect_t* clip, const sk_paint_t* cpaint)
+{
+    SkBitmap* bmp = AsBitmap(cbitmap);
+    SkPixmap pxMap;
+    bmp->peekPixels(&pxMap);
+    SkMask* mask = AsMask(cmask);
+    const SkRect* clip_rect = AsRect(clip);
+    SkBlitter* blitter;
+
+    switch (mask->fFormat) {
+        case SkMask::Format::kBW_Format:
+        case SkMask::Format::kA8_Format:
+            blitter = new SkA8_Blitter(pxMap, *AsPaint(cpaint));
+            blitter->blitMask(*AsMask(cmask), clip_rect->round());
+            delete(blitter);
+            break;
+        case SkMask::Format::kLCD16_Format:
+        case SkMask::Format::kARGB32_Format:
+            blitter = new SkARGB32_Blitter(pxMap, *AsPaint(cpaint));
+            blitter->blitMask(*AsMask(cmask), clip_rect->round());
+            delete(blitter);
+            break;
+        case SkMask::Format::k3D_Format:
+            break;
+    }
 }
