@@ -22,3 +22,4 @@ SK_API sk_color_t get_pixel_color(sk_mask_t* cmask, int x, int y);
 SK_C_PLUS_PLUS_END_GUARD
 
 #endif
+
