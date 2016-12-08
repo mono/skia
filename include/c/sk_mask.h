@@ -19,4 +19,6 @@ SK_API sk_mask_t* sk_mask_new(uint8_t* pixels, const sk_mask_format_t format, ui
 SK_API void sk_mask_destructor(sk_mask_t* cmask);
 SK_API sk_color_t get_pixel_color(sk_mask_t* cmask, int x, int y);
 
+SK_C_PLUS_PLUS_END_GUARD
+
 #endif
