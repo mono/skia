@@ -348,21 +348,22 @@ void sk_bitmap_blit_mask(sk_bitmap_t* cbitmap, sk_mask_t* cmask, const sk_rect_t
     SkBitmap* bmp = AsBitmap(cbitmap);
     SkPixmap pxMap;
     bmp->peekPixels(&pxMap);
-    SkMask* mask = AsMask(cmask);
+    SkMask mask = *AsMask(cmask);
+    SkPaint paint = *AsPaint(cpaint);
     const SkRect* clip_rect = AsRect(clip);
     SkBlitter* blitter;
 
-    switch (mask->fFormat) {
+    switch (mask.fFormat) {
         case SkMask::Format::kBW_Format:
         case SkMask::Format::kA8_Format:
-            blitter = new SkA8_Blitter(pxMap, *AsPaint(cpaint));
-            blitter->blitMask(*AsMask(cmask), clip_rect->round());
+            blitter = new SkA8_Blitter(pxMap, paint);
+            blitter->blitMask(mask, clip_rect->round());
             delete(blitter);
             break;
         case SkMask::Format::kLCD16_Format:
         case SkMask::Format::kARGB32_Format:
-            blitter = new SkARGB32_Blitter(pxMap, *AsPaint(cpaint));
-            blitter->blitMask(*AsMask(cmask), clip_rect->round());
+            blitter = new SkARGB32_Blitter(pxMap, paint);
+            blitter->blitMask(mask, clip_rect->round());
             delete(blitter);
             break;
         case SkMask::Format::k3D_Format:

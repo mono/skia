@@ -22,8 +22,31 @@ sk_mask_t* sk_mask_new(uint8_t* pixels, const sk_mask_format_t format, uint32_t 
     return ToMask(mask);
 }
 
-void sk_mask_destructor(sk_mask_t* cmask) {
-    delete AsMask(cmask);
+void sk_mask_destructor(sk_mask_t* cmask, bool owns_pixels) {
+    SkMask* mask = AsMask(cmask);
+    if (owns_pixels) {
+        SkMask::FreeImage(mask->fImage);
+    }
+
+    delete mask;
+}
+
+uint8_t* sk_mask_get_image(sk_mask_t* cmask) {
+    return AsMask(cmask)->fImage;
+}
+
+sk_irect_t sk_mask_get_bounds(sk_mask_t* cmask) {
+    SkMask* mask = AsMask(cmask);
+    return ToIRect(mask->fBounds);
+}
+
+uint32_t sk_mask_get_row_bytes(sk_mask_t* cmask) {
+    return AsMask(cmask)->fRowBytes;
+}
+
+sk_mask_format_t sk_mask_get_format(sk_mask_t* cmask) {
+    SkMask::Format format = AsMask(cmask)->fFormat;
+    return (sk_mask_format_t)format;
 }
 
 sk_color_t get_pixel_color(sk_mask_t* cmask, int x, int y) {
