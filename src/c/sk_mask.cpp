@@ -42,6 +42,14 @@ sk_irect_t sk_mask_get_bounds(sk_mask_t* cmask) {
     return ToIRect(mask->fBounds);
 }
 
+SK_API size_t sk_mask_get_image_size(sk_mask_t* cmask) {
+    SkMask* mask = AsMask(cmask);
+    if (mask->fFormat == SkMask::k3D_Format) {
+        return mask->computeTotalImageSize();
+    }
+    return mask->computeImageSize();
+}
+
 uint32_t sk_mask_get_row_bytes(sk_mask_t* cmask) {
     return AsMask(cmask)->fRowBytes;
 }
