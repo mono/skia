@@ -15,28 +15,21 @@
 
 sk_mask_t* sk_mask_new(uint8_t* pixels, const sk_mask_format_t format, uint32_t row_bytes, sk_irect_t* crect) {
     SkMask* mask = new SkMask();
-    mask->fImage = pixels;
+    mask->fBounds = *AsIRect(crect);
     mask->fFormat = (SkMask::Format)format;
     mask->fRowBytes = row_bytes;
-    mask->fBounds = *AsIRect(crect);
-    return ToMask(mask);
-}
-
-sk_mask_t* sk_mask_new2(size_t byteCount, const sk_mask_format_t format, uint32_t row_bytes, sk_irect_t* crect) {
-    SkMask* mask = new SkMask();
-    mask->fImage = SKMask::AllocImage(byteCount);
-    mask->fFormat = (SkMask::Format)format;
-    mask->fRowBytes = row_bytes;
-    mask->fBounds = *AsIRect(crect);
-    return ToMask(mask);
-}
-
-void sk_mask_destructor(sk_mask_t* cmask, bool owns_pixels) {
-    SkMask* mask = AsMask(cmask);
-    if (owns_pixels) {
-        SkMask::FreeImage(mask->fImage);
+    size_t size = row_bytes * mask->fBounds.height();
+    if (mask->fFormat == SkMask::k3D_Format) {
+        size *= 3;
     }
+    mask->fImage = SkMask::AllocImage(size);
+    memcpy(mask->fImage, pixels, size);
+    return ToMask(mask);
+}
 
+void sk_mask_destructor(sk_mask_t* cmask) {
+    SkMask* mask = AsMask(cmask);
+    SkMask::FreeImage(mask->fImage);
     delete mask;
 }
 
@@ -61,16 +54,16 @@ sk_mask_format_t sk_mask_get_format(sk_mask_t* cmask) {
 sk_color_t get_pixel_color(sk_mask_t* cmask, int x, int y) {
     SkMask* mask = AsMask(cmask);
     switch (mask->fFormat) {
-        default:
-        case SkMask::Format::kBW_Format:
+        case SkMask::kBW_Format:
             return SkColorSetA(0, *mask->getAddr1(x, y));
-        case SkMask::Format::kA8_Format:
+        default:
+        case SkMask::kA8_Format:
             return SkColorSetA(0, *mask->getAddr8(x, y));
-        case SkMask::Format::kARGB32_Format:
+        case SkMask::kARGB32_Format:
             return *mask->getAddr32(x, y);
         case SkMask::Format::kLCD16_Format:
             return SkPixel16ToColor(*mask->getAddrLCD16(x, y));
-        case SkMask::Format::k3D_Format:
+        case SkMask::k3D_Format:
             return 0;
     }
 }

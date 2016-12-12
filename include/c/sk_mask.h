@@ -16,8 +16,7 @@
 SK_C_PLUS_PLUS_BEGIN_GUARD
 
 SK_API sk_mask_t* sk_mask_new(uint8_t* pixels, const sk_mask_format_t format, uint32_t row_bytes, sk_irect_t* crect);
-SK_API sk_mask_t* sk_mask_new2(size_t byteCount, const sk_mask_format_t format, uint32_t row_bytes, sk_irect_t* crect);
-SK_API void sk_mask_destructor(sk_mask_t* cmask, bool owns_pixels);
+SK_API void sk_mask_destructor(sk_mask_t* cmask);
 SK_API uint8_t* sk_mask_get_image(sk_mask_t* cmask);
 SK_API sk_irect_t sk_mask_get_bounds(sk_mask_t* cmask);
 SK_API uint32_t sk_mask_get_row_bytes(sk_mask_t* cmask);
