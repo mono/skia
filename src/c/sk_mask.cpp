@@ -59,7 +59,7 @@ sk_mask_format_t sk_mask_get_format(sk_mask_t* cmask) {
     return (sk_mask_format_t)format;
 }
 
-sk_color_t get_pixel_color(sk_mask_t* cmask, int x, int y) {
+sk_color_t sk_mask_get_pixel_color(sk_mask_t* cmask, int x, int y) {
     SkMask* mask = AsMask(cmask);
     switch (mask->fFormat) {
         case SkMask::kBW_Format:
