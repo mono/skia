@@ -9,8 +9,14 @@
 #include "gl/GrGLInterface.h"
 #include "gl/GrGLAssembleInterface.h"
 #include "gl/GrGLUtil.h"
-
+#include <dlfcn.h>
 #include <GL/glx.h>
+
+typedef void* (*GetCurrentContextFuncPtr)();
+typedef GrGLFuncPtr (*GetGLProc)(const char name[]);
+static void* libGLHandle = nullptr;
+static GetGLProc pglXGetProcAddress = nullptr;
+static GetCurrentContextFuncPtr pglXGetCurrentContext = nullptr;
 
 static GrGLFuncPtr glx_get(void* ctx, const char name[]) {
     // Avoid calling glXGetProcAddress() for EGL procs.
@@ -20,12 +26,22 @@ static GrGLFuncPtr glx_get(void* ctx, const char name[]) {
     }
 
     SkASSERT(nullptr == ctx);
-    SkASSERT(glXGetCurrentContext());
-    return glXGetProcAddress(reinterpret_cast<const GLubyte*>(name));
+    SkASSERT(pglXGetCurrentContext());
+    return pglXGetProcAddress(name);
 }
 
 const GrGLInterface* GrGLCreateNativeInterface() {
-    if (nullptr == glXGetCurrentContext()) {
+    if(libGLHandle == nullptr)
+    {
+        libGLHandle = dlopen("libGL.so.1", RTLD_LAZY);
+        if(libGLHandle != nullptr)
+            return nullptr;
+        pglXGetProcAddress = (GetGLProc)dlsym(libGLHandle, "glXGetProcAddress");
+        pglXGetCurrentContext = (GetCurrentContextFuncPtr)dlsym(libGLHandle, "glXGetCurrentContext");
+    }
+    if(pglXGetProcAddress == nullptr || pglXGetCurrentContext == nullptr)
+        return nullptr;
+    if (nullptr == pglXGetCurrentContext()) {
         return nullptr;
     }
 
