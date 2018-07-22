@@ -13,19 +13,15 @@
 #include "GrDistanceFieldGenFromVector.h"
 #include "GrDrawOpTest.h"
 #include "GrOpFlushState.h"
-#include "GrPipelineBuilder.h"
 #include "GrResourceProvider.h"
 #include "GrSWMaskHelper.h"
-#include "GrSurfacePriv.h"
-#include "GrSurfaceProxyPriv.h"
-#include "GrTexturePriv.h"
-#include "effects/GrBitmapTextGeoProc.h"
-#include "effects/GrDistanceFieldGeoProc.h"
-#include "ops/GrMeshDrawOp.h"
-
+#include "GrSimpleMeshDrawOpHelper.h"
 #include "SkAutoMalloc.h"
 #include "SkDistanceFieldGen.h"
 #include "SkPathOps.h"
+#include "effects/GrBitmapTextGeoProc.h"
+#include "effects/GrDistanceFieldGeoProc.h"
+#include "ops/GrMeshDrawOp.h"
 
 #define ATLAS_TEXTURE_WIDTH 2048
 #define ATLAS_TEXTURE_HEIGHT 2048
@@ -133,7 +129,10 @@ bool GrSmallPathRenderer::onCanDrawPath(const CanDrawPathArgs& args) const {
 // padding around path bounds to allow for antialiased pixels
 static const SkScalar kAntiAliasPad = 1.0f;
 
-class SmallPathOp final : public GrLegacyMeshDrawOp {
+class GrSmallPathRenderer::SmallPathOp final : public GrMeshDrawOp {
+private:
+    using Helper = GrSimpleMeshDrawOpHelperWithStencil;
+
 public:
     DEFINE_OP_CLASS_ID
 
@@ -141,31 +140,21 @@ public:
     using ShapeCache = SkTDynamicHash<ShapeData, ShapeData::Key>;
     using ShapeDataList = GrSmallPathRenderer::ShapeDataList;
 
-    static std::unique_ptr<GrLegacyMeshDrawOp> Make(GrColor color, const GrShape& shape,
-                                                    const SkMatrix& viewMatrix,
-                                                    GrDrawOpAtlas* atlas, ShapeCache* shapeCache,
-                                                    ShapeDataList* shapeList, bool gammaCorrect) {
-        return std::unique_ptr<GrLegacyMeshDrawOp>(new SmallPathOp(
-                color, shape, viewMatrix, atlas, shapeCache, shapeList, gammaCorrect));
+    static std::unique_ptr<GrDrawOp> Make(GrPaint&& paint, const GrShape& shape,
+                                          const SkMatrix& viewMatrix, GrDrawOpAtlas* atlas,
+                                          ShapeCache* shapeCache, ShapeDataList* shapeList,
+                                          bool gammaCorrect,
+                                          const GrUserStencilSettings* stencilSettings) {
+        return Helper::FactoryHelper<SmallPathOp>(std::move(paint), shape, viewMatrix, atlas,
+                                                  shapeCache, shapeList, gammaCorrect,
+                                                  stencilSettings);
     }
 
-    const char* name() const override { return "SmallPathOp"; }
-
-    SkString dumpInfo() const override {
-        SkString string;
-        for (const auto& geo : fShapes) {
-            string.appendf("Color: 0x%08x\n", geo.fColor);
-        }
-        string.append(DumpPipelineInfo(*this->pipeline()));
-        string.append(INHERITED::dumpInfo());
-        return string;
-    }
-
-private:
-    SmallPathOp(GrColor color, const GrShape& shape, const SkMatrix& viewMatrix,
-                GrDrawOpAtlas* atlas, ShapeCache* shapeCache, ShapeDataList* shapeList,
-                bool gammaCorrect)
-            : INHERITED(ClassID()) {
+    SmallPathOp(Helper::MakeArgs helperArgs, GrColor color, const GrShape& shape,
+                const SkMatrix& viewMatrix, GrDrawOpAtlas* atlas, ShapeCache* shapeCache,
+                ShapeDataList* shapeList, bool gammaCorrect,
+                const GrUserStencilSettings* stencilSettings)
+            : INHERITED(ClassID()), fHelper(helperArgs, GrAAType::kCoverage, stencilSettings) {
         SkASSERT(shape.hasUnstyledKey());
         // Compute bounds
         this->setTransformedBounds(shape.bounds(), viewMatrix, HasAABloat::kYes, IsZeroArea::kNo);
@@ -199,32 +188,41 @@ private:
 
     }
 
-    void getProcessorAnalysisInputs(GrProcessorAnalysisColor* color,
-                                    GrProcessorAnalysisCoverage* coverage) const override {
-        color->setToConstant(fShapes[0].fColor);
-        *coverage = GrProcessorAnalysisCoverage::kSingleChannel;
+    const char* name() const override { return "SmallPathOp"; }
+
+    SkString dumpInfo() const override {
+        SkString string;
+        for (const auto& geo : fShapes) {
+            string.appendf("Color: 0x%08x\n", geo.fColor);
+        }
+        string += fHelper.dumpInfo();
+        string += INHERITED::dumpInfo();
+        return string;
     }
 
-    void applyPipelineOptimizations(const PipelineOptimizations& optimizations) override {
-        optimizations.getOverrideColorIfSet(&fShapes[0].fColor);
-        fUsesLocalCoords = optimizations.readsLocalCoords();
+    FixedFunctionFlags fixedFunctionFlags() const override { return fHelper.fixedFunctionFlags(); }
+
+    RequiresDstTexture finalize(const GrCaps& caps, const GrAppliedClip* clip) override {
+        return fHelper.xpRequiresDstTexture(caps, clip, GrProcessorAnalysisCoverage::kSingleChannel,
+                                            &fShapes.front().fColor);
     }
 
+private:
     struct FlushInfo {
         sk_sp<const GrBuffer> fVertexBuffer;
         sk_sp<const GrBuffer> fIndexBuffer;
         sk_sp<GrGeometryProcessor>   fGeometryProcessor;
+        const GrPipeline* fPipeline;
         int fVertexOffset;
         int fInstancesToFlush;
     };
 
     void onPrepareDraws(Target* target) const override {
         int instanceCount = fShapes.count();
-
         const SkMatrix& ctm = this->viewMatrix();
 
         FlushInfo flushInfo;
-
+        flushInfo.fPipeline = fHelper.makePipeline(target);
         // Setup GrGeometryProcessor
         GrDrawOpAtlas* atlas = fAtlas;
         if (fUsesDistanceField) {
@@ -236,14 +234,13 @@ private:
             flags |= fGammaCorrect ? kGammaCorrect_DistanceFieldEffectFlag : 0;
 
             flushInfo.fGeometryProcessor = GrDistanceFieldPathGeoProc::Make(
-                atlas->context()->resourceProvider(),
-                this->color(), this->viewMatrix(), atlas->getProxy(), params, flags,
-                this->usesLocalCoords());
+                    this->color(), this->viewMatrix(), atlas->getProxy(), params, flags,
+                    fHelper.usesLocalCoords());
         } else {
             GrSamplerParams params(SkShader::kClamp_TileMode, GrSamplerParams::kNone_FilterMode);
 
             SkMatrix invert;
-            if (this->usesLocalCoords()) {
+            if (fHelper.usesLocalCoords()) {
                 if (!this->viewMatrix().invert(&invert)) {
                     SkDebugf("Could not invert viewmatrix\n");
                     return;
@@ -253,10 +250,9 @@ private:
                 invert.preTranslate(-fShapes[0].fTranslate.fX, -fShapes[0].fTranslate.fY);
             }
 
-            flushInfo.fGeometryProcessor = GrBitmapTextGeoProc::Make(
-                atlas->context()->resourceProvider(),
-                this->color(), atlas->getProxy(), params, kA8_GrMaskFormat, invert,
-                this->usesLocalCoords());
+            flushInfo.fGeometryProcessor =
+                    GrBitmapTextGeoProc::Make(this->color(), atlas->getProxy(), params,
+                                              kA8_GrMaskFormat, invert, fHelper.usesLocalCoords());
         }
 
         // allocate vertices
@@ -340,7 +336,6 @@ private:
                                                 SkScalarCeilToInt(desiredDimension),
                                                 scale)) {
                         delete shapeData;
-                        SkDebugf("Can't rasterize path\n");
                         continue;
                     }
                 }
@@ -364,7 +359,6 @@ private:
                                               args.fShape,
                                               this->viewMatrix())) {
                         delete shapeData;
-                        SkDebugf("Can't rasterize path\n");
                         continue;
                     }
                 }
@@ -388,7 +382,7 @@ private:
         this->flush(target, &flushInfo);
     }
 
-    bool addDFPathToAtlas(GrLegacyMeshDrawOp::Target* target, FlushInfo* flushInfo,
+    bool addDFPathToAtlas(GrMeshDrawOp::Target* target, FlushInfo* flushInfo,
                           GrDrawOpAtlas* atlas, ShapeData* shapeData, const GrShape& shape,
                           uint32_t dimension, SkScalar scale) const {
         const SkRect& bounds = shape.bounds();
@@ -505,7 +499,7 @@ private:
         return true;
     }
 
-    bool addBMPathToAtlas(GrLegacyMeshDrawOp::Target* target, FlushInfo* flushInfo,
+    bool addBMPathToAtlas(GrMeshDrawOp::Target* target, FlushInfo* flushInfo,
                           GrDrawOpAtlas* atlas, ShapeData* shapeData, const GrShape& shape,
                           const SkMatrix& ctm) const {
         const SkRect& bounds = shape.bounds();
@@ -677,16 +671,16 @@ private:
         textureCoords[1] = t;
     }
 
-    void flush(GrLegacyMeshDrawOp::Target* target, FlushInfo* flushInfo) const {
+    void flush(GrMeshDrawOp::Target* target, FlushInfo* flushInfo) const {
         if (flushInfo->fInstancesToFlush) {
-            GrMesh mesh(kTriangles_GrPrimitiveType);
+            GrMesh mesh(GrPrimitiveType::kTriangles);
             int maxInstancesPerDraw =
                 static_cast<int>(flushInfo->fIndexBuffer->gpuMemorySize() / sizeof(uint16_t) / 6);
             mesh.setIndexedPatterned(flushInfo->fIndexBuffer.get(), kIndicesPerQuad,
-                                     flushInfo->fInstancesToFlush, maxInstancesPerDraw);
-            mesh.setVertices(flushInfo->fVertexBuffer.get(), kVerticesPerQuad,
-                             flushInfo->fVertexOffset);
-            target->draw(flushInfo->fGeometryProcessor.get(), this->pipeline(), mesh);
+                                     kVerticesPerQuad, flushInfo->fInstancesToFlush,
+                                     maxInstancesPerDraw);
+            mesh.setVertexData(flushInfo->fVertexBuffer.get(), flushInfo->fVertexOffset);
+            target->draw(flushInfo->fGeometryProcessor.get(), flushInfo->fPipeline, mesh);
             flushInfo->fVertexOffset += kVerticesPerQuad * flushInfo->fInstancesToFlush;
             flushInfo->fInstancesToFlush = 0;
         }
@@ -694,13 +688,11 @@ private:
 
     GrColor color() const { return fShapes[0].fColor; }
     const SkMatrix& viewMatrix() const { return fViewMatrix; }
-    bool usesLocalCoords() const { return fUsesLocalCoords; }
     bool usesDistanceField() const { return fUsesDistanceField; }
 
     bool onCombineIfPossible(GrOp* t, const GrCaps& caps) override {
         SmallPathOp* that = t->cast<SmallPathOp>();
-        if (!GrPipeline::CanCombine(*this->pipeline(), this->bounds(), *that->pipeline(),
-                                    that->bounds(), caps)) {
+        if (!fHelper.isCompatible(that->fHelper, caps, this->bounds(), that->bounds())) {
             return false;
         }
 
@@ -713,7 +705,7 @@ private:
             return false;
         }
 
-        if (!this->usesDistanceField() && this->usesLocalCoords() &&
+        if (!this->usesDistanceField() && fHelper.usesLocalCoords() &&
             !this->fShapes[0].fTranslate.equalsWithinTolerance(that->fShapes[0].fTranslate)) {
             return false;
         }
@@ -724,7 +716,6 @@ private:
     }
 
     SkMatrix fViewMatrix;
-    bool fUsesLocalCoords;
     bool fUsesDistanceField;
 
     struct Entry {
@@ -734,12 +725,13 @@ private:
     };
 
     SkSTArray<1, Entry> fShapes;
+    Helper fHelper;
     GrDrawOpAtlas* fAtlas;
     ShapeCache* fShapeCache;
     ShapeDataList* fShapeList;
     bool fGammaCorrect;
 
-    typedef GrLegacyMeshDrawOp INHERITED;
+    typedef GrMeshDrawOp INHERITED;
 };
 
 bool GrSmallPathRenderer::onDrawPath(const DrawPathArgs& args) {
@@ -761,14 +753,10 @@ bool GrSmallPathRenderer::onDrawPath(const DrawPathArgs& args) {
         }
     }
 
-    std::unique_ptr<GrLegacyMeshDrawOp> op =
-            SmallPathOp::Make(args.fPaint.getColor(), *args.fShape, *args.fViewMatrix, fAtlas.get(),
-                              &fShapeCache, &fShapeList, args.fGammaCorrect);
-    GrPipelineBuilder pipelineBuilder(std::move(args.fPaint), args.fAAType);
-    pipelineBuilder.setUserStencil(args.fUserStencilSettings);
-
-    args.fRenderTargetContext->addLegacyMeshDrawOp(std::move(pipelineBuilder), *args.fClip,
-                                                   std::move(op));
+    std::unique_ptr<GrDrawOp> op = SmallPathOp::Make(
+            std::move(args.fPaint), *args.fShape, *args.fViewMatrix, fAtlas.get(), &fShapeCache,
+            &fShapeList, args.fGammaCorrect, args.fUserStencilSettings);
+    args.fRenderTargetContext->addDrawOp(*args.fClip, std::move(op));
 
     return true;
 }
@@ -777,10 +765,7 @@ bool GrSmallPathRenderer::onDrawPath(const DrawPathArgs& args) {
 
 #if GR_TEST_UTILS
 
-struct PathTestStruct {
-    typedef GrSmallPathRenderer::ShapeCache ShapeCache;
-    typedef GrSmallPathRenderer::ShapeData ShapeData;
-    typedef GrSmallPathRenderer::ShapeDataList ShapeDataList;
+struct GrSmallPathRenderer::PathTestStruct {
     PathTestStruct() : fContextID(SK_InvalidGenID), fAtlas(nullptr) {}
     ~PathTestStruct() { this->reset(); }
 
@@ -819,7 +804,8 @@ struct PathTestStruct {
     ShapeDataList fShapeList;
 };
 
-GR_LEGACY_MESH_DRAW_OP_TEST_DEFINE(SmallPathOp) {
+GR_DRAW_OP_TEST_DEFINE(SmallPathOp) {
+    using PathTestStruct = GrSmallPathRenderer::PathTestStruct;
     static PathTestStruct gTestStruct;
 
     if (context->uniqueID() != gTestStruct.fContextID) {
@@ -833,14 +819,14 @@ GR_LEGACY_MESH_DRAW_OP_TEST_DEFINE(SmallPathOp) {
     }
 
     SkMatrix viewMatrix = GrTest::TestMatrix(random);
-    GrColor color = GrRandomColor(random);
     bool gammaCorrect = random->nextBool();
 
     // This path renderer only allows fill styles.
     GrShape shape(GrTest::TestPath(random), GrStyle::SimpleFill());
 
-    return SmallPathOp::Make(color, shape, viewMatrix, gTestStruct.fAtlas.get(),
-                             &gTestStruct.fShapeCache, &gTestStruct.fShapeList, gammaCorrect);
+    return GrSmallPathRenderer::SmallPathOp::Make(
+            std::move(paint), shape, viewMatrix, gTestStruct.fAtlas.get(), &gTestStruct.fShapeCache,
+            &gTestStruct.fShapeList, gammaCorrect, GrGetRandomStencil(random, context));
 }
 
 #endif

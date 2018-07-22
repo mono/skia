@@ -12,11 +12,11 @@
 #include "GrContext.h"
 #include "GrContextPriv.h"
 #include "GrGpu.h"
-#include "GrRenderTarget.h"
 #include "GrResourceProvider.h"
 #include "GrTest.h"
 #include "GrTexture.h"
 #include "GrSurfacePriv.h"
+#include "SkMipMap.h"
 #include "Test.h"
 
 // Tests that GrSurface::asTexture(), GrSurface::asRenderTarget(), and static upcasting of texture
@@ -54,9 +54,8 @@ DEF_GPUTEST_FOR_NULLGL_CONTEXT(GrSurface, reporter, ctxInfo) {
                                                                kRGBA_8888_GrPixelConfig,
                                                                backendTexHandle);
 
-    sk_sp<GrSurface> texRT2 = context->resourceProvider()->wrapBackendTexture(
-        backendTex, kTopLeft_GrSurfaceOrigin, kRenderTarget_GrBackendTextureFlag, 0,
-        kBorrow_GrWrapOwnership);
+    sk_sp<GrSurface> texRT2 = context->resourceProvider()->wrapRenderableBackendTexture(
+            backendTex, kTopLeft_GrSurfaceOrigin, 0, kBorrow_GrWrapOwnership);
 
     REPORTER_ASSERT(reporter, texRT2.get() == texRT2->asRenderTarget());
     REPORTER_ASSERT(reporter, texRT2.get() == texRT2->asTexture());
@@ -70,11 +69,11 @@ DEF_GPUTEST_FOR_NULLGL_CONTEXT(GrSurface, reporter, ctxInfo) {
     context->getGpu()->deleteTestingOnlyBackendTexture(backendTexHandle);
 }
 
-#if 0
 // This test checks that the isConfigTexturable and isConfigRenderable are
 // consistent with createTexture's result.
 DEF_GPUTEST_FOR_ALL_CONTEXTS(GrSurfaceRenderability, reporter, ctxInfo) {
     GrContext* context = ctxInfo.grContext();
+    GrResourceProvider* resourceProvider = context->resourceProvider();
     const GrCaps* caps = context->caps();
 
     GrPixelConfig configs[] = {
@@ -88,7 +87,6 @@ DEF_GPUTEST_FOR_ALL_CONTEXTS(GrSurfaceRenderability, reporter, ctxInfo) {
         kSRGBA_8888_GrPixelConfig,
         kSBGRA_8888_GrPixelConfig,
         kRGBA_8888_sint_GrPixelConfig,
-        kETC1_GrPixelConfig,
         kRGBA_float_GrPixelConfig,
         kRG_float_GrPixelConfig,
         kAlpha_half_GrPixelConfig,
@@ -100,6 +98,16 @@ DEF_GPUTEST_FOR_ALL_CONTEXTS(GrSurfaceRenderability, reporter, ctxInfo) {
     desc.fWidth = 64;
     desc.fHeight = 64;
 
+    // Enough space for the first mip of our largest pixel config
+    const size_t pixelBufferSize = desc.fWidth * desc.fHeight *
+                                   GrBytesPerPixel(kRGBA_float_GrPixelConfig);
+    std::unique_ptr<char[]> pixelData(new char[pixelBufferSize]);
+    memset(pixelData.get(), 0, pixelBufferSize);
+
+    // We re-use the same mip level objects (with updated pointers and rowBytes) for each config
+    const int levelCount = SkMipMap::ComputeLevelCount(desc.fWidth, desc.fHeight) + 1;
+    std::unique_ptr<GrMipLevel[]> texels(new GrMipLevel[levelCount]);
+
     for (GrPixelConfig config : configs) {
         for (GrSurfaceOrigin origin : { kTopLeft_GrSurfaceOrigin, kBottomLeft_GrSurfaceOrigin }) {
             desc.fFlags = kNone_GrSurfaceFlags;
@@ -107,21 +115,33 @@ DEF_GPUTEST_FOR_ALL_CONTEXTS(GrSurfaceRenderability, reporter, ctxInfo) {
             desc.fSampleCnt = 0;
             desc.fConfig = config;
 
-            sk_sp<GrSurface> tex = context->resourceProvider()->createTexture(desc, SkBudgeted::kNo);
-            REPORTER_ASSERT(reporter, SkToBool(tex.get()) == caps->isConfigTexturable(desc.fConfig,
-                                                                                      desc.fOrigin));
+            sk_sp<GrSurface> tex = resourceProvider->createTexture(desc, SkBudgeted::kNo);
+            REPORTER_ASSERT(reporter, SkToBool(tex.get()) == caps->isConfigTexturable(desc.fConfig));
+
+            size_t rowBytes = desc.fWidth * GrBytesPerPixel(desc.fConfig);
+            for (int i = 0; i < levelCount; ++i) {
+                texels[i].fPixels = pixelData.get();
+                texels[i].fRowBytes = rowBytes >> i;
+            }
+            sk_sp<GrTextureProxy> proxy = GrSurfaceProxy::MakeDeferredMipMap(resourceProvider,
+                                                                             desc, SkBudgeted::kNo,
+                                                                             texels.get(),
+                                                                             levelCount);
+            REPORTER_ASSERT(reporter, SkToBool(proxy.get()) ==
+                            (caps->isConfigTexturable(desc.fConfig) &&
+                             caps->mipMapSupport() &&
+                             !GrPixelConfigIsSint(desc.fConfig)));
 
             desc.fFlags = kRenderTarget_GrSurfaceFlag;
-            tex = context->resourceProvider()->createTexture(desc, SkBudgeted::kNo);
+            tex = resourceProvider->createTexture(desc, SkBudgeted::kNo);
             REPORTER_ASSERT(reporter, SkToBool(tex.get()) == caps->isConfigRenderable(config, false));
 
             desc.fSampleCnt = 4;
-            tex = context->resourceProvider()->createTexture(desc, SkBudgeted::kNo);
+            tex = resourceProvider->createTexture(desc, SkBudgeted::kNo);
             REPORTER_ASSERT(reporter, SkToBool(tex.get()) == caps->isConfigRenderable(config, true));
         }
     }
 }
-#endif
 
 #include "GrDrawingManager.h"
 #include "GrSurfaceProxy.h"

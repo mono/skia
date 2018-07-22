@@ -26,6 +26,9 @@ double frame;    // A value in [0, 1] of where we are in the animation.
 // Global used by the local impl of SkDebugf.
 std::ostringstream gTextOutput;
 
+// Global to record the GL driver info via create_grcontext().
+std::ostringstream gGLDriverInfo;
+
 void SkDebugf(const char * fmt, ...) {
     va_list args;
     va_start(args, fmt);
@@ -85,38 +88,15 @@ static void dump_output(const sk_sp<SkData>& data,
     }
 }
 
-static SkData* encode_snapshot(const sk_sp<SkSurface>& surface) {
+static sk_sp<SkData> encode_snapshot(const sk_sp<SkSurface>& surface) {
     sk_sp<SkImage> img(surface->makeImageSnapshot());
-    return img ? img->encode() : nullptr;
+    return img ? img->encodeToData() : nullptr;
 }
 
-#if defined(__linux) && !defined(__ANDROID__)
-    #include <GL/osmesa.h>
-    static sk_sp<GrContext> create_grcontext() {
-        // We just leak the OSMesaContext... the process will die soon anyway.
-        if (OSMesaContext osMesaContext = OSMesaCreateContextExt(OSMESA_BGRA, 0, 0, 0, nullptr)) {
-            static uint32_t buffer[16 * 16];
-            OSMesaMakeCurrent(osMesaContext, &buffer, GL_UNSIGNED_BYTE, 16, 16);
-        }
-
-        auto osmesa_get = [](void* ctx, const char name[]) {
-            SkASSERT(nullptr == ctx);
-            SkASSERT(OSMesaGetCurrentContext());
-            return OSMesaGetProcAddress(name);
-        };
-        sk_sp<const GrGLInterface> mesa(GrGLAssembleInterface(nullptr, osmesa_get));
-        if (!mesa) {
-            return nullptr;
-        }
-        return sk_sp<GrContext>(GrContext::Create(
-                                        kOpenGL_GrBackend,
-                                        reinterpret_cast<intptr_t>(mesa.get())));
-    }
-#else
-    static sk_sp<GrContext> create_grcontext() { return nullptr; }
-#endif
-
-
+static SkCanvas* prepare_canvas(SkCanvas * canvas) {
+    canvas->clear(SK_ColorWHITE);
+    return canvas;
+}
 
 int main(int argc, char** argv) {
     SkCommandLineFlags::Parse(argc, argv);
@@ -161,11 +141,11 @@ int main(int argc, char** argv) {
     if (options.raster) {
         auto rasterSurface = SkSurface::MakeRaster(info);
         srand(0);
-        draw(rasterSurface->getCanvas());
-        rasterData.reset(encode_snapshot(rasterSurface));
+        draw(prepare_canvas(rasterSurface->getCanvas()));
+        rasterData = encode_snapshot(rasterSurface);
     }
     if (options.gpu) {
-        auto grContext = create_grcontext();
+        auto grContext = create_grcontext(gGLDriverInfo);
         if (!grContext) {
             fputs("Unable to get GrContext.\n", stderr);
         } else {
@@ -175,8 +155,8 @@ int main(int argc, char** argv) {
                 exit(1);
             }
             srand(0);
-            draw(surface->getCanvas());
-            gpuData.reset(encode_snapshot(surface));
+            draw(prepare_canvas(surface->getCanvas()));
+            gpuData = encode_snapshot(surface);
         }
     }
     if (options.pdf) {
@@ -184,7 +164,7 @@ int main(int argc, char** argv) {
         sk_sp<SkDocument> document(SkDocument::MakePDF(&pdfStream));
         if (document) {
             srand(0);
-            draw(document->beginPage(options.size.width(), options.size.height()));
+            draw(prepare_canvas(document->beginPage(options.size.width(), options.size.height())));
             document->close();
             pdfData = pdfStream.detachAsData();
         }
@@ -194,7 +174,7 @@ int main(int argc, char** argv) {
         size = options.size;
         SkPictureRecorder recorder;
         srand(0);
-        draw(recorder.beginRecording(size.width(), size.height()));
+        draw(prepare_canvas(recorder.beginRecording(size.width(), size.height())));
         auto picture = recorder.finishRecordingAsPicture();
         SkDynamicMemoryWStream skpStream;
         picture->serialize(&skpStream);
@@ -203,14 +183,16 @@ int main(int argc, char** argv) {
 
     printf("{\n");
     if (!options.textOnly) {
-        dump_output(rasterData, "Raster", !gpuData && !pdfData && !skpData);
-        dump_output(gpuData, "Gpu", !pdfData && !skpData);
-        dump_output(pdfData, "Pdf", !skpData);
-        dump_output(skpData, "Skp");
+        dump_output(rasterData, "Raster", false);
+        dump_output(gpuData, "Gpu", false);
+        dump_output(pdfData, "Pdf", false);
+        dump_output(skpData, "Skp", false);
     } else {
         std::string textoutput = gTextOutput.str();
-        dump_output(textoutput.c_str(), textoutput.length(), "Text");
+        dump_output(textoutput.c_str(), textoutput.length(), "Text", false);
     }
+    std::string glinfo = gGLDriverInfo.str();
+    dump_output(glinfo.c_str(), glinfo.length(), "GLInfo", true);
     printf("}\n");
 
     return 0;

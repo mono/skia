@@ -12,9 +12,10 @@
 #include "GrSurfaceContext.h"
 
 class GrBackendRenderTarget;
+class GrOnFlushCallbackObject;
 class GrSemaphore;
 class GrSurfaceProxy;
-class GrOnFlushCallbackObject;
+class GrTextureContext;
 
 /** Class that adds methods to GrContext that are only intended for use internal to Skia.
     This class is purely a privileged window into GrContext. It should never have additional
@@ -23,26 +24,14 @@ class GrContextPriv {
 public:
     GrDrawingManager* drawingManager() { return fContext->fDrawingManager.get(); }
 
-    // Create a renderTargetContext that wraps an existing renderTarget
-    sk_sp<GrRenderTargetContext> makeWrappedRenderTargetContext(sk_sp<GrRenderTarget>,
-                                                                sk_sp<SkColorSpace>,
-                                                                const SkSurfaceProps* = nullptr);
-
-    // Create a surfaceContext that wraps an existing texture or renderTarget
-    sk_sp<GrSurfaceContext> makeWrappedSurfaceContext(sk_sp<GrSurface>);
-
     sk_sp<GrSurfaceContext> makeWrappedSurfaceContext(sk_sp<GrSurfaceProxy>, sk_sp<SkColorSpace>);
 
     sk_sp<GrSurfaceContext> makeDeferredSurfaceContext(const GrSurfaceDesc&,
                                                        SkBackingFit,
                                                        SkBudgeted);
 
-    // TODO: Maybe add a 'surfaceProps' param (that is ignored for non-RTs) and remove
-    // makeBackendTextureRenderTargetContext & makeBackendTextureAsRenderTargetRenderTargetContext
-    sk_sp<GrSurfaceContext> makeBackendSurfaceContext(const GrBackendTexture& tex,
+    sk_sp<GrTextureContext> makeBackendTextureContext(const GrBackendTexture& tex,
                                                       GrSurfaceOrigin origin,
-                                                      GrBackendTextureFlags flags,
-                                                      int sampleCnt,
                                                       sk_sp<SkColorSpace> colorSpace);
 
     sk_sp<GrRenderTargetContext> makeBackendTextureRenderTargetContext(

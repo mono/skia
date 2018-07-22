@@ -37,8 +37,6 @@ struct SkPictInfo;
 */
 class SK_API SkPicture : public SkRefCnt {
 public:
-    virtual ~SkPicture();
-
     /**
      *  Function signature defining a function that sets up an SkBitmap from encoded data. On
      *  success, the SkBitmap should have its Config, width, height, rowBytes and pixelref set.
@@ -157,9 +155,6 @@ public:
     bool suitableForGpuRasterization(GrContext*, const char** whyNot = NULL) const;
 #endif
 
-    // Sent via SkMessageBus from destructor.
-    struct DeletionMessage { int32_t fUniqueID; };  // TODO: -> uint32_t?
-
     // Returns NULL if this is not an SkBigPicture.
     virtual const SkBigPicture* asSkBigPicture() const { return NULL; }
 
@@ -201,25 +196,13 @@ private:
     // V51: more SkXfermode -> SkBlendMode
     // V52: Remove SkTextBlob::fRunCount
     // V53: SaveLayerRec clip mask
+    // V54: ComposeShader can use a Mode or a Lerp
+    // V55: Drop blendmode[] from MergeImageFilter
+    // V56: Add TileMode in SkBlurImageFilter.
 
     // Only SKPs within the min/current picture version range (inclusive) can be read.
-    static const uint32_t     MIN_PICTURE_VERSION = 35;     // Produced by Chrome M39.
-    static const uint32_t CURRENT_PICTURE_VERSION = 53;
-
-    static_assert(MIN_PICTURE_VERSION <= 41,
-                  "Remove kFontFileName and related code from SkFontDescriptor.cpp.");
-
-    static_assert(MIN_PICTURE_VERSION <= 42,
-                  "Remove COMMENT API handlers from SkPicturePlayback.cpp");
-
-    static_assert(MIN_PICTURE_VERSION <= 43,
-                  "Remove SkBitmapSourceDeserializer.");
-
-    static_assert(MIN_PICTURE_VERSION <= 45,
-                  "Remove decoding of old SkTypeface::Style from SkFontDescriptor.cpp.");
-
-    static_assert(MIN_PICTURE_VERSION <= 48,
-                  "Remove legacy gradient deserialization code from SkGradientShader.cpp.");
+    static const uint32_t     MIN_PICTURE_VERSION = 51;     // Produced by Chrome ~M56.
+    static const uint32_t CURRENT_PICTURE_VERSION = 56;
 
     static bool IsValidPictInfo(const SkPictInfo& info);
     static sk_sp<SkPicture> Forwardport(const SkPictInfo&,

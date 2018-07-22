@@ -87,18 +87,21 @@ private:
     SkColorSpacePrimaries  fColorSpacePrimaries;
 
     // transform data
-    SkScalar               fZoomCenterX;
-    SkScalar               fZoomCenterY;
     SkScalar               fZoomLevel;
-    SkScalar               fZoomScale;
 
     sk_app::CommandSet     fCommands;
 
+    enum class GestureDevice {
+        kNone,
+        kTouch,
+        kMouse,
+    };
+
     SkTouchGesture         fGesture;
+    GestureDevice          fGestureDevice;
 
     // identity unless the window initially scales the content to fit the screen.
     SkMatrix               fDefaultMatrix;
-    SkMatrix               fDefaultMatrixInv;
 
     SkTArray<std::function<void(void)>> fDeferredActions;
 

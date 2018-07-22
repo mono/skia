@@ -267,8 +267,8 @@ static constexpr BlendFormula MakeCoverageDstCoeffZeroFormula(GrBlendCoeff srcCo
 
 // Older GCC won't like the constexpr arrays because of
 // https://gcc.gnu.org/bugzilla/show_bug.cgi?id=61484.
-// MSVC crashes with an internal compiler error.
-#if !defined(__clang__) && ((defined(__GNUC__) && __GNUC__ < 5) || defined(_MSC_VER))
+// MSVC 2015 crashes with an internal compiler error.
+#if !defined(__clang__) && ((defined(__GNUC__) && __GNUC__ < 5) || (defined(_MSC_VER) && _MSC_VER <= 1910))
 #   define MAYBE_CONSTEXPR const
 #else
 #   define MAYBE_CONSTEXPR constexpr
@@ -321,7 +321,7 @@ static MAYBE_CONSTEXPR BlendFormula gBlendTable[2][2][(int)SkBlendMode::kLastCoe
     /* clear */      MakeCoeffFormula(kZero_GrBlendCoeff, kZero_GrBlendCoeff),
     /* src */        MakeCoeffFormula(kOne_GrBlendCoeff,  kZero_GrBlendCoeff),
     /* dst */        MakeCoeffFormula(kZero_GrBlendCoeff, kOne_GrBlendCoeff),
-    /* src-over */   MakeCoeffFormula(kOne_GrBlendCoeff,  kZero_GrBlendCoeff),
+    /* src-over */   MakeCoeffFormula(kOne_GrBlendCoeff,  kISA_GrBlendCoeff), // see comment below
     /* dst-over */   MakeCoeffFormula(kIDA_GrBlendCoeff,  kOne_GrBlendCoeff),
     /* src-in */     MakeCoeffFormula(kDA_GrBlendCoeff,   kZero_GrBlendCoeff),
     /* dst-in */     MakeCoeffFormula(kZero_GrBlendCoeff, kOne_GrBlendCoeff),
@@ -352,6 +352,10 @@ static MAYBE_CONSTEXPR BlendFormula gBlendTable[2][2][(int)SkBlendMode::kLastCoe
     /* modulate */   MakeCoverageSrcCoeffZeroFormula(BlendFormula::kISCModulate_OutputType),
     /* screen */     MakeCoeffFormula(kOne_GrBlendCoeff,  kISC_GrBlendCoeff),
 }}};
+// In the above table src-over is not optimized to src mode when the color is opaque because we
+// found no advantage to doing so. Also, we are using a global src-over XP in most cases which is
+// not specialized for opaque input. If the table were set to use the src formula then we'd have to
+// change when we use this global XP to keep analysis and practice in sync.
 
 static MAYBE_CONSTEXPR BlendFormula gLCDBlendTable[(int)SkBlendMode::kLastCoeffMode + 1] = {
     /* clear */      MakeCoverageSrcCoeffZeroFormula(BlendFormula::kCoverage_OutputType),
@@ -760,7 +764,8 @@ sk_sp<const GrXferProcessor> GrPorterDuffXPFactory::makeXferProcessor(
     BlendFormula blendFormula;
     bool isLCD = coverage == GrProcessorAnalysisCoverage::kLCD;
     if (isLCD) {
-        if (SkBlendMode::kSrcOver == fBlendMode && color.isConstant() && color.isOpaque() &&
+        // See comment in MakeSrcOverXferProcessor about color.isOpaque here
+        if (SkBlendMode::kSrcOver == fBlendMode && color.isConstant() && /*color.isOpaque() &&*/
             !caps.shaderCaps()->dualSourceBlendingSupport() &&
             !caps.shaderCaps()->dstReadInShaderSupport()) {
             // If we don't have dual source blending or in shader dst reads, we fall back to this
@@ -775,7 +780,7 @@ sk_sp<const GrXferProcessor> GrPorterDuffXPFactory::makeXferProcessor(
     }
 
     if ((blendFormula.hasSecondaryOutput() && !caps.shaderCaps()->dualSourceBlendingSupport()) ||
-        (isLCD && (SkBlendMode::kSrcOver != fBlendMode || !color.isOpaque()))) {
+        (isLCD && (SkBlendMode::kSrcOver != fBlendMode /*|| !color.isOpaque()*/))) {
         return sk_sp<const GrXferProcessor>(new ShaderPDXferProcessor(hasMixedSamples, fBlendMode,
                                                                       coverage));
     }
@@ -813,8 +818,8 @@ static inline GrXPFactory::AnalysisProperties analysis_properties(
             // and DstATop would also work). We also fall into the dst read case for src-over if we
             // do not have dual source blending.
             if (SkBlendMode::kSrcOver != mode ||
-                !color.isOpaque() ||
-                !caps.shaderCaps()->dualSourceBlendingSupport()) {
+                /*!color.isOpaque() ||*/ // See comment in MakeSrcOverXferProcessor about isOpaque.
+                (formula.hasSecondaryOutput() && !caps.shaderCaps()->dualSourceBlendingSupport())) {
                 props |= AnalysisProperties::kReadsDstInShader;
             }
         }
@@ -899,8 +904,10 @@ sk_sp<const GrXferProcessor> GrPorterDuffXPFactory::MakeSrcOverXferProcessor(
 
     // Currently up the stack Skia is requiring that the dst is opaque or that the client has said
     // the opaqueness doesn't matter. Thus for src-over we don't need to worry about the src color
-    // being opaque or not. For now we disable the check for opaqueness, but in the future we should
-    // pass down the knowledge about dst opaqueness and make the correct decision here.
+    // being opaque or not. This allows us to use faster code paths as well as avoid various bugs
+    // that occur with dst reads in the shader blending. For now we disable the check for
+    // opaqueness, but in the future we should pass down the knowledge about dst opaqueness and make
+    // the correct decision here.
     //
     // This also fixes a chrome bug on macs where we are getting random fuzziness when doing
     // blending in the shader for non opaque sources.
@@ -915,7 +922,8 @@ sk_sp<const GrXferProcessor> GrPorterDuffXPFactory::MakeSrcOverXferProcessor(
 
     BlendFormula blendFormula;
     blendFormula = get_lcd_blend_formula(SkBlendMode::kSrcOver);
-    if (!color.isOpaque() ||
+    // See comment above regarding why the opaque check is commented out here.
+    if (/*!color.isOpaque() ||*/
         (blendFormula.hasSecondaryOutput() && !caps.shaderCaps()->dualSourceBlendingSupport())) {
         return sk_sp<GrXferProcessor>(
                 new ShaderPDXferProcessor(hasMixedSamples, SkBlendMode::kSrcOver, coverage));

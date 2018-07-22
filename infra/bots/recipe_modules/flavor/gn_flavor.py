@@ -41,7 +41,7 @@ class GNFlavorUtils(default_flavor.DefaultFlavorUtils):
     extra_cflags = []
     extra_ldflags = []
 
-    if compiler == 'Clang' and os == 'Ubuntu':
+    if compiler == 'Clang' and self.m.vars.is_linux:
       cc  = clang_linux + '/bin/clang'
       cxx = clang_linux + '/bin/clang++'
       extra_cflags .append('-B%s/bin' % clang_linux)
@@ -87,7 +87,7 @@ class GNFlavorUtils(default_flavor.DefaultFlavorUtils):
         'is_component_build':     'true',   # Proves we can link a coherent .so.
         'is_official_build':      'true',   # No debug symbols, no tools.
         'skia_enable_effects':    'false',
-        'skia_enable_gpu':        'false',
+        'skia_enable_gpu':        'true',
         'skia_enable_pdf':        'false',
         'skia_use_expat':         'false',
         'skia_use_libjpeg_turbo': 'false',
@@ -101,7 +101,7 @@ class GNFlavorUtils(default_flavor.DefaultFlavorUtils):
       args['is_component_build'] = 'true'
     if extra_config == 'Vulkan':
       args['skia_enable_vulkan_debug_layers'] = 'false'
-      if os == 'Ubuntu':
+      if self.m.vars.is_linux:
         args['skia_vulkan_sdk'] = '"%s"' % linux_vulkan_sdk
       if 'Win' in os:
         args['skia_vulkan_sdk'] = '"%s"' % win_vulkan_sdk
@@ -146,7 +146,7 @@ class GNFlavorUtils(default_flavor.DefaultFlavorUtils):
   def step(self, name, cmd):
     app = self.m.vars.skia_out.join(self.m.vars.configuration, cmd[0])
     cmd = [app] + cmd[1:]
-    env = self.m.step.get_from_context('env', {})
+    env = self.m.context.env
 
     clang_linux = str(self.m.vars.slave_dir.join('clang_linux'))
     extra_config = self.m.vars.builder_cfg.get('extra_config', '')
@@ -154,7 +154,7 @@ class GNFlavorUtils(default_flavor.DefaultFlavorUtils):
     if 'SAN' in extra_config:
       # Sanitized binaries may want to run clang_linux/bin/llvm-symbolizer.
       env['PATH'] = '%%(PATH)s:%s' % clang_linux + '/bin'
-    elif 'Ubuntu' == self.m.vars.builder_cfg.get('os', ''):
+    elif self.m.vars.is_linux:
       cmd = ['catchsegv'] + cmd
 
     if 'ASAN' == extra_config:
@@ -167,7 +167,7 @@ class GNFlavorUtils(default_flavor.DefaultFlavorUtils):
       env['LD_LIBRARY_PATH'] = clang_linux + '/msan'
 
     to_symbolize = ['dm', 'nanobench']
-    if name in to_symbolize and 'Ubuntu' in self.m.vars.builder_cfg['os']:
+    if name in to_symbolize and self.m.vars.is_linux:
       # Convert path objects or placeholders into strings such that they can
       # be passed to symbolize_stack_trace.py
       args = [self.m.vars.slave_dir] + [str(x) for x in cmd]

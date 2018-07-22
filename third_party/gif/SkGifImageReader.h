@@ -289,7 +289,6 @@ public:
         , m_streamBuffer(stream)
         , m_parseCompleted(false)
         , m_firstFrameHasAlpha(false)
-        , m_firstFrameSupportsIndex8(false)
     {
     }
 
@@ -313,9 +312,7 @@ public:
 
     // Parse incoming GIF data stream into internal data structures.
     // Non-negative values are used to indicate to parse through that frame.
-    // Return true if parsing has progressed or there is not enough data.
-    // Return false if a fatal error is encountered.
-    bool parse(SkGIFParseQuery);
+    SkCodec::Result parse(SkGIFParseQuery);
 
     // Decode the frame indicated by frameIndex.
     // frameComplete will be set to true if the frame is completely decoded.
@@ -324,11 +321,9 @@ public:
 
     int imagesCount() const
     {
-        // Report the first frame immediately, so the parser can stop when it
-        // sees the size on a SizeQuery.
         const size_t frames = m_frames.size();
-        if (frames <= 1) {
-            return static_cast<int>(frames);
+        if (!frames) {
+            return 0;
         }
 
         // This avoids counting an empty frame when the file is truncated (or
@@ -366,8 +361,6 @@ public:
     sk_sp<SkColorTable> getColorTable(SkColorType dstColorType, int index);
 
     bool firstFrameHasAlpha() const { return m_firstFrameHasAlpha; }
-
-    bool firstFrameSupportsIndex8() const { return m_firstFrameSupportsIndex8; }
 
     // Helper function that returns whether an SkGIFFrameContext has transparency.
     // This method is sometimes called before creating one/parsing its color map,
@@ -410,10 +403,9 @@ private:
     SkStreamBuffer m_streamBuffer;
     bool m_parseCompleted;
 
-    // These values can be computed before we create a SkGIFFrameContext, so we
-    // store them here instead of on m_frames[0].
+    // This value can be computed before we create a SkGIFFrameContext, so we
+    // store it here instead of on m_frames[0].
     bool m_firstFrameHasAlpha;
-    bool m_firstFrameSupportsIndex8;
 };
 
 #endif

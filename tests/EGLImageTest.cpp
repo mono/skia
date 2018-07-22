@@ -9,14 +9,15 @@
 #include "TestUtils.h"
 #if SK_SUPPORT_GPU
 #include "GrContext.h"
-#include "GrContextPriv.h"
 #include "GrContextFactory.h"
+#include "GrContextPriv.h"
+#include "GrRenderTargetContext.h"
 #include "GrShaderCaps.h"
-#include "GrSurfaceContext.h"
 #include "GrTest.h"
+#include "GrTextureContext.h"
+#include "gl/GLTestContext.h"
 #include "gl/GrGLGpu.h"
 #include "gl/GrGLUtil.h"
-#include "gl/GLTestContext.h"
 
 using sk_gpu_test::GLTestContext;
 
@@ -128,14 +129,19 @@ DEF_GPUTEST_FOR_GL_RENDERING_CONTEXTS(EGLImageTest, reporter, ctxInfo) {
     glCtx0->makeCurrent();
     externalTexture.fTarget = GR_GL_TEXTURE_EXTERNAL;
     externalTexture.fID = glCtx0->eglImageToExternalTexture(image);
+    if (0 == externalTexture.fID) {
+        ERRORF(reporter, "Error converting EGL Image back to texture");
+        cleanup(glCtx0, externalTexture.fID, glCtx1.get(), context1, backendTexture1, image);
+        return;
+    }
 
     // Wrap this texture ID in a GrTexture
     GrBackendTexture backendTex(kSize, kSize, kRGBA_8888_GrPixelConfig, externalTexture);
 
     // TODO: If I make this TopLeft origin to match resolve_origin calls for kDefault, this test
     // fails on the Nexus5. Why?
-    sk_sp<GrSurfaceContext> surfaceContext = context0->contextPriv().makeBackendSurfaceContext(
-            backendTex, kBottomLeft_GrSurfaceOrigin, kNone_GrBackendTextureFlag, 0, nullptr);
+    sk_sp<GrTextureContext> surfaceContext = context0->contextPriv().makeBackendTextureContext(
+            backendTex, kBottomLeft_GrSurfaceOrigin, nullptr);
 
     if (!surfaceContext) {
         ERRORF(reporter, "Error wrapping external texture in GrSurfaceContext.");
@@ -145,20 +151,11 @@ DEF_GPUTEST_FOR_GL_RENDERING_CONTEXTS(EGLImageTest, reporter, ctxInfo) {
 
     // Should not be able to wrap as a RT
     {
-        sk_sp<GrSurfaceContext> temp = context0->contextPriv().makeBackendSurfaceContext(
-            backendTex, kBottomLeft_GrSurfaceOrigin, kRenderTarget_GrBackendTextureFlag, 0,
-            nullptr);
+        sk_sp<GrRenderTargetContext> temp =
+                context0->contextPriv().makeBackendTextureRenderTargetContext(
+                        backendTex, kBottomLeft_GrSurfaceOrigin, 0, nullptr);
         if (temp) {
             ERRORF(reporter, "Should not be able to wrap an EXTERNAL texture as a RT.");
-        }
-    }
-
-    // Should not be able to wrap with a sample count
-    {
-        sk_sp<GrSurfaceContext> temp = context0->contextPriv().makeBackendSurfaceContext(
-            backendTex, kBottomLeft_GrSurfaceOrigin, kNone_GrBackendTextureFlag, 4, nullptr);
-        if (temp) {
-            ERRORF(reporter, "Should not be able to wrap an EXTERNAL texture with MSAA.");
         }
     }
 

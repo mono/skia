@@ -43,6 +43,7 @@ GrCaps::GrCaps(const GrContextOptions& options) {
     fTextureBarrierSupport = false;
     fSampleLocationsSupport = false;
     fMultisampleDisableSupport = false;
+    fInstanceAttribSupport = false;
     fUsesMixedSamples = false;
     fPreferClientSideDynamicBuffers = false;
     fFullClearIsFree = false;
@@ -69,11 +70,8 @@ GrCaps::GrCaps(const GrContextOptions& options) {
     fMaxWindowRectangles = 0;
 
     fSuppressPrints = options.fSuppressPrints;
-    fImmediateFlush = options.fImmediateMode;
     fWireframeMode = options.fWireframeMode;
     fBufferMapThreshold = options.fBufferMapThreshold;
-    fUseDrawInsteadOfPartialRenderTargetWrite = options.fUseDrawInsteadOfPartialRenderTargetWrite;
-    fUseDrawInsteadOfAllRenderTargetWrites = false;
     fAvoidInstancedDrawsToFPTargets = false;
     fAvoidStencilBuffers = false;
 
@@ -132,6 +130,7 @@ SkString GrCaps::dump() const {
     r.appendf("Texture Barrier Support            : %s\n", gNY[fTextureBarrierSupport]);
     r.appendf("Sample Locations Support           : %s\n", gNY[fSampleLocationsSupport]);
     r.appendf("Multisample disable support        : %s\n", gNY[fMultisampleDisableSupport]);
+    r.appendf("Instance Attrib Support            : %s\n", gNY[fInstanceAttribSupport]);
     r.appendf("Uses Mixed Samples                 : %s\n", gNY[fUsesMixedSamples]);
     r.appendf("Prefer client-side dynamic buffers : %s\n", gNY[fPreferClientSideDynamicBuffers]);
     r.appendf("Full screen clear is free          : %s\n", gNY[fFullClearIsFree]);
@@ -141,8 +140,6 @@ SkString GrCaps::dump() const {
     r.appendf("Cross context texture support      : %s\n", gNY[fCrossContextTextureSupport]);
 
     r.appendf("Draw Instead of Clear [workaround] : %s\n", gNY[fUseDrawInsteadOfClear]);
-    r.appendf("Draw Instead of TexSubImage [workaround] : %s\n",
-              gNY[fUseDrawInsteadOfPartialRenderTargetWrite]);
     r.appendf("Prefer VRAM Use over flushes [workaround] : %s\n", gNY[fPreferVRAMUseOverFlushes]);
 
     if (this->advancedBlendEquationSupport()) {

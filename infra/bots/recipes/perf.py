@@ -12,8 +12,8 @@ import calendar
 DEPS = [
   'core',
   'env',
-  'file',
   'flavor',
+  'recipe_engine/file',
   'recipe_engine/json',
   'recipe_engine/path',
   'recipe_engine/platform',
@@ -26,7 +26,7 @@ DEPS = [
 ]
 
 
-def nanobench_flags(bot):
+def nanobench_flags(api, bot):
   args = ['--pre_log']
 
   if 'GPU' in bot:
@@ -74,7 +74,7 @@ def nanobench_flags(bot):
 
   # We want to test both the OpenGL config and the GLES config on Linux Intel:
   # GL is used by Chrome, GLES is used by ChromeOS.
-  if 'Intel' in bot and 'Ubuntu' in bot:
+  if 'Intel' in bot and api.vars.is_linux:
     configs.append('gles')
 
   # Bench instanced rendering on a limited number of platforms
@@ -107,6 +107,9 @@ def nanobench_flags(bot):
     # Ensure that the bot framework does not think we have timed out.
     args.extend(['--keepAlive', 'true'])
 
+  # Some people don't like verbose output.
+  verbose = False
+
   match = []
   if 'Android' in bot:
     # Segfaults when run as GPU bench. Very large texture?
@@ -126,16 +129,15 @@ def nanobench_flags(bot):
     match.append('~GLInstancedArraysBench') # skia:4714
   if 'IntelIris540' in bot and 'ANGLE' in bot:
     match.append('~tile_image_filter_tiled_64')  # skia:6082
-  if 'Intel' in bot and 'Ubuntu' in bot and not 'Vulkan' in bot:
-    match.append('~native_image_to_raster_surface')  # skia:6401
-  if 'Vulkan' in bot and 'IntelIris540' in bot and 'Win' in bot:
+  if ('Vulkan' in bot and ('IntelIris540' in bot or 'IntelIris640' in bot) and
+      'Win' in bot):
     # skia:6398
     match.append('~GM_varied_text_clipped_lcd')
     match.append('~GM_varied_text_ignorable_clip_lcd')
-    match.append('~Xfermode_DstATop_aa')
-    match.append('~Xfermode_SrcIn_aa')
-    match.append('~Xfermode_SrcOut_aa')
-    match.append('~Xfermode_Src_aa')
+    match.append('~blendmode_mask_DstATop')
+    match.append('~blendmode_mask_SrcIn')
+    match.append('~blendmode_mask_SrcOut')
+    match.append('~blendmode_mask_Src')
     match.append('~fontscaler_lcd')
     match.append('~rotated_rects_aa_alternating_transparent_and_opaque_src')
     match.append('~rotated_rects_aa_changing_transparent_src')
@@ -146,18 +148,25 @@ def nanobench_flags(bot):
     match.append('~text_16_LCD_BK')
     match.append('~text_16_LCD_FF')
     match.append('~text_16_LCD_WT')
+    # skia:6863
+    match.append('~desk_skbug6850overlay2')
+  if ('Intel' in bot and api.vars.is_linux and not 'Vulkan' in bot):
+    # TODO(dogben): Track down what's causing bots to die.
+    verbose = True
   if 'Vulkan' in bot and 'NexusPlayer' in bot:
-    match.append('~hardstop') # skia:6037
-  if 'ANGLE' in bot and any('msaa' in x for x in configs):
-    match.append('~native_image_to_raster_surface')  # skia:6457
-  if 'ANGLE' in bot and 'Radeon' in bot:
+    match.append('~blendmode_') # skia:6691
+  if 'ANGLE' in bot and 'Radeon' in bot and 'Release' in bot:
     # skia:6534
     match.append('~shapes_mixed_10000_32x33')
-    match.append('~shapes_rrect_10000_32x32')
+    match.append('~shapes_oval_10000_32x32')
     match.append('~shapes_oval_10000_32x33')
+    match.append('~shapes_rect_100_500x500')
+    match.append('~shapes_rrect_10000_32x32')
   if 'ANGLE' in bot and 'GTX960' in bot and 'Release' in bot:
     # skia:6534
     match.append('~shapes_mixed_10000_32x33')
+    match.append('~shapes_rect_100_500x500')
+    match.append('~shapes_rrect_10000_32x32')
 
   # We do not need or want to benchmark the decodes of incomplete images.
   # In fact, in nanobench we assert that the full image decode succeeds.
@@ -184,6 +193,9 @@ def nanobench_flags(bot):
   if match:
     args.append('--match')
     args.extend(match)
+
+  if verbose:
+    args.append('--verbose')
 
   return args
 
@@ -231,25 +243,33 @@ def perf_steps(api):
     skip_flag = '--nocpu'
   if skip_flag:
     args.append(skip_flag)
-  args.extend(nanobench_flags(api.vars.builder_name))
+  args.extend(nanobench_flags(api, api.vars.builder_name))
 
   if 'Chromecast' in api.vars.builder_cfg.get('os', ''):
     # Due to limited disk space, run a watered down perf run on Chromecast.
     args = [
       target,
       '--config',
+      '8888',
       'gles',
+    ]
+    if api.vars.builder_cfg.get('cpu_or_gpu') == 'CPU':
+      args.extend(['--nogpu'])
+    elif api.vars.builder_cfg.get('cpu_or_gpu') == 'GPU':
+      args.extend(['--nocpu'])
+    args.extend([
       '-i', api.flavor.device_dirs.resource_dir,
       '--images', api.flavor.device_path_join(
           api.flavor.device_dirs.resource_dir, 'color_wheel.jpg'),
-      '--svgs',  api.flavor.device_dirs.svg_dir,
+      '--skps',  api.flavor.device_dirs.skp_dir,
       '--pre_log',
       '--match', # skia:6581
       '~matrixconvolution',
       '~blur_image_filter',
       '~blur_0.01',
       '~GM_animated-image-blurs',
-    ]
+      '~blendmode_mask_',
+    ])
 
   if api.vars.upload_perf_results:
     now = api.time.utcnow()
@@ -301,7 +321,7 @@ def perf_steps(api):
 
   # Copy results to swarming out dir.
   if api.vars.upload_perf_results:
-    api.file.makedirs('perf_dir', api.vars.perf_data_dir)
+    api.file.ensure_directory('makedirs perf_dir', api.vars.perf_data_dir)
     api.flavor.copy_directory_contents_to_host(
         api.flavor.device_dirs.perf_data_dir,
         api.vars.perf_data_dir)
@@ -335,9 +355,9 @@ TEST_BUILDERS = [
   'Perf-Android-Clang-PixelC-GPU-TegraX1-arm64-Release-Android',
   'Perf-ChromeOS-Clang-Chromebook_C100p-GPU-MaliT764-arm-Release',
   'Perf-Chromecast-GCC-Chorizo-CPU-Cortex_A7-arm-Debug',
-  'Perf-Chromecast-GCC-Chorizo-CPU-Cortex_A7-arm-Release',
+  'Perf-Chromecast-GCC-Chorizo-GPU-Cortex_A7-arm-Release',
   'Perf-Mac-Clang-MacMini6.2-CPU-AVX-x86_64-Release',
-  'Perf-Mac-Clang-MacMini6.2-GPU-HD4000-x86_64-Debug-CommandBuffer',
+  'Perf-Mac-Clang-MacMini6.2-GPU-IntelHD4000-x86_64-Debug-CommandBuffer',
   'Perf-Ubuntu-Clang-GCE-CPU-AVX2-x86_64-Release',
   'Perf-Ubuntu-GCC-ShuttleA-GPU-GTX550Ti-x86_64-Release-Valgrind',
   ('Perf-Ubuntu-GCC-ShuttleA-GPU-GTX550Ti-x86_64-Release-Valgrind' +

@@ -12,13 +12,11 @@
 #include "GrFixedClip.h"
 #include "GrGpu.h"
 #include "GrPath.h"
-#include "GrPipelineBuilder.h"
-#include "GrRenderTarget.h"
 #include "GrRenderTargetContextPriv.h"
 #include "GrResourceProvider.h"
 #include "GrStencilPathOp.h"
 #include "GrStyle.h"
-#include "ops/GrNonAAFillRectOp.h"
+#include "ops/GrRectOpFactory.h"
 
 GrPathRenderer* GrStencilAndCoverPathRenderer::Create(GrResourceProvider* resourceProvider,
                                                       const GrCaps& caps) {
@@ -59,7 +57,7 @@ static GrPath* get_gr_path(GrResourceProvider* resourceProvider, const GrShape& 
     if (!path) {
         SkPath skPath;
         shape.asPath(&skPath);
-        path.reset(resourceProvider->createPath(skPath, shape.style()));
+        path = resourceProvider->createPath(skPath, shape.style());
         if (!isVolatile) {
             resourceProvider->assignUniqueKeyToResource(key, path.get());
         }
@@ -135,10 +133,10 @@ bool GrStencilAndCoverPathRenderer::onDrawPath(const DrawPathArgs& args) {
             if (GrAAType::kMixedSamples == coverAAType) {
                 coverAAType = GrAAType::kNone;
             }
-            args.fRenderTargetContext->addDrawOp(
-                    *args.fClip,
-                    GrNonAAFillRectOp::Make(std::move(args.fPaint), viewM, bounds, nullptr, &invert,
-                                            coverAAType, &kInvertedCoverPass));
+            args.fRenderTargetContext->addDrawOp(*args.fClip,
+                                                 GrRectOpFactory::MakeNonAAFillWithLocalMatrix(
+                                                         std::move(args.fPaint), viewM, invert,
+                                                         bounds, coverAAType, &kInvertedCoverPass));
         }
     } else {
         std::unique_ptr<GrDrawOp> op =

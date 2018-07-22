@@ -9,6 +9,7 @@
 #include "GrAppliedClip.h"
 #include "GrCaps.h"
 #include "GrXferProcessor.h"
+#include "SkBlendModePriv.h"
 #include "effects/GrPorterDuffXferProcessor.h"
 
 const GrProcessorSet& GrProcessorSet::EmptySet() {
@@ -23,18 +24,33 @@ GrProcessorSet::GrProcessorSet(GrPaint&& paint) : fXP(paint.getXPFactory()) {
         fFragmentProcessors.reset(paint.numTotalFragmentProcessors());
         int i = 0;
         for (auto& fp : paint.fColorFragmentProcessors) {
+            SkASSERT(fp.get());
             fFragmentProcessors[i++] = fp.release();
         }
         for (auto& fp : paint.fCoverageFragmentProcessors) {
+            SkASSERT(fp.get());
             fFragmentProcessors[i++] = fp.release();
-        }
-        if (paint.usesDistanceVectorField()) {
-            fFlags |= kUseDistanceVectorField_Flag;
         }
     } else {
         SkDebugf("Insane number of color fragment processors in paint. Dropping all processors.");
         fColorFragmentProcessorCnt = 0;
     }
+}
+
+GrProcessorSet::GrProcessorSet(SkBlendMode mode)
+        : fXP(SkBlendMode_AsXPFactory(mode))
+        , fColorFragmentProcessorCnt(0)
+        , fFragmentProcessorOffset(0)
+        , fFlags(0) {}
+
+GrProcessorSet::GrProcessorSet(sk_sp<GrFragmentProcessor> colorFP)
+        : fFragmentProcessors(1)
+        , fXP((const GrXPFactory*)nullptr)
+        , fColorFragmentProcessorCnt(1)
+        , fFragmentProcessorOffset(0)
+        , fFlags(0) {
+    SkASSERT(colorFP);
+    fFragmentProcessors[0] = colorFP.release();
 }
 
 GrProcessorSet::~GrProcessorSet() {
@@ -48,6 +64,56 @@ GrProcessorSet::~GrProcessorSet() {
     if (this->isFinalized() && this->xferProcessor()) {
         this->xferProcessor()->unref();
     }
+}
+
+SkString dump_fragment_processor_tree(const GrFragmentProcessor* fp, int indentCnt) {
+    SkString result;
+    SkString indentString;
+    for (int i = 0; i < indentCnt; ++i) {
+        indentString.append("    ");
+    }
+    result.appendf("%s%s %s \n", indentString.c_str(), fp->name(), fp->dumpInfo().c_str());
+    if (fp->numChildProcessors()) {
+        for (int i = 0; i < fp->numChildProcessors(); ++i) {
+            result += dump_fragment_processor_tree(&fp->childProcessor(i), indentCnt + 1);
+        }
+    }
+    return result;
+}
+
+SkString GrProcessorSet::dumpProcessors() const {
+    SkString result;
+    if (this->numFragmentProcessors()) {
+        if (this->numColorFragmentProcessors()) {
+            result.append("Color Fragment Processors:\n");
+            for (int i = 0; i < this->numColorFragmentProcessors(); ++i) {
+                result += dump_fragment_processor_tree(this->colorFragmentProcessor(i), 1);
+            }
+        } else {
+            result.append("No color fragment processors.\n");
+        }
+        if (this->numCoverageFragmentProcessors()) {
+            result.append("Coverage Fragment Processors:\n");
+            for (int i = 0; i < this->numColorFragmentProcessors(); ++i) {
+                result += dump_fragment_processor_tree(this->coverageFragmentProcessor(i), 1);
+            }
+        } else {
+            result.append("No coverage fragment processors.\n");
+        }
+    } else {
+        result.append("No color or coverage fragment processors.\n");
+    }
+    if (this->isFinalized()) {
+        result.append("Xfer Processor: ");
+        if (this->xferProcessor()) {
+            result.appendf("%s\n", this->xferProcessor()->name());
+        } else {
+            result.append("SrcOver\n");
+        }
+    } else {
+        result.append("XP Factory dumping not implemented.\n");
+    }
+    return result;
 }
 
 bool GrProcessorSet::operator==(const GrProcessorSet& that) const {

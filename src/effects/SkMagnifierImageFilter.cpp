@@ -9,6 +9,7 @@
 
 #include "SkBitmap.h"
 #include "SkColorPriv.h"
+#include "SkColorSpaceXformer.h"
 #include "SkReadBuffer.h"
 #include "SkSpecialImage.h"
 #include "SkWriteBuffer.h"
@@ -17,6 +18,7 @@
 ////////////////////////////////////////////////////////////////////////////////
 #if SK_SUPPORT_GPU
 #include "GrContext.h"
+#include "GrTexture.h"
 #include "effects/GrProxyMove.h"
 #include "effects/GrSingleTextureEffect.h"
 #include "glsl/GrGLSLColorSpaceXformHelper.h"
@@ -48,8 +50,7 @@ sk_sp<SkImageFilter> SkMagnifierImageFilter::Make(const SkRect& srcRect, SkScala
 #if SK_SUPPORT_GPU
 class GrMagnifierEffect : public GrSingleTextureEffect {
 public:
-    static sk_sp<GrFragmentProcessor> Make(GrResourceProvider* resourceProvider,
-                                           sk_sp<GrTextureProxy> proxy,
+    static sk_sp<GrFragmentProcessor> Make(sk_sp<GrTextureProxy> proxy,
                                            sk_sp<GrColorSpaceXform> colorSpaceXform,
                                            const SkIRect& bounds,
                                            const SkRect& srcRect,
@@ -57,8 +58,7 @@ public:
                                            float yInvZoom,
                                            float xInvInset,
                                            float yInvInset) {
-        return sk_sp<GrFragmentProcessor>(new GrMagnifierEffect(resourceProvider,
-                                                                std::move(proxy),
+        return sk_sp<GrFragmentProcessor>(new GrMagnifierEffect(std::move(proxy),
                                                                 std::move(colorSpaceXform),
                                                                 bounds, srcRect,
                                                                 xInvZoom, yInvZoom,
@@ -81,8 +81,7 @@ public:
     float yInvInset() const { return fYInvInset; }
 
 private:
-    GrMagnifierEffect(GrResourceProvider* resourceProvider,
-                      sk_sp<GrTextureProxy> proxy,
+    GrMagnifierEffect(sk_sp<GrTextureProxy> proxy,
                       sk_sp<GrColorSpaceXform> colorSpaceXform,
                       const SkIRect& bounds,
                       const SkRect& srcRect,
@@ -90,8 +89,7 @@ private:
                       float yInvZoom,
                       float xInvInset,
                       float yInvInset)
-            : INHERITED{resourceProvider,
-                        ModulationFlags(proxy->config()),
+            : INHERITED{ModulationFlags(proxy->config()),
                         GR_PROXY_MOVE(proxy),
                         std::move(colorSpaceXform),
                         SkMatrix::I()} // TODO: no GrSamplerParams::kBilerp_FilterMode?
@@ -110,7 +108,7 @@ private:
 
     bool onIsEqual(const GrFragmentProcessor&) const override;
 
-    GR_DECLARE_FRAGMENT_PROCESSOR_TEST;
+    GR_DECLARE_FRAGMENT_PROCESSOR_TEST
 
     SkIRect fBounds;
     SkRect  fSrcRect;
@@ -204,8 +202,7 @@ void GrGLMagnifierEffect::onSetData(const GrGLSLProgramDataManager& pdman,
                                     const GrFragmentProcessor& effect) {
     const GrMagnifierEffect& zoom = effect.cast<GrMagnifierEffect>();
 
-    GrTexture* tex = zoom.textureSampler(0).texture();
-    SkASSERT(tex);
+    GrTexture* tex = zoom.textureSampler(0).peekTexture();
 
     SkScalar invW = 1.0f / tex->width();
     SkScalar invH = 1.0f / tex->height();
@@ -268,7 +265,6 @@ sk_sp<GrFragmentProcessor> GrMagnifierEffect::TestCreate(GrProcessorTestData* d)
     SkRect srcRect = SkRect::MakeWH(SkIntToScalar(width), SkIntToScalar(height));
 
     sk_sp<GrFragmentProcessor> effect(GrMagnifierEffect::Make(
-        d->resourceProvider(),
         std::move(proxy),
         std::move(colorSpaceXform),
         bounds,
@@ -359,7 +355,6 @@ sk_sp<SkSpecialImage> SkMagnifierImageFilter::onFilterImage(SkSpecialImage* sour
         sk_sp<GrColorSpaceXform> colorSpaceXform = GrColorSpaceXform::Make(input->getColorSpace(),
                                                                            dstColorSpace);
         sk_sp<GrFragmentProcessor> fp(GrMagnifierEffect::Make(
-                                                        context->resourceProvider(),
                                                         std::move(inputProxy),
                                                         std::move(colorSpaceXform),
                                                         bounds,
@@ -444,13 +439,12 @@ sk_sp<SkSpecialImage> SkMagnifierImageFilter::onFilterImage(SkSpecialImage* sour
 
 sk_sp<SkImageFilter> SkMagnifierImageFilter::onMakeColorSpace(SkColorSpaceXformer* xformer) const {
     SkASSERT(1 == this->countInputs());
-    if (!this->getInput(0)) {
-        return sk_ref_sp(const_cast<SkMagnifierImageFilter*>(this));
+    auto input = xformer->apply(this->getInput(0));
+    if (input.get() != this->getInput(0)) {
+        return SkMagnifierImageFilter::Make(fSrcRect, fInset, std::move(input),
+                                            this->getCropRectIfSet());
     }
-
-    sk_sp<SkImageFilter> input = this->getInput(0)->makeColorSpace(xformer);
-    return SkMagnifierImageFilter::Make(fSrcRect, fInset, std::move(input),
-                                        this->getCropRectIfSet());
+    return this->refMe();
 }
 
 #ifndef SK_IGNORE_TO_STRING

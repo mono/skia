@@ -112,6 +112,8 @@ public:
     GrGLCaps(const GrContextOptions& contextOptions, const GrGLContextInfo& ctxInfo,
              const GrGLInterface* glInterface);
 
+    int getSampleCount(int requestedCount, GrPixelConfig config) const override;
+
     bool isConfigTexturable(GrPixelConfig config) const override {
         return SkToBool(fConfigTable[config].fFlags & ConfigInfo::kTextureable_Flag);
     }
@@ -369,6 +371,29 @@ public:
     // https://bugs.chromium.org/p/skia/issues/detail?id=6650
     bool drawArraysBaseVertexIsBroken() const { return fDrawArraysBaseVertexIsBroken; }
 
+    /// Adreno 4xx devices experience an issue when there are a large number of stencil clip bit
+    /// clears. The minimal repro steps are not precisely known but drawing a rect with a stencil
+    /// op instead of using glClear seems to resolve the issue.
+    bool useDrawToClearStencilClip() const { return fUseDrawToClearStencilClip; }
+
+    // If true then we must use an intermediate surface to perform partial updates to unorm textures
+    // that have ever been bound to a FBO.
+    bool disallowTexSubImageForUnormConfigTexturesEverBoundToFBO() const {
+        return fDisallowTexSubImageForUnormConfigTexturesEverBoundToFBO;
+    }
+
+    // Use an intermediate surface to write pixels (full or partial overwrite) to into a texture
+    // that is bound to an FBO.
+    bool useDrawInsteadOfAllRenderTargetWrites() const {
+        return fUseDrawInsteadOfAllRenderTargetWrites;
+    }
+
+    // At least some Adreno 3xx drivers draw lines incorrectly after drawing non-lines. Toggling
+    // face culling on and off seems to resolve this.
+    bool requiresCullFaceEnableDisableWhenDrawingLinesAfterNonLines() const {
+        return fRequiresCullFaceEnableDisableWhenDrawingLinesAfterNonLines;
+    }
+
     bool initDescForDstCopy(const GrRenderTargetProxy* src, GrSurfaceDesc* desc,
                             bool* rectsMustMatch, bool* disallowSubrect) const override;
 
@@ -444,6 +469,10 @@ private:
     bool fClearToBoundaryValuesIsBroken : 1;
     bool fClearTextureSupport : 1;
     bool fDrawArraysBaseVertexIsBroken : 1;
+    bool fUseDrawToClearStencilClip : 1;
+    bool fDisallowTexSubImageForUnormConfigTexturesEverBoundToFBO : 1;
+    bool fUseDrawInsteadOfAllRenderTargetWrites : 1;
+    bool fRequiresCullFaceEnableDisableWhenDrawingLinesAfterNonLines : 1;
 
     uint32_t fBlitFramebufferFlags;
 
@@ -502,7 +531,9 @@ private:
         };
 
         // Index fStencilFormats.
-        int      fStencilFormatIndex;
+        int fStencilFormatIndex;
+
+        SkTDArray<int> fColorSampleCounts;
 
         enum {
             kVerifiedColorAttachment_Flag = 0x1,

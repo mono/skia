@@ -12,7 +12,6 @@
 #include "GrClip.h"
 #include "GrFragmentProcessor.h"
 #include "GrRenderTargetContext.h"
-#include "GrResourceProvider.h"
 #include "GrTexture.h"
 #include "glsl/GrGLSLFragmentProcessor.h"
 #include "glsl/GrGLSLFragmentShaderBuilder.h"
@@ -20,23 +19,20 @@
 DEF_GPUTEST_FOR_RENDERING_CONTEXTS(ImageStorageLoad, reporter, ctxInfo) {
     class TestFP : public GrFragmentProcessor {
     public:
-        static sk_sp<GrFragmentProcessor> Make(GrResourceProvider* resourceProvider,
-                                               sk_sp<GrTextureProxy> proxy,
+        static sk_sp<GrFragmentProcessor> Make(sk_sp<GrTextureProxy> proxy,
                                                GrSLMemoryModel mm,
                                                GrSLRestrict restrict) {
-            return sk_sp<GrFragmentProcessor>(new TestFP(resourceProvider,
-                                                         std::move(proxy), mm, restrict));
+            return sk_sp<GrFragmentProcessor>(new TestFP(std::move(proxy), mm, restrict));
         }
 
         const char* name() const override { return "Image Load Test FP"; }
 
     private:
-        TestFP(GrResourceProvider* resourceProvider,
-               sk_sp<GrTextureProxy> proxy, GrSLMemoryModel mm, GrSLRestrict restrict)
+        TestFP(sk_sp<GrTextureProxy> proxy, GrSLMemoryModel mm, GrSLRestrict restrict)
                 : INHERITED(kNone_OptimizationFlags)
                 , fImageStorageAccess(std::move(proxy), kRead_GrIOType, mm, restrict) {
             this->initClassID<TestFP>();
-            this->addImageStorageAccess(resourceProvider, &fImageStorageAccess);
+            this->addImageStorageAccess(&fImageStorageAccess);
         }
 
         void onGetGLSLProcessorKey(const GrShaderCaps&, GrProcessorKeyBuilder*) const override {}
@@ -54,7 +50,7 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(ImageStorageLoad, reporter, ctxInfo) {
                     fb->codeAppend("highp vec2 coord = sk_FragCoord.xy;");
                     fb->appendImageStorageLoad(&imageLoadStr, args.fImageStorages[0],
                                                "ivec2(coord)");
-                    if (GrPixelConfigIsSint(tfp.fImageStorageAccess.texture()->config())) {
+                    if (GrPixelConfigIsSint(tfp.fImageStorageAccess.peekTexture()->config())) {
                         // Map the signed bytes so that when then get read back as unorm values they
                         // will have their original bit pattern.
                         fb->codeAppendf("highp ivec4 ivals = %s;", imageLoadStr.c_str());
@@ -140,8 +136,7 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(ImageStorageLoad, reporter, ctxInfo) {
                                                              kRGBA_8888_GrPixelConfig, nullptr);
                 GrPaint paint;
                 paint.setPorterDuffXPFactory(SkBlendMode::kSrc);
-                paint.addColorFragmentProcessor(TestFP::Make(context->resourceProvider(),
-                                                             imageStorageTexture, mm, restrict));
+                paint.addColorFragmentProcessor(TestFP::Make(imageStorageTexture, mm, restrict));
                 rtContext->drawPaint(GrNoClip(), std::move(paint), SkMatrix::I());
                 std::unique_ptr<uint32_t[]> readData(new uint32_t[kS * kS]);
                 SkImageInfo info = SkImageInfo::Make(kS, kS, kRGBA_8888_SkColorType,

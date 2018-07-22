@@ -79,7 +79,7 @@ public:
                  bool useCenter, const SkPaint& paint) override;
     void drawPath(const SkPath& path, const SkPaint& paint,
                   const SkMatrix* prePathMatrix, bool pathIsMutable) override;
-    void drawBitmap(const SkBitmap& bitmap, const SkMatrix&,
+    void drawBitmap(const SkBitmap&, SkScalar x, SkScalar y,
                     const SkPaint&) override;
     void drawBitmapRect(const SkBitmap&, const SkRect* srcOrNull, const SkRect& dst,
                         const SkPaint& paint, SkCanvas::SrcRectConstraint) override;
@@ -118,6 +118,8 @@ public:
     sk_sp<SkSpecialImage> snapSpecial() override;
 
     void flush() override;
+    bool flushAndSignalSemaphores(int numSemaphores, GrBackendSemaphore* signalSemaphores);
+    bool wait(int numSemaphores, const GrBackendSemaphore* waitSemaphores);
 
     bool onAccessPixels(SkPixmap*) override;
 

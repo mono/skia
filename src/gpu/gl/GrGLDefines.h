@@ -1062,6 +1062,12 @@
 #define GR_GL_SYNC_FLUSH_COMMANDS_BIT                       0x00000001
 #define GR_GL_TIMEOUT_IGNORED                               0xFFFFFFFFFFFFFFFFull
 
+/* GL_EXT_geometry_shader */
+#define GR_GL_LINES_ADJACENCY                               0x000A
+
+/* GL_ARB_internalformat_query */
+#define GR_GL_NUM_SAMPLE_COUNTS                             0x9380
+
 /* EGL Defines */
 #define GR_EGL_NO_DISPLAY                                   ((GrEGLDisplay)0)
 #define GR_EGL_EXTENSIONS                                   0x3055

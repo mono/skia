@@ -13,7 +13,6 @@
 #include "GrPipeline.h"
 #include "GrProcessor.h"
 #include "GrShaderCaps.h"
-#include "GrTexture.h"
 #include "glsl/GrGLSLBlend.h"
 #include "glsl/GrGLSLFragmentProcessor.h"
 #include "glsl/GrGLSLFragmentShaderBuilder.h"
@@ -222,7 +221,7 @@ private:
                                           const GrProcessorAnalysisCoverage&,
                                           const GrCaps&) const override;
 
-    GR_DECLARE_XP_FACTORY_TEST;
+    GR_DECLARE_XP_FACTORY_TEST
 
     SkBlendMode fMode;
     GrBlendEquation fHWBlendEquation;

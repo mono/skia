@@ -13,6 +13,8 @@
 #include "GrClip.h"
 #include "GrContext.h"
 #include "SkGradientShader.h"
+#include "SkShaderBase.h"
+#include "effects/GrPorterDuffXferProcessor.h"
 #include "ops/GrTessellatingPathRenderer.h"
 
 /*
@@ -313,14 +315,46 @@ static SkPath create_path_19() {
     return path;
 }
 
+// An intersection above the first vertex in the mesh.
+// Reduction from http://crbug.com/730687
+static SkPath create_path_20() {
+    SkPath path;
+    path.moveTo(           2822128.5,  235.026336669921875);
+    path.lineTo(          2819349.25, 235.3623504638671875);
+    path.lineTo(          -340558688, 23.83478546142578125);
+    path.lineTo(          -340558752, 25.510419845581054688);
+    path.lineTo(          -340558720, 27.18605804443359375);
+    return path;
+}
+
+// An intersection whose result is NaN (due to rounded-to-inf endpoint).
+static SkPath create_path_21() {
+    SkPath path;
+    path.moveTo(1.7889142061167663539e+38, 39338463358011572224.0);
+    path.lineTo(  1647.4193115234375,       -522.603515625);
+    path.lineTo(    1677.74560546875,   -529.0028076171875);
+    path.lineTo(    1678.29541015625,   -528.7847900390625);
+    path.lineTo(  1637.5167236328125,  -519.79266357421875);
+    path.lineTo(  1647.4193115234375,       -522.603515625);
+    return path;
+}
+
+// A quad which becomes NaN when interpolated.
+static SkPath create_path_22() {
+    SkPath path;
+    path.moveTo(-5.71889e+13f, 1.36759e+09f);
+    path.quadTo(2.45472e+19f, -3.12406e+15f, -2.19589e+18f, 2.79462e+14f);
+    return path;
+}
+
 static sk_sp<GrFragmentProcessor> create_linear_gradient_processor(GrContext* ctx) {
     SkPoint pts[2] = { {0, 0}, {1, 1} };
     SkColor colors[2] = { SK_ColorGREEN, SK_ColorBLUE };
     sk_sp<SkShader> shader = SkGradientShader::MakeLinear(
         pts, colors, nullptr, SK_ARRAY_COUNT(colors), SkShader::kClamp_TileMode);
-    SkShader::AsFPArgs args(
+    SkShaderBase::AsFPArgs args(
         ctx, &SkMatrix::I(), &SkMatrix::I(), SkFilterQuality::kLow_SkFilterQuality, nullptr);
-    return shader->asFragmentProcessor(args);
+    return as_SB(shader)->asFragmentProcessor(args);
 }
 
 static void test_path(GrContext* ctx,
@@ -389,5 +423,8 @@ DEF_GPUTEST_FOR_ALL_CONTEXTS(TessellatingPathRendererTests, reporter, ctxInfo) {
     test_path(ctx, rtc.get(), create_path_17(), nonInvertibleMatrix, GrAAType::kCoverage, fp);
     test_path(ctx, rtc.get(), create_path_18());
     test_path(ctx, rtc.get(), create_path_19());
+    test_path(ctx, rtc.get(), create_path_20(), SkMatrix(), GrAAType::kCoverage);
+    test_path(ctx, rtc.get(), create_path_21(), SkMatrix(), GrAAType::kCoverage);
+    test_path(ctx, rtc.get(), create_path_22());
 }
 #endif

@@ -16,8 +16,8 @@
 
 #if SK_SUPPORT_GPU
 #include "GrContext.h"
+#include "GrContextFactory.h"
 #include "GrContextPriv.h"
-#include "GrResourceProvider.h"
 #include "SkGr.h"
 #endif
 
@@ -391,6 +391,13 @@ DEF_TEST(ReadPixels, reporter) {
 }
 #if SK_SUPPORT_GPU
 DEF_GPUTEST_FOR_RENDERING_CONTEXTS(ReadPixels_Gpu, reporter, ctxInfo) {
+    if (ctxInfo.type() == sk_gpu_test::GrContextFactory::kANGLE_D3D9_ES2_ContextType ||
+        ctxInfo.type() == sk_gpu_test::GrContextFactory::kANGLE_GL_ES2_ContextType ||
+        ctxInfo.type() == sk_gpu_test::GrContextFactory::kANGLE_D3D11_ES2_ContextType) {
+        // skbug.com/6742 ReadPixels_Texture & _Gpu don't work with ANGLE ES2 configs
+        return;
+    }
+
     const SkImageInfo ii = SkImageInfo::MakeN32Premul(DEV_W, DEV_H);
     for (auto& origin : {kBottomLeft_GrSurfaceOrigin, kTopLeft_GrSurfaceOrigin}) {
         sk_sp<SkSurface> surface(SkSurface::MakeRenderTarget(ctxInfo.grContext(), SkBudgeted::kNo,
@@ -434,6 +441,13 @@ static void test_readpixels_texture(skiatest::Reporter* reporter,
 }
 
 DEF_GPUTEST_FOR_RENDERING_CONTEXTS(ReadPixels_Texture, reporter, ctxInfo) {
+    if (ctxInfo.type() == sk_gpu_test::GrContextFactory::kANGLE_D3D9_ES2_ContextType ||
+        ctxInfo.type() == sk_gpu_test::GrContextFactory::kANGLE_GL_ES2_ContextType ||
+        ctxInfo.type() == sk_gpu_test::GrContextFactory::kANGLE_D3D11_ES2_ContextType) {
+        // skbug.com/6742 ReadPixels_Texture & _Gpu don't work with ANGLE ES2 configs
+        return;
+    }
+
     GrContext* context = ctxInfo.grContext();
 
     SkBitmap bmp = make_src_bitmap();
@@ -489,16 +503,6 @@ static const uint64_t f16[kNumPixels] = {
         kAlpha | kRed, kAlpha | kGreen, kAlpha | kBlue, kAlpha | kBlue | kGreen | kRed, kAlpha
 };
 
-#ifdef SK_PMCOLOR_IS_RGBA
-static const SkPMColor index8colors[kNumPixels] = {
-        0xFF0000FF, 0xFF00FF00, 0xFFFF0000, 0xFFFFFFFF, 0xFF000000
-};
-#else
-static const SkPMColor index8colors[kNumPixels] = {
-        0xFFFF0000, 0xFF00FF00, 0xFF0000FF, 0xFFFFFFFF, 0xFF000000
-};
-#endif
-static const uint8_t index8[kNumPixels] = { 0, 1, 2, 3, 4 };
 static const uint8_t alpha8[kNumPixels] = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
 static const uint8_t gray8[kNumPixels] = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
 
@@ -516,12 +520,12 @@ static const void* five_reference_pixels(SkColorType colorType) {
             return rgba;
         case kBGRA_8888_SkColorType:
             return bgra;
-        case kIndex_8_SkColorType:
-            return index8;
         case kGray_8_SkColorType:
             return gray8;
         case kRGBA_F16_SkColorType:
             return f16;
+        default:
+            return nullptr; // remove me when kIndex_8 is removed from the enum
     }
 
     SkASSERT(false);
@@ -534,21 +538,14 @@ static void test_conversion(skiatest::Reporter* r, const SkImageInfo& dstInfo,
         return;
     }
 
-    sk_sp<SkColorTable> srcColorTable = (kIndex_8_SkColorType == srcInfo.colorType())
-            ? sk_make_sp<SkColorTable>(index8colors, 5)
-            : nullptr;
-    sk_sp<SkColorTable> dstColorTable = (kIndex_8_SkColorType == dstInfo.colorType())
-            ? sk_make_sp<SkColorTable>(index8colors, 5)
-            : nullptr;
-
     const void* srcPixels = five_reference_pixels(srcInfo.colorType());
-    SkPixmap srcPixmap(srcInfo, srcPixels, srcInfo.minRowBytes(), srcColorTable.get());
+    SkPixmap srcPixmap(srcInfo, srcPixels, srcInfo.minRowBytes());
     sk_sp<SkImage> src = SkImage::MakeFromRaster(srcPixmap, nullptr, nullptr);
     REPORTER_ASSERT(r, src);
 
     // Enough space for 5 pixels when color type is F16, more than enough space in other cases.
     uint64_t dstPixels[kNumPixels];
-    SkPixmap dstPixmap(dstInfo, dstPixels, dstInfo.minRowBytes(), dstColorTable.get());
+    SkPixmap dstPixmap(dstInfo, dstPixels, dstInfo.minRowBytes());
     bool success = src->readPixels(dstPixmap, 0, 0);
     REPORTER_ASSERT(r, success == SkImageInfoValidConversion(dstInfo, srcInfo));
 
@@ -575,7 +572,6 @@ DEF_TEST(ReadPixels_ValidConversion, reporter) {
             kARGB_4444_SkColorType,
             kRGBA_8888_SkColorType,
             kBGRA_8888_SkColorType,
-            kIndex_8_SkColorType,
             kGray_8_SkColorType,
             kRGBA_F16_SkColorType,
     };

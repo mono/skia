@@ -5,6 +5,7 @@
  * found in the LICENSE file.
  */
 
+#include "GrGpuCommandBuffer.h"
 #include "GrMeshDrawOp.h"
 #include "GrOpFlushState.h"
 #include "GrResourceProvider.h"
@@ -37,8 +38,9 @@ void* GrMeshDrawOp::PatternHelper::init(Target* target, size_t vertexStride,
     size_t ibSize = indexBuffer->gpuMemorySize();
     int maxRepetitions = static_cast<int>(ibSize / (sizeof(uint16_t) * indicesPerRepetition));
 
-    fMesh.setIndexedPatterned(indexBuffer, indicesPerRepetition, repeatCount, maxRepetitions);
-    fMesh.setVertices(vertexBuffer, verticesPerRepetition, firstVertex);
+    fMesh.setIndexedPatterned(indexBuffer, indicesPerRepetition, verticesPerRepetition,
+                              repeatCount, maxRepetitions);
+    fMesh.setVertexData(vertexBuffer, firstVertex);
     return vertices;
 }
 
@@ -73,7 +75,8 @@ void GrMeshDrawOp::onExecute(GrOpFlushState* state) {
         const QueuedDraw& draw = fQueuedDraws[currDrawIdx];
         SkASSERT(draw.fPipeline->getRenderTarget() == state->drawOpArgs().fRenderTarget);
         state->commandBuffer()->draw(*draw.fPipeline, *draw.fGeometryProcessor.get(),
-                                     fMeshes.begin() + currMeshIdx, draw.fMeshCnt, this->bounds());
+                                     fMeshes.begin() + currMeshIdx, nullptr, draw.fMeshCnt,
+                                     this->bounds());
         currMeshIdx += draw.fMeshCnt;
         state->flushToken();
     }
@@ -92,7 +95,7 @@ void GrMeshDrawOp::Target::draw(const GrGeometryProcessor* gp, const GrPipeline*
     if (!op->fQueuedDraws.empty()) {
         // If the last draw shares a geometry processor and pipeline and there are no intervening
         // uploads, add this mesh to it.
-        GrLegacyMeshDrawOp::QueuedDraw& lastDraw = op->fQueuedDraws.back();
+        GrMeshDrawOp::QueuedDraw& lastDraw = op->fQueuedDraws.back();
         if (lastDraw.fGeometryProcessor == gp && lastDraw.fPipeline == pipeline &&
             (op->fInlineUploads.empty() ||
              op->fInlineUploads.back().fUploadBeforeToken != this->nextDrawToken())) {
@@ -100,7 +103,7 @@ void GrMeshDrawOp::Target::draw(const GrGeometryProcessor* gp, const GrPipeline*
             return;
         }
     }
-    GrLegacyMeshDrawOp::QueuedDraw& draw = op->fQueuedDraws.push_back();
+    GrMeshDrawOp::QueuedDraw& draw = op->fQueuedDraws.push_back();
     GrDrawOpUploadToken token = this->state()->issueDrawToken();
     draw.fGeometryProcessor.reset(gp);
     draw.fPipeline = pipeline;

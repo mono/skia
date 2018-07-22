@@ -57,9 +57,9 @@ public:
         this->freeStorage();
         this->INHERITED::reset();
     }
-    void reset(const SkImageInfo& info, const void* addr, size_t rb, SkColorTable* ctable = NULL) {
+    void reset(const SkImageInfo& info, const void* addr, size_t rb) {
         this->freeStorage();
-        this->INHERITED::reset(info, addr, rb, ctable);
+        this->INHERITED::reset(info, addr, rb);
     }
     void reset(const SkImageInfo& info) {
         this->freeStorage();

@@ -36,10 +36,6 @@
 #include "SkTLazy.h"
 #include "SkUtils.h"
 
-// Helper function to fix code gen bug on ARM64.
-// See SkFindAndPlaceGlyph.h for more details.
-void FixGCC49Arm64Bug(int v) { }
-
 static SkPaint make_paint_with_image(
     const SkPaint& origPaint, const SkBitmap& bitmap, SkMatrix* matrix = nullptr) {
     SkPaint paint(origPaint);
@@ -98,7 +94,7 @@ static BitmapXferProc ChooseBitmapXferProc(const SkPixmap& dst, const SkPaint& p
                                            uint32_t* data) {
     // todo: we can apply colorfilter up front if no shader, so we wouldn't
     // need to abort this fastpath
-    if (paint.getShader() || paint.getColorFilter()) {
+    if (paint.getShader() || paint.getColorFilter() || dst.colorSpace()) {
         return nullptr;
     }
 

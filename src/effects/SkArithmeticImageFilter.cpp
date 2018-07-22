@@ -6,8 +6,8 @@
  */
 
 #include "SkArithmeticImageFilter.h"
-#include "SkArithmeticModePriv.h"
 #include "SkCanvas.h"
+#include "SkColorSpaceXformer.h"
 #include "SkNx.h"
 #include "SkReadBuffer.h"
 #include "SkSpecialImage.h"
@@ -303,7 +303,7 @@ private:
     float fK1, fK2, fK3, fK4;
     bool fEnforcePMColor;
 
-    GR_DECLARE_FRAGMENT_PROCESSOR_TEST;
+    GR_DECLARE_FRAGMENT_PROCESSOR_TEST
     typedef GrFragmentProcessor INHERITED;
 };
 }
@@ -325,11 +325,9 @@ GR_DEFINE_FRAGMENT_PROCESSOR_TEST(ArithmeticFP);
 
 sk_sp<SkSpecialImage> ArithmeticImageFilterImpl::filterImageGPU(
         SkSpecialImage* source,
-        sk_sp<SkSpecialImage>
-                background,
+        sk_sp<SkSpecialImage> background,
         const SkIPoint& backgroundOffset,
-        sk_sp<SkSpecialImage>
-                foreground,
+        sk_sp<SkSpecialImage> foreground,
         const SkIPoint& foregroundOffset,
         const SkIRect& bounds,
         const OutputProperties& outputProperties) const {
@@ -356,7 +354,7 @@ sk_sp<SkSpecialImage> ArithmeticImageFilterImpl::filterImageGPU(
         sk_sp<GrColorSpaceXform> bgXform =
                 GrColorSpaceXform::Make(background->getColorSpace(), outputProperties.colorSpace());
         bgFP = GrTextureDomainEffect::Make(
-                context->resourceProvider(), std::move(backgroundProxy), std::move(bgXform),
+                std::move(backgroundProxy), std::move(bgXform),
                 backgroundMatrix, GrTextureDomain::MakeTexelDomain(background->subset()),
                 GrTextureDomain::kDecal_Mode, GrSamplerParams::kNone_FilterMode);
     } else {
@@ -369,13 +367,11 @@ sk_sp<SkSpecialImage> ArithmeticImageFilterImpl::filterImageGPU(
                                                         -SkIntToScalar(foregroundOffset.fY));
         sk_sp<GrColorSpaceXform> fgXform =
                 GrColorSpaceXform::Make(foreground->getColorSpace(), outputProperties.colorSpace());
-        sk_sp<GrFragmentProcessor> foregroundFP;
-
-        foregroundFP = GrTextureDomainEffect::Make(
-                context->resourceProvider(), std::move(foregroundProxy), std::move(fgXform),
-                foregroundMatrix, GrTextureDomain::MakeTexelDomain(foreground->subset()),
-                GrTextureDomain::kDecal_Mode, GrSamplerParams::kNone_FilterMode);
-
+        sk_sp<GrFragmentProcessor> foregroundFP(GrTextureDomainEffect::Make(
+                                std::move(foregroundProxy), std::move(fgXform),
+                                foregroundMatrix,
+                                GrTextureDomain::MakeTexelDomain(foreground->subset()),
+                                GrTextureDomain::kDecal_Mode, GrSamplerParams::kNone_FilterMode));
         paint.addColorFragmentProcessor(std::move(foregroundFP));
 
         sk_sp<GrFragmentProcessor> xferFP =
@@ -459,17 +455,14 @@ void ArithmeticImageFilterImpl::drawForeground(SkCanvas* canvas, SkSpecialImage*
 sk_sp<SkImageFilter> ArithmeticImageFilterImpl::onMakeColorSpace(SkColorSpaceXformer* xformer)
 const {
     SkASSERT(2 == this->countInputs());
-    if (!this->getInput(0) && !this->getInput(1)) {
-        return sk_ref_sp(const_cast<ArithmeticImageFilterImpl*>(this));
+    auto background = xformer->apply(this->getInput(0));
+    auto foreground = xformer->apply(this->getInput(1));
+    if (background.get() != this->getInput(0) || foreground.get() != this->getInput(1)) {
+        return SkArithmeticImageFilter::Make(fK[0], fK[1], fK[2], fK[3], fEnforcePMColor,
+                                             std::move(background), std::move(foreground),
+                                             getCropRectIfSet());
     }
-
-    sk_sp<SkImageFilter> background =
-            this->getInput(0) ? this->getInput(0)->makeColorSpace(xformer) : nullptr;
-    sk_sp<SkImageFilter> foreground =
-            this->getInput(1) ? this->getInput(1)->makeColorSpace(xformer) : nullptr;
-    return SkArithmeticImageFilter::Make(fK[0], fK[1], fK[2], fK[3], fEnforcePMColor,
-                                         std::move(background), std::move(foreground),
-                                         getCropRectIfSet());
+    return this->refMe();
 }
 
 #ifndef SK_IGNORE_TO_STRING

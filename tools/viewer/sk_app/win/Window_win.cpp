@@ -114,6 +114,7 @@ bool Window_win::init(HINSTANCE hInstance) {
     }
 
     SetWindowLongPtr(fHWnd, GWLP_USERDATA, (LONG_PTR)this);
+    RegisterTouchWindow(fHWnd, 0);
 
     return true;
 }
@@ -196,6 +197,7 @@ static uint32_t get_modifiers(UINT message, WPARAM wParam, LPARAM lParam) {
             if (wParam & MK_SHIFT) {
                 modifiers |= Window::kShift_ModifierKey;
             }
+            break;
     }
 
     return modifiers;
@@ -296,6 +298,34 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                                                 get_modifiers(message, wParam, lParam));
             break;
 
+        case WM_TOUCH: {
+            uint16_t numInputs = LOWORD(wParam);
+            std::unique_ptr<TOUCHINPUT[]> inputs(new TOUCHINPUT[numInputs]);
+            if (GetTouchInputInfo((HTOUCHINPUT)lParam, numInputs, inputs.get(),
+                                  sizeof(TOUCHINPUT))) {
+                RECT rect;
+                GetClientRect(hWnd, &rect);
+                for (uint16_t i = 0; i < numInputs; ++i) {
+                    TOUCHINPUT ti = inputs[i];
+                    Window::InputState state;
+                    if (ti.dwFlags & TOUCHEVENTF_DOWN) {
+                        state = Window::kDown_InputState;
+                    } else if (ti.dwFlags & TOUCHEVENTF_MOVE) {
+                        state = Window::kMove_InputState;
+                    } else if (ti.dwFlags & TOUCHEVENTF_UP) {
+                        state = Window::kUp_InputState;
+                    } else {
+                        continue;
+                    }
+                    // TOUCHINPUT coordinates are in 100ths of pixels
+                    // Adjust for that, and make them window relative
+                    LONG tx = (ti.x / 100) - rect.left;
+                    LONG ty = (ti.y / 100) - rect.top;
+                    eventHandled = window->onTouch(ti.dwID, state, tx, ty) || eventHandled;
+                }
+            }
+        } break;
+
         default:
             return DefWindowProc(hWnd, message, wParam, lParam);
     }
@@ -339,9 +369,10 @@ void Window_win::onInval() {
     InvalidateRect(fHWnd, nullptr, false);
 }
 
-void Window_win::setRequestedDisplayParams(const DisplayParams& params) {
+void Window_win::setRequestedDisplayParams(const DisplayParams& params, bool allowReattach) {
     // GL on Windows doesn't let us change MSAA after the window is created
-    if (params.fMSAASampleCount != this->getRequestedDisplayParams().fMSAASampleCount) {
+    if (params.fMSAASampleCount != this->getRequestedDisplayParams().fMSAASampleCount
+            && allowReattach) {
         // Need to change these early, so attach() creates the window context correctly
         fRequestedDisplayParams = params;
 
@@ -351,7 +382,7 @@ void Window_win::setRequestedDisplayParams(const DisplayParams& params) {
         this->attach(fBackend);
     }
 
-    INHERITED::setRequestedDisplayParams(params);
+    INHERITED::setRequestedDisplayParams(params, allowReattach);
 }
 
 }   // namespace sk_app

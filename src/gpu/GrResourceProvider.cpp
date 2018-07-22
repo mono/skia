@@ -7,11 +7,13 @@
 
 #include "GrResourceProvider.h"
 
+#include "GrBackendSemaphore.h"
 #include "GrBuffer.h"
 #include "GrCaps.h"
 #include "GrContext.h"
 #include "GrContextPriv.h"
 #include "GrGpu.h"
+#include "GrPath.h"
 #include "GrPathRendering.h"
 #include "GrRenderTarget.h"
 #include "GrRenderTargetPriv.h"
@@ -27,7 +29,7 @@
 
 GR_DECLARE_STATIC_UNIQUE_KEY(gQuadIndexBufferKey);
 
-const int GrResourceProvider::kMinScratchTextureSize = 16;
+const uint32_t GrResourceProvider::kMinScratchTextureSize = 16;
 
 #define ASSERT_SINGLE_OWNER \
     SkDEBUGCODE(GrSingleOwner::AutoEnforce debug_SingleOwner(fSingleOwner);)
@@ -65,32 +67,18 @@ bool validate_desc(const GrSurfaceDesc& desc, const GrCaps& caps, int levelCount
             return false;
         }
     }
-    if (levelCount > 1 && GrPixelConfigIsSint(desc.fConfig)) {
+    if (levelCount > 1 && (GrPixelConfigIsSint(desc.fConfig) || !caps.mipMapSupport())) {
         return false;
     }
     return true;
 }
 
-// MDB TODO: this should probably be a factory on GrSurfaceProxy
-sk_sp<GrTextureProxy> GrResourceProvider::createMipMappedTexture(
-                                                      const GrSurfaceDesc& desc,
-                                                      SkBudgeted budgeted,
-                                                      const GrMipLevel* texels,
-                                                      int mipLevelCount,
-                                                      SkDestinationSurfaceColorMode mipColorMode) {
+sk_sp<GrTexture> GrResourceProvider::createTexture(const GrSurfaceDesc& desc, SkBudgeted budgeted,
+                                                   const GrMipLevel texels[], int mipLevelCount,
+                                                   SkDestinationSurfaceColorMode mipColorMode) {
     ASSERT_SINGLE_OWNER
 
-    if (!mipLevelCount) {
-        if (texels) {
-            return nullptr;
-        }
-        return GrSurfaceProxy::MakeDeferred(this, desc, budgeted, nullptr, 0);
-    } else if (1 == mipLevelCount) {
-        if (!texels) {
-            return nullptr;
-        }
-        return this->createTextureProxy(desc, budgeted, texels[0]);
-    }
+    SkASSERT(mipLevelCount >= 1);
 
     if (this->isAbandoned()) {
         return nullptr;
@@ -100,25 +88,16 @@ sk_sp<GrTextureProxy> GrResourceProvider::createMipMappedTexture(
         return nullptr;
     }
 
-    SkTArray<GrMipLevel> texelsShallowCopy(mipLevelCount);
-    for (int i = 0; i < mipLevelCount; ++i) {
-        if (!texels[i].fPixels) {
-            return nullptr;
-        }
-
-        texelsShallowCopy.push_back(texels[i]);
-    }
-    sk_sp<GrTexture> tex(fGpu->createTexture(desc, budgeted, texelsShallowCopy));
+    sk_sp<GrTexture> tex(fGpu->createTexture(desc, budgeted, texels, mipLevelCount));
     if (tex) {
         tex->texturePriv().setMipColorMode(mipColorMode);
     }
 
-    return GrSurfaceProxy::MakeWrapped(std::move(tex));
+    return tex;
 }
 
 sk_sp<GrTexture> GrResourceProvider::getExactScratch(const GrSurfaceDesc& desc,
                                                      SkBudgeted budgeted, uint32_t flags) {
-
     flags |= kExact_Flag | kNoCreate_Flag;
     sk_sp<GrTexture> tex(this->refScratchTexture(desc, flags));
     if (tex && SkBudgeted::kNo == budgeted) {
@@ -161,22 +140,21 @@ sk_sp<GrTextureProxy> GrResourceProvider::createTextureProxy(const GrSurfaceDesc
 
     if (make_info(desc.fWidth, desc.fHeight, desc.fConfig, &srcInfo)) {
         sk_sp<GrTexture> tex = this->getExactScratch(desc, budgeted, 0);
-        sk_sp<GrSurfaceContext> sContext =
-                            context->contextPriv().makeWrappedSurfaceContext(std::move(tex));
-        if (sContext) {
-            if (sContext->writePixels(srcInfo, mipLevel.fPixels, mipLevel.fRowBytes, 0, 0)) {
-                return sContext->asTextureProxyRef();
+        sk_sp<GrTextureProxy> proxy = GrSurfaceProxy::MakeWrapped(std::move(tex));
+        if (proxy) {
+            sk_sp<GrSurfaceContext> sContext =
+                       context->contextPriv().makeWrappedSurfaceContext(std::move(proxy), nullptr);
+            if (sContext) {
+                if (sContext->writePixels(srcInfo, mipLevel.fPixels, mipLevel.fRowBytes, 0, 0)) {
+                    return sContext->asTextureProxyRef();
+                }
             }
         }
     }
 
-    SkTArray<GrMipLevel> texels(1);
-    texels.push_back(mipLevel);
-
-    sk_sp<GrTexture> tex(fGpu->createTexture(desc, budgeted, texels));
+    sk_sp<GrTexture> tex(fGpu->createTexture(desc, budgeted, &mipLevel, 1));
     return GrSurfaceProxy::MakeWrapped(std::move(tex));
 }
-
 
 sk_sp<GrTexture> GrResourceProvider::createTexture(const GrSurfaceDesc& desc, SkBudgeted budgeted,
                                                    uint32_t flags) {
@@ -195,11 +173,11 @@ sk_sp<GrTexture> GrResourceProvider::createTexture(const GrSurfaceDesc& desc, Sk
         return tex;
     }
 
-    tex.reset(fGpu->createTexture(desc, budgeted));
-    return tex;
+    return fGpu->createTexture(desc, budgeted);
 }
 
-GrTexture* GrResourceProvider::createApproxTexture(const GrSurfaceDesc& desc, uint32_t flags) {
+sk_sp<GrTexture> GrResourceProvider::createApproxTexture(const GrSurfaceDesc& desc,
+                                                         uint32_t flags) {
     ASSERT_SINGLE_OWNER
     SkASSERT(0 == flags || kNoPendingIO_Flag == flags);
 
@@ -214,7 +192,8 @@ GrTexture* GrResourceProvider::createApproxTexture(const GrSurfaceDesc& desc, ui
     return this->refScratchTexture(desc, flags);
 }
 
-GrTexture* GrResourceProvider::refScratchTexture(const GrSurfaceDesc& inDesc, uint32_t flags) {
+sk_sp<GrTexture> GrResourceProvider::refScratchTexture(const GrSurfaceDesc& inDesc,
+                                                       uint32_t flags) {
     ASSERT_SINGLE_OWNER
     SkASSERT(!this->isAbandoned());
     SkASSERT(validate_desc(inDesc, *fCaps));
@@ -247,7 +226,7 @@ GrTexture* GrResourceProvider::refScratchTexture(const GrSurfaceDesc& inDesc, ui
                                                                    scratchFlags);
         if (resource) {
             GrSurface* surface = static_cast<GrSurface*>(resource);
-            return surface->asTexture();
+            return sk_sp<GrTexture>(surface->asTexture());
         }
     }
 
@@ -260,14 +239,23 @@ GrTexture* GrResourceProvider::refScratchTexture(const GrSurfaceDesc& inDesc, ui
 
 sk_sp<GrTexture> GrResourceProvider::wrapBackendTexture(const GrBackendTexture& tex,
                                                         GrSurfaceOrigin origin,
-                                                        GrBackendTextureFlags flags,
-                                                        int sampleCnt,
                                                         GrWrapOwnership ownership) {
     ASSERT_SINGLE_OWNER
     if (this->isAbandoned()) {
         return nullptr;
     }
-    return fGpu->wrapBackendTexture(tex, origin, flags, sampleCnt, ownership);
+    return fGpu->wrapBackendTexture(tex, origin, ownership);
+}
+
+sk_sp<GrTexture> GrResourceProvider::wrapRenderableBackendTexture(const GrBackendTexture& tex,
+                                                                  GrSurfaceOrigin origin,
+                                                                  int sampleCnt,
+                                                                  GrWrapOwnership ownership) {
+    ASSERT_SINGLE_OWNER
+    if (this->isAbandoned()) {
+        return nullptr;
+    }
+    return fGpu->wrapRenderableBackendTexture(tex, origin, sampleCnt, ownership);
 }
 
 sk_sp<GrRenderTarget> GrResourceProvider::wrapBackendRenderTarget(
@@ -302,6 +290,11 @@ GrTexture* GrResourceProvider::findAndRefTextureByUniqueKey(const GrUniqueKey& k
     return NULL;
 }
 
+void GrResourceProvider::assignUniqueKeyToTexture(const GrUniqueKey& key, GrTexture* texture) {
+    SkASSERT(key.isValid());
+    this->assignUniqueKeyToResource(key, texture);
+}
+
 // MDB TODO (caching): this side-steps the issue of texture proxies with unique IDs
 void GrResourceProvider::assignUniqueKeyToProxy(const GrUniqueKey& key, GrTextureProxy* proxy) {
     ASSERT_SINGLE_OWNER
@@ -310,10 +303,10 @@ void GrResourceProvider::assignUniqueKeyToProxy(const GrUniqueKey& key, GrTextur
         return;
     }
 
-    GrTexture* texture = proxy->instantiateTexture(this);
-    if (!texture) {
+    if (!proxy->instantiate(this)) {
         return;
     }
+    GrTexture* texture = proxy->priv().peekTexture();
 
     this->assignUniqueKeyToResource(key, texture);
 }
@@ -376,21 +369,21 @@ const GrBuffer* GrResourceProvider::createQuadIndexBuffer() {
     return this->createPatternedIndexBuffer(kPattern, 6, kMaxQuads, 4, fQuadIndexBufferKey);
 }
 
-GrPath* GrResourceProvider::createPath(const SkPath& path, const GrStyle& style) {
+sk_sp<GrPath> GrResourceProvider::createPath(const SkPath& path, const GrStyle& style) {
     SkASSERT(this->gpu()->pathRendering());
     return this->gpu()->pathRendering()->createPath(path, style);
 }
 
-GrPathRange* GrResourceProvider::createPathRange(GrPathRange::PathGenerator* gen,
-                                                 const GrStyle& style) {
+sk_sp<GrPathRange> GrResourceProvider::createPathRange(GrPathRange::PathGenerator* gen,
+                                                       const GrStyle& style) {
     SkASSERT(this->gpu()->pathRendering());
     return this->gpu()->pathRendering()->createPathRange(gen, style);
 }
 
-GrPathRange* GrResourceProvider::createGlyphs(const SkTypeface* tf,
-                                              const SkScalerContextEffects& effects,
-                                              const SkDescriptor* desc,
-                                              const GrStyle& style) {
+sk_sp<GrPathRange> GrResourceProvider::createGlyphs(const SkTypeface* tf,
+                                                    const SkScalerContextEffects& effects,
+                                                    const SkDescriptor* desc,
+                                                    const GrStyle& style) {
 
     SkASSERT(this->gpu()->pathRendering());
     return this->gpu()->pathRendering()->createGlyphs(tf, effects, desc, style);
@@ -495,8 +488,14 @@ sk_sp<GrRenderTarget> GrResourceProvider::wrapBackendTextureAsRenderTarget(
     return this->gpu()->wrapBackendTextureAsRenderTarget(tex, origin, sampleCnt);
 }
 
-sk_sp<GrSemaphore> SK_WARN_UNUSED_RESULT GrResourceProvider::makeSemaphore() {
-    return fGpu->makeSemaphore();
+sk_sp<GrSemaphore> SK_WARN_UNUSED_RESULT GrResourceProvider::makeSemaphore(bool isOwned) {
+    return fGpu->makeSemaphore(isOwned);
+}
+
+sk_sp<GrSemaphore> GrResourceProvider::wrapBackendSemaphore(const GrBackendSemaphore& semaphore,
+                                                            GrWrapOwnership ownership) {
+    ASSERT_SINGLE_OWNER
+    return this->isAbandoned() ? nullptr : fGpu->wrapBackendSemaphore(semaphore, ownership);
 }
 
 void GrResourceProvider::takeOwnershipOfSemaphore(sk_sp<GrSemaphore> semaphore) {

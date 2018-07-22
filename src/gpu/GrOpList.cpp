@@ -6,6 +6,8 @@
  */
 
 #include "GrOpList.h"
+
+#include "GrContext.h"
 #include "GrSurfaceProxy.h"
 
 #include "SkAtomics.h"
@@ -20,18 +22,26 @@ uint32_t GrOpList::CreateUniqueID() {
     return id;
 }
 
-GrOpList::GrOpList(GrSurfaceProxy* surfaceProxy, GrAuditTrail* auditTrail)
+GrOpList::GrOpList(GrResourceProvider* resourceProvider,
+                   GrSurfaceProxy* surfaceProxy, GrAuditTrail* auditTrail)
     : fAuditTrail(auditTrail)
     , fUniqueID(CreateUniqueID())
     , fFlags(0) {
-    fTarget.reset(surfaceProxy);
+    fTarget.setProxy(sk_ref_sp(surfaceProxy), kWrite_GrIOType);
     fTarget.get()->setLastOpList(this);
+
+    // MDB TODO: remove this! We are currently moving to having all the ops that target
+    // the RT as a dest (e.g., clear, etc.) rely on the opList's 'fTarget' pointer
+    // for the IO Ref. This works well but until they are all swapped over (and none
+    // are pre-emptively instantiating proxies themselves) we need to instantiate
+    // here so that the GrSurfaces are created in an order that preserves the GrSurface
+    // re-use assumptions.
+    fTarget.get()->instantiate(resourceProvider);
+    fTarget.markPendingIO();
 }
 
 GrOpList::~GrOpList() {
-    if (fTarget.get() && this == fTarget.get()->getLastOpList()) {
-        fTarget.get()->setLastOpList(nullptr);
-    }
+    this->reset();
 }
 
 bool GrOpList::instantiate(GrResourceProvider* resourceProvider) {
@@ -43,7 +53,7 @@ void GrOpList::reset() {
         fTarget.get()->setLastOpList(nullptr);
     }
 
-    fTarget.reset(nullptr);
+    fTarget.reset();
     fAuditTrail = nullptr;
 }
 

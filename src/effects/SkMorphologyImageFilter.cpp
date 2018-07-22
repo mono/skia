@@ -9,6 +9,7 @@
 
 #include "SkBitmap.h"
 #include "SkColorPriv.h"
+#include "SkColorSpaceXformer.h"
 #include "SkOpts.h"
 #include "SkReadBuffer.h"
 #include "SkRect.h"
@@ -145,17 +146,15 @@ public:
         kDilate_MorphologyType,
     };
 
-    static sk_sp<GrFragmentProcessor> Make(GrResourceProvider* resourceProvider,
-                                           sk_sp<GrTextureProxy> proxy,
+    static sk_sp<GrFragmentProcessor> Make(sk_sp<GrTextureProxy> proxy,
                                            Direction dir, int radius, MorphologyType type) {
-        return sk_sp<GrFragmentProcessor>(new GrMorphologyEffect(resourceProvider, std::move(proxy),
+        return sk_sp<GrFragmentProcessor>(new GrMorphologyEffect(std::move(proxy),
                                                                  dir, radius, type));
     }
 
-    static sk_sp<GrFragmentProcessor> Make(GrResourceProvider* resourceProvider,
-                                           sk_sp<GrTextureProxy> proxy, Direction dir, int radius,
+    static sk_sp<GrFragmentProcessor> Make(sk_sp<GrTextureProxy> proxy, Direction dir, int radius,
                                            MorphologyType type, const float bounds[2]) {
-        return sk_sp<GrFragmentProcessor>(new GrMorphologyEffect(resourceProvider, std::move(proxy),
+        return sk_sp<GrFragmentProcessor>(new GrMorphologyEffect(std::move(proxy),
                                                                  dir, radius, type, bounds));
     }
 
@@ -180,12 +179,12 @@ private:
 
     bool onIsEqual(const GrFragmentProcessor&) const override;
 
-    GrMorphologyEffect(GrResourceProvider*, sk_sp<GrTextureProxy>,
+    GrMorphologyEffect(sk_sp<GrTextureProxy>,
                        Direction, int radius, MorphologyType);
-    GrMorphologyEffect(GrResourceProvider*, sk_sp<GrTextureProxy>,
+    GrMorphologyEffect(sk_sp<GrTextureProxy>,
                        Direction, int radius, MorphologyType, const float bounds[2]);
 
-    GR_DECLARE_FRAGMENT_PROCESSOR_TEST;
+    GR_DECLARE_FRAGMENT_PROCESSOR_TEST
 
     typedef Gr1DKernelEffect INHERITED;
 };
@@ -294,7 +293,7 @@ void GrGLMorphologyEffect::GenKey(const GrProcessor& proc,
 void GrGLMorphologyEffect::onSetData(const GrGLSLProgramDataManager& pdman,
                                      const GrFragmentProcessor& proc) {
     const GrMorphologyEffect& m = proc.cast<GrMorphologyEffect>();
-    GrTexture& texture = *m.textureSampler(0).texture();
+    GrTexture& texture = *m.textureSampler(0).peekTexture();
 
     float pixelSize = 0.0f;
     switch (m.direction()) {
@@ -322,30 +321,22 @@ void GrGLMorphologyEffect::onSetData(const GrGLSLProgramDataManager& pdman,
 
 ///////////////////////////////////////////////////////////////////////////////
 
-GrMorphologyEffect::GrMorphologyEffect(GrResourceProvider* resourceProvider,
-                                       sk_sp<GrTextureProxy> proxy,
+GrMorphologyEffect::GrMorphologyEffect(sk_sp<GrTextureProxy> proxy,
                                        Direction direction,
                                        int radius,
                                        MorphologyType type)
-        : INHERITED{resourceProvider,
-                    ModulationFlags(proxy->config()),
-                    GR_PROXY_MOVE(proxy),
-                    direction, radius}
+        : INHERITED{ModulationFlags(proxy->config()), GR_PROXY_MOVE(proxy), direction, radius}
         , fType(type)
         , fUseRange(false) {
     this->initClassID<GrMorphologyEffect>();
 }
 
-GrMorphologyEffect::GrMorphologyEffect(GrResourceProvider* resourceProvider,
-                                       sk_sp<GrTextureProxy> proxy,
+GrMorphologyEffect::GrMorphologyEffect(sk_sp<GrTextureProxy> proxy,
                                        Direction direction,
                                        int radius,
                                        MorphologyType type,
                                        const float range[2])
-        : INHERITED{resourceProvider,
-                    ModulationFlags(proxy->config()),
-                    GR_PROXY_MOVE(proxy),
-                    direction, radius}
+        : INHERITED{ModulationFlags(proxy->config()), GR_PROXY_MOVE(proxy), direction, radius}
         , fType(type)
         , fUseRange(true) {
     this->initClassID<GrMorphologyEffect>();
@@ -388,8 +379,7 @@ sk_sp<GrFragmentProcessor> GrMorphologyEffect::TestCreate(GrProcessorTestData* d
     MorphologyType type = d->fRandom->nextBool() ? GrMorphologyEffect::kErode_MorphologyType
                                                  : GrMorphologyEffect::kDilate_MorphologyType;
 
-    return GrMorphologyEffect::Make(d->resourceProvider(),
-                                    std::move(proxy), dir, radius, type);
+    return GrMorphologyEffect::Make(std::move(proxy), dir, radius, type);
 }
 #endif
 
@@ -406,9 +396,7 @@ static void apply_morphology_rect(GrRenderTargetContext* renderTargetContext,
     GrPaint paint;
     paint.setGammaCorrect(renderTargetContext->isGammaCorrect());
 
-    GrResourceProvider* resourceProvider = renderTargetContext->resourceProvider();
-
-    paint.addColorFragmentProcessor(GrMorphologyEffect::Make(resourceProvider, std::move(proxy),
+    paint.addColorFragmentProcessor(GrMorphologyEffect::Make(std::move(proxy),
                                                              direction, radius, morphType,
                                                              bounds));
     paint.setPorterDuffXPFactory(SkBlendMode::kSrc);
@@ -427,9 +415,7 @@ static void apply_morphology_rect_no_bounds(GrRenderTargetContext* renderTargetC
     GrPaint paint;
     paint.setGammaCorrect(renderTargetContext->isGammaCorrect());
 
-    GrResourceProvider* resourceProvider = renderTargetContext->resourceProvider();
-
-    paint.addColorFragmentProcessor(GrMorphologyEffect::Make(resourceProvider, std::move(proxy),
+    paint.addColorFragmentProcessor(GrMorphologyEffect::Make(std::move(proxy),
                                                              direction, radius, morphType));
     paint.setPorterDuffXPFactory(SkBlendMode::kSrc);
     renderTargetContext->fillRectToRect(clip, std::move(paint), GrAA::kNo, SkMatrix::I(),
@@ -655,16 +641,15 @@ sk_sp<SkSpecialImage> SkMorphologyImageFilter::onFilterImage(SkSpecialImage* sou
                                           dst, &source->props());
 }
 
-sk_sp<SkImageFilter> SkMorphologyImageFilter::onMakeColorSpace(SkColorSpaceXformer* xformer) const {
+sk_sp<SkImageFilter> SkMorphologyImageFilter::onMakeColorSpace(SkColorSpaceXformer* xformer) const{
     SkASSERT(1 == this->countInputs());
-    if (!this->getInput(0)) {
-        return sk_ref_sp(const_cast<SkMorphologyImageFilter*>(this));
+    auto input = xformer->apply(this->getInput(0));
+    if (input.get() != this->getInput(0)) {
+        return (SkMorphologyImageFilter::kDilate_Op == this->op())
+                ? SkDilateImageFilter::Make(fRadius.width(), fRadius.height(), std::move(input),
+                                            this->getCropRectIfSet())
+                : SkErodeImageFilter::Make(fRadius.width(), fRadius.height(), std::move(input),
+                                           this->getCropRectIfSet());
     }
-
-    sk_sp<SkImageFilter> input = this->getInput(0)->makeColorSpace(xformer);
-    return (SkMorphologyImageFilter::kDilate_Op == this->op())
-            ? SkDilateImageFilter::Make(fRadius.width(), fRadius.height(), std::move(input),
-                                        this->getCropRectIfSet())
-            : SkErodeImageFilter::Make(fRadius.width(), fRadius.height(), std::move(input),
-                                       this->getCropRectIfSet());
+    return this->refMe();
 }

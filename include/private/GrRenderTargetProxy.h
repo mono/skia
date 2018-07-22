@@ -8,9 +8,8 @@
 #ifndef GrRenderTargetProxy_DEFINED
 #define GrRenderTargetProxy_DEFINED
 
-#include "GrRenderTarget.h"
 #include "GrSurfaceProxy.h"
-#include "GrTypes.h"
+#include "GrTypesPriv.h"
 
 class GrResourceProvider;
 
@@ -24,22 +23,16 @@ public:
     const GrRenderTargetProxy* asRenderTargetProxy() const override { return this; }
 
     // Actually instantiate the backing rendertarget, if necessary.
-    GrSurface* instantiate(GrResourceProvider* resourceProvider) override;
-    GrRenderTarget* instantiateRenderTarget(GrResourceProvider* resourceProvider) {
-        if (auto surf = this->instantiate(resourceProvider)) {
-            return surf->asRenderTarget();
-        }
-        return nullptr;
-    }
+    bool instantiate(GrResourceProvider*) override;
 
     GrFSAAType fsaaType() const {
         if (!fSampleCnt) {
-            SkASSERT(!(fRenderTargetFlags & GrRenderTarget::Flags::kMixedSampled));
+            SkASSERT(!(fRenderTargetFlags & GrRenderTargetFlags::kMixedSampled));
             return GrFSAAType::kNone;
         }
-        return (fRenderTargetFlags & GrRenderTarget::Flags::kMixedSampled)
-                       ? GrFSAAType::kMixedSamples
-                       : GrFSAAType::kUnifiedMSAA;
+        return (fRenderTargetFlags & GrRenderTargetFlags::kMixedSampled)
+                                                             ? GrFSAAType::kMixedSamples
+                                                             : GrFSAAType::kUnifiedMSAA;
     }
 
     /**
@@ -60,7 +53,7 @@ public:
 
     int maxWindowRectangles(const GrCaps& caps) const;
 
-    GrRenderTarget::Flags testingOnly_getFlags() const;
+    GrRenderTargetFlags testingOnly_getFlags() const;
 
     // TODO: move this to a priv class!
     bool refsWrappedObjects() const;
@@ -75,10 +68,12 @@ protected:
     // Wrapped version
     GrRenderTargetProxy(sk_sp<GrSurface>);
 
+    sk_sp<GrSurface> createSurface(GrResourceProvider*) const override;
+
 private:
     size_t onUninstantiatedGpuMemorySize() const override;
 
-    int fSampleCnt;
+    int                 fSampleCnt;
     // For wrapped render targets the actual GrRenderTarget is stored in the GrIORefProxy class.
     // For deferred proxies that pointer is filled in when we need to instantiate the
     // deferred resource.
@@ -88,7 +83,7 @@ private:
     // we know the newly created render target will be internal, we are able to precompute what the
     // flags will ultimately end up being. In the wrapped case we just copy the wrapped
     // rendertarget's info here.
-    GrRenderTarget::Flags   fRenderTargetFlags;
+    GrRenderTargetFlags fRenderTargetFlags;
 
     typedef GrSurfaceProxy INHERITED;
 };

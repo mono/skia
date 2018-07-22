@@ -14,6 +14,7 @@
 #include "GrFixedClip.h"
 #include "GrGpuResourcePriv.h"
 #include "GrRenderTargetPriv.h"
+#include "GrResourceProvider.h"
 #include "GrStencilAttachment.h"
 #include "GrSWMaskHelper.h"
 #include "GrTextureProxy.h"
@@ -72,12 +73,10 @@ void GrClipStackClip::getConservativeBounds(int width, int height, SkIRect* devR
 
 ////////////////////////////////////////////////////////////////////////////////
 // set up the draw state to enable the aa clipping mask.
-static sk_sp<GrFragmentProcessor> create_fp_for_mask(GrResourceProvider* resourceProvider,
-                                                     sk_sp<GrTextureProxy> mask,
+static sk_sp<GrFragmentProcessor> create_fp_for_mask(sk_sp<GrTextureProxy> mask,
                                                      const SkIRect &devBound) {
     SkIRect domainTexels = SkIRect::MakeWH(devBound.width(), devBound.height());
-    return GrDeviceSpaceTextureDecalFragmentProcessor::Make(resourceProvider,
-                                                            std::move(mask), domainTexels,
+    return GrDeviceSpaceTextureDecalFragmentProcessor::Make(std::move(mask), domainTexels,
                                                             {devBound.fLeft, devBound.fTop});
 }
 
@@ -120,7 +119,8 @@ bool GrClipStackClip::PathNeedsSWRenderer(GrContext* context,
         canDrawArgs.fShape = &shape;
         canDrawArgs.fAAType = GrChooseAAType(GrBoolToAA(element->isAA()),
                                              renderTargetContext->fsaaType(),
-                                             GrAllowMixedSamples::kYes);
+                                             GrAllowMixedSamples::kYes,
+                                             *context->caps());
         canDrawArgs.fHasUserStencilSettings = hasUserStencilSettings;
 
         // the 'false' parameter disallows use of the SW path renderer
@@ -326,8 +326,7 @@ bool GrClipStackClip::apply(GrContext* context, GrRenderTargetContext* renderTar
         if (result) {
             // The mask's top left coord should be pinned to the rounded-out top left corner of
             // the clip's device space bounds.
-            out->addCoverageFP(create_fp_for_mask(context->resourceProvider(), std::move(result),
-                                                  reducedClip.ibounds()));
+            out->addCoverageFP(create_fp_for_mask(std::move(result), reducedClip.ibounds()));
             return true;
         }
 
@@ -358,14 +357,14 @@ bool GrClipStackClip::apply(GrContext* context, GrRenderTargetContext* renderTar
         reducedClip.drawStencilClipMask(context, renderTargetContext);
         renderTargetContext->priv().setLastClip(reducedClip.elementsGenID(), reducedClip.ibounds());
     }
-    out->addStencilClip();
+    out->addStencilClip(reducedClip.elementsGenID());
     return true;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 // Create a 8-bit clip mask in alpha
 
-static void create_clip_mask_key(int32_t clipGenID, const SkIRect& bounds, GrUniqueKey* key) {
+static void create_clip_mask_key(uint32_t clipGenID, const SkIRect& bounds, GrUniqueKey* key) {
     static const GrUniqueKey::Domain kDomain = GrUniqueKey::GenerateDomain();
     GrUniqueKey::Builder builder(key, kDomain, 3, GrClipStackClip::kMaskTestTag);
     builder[0] = clipGenID;
@@ -375,7 +374,7 @@ static void create_clip_mask_key(int32_t clipGenID, const SkIRect& bounds, GrUni
     builder[2] = SkToS16(bounds.fTop) | (SkToS16(bounds.fBottom) << 16);
 }
 
-static void add_invalidate_on_pop_message(const SkClipStack& stack, int32_t clipGenID,
+static void add_invalidate_on_pop_message(const SkClipStack& stack, uint32_t clipGenID,
                                           const GrUniqueKey& clipMaskKey) {
     SkClipStack::Iter iter(stack, SkClipStack::Iter::kTop_IterStart);
     while (const Element* element = iter.prev()) {

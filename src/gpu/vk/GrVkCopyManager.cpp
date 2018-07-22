@@ -24,6 +24,7 @@
 #include "GrVkVertexBuffer.h"
 #include "SkPoint.h"
 #include "SkRect.h"
+#include "SkTraceEvent.h"
 
 GrVkCopyManager::GrVkCopyManager()
     : fVertShaderModule(VK_NULL_HANDLE)
@@ -33,6 +34,8 @@ GrVkCopyManager::GrVkCopyManager()
 GrVkCopyManager::~GrVkCopyManager() {}
 
 bool GrVkCopyManager::createCopyProgram(GrVkGpu* gpu) {
+    TRACE_EVENT0(TRACE_DISABLED_BY_DEFAULT("skia"), "GrVkCopyManager::createCopyProgram()");
+
     const GrShaderCaps* shaderCaps = gpu->caps()->shaderCaps();
     const char* version = shaderCaps->versionDeclString();
     SkString vertShaderText(version);
@@ -377,7 +380,7 @@ bool GrVkCopyManager::copySurfaceAsDraw(GrVkGpu* gpu,
     scissor.offset.y = 0;
     cmdBuffer->setScissor(gpu, 0, 1, &scissor);
 
-    cmdBuffer->bindVertexBuffer(gpu, fVertexBuffer.get());
+    cmdBuffer->bindInputBuffer(gpu, 0, fVertexBuffer.get());
     cmdBuffer->draw(gpu, 4, 1, 0, 0);
     cmdBuffer->endRenderPass(gpu);
 

@@ -9,9 +9,9 @@
 DEPS = [
   'core',
   'env',
-  'file',
   'flavor',
   'recipe_engine/context',
+  'recipe_engine/file',
   'recipe_engine/json',
   'recipe_engine/path',
   'recipe_engine/platform',
@@ -24,7 +24,7 @@ DEPS = [
 ]
 
 
-def dm_flags(bot):
+def dm_flags(api, bot):
   args = []
 
   # This enables non-deterministic random seeding of the GPU FP optimization
@@ -34,11 +34,15 @@ def dm_flags(bot):
   # 32-bit desktop bots tend to run out of memory, because they have relatively
   # far more cores than RAM (e.g. 32 cores, 3G RAM).  Hold them back a bit.
   if '-x86-' in bot and not 'NexusPlayer' in bot:
-    args.extend('--threads 4'.split(' '))
+    args.extend(['--threads', '4'])
 
   # Avoid issues with dynamically exceeding resource cache limits.
   if 'Test' in bot and 'DISCARDABLE' in bot:
-    args.extend('--threads 0'.split(' '))
+    args.extend(['--threads', '0'])
+
+  # See if staying on the main thread helps skia:6748.
+  if 'Test-iOS' in bot:
+    args.extend(['--threads', '0'])
 
   # These are the canonical configs that we would ideally run on all bots. We
   # may opt out or substitute some below for specific bots
@@ -70,7 +74,7 @@ def dm_flags(bot):
       'iPhone6' in bot or
       'iPhone7' in bot or
       # skia:5792
-      'iHD530'       in bot or
+      'IntelHD530'   in bot or
       'IntelIris540' in bot):
     configs = [x for x in configs if 'msaa' not in x]
 
@@ -99,7 +103,7 @@ def dm_flags(bot):
 
   # We want to test both the OpenGL config and the GLES config on Linux Intel:
   # GL is used by Chrome, GLES is used by ChromeOS.
-  if 'Intel' in bot and 'Ubuntu' in bot:
+  if 'Intel' in bot and api.vars.is_linux:
     configs.extend(['gles', 'glesdft', 'glessrgb'])
 
   # NP is running out of RAM when we run all these modes.  skia:3255
@@ -129,9 +133,11 @@ def dm_flags(bot):
   if 'ANGLE' in bot:
     configs = ['angle_d3d11_es2',
                'angle_d3d9_es2',
-               'angle_gl_es2']
+               'angle_gl_es2',
+               'angle_d3d11_es3']
     if sample_count is not '':
       configs.append('angle_d3d11_es2_msaa' + sample_count)
+      configs.append('angle_d3d11_es3_msaa' + sample_count)
 
   # Vulkan bot *only* runs the vk config.
   if 'Vulkan' in bot:
@@ -152,6 +158,10 @@ def dm_flags(bot):
   args.append('--config')
   args.extend(configs)
 
+  # Test coverage counting path renderer.
+  if 'CCPR' in bot:
+    args.extend(['--pr', 'ccpr'])
+
   # Run tests, gms, and image decoding tests everywhere.
   args.extend('--src tests gm image colorImage svg'.split(' '))
   if 'Vulkan' in bot and 'NexusPlayer' in bot:
@@ -161,6 +171,9 @@ def dm_flags(bot):
   # Eventually I'd like these to pass, but for now just skip 'em.
   if 'SK_FORCE_RASTER_PIPELINE_BLITTER' in bot:
     args.remove('tests')
+
+  # Some people don't like verbose output.
+  verbose = False
 
   blacklisted = []
   def blacklist(quad):
@@ -389,6 +402,10 @@ def dm_flags(bot):
   if 'Valgrind' in bot: # skia:3021
     match.append('~Threaded')
 
+  if 'Valgrind' in bot and 'PreAbandonGpuContext' in bot:
+    # skia:6575
+    match.append('~multipicturedraw_')
+
   if 'CommandBuffer' in bot:
     # https://crbug.com/697030
     match.append('~HalfFloatAlphaTextureTest')
@@ -405,12 +422,10 @@ def dm_flags(bot):
 
   if 'GalaxyS6' in bot:
     match.append('~SpecialImage') # skia:6338
+    match.append('~skbug6653') # skia:6653
 
   if 'GalaxyS7_G930A' in bot:
     match.append('~WritePixels') # skia:6427
-
-  if 'ANGLE' in bot and 'Debug' in bot:
-    match.append('~GLPrograms') # skia:4717
 
   if 'MSAN' in bot:
     match.extend(['~Once', '~Shared'])  # Not sure what's up with these tests.
@@ -420,23 +435,23 @@ def dm_flags(bot):
     match.extend(['~RGBA4444TextureTest',  # Flakier than they are important.
                   '~RGB565TextureTest'])
 
-  if 'Vulkan' in bot and 'Adreno' in bot:
-    # skia:5777
-    match.extend(['~XfermodeImageFilterCroppedInput',
-                  '~GrTextureStripAtlasFlush',
-                  '~CopySurface'])
+  if 'Vulkan' in bot and 'Adreno530' in bot:
+      # skia:5777
+      match.extend(['~CopySurface'])
 
   if 'Vulkan' in bot and 'NexusPlayer' in bot:
-    match.extend(['~hardstop_gradient', # skia:6037
-                  '~gradients_dup_color_stops',  # skia:6037
-                  '~gradients_no_texture$', # skia:6132
+    match.extend(['~gradients_no_texture$', # skia:6132
                   '~tilemodes', # skia:6132
                   '~shadertext$', # skia:6132
                   '~bitmapfilters', # skia:6132
                   '~GrContextFactory_abandon']) #skia:6209
 
-  if 'Vulkan' in bot and 'IntelIris540' in bot and 'Ubuntu' in bot:
+  if 'Vulkan' in bot and 'IntelIris540' in bot and api.vars.is_linux:
     match.extend(['~VkHeapTests']) # skia:6245
+
+  if 'Intel' in bot and api.vars.is_linux and not 'Vulkan' in bot:
+    # TODO(dogben): Track down what's causing bots to die.
+    verbose = True
 
   if 'Vulkan' in bot and 'IntelIris540' in bot and 'Win' in bot:
     # skia:6398
@@ -471,6 +486,7 @@ def dm_flags(bot):
     blacklist(['vk', 'gm', '_', 'lcdtextsize'])
     blacklist(['vk', 'gm', '_', 'matriximagefilter'])
     blacklist(['vk', 'gm', '_', 'mixedtextblobsCOLR'])
+    blacklist(['vk', 'gm', '_', 'mixershader'])
     blacklist(['vk', 'gm', '_', 'pictureimagefilter'])
     blacklist(['vk', 'gm', '_', 'resizeimagefilter'])
     blacklist(['vk', 'gm', '_', 'rotate_imagefilter'])
@@ -491,6 +507,7 @@ def dm_flags(bot):
     match.append('~ApplyGamma')
     match.append('~ComposedImageFilterBounds_Gpu')
     match.append('~DeferredTextureImage')
+    match.append('~GrMeshTest')
     match.append('~ImageFilterFailAffectsTransparentBlack_Gpu')
     match.append('~ImageFilterZeroBlurSigma_Gpu')
     match.append('~ImageNewShader_GPU')
@@ -498,6 +515,7 @@ def dm_flags(bot):
     match.append('~ReadPixels_Gpu')
     match.append('~ReadPixels_Texture')
     match.append('~ReadWriteAlpha')
+    match.append('~skbug6653')
     match.append('~SRGBReadWritePixels')
     match.append('~SpecialImage_DeferredGpu')
     match.append('~SpecialImage_Gpu')
@@ -506,17 +524,17 @@ def dm_flags(bot):
     match.append('~XfermodeImageFilterCroppedInput_Gpu')
 
   if 'IntelIris540' in bot and 'ANGLE' in bot:
-    match.append('~IntTexture') # skia:6086
-    blacklist(['_', 'gm', '_', 'discard']) # skia:6141
-    # skia:6103
     for config in ['angle_d3d9_es2', 'angle_d3d11_es2', 'angle_gl_es2']:
+      # skia:6103
       blacklist([config, 'gm', '_', 'multipicturedraw_invpathclip_simple'])
       blacklist([config, 'gm', '_', 'multipicturedraw_noclip_simple'])
       blacklist([config, 'gm', '_', 'multipicturedraw_pathclip_simple'])
       blacklist([config, 'gm', '_', 'multipicturedraw_rectclip_simple'])
       blacklist([config, 'gm', '_', 'multipicturedraw_rrectclip_simple'])
+      # skia:6141
+      blacklist([config, 'gm', '_', 'discard'])
 
-  if 'IntelBayTrail' in bot and 'Ubuntu' in bot:
+  if 'IntelBayTrail' in bot and api.vars.is_linux:
     match.append('~ImageStorageLoad') # skia:6358
 
   if 'Ci20' in bot:
@@ -544,6 +562,15 @@ def dm_flags(bot):
     args.append('--noRAW_threading')
 
   if 'Valgrind' in bot and 'PreAbandonGpuContext' in bot:
+    verbose = True
+
+  if 'NexusPlayer' in bot and 'CPU' in bot:
+    # The Nexus Player's image decoding tests are slow enough that swarming
+    # times it out for not printing anything frequently enough.  --verbose
+    # makes dm print something every time we start or complete a task.
+    verbose = True
+
+  if verbose:
     args.append('--verbose')
 
   return args
@@ -583,10 +610,9 @@ def test_steps(api):
     hash_filename = 'uninteresting_hashes.txt'
 
     # Ensure that the tmp_dir exists.
-    api.run.run_once(api.file.makedirs,
-                           'tmp_dir',
-                           api.vars.tmp_dir,
-                           infra_step=True)
+    api.run.run_once(api.file.ensure_directory,
+                     'makedirs tmp_dir',
+                     api.vars.tmp_dir)
 
     host_hashes_file = api.vars.tmp_dir.join(hash_filename)
     hashes_file = api.flavor.device_path_join(
@@ -602,7 +628,7 @@ def test_steps(api):
         import time
         import urllib2
 
-        HASHES_URL = 'https://gold.skia.org/_/hashes'
+        HASHES_URL = 'https://storage.googleapis.com/skia-infra-gm/hash_files/gold-prod-hashes.txt'
         RETRIES = 5
         TIMEOUT = 60
         WAIT_BASE = 15
@@ -677,7 +703,7 @@ def test_steps(api):
     skip_flag = '--nocpu'
   if skip_flag:
     args.append(skip_flag)
-  args.extend(dm_flags(api.vars.builder_name))
+  args.extend(dm_flags(api, api.vars.builder_name))
 
   env = {}
   if 'Ubuntu16' in api.vars.builder_name:
@@ -744,14 +770,16 @@ TEST_BUILDERS = [
   'Test-Android-Clang-NVIDIA_Shield-GPU-TegraX1-arm64-Debug-Android',
   'Test-Android-Clang-Nexus10-GPU-MaliT604-arm-Release-Android',
   'Test-Android-Clang-Nexus5-GPU-Adreno330-arm-Release-Android',
+  'Test-Android-Clang-PixelXL-GPU-Adreno530-arm64-Debug-Android_CCPR',
   'Test-Android-Clang-Nexus6p-GPU-Adreno430-arm64-Debug-Android_Vulkan',
+  'Test-Android-Clang-PixelXL-GPU-Adreno530-arm64-Debug-Android_Vulkan',
   'Test-Android-Clang-Nexus7-GPU-Tegra3-arm-Debug-Android',
   'Test-Android-Clang-NexusPlayer-CPU-SSE4-x86-Release-Android',
   'Test-Android-Clang-NexusPlayer-GPU-PowerVR-x86-Release-Android_Vulkan',
   'Test-Android-Clang-PixelC-CPU-TegraX1-arm64-Debug-Android',
   'Test-ChromeOS-Clang-Chromebook_C100p-GPU-MaliT764-arm-Debug',
   'Test-Mac-Clang-MacMini6.2-CPU-AVX-x86_64-Debug',
-  'Test-Mac-Clang-MacMini6.2-GPU-HD4000-x86_64-Debug-CommandBuffer',
+  'Test-Mac-Clang-MacMini6.2-GPU-IntelHD4000-x86_64-Debug-CommandBuffer',
   'Test-Ubuntu-Clang-GCE-CPU-AVX2-x86_64-Debug-ASAN',
   'Test-Ubuntu-Clang-GCE-CPU-AVX2-x86_64-Debug-MSAN',
   'Test-Ubuntu-Clang-GCE-CPU-AVX2-x86_64-Release-TSAN',

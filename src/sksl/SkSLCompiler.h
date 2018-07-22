@@ -18,12 +18,16 @@
 #include "SkSLErrorReporter.h"
 #include "SkSLIRGenerator.h"
 
-#define SK_FRAGCOLOR_BUILTIN    10001
-#define SK_IN_BUILTIN           10002
-#define SK_FRAGCOORD_BUILTIN       15
-#define SK_VERTEXID_BUILTIN         5
-#define SK_CLIPDISTANCE_BUILTIN     3
-#define SK_INVOCATIONID_BUILTIN     8
+#define SK_FRAGCOLOR_BUILTIN           10001
+#define SK_IN_BUILTIN                  10002
+#define SK_INCOLOR_BUILTIN             10003
+#define SK_OUTCOLOR_BUILTIN            10004
+#define SK_TRANSFORMEDCOORDS2D_BUILTIN 10005
+#define SK_TEXTURESAMPLERS_BUILTIN     10006
+#define SK_FRAGCOORD_BUILTIN              15
+#define SK_VERTEXID_BUILTIN                5
+#define SK_CLIPDISTANCE_BUILTIN            3
+#define SK_INVOCATIONID_BUILTIN            8
 
 namespace SkSL {
 
@@ -39,7 +43,15 @@ class IRGenerator;
  */
 class Compiler : public ErrorReporter {
 public:
-    Compiler();
+    enum Flags {
+        kNone_Flags = 0,
+        // permits static if/switch statements to be used with non-constant tests. This is used when
+        // producing H and CPP code; the static tests don't have to have constant values *yet*, but
+        // the generated code will contain a static test which then does have to be a constant.
+        kPermitInvalidStaticTests_Flag = 1,
+    };
+
+    Compiler(Flags flags = kNone_Flags);
 
     ~Compiler() override;
 
@@ -53,6 +65,10 @@ public:
     bool toGLSL(const Program& program, OutputStream& out);
 
     bool toGLSL(const Program& program, String* out);
+
+    bool toCPP(const Program& program, String name, OutputStream& out);
+
+    bool toH(const Program& program, String name, OutputStream& out);
 
     void error(Position position, String msg) override;
 
@@ -98,13 +114,10 @@ private:
 
     void scanCFG(FunctionDefinition& f);
 
-    void internalConvertProgram(String text,
-                                Modifiers::Flag* defaultPrecision,
-                                std::vector<std::unique_ptr<ProgramElement>>* result);
-
     std::shared_ptr<SymbolTable> fTypes;
     IRGenerator* fIRGenerator;
     String fSkiaVertText; // FIXME store parsed version instead
+    int fFlags;
 
     Context fContext;
     int fErrorCount;

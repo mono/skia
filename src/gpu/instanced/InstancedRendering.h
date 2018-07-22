@@ -8,12 +8,12 @@
 #ifndef gr_instanced_InstancedRendering_DEFINED
 #define gr_instanced_InstancedRendering_DEFINED
 
-#include "GrGpu.h"
 #include "instanced/InstancedOp.h"
 #include "instanced/InstancedRenderingTypes.h"
 
 #include "SkTInternalLList.h"
 
+class GrGpu;
 class GrResourceProvider;
 
 namespace gr_instanced {
@@ -46,7 +46,7 @@ class InstanceProcessor;
  */
 class InstancedRendering : public SkNoncopyable {
 public:
-    virtual ~InstancedRendering() { SkASSERT(State::kRecordingDraws == fState); }
+    virtual ~InstancedRendering();
 
     GrGpu* gpu() const { return fGpu.get(); }
 

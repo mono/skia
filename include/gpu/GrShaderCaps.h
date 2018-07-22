@@ -130,6 +130,8 @@ public:
 
     bool texelFetchSupport() const { return fTexelFetchSupport; }
 
+    bool vertexIDSupport() const { return fVertexIDSupport; }
+
     AdvBlendEqInteraction advBlendEqInteraction() const { return fAdvBlendEqInteraction; }
 
     bool mustEnableAdvBlendEqs() const {
@@ -160,6 +162,8 @@ public:
 
     // On MacBook, geometry shaders break if they have more than one invocation.
     bool mustImplementGSInvocationsWithLoop() const { return fMustImplementGSInvocationsWithLoop; }
+
+    bool mustObfuscateUniformColor() const { return fMustObfuscateUniformColor; }
 
     // Returns the string of an extension that must be enabled in the shader to support
     // derivatives. If nullptr is returned then no extension needs to be enabled. Before calling
@@ -282,6 +286,7 @@ private:
     bool fSampleMaskOverrideCoverageSupport : 1;
     bool fExternalTextureSupport : 1;
     bool fTexelFetchSupport : 1;
+    bool fVertexIDSupport : 1;
 
     // Used for specific driver bug work arounds
     bool fCanUseMinAndAbsTogether : 1;
@@ -289,6 +294,7 @@ private:
     bool fAtan2ImplementedAsAtanYOverX : 1;
     bool fRequiresLocalOutputColorForFBFetch : 1;
     bool fMustImplementGSInvocationsWithLoop : 1;
+    bool fMustObfuscateUniformColor : 1;
 
     PrecisionInfo fFloatPrecisions[kGrShaderTypeCount][kGrSLPrecisionCount];
 

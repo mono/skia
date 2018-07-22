@@ -8,7 +8,32 @@
 #include "GrGLTextureRenderTarget.h"
 
 #include "GrContext.h"
+#include "GrGLGpu.h"
+#include "GrTexturePriv.h"
 #include "SkTraceMemoryDump.h"
+
+GrGLTextureRenderTarget::GrGLTextureRenderTarget(GrGLGpu* gpu,
+                                                 SkBudgeted budgeted,
+                                                 const GrSurfaceDesc& desc,
+                                                 const GrGLTexture::IDDesc& texIDDesc,
+                                                 const GrGLRenderTarget::IDDesc& rtIDDesc,
+                                                 bool wasMipMapDataProvided)
+        : GrSurface(gpu, desc)
+        , GrGLTexture(gpu, desc, texIDDesc, wasMipMapDataProvided)
+        , GrGLRenderTarget(gpu, desc, rtIDDesc) {
+    this->registerWithCache(budgeted);
+}
+
+GrGLTextureRenderTarget::GrGLTextureRenderTarget(GrGLGpu* gpu,
+                                                 const GrSurfaceDesc& desc,
+                                                 const GrGLTexture::IDDesc& texIDDesc,
+                                                 const GrGLRenderTarget::IDDesc& rtIDDesc,
+                                                 bool wasMipMapDataProvided)
+        : GrSurface(gpu, desc)
+        , GrGLTexture(gpu, desc, texIDDesc, wasMipMapDataProvided)
+        , GrGLRenderTarget(gpu, desc, rtIDDesc) {
+    this->registerWithCacheWrapped();
+}
 
 // GrGLTextureRenderTarget must dump both of its superclasses.
 void GrGLTextureRenderTarget::dumpMemoryStatistics(
@@ -51,4 +76,10 @@ sk_sp<GrGLTextureRenderTarget> GrGLTextureRenderTarget::MakeWrapped(
 {
     return sk_sp<GrGLTextureRenderTarget>(
         new GrGLTextureRenderTarget(gpu, desc, texIDDesc, rtIDDesc, false));
+}
+
+size_t GrGLTextureRenderTarget::onGpuMemorySize() const {
+    return GrSurface::ComputeSize(this->config(), this->width(), this->height(),
+                                    this->numSamplesOwnedPerPixel(),
+                                    this->texturePriv().hasMipMaps());
 }

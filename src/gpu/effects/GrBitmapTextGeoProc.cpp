@@ -31,7 +31,7 @@ public:
 
         // compute numbers to be hardcoded to convert texture coordinates from int to float
         SkASSERT(cte.numTextureSamplers() == 1);
-        SkDEBUGCODE(GrTexture* atlas = cte.textureSampler(0).texture());
+        SkDEBUGCODE(GrTexture* atlas = cte.textureSampler(0).peekTexture());
         SkASSERT(atlas && SkIsPow2(atlas->width()) && SkIsPow2(atlas->height()));
 
         GrGLSLVertToFrag v(kVec2f_GrSLType);
@@ -98,7 +98,7 @@ public:
 
         // Currently we hardcode numbers to convert atlas coordinates to normalized floating point
         SkASSERT(gp.numTextureSamplers() == 1);
-        GrTexture* atlas = gp.textureSampler(0).texture();
+        GrTextureProxy* atlas = gp.textureSampler(0).proxy();
         if (atlas) {
             b->add32(atlas->width());
             b->add32(atlas->height());
@@ -114,14 +114,14 @@ private:
 
 ///////////////////////////////////////////////////////////////////////////////
 
-GrBitmapTextGeoProc::GrBitmapTextGeoProc(GrResourceProvider* resourceProvider, GrColor color,
+GrBitmapTextGeoProc::GrBitmapTextGeoProc(GrColor color,
                                          sk_sp<GrTextureProxy> proxy,
                                          const GrSamplerParams& params, GrMaskFormat format,
                                          const SkMatrix& localMatrix, bool usesLocalCoords)
     : fColor(color)
     , fLocalMatrix(localMatrix)
     , fUsesLocalCoords(usesLocalCoords)
-    , fTextureSampler(resourceProvider, std::move(proxy), params)
+    , fTextureSampler(std::move(proxy), params)
     , fInColor(nullptr)
     , fMaskFormat(format) {
     this->initClassID<GrBitmapTextGeoProc>();
@@ -181,8 +181,7 @@ sk_sp<GrGeometryProcessor> GrBitmapTextGeoProc::TestCreate(GrProcessorTestData* 
             break;
     }
 
-    return GrBitmapTextGeoProc::Make(d->resourceProvider(), GrRandomColor(d->fRandom),
-                                     std::move(proxy),
+    return GrBitmapTextGeoProc::Make(GrRandomColor(d->fRandom), std::move(proxy),
                                      params, format, GrTest::TestMatrix(d->fRandom),
                                      d->fRandom->nextBool());
 }

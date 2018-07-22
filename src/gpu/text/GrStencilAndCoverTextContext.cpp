@@ -10,7 +10,6 @@
 #include "GrContext.h"
 #include "GrPath.h"
 #include "GrPathRange.h"
-#include "GrPipelineBuilder.h"
 #include "GrRenderTargetContext.h"
 #include "GrResourceProvider.h"
 #include "GrTextUtils.h"
@@ -527,11 +526,13 @@ void GrStencilAndCoverTextContext::TextRun::setPosText(const char text[], size_t
     fFallbackTextBlob = fallback.makeIfNeeded(&fFallbackGlyphCount);
 }
 
-GrPathRange* GrStencilAndCoverTextContext::TextRun::createGlyphs(
+sk_sp<GrPathRange> GrStencilAndCoverTextContext::TextRun::createGlyphs(
                                                     GrResourceProvider* resourceProvider) const {
-    GrPathRange* glyphs = static_cast<GrPathRange*>(
-            resourceProvider->findAndRefResourceByUniqueKey(fGlyphPathsKey));
-    if (nullptr == glyphs) {
+    sk_sp<GrPathRange> glyphs;
+
+    glyphs.reset(static_cast<GrPathRange*>(
+            resourceProvider->findAndRefResourceByUniqueKey(fGlyphPathsKey)));
+    if (!glyphs) {
         if (fUsingRawGlyphPaths) {
             SkScalerContextEffects noeffects;
             glyphs = resourceProvider->createGlyphs(fFont.getTypeface(), noeffects,
@@ -543,7 +544,7 @@ GrPathRange* GrStencilAndCoverTextContext::TextRun::createGlyphs(
                                                     &cache->getDescriptor(),
                                                     fStyle);
         }
-        resourceProvider->assignUniqueKeyToResource(fGlyphPathsKey, glyphs);
+        resourceProvider->assignUniqueKeyToResource(fGlyphPathsKey, glyphs.get());
     }
     return glyphs;
 }
@@ -605,7 +606,7 @@ void GrStencilAndCoverTextContext::TextRun::draw(GrContext* ctx,
 
         // The run's "font" overrides the anti-aliasing of the passed in SkPaint!
         GrAAType aaType = GrChooseAAType(this->aa(), renderTargetContext->fsaaType(),
-                                         GrAllowMixedSamples::kYes);
+                                         GrAllowMixedSamples::kYes, *renderTargetContext->caps());
 
         std::unique_ptr<GrDrawOp> op = GrDrawPathRangeOp::Make(
                 viewMatrix, fTextRatio, fTextInverseRatio * x, fTextInverseRatio * y,

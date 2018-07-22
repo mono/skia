@@ -9,9 +9,11 @@
 
 #include "GrContext.h"
 #include "GrContextPriv.h"
+#include "GrGpu.h"
 #include "GrResourceCache.h"
 #include "GrResourceProvider.h"
 #include "GrSemaphore.h"
+#include "GrTexture.h"
 
 #include "SkGr.h"
 #include "SkMessageBus.h"
@@ -31,13 +33,23 @@ static GrBackendTexture make_backend_texture_from_handle(GrBackend backend,
                                                          int width, int height,
                                                          GrPixelConfig config,
                                                          GrBackendObject handle) {
-    if (kOpenGL_GrBackend == backend) {
-        GrGLTextureInfo* glInfo = (GrGLTextureInfo*)(handle);
-        return GrBackendTexture(width, height, config, *glInfo);
-    } else {
-        SkASSERT(kVulkan_GrBackend == backend);
-        GrVkImageInfo* vkInfo = (GrVkImageInfo*)(handle);
-        return GrBackendTexture(width, height, *vkInfo);
+    switch (backend) {
+        case kOpenGL_GrBackend: {
+            const GrGLTextureInfo* glInfo = (const GrGLTextureInfo*)(handle);
+            return GrBackendTexture(width, height, config, *glInfo);
+        }
+#ifdef SK_VULKAN
+        case kVulkan_GrBackend: {
+            const GrVkImageInfo* vkInfo = (const GrVkImageInfo*)(handle);
+            return GrBackendTexture(width, height, *vkInfo);
+        }
+#endif
+        case kMock_GrBackend: {
+            const GrMockTextureInfo* mockInfo = (const GrMockTextureInfo*)(handle);
+            return GrBackendTexture(width, height, config, *mockInfo);
+        }
+        default:
+            return GrBackendTexture();
     }
 }
 
@@ -102,9 +114,9 @@ void GrBackendTextureImageGenerator::ReleaseRefHelper_TextureReleaseProc(void* c
     refHelper->unref();
 }
 
-sk_sp<GrTextureProxy> GrBackendTextureImageGenerator::onGenerateTexture(GrContext* context,
-                                                                        const SkImageInfo& info,
-                                                                        const SkIPoint& origin) {
+sk_sp<GrTextureProxy> GrBackendTextureImageGenerator::onGenerateTexture(
+        GrContext* context, const SkImageInfo& info, const SkIPoint& origin,
+        SkTransferFunctionBehavior) {
     SkASSERT(context);
 
     if (context->contextPriv().getBackend() != fBackendTexture.backend()) {
@@ -140,7 +152,6 @@ sk_sp<GrTextureProxy> GrBackendTextureImageGenerator::onGenerateTexture(GrContex
         // with it. This is unfortunate - we'll have two texture objects referencing the same GPU
         // object. However, no client can ever see the original texture, so this should be safe.
         tex = context->resourceProvider()->wrapBackendTexture(fBackendTexture, fSurfaceOrigin,
-                                                              kNone_GrBackendTextureFlag, 0,
                                                               kBorrow_GrWrapOwnership);
         if (!tex) {
             fRefHelper->fBorrowingContextID = SK_InvalidGenID;

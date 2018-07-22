@@ -30,6 +30,7 @@ public:
     class SK_API Iter {
     public:
         Iter(const SkROBuffer*);
+        Iter(const sk_sp<SkROBuffer>&);
 
         void reset(const SkROBuffer*);
 
@@ -89,8 +90,11 @@ public:
      */
     void append(const void* buffer, size_t length, size_t reserve = 0);
 
-    SkROBuffer* newRBufferSnapshot() const;
-    SkStreamAsset* newStreamSnapshot() const;
+    sk_sp<SkROBuffer> makeROBufferSnapshot() const {
+        return sk_sp<SkROBuffer>(new SkROBuffer(fHead, fTotalUsed, fTail));
+    }
+
+    std::unique_ptr<SkStreamAsset> makeStreamSnapshot() const;
 
 #ifdef SK_DEBUG
     void validate() const;

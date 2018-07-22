@@ -16,9 +16,7 @@
 #include "SkRasterClip.h"
 
 #if SK_SUPPORT_GPU
-#include "GrTexture.h"
 #include "GrTextureProxy.h"
-#include "SkGr.h"
 #endif
 
 SkMaskFilter::NinePatch::~NinePatch() {
@@ -169,24 +167,24 @@ static void draw_nine_clipped(const SkMask& mask, const SkIRect& outerR,
     // left
     r.set(outerR.left(), innerR.top(), innerR.left(), innerR.bottom());
     if (r.intersect(clipR)) {
-        int startX = r.left() - outerR.left();
-        int stopX = startX + r.width();
-        int height = r.height();
-        for (int x = startX; x < stopX; ++x) {
-            blitter->blitV(outerR.left() + x, r.top(), height,
-                           *mask.getAddr8(mask.fBounds.left() + x, mask.fBounds.top() + cy));
-        }
+        SkMask m;
+        m.fImage = mask.getAddr8(mask.fBounds.left() + r.left() - outerR.left(),
+                                 mask.fBounds.top() + cy);
+        m.fBounds = r;
+        m.fRowBytes = 0;    // so we repeat the scanline for our height
+        m.fFormat = SkMask::kA8_Format;
+        blitter->blitMask(m, r);
     }
     // right
     r.set(innerR.right(), innerR.top(), outerR.right(), innerR.bottom());
     if (r.intersect(clipR)) {
-        int startX = outerR.right() - r.right();
-        int stopX = startX + r.width();
-        int height = r.height();
-        for (int x = startX; x < stopX; ++x) {
-            blitter->blitV(outerR.right() - x - 1, r.top(), height,
-                           *mask.getAddr8(mask.fBounds.right() - x - 1, mask.fBounds.top() + cy));
-        }
+        SkMask m;
+        m.fImage = mask.getAddr8(mask.fBounds.right() - outerR.right() + r.left(),
+                                 mask.fBounds.top() + cy);
+        m.fBounds = r;
+        m.fRowBytes = 0;    // so we repeat the scanline for our height
+        m.fFormat = SkMask::kA8_Format;
+        blitter->blitMask(m, r);
     }
 }
 
@@ -303,10 +301,6 @@ SkMaskFilter::filterRectsToNine(const SkRect[], int count, const SkMatrix&,
 }
 
 #if SK_SUPPORT_GPU
-bool SkMaskFilter::asFragmentProcessor(GrFragmentProcessor**, GrTexture*, const SkMatrix&) const {
-    return false;
-}
-
 bool SkMaskFilter::canFilterMaskGPU(const SkRRect& devRRect,
                                     const SkIRect& clipBounds,
                                     const SkMatrix& ctm,

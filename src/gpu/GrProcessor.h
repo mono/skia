@@ -8,23 +8,23 @@
 #ifndef GrProcessor_DEFINED
 #define GrProcessor_DEFINED
 
-#include "GrColor.h"
+#include "../private/SkAtomics.h"
 #include "GrBuffer.h"
+#include "GrColor.h"
 #include "GrGpuResourceRef.h"
 #include "GrProcessorUnitTest.h"
 #include "GrProgramElement.h"
 #include "GrSamplerParams.h"
 #include "GrShaderVar.h"
 #include "GrSurfaceProxyPriv.h"
+#include "GrTextureProxy.h"
 #include "SkMath.h"
 #include "SkString.h"
-#include "../private/SkAtomics.h"
 
 class GrContext;
 class GrCoordTransform;
 class GrInvariantOutput;
 class GrResourceProvider;
-class GrTextureProxy;
 
 /**
  * Used by processors to build their keys. It incorporates each per-processor key into a larger
@@ -177,10 +177,10 @@ public:
         return *fImageStorageAccesses[index];
     }
 
-    bool isBad() const { return fIsBad; }
+    bool instantiate(GrResourceProvider* resourceProvider) const;
 
 protected:
-    GrResourceIOProcessor() : fIsBad(false) {}
+    GrResourceIOProcessor() {}
 
     /**
      * Subclasses call these from their constructor to register sampler/image sources. The processor
@@ -190,7 +190,7 @@ protected:
      */
     void addTextureSampler(const TextureSampler*);
     void addBufferAccess(const BufferAccess*);
-    void addImageStorageAccess(GrResourceProvider* resourceProvider, const ImageStorageAccess*);
+    void addImageStorageAccess(const ImageStorageAccess*);
 
     bool hasSameSamplersAndAccesses(const GrResourceIOProcessor&) const;
 
@@ -199,13 +199,10 @@ protected:
     void removeRefs() const;
     void pendingIOComplete() const;
 
-    void markAsBad() { fIsBad = true; }
-
 private:
     SkSTArray<4, const TextureSampler*, true> fTextureSamplers;
     SkSTArray<1, const BufferAccess*, true> fBufferAccesses;
     SkSTArray<1, const ImageStorageAccess*, true> fImageStorageAccesses;
-    bool fIsBad;
 
     typedef GrProcessor INHERITED;
 };
@@ -222,49 +219,49 @@ public:
      */
     TextureSampler();
 
-    // MDB TODO: this is the last GrTexture-based reset call!
-    void reset(GrTexture*,
-               GrSamplerParams::FilterMode = GrSamplerParams::kNone_FilterMode,
-               SkShader::TileMode tileXAndY = SkShader::kClamp_TileMode,
-               GrShaderFlags visibility = kFragment_GrShaderFlag);
-
-    // MDB TODO: ultimately we shouldn't need the resource provider parameter
-    TextureSampler(GrResourceProvider*, sk_sp<GrTextureProxy>, const GrSamplerParams&);
-    explicit TextureSampler(GrResourceProvider*, sk_sp<GrTextureProxy>,
+    TextureSampler(sk_sp<GrTextureProxy>, const GrSamplerParams&);
+    explicit TextureSampler(sk_sp<GrTextureProxy>,
                             GrSamplerParams::FilterMode = GrSamplerParams::kNone_FilterMode,
                             SkShader::TileMode tileXAndY = SkShader::kClamp_TileMode,
                             GrShaderFlags visibility = kFragment_GrShaderFlag);
-    void reset(GrResourceProvider*, sk_sp<GrTextureProxy>, const GrSamplerParams&,
+    void reset(sk_sp<GrTextureProxy>, const GrSamplerParams&,
                GrShaderFlags visibility = kFragment_GrShaderFlag);
-    void reset(GrResourceProvider*, sk_sp<GrTextureProxy>,
+    void reset(sk_sp<GrTextureProxy>,
                GrSamplerParams::FilterMode = GrSamplerParams::kNone_FilterMode,
                SkShader::TileMode tileXAndY = SkShader::kClamp_TileMode,
                GrShaderFlags visibility = kFragment_GrShaderFlag);
 
     bool operator==(const TextureSampler& that) const {
-        return this->texture() == that.texture() &&
+        return this->proxy()->underlyingUniqueID() == that.proxy()->underlyingUniqueID() &&
                fParams == that.fParams &&
                fVisibility == that.fVisibility;
     }
 
     bool operator!=(const TextureSampler& other) const { return !(*this == other); }
 
-    GrTexture* texture() const { return fTexture.get(); }
+    // 'instantiate' should only ever be called at flush time.
+    bool instantiate(GrResourceProvider* resourceProvider) const {
+        return SkToBool(fProxyRef.get()->instantiate(resourceProvider));
+    }
+
+    // 'peekTexture' should only ever be called after a successful 'instantiate' call
+    GrTexture* peekTexture() const {
+        SkASSERT(fProxyRef.get()->priv().peekTexture());
+        return fProxyRef.get()->priv().peekTexture();
+    }
+
+    GrTextureProxy* proxy() const { return fProxyRef.get()->asTextureProxy(); }
     GrShaderFlags visibility() const { return fVisibility; }
     const GrSamplerParams& params() const { return fParams; }
 
+    bool isInitialized() const { return SkToBool(fProxyRef.get()); }
     /**
      * For internal use by GrProcessor.
      */
-    const GrGpuResourceRef* programTexture() const { return &fTexture; }
-
-    bool isBad() const { return !fTexture.get(); }
+    const GrSurfaceProxyRef* programProxy() const { return &fProxyRef; }
 
 private:
-
-    typedef GrTGpuResourceRef<GrTexture> ProgramTexture;
-
-    ProgramTexture                  fTexture;
+    GrSurfaceProxyRef               fProxyRef;
     GrSamplerParams                 fParams;
     GrShaderFlags                   fVisibility;
 
@@ -334,17 +331,21 @@ public:
 
     bool operator!=(const ImageStorageAccess& that) const { return !(*this == that); }
 
-    GrTexture* texture() const { return fProxyRef.getProxy()->priv().peekTexture(); }
-    GrTextureProxy* proxy() const { return fProxyRef.getProxy()->asTextureProxy(); }
+    GrTextureProxy* proxy() const { return fProxyRef.get()->asTextureProxy(); }
     GrShaderFlags visibility() const { return fVisibility; }
     GrIOType ioType() const { return fProxyRef.ioType(); }
     GrImageStorageFormat format() const { return fFormat; }
     GrSLMemoryModel memoryModel() const { return fMemoryModel; }
     GrSLRestrict restrict() const { return fRestrict; }
 
-    // MDB: In the future this should be renamed instantiate
-    bool isBad(GrResourceProvider* resourceProvider) const {
-        return SkToBool(!fProxyRef.getProxy()->instantiate(resourceProvider));
+    // 'instantiate' should only ever be called at flush time.
+    bool instantiate(GrResourceProvider* resourceProvider) const {
+        return SkToBool(fProxyRef.get()->instantiate(resourceProvider));
+    }
+    // 'peekTexture' should only ever be called after a successful 'instantiate' call
+    GrTexture* peekTexture() const {
+        SkASSERT(fProxyRef.get()->priv().peekTexture());
+        return fProxyRef.get()->priv().peekTexture();
     }
 
     /**

@@ -7,6 +7,8 @@
 
 #include "SkBitmap.h"
 #include "SkCanvas.h"
+#include "SkCodecAnimation.h"
+#include "SkCodecAnimationPriv.h"
 #include "SkCodecPriv.h"
 #include "SkColorSpaceXform.h"
 #include "SkRasterPipeline.h"
@@ -41,7 +43,7 @@ static SkAlphaType alpha_type(bool hasAlpha) {
 
 // Parse headers of RIFF container, and check for valid Webp (VP8) content.
 // Returns an SkWebpCodec on success
-SkCodec* SkWebpCodec::NewFromStream(SkStream* stream) {
+SkCodec* SkWebpCodec::NewFromStream(SkStream* stream, Result* result) {
     std::unique_ptr<SkStream> streamDeleter(stream);
 
     // Webp demux needs a contiguous data buffer.
@@ -60,9 +62,19 @@ SkCodec* SkWebpCodec::NewFromStream(SkStream* stream) {
     // pointer in |webpData| to remain valid.  This works because the pointer remains valid
     // until the SkData is freed.
     WebPData webpData = { data->bytes(), data->size() };
-    SkAutoTCallVProc<WebPDemuxer, WebPDemuxDelete> demux(WebPDemuxPartial(&webpData, nullptr));
-    if (nullptr == demux) {
-        return nullptr;
+    WebPDemuxState state;
+    SkAutoTCallVProc<WebPDemuxer, WebPDemuxDelete> demux(WebPDemuxPartial(&webpData, &state));
+    switch (state) {
+        case WEBP_DEMUX_PARSE_ERROR:
+            *result = kInvalidInput;
+            return nullptr;
+        case WEBP_DEMUX_PARSING_HEADER:
+            *result = kIncompleteInput;
+            return nullptr;
+        case WEBP_DEMUX_PARSED_HEADER:
+        case WEBP_DEMUX_DONE:
+            SkASSERT(demux);
+            break;
     }
 
     const int width = WebPDemuxGetI(demux, WEBP_FF_CANVAS_WIDTH);
@@ -71,11 +83,9 @@ SkCodec* SkWebpCodec::NewFromStream(SkStream* stream) {
     // Sanity check for image size that's about to be decoded.
     {
         const int64_t size = sk_64_mul(width, height);
-        if (!sk_64_isS32(size)) {
-            return nullptr;
-        }
         // now check that if we are 4-bytes per pixel, we also don't overflow
-        if (sk_64_asS32(size) > (0x7FFFFFFF >> 2)) {
+        if (!sk_64_isS32(size) || sk_64_asS32(size) > (0x7FFFFFFF >> 2)) {
+            *result = kInvalidInput;
             return nullptr;
         }
     }
@@ -83,12 +93,8 @@ SkCodec* SkWebpCodec::NewFromStream(SkStream* stream) {
     WebPChunkIterator chunkIterator;
     SkAutoTCallVProc<WebPChunkIterator, WebPDemuxReleaseChunkIterator> autoCI(&chunkIterator);
     sk_sp<SkColorSpace> colorSpace = nullptr;
-    bool unsupportedICC = false;
     if (WebPDemuxGetChunk(demux, "ICCP", 1, &chunkIterator)) {
         colorSpace = SkColorSpace::MakeICC(chunkIterator.chunk.bytes, chunkIterator.chunk.size);
-        if (!colorSpace) {
-            unsupportedICC = true;
-        }
     }
     if (!colorSpace) {
         colorSpace = SkColorSpace::MakeSRGB();
@@ -98,13 +104,21 @@ SkCodec* SkWebpCodec::NewFromStream(SkStream* stream) {
     WebPIterator frame;
     SkAutoTCallVProc<WebPIterator, WebPDemuxReleaseIterator> autoFrame(&frame);
     if (!WebPDemuxGetFrame(demux, 1, &frame)) {
+        *result = kIncompleteInput;
         return nullptr;
     }
 
     WebPBitstreamFeatures features;
-    VP8StatusCode status = WebPGetFeatures(frame.fragment.bytes, frame.fragment.size, &features);
-    if (VP8_STATUS_OK != status) {
-        return nullptr;
+    switch (WebPGetFeatures(frame.fragment.bytes, frame.fragment.size, &features)) {
+        case VP8_STATUS_OK:
+            break;
+        case VP8_STATUS_SUSPENDED:
+        case VP8_STATUS_NOT_ENOUGH_DATA:
+            *result = kIncompleteInput;
+            return nullptr;
+        default:
+            *result = kInvalidInput;
+            return nullptr;
     }
 
     const bool hasAlpha = SkToBool(frame.has_alpha)
@@ -141,15 +155,15 @@ SkCodec* SkWebpCodec::NewFromStream(SkStream* stream) {
             }
             break;
         default:
+            *result = kInvalidInput;
             return nullptr;
     }
 
+    *result = kSuccess;
     SkEncodedInfo info = SkEncodedInfo::Make(color, alpha, 8);
-    SkWebpCodec* codecOut = new SkWebpCodec(width, height, info, std::move(colorSpace),
-                                            streamDeleter.release(), demux.release(),
-                                            std::move(data));
-    codecOut->setUnsupportedICC(unsupportedICC);
-    return codecOut;
+    return new SkWebpCodec(width, height, info, std::move(colorSpace),
+                           streamDeleter.release(), demux.release(),
+                           std::move(data));
 }
 
 SkISize SkWebpCodec::onGetScaledDimensions(float desiredScale) const {
@@ -253,8 +267,8 @@ int SkWebpCodec::onGetFrameCount() {
         Frame* frame = fFrameHolder.appendNewFrame(iter.has_alpha);
         frame->setXYWH(iter.x_offset, iter.y_offset, iter.width, iter.height);
         frame->setDisposalMethod(iter.dispose_method == WEBP_MUX_DISPOSE_BACKGROUND ?
-                SkCodecAnimation::RestoreBGColor_DisposalMethod :
-                SkCodecAnimation::Keep_DisposalMethod);
+                SkCodecAnimation::DisposalMethod::kRestoreBGColor :
+                SkCodecAnimation::DisposalMethod::kKeep);
         frame->setDuration(iter.duration);
         if (WEBP_MUX_BLEND != iter.blend_method) {
             frame->setBlend(SkCodecAnimation::Blend::kBG);
@@ -292,6 +306,7 @@ bool SkWebpCodec::onGetFrameInfo(int i, FrameInfo* frameInfo) const {
         // animated image.
         frameInfo->fFullyReceived = true;
         frameInfo->fAlphaType = alpha_type(frame->hasAlpha());
+        frameInfo->fDisposalMethod = frame->getDisposalMethod();
     }
 
     return true;
@@ -313,7 +328,6 @@ static void pick_memory_stages(SkColorType ct, SkRasterPipeline::StockStage* loa
         case kUnknown_SkColorType:
         case kAlpha_8_SkColorType:
         case kARGB_4444_SkColorType:
-        case kIndex_8_SkColorType:
         case kGray_8_SkColorType:
             SkASSERT(false);
             break;
@@ -322,9 +336,12 @@ static void pick_memory_stages(SkColorType ct, SkRasterPipeline::StockStage* loa
             if (store) *store = SkRasterPipeline::store_565;
             break;
         case kRGBA_8888_SkColorType:
-        case kBGRA_8888_SkColorType:
             if (load) *load = SkRasterPipeline::load_8888;
             if (store) *store = SkRasterPipeline::store_8888;
+            break;
+        case kBGRA_8888_SkColorType:
+            if (load) *load = SkRasterPipeline::load_bgra;
+            if (store) *store = SkRasterPipeline::store_bgra;
             break;
         case kRGBA_F16_SkColorType:
             if (load) *load = SkRasterPipeline::load_f16;
@@ -360,10 +377,6 @@ static void blend_line(SkColorType dstCT, void* dst,
     SkRasterPipeline::StockStage load_src;
     pick_memory_stages(srcCT, &load_src, nullptr);
     p.append(load_src, src);
-    if (dstCT != srcCT) {
-        SkASSERT(kBGRA_8888_SkColorType == srcCT);
-        p.append(SkRasterPipeline::swap_rb);
-    }
     p.extend(convert_to_linear_premul);
 
     p.append(SkRasterPipeline::srcover);
@@ -377,17 +390,13 @@ static void blend_line(SkColorType dstCT, void* dst,
     }
     p.append(store_dst, dst);
 
-    p.run(0, width);
+    p.run(0,0, width);
 }
 
 SkCodec::Result SkWebpCodec::onGetPixels(const SkImageInfo& dstInfo, void* dst, size_t rowBytes,
-                                         const Options& options, SkPMColor*, int*,
-                                         int* rowsDecodedPtr) {
-    // Ensure that we have parsed this far.
+                                         const Options& options, int* rowsDecodedPtr) {
     const int index = options.fFrameIndex;
-    if (index >= this->onGetFrameCount()) {
-        return kIncompleteInput;
-    }
+    SkASSERT(0 == index || index < fFrameHolder.size());
 
     const auto& srcInfo = this->getInfo();
     {
@@ -403,13 +412,7 @@ SkCodec::Result SkWebpCodec::onGetPixels(const SkImageInfo& dstInfo, void* dst, 
         }
     }
 
-    if (index > 0 && (options.fSubset || dstInfo.dimensions() != srcInfo.dimensions())) {
-        // Subsetting and scaling are tricky when asking for frames beyond frame 0. In order to
-        // support it, we'll need to determine the proper rectangle for a
-        // WEBP_MUX_DISPOSE_BACKGROUND required frame before erasing it. (Currently the order
-        // is backwards.) Disable until it becomes clear that supporting it is important.
-        return kUnimplemented;
-    }
+    SkASSERT(0 == index || (!options.fSubset && dstInfo.dimensions() == srcInfo.dimensions()));
 
     WebPDecoderConfig config;
     if (0 == WebPInitDecoderConfig(&config)) {
@@ -426,43 +429,15 @@ SkCodec::Result SkWebpCodec::onGetPixels(const SkImageInfo& dstInfo, void* dst, 
     // If this succeeded in onGetFrameCount(), it should succeed again here.
     SkAssertResult(WebPDemuxGetFrame(fDemux, index + 1, &frame));
 
-    const int requiredFrame = index == 0 ? kNone : fFrameHolder.frame(index)->getRequiredFrame();
+    const bool independent = index == 0 ? true :
+            (fFrameHolder.frame(index)->getRequiredFrame() == kNone);
     // Get the frameRect.  libwebp will have already signaled an error if this is not fully
     // contained by the canvas.
     auto frameRect = SkIRect::MakeXYWH(frame.x_offset, frame.y_offset, frame.width, frame.height);
     SkASSERT(srcInfo.bounds().contains(frameRect));
     const bool frameIsSubset = frameRect != srcInfo.bounds();
-    if (kNone == requiredFrame) {
-        if (frameIsSubset) {
-            SkSampler::Fill(dstInfo, dst, rowBytes, 0, options.fZeroInitialized);
-        }
-    } else {
-        if (!options.fHasPriorFrame) {
-            Options prevFrameOpts(options);
-            prevFrameOpts.fFrameIndex = requiredFrame;
-            const auto result = this->getPixels(dstInfo, dst, rowBytes, &prevFrameOpts,
-                                                nullptr, nullptr);
-            switch (result) {
-                case kSuccess:
-                    break;
-                case kIncompleteInput:
-                    return kInvalidInput;
-                default:
-                    return result;
-            }
-        }
-
-        // Dispose bg color
-        const Frame* priorFrame = fFrameHolder.frame(requiredFrame);
-        if (priorFrame->getDisposalMethod() == SkCodecAnimation::RestoreBGColor_DisposalMethod) {
-            // FIXME: If we add support for scaling/subsets, this rectangle needs to be adjusted.
-            const auto priorRect = priorFrame->frameRect();
-            const auto info = dstInfo.makeWH(priorRect.width(), priorRect.height());
-            const size_t bpp = SkColorTypeBytesPerPixel(dstInfo.colorType());
-            const size_t offset = priorRect.x() * bpp + priorRect.y() * rowBytes;
-            auto* eraseDst = SkTAddOffset<void>(dst, offset);
-            SkSampler::Fill(info, eraseDst, rowBytes, 0, kNo_ZeroInitialized);
-        }
+    if (independent && frameIsSubset) {
+        SkSampler::Fill(dstInfo, dst, rowBytes, 0, options.fZeroInitialized);
     }
 
     int dstX = frameRect.x();
@@ -532,7 +507,7 @@ SkCodec::Result SkWebpCodec::onGetPixels(const SkImageInfo& dstInfo, void* dst, 
         config.options.scaled_height = scaledHeight;
     }
 
-    const bool blendWithPrevFrame = requiredFrame != kNone && frame.blend_method == WEBP_MUX_BLEND
+    const bool blendWithPrevFrame = !independent && frame.blend_method == WEBP_MUX_BLEND
         && frame.has_alpha;
     if (blendWithPrevFrame && options.fPremulBehavior == SkTransferFunctionBehavior::kRespect) {
         // Blending is done with SkRasterPipeline, which requires a color space that is valid for
@@ -612,10 +587,6 @@ SkCodec::Result SkWebpCodec::onGetPixels(const SkImageInfo& dstInfo, void* dst, 
 
     const auto dstCT = dstInfo.colorType();
     if (this->colorXform()) {
-        const auto dstColorFormat = select_xform_format(dstInfo.colorType());
-        const auto srcColorFormat = SkColorSpaceXform::kBGRA_8888_ColorFormat;
-        SkASSERT(select_xform_format(webpDst.colorType()) == srcColorFormat);
-
         uint32_t* xformSrc = (uint32_t*) config.output.u.RGBA.rgba;
         SkBitmap tmp;
         void* xformDst;
@@ -628,8 +599,7 @@ SkCodec::Result SkWebpCodec::onGetPixels(const SkImageInfo& dstInfo, void* dst, 
             xformDst = dst;
         }
         for (int y = 0; y < rowsDecoded; y++) {
-            SkAssertResult(this->colorXform()->apply(dstColorFormat, xformDst,
-                    srcColorFormat, xformSrc, scaledWidth, xformAlphaType));
+            this->applyColorXform(xformDst, xformSrc, scaledWidth, xformAlphaType);
             if (blendWithPrevFrame) {
                 blend_line(dstCT, &dst, dstCT, &xformDst, needsSrgbToLinear, xformAlphaType,
                         scaledWidth);
@@ -656,7 +626,8 @@ SkCodec::Result SkWebpCodec::onGetPixels(const SkImageInfo& dstInfo, void* dst, 
 SkWebpCodec::SkWebpCodec(int width, int height, const SkEncodedInfo& info,
                          sk_sp<SkColorSpace> colorSpace, SkStream* stream, WebPDemuxer* demux,
                          sk_sp<SkData> data)
-    : INHERITED(width, height, info, stream, std::move(colorSpace))
+    : INHERITED(width, height, info, SkColorSpaceXform::kBGRA_8888_ColorFormat, stream,
+                std::move(colorSpace))
     , fDemux(demux)
     , fData(std::move(data))
     , fFailed(false)

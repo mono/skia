@@ -37,6 +37,8 @@
 
 #include "imgui.h"
 
+#include "ccpr/GrCoverageCountingPathRenderer.h"
+
 #include <stdlib.h>
 #include <map>
 
@@ -146,8 +148,8 @@ DEFINE_bool(list, false, "List samples?");
 #endif
 
 #ifdef SK_BUILD_FOR_ANDROID
-static DEFINE_string(skps, "/data/local/tmp/skia", "Directory to read skps from.");
-static DEFINE_string(jpgs, "/data/local/tmp/skia", "Directory to read jpgs from.");
+static DEFINE_string(skps, "/data/local/tmp/skps", "Directory to read skps from.");
+static DEFINE_string(jpgs, "/data/local/tmp/resources", "Directory to read jpgs from.");
 #else
 static DEFINE_string(skps, "skps", "Directory to read skps from.");
 static DEFINE_string(jpgs, "jpgs", "Directory to read jpgs from.");
@@ -250,10 +252,8 @@ Viewer::Viewer(int argc, char** argv, void* platformData)
     , fBackendType(sk_app::Window::kNativeGL_BackendType)
     , fColorMode(ColorMode::kLegacy)
     , fColorSpacePrimaries(gSrgbPrimaries)
-    , fZoomCenterX(0.0f)
-    , fZoomCenterY(0.0f)
     , fZoomLevel(0.0f)
-    , fZoomScale(SK_Scalar1)
+    , fGestureDevice(GestureDevice::kNone)
 {
     static SkTaskGroup::Enabler kTaskGroupEnabler;
     SkGraphics::Init();
@@ -264,6 +264,7 @@ Viewer::Viewer(int argc, char** argv, void* platformData)
         gPathRendererNames[GpuPathRenderers::kStencilAndCover] = "NV_path_rendering";
         gPathRendererNames[GpuPathRenderers::kMSAA] = "Sample shading";
         gPathRendererNames[GpuPathRenderers::kSmall] = "Small paths (cached sdf or alpha masks)";
+        gPathRendererNames[GpuPathRenderers::kCoverageCounting] = "Coverage counting";
         gPathRendererNames[GpuPathRenderers::kTessellating] = "Tessellating";
         gPathRendererNames[GpuPathRenderers::kDefault] = "Original Ganesh path renderer";
         gPathRendererNames[GpuPathRenderers::kNone] = "Software masks";
@@ -281,7 +282,7 @@ Viewer::Viewer(int argc, char** argv, void* platformData)
 
     SkCommandLineFlags::Parse(argc, argv);
 #ifdef SK_BUILD_FOR_ANDROID
-    SetResourcePath("/data/local/tmp/skia");
+    SetResourcePath("/data/local/tmp/resources");
 #endif
 
     if (FLAGS_atrace) {
@@ -619,26 +620,20 @@ void Viewer::setupCurrentSlide(int previousSlide) {
 
     fGesture.reset();
     fDefaultMatrix.reset();
-    fDefaultMatrixInv.reset();
 
-    if (fWindow->supportsContentRect() && fWindow->scaleContentToFit()) {
-        const SkRect contentRect = fWindow->getContentRect();
-        const SkISize slideSize = fSlides[fCurrentSlide]->getDimensions();
-        const SkRect slideBounds = SkRect::MakeIWH(slideSize.width(), slideSize.height());
-        if (contentRect.width() > 0 && contentRect.height() > 0) {
-            fDefaultMatrix.setRectToRect(slideBounds, contentRect, SkMatrix::kStart_ScaleToFit);
-            SkAssertResult(fDefaultMatrix.invert(&fDefaultMatrixInv));
+    const SkISize slideSize = fSlides[fCurrentSlide]->getDimensions();
+    const SkRect slideBounds = SkRect::MakeIWH(slideSize.width(), slideSize.height());
+    const SkRect windowRect = SkRect::MakeIWH(fWindow->width(), fWindow->height());
+
+    // Start with a matrix that scales the slide to the available screen space
+    if (fWindow->scaleContentToFit()) {
+        if (windowRect.width() > 0 && windowRect.height() > 0) {
+            fDefaultMatrix.setRectToRect(slideBounds, windowRect, SkMatrix::kStart_ScaleToFit);
         }
     }
 
-    if (fWindow->supportsContentRect()) {
-        const SkISize slideSize = fSlides[fCurrentSlide]->getDimensions();
-        SkRect windowRect = fWindow->getContentRect();
-        fDefaultMatrixInv.mapRect(&windowRect);
-        fGesture.setTransLimit(SkRect::MakeWH(SkIntToScalar(slideSize.width()), 
-                                              SkIntToScalar(slideSize.height())),
-                               windowRect);
-    }
+    // Prevent the user from dragging content so far outside the window they can't find it again
+    fGesture.setTransLimit(slideBounds, windowRect, fDefaultMatrix);
 
     this->updateTitle();
     this->updateUIState();
@@ -653,35 +648,18 @@ void Viewer::setupCurrentSlide(int previousSlide) {
 
 void Viewer::changeZoomLevel(float delta) {
     fZoomLevel += delta;
-    if (fZoomLevel > 0) {
-        fZoomLevel = SkMinScalar(fZoomLevel, MAX_ZOOM_LEVEL);
-        fZoomScale = fZoomLevel + SK_Scalar1;
-    } else if (fZoomLevel < 0) {
-        fZoomLevel = SkMaxScalar(fZoomLevel, MIN_ZOOM_LEVEL);
-        fZoomScale = SK_Scalar1 / (SK_Scalar1 - fZoomLevel);
-    } else {
-        fZoomScale = SK_Scalar1;
-    }
+    fZoomLevel = SkScalarPin(fZoomLevel, MIN_ZOOM_LEVEL, MAX_ZOOM_LEVEL);
 }
 
 SkMatrix Viewer::computeMatrix() {
     SkMatrix m;
-    m.reset();
 
-    if (fZoomLevel) {
-        SkPoint center;
-        //m = this->getLocalMatrix();//.invert(&m);
-        m.mapXY(fZoomCenterX, fZoomCenterY, &center);
-        SkScalar cx = center.fX;
-        SkScalar cy = center.fY;
-
-        m.setTranslate(-cx, -cy);
-        m.postScale(fZoomScale, fZoomScale);
-        m.postTranslate(cx, cy);
-    }
-
-    m.preConcat(fGesture.localM());
+    SkScalar zoomScale = (fZoomLevel < 0) ? SK_Scalar1 / (SK_Scalar1 - fZoomLevel)
+                                          : SK_Scalar1 + fZoomLevel;
+    m = fGesture.localM();
     m.preConcat(fGesture.globalM());
+    m.preConcat(fDefaultMatrix);
+    m.preScale(zoomScale, zoomScale);
 
     return m;
 }
@@ -692,9 +670,10 @@ void Viewer::setBackend(sk_app::Window::BackendType backendType) {
     fWindow->detach();
 
 #if defined(SK_BUILD_FOR_WIN) && defined(SK_VULKAN)
-    // Switching from OpenGL to Vulkan in the same window is problematic at this point on
-    // Windows, so we just delete the window and recreate it.
-    if (sk_app::Window::kVulkan_BackendType == fBackendType) {
+    // Switching from OpenGL to Vulkan (or vice-versa on some systems) in the same window is
+    // problematic at this point on Windows, so we just delete the window and recreate it.
+    if (sk_app::Window::kVulkan_BackendType == fBackendType ||
+            sk_app::Window::kNativeGL_BackendType == fBackendType) {
         DisplayParams params = fWindow->getRequestedDisplayParams();
         delete fWindow;
         fWindow = Window::CreateNativeWindow(nullptr);
@@ -709,7 +688,13 @@ void Viewer::setBackend(sk_app::Window::BackendType backendType) {
         fWindow->registerMouseWheelFunc(on_mouse_wheel_handler, this);
         fWindow->registerKeyFunc(on_key_handler, this);
         fWindow->registerCharFunc(on_char_handler, this);
-        fWindow->setRequestedDisplayParams(params);
+        // Don't allow the window to re-attach. If we're in MSAA mode, the params we grabbed above
+        // will still include our correct sample count. But the re-created fWindow will lose that
+        // information. On Windows, we need to re-create the window when changing sample count,
+        // so we'll incorrectly detect that situation, then re-initialize the window in GL mode,
+        // rendering this tear-down step pointless (and causing the Vulkan window context to fail
+        // as if we had never changed windows at all).
+        fWindow->setRequestedDisplayParams(params, false);
     }
 #endif
 
@@ -736,12 +721,6 @@ void Viewer::setColorMode(ColorMode colorMode) {
 
 void Viewer::drawSlide(SkCanvas* canvas) {
     SkAutoCanvasRestore autorestore(canvas, false);
-
-    if (fWindow->supportsContentRect()) {
-        SkRect contentRect = fWindow->getContentRect();
-        canvas->clipRect(contentRect);
-        canvas->translate(contentRect.fLeft, contentRect.fTop);
-    }
 
     // By default, we render directly into the window's surface/canvas
     SkCanvas* slideCanvas = canvas;
@@ -785,7 +764,6 @@ void Viewer::drawSlide(SkCanvas* canvas) {
 
     int count = slideCanvas->save();
     slideCanvas->clear(SK_ColorWHITE);
-    slideCanvas->concat(fDefaultMatrix);
     slideCanvas->concat(computeMatrix());
     // Time the painting logic of the slide
     double startTime = SkTime::GetMSecs();
@@ -852,43 +830,48 @@ void Viewer::onPaint(SkCanvas* canvas) {
 }
 
 bool Viewer::onTouch(intptr_t owner, Window::InputState state, float x, float y) {
+    if (GestureDevice::kMouse == fGestureDevice) {
+        return false;
+    }
     void* castedOwner = reinterpret_cast<void*>(owner);
-    SkPoint touchPoint = fDefaultMatrixInv.mapXY(x, y);
     switch (state) {
         case Window::kUp_InputState: {
             fGesture.touchEnd(castedOwner);
             break;
         }
         case Window::kDown_InputState: {
-            fGesture.touchBegin(castedOwner, touchPoint.fX, touchPoint.fY);
+            fGesture.touchBegin(castedOwner, x, y);
             break;
         }
         case Window::kMove_InputState: {
-            fGesture.touchMoved(castedOwner, touchPoint.fX, touchPoint.fY);
+            fGesture.touchMoved(castedOwner, x, y);
             break;
         }
     }
+    fGestureDevice = fGesture.isBeingTouched() ? GestureDevice::kTouch : GestureDevice::kNone;
     fWindow->inval();
     return true;
 }
 
 bool Viewer::onMouse(float x, float y, Window::InputState state, uint32_t modifiers) {
-
-    SkPoint touchPoint = fDefaultMatrixInv.mapXY(x, y);
+    if (GestureDevice::kTouch == fGestureDevice) {
+        return false;
+    }
     switch (state) {
         case Window::kUp_InputState: {
             fGesture.touchEnd(nullptr);
             break;
         }
         case Window::kDown_InputState: {
-            fGesture.touchBegin(nullptr, touchPoint.fX, touchPoint.fY);
+            fGesture.touchBegin(nullptr, x, y);
             break;
         }
         case Window::kMove_InputState: {
-            fGesture.touchMoved(nullptr, touchPoint.fX, touchPoint.fY);
+            fGesture.touchMoved(nullptr, x, y);
             break;
         }
     }
+    fGestureDevice = fGesture.isBeingTouched() ? GestureDevice::kMouse : GestureDevice::kNone;
     fWindow->inval();
     return true;
 }
@@ -907,12 +890,6 @@ void Viewer::drawStats(SkCanvas* canvas) {
                                    SkIntToScalar(kDisplayWidth), SkIntToScalar(kDisplayHeight));
     SkPaint paint;
     canvas->save();
-
-    if (fWindow->supportsContentRect()) {
-        SkRect contentRect = fWindow->getContentRect();
-        canvas->clipRect(contentRect);
-        canvas->translate(contentRect.fLeft, contentRect.fTop);
-    }
 
     canvas->clipRect(rect);
     paint.setColor(SK_ColorBLACK);
@@ -1095,6 +1072,9 @@ void Viewer::drawImGui(SkCanvas* canvas) {
                         prButton(GpuPathRenderers::kNone);
                     } else {
                         prButton(GpuPathRenderers::kAll);
+                        if (GrCoverageCountingPathRenderer::IsSupported(*ctx->caps())) {
+                            prButton(GpuPathRenderers::kCoverageCounting);
+                        }
                         prButton(GpuPathRenderers::kSmall);
                         prButton(GpuPathRenderers::kTessellating);
                         prButton(GpuPathRenderers::kNone);
@@ -1331,6 +1311,9 @@ void Viewer::updateUIState() {
         prState[kOptions].append(gPathRendererNames[GpuPathRenderers::kNone]);
     } else {
         prState[kOptions].append(gPathRendererNames[GpuPathRenderers::kAll]);
+        if (GrCoverageCountingPathRenderer::IsSupported(*ctx->caps())) {
+            prState[kOptions].append(gPathRendererNames[GpuPathRenderers::kCoverageCounting]);
+        }
         prState[kOptions].append(gPathRendererNames[GpuPathRenderers::kSmall]);
         prState[kOptions].append(gPathRendererNames[GpuPathRenderers::kTessellating]);
         prState[kOptions].append(gPathRendererNames[GpuPathRenderers::kNone]);

@@ -16,6 +16,7 @@
 #include "SkString.h"
 #include "SkStringUtils.h"
 #include "SkUnPreMultiply.h"
+#include "SkXfermodePriv.h"
 
 SkLayerDrawLooper::LayerInfo::LayerInfo() {
     fPaintBits = 0;                     // ignore our paint fields
@@ -53,8 +54,8 @@ static SkColor xferColor(SkColor src, SkColor dst, SkBlendMode mode) {
         default: {
             SkPMColor pmS = SkPreMultiplyColor(src);
             SkPMColor pmD = SkPreMultiplyColor(dst);
-            SkPMColor result = SkXfermode::GetProc(mode)(pmS, pmD);
-            return SkUnPreMultiply::PMColorToColor(result);
+            SkXfermode::Peek(mode)->xfer32(&pmD, &pmS, 1, nullptr);
+            return SkUnPreMultiply::PMColorToColor(pmD);
         }
     }
 }

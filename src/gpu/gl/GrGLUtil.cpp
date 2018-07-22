@@ -173,6 +173,16 @@ void GrGLGetDriverInfo(GrGLStandard standard,
         // We presume we're on the Intel driver since it hasn't identified itself as Mesa.
         *outDriver = kIntel_GrGLDriver;
     }
+
+    if (kQualcomm_GrGLVendor == vendor) {
+        *outDriver = kQualcomm_GrGLDriver;
+        int n = sscanf(versionString, "OpenGL ES %d.%d V@%d.%d", &major, &minor, &driverMajor,
+                       &driverMinor);
+        if (4 == n) {
+            *outVersion = GR_GL_DRIVER_VER(driverMajor, driverMinor);
+        }
+        return;
+    }
 }
 
 GrGLVersion GrGLGetVersionFromString(const char* versionString) {
@@ -325,6 +335,14 @@ GrGLRenderer GrGLGetRendererFromString(const char* rendererString) {
         }
         if (0 == strcmp("Mesa Offscreen", rendererString)) {
             return kOSMesa_GrGLRenderer;
+        }
+        static const char kMaliTStr[] = "Mali-T";
+        if (0 == strncmp(rendererString, kMaliTStr, SK_ARRAY_COUNT(kMaliTStr) - 1)) {
+            return kMaliT_GrGLRenderer;
+        }
+        static const char kANGLEStr[] = "ANGLE";
+        if (0 == strncmp(rendererString, kANGLEStr, SK_ARRAY_COUNT(kANGLEStr) - 1)) {
+            return kANGLE_GrGLRenderer;
         }
     }
     return kOther_GrGLRenderer;

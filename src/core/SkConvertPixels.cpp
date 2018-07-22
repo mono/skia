@@ -243,19 +243,6 @@ static void convert_to_alpha8(uint8_t* dst, size_t dstRB, const SkImageInfo& src
             }
             break;
         }
-        case kIndex_8_SkColorType: {
-            SkASSERT(ctable);
-            const uint32_t* table = ctable->readColors();
-            auto src8 = (const uint8_t*)src;
-            for (int y = 0; y < srcInfo.height(); y++) {
-                for (int x = 0; x < srcInfo.width(); x++) {
-                    dst[x] = table[src8[x]] >> 24;
-                }
-                dst = SkTAddOffset<uint8_t>(dst, dstRB);
-                src8 = SkTAddOffset<const uint8_t>(src8, srcRB);
-            }
-            break;
-        }
         case kRGBA_F16_SkColorType: {
             auto src64 = (const uint64_t*) src;
             for (int y = 0; y < srcInfo.height(); y++) {
@@ -283,8 +270,7 @@ static void convert_with_pipeline(const SkImageInfo& dstInfo, void* dstRow, size
             pipeline.append(SkRasterPipeline::load_8888, &srcRow);
             break;
         case kBGRA_8888_SkColorType:
-            pipeline.append(SkRasterPipeline::load_8888, &srcRow);
-            pipeline.append(SkRasterPipeline::swap_rb);
+            pipeline.append(SkRasterPipeline::load_bgra, &srcRow);
             break;
         case kRGB_565_SkColorType:
             pipeline.append(SkRasterPipeline::load_565, &srcRow);
@@ -309,14 +295,14 @@ static void convert_with_pipeline(const SkImageInfo& dstInfo, void* dstRow, size
         premulState = kUnpremul_SkAlphaType;
     }
 
+    SkColorSpaceTransferFn srcFn;
     if (isColorAware && srcInfo.gammaCloseToSRGB()) {
-        pipeline.append_from_srgb(srcInfo.alphaType());
+        pipeline.append_from_srgb(premulState);
     } else if (isColorAware && !srcInfo.colorSpace()->gammaIsLinear()) {
-        SkColorSpaceTransferFn fn;
-        SkAssertResult(srcInfo.colorSpace()->isNumericalTransferFn(&fn));
-        pipeline.append(SkRasterPipeline::parametric_r, &fn);
-        pipeline.append(SkRasterPipeline::parametric_g, &fn);
-        pipeline.append(SkRasterPipeline::parametric_b, &fn);
+        SkAssertResult(srcInfo.colorSpace()->isNumericalTransferFn(&srcFn));
+        pipeline.append(SkRasterPipeline::parametric_r, &srcFn);
+        pipeline.append(SkRasterPipeline::parametric_g, &srcFn);
+        pipeline.append(SkRasterPipeline::parametric_b, &srcFn);
     }
 
     float matrix[12];
@@ -336,15 +322,15 @@ static void convert_with_pipeline(const SkImageInfo& dstInfo, void* dstRow, size
         }
     }
 
+    SkColorSpaceTransferFn dstFn;
     if (isColorAware && dstInfo.gammaCloseToSRGB()) {
         pipeline.append(SkRasterPipeline::to_srgb);
     } else if (isColorAware && !dstInfo.colorSpace()->gammaIsLinear()) {
-        SkColorSpaceTransferFn fn;
-        SkAssertResult(dstInfo.colorSpace()->isNumericalTransferFn(&fn));
-        fn = fn.invert();
-        pipeline.append(SkRasterPipeline::parametric_r, &fn);
-        pipeline.append(SkRasterPipeline::parametric_g, &fn);
-        pipeline.append(SkRasterPipeline::parametric_b, &fn);
+        SkAssertResult(dstInfo.colorSpace()->isNumericalTransferFn(&dstFn));
+        dstFn = dstFn.invert();
+        pipeline.append(SkRasterPipeline::parametric_r, &dstFn);
+        pipeline.append(SkRasterPipeline::parametric_g, &dstFn);
+        pipeline.append(SkRasterPipeline::parametric_b, &dstFn);
     }
 
     if (kUnpremul_SkAlphaType == premulState && kPremul_SkAlphaType == dat &&
@@ -359,17 +345,16 @@ static void convert_with_pipeline(const SkImageInfo& dstInfo, void* dstRow, size
     SkASSERT(premulState == dat || kOpaque_SkAlphaType == srcInfo.alphaType());
 
     // We'll dither if we're decreasing precision below 32-bit.
-    int y;
-    SkJumper_DitherCtx dither = {&y, 0.0f};
+    float dither_rate = 0.0f;
     if (srcInfo.bytesPerPixel() > dstInfo.bytesPerPixel()) {
         switch (dstInfo.colorType()) {
-            case   kRGB_565_SkColorType: dither.rate = 1/63.0f; break;
-            case kARGB_4444_SkColorType: dither.rate = 1/15.0f; break;
-            default:                     dither.rate =    0.0f; break;
+            case   kRGB_565_SkColorType: dither_rate = 1/63.0f; break;
+            case kARGB_4444_SkColorType: dither_rate = 1/15.0f; break;
+            default:                     dither_rate =    0.0f; break;
         }
     }
-    if (dither.rate > 0) {
-        pipeline.append(SkRasterPipeline::dither, &dither);
+    if (dither_rate > 0) {
+        pipeline.append(SkRasterPipeline::dither, &dither_rate);
     }
 
     switch (dstInfo.colorType()) {
@@ -377,8 +362,7 @@ static void convert_with_pipeline(const SkImageInfo& dstInfo, void* dstRow, size
             pipeline.append(SkRasterPipeline::store_8888, &dstRow);
             break;
         case kBGRA_8888_SkColorType:
-            pipeline.append(SkRasterPipeline::swap_rb);
-            pipeline.append(SkRasterPipeline::store_8888, &dstRow);
+            pipeline.append(SkRasterPipeline::store_bgra, &dstRow);
             break;
         case kRGB_565_SkColorType:
             pipeline.append(SkRasterPipeline::store_565, &dstRow);
@@ -394,9 +378,9 @@ static void convert_with_pipeline(const SkImageInfo& dstInfo, void* dstRow, size
             break;
     }
 
-    // This y is declared above when handling dither (which needs to know y).
-    for (y = 0; y < srcInfo.height(); ++y) {
-        pipeline.run(0,srcInfo.width());
+    auto run = pipeline.compile();
+    for (int y = 0; y < srcInfo.height(); ++y) {
+        run(0,y, srcInfo.width());
         // The pipeline has pointers to srcRow and dstRow, so we just need to update them in the
         // loop to move between rows of src/dst.
         dstRow = SkTAddOffset<void>(dstRow, dstRB);
@@ -428,14 +412,6 @@ void SkConvertPixels(const SkImageInfo& dstInfo, void* dstPixels, size_t dstRB,
     // Fast Path 3: Color space xform.
     if (isColorAware && optimized_color_xform(dstInfo, srcInfo, behavior)) {
         apply_color_xform(dstInfo, dstPixels, dstRB, srcInfo, srcPixels, srcRB, behavior);
-        return;
-    }
-
-    // Fast Path 4: Index 8 sources.
-    if (kIndex_8_SkColorType == srcInfo.colorType()) {
-        SkASSERT(ctable);
-        convert_from_index8(dstInfo, dstPixels, dstRB, srcInfo, (const uint8_t*) srcPixels, srcRB,
-                            ctable, behavior);
         return;
     }
 

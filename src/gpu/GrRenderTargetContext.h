@@ -19,12 +19,13 @@
 #include "SkRefCnt.h"
 #include "SkSurfaceProps.h"
 
+class GrBackendSemaphore;
+class GrCCPRAtlas;
 class GrClip;
+class GrCoverageCountingPathRenderer;
 class GrDrawingManager;
 class GrDrawOp;
 class GrFixedClip;
-class GrLegacyMeshDrawOp;
-class GrPipelineBuilder;
 class GrRenderTarget;
 class GrRenderTargetContextPriv;
 class GrRenderTargetOpList;
@@ -53,10 +54,6 @@ class SkVertices;
 class SK_API GrRenderTargetContext : public GrSurfaceContext {
 public:
     ~GrRenderTargetContext() override;
-
-    // MDB TODO: This access is mainly provided for the image filters. Remove it when they
-    // no longer need to pass it to the FragmentProcessor ctors.
-    GrResourceProvider* resourceProvider() { return fContext->resourceProvider(); }
 
     // We use SkPaint rather than GrPaint here for two reasons:
     //    * The SkPaint carries extra text settings. If these were extracted to a lighter object
@@ -157,13 +154,13 @@ public:
      * Use a fast method to render the ambient and spot shadows for a path.
      * Will return false if not possible for the given path.
      *
-     * @param paint        describes how to color pixels.
+     * @param color        shadow color.
      * @param viewMatrix   transformation matrix
      * @param path         the path to shadow
      * @param rec          parameters for shadow rendering
      */
     bool drawFastShadow(const GrClip&,
-                        GrPaint&&,
+                        GrColor color,
                         const SkMatrix& viewMatrix,
                         const SkPath& path,
                         const SkDrawShadowRec& rec);
@@ -201,52 +198,19 @@ public:
                   const SkPath&,
                   const GrStyle& style);
 
-    enum class ColorArrayType {
-        kPremulGrColor,
-        kSkColor,
-    };
     /**
      * Draws vertices with a paint.
      *
-     * @param   paint           describes how to color pixels.
-     * @param   viewMatrix      transformation matrix
-     * @param   primitiveType   primitives type to draw.
-     * @param   vertexCount     number of vertices.
-     * @param   positions       array of vertex positions, required.
-     * @param   texCoords       optional array of texture coordinates used
-     *                          to access the paint.
-     * @param   colors          optional array of per-vertex colors, supercedes
-     *                          the paint's color field.
-     * @param   indices         optional array of indices. If NULL vertices
-     *                          are drawn non-indexed.
-     * @param   indexCount      if indices is non-null then this is the
-     *                          number of indices.
-     * @param   ColorArrayType  Determines how the color array should be interpreted.
+     * @param   paint            describes how to color pixels.
+     * @param   viewMatrix       transformation matrix
+     * @param   vertices         specifies the mesh to draw.
+     * @param   overridePrimType primitive type to draw. If NULL, derive prim type from vertices.
      */
     void drawVertices(const GrClip&,
                       GrPaint&& paint,
                       const SkMatrix& viewMatrix,
-                      GrPrimitiveType primitiveType,
-                      int vertexCount,
-                      const SkPoint positions[],
-                      const SkPoint texs[],
-                      const uint32_t colors[],
-                      const uint16_t indices[],
-                      int indexCount,
-                      ColorArrayType = ColorArrayType::kPremulGrColor);
-
-    /**
-     * Draws vertices with a paint.
-     *
-     * @param   paint           describes how to color pixels.
-     * @param   viewMatrix      transformation matrix
-     * @param   veritces        specifies the mesh to draw.
-     * @param   flags           A bitfield of options specified by SkCanvas::VerticesFlags.
-     */
-    void drawVertices(const GrClip&,
-                      GrPaint&& paint,
-                      const SkMatrix& viewMatrix,
-                      sk_sp<SkVertices> vertices);
+                      sk_sp<SkVertices> vertices,
+                      GrPrimitiveType* overridePrimType = nullptr);
 
     /**
      * Draws textured sprites from an atlas with a paint. This currently does not support AA for the
@@ -339,7 +303,13 @@ public:
      * After this returns any pending surface IO will be issued to the backend 3D API and
      * if the surface has MSAA it will be resolved.
      */
-    void prepareForExternalIO();
+    bool prepareForExternalIO(int numSemaphores, GrBackendSemaphore* backendSemaphores);
+
+    /**
+     *  The next time this GrRenderTargetContext is flushed, the gpu will wait on the passed in
+     *  semaphores before executing any commands.
+     */
+    bool waitOnSemaphores(int numSemaphores, const GrBackendSemaphore* waitSemaphores);
 
     GrFSAAType fsaaType() const { return fRenderTargetProxy->fsaaType(); }
     const GrCaps* caps() const { return fContext->caps(); }
@@ -357,7 +327,10 @@ public:
     GrRenderTarget* accessRenderTarget() {
         // TODO: usage of this entry point needs to be reduced and potentially eliminated
         // since it ends the deferral of the GrRenderTarget's allocation
-        return fRenderTargetProxy->instantiateRenderTarget(fContext->resourceProvider());
+        if (!fRenderTargetProxy->instantiate(fContext->resourceProvider())) {
+            return nullptr;
+        }
+        return fRenderTargetProxy->priv().peekRenderTarget();
     }
 
     GrSurfaceProxy* asSurfaceProxy() override { return fRenderTargetProxy.get(); }
@@ -381,13 +354,13 @@ public:
 protected:
     GrRenderTargetContext(GrContext*, GrDrawingManager*, sk_sp<GrRenderTargetProxy>,
                           sk_sp<SkColorSpace>, const SkSurfaceProps*, GrAuditTrail*,
-                          GrSingleOwner*);
+                          GrSingleOwner*, bool managedOpList = true);
 
-    SkDEBUGCODE(void validate() const;)
+    SkDEBUGCODE(void validate() const override;)
 
 private:
     inline GrAAType chooseAAType(GrAA aa, GrAllowMixedSamples allowMixedSamples) {
-        return GrChooseAAType(aa, this->fsaaType(), allowMixedSamples);
+        return GrChooseAAType(aa, this->fsaaType(), allowMixedSamples, *this->caps());
     }
 
     friend class GrAtlasTextBlob;               // for access to add[Mesh]DrawOp
@@ -408,6 +381,8 @@ private:
     friend class GrMSAAPathRenderer;                 // for access to add[Mesh]DrawOp
     friend class GrStencilAndCoverPathRenderer;      // for access to add[Mesh]DrawOp
     friend class GrTessellatingPathRenderer;         // for access to add[Mesh]DrawOp
+    friend class GrCCPRAtlas;                        // for access to addDrawOp
+    friend class GrCoverageCountingPathRenderer;     // for access to addDrawOp
     // for a unit test
     friend void test_draw_op(GrRenderTargetContext*,
                              sk_sp<GrFragmentProcessor>, sk_sp<GrTextureProxy>);
@@ -430,36 +405,24 @@ private:
                         const SkRect& rect,
                         const GrUserStencilSettings* ss);
 
-    void drawNonAAFilledRect(const GrClip&,
-                             GrPaint&&,
-                             const SkMatrix& viewMatrix,
-                             const SkRect& rect,
-                             const SkRect* localRect,
-                             const SkMatrix* localMatrix,
-                             const GrUserStencilSettings* ss,
-                             GrAAType hwOrNoneAAType);
-
     void internalDrawPath(
             const GrClip&, GrPaint&&, GrAA, const SkMatrix&, const SkPath&, const GrStyle&);
-
-    bool onCopy(GrSurfaceProxy* src, const SkIRect& srcRect, const SkIPoint& dstPoint) override;
 
     // These perform processing specific to Gr[Mesh]DrawOp-derived ops before recording them into
     // the op list. They return the id of the opList to which the op was added, or 0, if it was
     // dropped (e.g., due to clipping).
     uint32_t addDrawOp(const GrClip&, std::unique_ptr<GrDrawOp>);
-    uint32_t addLegacyMeshDrawOp(GrPipelineBuilder&&, const GrClip&,
-                                 std::unique_ptr<GrLegacyMeshDrawOp>);
 
     // Makes a copy of the proxy if it is necessary for the draw and places the texture that should
     // be used by GrXferProcessor to access the destination color in 'result'. If the return
     // value is false then a texture copy could not be made.
-    bool SK_WARN_UNUSED_RESULT setupDstTexture(GrRenderTargetProxy*,
-                                               const GrClip&,
-                                               const SkRect& opBounds,
-                                               GrXferProcessor::DstTexture* result);
+    bool SK_WARN_UNUSED_RESULT setupDstProxy(GrRenderTargetProxy*,
+                                             const GrClip&,
+                                             const SkRect& opBounds,
+                                             GrXferProcessor::DstProxy* result);
 
-    GrRenderTargetOpList* getOpList();
+    GrRenderTargetOpList* getRTOpList();
+    GrOpList* getOpList() override;
 
     sk_sp<GrRenderTargetProxy>        fRenderTargetProxy;
 
@@ -470,6 +433,7 @@ private:
 
     sk_sp<GrColorSpaceXform>          fColorXformFromSRGB;
     SkSurfaceProps                    fSurfaceProps;
+    bool                              fManagedOpList;
 
     typedef GrSurfaceContext INHERITED;
 };

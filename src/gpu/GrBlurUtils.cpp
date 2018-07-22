@@ -12,10 +12,8 @@
 #include "GrContextPriv.h"
 #include "GrFixedClip.h"
 #include "GrRenderTargetContextPriv.h"
-#include "GrResourceProvider.h"
 #include "effects/GrSimpleTextureEffect.h"
 #include "GrStyle.h"
-#include "GrTexture.h"
 #include "GrTextureProxy.h"
 #include "SkDraw.h"
 #include "SkGr.h"
@@ -41,13 +39,10 @@ static bool draw_mask(GrRenderTargetContext* renderTargetContext,
         return false;
     }
 
-    GrResourceProvider* resourceProvider = renderTargetContext->resourceProvider();
-
     SkMatrix matrix = SkMatrix::MakeTrans(-SkIntToScalar(maskRect.fLeft),
                                           -SkIntToScalar(maskRect.fTop));
     matrix.preConcat(viewMatrix);
-    paint.addCoverageFragmentProcessor(GrSimpleTextureEffect::Make(resourceProvider,
-                                                                   std::move(mask),
+    paint.addCoverageFragmentProcessor(GrSimpleTextureEffect::Make(std::move(mask),
                                                                    nullptr, matrix));
 
     renderTargetContext->fillRectWithLocalMatrix(clip, std::move(paint), GrAA::kNo, SkMatrix::I(),
@@ -302,7 +297,7 @@ void GrBlurUtils::drawPathWithMaskFilter(GrContext* context,
     }
     GrAA aa = GrBoolToAA(paint.isAntiAlias());
     SkMaskFilter* mf = paint.getMaskFilter();
-    if (mf && !mf->asFragmentProcessor(nullptr, nullptr, viewMatrix)) {
+    if (mf && !mf->asFragmentProcessor(nullptr)) {
         // The MaskFilter wasn't already handled in SkPaintToGrPaint
         draw_path_with_mask_filter(context, renderTargetContext, clip, std::move(grPaint), aa,
                                    viewMatrix, mf, style, path, pathIsMutable);

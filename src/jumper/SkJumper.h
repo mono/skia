@@ -12,9 +12,11 @@
 // and SkJumper_stages.cpp (compiled into Skia _and_ offline into SkJumper_generated.h).
 // Keep it simple!
 
-// Sometimes we need to make sure externally facing functions are called with MS' ABI, not System V.
-#if defined(JUMPER) && defined(WIN)
-    #define MAYBE_MSABI __attribute__((ms_abi))
+// Externally facing functions (start_pipeline) are called a little specially on Windows.
+#if defined(JUMPER) && defined(WIN) && defined(__x86_64__)
+    #define MAYBE_MSABI __attribute__((ms_abi))                   // Use MS' ABI, not System V.
+#elif defined(JUMPER) && defined(WIN) && defined(__i386__)
+    #define MAYBE_MSABI __attribute__((force_align_arg_pointer))  // Re-align stack 4 -> 16 bytes.
 #else
     #define MAYBE_MSABI
 #endif
@@ -55,10 +57,9 @@ struct SkJumper_constants {
     uint32_t iota_U32[SkJumper_kMaxStride];   //  0,1,2,3,4,...
 };
 
-struct SkJumper_GatherCtx {
-    const void*     pixels;
-    const uint32_t* ctable;
-    int             stride;
+struct SkJumper_MemoryCtx {
+    void* pixels;
+    int   stride;
 };
 
 // State shared by save_xy, accumulate, and bilinear_* / bicubic_*.
@@ -69,6 +70,11 @@ struct SkJumper_SamplerCtx {
     float     fy[SkJumper_kMaxStride];
     float scalex[SkJumper_kMaxStride];
     float scaley[SkJumper_kMaxStride];
+};
+
+struct SkJumper_TileCtx {
+    float scale;
+    float invScale; // cache of 1/scale
 };
 
 struct SkJumper_CallbackCtx {
@@ -95,16 +101,19 @@ struct SkJumper_ParametricTransferFunction {
     float G, A,B,C,D,E,F;
 };
 
-struct SkJumper_DitherCtx {
-    const int* y;
-    float rate;
-};
-
 struct SkJumper_GradientCtx {
     size_t stopCount;
     float* fs[4];
     float* bs[4];
     float* ts;
+};
+
+struct SkJumper_2PtConicalCtx {
+    uint32_t fMask[SkJumper_kMaxStride];
+    float    fCoeffA,
+             fInvCoeffA,
+             fR0,
+             fDR;
 };
 
 #endif//SkJumper_DEFINED

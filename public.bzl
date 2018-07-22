@@ -83,7 +83,6 @@ BASE_SRCS_ALL = struct(
         "src/gpu/gl/iOS/*",
         "src/gpu/gl/mac/*",
         "src/gpu/gl/win/*",
-        "src/images/*",
         "src/opts/**/*",
         "src/ports/**/*",
         "src/utils/android/**/*",
@@ -117,6 +116,9 @@ BASE_SRCS_ALL = struct(
 
         # Defines main.
         "src/sksl/SkSLMain.cpp",
+
+        # Only pre-compiled into SkJumper_generated.S.
+        "src/jumper/SkJumper_stages_lowp.cpp",
     ],
 )
 
@@ -126,7 +128,6 @@ BASE_SRCS_UNIX = struct(
         "src/android/*",
         "src/codec/*",
         "src/gpu/gl/GrGLDefaultInterface_none.cpp",
-        "src/images/*",
         "src/opts/**/*.cpp",
         "src/opts/**/*.h",
         "src/ports/**/*.cpp",
@@ -168,7 +169,6 @@ BASE_SRCS_UNIX = struct(
         "src/ports/SkFontMgr_fontconfig.cpp",
         "src/ports/SkFontMgr_fontconfig_factory.cpp",
         "src/ports/SkGlobalInitialization_none.cpp",
-        "src/ports/SkImageEncoder_none.cpp",
         "src/ports/SkImageGenerator_none.cpp",
         "src/ports/SkTLS_none.cpp",
     ],
@@ -180,7 +180,6 @@ BASE_SRCS_ANDROID = struct(
         "src/android/*",
         "src/codec/*",
         "src/gpu/gl/GrGLDefaultInterface_none.cpp",
-        "src/images/*",
         # TODO(benjaminwagner): Figure out how to compile with EGL.
         "src/opts/**/*.cpp",
         "src/opts/**/*.h",
@@ -214,7 +213,6 @@ BASE_SRCS_ANDROID = struct(
         "src/ports/SkFontMgr_custom_empty_factory.cpp",
         "src/ports/SkFontMgr_empty_factory.cpp",
         "src/ports/SkGlobalInitialization_none.cpp",
-        "src/ports/SkImageEncoder_none.cpp",
         "src/ports/SkImageGenerator_none.cpp",
         "src/ports/SkTLS_none.cpp",
     ],
@@ -384,6 +382,8 @@ SKIA_OS_IOS = "IOS"
 
 SKIA_CPU_UNSPECIFIED = "UNSPECIFIED"
 
+SKIA_CPU_ARM = "ARM"
+
 SKIA_CPU_PPC = "PPC"
 
 def skia_srcs(os=SKIA_OS_UNIX, cpu=SKIA_CPU_UNSPECIFIED):
@@ -400,7 +400,7 @@ def skia_srcs(os=SKIA_OS_UNIX, cpu=SKIA_CPU_UNSPECIFIED):
   elif os == SKIA_OS_UNIX:
     if cpu == SKIA_CPU_UNSPECIFIED:
       srcs = srcs + ["src/opts/opts_check_x86.cpp"] + skia_glob(BASE_SRCS_UNIX)
-    elif cpu == SKIA_CPU_PPC:
+    elif cpu == SKIA_CPU_PPC or cpu == SKIA_CPU_ARM:
       srcs = srcs + skia_glob(BASE_SRCS_UNIX)
     else:
       fail("cpu must be one of SKIA_CPU_*")
@@ -442,6 +442,7 @@ INCLUDES = [
     "src/ports",
     "src/pdf",
     "src/sfnt",
+    "src/shaders",
     "src/sksl",
     "src/utils",
     "third_party/etc1",
@@ -491,6 +492,8 @@ DM_SRCS_ALL = struct(
         "tools/test_font_index.inc",
         "tools/timer/*.cpp",
         "tools/timer/*.h",
+        "tools/trace/*.cpp",
+        "tools/trace/*.h",
     ],
     exclude = [
         "tests/FontMgrAndroidParserTest.cpp",  # Android-only.
@@ -544,12 +547,13 @@ DM_INCLUDES = [
     "src/codec",
     "src/core",
     "src/effects",
-    "src/effects/gradients",
     "src/fonts",
     "src/images",
     "src/pathops",
     "src/pipe/utils",
     "src/ports",
+    "src/shaders",
+    "src/shaders/gradients",
     "src/xml",
     "tests",
     "tools",
@@ -557,6 +561,7 @@ DM_INCLUDES = [
     "tools/flags",
     "tools/gpu",
     "tools/timer",
+    "tools/trace",
 ]
 
 ################################################################################
@@ -658,11 +663,15 @@ DEFINES_ALL = [
     "SK_USE_FREETYPE_EMBOLDEN",
     # Turn on a few Google3-specific build fixes.
     "GOOGLE3",
+    # Required for building dm.
+    "GR_TEST_UTILS",
     # Staging flags for API changes
     # Should remove after we update golden images
     "SK_WEBP_ENCODER_USE_DEFAULT_METHOD",
     # Temporarily Disable analytic AA for Google3
     "SK_NO_ANALYTIC_AA",
+    # Experiment to diagnose image diffs in Google3
+    "SK_DISABLE_SSSE3_RUNTIME_CHECK_FOR_LOWP_STAGES",
 ]
 
 ################################################################################

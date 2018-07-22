@@ -77,12 +77,14 @@ public:
         bool isSimilarity = SkToBool(dfTexEffect.getFlags() & kSimilarity_DistanceFieldEffectFlag);
         bool isGammaCorrect =
             SkToBool(dfTexEffect.getFlags() & kGammaCorrect_DistanceFieldEffectFlag);
+        bool isAliased =
+            SkToBool(dfTexEffect.getFlags() & kAliased_DistanceFieldEffectFlag);
         varyingHandler->addVarying("TextureCoords", &uv, kHigh_GrSLPrecision);
         vertBuilder->codeAppendf("%s = %s;", uv.vsOut(), dfTexEffect.inTextureCoords()->fName);
 
         // compute numbers to be hardcoded to convert texture coordinates from float to int
         SkASSERT(dfTexEffect.numTextureSamplers() == 1);
-        GrTexture* atlas = dfTexEffect.textureSampler(0).texture();
+        GrTexture* atlas = dfTexEffect.textureSampler(0).peekTexture();
         SkASSERT(atlas && SkIsPow2(atlas->width()) && SkIsPow2(atlas->height()));
 
         GrGLSLVertToFrag st(kVec2f_GrSLType);
@@ -158,10 +160,12 @@ public:
             fragBuilder->codeAppend("afwidth = " SK_DistanceFieldAAFactor "*length(grad);");
         }
 
-        // The smoothstep falloff compensates for the non-linear sRGB response curve. If we are
-        // doing gamma-correct rendering (to an sRGB or F16 buffer), then we actually want distance
-        // mapped linearly to coverage, so use a linear step:
-        if (isGammaCorrect) {
+        if (isAliased) {
+            fragBuilder->codeAppend("float val = distance > 0 ? 1.0 : 0.0;");
+        } else if (isGammaCorrect) {
+            // The smoothstep falloff compensates for the non-linear sRGB response curve. If we are
+            // doing gamma-correct rendering (to an sRGB or F16 buffer), then we actually want
+            // distance mapped linearly to coverage, so use a linear step:
             fragBuilder->codeAppend(
                 "float val = clamp((distance + afwidth) / (2.0 * afwidth), 0.0, 1.0);");
         } else {
@@ -202,7 +206,7 @@ public:
 
         // Currently we hardcode numbers to convert atlas coordinates to normalized floating point
         SkASSERT(gp.numTextureSamplers() == 1);
-        GrTexture* atlas = gp.textureSampler(0).texture();
+        GrTextureProxy* atlas = gp.textureSampler(0).proxy();
         if (atlas) {
             b->add32(atlas->width());
             b->add32(atlas->height());
@@ -222,8 +226,7 @@ private:
 
 ///////////////////////////////////////////////////////////////////////////////
 
-GrDistanceFieldA8TextGeoProc::GrDistanceFieldA8TextGeoProc(GrResourceProvider* resourceProvider,
-                                                           GrColor color,
+GrDistanceFieldA8TextGeoProc::GrDistanceFieldA8TextGeoProc(GrColor color,
                                                            const SkMatrix& viewMatrix,
                                                            sk_sp<GrTextureProxy> proxy,
                                                            const GrSamplerParams& params,
@@ -234,7 +237,7 @@ GrDistanceFieldA8TextGeoProc::GrDistanceFieldA8TextGeoProc(GrResourceProvider* r
                                                            bool usesLocalCoords)
     : fColor(color)
     , fViewMatrix(viewMatrix)
-    , fTextureSampler(resourceProvider, std::move(proxy), params)
+    , fTextureSampler(std::move(proxy), params)
 #ifdef SK_GAMMA_APPLY_TO_A8
     , fDistanceAdjust(distanceAdjust)
 #endif
@@ -289,8 +292,7 @@ sk_sp<GrGeometryProcessor> GrDistanceFieldA8TextGeoProc::TestCreate(GrProcessorT
         flags |= d->fRandom->nextBool() ? kScaleOnly_DistanceFieldEffectFlag : 0;
     }
 
-    return GrDistanceFieldA8TextGeoProc::Make(d->resourceProvider(),
-                                              GrRandomColor(d->fRandom),
+    return GrDistanceFieldA8TextGeoProc::Make(GrRandomColor(d->fRandom),
                                               GrTest::TestMatrix(d->fRandom),
                                               std::move(proxy), params,
 #ifdef SK_GAMMA_APPLY_TO_A8
@@ -431,7 +433,8 @@ public:
                  FPCoordTransformIter&& transformIter) override {
         SkASSERT(fTextureSizeUni.isValid());
 
-        GrTexture* texture = proc.textureSampler(0).texture();
+        GrTexture* texture = proc.textureSampler(0).peekTexture();
+
         if (texture->width() != fTextureSize.width() ||
             texture->height() != fTextureSize.height()) {
             fTextureSize = SkISize::Make(texture->width(), texture->height());
@@ -471,20 +474,18 @@ private:
 };
 
 ///////////////////////////////////////////////////////////////////////////////
-GrDistanceFieldPathGeoProc::GrDistanceFieldPathGeoProc(
-        GrResourceProvider* resourceProvider,
-        GrColor color,
-        const SkMatrix& viewMatrix,
-        sk_sp<GrTextureProxy> proxy,
-        const GrSamplerParams& params,
-        uint32_t flags,
-        bool usesLocalCoords)
-    : fColor(color)
-    , fViewMatrix(viewMatrix)
-    , fTextureSampler(resourceProvider, std::move(proxy), params)
-    , fFlags(flags & kNonLCD_DistanceFieldEffectMask)
-    , fInColor(nullptr)
-    , fUsesLocalCoords(usesLocalCoords) {
+GrDistanceFieldPathGeoProc::GrDistanceFieldPathGeoProc(GrColor color,
+                                                       const SkMatrix& viewMatrix,
+                                                       sk_sp<GrTextureProxy> proxy,
+                                                       const GrSamplerParams& params,
+                                                       uint32_t flags,
+                                                       bool usesLocalCoords)
+        : fColor(color)
+        , fViewMatrix(viewMatrix)
+        , fTextureSampler(std::move(proxy), params)
+        , fFlags(flags & kNonLCD_DistanceFieldEffectMask)
+        , fInColor(nullptr)
+        , fUsesLocalCoords(usesLocalCoords) {
     SkASSERT(!(flags & ~kNonLCD_DistanceFieldEffectMask));
     this->initClassID<GrDistanceFieldPathGeoProc>();
     fInPosition = &this->addVertexAttrib("inPosition", kVec2f_GrVertexAttribType,
@@ -532,8 +533,7 @@ sk_sp<GrGeometryProcessor> GrDistanceFieldPathGeoProc::TestCreate(GrProcessorTes
         flags |= d->fRandom->nextBool() ? kScaleOnly_DistanceFieldEffectFlag : 0;
     }
 
-    return GrDistanceFieldPathGeoProc::Make(d->resourceProvider(),
-                                            GrRandomColor(d->fRandom),
+    return GrDistanceFieldPathGeoProc::Make(GrRandomColor(d->fRandom),
                                             GrTest::TestMatrix(d->fRandom),
                                             std::move(proxy),
                                             params,
@@ -596,7 +596,7 @@ public:
 
         // compute numbers to be hardcoded to convert texture coordinates from float to int
         SkASSERT(dfTexEffect.numTextureSamplers() == 1);
-        GrTexture* atlas = dfTexEffect.textureSampler(0).texture();
+        GrTexture* atlas = dfTexEffect.textureSampler(0).peekTexture();
         SkASSERT(atlas && SkIsPow2(atlas->width()) && SkIsPow2(atlas->height()));
 
         GrGLSLVertToFrag st(kVec2f_GrSLType);
@@ -756,7 +756,7 @@ public:
 
         // Currently we hardcode numbers to convert atlas coordinates to normalized floating point
         SkASSERT(gp.numTextureSamplers() == 1);
-        GrTexture* atlas = gp.textureSampler(0).texture();
+        GrTextureProxy* atlas = gp.textureSampler(0).proxy();
         if (atlas) {
             b->add32(atlas->width());
             b->add32(atlas->height());
@@ -775,7 +775,6 @@ private:
 
 ///////////////////////////////////////////////////////////////////////////////
 GrDistanceFieldLCDTextGeoProc::GrDistanceFieldLCDTextGeoProc(
-                                                  GrResourceProvider* resourceProvider,
                                                   GrColor color, const SkMatrix& viewMatrix,
                                                   sk_sp<GrTextureProxy> proxy,
                                                   const GrSamplerParams& params,
@@ -783,7 +782,7 @@ GrDistanceFieldLCDTextGeoProc::GrDistanceFieldLCDTextGeoProc(
                                                   uint32_t flags, bool usesLocalCoords)
     : fColor(color)
     , fViewMatrix(viewMatrix)
-    , fTextureSampler(resourceProvider, std::move(proxy), params)
+    , fTextureSampler(std::move(proxy), params)
     , fDistanceAdjust(distanceAdjust)
     , fFlags(flags & kLCD_DistanceFieldEffectMask)
     , fUsesLocalCoords(usesLocalCoords) {
@@ -834,8 +833,7 @@ sk_sp<GrGeometryProcessor> GrDistanceFieldLCDTextGeoProc::TestCreate(GrProcessor
         flags |= d->fRandom->nextBool() ? kScaleOnly_DistanceFieldEffectFlag : 0;
     }
     flags |= d->fRandom->nextBool() ? kBGR_DistanceFieldEffectFlag : 0;
-    return GrDistanceFieldLCDTextGeoProc::Make(d->resourceProvider(),
-                                               GrRandomColor(d->fRandom),
+    return GrDistanceFieldLCDTextGeoProc::Make(GrRandomColor(d->fRandom),
                                                GrTest::TestMatrix(d->fRandom),
                                                std::move(proxy), params,
                                                wa,

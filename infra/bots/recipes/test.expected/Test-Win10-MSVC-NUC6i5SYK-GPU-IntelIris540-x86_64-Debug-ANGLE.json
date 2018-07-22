@@ -3,7 +3,10 @@
     "cmd": [
       "python",
       "-u",
-      "\nimport shutil\nimport sys\nshutil.copy(sys.argv[1], sys.argv[2])\n",
+      "RECIPE_MODULE[recipe_engine::file]\\resources\\fileutil.py",
+      "--json-output",
+      "/path/to/tmp/json",
+      "copy",
       "[START_DIR]\\skia\\infra\\bots\\assets\\skp\\VERSION",
       "/path/to/tmp/"
     ],
@@ -14,7 +17,10 @@
     "cmd": [
       "python",
       "-u",
-      "\nimport shutil\nimport sys\nshutil.copy(sys.argv[1], sys.argv[2])\n",
+      "RECIPE_MODULE[recipe_engine::file]\\resources\\fileutil.py",
+      "--json-output",
+      "/path/to/tmp/json",
+      "copy",
       "42",
       "[START_DIR]\\tmp\\SKP_VERSION"
     ],
@@ -25,7 +31,10 @@
     "cmd": [
       "python",
       "-u",
-      "\nimport shutil\nimport sys\nshutil.copy(sys.argv[1], sys.argv[2])\n",
+      "RECIPE_MODULE[recipe_engine::file]\\resources\\fileutil.py",
+      "--json-output",
+      "/path/to/tmp/json",
+      "copy",
       "[START_DIR]\\skia\\infra\\bots\\assets\\skimage\\VERSION",
       "/path/to/tmp/"
     ],
@@ -36,7 +45,10 @@
     "cmd": [
       "python",
       "-u",
-      "\nimport shutil\nimport sys\nshutil.copy(sys.argv[1], sys.argv[2])\n",
+      "RECIPE_MODULE[recipe_engine::file]\\resources\\fileutil.py",
+      "--json-output",
+      "/path/to/tmp/json",
+      "copy",
       "42",
       "[START_DIR]\\tmp\\SK_IMAGE_VERSION"
     ],
@@ -47,7 +59,10 @@
     "cmd": [
       "python",
       "-u",
-      "\nimport shutil\nimport sys\nshutil.copy(sys.argv[1], sys.argv[2])\n",
+      "RECIPE_MODULE[recipe_engine::file]\\resources\\fileutil.py",
+      "--json-output",
+      "/path/to/tmp/json",
+      "copy",
       "[START_DIR]\\skia\\infra\\bots\\assets\\svg\\VERSION",
       "/path/to/tmp/"
     ],
@@ -58,7 +73,10 @@
     "cmd": [
       "python",
       "-u",
-      "\nimport shutil\nimport sys\nshutil.copy(sys.argv[1], sys.argv[2])\n",
+      "RECIPE_MODULE[recipe_engine::file]\\resources\\fileutil.py",
+      "--json-output",
+      "/path/to/tmp/json",
+      "copy",
       "42",
       "[START_DIR]\\tmp\\SVG_VERSION"
     ],
@@ -69,13 +87,12 @@
     "cmd": [
       "python",
       "-u",
-      "RECIPE_MODULE[skia::file]\\resources\\fileutil.py",
+      "RECIPE_MODULE[recipe_engine::file]\\resources\\fileutil.py",
+      "--json-output",
+      "/path/to/tmp/json",
       "rmtree",
       "[CUSTOM_[SWARM_OUT_DIR]]\\dm"
     ],
-    "env": {
-      "PYTHONPATH": "[START_DIR]\\skia\\infra\\bots\\.recipe_deps\\build\\scripts"
-    },
     "infra_step": true,
     "name": "rmtree dm"
   },
@@ -83,59 +100,43 @@
     "cmd": [
       "python",
       "-u",
-      "\nimport sys, os\npath = sys.argv[1]\nmode = int(sys.argv[2])\nif not os.path.isdir(path):\n  if os.path.exists(path):\n    print \"%s exists but is not a dir\" % path\n    sys.exit(1)\n  os.makedirs(path, mode)\n",
-      "[CUSTOM_[SWARM_OUT_DIR]]\\dm",
-      "511"
+      "RECIPE_MODULE[recipe_engine::file]\\resources\\fileutil.py",
+      "--json-output",
+      "/path/to/tmp/json",
+      "ensure-directory",
+      "--mode",
+      "0777",
+      "[CUSTOM_[SWARM_OUT_DIR]]\\dm"
     ],
     "infra_step": true,
-    "name": "makedirs dm",
-    "~followup_annotations": [
-      "@@@STEP_LOG_LINE@python.inline@@@@",
-      "@@@STEP_LOG_LINE@python.inline@import sys, os@@@",
-      "@@@STEP_LOG_LINE@python.inline@path = sys.argv[1]@@@",
-      "@@@STEP_LOG_LINE@python.inline@mode = int(sys.argv[2])@@@",
-      "@@@STEP_LOG_LINE@python.inline@if not os.path.isdir(path):@@@",
-      "@@@STEP_LOG_LINE@python.inline@  if os.path.exists(path):@@@",
-      "@@@STEP_LOG_LINE@python.inline@    print \"%s exists but is not a dir\" % path@@@",
-      "@@@STEP_LOG_LINE@python.inline@    sys.exit(1)@@@",
-      "@@@STEP_LOG_LINE@python.inline@  os.makedirs(path, mode)@@@",
-      "@@@STEP_LOG_END@python.inline@@@"
-    ]
+    "name": "makedirs dm"
   },
   {
     "cmd": [
       "python",
       "-u",
-      "\nimport sys, os\npath = sys.argv[1]\nmode = int(sys.argv[2])\nif not os.path.isdir(path):\n  if os.path.exists(path):\n    print \"%s exists but is not a dir\" % path\n    sys.exit(1)\n  os.makedirs(path, mode)\n",
-      "[START_DIR]\\tmp",
-      "511"
+      "RECIPE_MODULE[recipe_engine::file]\\resources\\fileutil.py",
+      "--json-output",
+      "/path/to/tmp/json",
+      "ensure-directory",
+      "--mode",
+      "0777",
+      "[START_DIR]\\tmp"
     ],
     "infra_step": true,
-    "name": "makedirs tmp_dir",
-    "~followup_annotations": [
-      "@@@STEP_LOG_LINE@python.inline@@@@",
-      "@@@STEP_LOG_LINE@python.inline@import sys, os@@@",
-      "@@@STEP_LOG_LINE@python.inline@path = sys.argv[1]@@@",
-      "@@@STEP_LOG_LINE@python.inline@mode = int(sys.argv[2])@@@",
-      "@@@STEP_LOG_LINE@python.inline@if not os.path.isdir(path):@@@",
-      "@@@STEP_LOG_LINE@python.inline@  if os.path.exists(path):@@@",
-      "@@@STEP_LOG_LINE@python.inline@    print \"%s exists but is not a dir\" % path@@@",
-      "@@@STEP_LOG_LINE@python.inline@    sys.exit(1)@@@",
-      "@@@STEP_LOG_LINE@python.inline@  os.makedirs(path, mode)@@@",
-      "@@@STEP_LOG_END@python.inline@@@"
-    ]
+    "name": "makedirs tmp_dir"
   },
   {
     "cmd": [
       "python",
       "-u",
-      "\nimport contextlib\nimport math\nimport socket\nimport sys\nimport time\nimport urllib2\n\nHASHES_URL = 'https://gold.skia.org/_/hashes'\nRETRIES = 5\nTIMEOUT = 60\nWAIT_BASE = 15\n\nsocket.setdefaulttimeout(TIMEOUT)\nfor retry in range(RETRIES):\n  try:\n    with contextlib.closing(\n        urllib2.urlopen(HASHES_URL, timeout=TIMEOUT)) as w:\n      hashes = w.read()\n      with open(sys.argv[1], 'w') as f:\n        f.write(hashes)\n        break\n  except Exception as e:\n    print 'Failed to get uninteresting hashes from %s:' % HASHES_URL\n    print e\n    if retry == RETRIES:\n      raise\n    waittime = WAIT_BASE * math.pow(2, retry)\n    print 'Retry in %d seconds.' % waittime\n    time.sleep(waittime)\n",
+      "\nimport contextlib\nimport math\nimport socket\nimport sys\nimport time\nimport urllib2\n\nHASHES_URL = 'https://storage.googleapis.com/skia-infra-gm/hash_files/gold-prod-hashes.txt'\nRETRIES = 5\nTIMEOUT = 60\nWAIT_BASE = 15\n\nsocket.setdefaulttimeout(TIMEOUT)\nfor retry in range(RETRIES):\n  try:\n    with contextlib.closing(\n        urllib2.urlopen(HASHES_URL, timeout=TIMEOUT)) as w:\n      hashes = w.read()\n      with open(sys.argv[1], 'w') as f:\n        f.write(hashes)\n        break\n  except Exception as e:\n    print 'Failed to get uninteresting hashes from %s:' % HASHES_URL\n    print e\n    if retry == RETRIES:\n      raise\n    waittime = WAIT_BASE * math.pow(2, retry)\n    print 'Retry in %d seconds.' % waittime\n    time.sleep(waittime)\n",
       "[START_DIR]\\tmp\\uninteresting_hashes.txt"
     ],
     "env": {
       "BUILDTYPE": "Debug_x64",
       "CHROME_HEADLESS": "1",
-      "PATH": "%(PATH)s;RECIPE_PACKAGE_REPO[depot_tools]",
+      "PATH": "<PATH>;RECIPE_PACKAGE_REPO[depot_tools]",
       "SKIA_OUT": "[START_DIR]\\out"
     },
     "infra_step": true,
@@ -149,7 +150,7 @@
       "@@@STEP_LOG_LINE@python.inline@import time@@@",
       "@@@STEP_LOG_LINE@python.inline@import urllib2@@@",
       "@@@STEP_LOG_LINE@python.inline@@@@",
-      "@@@STEP_LOG_LINE@python.inline@HASHES_URL = 'https://gold.skia.org/_/hashes'@@@",
+      "@@@STEP_LOG_LINE@python.inline@HASHES_URL = 'https://storage.googleapis.com/skia-infra-gm/hash_files/gold-prod-hashes.txt'@@@",
       "@@@STEP_LOG_LINE@python.inline@RETRIES = 5@@@",
       "@@@STEP_LOG_LINE@python.inline@TIMEOUT = 60@@@",
       "@@@STEP_LOG_LINE@python.inline@WAIT_BASE = 15@@@",
@@ -253,6 +254,7 @@
       "angle_d3d11_es2",
       "angle_d3d9_es2",
       "angle_gl_es2",
+      "angle_d3d11_es3",
       "--src",
       "tests",
       "gm",
@@ -400,30 +402,30 @@
       "image",
       "_",
       ".SRW",
+      "angle_d3d9_es2",
+      "gm",
       "_",
+      "multipicturedraw_invpathclip_simple",
+      "angle_d3d9_es2",
+      "gm",
+      "_",
+      "multipicturedraw_noclip_simple",
+      "angle_d3d9_es2",
+      "gm",
+      "_",
+      "multipicturedraw_pathclip_simple",
+      "angle_d3d9_es2",
+      "gm",
+      "_",
+      "multipicturedraw_rectclip_simple",
+      "angle_d3d9_es2",
+      "gm",
+      "_",
+      "multipicturedraw_rrectclip_simple",
+      "angle_d3d9_es2",
       "gm",
       "_",
       "discard",
-      "angle_d3d9_es2",
-      "gm",
-      "_",
-      "multipicturedraw_invpathclip_simple",
-      "angle_d3d9_es2",
-      "gm",
-      "_",
-      "multipicturedraw_noclip_simple",
-      "angle_d3d9_es2",
-      "gm",
-      "_",
-      "multipicturedraw_pathclip_simple",
-      "angle_d3d9_es2",
-      "gm",
-      "_",
-      "multipicturedraw_rectclip_simple",
-      "angle_d3d9_es2",
-      "gm",
-      "_",
-      "multipicturedraw_rrectclip_simple",
       "angle_d3d11_es2",
       "gm",
       "_",
@@ -444,6 +446,10 @@
       "gm",
       "_",
       "multipicturedraw_rrectclip_simple",
+      "angle_d3d11_es2",
+      "gm",
+      "_",
+      "discard",
       "angle_gl_es2",
       "gm",
       "_",
@@ -464,14 +470,15 @@
       "gm",
       "_",
       "multipicturedraw_rrectclip_simple",
-      "--match",
-      "~GLPrograms",
-      "~IntTexture"
+      "angle_gl_es2",
+      "gm",
+      "_",
+      "discard"
     ],
     "env": {
       "BUILDTYPE": "Debug_x64",
       "CHROME_HEADLESS": "1",
-      "PATH": "%(PATH)s;RECIPE_PACKAGE_REPO[depot_tools]",
+      "PATH": "<PATH>;RECIPE_PACKAGE_REPO[depot_tools]",
       "SKIA_OUT": "[START_DIR]\\out"
     },
     "name": "dm"

@@ -5,15 +5,16 @@
  * found in the LICENSE file.
  */
 
+#include "SkPDFUtils.h"
 
 #include "SkData.h"
 #include "SkFixed.h"
 #include "SkGeometry.h"
+#include "SkImage_Base.h"
 #include "SkPDFResourceDict.h"
-#include "SkPDFUtils.h"
+#include "SkPDFTypes.h"
 #include "SkStream.h"
 #include "SkString.h"
-#include "SkPDFTypes.h"
 
 #include <cmath>
 
@@ -128,7 +129,9 @@ void SkPDFUtils::EmitPath(const SkPath& path, SkPaint::Style paintStyle,
     bool isClosed; // Both closure and direction need to be checked.
     SkPath::Direction direction;
     if (path.isRect(&rect, &isClosed, &direction) &&
-        isClosed && SkPath::kCW_Direction == direction)
+        isClosed &&
+        (SkPath::kCW_Direction == direction ||
+         SkPath::kEvenOdd_FillType == path.getFillType()))
     {
         SkPDFUtils::AppendRectangle(rect, content);
         return;
@@ -479,12 +482,53 @@ void SkPDFUtils::WriteString(SkWStream* wStream, const char* cin, size_t len) {
         wStream->writeText("<");
         for (size_t i = 0; i < len; i++) {
             uint8_t c = static_cast<uint8_t>(cin[i]);
-            static const char gHex[] = "0123456789ABCDEF";
-            char hexValue[2];
-            hexValue[0] = gHex[(c >> 4) & 0xF];
-            hexValue[1] = gHex[ c       & 0xF];
+            char hexValue[2] = { SkHexadecimalDigits::gUpper[c >> 4],
+                                 SkHexadecimalDigits::gUpper[c & 0xF] };
             wStream->write(hexValue, 2);
         }
         wStream->writeText(">");
     }
+}
+
+bool SkPDFUtils::InverseTransformBBox(const SkMatrix& matrix, SkRect* bbox) {
+    SkMatrix inverse;
+    if (!matrix.invert(&inverse)) {
+        return false;
+    }
+    inverse.mapRect(bbox);
+    return true;
+}
+
+void SkPDFUtils::PopulateTilingPatternDict(SkPDFDict* pattern,
+                                           SkRect& bbox,
+                                           sk_sp<SkPDFDict> resources,
+                                           const SkMatrix& matrix) {
+    const int kTiling_PatternType = 1;
+    const int kColoredTilingPattern_PaintType = 1;
+    const int kConstantSpacing_TilingType = 1;
+
+    pattern->insertName("Type", "Pattern");
+    pattern->insertInt("PatternType", kTiling_PatternType);
+    pattern->insertInt("PaintType", kColoredTilingPattern_PaintType);
+    pattern->insertInt("TilingType", kConstantSpacing_TilingType);
+    pattern->insertObject("BBox", SkPDFUtils::RectToArray(bbox));
+    pattern->insertScalar("XStep", bbox.width());
+    pattern->insertScalar("YStep", bbox.height());
+    pattern->insertObject("Resources", std::move(resources));
+    if (!matrix.isIdentity()) {
+        pattern->insertObject("Matrix", SkPDFUtils::MatrixToArray(matrix));
+    }
+}
+
+bool SkPDFUtils::ToBitmap(const SkImage* img, SkBitmap* dst) {
+    SkASSERT(img);
+    SkASSERT(dst);
+    SkBitmap bitmap;
+    if(as_IB(img)->getROPixels(&bitmap, nullptr)) {
+        SkASSERT(bitmap.dimensions() == img->dimensions());
+        SkASSERT(!bitmap.drawsNothing());
+        *dst = std::move(bitmap);
+        return true;
+    }
+    return false;
 }

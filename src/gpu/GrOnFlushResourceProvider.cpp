@@ -33,7 +33,7 @@ sk_sp<GrRenderTargetContext> GrOnFlushResourceProvider::makeRenderTargetContext(
     sk_sp<GrRenderTargetContext> renderTargetContext(
         fDrawingMgr->makeRenderTargetContext(std::move(proxy),
                                              std::move(colorSpace),
-                                             props));
+                                             props, false));
 
     if (!renderTargetContext) {
         return nullptr;
@@ -53,7 +53,7 @@ sk_sp<GrRenderTargetContext> GrOnFlushResourceProvider::makeRenderTargetContext(
     sk_sp<GrRenderTargetContext> renderTargetContext(
         fDrawingMgr->makeRenderTargetContext(std::move(proxy),
                                              std::move(colorSpace),
-                                             props));
+                                             props, false));
 
     if (!renderTargetContext) {
         return nullptr;
@@ -64,3 +64,30 @@ sk_sp<GrRenderTargetContext> GrOnFlushResourceProvider::makeRenderTargetContext(
     return renderTargetContext;
 }
 
+sk_sp<GrBuffer> GrOnFlushResourceProvider::makeBuffer(GrBufferType intendedType, size_t size,
+                                                      const void* data) {
+    GrResourceProvider* rp = fDrawingMgr->getContext()->resourceProvider();
+    return sk_sp<GrBuffer>(rp->createBuffer(size, intendedType, kDynamic_GrAccessPattern,
+                                            GrResourceProvider::kNoPendingIO_Flag,
+                                            data));
+}
+
+sk_sp<GrBuffer> GrOnFlushResourceProvider::findOrMakeStaticBuffer(const GrUniqueKey& key,
+                                                                  GrBufferType intendedType,
+                                                                  size_t size, const void* data) {
+    GrResourceProvider* rp = fDrawingMgr->getContext()->resourceProvider();
+    sk_sp<GrBuffer> buffer(rp->findAndRefTByUniqueKey<GrBuffer>(key));
+    if (!buffer) {
+        buffer.reset(rp->createBuffer(size, intendedType, kStatic_GrAccessPattern, 0, data));
+        if (!buffer) {
+            return nullptr;
+        }
+        SkASSERT(buffer->sizeInBytes() == size); // rp shouldn't bin and/or cache static buffers.
+        buffer->resourcePriv().setUniqueKey(key);
+    }
+    return buffer;
+}
+
+const GrCaps* GrOnFlushResourceProvider::caps() const {
+    return fDrawingMgr->getContext()->caps();
+}

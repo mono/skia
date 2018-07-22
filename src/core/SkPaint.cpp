@@ -12,6 +12,7 @@
 #include "SkData.h"
 #include "SkDraw.h"
 #include "SkFontDescriptor.h"
+#include "SkGraphics.h"
 #include "SkGlyphCache.h"
 #include "SkImageFilter.h"
 #include "SkMaskFilter.h"
@@ -26,6 +27,7 @@
 #include "SkScalar.h"
 #include "SkScalerContext.h"
 #include "SkShader.h"
+#include "SkShaderBase.h"
 #include "SkStringUtils.h"
 #include "SkStroke.h"
 #include "SkStrokeRec.h"
@@ -391,6 +393,12 @@ bool SkPaint::TooBigToUseCache(const SkMatrix& ctm, const SkMatrix& textM) {
     return tooBig(matrix, MaxCacheSize2());
 }
 
+SkScalar SkPaint::MaxCacheSize2() {
+    // we have a self-imposed maximum, just for memory-usage sanity
+    const int limit = SkMin32(SkGraphics::GetFontCachePointSizeLimit(), 1024);
+    const SkScalar maxSize = SkIntToScalar(limit);
+    return maxSize * maxSize;
+}
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -1250,7 +1258,7 @@ static SkPaint::Hinting computeHinting(const SkPaint& paint) {
 static bool justAColor(const SkPaint& paint, SkColor* color) {
     SkColor c = paint.getColor();
 
-    SkShader* shader = paint.getShader();
+    const auto* shader = as_SB(paint.getShader());
     if (shader && !shader->asLuminanceColor(&c)) {
         return false;
     }
@@ -1853,8 +1861,15 @@ static FlatFlags unpack_paint_flags(SkPaint* paint, uint32_t packed) {
     it if there are not tricky elements like shaders, etc.
  */
 void SkPaint::flatten(SkWriteBuffer& buffer) const {
+    // If the writer is xprocess, then we force recording our typeface, even if its "default"
+    // since the other process may have a different notion of default.
+    SkTypeface* tf = this->getTypeface();
+    if (!tf && buffer.isCrossProcess()) {
+        tf = SkTypeface::GetDefaultTypeface(SkTypeface::kNormal);
+    }
+
     uint8_t flatFlags = 0;
-    if (this->getTypeface()) {
+    if (tf) {
         flatFlags |= kHasTypeface_FlatFlag;
     }
     if (asint(this->getPathEffect()) |
@@ -1883,7 +1898,7 @@ void SkPaint::flatten(SkWriteBuffer& buffer) const {
     // now we're done with ptr and the (pre)reserved space. If we need to write
     // additional fields, use the buffer directly
     if (flatFlags & kHasTypeface_FlatFlag) {
-        buffer.writeTypeface(this->getTypeface());
+        buffer.writeTypeface(tf);
     }
     if (flatFlags & kHasEffects_FlatFlag) {
         buffer.writeFlattenable(this->getPathEffect());
@@ -1909,14 +1924,9 @@ void SkPaint::unflatten(SkReadBuffer& buffer) {
     uint32_t tmp = buffer.readUInt();
     this->setStrokeCap(static_cast<Cap>((tmp >> 24) & 0xFF));
     this->setStrokeJoin(static_cast<Join>((tmp >> 16) & 0xFF));
-    if (buffer.isVersionLT(SkReadBuffer::kXfermodeToBlendMode_Version)) {
-        this->setStyle(static_cast<Style>((tmp >> 8) & 0xFF));
-        this->setTextEncoding(static_cast<TextEncoding>((tmp >> 0) & 0xFF));
-    } else {
-        this->setStyle(static_cast<Style>((tmp >> 12) & 0xF));
-        this->setTextEncoding(static_cast<TextEncoding>((tmp >> 8) & 0xF));
-        this->setBlendMode((SkBlendMode)(tmp & 0xFF));
-    }
+    this->setStyle(static_cast<Style>((tmp >> 12) & 0xF));
+    this->setTextEncoding(static_cast<TextEncoding>((tmp >> 8) & 0xF));
+    this->setBlendMode((SkBlendMode)(tmp & 0xFF));
 
     if (flatFlags & kHasTypeface_FlatFlag) {
         this->setTypeface(buffer.readTypeface());
@@ -1927,25 +1937,11 @@ void SkPaint::unflatten(SkReadBuffer& buffer) {
     if (flatFlags & kHasEffects_FlatFlag) {
         this->setPathEffect(buffer.readPathEffect());
         this->setShader(buffer.readShader());
-        if (buffer.isVersionLT(SkReadBuffer::kXfermodeToBlendMode_Version)) {
-            sk_sp<SkXfermode> xfer = buffer.readXfermode();
-            this->setBlendMode(xfer ? xfer->blend() : SkBlendMode::kSrcOver);
-        }
         this->setMaskFilter(buffer.readMaskFilter());
         this->setColorFilter(buffer.readColorFilter());
         this->setRasterizer(buffer.readRasterizer());
         this->setLooper(buffer.readDrawLooper());
         this->setImageFilter(buffer.readImageFilter());
-
-        if (buffer.isVersionLT(SkReadBuffer::kAnnotationsMovedToCanvas_Version)) {
-            // We used to store annotations here (string+skdata) if this bool was true
-            if (buffer.readBool()) {
-                // Annotations have moved to drawAnnotation, so we just drop this one on the floor.
-                SkString key;
-                buffer.readString(&key);
-                (void)buffer.readByteArrayAsData();
-            }
-        }
     } else {
         this->setPathEffect(nullptr);
         this->setShader(nullptr);
@@ -2071,8 +2067,7 @@ void SkPaint::toString(SkString* str) const {
         str->append("</dd>");
     }
 
-    SkShader* shader = this->getShader();
-    if (shader) {
+    if (const auto* shader = as_SB(this->getShader())) {
         str->append("<dt>Shader:</dt><dd>");
         shader->toString(str);
         str->append("</dd>");

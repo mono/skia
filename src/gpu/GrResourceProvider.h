@@ -9,14 +9,23 @@
 #define GrResourceProvider_DEFINED
 
 #include "GrBuffer.h"
-#include "GrGpu.h"
 #include "GrPathRange.h"
+#include "SkImageInfo.h"
+#include "SkScalerContext.h"
 
 class GrBackendRenderTarget;
+class GrBackendSemaphore;
+class GrBackendTexture;
+class GrGpu;
 class GrPath;
 class GrRenderTarget;
+class GrSemaphore;
 class GrSingleOwner;
 class GrStencilAttachment;
+class GrSurfaceProxy;
+class GrTexture;
+class GrTextureProxy;
+
 class GrStyle;
 class SkDescriptor;
 class SkPath;
@@ -39,20 +48,6 @@ public:
     ///////////////////////////////////////////////////////////////////////////
     // Textures
 
-    /**
-     * Creates a new texture in the resource cache and returns it. The caller owns a
-     * ref on the returned texture which must be balanced by a call to unref.
-     *
-     * @param desc          Description of the texture properties.
-     * @param budgeted      Does the texture count against the resource cache budget?
-     * @param texels        A contiguous array of mipmap levels
-     * @param mipLevelCount The amount of elements in the texels array
-     */
-    sk_sp<GrTextureProxy> createMipMappedTexture(const GrSurfaceDesc& desc, SkBudgeted budgeted,
-                                                 const GrMipLevel* texels, int mipLevelCount,
-                                                 SkDestinationSurfaceColorMode mipColorMode =
-                                                        SkDestinationSurfaceColorMode::kLegacy);
-
     /** Assigns a unique key to the texture. The texture will be findable via this key using
     findTextureByUniqueKey(). If an existing texture has this key, it's key will be removed. */
     void assignUniqueKeyToProxy(const GrUniqueKey& key, GrTextureProxy*);
@@ -64,14 +59,17 @@ public:
      * Finds a texture that approximately matches the descriptor. Will be at least as large in width
      * and height as desc specifies. If desc specifies that the texture should be a render target
      * then result will be a render target. Format and sample count will always match the request.
-     * The contents of the texture are undefined. The caller owns a ref on the returned texture and
-     * must balance with a call to unref.
+     * The contents of the texture are undefined.
      */
-    GrTexture* createApproxTexture(const GrSurfaceDesc&, uint32_t flags);
+    sk_sp<GrTexture> createApproxTexture(const GrSurfaceDesc&, uint32_t flags);
 
     /** Create an exact fit texture with no initial data to upload.
      */
     sk_sp<GrTexture> createTexture(const GrSurfaceDesc&, SkBudgeted, uint32_t flags = 0);
+
+    sk_sp<GrTexture> createTexture(const GrSurfaceDesc&, SkBudgeted,
+                                   const GrMipLevel texels[], int mipLevelCount,
+                                   SkDestinationSurfaceColorMode mipColorMode);
 
     sk_sp<GrTextureProxy> createTextureProxy(const GrSurfaceDesc&, SkBudgeted, const GrMipLevel&);
 
@@ -88,9 +86,17 @@ public:
      */
     sk_sp<GrTexture> wrapBackendTexture(const GrBackendTexture& tex,
                                         GrSurfaceOrigin origin,
-                                        GrBackendTextureFlags flags,
-                                        int sampleCnt,
                                         GrWrapOwnership = kBorrow_GrWrapOwnership);
+
+    /**
+     * This makes the backend texture be renderable. If sampleCnt is > 0 and the underlying API
+     * uses separate MSAA render buffers then a MSAA render buffer is created that resolves
+     * to the texture.
+     */
+    sk_sp<GrTexture> wrapRenderableBackendTexture(const GrBackendTexture& tex,
+                                                  GrSurfaceOrigin origin,
+                                                  int sampleCnt,
+                                                  GrWrapOwnership = kBorrow_GrWrapOwnership);
 
     /**
      * Wraps an existing render target with a GrRenderTarget object. It is
@@ -103,7 +109,7 @@ public:
      */
     sk_sp<GrRenderTarget> wrapBackendRenderTarget(const GrBackendRenderTarget&, GrSurfaceOrigin);
 
-    static const int kMinScratchTextureSize;
+    static const uint32_t kMinScratchTextureSize;
 
     /**
      * Either finds and refs, or creates an index buffer with a repeating pattern for drawing
@@ -133,7 +139,7 @@ public:
      * Returns an index buffer that can be used to render quads.
      * Six indices per quad: 0, 1, 2, 0, 2, 3, etc.
      * The max number of quads is the buffer's index capacity divided by 6.
-     * Draw with kTriangles_GrPrimitiveType
+     * Draw with GrPrimitiveType::kTriangles
      * @ return the quad index buffer
      */
     const GrBuffer* refQuadIndexBuffer() {
@@ -148,10 +154,10 @@ public:
      * Factories for GrPath and GrPathRange objects. It's an error to call these if path rendering
      * is not supported.
      */
-    GrPath* createPath(const SkPath&, const GrStyle&);
-    GrPathRange* createPathRange(GrPathRange::PathGenerator*, const GrStyle&);
-    GrPathRange* createGlyphs(const SkTypeface*, const SkScalerContextEffects&,
-                              const SkDescriptor*, const GrStyle&);
+    sk_sp<GrPath> createPath(const SkPath&, const GrStyle&);
+    sk_sp<GrPathRange> createPathRange(GrPathRange::PathGenerator*, const GrStyle&);
+    sk_sp<GrPathRange> createGlyphs(const SkTypeface*, const SkScalerContextEffects&,
+                                    const SkDescriptor*, const GrStyle&);
 
     /** These flags govern which scratch resources we are allowed to return */
     enum Flags {
@@ -220,7 +226,10 @@ public:
      */
     GrGpuResource* findAndRefResourceByUniqueKey(const GrUniqueKey&);
 
-    sk_sp<GrSemaphore> SK_WARN_UNUSED_RESULT makeSemaphore();
+    sk_sp<GrSemaphore> SK_WARN_UNUSED_RESULT makeSemaphore(bool isOwned = true);
+
+    sk_sp<GrSemaphore> wrapBackendSemaphore(const GrBackendSemaphore&,
+                                            GrWrapOwnership = kBorrow_GrWrapOwnership);
 
     // Takes the GrSemaphore and sets the ownership of the semaphore to the GrGpu object used by
     // this class. This call is only used when passing a GrSemaphore from one context to another.
@@ -244,12 +253,9 @@ public:
 
 private:
     GrTexture* findAndRefTextureByUniqueKey(const GrUniqueKey& key);
-    void assignUniqueKeyToTexture(const GrUniqueKey& key, GrTexture* texture) {
-        SkASSERT(key.isValid());
-        this->assignUniqueKeyToResource(key, texture);
-    }
+    void assignUniqueKeyToTexture(const GrUniqueKey& key, GrTexture* texture);
 
-    GrTexture* refScratchTexture(const GrSurfaceDesc&, uint32_t scratchTextureFlags);
+    sk_sp<GrTexture> refScratchTexture(const GrSurfaceDesc&, uint32_t scratchTextureFlags);
 
     /*
      * Try to find an existing scratch texture that exactly matches 'desc'. If successful

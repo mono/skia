@@ -18,7 +18,7 @@
 #include "SkGradientShader.h"
 #include "effects/GrTextureDomain.h"
 #include "ops/GrDrawOp.h"
-#include "ops/GrNonAAFillRectOp.h"
+#include "ops/GrRectOpFactory.h"
 
 namespace skiagm {
 /**
@@ -123,7 +123,7 @@ protected:
                     grPaint.setXPFactory(GrPorterDuffXPFactory::Get(SkBlendMode::kSrc));
                     sk_sp<GrFragmentProcessor> fp(
                         GrTextureDomainEffect::Make(
-                                   context->resourceProvider(), proxy,
+                                   proxy,
                                    nullptr, textureMatrices[tm],
                                    GrTextureDomain::MakeTexelDomainForMode(texelDomains[d], mode),
                                    mode, GrSamplerParams::kNone_FilterMode));
@@ -134,8 +134,8 @@ protected:
                     const SkMatrix viewMatrix = SkMatrix::MakeTrans(x, y);
                     grPaint.addColorFragmentProcessor(std::move(fp));
                     renderTargetContext->priv().testingOnly_addDrawOp(
-                            GrNonAAFillRectOp::Make(std::move(grPaint), viewMatrix, renderRect,
-                                                    nullptr, nullptr, GrAAType::kNone));
+                            GrRectOpFactory::MakeNonAAFill(std::move(grPaint), viewMatrix,
+                                                           renderRect, GrAAType::kNone));
                     x += renderRect.width() + kTestPad;
                 }
                 y += renderRect.height() + kTestPad;

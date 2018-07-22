@@ -34,7 +34,7 @@ GrVkTexture::GrVkTexture(GrVkGpu* gpu,
     : GrSurface(gpu, desc)
     , GrVkImage(info, GrVkImage::kNot_Wrapped)
     , INHERITED(gpu, desc, kTexture2DSampler_GrSLType, highest_filter_mode(desc.fConfig),
-                desc.fIsMipMapped)
+                info.fLevelCount > 1)
     , fTextureView(view)
     , fLinearTextureView(nullptr) {
     this->registerWithCache(budgeted);
@@ -49,7 +49,7 @@ GrVkTexture::GrVkTexture(GrVkGpu* gpu,
     : GrSurface(gpu, desc)
     , GrVkImage(info, wrapped)
     , INHERITED(gpu, desc, kTexture2DSampler_GrSLType, highest_filter_mode(desc.fConfig),
-                desc.fIsMipMapped)
+                info.fLevelCount > 1)
     , fTextureView(view)
     , fLinearTextureView(nullptr) {
     this->registerWithCacheWrapped();
@@ -64,14 +64,14 @@ GrVkTexture::GrVkTexture(GrVkGpu* gpu,
     : GrSurface(gpu, desc)
     , GrVkImage(info, wrapped)
     , INHERITED(gpu, desc, kTexture2DSampler_GrSLType, highest_filter_mode(desc.fConfig),
-                desc.fIsMipMapped)
+                info.fLevelCount > 1)
     , fTextureView(view)
     , fLinearTextureView(nullptr) {
 }
 
-GrVkTexture* GrVkTexture::CreateNewTexture(GrVkGpu* gpu, SkBudgeted budgeted,
-                                           const GrSurfaceDesc& desc,
-                                           const GrVkImage::ImageDesc& imageDesc) {
+sk_sp<GrVkTexture> GrVkTexture::CreateNewTexture(GrVkGpu* gpu, SkBudgeted budgeted,
+                                                 const GrSurfaceDesc& desc,
+                                                 const GrVkImage::ImageDesc& imageDesc) {
     SkASSERT(imageDesc.fUsageFlags & VK_IMAGE_USAGE_SAMPLED_BIT);
 
     GrVkImageInfo info;
@@ -87,7 +87,7 @@ GrVkTexture* GrVkTexture::CreateNewTexture(GrVkGpu* gpu, SkBudgeted budgeted,
         return nullptr;
     }
 
-    return new GrVkTexture(gpu, budgeted, desc, info, imageView);
+    return sk_sp<GrVkTexture>(new GrVkTexture(gpu, budgeted, desc, info, imageView));
 }
 
 sk_sp<GrVkTexture> GrVkTexture::MakeWrappedTexture(GrVkGpu* gpu,

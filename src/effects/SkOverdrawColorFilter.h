@@ -6,7 +6,7 @@
  */
 
 #include "SkColorFilter.h"
-#include "../../src/core/SkReadBuffer.h"
+#include "SkFlattenable.h"
 
 #ifndef SkOverdrawColorFilter_DEFINED
 #define SkOverdrawColorFilter_DEFINED
@@ -31,8 +31,6 @@ public:
     sk_sp<GrFragmentProcessor> asFragmentProcessor(GrContext*, SkColorSpace*) const override;
 #endif
 
-    void filterSpan(const SkPMColor src[], int count, SkPMColor dst[]) const override;
-    void filterSpan4f(const SkPM4f src[], int count, SkPM4f result[]) const override;
     void toString(SkString* str) const override;
 
     static sk_sp<SkFlattenable> CreateProc(SkReadBuffer& buffer);
@@ -46,6 +44,8 @@ private:
     SkOverdrawColorFilter(const SkPMColor colors[kNumColors]) {
         memcpy(fColors, colors, kNumColors * sizeof(SkPMColor));
     }
+
+    void onAppendStages(SkRasterPipeline*, SkColorSpace*, SkArenaAlloc*, bool) const override;
 
     SkPMColor fColors[kNumColors];
 

@@ -43,7 +43,6 @@
 
 #if SK_SUPPORT_GPU
 #include "GrContext.h"
-#include "GrRenderTarget.h"
 #include "SkGr.h"
 
 #endif
@@ -90,7 +89,7 @@ protected:
     void drawOval(const SkRect&, const SkPaint&) override {}
     void drawRRect(const SkRRect&, const SkPaint&) override {}
     void drawPath(const SkPath&, const SkPaint&, const SkMatrix*, bool) override {}
-    void drawBitmap(const SkBitmap&, const SkMatrix&, const SkPaint&) override {}
+    void drawBitmap(const SkBitmap&, SkScalar x, SkScalar y, const SkPaint&) override {}
     void drawSprite(const SkBitmap&, int, int, const SkPaint&) override {}
     void drawBitmapRect(const SkBitmap&, const SkRect*, const SkRect&, const SkPaint&,
                         SkCanvas::SrcRectConstraint) override {}
@@ -2285,8 +2284,6 @@ void SkCanvas::onDrawBitmap(const SkBitmap& bitmap, SkScalar x, SkScalar y, cons
         }
     }
 
-    const SkMatrix matrix = SkMatrix::MakeTrans(x, y);
-
     LOOPER_BEGIN_DRAWBITMAP(*paint, drawAsSprite, &bounds)
 
     while (iter.next()) {
@@ -2299,7 +2296,7 @@ void SkCanvas::onDrawBitmap(const SkBitmap& bitmap, SkScalar x, SkScalar y, cons
                                       SkScalarRoundToInt(pt.fY), pnt,
                                       nullptr, SkMatrix::I());
         } else {
-            iter.fDevice->drawBitmap(bitmap, matrix, looper.paint());
+            iter.fDevice->drawBitmap(bitmap, x, y, looper.paint());
         }
     }
 
@@ -2977,8 +2974,7 @@ SkRasterHandleAllocator::Handle SkCanvas::accessTopRasterHandle() const {
 
 static bool install(SkBitmap* bm, const SkImageInfo& info,
                     const SkRasterHandleAllocator::Rec& rec) {
-    return bm->installPixels(info, rec.fPixels, rec.fRowBytes, nullptr,
-                             rec.fReleaseProc, rec.fReleaseCtx);
+    return bm->installPixels(info, rec.fPixels, rec.fRowBytes, rec.fReleaseProc, rec.fReleaseCtx);
 }
 
 SkRasterHandleAllocator::Handle SkRasterHandleAllocator::allocBitmap(const SkImageInfo& info,

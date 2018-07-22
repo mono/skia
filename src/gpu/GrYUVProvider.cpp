@@ -16,6 +16,7 @@
 #include "SkRefCnt.h"
 #include "SkResourceCache.h"
 #include "SkYUVPlanesCache.h"
+#include "effects/GrNonlinearColorSpaceXformEffect.h"
 #include "effects/GrSRGBEffect.h"
 #include "effects/GrYUVEffect.h"
 
@@ -84,9 +85,10 @@ bool YUVScoper::init(GrYUVProvider* provider, SkYUVPlanesCache::Info* yuvInfo, v
     return true;
 }
 
-sk_sp<GrTextureProxy> GrYUVProvider::refAsTextureProxy(GrContext* ctx,
-                                                       const GrSurfaceDesc& desc,
-                                                       bool useCache) {
+sk_sp<GrTextureProxy> GrYUVProvider::refAsTextureProxy(GrContext* ctx, const GrSurfaceDesc& desc,
+                                                       bool useCache,
+                                                       const SkColorSpace* srcColorSpace,
+                                                       const SkColorSpace* dstColorSpace) {
     SkYUVPlanesCache::Info yuvInfo;
     void* planes[3];
     YUVScoper scoper;
@@ -132,8 +134,7 @@ sk_sp<GrTextureProxy> GrYUVProvider::refAsTextureProxy(GrContext* ctx,
 
     GrPaint paint;
     sk_sp<GrFragmentProcessor> yuvToRgbProcessor(
-        GrYUVEffect::MakeYUVToRGB(ctx->resourceProvider(),
-                                  yuvTextureContexts[0]->asTextureProxyRef(),
+        GrYUVEffect::MakeYUVToRGB(yuvTextureContexts[0]->asTextureProxyRef(),
                                   yuvTextureContexts[1]->asTextureProxyRef(),
                                   yuvTextureContexts[2]->asTextureProxyRef(),
                                   yuvInfo.fSizeInfo.fSizes, yuvInfo.fColorSpace, false));
@@ -149,8 +150,17 @@ sk_sp<GrTextureProxy> GrYUVProvider::refAsTextureProxy(GrContext* ctx,
         if (ctx->caps()->srgbWriteControl()) {
             paint.setDisableOutputConversionToSRGB(true);
         } else {
-            paint.addColorFragmentProcessor(GrSRGBEffect::Make(GrSRGBEffect::Mode::kSRGBToLinear));
+            paint.addColorFragmentProcessor(GrSRGBEffect::Make(GrSRGBEffect::Mode::kSRGBToLinear,
+                                                               GrSRGBEffect::Alpha::kOpaque));
         }
+    }
+
+    // If the caller expects the pixels in a different color space than the one from the image,
+    // apply a color conversion to do this.
+    sk_sp<GrFragmentProcessor> colorConversionProcessor =
+            GrNonlinearColorSpaceXformEffect::Make(srcColorSpace, dstColorSpace);
+    if (colorConversionProcessor) {
+        paint.addColorFragmentProcessor(colorConversionProcessor);
     }
 
     paint.setPorterDuffXPFactory(SkBlendMode::kSrc);

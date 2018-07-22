@@ -5,11 +5,12 @@
  * found in the LICENSE file.
  */
 
+#include "SkPDFDocument.h"
+
+#include "SkCanvas.h"
 #include "SkMakeUnique.h"
 #include "SkPDFCanon.h"
-#include "SkPDFCanvas.h"
 #include "SkPDFDevice.h"
-#include "SkPDFDocument.h"
 #include "SkPDFUtils.h"
 #include "SkStream.h"
 
@@ -193,8 +194,7 @@ void SkPDFDocument::serialize(const sk_sp<SkPDFObject>& object) {
     fObjectSerializer.serializeObjects(this->getStream());
 }
 
-SkCanvas* SkPDFDocument::onBeginPage(SkScalar width, SkScalar height,
-                                     const SkRect& trimBox) {
+SkCanvas* SkPDFDocument::onBeginPage(SkScalar width, SkScalar height) {
     SkASSERT(!fCanvas.get());  // endPage() was called before this.
     if (fPages.empty()) {
         // if this is the first page if the document.
@@ -215,13 +215,9 @@ SkCanvas* SkPDFDocument::onBeginPage(SkScalar width, SkScalar height,
     }
     SkISize pageSize = SkISize::Make(
             SkScalarRoundToInt(width), SkScalarRoundToInt(height));
-    fPageDevice.reset(
-            SkPDFDevice::Create(pageSize, fRasterDpi, this));
-    fCanvas.reset(new SkPDFCanvas(fPageDevice));
-    if (SkRect::MakeWH(width, height) != trimBox) {
-        fCanvas->clipRect(trimBox);
-        fCanvas->translate(trimBox.x(), trimBox.y());
-    }
+    fPageDevice = sk_make_sp<SkPDFDevice>(pageSize, this);
+    fPageDevice->setFlip();  // Only the top-level device needs to be flipped.
+    fCanvas.reset(new SkCanvas(fPageDevice.get()));
     return fCanvas.get();
 }
 
@@ -440,6 +436,9 @@ sk_sp<SkDocument> SkPDFMakeDocument(SkWStream* stream,
                                     const SkDocument::PDFMetadata& metadata,
                                     sk_sp<SkPixelSerializer> jpeg,
                                     bool pdfa) {
+    if (dpi <= 0) {
+        dpi = 72.0f;
+    }
     return stream ? sk_make_sp<SkPDFDocument>(stream, proc, dpi, metadata,
                                               std::move(jpeg), pdfa)
                   : nullptr;

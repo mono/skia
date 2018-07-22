@@ -12,7 +12,6 @@
 #include "SkColorFilter.h"
 #include "SkCamera.h"
 #include "SkCanvas.h"
-#include "SkGaussianEdgeShader.h"
 #include "SkPath.h"
 #include "SkPathOps.h"
 #include "SkPoint3.h"
@@ -145,6 +144,7 @@ protected:
         if (fUseAlt) {
             flags |= SkShadowFlags::kGeometricOnly_ShadowFlag;
         }
+
         SkShadowUtils::DrawShadow(canvas, path, zPlaneParams,
                                   lightPos, lightWidth,
                                   ambientAlpha, spotAlpha, SK_ColorBLACK, flags);

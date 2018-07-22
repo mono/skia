@@ -18,7 +18,6 @@ SkBmpMaskCodec::SkBmpMaskCodec(int width, int height, const SkEncodedInfo& info,
     : INHERITED(width, height, info, stream, bitsPerPixel, rowOrder)
     , fMasks(masks)
     , fMaskSwizzler(nullptr)
-    , fSrcBuffer(new uint8_t [this->srcRowBytes()])
 {}
 
 /*
@@ -27,8 +26,6 @@ SkBmpMaskCodec::SkBmpMaskCodec(int width, int height, const SkEncodedInfo& info,
 SkCodec::Result SkBmpMaskCodec::onGetPixels(const SkImageInfo& dstInfo,
                                             void* dst, size_t dstRowBytes,
                                             const Options& opts,
-                                            SkPMColor* inputColorPtr,
-                                            int* inputColorCount,
                                             int* rowsDecoded) {
     if (opts.fSubset) {
         // Subsets are not supported.
@@ -39,7 +36,7 @@ SkCodec::Result SkBmpMaskCodec::onGetPixels(const SkImageInfo& dstInfo,
         return kInvalidScale;
     }
 
-    Result result = this->prepareToDecode(dstInfo, opts, inputColorPtr, inputColorCount);
+    Result result = this->prepareToDecode(dstInfo, opts);
     if (kSuccess != result) {
         return result;
     }
@@ -53,7 +50,7 @@ SkCodec::Result SkBmpMaskCodec::onGetPixels(const SkImageInfo& dstInfo,
 }
 
 SkCodec::Result SkBmpMaskCodec::onPrepareToDecode(const SkImageInfo& dstInfo,
-        const SkCodec::Options& options, SkPMColor inputColorPtr[], int* inputColorCount) {
+        const SkCodec::Options& options) {
     if (this->colorXform()) {
         this->resetXformBuffer(dstInfo.width());
     }
@@ -81,7 +78,7 @@ int SkBmpMaskCodec::decodeRows(const SkImageInfo& dstInfo,
                                            void* dst, size_t dstRowBytes,
                                            const Options& opts) {
     // Iterate over rows of the image
-    uint8_t* srcRow = fSrcBuffer.get();
+    uint8_t* srcRow = this->srcBuffer();
     const int height = dstInfo.height();
     for (int y = 0; y < height; y++) {
         // Read a row of the input
@@ -95,9 +92,8 @@ int SkBmpMaskCodec::decodeRows(const SkImageInfo& dstInfo,
         void* dstRow = SkTAddOffset<void>(dst, row * dstRowBytes);
 
         if (this->colorXform()) {
-            SkImageInfo xformInfo = dstInfo.makeWH(fMaskSwizzler->swizzleWidth(), dstInfo.height());
             fMaskSwizzler->swizzle(this->xformBuffer(), srcRow);
-            this->applyColorXform(xformInfo, dstRow, this->xformBuffer());
+            this->applyColorXform(dstRow, this->xformBuffer(), fMaskSwizzler->swizzleWidth());
         } else {
             fMaskSwizzler->swizzle(dstRow, srcRow);
         }

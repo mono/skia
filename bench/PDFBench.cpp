@@ -110,7 +110,7 @@ protected:
     void onDelayedSetup() override {
         sk_sp<SkImage> img(GetResourceAsImage("mandrill_512_q075.jpg"));
         if (!img) { return; }
-        sk_sp<SkData> encoded(img->refEncoded());
+        sk_sp<SkData> encoded = img->refEncodedData();
         SkASSERT(encoded);
         if (!encoded) { return; }
         fImage = img;
@@ -216,10 +216,8 @@ struct PDFShaderBench : public Benchmark {
             SkNullWStream nullStream;
             SkPDFDocument doc(&nullStream, nullptr, 72,
                               SkDocument::PDFMetadata(), nullptr, false);
-            sk_sp<SkPDFObject> shader(
-                    SkPDFShader::GetPDFShader(
-                            &doc, 72, fShader.get(), SkMatrix::I(),
-                            SkIRect::MakeWH(400,400), 72));
+            sk_sp<SkPDFObject> shader = SkPDFMakeShader(&doc, fShader.get(), SkMatrix::I(),
+                                                        {0, 0, 400, 400}, SK_ColorBLACK);
         }
     }
 };

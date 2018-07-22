@@ -7,11 +7,11 @@
 
 #include "SkSLCompiler.h"
 
-#include "ast/SkSLASTPrecision.h"
 #include "SkSLCFGGenerator.h"
+#include "SkSLCPPCodeGenerator.h"
 #include "SkSLGLSLCodeGenerator.h"
+#include "SkSLHCodeGenerator.h"
 #include "SkSLIRGenerator.h"
-#include "SkSLParser.h"
 #include "SkSLSPIRVCodeGenerator.h"
 #include "ir/SkSLExpression.h"
 #include "ir/SkSLExpressionStatement.h"
@@ -47,10 +47,16 @@ static const char* SKSL_GEOM_INCLUDE =
 #include "sksl_geom.include"
 ;
 
+static const char* SKSL_FP_INCLUDE =
+#include "sksl_fp.include"
+;
+
+
 namespace SkSL {
 
-Compiler::Compiler()
-: fErrorCount(0) {
+Compiler::Compiler(Flags flags)
+: fFlags(flags)
+, fErrorCount(0) {
     auto types = std::shared_ptr<SymbolTable>(new SymbolTable(this));
     auto symbols = std::shared_ptr<SymbolTable>(new SymbolTable(types, this));
     fIRGenerator = new IRGenerator(&fContext, symbols, *this);
@@ -148,15 +154,21 @@ Compiler::Compiler()
     ADD_TYPE(SamplerCubeArrayShadow);
     ADD_TYPE(GSampler2DArrayShadow);
     ADD_TYPE(GSamplerCubeArrayShadow);
+    ADD_TYPE(ColorSpaceXform);
 
     String skCapsName("sk_Caps");
     Variable* skCaps = new Variable(Position(), Modifiers(), skCapsName,
                                     *fContext.fSkCaps_Type, Variable::kGlobal_Storage);
     fIRGenerator->fSymbolTable->add(skCapsName, std::unique_ptr<Symbol>(skCaps));
 
+    String skArgsName("sk_Args");
+    Variable* skArgs = new Variable(Position(), Modifiers(), skArgsName,
+                                    *fContext.fSkArgs_Type, Variable::kGlobal_Storage);
+    fIRGenerator->fSymbolTable->add(skArgsName, std::unique_ptr<Symbol>(skArgs));
+
     Modifiers::Flag ignored1;
     std::vector<std::unique_ptr<ProgramElement>> ignored2;
-    this->internalConvertProgram(String(SKSL_INCLUDE), &ignored1, &ignored2);
+    fIRGenerator->convertProgram(String(SKSL_INCLUDE), *fTypes, &ignored1, &ignored2);
     fIRGenerator->fSymbolTable->markAllFunctionsBuiltin();
     ASSERT(!fErrorCount);
 }
@@ -262,12 +274,10 @@ void Compiler::addDefinitions(const BasicBlock::Node& node,
         }
         case BasicBlock::Node::kStatement_Kind: {
             const Statement* stmt = (Statement*) node.statement()->get();
-            if (stmt->fKind == Statement::kVarDeclarations_Kind) {
-                VarDeclarationsStatement* vd = (VarDeclarationsStatement*) stmt;
-                for (const auto& decl : vd->fDeclaration->fVars) {
-                    if (decl->fValue) {
-                        (*definitions)[decl->fVar] = &decl->fValue;
-                    }
+            if (stmt->fKind == Statement::kVarDeclaration_Kind) {
+                VarDeclaration& vd = (VarDeclaration&) *stmt;
+                if (vd.fValue) {
+                    (*definitions)[vd.fVar] = &vd.fValue;
                 }
             }
             break;
@@ -324,7 +334,9 @@ static DefinitionMap compute_start_state(const CFG& cfg) {
                 if (s->fKind == Statement::kVarDeclarations_Kind) {
                     const VarDeclarationsStatement* vd = (const VarDeclarationsStatement*) s;
                     for (const auto& decl : vd->fDeclaration->fVars) {
-                        result[decl->fVar] = nullptr;
+                        if (decl->fKind == Statement::kVarDeclaration_Kind) {
+                            result[((VarDeclaration&) *decl).fVar] = nullptr;
+                        }
                     }
                 }
             }
@@ -780,7 +792,6 @@ void Compiler::simplifyExpression(DefinitionMap& definitions,
     }
 }
 
-
 // returns true if this statement could potentially execute a break at the current level (we ignore
 // nested loops and switches, since any breaks inside of them will merely break the loop / switch)
 static bool contains_break(Statement& s) {
@@ -835,7 +846,7 @@ static std::unique_ptr<Statement> block_for_case(SwitchStatement* s, SwitchCase*
     for (const auto& s : statementPtrs) {
         statements.push_back(std::move(*s));
     }
-    return std::unique_ptr<Statement>(new Block(Position(), std::move(statements)));
+    return std::unique_ptr<Statement>(new Block(Position(), std::move(statements), s->fSymbols));
 }
 
 void Compiler::simplifyStatement(DefinitionMap& definitions,
@@ -846,27 +857,19 @@ void Compiler::simplifyStatement(DefinitionMap& definitions,
                                  bool* outNeedsRescan) {
     Statement* stmt = (*iter)->statement()->get();
     switch (stmt->fKind) {
-        case Statement::kVarDeclarations_Kind: {
-            VarDeclarations& vd = *((VarDeclarationsStatement&) *stmt).fDeclaration;
-            for (auto varIter = vd.fVars.begin(); varIter != vd.fVars.end(); ) {
-                const auto& varDecl = **varIter;
-                if (varDecl.fVar->dead() &&
-                    (!varDecl.fValue ||
-                     !varDecl.fValue->hasSideEffects())) {
-                    if (varDecl.fValue) {
-                        ASSERT((*iter)->statement()->get() == stmt);
-                        if (!b.tryRemoveExpressionBefore(iter, varDecl.fValue.get())) {
-                            *outNeedsRescan = true;
-                        }
+        case Statement::kVarDeclaration_Kind: {
+            const auto& varDecl = (VarDeclaration&) *stmt;
+            if (varDecl.fVar->dead() &&
+                (!varDecl.fValue ||
+                 !varDecl.fValue->hasSideEffects())) {
+                if (varDecl.fValue) {
+                    ASSERT((*iter)->statement()->get() == stmt);
+                    if (!b.tryRemoveExpressionBefore(iter, varDecl.fValue.get())) {
+                        *outNeedsRescan = true;
                     }
-                    varIter = vd.fVars.erase(varIter);
-                    *outUpdated = true;
-                } else {
-                    ++varIter;
                 }
-            }
-            if (vd.fVars.size() == 0) {
                 (*iter)->setStatement(std::unique_ptr<Statement>(new Nop()));
+                *outUpdated = true;
             }
             break;
         }
@@ -929,7 +932,7 @@ void Compiler::simplifyStatement(DefinitionMap& definitions,
                             (*iter)->setStatement(std::move(newBlock));
                             break;
                         } else {
-                            if (s.fIsStatic) {
+                            if (s.fIsStatic && !(fFlags & kPermitInvalidStaticTests_Flag)) {
                                 this->error(s.fPosition,
                                             "static switch contains non-static conditional break");
                                 s.fIsStatic = false;
@@ -945,7 +948,7 @@ void Compiler::simplifyStatement(DefinitionMap& definitions,
                         if (newBlock) {
                             (*iter)->setStatement(std::move(newBlock));
                         } else {
-                            if (s.fIsStatic) {
+                            if (s.fIsStatic && !(fFlags & kPermitInvalidStaticTests_Flag)) {
                                 this->error(s.fPosition,
                                             "static switch contains non-static conditional break");
                                 s.fIsStatic = false;
@@ -1036,27 +1039,50 @@ void Compiler::scanCFG(FunctionDefinition& f) {
     } while (updated);
     ASSERT(!needsRescan);
 
-    // verify static ifs & switches
+    // verify static ifs & switches, clean up dead variable decls
     for (BasicBlock& b : cfg.fBlocks) {
         DefinitionMap definitions = b.fBefore;
 
-        for (auto iter = b.fNodes.begin(); iter != b.fNodes.end() && !needsRescan; ++iter) {
+        for (auto iter = b.fNodes.begin(); iter != b.fNodes.end() && !needsRescan;) {
             if (iter->fKind == BasicBlock::Node::kStatement_Kind) {
                 const Statement& s = **iter->statement();
                 switch (s.fKind) {
                     case Statement::kIf_Kind:
-                        if (((const IfStatement&) s).fIsStatic) {
+                        if (((const IfStatement&) s).fIsStatic &&
+                            !(fFlags & kPermitInvalidStaticTests_Flag)) {
                             this->error(s.fPosition, "static if has non-static test");
                         }
+                        ++iter;
                         break;
                     case Statement::kSwitch_Kind:
-                        if (((const SwitchStatement&) s).fIsStatic) {
+                        if (((const SwitchStatement&) s).fIsStatic &&
+                             !(fFlags & kPermitInvalidStaticTests_Flag)) {
                             this->error(s.fPosition, "static switch has non-static test");
                         }
+                        ++iter;
                         break;
+                    case Statement::kVarDeclarations_Kind: {
+                        VarDeclarations& decls = *((VarDeclarationsStatement&) s).fDeclaration;
+                        for (auto varIter = decls.fVars.begin(); varIter != decls.fVars.end();) {
+                            if ((*varIter)->fKind == Statement::kNop_Kind) {
+                                varIter = decls.fVars.erase(varIter);
+                            } else {
+                                ++varIter;
+                            }
+                        }
+                        if (!decls.fVars.size()) {
+                            iter = b.fNodes.erase(iter);
+                        } else {
+                            ++iter;
+                        }
+                        break;
+                    }
                     default:
+                        ++iter;
                         break;
                 }
+            } else {
+                ++iter;
             }
         }
     }
@@ -1065,69 +1091,6 @@ void Compiler::scanCFG(FunctionDefinition& f) {
     if (f.fDeclaration.fReturnType != *fContext.fVoid_Type) {
         if (cfg.fBlocks[cfg.fExit].fEntrances.size()) {
             this->error(f.fPosition, String("function can exit without returning a value"));
-        }
-    }
-}
-
-void Compiler::internalConvertProgram(String text,
-                                      Modifiers::Flag* defaultPrecision,
-                                      std::vector<std::unique_ptr<ProgramElement>>* result) {
-    Parser parser(text, *fTypes, *this);
-    std::vector<std::unique_ptr<ASTDeclaration>> parsed = parser.file();
-    if (fErrorCount) {
-        return;
-    }
-    *defaultPrecision = Modifiers::kHighp_Flag;
-    for (size_t i = 0; i < parsed.size(); i++) {
-        ASTDeclaration& decl = *parsed[i];
-        switch (decl.fKind) {
-            case ASTDeclaration::kVar_Kind: {
-                std::unique_ptr<VarDeclarations> s = fIRGenerator->convertVarDeclarations(
-                                                                         (ASTVarDeclarations&) decl,
-                                                                         Variable::kGlobal_Storage);
-                if (s) {
-                    result->push_back(std::move(s));
-                }
-                break;
-            }
-            case ASTDeclaration::kFunction_Kind: {
-                std::unique_ptr<FunctionDefinition> f = fIRGenerator->convertFunction(
-                                                                               (ASTFunction&) decl);
-                if (!fErrorCount && f) {
-                    this->scanCFG(*f);
-                    result->push_back(std::move(f));
-                }
-                break;
-            }
-            case ASTDeclaration::kModifiers_Kind: {
-                std::unique_ptr<ModifiersDeclaration> f = fIRGenerator->convertModifiersDeclaration(
-                                                                   (ASTModifiersDeclaration&) decl);
-                if (f) {
-                    result->push_back(std::move(f));
-                }
-                break;
-            }
-            case ASTDeclaration::kInterfaceBlock_Kind: {
-                std::unique_ptr<InterfaceBlock> i = fIRGenerator->convertInterfaceBlock(
-                                                                         (ASTInterfaceBlock&) decl);
-                if (i) {
-                    result->push_back(std::move(i));
-                }
-                break;
-            }
-            case ASTDeclaration::kExtension_Kind: {
-                std::unique_ptr<Extension> e = fIRGenerator->convertExtension((ASTExtension&) decl);
-                if (e) {
-                    result->push_back(std::move(e));
-                }
-                break;
-            }
-            case ASTDeclaration::kPrecision_Kind: {
-                *defaultPrecision = ((ASTPrecision&) decl).fPrecision;
-                break;
-            }
-            default:
-                ABORT("unsupported declaration: %s\n", decl.description().c_str());
         }
     }
 }
@@ -1141,18 +1104,28 @@ std::unique_ptr<Program> Compiler::convertProgram(Program::Kind kind, String tex
     Modifiers::Flag ignored;
     switch (kind) {
         case Program::kVertex_Kind:
-            this->internalConvertProgram(String(SKSL_VERT_INCLUDE), &ignored, &elements);
+            fIRGenerator->convertProgram(String(SKSL_VERT_INCLUDE), *fTypes, &ignored, &elements);
             break;
         case Program::kFragment_Kind:
-            this->internalConvertProgram(String(SKSL_FRAG_INCLUDE), &ignored, &elements);
+            fIRGenerator->convertProgram(String(SKSL_FRAG_INCLUDE), *fTypes, &ignored, &elements);
             break;
         case Program::kGeometry_Kind:
-            this->internalConvertProgram(String(SKSL_GEOM_INCLUDE), &ignored, &elements);
+            fIRGenerator->convertProgram(String(SKSL_GEOM_INCLUDE), *fTypes, &ignored, &elements);
+            break;
+        case Program::kFragmentProcessor_Kind:
+            fIRGenerator->convertProgram(String(SKSL_FP_INCLUDE), *fTypes, &ignored, &elements);
             break;
     }
     fIRGenerator->fSymbolTable->markAllFunctionsBuiltin();
     Modifiers::Flag defaultPrecision;
-    this->internalConvertProgram(text, &defaultPrecision, &elements);
+    fIRGenerator->convertProgram(text, *fTypes, &defaultPrecision, &elements);
+    if (!fErrorCount) {
+        for (auto& element : elements) {
+            if (element->fKind == ProgramElement::kFunction_Kind) {
+                this->scanCFG((FunctionDefinition&) *element);
+            }
+        }
+    }
     auto result = std::unique_ptr<Program>(new Program(kind, settings, defaultPrecision, &fContext,
                                                        std::move(elements),
                                                        fIRGenerator->fSymbolTable,
@@ -1172,15 +1145,16 @@ bool Compiler::toSPIRV(const Program& program, OutputStream& out) {
     bool result = cg.generateCode();
     if (result) {
         spvtools::SpirvTools tools(SPV_ENV_VULKAN_1_0);
-        ASSERT(0 == buffer.size() % 4);
+        const String& data = buffer.str();
+        ASSERT(0 == data.size() % 4);
         auto dumpmsg = [](spv_message_level_t, const char*, const spv_position_t&, const char* m) {
             SkDebugf("SPIR-V validation error: %s\n", m);
         };
         tools.SetMessageConsumer(dumpmsg);
         // Verify that the SPIR-V we produced is valid. If this assert fails, check the logs prior
         // to the failure to see the validation errors.
-        ASSERT_RESULT(tools.Validate((const uint32_t*) buffer.data(), buffer.size() / 4));
-        out.write(buffer.data(), buffer.size());
+        ASSERT_RESULT(tools.Validate((const uint32_t*) data.c_str(), data.size() / 4));
+        out.write(data.c_str(), data.size());
     }
 #else
     SPIRVCodeGenerator cg(&fContext, &program, this, &out);
@@ -1194,7 +1168,7 @@ bool Compiler::toSPIRV(const Program& program, String* out) {
     StringStream buffer;
     bool result = this->toSPIRV(program, buffer);
     if (result) {
-        *out = String(buffer.data(), buffer.size());
+        *out = buffer.str();
     }
     return result;
 }
@@ -1210,11 +1184,24 @@ bool Compiler::toGLSL(const Program& program, String* out) {
     StringStream buffer;
     bool result = this->toGLSL(program, buffer);
     if (result) {
-        *out = String(buffer.data(), buffer.size());
+        *out = buffer.str();
     }
     return result;
 }
 
+bool Compiler::toCPP(const Program& program, String name, OutputStream& out) {
+    CPPCodeGenerator cg(&fContext, &program, this, name, &out);
+    bool result = cg.generateCode();
+    this->writeErrorCount();
+    return result;
+}
+
+bool Compiler::toH(const Program& program, String name, OutputStream& out) {
+    HCodeGenerator cg(&program, this, name, &out);
+    bool result = cg.generateCode();
+    this->writeErrorCount();
+    return result;
+}
 
 void Compiler::error(Position position, String msg) {
     fErrorCount++;

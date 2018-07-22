@@ -17,7 +17,7 @@ GrTextureRenderTargetProxy::GrTextureRenderTargetProxy(const GrCaps& caps,
                                                        uint32_t flags)
     : GrSurfaceProxy(desc, fit, budgeted, flags)
     // for now textures w/ data are always wrapped
-    , GrTextureProxy(desc, fit, budgeted, nullptr, 0, flags) 
+    , GrTextureProxy(desc, fit, budgeted, nullptr, 0, flags)
     , GrRenderTargetProxy(caps, desc, fit, budgeted, flags) {
 }
 
@@ -26,8 +26,8 @@ GrTextureRenderTargetProxy::GrTextureRenderTargetProxy(const GrCaps& caps,
 // GrRenderTargetProxy) so its constructor must be explicitly called.
 GrTextureRenderTargetProxy::GrTextureRenderTargetProxy(sk_sp<GrSurface> surf)
     : GrSurfaceProxy(surf, SkBackingFit::kExact)
-    , GrTextureProxy(sk_ref_sp(surf->asTexture()))
-    , GrRenderTargetProxy(sk_ref_sp(surf->asRenderTarget())) {
+    , GrTextureProxy(surf)
+    , GrRenderTargetProxy(surf) {
     SkASSERT(surf->asTexture());
     SkASSERT(surf->asRenderTarget());
 }
@@ -44,16 +44,32 @@ size_t GrTextureRenderTargetProxy::onUninstantiatedGpuMemorySize() const {
                                   SkBackingFit::kApprox == fFit);
 }
 
-GrSurface* GrTextureRenderTargetProxy::instantiate(GrResourceProvider* resourceProvider) {
+bool GrTextureRenderTargetProxy::instantiate(GrResourceProvider* resourceProvider) {
     static constexpr GrSurfaceFlags kFlags = kRenderTarget_GrSurfaceFlag;
 
-    GrSurface* surf = this->instantiateImpl(resourceProvider, this->numStencilSamples(), kFlags,
-                                            this->isMipMapped(), this->mipColorMode());
-    if (!surf) {
+    if (!this->instantiateImpl(resourceProvider, this->numStencilSamples(), kFlags,
+                               this->isMipMapped(), this->mipColorMode())) {
+        return false;
+    }
+    SkASSERT(fTarget->asRenderTarget());
+    SkASSERT(fTarget->asTexture());
+
+    return true;
+}
+
+sk_sp<GrSurface> GrTextureRenderTargetProxy::createSurface(
+                                                    GrResourceProvider* resourceProvider) const {
+    static constexpr GrSurfaceFlags kFlags = kRenderTarget_GrSurfaceFlag;
+
+    sk_sp<GrSurface> surface = this->createSurfaceImpl(resourceProvider, this->numStencilSamples(),
+                                                       kFlags, this->isMipMapped(),
+                                                       this->mipColorMode());
+    if (!surface) {
         return nullptr;
     }
-    SkASSERT(surf->asRenderTarget());
-    SkASSERT(surf->asTexture());
+    SkASSERT(surface->asRenderTarget());
+    SkASSERT(surface->asTexture());
 
-    return surf;
+    return surface;
 }
+

@@ -18,13 +18,10 @@
 #include "CrashHandler.h"
 #include "GMBench.h"
 #include "ProcStats.h"
-#include "ResultsWriter.h"
 #include "RecordingBench.h"
+#include "ResultsWriter.h"
 #include "SKPAnimationBench.h"
 #include "SKPBench.h"
-#include "Stats.h"
-#include "ios_utils.h"
-
 #include "SkAndroidCodec.h"
 #include "SkAutoMalloc.h"
 #include "SkBBoxHierarchy.h"
@@ -35,6 +32,7 @@
 #include "SkCommonFlagsConfig.h"
 #include "SkCommonFlagsPathRenderer.h"
 #include "SkData.h"
+#include "SkDebugfTracer.h"
 #include "SkGraphics.h"
 #include "SkLeanWindows.h"
 #include "SkOSFile.h"
@@ -46,9 +44,13 @@
 #include "SkSurface.h"
 #include "SkTaskGroup.h"
 #include "SkThreadUtils.h"
+#include "Stats.h"
 #include "ThermalManager.h"
+#include "ios_utils.h"
 
 #include <stdlib.h>
+
+extern bool gSkForceRasterPipelineBlitter;
 
 #ifndef SK_BUILD_FOR_WIN32
     #include <unistd.h>
@@ -59,6 +61,7 @@
     #include "GrCaps.h"
     #include "GrContextFactory.h"
     #include "gl/GrGLUtil.h"
+    #include "SkGr.h"
     using sk_gpu_test::GrContextFactory;
     using sk_gpu_test::TestContext;
     std::unique_ptr<GrContextFactory> gGrFactory;
@@ -122,11 +125,13 @@ DEFINE_bool(gpuStatsDump, false, "Dump GPU states after each benchmark to json")
 DEFINE_bool(keepAlive, false, "Print a message every so often so that we don't time out");
 DEFINE_string(useThermalManager, "0,1,10,1000", "enabled,threshold,sleepTimeMs,TimeoutMs for "
                                                 "thermalManager\n");
-
+DEFINE_bool(csv, false, "Print status in CSV format");
 DEFINE_string(sourceType, "",
         "Apply usual --match rules to source type: bench, gm, skp, image, etc.");
 DEFINE_string(benchType,  "",
         "Apply usual --match rules to bench type: micro, recording, piping, playback, skcodec, etc.");
+
+DEFINE_bool(forceRasterPipeline, false, "sets gSkForceRasterPipelineBlitter");
 
 #if SK_SUPPORT_GPU
 DEFINE_pathrenderer_flag;
@@ -412,12 +417,16 @@ static void create_config(const SkCommandLineConfig* config, SkTArray<Config>* c
         const auto ctxType = gpuConfig->getContextType();
         const auto ctxOverrides = gpuConfig->getContextOverrides();
         const auto sampleCount = gpuConfig->getSamples();
+        const auto colorType = gpuConfig->getColorType();
+        auto colorSpace = gpuConfig->getColorSpace();
 
         if (const GrContext* ctx = gGrFactory->get(ctxType, ctxOverrides)) {
-            const auto maxSampleCount = ctx->caps()->maxSampleCount();
-            if (sampleCount > ctx->caps()->maxSampleCount()) {
-                SkDebugf("Configuration sample count %d exceeds maximum %d.\n",
-                    sampleCount, maxSampleCount);
+            GrPixelConfig grPixConfig = SkImageInfo2GrPixelConfig(colorType, colorSpace,
+                                                                  *ctx->caps());
+            int supportedSampleCount = ctx->caps()->getSampleCount(sampleCount, grPixConfig);
+            if (sampleCount != supportedSampleCount) {
+                SkDebugf("Configuration sample count %d is not a supported sample count.\n",
+                    sampleCount);
                 return;
             }
         } else {
@@ -428,9 +437,9 @@ static void create_config(const SkCommandLineConfig* config, SkTArray<Config>* c
         Config target = {
             gpuConfig->getTag(),
             Benchmark::kGPU_Backend,
-            gpuConfig->getColorType(),
+            colorType,
             kPremul_SkAlphaType,
-            sk_ref_sp(gpuConfig->getColorSpace()),
+            sk_ref_sp(colorSpace),
             sampleCount,
             ctxType,
             ctxOverrides,
@@ -626,7 +635,6 @@ public:
         if (!FLAGS_simpleCodec) {
             fColorTypes.push_back(kRGB_565_SkColorType);
             fColorTypes.push_back(kAlpha_8_SkColorType);
-            fColorTypes.push_back(kIndex_8_SkColorType);
             fColorTypes.push_back(kGray_8_SkColorType);
         }
     }
@@ -855,13 +863,8 @@ public:
                 const size_t rowBytes = info.minRowBytes();
                 SkAutoMalloc storage(info.getSafeSize(rowBytes));
 
-                // Used if fCurrentColorType is kIndex_8_SkColorType
-                int colorCount = 256;
-                SkPMColor colors[256];
-
                 const SkCodec::Result result = codec->getPixels(
-                        info, storage.get(), rowBytes, nullptr, colors,
-                        &colorCount);
+                        info, storage.get(), rowBytes);
                 switch (result) {
                     case SkCodec::kSuccess:
                     case SkCodec::kIncompleteInput:
@@ -1101,6 +1104,9 @@ static void start_keepalive() {
 
 int main(int argc, char** argv) {
     SkCommandLineFlags::Parse(argc, argv);
+    if (FLAGS_trace) {
+        SkEventTracer::SetInstance(new SkDebugfTracer);
+    }
 #if defined(SK_BUILD_FOR_IOS)
     cd_Documents();
 #endif
@@ -1195,6 +1201,9 @@ int main(int argc, char** argv) {
 
     if (FLAGS_forceAnalyticAA) {
         gSkForceAnalyticAA = true;
+    }
+    if (FLAGS_forceRasterPipeline) {
+        gSkForceRasterPipelineBlitter = true;
     }
 
     int runs = 0;
@@ -1318,9 +1327,21 @@ int main(int argc, char** argv) {
 
                 SkDebugf("%10.2f %s\t%s\t%s\n",
                          stats.median*1e3, mark, bench->getUniqueName(), config);
-            } else {
+            } else if (FLAGS_csv) {
                 const double stddev_percent = 100 * sqrt(stats.var) / stats.mean;
-                SkDebugf("%4d/%-4dMB\t%d\t%s\t%s\t%s\t%s\t%.0f%%\t%s\t%s\t%s\n"
+                SkDebugf("%g,%g,%g,%g,%g,%s,%s\n"
+                         , stats.min
+                         , stats.median
+                         , stats.mean
+                         , stats.max
+                         , stddev_percent
+                         , config
+                         , bench->getUniqueName()
+                         );
+            } else {
+                const char* format = "%4d/%-4dMB\t%d\t%s\t%s\t%s\t%s\t%.0f%%\t%s\t%s\t%s\n";
+                const double stddev_percent = 100 * sqrt(stats.var) / stats.mean;
+                SkDebugf(format
                         , sk_tools::getCurrResidentSetSizeMB()
                         , sk_tools::getMaxResidentSetSizeMB()
                         , loops

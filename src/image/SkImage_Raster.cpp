@@ -10,9 +10,11 @@
 #include "SkBitmapProcShader.h"
 #include "SkCanvas.h"
 #include "SkColorSpaceXform_Base.h"
+#include "SkColorSpaceXformImageGenerator.h"
 #include "SkColorSpaceXformPriv.h"
 #include "SkColorTable.h"
 #include "SkData.h"
+#include "SkImageInfoPriv.h"
 #include "SkImagePriv.h"
 #include "SkPixelRef.h"
 #include "SkSurface.h"
@@ -35,8 +37,7 @@ static bool is_not_subset(const SkBitmap& bm) {
 
 class SkImage_Raster : public SkImage_Base {
 public:
-    static bool ValidArgs(const Info& info, size_t rowBytes, bool hasColorTable,
-                          size_t* minSize) {
+    static bool ValidArgs(const Info& info, size_t rowBytes, size_t* minSize) {
         const int maxDimension = SK_MaxS32 >> 2;
 
         if (info.width() <= 0 || info.height() <= 0) {
@@ -55,12 +56,6 @@ public:
         if (kUnknown_SkColorType == info.colorType()) {
             return false;
         }
-
-        const bool needsCT = kIndex_8_SkColorType == info.colorType();
-        if (needsCT != hasColorTable) {
-            return false;
-        }
-
         if (rowBytes < info.minRowBytes()) {
             return false;
         }
@@ -76,7 +71,8 @@ public:
         return true;
     }
 
-    SkImage_Raster(const SkImageInfo&, sk_sp<SkData>, size_t rb, SkColorTable*);
+    SkImage_Raster(const SkImageInfo&, sk_sp<SkData>, size_t rb,
+                   uint32_t id = kNeedNewImageUniqueID);
     ~SkImage_Raster() override;
 
     SkImageInfo onImageInfo() const override {
@@ -142,13 +138,12 @@ static void release_data(void* addr, void* context) {
     data->unref();
 }
 
-SkImage_Raster::SkImage_Raster(const Info& info, sk_sp<SkData> data, size_t rowBytes,
-                               SkColorTable* ctable)
-    : INHERITED(info.width(), info.height(), kNeedNewImageUniqueID)
+SkImage_Raster::SkImage_Raster(const Info& info, sk_sp<SkData> data, size_t rowBytes, uint32_t id)
+    : INHERITED(info.width(), info.height(), id)
 {
     void* addr = const_cast<void*>(data->data());
 
-    fBitmap.installPixels(info, addr, rowBytes, ctable, release_data, data.release());
+    fBitmap.installPixels(info, addr, rowBytes, release_data, data.release());
     fBitmap.setImmutable();
 }
 
@@ -259,23 +254,25 @@ sk_sp<SkImage> SkImage_Raster::onMakeSubset(const SkIRect& subset) const {
 
 ///////////////////////////////////////////////////////////////////////////////
 
-sk_sp<SkImage> SkImage::MakeRasterCopy(const SkPixmap& pmap) {
+sk_sp<SkImage> MakeRasterCopyPriv(const SkPixmap& pmap, uint32_t id) {
     size_t size;
-    if (!SkImage_Raster::ValidArgs(pmap.info(), pmap.rowBytes(),
-                                   pmap.ctable() != nullptr, &size) || !pmap.addr()) {
+    if (!SkImage_Raster::ValidArgs(pmap.info(), pmap.rowBytes(), &size) || !pmap.addr()) {
         return nullptr;
     }
 
     // Here we actually make a copy of the caller's pixel data
     sk_sp<SkData> data(SkData::MakeWithCopy(pmap.addr(), size));
-    return sk_make_sp<SkImage_Raster>(pmap.info(), std::move(data), pmap.rowBytes(), pmap.ctable());
+    return sk_make_sp<SkImage_Raster>(pmap.info(), std::move(data), pmap.rowBytes(), id);
 }
 
+sk_sp<SkImage> SkImage::MakeRasterCopy(const SkPixmap& pmap) {
+    return MakeRasterCopyPriv(pmap, kNeedNewImageUniqueID);
+}
 
 sk_sp<SkImage> SkImage::MakeRasterData(const SkImageInfo& info, sk_sp<SkData> data,
                                        size_t rowBytes) {
     size_t size;
-    if (!SkImage_Raster::ValidArgs(info, rowBytes, false, &size) || !data) {
+    if (!SkImage_Raster::ValidArgs(info, rowBytes, &size) || !data) {
         return nullptr;
     }
 
@@ -284,42 +281,69 @@ sk_sp<SkImage> SkImage::MakeRasterData(const SkImageInfo& info, sk_sp<SkData> da
         return nullptr;
     }
 
-    SkColorTable* ctable = nullptr;
-    return sk_make_sp<SkImage_Raster>(info, std::move(data), rowBytes, ctable);
+    return sk_make_sp<SkImage_Raster>(info, std::move(data), rowBytes);
 }
 
 sk_sp<SkImage> SkImage::MakeFromRaster(const SkPixmap& pmap, RasterReleaseProc proc,
                                        ReleaseContext ctx) {
     size_t size;
-    if (!SkImage_Raster::ValidArgs(pmap.info(), pmap.rowBytes(), pmap.ctable(), &size) ||
-        !pmap.addr())
-    {
+    if (!SkImage_Raster::ValidArgs(pmap.info(), pmap.rowBytes(), &size) || !pmap.addr()) {
         return nullptr;
     }
 
     sk_sp<SkData> data(SkData::MakeWithProc(pmap.addr(), size, proc, ctx));
-    return sk_make_sp<SkImage_Raster>(pmap.info(), std::move(data), pmap.rowBytes(), pmap.ctable());
+    return sk_make_sp<SkImage_Raster>(pmap.info(), std::move(data), pmap.rowBytes());
+}
+
+sk_sp<SkImage> SkMakeImageFromRasterBitmapPriv(const SkBitmap& bm, SkCopyPixelsMode cpm,
+                                               uint32_t idForCopy) {
+    if (kAlways_SkCopyPixelsMode == cpm || (!bm.isImmutable() && kNever_SkCopyPixelsMode != cpm)) {
+        SkPixmap pmap;
+        if (bm.peekPixels(&pmap)) {
+            return MakeRasterCopyPriv(pmap, idForCopy);
+        } else {
+            return sk_sp<SkImage>();
+        }
+    }
+
+    return sk_make_sp<SkImage_Raster>(bm, kNever_SkCopyPixelsMode == cpm);
 }
 
 sk_sp<SkImage> SkMakeImageFromRasterBitmap(const SkBitmap& bm, SkCopyPixelsMode cpm) {
-    bool hasColorTable = false;
-    if (kIndex_8_SkColorType == bm.colorType()) {
-        hasColorTable = bm.getColorTable() != nullptr;
-    }
-
-    if (!SkImage_Raster::ValidArgs(bm.info(), bm.rowBytes(), hasColorTable, nullptr)) {
+    if (!SkImageInfoIsValidAllowNumericalCS(bm.info()) || bm.rowBytes() < bm.info().minRowBytes()) {
         return nullptr;
     }
 
-    if (kAlways_SkCopyPixelsMode == cpm || (!bm.isImmutable() && kNever_SkCopyPixelsMode != cpm)) {
-        SkPixmap pmap;
-        if (bm.getPixels() && bm.peekPixels(&pmap)) {
-            return SkImage::MakeRasterCopy(pmap);
-        }
-    } else {
-        return sk_make_sp<SkImage_Raster>(bm, kNever_SkCopyPixelsMode == cpm);
+    return SkMakeImageFromRasterBitmapPriv(bm, cpm, kNeedNewImageUniqueID);
+}
+
+sk_sp<SkImage> SkMakeImageInColorSpace(const SkBitmap& bm, sk_sp<SkColorSpace> dstCS, uint32_t id,
+                                       SkCopyPixelsMode cpm) {
+    if (!SkImageInfoIsValidAllowNumericalCS(bm.info()) || !bm.getPixels() ||
+            bm.rowBytes() < bm.info().minRowBytes() || !dstCS) {
+        return nullptr;
     }
-    return sk_sp<SkImage>();
+
+    sk_sp<SkColorSpace> srcCS = bm.info().refColorSpace();
+    if (!srcCS) {
+        // Treat nullptr as sRGB.
+        srcCS = SkColorSpace::MakeSRGB();
+    }
+
+    sk_sp<SkImage> image = nullptr;
+
+    // For the Android use case, this is very likely to be true.
+    if (SkColorSpace::Equals(srcCS.get(), dstCS.get())) {
+        SkASSERT(kNeedNewImageUniqueID == id || bm.getGenerationID() == id);
+        image = SkMakeImageFromRasterBitmapPriv(bm, cpm, id);
+    } else {
+        image = SkImage::MakeFromGenerator(SkColorSpaceXformImageGenerator::Make(bm, dstCS, cpm,
+                                                                                 id));
+    }
+
+    // If the caller suplied an id, we must propagate that to the image we return
+    SkASSERT(kNeedNewImageUniqueID == id || image->uniqueID() == id);
+    return image;
 }
 
 const SkPixelRef* SkBitmapImageGetPixelRef(const SkImage* image) {
@@ -348,17 +372,21 @@ bool SkImage_Raster::onAsLegacyBitmap(SkBitmap* bitmap, LegacyBitmapMode mode) c
 sk_sp<SkImage> SkImage_Raster::onMakeColorSpace(sk_sp<SkColorSpace> target,
                                                 SkColorType targetColorType,
                                                 SkTransferFunctionBehavior premulBehavior) const {
-    SkImageInfo dstInfo = fBitmap.info().makeColorType(targetColorType).makeColorSpace(target);
-    SkBitmap dst;
-    dst.allocPixels(dstInfo);
-
     SkPixmap src;
     SkAssertResult(fBitmap.peekPixels(&src));
 
     // Treat nullptr srcs as sRGB.
     if (!src.colorSpace()) {
+        if (target->isSRGB()) {
+            return sk_ref_sp(const_cast<SkImage*>((SkImage*)this));
+        }
+
         src.setColorSpace(SkColorSpace::MakeSRGB());
     }
+
+    SkImageInfo dstInfo = fBitmap.info().makeColorType(targetColorType).makeColorSpace(target);
+    SkBitmap dst;
+    dst.allocPixels(dstInfo);
 
     SkAssertResult(dst.writePixels(src, 0, 0, premulBehavior));
     dst.setImmutable();

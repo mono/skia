@@ -3,7 +3,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("gn/android_framework_defines.gni")
+import("gn/flutter_defines.gni")
 import("gn/shared_sources.gni")
 
 if (is_fuchsia) {
@@ -30,17 +30,23 @@ declare_args() {
   skia_use_mesa = false
   skia_use_piex = !is_win
   skia_use_zlib = true
+  skia_use_metal = false
 
   skia_android_serial = ""
-  skia_enable_android_framework_defines = false
   skia_enable_discrete_gpu = true
   skia_enable_effects = true
+  skia_enable_flutter_defines = false
   skia_enable_gpu = true
   skia_enable_pdf = true
   skia_enable_spirv_validation = is_skia_dev_build && is_debug
   skia_enable_tools = is_skia_dev_build
   skia_enable_vulkan_debug_layers = is_skia_dev_build && is_debug
   skia_vulkan_sdk = getenv("VULKAN_SDK")
+  skia_compile_processors = false
+
+  skia_jumper_clang = ""
+  skia_jumper_objdump = ""
+  skia_jumper_ccache = ""
 }
 declare_args() {
   skia_use_dng_sdk = !is_fuchsia && skia_use_libjpeg_turbo && skia_use_zlib
@@ -55,17 +61,14 @@ declare_args() {
   }
 }
 declare_args() {
+  skia_vulkan_headers = ""
   if (skia_use_vulkan) {
+    # When buliding on Android we get the header via the NDK so no need for any extra path.
     if (is_fuchsia) {
       skia_vulkan_headers = "$fuchsia_vulkan_sdk/include"
     } else if (is_linux || is_win) {
       skia_vulkan_headers = "$skia_vulkan_sdk/include"
-    } else {
-      # When buliding on Android we get the header via the NDK
-      skia_vulkan_headers = ""
     }
-  } else {
-    skia_vulkan_headers = "third_party/vulkan"
   }
 }
 
@@ -91,6 +94,13 @@ skia_public_includes = [
   "include/utils/mac",
 ]
 
+if (skia_use_vulkan) {
+  skia_public_includes += [ "include/gpu/vk" ]
+}
+if (skia_use_metal) {
+  skia_public_includes += [ "include/gpu/mtl" ]
+}
+
 # Skia public API, generally provided by :skia.
 config("skia_public") {
   include_dirs = skia_public_includes
@@ -104,8 +114,8 @@ config("skia_public") {
   if (is_fuchsia || is_linux) {
     defines += [ "SK_SAMPLES_FOR_X" ]
   }
-  if (skia_enable_android_framework_defines) {
-    defines += android_framework_defines
+  if (skia_enable_flutter_defines) {
+    defines += flutter_defines
   }
   if (!skia_enable_gpu) {
     defines += [ "SK_SUPPORT_GPU=0" ]
@@ -122,7 +132,6 @@ config("skia_private") {
     "src/codec",
     "src/core",
     "src/effects",
-    "src/effects/gradients",
     "src/fonts",
     "src/image",
     "src/images",
@@ -132,6 +141,8 @@ config("skia_private") {
     "src/pdf",
     "src/ports",
     "src/sfnt",
+    "src/shaders",
+    "src/shaders/gradients",
     "src/sksl",
     "src/utils",
     "src/utils/win",
@@ -172,6 +183,9 @@ config("skia_private") {
   }
   if (skia_enable_discrete_gpu) {
     defines += [ "SK_ENABLE_DISCRETE_GPU" ]
+  }
+  if (!is_official_build) {
+    defines += [ "GR_TEST_UTILS=1" ]
   }
 }
 
@@ -286,22 +300,6 @@ opts("avx") {
   }
 }
 
-opts("hsw") {
-  enabled = is_x86
-  sources = skia_opts.hsw_sources
-  if (is_win) {
-    cflags = [ "/arch:AVX2" ]
-  } else {
-    cflags = [
-      "-mavx2",
-      "-mbmi",
-      "-mbmi2",
-      "-mf16c",
-      "-mfma",
-    ]
-  }
-}
-
 # Any feature of Skia that requires third-party code should be optional and use this template.
 template("optional") {
   if (invoker.enabled) {
@@ -346,6 +344,9 @@ template("optional") {
 
 optional("effects") {
   enabled = skia_enable_effects
+  deps = [
+    ":compile_processors",
+  ]
   sources =
       skia_effects_sources + [ "src/ports/SkGlobalInitialization_default.cpp" ]
   sources_when_disabled = [ "src/ports/SkGlobalInitialization_none.cpp" ]
@@ -411,12 +412,70 @@ optional("fontmgr_fuchsia") {
   ]
 }
 
+if (skia_compile_processors) {
+  executable("skslc") {
+    defines = [ "SKSL_STANDALONE" ]
+    sources = [
+      "src/sksl/SkSLMain.cpp",
+    ]
+    sources += skia_sksl_sources
+    include_dirs = [
+      "src/gpu",
+      "src/sksl",
+    ]
+    deps = [
+      "//third_party/spirv-tools",
+    ]
+  }
+
+  skia_gpu_processor_outputs = []
+  foreach(src, skia_gpu_processor_sources) {
+    dir = get_path_info(src, "dir")
+    name = get_path_info(src, "name")
+
+    # GN insists its outputs should go somewhere underneath target_out_dir, so we trick it with a
+    # path that starts with target_out_dir and then uses ".." to back up into the src dir.
+    skia_gpu_processor_outputs += [
+      "$target_out_dir/" + rebase_path("$dir/$name.h", target_out_dir),
+      # the script also modifies the corresponding .cpp file, but if we tell GN that it gets
+      # confused due to the same file being named by two different paths
+    ]
+  }
+
+  action("compile_processors") {
+    script = "gn/compile_processors.py"
+    deps = [
+      ":skslc(//gn/toolchain:$host_toolchain)",
+    ]
+    sources = skia_gpu_processor_sources
+    outputs = skia_gpu_processor_outputs
+    skslc_path = "$root_out_dir/"
+    if (host_toolchain != default_toolchain_name) {
+      skslc_path += "$host_toolchain/"
+    }
+    skslc_path += "skslc"
+    if (host_os == "win") {
+      skslc_path += ".exe"
+    }
+    args = [ rebase_path(skslc_path) ]
+    args += rebase_path(skia_gpu_processor_sources)
+  }
+} else {
+  skia_gpu_processor_outputs = []
+  group("compile_processors") {
+  }
+}
+
 optional("gpu") {
   enabled = skia_enable_gpu
+  deps = [
+    ":compile_processors",
+  ]
   public_defines = []
 
   sources = skia_gpu_sources + skia_sksl_sources +
-            [ "src/gpu/gl/GrGLDefaultInterface_native.cpp" ]
+            [ "src/gpu/gl/GrGLDefaultInterface_native.cpp" ] +
+            skia_gpu_processor_outputs
 
   # These paths need to be absolute to match the ones produced by shared_sources.gni.
   sources -= get_path_info([
@@ -427,6 +486,11 @@ optional("gpu") {
   libs = []
   if (is_android) {
     sources += [ "src/gpu/gl/android/GrGLCreateNativeInterface_android.cpp" ]
+
+    # this lib is required to link against AHardwareBuffer
+    if (defined(ndk_api) && ndk_api >= 26) {
+      libs += [ "android" ]
+    }
   } else if (skia_use_egl) {
     sources += [ "src/gpu/gl/egl/GrGLCreateNativeInterface_egl.cpp" ]
     libs += [ "EGL" ]
@@ -457,10 +521,16 @@ optional("gpu") {
     }
   }
   if (skia_enable_spirv_validation) {
-    deps = [
-      "//third_party/spirv-tools",
-    ]
+    deps += [ "//third_party/spirv-tools" ]
     public_defines += [ "SK_ENABLE_SPIRV_VALIDATION" ]
+  }
+
+  cflags_objcc = []
+  if (skia_use_metal) {
+    public_defines += [ "SK_METAL" ]
+    sources += skia_metal_sources
+    libs += [ "Metal.framework" ]
+    cflags_objcc += [ "-fobjc-arc" ]
   }
 }
 
@@ -587,7 +657,6 @@ component("skia") {
     ":fontmgr_fontconfig",
     ":fontmgr_fuchsia",
     ":gpu",
-    ":hsw",
     ":jpeg",
     ":none",
     ":pdf",
@@ -614,6 +683,7 @@ component("skia") {
     "src/android/SkBitmapRegionCodec.cpp",
     "src/android/SkBitmapRegionDecoder.cpp",
     "src/codec/SkAndroidCodec.cpp",
+    "src/codec/SkBmpBaseCodec.cpp",
     "src/codec/SkBmpCodec.cpp",
     "src/codec/SkBmpMaskCodec.cpp",
     "src/codec/SkBmpRLECodec.cpp",
@@ -794,8 +864,7 @@ if (skia_enable_tools) {
     skia_h = "$target_gen_dir/skia.h"
     script = "gn/find_headers.py"
     args = [ rebase_path(skia_h, root_build_dir) ] +
-           rebase_path(skia_public_includes) +
-           [ rebase_path("third_party/vulkan") ]
+           rebase_path(skia_public_includes)
     depfile = "$skia_h.deps"
     outputs = [
       skia_h,
@@ -807,14 +876,21 @@ if (skia_enable_tools) {
     # TODO: worth fixing?
     executable("fiddle") {
       libs = []
-      if (is_linux) {
-        libs += [ "OSMesa" ]
-      }
-
       sources = [
         "tools/fiddle/draw.cpp",
         "tools/fiddle/fiddle_main.cpp",
       ]
+
+      if (skia_use_egl) {
+        sources += [ "tools/fiddle/egl_context.cpp" ]
+      } else if (skia_use_mesa) {
+        sources += [ "tools/fiddle/mesa_context.cpp" ]
+        if (is_linux) {
+          libs += [ "OSMesa" ]
+        }
+      } else {
+        sources += [ "tools/fiddle/null_context.cpp" ]
+      }
       testonly = true
       deps = [
         ":flags",
@@ -913,6 +989,7 @@ if (skia_enable_tools) {
         "tools/gpu/gl/debug/GrTextureObj.cpp",
         "tools/gpu/gl/debug/GrTextureUnitObj.cpp",
         "tools/gpu/gl/null/NullGLTestContext.cpp",
+        "tools/gpu/mock/MockTestContext.cpp",
       ]
       libs = []
 
@@ -934,6 +1011,8 @@ if (skia_enable_tools) {
         ]
       }
 
+      cflags_objcc = [ "-fobjc-arc" ]
+
       if (skia_use_angle) {
         deps += [ "//third_party/angle2" ]
         sources += [ "tools/gpu/gl/angle/GLTestContext_angle.cpp" ]
@@ -950,6 +1029,9 @@ if (skia_enable_tools) {
         } else {
           libs += [ "vulkan" ]
         }
+      }
+      if (skia_use_metal) {
+        sources += [ "tools/gpu/mtl/MtlTestContext.mm" ]
       }
     }
   }
@@ -977,6 +1059,7 @@ if (skia_enable_tools) {
       "tools",
       "tools/debugger",
       "tools/timer",
+      "tools/trace",
     ]
     sources = [
       "tools/AndroidSkDebugToStdOut.cpp",
@@ -995,6 +1078,8 @@ if (skia_enable_tools) {
       "tools/sk_tool_utils.cpp",
       "tools/sk_tool_utils_font.cpp",
       "tools/timer/Timer.cpp",
+      "tools/trace/SkDebugfTracer.cpp",
+      "tools/trace/SkDebugfTracer.h",
     ]
     libs = []
     if (is_ios) {
@@ -1172,10 +1257,15 @@ if (skia_enable_tools) {
     public_include_dirs = [ "samplecode" ]
     include_dirs = [ "experimental" ]
     sources = samples_sources + [
-                "experimental/SkPerlinNoiseShader2/SkPerlinNoiseShader2.cpp",
                 "experimental/SkSetPoly3To3.cpp",
                 "experimental/SkSetPoly3To3_A.cpp",
                 "experimental/SkSetPoly3To3_D.cpp",
+
+                # Relocating these files here, so that clients don't try to build them while they're
+                # still in active development. Clang's thread safety analysis gets tripped up by
+                # conditional locks.
+                "src/core/SkThreadedBMPDevice.cpp",
+                "src/core/SkThreadedBMPDevice.h",
               ]
     deps = [
       ":experimental_svg_model",
@@ -1549,6 +1639,21 @@ if (skia_enable_tools) {
     }
   }
 
+  if (skia_enable_gpu && (is_linux || is_mac)) {
+    test_app("SkiaSDLExample") {
+      sources = [
+        "example/SkiaSDLExample.cpp",
+      ]
+      libs = []
+      include_dirs = []
+      deps = [
+        ":gpu_tool_utils",
+        ":skia",
+        "//third_party/libsdl",
+      ]
+    }
+  }
+
   if (is_android && defined(ndk) && ndk != "") {
     copy("gdbserver") {
       sources = [
@@ -1559,15 +1664,29 @@ if (skia_enable_tools) {
       ]
     }
   }
+}
 
-  if (skia_enable_gpu) {
-    test_app("skslc") {
-      defines = [ "SKSL_STANDALONE" ]
-      sources = [
-        "src/sksl/SkSLMain.cpp",
-      ]
-      sources += skia_sksl_sources
-      include_dirs = [ "src/sksl" ]
-    }
+if (skia_jumper_clang != "") {
+  action("regen_jumper") {
+    script = "src/jumper/build_stages.py"
+
+    inputs = [
+      "src/jumper/SkJumper_stages.cpp",
+      "src/jumper/SkJumper_stages_lowp.cpp",
+    ]
+
+    # GN insists its outputs should go somewhere underneath target_out_dir, so we trick it.
+    outputs = [
+      "$target_out_dir/" +
+          rebase_path("src/jumper/SkJumper_generated.S", target_out_dir),
+      "$target_out_dir/" +
+          rebase_path("src/jumper/SkJumper_generated_win.S", target_out_dir),
+    ]
+
+    args = [
+             skia_jumper_clang,
+             skia_jumper_objdump,
+             skia_jumper_ccache,
+           ] + rebase_path(inputs) + rebase_path(outputs)
   }
 }

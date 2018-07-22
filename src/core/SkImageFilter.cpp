@@ -140,16 +140,12 @@ bool SkImageFilter::Common::unflatten(SkReadBuffer& buffer, int expectedCount) {
 
     uint32_t flags = buffer.readUInt();
     fCropRect = CropRect(rect, flags);
-    if (buffer.isVersionLT(SkReadBuffer::kImageFilterNoUniqueID_Version)) {
-
-        (void) buffer.readUInt();
-    }
     return buffer.isValid();
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-void SkImageFilter::init(sk_sp<SkImageFilter>* inputs,
+void SkImageFilter::init(sk_sp<SkImageFilter> const* inputs,
                          int inputCount,
                          const CropRect* cropRect) {
     fCropRect = cropRect ? *cropRect : CropRect(SkRect(), 0x0);
@@ -164,7 +160,7 @@ void SkImageFilter::init(sk_sp<SkImageFilter>* inputs,
     }
 }
 
-SkImageFilter::SkImageFilter(sk_sp<SkImageFilter>* inputs,
+SkImageFilter::SkImageFilter(sk_sp<SkImageFilter> const* inputs,
                              int inputCount,
                              const CropRect* cropRect)
     : fUsesSrcInput(false)
@@ -225,12 +221,29 @@ sk_sp<SkSpecialImage> SkImageFilter::filterImage(SkSpecialImage* src, const Cont
 #endif
 
     if (result && context.cache()) {
-        context.cache()->set(key, result.get(), *offset);
+        context.cache()->set(key, result.get(), *offset, this);
         SkAutoMutexAcquire mutex(fMutex);
         fCacheKeys.push_back(key);
     }
 
     return result;
+}
+
+void SkImageFilter::removeKey(const SkImageFilterCacheKey& key) const {
+    SkAutoMutexAcquire mutex(fMutex);
+    for (int i = 0; i < fCacheKeys.count(); i++) {
+        if (fCacheKeys[i] == key) {
+            fCacheKeys.removeShuffle(i);
+            break;
+        }
+    }
+#ifdef SK_DEBUG
+    for (int i = 0; i < fCacheKeys.count(); i++) {
+        if (fCacheKeys[i] == key) {
+            SkASSERT(false);
+        }
+    }
+#endif
 }
 
 SkIRect SkImageFilter::filterBounds(const SkIRect& src, const SkMatrix& ctm,

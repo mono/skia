@@ -24,7 +24,6 @@
 class GrBlobRegenHelper;
 struct GrDistanceFieldAdjustTable;
 class GrMemoryPool;
-class GrLegacyMeshDrawOp;
 class SkDrawFilter;
 class SkTextBlob;
 class SkTextBlobRunIterator;
@@ -126,10 +125,11 @@ public:
     }
 
     // sets the last subrun of runIndex to use distance field text
-    void setSubRunHasDistanceFields(int runIndex, bool hasLCD) {
+    void setSubRunHasDistanceFields(int runIndex, bool hasLCD, bool isAntiAlias) {
         Run& run = fRuns[runIndex];
         Run::SubRunInfo& subRun = run.fSubRunInfo.back();
         subRun.setUseLCDText(hasLCD);
+        subRun.setAntiAliased(isAntiAlias);
         subRun.setDrawAsDistanceFields();
     }
 
@@ -240,9 +240,9 @@ public:
     // The color here is the GrPaint color, and it is used to determine whether we
     // have to regenerate LCD text blobs.
     // We use this color vs the SkPaint color because it has the colorfilter applied.
-    void initReusableBlob(GrColor filteredColor, const SkMatrix& viewMatrix, SkScalar x,
+    void initReusableBlob(SkColor luminanceColor, const SkMatrix& viewMatrix, SkScalar x,
                           SkScalar y) {
-        fFilteredPaintColor = filteredColor;
+        fLuminanceColor = luminanceColor;
         this->setupViewMatrix(viewMatrix, x, y);
     }
 
@@ -270,10 +270,11 @@ public:
 
     ////////////////////////////////////////////////////////////////////////////////////////////////
     // Internal test methods
-    std::unique_ptr<GrLegacyMeshDrawOp> test_makeOp(
-            int glyphCount, int run, int subRun, const SkMatrix& viewMatrix, SkScalar x, SkScalar y,
-            const GrTextUtils::Paint& paint, const SkSurfaceProps& props,
-            const GrDistanceFieldAdjustTable* distanceAdjustTable, GrAtlasGlyphCache* cache);
+    std::unique_ptr<GrDrawOp> test_makeOp(int glyphCount, int run, int subRun,
+                                          const SkMatrix& viewMatrix, SkScalar x, SkScalar y,
+                                          const GrTextUtils::Paint&, const SkSurfaceProps&,
+                                          const GrDistanceFieldAdjustTable*, GrAtlasGlyphCache*,
+                                          GrRenderTargetContext*);
 
 private:
     GrAtlasTextBlob()
@@ -358,8 +359,7 @@ private:
                     , fGlyphEndIndex(0)
                     , fColor(GrColor_ILLEGAL)
                     , fMaskFormat(kA8_GrMaskFormat)
-                    , fDrawAsDistanceFields(false)
-                    , fUseLCDText(false) {
+                    , fFlags(0) {
                 fVertexBounds.setLargestInverted();
             }
             SubRunInfo(const SubRunInfo& that)
@@ -376,8 +376,7 @@ private:
                 , fY(that.fY)
                 , fColor(that.fColor)
                 , fMaskFormat(that.fMaskFormat)
-                , fDrawAsDistanceFields(that.fDrawAsDistanceFields)
-                , fUseLCDText(that.fUseLCDText) {
+                , fFlags(that.fFlags) {
             }
 
             // TODO when this object is more internal, drop the privacy
@@ -432,12 +431,24 @@ private:
                                     SkScalar*transX, SkScalar* transY);
 
             // df properties
-            void setUseLCDText(bool useLCDText) { fUseLCDText = useLCDText; }
-            bool hasUseLCDText() const { return fUseLCDText; }
-            void setDrawAsDistanceFields() { fDrawAsDistanceFields = true; }
-            bool drawAsDistanceFields() const { return fDrawAsDistanceFields; }
+            void setDrawAsDistanceFields() { fFlags |= kDrawAsSDF_Flag; }
+            bool drawAsDistanceFields() const { return SkToBool(fFlags & kDrawAsSDF_Flag); }
+            void setUseLCDText(bool useLCDText) {
+                fFlags = useLCDText ? fFlags | kUseLCDText_Flag : fFlags & ~kUseLCDText_Flag;
+            }
+            bool hasUseLCDText() const { return SkToBool(fFlags & kUseLCDText_Flag); }
+            void setAntiAliased(bool antiAliased) {
+                fFlags = antiAliased ? fFlags | kAntiAliased_Flag : fFlags & ~kAntiAliased_Flag;
+            }
+            bool isAntiAliased() const { return SkToBool(fFlags & kAntiAliased_Flag); }
 
         private:
+            enum Flag {
+                kDrawAsSDF_Flag = 0x1,
+                kUseLCDText_Flag = 0x2,
+                kAntiAliased_Flag = 0x4
+            };
+
             GrDrawOpAtlas::BulkUseTokenUpdater fBulkUseToken;
             sk_sp<GrAtlasTextStrike> fStrike;
             SkMatrix fCurrentViewMatrix;
@@ -451,8 +462,7 @@ private:
             SkScalar fY;
             GrColor fColor;
             GrMaskFormat fMaskFormat;
-            bool fDrawAsDistanceFields; // df property
-            bool fUseLCDText; // df property
+            uint32_t fFlags;
         };
 
         SubRunInfo& push_back() {
@@ -487,11 +497,12 @@ private:
                    Run* run, Run::SubRunInfo* info, SkAutoGlyphCache*, int glyphCount,
                    size_t vertexStride, GrColor color, SkScalar transX, SkScalar transY) const;
 
-    inline std::unique_ptr<GrLegacyMeshDrawOp> makeOp(
-            const Run::SubRunInfo& info, int glyphCount, int run, int subRun,
-            const SkMatrix& viewMatrix, SkScalar x, SkScalar y, const GrTextUtils::Paint& paint,
-            const SkSurfaceProps& props, const GrDistanceFieldAdjustTable* distanceAdjustTable,
-            bool useGammaCorrectDistanceTable, GrAtlasGlyphCache* cache);
+    inline std::unique_ptr<GrDrawOp> makeOp(const Run::SubRunInfo& info, int glyphCount, int run,
+                                            int subRun, const SkMatrix& viewMatrix, SkScalar x,
+                                            SkScalar y, const GrTextUtils::Paint& paint,
+                                            const SkSurfaceProps& props,
+                                            const GrDistanceFieldAdjustTable* distanceAdjustTable,
+                                            GrAtlasGlyphCache* cache, GrRenderTargetContext*);
 
     struct BigGlyph {
         BigGlyph(const SkPath& path, SkScalar vx, SkScalar vy, SkScalar scale, bool treatAsBMP)
@@ -530,7 +541,7 @@ private:
     SkMatrix fInitialViewMatrix;
     SkMatrix fInitialViewMatrixInverse;
     size_t fSize;
-    GrColor fFilteredPaintColor;
+    SkColor fLuminanceColor;
     SkScalar fInitialX;
     SkScalar fInitialY;
 

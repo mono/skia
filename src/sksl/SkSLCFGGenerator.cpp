@@ -231,6 +231,7 @@ bool BasicBlock::tryRemoveExpression(std::vector<BasicBlock::Node>::iterator* it
         case Expression::kBoolLiteral_Kind:  // fall through
         case Expression::kFloatLiteral_Kind: // fall through
         case Expression::kIntLiteral_Kind:   // fall through
+        case Expression::kSetting_Kind:      // fall through
         case Expression::kVariableReference_Kind:
             *iter = fNodes.erase(*iter);
             return true;
@@ -380,6 +381,7 @@ void CFGGenerator::addExpression(CFG& cfg, std::unique_ptr<Expression>* e, bool 
         case Expression::kBoolLiteral_Kind:  // fall through
         case Expression::kFloatLiteral_Kind: // fall through
         case Expression::kIntLiteral_Kind:   // fall through
+        case Expression::kSetting_Kind:      // fall through
         case Expression::kVariableReference_Kind:
             cfg.fBlocks[cfg.fCurrent].fNodes.push_back({ BasicBlock::Node::kExpression_Kind,
                                                          constantPropagate, e, nullptr });
@@ -465,10 +467,16 @@ void CFGGenerator::addStatement(CFG& cfg, std::unique_ptr<Statement>* s) {
         }
         case Statement::kVarDeclarations_Kind: {
             VarDeclarationsStatement& decls = ((VarDeclarationsStatement&) **s);
-            for (auto& vd : decls.fDeclaration->fVars) {
-                if (vd->fValue) {
-                    this->addExpression(cfg, &vd->fValue, true);
+            for (auto& stmt : decls.fDeclaration->fVars) {
+                if (stmt->fKind == Statement::kNop_Kind) {
+                    continue;
                 }
+                VarDeclaration& vd = (VarDeclaration&) *stmt;
+                if (vd.fValue) {
+                    this->addExpression(cfg, &vd.fValue, true);
+                }
+                cfg.fBlocks[cfg.fCurrent].fNodes.push_back({ BasicBlock::Node::kStatement_Kind,
+                                                             false, nullptr, &stmt });
             }
             cfg.fBlocks[cfg.fCurrent].fNodes.push_back({ BasicBlock::Node::kStatement_Kind, false,
                                                          nullptr, s });
@@ -545,8 +553,13 @@ void CFGGenerator::addStatement(CFG& cfg, std::unique_ptr<Statement>* s) {
             fLoopExits.push(loopExit);
             if (f.fTest) {
                 this->addExpression(cfg, &f.fTest, true);
-                BlockId test = cfg.fCurrent;
-                cfg.addExit(test, loopExit);
+                // this isn't quite right; we should have an exit from here to the loop exit, and
+                // remove the exit from the loop body to the loop exit. Structuring it like this
+                // forces the optimizer to believe that the loop body is always executed at least
+                // once. While not strictly correct, this avoids incorrect "variable not assigned"
+                // errors on variables which are assigned within the loop. The correct solution to
+                // this is to analyze the loop to see whether or not at least one iteration is
+                // guaranteed to happen, but for the time being we take the easy way out.
             }
             cfg.newBlock();
             this->addStatement(cfg, &f.fStatement);
@@ -556,6 +569,7 @@ void CFGGenerator::addStatement(CFG& cfg, std::unique_ptr<Statement>* s) {
                 this->addExpression(cfg, &f.fNext, true);
             }
             cfg.addExit(cfg.fCurrent, loopStart);
+            cfg.addExit(cfg.fCurrent, loopExit);
             fLoopContinues.pop();
             fLoopExits.pop();
             cfg.fCurrent = loopExit;

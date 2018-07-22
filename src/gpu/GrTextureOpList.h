@@ -23,8 +23,7 @@ struct SkIRect;
 
 class GrTextureOpList final : public GrOpList {
 public:
-    GrTextureOpList(GrTextureProxy*, GrAuditTrail*);
-
+    GrTextureOpList(GrResourceProvider*, GrTextureProxy*, GrAuditTrail*);
     ~GrTextureOpList() override;
 
     /**
@@ -52,11 +51,11 @@ public:
      * depending on the type of surface, configs, etc, and the backend-specific
      * limitations.
      */
-    bool copySurface(GrResourceProvider* resourceProvider,
+    bool copySurface(const GrCaps& caps,
                      GrSurfaceProxy* dst,
                      GrSurfaceProxy* src,
                      const SkIRect& srcRect,
-                     const SkIPoint& dstPoint);
+                     const SkIPoint& dstPoint) override;
 
     GrTextureOpList* asTextureOpList() override { return this; }
 

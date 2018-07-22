@@ -60,6 +60,7 @@ GrShaderCaps::GrShaderCaps(const GrContextOptions& options) {
     fAtan2ImplementedAsAtanYOverX = false;
     fRequiresLocalOutputColorForFBFetch = false;
     fMustImplementGSInvocationsWithLoop = false;
+    fMustObfuscateUniformColor = false;
     fFlatInterpolationSupport = false;
     fNoPerspectiveInterpolationSupport = false;
     fMultisampleInterpolationSupport = false;
@@ -67,6 +68,7 @@ GrShaderCaps::GrShaderCaps(const GrContextOptions& options) {
     fSampleMaskOverrideCoverageSupport = false;
     fExternalTextureSupport = false;
     fTexelFetchSupport = false;
+    fVertexIDSupport = false;
 
     fVersionDeclString = nullptr;
     fShaderDerivativeExtensionString = nullptr;
@@ -146,6 +148,7 @@ SkString GrShaderCaps::dump() const {
                                                              "YES" : "NO"));
     r.appendf("Must implement geo shader invocations with loop : %s\n",
               (fMustImplementGSInvocationsWithLoop ? "YES" : "NO"));
+    r.appendf("Must obfuscate uniform color: %s\n", (fMustObfuscateUniformColor ? "YES" : "NO"));
     r.appendf("Flat interpolation support: %s\n", (fFlatInterpolationSupport ?  "YES" : "NO"));
     r.appendf("No perspective interpolation support: %s\n", (fNoPerspectiveInterpolationSupport ?
                                                              "YES" : "NO"));
@@ -156,6 +159,7 @@ SkString GrShaderCaps::dump() const {
                                                               "YES" : "NO"));
     r.appendf("External texture support: %s\n", (fExternalTextureSupport ? "YES" : "NO"));
     r.appendf("texelFetch support: %s\n", (fTexelFetchSupport ? "YES" : "NO"));
+    r.appendf("sk_VertexID support: %s\n", (fVertexIDSupport ? "YES" : "NO"));
     r.appendf("Max VS Samplers: %d\n", fMaxVertexSamplers);
     r.appendf("Max GS Samplers: %d\n", fMaxGeometrySamplers);
     r.appendf("Max FS Samplers: %d\n", fMaxFragmentSamplers);

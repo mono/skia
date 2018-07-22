@@ -53,8 +53,6 @@ public:
      * @param index     Pass a value >= 0 if using multiple texture domains in the same effect.
      *                  It is used to keep inserted variables from causing name collisions.
      */
-    GrTextureDomain(GrTexture*, const SkRect& domain, Mode, int index = -1);
-
     GrTextureDomain(GrTextureProxy*, const SkRect& domain, Mode, int index = -1);
 
     const SkRect& domain() const { return fDomain; }
@@ -153,8 +151,7 @@ protected:
 class GrTextureDomainEffect : public GrSingleTextureEffect {
 
 public:
-    static sk_sp<GrFragmentProcessor> Make(GrResourceProvider*,
-                                           sk_sp<GrTextureProxy>,
+    static sk_sp<GrFragmentProcessor> Make(sk_sp<GrTextureProxy>,
                                            sk_sp<GrColorSpaceXform>,
                                            const SkMatrix&,
                                            const SkRect& domain,
@@ -175,8 +172,7 @@ public:
 private:
     GrTextureDomain fTextureDomain;
 
-    GrTextureDomainEffect(GrResourceProvider*,
-                          sk_sp<GrTextureProxy>,
+    GrTextureDomainEffect(sk_sp<GrTextureProxy>,
                           sk_sp<GrColorSpaceXform>,
                           const SkMatrix&,
                           const SkRect& domain,
@@ -191,14 +187,14 @@ private:
 
     bool onIsEqual(const GrFragmentProcessor&) const override;
 
-    GR_DECLARE_FRAGMENT_PROCESSOR_TEST;
+    GR_DECLARE_FRAGMENT_PROCESSOR_TEST
 
     typedef GrSingleTextureEffect INHERITED;
 };
 
 class GrDeviceSpaceTextureDecalFragmentProcessor : public GrFragmentProcessor {
 public:
-    static sk_sp<GrFragmentProcessor> Make(GrResourceProvider*, sk_sp<GrTextureProxy>,
+    static sk_sp<GrFragmentProcessor> Make(sk_sp<GrTextureProxy>,
                                            const SkIRect& subset,
                                            const SkIPoint& deviceSpaceOffset);
 
@@ -219,7 +215,7 @@ private:
     GrTextureDomain fTextureDomain;
     SkIPoint fDeviceSpaceOffset;
 
-    GrDeviceSpaceTextureDecalFragmentProcessor(GrResourceProvider*, sk_sp<GrTextureProxy>,
+    GrDeviceSpaceTextureDecalFragmentProcessor(sk_sp<GrTextureProxy>,
                                                const SkIRect&, const SkIPoint&);
 
     GrGLSLFragmentProcessor* onCreateGLSLInstance() const override;
@@ -229,7 +225,7 @@ private:
 
     bool onIsEqual(const GrFragmentProcessor& fp) const override;
 
-    GR_DECLARE_FRAGMENT_PROCESSOR_TEST;
+    GR_DECLARE_FRAGMENT_PROCESSOR_TEST
 
     typedef GrFragmentProcessor INHERITED;
 };

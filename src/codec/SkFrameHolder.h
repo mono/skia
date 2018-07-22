@@ -10,6 +10,8 @@
 
 #include "SkTypes.h"
 #include "SkCodecAnimation.h"
+#include "SkCodecAnimationPriv.h"
+#include "SkRect.h"
 
 /**
  *  Base class for a single frame of an animated image.
@@ -23,7 +25,7 @@ public:
         : fId(id)
         , fHasAlpha(false)
         , fRequiredFrame(kUninitialized)
-        , fDisposalMethod(SkCodecAnimation::Keep_DisposalMethod)
+        , fDisposalMethod(SkCodecAnimation::DisposalMethod::kKeep)
         , fDuration(0)
         , fBlend(SkCodecAnimation::Blend::kPriorFrame)
     {

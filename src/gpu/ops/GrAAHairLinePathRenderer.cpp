@@ -14,9 +14,9 @@
 #include "GrDrawOpTest.h"
 #include "GrOpFlushState.h"
 #include "GrPathUtils.h"
-#include "GrPipelineBuilder.h"
 #include "GrProcessor.h"
 #include "GrResourceProvider.h"
+#include "GrSimpleMeshDrawOpHelper.h"
 #include "SkGeometry.h"
 #include "SkStroke.h"
 #include "SkTemplates.h"
@@ -237,6 +237,7 @@ static int num_quad_subdivs(const SkPoint p[3]) {
 static int gather_lines_and_quads(const SkPath& path,
                                   const SkMatrix& m,
                                   const SkIRect& devClipBounds,
+                                  SkScalar capLength,
                                   GrAAHairLinePathRenderer::PtArray* lines,
                                   GrAAHairLinePathRenderer::PtArray* quads,
                                   GrAAHairLinePathRenderer::PtArray* conics,
@@ -250,10 +251,17 @@ static int gather_lines_and_quads(const SkPath& path,
 
     bool persp = m.hasPerspective();
 
+    // Whenever a degenerate, zero-length contour is encountered, this code will insert a
+    // 'capLength' x-aligned line segment. Since this is rendering hairlines it is hoped this will
+    // suffice for AA square & circle capping.
+    int verbsInContour = 0; // Does not count moves
+    bool seenZeroLengthVerb = false;
+    SkPoint zeroVerbPt;
+
     for (;;) {
         SkPoint pathPts[4];
         SkPoint devPts[4];
-        SkPath::Verb verb = iter.next(pathPts);
+        SkPath::Verb verb = iter.next(pathPts, false);
         switch (verb) {
             case SkPath::kConic_Verb: {
                 SkConic dst[4];
@@ -274,6 +282,11 @@ static int gather_lines_and_quads(const SkPath& path,
                             pts[1] = devPts[1];
                             pts[2] = devPts[1];
                             pts[3] = devPts[2];
+                            if (verbsInContour == 0 && i == 0 &&
+                                    pts[0] == pts[1] && pts[2] == pts[3]) {
+                                seenZeroLengthVerb = true;
+                                zeroVerbPt = pts[0];
+                            }
                         } else {
                             // when in perspective keep conics in src space
                             SkPoint* cPts = persp ? chopPnts : devPts;
@@ -285,9 +298,19 @@ static int gather_lines_and_quads(const SkPath& path,
                         }
                     }
                 }
+                verbsInContour++;
                 break;
             }
             case SkPath::kMove_Verb:
+                // New contour (and last one was unclosed). If it was just a zero length drawing
+                // operation, and we're supposed to draw caps, then add a tiny line.
+                if (seenZeroLengthVerb && verbsInContour == 1 && capLength > 0) {
+                    SkPoint* pts = lines->push_back_n(2);
+                    pts[0] = SkPoint::Make(zeroVerbPt.fX - capLength, zeroVerbPt.fY);
+                    pts[1] = SkPoint::Make(zeroVerbPt.fX + capLength, zeroVerbPt.fY);
+                }
+                verbsInContour = 0;
+                seenZeroLengthVerb = false;
                 break;
             case SkPath::kLine_Verb:
                 m.mapPoints(devPts, pathPts, 2);
@@ -298,7 +321,12 @@ static int gather_lines_and_quads(const SkPath& path,
                     SkPoint* pts = lines->push_back_n(2);
                     pts[0] = devPts[0];
                     pts[1] = devPts[1];
+                    if (verbsInContour == 0 && pts[0] == pts[1]) {
+                        seenZeroLengthVerb = true;
+                        zeroVerbPt = pts[0];
+                    }
                 }
+                verbsInContour++;
                 break;
             case SkPath::kQuad_Verb: {
                 SkPoint choppedPts[5];
@@ -324,6 +352,11 @@ static int gather_lines_and_quads(const SkPath& path,
                             pts[1] = devPts[1];
                             pts[2] = devPts[1];
                             pts[3] = devPts[2];
+                            if (verbsInContour == 0 && i == 0 &&
+                                    pts[0] == pts[1] && pts[2] == pts[3]) {
+                                seenZeroLengthVerb = true;
+                                zeroVerbPt = pts[0];
+                            }
                         } else {
                             // when in perspective keep quads in src space
                             SkPoint* qPts = persp ? quadPts : devPts;
@@ -336,6 +369,7 @@ static int gather_lines_and_quads(const SkPath& path,
                         }
                     }
                 }
+                verbsInContour++;
                 break;
             }
             case SkPath::kCubic_Verb:
@@ -378,6 +412,11 @@ static int gather_lines_and_quads(const SkPath& path,
                                 pts[1] = qInDevSpace[1];
                                 pts[2] = qInDevSpace[1];
                                 pts[3] = qInDevSpace[2];
+                                if (verbsInContour == 0 && i == 0 &&
+                                        pts[0] == pts[1] && pts[2] == pts[3]) {
+                                    seenZeroLengthVerb = true;
+                                    zeroVerbPt = pts[0];
+                                }
                             } else {
                                 SkPoint* pts = quads->push_back_n(3);
                                 // q is already in src space when there is no
@@ -391,10 +430,39 @@ static int gather_lines_and_quads(const SkPath& path,
                         }
                     }
                 }
+                verbsInContour++;
                 break;
             case SkPath::kClose_Verb:
+                // Contour is closed, so we don't need to grow the starting line, unless it's
+                // *just* a zero length subpath. (SVG Spec 11.4, 'stroke').
+                if (capLength > 0) {
+                    if (seenZeroLengthVerb && verbsInContour == 1) {
+                        SkPoint* pts = lines->push_back_n(2);
+                        pts[0] = SkPoint::Make(zeroVerbPt.fX - capLength, zeroVerbPt.fY);
+                        pts[1] = SkPoint::Make(zeroVerbPt.fX + capLength, zeroVerbPt.fY);
+                    } else if (verbsInContour == 0) {
+                        // Contour was (moveTo, close). Add a line.
+                        m.mapPoints(devPts, pathPts, 1);
+                        devPts[1] = devPts[0];
+                        bounds.setBounds(devPts, 2);
+                        bounds.outset(SK_Scalar1, SK_Scalar1);
+                        bounds.roundOut(&ibounds);
+                        if (SkIRect::Intersects(devClipBounds, ibounds)) {
+                            SkPoint* pts = lines->push_back_n(2);
+                            pts[0] = SkPoint::Make(devPts[0].fX - capLength, devPts[0].fY);
+                            pts[1] = SkPoint::Make(devPts[1].fX + capLength, devPts[1].fY);
+                        }
+                    }
+                }
                 break;
             case SkPath::kDone_Verb:
+                if (seenZeroLengthVerb && verbsInContour == 1 && capLength > 0) {
+                    // Path ended with a dangling (moveTo, line|quad|etc). If the final verb is
+                    // degenerate, we need to draw a line.
+                    SkPoint* pts = lines->push_back_n(2);
+                    pts[0] = SkPoint::Make(zeroVerbPt.fX - capLength, zeroVerbPt.fY);
+                    pts[1] = SkPoint::Make(zeroVerbPt.fX + capLength, zeroVerbPt.fY);
+                }
                 return totalQuadCount;
         }
     }
@@ -668,23 +736,50 @@ bool check_bounds(const SkMatrix& viewMatrix, const SkRect& devBounds, void* ver
     return true;
 }
 
-class AAHairlineOp final : public GrLegacyMeshDrawOp {
+namespace {
+
+class AAHairlineOp final : public GrMeshDrawOp {
+private:
+    using Helper = GrSimpleMeshDrawOpHelperWithStencil;
+
 public:
     DEFINE_OP_CLASS_ID
 
-    static std::unique_ptr<GrLegacyMeshDrawOp> Make(GrColor color,
-                                                    const SkMatrix& viewMatrix,
-                                                    const SkPath& path,
-                                                    const GrStyle& style,
-                                                    const SkIRect& devClipBounds) {
+    static std::unique_ptr<GrDrawOp> Make(GrPaint&& paint,
+                                          const SkMatrix& viewMatrix,
+                                          const SkPath& path,
+                                          const GrStyle& style,
+                                          const SkIRect& devClipBounds,
+                                          const GrUserStencilSettings* stencilSettings) {
         SkScalar hairlineCoverage;
         uint8_t newCoverage = 0xff;
         if (GrPathRenderer::IsStrokeHairlineOrEquivalent(style, viewMatrix, &hairlineCoverage)) {
             newCoverage = SkScalarRoundToInt(hairlineCoverage * 0xff);
         }
 
-        return std::unique_ptr<GrLegacyMeshDrawOp>(
-                new AAHairlineOp(color, newCoverage, viewMatrix, path, devClipBounds));
+        const SkStrokeRec& stroke = style.strokeRec();
+        SkScalar capLength = SkPaint::kButt_Cap != stroke.getCap() ? hairlineCoverage * 0.5f : 0.0f;
+
+        return Helper::FactoryHelper<AAHairlineOp>(std::move(paint), newCoverage, viewMatrix, path,
+                                                   devClipBounds, capLength, stencilSettings);
+    }
+
+    AAHairlineOp(const Helper::MakeArgs& helperArgs,
+                 GrColor color,
+                 uint8_t coverage,
+                 const SkMatrix& viewMatrix,
+                 const SkPath& path,
+                 SkIRect devClipBounds,
+                 SkScalar capLength,
+                 const GrUserStencilSettings* stencilSettings)
+            : INHERITED(ClassID())
+            , fHelper(helperArgs, GrAAType::kCoverage, stencilSettings)
+            , fColor(color)
+            , fCoverage(coverage) {
+        fPaths.emplace_back(PathData{viewMatrix, path, devClipBounds, capLength});
+
+        this->setTransformedBounds(path.getBounds(), viewMatrix, HasAABloat::kYes,
+                                   IsZeroArea::kYes);
     }
 
     const char* name() const override { return "AAHairlineOp"; }
@@ -693,34 +788,19 @@ public:
         SkString string;
         string.appendf("Color: 0x%08x Coverage: 0x%02x, Count: %d\n", fColor, fCoverage,
                        fPaths.count());
-        string.append(INHERITED::dumpInfo());
+        string += INHERITED::dumpInfo();
+        string += fHelper.dumpInfo();
         return string;
     }
 
+    FixedFunctionFlags fixedFunctionFlags() const override { return fHelper.fixedFunctionFlags(); }
+
+    RequiresDstTexture finalize(const GrCaps& caps, const GrAppliedClip* clip) override {
+        return fHelper.xpRequiresDstTexture(caps, clip, GrProcessorAnalysisCoverage::kSingleChannel,
+                                            &fColor);
+    }
+
 private:
-    AAHairlineOp(GrColor color,
-                 uint8_t coverage,
-                 const SkMatrix& viewMatrix,
-                 const SkPath& path,
-                 SkIRect devClipBounds)
-            : INHERITED(ClassID()), fColor(color), fCoverage(coverage) {
-        fPaths.emplace_back(PathData{viewMatrix, path, devClipBounds});
-
-        this->setTransformedBounds(path.getBounds(), viewMatrix, HasAABloat::kYes,
-                                   IsZeroArea::kYes);
-    }
-
-    void getProcessorAnalysisInputs(GrProcessorAnalysisColor* color,
-                                    GrProcessorAnalysisCoverage* coverage) const override {
-        color->setToConstant(fColor);
-        *coverage = GrProcessorAnalysisCoverage::kSingleChannel;
-    }
-
-    void applyPipelineOptimizations(const PipelineOptimizations& optimizations) override {
-        optimizations.getOverrideColorIfSet(&fColor);
-        fUsesLocalCoords = optimizations.readsLocalCoords();
-    }
-
     void onPrepareDraws(Target*) const override;
 
     typedef SkTArray<SkPoint, true> PtArray;
@@ -730,8 +810,7 @@ private:
     bool onCombineIfPossible(GrOp* t, const GrCaps& caps) override {
         AAHairlineOp* that = t->cast<AAHairlineOp>();
 
-        if (!GrPipeline::CanCombine(*this->pipeline(), this->bounds(), *that->pipeline(),
-                                    that->bounds(), caps)) {
+        if (!fHelper.isCompatible(that->fHelper, caps, this->bounds(), that->bounds())) {
             return false;
         }
 
@@ -756,8 +835,7 @@ private:
             return false;
         }
 
-        SkASSERT(this->usesLocalCoords() == that->usesLocalCoords());
-        if (this->usesLocalCoords() && !this->viewMatrix().cheapEqualTo(that->viewMatrix())) {
+        if (fHelper.usesLocalCoords() && !this->viewMatrix().cheapEqualTo(that->viewMatrix())) {
             return false;
         }
 
@@ -768,23 +846,24 @@ private:
 
     GrColor color() const { return fColor; }
     uint8_t coverage() const { return fCoverage; }
-    bool usesLocalCoords() const { return fUsesLocalCoords; }
     const SkMatrix& viewMatrix() const { return fPaths[0].fViewMatrix; }
 
     struct PathData {
         SkMatrix fViewMatrix;
         SkPath fPath;
         SkIRect fDevClipBounds;
+        SkScalar fCapLength;
     };
 
+    SkSTArray<1, PathData, true> fPaths;
+    Helper fHelper;
     GrColor fColor;
     uint8_t fCoverage;
-    bool fUsesLocalCoords;
 
-    SkSTArray<1, PathData, true> fPaths;
-
-    typedef GrLegacyMeshDrawOp INHERITED;
+    typedef GrMeshDrawOp INHERITED;
 };
+
+}  // anonymous namespace
 
 void AAHairlineOp::onPrepareDraws(Target* target) const {
     // Setup the viewmatrix and localmatrix for the GrGeometryProcessor.
@@ -818,12 +897,14 @@ void AAHairlineOp::onPrepareDraws(Target* target) const {
     for (int i = 0; i < instanceCount; i++) {
         const PathData& args = fPaths[i];
         quadCount += gather_lines_and_quads(args.fPath, args.fViewMatrix, args.fDevClipBounds,
-                                            &lines, &quads, &conics, &qSubdivs, &cWeights);
+                                            args.fCapLength, &lines, &quads, &conics, &qSubdivs,
+                                            &cWeights);
     }
 
     int lineCount = lines.count() / 2;
     int conicCount = conics.count() / 3;
 
+    const GrPipeline* pipeline = fHelper.makePipeline(target);
     // do lines first
     if (lineCount) {
         sk_sp<GrGeometryProcessor> lineGP;
@@ -831,8 +912,8 @@ void AAHairlineOp::onPrepareDraws(Target* target) const {
             using namespace GrDefaultGeoProcFactory;
 
             Color color(this->color());
-            LocalCoords localCoords(this->usesLocalCoords() ? LocalCoords::kUsePosition_Type :
-                                    LocalCoords::kUnused_Type);
+            LocalCoords localCoords(fHelper.usesLocalCoords() ? LocalCoords::kUsePosition_Type
+                                                              : LocalCoords::kUnused_Type);
             localCoords.fMatrix = geometryProcessorLocalM;
             lineGP = GrDefaultGeoProcFactory::Make(color, Coverage::kAttribute_Type, localCoords,
                                                    *geometryProcessorViewM);
@@ -860,31 +941,29 @@ void AAHairlineOp::onPrepareDraws(Target* target) const {
             add_line(&lines[2*i], toSrc, this->coverage(), &verts);
         }
 
-        GrMesh mesh(kTriangles_GrPrimitiveType);
-        mesh.setIndexedPatterned(linesIndexBuffer.get(), kIdxsPerLineSeg,
+        GrMesh mesh(GrPrimitiveType::kTriangles);
+        mesh.setIndexedPatterned(linesIndexBuffer.get(), kIdxsPerLineSeg, kLineSegNumVertices,
                                  lineCount, kLineSegsNumInIdxBuffer);
-        mesh.setVertices(vertexBuffer, kLineSegNumVertices, firstVertex);
-        target->draw(lineGP.get(), this->pipeline(), mesh);
+        mesh.setVertexData(vertexBuffer, firstVertex);
+        target->draw(lineGP.get(), pipeline, mesh);
     }
 
     if (quadCount || conicCount) {
-        sk_sp<GrGeometryProcessor> quadGP(
-            GrQuadEffect::Make(this->color(),
-                               *geometryProcessorViewM,
-                               kHairlineAA_GrProcessorEdgeType,
-                               target->caps(),
-                               *geometryProcessorLocalM,
-                               this->usesLocalCoords(),
-                               this->coverage()));
+        sk_sp<GrGeometryProcessor> quadGP(GrQuadEffect::Make(this->color(),
+                                                             *geometryProcessorViewM,
+                                                             kHairlineAA_GrProcessorEdgeType,
+                                                             target->caps(),
+                                                             *geometryProcessorLocalM,
+                                                             fHelper.usesLocalCoords(),
+                                                             this->coverage()));
 
-        sk_sp<GrGeometryProcessor> conicGP(
-            GrConicEffect::Make(this->color(),
-                                *geometryProcessorViewM,
-                                kHairlineAA_GrProcessorEdgeType,
-                                target->caps(),
-                                *geometryProcessorLocalM,
-                                this->usesLocalCoords(),
-                                this->coverage()));
+        sk_sp<GrGeometryProcessor> conicGP(GrConicEffect::Make(this->color(),
+                                                               *geometryProcessorViewM,
+                                                               kHairlineAA_GrProcessorEdgeType,
+                                                               target->caps(),
+                                                               *geometryProcessorLocalM,
+                                                               fHelper.usesLocalCoords(),
+                                                               this->coverage()));
 
         const GrBuffer* vertexBuffer;
         int firstVertex;
@@ -917,20 +996,20 @@ void AAHairlineOp::onPrepareDraws(Target* target) const {
         }
 
         if (quadCount > 0) {
-            GrMesh mesh(kTriangles_GrPrimitiveType);
-            mesh.setIndexedPatterned(quadsIndexBuffer.get(), kIdxsPerQuad, quadCount,
-                                     kQuadsNumInIdxBuffer);
-            mesh.setVertices(vertexBuffer, kQuadNumVertices, firstVertex);
-            target->draw(quadGP.get(), this->pipeline(), mesh);
+            GrMesh mesh(GrPrimitiveType::kTriangles);
+            mesh.setIndexedPatterned(quadsIndexBuffer.get(), kIdxsPerQuad, kQuadNumVertices,
+                                     quadCount, kQuadsNumInIdxBuffer);
+            mesh.setVertexData(vertexBuffer, firstVertex);
+            target->draw(quadGP.get(), pipeline, mesh);
             firstVertex += quadCount * kQuadNumVertices;
         }
 
         if (conicCount > 0) {
-            GrMesh mesh(kTriangles_GrPrimitiveType);
-            mesh.setIndexedPatterned(quadsIndexBuffer.get(), kIdxsPerQuad, conicCount,
-                                     kQuadsNumInIdxBuffer);
-            mesh.setVertices(vertexBuffer, kQuadNumVertices, firstVertex);
-            target->draw(conicGP.get(), this->pipeline(), mesh);
+            GrMesh mesh(GrPrimitiveType::kTriangles);
+            mesh.setIndexedPatterned(quadsIndexBuffer.get(), kIdxsPerQuad, kQuadNumVertices,
+                                     conicCount, kQuadsNumInIdxBuffer);
+            mesh.setVertexData(vertexBuffer, firstVertex);
+            target->draw(conicGP.get(), pipeline, mesh);
         }
     }
 }
@@ -946,12 +1025,10 @@ bool GrAAHairLinePathRenderer::onDrawPath(const DrawPathArgs& args) {
                                       &devClipBounds);
     SkPath path;
     args.fShape->asPath(&path);
-    std::unique_ptr<GrLegacyMeshDrawOp> op = AAHairlineOp::Make(
-            args.fPaint.getColor(), *args.fViewMatrix, path, args.fShape->style(), devClipBounds);
-    GrPipelineBuilder pipelineBuilder(std::move(args.fPaint), args.fAAType);
-    pipelineBuilder.setUserStencil(args.fUserStencilSettings);
-    args.fRenderTargetContext->addLegacyMeshDrawOp(std::move(pipelineBuilder), *args.fClip,
-                                                   std::move(op));
+    std::unique_ptr<GrDrawOp> op =
+            AAHairlineOp::Make(std::move(args.fPaint), *args.fViewMatrix, path,
+                               args.fShape->style(), devClipBounds, args.fUserStencilSettings);
+    args.fRenderTargetContext->addDrawOp(*args.fClip, std::move(op));
     return true;
 }
 
@@ -959,13 +1036,13 @@ bool GrAAHairLinePathRenderer::onDrawPath(const DrawPathArgs& args) {
 
 #if GR_TEST_UTILS
 
-GR_LEGACY_MESH_DRAW_OP_TEST_DEFINE(AAHairlineOp) {
-    GrColor color = GrRandomColor(random);
+GR_DRAW_OP_TEST_DEFINE(AAHairlineOp) {
     SkMatrix viewMatrix = GrTest::TestMatrix(random);
     SkPath path = GrTest::TestPath(random);
     SkIRect devClipBounds;
     devClipBounds.setEmpty();
-    return AAHairlineOp::Make(color, viewMatrix, path, GrStyle::SimpleHairline(), devClipBounds);
+    return AAHairlineOp::Make(std::move(paint), viewMatrix, path, GrStyle::SimpleHairline(),
+                              devClipBounds, GrGetRandomStencil(random, context));
 }
 
 #endif

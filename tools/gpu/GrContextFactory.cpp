@@ -20,8 +20,12 @@
 #ifdef SK_VULKAN
 #include "vk/VkTestContext.h"
 #endif
+#ifdef SK_METAL
+#include "mtl/MtlTestContext.h"
+#endif
 #include "gl/null/NullGLTestContext.h"
 #include "gl/GrGLGpu.h"
+#include "mock/MockTestContext.h"
 #include "GrCaps.h"
 
 #if defined(SK_BUILD_FOR_WIN32) && defined(SK_ENABLE_DISCRETE_GPU)
@@ -95,6 +99,10 @@ void GrContextFactory::releaseResourcesAndAbandonContexts() {
     }
 }
 
+GrContext* GrContextFactory::get(ContextType type, ContextOverrides overrides) {
+    return this->getContextInfo(type, overrides).grContext();
+}
+
 ContextInfo GrContextFactory::getContextInfoInternal(ContextType type, ContextOverrides overrides,
                                                      GrContext* shareContext, uint32_t shareIndex) {
     // (shareIndex != 0) -> (shareContext != nullptr)
@@ -108,7 +116,7 @@ ContextInfo GrContextFactory::getContextInfoInternal(ContextType type, ContextOv
             context.fShareIndex == shareIndex &&
             !context.fAbandoned) {
             context.fTestContext->makeCurrent();
-            return ContextInfo(context.fBackend, context.fTestContext, context.fGrContext);
+            return ContextInfo(context.fType, context.fTestContext, context.fGrContext);
         }
     }
 
@@ -216,6 +224,29 @@ ContextInfo GrContextFactory::getContextInfoInternal(ContextType type, ContextOv
             break;
         }
 #endif
+#ifdef SK_METAL
+        case kMetal_GrBackend: {
+            SkASSERT(!masterContext);
+            testCtx.reset(CreatePlatformMtlTestContext(nullptr));
+            if (!testCtx) {
+                return ContextInfo();
+            }
+            break;
+        }
+#endif
+        case kMock_GrBackend: {
+            TestContext* sharedContext = masterContext ? masterContext->fTestContext : nullptr;
+            SkASSERT(kMock_ContextType == type);
+            if (ContextOverrides::kRequireNVPRSupport & overrides) {
+                return ContextInfo();
+            }
+            testCtx.reset(CreateMockTestContext(sharedContext));
+            if (!testCtx) {
+                return ContextInfo();
+            }
+            backendContext = testCtx->backendContext();
+            break;
+        }
         default:
             return ContextInfo();
     }
@@ -234,7 +265,10 @@ ContextInfo GrContextFactory::getContextInfoInternal(ContextType type, ContextOv
     if (ContextOverrides::kAvoidStencilBuffers & overrides) {
         grOptions.fAvoidStencilBuffers = true;
     }
-    sk_sp<GrContext> grCtx(GrContext::Create(backend, backendContext, grOptions));
+    sk_sp<GrContext> grCtx = testCtx->makeGrContext(grOptions);
+    if (!grCtx.get() && kMetal_GrBackend != backend) {
+        grCtx.reset(GrContext::Create(backend, backendContext, grOptions));
+    }
     if (!grCtx.get()) {
         return ContextInfo();
     }
@@ -263,7 +297,7 @@ ContextInfo GrContextFactory::getContextInfoInternal(ContextType type, ContextOv
     context.fAbandoned = false;
     context.fShareContext = shareContext;
     context.fShareIndex = shareIndex;
-    return ContextInfo(context.fBackend, context.fTestContext, context.fGrContext);
+    return ContextInfo(context.fType, context.fTestContext, context.fGrContext);
 }
 
 ContextInfo GrContextFactory::getContextInfo(ContextType type, ContextOverrides overrides) {

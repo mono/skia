@@ -24,6 +24,8 @@ private:
 
 public:
     GrProcessorSet(GrPaint&& paint);
+    GrProcessorSet(SkBlendMode mode);
+    GrProcessorSet(sk_sp<GrFragmentProcessor> colorFP);
 
     ~GrProcessorSet();
 
@@ -51,8 +53,6 @@ public:
         SkASSERT(this->isFinalized());
         return sk_ref_sp(fXP.fProcessor);
     }
-
-    bool usesDistanceVectorField() const { return SkToBool(fFlags & kUseDistanceVectorField_Flag); }
 
     /** Comparisons are only legal on finalized processor sets. */
     bool operator==(const GrProcessorSet& that) const;
@@ -134,8 +134,11 @@ public:
 
     bool isFinalized() const { return SkToBool(kFinalized_Flag & fFlags); }
 
+    /** These are valid only for non-LCD coverage. */
     static const GrProcessorSet& EmptySet();
     static constexpr const Analysis EmptySetAnalysis() { return Analysis(Empty::kEmpty); }
+
+    SkString dumpProcessors() const;
 
 private:
     GrProcessorSet(Empty) : fXP((const GrXferProcessor*)nullptr), fFlags(kFinalized_Flag) {}
@@ -143,7 +146,7 @@ private:
     // This absurdly large limit allows Analysis and this to pack fields together.
     static constexpr int kMaxColorProcessors = UINT8_MAX;
 
-    enum Flags : uint16_t { kUseDistanceVectorField_Flag = 0x1, kFinalized_Flag = 0x2 };
+    enum Flags : uint16_t { kFinalized_Flag = 0x1 };
 
     union XP {
         XP(const GrXPFactory* factory) : fFactory(factory) {}

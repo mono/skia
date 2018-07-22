@@ -8,8 +8,7 @@
 #ifndef GrCaps_DEFINED
 #define GrCaps_DEFINED
 
-#include "GrTypes.h"
-#include "GrTypesPriv.h"
+#include "../private/GrTypesPriv.h"
 #include "GrBlend.h"
 #include "GrShaderCaps.h"
 #include "SkRefCnt.h"
@@ -49,17 +48,11 @@ public:
     bool textureBarrierSupport() const { return fTextureBarrierSupport; }
     bool sampleLocationsSupport() const { return fSampleLocationsSupport; }
     bool multisampleDisableSupport() const { return fMultisampleDisableSupport; }
+    bool instanceAttribSupport() const { return fInstanceAttribSupport; }
     bool usesMixedSamples() const { return fUsesMixedSamples; }
     bool preferClientSideDynamicBuffers() const { return fPreferClientSideDynamicBuffers; }
 
     bool useDrawInsteadOfClear() const { return fUseDrawInsteadOfClear; }
-    bool useDrawInsteadOfPartialRenderTargetWrite() const {
-        return fUseDrawInsteadOfPartialRenderTargetWrite;
-    }
-
-    bool useDrawInsteadOfAllRenderTargetWrites() const {
-        return fUseDrawInsteadOfAllRenderTargetWrites;
-    }
 
     bool preferVRAMUseOverFlushes() const { return fPreferVRAMUseOverFlushes; }
 
@@ -139,22 +132,11 @@ public:
         It is usually the max texture size, unless we're overriding it for testing. */
     int maxTileSize() const { SkASSERT(fMaxTileSize <= fMaxTextureSize); return fMaxTileSize; }
 
-    // Will be 0 if MSAA is not supported
-    int maxColorSampleCount() const { return fMaxColorSampleCount; }
-    // Will be 0 if MSAA is not supported
-    int maxStencilSampleCount() const { return fMaxStencilSampleCount; }
-    // Will be 0 if raster multisample is not supported. Raster multisample is a special HW mode
-    // where the rasterizer runs with more samples than are in the target framebuffer.
     int maxRasterSamples() const { return fMaxRasterSamples; }
-    // We require the sample count to be less than maxColorSampleCount and maxStencilSampleCount.
-    // If we are using mixed samples, we only care about stencil.
-    int maxSampleCount() const {
-        if (this->usesMixedSamples()) {
-            return this->maxStencilSampleCount();
-        } else {
-            return SkTMin(this->maxColorSampleCount(), this->maxStencilSampleCount());
-        }
-    }
+
+    // Find a sample count greater than or equal to the requested count which is supported for a
+    // color buffer of the given config. If MSAA is not support for the config we will return 0.
+    virtual int getSampleCount(int requestedCount, GrPixelConfig config) const = 0;
 
     int maxWindowRectangles() const { return fMaxWindowRectangles; }
 
@@ -163,8 +145,6 @@ public:
     virtual bool canConfigBeImageStorage(GrPixelConfig config) const = 0;
 
     bool suppressPrints() const { return fSuppressPrints; }
-
-    bool immediateFlush() const { return fImmediateFlush; }
 
     size_t bufferMapThreshold() const {
         SkASSERT(fBufferMapThreshold >= 0);
@@ -215,6 +195,7 @@ protected:
     bool fTextureBarrierSupport                      : 1;
     bool fSampleLocationsSupport                     : 1;
     bool fMultisampleDisableSupport                  : 1;
+    bool fInstanceAttribSupport                      : 1;
     bool fUsesMixedSamples                           : 1;
     bool fPreferClientSideDynamicBuffers             : 1;
     bool fFullClearIsFree                            : 1;
@@ -222,8 +203,6 @@ protected:
 
     // Driver workaround
     bool fUseDrawInsteadOfClear                      : 1;
-    bool fUseDrawInsteadOfPartialRenderTargetWrite   : 1;
-    bool fUseDrawInsteadOfAllRenderTargetWrites      : 1;
     bool fAvoidInstancedDrawsToFPTargets             : 1;
     bool fAvoidStencilBuffers                        : 1;
 
@@ -259,7 +238,6 @@ private:
     virtual void onApplyOptionsOverrides(const GrContextOptions&) {}
 
     bool fSuppressPrints : 1;
-    bool fImmediateFlush : 1;
     bool fWireframeMode  : 1;
 
     typedef SkRefCnt INHERITED;

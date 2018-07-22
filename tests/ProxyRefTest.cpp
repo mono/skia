@@ -11,10 +11,11 @@
 
 #if SK_SUPPORT_GPU
 #include "GrContextPriv.h"
-#include "GrRenderTargetPriv.h"
+#include "GrGpuResourceRef.h"
 #include "GrRenderTargetProxy.h"
 #include "GrResourceProvider.h"
 #include "GrSurfaceProxy.h"
+#include "GrTexture.h"
 #include "GrTextureProxy.h"
 
 int32_t GrIORefProxy::getProxyRefCnt_TestOnly() const {
@@ -44,8 +45,6 @@ int32_t GrIORefProxy::getPendingWriteCnt_TestOnly() const {
 
     return fPendingWrites;
 }
-
-#ifndef SK_DISABLE_DEFERRED_PROXIES
 
 static const int kWidthHeight = 128;
 
@@ -189,7 +188,5 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(ProxyRefTest, reporter, ctxInfo) {
         }
     }
 }
-
-#endif
 
 #endif

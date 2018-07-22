@@ -26,34 +26,11 @@ class SkiaApi(recipe_api.RecipeApi):
     self.checkout_steps()
 
     if not self.m.path.exists(self.m.vars.tmp_dir):
-      self.m.run.run_once(self.m.file.makedirs,
-                          'tmp_dir',
-                          self.m.vars.tmp_dir,
-                          infra_step=True)
+      self.m.run.run_once(self.m.file.ensure_directory,
+                          'makedirs tmp_dir',
+                          self.m.vars.tmp_dir)
 
     self.m.flavor.setup()
-
-  def update_repo(self, parent_dir, repo):
-    """Update an existing repo. This is safe to call without gen_steps."""
-    repo_path = parent_dir.join(repo.name)
-    if self.m.path.exists(repo_path) or self._test_data.enabled:
-      if 'Win' in self.m.properties.get('buildername', ''):
-        git = 'git.bat'
-      else:
-        git = 'git'
-      with self.m.context(cwd=repo_path):
-        self.m.step('git remote set-url',
-                    cmd=[git, 'remote', 'set-url', 'origin', repo.url],
-                    infra_step=True)
-        self.m.step('git fetch',
-                    cmd=[git, 'fetch'],
-                    infra_step=True)
-        self.m.step('git reset',
-                    cmd=[git, 'reset', '--hard', repo.revision],
-                    infra_step=True)
-        self.m.step('git clean',
-                    cmd=[git, 'clean', '-d', '-f'],
-                    infra_step=True)
 
   def checkout_steps(self):
     """Run the steps to obtain a checkout of Skia."""
@@ -68,9 +45,8 @@ class SkiaApi(recipe_api.RecipeApi):
 
     # Create the checkout path if necessary.
     if not self.m.path.exists(self.m.vars.checkout_root):
-      self.m.file.makedirs('checkout_path',
-                           self.m.vars.checkout_root,
-                           infra_step=True)
+      self.m.file.ensure_directory('makedirs checkout_path',
+                                   self.m.vars.checkout_root)
 
     # Initial cleanup.
     gclient_cfg = self.m.gclient.make_config(**cfg_kwargs)
@@ -97,7 +73,9 @@ class SkiaApi(recipe_api.RecipeApi):
     patch_repo = main.url
     if self.m.properties.get('patch_repo'):
       patch_repo = self.m.properties['patch_repo']
-      patch_root = patch_repo.split('/')[-1].rstrip('.git')
+      patch_root = patch_repo.split('/')[-1]
+      if patch_root.endswith('.git'):
+        patch_root = patch_root[:-4]
 
     if self.m.vars.need_pdfium_checkout:
       # Skia is a DEP of PDFium; the 'revision' property is a Skia revision, and
@@ -129,15 +107,12 @@ class SkiaApi(recipe_api.RecipeApi):
       patch_repo = 'https://skia.googlesource.com/skia.git'
       patch_root = skia_dep_path
 
-    self.update_repo(self.m.vars.checkout_root, main)
-
     # TODO(rmistry): Remove the below block after there is a solution for
     #                crbug.com/616443
     entries_file = self.m.vars.checkout_root.join('.gclient_entries')
     if self.m.path.exists(entries_file) or self._test_data.enabled:
       self.m.file.remove('remove %s' % entries_file,
-                         entries_file,
-                         infra_step=True)
+                         entries_file)
 
     if self.m.vars.need_chromium_checkout:
       chromium = gclient_cfg.solutions.add()
@@ -145,7 +120,6 @@ class SkiaApi(recipe_api.RecipeApi):
       chromium.managed = False
       chromium.url = 'https://chromium.googlesource.com/chromium/src.git'
       chromium.revision = 'origin/lkgr'
-      self.update_repo(self.m.vars.checkout_root, chromium)
 
     # Run bot_update.
 

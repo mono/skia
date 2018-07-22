@@ -764,7 +764,7 @@ bool GrGLInterface::validate() const {
             }
         }
     } else if (kGLES_GrGLStandard == fStandard) {
-        if (glVer >= GR_GL_VER(3, 0)) {
+        if (glVer >= GR_GL_VER(3, 0) || fExtensions.has("GL_APPLE_sync")) {
             if (nullptr == fFunctions.fFenceSync ||
                 nullptr == fFunctions.fClientWaitSync ||
                 nullptr == fFunctions.fWaitSync ||
@@ -805,6 +805,15 @@ bool GrGLInterface::validate() const {
             nullptr == fFunctions.fMemoryBarrier ||
             nullptr == fFunctions.fMemoryBarrierByRegion) {
             RETURN_FALSE_INTERFACE;
+        }
+    }
+
+    // getInternalformativ was added in GL 4.2, ES 3.0, and with extension ARB_internalformat_query
+    if ((kGL_GrGLStandard == fStandard &&
+         (glVer >= GR_GL_VER(4,2) || fExtensions.has("GL_ARB_internalformat_query"))) ||
+        (kGLES_GrGLStandard == fStandard && glVer >= GR_GL_VER(3,0))) {
+        if (nullptr == fFunctions.fGetInternalformativ) {
+        //    RETURN_FALSE_INTERFACE;
         }
     }
 

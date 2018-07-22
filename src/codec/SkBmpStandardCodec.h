@@ -7,7 +7,7 @@
 #ifndef SkBmpStandardCodec_DEFINED
 #define SkBmpStandardCodec_DEFINED
 
-#include "SkBmpCodec.h"
+#include "SkBmpBaseCodec.h"
 #include "SkColorTable.h"
 #include "SkImageInfo.h"
 #include "SkSwizzler.h"
@@ -17,7 +17,7 @@
  * This class implements the decoding for bmp images that use "standard" modes,
  * which essentially means they do not contain bit masks or RLE codes.
  */
-class SkBmpStandardCodec : public SkBmpCodec {
+class SkBmpStandardCodec : public SkBmpBaseCodec {
 public:
 
     /*
@@ -47,16 +47,15 @@ public:
 protected:
 
     Result onGetPixels(const SkImageInfo& dstInfo, void* dst,
-                       size_t dstRowBytes, const Options&, SkPMColor*,
-                       int*, int*) override;
+                       size_t dstRowBytes, const Options&,
+                       int*) override;
 
     bool onInIco() const override {
         return fInIco;
     }
 
     SkCodec::Result onPrepareToDecode(const SkImageInfo& dstInfo,
-            const SkCodec::Options& options, SkPMColor inputColorPtr[],
-            int* inputColorCount) override;
+            const SkCodec::Options& options) override;
 
 
     uint64_t onGetFillValue(const SkImageInfo&) const override;
@@ -70,9 +69,8 @@ private:
 
     /*
      * Creates the color table
-     * Sets colorCount to the new color count if it is non-nullptr
      */
-    bool createColorTable(SkColorType colorType, SkAlphaType alphaType, int* colorCount);
+    bool createColorTable(SkColorType colorType, SkAlphaType alphaType);
 
     void initializeSwizzler(const SkImageInfo& dstInfo, const Options& opts);
 
@@ -92,12 +90,10 @@ private:
     const uint32_t              fBytesPerColor;
     const uint32_t              fOffset;
     std::unique_ptr<SkSwizzler> fSwizzler;
-    std::unique_ptr<uint8_t[]>  fSrcBuffer;
     const bool                  fIsOpaque;
     const bool                  fInIco;
     const size_t                fAndMaskRowBytes; // only used for fInIco decodes
-    bool                        fXformOnDecode;
 
-    typedef SkBmpCodec INHERITED;
+    typedef SkBmpBaseCodec INHERITED;
 };
 #endif  // SkBmpStandardCodec_DEFINED

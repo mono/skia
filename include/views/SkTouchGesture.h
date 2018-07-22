@@ -39,11 +39,13 @@ public:
 
     bool isActive() { return fFlinger.isActive(); }
     void stop() { fFlinger.stop(); }
+    bool isBeingTouched() { return kEmpty_State != fState; }
 
     const SkMatrix& localM();
     const SkMatrix& globalM() const { return fGlobalM; }
 
-    void setTransLimit(const SkRect& contentRect, const SkRect& windowRect);
+    void setTransLimit(const SkRect& contentRect, const SkRect& windowRect,
+                       const SkMatrix& preTouchM);
 
 private:
     enum State {
@@ -62,7 +64,7 @@ private:
     SkTDArray<Rec> fTouches;
 
     State           fState;
-    SkMatrix        fLocalM, fGlobalM;
+    SkMatrix        fLocalM, fGlobalM, fPreTouchM;
     SkFlingState    fFlinger;
     double          fLastUpMillis;
     SkPoint         fLastUpP;

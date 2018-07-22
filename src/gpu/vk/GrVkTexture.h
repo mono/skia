@@ -8,7 +8,6 @@
 #ifndef GrVkTexture_DEFINED
 #define GrVkTexture_DEFINED
 
-#include "GrGpu.h"
 #include "GrTexture.h"
 #include "GrVkImage.h"
 
@@ -18,8 +17,8 @@ struct GrVkImageInfo;
 
 class GrVkTexture : public GrTexture, public virtual GrVkImage {
 public:
-    static GrVkTexture* CreateNewTexture(GrVkGpu*, SkBudgeted budgeted, const GrSurfaceDesc&,
-                                         const GrVkImage::ImageDesc&);
+    static sk_sp<GrVkTexture> CreateNewTexture(GrVkGpu*, SkBudgeted budgeted, const GrSurfaceDesc&,
+                                               const GrVkImage::ImageDesc&);
 
     static sk_sp<GrVkTexture> MakeWrappedTexture(GrVkGpu*, const GrSurfaceDesc&,
                                                  GrWrapOwnership, const GrVkImageInfo*);

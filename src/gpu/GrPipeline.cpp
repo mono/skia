@@ -10,7 +10,6 @@
 #include "GrAppliedClip.h"
 #include "GrCaps.h"
 #include "GrGpu.h"
-#include "GrPipelineBuilder.h"
 #include "GrRenderTargetContext.h"
 #include "GrRenderTargetOpList.h"
 #include "GrRenderTargetPriv.h"
@@ -33,9 +32,6 @@ void GrPipeline::init(const InitArgs& args) {
         }
         fWindowRectsState = args.fAppliedClip->windowRectsState();
     }
-    if (args.fProcessors->usesDistanceVectorField()) {
-        fFlags |= kUsesDistanceVectorField_Flag;
-    }
     if (!args.fUserStencil->isDisabled(fFlags & kHasStencilClip_Flag)) {
         fFlags |= kStencilEnabled_Flag;
     }
@@ -44,13 +40,16 @@ void GrPipeline::init(const InitArgs& args) {
 
     fXferProcessor = args.fProcessors->refXferProcessor();
 
-    if (args.fDstTexture.texture()) {
-        fDstTexture.reset(args.fDstTexture.texture());
-        fDstTextureOffset = args.fDstTexture.offset();
+    if (args.fDstProxy.proxy()) {
+        if (!args.fDstProxy.proxy()->instantiate(args.fResourceProvider)) {
+            this->markAsBad();
+        }
+
+        fDstTextureProxy.reset(args.fDstProxy.proxy());
+        fDstTextureOffset = args.fDstProxy.offset();
     }
 
-    // Copy GrFragmentProcessors from GrPipelineBuilder to Pipeline, possibly removing some of the
-    // color fragment processors.
+    // Copy GrFragmentProcessors from GrProcessorSet to Pipeline
     fNumColorProcessors = args.fProcessors->numColorFragmentProcessors();
     int numTotalProcessors =
             fNumColorProcessors + args.fProcessors->numCoverageFragmentProcessors();
@@ -62,7 +61,7 @@ void GrPipeline::init(const InitArgs& args) {
     for (int i = 0; i < args.fProcessors->numColorFragmentProcessors(); ++i, ++currFPIdx) {
         const GrFragmentProcessor* fp = args.fProcessors->colorFragmentProcessor(i);
         fFragmentProcessors[currFPIdx].reset(fp);
-        if (fp->isBad()) {
+        if (!fp->instantiate(args.fResourceProvider)) {
             this->markAsBad();
         }
     }
@@ -70,56 +69,55 @@ void GrPipeline::init(const InitArgs& args) {
     for (int i = 0; i < args.fProcessors->numCoverageFragmentProcessors(); ++i, ++currFPIdx) {
         const GrFragmentProcessor* fp = args.fProcessors->coverageFragmentProcessor(i);
         fFragmentProcessors[currFPIdx].reset(fp);
-        if (fp->isBad()) {
+        if (!fp->instantiate(args.fResourceProvider)) {
             this->markAsBad();
         }
     }
     if (args.fAppliedClip) {
         if (const GrFragmentProcessor* fp = args.fAppliedClip->clipCoverageFragmentProcessor()) {
             fFragmentProcessors[currFPIdx].reset(fp);
-            if (fp->isBad()) {
+            if (!fp->instantiate(args.fResourceProvider)) {
                 this->markAsBad();
             }
         }
     }
 }
 
-// MDB TODO: re-enable when TextureSamplers store texture proxies
-#if 0
-static void add_dependencies_for_processor(const GrFragmentProcessor* proc,
-                                           GrRenderTargetProxy* rtp) {
-    GrFragmentProcessor::TextureAccessIter iter(proc);
-    while (const GrResourceIOProcessor::TextureSampler* sampler = iter.next()) {
-        SkASSERT(rtp->getLastOpList());
-        rtp->getLastOpList()->addDependency(sampler->texture());
-    }
-}
-#endif
-
-void GrPipeline::addDependenciesTo(GrRenderTargetProxy* rtp) const {
-    // MDB TODO: re-enable when TextureSamplers store texture proxies
-#if 0
+void GrPipeline::addDependenciesTo(GrOpList* opList, const GrCaps& caps) const {
     for (int i = 0; i < fFragmentProcessors.count(); ++i) {
-        add_dependencies_for_processor(fFragmentProcessors[i].get(), rtp);
+        GrFragmentProcessor::TextureAccessIter iter(fFragmentProcessors[i].get());
+        while (const GrResourceIOProcessor::TextureSampler* sampler = iter.next()) {
+            opList->addDependency(sampler->proxy(), caps);
+        }
     }
-#endif
 
-    if (fDstTexture) {
-        //SkASSERT(rtp->getLastOpList());
-        // MDB TODO: re-enable when TextureSamplers store texture proxies
-        //rtp->getLastOpList()->addDependency(fDstTexture.get());
+    if (fDstTextureProxy) {
+        opList->addDependency(fDstTextureProxy.get(), caps);
     }
+
 }
 
-GrPipeline::GrPipeline(GrRenderTarget* rt, SkBlendMode blendmode)
-        : fRenderTarget(rt)
-        , fScissorState()
-        , fWindowRectsState()
-        , fUserStencilSettings(&GrUserStencilSettings::kUnused)
-        , fFlags()
-        , fXferProcessor(GrPorterDuffXPFactory::MakeNoCoverageXP(blendmode))
-        , fFragmentProcessors()
-        , fNumColorProcessors(0) {}
+GrXferBarrierType GrPipeline::xferBarrierType(const GrCaps& caps) const {
+    if (fDstTextureProxy.get() &&
+        fDstTextureProxy.get()->priv().peekTexture() == fRenderTarget.get()->asTexture()) {
+        return kTexture_GrXferBarrierType;
+    }
+    return this->getXferProcessor().xferBarrierType(caps);
+}
+
+GrPipeline::GrPipeline(GrRenderTarget* rt, ScissorState scissorState, SkBlendMode blendmode)
+    : fRenderTarget(rt)
+    , fScissorState()
+    , fWindowRectsState()
+    , fUserStencilSettings(&GrUserStencilSettings::kUnused)
+    , fFlags()
+    , fXferProcessor(GrPorterDuffXPFactory::MakeNoCoverageXP(blendmode))
+    , fFragmentProcessors()
+    , fNumColorProcessors(0) {
+    if (ScissorState::kEnabled == scissorState) {
+        fScissorState.set({0, 0, 0, 0}); // caller will use the DynamicState struct.
+    }
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 

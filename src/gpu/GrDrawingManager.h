@@ -11,7 +11,6 @@
 #include "GrOpFlushState.h"
 #include "GrPathRenderer.h"
 #include "GrPathRendererChain.h"
-#include "GrOnFlushResourceProvider.h"
 #include "GrRenderTargetOpList.h"
 #include "GrResourceCache.h"
 #include "SkTArray.h"
@@ -19,6 +18,7 @@
 #include "text/GrAtlasTextContext.h"
 
 class GrContext;
+class GrOnFlushCallbackObject;
 class GrRenderTargetContext;
 class GrRenderTargetProxy;
 class GrSingleOWner;
@@ -42,12 +42,15 @@ public:
 
     sk_sp<GrRenderTargetContext> makeRenderTargetContext(sk_sp<GrSurfaceProxy>,
                                                          sk_sp<SkColorSpace>,
-                                                         const SkSurfaceProps*);
+                                                         const SkSurfaceProps*,
+                                                         bool managedOpList = true);
     sk_sp<GrTextureContext> makeTextureContext(sk_sp<GrSurfaceProxy>, sk_sp<SkColorSpace>);
 
     // The caller automatically gets a ref on the returned opList. It must
     // be balanced by an unref call.
-    sk_sp<GrRenderTargetOpList> newRTOpList(GrRenderTargetProxy* rtp);
+    // A managed opList is controlled by the drawing manager (i.e., sorted & flushed with the
+    // other). An unmanaged one is created and used by the onFlushCallback.
+    sk_sp<GrRenderTargetOpList> newRTOpList(GrRenderTargetProxy* rtp, bool managedOpList);
     sk_sp<GrTextureOpList> newTextureOpList(GrTextureProxy* textureProxy);
 
     GrContext* getContext() { return fContext; }
@@ -62,12 +65,10 @@ public:
     void flushIfNecessary() {
         if (fContext->getResourceCache()->requestsFlush()) {
             this->internalFlush(nullptr, GrResourceCache::kCacheRequested);
-        } else if (fIsImmediateMode) {
-            this->internalFlush(nullptr, GrResourceCache::kImmediateMode);
         }
     }
 
-    static bool ProgramUnitTest(GrContext* context, int maxStages);
+    static bool ProgramUnitTest(GrContext* context, int maxStages, int maxLevels);
 
     void prepareSurfaceForExternalIO(GrSurfaceProxy*);
 
@@ -77,7 +78,7 @@ public:
 private:
     GrDrawingManager(GrContext* context,
                      const GrPathRendererChain::Options& optionsForPathRendererChain,
-                     bool isImmediateMode, GrSingleOwner* singleOwner)
+                     GrSingleOwner* singleOwner)
         : fContext(context)
         , fOptionsForPathRendererChain(optionsForPathRendererChain)
         , fSingleOwner(singleOwner)
@@ -86,8 +87,7 @@ private:
         , fPathRendererChain(nullptr)
         , fSoftwarePathRenderer(nullptr)
         , fFlushState(context->getGpu(), context->resourceProvider())
-        , fFlushing(false)
-        , fIsImmediateMode(isImmediateMode) {
+        , fFlushing(false) {
     }
 
     void abandon();
@@ -121,8 +121,6 @@ private:
 
     GrOpFlushState                    fFlushState;
     bool                              fFlushing;
-
-    bool                              fIsImmediateMode;
 
     SkTArray<GrOnFlushCallbackObject*> fOnFlushCBObjects;
 

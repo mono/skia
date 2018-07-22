@@ -9,6 +9,7 @@
 
 #ifdef SK_HAS_PNG_LIBRARY
 
+#include "SkColorTable.h"
 #include "SkImageEncoderFns.h"
 #include "SkImageInfoPriv.h"
 #include "SkStream.h"
@@ -51,9 +52,7 @@ public:
     static std::unique_ptr<SkPngEncoderMgr> Make(SkWStream* stream);
 
     bool setHeader(const SkImageInfo& srcInfo, const SkPngEncoder::Options& options);
-    bool setPalette(const SkImageInfo& srcInfo, SkColorTable* colorTable,
-                    SkTransferFunctionBehavior);
-    bool setColorSpace(SkColorSpace* colorSpace);
+    bool setColorSpace(const SkImageInfo& info);
     bool writeInfo(const SkImageInfo& srcInfo);
     void chooseProc(const SkImageInfo& srcInfo, SkTransferFunctionBehavior unpremulBehavior);
 
@@ -115,14 +114,6 @@ bool SkPngEncoderMgr::setHeader(const SkImageInfo& srcInfo, const SkPngEncoder::
             pngColorType = srcInfo.isOpaque() ? PNG_COLOR_TYPE_RGB : PNG_COLOR_TYPE_RGB_ALPHA;
             fPngBytesPerPixel = 8;
             break;
-        case kIndex_8_SkColorType:
-            sigBit.red = 8;
-            sigBit.green = 8;
-            sigBit.blue = 8;
-            sigBit.alpha = 8;
-            pngColorType = PNG_COLOR_TYPE_PALETTE;
-            fPngBytesPerPixel = 1;
-            break;
         case kGray_8_SkColorType:
             sigBit.gray = 8;
             pngColorType = PNG_COLOR_TYPE_GRAY;
@@ -175,6 +166,34 @@ bool SkPngEncoderMgr::setHeader(const SkImageInfo& srcInfo, const SkPngEncoder::
     int zlibLevel = SkTMin(SkTMax(0, options.fZLibLevel), 9);
     SkASSERT(zlibLevel == options.fZLibLevel);
     png_set_compression_level(fPngPtr, zlibLevel);
+
+    // Set comments in tEXt chunk
+    const sk_sp<SkDataTable>& comments = options.fComments;
+    if (comments != nullptr) {
+        std::vector<png_text> png_texts(comments->count());
+        std::vector<SkString> clippedKeys;
+        for (int i = 0; i < comments->count() / 2; ++i) {
+            const char* keyword;
+            const char* originalKeyword = comments->atStr(2 * i);
+            const char* text = comments->atStr(2 * i + 1);
+            if (strlen(originalKeyword) <= PNG_KEYWORD_MAX_LENGTH) {
+                keyword = originalKeyword;
+            } else {
+                SkDEBUGFAILF("PNG tEXt keyword should be no longer than %d.",
+                        PNG_KEYWORD_MAX_LENGTH);
+                clippedKeys.emplace_back(originalKeyword, PNG_KEYWORD_MAX_LENGTH);
+                keyword = clippedKeys.back().c_str();
+            }
+            // It seems safe to convert png_const_charp to png_charp for key/text,
+            // and we don't have to provide text_length and other fields as we're providing
+            // 0-terminated c_str with PNG_TEXT_COMPRESSION_NONE (no compression, no itxt).
+            png_texts[i].compression = PNG_TEXT_COMPRESSION_NONE;
+            png_texts[i].key = (png_charp)keyword;
+            png_texts[i].text = (png_charp)text;
+        }
+        png_set_text(fPngPtr, fInfoPtr, png_texts.data(), png_texts.size());
+    }
+
     return true;
 }
 
@@ -222,7 +241,6 @@ static transform_scanline_proc choose_proc(const SkImageInfo& info,
                     SkASSERT(false);
                     return nullptr;
             }
-        case kIndex_8_SkColorType:
         case kGray_8_SkColorType:
             return transform_scanline_memcpy;
         case kRGBA_F16_SkColorType:
@@ -242,93 +260,8 @@ static transform_scanline_proc choose_proc(const SkImageInfo& info,
     }
 }
 
-/*
- * Pack palette[] with the corresponding colors, and if the image has alpha, also
- * pack trans[] and return the number of alphas[] entries written. If the image is
- * opaque, the return value will always be 0.
- */
-static inline int pack_palette(SkColorTable* ctable, png_color* SK_RESTRICT palette,
-                               png_byte* SK_RESTRICT alphas, const SkImageInfo& info,
-                               SkTransferFunctionBehavior unpremulBehavior) {
-    const SkPMColor* colors = ctable->readColors();
-    const int count = ctable->count();
-    SkPMColor storage[256];
-    if (kPremul_SkAlphaType == info.alphaType()) {
-        // Unpremultiply the colors.
-        const SkImageInfo rgbaInfo = info.makeColorType(kRGBA_8888_SkColorType);
-        transform_scanline_proc proc = choose_proc(rgbaInfo, unpremulBehavior);
-        proc((char*) storage, (const char*) colors, ctable->count(), 4, nullptr);
-        colors = storage;
-    }
-
-    int numWithAlpha = 0;
-    if (kOpaque_SkAlphaType != info.alphaType()) {
-        // PNG requires that all non-opaque colors come first in the palette.  Write these first.
-        for (int i = 0; i < count; i++) {
-            uint8_t alpha = SkGetPackedA32(colors[i]);
-            if (0xFF != alpha) {
-                alphas[numWithAlpha] = alpha;
-                palette[numWithAlpha].red   = SkGetPackedR32(colors[i]);
-                palette[numWithAlpha].green = SkGetPackedG32(colors[i]);
-                palette[numWithAlpha].blue  = SkGetPackedB32(colors[i]);
-                numWithAlpha++;
-            }
-        }
-    }
-
-    if (0 == numWithAlpha) {
-        // All of the entries are opaque.
-        for (int i = 0; i < count; i++) {
-            SkPMColor c = *colors++;
-            palette[i].red   = SkGetPackedR32(c);
-            palette[i].green = SkGetPackedG32(c);
-            palette[i].blue  = SkGetPackedB32(c);
-        }
-    } else {
-        // We have already written the non-opaque colors.  Now just write the opaque colors.
-        int currIndex = numWithAlpha;
-        int i = 0;
-        while (currIndex != count) {
-            uint8_t alpha = SkGetPackedA32(colors[i]);
-            if (0xFF == alpha) {
-                palette[currIndex].red   = SkGetPackedR32(colors[i]);
-                palette[currIndex].green = SkGetPackedG32(colors[i]);
-                palette[currIndex].blue  = SkGetPackedB32(colors[i]);
-                currIndex++;
-            }
-
-            i++;
-        }
-    }
-
-    return numWithAlpha;
-}
-
-bool SkPngEncoderMgr::setPalette(const SkImageInfo& srcInfo, SkColorTable* colorTable,
-                                 SkTransferFunctionBehavior unpremulBehavior) {
-    if (setjmp(png_jmpbuf(fPngPtr))) {
-        return false;
-    }
-
-    png_color paletteColors[256];
-    png_byte trans[256];
-    if (kIndex_8_SkColorType == srcInfo.colorType()) {
-        if (!colorTable || colorTable->count() <= 0) {
-            return false;
-        }
-
-        int numTrans = pack_palette(colorTable, paletteColors, trans, srcInfo, unpremulBehavior);
-        png_set_PLTE(fPngPtr, fInfoPtr, paletteColors, colorTable->count());
-        if (numTrans > 0) {
-            png_set_tRNS(fPngPtr, fInfoPtr, trans, numTrans, nullptr);
-        }
-    }
-
-    return true;
-}
-
-static void set_icc(png_structp png_ptr, png_infop info_ptr, const SkColorSpace& colorSpace) {
-    sk_sp<SkData> icc = icc_from_color_space(colorSpace);
+static void set_icc(png_structp png_ptr, png_infop info_ptr, const SkImageInfo& info) {
+    sk_sp<SkData> icc = icc_from_color_space(info);
     if (!icc) {
         return;
     }
@@ -344,17 +277,15 @@ static void set_icc(png_structp png_ptr, png_infop info_ptr, const SkColorSpace&
     png_set_iCCP(png_ptr, info_ptr, name, 0, iccPtr, icc->size());
 }
 
-bool SkPngEncoderMgr::setColorSpace(SkColorSpace* colorSpace) {
+bool SkPngEncoderMgr::setColorSpace(const SkImageInfo& info) {
     if (setjmp(png_jmpbuf(fPngPtr))) {
         return false;
     }
 
-    if (colorSpace) {
-        if (colorSpace->isSRGB()) {
-            png_set_sRGB(fPngPtr, fInfoPtr, PNG_sRGB_INTENT_PERCEPTUAL);
-        } else {
-            set_icc(fPngPtr, fInfoPtr, *colorSpace);
-        }
+    if (info.colorSpace() && info.colorSpace()->isSRGB()) {
+        png_set_sRGB(fPngPtr, fInfoPtr, PNG_sRGB_INTENT_PERCEPTUAL);
+    } else {
+        set_icc(fPngPtr, fInfoPtr, info);
     }
 
     return true;
@@ -397,11 +328,7 @@ std::unique_ptr<SkEncoder> SkPngEncoder::Make(SkWStream* dst, const SkPixmap& sr
         return nullptr;
     }
 
-    if (!encoderMgr->setPalette(src.info(), src.ctable(), options.fUnpremulBehavior)) {
-        return nullptr;
-    }
-
-    if (!encoderMgr->setColorSpace(src.colorSpace())) {
+    if (!encoderMgr->setColorSpace(src.info())) {
         return nullptr;
     }
 

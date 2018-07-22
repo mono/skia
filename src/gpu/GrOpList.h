@@ -9,7 +9,6 @@
 #define GrOpList_DEFINED
 
 #include "GrGpuResourceRef.h"
-
 #include "SkRefCnt.h"
 #include "SkTDArray.h"
 
@@ -21,11 +20,15 @@ class GrOpFlushState;
 class GrRenderTargetOpList;
 class GrResourceProvider;
 class GrSurfaceProxy;
+class GrTextureProxy;
 class GrTextureOpList;
+
+struct SkIPoint;
+struct SkIRect;
 
 class GrOpList : public SkRefCnt {
 public:
-    GrOpList(GrSurfaceProxy*, GrAuditTrail*);
+    GrOpList(GrResourceProvider*, GrSurfaceProxy*, GrAuditTrail*);
     ~GrOpList() override;
 
     // These three methods are invoked at flush time
@@ -33,8 +36,17 @@ public:
     virtual void prepareOps(GrOpFlushState* flushState) = 0;
     virtual bool executeOps(GrOpFlushState* flushState) = 0;
 
+    virtual bool copySurface(const GrCaps& caps,
+                             GrSurfaceProxy* dst,
+                             GrSurfaceProxy* src,
+                             const SkIRect& srcRect,
+                             const SkIPoint& dstPoint) = 0;
+
     virtual void makeClosed(const GrCaps&) {
-        this->setFlag(kClosed_Flag);
+        if (!this->isClosed()) {
+            this->setFlag(kClosed_Flag);
+            fTarget.removeRef();
+        }
     }
 
     virtual void reset();
@@ -79,8 +91,8 @@ public:
     SkDEBUGCODE(virtual int numClips() const { return 0; })
 
 protected:
-    GrPendingIOResource<GrSurfaceProxy, kWrite_GrIOType> fTarget;
-    GrAuditTrail*                                        fAuditTrail;
+    GrSurfaceProxyRef fTarget;
+    GrAuditTrail*     fAuditTrail;
 
 private:
     friend class GrDrawingManager; // for resetFlag & TopoSortTraits

@@ -11,8 +11,10 @@
 #include "GrGpuCommandBuffer.h"
 
 #include "GrGLGpu.h"
+#include "GrGLRenderTarget.h"
 #include "GrOpFlushState.h"
 
+class GrGLGpu;
 class GrGLRenderTarget;
 
 class GrGLGpuCommandBuffer : public GrGpuCommandBuffer {
@@ -49,7 +51,8 @@ private:
 
     void onDraw(const GrPipeline& pipeline,
                 const GrPrimitiveProcessor& primProc,
-                const GrMesh* mesh,
+                const GrMesh mesh[],
+                const GrPipeline::DynamicState dynamicStates[],
                 int meshCount,
                 const SkRect& bounds) override {
         GrGLRenderTarget* target = static_cast<GrGLRenderTarget*>(pipeline.getRenderTarget());
@@ -57,7 +60,7 @@ private:
             fRenderTarget = target;
         }
         SkASSERT(target == fRenderTarget);
-        fGpu->draw(pipeline, primProc, mesh, meshCount);
+        fGpu->draw(pipeline, primProc, mesh, dynamicStates, meshCount);
     }
 
     void onClear(GrRenderTarget* rt, const GrFixedClip& clip, GrColor color) override {

@@ -142,7 +142,8 @@ public:
      *  - it can somehow convert its texture into one that is valid for the provided context.
      */
     sk_sp<GrTextureProxy> generateTexture(GrContext*, const SkImageInfo& info,
-                                          const SkIPoint& origin);
+                                          const SkIPoint& origin,
+                                          SkTransferFunctionBehavior behavior);
 #endif
 
     /**
@@ -176,9 +177,15 @@ protected:
     virtual bool onGetYUV8Planes(const SkYUVSizeInfo&, void*[3] /*planes*/) { return false; }
 
 #if SK_SUPPORT_GPU
-    virtual bool onCanGenerateTexture() const { return false; }
-    virtual sk_sp<GrTextureProxy> onGenerateTexture(GrContext*, const SkImageInfo&,
-                                                    const SkIPoint&);   // returns nullptr
+    enum class TexGenType {
+        kNone,           //image generator does not implement onGenerateTexture
+        kCheap,          //onGenerateTexture is implemented and it is fast (does not render offscreen)
+        kExpensive,      //onGenerateTexture is implemented and it is relatively slow
+    };
+
+    virtual TexGenType onCanGenerateTexture() const { return TexGenType::kNone; }
+    virtual sk_sp<GrTextureProxy> onGenerateTexture(GrContext*, const SkImageInfo&, const SkIPoint&,
+                                                    SkTransferFunctionBehavior);  // returns nullptr
 #endif
 
 private:

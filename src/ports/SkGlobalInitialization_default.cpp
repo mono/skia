@@ -8,7 +8,6 @@
 #include "Sk1DPathEffect.h"
 #include "Sk2DPathEffect.h"
 #include "SkAlphaThresholdFilter.h"
-#include "../../src/effects/SkArithmeticModePriv.h"
 #include "SkArcToPathEffect.h"
 #include "SkBitmapSourceDeserializer.h"
 #include "SkBlurImageFilter.h"
@@ -22,7 +21,6 @@
 #include "SkDisplacementMapEffect.h"
 #include "SkDropShadowImageFilter.h"
 #include "../../src/effects/SkEmbossMaskFilter.h"
-#include "../../src/effects/SkGaussianEdgeShader.h"
 #include "SkGradientShader.h"
 #include "SkHighContrastFilter.h"
 #include "SkImageSource.h"
@@ -82,7 +80,6 @@ void SkFlattenable::PrivateInitializer::InitEffects() {
     SK_DEFINE_FLATTENABLE_REGISTRAR_ENTRY(SkColorMatrixFilterRowMajor255)
     SK_DEFINE_FLATTENABLE_REGISTRAR_ENTRY(SkLumaColorFilter)
     SkAlphaThresholdFilter::InitializeFlattenables();
-    SkArithmeticMode::InitializeFlattenables();
     SkTableColorFilter::InitializeFlattenables();
     SkOverdrawColorFilter::InitializeFlattenables();
     SkHighContrastFilter::InitializeFlattenables();
@@ -92,7 +89,6 @@ void SkFlattenable::PrivateInitializer::InitEffects() {
     SkGradientShader::InitializeFlattenables();
     SkLightingShader::InitializeFlattenables();
     SkNormalSource::InitializeFlattenables();
-    SkGaussianEdgeShader::InitializeFlattenables();
 
     // PathEffect
     SK_DEFINE_FLATTENABLE_REGISTRAR_ENTRY(SkArcToPathEffect)

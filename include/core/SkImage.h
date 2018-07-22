@@ -29,6 +29,8 @@ class GrContext;
 class GrContextThreadSafeProxy;
 class GrTexture;
 
+struct AHardwareBuffer;
+
 /**
  *  SkImage is an abstraction for drawing a rectagle of pixels, though the
  *  particular type of image could be actually storing its data on the GPU, or
@@ -85,54 +87,7 @@ public:
      */
     static sk_sp<SkImage> MakeFromEncoded(sk_sp<SkData> encoded, const SkIRect* subset = nullptr);
 
-    /**
-     *  Create a new image from the specified descriptor. Note - the caller is responsible for
-     *  managing the lifetime of the underlying platform texture.
-     *
-     *  Will return NULL if the specified descriptor is unsupported.
-     *
-     *  It is preferred to use the new methods which take a GrBackendTexture instead of a
-     *  GrBackendTextureDesc. This method will eventually be removed.
-     */
-    static sk_sp<SkImage> MakeFromTexture(GrContext* ctx, const GrBackendTextureDesc& desc) {
-        return MakeFromTexture(ctx, desc, kPremul_SkAlphaType, nullptr, nullptr, nullptr);
-    }
-
-    static sk_sp<SkImage> MakeFromTexture(GrContext* ctx, const GrBackendTextureDesc& de,
-                                          SkAlphaType at) {
-        return MakeFromTexture(ctx, de, at, nullptr, nullptr, nullptr);
-    }
-
     typedef void (*TextureReleaseProc)(ReleaseContext);
-
-    /**
-     *  Create a new image from the specified descriptor. The underlying platform texture must stay
-     *  valid and unaltered until the specified release-proc is invoked, indicating that Skia
-     *  no longer is holding a reference to it.
-     *
-     *  Will return NULL if the specified descriptor is unsupported.
-     *
-     *  It is preferred to use the new methods which take a GrBackendTexture instead of a
-     *  GrBackendTextureDesc. This method will eventually be removed.
-     */
-    static sk_sp<SkImage> MakeFromTexture(GrContext* ctx, const GrBackendTextureDesc& desc,
-                                          SkAlphaType at, TextureReleaseProc trp,
-                                          ReleaseContext rc) {
-        return MakeFromTexture(ctx, desc, at, nullptr, trp, rc);
-    }
-
-    /**
-    *  Create a new image from the specified descriptor. The underlying platform texture must stay
-    *  valid and unaltered until the specified release-proc is invoked, indicating that Skia
-    *  no longer is holding a reference to it.
-    *
-    *  Will return NULL if the specified descriptor is unsupported.
-     *
-     *  It is preferred to use the new methods which take a GrBackendTexture instead of a
-     *  GrBackendTextureDesc. This method will eventually be removed.
-    */
-    static sk_sp<SkImage> MakeFromTexture(GrContext*, const GrBackendTextureDesc&, SkAlphaType,
-                                          sk_sp<SkColorSpace>, TextureReleaseProc, ReleaseContext);
 
     /**
      *  Create a new image from the specified descriptor. Note - the caller is responsible for
@@ -178,19 +133,6 @@ public:
      *  Create a new image from the specified descriptor. Note - Skia will delete or recycle the
      *  texture when the image is released.
      *
-     *  Will return NULL if the specified descriptor is unsupported.
-     *
-     *  It is preferred to use the new methods which take a GrBackendTexture instead of a
-     *  GrBackendTextureDesc. This method will eventually be removed.
-     */
-    static sk_sp<SkImage> MakeFromAdoptedTexture(GrContext*, const GrBackendTextureDesc&,
-                                                 SkAlphaType = kPremul_SkAlphaType,
-                                                 sk_sp<SkColorSpace> = nullptr);
-
-    /**
-     *  Create a new image from the specified descriptor. Note - Skia will delete or recycle the
-     *  texture when the image is released.
-     *
      *  Will return NULL if the specified backend texture is unsupported.
      */
     static sk_sp<SkImage> MakeFromAdoptedTexture(GrContext*,
@@ -231,6 +173,16 @@ public:
     static sk_sp<SkImage> MakeFromPicture(sk_sp<SkPicture>, const SkISize& dimensions,
                                           const SkMatrix*, const SkPaint*, BitDepth,
                                           sk_sp<SkColorSpace>);
+
+#if defined(SK_BUILD_FOR_ANDROID) && __ANDROID_API__ >= 26
+    /**
+     *  Create a new image from the an Android hardware buffer.
+     *  The new image takes a reference on the buffer.
+     */
+    static sk_sp<SkImage> MakeFromAHardwareBuffer(AHardwareBuffer*,
+                                                 SkAlphaType = kPremul_SkAlphaType,
+                                                 sk_sp<SkColorSpace> = nullptr);
+#endif
 
     ///////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -347,20 +299,16 @@ public:
     bool scalePixels(const SkPixmap& dst, SkFilterQuality, CachingHint = kAllow_CachingHint) const;
 
     /**
-     *  Encode the image's pixels and return the result as a new SkData, which
-     *  the caller must manage (i.e. call unref() when they are done).
+     *  Encode the image's pixels and return the result as SkData.
      *
-     *  If the image type cannot be encoded, or the requested encoder type is
+     *  If the image type cannot be encoded, or the requested encoder format is
      *  not supported, this will return NULL.
-     *
-     *  Note: this will attempt to encode the image's pixels in the specified format,
-     *  even if the image returns a data from refEncoded(). That data will be ignored.
      */
-    SkData* encode(SkEncodedImageFormat, int quality) const;
+    sk_sp<SkData> encodeToData(SkEncodedImageFormat, int quality) const;
 
     /**
-     *  Encode the image and return the result as a caller-managed SkData.  This will
-     *  attempt to reuse existing encoded data (as returned by refEncoded).
+     *  Encode the image and return the result as SkData.  This will attempt to reuse existing
+     *  encoded data (as returned by refEncodedData).
      *
      *  We defer to the SkPixelSerializer both for vetting existing encoded data
      *  (useEncodedData) and for encoding the image (encode) when no such data is
@@ -372,18 +320,15 @@ public:
      *  If no compatible encoded data exists and encoding fails, this method will also
      *  fail (return NULL).
      */
-    SkData* encode(SkPixelSerializer* = nullptr) const;
+    sk_sp<SkData> encodeToData(SkPixelSerializer* = nullptr) const;
 
     /**
-     *  If the image already has its contents in encoded form (e.g. PNG or JPEG), return a ref
-     *  to that data (which the caller must call unref() on). The caller is responsible for calling
-     *  unref on the data when they are done.
+     *  If the image already has its contents in encoded form (e.g. PNG or JPEG), return that
+     *  as SkData. If the image does not already has its contents in encoded form, return NULL.
      *
-     *  If the image does not already has its contents in encoded form, return NULL.
-     *
-     *  Note: to force the image to return its contents as encoded data, try calling encode(...).
+     *  Note: to force the image to return its contents as encoded data, use encodeToData(...).
      */
-    SkData* refEncoded() const;
+    sk_sp<SkData> refEncodedData() const;
 
     const char* toString(SkString*) const;
 
@@ -523,12 +468,12 @@ public:
     sk_sp<SkImage> makeColorSpace(sk_sp<SkColorSpace> target,
                                   SkTransferFunctionBehavior premulBehavior) const;
 
-protected:
-    SkImage(int width, int height, uint32_t uniqueID);
-
 private:
+    SkImage(int width, int height, uint32_t uniqueID);
+    friend class SkImage_Base;
+
     static sk_sp<SkImage> MakeTextureFromMipMap(GrContext*, const SkImageInfo&,
-                                                const GrMipLevel* texels, int mipLevelCount,
+                                                const GrMipLevel texels[], int mipLevelCount,
                                                 SkBudgeted, SkDestinationSurfaceColorMode);
 
     const int       fWidth;

@@ -10,6 +10,7 @@
 #include "SkCanvas.h"
 #include "SkColorFilterImageFilter.h"
 #include "SkColorMatrixFilter.h"
+#include "SkColorSpaceXformer.h"
 #include "SkComposeImageFilter.h"
 #include "SkDisplacementMapEffect.h"
 #include "SkDropShadowImageFilter.h"
@@ -196,9 +197,7 @@ public:
                       input, cropRect));
         }
 
-        this->addFilter("merge", SkMergeImageFilter::Make(input, input,
-                                                          SkBlendMode::kSrcOver,
-                                                          cropRect));
+        this->addFilter("merge", SkMergeImageFilter::Make(input, input, cropRect));
 
         {
             SkPaint greenColorShaderPaint;
@@ -213,8 +212,7 @@ public:
 
 
             this->addFilter("merge with disjoint inputs", SkMergeImageFilter::Make(
-                  std::move(paintFilterLeft), std::move(paintFilterRight),
-                  SkBlendMode::kSrcOver, cropRect));
+                  std::move(paintFilterLeft), std::move(paintFilterRight), cropRect));
         }
 
         this->addFilter("offset",
@@ -959,7 +957,7 @@ static void test_imagefilter_merge_result_size(skiatest::Reporter* reporter, GrC
     greenBM.eraseColor(SK_ColorGREEN);
     sk_sp<SkImage> greenImage(SkImage::MakeFromBitmap(greenBM));
     sk_sp<SkImageFilter> source(SkImageSource::Make(std::move(greenImage)));
-    sk_sp<SkImageFilter> merge(SkMergeImageFilter::Make(source, source, SkBlendMode::kSrcOver));
+    sk_sp<SkImageFilter> merge(SkMergeImageFilter::Make(source, source));
 
     sk_sp<SkSpecialImage> srcImg(create_empty_special_image(context, 1));
 
@@ -1831,11 +1829,10 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(ImageFilterHugeBlur_Gpu, reporter, ctxInfo) {
 }
 
 DEF_GPUTEST_FOR_RENDERING_CONTEXTS(XfermodeImageFilterCroppedInput_Gpu, reporter, ctxInfo) {
-
-    sk_sp<SkSurface> surf(SkSurface::MakeRenderTarget(ctxInfo.grContext(),
-                                                      SkBudgeted::kNo,
-                                                      SkImageInfo::MakeN32Premul(1, 1)));
-
+    sk_sp<SkSurface> surf(SkSurface::MakeRenderTarget(
+            ctxInfo.grContext(),
+            SkBudgeted::kNo,
+            SkImageInfo::Make(1, 1, kRGBA_8888_SkColorType, kPremul_SkAlphaType)));
 
     SkCanvas* canvas = surf->getCanvas();
 
@@ -1843,8 +1840,9 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(XfermodeImageFilterCroppedInput_Gpu, reporter
 }
 
 DEF_GPUTEST_FOR_ALL_CONTEXTS(ImageFilterBlurLargeImage_Gpu, reporter, ctxInfo) {
-    auto surface(SkSurface::MakeRenderTarget(ctxInfo.grContext(), SkBudgeted::kYes,
-                                             SkImageInfo::MakeN32Premul(100, 100)));
+    auto surface(SkSurface::MakeRenderTarget(
+            ctxInfo.grContext(), SkBudgeted::kYes,
+            SkImageInfo::Make(100, 100, kRGBA_8888_SkColorType, kPremul_SkAlphaType)));
     test_large_blur_input(reporter, surface->getCanvas());
 }
 #endif
@@ -1865,13 +1863,13 @@ DEF_TEST(ImageFilterComplexCTM, reporter) {
     } recs[] = {
         { cfif,                                     true  },
         { SkColorFilterImageFilter::Make(cf, cfif), true  },
-        { SkMergeImageFilter::Make(cfif, cfif, SkBlendMode::kSrcOver),     true  },
+        { SkMergeImageFilter::Make(cfif, cfif),     true  },
         { SkComposeImageFilter::Make(cfif, cfif),   true  },
 
         { blif,                                     false },
         { SkBlurImageFilter::Make(3, 3, cfif),      false },
         { SkColorFilterImageFilter::Make(cf, blif), false },
-        { SkMergeImageFilter::Make(cfif, blif, SkBlendMode::kSrcOver),     false },
+        { SkMergeImageFilter::Make(cfif, blif),     false },
         { SkComposeImageFilter::Make(blif, cfif),   false },
     };
 
@@ -1879,4 +1877,48 @@ DEF_TEST(ImageFilterComplexCTM, reporter) {
         const bool canHandle = rec.fFilter->canHandleComplexCTM();
         REPORTER_ASSERT(reporter, canHandle == rec.fExpectCanHandle);
     }
+}
+
+// Test that transforming the filter DAG doesn't clone shared nodes multiple times.
+DEF_TEST(ImageFilterColorSpaceDAG, reporter) {
+
+    // Helper for counting makeColorSpace() clones.
+    class TestFilter final : public SkImageFilter {
+    public:
+        TestFilter() : INHERITED(nullptr, 0, nullptr) {}
+
+#ifndef SK_IGNORE_TO_STRING
+        void toString(SkString*) const override {}
+#endif
+        Factory getFactory() const override { return nullptr; }
+
+        size_t cloneCount() const { return fCloneCount; }
+
+    protected:
+        sk_sp<SkSpecialImage> onFilterImage(SkSpecialImage* src, const Context&,
+                                            SkIPoint* offset) const override {
+            return nullptr;
+        }
+        sk_sp<SkImageFilter> onMakeColorSpace(SkColorSpaceXformer*) const override {
+            fCloneCount++;
+            return sk_ref_sp(const_cast<TestFilter*>(this));
+        }
+
+    private:
+        typedef SkImageFilter INHERITED;
+
+        mutable size_t fCloneCount = 0;
+    };
+
+    auto filter = sk_make_sp<TestFilter>();
+    REPORTER_ASSERT(reporter, filter->cloneCount() == 0u);
+
+    // Build a DAG referencing the filter twice.
+    auto complexFilter = SkMergeImageFilter::Make(filter, SkOffsetImageFilter::Make(1, 1, filter));
+    REPORTER_ASSERT(reporter, filter->cloneCount() == 0u);
+
+    auto xformer = SkColorSpaceXformer::Make(SkColorSpace::MakeSRGB());
+    auto xformedFilter = xformer->apply(complexFilter.get());
+
+    REPORTER_ASSERT(reporter, filter->cloneCount() == 1u);
 }

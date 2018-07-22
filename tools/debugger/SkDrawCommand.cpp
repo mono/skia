@@ -46,6 +46,7 @@
 #define SKDEBUGCANVAS_ATTRIBUTE_TEXT              "text"
 #define SKDEBUGCANVAS_ATTRIBUTE_COLOR             "color"
 #define SKDEBUGCANVAS_ATTRIBUTE_ALPHA             "alpha"
+#define SKDEBUGCANVAS_ATTRIBUTE_BLENDMODE         "blendMode"
 #define SKDEBUGCANVAS_ATTRIBUTE_STYLE             "style"
 #define SKDEBUGCANVAS_ATTRIBUTE_STROKEWIDTH       "strokeWidth"
 #define SKDEBUGCANVAS_ATTRIBUTE_STROKEMITER       "strokeMiter"
@@ -53,6 +54,14 @@
 #define SKDEBUGCANVAS_ATTRIBUTE_CAP               "cap"
 #define SKDEBUGCANVAS_ATTRIBUTE_ANTIALIAS         "antiAlias"
 #define SKDEBUGCANVAS_ATTRIBUTE_DITHER            "dither"
+#define SKDEBUGCANVAS_ATTRIBUTE_FAKEBOLDTEXT      "fakeBoldText"
+#define SKDEBUGCANVAS_ATTRIBUTE_LINEARTEXT        "linearText"
+#define SKDEBUGCANVAS_ATTRIBUTE_SUBPIXELTEXT      "subpixelText"
+#define SKDEBUGCANVAS_ATTRIBUTE_DEVKERNTEXT       "devKernText"
+#define SKDEBUGCANVAS_ATTRIBUTE_LCDRENDERTEXT     "lcdRenderText"
+#define SKDEBUGCANVAS_ATTRIBUTE_EMBEDDEDBITMAPTEXT "embeddedBitmapText"
+#define SKDEBUGCANVAS_ATTRIBUTE_AUTOHINTING       "forceAutoHinting"
+#define SKDEBUGCANVAS_ATTRIBUTE_VERTICALTEXT      "verticalText"
 #define SKDEBUGCANVAS_ATTRIBUTE_REGION            "region"
 #define SKDEBUGCANVAS_ATTRIBUTE_REGIONOP          "op"
 #define SKDEBUGCANVAS_ATTRIBUTE_EDGESTYLE         "edgeStyle"
@@ -423,6 +432,68 @@ void render_drrect(SkCanvas* canvas, const SkRRect& outer, const SkRRect& inner)
     canvas->restore();
 }
 
+static const char* const gBlendModeMap[] = {
+    "clear",
+    "src",
+    "dst",
+    "srcOver",
+    "dstOver",
+    "srcIn",
+    "dstIn",
+    "srcOut",
+    "dstOut",
+    "srcATop",
+    "dstATop",
+    "xor",
+    "plus",
+    "modulate",
+
+    "screen",
+
+    "overlay",
+    "darken",
+    "lighten",
+    "colorDodge",
+    "colorBurn",
+    "hardLight",
+    "softLight",
+    "difference",
+    "exclusion",
+    "multiply",
+
+    "hue",
+    "saturation",
+    "color",
+    "luminosity",
+};
+
+static_assert(SK_ARRAY_COUNT(gBlendModeMap) == static_cast<size_t>(SkBlendMode::kLastMode) + 1,
+              "blendMode mismatch");
+static_assert(SK_ARRAY_COUNT(gBlendModeMap) == static_cast<size_t>(SkBlendMode::kLuminosity) + 1,
+              "blendMode mismatch");
+
+void apply_paint_blend_mode(const SkPaint& paint, Json::Value* target) {
+    const auto mode = paint.getBlendMode();
+    if (mode != SkBlendMode::kSrcOver) {
+        SkASSERT(static_cast<size_t>(mode) < SK_ARRAY_COUNT(gBlendModeMap));
+        (*target)[SKDEBUGCANVAS_ATTRIBUTE_BLENDMODE] =
+            Json::Value(gBlendModeMap[static_cast<size_t>(mode)]);
+    }
+}
+
+void extract_json_paint_blend_mode(Json::Value& jsonPaint, SkPaint* target) {
+    if (jsonPaint.isMember(SKDEBUGCANVAS_ATTRIBUTE_BLENDMODE)) {
+        const char* mode = jsonPaint[SKDEBUGCANVAS_ATTRIBUTE_BLENDMODE].asCString();
+
+        for (size_t i = 0; i < SK_ARRAY_COUNT(gBlendModeMap); ++i) {
+            if (!strcmp(mode, gBlendModeMap[i])) {
+                target->setBlendMode(static_cast<SkBlendMode>(i));
+                break;
+            }
+        }
+    }
+}
+
 };
 
 Json::Value SkDrawCommand::MakeJsonColor(const SkColor color) {
@@ -741,8 +812,6 @@ static const char* color_type_name(SkColorType colorType) {
             return SKDEBUGCANVAS_COLORTYPE_565;
         case kGray_8_SkColorType:
             return SKDEBUGCANVAS_COLORTYPE_GRAY8;
-        case kIndex_8_SkColorType:
-            return SKDEBUGCANVAS_COLORTYPE_INDEX8;
         case kAlpha_8_SkColorType:
             return SKDEBUGCANVAS_COLORTYPE_ALPHA8;
         default:
@@ -816,9 +885,6 @@ static SkColorType colortype_from_name(const char* name) {
     else if (!strcmp(name, SKDEBUGCANVAS_COLORTYPE_GRAY8)) {
         return kGray_8_SkColorType;
     }
-    else if (!strcmp(name, SKDEBUGCANVAS_COLORTYPE_INDEX8)) {
-        return kIndex_8_SkColorType;
-    }
     else if (!strcmp(name, SKDEBUGCANVAS_COLORTYPE_ALPHA8)) {
         return kAlpha_8_SkColorType;
     }
@@ -863,9 +929,7 @@ static SkBitmap* load_bitmap(const Json::Value& jsonBitmap, UrlDataManager& urlD
         if (jsonBitmap.isMember(SKDEBUGCANVAS_ATTRIBUTE_COLOR)) {
             const char* ctName = jsonBitmap[SKDEBUGCANVAS_ATTRIBUTE_COLOR].asCString();
             SkColorType ct = colortype_from_name(ctName);
-            if (ct != kIndex_8_SkColorType) {
-                bitmap.reset(convert_colortype(bitmap.release(), ct));
-            }
+            bitmap.reset(convert_colortype(bitmap.release(), ct));
         }
         return bitmap.release();
     }
@@ -1159,6 +1223,16 @@ Json::Value SkDrawCommand::MakeJsonPaint(const SkPaint& paint, UrlDataManager& u
                  SkPaintDefaults_MiterLimit);
     store_bool(&result, SKDEBUGCANVAS_ATTRIBUTE_ANTIALIAS, paint.isAntiAlias(), false);
     store_bool(&result, SKDEBUGCANVAS_ATTRIBUTE_DITHER, paint.isDither(), false);
+    store_bool(&result, SKDEBUGCANVAS_ATTRIBUTE_FAKEBOLDTEXT, paint.isFakeBoldText(), false);
+    store_bool(&result, SKDEBUGCANVAS_ATTRIBUTE_LINEARTEXT, paint.isLinearText(), false);
+    store_bool(&result, SKDEBUGCANVAS_ATTRIBUTE_SUBPIXELTEXT, paint.isSubpixelText(), false);
+    store_bool(&result, SKDEBUGCANVAS_ATTRIBUTE_DEVKERNTEXT, paint.isDevKernText(), false);
+    store_bool(&result, SKDEBUGCANVAS_ATTRIBUTE_LCDRENDERTEXT, paint.isLCDRenderText(), false);
+    store_bool(&result, SKDEBUGCANVAS_ATTRIBUTE_EMBEDDEDBITMAPTEXT, paint.isEmbeddedBitmapText(), false);
+    store_bool(&result, SKDEBUGCANVAS_ATTRIBUTE_AUTOHINTING, paint.isAutohinted(), false);
+    store_bool(&result, SKDEBUGCANVAS_ATTRIBUTE_VERTICALTEXT, paint.isVerticalText(), false);
+    //kGenA8FromLCD_Flag
+
     store_scalar(&result, SKDEBUGCANVAS_ATTRIBUTE_TEXTSIZE, paint.getTextSize(),
                  SkPaintDefaults_TextSize);
     store_scalar(&result, SKDEBUGCANVAS_ATTRIBUTE_TEXTSCALEX, paint.getTextScaleX(), SK_Scalar1);
@@ -1166,6 +1240,7 @@ Json::Value SkDrawCommand::MakeJsonPaint(const SkPaint& paint, UrlDataManager& u
     apply_paint_hinting(paint, &result);
     apply_paint_color(paint, &result);
     apply_paint_style(paint, &result);
+    apply_paint_blend_mode(paint, &result);
     apply_paint_cap(paint, &result);
     apply_paint_join(paint, &result);
     apply_paint_filterquality(paint, &result);
@@ -1415,6 +1490,54 @@ static void extract_json_paint_dither(Json::Value& jsonPaint, SkPaint* target) {
     }
 }
 
+static void extract_json_paint_fakeboldtext(Json::Value& jsonPaint, SkPaint* target) {
+    if (jsonPaint.isMember(SKDEBUGCANVAS_ATTRIBUTE_FAKEBOLDTEXT)) {
+        target->setFakeBoldText(jsonPaint[SKDEBUGCANVAS_ATTRIBUTE_FAKEBOLDTEXT].asBool());
+    }
+}
+
+static void extract_json_paint_lineartext(Json::Value& jsonPaint, SkPaint* target) {
+    if (jsonPaint.isMember(SKDEBUGCANVAS_ATTRIBUTE_LINEARTEXT)) {
+        target->setLinearText(jsonPaint[SKDEBUGCANVAS_ATTRIBUTE_LINEARTEXT].asBool());
+    }
+}
+
+static void extract_json_paint_subpixeltext(Json::Value& jsonPaint, SkPaint* target) {
+    if (jsonPaint.isMember(SKDEBUGCANVAS_ATTRIBUTE_SUBPIXELTEXT)) {
+        target->setSubpixelText(jsonPaint[SKDEBUGCANVAS_ATTRIBUTE_SUBPIXELTEXT].asBool());
+    }
+}
+
+static void extract_json_paint_devkerntext(Json::Value& jsonPaint, SkPaint* target) {
+    if (jsonPaint.isMember(SKDEBUGCANVAS_ATTRIBUTE_DEVKERNTEXT)) {
+        target->setDevKernText(jsonPaint[SKDEBUGCANVAS_ATTRIBUTE_DEVKERNTEXT].asBool());
+    }
+}
+
+static void extract_json_paint_lcdrendertext(Json::Value& jsonPaint, SkPaint* target) {
+    if (jsonPaint.isMember(SKDEBUGCANVAS_ATTRIBUTE_LCDRENDERTEXT)) {
+        target->setLCDRenderText(jsonPaint[SKDEBUGCANVAS_ATTRIBUTE_LCDRENDERTEXT].asBool());
+    }
+}
+
+static void extract_json_paint_embeddedbitmaptext(Json::Value& jsonPaint, SkPaint* target) {
+    if (jsonPaint.isMember(SKDEBUGCANVAS_ATTRIBUTE_EMBEDDEDBITMAPTEXT)) {
+        target->setEmbeddedBitmapText(jsonPaint[SKDEBUGCANVAS_ATTRIBUTE_EMBEDDEDBITMAPTEXT].asBool());
+    }
+}
+
+static void extract_json_paint_autohinting(Json::Value& jsonPaint, SkPaint* target) {
+    if (jsonPaint.isMember(SKDEBUGCANVAS_ATTRIBUTE_AUTOHINTING)) {
+        target->setAutohinted(jsonPaint[SKDEBUGCANVAS_ATTRIBUTE_AUTOHINTING].asBool());
+    }
+}
+
+static void extract_json_paint_verticaltext(Json::Value& jsonPaint, SkPaint* target) {
+    if (jsonPaint.isMember(SKDEBUGCANVAS_ATTRIBUTE_VERTICALTEXT)) {
+        target->setVerticalText(jsonPaint[SKDEBUGCANVAS_ATTRIBUTE_VERTICALTEXT].asBool());
+    }
+}
+
 static void extract_json_paint_blur(Json::Value& jsonPaint, SkPaint* target) {
     if (jsonPaint.isMember(SKDEBUGCANVAS_ATTRIBUTE_BLUR)) {
         Json::Value blur = jsonPaint[SKDEBUGCANVAS_ATTRIBUTE_BLUR];
@@ -1522,6 +1645,7 @@ static void extract_json_paint(Json::Value& paint, UrlDataManager& urlDataManage
     extract_json_paint_imagefilter(paint, urlDataManager, result);
     extract_json_paint_typeface(paint, urlDataManager, result);
     extract_json_paint_style(paint, result);
+    extract_json_paint_blend_mode(paint, result);
     extract_json_paint_strokewidth(paint, result);
     extract_json_paint_strokemiter(paint, result);
     extract_json_paint_strokejoin(paint, result);
@@ -1529,6 +1653,14 @@ static void extract_json_paint(Json::Value& paint, UrlDataManager& urlDataManage
     extract_json_paint_filterquality(paint, result);
     extract_json_paint_antialias(paint, result);
     extract_json_paint_dither(paint, result);
+    extract_json_paint_fakeboldtext(paint, result);
+    extract_json_paint_lineartext(paint, result);
+    extract_json_paint_subpixeltext(paint, result);
+    extract_json_paint_devkerntext(paint, result);
+    extract_json_paint_lcdrendertext(paint, result);
+    extract_json_paint_embeddedbitmaptext(paint, result);
+    extract_json_paint_autohinting(paint, result);
+    extract_json_paint_verticaltext(paint, result);
     extract_json_paint_blur(paint, result);
     extract_json_paint_dashing(paint, result);
     extract_json_paint_textalign(paint, result);

@@ -173,9 +173,7 @@ public:
         return this->isColorFilterNode(filterPtr);
     }
 
-    static sk_sp<SkImageFilter> MakeBlur(SkScalar sigmaX, SkScalar sigmaY,
-                                         sk_sp<SkImageFilter> input,
-                                         const CropRect* cropRect = nullptr);
+    void removeKey(const SkImageFilterCacheKey& key) const;
 
     /**
      *  Returns true (and optionally returns a ref'd filter) if this imagefilter can be completely
@@ -269,7 +267,7 @@ protected:
         void allocInputs(int count);
     };
 
-    SkImageFilter(sk_sp<SkImageFilter>* inputs, int inputCount, const CropRect* cropRect);
+    SkImageFilter(sk_sp<SkImageFilter> const* inputs, int inputCount, const CropRect* cropRect);
 
     ~SkImageFilter() override;
 
@@ -408,34 +406,19 @@ protected:
     }
     virtual sk_sp<SkImageFilter> onMakeColorSpace(SkColorSpaceXformer*) const = 0;
 
+    sk_sp<SkImageFilter> refMe() const {
+        return sk_ref_sp(const_cast<SkImageFilter*>(this));
+    }
+
 private:
     // For makeColorSpace().
-    friend class ArithmeticImageFilterImpl;
-    friend class SkAlphaThresholdFilterImpl;
-    friend class SkBlurImageFilterImpl;
-    friend class SkColorFilterImageFilter;
     friend class SkColorSpaceXformer;
-    friend class SkComposeImageFilter;
-    friend class SkDiffuseLightingImageFilter;
-    friend class SkDisplacementMapEffect;
-    friend class SkDropShadowImageFilter;
-    friend class SkImageSource;
-    friend class SkMagnifierImageFilter;
-    friend class SkMatrixConvolutionImageFilter;
-    friend class SkMatrixImageFilter;
-    friend class SkLocalMatrixImageFilter;
-    friend class SkMergeImageFilter;
-    friend class SkMorphologyImageFilter;
-    friend class SkOffsetImageFilter;
-    friend class SkSpecularLightingImageFilter;
-    friend class SkTileImageFilter;
-    friend class SkXfermodeImageFilter_Base;
 
     friend class SkGraphics;
 
     static void PurgeCache();
 
-    void init(sk_sp<SkImageFilter>* inputs, int inputCount, const CropRect* cropRect);
+    void init(sk_sp<SkImageFilter> const* inputs, int inputCount, const CropRect* cropRect);
 
     bool usesSrcInput() const { return fUsesSrcInput; }
     virtual bool affectsTransparentBlack() const { return false; }

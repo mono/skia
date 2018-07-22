@@ -8,8 +8,8 @@
 #ifndef GrTextureProxy_DEFINED
 #define GrTextureProxy_DEFINED
 
+#include "GrSamplerParams.h"
 #include "GrSurfaceProxy.h"
-#include "GrTexture.h"
 
 class GrCaps;
 class GrResourceProvider;
@@ -22,13 +22,7 @@ public:
     const GrTextureProxy* asTextureProxy() const override { return this; }
 
     // Actually instantiate the backing texture, if necessary
-    GrSurface* instantiate(GrResourceProvider*) override;
-    GrTexture* instantiateTexture(GrResourceProvider* resourceProvider) {
-        if (auto surf = this->instantiate(resourceProvider)) {
-            return surf->asTexture();
-        }
-        return nullptr;
-    }
+    bool instantiate(GrResourceProvider*) override;
 
     void setMipColorMode(SkDestinationSurfaceColorMode colorMode);
 
@@ -54,6 +48,8 @@ protected:
     GrTextureProxy(sk_sp<GrSurface>);
 
     SkDestinationSurfaceColorMode mipColorMode() const { return fMipColorMode;  }
+
+    sk_sp<GrSurface> createSurface(GrResourceProvider*) const override;
 
 private:
     bool fIsMipMapped;

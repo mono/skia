@@ -11,6 +11,7 @@
 #include "SkColorSpace_XYZ.h"
 #include "SkData.h"
 #include "SkICC.h"
+#include "SkICCPriv.h"
 #include "SkMatrix44.h"
 #include "SkStream.h"
 #include "Test.h"
@@ -138,6 +139,12 @@ DEF_TEST(ICC_WriteICC, r) {
     srgbMatrix.set3x3RowMajorf(gSRGB_toXYZD50);
     test_write_icc(r, srgbFn, srgbMatrix, SkColorSpace::MakeSRGB().get(),
                    false);
+
+    SkString adobeTag = SkICCGetColorProfileTag(adobeFn, adobeMatrix);
+    SkString srgbTag = SkICCGetColorProfileTag(srgbFn, srgbMatrix);
+    REPORTER_ASSERT(r, adobeTag != srgbTag);
+    REPORTER_ASSERT(r, srgbTag.equals("sRGB"));
+    REPORTER_ASSERT(r, adobeTag.equals("AdobeRGB"));
 }
 
 static inline void test_raw_transfer_fn(skiatest::Reporter* r, SkICC* icc) {

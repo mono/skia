@@ -39,14 +39,6 @@ static bool valid_for_bitmap_device(const SkImageInfo& info,
         return true;
     }
 
-    switch (info.alphaType()) {
-        case kPremul_SkAlphaType:
-        case kOpaque_SkAlphaType:
-            break;
-        default:
-            return false;
-    }
-
     SkAlphaType canonicalAlphaType = info.alphaType();
 
     switch (info.colorType()) {
@@ -121,7 +113,7 @@ SkBitmapDevice* SkBitmapDevice::Create(const SkImageInfo& origInfo,
     } else {
         // This bitmap has transparency, so we'll zero the pixels (to transparent).
         // We use the flag as a faster alloc-then-eraseColor(SK_ColorTRANSPARENT).
-        if (!bitmap.tryAllocPixels(info, nullptr/*colortable*/, SkBitmap::kZeroPixels_AllocFlag)) {
+        if (!bitmap.tryAllocPixelsFlags(info, SkBitmap::kZeroPixels_AllocFlag)) {
             return nullptr;
         }
     }
@@ -152,8 +144,7 @@ bool SkBitmapDevice::onAccessPixels(SkPixmap* pmap) {
 bool SkBitmapDevice::onPeekPixels(SkPixmap* pmap) {
     const SkImageInfo info = fBitmap.info();
     if (fBitmap.getPixels() && (kUnknown_SkColorType != info.colorType())) {
-        SkColorTable* ctable = nullptr;
-        pmap->reset(fBitmap.info(), fBitmap.getPixels(), fBitmap.rowBytes(), ctable);
+        pmap->reset(fBitmap.info(), fBitmap.getPixels(), fBitmap.rowBytes());
         return true;
     }
     return false;
@@ -233,8 +224,9 @@ void SkBitmapDevice::drawPath(const SkPath& path,
     BDDraw(this).drawPath(path, paint, prePathMatrix, pathIsMutable);
 }
 
-void SkBitmapDevice::drawBitmap(const SkBitmap& bitmap,
-                                const SkMatrix& matrix, const SkPaint& paint) {
+void SkBitmapDevice::drawBitmap(const SkBitmap& bitmap, SkScalar x, SkScalar y,
+                                const SkPaint& paint) {
+    SkMatrix matrix = SkMatrix::MakeTrans(x, y);
     LogDrawScaleFactor(SkMatrix::Concat(this->ctm(), matrix), paint.getFilterQuality());
     BDDraw(this).drawBitmap(bitmap, matrix, nullptr, paint);
 }

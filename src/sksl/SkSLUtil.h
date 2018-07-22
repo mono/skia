@@ -135,6 +135,14 @@ public:
         return false;
     }
 
+    bool floatPrecisionVaries() const {
+        return false;
+    }
+
+    bool integerSupport() const {
+        return false;
+    }
+
     const char* shaderDerivativeExtensionString() const {
         return nullptr;
     }
@@ -149,6 +157,10 @@ public:
 
     const char* versionDeclString() const {
         return "";
+    }
+
+    bool mustImplementGSInvocationsWithLoop() const {
+        return false;
     }
 };
 
@@ -206,6 +218,7 @@ public:
         result->fVersionDeclString = "#version 400";
         result->fShaderDerivativeSupport = true;
         result->fShaderDerivativeExtensionString = "GL_OES_standard_derivatives";
+        result->fUsesPrecisionModifiers = true;
         return result;
     }
 
@@ -221,6 +234,13 @@ public:
         sk_sp<GrShaderCaps> result = sk_make_sp<GrShaderCaps>(GrContextOptions());
         result->fVersionDeclString = "#version 400";
         result->fFragCoordConventionsExtensionString = "GL_ARB_fragment_coord_conventions";
+        return result;
+    }
+
+    static sk_sp<GrShaderCaps> MustImplementGSInvocationsWithLoop() {
+        sk_sp<GrShaderCaps> result = sk_make_sp<GrShaderCaps>(GrContextOptions());
+        result->fVersionDeclString = "#version 400";
+        result->fMustImplementGSInvocationsWithLoop = true;
         return result;
     }
 

@@ -13,7 +13,6 @@
 #include "GrContextOptions.h"
 #include "GrContextPriv.h"
 #include "GrGpu.h"
-#include "GrResourceProvider.h"
 #include "GrTest.h"
 #include "GrXferProcessor.h"
 #include "effects/GrPorterDuffXferProcessor.h"
@@ -873,14 +872,15 @@ static void test_color_opaque_no_coverage(skiatest::Reporter* reporter, const Gr
                 TEST_ASSERT(!xpi.fBlendInfo.fWriteColor);
                 break;
             case SkBlendMode::kSrcOver:
-                TEST_ASSERT(xpi.fCanCombineOverlappedStencilAndCover);
+                // We don't specialize opaque src-over. See note in GrPorterDuffXferProcessor.cpp
+                TEST_ASSERT(!xpi.fCanCombineOverlappedStencilAndCover);
                 TEST_ASSERT(!xpi.fIgnoresInputColor);
-                TEST_ASSERT(!xpi.fCompatibleWithCoverageAsAlpha);
+                TEST_ASSERT(xpi.fCompatibleWithCoverageAsAlpha);
                 TEST_ASSERT(kModulate_OutputType == xpi.fPrimaryOutputType);
                 TEST_ASSERT(kNone_OutputType == xpi.fSecondaryOutputType);
                 TEST_ASSERT(kAdd_GrBlendEquation == xpi.fBlendInfo.fEquation);
                 TEST_ASSERT(kOne_GrBlendCoeff == xpi.fBlendInfo.fSrcBlend);
-                TEST_ASSERT(kZero_GrBlendCoeff == xpi.fBlendInfo.fDstBlend);
+                TEST_ASSERT(kISA_GrBlendCoeff == xpi.fBlendInfo.fDstBlend);
                 TEST_ASSERT(xpi.fBlendInfo.fWriteColor);
                 break;
             case SkBlendMode::kDstOver:
@@ -1031,8 +1031,8 @@ static void test_lcd_coverage_fallback_case(skiatest::Reporter* reporter, const 
     // Test with non-opaque alpha
     color = GrColorPackRGBA(123, 45, 67, 221);
     coverage = GrProcessorAnalysisCoverage::kLCD;
-    TEST_ASSERT(GrXPFactory::GetAnalysisProperties(xpf, color, coverage, caps) &
-                GrXPFactory::AnalysisProperties::kRequiresDstTexture);
+    TEST_ASSERT(!(GrXPFactory::GetAnalysisProperties(xpf, color, coverage, caps) &
+                GrXPFactory::AnalysisProperties::kRequiresDstTexture));
     sk_sp<const GrXferProcessor> xp(
             GrXPFactory::MakeXferProcessor(xpf, color, coverage, false, caps));
     if (!xp) {
@@ -1068,11 +1068,12 @@ DEF_GPUTEST(PorterDuffNoDualSourceBlending, reporter, /*factory*/) {
                                                                kRGBA_8888_GrPixelConfig,
                                                                backendTexHandle);
 
-    GrXferProcessor::DstTexture fakeDstTexture;
-    fakeDstTexture.setTexture(
-        ctx->resourceProvider()->wrapBackendTexture(backendTex, kTopLeft_GrSurfaceOrigin,
-                                                    kNone_GrBackendTextureFlag, 0,
-                                                    kBorrow_GrWrapOwnership));
+    GrXferProcessor::DstProxy fakeDstProxy;
+    {
+        sk_sp<GrTextureProxy> proxy = GrSurfaceProxy::MakeWrappedBackend(ctx, backendTex,
+                                                                         kTopLeft_GrSurfaceOrigin);
+        fakeDstProxy.setProxy(std::move(proxy));
+    }
 
     static const GrProcessorAnalysisColor colorInputs[] = {
             GrProcessorAnalysisColor::Opaque::kNo, GrProcessorAnalysisColor::Opaque::kYes,

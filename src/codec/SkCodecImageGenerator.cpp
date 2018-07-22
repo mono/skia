@@ -22,11 +22,6 @@ static SkImageInfo adjust_info(const SkImageInfo& info) {
     if (kUnpremul_SkAlphaType == info.alphaType()) {
         newInfo = newInfo.makeAlphaType(kPremul_SkAlphaType);
     }
-
-    if (kIndex_8_SkColorType == info.colorType()) {
-        newInfo = newInfo.makeColorType(kN32_SkColorType);
-    }
-
     return newInfo;
 }
 
@@ -44,11 +39,11 @@ bool SkCodecImageGenerator::onGetPixels(const SkImageInfo& info, void* pixels, s
                                         const Options& opts) {
     SkCodec::Options codecOpts;
     codecOpts.fPremulBehavior = opts.fBehavior;
-    SkCodec::Result result = fCodec->getPixels(info, pixels, rowBytes, &codecOpts, nullptr,
-                                               nullptr);
+    SkCodec::Result result = fCodec->getPixels(info, pixels, rowBytes, &codecOpts);
     switch (result) {
         case SkCodec::kSuccess:
         case SkCodec::kIncompleteInput:
+        case SkCodec::kErrorInInput:
             return true;
         default:
             return false;
@@ -66,6 +61,7 @@ bool SkCodecImageGenerator::onGetYUV8Planes(const SkYUVSizeInfo& sizeInfo, void*
     switch (result) {
         case SkCodec::kSuccess:
         case SkCodec::kIncompleteInput:
+        case SkCodec::kErrorInInput:
             return true;
         default:
             return false;

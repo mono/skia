@@ -21,8 +21,17 @@ struct VarDeclarationsStatement : public Statement {
     : INHERITED(decl->fPosition, kVarDeclarations_Kind)
     , fDeclaration(std::move(decl)) {}
 
+    bool isEmpty() const override {
+        for (const auto& s : fDeclaration->fVars) {
+            if (!s->isEmpty()) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     String description() const override {
-        return fDeclaration->description();
+        return fDeclaration->description() + ";";
     }
 
     std::shared_ptr<VarDeclarations> fDeclaration;

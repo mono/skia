@@ -13,6 +13,7 @@
 #include "glsl/GrGLSLBlend.h"
 #include "glsl/GrGLSLFragmentShaderBuilder.h"
 #include "SkGr.h"
+#include "SkXfermodePriv.h"
 
 // Some of the cpu implementations of blend modes differ too much from the GPU enough that
 // we can't use the cpu implementation to implement constantOutputForConstantInput.
@@ -28,14 +29,11 @@ static inline bool does_cpu_blend_impl_match_gpu(SkBlendMode mode) {
 
 class ComposeTwoFragmentProcessor : public GrFragmentProcessor {
 public:
-    ComposeTwoFragmentProcessor(sk_sp<GrFragmentProcessor> src, sk_sp<GrFragmentProcessor> dst,
-                                SkBlendMode mode)
-            : INHERITED(OptFlags(src.get(), dst.get(), mode)), fMode(mode) {
-        this->initClassID<ComposeTwoFragmentProcessor>();
-        SkDEBUGCODE(int shaderAChildIndex = )this->registerChildProcessor(std::move(src));
-        SkDEBUGCODE(int shaderBChildIndex = )this->registerChildProcessor(std::move(dst));
-        SkASSERT(0 == shaderAChildIndex);
-        SkASSERT(1 == shaderBChildIndex);
+    static sk_sp<GrFragmentProcessor> Make(sk_sp<GrFragmentProcessor> src,
+                                           sk_sp<GrFragmentProcessor> dst,
+                                           SkBlendMode mode) {
+        return sk_sp<GrFragmentProcessor>(new ComposeTwoFragmentProcessor(std::move(src),
+                                                                          std::move(dst), mode));
     }
 
     const char* name() const override { return "ComposeTwo"; }
@@ -59,6 +57,18 @@ public:
     SkBlendMode getMode() const { return fMode; }
 
 private:
+    ComposeTwoFragmentProcessor(sk_sp<GrFragmentProcessor> src,
+                                sk_sp<GrFragmentProcessor> dst,
+                                SkBlendMode mode)
+            : INHERITED(OptFlags(src.get(), dst.get(), mode))
+            , fMode(mode) {
+        this->initClassID<ComposeTwoFragmentProcessor>();
+        SkDEBUGCODE(int shaderAChildIndex = )this->registerChildProcessor(std::move(src));
+        SkDEBUGCODE(int shaderBChildIndex = )this->registerChildProcessor(std::move(dst));
+        SkASSERT(0 == shaderAChildIndex);
+        SkASSERT(1 == shaderBChildIndex);
+    }
+
     static OptimizationFlags OptFlags(const GrFragmentProcessor* src,
                                       const GrFragmentProcessor* dst, SkBlendMode mode) {
         OptimizationFlags flags;
@@ -142,15 +152,15 @@ private:
         GrColor4f dstColor = ConstantOutputForConstantInput(this->childProcessor(1), input);
         SkPM4f src = GrColor4fToSkPM4f(srcColor);
         SkPM4f dst = GrColor4fToSkPM4f(dstColor);
-        auto proc = SkXfermode::GetProc4f(fMode);
-        return SkPM4fToGrColor4f(proc(src, dst)).mulByScalar(alpha);
+        SkPM4f res = SkBlendMode_Apply(fMode, src, dst);
+        return SkPM4fToGrColor4f(res).mulByScalar(alpha);
     }
 
     GrGLSLFragmentProcessor* onCreateGLSLInstance() const override;
 
     SkBlendMode fMode;
 
-    GR_DECLARE_FRAGMENT_PROCESSOR_TEST;
+    GR_DECLARE_FRAGMENT_PROCESSOR_TEST
 
     typedef GrFragmentProcessor INHERITED;
 };
@@ -210,7 +220,7 @@ void GLComposeTwoFragmentProcessor::emitCode(EmitArgs& args) {
 
     // emit blend code
     SkBlendMode mode = cs.getMode();
-    fragBuilder->codeAppendf("// Compose Xfer Mode: %s\n", SkXfermode::ModeName(mode));
+    fragBuilder->codeAppendf("// Compose Xfer Mode: %s\n", SkBlendMode_Name(mode));
     GrGLSLBlend::AppendMode(fragBuilder,
                             srcColor.c_str(),
                             dstColor.c_str(),
@@ -234,8 +244,7 @@ sk_sp<GrFragmentProcessor> GrXfermodeFragmentProcessor::MakeFromTwoProcessors(
         case SkBlendMode::kDst:
             return dst;
         default:
-            return sk_sp<GrFragmentProcessor>(
-                new ComposeTwoFragmentProcessor(std::move(src), std::move(dst), mode));
+            return ComposeTwoFragmentProcessor::Make(std::move(src), std::move(dst), mode);
     }
 }
 
@@ -248,11 +257,13 @@ public:
         kSrc_Child,
     };
 
-    ComposeOneFragmentProcessor(sk_sp<GrFragmentProcessor> fp, SkBlendMode mode, Child child)
-            : INHERITED(OptFlags(fp.get(), mode, child)), fMode(mode), fChild(child) {
-        this->initClassID<ComposeOneFragmentProcessor>();
-        SkDEBUGCODE(int dstIndex =) this->registerChildProcessor(std::move(fp));
-        SkASSERT(0 == dstIndex);
+    static sk_sp<GrFragmentProcessor> Make(sk_sp<GrFragmentProcessor> fp, SkBlendMode mode,
+                                           Child child) {
+        if (!fp) {
+            return nullptr;
+        }
+        return sk_sp<GrFragmentProcessor>(new ComposeOneFragmentProcessor(std::move(fp),
+                                                                          mode, child));
     }
 
     const char* name() const override { return "ComposeOne"; }
@@ -390,17 +401,26 @@ private:
             src = GrColor4fToSkPM4f(inputColor);
             dst = GrColor4fToSkPM4f(childColor);
         }
-        auto proc = SkXfermode::GetProc4f(fMode);
-        return SkPM4fToGrColor4f(proc(src, dst));
+        SkPM4f res = SkBlendMode_Apply(fMode, src, dst);
+        return SkPM4fToGrColor4f(res);
     }
 
 private:
+    ComposeOneFragmentProcessor(sk_sp<GrFragmentProcessor> fp, SkBlendMode mode, Child child)
+            : INHERITED(OptFlags(fp.get(), mode, child))
+            , fMode(mode)
+            , fChild(child) {
+        this->initClassID<ComposeOneFragmentProcessor>();
+        SkDEBUGCODE(int dstIndex =) this->registerChildProcessor(std::move(fp));
+        SkASSERT(0 == dstIndex);
+    }
+
     GrGLSLFragmentProcessor* onCreateGLSLInstance() const override;
 
     SkBlendMode fMode;
     Child       fChild;
 
-    GR_DECLARE_FRAGMENT_PROCESSOR_TEST;
+    GR_DECLARE_FRAGMENT_PROCESSOR_TEST
 
     typedef GrFragmentProcessor INHERITED;
 };
@@ -425,7 +445,7 @@ public:
         }
 
         // emit blend code
-        fragBuilder->codeAppendf("// Compose Xfer Mode: %s\n", SkXfermode::ModeName(mode));
+        fragBuilder->codeAppendf("// Compose Xfer Mode: %s\n", SkBlendMode_Name(mode));
         const char* childStr = childColor.c_str();
         if (ComposeOneFragmentProcessor::kDst_Child == child) {
             GrGLSLBlend::AppendMode(fragBuilder, inputColor, childStr, args.fOutputColor, mode);
@@ -480,9 +500,8 @@ sk_sp<GrFragmentProcessor> GrXfermodeFragmentProcessor::MakeFromDstProcessor(
         case SkBlendMode::kSrc:
             return nullptr;
         default:
-            return sk_sp<GrFragmentProcessor>(
-                new ComposeOneFragmentProcessor(std::move(dst), mode,
-                                                ComposeOneFragmentProcessor::kDst_Child));
+            return ComposeOneFragmentProcessor::Make(std::move(dst), mode,
+                                                     ComposeOneFragmentProcessor::kDst_Child);
     }
 }
 
@@ -495,8 +514,7 @@ sk_sp<GrFragmentProcessor> GrXfermodeFragmentProcessor::MakeFromSrcProcessor(
         case SkBlendMode::kDst:
             return nullptr;
         default:
-            return sk_sp<GrFragmentProcessor>(
-                new ComposeOneFragmentProcessor(std::move(src), mode,
-                                                ComposeOneFragmentProcessor::kSrc_Child));
+            return ComposeOneFragmentProcessor::Make(std::move(src), mode,
+                                                     ComposeOneFragmentProcessor::kSrc_Child);
     }
 }

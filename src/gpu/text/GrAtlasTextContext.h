@@ -20,7 +20,6 @@
 
 class GrDrawOp;
 class GrRenderTargetContext;
-class GrPipelineBuilder;
 class GrTextBlobCache;
 class SkGlyph;
 
@@ -89,7 +88,7 @@ private:
 #if GR_TEST_UTILS
     static const uint32_t kTextBlobOpScalerContextFlags =
             SkPaint::kFakeGammaAndBoostContrast_ScalerContextFlags;
-    GR_LEGACY_MESH_DRAW_OP_TEST_FRIEND(TextBlobOp);
+    GR_DRAW_OP_TEST_FRIEND(GrAtlasTextOp);
 #endif
 };
 

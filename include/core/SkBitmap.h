@@ -9,7 +9,6 @@
 #define SkBitmap_DEFINED
 
 #include "SkColor.h"
-#include "SkColorTable.h"
 #include "SkImageInfo.h"
 #include "SkPixmap.h"
 #include "SkPoint.h"
@@ -47,9 +46,7 @@ public:
     /**
      *  Copy the settings from the src into this bitmap. If the src has pixels
      *  allocated, they will be shared, not copied, so that the two bitmaps will
-     *  reference the same memory for the pixels. If a deep copy is needed,
-     *  where the new bitmap has its own separate copy of the pixels, use
-     *  deepCopyTo().
+     *  reference the same memory for the pixels.
      */
     SkBitmap(const SkBitmap& src);
 
@@ -122,7 +119,9 @@ public:
 
     /** Return true iff drawing this bitmap has no effect.
      */
-    bool drawsNothing() const { return this->empty() || this->isNull(); }
+    bool drawsNothing() const {
+        return this->empty() || this->isNull();
+    }
 
     /** Return the number of bytes between subsequent rows of the bitmap. */
     size_t rowBytes() const { return fRowBytes; }
@@ -240,17 +239,16 @@ public:
     enum AllocFlags {
         kZeroPixels_AllocFlag   = 1 << 0,
     };
+
     /**
      *  Allocate the bitmap's pixels to match the requested image info. If the Factory
-     *  is non-null, call it to allcoate the pixelref. If the ImageInfo requires
-     *  a colortable, then ColorTable must be non-null.
+     *  is non-null, call it to allcoate the pixelref.
      *
      *  On failure, the bitmap will be set to empty and return false.
      */
-    bool SK_WARN_UNUSED_RESULT tryAllocPixels(const SkImageInfo& info, sk_sp<SkColorTable> ctable,
-                                              uint32_t flags = 0);
-    void allocPixels(const SkImageInfo& info, sk_sp<SkColorTable> ctable, uint32_t flags = 0) {
-        if (!this->tryAllocPixels(info, std::move(ctable), flags)) {
+    bool SK_WARN_UNUSED_RESULT tryAllocPixelsFlags(const SkImageInfo& info, uint32_t flags);
+    void allocPixelsFlags(const SkImageInfo& info, uint32_t flags) {
+        if (!this->tryAllocPixelsFlags(info, flags)) {
             sk_throw();
         }
     }
@@ -291,11 +289,6 @@ public:
         this->allocPixels(info);
     }
 
-    // TEMPORARY -- remove after updating Android BitmapTests.cpp:35
-    void allocPixels(const SkImageInfo& info, std::nullptr_t, SkColorTable* ctable) {
-        this->allocPixels(info, sk_ref_sp(ctable));
-    }
-
     /**
      *  Install a pixelref that wraps the specified pixels and rowBytes, and
      *  optional ReleaseProc and context. When the pixels are no longer
@@ -306,7 +299,7 @@ public:
      *  If specified, the releaseProc will always be called, even on failure. It is also possible
      *  for success but the releaseProc is immediately called (e.g. valid Info but NULL pixels).
      */
-    bool installPixels(const SkImageInfo&, void* pixels, size_t rowBytes, SkColorTable*,
+    bool installPixels(const SkImageInfo&, void* pixels, size_t rowBytes,
                        void (*releaseProc)(void* addr, void* context), void* context);
 
     /**
@@ -315,13 +308,12 @@ public:
      *  of the created bitmap (and its pixelRef).
      */
     bool installPixels(const SkImageInfo& info, void* pixels, size_t rowBytes) {
-        return this->installPixels(info, pixels, rowBytes, NULL, NULL, NULL);
+        return this->installPixels(info, pixels, rowBytes, nullptr, nullptr);
     }
 
     /**
-     *  Call installPixels with no ReleaseProc specified. This means
-     *  that the caller must ensure that the specified pixels and
-     *  colortable are valid for the lifetime of the created bitmap
+     *  Call installPixels with no ReleaseProc specified. This means that the caller must ensure
+     *  that the specified pixels are valid for the lifetime of the created bitmap
      *  (and its pixelRef).
      */
     bool installPixels(const SkPixmap&);
@@ -337,33 +329,24 @@ public:
         will automatically release any pixelref previously installed. Only call
         this if you are handling ownership/lifetime of the pixel memory.
 
-        If the bitmap retains a reference to the colortable (assuming it is
-        not null) it will take care of incrementing the reference count.
-
         @param pixels   Address for the pixels, managed by the caller.
-        @param ctable   ColorTable (or null) that matches the specified pixels
     */
-    void setPixels(void* p, SkColorTable* ctable = NULL);
+    void setPixels(void* p);
 
     /** Use the standard HeapAllocator to create the pixelref that manages the
         pixel memory. It will be sized based on the current ImageInfo.
         If this is called multiple times, a new pixelref object will be created
         each time.
 
-        If the bitmap retains a reference to the colortable (assuming it is
-        not null) it will take care of incrementing the reference count.
-
-        @param ctable   ColorTable (or null) to use with the pixels that will
-                        be allocated. Only used if colortype == kIndex_8_SkColorType
         @return true if the allocation succeeds. If not the pixelref field of
                      the bitmap will be unchanged.
     */
-    bool SK_WARN_UNUSED_RESULT tryAllocPixels(SkColorTable* ctable = NULL) {
-        return this->tryAllocPixels(NULL, ctable);
+    bool SK_WARN_UNUSED_RESULT tryAllocPixels() {
+        return this->tryAllocPixels((Allocator*)nullptr);
     }
 
-    void allocPixels(SkColorTable* ctable = NULL) {
-        this->allocPixels(NULL, ctable);
+    void allocPixels() {
+        this->allocPixels((Allocator*)nullptr);
     }
 
     /** Use the specified Allocator to create the pixelref that manages the
@@ -371,23 +354,16 @@ public:
         If this is called multiple times, a new pixelref object will be created
         each time.
 
-        If the bitmap retains a reference to the colortable (assuming it is
-        not null) it will take care of incrementing the reference count.
-
         @param allocator The Allocator to use to create a pixelref that can
                          manage the pixel memory for the current ImageInfo.
                          If allocator is NULL, the standard HeapAllocator will be used.
-        @param ctable   ColorTable (or null) to use with the pixels that will
-                        be allocated. Only used if colortype == kIndex_8_SkColorType.
-                        If it is non-null and the colortype is not indexed, it will
-                        be ignored.
         @return true if the allocation succeeds. If not the pixelref field of
                      the bitmap will be unchanged.
     */
-    bool SK_WARN_UNUSED_RESULT tryAllocPixels(Allocator* allocator, SkColorTable* ctable);
+    bool SK_WARN_UNUSED_RESULT tryAllocPixels(Allocator* allocator);
 
-    void allocPixels(Allocator* allocator, SkColorTable* ctable) {
-        if (!this->tryAllocPixels(allocator, ctable)) {
+    void allocPixels(Allocator* allocator) {
+        if (!this->tryAllocPixels(allocator)) {
             sk_throw();
         }
     }
@@ -420,20 +396,11 @@ public:
     void setPixelRef(sk_sp<SkPixelRef>, int dx, int dy);
 
     /** Call this to be sure that the bitmap is valid enough to be drawn (i.e.
-        it has non-null pixels, and if required by its colortype, it has a
-        non-null colortable. Returns true if all of the above are met.
+        it has non-null pixels).
     */
     bool readyToDraw() const {
-        return this->getPixels() != NULL &&
-               (this->colorType() != kIndex_8_SkColorType || this->getColorTable());
+        return this->getPixels() != NULL;
     }
-
-    /** Return the bitmap's colortable, if it uses one (i.e. colorType is
-        Index_8).
-        Otherwise returns NULL. Does not affect the colortable's
-        reference count.
-    */
-    SkColorTable* getColorTable() const;
 
     /** Returns a non-zero, unique value corresponding to the pixels in our
         pixelref. Each time the pixels are changed (and notifyPixelsChanged
@@ -530,14 +497,6 @@ public:
      */
     inline uint8_t* getAddr8(int x, int y) const;
 
-    /** Returns the color corresponding to the pixel specified by x,y for
-     *  colortable based bitmaps.
-     *  In debug build, this asserts that the pixels are allocated,
-     *  that the colortype is indexed, and that the colortable is allocated,
-     *  however none of these checks are performed in the release build.
-     */
-    inline SkPMColor getIndex8Color(int x, int y) const;
-
     /** Set dst to be a setset of this bitmap. If possible, it will share the
         pixel memory, and just point into a subset of it. However, if the colortype
         does not support this, a local copy will be made and associated with
@@ -571,7 +530,12 @@ public:
      *  - If the src pixels are not available.
      */
     bool readPixels(const SkImageInfo& dstInfo, void* dstPixels, size_t dstRowBytes,
-                    int srcX, int srcY) const;
+                    int srcX, int srcY, SkTransferFunctionBehavior behavior) const;
+    bool readPixels(const SkImageInfo& dstInfo, void* dstPixels, size_t dstRowBytes,
+                    int srcX, int srcY) const {
+        return this->readPixels(dstInfo, dstPixels, dstRowBytes, srcX, srcY,
+                SkTransferFunctionBehavior::kRespect);
+    }
     bool readPixels(const SkPixmap& dst, int srcX, int srcY) const;
     bool readPixels(const SkPixmap& dst) const {
         return this->readPixels(dst, 0, 0);
@@ -589,6 +553,7 @@ public:
     bool writePixels(const SkPixmap& src) {
         return this->writePixels(src, 0, 0);
     }
+    bool writePixels(const SkPixmap& src, int x, int y, SkTransferFunctionBehavior behavior);
 
 #ifdef SK_BUILD_FOR_ANDROID
     bool hasHardwareMipMap() const {
@@ -645,11 +610,9 @@ public:
     public:
         /** Allocate the pixel memory for the bitmap, given its dimensions and
             colortype. Return true on success, where success means either setPixels
-            or setPixelRef was called. If the colortype requires a colortable,
-            it also must be installed via setColorTable. If false is returned,
-            the bitmap and colortable should be left unchanged.
+            or setPixelRef was called.
         */
-        virtual bool allocPixelRef(SkBitmap*, SkColorTable*) = 0;
+        virtual bool allocPixelRef(SkBitmap*) = 0;
     private:
         typedef SkRefCnt INHERITED;
     };
@@ -660,7 +623,7 @@ public:
     */
     class HeapAllocator : public Allocator {
     public:
-        bool allocPixelRef(SkBitmap*, SkColorTable*) override;
+        bool allocPixelRef(SkBitmap*) override;
     };
 
     SK_TO_STRING_NONVIRT()
@@ -684,10 +647,7 @@ private:
     uint32_t            fRowBytes;
     uint8_t             fFlags;
 
-    friend class SkImage_Raster;
-    bool writePixels(const SkPixmap& src, int x, int y, SkTransferFunctionBehavior behavior);
-
-    /*  Unreference any pixelrefs or colortables
+    /*  Unreference any pixelrefs
     */
     void freePixels();
     void updatePixelsFromRef();
@@ -720,14 +680,6 @@ inline uint8_t* SkBitmap::getAddr8(int x, int y) const {
     SkASSERT(1 == this->bytesPerPixel());
     SkASSERT((unsigned)x < (unsigned)this->width() && (unsigned)y < (unsigned)this->height());
     return (uint8_t*)fPixels + y * fRowBytes + x;
-}
-
-inline SkPMColor SkBitmap::getIndex8Color(int x, int y) const {
-    SkASSERT(fPixels);
-    SkASSERT(kIndex_8_SkColorType == this->colorType());
-    SkASSERT((unsigned)x < (unsigned)this->width() && (unsigned)y < (unsigned)this->height());
-    SkASSERT(this->getColorTable());
-    return (*this->getColorTable())[*((const uint8_t*)fPixels + y * fRowBytes + x)];
 }
 
 #endif

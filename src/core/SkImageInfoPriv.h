@@ -111,22 +111,6 @@ static inline bool SkImageInfoValidConversion(const SkImageInfo& dst, const SkIm
         return false;
     }
 
-    if (kIndex_8_SkColorType == dst.colorType()) {
-        if (kIndex_8_SkColorType != src.colorType()) {
-            return false;
-        }
-
-        if ((kPremul_SkAlphaType == dst.alphaType() && kUnpremul_SkAlphaType == src.alphaType()) ||
-            (kUnpremul_SkAlphaType == dst.alphaType() && kPremul_SkAlphaType == src.alphaType()))
-        {
-            return false;
-        }
-
-        if (dst.colorSpace() && !SkColorSpace::Equals(dst.colorSpace(), src.colorSpace())) {
-            return false;
-        }
-    }
-
     if (kGray_8_SkColorType == dst.colorType()) {
         if (kGray_8_SkColorType != src.colorType()) {
             return false;

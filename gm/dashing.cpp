@@ -332,7 +332,7 @@ protected:
         return SkString("dashing4");
     }
 
-    SkISize onISize() { return SkISize::Make(640, 950); }
+    SkISize onISize() { return SkISize::Make(640, 1050); }
 
     virtual void onDraw(SkCanvas* canvas) {
         constexpr struct {
@@ -348,7 +348,7 @@ protected:
         paint.setStyle(SkPaint::kStroke_Style);
 
         canvas->translate(SkIntToScalar(20), SkIntToScalar(20));
-        canvas->translate(0, SK_ScalarHalf);
+        canvas->translate(SK_ScalarHalf, SK_ScalarHalf);
 
         for (int width = 0; width <= 2; ++width) {
             for (size_t data = 0; data < SK_ARRAY_COUNT(gData); ++data) {
@@ -397,6 +397,18 @@ protected:
             drawline(canvas, 32, 16, paint, 8.f, 0.f, 40.f);
             canvas->translate(0, SkIntToScalar(20));
         }
+
+        // Test overlapping circles.
+        canvas->translate(SkIntToScalar(5), SkIntToScalar(20));
+        paint.setAntiAlias(true);
+        paint.setStrokeCap(SkPaint::kRound_Cap);
+        paint.setColor(0x44000000);
+        paint.setStrokeWidth(40);
+        drawline(canvas, 0, 30, paint);
+
+        canvas->translate(0, SkIntToScalar(50));
+        paint.setStrokeCap(SkPaint::kSquare_Cap);
+        drawline(canvas, 0, 30, paint);
     }
 };
 

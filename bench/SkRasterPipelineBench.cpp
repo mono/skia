@@ -59,7 +59,7 @@ public:
         }
 
         while (loops --> 0) {
-            p.run(0,N);
+            p.run(0,0,N);
         }
     }
 };
@@ -89,11 +89,11 @@ public:
         if (fCompile) {
             auto fn = p.compile();
             while (loops --> 0) {
-                fn(0,N);
+                fn(0,0,N);
             }
         } else {
             while (loops --> 0) {
-                p.run(0,N);
+                p.run(0,0,N);
             }
         }
     }
@@ -123,7 +123,7 @@ public:
         SkColorSpaceTransferFn from_2dot2 = gamma(  2.2f),
                                  to_2dot2 = gamma(1/2.2f);
         SkRasterPipeline_<256> p;
-        p.append(SkRasterPipeline::constant_color, &c);
+        p.append(SkRasterPipeline::uniform_color, &c);
         p.append(SkRasterPipeline::parametric_r, &from_2dot2);
         p.append(SkRasterPipeline::parametric_g, &from_2dot2);
         p.append(SkRasterPipeline::parametric_b, &from_2dot2);
@@ -132,7 +132,7 @@ public:
         p.append(SkRasterPipeline::parametric_b, &  to_2dot2);
 
         while (loops --> 0) {
-            p.run(0,N);
+            p.run(0,0,N);
         }
     }
 };
@@ -150,7 +150,7 @@ public:
         p.append(SkRasterPipeline::to_srgb);
 
         while (loops --> 0) {
-            p.run(0,N);
+            p.run(0,0,N);
         }
     }
 };

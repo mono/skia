@@ -420,17 +420,15 @@ bool SkGifImageReader::decode(int frameIndex, bool* frameComplete)
 }
 
 // Parse incoming GIF data stream into internal data structures.
-// Return true if parsing has progressed or there is not enough data.
-// Return false if a fatal error is encountered.
-bool SkGifImageReader::parse(SkGifImageReader::SkGIFParseQuery query)
+SkCodec::Result SkGifImageReader::parse(SkGifImageReader::SkGIFParseQuery query)
 {
     if (m_parseCompleted) {
-        return true;
+        return SkCodec::kSuccess;
     }
 
     if (SkGIFLoopCountQuery == query && m_loopCount != cLoopCountNotSeen) {
         // Loop count has already been parsed.
-        return true;
+        return SkCodec::kSuccess;
     }
 
     // SkGIFSizeQuery and SkGIFFrameCountQuery are negative, so this is only meaningful when >= 0.
@@ -438,13 +436,13 @@ bool SkGifImageReader::parse(SkGifImageReader::SkGIFParseQuery query)
     if (lastFrameToParse >= 0 && (int) m_frames.size() > lastFrameToParse
                 && m_frames[lastFrameToParse]->isComplete()) {
         // We have already parsed this frame.
-        return true;
+        return SkCodec::kSuccess;
     }
 
     while (true) {
         if (!m_streamBuffer.buffer(m_bytesToConsume)) {
             // The stream does not yet have enough data.
-            return true;
+            return SkCodec::kIncompleteInput;
         }
 
         switch (m_state) {
@@ -475,7 +473,7 @@ bool SkGifImageReader::parse(SkGifImageReader::SkGIFParseQuery query)
             else {
                 // This prevents attempting to continue reading this invalid stream.
                 GETN(0, SkGIFDone);
-                return false;
+                return SkCodec::kInvalidInput;
             }
             GETN(7, SkGIFGlobalHeader);
             break;
@@ -616,11 +614,11 @@ bool SkGifImageReader::parse(SkGifImageReader::SkGIFParseQuery query)
             case 4:
                 // Some specs say that disposal method 3 is "overwrite previous", others that setting
                 // the third bit of the field (i.e. method 4) is. We map both to the same value.
-                currentFrame->setDisposalMethod(SkCodecAnimation::RestorePrevious_DisposalMethod);
+                currentFrame->setDisposalMethod(SkCodecAnimation::DisposalMethod::kRestorePrevious);
                 break;
             default:
                 // Other values use the default.
-                currentFrame->setDisposalMethod(SkCodecAnimation::Keep_DisposalMethod);
+                currentFrame->setDisposalMethod(SkCodecAnimation::DisposalMethod::kKeep);
                 break;
             }
             currentFrame->setDuration(GETINT16(currentComponent + 1) * 10);
@@ -687,7 +685,7 @@ bool SkGifImageReader::parse(SkGifImageReader::SkGIFParseQuery query)
 
                 if (SkGIFLoopCountQuery == query) {
                     m_streamBuffer.flush();
-                    return true;
+                    return SkCodec::kSuccess;
                 }
             } else if (netscapeExtension == 2) {
                 // Wait for specified # of bytes to enter buffer.
@@ -700,7 +698,7 @@ bool SkGifImageReader::parse(SkGifImageReader::SkGIFParseQuery query)
                 // 0,3-7 are yet to be defined netscape extension codes
                 // This prevents attempting to continue reading this invalid stream.
                 GETN(0, SkGIFDone);
-                return false;
+                return SkCodec::kInvalidInput;
             }
             break;
         }
@@ -748,7 +746,7 @@ bool SkGifImageReader::parse(SkGifImageReader::SkGIFParseQuery query)
                 if (!height || !width) {
                     // This prevents attempting to continue reading this invalid stream.
                     GETN(0, SkGIFDone);
-                    return false;
+                    return SkCodec::kInvalidInput;
                 }
             }
 
@@ -762,13 +760,11 @@ bool SkGifImageReader::parse(SkGifImageReader::SkGIFParseQuery query)
                         isLocalColormapDefined, numColors))
                 {
                     m_firstFrameHasAlpha = true;
-                    m_firstFrameSupportsIndex8 = true;
                 } else {
                     const bool frameIsSubset = xOffset > 0 || yOffset > 0
                             || width < fScreenWidth
                             || height < fScreenHeight;
                     m_firstFrameHasAlpha = frameIsSubset;
-                    m_firstFrameSupportsIndex8 = !frameIsSubset;
                 }
             }
 
@@ -780,7 +776,7 @@ bool SkGifImageReader::parse(SkGifImageReader::SkGIFParseQuery query)
                 // The decoder needs to stop, so we return here, before
                 // flushing the buffer. Next time through, we'll be in the same
                 // state, requiring the same amount in the buffer.
-                return true;
+                return SkCodec::kSuccess;
             }
 
 
@@ -832,7 +828,7 @@ bool SkGifImageReader::parse(SkGifImageReader::SkGIFParseQuery query)
                 GETN(1, SkGIFImageStart);
                 if (lastFrameToParse >= 0 && (int) m_frames.size() > lastFrameToParse) {
                     m_streamBuffer.flush();
-                    return true;
+                    return SkCodec::kSuccess;
                 }
             }
             break;
@@ -840,20 +836,18 @@ bool SkGifImageReader::parse(SkGifImageReader::SkGIFParseQuery query)
 
         case SkGIFDone: {
             m_parseCompleted = true;
-            return true;
+            return SkCodec::kSuccess;
         }
 
         default:
             // We shouldn't ever get here.
             // This prevents attempting to continue reading this invalid stream.
             GETN(0, SkGIFDone);
-            return false;
+            return SkCodec::kInvalidInput;
             break;
         }   // switch
         m_streamBuffer.flush();
     }
-
-    return true;
 }
 
 bool SkGifImageReader::hasTransparency(int transparentPixel, bool isLocalColormapDefined,
@@ -903,7 +897,7 @@ static bool independent(const SkFrame& frame) {
 }
 
 static bool restore_bg(const SkFrame& frame) {
-    return frame.getDisposalMethod() == SkCodecAnimation::RestoreBGColor_DisposalMethod;
+    return frame.getDisposalMethod() == SkCodecAnimation::DisposalMethod::kRestoreBGColor;
 }
 
 bool SkGIFFrameContext::onReportsAlpha() const {
@@ -935,7 +929,7 @@ void SkFrameHolder::setAlphaAndRequiredFrame(SkFrame* frame) {
     }
 
     const SkFrame* prevFrame = this->getFrame(i-1);
-    while (prevFrame->getDisposalMethod() == SkCodecAnimation::RestorePrevious_DisposalMethod) {
+    while (prevFrame->getDisposalMethod() == SkCodecAnimation::DisposalMethod::kRestorePrevious) {
         const int prevId = prevFrame->frameId();
         if (0 == prevId) {
             frame->setHasAlpha(true);
@@ -992,7 +986,7 @@ void SkFrameHolder::setAlphaAndRequiredFrame(SkFrame* frame) {
         return;
     }
 
-    SkASSERT(prevFrame->getDisposalMethod() == SkCodecAnimation::Keep_DisposalMethod);
+    SkASSERT(prevFrame->getDisposalMethod() == SkCodecAnimation::DisposalMethod::kKeep);
     frame->setRequiredFrame(prevFrame->frameId());
     frame->setHasAlpha(prevFrame->hasAlpha() || (reportsAlpha && !blendWithPrevFrame));
 }

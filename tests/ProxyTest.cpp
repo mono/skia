@@ -11,13 +11,12 @@
 
 #if SK_SUPPORT_GPU
 
-#ifndef SK_DISABLE_DEFERRED_PROXIES
-
 #include "GrBackendSurface.h"
 #include "GrRenderTargetPriv.h"
 #include "GrRenderTargetProxy.h"
 #include "GrResourceProvider.h"
 #include "GrSurfaceProxy.h"
+#include "GrTexture.h"
 #include "GrTextureProxy.h"
 
 // Check that the surface proxy's member vars are set as expected
@@ -52,8 +51,8 @@ static void check_rendertarget(skiatest::Reporter* reporter,
     REPORTER_ASSERT(reporter, rtProxy->numStencilSamples() == numSamples);
 
     GrSurfaceProxy::UniqueID idBefore = rtProxy->uniqueID();
-    GrRenderTarget* rt = rtProxy->instantiateRenderTarget(provider);
-    REPORTER_ASSERT(reporter, rt);
+    REPORTER_ASSERT(reporter, rtProxy->instantiate(provider));
+    GrRenderTarget* rt = rtProxy->priv().peekRenderTarget();
 
     REPORTER_ASSERT(reporter, rtProxy->uniqueID() == idBefore);
     if (wasWrapped) {
@@ -86,8 +85,9 @@ static void check_texture(skiatest::Reporter* reporter,
                           SkBackingFit fit,
                           bool wasWrapped) {
     GrSurfaceProxy::UniqueID idBefore = texProxy->uniqueID();
-    GrTexture* tex = texProxy->instantiateTexture(provider);
-    REPORTER_ASSERT(reporter, tex);
+
+    REPORTER_ASSERT(reporter, texProxy->instantiate(provider));
+    GrTexture* tex = texProxy->priv().peekTexture();
 
     REPORTER_ASSERT(reporter, texProxy->uniqueID() == idBefore);
     if (wasWrapped) {
@@ -136,7 +136,7 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(DeferredProxyTest, reporter, ctxInfo) {
                             {
                                 sk_sp<GrTexture> tex;
                                 if (SkBackingFit::kApprox == fit) {
-                                    tex.reset(provider->createApproxTexture(desc, 0));
+                                    tex = provider->createApproxTexture(desc, 0);
                                 } else {
                                     tex = provider->createTexture(desc, budgeted);
                                 }
@@ -157,9 +157,10 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(DeferredProxyTest, reporter, ctxInfo) {
                                     check_surface(reporter, proxy.get(), origin,
                                                   widthHeight, widthHeight, config,
                                                   kInvalidResourceID, budgeted);
+                                    int supportedSamples = caps.getSampleCount(numSamples, config);
                                     check_rendertarget(reporter, caps, provider,
                                                        proxy->asRenderTargetProxy(),
-                                                       SkTMin(numSamples, caps.maxSampleCount()),
+                                                       supportedSamples,
                                                        fit, caps.maxWindowRectangles(), false);
                                 }
                             }
@@ -169,7 +170,7 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(DeferredProxyTest, reporter, ctxInfo) {
                             {
                                 sk_sp<GrTexture> tex;
                                 if (SkBackingFit::kApprox == fit) {
-                                    tex.reset(provider->createApproxTexture(desc, 0));
+                                    tex = provider->createApproxTexture(desc, 0);
                                 } else {
                                     tex = provider->createTexture(desc, budgeted);
                                 }
@@ -214,9 +215,7 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(WrappedProxyTest, reporter, ctxInfo) {
         for (auto config : { kAlpha_8_GrPixelConfig, kRGBA_8888_GrPixelConfig }) {
             for (auto budgeted : { SkBudgeted::kYes, SkBudgeted::kNo }) {
                 for (auto numSamples: { 0, 4}) {
-                    if (caps.maxSampleCount() < numSamples) {
-                        continue;
-                    }
+                    int supportedNumSamples = caps.getSampleCount(numSamples, config);
 
                     bool renderable = caps.isConfigRenderable(config, numSamples > 0);
 
@@ -225,7 +224,7 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(WrappedProxyTest, reporter, ctxInfo) {
                     desc.fWidth = kWidthHeight;
                     desc.fHeight = kWidthHeight;
                     desc.fConfig = config;
-                    desc.fSampleCnt = numSamples;
+                    desc.fSampleCnt = supportedNumSamples;
 
                     // External on-screen render target.
                     if (renderable && kOpenGL_GrBackend == ctxInfo.backend()) {
@@ -242,7 +241,7 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(WrappedProxyTest, reporter, ctxInfo) {
                                       kWidthHeight, kWidthHeight, config,
                                       defaultFBO->uniqueID(), SkBudgeted::kNo);
                         check_rendertarget(reporter, caps, provider, sProxy->asRenderTargetProxy(),
-                                           numSamples, SkBackingFit::kExact, 0, true);
+                                           supportedNumSamples, SkBackingFit::kExact, 0, true);
                     }
 
                     sk_sp<GrTexture> tex;
@@ -258,7 +257,7 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(WrappedProxyTest, reporter, ctxInfo) {
                                       kWidthHeight, kWidthHeight, config,
                                       rt->uniqueID(), budgeted);
                         check_rendertarget(reporter, caps, provider, sProxy->asRenderTargetProxy(),
-                                           numSamples, SkBackingFit::kExact,
+                                           supportedNumSamples, SkBackingFit::kExact,
                                            caps.maxWindowRectangles(), true);
                     }
 
@@ -308,7 +307,5 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(ZeroSizedProxyTest, reporter, ctxInfo) {
         }
     }
 }
-
-#endif
 
 #endif

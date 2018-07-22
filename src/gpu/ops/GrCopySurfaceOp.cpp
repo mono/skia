@@ -6,6 +6,7 @@
  */
 
 #include "GrCopySurfaceOp.h"
+#include "GrGpu.h"
 
 // returns true if the read/written rect intersects the src/dst and false if not.
 static bool clip_src_rect_and_dst_point(const GrSurfaceProxy* dst,
@@ -58,8 +59,7 @@ static bool clip_src_rect_and_dst_point(const GrSurfaceProxy* dst,
     return !clippedSrcRect->isEmpty();
 }
 
-std::unique_ptr<GrOp> GrCopySurfaceOp::Make(GrResourceProvider* resourceProvider,
-                                            GrSurfaceProxy* dstProxy, GrSurfaceProxy* srcProxy,
+std::unique_ptr<GrOp> GrCopySurfaceOp::Make(GrSurfaceProxy* dstProxy, GrSurfaceProxy* srcProxy,
                                             const SkIRect& srcRect,
                                             const SkIPoint& dstPoint) {
     SkASSERT(dstProxy);
@@ -75,17 +75,18 @@ std::unique_ptr<GrOp> GrCopySurfaceOp::Make(GrResourceProvider* resourceProvider
         return nullptr;
     }
 
-    // MDB TODO: remove this instantiation
-    GrSurface* dstTex = dstProxy->instantiate(resourceProvider);
-    if (!dstTex) {
-        return nullptr;
-    }
-    GrSurface* srcTex = srcProxy->instantiate(resourceProvider);
-    if (!srcTex) {
-        return nullptr;
+    return std::unique_ptr<GrOp>(new GrCopySurfaceOp(dstProxy, srcProxy,
+                                                     clippedSrcRect, clippedDstPoint));
+}
+
+void GrCopySurfaceOp::onExecute(GrOpFlushState* state) {
+    SkASSERT(!state->commandBuffer());
+
+    if (!fDst.get()->instantiate(state->resourceProvider()) ||
+        !fSrc.get()->instantiate(state->resourceProvider())) {
+        return;
     }
 
-    return std::unique_ptr<GrOp>(new GrCopySurfaceOp(dstTex, srcTex,
-                                                     dstProxy->uniqueID(), srcProxy->uniqueID(),
-                                                     clippedSrcRect, clippedDstPoint));
+    state->gpu()->copySurface(fDst.get()->priv().peekSurface(),
+                              fSrc.get()->priv().peekSurface(), fSrcRect, fDstPoint);
 }

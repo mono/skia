@@ -8,7 +8,7 @@
 #include "InstancedOp.h"
 #include "InstanceProcessor.h"
 #include "InstancedRendering.h"
-
+#include "GrGpu.h"
 #include "GrOpFlushState.h"
 #include "GrRenderTargetOpList.h"
 
@@ -120,7 +120,7 @@ void InstancedOp::appendParamsTexel(SkScalar x, SkScalar y, SkScalar z) {
     fInfo.fHasParams = true;
 }
 
-bool InstancedOp::xpRequiresDstTexture(const GrCaps& caps, const GrAppliedClip* clip) {
+GrDrawOp::RequiresDstTexture InstancedOp::finalize(const GrCaps& caps, const GrAppliedClip* clip) {
     GrProcessorAnalysisCoverage coverageInput;
     bool isMixedSamples = false;
     if (GrAAType::kCoverage == fInfo.aaType() ||
@@ -151,7 +151,7 @@ bool InstancedOp::xpRequiresDstTexture(const GrCaps& caps, const GrAppliedClip* 
 
     fInfo.fUsesLocalCoords = analysis.usesLocalCoords();
     fRequiresBarrierOnOverlap = analysis.requiresBarrierBetweenOverlappingDraws();
-    return analysis.requiresDstTexture();
+    return analysis.requiresDstTexture() ? RequiresDstTexture::kYes : RequiresDstTexture::kNo;
 }
 
 void InstancedOp::wasRecorded(GrRenderTargetOpList* opList) {
@@ -229,6 +229,7 @@ void InstancedOp::onExecute(GrOpFlushState* state) {
     GrPipeline::InitArgs args;
     args.fAppliedClip = state->drawOpArgs().fAppliedClip;
     args.fCaps = &state->caps();
+    args.fResourceProvider = state->resourceProvider();
     args.fProcessors = &fProcessors;
     args.fFlags = GrAATypeIsHW(fInfo.aaType()) ? GrPipeline::kHWAntialias_Flag : 0;
     if (fAllowsSRGBInputs) {
@@ -238,7 +239,7 @@ void InstancedOp::onExecute(GrOpFlushState* state) {
         args.fFlags |= GrPipeline::kDisableOutputConversionToSRGB_Flag;
     }
     args.fRenderTarget = state->drawOpArgs().fRenderTarget;
-    args.fDstTexture = state->drawOpArgs().fDstTexture;
+    args.fDstProxy = state->drawOpArgs().fDstProxy;
     pipeline.init(args);
 
     if (GrXferBarrierType barrierType = pipeline.xferBarrierType(*state->gpu()->caps())) {

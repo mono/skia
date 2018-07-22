@@ -9,6 +9,7 @@
 #define GrOnFlushResourceProvider_DEFINED
 
 #include "GrTypes.h"
+#include "GrResourceProvider.h"
 #include "SkRefCnt.h"
 #include "SkTArray.h"
 
@@ -66,6 +67,15 @@ public:
     sk_sp<GrRenderTargetContext> makeRenderTargetContext(sk_sp<GrSurfaceProxy> proxy,
                                                          sk_sp<SkColorSpace> colorSpace,
                                                          const SkSurfaceProps* props);
+
+    // Creates a GPU buffer with a "dynamic" access pattern.
+    sk_sp<GrBuffer> makeBuffer(GrBufferType, size_t, const void* data = nullptr);
+
+    // Either finds and refs, or creates a static GPU buffer with the given data.
+    sk_sp<GrBuffer> findOrMakeStaticBuffer(const GrUniqueKey&, GrBufferType,
+                                           size_t, const void* data);
+
+    const GrCaps* caps() const;
 
 private:
     explicit GrOnFlushResourceProvider(GrDrawingManager* drawingMgr) : fDrawingMgr(drawingMgr) {}

@@ -32,6 +32,7 @@ GrVkCaps::GrVkCaps(const GrContextOptions& contextOptions, const GrVkInterface* 
     fReuseScratchTextures = true; //TODO: figure this out
     fGpuTracingSupport = false; //TODO: figure this out
     fOversizedStencilSupport = false; //TODO: figure this out
+    fInstanceAttribSupport = true;
 
     fUseDrawInsteadOfClear = false;
     fFenceSyncSupport = true;   // always available in Vulkan
@@ -82,7 +83,7 @@ void GrVkCaps::init(const GrContextOptions& contextOptions, const GrVkInterface*
 
     this->initGrCaps(properties, memoryProperties, featureFlags);
     this->initShaderCaps(properties, featureFlags);
-    this->initConfigTable(vkInterface, physDev);
+    this->initConfigTable(vkInterface, physDev, properties);
     this->initStencilFormat(vkInterface, physDev);
 
     if (SkToBool(extensionFlags & kNV_glsl_shader_GrVkExtensionFlag)) {
@@ -247,6 +248,9 @@ void GrVkCaps::initShaderCaps(const VkPhysicalDeviceProperties& properties, uint
     }
 
     shaderCaps->fIntegerSupport = true;
+    shaderCaps->fTexelBufferSupport = true;
+    shaderCaps->fTexelFetchSupport = true;
+    shaderCaps->fVertexIDSupport = true;
 
     // Assume the minimum precisions mandated by the SPIR-V spec.
     shaderCaps->fShaderPrecisionVaries = true;
@@ -305,12 +309,13 @@ void GrVkCaps::initStencilFormat(const GrVkInterface* interface, VkPhysicalDevic
     }
 }
 
-void GrVkCaps::initConfigTable(const GrVkInterface* interface, VkPhysicalDevice physDev) {
+void GrVkCaps::initConfigTable(const GrVkInterface* interface, VkPhysicalDevice physDev,
+                               const VkPhysicalDeviceProperties& properties) {
     for (int i = 0; i < kGrPixelConfigCnt; ++i) {
         VkFormat format;
         if (GrPixelConfigToVkFormat(static_cast<GrPixelConfig>(i), &format)) {
             if (!GrPixelConfigIsSRGB(static_cast<GrPixelConfig>(i)) || fSRGBSupport) {
-                fConfigTable[i].init(interface, physDev, format);
+                fConfigTable[i].init(interface, physDev, properties, format);
             }
         }
     }
@@ -336,12 +341,77 @@ void GrVkCaps::ConfigInfo::InitConfigFlags(VkFormatFeatureFlags vkFlags, uint16_
     }
 }
 
+void GrVkCaps::ConfigInfo::initSampleCounts(const GrVkInterface* interface,
+                                            VkPhysicalDevice physDev,
+                                            const VkPhysicalDeviceProperties& physProps,
+                                            VkFormat format) {
+    VkImageUsageFlags usage = VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
+                              VK_IMAGE_USAGE_TRANSFER_DST_BIT |
+                              VK_IMAGE_USAGE_SAMPLED_BIT |
+                              VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+    VkImageCreateFlags createFlags = GrVkFormatIsSRGB(format, nullptr)
+        ? VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT : 0;
+    VkImageFormatProperties properties;
+    GR_VK_CALL(interface, GetPhysicalDeviceImageFormatProperties(physDev,
+                                                                 format,
+                                                                 VK_IMAGE_TYPE_2D,
+                                                                 VK_IMAGE_TILING_OPTIMAL,
+                                                                 usage,
+                                                                 createFlags,
+                                                                 &properties));
+    VkSampleCountFlags flags = properties.sampleCounts;
+    if (flags & VK_SAMPLE_COUNT_1_BIT) {
+        fColorSampleCounts.push(0);
+    }
+    if (kImagination_VkVendor == physProps.vendorID) {
+        // MSAA does not work on imagination
+        return;
+    }
+    if (flags & VK_SAMPLE_COUNT_2_BIT) {
+        fColorSampleCounts.push(2);
+    }
+    if (flags & VK_SAMPLE_COUNT_4_BIT) {
+        fColorSampleCounts.push(4);
+    }
+    if (flags & VK_SAMPLE_COUNT_8_BIT) {
+        fColorSampleCounts.push(8);
+    }
+    if (flags & VK_SAMPLE_COUNT_16_BIT) {
+        fColorSampleCounts.push(16);
+    }
+    if (flags & VK_SAMPLE_COUNT_32_BIT) {
+        fColorSampleCounts.push(32);
+    }
+    if (flags & VK_SAMPLE_COUNT_64_BIT) {
+        fColorSampleCounts.push(64);
+    }
+}
+
 void GrVkCaps::ConfigInfo::init(const GrVkInterface* interface,
                                 VkPhysicalDevice physDev,
+                                const VkPhysicalDeviceProperties& properties,
                                 VkFormat format) {
     VkFormatProperties props;
     memset(&props, 0, sizeof(VkFormatProperties));
     GR_VK_CALL(interface, GetPhysicalDeviceFormatProperties(physDev, format, &props));
     InitConfigFlags(props.linearTilingFeatures, &fLinearFlags);
     InitConfigFlags(props.optimalTilingFeatures, &fOptimalFlags);
+    if (fOptimalFlags & kRenderable_Flag) {
+        this->initSampleCounts(interface, physDev, properties, format);
+    }
 }
+
+int GrVkCaps::getSampleCount(int requestedCount, GrPixelConfig config) const {
+    int count = fConfigTable[config].fColorSampleCounts.count();
+    if (!count || !this->isConfigRenderable(config, true)) {
+        return 0;
+    }
+
+    for (int i = 0; i < count; ++i) {
+        if (fConfigTable[config].fColorSampleCounts[i] >= requestedCount) {
+            return fConfigTable[config].fColorSampleCounts[i];
+        }
+    }
+    return fConfigTable[config].fColorSampleCounts[count-1];
+}
+

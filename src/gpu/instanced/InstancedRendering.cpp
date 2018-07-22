@@ -10,6 +10,7 @@
 #include "InstancedOp.h"
 #include "GrAppliedClip.h"
 #include "GrCaps.h"
+#include "GrGpu.h"
 #include "GrPipeline.h"
 #include "GrResourceProvider.h"
 
@@ -23,6 +24,9 @@ InstancedRendering::InstancedRendering(GrGpu* gpu)
     SkDEBUGCODE(, fState(State::kRecordingDraws)) {
 }
 
+InstancedRendering::~InstancedRendering() {
+    SkASSERT(State::kRecordingDraws == fState);
+}
 
 void InstancedRendering::beginFlush(GrResourceProvider* rp) {
 #ifdef SK_DEBUG

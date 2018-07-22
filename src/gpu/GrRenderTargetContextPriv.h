@@ -22,21 +22,21 @@ struct GrUserStencilSettings;
 class GrRenderTargetContextPriv {
 public:
     gr_instanced::InstancedRendering* accessInstancedRendering() const {
-        return fRenderTargetContext->getOpList()->instancedRendering();
+        return fRenderTargetContext->getRTOpList()->instancedRendering();
     }
 
     // called to note the last clip drawn to the stencil buffer.
     // TODO: remove after clipping overhaul.
-    void setLastClip(int32_t clipStackGenID, const SkIRect& devClipBounds) {
-        GrRenderTargetOpList* opList = fRenderTargetContext->getOpList();
+    void setLastClip(uint32_t clipStackGenID, const SkIRect& devClipBounds) {
+        GrRenderTargetOpList* opList = fRenderTargetContext->getRTOpList();
         opList->fLastClipStackGenID = clipStackGenID;
         opList->fLastDevClipBounds = devClipBounds;
     }
 
     // called to determine if we have to render the clip into SB.
     // TODO: remove after clipping overhaul.
-    bool mustRenderClip(int32_t clipStackGenID, const SkIRect& devClipBounds) const {
-        GrRenderTargetOpList* opList = fRenderTargetContext->getOpList();
+    bool mustRenderClip(uint32_t clipStackGenID, const SkIRect& devClipBounds) const {
+        GrRenderTargetOpList* opList = fRenderTargetContext->getRTOpList();
         return opList->fLastClipStackGenID != clipStackGenID ||
                !opList->fLastDevClipBounds.contains(devClipBounds);
     }
@@ -101,11 +101,6 @@ public:
     GrSurfaceProxy::UniqueID uniqueID() const {
         return fRenderTargetContext->fRenderTargetProxy->uniqueID();
     }
-
-    uint32_t testingOnly_addLegacyMeshDrawOp(GrPaint&&, GrAAType,
-                                             std::unique_ptr<GrLegacyMeshDrawOp>,
-                                             const GrUserStencilSettings* = nullptr,
-                                             bool snapToCenters = false);
 
     uint32_t testingOnly_addDrawOp(std::unique_ptr<GrDrawOp>);
 

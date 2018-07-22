@@ -8,7 +8,7 @@
 #ifndef SkBmpMaskCodec_DEFINED
 #define SkBmpMaskCodec_DEFINED
 
-#include "SkBmpCodec.h"
+#include "SkBmpBaseCodec.h"
 #include "SkImageInfo.h"
 #include "SkMaskSwizzler.h"
 #include "SkTypes.h"
@@ -16,7 +16,7 @@
 /*
  * This class implements the decoding for bmp images using bit masks
  */
-class SkBmpMaskCodec : public SkBmpCodec {
+class SkBmpMaskCodec : public SkBmpBaseCodec {
 public:
 
     /*
@@ -38,12 +38,11 @@ public:
 protected:
 
     Result onGetPixels(const SkImageInfo& dstInfo, void* dst,
-                       size_t dstRowBytes, const Options&, SkPMColor*,
-                       int*, int*) override;
+                       size_t dstRowBytes, const Options&,
+                       int*) override;
 
     SkCodec::Result onPrepareToDecode(const SkImageInfo& dstInfo,
-            const SkCodec::Options& options, SkPMColor inputColorPtr[],
-            int* inputColorCount) override;
+            const SkCodec::Options& options) override;
 
 private:
 
@@ -57,8 +56,7 @@ private:
 
     std::unique_ptr<SkMasks>        fMasks;
     std::unique_ptr<SkMaskSwizzler> fMaskSwizzler;
-    std::unique_ptr<uint8_t[]>      fSrcBuffer;
 
-    typedef SkBmpCodec INHERITED;
+    typedef SkBmpBaseCodec INHERITED;
 };
 #endif  // SkBmpMaskCodec_DEFINED

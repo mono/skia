@@ -198,6 +198,31 @@ public:
     #endif
     }
 
+    AI SkNx abs() const {
+#if SK_CPU_SSE_LEVEL >= SK_CPU_SSE_LEVEL_SSSE3
+        return _mm_abs_epi32(fVec);
+#else
+        SkNx mask = (*this) >> 31;
+        return (mask ^ (*this)) - mask;
+#endif
+    }
+
+    AI static SkNx Min(const SkNx& x, const SkNx& y) {
+#if SK_CPU_SSE_LEVEL >= SK_CPU_SSE_LEVEL_SSE41
+        return _mm_min_epi32(x.fVec, y.fVec);
+#else
+        return (x < y).thenElse(x, y);
+#endif
+    }
+
+    AI static SkNx Max(const SkNx& x, const SkNx& y) {
+#if SK_CPU_SSE_LEVEL >= SK_CPU_SSE_LEVEL_SSE41
+        return _mm_max_epi32(x.fVec, y.fVec);
+#else
+        return (x > y).thenElse(x, y);
+#endif
+    }
+
     __m128i fVec;
 };
 

@@ -18,8 +18,6 @@
 #include "GrContext.h"
 #include "GrContextPriv.h"
 #include "GrSurfaceContext.h"
-#include "GrSurfaceProxy.h"
-#include "GrTexture.h"
 #include "GrTextureProxy.h"
 #include "../src/image/SkImage_Gpu.h"
 #endif
@@ -165,7 +163,8 @@ public:
     }
 protected:
     sk_sp<GrTextureProxy> onGenerateTexture(GrContext* ctx, const SkImageInfo& info,
-                                            const SkIPoint& origin) override {
+                                            const SkIPoint& origin,
+                                            SkTransferFunctionBehavior) override {
         SkASSERT(ctx);
         SkASSERT(ctx == fCtx.get());
 

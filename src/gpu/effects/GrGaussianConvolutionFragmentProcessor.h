@@ -9,6 +9,7 @@
 #define GrGaussianConvolutionFragmentProcessor_DEFINED
 
 #include "Gr1DKernelEffect.h"
+#include "GrTextureDomain.h"
 
 /**
  * A 1D Gaussian convolution effect. The kernel is computed as an array of 2 * half-width weights.
@@ -18,15 +19,14 @@
 class GrGaussianConvolutionFragmentProcessor : public Gr1DKernelEffect {
 public:
     /// Convolve with a Gaussian kernel
-    static sk_sp<GrFragmentProcessor> Make(GrResourceProvider* resourceProvider,
-                                           sk_sp<GrTextureProxy> proxy,
+    static sk_sp<GrFragmentProcessor> Make(sk_sp<GrTextureProxy> proxy,
                                            Direction dir,
                                            int halfWidth,
                                            float gaussianSigma,
-                                           bool useBounds,
+                                           GrTextureDomain::Mode mode,
                                            int* bounds) {
         return sk_sp<GrFragmentProcessor>(new GrGaussianConvolutionFragmentProcessor(
-            resourceProvider, std::move(proxy), dir, halfWidth, gaussianSigma, useBounds, bounds));
+            std::move(proxy), dir, halfWidth, gaussianSigma, mode, bounds));
     }
 
     ~GrGaussianConvolutionFragmentProcessor() override;
@@ -34,7 +34,9 @@ public:
     const float* kernel() const { return fKernel; }
 
     const int* bounds() const { return fBounds; }
-    bool useBounds() const { return fUseBounds; }
+    bool useBounds() const { return fMode != GrTextureDomain::kIgnore_Mode; }
+
+    GrTextureDomain::Mode mode() const { return fMode; }
 
     const char* name() const override { return "GaussianConvolution"; }
 
@@ -49,9 +51,9 @@ public:
 
 private:
     /// Convolve with a Gaussian kernel
-    GrGaussianConvolutionFragmentProcessor(GrResourceProvider*, sk_sp<GrTextureProxy>, Direction,
-                                           int halfWidth, float gaussianSigma, bool useBounds,
-                                           int bounds[2]);
+    GrGaussianConvolutionFragmentProcessor(sk_sp<GrTextureProxy>, Direction,
+                                           int halfWidth, float gaussianSigma,
+                                           GrTextureDomain::Mode mode, int bounds[2]);
 
     GrGLSLFragmentProcessor* onCreateGLSLInstance() const override;
 
@@ -59,13 +61,13 @@ private:
 
     bool onIsEqual(const GrFragmentProcessor&) const override;
 
-    GR_DECLARE_FRAGMENT_PROCESSOR_TEST;
+    GR_DECLARE_FRAGMENT_PROCESSOR_TEST
 
     // TODO: Inline the kernel constants into the generated shader code. This may involve pulling
     // some of the logic from SkGpuBlurUtils into this class related to radius/sigma calculations.
     float fKernel[kMaxKernelWidth];
-    bool  fUseBounds;
     int   fBounds[2];
+    GrTextureDomain::Mode fMode;
 
     typedef Gr1DKernelEffect INHERITED;
 };

@@ -53,6 +53,7 @@ struct GrProcessorTestData {
             : fRandom(random)
             , fRenderTargetContext(renderTargetContext)
             , fContext(context) {
+        SkASSERT(proxies[0] && proxies[1]);
         fProxies[0] = proxies[0];
         fProxies[1] = proxies[1];
     }
@@ -140,15 +141,15 @@ private:
  */
 #define GR_DECLARE_GEOMETRY_PROCESSOR_TEST                                                         \
     static GrProcessorTestFactory<GrGeometryProcessor> gTestFactory SK_UNUSED;                     \
-    static sk_sp<GrGeometryProcessor> TestCreate(GrProcessorTestData*)
+    static sk_sp<GrGeometryProcessor> TestCreate(GrProcessorTestData*);
 
 #define GR_DECLARE_FRAGMENT_PROCESSOR_TEST                                                         \
     static GrProcessorTestFactory<GrFragmentProcessor> gTestFactory SK_UNUSED;                     \
-    static sk_sp<GrFragmentProcessor> TestCreate(GrProcessorTestData*)
+    static sk_sp<GrFragmentProcessor> TestCreate(GrProcessorTestData*);
 
 #define GR_DECLARE_XP_FACTORY_TEST                                                                 \
     static GrXPFactoryTestFactory gTestFactory SK_UNUSED;                                          \
-    static const GrXPFactory* TestGet(GrProcessorTestData*)
+    static const GrXPFactory* TestGet(GrProcessorTestData*);
 
 /** GrProcessor subclasses should insert this macro in their implementation file. They must then
  *  also implement this static function:
@@ -168,19 +169,19 @@ private:
 // The unit test relies on static initializers. Just declare the TestCreate function so that
 // its definitions will compile.
 #define GR_DECLARE_FRAGMENT_PROCESSOR_TEST                                                         \
-    static sk_sp<GrFragmentProcessor> TestCreate(GrProcessorTestData*)
+    static sk_sp<GrFragmentProcessor> TestCreate(GrProcessorTestData*);
 #define GR_DEFINE_FRAGMENT_PROCESSOR_TEST(X)
 
 // The unit test relies on static initializers. Just declare the TestCreate function so that
 // its definitions will compile.
 #define GR_DECLARE_GEOMETRY_PROCESSOR_TEST                                                         \
-    static sk_sp<GrGeometryProcessor> TestCreate(GrProcessorTestData*)
+    static sk_sp<GrGeometryProcessor> TestCreate(GrProcessorTestData*);
 #define GR_DEFINE_GEOMETRY_PROCESSOR_TEST(X)
 
 // The unit test relies on static initializers. Just declare the TestGet function so that
 // its definitions will compile.
 #define GR_DECLARE_XP_FACTORY_TEST                                                                 \
-    const GrXPFactory* TestGet(GrProcessorTestData*)
+    const GrXPFactory* TestGet(GrProcessorTestData*);
 #define GR_DEFINE_XP_FACTORY_TEST(X)
 
 #endif  // !SK_ALLOW_STATIC_GLOBAL_INITIALIZERS

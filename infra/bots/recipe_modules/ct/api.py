@@ -37,7 +37,8 @@ class CTApi(recipe_api.RecipeApi):
 
     # Delete and recreate the local dir.
     self.m.run.rmtree(slave_dest_dir)
-    self.m.file.makedirs(self.m.path.basename(slave_dest_dir), slave_dest_dir)
+    self.m.file.ensure_directory(
+      'makedirs %s' % self.m.path.basename(slave_dest_dir), slave_dest_dir)
 
     # Populate the empty local dir.
     gsutil_args = ['-m', 'cp']

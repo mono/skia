@@ -45,7 +45,7 @@ GrReducedClip::GrReducedClip(const SkClipStack& stack, const SkRect& queryBounds
     bool iior;
     stack.getBounds(&stackBounds, &stackBoundsType, &iior);
 
-    if (stackBounds.isEmpty() || GrClip::IsOutsideClip(stackBounds, queryBounds)) {
+    if (GrClip::IsOutsideClip(stackBounds, queryBounds)) {
         bool insideOut = SkClipStack::kInsideOut_BoundsType == stackBoundsType;
         fInitialState = insideOut ? InitialState::kAllIn : InitialState::kAllOut;
         return;
@@ -72,7 +72,10 @@ GrReducedClip::GrReducedClip(const SkClipStack& stack, const SkRect& queryBounds
         SkRect tightBounds;
         SkAssertResult(tightBounds.intersect(stackBounds, queryBounds));
         fIBounds = GrClip::GetPixelIBounds(tightBounds);
-        SkASSERT(!fIBounds.isEmpty()); // Empty should have been blocked by IsOutsideClip above.
+        if (fIBounds.isEmpty()) {
+            fInitialState = InitialState::kAllOut;
+            return;
+        }
         fHasIBounds = true;
 
         // Implement the clip with an AA rect element.
@@ -92,7 +95,10 @@ GrReducedClip::GrReducedClip(const SkClipStack& stack, const SkRect& queryBounds
     }
 
     fIBounds = GrClip::GetPixelIBounds(tighterQuery);
-    SkASSERT(!fIBounds.isEmpty()); // Empty should have been blocked by IsOutsideClip above.
+    if (fIBounds.isEmpty()) {
+        fInitialState = InitialState::kAllOut;
+        return;
+    }
     fHasIBounds = true;
 
     // Now that we have determined the bounds to use and filtered out the trivial cases, call the
@@ -656,7 +662,11 @@ bool GrReducedClip::drawAlphaClipMask(GrRenderTargetContext* rtc) const {
 
 class StencilClip final : public GrClip {
 public:
-    StencilClip(const SkIRect& scissorRect) : fFixedClip(scissorRect) {}
+    StencilClip(const SkIRect& scissorRect, uint32_t clipStackID)
+        : fFixedClip(scissorRect)
+        , fClipStackID(clipStackID) {
+    }
+
     const GrFixedClip& fixedClip() const { return fFixedClip; }
 
     void setWindowRectangles(const GrWindowRectangles& windows, GrWindowRectsState::Mode mode) {
@@ -679,11 +689,12 @@ private:
                               bounds)) {
             return false;
         }
-        out->addStencilClip();
+        out->addStencilClip(fClipStackID);
         return true;
     }
 
     GrFixedClip fFixedClip;
+    uint32_t    fClipStackID;
 
     typedef GrClip INHERITED;
 };
@@ -691,7 +702,7 @@ private:
 bool GrReducedClip::drawStencilClipMask(GrContext* context,
                                         GrRenderTargetContext* renderTargetContext) const {
     // We set the current clip to the bounds so that our recursive draws are scissored to them.
-    StencilClip stencilClip(fIBounds);
+    StencilClip stencilClip(fIBounds, this->elementsGenID());
 
     if (!fWindowRects.empty()) {
         stencilClip.setWindowRectangles(fWindowRects, GrWindowRectsState::Mode::kExclusive);
