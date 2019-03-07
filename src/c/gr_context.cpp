@@ -15,6 +15,7 @@
 #include "GrBackendSurface.h"
 #include "gl/GrGLInterface.h"
 #include "gl/GrGLAssembleInterface.h"
+#include "vk/GrVkBackendContext.h"
 
 #define SK_ONLY_GPU(expr) expr
 #define SK_ONLY_GPU_RETURN(expr, def) expr
@@ -35,6 +36,10 @@
 
 gr_context_t* gr_context_make_gl(const gr_glinterface_t* glInterface) {
     return SK_ONLY_GPU_RETURN(ToGrContext(GrContext::MakeGL(sk_ref_sp(AsGrGLInterface(glInterface))).release()), nullptr);
+}
+
+gr_context_t* gr_context_make_vulkan(const gr_vkbackendcontext_t* vkBackendContext) {
+    return SK_ONLY_GPU_RETURN(ToGrContext(GrContext::MakeVulkan(sk_ref_sp(AsGrVkBackendContext(vkBackendContext))).release()), nullptr);
 }
 
 void gr_context_unref(gr_context_t* context) {
@@ -106,6 +111,65 @@ bool gr_glinterface_validate(const gr_glinterface_t* glInterface) {
 
 bool gr_glinterface_has_extension(const gr_glinterface_t* glInterface, const char* extension) {
     return SK_ONLY_GPU_RETURN(AsGrGLInterface(glInterface)->hasExtension(extension), false);
+}
+
+
+// GrVkInstance
+
+gr_vkinterface_t* gr_vkinterface_make(vk_getinstanceprocaddr_t* vkGetInstanceProcAddr,
+                                      vk_getdeviceprocaddr_t* vkGetDeviceProcAddr,
+                                      vk_instance_t* vkInstance,
+                                      vk_device_t* vkDevice,
+                                      uint32_t extensionFlags) {
+    SK_ONLY_GPU(
+        sk_sp<GrVkInterface> grVkInterface(new GrVkInterface(
+            GrVkInterface::GetInstanceProc(reinterpret_cast<PFN_vkVoidFunction(*)(VkInstance, const char*)>(vkGetInstanceProcAddr)),
+            GrVkInterface::GetDeviceProc(reinterpret_cast<PFN_vkVoidFunction(*)(VkDevice, const char*)>(vkGetDeviceProcAddr)),
+            reinterpret_cast<VkInstance>(vkInstance),
+            reinterpret_cast<VkDevice>(vkDevice),
+            extensionFlags
+        ));
+    )
+
+    return SK_ONLY_GPU_RETURN(ToGrVkInterface(grVkInterface.release()), nullptr);
+}
+
+void gr_vkinterface_unref(gr_vkinterface_t* grVkInterface) {
+    SkSafeUnref(AsGrVkInterface(grVkInterface));
+}
+
+
+// GrVkBackendContext
+
+gr_vkbackendcontext_t* gr_vkbackendcontext_assemble(vk_instance_t* vkInstance,
+                                                    vk_physical_device_t* vkPhysicalDevice,
+                                                    vk_device_t* vkDevice,
+                                                    vk_queue_t* vkQueue,
+                                                    uint32_t graphicsQueueIndex,
+                                                    uint32_t minAPIVersion,
+                                                    uint32_t extensions,
+                                                    uint32_t features,
+                                                    gr_vkinterface_t* grVkInterface) {
+    SK_ONLY_GPU(
+        sk_sp<GrVkBackendContext> grVkBackendContext(new GrVkBackendContext());
+
+        grVkBackendContext->fInstance = reinterpret_cast<VkInstance>(vkInstance);
+        grVkBackendContext->fPhysicalDevice = reinterpret_cast<VkPhysicalDevice>(vkPhysicalDevice);
+        grVkBackendContext->fDevice = reinterpret_cast<VkDevice>(vkDevice);
+        grVkBackendContext->fQueue = reinterpret_cast<VkQueue>(vkQueue);
+        grVkBackendContext->fGraphicsQueueIndex = graphicsQueueIndex;
+        grVkBackendContext->fMinAPIVersion = minAPIVersion;
+        grVkBackendContext->fExtensions = extensions;
+        grVkBackendContext->fFeatures = features;
+        grVkBackendContext->fOwnsInstanceAndDevice = false;
+        grVkBackendContext->fInterface = sk_sp<GrVkInterface>(AsGrVkInterface(grVkInterface));
+    )
+
+    return SK_ONLY_GPU_RETURN(ToGrVkBackendContext(grVkBackendContext.release()), nullptr);
+}
+
+void gr_vkbackendcontext_unref(gr_vkbackendcontext_t* grVkBackendContext) {
+    SkSafeUnref(AsGrVkBackendContext(grVkBackendContext));
 }
 
 

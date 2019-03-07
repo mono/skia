@@ -695,6 +695,17 @@ typedef struct {
     unsigned int fFormat;
 } gr_gl_framebufferinfo_t;
 
+typedef struct gr_vkbackendcontext_t gr_vkbackendcontext_t;
+typedef struct gr_vkinterface_t gr_vkinterface_t;
+
+typedef struct vk_getinstanceprocaddr_t vk_getinstanceprocaddr_t;
+typedef struct vk_getdeviceprocaddr_t vk_getdeviceprocaddr_t;
+
+typedef struct vk_instance_t vk_instance_t;
+typedef struct vk_physical_device_t vk_physical_device_t;
+typedef struct vk_device_t vk_device_t;
+typedef struct vk_queue_t vk_queue_t;
+
 typedef enum {
     DIFFERENCE_SK_PATHOP,
     INTERSECT_SK_PATHOP,
