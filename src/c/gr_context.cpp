@@ -153,6 +153,8 @@ gr_vkbackendcontext_t* gr_vkbackendcontext_assemble(vk_instance_t* vkInstance,
     SK_ONLY_GPU(
         sk_sp<GrVkBackendContext> grVkBackendContext(new GrVkBackendContext());
 
+        sk_sp<GrVkInterface> sharedGrVkInterface(AsGrVkInterface(grVkInterface));
+
         grVkBackendContext->fInstance = reinterpret_cast<VkInstance>(vkInstance);
         grVkBackendContext->fPhysicalDevice = reinterpret_cast<VkPhysicalDevice>(vkPhysicalDevice);
         grVkBackendContext->fDevice = reinterpret_cast<VkDevice>(vkDevice);
@@ -162,7 +164,9 @@ gr_vkbackendcontext_t* gr_vkbackendcontext_assemble(vk_instance_t* vkInstance,
         grVkBackendContext->fExtensions = extensions;
         grVkBackendContext->fFeatures = features;
         grVkBackendContext->fOwnsInstanceAndDevice = false;
-        grVkBackendContext->fInterface = sk_sp<GrVkInterface>(AsGrVkInterface(grVkInterface));
+        grVkBackendContext->fInterface = sharedGrVkInterface;
+
+        sharedGrVkInterface.release();
     )
 
     return SK_ONLY_GPU_RETURN(ToGrVkBackendContext(grVkBackendContext.release()), nullptr);
@@ -212,6 +216,10 @@ bool gr_backendtexture_get_gl_textureinfo(const gr_backendtexture_t* texture, gr
 
 gr_backendrendertarget_t* gr_backendrendertarget_new_gl(int width, int height, int samples, int stencils, const gr_gl_framebufferinfo_t* glInfo) {
     return SK_ONLY_GPU_RETURN(ToGrBackendRenderTarget(new GrBackendRenderTarget(width, height, samples, stencils, *AsGrGLFramebufferInfo(glInfo))), nullptr);
+}
+
+gr_backendrendertarget_t* gr_backendrendertarget_new_vulkan(int width, int height, int samples, const gr_vk_imageinfo_t* vkImageInfo) {
+    return SK_ONLY_GPU_RETURN(ToGrBackendRenderTarget(new GrBackendRenderTarget(width, height, samples, *AsGrVkImageInfo(vkImageInfo))), nullptr);
 }
 
 void gr_backendrendertarget_delete(gr_backendrendertarget_t* rendertarget) {

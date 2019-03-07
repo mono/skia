@@ -698,6 +698,8 @@ typedef struct {
 typedef struct gr_vkbackendcontext_t gr_vkbackendcontext_t;
 typedef struct gr_vkinterface_t gr_vkinterface_t;
 
+typedef struct gr_vk_imageinfo_t gr_vk_imageinfo_t;
+
 typedef struct vk_getinstanceprocaddr_t vk_getinstanceprocaddr_t;
 typedef struct vk_getdeviceprocaddr_t vk_getdeviceprocaddr_t;
 

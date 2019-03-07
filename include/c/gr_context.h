@@ -87,6 +87,8 @@ SK_C_API bool gr_backendtexture_get_gl_textureinfo(const gr_backendtexture_t* te
 // GrBackendRenderTarget
 
 SK_C_API gr_backendrendertarget_t* gr_backendrendertarget_new_gl(int width, int height, int samples, int stencils, const gr_gl_framebufferinfo_t* glInfo);
+SK_C_API gr_backendrendertarget_t* gr_backendrendertarget_new_vulkan(int width, int height, int samples, const gr_vk_imageinfo_t* vkImageInfo);
+
 SK_C_API void gr_backendrendertarget_delete(gr_backendrendertarget_t* rendertarget);
 
 SK_C_API bool gr_backendrendertarget_is_valid(const gr_backendrendertarget_t* rendertarget);
