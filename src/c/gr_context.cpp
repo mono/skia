@@ -183,6 +183,10 @@ gr_backendtexture_t* gr_backendtexture_new_gl(int width, int height, bool mipmap
     return SK_ONLY_GPU_RETURN(ToGrBackendTexture(new GrBackendTexture(width, height, (GrMipMapped)mipmapped, *AsGrGLTextureInfo(glInfo))), nullptr);
 }
 
+gr_backendtexture_t* gr_backendtexture_new_vulkan(int width, int height, const gr_vk_imageinfo_t* vkInfo) {
+    return SK_ONLY_GPU_RETURN(ToGrBackendTexture(new GrBackendTexture(width, height, *AsGrVkImageInfo(vkInfo))), nullptr);
+}
+
 void gr_backendtexture_delete(gr_backendtexture_t* texture) {
     SK_ONLY_GPU(delete AsGrBackendTexture(texture));
 }

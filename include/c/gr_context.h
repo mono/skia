@@ -74,6 +74,7 @@ SK_C_API void gr_vkbackendcontext_unref(gr_vkbackendcontext_t* grVkBackendContex
 // GrBackendTexture
 
 SK_C_API gr_backendtexture_t* gr_backendtexture_new_gl(int width, int height, bool mipmapped, const gr_gl_textureinfo_t* glInfo);
+SK_C_API gr_backendtexture_t* gr_backendtexture_new_vulkan(int width, int height, const gr_vk_imageinfo_t* vkInfo);
 SK_C_API void gr_backendtexture_delete(gr_backendtexture_t* texture);
 
 SK_C_API bool gr_backendtexture_is_valid(const gr_backendtexture_t* texture);
