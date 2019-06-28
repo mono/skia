@@ -15,7 +15,11 @@
 #include "GrBackendSurface.h"
 #include "gl/GrGLInterface.h"
 #include "gl/GrGLAssembleInterface.h"
+
+#ifdef SK_VULKAN
 #include "vk/GrVkBackendContext.h"
+#endif
+
 
 #define SK_ONLY_GPU(expr) expr
 #define SK_ONLY_GPU_RETURN(expr, def) expr
@@ -38,9 +42,11 @@ gr_context_t* gr_context_make_gl(const gr_glinterface_t* glInterface) {
     return SK_ONLY_GPU_RETURN(ToGrContext(GrContext::MakeGL(sk_ref_sp(AsGrGLInterface(glInterface))).release()), nullptr);
 }
 
+#ifdef SK_VULKAN
 gr_context_t* gr_context_make_vulkan(const gr_vkbackendcontext_t* vkBackendContext) {
     return SK_ONLY_GPU_RETURN(ToGrContext(GrContext::MakeVulkan(sk_ref_sp(AsGrVkBackendContext(vkBackendContext))).release()), nullptr);
 }
+#endif
 
 void gr_context_unref(gr_context_t* context) {
     SK_ONLY_GPU(SkSafeUnref(AsGrContext(context)));
@@ -116,6 +122,7 @@ bool gr_glinterface_has_extension(const gr_glinterface_t* glInterface, const cha
 
 // GrVkInstance
 
+#ifdef SK_VULKAN
 gr_vkinterface_t* gr_vkinterface_make(vk_getinstanceprocaddr_t* vkGetInstanceProcAddr,
                                       vk_getdeviceprocaddr_t* vkGetDeviceProcAddr,
                                       vk_instance_t* vkInstance,
@@ -137,10 +144,11 @@ gr_vkinterface_t* gr_vkinterface_make(vk_getinstanceprocaddr_t* vkGetInstancePro
 void gr_vkinterface_unref(gr_vkinterface_t* grVkInterface) {
     SkSafeUnref(AsGrVkInterface(grVkInterface));
 }
-
+#endif
 
 // GrVkBackendContext
 
+#ifdef SK_VULKAN
 gr_vkbackendcontext_t* gr_vkbackendcontext_assemble(vk_instance_t* vkInstance,
                                                     vk_physical_device_t* vkPhysicalDevice,
                                                     vk_device_t* vkDevice,
@@ -175,7 +183,7 @@ gr_vkbackendcontext_t* gr_vkbackendcontext_assemble(vk_instance_t* vkInstance,
 void gr_vkbackendcontext_unref(gr_vkbackendcontext_t* grVkBackendContext) {
     SkSafeUnref(AsGrVkBackendContext(grVkBackendContext));
 }
-
+#endif
 
 // GrBackendTexture
 
@@ -183,9 +191,11 @@ gr_backendtexture_t* gr_backendtexture_new_gl(int width, int height, bool mipmap
     return SK_ONLY_GPU_RETURN(ToGrBackendTexture(new GrBackendTexture(width, height, (GrMipMapped)mipmapped, *AsGrGLTextureInfo(glInfo))), nullptr);
 }
 
+#ifdef SK_VULKAN
 gr_backendtexture_t* gr_backendtexture_new_vulkan(int width, int height, const gr_vk_imageinfo_t* vkInfo) {
     return SK_ONLY_GPU_RETURN(ToGrBackendTexture(new GrBackendTexture(width, height, *AsGrVkImageInfo(vkInfo))), nullptr);
 }
+#endif
 
 void gr_backendtexture_delete(gr_backendtexture_t* texture) {
     SK_ONLY_GPU(delete AsGrBackendTexture(texture));
@@ -222,9 +232,11 @@ gr_backendrendertarget_t* gr_backendrendertarget_new_gl(int width, int height, i
     return SK_ONLY_GPU_RETURN(ToGrBackendRenderTarget(new GrBackendRenderTarget(width, height, samples, stencils, *AsGrGLFramebufferInfo(glInfo))), nullptr);
 }
 
+#ifdef SK_VULKAN
 gr_backendrendertarget_t* gr_backendrendertarget_new_vulkan(int width, int height, int samples, const gr_vk_imageinfo_t* vkImageInfo) {
     return SK_ONLY_GPU_RETURN(ToGrBackendRenderTarget(new GrBackendRenderTarget(width, height, samples, *AsGrVkImageInfo(vkImageInfo))), nullptr);
 }
+#endif
 
 void gr_backendrendertarget_delete(gr_backendrendertarget_t* rendertarget) {
     SK_ONLY_GPU(delete AsGrBackendRenderTarget(rendertarget));
