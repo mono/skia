@@ -19,6 +19,7 @@ SK_C_PLUS_PLUS_BEGIN_GUARD
 
 SK_C_API gr_context_t* gr_context_make_gl(const gr_glinterface_t* glInterface);
 SK_C_API gr_context_t* gr_context_make_vulkan(const gr_vkbackendcontext_t* vkBackendContext);
+
 // TODO: the overloads with GrContextOptions
 // TODO: the Metal context
 
