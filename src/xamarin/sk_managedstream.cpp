@@ -16,9 +16,6 @@
 static inline SkManagedWStream* AsManagedWStream(sk_wstream_managedstream_t* stream) {
     return reinterpret_cast<SkManagedWStream*>(stream);
 }
-static inline const SkManagedWStream* AsManagedWStream(const sk_wstream_managedstream_t* stream) {
-    return reinterpret_cast<const SkManagedWStream*>(stream);
-}
 static inline sk_wstream_managedstream_t* ToManagedWStream(SkManagedWStream* stream) {
     return reinterpret_cast<sk_wstream_managedstream_t*>(stream);
 }
@@ -69,9 +66,6 @@ void sk_managedwstream_set_procs(sk_managedwstream_procs_t procs) {
 
 static inline SkManagedStream* AsManagedStream(sk_stream_managedstream_t* s) {
     return reinterpret_cast<SkManagedStream*>(s);
-}
-static inline const SkManagedStream* AsManagedStream(const sk_stream_managedstream_t* s) {
-    return reinterpret_cast<const SkManagedStream*>(s);
 }
 static inline sk_stream_managedstream_t* ToManagedStream(SkManagedStream* s) {
     return reinterpret_cast<sk_stream_managedstream_t*>(s);
