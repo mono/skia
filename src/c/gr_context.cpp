@@ -38,7 +38,6 @@
 
 #include "sk_types_priv.h"
 
-
 // GrContext
 
 gr_context_t* gr_context_make_gl(const gr_glinterface_t* glInterface) {
@@ -143,6 +142,11 @@ gr_vkinterface_t* gr_vkinterface_make(vk_getinstanceprocaddr_t* vkGetInstancePro
 
 void gr_vkinterface_unref(gr_vkinterface_t* grVkInterface) {
     SK_ONLY_VULKAN(SkSafeUnref(AsGrVkInterface(grVkInterface)));
+}
+
+bool gr_vkinterface_validate(const gr_vkinterface_t* grVkInterface, uint32_t extensionsFlags)
+{
+    return SK_ONLY_VULKAN(AsGrVkInterface(grVkInterface)->validate(extensionsFlags), false);
 }
 
 // GrVkBackendContext

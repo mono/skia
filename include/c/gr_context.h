@@ -56,6 +56,7 @@ SK_C_API gr_vkinterface_t* gr_vkinterface_make(vk_getinstanceprocaddr_t* vkGetIn
 
 SK_C_API void gr_vkinterface_unref(gr_vkinterface_t* grVkInterface);
 
+SK_C_API bool gr_vkinterface_validate(const gr_vkinterface_t* grVkInterface, uint32_t extensionsFlags);
 
 // GrVkBackendContext
 
