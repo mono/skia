@@ -49,7 +49,8 @@ public:
     typedef bool              (*SeekProc)        (      SkManagedStream* s, void* context, size_t position);
     typedef bool              (*MoveProc)        (      SkManagedStream* s, void* context, long offset);
     typedef size_t            (*GetLengthProc)   (const SkManagedStream* s, void* context);
-    typedef SkManagedStream*  (*CreateNewProc)   (const SkManagedStream* s, void* context);
+    typedef SkManagedStream*  (*DuplicateProc)   (const SkManagedStream* s, void* context);
+    typedef SkManagedStream*  (*ForkProc)        (const SkManagedStream* s, void* context);
     typedef void              (*DestroyProc)     (      SkManagedStream* s, void* context);
 
     struct Procs {
@@ -63,7 +64,8 @@ public:
         SeekProc fSeek = nullptr;
         MoveProc fMove = nullptr;
         GetLengthProc fGetLength = nullptr;
-        CreateNewProc fCreateNew = nullptr;
+        DuplicateProc fDuplicate = nullptr;
+        ForkProc fFork = nullptr;
         DestroyProc fDestroy = nullptr;
     };
 

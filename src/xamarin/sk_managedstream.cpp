@@ -116,9 +116,13 @@ size_t dGetLength(const SkManagedStream* stream, void* context) {
     if (!gProcs.fGetLength) return 0;
     return gProcs.fGetLength(ToManagedStream(stream), context);
 }
-SkManagedStream* dCreateNew(const SkManagedStream* stream, void* context) {
-    if (!gProcs.fCreateNew) return nullptr;
-    return AsManagedStream(gProcs.fCreateNew(ToManagedStream(stream), context));
+SkManagedStream* dDuplicate(const SkManagedStream* stream, void* context) {
+    if (!gProcs.fDuplicate) return nullptr;
+    return AsManagedStream(gProcs.fDuplicate(ToManagedStream(stream), context));
+}
+SkManagedStream* dFork(const SkManagedStream* stream, void* context) {
+    if (!gProcs.fFork) return nullptr;
+    return AsManagedStream(gProcs.fFork(ToManagedStream(stream), context));
 }
 void dDestroy(SkManagedStream* stream, void* context) {
     if (!gProcs.fDestroy) return;
@@ -146,7 +150,8 @@ void sk_managedstream_set_procs(const sk_managedstream_procs_t procs) {
     p.fSeek = dSeek;
     p.fMove = dMove;
     p.fGetLength = dGetLength;
-    p.fCreateNew = dCreateNew;
+    p.fDuplicate = dDuplicate;
+    p.fFork = dFork;
     p.fDestroy = dDestroy;
 
     SkManagedStream::setProcs(p);

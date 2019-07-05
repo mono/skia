@@ -51,7 +51,8 @@ typedef size_t                     (*sk_managedstream_getPosition_proc)  (const 
 typedef bool                       (*sk_managedstream_seek_proc)         (      sk_stream_managedstream_t* s, void* context, size_t position);
 typedef bool                       (*sk_managedstream_move_proc)         (      sk_stream_managedstream_t* s, void* context, long offset);
 typedef size_t                     (*sk_managedstream_getLength_proc)    (const sk_stream_managedstream_t* s, void* context);
-typedef sk_stream_managedstream_t* (*sk_managedstream_createNew_proc)    (const sk_stream_managedstream_t* s, void* context);
+typedef sk_stream_managedstream_t* (*sk_managedstream_duplicate_proc)    (const sk_stream_managedstream_t* s, void* context);
+typedef sk_stream_managedstream_t* (*sk_managedstream_fork_proc)         (const sk_stream_managedstream_t* s, void* context);
 typedef void                       (*sk_managedstream_destroy_proc)      (      sk_stream_managedstream_t* s, void* context);
 
 typedef struct {
@@ -65,7 +66,8 @@ typedef struct {
     sk_managedstream_seek_proc fSeek;
     sk_managedstream_move_proc fMove;
     sk_managedstream_getLength_proc fGetLength;
-    sk_managedstream_createNew_proc fCreateNew;
+    sk_managedstream_duplicate_proc fDuplicate;
+    sk_managedstream_fork_proc fFork;
     sk_managedstream_destroy_proc fDestroy;
 } sk_managedstream_procs_t;
 

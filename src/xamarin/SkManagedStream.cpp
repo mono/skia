@@ -65,14 +65,12 @@ size_t SkManagedStream::getLength() const {
     return fProcs.fGetLength(this, fContext);
 }
 SkStreamAsset* SkManagedStream::onDuplicate() const {
-    if (!fProcs.fCreateNew) return nullptr;
-    return fProcs.fCreateNew(this, fContext);
+    if (!fProcs.fDuplicate) return nullptr;
+    return fProcs.fDuplicate(this, fContext);
 }
 SkStreamAsset* SkManagedStream::onFork() const {
-    if (!fProcs.fCreateNew) return nullptr;
-    std::unique_ptr<SkManagedStream> that(fProcs.fCreateNew(this, fContext));
-    that->seek(getPosition());
-    return that.release();
+    if (!fProcs.fFork) return nullptr;
+    return fProcs.fFork(this, fContext);
 }
 
 
