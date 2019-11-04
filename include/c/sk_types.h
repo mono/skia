@@ -178,7 +178,7 @@ typedef enum {
     TRANSLATE_SK_MATRIX44_TYPE_MASK = 0x01,
     SCALE_SK_MATRIX44_TYPE_MASK = 0x02,
     AFFINE_SK_MATRIX44_TYPE_MASK = 0x04,
-    PERSPECTIVE_SK_MATRIX44_TYPE_MASK = 0x08 
+    PERSPECTIVE_SK_MATRIX44_TYPE_MASK = 0x08
 } sk_matrix44_type_mask_t;
 
 /**
@@ -574,7 +574,7 @@ typedef enum {
     INVERTED_SK_PATH_EFFECT_TRIM_MODE,
 } sk_path_effect_trim_mode_t;
 
-typedef struct sk_path_effect_t sk_path_effect_t;  
+typedef struct sk_path_effect_t sk_path_effect_t;
 
 typedef enum {
     BUTT_SK_STROKE_CAP,
@@ -885,8 +885,8 @@ typedef enum {
     PAETH_SK_PNGENCODER_FILTER_FLAGS = 0x80,
     ALL_SK_PNGENCODER_FILTER_FLAGS   = NONE_SK_PNGENCODER_FILTER_FLAGS |
                                        SUB_SK_PNGENCODER_FILTER_FLAGS |
-                                       UP_SK_PNGENCODER_FILTER_FLAGS | 
-                                       AVG_SK_PNGENCODER_FILTER_FLAGS | 
+                                       UP_SK_PNGENCODER_FILTER_FLAGS |
+                                       AVG_SK_PNGENCODER_FILTER_FLAGS |
                                        PAETH_SK_PNGENCODER_FILTER_FLAGS,
 } sk_pngencoder_filterflags_t;
 
