@@ -28,6 +28,10 @@
 #include "GrTypes.h"
 #include "gl/GrGLTypes.h"
 #include "GrContextOptions.h"
+
+#if SK_VULKAN
+#include "vk/GrVkTypes.h"
+#endif
 #endif
 
 #if __cplusplus >= 199711L
@@ -65,6 +69,11 @@ static_assert (sizeof (sk_textblob_builder_runbuffer_t) == sizeof (SkTextBlobBui
 #if SK_SUPPORT_GPU
 static_assert (sizeof (gr_gl_framebufferinfo_t) == sizeof (GrGLFramebufferInfo), ASSERT_MSG(GrGLFramebufferInfo, gr_gl_framebufferinfo_t));
 static_assert (sizeof (gr_gl_textureinfo_t) == sizeof (GrGLTextureInfo), ASSERT_MSG(GrGLTextureInfo, gr_gl_textureinfo_t));
+
+#if SK_VULKAN
+static_assert (sizeof (gr_vk_alloc_t) == sizeof (GrVkAlloc), ASSERT_MSG(GrVkAlloc, gr_vk_alloc_t));
+static_assert (sizeof (gr_vk_imageinfo_t) == sizeof (GrVkImageInfo), ASSERT_MSG(GrVkImageInfo, gr_vk_imageinfo_t));
+#endif
 #endif
 
 #endif

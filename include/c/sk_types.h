@@ -700,7 +700,22 @@ typedef struct {
 typedef struct gr_vkbackendcontext_t gr_vkbackendcontext_t;
 typedef struct gr_vkinterface_t gr_vkinterface_t;
 
-typedef struct gr_vk_imageinfo_t gr_vk_imageinfo_t;
+typedef struct {
+    uint64_t  fMemory;
+    uint64_t  fOffset;
+    uint64_t  fSize;
+    uint32_t  fFlags;
+    bool      _private_fUsesSystemHeap;
+} gr_vk_alloc_t;
+
+typedef struct {
+    uint64_t       fImage;
+    gr_vk_alloc_t  fAlloc;
+    uint32_t       fImageTiling;
+    uint32_t       fImageLayout;
+    uint32_t       fFormat;
+    uint32_t       fLevelCount;
+} gr_vk_imageinfo_t;
 
 typedef struct vk_getinstanceprocaddr_t vk_getinstanceprocaddr_t;
 typedef struct vk_getdeviceprocaddr_t vk_getdeviceprocaddr_t;
