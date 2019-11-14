@@ -126,6 +126,10 @@ DEF_STRUCT_MAP(GrGLTextureInfo, gr_gl_textureinfo_t, GrGLTextureInfo)
 DEF_STRUCT_MAP(GrGLFramebufferInfo, gr_gl_framebufferinfo_t, GrGLFramebufferInfo)
 DEF_STRUCT_MAP(GrGLInterface, gr_glinterface_t, GrGLInterface)
 
+DEF_STRUCT_MAP(GrVkBackendContext, gr_vkbackendcontext_t, GrVkBackendContext)
+DEF_STRUCT_MAP(GrVkInterface, gr_vkinterface_t, GrVkInterface)
+DEF_STRUCT_MAP(GrVkImageInfo, gr_vk_imageinfo_t, GrVkImageInfo)
+
 #include "SkCanvas.h"
 DEF_MAP(SkCanvas::Lattice, sk_lattice_t, Lattice)
 
