@@ -362,6 +362,10 @@ config("warnings") {
     cflags += [
       "-Weverything",
       "-Wno-unknown-warning-option",  # Let older Clangs ignore newer Clangs' warnings.
+      
+      # clang 10 fixes
+      "-Wno-anon-enum-enum-conversion",
+      "-Wno-sizeof-array-div",
     ]
 
     if (target_cpu == "arm" && is_ios) {
