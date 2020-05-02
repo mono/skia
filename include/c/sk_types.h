@@ -55,6 +55,13 @@ typedef uint32_t sk_pmcolor_t;
 #define sk_color_get_g(c)               (((c) >>  8) & 0xFF)
 #define sk_color_get_b(c)               (((c) >>  0) & 0xFF)
 
+typedef struct sk_color4f_t {
+    float fR;
+    float fG;
+    float fB;
+    float fA;
+} sk_color4f_t;
+
 typedef enum {
     UNKNOWN_SK_COLORTYPE = 0,
     ALPHA_8_SK_COLORTYPE,
@@ -112,59 +119,6 @@ typedef struct {
     float   bottom;
 } sk_rect_t;
 
-/**
-    The sk_matrix_t struct holds a 3x3 perspective matrix for
-    transforming coordinates:
-
-        (X,Y) = T[M]((x,y))
-        X = (M[0] * x + M[1] * y + M[2]) / (M[6] * x + M[7] * y + M[8]);
-        Y = (M[3] * x + M[4] * y + M[5]) / (M[6] * x + M[7] * y + M[8]);
-
-    Therefore, the identity matrix is
-
-        sk_matrix_t identity = {{1, 0, 0,
-                                 0, 1, 0,
-                                 0, 0, 1}};
-
-    A matrix that scales by sx and sy is:
-
-        sk_matrix_t scale = {{sx, 0,  0,
-                              0,  sy, 0,
-                              0,  0,  1}};
-
-    A matrix that translates by tx and ty is:
-
-        sk_matrix_t translate = {{1, 0, tx,
-                                  0, 1, ty,
-                                  0, 0, 1}};
-
-    A matrix that rotates around the origin by A radians:
-
-        sk_matrix_t rotate = {{cos(A), -sin(A), 0,
-                               sin(A),  cos(A), 0,
-                               0,       0,      1}};
-
-    Two matrixes can be concatinated by:
-
-         void concat_matrices(sk_matrix_t* dst,
-                             const sk_matrix_t* matrixU,
-                             const sk_matrix_t* matrixV) {
-            const float* u = matrixU->mat;
-            const float* v = matrixV->mat;
-            sk_matrix_t result = {{
-                    u[0] * v[0] + u[1] * v[3] + u[2] * v[6],
-                    u[0] * v[1] + u[1] * v[4] + u[2] * v[7],
-                    u[0] * v[2] + u[1] * v[5] + u[2] * v[8],
-                    u[3] * v[0] + u[4] * v[3] + u[5] * v[6],
-                    u[3] * v[1] + u[4] * v[4] + u[5] * v[7],
-                    u[3] * v[2] + u[4] * v[5] + u[5] * v[8],
-                    u[6] * v[0] + u[7] * v[3] + u[8] * v[6],
-                    u[6] * v[1] + u[7] * v[4] + u[8] * v[7],
-                    u[6] * v[2] + u[7] * v[5] + u[8] * v[8]
-            }};
-            *dst = result;
-        }
-*/
 typedef struct {
     float scaleX, skewX, transX;
     float skewY, scaleY, transY;
@@ -254,6 +208,9 @@ typedef struct sk_surface_t sk_surface_t;
     clipping areas for drawing.
 */
 typedef struct sk_region_t sk_region_t;
+typedef struct sk_region_iterator_t sk_region_iterator_t;
+typedef struct sk_region_cliperator_t sk_region_cliperator_t;
+typedef struct sk_region_spanerator_t sk_region_spanerator_t;
 
 typedef enum {
     CLEAR_SK_BLENDMODE,
@@ -980,6 +937,13 @@ typedef struct {
     void* utf8text;
     void* clusters;
 } sk_textblob_builder_runbuffer_t;
+
+typedef struct {
+    float fSCos;
+    float fSSin;
+    float fTX;
+    float fTY;
+} sk_rsxform_t;
 
 SK_C_PLUS_PLUS_END_GUARD
 

@@ -48,6 +48,10 @@ size_t sk_pixmap_get_row_bytes(const sk_pixmap_t* cpixmap) {
     return AsPixmap(cpixmap)->rowBytes();
 }
 
+void* sk_pixmap_get_writable_addr(const sk_pixmap_t* cpixmap) {
+    return AsPixmap(cpixmap)->writable_addr();
+}
+
 const void* sk_pixmap_get_pixels(const sk_pixmap_t* cpixmap) {
     return AsPixmap(cpixmap)->addr();
 }
@@ -64,8 +68,12 @@ bool sk_pixmap_extract_subset(const sk_pixmap_t* cpixmap, sk_pixmap_t* result, c
     return AsPixmap(cpixmap)->extractSubset(AsPixmap(result), *AsIRect(subset));
 }
 
-bool sk_pixmap_erase_color (const sk_pixmap_t* cpixmap, sk_color_t color, const sk_irect_t* subset) {
+bool sk_pixmap_erase_color(const sk_pixmap_t* cpixmap, sk_color_t color, const sk_irect_t* subset) {
     return AsPixmap(cpixmap)->erase((SkColor)color, *AsIRect(subset));
+}
+
+bool sk_pixmap_erase_color4f(const sk_pixmap_t* cpixmap, const sk_color4f_t* color, const sk_irect_t* subset) {
+    return AsPixmap(cpixmap)->erase(*AsColor4f(color), AsIRect(subset));
 }
 
 sk_color_t sk_color_unpremultiply(const sk_pmcolor_t pmcolor) {
@@ -111,14 +119,14 @@ void sk_swizzle_swap_rb(uint32_t* dest, const uint32_t* src, int count) {
     SkSwapRB(dest, src, count);
 }
 
-bool sk_webpencoder_encode(sk_wstream_t* dst, const sk_pixmap_t* src, sk_webpencoder_options_t options) {
-    return SkWebpEncoder::Encode(AsWStream(dst), *AsPixmap(src), AsWebpEncoderOptions(options));
+bool sk_webpencoder_encode(sk_wstream_t* dst, const sk_pixmap_t* src, const sk_webpencoder_options_t* options) {
+    return SkWebpEncoder::Encode(AsWStream(dst), *AsPixmap(src), *AsWebpEncoderOptions(options));
 }
 
-bool sk_jpegencoder_encode(sk_wstream_t* dst, const sk_pixmap_t* src, sk_jpegencoder_options_t options) {
-    return SkJpegEncoder::Encode(AsWStream(dst), *AsPixmap(src), AsJpegEncoderOptions(options));
+bool sk_jpegencoder_encode(sk_wstream_t* dst, const sk_pixmap_t* src, const sk_jpegencoder_options_t* options) {
+    return SkJpegEncoder::Encode(AsWStream(dst), *AsPixmap(src), *AsJpegEncoderOptions(options));
 }
 
-bool sk_pngencoder_encode(sk_wstream_t* dst, const sk_pixmap_t* src, sk_pngencoder_options_t options) {
-    return SkPngEncoder::Encode(AsWStream(dst), *AsPixmap(src), AsPngEncoderOptions(options));
+bool sk_pngencoder_encode(sk_wstream_t* dst, const sk_pixmap_t* src, const sk_pngencoder_options_t* options) {
+    return SkPngEncoder::Encode(AsWStream(dst), *AsPixmap(src), *AsPngEncoderOptions(options));
 }
