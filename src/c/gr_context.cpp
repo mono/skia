@@ -7,7 +7,12 @@
  * found in the LICENSE file.
  */
 
-#include "SkTypes.h" // required to make sure SK_SUPPORT_GPU is defined
+#include "include/core/SkTypes.h" // required to make sure SK_SUPPORT_GPU is defined
+
+#include "include/gpu/GrContext.h"
+#include "include/gpu/GrBackendSurface.h"
+#include "include/gpu/gl/GrGLInterface.h"
+#include "include/gpu/gl/GrGLAssembleInterface.h"
 
 #define SK_SKIP_ARG__(keep, skip, ...) skip
 #define SK_SKIP_ARG_(args) SK_SKIP_ARG__ args
@@ -29,14 +34,14 @@
 #    else
 #        define SK_ONLY_VULKAN(...) SK_SKIP_ARG(__VA_ARGS__)
 #    endif
-#else
+#else // !SK_SUPPORT_GPU
 #    define SK_ONLY_GPU(...) SK_SKIP_ARG(__VA_ARGS__)
 #    define SK_ONLY_VULKAN(...) SK_SKIP_ARG(__VA_ARGS__)
-#endif
+#endif // SK_SUPPORT_GPU
 
-#include "gr_context.h"
+#include "include/c/gr_context.h"
 
-#include "sk_types_priv.h"
+#include "src/c/sk_types_priv.h"
 
 // GrContext
 
@@ -91,7 +96,7 @@ gr_backend_t gr_context_get_backend(gr_context_t* context) {
 
 // GrGLInterface
 
-const gr_glinterface_t* gr_glinterface_create_native_interface() {
+const gr_glinterface_t* gr_glinterface_create_native_interface(void) {
     return SK_ONLY_GPU(ToGrGLInterface(GrGLMakeNativeInterface().release()), nullptr);
 }
 
