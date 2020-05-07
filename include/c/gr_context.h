@@ -46,21 +46,10 @@ SK_C_API void gr_glinterface_unref(const gr_glinterface_t* glInterface);
 SK_C_API bool gr_glinterface_validate(const gr_glinterface_t* glInterface);
 SK_C_API bool gr_glinterface_has_extension(const gr_glinterface_t* glInterface, const char* extension);
 
-// GrVkInterface
-
-SK_C_API gr_vkinterface_t* gr_vkinterface_make(vk_getinstanceprocaddr_t* vkGetInstanceProcAddr,
-                                               vk_getdeviceprocaddr_t* vkGetDeviceProcAddr,
-                                               vk_instance_t* vkInstance,
-                                               vk_device_t* vkDevice,
-                                               uint32_t extensionFlags);
-
-SK_C_API void gr_vkinterface_unref(gr_vkinterface_t* grVkInterface);
-
-SK_C_API bool gr_vkinterface_validate(const gr_vkinterface_t* grVkInterface, uint32_t extensionsFlags);
-
 // GrVkBackendContext
 
-SK_C_API gr_vkbackendcontext_t* gr_vkbackendcontext_assemble(vk_instance_t* vkInstance,
+SK_C_API gr_vkbackendcontext_t* gr_vkbackendcontext_assemble(void* ctx,
+                                                             vk_instance_t* vkInstance,
                                                              vk_physical_device_t* vkPhysicalDevice,
                                                              vk_device_t* vkDevice,
                                                              vk_queue_t* vkQueue,
@@ -68,9 +57,9 @@ SK_C_API gr_vkbackendcontext_t* gr_vkbackendcontext_assemble(vk_instance_t* vkIn
                                                              uint32_t minAPIVersion,
                                                              uint32_t extensions,
                                                              uint32_t features,
-                                                             gr_vkinterface_t* grVkInterface);
+                                                             gr_vk_get_proc getProc);
 
-SK_C_API void gr_vkbackendcontext_unref(gr_vkbackendcontext_t* grVkBackendContext);
+SK_C_API void gr_vkbackendcontext_delete(gr_vkbackendcontext_t* grVkBackendContext);
 
 
 // GrBackendTexture

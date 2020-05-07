@@ -676,32 +676,47 @@ typedef struct {
 } gr_gl_framebufferinfo_t;
 
 typedef struct gr_vkbackendcontext_t gr_vkbackendcontext_t;
-typedef struct gr_vkinterface_t gr_vkinterface_t;
 
 typedef struct {
     uint64_t  fMemory;
     uint64_t  fOffset;
     uint64_t  fSize;
     uint32_t  fFlags;
+    intptr_t  fBackendMemory;
     bool      _private_fUsesSystemHeap;
 } gr_vk_alloc_t;
 
-typedef struct {
-    uint64_t       fImage;
-    gr_vk_alloc_t  fAlloc;
-    uint32_t       fImageTiling;
-    uint32_t       fImageLayout;
-    uint32_t       fFormat;
-    uint32_t       fLevelCount;
-} gr_vk_imageinfo_t;
+typedef struct gr_vk_ycbcr_conversion_info_t {
+    uint32_t fFormat;
+    uint64_t fExternalFormat;
+    uint32_t fYcbcrModel;
+    uint32_t fYcbcrRange;
+    uint32_t fXChromaOffset;
+    uint32_t fYChromaOffset;
+    uint32_t fChromaFilter;
+    uint32_t fForceExplicitReconstruction;
+    uint32_t fFormatFeatures;
+} gr_vk_ycbcr_conversion_info_t;
 
-typedef struct vk_getinstanceprocaddr_t vk_getinstanceprocaddr_t;
-typedef struct vk_getdeviceprocaddr_t vk_getdeviceprocaddr_t;
+typedef struct {
+    uint64_t                        fImage;
+    gr_vk_alloc_t                   fAlloc;
+    uint32_t                        fImageTiling;
+    uint32_t                        fImageLayout;
+    uint32_t                        fFormat;
+    uint32_t                        fLevelCount;
+    uint32_t                        fCurrentQueueFamily;
+    bool                            fProtected;
+    gr_vk_ycbcr_conversion_info_t   fYcbcrConversionInfo;
+} gr_vk_imageinfo_t;
 
 typedef struct vk_instance_t vk_instance_t;
 typedef struct vk_physical_device_t vk_physical_device_t;
 typedef struct vk_device_t vk_device_t;
 typedef struct vk_queue_t vk_queue_t;
+
+typedef void (*gr_vk_func_ptr)(void);
+typedef gr_vk_func_ptr (*gr_vk_get_proc)(void* ctx, const char* name, vk_instance_t* instance, vk_device_t* device);
 
 typedef enum {
     DIFFERENCE_SK_PATHOP,

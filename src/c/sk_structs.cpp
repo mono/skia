@@ -31,7 +31,7 @@
 #include "include/gpu/gl/GrGLTypes.h"
 
 #if SK_VULKAN
-#include "vk/GrVkTypes.h"
+#include "include/gpu/vk/GrVkTypes.h"
 #endif
 
 #endif

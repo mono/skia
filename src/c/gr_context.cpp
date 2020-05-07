@@ -45,7 +45,7 @@ gr_context_t* gr_context_make_gl(const gr_glinterface_t* glInterface) {
 }
 
 gr_context_t* gr_context_make_vulkan(const gr_vkbackendcontext_t* vkBackendContext) {
-    return SK_ONLY_VULKAN(ToGrContext(GrContext::MakeVulkan(sk_ref_sp(AsGrVkBackendContext(vkBackendContext))).release()), nullptr);
+    return SK_ONLY_VULKAN(ToGrContext(GrContext::MakeVulkan(*AsGrVkBackendContext(vkBackendContext)).release()), nullptr);
 }
 
 void gr_context_unref(gr_context_t* context) {
@@ -119,39 +119,10 @@ bool gr_glinterface_has_extension(const gr_glinterface_t* glInterface, const cha
     return SK_ONLY_GPU(AsGrGLInterface(glInterface)->hasExtension(extension), false);
 }
 
-
-// GrVkInstance
-
-gr_vkinterface_t* gr_vkinterface_make(vk_getinstanceprocaddr_t* vkGetInstanceProcAddr,
-                                      vk_getdeviceprocaddr_t* vkGetDeviceProcAddr,
-                                      vk_instance_t* vkInstance,
-                                      vk_device_t* vkDevice,
-                                      uint32_t extensionFlags) {
-    SK_ONLY_VULKAN(
-        sk_sp<GrVkInterface> grVkInterface(new GrVkInterface(
-            GrVkInterface::GetInstanceProc(reinterpret_cast<PFN_vkVoidFunction(*)(VkInstance, const char*)>(vkGetInstanceProcAddr)),
-            GrVkInterface::GetDeviceProc(reinterpret_cast<PFN_vkVoidFunction(*)(VkDevice, const char*)>(vkGetDeviceProcAddr)),
-            reinterpret_cast<VkInstance>(vkInstance),
-            reinterpret_cast<VkDevice>(vkDevice),
-            extensionFlags
-        ));
-    )
-
-    return SK_ONLY_VULKAN(ToGrVkInterface(grVkInterface.release()), nullptr);
-}
-
-void gr_vkinterface_unref(gr_vkinterface_t* grVkInterface) {
-    SK_ONLY_VULKAN(SkSafeUnref(AsGrVkInterface(grVkInterface)));
-}
-
-bool gr_vkinterface_validate(const gr_vkinterface_t* grVkInterface, uint32_t extensionsFlags)
-{
-    return SK_ONLY_VULKAN(AsGrVkInterface(grVkInterface)->validate(extensionsFlags), false);
-}
-
 // GrVkBackendContext
 
-gr_vkbackendcontext_t* gr_vkbackendcontext_assemble(vk_instance_t* vkInstance,
+gr_vkbackendcontext_t* gr_vkbackendcontext_assemble(void* ctx,
+                                                    vk_instance_t* vkInstance,
                                                     vk_physical_device_t* vkPhysicalDevice,
                                                     vk_device_t* vkDevice,
                                                     vk_queue_t* vkQueue,
@@ -159,11 +130,9 @@ gr_vkbackendcontext_t* gr_vkbackendcontext_assemble(vk_instance_t* vkInstance,
                                                     uint32_t minAPIVersion,
                                                     uint32_t extensions,
                                                     uint32_t features,
-                                                    gr_vkinterface_t* grVkInterface) {
+                                                    gr_vk_get_proc getProc) {
     SK_ONLY_VULKAN(
-        sk_sp<GrVkBackendContext> grVkBackendContext(new GrVkBackendContext());
-
-        sk_sp<GrVkInterface> sharedGrVkInterface(AsGrVkInterface(grVkInterface));
+        GrVkBackendContext* grVkBackendContext = new GrVkBackendContext();
 
         grVkBackendContext->fInstance = reinterpret_cast<VkInstance>(vkInstance);
         grVkBackendContext->fPhysicalDevice = reinterpret_cast<VkPhysicalDevice>(vkPhysicalDevice);
@@ -174,16 +143,22 @@ gr_vkbackendcontext_t* gr_vkbackendcontext_assemble(vk_instance_t* vkInstance,
         grVkBackendContext->fExtensions = extensions;
         grVkBackendContext->fFeatures = features;
         grVkBackendContext->fOwnsInstanceAndDevice = false;
-        grVkBackendContext->fInterface = sharedGrVkInterface;
+        grVkBackendContext->fGetProc = [=](const char* name, VkInstance instance, VkDevice device)
+        {
+            auto proc = getProc(ctx,
+                          name,
+                          reinterpret_cast<vk_instance_t*>(instance),
+                          reinterpret_cast<vk_device_t*>(device));
 
-        sharedGrVkInterface.release();
-    )
+            return reinterpret_cast<PFN_vkVoidFunction>(proc);
+        };
+    );
 
-    return SK_ONLY_VULKAN(ToGrVkBackendContext(grVkBackendContext.release()), nullptr);
+    return SK_ONLY_VULKAN(ToGrVkBackendContext(grVkBackendContext), nullptr);
 }
 
-void gr_vkbackendcontext_unref(gr_vkbackendcontext_t* grVkBackendContext) {
-    SK_ONLY_VULKAN(SkSafeUnref(AsGrVkBackendContext(grVkBackendContext)));
+void gr_vkbackendcontext_delete(gr_vkbackendcontext_t* grVkBackendContext) {
+    SK_ONLY_VULKAN(delete AsGrVkBackendContext(grVkBackendContext));
 }
 
 // GrBackendTexture
