@@ -40,7 +40,7 @@
 
 #if defined(_WIN32)
     #define VKAPI_CALL __stdcall
-#endif
+#elif
     #define VKAPI_CALL
 #endif
 
