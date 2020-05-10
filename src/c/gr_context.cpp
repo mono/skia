@@ -25,6 +25,7 @@
 #    define SK_ONLY_GPU(...) SK_FIRST_ARG(__VA_ARGS__)
 #    if SK_VULKAN
 #        include "include/gpu/vk/GrVkBackendContext.h"
+#        include "include/gpu/vk/GrVkExtensions.h"
 #        define SK_ONLY_VULKAN(...) SK_FIRST_ARG(__VA_ARGS__)
 #    else
 #        define SK_ONLY_VULKAN(...) SK_SKIP_ARG(__VA_ARGS__)
@@ -44,8 +45,8 @@ gr_context_t* gr_context_make_gl(const gr_glinterface_t* glInterface) {
     return SK_ONLY_GPU(ToGrContext(GrContext::MakeGL(sk_ref_sp(AsGrGLInterface(glInterface))).release()), nullptr);
 }
 
-gr_context_t* gr_context_make_vulkan(const gr_vkbackendcontext_t* vkBackendContext) {
-    return SK_ONLY_VULKAN(ToGrContext(GrContext::MakeVulkan(sk_ref_sp(AsGrVkBackendContext(vkBackendContext))).release()), nullptr);
+gr_context_t* gr_context_make_vulkan(const gr_vk_backendcontext_t vkBackendContext) {
+    return SK_ONLY_VULKAN(ToGrContext(GrContext::MakeVulkan(AsGrVkBackendContext(&vkBackendContext)).release()), nullptr);
 }
 
 void gr_context_unref(gr_context_t* context) {
@@ -119,71 +120,29 @@ bool gr_glinterface_has_extension(const gr_glinterface_t* glInterface, const cha
     return SK_ONLY_GPU(AsGrGLInterface(glInterface)->hasExtension(extension), false);
 }
 
+// GrVkExtensions
 
-// GrVkInstance
-
-gr_vkinterface_t* gr_vkinterface_make(vk_getinstanceprocaddr_t* vkGetInstanceProcAddr,
-                                      vk_getdeviceprocaddr_t* vkGetDeviceProcAddr,
-                                      vk_instance_t* vkInstance,
-                                      vk_device_t* vkDevice,
-                                      uint32_t extensionFlags) {
-    SK_ONLY_VULKAN(
-        sk_sp<GrVkInterface> grVkInterface(new GrVkInterface(
-            GrVkInterface::GetInstanceProc(reinterpret_cast<PFN_vkVoidFunction(*)(VkInstance, const char*)>(vkGetInstanceProcAddr)),
-            GrVkInterface::GetDeviceProc(reinterpret_cast<PFN_vkVoidFunction(*)(VkDevice, const char*)>(vkGetDeviceProcAddr)),
-            reinterpret_cast<VkInstance>(vkInstance),
-            reinterpret_cast<VkDevice>(vkDevice),
-            extensionFlags
-        ));
-    )
-
-    return SK_ONLY_VULKAN(ToGrVkInterface(grVkInterface.release()), nullptr);
+gr_vk_extensions_t* gr_vk_extensions_new() {
+    return SK_ONLY_VULKAN(ToGrVkExtensions(new GrVkExtensions()), nullptr);
 }
 
-void gr_vkinterface_unref(gr_vkinterface_t* grVkInterface) {
-    SK_ONLY_VULKAN(SkSafeUnref(AsGrVkInterface(grVkInterface)));
+void gr_vk_extensions_delete(gr_vk_extensions_t* extensions) {
+    SK_ONLY_VULKAN(delete AsGrVkExtensions(extensions));
 }
 
-bool gr_vkinterface_validate(const gr_vkinterface_t* grVkInterface, uint32_t extensionsFlags)
-{
-    return SK_ONLY_VULKAN(AsGrVkInterface(grVkInterface)->validate(extensionsFlags), false);
+void gr_vk_extensions_init(gr_vk_extensions_t* extensions, gr_vk_get_proc getProc, void* userData, vk_instance_t* instance, vk_physical_device_t* physDev, uint32_t instanceExtensionCount, const char** instanceExtensions, uint32_t deviceExtensionCount, const char** deviceExtensions) {
+    SK_ONLY_VULKAN(AsGrVkExtensions(extensions)->init(
+        [userData, getProc](const char* name, VkInstance instance, VkDevice device) -> PFN_vkVoidFunction {
+            return getProc(userData, name, ToVkInstance(instance), ToVkDevice(device));
+        },
+        AsVkInstance(instance),
+        AsVkPhysicalDevice(physDev),
+        instanceExtensionCount, instanceExtensions,
+        deviceExtensionCount, deviceExtensions));
 }
 
-// GrVkBackendContext
-
-gr_vkbackendcontext_t* gr_vkbackendcontext_assemble(vk_instance_t* vkInstance,
-                                                    vk_physical_device_t* vkPhysicalDevice,
-                                                    vk_device_t* vkDevice,
-                                                    vk_queue_t* vkQueue,
-                                                    uint32_t graphicsQueueIndex,
-                                                    uint32_t minAPIVersion,
-                                                    uint32_t extensions,
-                                                    uint32_t features,
-                                                    gr_vkinterface_t* grVkInterface) {
-    SK_ONLY_VULKAN(
-        sk_sp<GrVkBackendContext> grVkBackendContext(new GrVkBackendContext());
-
-        sk_sp<GrVkInterface> sharedGrVkInterface(AsGrVkInterface(grVkInterface));
-
-        grVkBackendContext->fInstance = reinterpret_cast<VkInstance>(vkInstance);
-        grVkBackendContext->fPhysicalDevice = reinterpret_cast<VkPhysicalDevice>(vkPhysicalDevice);
-        grVkBackendContext->fDevice = reinterpret_cast<VkDevice>(vkDevice);
-        grVkBackendContext->fQueue = reinterpret_cast<VkQueue>(vkQueue);
-        grVkBackendContext->fGraphicsQueueIndex = graphicsQueueIndex;
-        grVkBackendContext->fMinAPIVersion = minAPIVersion;
-        grVkBackendContext->fExtensions = extensions;
-        grVkBackendContext->fFeatures = features;
-        grVkBackendContext->fOwnsInstanceAndDevice = false;
-        grVkBackendContext->fInterface = sharedGrVkInterface;
-
-        sharedGrVkInterface.release();
-    )
-
-    return SK_ONLY_VULKAN(ToGrVkBackendContext(grVkBackendContext.release()), nullptr);
-}
-
-void gr_vkbackendcontext_unref(gr_vkbackendcontext_t* grVkBackendContext) {
-    SK_ONLY_VULKAN(SkSafeUnref(AsGrVkBackendContext(grVkBackendContext)));
+bool gr_vk_extensions_has_extension(gr_vk_extensions_t* extensions, const char* ext, uint32_t minVersion) {
+    return SK_ONLY_VULKAN(AsGrVkExtensions(extensions)->hasExtension(ext, minVersion), nullptr);
 }
 
 // GrBackendTexture

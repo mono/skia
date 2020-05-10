@@ -31,7 +31,7 @@
 #include "include/gpu/gl/GrGLTypes.h"
 
 #if SK_VULKAN
-#include "vk/GrVkTypes.h"
+#include "include/gpu/vk/GrVkTypes.h"
 #endif
 
 #endif
@@ -78,6 +78,7 @@ static_assert (sizeof (gr_gl_textureinfo_t) == sizeof (GrGLTextureInfo), ASSERT_
 #if SK_VULKAN
 static_assert (sizeof (gr_vk_alloc_t) == sizeof (GrVkAlloc), ASSERT_MSG(GrVkAlloc, gr_vk_alloc_t));
 static_assert (sizeof (gr_vk_imageinfo_t) == sizeof (GrVkImageInfo), ASSERT_MSG(GrVkImageInfo, gr_vk_imageinfo_t));
+static_assert (sizeof(gr_vk_ycbcrconversioninfo_t) == sizeof(GrVkYcbcrConversionInfo), ASSERT_MSG(GrVkYcbcrConversionInfo, gr_vk_ycbcrconversioninfo_t));
 #endif
 #endif
 
