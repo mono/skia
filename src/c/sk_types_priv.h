@@ -319,10 +319,8 @@ static GrVkBackendContext AsGrVkBackendContext(const gr_vk_backendcontext_t* con
     ctx.fDeviceFeatures2 = AsVkPhysicalDeviceFeatures2(context->fDeviceFeatures2);
     ctx.fMemoryAllocator = sk_ref_sp(AsGrVkMemoryAllocator(context->fMemoryAllocator));
     if (context->fGetProc != nullptr) {
-        ctx.fGetProc = [context](const char* name, VkInstance instance,
-                                 VkDevice device) -> PFN_vkVoidFunction {
-            return context->fGetProc(reinterpret_cast<void*>(context->fGetProcContext), name,
-                                     ToVkInstance(instance), ToVkDevice(device));
+        ctx.fGetProc = [context](const char* name, VkInstance instance, VkDevice device) -> PFN_vkVoidFunction {
+            return context->fGetProc(context->fGetProcUserData, name, ToVkInstance(instance), ToVkDevice(device));
         };
     }
     ctx.fOwnsInstanceAndDevice = context->fOwnsInstanceAndDevice;

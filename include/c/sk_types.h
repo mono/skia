@@ -690,7 +690,7 @@ typedef struct vk_queue_t vk_queue_t;
 typedef struct gr_vk_extensions_t gr_vk_extensions_t;
 typedef struct gr_vk_memory_allocator_t gr_vk_memory_allocator_t;
 
-typedef void(VKAPI_CALL *gr_vk_func_ptr)(void);
+typedef void (VKAPI_CALL *gr_vk_func_ptr)(void);
 typedef gr_vk_func_ptr (*gr_vk_get_proc)(void* ctx, const char* name, vk_instance_t* instance, vk_device_t* device);
 
 typedef struct {
@@ -709,7 +709,7 @@ typedef struct {
     const vk_physical_device_features_2_t*  fDeviceFeatures2;
     gr_vk_memory_allocator_t*               fMemoryAllocator;
     gr_vk_get_proc                          fGetProc;
-    intptr_t                                fGetProcContext;
+    void*                                   fGetProcUserData;
     bool                                    fOwnsInstanceAndDevice;
     bool                                    fProtectedContext;
 } gr_vk_backendcontext_t;
