@@ -142,7 +142,7 @@ void gr_vk_extensions_init(gr_vk_extensions_t* extensions, gr_vk_get_proc getPro
 }
 
 bool gr_vk_extensions_has_extension(gr_vk_extensions_t* extensions, const char* ext, uint32_t minVersion) {
-    return SK_ONLY_VULKAN(AsGrVkExtensions(extensions)->hasExtension(ext, minVersion), nullptr);
+    return SK_ONLY_VULKAN(AsGrVkExtensions(extensions)->hasExtension(ext, minVersion), false);
 }
 
 // GrBackendTexture
