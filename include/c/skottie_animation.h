@@ -18,7 +18,7 @@ SK_C_PLUS_PLUS_BEGIN_GUARD
  * skottie::Animation
  */
 SK_C_API skottie_animation_t* skottie_animation_make_from_string(const char* data, size_t length);
-SK_C_API skottie_animation_t* skottie_animation_make_from_stream(sk_stream_filestream_t* stream);
+SK_C_API skottie_animation_t* skottie_animation_make_from_stream(sk_stream_t* stream);
 SK_C_API skottie_animation_t* skottie_animation_make_from_file(const char* path);
 
 SK_C_API void skottie_animation_render(skottie_animation_t *instance, sk_canvas_t *canvas, sk_rect_t *dst);

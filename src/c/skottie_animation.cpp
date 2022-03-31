@@ -10,8 +10,8 @@ skottie_animation_t* skottie_animation_make_from_string(const char* data, size_t
     return ToSkottieAnimation(animation.release());
 }
 
-skottie_animation_t* skottie_animation_make_from_stream(sk_stream_filestream_t* stream) {
-    return ToSkottieAnimation(skottie::Animation::Make(AsFileStream(stream)).release());
+skottie_animation_t* skottie_animation_make_from_stream(sk_stream_t* stream) {
+    return ToSkottieAnimation(skottie::Animation::Make(AsStream(stream)).release());
 }
 
 skottie_animation_t* skottie_animation_make_from_file(const char* path) {
