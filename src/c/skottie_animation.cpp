@@ -26,15 +26,15 @@ void skottie_animation_render_with_flags(skottie_animation_t *instance, sk_canva
     AsSkottieAnimation(instance)->render(AsCanvas(canvas), AsRect(dst), (skottie::Animation::RenderFlags)(flags));
 }
 
-void skottie_animation_seek(skottie_animation_t *instance, SkScalar t, sksg_invalidation_controller_t *ic) {
+void skottie_animation_seek(skottie_animation_t *instance, float t, sksg_invalidation_controller_t *ic) {
     AsSkottieAnimation(instance)->seek(t, AsSksgInvalidationController(ic));
 }
 
-void skottie_animation_seek_frame(skottie_animation_t *instance, SkScalar t, sksg_invalidation_controller_t *ic) {
+void skottie_animation_seek_frame(skottie_animation_t *instance, float t, sksg_invalidation_controller_t *ic) {
     AsSkottieAnimation(instance)->seekFrame(t, AsSksgInvalidationController(ic));
 }
 
-void skottie_animation_seek_frame_time(skottie_animation_t *instance, SkScalar t, sksg_invalidation_controller_t *ic) {
+void skottie_animation_seek_frame_time(skottie_animation_t *instance, float t, sksg_invalidation_controller_t *ic) {
     AsSkottieAnimation(instance)->seekFrameTime(t, AsSksgInvalidationController(ic));
 }
 

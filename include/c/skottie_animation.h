@@ -24,9 +24,9 @@ SK_C_API skottie_animation_t* skottie_animation_make_from_file(const char* path)
 SK_C_API void skottie_animation_render(skottie_animation_t *instance, sk_canvas_t *canvas, sk_rect_t *dst);
 SK_C_API void skottie_animation_render_with_flags(skottie_animation_t *instance, sk_canvas_t *canvas, sk_rect_t *dst, skottie_animation_renderflags_t flags);
 
-SK_C_API void skottie_animation_seek(skottie_animation_t *instance, SkScalar t, sksg_invalidation_controller_t *ic);
-SK_C_API void skottie_animation_seek_frame(skottie_animation_t *instance, SkScalar t, sksg_invalidation_controller_t *ic);
-SK_C_API void skottie_animation_seek_frame_time(skottie_animation_t *instance, SkScalar t, sksg_invalidation_controller_t *ic);
+SK_C_API void skottie_animation_seek(skottie_animation_t *instance, float t, sksg_invalidation_controller_t *ic);
+SK_C_API void skottie_animation_seek_frame(skottie_animation_t *instance, float t, sksg_invalidation_controller_t *ic);
+SK_C_API void skottie_animation_seek_frame_time(skottie_animation_t *instance, float t, sksg_invalidation_controller_t *ic);
 
 SK_C_API double skottie_animation_get_duration(skottie_animation_t *instance);
 SK_C_API double skottie_animation_get_fps(skottie_animation_t *instance);
