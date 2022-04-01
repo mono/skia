@@ -45,6 +45,11 @@
 #include "include/c/sk_vertices.h"
 #include "include/c/sk_xml.h"
 
+// Skottie
+#include "include/c/skottie_animation.h"
+#include "include/c/sksg_invalidation_controller.h"
+
+
 // Xamarin
 #include "include/xamarin/sk_managedstream.h"
 #include "include/xamarin/sk_manageddrawable.h"
