@@ -5,6 +5,20 @@
 
 #include "src/c/sk_types_priv.h"
 
+#include "src/utils/SkJSON.h"
+#include "include/core/SkCubicMap.h"
+
+void skottie_animation_keepalive() {
+    // This function is needed on Tizen to ensure required types are kept alive
+    // It is not meant to be executed.
+
+    skjson::ObjectValue* a;
+    auto r = (*a)["tmp"];
+
+    SkCubicMap* b;
+    (*b).computeYFromX(.0f);
+}
+
 skottie_animation_t* skottie_animation_make_from_string(const char* data, size_t length) {
     auto animation = skottie::Animation::Make(data, length);
     return ToSkottieAnimation(animation.release());

@@ -102,6 +102,7 @@ void** KeepSkiaCSymbols (void)
         // Animation
         (void*)skottie_animation_make_from_stream,
         (void*)sksg_invalidation_controller_new,
+        (void*)skottie_animation_keepalive,
 
         // Xamarin
         (void*)sk_compatpaint_new,
