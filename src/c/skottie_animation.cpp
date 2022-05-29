@@ -19,6 +19,14 @@ void skottie_animation_keepalive() {
     (*b).computeYFromX(.0f);
 }
 
+void skottie_animation_ref(skottie_animation_t* instance) {
+    SkSafeRef(AsSkottieAnimation(instance));
+}
+
+void skottie_animation_unref(skottie_animation_t* instance) {
+    SkSafeUnref(AsSkottieAnimation(instance));
+}
+
 skottie_animation_t* skottie_animation_make_from_string(const char* data, size_t length) {
     auto animation = skottie::Animation::Make(data, length);
     return ToSkottieAnimation(animation.release());
