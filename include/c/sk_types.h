@@ -1024,8 +1024,8 @@ typedef struct skottie_marker_observer_t skottie_marker_observer_t;
 typedef struct sksg_invalidation_controller_t sksg_invalidation_controller_t;
 
 typedef enum {
-    kSkipTopLevelIsolation = 0x01,
-    kDisableTopLevelClipping = 0x02,
+    SKIP_TOP_LEVEL_ISOLATION = 0x01,
+    DISABLE_TOP_LEVEL_CLIPPING = 0x02,
 } skottie_animation_renderflags_t;
 
 SK_C_PLUS_PLUS_END_GUARD

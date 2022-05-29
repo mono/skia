@@ -32,6 +32,10 @@ skottie_animation_t* skottie_animation_make_from_file(const char* path) {
     return ToSkottieAnimation(skottie::Animation::MakeFromFile(path).release());
 }
 
+void skottie_animation_delete(skottie_animation_t* instance) {
+    delete AsSkottieAnimation(instance);
+}
+
 void skottie_animation_render(skottie_animation_t *instance, sk_canvas_t *canvas, sk_rect_t *dst) {
     AsSkottieAnimation(instance)->render(AsCanvas(canvas), AsRect(dst));
 }

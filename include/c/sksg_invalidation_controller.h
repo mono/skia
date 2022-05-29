@@ -15,6 +15,7 @@
 SK_C_PLUS_PLUS_BEGIN_GUARD
 
 SK_C_API sksg_invalidation_controller_t* sksg_invalidation_controller_new();
+SK_C_API void sksg_invalidation_controller_delete(sksg_invalidation_controller_t* instance);
 
 SK_C_API void sksg_invalidation_controller_inval(sksg_invalidation_controller_t* instance, sk_rect_t* rect, sk_matrix_t* matrix);
 SK_C_API void sksg_invalidation_controller_get_bounds(sksg_invalidation_controller_t* instance, sk_rect_t* bounds);

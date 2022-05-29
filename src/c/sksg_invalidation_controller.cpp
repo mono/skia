@@ -10,6 +10,10 @@ sksg_invalidation_controller_t* sksg_invalidation_controller_new() {
     return ToSksgInvalidationController(new sksg::InvalidationController());
 }
 
+void sksg_invalidation_controller_delete(sksg_invalidation_controller_t* instance) {
+    delete AsSksgInvalidationController(instance);
+}
+
 void sksg_invalidation_controller_inval(sksg_invalidation_controller_t* instance, sk_rect_t* rect, sk_matrix_t* matrix) {
     AsSksgInvalidationController(instance)->inval(*AsRect(rect), AsMatrix(matrix));
 }
