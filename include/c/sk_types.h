@@ -344,6 +344,8 @@ typedef struct sk_string_t sk_string_t;
 */
 typedef struct sk_bitmap_t sk_bitmap_t;
 typedef struct sk_pixmap_t sk_pixmap_t;
+// placed here to help seperate in PR
+typedef struct sk_png_chunk_reader_t sk_png_chunk_reader_t;
 typedef struct sk_colorfilter_t sk_colorfilter_t;
 typedef struct sk_imagefilter_t sk_imagefilter_t;
 typedef struct sk_imagefilter_croprect_t sk_imagefilter_croprect_t;
@@ -471,6 +473,14 @@ typedef enum {
     DNG_SK_ENCODED_FORMAT,
     HEIF_SK_ENCODED_FORMAT,
 } sk_encoded_image_format_t;
+
+/**
+ *  Enum describing selection policy.
+ */
+typedef enum {
+    kPreferStillImage,
+    kPreferAnimation,
+} sk_codec_selection_policy_t;
 
 typedef enum {
     TOP_LEFT_SK_ENCODED_ORIGIN     = 1, // Default

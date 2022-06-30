@@ -53,6 +53,8 @@
 // Xamarin
 #include "include/xamarin/sk_managedstream.h"
 #include "include/xamarin/sk_manageddrawable.h"
+// placed here to help seperate in PR
+#include "include/xamarin/sk_managed_png_chunk_reader.h"
 #include "include/xamarin/sk_managedtracememorydump.h"
 #include "include/xamarin/sk_compatpaint.h"
 
@@ -68,6 +70,8 @@ void** KeepSkiaCSymbols (void)
         (void*)sk_bitmap_new,
         (void*)sk_canvas_destroy,
         (void*)sk_codec_min_buffered_bytes_needed,
+        (void*)sk_codec_new_from_data,
+        (void*)sk_codec_new_from_stream,
         (void*)sk_colorfilter_unref,
         (void*)sk_colorspace_unref,
         (void*)sk_colortable_unref,
@@ -108,6 +112,8 @@ void** KeepSkiaCSymbols (void)
         (void*)sk_compatpaint_new,
         (void*)sk_managedstream_new,
         (void*)sk_manageddrawable_new,
+        // placed here to help seperate in pr
+        (void*)sk_managed_png_chunk_reader_new,
         (void*)sk_managedtracememorydump_new,
     };
     return ret;

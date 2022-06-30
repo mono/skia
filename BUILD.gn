@@ -3088,12 +3088,16 @@ skiasharp_build("SkiaSharp") {
   ]
 
   sources = [
+    // placed here to help seperate in PR
+    "src/xamarin/sk_managed_png_chunk_reader.cpp",
     "src/xamarin/sk_compatpaint.cpp",
     "src/xamarin/sk_manageddrawable.cpp",
     "src/xamarin/sk_managedstream.cpp",
     "src/xamarin/sk_managedtracememorydump.cpp",
     "src/xamarin/sk_xamarin.cpp",
     "src/xamarin/SkiaKeeper.c",
+    // placed here to help seperate in PR
+    "src/xamarin/SkManaged_Png_Chunk_Reader.cpp",
     "src/xamarin/SkCompatPaint.cpp",
     "src/xamarin/SkManagedDrawable.cpp",
     "src/xamarin/SkManagedStream.cpp",

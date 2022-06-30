@@ -16,11 +16,12 @@ SK_C_PLUS_PLUS_BEGIN_GUARD
 
 SK_C_API size_t sk_codec_min_buffered_bytes_needed(void);
 
-SK_C_API sk_codec_t* sk_codec_new_from_stream(sk_stream_t* stream, sk_codec_result_t* result);
-SK_C_API sk_codec_t* sk_codec_new_from_data(sk_data_t* data);
+SK_C_API sk_codec_t* sk_codec_new_from_stream(sk_stream_t* stream, sk_codec_result_t* result, sk_png_chunk_reader_t* chunk_reader, sk_codec_selection_policy_t policy);
+SK_C_API sk_codec_t* sk_codec_new_from_data(sk_data_t* data, sk_png_chunk_reader_t* chunk_reader);
 SK_C_API void sk_codec_destroy(sk_codec_t* codec);
 SK_C_API void sk_codec_get_info(sk_codec_t* codec, sk_imageinfo_t* info);
 SK_C_API sk_encodedorigin_t sk_codec_get_origin(sk_codec_t* codec);
+SK_C_API void sk_codec_get_dimensions(sk_codec_t* codec, sk_isize_t* dimensions);
 SK_C_API void sk_codec_get_scaled_dimensions(sk_codec_t* codec, float desiredScale, sk_isize_t* dimensions);
 SK_C_API bool sk_codec_get_valid_subset(sk_codec_t* codec, sk_irect_t* desiredSubset);
 SK_C_API sk_encoded_image_format_t sk_codec_get_encoded_format(sk_codec_t* codec);
