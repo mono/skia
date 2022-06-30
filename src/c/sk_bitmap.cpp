@@ -12,6 +12,7 @@
 #include "include/core/SkColorPriv.h"
 #include "include/core/SkImageInfo.h"
 #include "include/core/SkMath.h"
+#include "include/core/SkPixelRef.h"
 #include "include/core/SkShader.h"
 #include "include/core/SkUnPreMultiply.h"
 
@@ -117,6 +118,10 @@ bool sk_bitmap_install_mask_pixels(sk_bitmap_t* cbitmap, const sk_mask_t* cmask)
     return AsBitmap(cbitmap)->installMaskPixels(*AsMask(cmask));
 }
 
+bool sk_bitmap_try_alloc_pixels_with_allocator(sk_bitmap_t* cbitmap, sk_bitmapallocator_t* allocator) {
+    return AsBitmap(cbitmap)->tryAllocPixels(AsBitmapAllocator(allocator));
+}
+
 bool sk_bitmap_try_alloc_pixels(sk_bitmap_t* cbitmap, const sk_imageinfo_t* requestedInfo, size_t rowBytes) {
     return AsBitmap(cbitmap)->tryAllocPixels(AsImageInfo(requestedInfo), rowBytes);
 }
@@ -132,6 +137,16 @@ void sk_bitmap_set_pixels(sk_bitmap_t* cbitmap, void* pixels) {
 bool sk_bitmap_peek_pixels(sk_bitmap_t* cbitmap, sk_pixmap_t* cpixmap) {
     return AsBitmap(cbitmap)->peekPixels(AsPixmap(cpixmap));
 }
+
+SK_C_API void* sk_bitmap_get_pixel_ref(sk_bitmap_t* cbitmap) {
+    return AsBitmap(cbitmap)->pixelRef();
+}
+
+SK_C_API void sk_bitmap_set_pixel_ref(sk_bitmap_t* cbitmap, void* cpixelref, int x, int y) {
+    SkPixelRef* r = (SkPixelRef*)cpixelref;
+    AsBitmap(cbitmap)->setPixelRef(sk_ref_sp(r), x, y);
+}
+
 
 bool sk_bitmap_extract_subset(sk_bitmap_t* cbitmap, sk_bitmap_t* cdst, sk_irect_t* subset) {
     return AsBitmap(cbitmap)->extractSubset(AsBitmap(cdst), *AsIRect(subset));
@@ -155,4 +170,9 @@ sk_shader_t* sk_bitmap_make_shader(sk_bitmap_t* cbitmap, sk_shader_tilemode_t tm
         m = AsMatrix(cmatrix);
     }
     return ToShader(AsBitmap(cbitmap)->makeShader((SkTileMode)tmx, (SkTileMode)tmy, cmatrix ? &m : nullptr).release());
+}
+
+bool sk_bitmap_heapalloc(sk_bitmap_t* cbitmap) {
+    SkBitmap::HeapAllocator stdalloc;
+    return stdalloc.allocPixelRef(AsBitmap(cbitmap));
 }
