@@ -72,6 +72,132 @@ float sk_matrix_map_radius(sk_matrix_t *matrix, float radius) {
     return AsMatrix(matrix).mapRadius(radius);
 }
 
+// additional
+sk_matrix_t sk_matrix_scale(float sx, float sy) {
+    return ToMatrix(SkMatrix::Scale(sx, sy));
+}
+sk_matrix_t sk_matrix_translate(float dx, float dy) {
+    return ToMatrix(SkMatrix::Translate(dx, dy));
+}
+sk_matrix_t sk_matrix_translate_point(sk_point_t t) {
+    return ToMatrix(SkMatrix::Translate(AsPoint(t)));
+}
+sk_matrix_t sk_matrix_translate_ipoint(sk_ipoint_t t) {
+    return ToMatrix(SkMatrix::Translate(AsIPoint(t)));
+}
+sk_matrix_t sk_matrix_rotate_deg(float deg) {
+    return ToMatrix(SkMatrix::RotateDeg(deg));
+}
+sk_matrix_t sk_matrix_rotate_deg_point(float deg, sk_point_t t) {
+    return ToMatrix(SkMatrix::RotateDeg(deg, AsPoint(t)));
+}
+sk_matrix_t sk_matrix_rotate_rad(float rad) {
+    return ToMatrix(SkMatrix::RotateRad(rad));
+}
+sk_matrix_type_mask_t sk_matrix_get_type(sk_matrix_t* matrix) {
+    return (sk_matrix_type_mask_t)AsMatrix(matrix).getType(); // calls ComputeTypeMask
+}
+bool sk_matrix_is_identity(sk_matrix_t* matrix) {
+    return AsMatrix(matrix).isIdentity(); // calls getType()
+}
+bool sk_matrix_is_scale_translate(sk_matrix_t* matrix) {
+    return AsMatrix(matrix).isScaleTranslate(); // calls getType()
+}
+bool sk_matrix_is_translate(sk_matrix_t* matrix) {
+    return AsMatrix(matrix).isTranslate(); // calls getType()
+}
+bool sk_matrix_rect_stays_rect(sk_matrix_t* matrix) {
+    return AsMatrix(matrix).rectStaysRect(); // calls getType()
+}
+bool sk_matrix_preserves_axis_alignment(sk_matrix_t* matrix) {
+    return AsMatrix(matrix).preservesAxisAlignment();
+}
+bool sk_matrix_has_perspective(sk_matrix_t* matrix) {
+    return AsMatrix(matrix).hasPerspective(); // calls getType()
+}
+bool sk_matrix_is_similarity(sk_matrix_t* matrix, float tol) {
+    return AsMatrix(matrix).isSimilarity(tol);
+}
+bool sk_matrix_preserves_right_angles(sk_matrix_t* matrix, float tol) {
+    return AsMatrix(matrix).preservesRightAngles(tol);
+}
+float sk_matrix_get(sk_matrix_t* matrix, sk_matrix_row_major_mask_t mask) {
+    return AsMatrix(matrix).get(mask);
+}
+float sk_matrix_rc(sk_matrix_t* matrix, int r, int c) {
+    return AsMatrix(matrix).rc(r, c);
+}
+void sk_matrix_get9(sk_matrix_t* matrix, float* buffer) {
+    return AsMatrix(matrix).get9(buffer);
+}
+void sk_matrix_set9(sk_matrix_t* matrix, float* buffer, sk_matrix_t* result) {
+    SkMatrix m = AsMatrix(matrix);
+    m.set9(buffer);
+    *result = ToMatrix(&m);
+}
+void sk_matrix_reset(sk_matrix_t* matrix, sk_matrix_t* result) {
+    SkMatrix m = AsMatrix(matrix);
+    m.reset();
+    *result = ToMatrix(&m);
+}
+void sk_matrix_set_identity(sk_matrix_t* matrix, sk_matrix_t* result) {
+    SkMatrix m = AsMatrix(matrix);
+    m.setIdentity();
+    *result = ToMatrix(&m);
+}
+void sk_matrix_normalize_perspective(sk_matrix_t* matrix, sk_matrix_t* result) {
+    SkMatrix m = AsMatrix(matrix);
+    m.normalizePerspective();
+    *result = ToMatrix(&m);
+}
+void sk_matrix_map_homogeneous_points3(sk_matrix_t* matrix, sk_point3_t* dst, sk_point3_t* src, int count) {
+    AsMatrix(matrix).mapHomogeneousPoints(AsPoint3(dst), AsPoint3(src), count);
+}
+void sk_matrix_map_homogeneous_points(sk_matrix_t* matrix, sk_point3_t* dst, sk_point_t* src, int count) {
+    AsMatrix(matrix).mapHomogeneousPoints(AsPoint3(dst), AsPoint(src), count);
+}
+bool sk_matrix_is_finite(sk_matrix_t* matrix) {
+    return AsMatrix(matrix).isFinite();
+}
+void sk_matrix_pre_scale(sk_matrix_t* result, sk_matrix_t* matrix, float sx, float sy) {
+    SkMatrix m = AsMatrix(matrix);
+    m.preScale(sx, sy);
+    *result = ToMatrix(&m);
+}
+void sk_matrix_pre_scale_with_pivot(sk_matrix_t* result, sk_matrix_t* matrix, float sx, float sy, float px, float py) {
+    SkMatrix m = AsMatrix(matrix);
+    m.preScale(sx, sy, px, py);
+    *result = ToMatrix(&m);
+}
+void sk_matrix_post_scale(sk_matrix_t* result, sk_matrix_t* matrix, float sx, float sy) {
+    SkMatrix m = AsMatrix(matrix);
+    m.postScale(sx, sy);
+    *result = ToMatrix(&m);
+}
+void sk_matrix_post_scale_with_pivot(sk_matrix_t* result, sk_matrix_t* matrix, float sx, float sy, float px, float py) {
+    SkMatrix m = AsMatrix(matrix);
+    m.postScale(sx, sy, px, py);
+    *result = ToMatrix(&m);
+}
+void sk_matrix_pre_translate(sk_matrix_t* result, sk_matrix_t* matrix, float dx, float dy) {
+    SkMatrix m = AsMatrix(matrix);
+    m.preTranslate(dx, dy);
+    *result = ToMatrix(&m);
+}
+void sk_matrix_post_translate(sk_matrix_t* result, sk_matrix_t* matrix, float dx, float dy) {
+    SkMatrix m = AsMatrix(matrix);
+    m.postTranslate(dx, dy);
+    *result = ToMatrix(&m);
+}
+bool sk_matrix_set_rect_to_rect(sk_matrix_t* matrix, sk_matrix_t* result, sk_rect_t* dest, sk_rect_t* source, sk_matrix_scale_to_fit_t stf) {
+    SkMatrix m = AsMatrix(matrix);
+    bool r = m.setRectToRect(*AsRect(source), *AsRect(dest), (SkMatrix::ScaleToFit)stf);
+    *result = ToMatrix(&m);
+    return r;
+}
+
+
+
 // 3d view
 
 sk_3dview_t* sk_3dview_new(void) {
