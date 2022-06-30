@@ -98,6 +98,7 @@ DEF_CLASS_MAP(Sk3DView, sk_3dview_t, 3DView)
 DEF_CLASS_MAP(SkBitmap, sk_bitmap_t, Bitmap)
 DEF_CLASS_MAP(SkCanvas, sk_canvas_t, Canvas)
 DEF_CLASS_MAP(SkCodec, sk_codec_t, Codec)
+DEF_CLASS_MAP(SkAndroidCodec, sk_android_codec_t, AndroidCodec)
 DEF_CLASS_MAP(SkColorFilter, sk_colorfilter_t, ColorFilter)
 DEF_CLASS_MAP(SkColorSpace, sk_colorspace_t, ColorSpace)
 DEF_CLASS_MAP(SkColorTable, sk_colortable_t, ColorTable)
@@ -184,6 +185,9 @@ DEF_MAP(SkCanvas::Lattice, sk_lattice_t, Lattice)
 #include "include/codec/SkCodec.h"
 DEF_MAP(SkCodec::FrameInfo, sk_codec_frameinfo_t, FrameInfo)
 DEF_MAP(SkCodec::Options, sk_codec_options_t, CodecOptions)
+
+#include "include/codec/SkAndroidCodec.h"
+DEF_MAP(SkAndroidCodec::AndroidOptions, sk_android_codec_options_t, AndroidCodecOptions)
 
 #include "include/core/SkColor.h"
 DEF_MAP(SkColor4f, sk_color4f_t, Color4f)
