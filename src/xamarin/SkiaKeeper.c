@@ -53,7 +53,6 @@
 // Xamarin
 #include "include/xamarin/sk_managedstream.h"
 #include "include/xamarin/sk_manageddrawable.h"
-// placed here to help seperate in PR
 #include "include/xamarin/sk_managed_png_chunk_reader.h"
 #include "include/xamarin/sk_managedtracememorydump.h"
 #include "include/xamarin/sk_compatpaint.h"
@@ -112,7 +111,6 @@ void** KeepSkiaCSymbols (void)
         (void*)sk_compatpaint_new,
         (void*)sk_managedstream_new,
         (void*)sk_manageddrawable_new,
-        // placed here to help seperate in pr
         (void*)sk_managed_png_chunk_reader_new,
         (void*)sk_managedtracememorydump_new,
     };
