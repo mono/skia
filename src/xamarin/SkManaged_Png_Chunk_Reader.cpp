@@ -18,9 +18,8 @@ SkManaged_Png_Chunk_Reader::SkManaged_Png_Chunk_Reader(void* context) {
 }
 
 SkManaged_Png_Chunk_Reader::~SkManaged_Png_Chunk_Reader() {
-    if (fProcs.fDestroy) {
-        fProcs.fDestroy(this, fContext);
-    }
+    if (!fProcs.fDestroy) return;
+    fProcs.fDestroy(this, fContext);
 }
 
 bool SkManaged_Png_Chunk_Reader::readChunk(const char tag[], const void* data, size_t length) {

@@ -25,9 +25,8 @@ bool readChunk(SkManaged_Png_Chunk_Reader* d, void* context, const char tag[], c
 }
 
 void destroy(SkManaged_Png_Chunk_Reader* d, void* context) {
-    if (gProcs.fDestroy) {
-        gProcs.fDestroy(ToManaged_Png_Chunk_Reader(d), context);
-    }
+    if (!gProcs.fDestroy) return;
+    gProcs.fDestroy(ToManaged_Png_Chunk_Reader(d), context);
 }
 
 sk_managed_png_chunk_reader_t* sk_managed_png_chunk_reader_new(void* context) {
