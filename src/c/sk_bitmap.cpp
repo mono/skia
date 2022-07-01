@@ -122,14 +122,6 @@ void sk_bitmap_get_pixel_colors(sk_bitmap_t* cbitmap, sk_color_t* colors) {
     }
 }
 
-bool sk_bitmap_read_pixels_imageinfo(sk_bitmap_t* cbitmap, const sk_imageinfo_t* dstInfo, void* dstPixels, size_t rowBytes, int x, int y) {
-    return AsBitmap(cbitmap)->readPixels(AsImageInfo(dstInfo), dstPixels, rowBytes, x, y);
-}
-
-bool sk_bitmap_read_pixels_at_location(sk_bitmap_t* cbitmap, const sk_pixmap_t* cpixmap, int x, int y) {
-    return AsBitmap(cbitmap)->readPixels(*AsPixmap(cpixmap), x, y);
-}
-
 bool sk_bitmap_write_pixels_at_location(sk_bitmap_t* cbitmap, const sk_pixmap_t* cpixmap, int x, int y) {
     return AsBitmap(cbitmap)->writePixels(*AsPixmap(cpixmap), x, y);
 }

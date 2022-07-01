@@ -37,8 +37,6 @@ SK_C_API bool sk_bitmap_ready_to_draw(sk_bitmap_t* cbitmap);
 SK_C_API bool sk_bitmap_compute_is_opaque(sk_bitmap_t* cbitmap);
 SK_C_API const sk_pixmap_t* sk_bitmap_get_pixmap(sk_bitmap_t* cbitmap);
 SK_C_API void sk_bitmap_get_pixel_colors(sk_bitmap_t* cbitmap, sk_color_t* colors);
-SK_C_API bool sk_bitmap_read_pixels_imageinfo(sk_bitmap_t* cbitmap, const sk_imageinfo_t* dstInfo, void* dstPixels, size_t rowBytes, int x, int y);
-SK_C_API bool sk_bitmap_read_pixels_at_location(sk_bitmap_t* cbitmap, const sk_pixmap_t* cpixmap, int x, int y);
 SK_C_API bool sk_bitmap_write_pixels_at_location(sk_bitmap_t* cbitmap, const sk_pixmap_t* cpixmap, int x, int y);
 SK_C_API bool sk_bitmap_install_pixels(sk_bitmap_t* cbitmap, const sk_imageinfo_t* cinfo, void* pixels, size_t rowBytes, const sk_bitmap_release_proc releaseProc, void* context);
 SK_C_API bool sk_bitmap_install_pixels_with_pixmap(sk_bitmap_t* cbitmap, const sk_pixmap_t* cpixmap);
