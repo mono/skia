@@ -71,6 +71,8 @@ void** KeepSkiaCSymbols (void)
         (void*)sk_codec_min_buffered_bytes_needed,
         (void*)sk_codec_new_from_data,
         (void*)sk_codec_new_from_stream,
+        (void*)sk_codec_new_from_stream_with_png_chunk_reader_and_selection_policy,
+        (void*)sk_codec_new_from_data_with_png_chunk_reader,
         (void*)sk_colorfilter_unref,
         (void*)sk_colorspace_unref,
         (void*)sk_colortable_unref,
