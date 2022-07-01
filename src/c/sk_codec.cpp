@@ -42,10 +42,6 @@ void sk_codec_get_scaled_dimensions(sk_codec_t* codec, float desiredScale, sk_is
     *dimensions = ToISize(AsCodec(codec)->getScaledDimensions(desiredScale));
 }
 
-void sk_codec_get_dimensions(sk_codec_t* codec, sk_isize_t* dimensions) {
-    *dimensions = ToISize(AsCodec(codec)->dimensions());
-}
-
 bool sk_codec_get_valid_subset(sk_codec_t* codec, sk_irect_t* desiredSubset) {
     return AsCodec(codec)->getValidSubset(AsIRect(desiredSubset));
 }
