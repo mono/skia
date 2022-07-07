@@ -477,8 +477,8 @@ typedef enum {
  *  Enum describing selection policy.
  */
 typedef enum {
-    kPreferStillImage,
-    kPreferAnimation,
+    PREFER_STILL_IMAGE_SK_CODEC_SELECTION_POLICY,
+    PREFER_ANIMATION_SK_CODEC_SELECTION_POLICY,
 } sk_codec_selection_policy_t;
 
 typedef enum {
