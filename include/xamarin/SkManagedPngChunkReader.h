@@ -5,26 +5,26 @@
  * found in the LICENSE file.
  */
 
-#ifndef SkManaged_Png_Chunk_Reader_h
-#define SkManaged_Png_Chunk_Reader_h
+#ifndef SkManagedPngChunkReader_h
+#define SkManagedPngChunkReader_h
 
 #include "include/core/SkPngChunkReader.h"
 #include "include/core/SkTypes.h"
 
-class SK_API SkManaged_Png_Chunk_Reader;
+class SK_API SkManagedPngChunkReader;
 
 // delegate declarations
 
 // managed _Png_Chunk_Reader
-class SkManaged_Png_Chunk_Reader : public SkPngChunkReader {
+class SkManagedPngChunkReader : public SkPngChunkReader {
 public:
-    SkManaged_Png_Chunk_Reader(void* context);
+    SkManagedPngChunkReader(void* context);
 
-    ~SkManaged_Png_Chunk_Reader() override;
+    ~SkManagedPngChunkReader() override;
 
 public:
-    typedef bool       (*ReadChunkProc)          (SkManaged_Png_Chunk_Reader* d, void* context, const char* tag, const void* data, size_t length);
-    typedef void       (*DestroyProc)            (SkManaged_Png_Chunk_Reader* d, void* context);
+    typedef bool       (*ReadChunkProc)          (SkManagedPngChunkReader* d, void* context, const char* tag, const void* data, size_t length);
+    typedef void       (*DestroyProc)            (SkManagedPngChunkReader* d, void* context);
 
     struct Procs {
         ReadChunkProc fReadChunk = nullptr;
