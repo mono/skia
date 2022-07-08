@@ -15,7 +15,6 @@ class SK_API SkManagedPngChunkReader;
 
 // delegate declarations
 
-// managed _Png_Chunk_Reader
 class SkManagedPngChunkReader : public SkPngChunkReader {
 public:
     SkManagedPngChunkReader(void* context);
