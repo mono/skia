@@ -118,14 +118,14 @@ sk_android_codec_t* sk_android_codec_new_from_codec(sk_codec_t* codec, sk_androi
     );
 }
 
-sk_android_codec_t* sk_android_codec_new_from_stream(sk_stream_t* stream, sk_png_chunk_reader_t* chunk_reader) {
+sk_android_codec_t* sk_android_codec_new_from_stream(sk_stream_t* stream, sk_pngchunkreader_t* chunk_reader) {
     std::unique_ptr<SkStream> skstream(AsStream(stream));
     return ToAndroidCodec(
         SkAndroidCodec::MakeFromStream(std::move(skstream), AsPngChunkReader(chunk_reader)).release()
     );
 }
 
-sk_android_codec_t* sk_android_codec_new_from_data(sk_data_t* data, sk_png_chunk_reader_t* chunk_reader) {
+sk_android_codec_t* sk_android_codec_new_from_data(sk_data_t* data, sk_pngchunkreader_t* chunk_reader) {
     return ToAndroidCodec(
         SkAndroidCodec::MakeFromData(sk_ref_sp(AsData(data)), AsPngChunkReader(chunk_reader)).release()
     );
