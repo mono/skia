@@ -121,12 +121,12 @@ public:
          *  If the container format contains both still images and image sequences,
          *  SkCodec should choose one of the still images. This is the default.
          */
-        PREFER_STILL_IMAGE_SK_CODEC_SELECTION_POLICY,
+        kPreferStillImage,
         /**
          *  If the container format contains both still images and image sequences,
          *  SkCodec should choose one of the image sequences for animation.
          */
-        PREFER_ANIMATION_SK_CODEC_SELECTION_POLICY,
+        kPreferAnimation,
     };
 
     /**
@@ -166,7 +166,7 @@ public:
     static std::unique_ptr<SkCodec> MakeFromStream(
             std::unique_ptr<SkStream>, Result* = nullptr,
             SkPngChunkReader* = nullptr,
-            SelectionPolicy selectionPolicy = SelectionPolicy::PREFER_STILL_IMAGE_SK_CODEC_SELECTION_POLICY);
+            SelectionPolicy selectionPolicy = SelectionPolicy::kPreferStillImage);
 
     /**
      *  If this data represents an encoded image that we know how to decode,

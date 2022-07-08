@@ -76,8 +76,8 @@ std::unique_ptr<SkCodec> SkCodec::MakeFromStream(
         return nullptr;
     }
 
-    if (selectionPolicy != SelectionPolicy::PREFER_STILL_IMAGE_SK_CODEC_SELECTION_POLICY
-            && selectionPolicy != SelectionPolicy::PREFER_ANIMATION_SK_CODEC_SELECTION_POLICY) {
+    if (selectionPolicy != SelectionPolicy::kPreferStillImage
+            && selectionPolicy != SelectionPolicy::kPreferAnimation) {
         *outResult = kInvalidParameters;
         return nullptr;
     }
