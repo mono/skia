@@ -138,11 +138,11 @@ bool sk_bitmap_peek_pixels(sk_bitmap_t* cbitmap, sk_pixmap_t* cpixmap) {
     return AsBitmap(cbitmap)->peekPixels(AsPixmap(cpixmap));
 }
 
-SK_C_API void* sk_bitmap_get_pixel_ref(sk_bitmap_t* cbitmap) {
+SK_C_API void* sk_bitmap_get_pixelref(sk_bitmap_t* cbitmap) {
     return AsBitmap(cbitmap)->pixelRef();
 }
 
-SK_C_API void sk_bitmap_set_pixel_ref(sk_bitmap_t* cbitmap, void* cpixelref, int x, int y) {
+SK_C_API void sk_bitmap_set_pixelref(sk_bitmap_t* cbitmap, void* cpixelref, int x, int y) {
     SkPixelRef* r = (SkPixelRef*)cpixelref;
     AsBitmap(cbitmap)->setPixelRef(sk_ref_sp(r), x, y);
 }

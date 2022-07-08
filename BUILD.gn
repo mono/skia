@@ -3091,7 +3091,7 @@ skiasharp_build("SkiaSharp") {
     "src/xamarin/sk_compatpaint.cpp",
     "src/xamarin/sk_manageddrawable.cpp",
     "src/xamarin/sk_managedallocator.cpp",
-    "src/xamarin/sk_managed_pixel_ref.cpp",
+    "src/xamarin/sk_managedpixelref.cpp",
     "src/xamarin/sk_managedstream.cpp",
     "src/xamarin/sk_managedtracememorydump.cpp",
     "src/xamarin/sk_xamarin.cpp",

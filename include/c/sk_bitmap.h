@@ -41,8 +41,8 @@ SK_C_API bool sk_bitmap_try_alloc_pixels(sk_bitmap_t* cbitmap, const sk_imageinf
 SK_C_API bool sk_bitmap_try_alloc_pixels_with_flags(sk_bitmap_t* cbitmap, const sk_imageinfo_t* requestedInfo, uint32_t flags);
 SK_C_API void sk_bitmap_set_pixels(sk_bitmap_t* cbitmap, void* pixels);
 SK_C_API bool sk_bitmap_peek_pixels(sk_bitmap_t* cbitmap, sk_pixmap_t* cpixmap);
-SK_C_API void* sk_bitmap_get_pixel_ref(sk_bitmap_t* cbitmap);
-SK_C_API void sk_bitmap_set_pixel_ref(sk_bitmap_t* cbitmap, void* cpixelref, int x, int y);
+SK_C_API void* sk_bitmap_get_pixelref(sk_bitmap_t* cbitmap);
+SK_C_API void sk_bitmap_set_pixelref(sk_bitmap_t* cbitmap, void* cpixelref, int x, int y);
 SK_C_API bool sk_bitmap_extract_subset(sk_bitmap_t* cbitmap, sk_bitmap_t* dst, sk_irect_t* subset);
 SK_C_API bool sk_bitmap_extract_alpha(sk_bitmap_t* cbitmap, sk_bitmap_t* dst, const sk_paint_t* paint, sk_ipoint_t* offset);
 SK_C_API void sk_bitmap_notify_pixels_changed(sk_bitmap_t* cbitmap);
