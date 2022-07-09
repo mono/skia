@@ -175,8 +175,17 @@ DEF_STRUCT_MAP(GrGLInterface, gr_glinterface_t, GrGLInterface)
 DEF_STRUCT_MAP(GrVkYcbcrConversionInfo, gr_vk_ycbcrconversioninfo_t, GrVkYcbcrConversionInfo)
 DEF_STRUCT_MAP(GrVkImageInfo, gr_vk_imageinfo_t, GrVkImageInfo)
 
+// placed here to help seperate in PR
+#include "include/core/SkBitmap.h"
+DEF_MAP(SkBitmap::Allocator, sk_bitmapallocator_t, BitmapAllocator)
+
 #include "include/effects/SkRuntimeEffect.h"
 DEF_MAP(SkRuntimeEffect::Uniform, sk_runtimeeffect_uniform_t, RuntimeEffectUniform)
+
+
+#include "include/private/SkIDChangeListener.h"
+DEF_CLASS_MAP(SkIDChangeListener, sk_idchangelistener_t, SKIDChangeListener)
+DEF_MAP(SkIDChangeListener::List, sk_idchangelistenerlist_t, SKIDChangeListenerList)
 
 #include "include/core/SkCanvas.h"
 DEF_MAP(SkCanvas::Lattice, sk_lattice_t, Lattice)

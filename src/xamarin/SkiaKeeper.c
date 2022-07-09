@@ -52,8 +52,13 @@
 
 // Xamarin
 #include "include/xamarin/sk_managedstream.h"
+// placed here to help seperate in PR
+#include "include/xamarin/sk_managedallocator.h"
+#include "include/xamarin/sk_managedpixelref.h"
 #include "include/xamarin/sk_manageddrawable.h"
 #include "include/xamarin/sk_managedtracememorydump.h"
+#include "include/xamarin/sk_managedidchangelistener.h"
+#include "include/xamarin/sk_managedidchangelistenerlist.h"
 #include "include/xamarin/sk_compatpaint.h"
 
 SK_X_API void** KeepSkiaCSymbols (void);
@@ -107,8 +112,14 @@ void** KeepSkiaCSymbols (void)
         // Xamarin
         (void*)sk_compatpaint_new,
         (void*)sk_managedstream_new,
+        // placed here to help seperate in PR
+        (void*)sk_managedallocator_new,
+        (void*)sk_managedpixelref_new,
+        (void*)sk_managedpixelref_new_from_existing,
         (void*)sk_manageddrawable_new,
         (void*)sk_managedtracememorydump_new,
+        (void*)sk_managedidchangelistener_new,
+        (void*)sk_managedidchangelistenerlist_new,
     };
     return ret;
 }
