@@ -182,6 +182,11 @@ DEF_MAP(SkBitmap::Allocator, sk_bitmapallocator_t, BitmapAllocator)
 #include "include/effects/SkRuntimeEffect.h"
 DEF_MAP(SkRuntimeEffect::Uniform, sk_runtimeeffect_uniform_t, RuntimeEffectUniform)
 
+
+#include "include/private/SkIDChangeListener.h"
+DEF_CLASS_MAP(SkIDChangeListener, sk_idchangelistener_t, SKIDChangeListener)
+DEF_MAP(SkIDChangeListener::List, sk_idchangelistenerlist_t, SKIDChangeListenerList)
+
 #include "include/core/SkCanvas.h"
 DEF_MAP(SkCanvas::Lattice, sk_lattice_t, Lattice)
 

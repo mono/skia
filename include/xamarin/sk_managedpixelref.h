@@ -35,7 +35,7 @@ SK_X_API uint32_t sk_managedpixelref_generation_id(sk_pixelref_t*);
 SK_X_API void sk_managedpixelref_notify_pixels_changed(sk_pixelref_t*);
 SK_X_API bool sk_managedpixelref_is_immutable(sk_pixelref_t*);
 SK_X_API void sk_managedpixelref_set_immutable(sk_pixelref_t*);
-//SK_X_API void sk_managedpixelref_add_generation_id_listener(sk_pixelref_t*, sk_id_change_listener_t*);
+SK_X_API void sk_managedpixelref_add_generation_id_listener(sk_pixelref_t*, sk_idchangelistener_t*);
 SK_X_API void sk_managedpixelref_notify_added_to_cache(sk_pixelref_t*);
 SK_X_API void sk_managedpixelref_set_procs(sk_pixelref_procs_t procs);
 

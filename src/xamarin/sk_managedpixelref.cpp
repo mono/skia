@@ -6,7 +6,7 @@
  */
 
 #include "include/xamarin/SkManagedPixelRef.h"
-#include "include/xamarin/SkManaged_ID_Change_Listener.h"
+#include "include/xamarin/SkManagedIDChangeListener.h"
 #include "include/xamarin/sk_managedpixelref.h"
 #include "src/c/sk_types_priv.h"
 
@@ -17,8 +17,8 @@ static inline sk_pixelref_t* ToSkPixelRef(SkManagedPixelRef* d) {
     return reinterpret_cast<sk_pixelref_t*>(d);
 }
 
-static inline SkManaged_ID_Change_Listener* AsSkManaged_ID_Change_Listener(sk_id_change_listener_t* d) {
-    return reinterpret_cast<SkManaged_ID_Change_Listener*>(d);
+static inline SkManagedIDChangeListener* AsSkManagedIDChangeListener(sk_idchangelistener_t* d) {
+    return reinterpret_cast<SkManagedIDChangeListener*>(d);
 }
 
 static sk_pixelref_procs_t gProcs;
@@ -76,9 +76,9 @@ bool sk_managedpixelref_is_immutable(sk_pixelref_t* d) {
 void sk_managedpixelref_set_immutable(sk_pixelref_t* d) {
     AsSkManagedPixelRef(d)->pixelRef->setImmutable();
 }
-//void sk_managedpixelref_add_generation_id_listener(sk_pixelref_t* d, sk_id_change_listener_t* listener) {
-//    AsSkManagedPixelRef(d)->pixelRef->addGenIDChangeListener(sk_ref_sp(AsSkManaged_ID_Change_Listener(listener)));
-//}
+void sk_managedpixelref_add_generation_id_listener(sk_pixelref_t* d, sk_idchangelistener_t* listener) {
+    AsSkManagedPixelRef(d)->pixelRef->addGenIDChangeListener(sk_ref_sp(AsSkManagedIDChangeListener(listener)));
+}
 void sk_managedpixelref_notify_added_to_cache(sk_pixelref_t* d) {
     AsSkManagedPixelRef(d)->pixelRef->notifyAddedToCache();
 }
