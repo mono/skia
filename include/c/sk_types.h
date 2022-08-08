@@ -66,7 +66,7 @@
 #endif
 
 #ifndef SK_C_INCREMENT
-#define SK_C_INCREMENT 0
+#define SK_C_INCREMENT 1
 #endif
 
 ///////////////////////////////////////////////////////////////////////////////////////
@@ -471,6 +471,7 @@ typedef enum {
     ASTC_SK_ENCODED_FORMAT,
     DNG_SK_ENCODED_FORMAT,
     HEIF_SK_ENCODED_FORMAT,
+    AVIF_SK_ENCODED_FORMAT,
 } sk_encoded_image_format_t;
 
 /**
