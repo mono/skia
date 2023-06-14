@@ -49,7 +49,8 @@ declare_args() {
   min_maccatalyst_version = "13.0"
 
   ios_use_simulator =
-      target_os == "ios" && (target_cpu == "x86" || target_cpu == "x64")
+    (target_os == "ios" || target_os == "tvos" || target_os == "watchos") &&
+    (target_cpu == "x86" || target_cpu == "x64")
 }
 declare_args() {
   is_debug = !is_official_build
