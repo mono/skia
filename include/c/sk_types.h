@@ -178,6 +178,42 @@ typedef enum {
     PERSPECTIVE_SK_MATRIX44_TYPE_MASK = 0x08
 } sk_matrix44_type_mask_t;
 
+typedef enum {
+    IDENTITY_SK_MATRIX_TYPE_MASK = 0,
+    TRANSLATE_SK_MATRIX_TYPE_MASK = 0x01,
+    SCALE_SK_MATRIX_TYPE_MASK = 0x02,
+    AFFINE_SK_MATRIX_TYPE_MASK = 0x04,
+    PERSPECTIVE_SK_MATRIX_TYPE_MASK = 0x08
+} sk_matrix_type_mask_t;
+
+typedef enum {
+    ScaleX = 0, //!< horizontal scale factor
+    SkewX  = 1, //!< horizontal skew factor
+    TransX = 2, //!< horizontal translation
+    SkewY  = 3, //!< vertical skew factor
+    ScaleY = 4, //!< vertical scale factor
+    TransY = 5, //!< vertical translation
+    Persp0 = 6, //!< input x perspective factor
+    Persp1 = 7, //!< input y perspective factor
+    Persp2 = 8  //!< perspective bias
+} sk_matrix_row_major_mask_t;
+
+typedef enum {
+    AScaleX = 0, //!< horizontal scale factor
+    ASkewY  = 1, //!< vertical skew factor
+    ASkewX  = 2, //!< horizontal skew factor
+    AScaleY = 3, //!< vertical scale factor
+    ATransX = 4, //!< horizontal translation
+    ATransY = 5, //!< vertical translation
+} sk_matrix_affine_colomn_major_mask_t;
+
+typedef enum {
+    Fill,   //!< scales in x and y to fill destination SkRect
+    Start,  //!< scales and aligns to left and top
+    Center, //!< scales and aligns to center
+    End,    //!< scales and aligns to right and bottom
+} sk_matrix_scale_to_fit_t;
+
 /**
     A sk_canvas_t encapsulates all of the state about drawing into a
     destination This includes a reference to the destination itself,

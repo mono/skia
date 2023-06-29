@@ -25,6 +25,41 @@ SK_C_API void sk_matrix_map_vectors (sk_matrix_t *matrix, sk_point_t *dst, sk_po
 SK_C_API void sk_matrix_map_xy (sk_matrix_t *matrix, float x, float y, sk_point_t* result);
 SK_C_API void sk_matrix_map_vector (sk_matrix_t *matrix, float x, float y, sk_point_t* result);
 SK_C_API float sk_matrix_map_radius (sk_matrix_t *matrix, float radius);
+// additional
+SK_C_API sk_matrix_t sk_matrix_scale(float sx, float sy);
+SK_C_API sk_matrix_t sk_matrix_translate(float dx, float dy);
+SK_C_API sk_matrix_t sk_matrix_translate_point(sk_point_t t);
+SK_C_API sk_matrix_t sk_matrix_translate_ipoint(sk_ipoint_t t);
+SK_C_API sk_matrix_t sk_matrix_rotate_deg(float deg);
+SK_C_API sk_matrix_t sk_matrix_rotate_deg_point(float deg, sk_point_t t);
+SK_C_API sk_matrix_t sk_matrix_rotate_rad(float rad);
+SK_C_API sk_matrix_type_mask_t sk_matrix_get_type(sk_matrix_t* matrix);
+SK_C_API bool sk_matrix_is_identity(sk_matrix_t* matrix);
+SK_C_API bool sk_matrix_is_scale_translate(sk_matrix_t* matrix);
+SK_C_API bool sk_matrix_is_translate(sk_matrix_t* matrix);
+SK_C_API bool sk_matrix_rect_stays_rect(sk_matrix_t* matrix);
+SK_C_API bool sk_matrix_preserves_axis_alignment(sk_matrix_t* matrix);
+SK_C_API bool sk_matrix_has_perspective(sk_matrix_t* matrix);
+SK_C_API bool sk_matrix_is_similarity(sk_matrix_t* matrix, float tol);
+SK_C_API bool sk_matrix_preserves_right_angles(sk_matrix_t* matrix, float tol);
+SK_C_API float sk_matrix_get(sk_matrix_t* matrix, sk_matrix_row_major_mask_t mask);
+SK_C_API float sk_matrix_rc(sk_matrix_t* matrix, int r, int c);
+SK_C_API void sk_matrix_get9(sk_matrix_t* matrix, float* buffer);
+SK_C_API void sk_matrix_set9(sk_matrix_t* matrix, float* buffer, sk_matrix_t* result);
+SK_C_API void sk_matrix_reset(sk_matrix_t* matrix, sk_matrix_t* result);
+SK_C_API void sk_matrix_set_identity(sk_matrix_t* matrix, sk_matrix_t* result);
+SK_C_API void sk_matrix_normalize_perspective(sk_matrix_t* matrix, sk_matrix_t* result);
+SK_C_API void sk_matrix_map_homogeneous_points3(sk_matrix_t* matrix, sk_point3_t* dst, sk_point3_t* src, int count);
+SK_C_API void sk_matrix_map_homogeneous_points(sk_matrix_t* matrix, sk_point3_t* dst, sk_point_t* src, int count);
+SK_C_API bool sk_matrix_is_finite(sk_matrix_t* matrix);
+SK_C_API void sk_matrix_pre_scale(sk_matrix_t* result, sk_matrix_t* matrix, float sx, float sy);
+SK_C_API void sk_matrix_pre_scale_with_pivot(sk_matrix_t* result, sk_matrix_t* matrix, float sx, float sy, float px, float py);
+SK_C_API void sk_matrix_post_scale(sk_matrix_t* result, sk_matrix_t* matrix, float sx, float sy);
+SK_C_API void sk_matrix_post_scale_with_pivot(sk_matrix_t* result, sk_matrix_t* matrix, float sx, float sy, float px, float py);
+SK_C_API void sk_matrix_pre_translate(sk_matrix_t* result, sk_matrix_t* matrix, float dx, float dy);
+SK_C_API void sk_matrix_post_translate(sk_matrix_t* result, sk_matrix_t* matrix, float dx, float dy);
+SK_C_API bool sk_matrix_set_rect_to_rect(sk_matrix_t* matrix, sk_matrix_t* result, sk_rect_t* dest, sk_rect_t* source, sk_matrix_scale_to_fit_t stf);
+
 
 
 SK_C_API sk_3dview_t* sk_3dview_new (void);
