@@ -9,7 +9,6 @@
 #define SkSVGCanvas_DEFINED
 
 #include "include/core/SkCanvas.h"
-#include "src/xml/SkXMLWriter.h"
 
 class SkWStream;
 
@@ -32,8 +31,6 @@ public:
      *  SVG element).
      */
     static std::unique_ptr<SkCanvas> Make(const SkRect& bounds, SkWStream*, uint32_t flags = 0);
-
-    static std::unique_ptr<SkCanvas> Make(const SkRect& bounds, SkXMLWriter*, uint32_t flags = 0);
 };
 
 #endif

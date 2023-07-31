@@ -628,13 +628,6 @@ typedef enum {
 } sk_mask_format_t;
 
 typedef struct {
-    uint8_t*          fImage;
-    sk_irect_t        fBounds;
-    uint32_t          fRowBytes;
-    sk_mask_format_t  fFormat;
-} sk_mask_t;
-
-typedef struct {
     bool      fAvoidStencilBuffers;
     int       fRuntimeProgramCacheSize;
     size_t    fGlyphCacheTextureMaximumBytes;
@@ -862,9 +855,6 @@ typedef struct {
     sk_alphatype_t fAlphaType;
     sk_codecanimation_disposalmethod_t fDisposalMethod;
 } sk_codec_frameinfo_t;
-
-typedef struct sk_xmlstreamwriter_t sk_xmlstreamwriter_t;
-typedef struct sk_xmlwriter_t sk_xmlwriter_t;
 
 typedef struct sk_svgcanvas_t sk_svgcanvas_t;
 

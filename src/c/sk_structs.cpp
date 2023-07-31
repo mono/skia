@@ -56,7 +56,6 @@ static_assert (sizeof (sk_point3_t) == sizeof (SkPoint3), ASSERT_MSG(SkPoint3, s
 static_assert (sizeof (sk_imageinfo_t) == sizeof (SkImageInfo), ASSERT_MSG(SkImageInfo, sk_imageinfo_t));
 static_assert (sizeof (sk_fontmetrics_t) == sizeof (SkFontMetrics), ASSERT_MSG(SkFontMetrics, sk_fontmetrics_t));
 static_assert (sizeof (sk_codec_options_t) == sizeof (SkCodec::Options), ASSERT_MSG(SkCodec::Options, sk_codec_options_t));
-static_assert (sizeof (sk_mask_t) == sizeof (SkMask), ASSERT_MSG(SkMask, sk_mask_t));
 static_assert (sizeof (sk_lattice_t) == sizeof (SkCanvas::Lattice), ASSERT_MSG(SkCanvas::Lattice, sk_lattice_t));
 static_assert (sizeof (sk_time_datetime_t) == sizeof (SkTime::DateTime), ASSERT_MSG(SkTime::DateTime, sk_time_datetime_t));
 static_assert (sizeof (sk_codec_frameinfo_t) == sizeof (SkCodec::FrameInfo), ASSERT_MSG(SkCodec::FrameInfo, sk_codec_frameinfo_t));

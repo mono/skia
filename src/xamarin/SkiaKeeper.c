@@ -15,7 +15,6 @@
 #include "include/c/sk_codec.h"
 #include "include/c/sk_colorfilter.h"
 #include "include/c/sk_colorspace.h"
-#include "include/c/sk_colortable.h"
 #include "include/c/sk_data.h"
 #include "include/c/sk_document.h"
 #include "include/c/sk_drawable.h"
@@ -24,7 +23,6 @@
 #include "include/c/sk_graphics.h"
 #include "include/c/sk_image.h"
 #include "include/c/sk_imagefilter.h"
-#include "include/c/sk_mask.h"
 #include "include/c/sk_maskfilter.h"
 #include "include/c/sk_matrix.h"
 #include "include/c/sk_paint.h"
@@ -43,7 +41,6 @@
 #include "include/c/sk_textblob.h"
 #include "include/c/sk_typeface.h"
 #include "include/c/sk_vertices.h"
-#include "include/c/sk_xml.h"
 
 // Skottie
 #include "include/c/skottie_animation.h"
@@ -54,7 +51,6 @@
 #include "include/xamarin/sk_managedstream.h"
 #include "include/xamarin/sk_manageddrawable.h"
 #include "include/xamarin/sk_managedtracememorydump.h"
-#include "include/xamarin/sk_compatpaint.h"
 
 SK_X_API void** KeepSkiaCSymbols (void);
 
@@ -70,14 +66,12 @@ void** KeepSkiaCSymbols (void)
         (void*)sk_codec_min_buffered_bytes_needed,
         (void*)sk_colorfilter_unref,
         (void*)sk_colorspace_unref,
-        (void*)sk_colortable_unref,
         (void*)sk_data_new_empty,
         (void*)sk_document_unref,
         (void*)sk_drawable_unref,
         (void*)sk_font_new,
         (void*)sk_image_ref,
         (void*)sk_imagefilter_croprect_new,
-        (void*)sk_mask_alloc_image,
         (void*)sk_maskfilter_ref,
         (void*)sk_matrix_concat,
         (void*)sk_paint_new,
@@ -94,7 +88,6 @@ void** KeepSkiaCSymbols (void)
         (void*)sk_surface_new_null,
         (void*)sk_svgcanvas_create_with_stream,
         (void*)sk_typeface_unref,
-        (void*)sk_xmlstreamwriter_new,
         (void*)sk_textblob_ref,
         (void*)sk_vertices_unref,
         (void*)sk_graphics_init,
@@ -105,7 +98,6 @@ void** KeepSkiaCSymbols (void)
         (void*)skottie_animation_keepalive,
 
         // Xamarin
-        (void*)sk_compatpaint_new,
         (void*)sk_managedstream_new,
         (void*)sk_manageddrawable_new,
         (void*)sk_managedtracememorydump_new,
