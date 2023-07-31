@@ -609,8 +609,6 @@ typedef enum {
     SUBPIXEL_ANTIALIAS_SK_FONT_EDGING,
 } sk_font_edging_t;
 
-typedef struct sk_colortable_t sk_colortable_t;
-
 typedef struct sk_pixelref_factory_t sk_pixelref_factory_t;
 
 typedef enum {
