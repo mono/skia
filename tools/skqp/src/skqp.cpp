@@ -8,19 +8,17 @@
 #include "tools/skqp/src/skqp.h"
 
 #include "gm/gm.h"
-#include "include/core/SkFontStyle.h"
 #include "include/core/SkGraphics.h"
 #include "include/core/SkStream.h"
 #include "include/core/SkSurface.h"
-#include "include/encode/SkPngEncoder.h"
 #include "include/gpu/GrContextOptions.h"
 #include "include/gpu/GrDirectContext.h"
-#include "include/private/SkImageInfoPriv.h"
 #include "src/core/SkFontMgrPriv.h"
 #include "src/core/SkOSFile.h"
-#include "src/core/SkStreamPriv.h"
 #include "src/utils/SkOSPath.h"
 #include "tests/Test.h"
+#include "tests/TestHarness.h"
+#include "tools/Resources.h"
 #include "tools/fonts/TestFontMgr.h"
 #ifdef SK_GL
 #include "tools/gpu/gl/GLTestContext.h"
@@ -29,320 +27,121 @@
 #include "tools/gpu/vk/VkTestContext.h"
 #endif
 
-#include <limits.h>
+#ifdef SK_BUILD_FOR_ANDROID
+#include <sys/system_properties.h>
+#endif
+
 #include <algorithm>
-#include <cinttypes>
-#include <sstream>
+#include <regex>
 
-#include "tools/skqp/src/skqp_model.h"
-
-#define IMAGES_DIRECTORY_PATH "images"
-#define PATH_MAX_PNG "max.png"
-#define PATH_MIN_PNG "min.png"
-#define PATH_IMG_PNG "image.png"
-#define PATH_ERR_PNG "errors.png"
-#define PATH_MODEL "model"
-
-static constexpr char kRenderTestCSVReport[] = "out.csv";
-static constexpr char kRenderTestReportPath[] = "report.html";
-static constexpr char kDefaultRenderTestsPath[] = "skqp/rendertests.txt";
 static constexpr char kUnitTestReportPath[] = "unit_tests.txt";
-static constexpr char kUnitTestsPath[]   = "skqp/unittests.txt";
 
-// Kind of like Python's readlines(), but without any allocation.
-// Calls f() on each line.
-// F is [](const char*, size_t) -> void
-template <typename F>
-static void readlines(const void* data, size_t size, F f) {
-    const char* start = (const char*)data;
-    const char* end = start + size;
-    const char* ptr = start;
-    while (ptr < end) {
-        while (*ptr++ != '\n' && ptr < end) {}
-        size_t len = ptr - start;
-        f(start, len);
-        start = ptr;
-    }
-}
-
-static void get_unit_tests(SkQPAssetManager* mgr, std::vector<SkQP::UnitTest>* unitTests) {
-    std::unordered_set<std::string> testset;
-    auto insert = [&testset](const char* s, size_t l) {
-        SkASSERT(l > 1) ;
-        if (l > 0 && s[l - 1] == '\n') {  // strip line endings.
-            --l;
-        }
-        if (l > 0) {  // only add non-empty strings.
-            testset.insert(std::string(s, l));
-        }
-    };
-    if (sk_sp<SkData> dat = mgr->open(kUnitTestsPath)) {
-        readlines(dat->data(), dat->size(), insert);
-    }
+// Returns a list of every unit test to be run.
+static std::vector<SkQP::UnitTest> get_unit_tests(int enforcedAndroidAPILevel) {
+    std::vector<SkQP::UnitTest> unitTests;
     for (const skiatest::Test& test : skiatest::TestRegistry::Range()) {
-        if ((testset.empty() || testset.count(std::string(test.name)) > 0) && test.needsGpu) {
-            unitTests->push_back(&test);
+        const auto ctsMode = test.fCTSEnforcement.eval(enforcedAndroidAPILevel);
+        if (ctsMode != CtsEnforcement::RunMode::kSkip) {
+            SkASSERTF(test.fTestType != skiatest::TestType::kCPU,
+                      "Non-GPU test was included in SkQP: %s\n", test.fName);
+            unitTests.push_back(&test);
         }
     }
-    auto lt = [](SkQP::UnitTest u, SkQP::UnitTest v) { return strcmp(u->name, v->name) < 0; };
-    std::sort(unitTests->begin(), unitTests->end(), lt);
+    auto lt = [](SkQP::UnitTest u, SkQP::UnitTest v) { return strcmp(u->fName, v->fName) < 0; };
+    std::sort(unitTests.begin(), unitTests.end(), lt);
+    return unitTests;
 }
 
-static void get_render_tests(SkQPAssetManager* mgr,
-                             const char *renderTestsIn,
-                             std::vector<SkQP::GMFactory>* gmlist,
-                             std::unordered_map<std::string, int64_t>* gmThresholds) {
-    // Runs all render tests if the |renderTests| file can't be found or is empty.
-    const char *renderTests = (renderTestsIn && renderTestsIn[0]) ?
-        renderTestsIn : kDefaultRenderTestsPath;
-    auto insert = [gmThresholds](const char* s, size_t l) {
-        SkASSERT(l > 1) ;
-        if (l > 0 && s[l - 1] == '\n') {  // strip line endings.
-            --l;
-        }
-        if (l == 0) {
-            return;
-        }
-        const char* end = s + l;
-        const char* ptr = s;
-        constexpr char kDelimeter = ',';
-        while (ptr < end && *ptr != kDelimeter) { ++ptr; }
-        if (ptr + 1 >= end) {
-            SkASSERT(false);  // missing delimeter
-            return;
-        }
-        std::string key(s, ptr - s);
-        ++ptr;  // skip delimeter
-        std::string number(ptr, end - ptr);  // null-terminated copy.
-        int64_t value = 0;
-        if (1 != sscanf(number.c_str(), "%" SCNd64 , &value)) {
-            SkASSERT(false);  // Not a number
-            return;
-        }
-        gmThresholds->insert({std::move(key), value});  // (*gmThresholds)[s] = value;
-    };
-    if (sk_sp<SkData> dat = mgr->open(renderTests)) {
-        readlines(dat->data(), dat->size(), insert);
-    }
-    using GmAndName = std::pair<SkQP::GMFactory, std::string>;
-    std::vector<GmAndName> gmsWithNames;
-    for (skiagm::GMFactory f : skiagm::GMRegistry::Range()) {
-        std::string name = SkQP::GetGMName(f);
-        if ((gmThresholds->empty() || gmThresholds->count(name) > 0)) {
-            gmsWithNames.push_back(std::make_pair(f, std::move(name)));
-        }
-    }
-    std::sort(gmsWithNames.begin(), gmsWithNames.end(),
-              [](GmAndName u, GmAndName v) { return u.second < v.second; });
-    gmlist->reserve(gmsWithNames.size());
-    for (const GmAndName& gmn : gmsWithNames) {
-        gmlist->push_back(gmn.first);
-    }
-}
+/**
+ * SkSL error tests are used by CTS to verify that Android's RuntimeShader API fails when certain
+ * shader programs are compiled.  Unlike unit tests these error tests are defined in resource files
+ * not source code.  As such, we are unable to mark each test with a CtsEnforcement value.  This
+ * list of exclusion rules excludes tests based on their file name so that we can have some form of
+ * control for which Android version an SkSL error test is expected to run.
+ */
+static const std::pair<std::regex, CtsEnforcement> sExclusionRulesForSkSLTests[] = {
+        // disable all ES3 tests until AGSL supports it.
+        {std::regex(".*ES3.*"), CtsEnforcement::kNever}};
 
-static std::unique_ptr<sk_gpu_test::TestContext> make_test_context(SkQP::SkiaBackend backend) {
-    using U = std::unique_ptr<sk_gpu_test::TestContext>;
-    switch (backend) {
-// TODO(halcanary): Fuchsia will have SK_SUPPORT_GPU and SK_VULKAN, but *not* SK_GL.
-#ifdef SK_GL
-        case SkQP::SkiaBackend::kGL:
-            return U(sk_gpu_test::CreatePlatformGLTestContext(kGL_GrGLStandard, nullptr));
-        case SkQP::SkiaBackend::kGLES:
-            return U(sk_gpu_test::CreatePlatformGLTestContext(kGLES_GrGLStandard, nullptr));
-#endif
-#ifdef SK_VULKAN
-        case SkQP::SkiaBackend::kVulkan:
-            return U(sk_gpu_test::CreatePlatformVkTestContext(nullptr));
-#endif
-        default:
-            return nullptr;
-    }
-}
-
-static GrContextOptions context_options(skiagm::GM* gm = nullptr) {
-    GrContextOptions grContextOptions;
-    grContextOptions.fAllowPathMaskCaching = true;
-    grContextOptions.fDisableDriverCorrectnessWorkarounds = true;
-    if (gm) {
-        gm->modifyGrContextOptions(&grContextOptions);
-    }
-    return grContextOptions;
-}
-
-static std::vector<SkQP::SkiaBackend> get_backends() {
-    std::vector<SkQP::SkiaBackend> result;
-    SkQP::SkiaBackend backends[] = {
-        #ifdef SK_GL
-        #ifndef SK_BUILD_FOR_ANDROID
-        SkQP::SkiaBackend::kGL,  // Used for testing on desktop machines.
-        #endif
-        SkQP::SkiaBackend::kGLES,
-        #endif  // SK_GL
-        #ifdef SK_VULKAN
-        SkQP::SkiaBackend::kVulkan,
-        #endif
-    };
-    for (SkQP::SkiaBackend backend : backends) {
-        std::unique_ptr<sk_gpu_test::TestContext> testCtx = make_test_context(backend);
-        if (testCtx) {
-            testCtx->makeCurrent();
-            if (nullptr != testCtx->makeContext(context_options())) {
-                result.push_back(backend);
+// Returns a list of every SkSL error test to be run.
+static std::vector<SkQP::SkSLErrorTest> get_sksl_error_tests(SkQPAssetManager* assetManager,
+                                                             int enforcedAndroidAPILevel) {
+    std::vector<SkQP::SkSLErrorTest> skslErrorTests;
+    auto iterateFn = [&](const char* directory, const char* extension) {
+        std::vector<std::string> paths = assetManager->iterateDir(directory, extension);
+        for (const std::string& path : paths) {
+            SkString name = SkOSPath::Basename(path.c_str());
+            for (auto& exclusionEntry : sExclusionRulesForSkSLTests) {
+                if (std::regex_match(name.c_str(), exclusionEntry.first) &&
+                    exclusionEntry.second.eval(enforcedAndroidAPILevel) ==
+                            CtsEnforcement::RunMode::kSkip) {
+                    continue;
+                }
             }
-        }
-    }
-    SkASSERT_RELEASE(result.size() > 0);
-    return result;
-}
-
-static void print_backend_info(const char* dstPath,
-                               const std::vector<SkQP::SkiaBackend>& backends) {
-#ifdef SK_ENABLE_DUMP_GPU
-    SkFILEWStream out(dstPath);
-    out.writeText("[\n");
-    for (SkQP::SkiaBackend backend : backends) {
-        if (std::unique_ptr<sk_gpu_test::TestContext> testCtx = make_test_context(backend)) {
-            testCtx->makeCurrent();
-            if (sk_sp<GrDirectContext> ctx = testCtx->makeContext(context_options())) {
-                SkString info = ctx->dump();
-                // remove null
-                out.write(info.c_str(), info.size());
-                out.writeText(",\n");
+            sk_sp<SkData> shaderText = GetResourceAsData(path.c_str());
+            if (!shaderText) {
+                continue;
             }
+            skslErrorTests.push_back({
+                name.c_str(),
+                std::string(static_cast<const char*>(shaderText->data()), shaderText->size())
+            });
         }
-    }
-    out.writeText("]\n");
-#endif
-}
+    };
 
-static void encode_png(const SkBitmap& src, const std::string& dst) {
-    SkFILEWStream wStream(dst.c_str());
-    SkPngEncoder::Options options;
-    bool success = wStream.isValid() && SkPngEncoder::Encode(&wStream, src.pixmap(), options);
-    SkASSERT_RELEASE(success);
-}
+    // Android only supports runtime shaders, not fragment shaders, color filters or blenders.
+    iterateFn("sksl/errors/", ".rts");
+    iterateFn("sksl/runtime_errors/", ".rts");
 
-static void write_to_file(const sk_sp<SkData>& src, const std::string& dst) {
-    SkFILEWStream wStream(dst.c_str());
-    bool success = wStream.isValid() && wStream.write(src->data(), src->size());
-    SkASSERT_RELEASE(success);
+    auto lt = [](const SkQP::SkSLErrorTest& a, const SkQP::SkSLErrorTest& b) {
+        return a.name < b.name;
+    };
+    std::sort(skslErrorTests.begin(), skslErrorTests.end(), lt);
+    return skslErrorTests;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 
-const char* SkQP::GetBackendName(SkQP::SkiaBackend b) {
-    switch (b) {
-        case SkQP::SkiaBackend::kGL:     return "gl";
-        case SkQP::SkiaBackend::kGLES:   return "gles";
-        case SkQP::SkiaBackend::kVulkan: return "vk";
-    }
-    return "";
+TestHarness CurrentTestHarness() {
+    return TestHarness::kSkQP;
 }
 
-std::string SkQP::GetGMName(SkQP::GMFactory f) {
-    std::unique_ptr<skiagm::GM> gm(f ? f() : nullptr);
-    return std::string(gm ? gm->getName() : "");
-}
+////////////////////////////////////////////////////////////////////////////////
 
-const char* SkQP::GetUnitTestName(SkQP::UnitTest t) { return t->name; }
+const char* SkQP::GetUnitTestName(SkQP::UnitTest t) { return t->fName; }
 
 SkQP::SkQP() {}
 
 SkQP::~SkQP() {}
 
-void SkQP::init(SkQPAssetManager* am, const char* renderTests, const char* reportDirectory) {
-    SkASSERT_RELEASE(!fAssetManager);
-    SkASSERT_RELEASE(am);
-    fAssetManager = am;
+void SkQP::init(SkQPAssetManager* assetManager, const char* reportDirectory) {
+    SkASSERT_RELEASE(assetManager);
     fReportDirectory = reportDirectory;
 
     SkGraphics::Init();
     gSkFontMgr_DefaultFactory = &ToolUtils::MakePortableFontMgr;
 
-    get_render_tests(fAssetManager, renderTests, &fGMs, &fGMThresholds);
-    /* If the file "skqp/unittests.txt" does not exist or is empty, run all gpu
-       unit tests.  Otherwise only run tests mentioned in that file.  */
-    get_unit_tests(fAssetManager, &fUnitTests);
-    fSupportedBackends = get_backends();
-
-    print_backend_info((fReportDirectory + "/grdump.txt").c_str(), fSupportedBackends);
-}
-
-std::tuple<SkQP::RenderOutcome, std::string> SkQP::evaluateGM(SkQP::SkiaBackend backend,
-                                                              SkQP::GMFactory gmFact) {
-    SkASSERT_RELEASE(fAssetManager);
-    static constexpr SkQP::RenderOutcome kError = {INT_MAX, INT_MAX, INT64_MAX};
-    static constexpr SkQP::RenderOutcome kPass = {0, 0, 0};
-
-    std::unique_ptr<sk_gpu_test::TestContext> testCtx = make_test_context(backend);
-    if (!testCtx) {
-        return std::make_tuple(kError, "Skia Failure: test context");
+#ifdef SK_BUILD_FOR_ANDROID
+    // ro.vendor.api_level contains the minAPI level based on the order defined in
+    // docs.partner.android.com/gms/building/integrating/extending-os-upgrade-support-windows
+    //  1. board's current api level (for boards that have been upgraded by the SoC vendor)
+    //  2. board's first api level (for devices that initially shipped with an older version)
+    //  3. product's first api level
+    //  4. product's current api level
+    char minAPIVersionStr[PROP_VALUE_MAX];
+    int strLength = __system_property_get("ro.vendor.api_level", minAPIVersionStr);
+    if (strLength != 0) {
+        fEnforcedAndroidAPILevel = atoi(minAPIVersionStr);
     }
-    testCtx->makeCurrent();
+#endif
 
-    SkASSERT(gmFact);
-    std::unique_ptr<skiagm::GM> gm(gmFact());
-    SkASSERT(gm);
-    const char* const name = gm->getName();
-    const SkISize size = gm->getISize();
-    const int w = size.width();
-    const int h = size.height();
-    const SkImageInfo info =
-        SkImageInfo::Make(w, h, skqp::kColorType, kPremul_SkAlphaType, nullptr);
-    const SkSurfaceProps props(0, kRGB_H_SkPixelGeometry);
+    fUnitTests = get_unit_tests(fEnforcedAndroidAPILevel);
+    fSkSLErrorTests = get_sksl_error_tests(assetManager, fEnforcedAndroidAPILevel);
 
-    sk_sp<SkSurface> surf = SkSurface::MakeRenderTarget(
-            testCtx->makeContext(context_options(gm.get())).get(),
-            SkBudgeted::kNo, info, 0, &props);
-    if (!surf) {
-        return std::make_tuple(kError, "Skia Failure: gr-context");
-    }
-    gm->draw(surf->getCanvas());
-
-    SkBitmap image;
-    image.allocPixels(SkImageInfo::Make(w, h, skqp::kColorType, skqp::kAlphaType));
-
-    // SkColorTypeBytesPerPixel should be constexpr, but is not.
-    SkASSERT(SkColorTypeBytesPerPixel(skqp::kColorType) == sizeof(uint32_t));
-    // Call readPixels because we need to compare pixels.
-    if (!surf->readPixels(image.pixmap(), 0, 0)) {
-        return std::make_tuple(kError, "Skia Failure: read pixels");
-    }
-    int64_t passingThreshold = fGMThresholds.empty() ? -1 : fGMThresholds[std::string(name)];
-
-    if (-1 == passingThreshold) {
-        return std::make_tuple(kPass, "");
-    }
-    skqp::ModelResult modelResult =
-        skqp::CheckAgainstModel(name, image.pixmap(), fAssetManager);
-
-    if (!modelResult.fErrorString.empty()) {
-        return std::make_tuple(kError, std::move(modelResult.fErrorString));
-    }
-    fRenderResults.push_back(SkQP::RenderResult{backend, gmFact, modelResult.fOutcome});
-    if (modelResult.fOutcome.fMaxError <= passingThreshold) {
-        return std::make_tuple(kPass, "");
-    }
-    std::string imagesDirectory = fReportDirectory + "/" IMAGES_DIRECTORY_PATH;
-    if (!sk_mkdir(imagesDirectory.c_str())) {
-        SkDebugf("ERROR: sk_mkdir('%s');\n", imagesDirectory.c_str());
-        return std::make_tuple(modelResult.fOutcome, "");
-    }
-    std::ostringstream tmp;
-    tmp << imagesDirectory << '/' << SkQP::GetBackendName(backend) << '_' << name << '_';
-    std::string imagesPathPrefix1 = tmp.str();
-    tmp = std::ostringstream();
-    tmp << imagesDirectory << '/' << PATH_MODEL << '_' << name << '_';
-    std::string imagesPathPrefix2 = tmp.str();
-    encode_png(image,                  imagesPathPrefix1 + PATH_IMG_PNG);
-    encode_png(modelResult.fErrors,    imagesPathPrefix1 + PATH_ERR_PNG);
-    write_to_file(modelResult.fMaxPng, imagesPathPrefix2 + PATH_MAX_PNG);
-    write_to_file(modelResult.fMinPng, imagesPathPrefix2 + PATH_MIN_PNG);
-    return std::make_tuple(modelResult.fOutcome, "");
+    printBackendInfo((fReportDirectory + "/grdump.txt").c_str());
 }
 
 std::vector<std::string> SkQP::executeTest(SkQP::UnitTest test) {
-    SkASSERT_RELEASE(fAssetManager);
     struct : public skiatest::Reporter {
         std::vector<std::string> fErrors;
         void reportFailed(const skiatest::Failure& failure) override {
@@ -351,95 +150,19 @@ std::vector<std::string> SkQP::executeTest(SkQP::UnitTest test) {
         }
     } r;
     GrContextOptions options;
-    options.fDisableDriverCorrectnessWorkarounds = true;
+    if (test->fCTSEnforcement.eval(fEnforcedAndroidAPILevel) ==
+        CtsEnforcement::RunMode::kRunStrict) {
+        options.fDisableDriverCorrectnessWorkarounds = true;
+    }
     if (test->fContextOptionsProc) {
         test->fContextOptionsProc(&options);
     }
-    test->proc(&r, options);
-    fUnitTestResults.push_back(UnitTestResult{test, r.fErrors});
+    test->ganesh(&r, options);
+    fTestResults.push_back(TestResult{test->fName, r.fErrors});
     return r.fErrors;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-
-static constexpr char kDocHead[] =
-    "<!doctype html>\n"
-    "<html lang=\"en\">\n"
-    "<head>\n"
-    "<meta charset=\"UTF-8\">\n"
-    "<title>SkQP Report</title>\n"
-    "<style>\n"
-    "img { max-width:48%; border:1px green solid;\n"
-    "      image-rendering: pixelated;\n"
-    "      background-image:url('data:image/png;base64,iVBORw0KGgoA"
-    "AAANSUhEUgAAABAAAAAQCAAAAAA6mKC9AAAAAXNSR0IArs4c6QAAAAJiS0dEAP+H"
-    "j8y/AAAACXBIWXMAAA7DAAAOwwHHb6hkAAAAB3RJTUUH3gUBEi4DGRAQYgAAAB1J"
-    "REFUGNNjfMoAAVJQmokBDdBHgPE/lPFsYN0BABdaAwN6tehMAAAAAElFTkSuQmCC"
-    "'); }\n"
-    "</style>\n"
-    "<script>\n"
-    "function ce(t) { return document.createElement(t); }\n"
-    "function ct(n) { return document.createTextNode(n); }\n"
-    "function ac(u,v) { return u.appendChild(v); }\n"
-    "function br(u) { ac(u, ce(\"br\")); }\n"
-    "function ma(s, c) { var a = ce(\"a\"); a.href = s; ac(a, c); return a; }\n"
-    "function f(backend, gm, e1, e2, e3) {\n"
-    "  var b = ce(\"div\");\n"
-    "  var x = ce(\"h2\");\n"
-    "  var t = backend + \"_\" + gm;\n"
-    "  ac(x, ct(t));\n"
-    "  ac(b, x);\n"
-    "  ac(b, ct(\"backend: \" + backend));\n"
-    "  br(b);\n"
-    "  ac(b, ct(\"gm name: \" + gm));\n"
-    "  br(b);\n"
-    "  ac(b, ct(\"maximum error: \" + e1));\n"
-    "  br(b);\n"
-    "  ac(b, ct(\"bad pixel counts: \" + e2));\n"
-    "  br(b);\n"
-    "  ac(b, ct(\"total error: \" + e3));\n"
-    "  br(b);\n"
-    "  var q = \"" IMAGES_DIRECTORY_PATH "/\" + backend + \"_\" + gm + \"_\";\n"
-    "  var p = \"" IMAGES_DIRECTORY_PATH "/"   PATH_MODEL  "_\" + gm + \"_\";\n"
-    "  var i = ce(\"img\");\n"
-    "  i.src = q + \"" PATH_IMG_PNG "\";\n"
-    "  i.alt = \"img\";\n"
-    "  ac(b, ma(i.src, i));\n"
-    "  i = ce(\"img\");\n"
-    "  i.src = q + \"" PATH_ERR_PNG "\";\n"
-    "  i.alt = \"err\";\n"
-    "  ac(b, ma(i.src, i));\n"
-    "  br(b);\n"
-    "  ac(b, ct(\"Expectation: \"));\n"
-    "  ac(b, ma(p + \"" PATH_MAX_PNG "\", ct(\"max\")));\n"
-    "  ac(b, ct(\" | \"));\n"
-    "  ac(b, ma(p + \"" PATH_MIN_PNG "\", ct(\"min\")));\n"
-    "  ac(b, ce(\"hr\"));\n"
-    "  b.id = backend + \":\" + gm;\n"
-    "  ac(document.body, b);\n"
-    "  l = ce(\"li\");\n"
-    "  ac(l, ct(\"[\" + e3 + \"] \"));\n"
-    "  ac(l, ma(\"#\" + backend +\":\"+ gm , ct(t)));\n"
-    "  ac(document.getElementById(\"toc\"), l);\n"
-    "}\n"
-    "function main() {\n";
-
-static constexpr char kDocMiddle[] =
-    "}\n"
-    "</script>\n"
-    "</head>\n"
-    "<body onload=\"main()\">\n"
-    "<h1>SkQP Report</h1>\n";
-
-static constexpr char kDocTail[] =
-    "<ul id=\"toc\"></ul>\n"
-    "<hr>\n"
-    "<p>Left image: test result<br>\n"
-    "Right image: errors (white = no error, black = smallest error, red = biggest error; "
-    "other errors are a color between black and red.)</p>\n"
-    "<hr>\n"
-    "</body>\n"
-    "</html>\n";
 
 template <typename T>
 inline void write(SkWStream* wStream, const T& text) {
@@ -447,59 +170,23 @@ inline void write(SkWStream* wStream, const T& text) {
 }
 
 void SkQP::makeReport() {
-    SkASSERT_RELEASE(fAssetManager);
-    int glesErrorCount = 0, vkErrorCount = 0, gles = 0, vk = 0;
-
     if (!sk_isdir(fReportDirectory.c_str())) {
         SkDebugf("Report destination does not exist: '%s'\n", fReportDirectory.c_str());
         return;
     }
-    SkFILEWStream csvOut(SkOSPath::Join(fReportDirectory.c_str(), kRenderTestCSVReport).c_str());
-    SkFILEWStream htmOut(SkOSPath::Join(fReportDirectory.c_str(), kRenderTestReportPath).c_str());
-    SkASSERT_RELEASE(csvOut.isValid() && htmOut.isValid());
-    htmOut.writeText(kDocHead);
-    for (const SkQP::RenderResult& run : fRenderResults) {
-        switch (run.fBackend) {
-            case SkQP::SkiaBackend::kGLES: ++gles; break;
-            case SkQP::SkiaBackend::kVulkan: ++vk; break;
-            default: break;
-        }
-        const char* backendName = SkQP::GetBackendName(run.fBackend);
-        std::string gmName = SkQP::GetGMName(run.fGM);
-        const SkQP::RenderOutcome& outcome = run.fOutcome;
-        auto str = SkStringPrintf("\"%s\",\"%s\",%d,%d,%" PRId64, backendName, gmName.c_str(),
-                                  outcome.fMaxError, outcome.fBadPixelCount, outcome.fTotalError);
-        write(&csvOut, SkStringPrintf("%s\n", str.c_str()));
-
-        int64_t passingThreshold = fGMThresholds.empty() ? 0 : fGMThresholds[gmName];
-        if (passingThreshold == -1 || outcome.fMaxError <= passingThreshold) {
-            continue;
-        }
-        write(&htmOut, SkStringPrintf("  f(%s);\n", str.c_str()));
-        switch (run.fBackend) {
-            case SkQP::SkiaBackend::kGLES: ++glesErrorCount; break;
-            case SkQP::SkiaBackend::kVulkan: ++vkErrorCount; break;
-            default: break;
-        }
-    }
-    htmOut.writeText(kDocMiddle);
-    write(&htmOut, SkStringPrintf("<p>gles errors: %d (of %d)</br>\n"
-                                  "vk errors: %d (of %d)</p>\n",
-                                  glesErrorCount, gles, vkErrorCount, vk));
-    htmOut.writeText(kDocTail);
-    SkFILEWStream unitOut(SkOSPath::Join(fReportDirectory.c_str(), kUnitTestReportPath).c_str());
-    SkASSERT_RELEASE(unitOut.isValid());
-    for (const SkQP::UnitTestResult& result : fUnitTestResults) {
-        unitOut.writeText(GetUnitTestName(result.fUnitTest));
-        if (result.fErrors.empty()) {
-            unitOut.writeText(" PASSED\n* * *\n");
+    SkFILEWStream report(SkOSPath::Join(fReportDirectory.c_str(), kUnitTestReportPath).c_str());
+    SkASSERT_RELEASE(report.isValid());
+    for (const SkQP::TestResult& result : fTestResults) {
+        report.writeText(result.name.c_str());
+        if (result.errors.empty()) {
+            report.writeText(" PASSED\n* * *\n");
         } else {
-            write(&unitOut, SkStringPrintf(" FAILED (%zu errors)\n", result.fErrors.size()));
-            for (const std::string& err : result.fErrors) {
-                write(&unitOut, err);
-                unitOut.newline();
+            write(&report, SkStringPrintf(" FAILED (%zu errors)\n", result.errors.size()));
+            for (const std::string& err : result.errors) {
+                write(&report, err);
+                report.newline();
             }
-            unitOut.writeText("* * *\n");
+            report.writeText("* * *\n");
         }
     }
 }

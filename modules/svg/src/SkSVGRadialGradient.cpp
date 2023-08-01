@@ -5,6 +5,7 @@
  * found in the LICENSE file.
  */
 
+#include "include/core/SkColorSpace.h"
 #include "include/effects/SkGradientShader.h"
 #include "modules/svg/include/SkSVGRadialGradient.h"
 #include "modules/svg/include/SkSVGRenderContext.h"
@@ -22,7 +23,7 @@ bool SkSVGRadialGradient::parseAndSetAttribute(const char* name, const char* val
 }
 
 sk_sp<SkShader> SkSVGRadialGradient::onMakeShader(const SkSVGRenderContext& ctx,
-                                                  const SkColor* colors, const SkScalar* pos,
+                                                  const SkColor4f* colors, const SkScalar* pos,
                                                   int count, SkTileMode tm,
                                                   const SkMatrix& m) const {
     const SkSVGLengthContext lctx =
@@ -40,10 +41,13 @@ sk_sp<SkShader> SkSVGRadialGradient::onMakeShader(const SkSVGRenderContext& ctx,
         fFy.isValid() ? lctx.resolve(*fFy, SkSVGLengthContext::LengthType::kVertical)
                       : center.y());
 
-    // TODO: Handle r == 0 which has a specific meaning according to the spec
-    SkASSERT(r != 0);
+    if (r == 0) {
+        const auto last_color = count > 0 ? colors[count - 1] : SkColors::kBlack;
+        return SkShaders::Color(last_color, nullptr);
+    }
 
     return center == focal
-        ? SkGradientShader::MakeRadial(center, r, colors, pos, count, tm, 0, &m)
-        : SkGradientShader::MakeTwoPointConical(focal, 0, center, r, colors, pos, count, tm, 0, &m);
+        ? SkGradientShader::MakeRadial(center, r, colors, nullptr, pos, count, tm, 0, &m)
+        : SkGradientShader::MakeTwoPointConical(focal, 0, center, r, colors, nullptr, pos,
+                                                count, tm, 0, &m);
 }

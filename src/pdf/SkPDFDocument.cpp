@@ -10,7 +10,8 @@
 
 #include "include/core/SkStream.h"
 #include "include/docs/SkPDFDocument.h"
-#include "include/private/SkTo.h"
+#include "include/private/base/SkTo.h"
+#include "src/base/SkUTF.h"
 #include "src/pdf/SkPDFDevice.h"
 #include "src/pdf/SkPDFFont.h"
 #include "src/pdf/SkPDFGradientShader.h"
@@ -18,7 +19,6 @@
 #include "src/pdf/SkPDFShader.h"
 #include "src/pdf/SkPDFTag.h"
 #include "src/pdf/SkPDFUtils.h"
-#include "src/utils/SkUTF.h"
 
 #include <utility>
 
@@ -132,7 +132,7 @@ static void serialize_footer(const SkPDFOffsetMap& offsetMap,
     trailerDict.emitObject(wStream);
     wStream->writeText("\nstartxref\n");
     wStream->writeBigDecAsText(xRefFileOffset);
-    wStream->writeText("\n%%EOF");
+    wStream->writeText("\n%%EOF\n");
 }
 
 static SkPDFIndirectReference generate_page_tree(
@@ -219,7 +219,7 @@ SkPDFDocument::SkPDFDocument(SkWStream* stream,
     if (fMetadata.fStructureElementTreeRoot) {
         fTagTree.init(fMetadata.fStructureElementTreeRoot);
     }
-    fExecutor = metadata.fExecutor;
+    fExecutor = fMetadata.fExecutor;
 }
 
 SkPDFDocument::~SkPDFDocument() {
@@ -237,11 +237,11 @@ SkPDFIndirectReference SkPDFDocument::emit(const SkPDFObject& object, SkPDFIndir
 SkWStream* SkPDFDocument::beginObject(SkPDFIndirectReference ref) SK_REQUIRES(fMutex) {
     begin_indirect_object(&fOffsetMap, ref, this->getStream());
     return this->getStream();
-};
+}
 
 void SkPDFDocument::endObject() SK_REQUIRES(fMutex) {
     end_indirect_object(this->getStream());
-};
+}
 
 static SkSize operator*(SkISize u, SkScalar s) { return SkSize{u.width() * s, u.height() * s}; }
 static SkSize operator*(SkSize u, SkScalar s) { return SkSize{u.width() * s, u.height() * s}; }
@@ -326,7 +326,8 @@ std::unique_ptr<SkPDFArray> SkPDFDocument::getAnnotations() {
         if (link->fType == SkPDFLink::Type::kUrl) {
             std::unique_ptr<SkPDFDict> action = SkPDFMakeDict("Action");
             action->insertName("S", "URI");
-            action->insertString("URI", ToValidUtf8String(*link->fData));
+            // This is documented to be a 7 bit ASCII (byte) string.
+            action->insertByteString("URI", ToValidUtf8String(*link->fData));
             annotation.insertObject("A", std::move(action));
         } else if (link->fType == SkPDFLink::Type::kNamedDestination) {
             annotation.insertName("Dest", ToValidUtf8String(*link->fData));
@@ -500,17 +501,17 @@ static SkPDFIndirectReference make_srgb_color_profile(SkPDFDocument* doc) {
     std::unique_ptr<SkPDFDict> dict = SkPDFMakeDict();
     dict->insertInt("N", 3);
     dict->insertObject("Range", SkPDFMakeArray(0, 1, 0, 1, 0, 1));
-    return SkPDFStreamOut(std::move(dict), SkMemoryStream::Make(SkSrgbIcm()), doc, true);
+    return SkPDFStreamOut(std::move(dict), SkMemoryStream::Make(SkSrgbIcm()),
+                          doc, SkPDFSteamCompressionEnabled::Yes);
 }
 
 static std::unique_ptr<SkPDFArray> make_srgb_output_intents(SkPDFDocument* doc) {
     // sRGB is specified by HTML, CSS, and SVG.
     auto outputIntent = SkPDFMakeDict("OutputIntent");
     outputIntent->insertName("S", "GTS_PDFA1");
-    outputIntent->insertString("RegistryName", "http://www.color.org");
-    outputIntent->insertString("OutputConditionIdentifier",
-                               "Custom");
-    outputIntent->insertString("Info","sRGB IEC61966-2.1");
+    outputIntent->insertTextString("RegistryName", "http://www.color.org");
+    outputIntent->insertTextString("OutputConditionIdentifier", "Custom");
+    outputIntent->insertTextString("Info", "sRGB IEC61966-2.1");
     outputIntent->insertRef("DestOutputProfile", make_srgb_color_profile(doc));
     auto intentArray = SkPDFMakeArray();
     intentArray->appendObject(std::move(outputIntent));
@@ -538,11 +539,30 @@ static std::vector<const SkPDFFont*> get_fonts(const SkPDFDocument& canon) {
     std::vector<const SkPDFFont*> fonts;
     fonts.reserve(canon.fFontMap.count());
     // Sort so the output PDF is reproducible.
-    canon.fFontMap.foreach([&fonts](uint64_t, const SkPDFFont& font) { fonts.push_back(&font); });
+    for (const auto& [unused, font] : canon.fFontMap) {
+        fonts.push_back(&font);
+    }
     std::sort(fonts.begin(), fonts.end(), [](const SkPDFFont* u, const SkPDFFont* v) {
         return u->indirectReference().fValue < v->indirectReference().fValue;
     });
     return fonts;
+}
+
+SkString SkPDFDocument::nextFontSubsetTag() {
+    // PDF 32000-1:2008 Section 9.6.4 FontSubsets "The tag shall consist of six uppercase letters"
+    // "followed by a plus sign" "different subsets in the same PDF file shall have different tags."
+    // There are 26^6 or 308,915,776 possible values. So start in range then increment and mod.
+    uint32_t thisFontSubsetTag = fNextFontSubsetTag;
+    fNextFontSubsetTag = (fNextFontSubsetTag + 1u) % 308915776u;
+
+    SkString subsetTag(7);
+    char* subsetTagData = subsetTag.data();
+    for (size_t i = 0; i < 6; ++i) {
+        subsetTagData[i] = 'A' + (thisFontSubsetTag % 26);
+        thisFontSubsetTag /= 26;
+    }
+    subsetTagData[6] = '+';
+    return subsetTag;
 }
 
 void SkPDFDocument::onClose(SkWStream* stream) {

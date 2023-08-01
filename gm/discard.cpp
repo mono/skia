@@ -18,10 +18,13 @@
 #include "include/core/SkTypes.h"
 #include "include/gpu/GrDirectContext.h"
 #include "include/gpu/GrRecordingContext.h"
-#include "include/utils/SkRandom.h"
+#include "include/gpu/ganesh/SkSurfaceGanesh.h"
+#include "src/base/SkRandom.h"
 #include "tools/ToolUtils.h"
 
-class GrRenderTargetContext;
+#if defined(SK_GRAPHITE)
+#include "include/gpu/graphite/Surface.h"
+#endif
 
 namespace skiagm {
 
@@ -29,7 +32,7 @@ namespace skiagm {
  * This GM exercises SkCanvas::discard() by creating an offscreen SkSurface and repeatedly
  * discarding it, drawing to it, and then drawing it to the main canvas.
  */
-class DiscardGM : public GpuGM {
+class DiscardGM : public GM {
 
 public:
     DiscardGM() {}
@@ -43,21 +46,31 @@ protected:
         return SkISize::Make(100, 100);
     }
 
-    DrawResult onDraw(GrRecordingContext* context, GrRenderTargetContext*, SkCanvas* canvas,
-                      SkString* errorMsg) override {
-        auto direct = context->asDirectContext();
-        if (!direct) {
-            *errorMsg = "GM relies on having access to a live direct context.";
-            return DrawResult::kSkip;
-        }
+    DrawResult onDraw(SkCanvas* canvas, SkString* errorMsg) override {
 
         SkISize size = this->getISize();
         size.fWidth /= 10;
         size.fHeight /= 10;
         SkImageInfo info = SkImageInfo::MakeN32Premul(size);
-        sk_sp<SkSurface> surface = SkSurface::MakeRenderTarget(direct, SkBudgeted::kNo, info);
-        if (nullptr == surface) {
-            *errorMsg = "Could not create render target.";
+        sk_sp<SkSurface> surface;
+
+        auto dContext = GrAsDirectContext(canvas->recordingContext());
+        if (dContext && !dContext->abandoned()) {
+            surface = SkSurfaces::RenderTarget(dContext, skgpu::Budgeted::kNo, info);
+        }
+
+#if defined(SK_GRAPHITE)
+        auto recorder = canvas->recorder();
+        if (recorder) {
+            surface = SkSurfaces::RenderTarget(recorder, info);
+        }
+#endif
+
+        if (!surface) {
+            surface = SkSurfaces::Raster(info);
+        }
+        if (!surface) {
+            *errorMsg = "Could not create surface.";
             return DrawResult::kFail;
         }
 
@@ -82,16 +95,13 @@ protected:
                       surface->getCanvas()->drawPaint(paint);
                       break;
               }
-              surface->draw(canvas, 10.f*x, 10.f*y, nullptr);
+              surface->draw(canvas, 10.f*x, 10.f*y);
             }
         }
 
         surface->getCanvas()->discard();
         return DrawResult::kOk;
     }
-
-private:
-    using INHERITED = GM;
 };
 
 //////////////////////////////////////////////////////////////////////////////

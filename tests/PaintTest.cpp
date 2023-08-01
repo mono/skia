@@ -5,43 +5,38 @@
  * found in the LICENSE file.
  */
 
+#include "include/core/SkBlendMode.h"
+#include "include/core/SkBlurTypes.h"
+#include "include/core/SkColorFilter.h"
+#include "include/core/SkColorType.h"
 #include "include/core/SkFont.h"
+#include "include/core/SkFontTypes.h"
 #include "include/core/SkMaskFilter.h"
+#include "include/core/SkPaint.h"
 #include "include/core/SkPath.h"
-#include "include/core/SkTypeface.h"
-#include "include/private/SkTo.h"
-#include "include/utils/SkRandom.h"
-#include "src/core/SkAutoMalloc.h"
+#include "include/core/SkPathUtils.h"
+#include "include/core/SkPoint.h"
+#include "include/core/SkRect.h"
+#include "include/core/SkScalar.h"
+#include "include/effects/SkColorMatrix.h"
+#include "include/private/base/SkTemplates.h"
+#include "src/base/SkAutoMalloc.h"
 #include "src/core/SkBlurMask.h"
 #include "src/core/SkPaintPriv.h"
 #include "src/core/SkReadBuffer.h"
 #include "src/core/SkWriteBuffer.h"
-#include "src/utils/SkUTF.h"
 #include "tests/Test.h"
+
+#include <algorithm>
+#include <cstddef>
+#include <cstdint>
+#include <initializer_list>
+#include <optional>
+#include <string>
+
 #undef ASSERT
 
-// temparary api for bicubic, just be sure we can set/clear it
-DEF_TEST(Paint_filterQuality, reporter) {
-    SkPaint p0, p1;
-
-    REPORTER_ASSERT(reporter, kNone_SkFilterQuality == p0.getFilterQuality());
-
-    static const SkFilterQuality gQualitys[] = {
-        kNone_SkFilterQuality,
-        kLow_SkFilterQuality,
-        kMedium_SkFilterQuality,
-        kHigh_SkFilterQuality
-    };
-    for (size_t i = 0; i < SK_ARRAY_COUNT(gQualitys); ++i) {
-        p0.setFilterQuality(gQualitys[i]);
-        REPORTER_ASSERT(reporter, gQualitys[i] == p0.getFilterQuality());
-        p1 = p0;
-        REPORTER_ASSERT(reporter, gQualitys[i] == p1.getFilterQuality());
-
-        p0.reset();
-        REPORTER_ASSERT(reporter, kNone_SkFilterQuality == p0.getFilterQuality());
-    }
-}
+using namespace skia_private;
 
 DEF_TEST(Paint_copy, reporter) {
     SkPaint paint;
@@ -54,7 +49,6 @@ DEF_TEST(Paint_copy, reporter) {
 
     // copy the paint using the copy constructor and check they are the same
     SkPaint copiedPaint = paint;
-    REPORTER_ASSERT(reporter, paint.getHash() == copiedPaint.getHash());
     REPORTER_ASSERT(reporter, paint == copiedPaint);
 
     // copy the paint using the equal operator and check they are the same
@@ -89,7 +83,7 @@ DEF_TEST(Paint_regression_cubic, reporter) {
 
     paint.setStyle(SkPaint::kStroke_Style);
     paint.setStrokeWidth(SkIntToScalar(2));
-    paint.getFillPath(path, &stroke);
+    skpathutils::FillPathWithPaint(path, paint, &stroke);
     strokeR = stroke.getBounds();
 
     SkRect maxR = fillR;
@@ -104,12 +98,6 @@ DEF_TEST(Paint_regression_cubic, reporter) {
 }
 
 DEF_TEST(Paint_flattening, reporter) {
-    const SkFilterQuality levels[] = {
-        kNone_SkFilterQuality,
-        kLow_SkFilterQuality,
-        kMedium_SkFilterQuality,
-        kHigh_SkFilterQuality,
-    };
     const SkPaint::Cap caps[] = {
         SkPaint::kButt_Cap,
         SkPaint::kRound_Cap,
@@ -127,7 +115,7 @@ DEF_TEST(Paint_flattening, reporter) {
     };
 
 #define FOR_SETUP(index, array, setter)                                 \
-    for (size_t index = 0; index < SK_ARRAY_COUNT(array); ++index) {    \
+    for (size_t index = 0; index < std::size(array); ++index) {         \
         paint.setter(array[index]);
 
     SkPaint paint;
@@ -135,7 +123,6 @@ DEF_TEST(Paint_flattening, reporter) {
 
     // we don't serialize hinting or encoding -- soon to be removed from paint
 
-    FOR_SETUP(i, levels, setFilterQuality)
     FOR_SETUP(l, caps, setStrokeCap)
     FOR_SETUP(m, joins, setStrokeJoin)
     FOR_SETUP(p, styles, setStyle)
@@ -147,11 +134,10 @@ DEF_TEST(Paint_flattening, reporter) {
     writer.writeToMemory(buf.get());
     SkReadBuffer reader(buf.get(), writer.bytesWritten());
 
-    SkPaint paint2;
-    SkPaintPriv::Unflatten(&paint2, reader, nullptr);
+    SkPaint paint2 = reader.readPaint();
     REPORTER_ASSERT(reporter, paint2 == paint);
 
-    }}}}
+    }}}
 #undef FOR_SETUP
 
 }
@@ -184,36 +170,13 @@ DEF_TEST(Paint_MoreFlattening, r) {
     writer.writeToMemory(buf.get());
     SkReadBuffer reader(buf.get(), writer.bytesWritten());
 
-    SkPaint other;
-    SkPaintPriv::Unflatten(&other, reader, nullptr);
+    SkPaint other = reader.readPaint();
     ASSERT(reader.offset() == writer.bytesWritten());
 
     // No matter the encoding, these must always hold.
-    ASSERT(other.getColor()      == paint.getColor());
-    ASSERT(other.getBlendMode()  == paint.getBlendMode());
+    ASSERT(other.getColor()    == paint.getColor());
+    ASSERT(other.asBlendMode() == paint.asBlendMode());
 }
-
-DEF_TEST(Paint_getHash, r) {
-    // Try not to inspect the actual hash values in here.
-    // We might want to change the hash function.
-
-    SkPaint paint;
-    const uint32_t defaultHash = paint.getHash();
-
-    // Check that some arbitrary field affects the hash.
-    paint.setColor(0xFF00FF00);
-    REPORTER_ASSERT(r, paint.getHash() != defaultHash);
-    paint.setColor(SK_ColorBLACK);  // Reset to default value.
-    REPORTER_ASSERT(r, paint.getHash() == defaultHash);
-
-    // This is part of fBitfields, the last field we hash.
-    paint.setBlendMode(SkBlendMode::kSrc);
-    REPORTER_ASSERT(r, paint.getHash() != defaultHash);
-    paint.setBlendMode(SkBlendMode::kSrcOver);
-    REPORTER_ASSERT(r, paint.getHash() == defaultHash);
-}
-
-#include "include/effects/SkColorMatrixFilter.h"
 
 DEF_TEST(Paint_nothingToDraw, r) {
     SkPaint paint;
@@ -243,13 +206,13 @@ DEF_TEST(Font_getpos, r) {
     SkFont font;
     const char text[] = "Hamburgefons!@#!#23425,./;'[]";
     int count = font.countText(text, strlen(text), SkTextEncoding::kUTF8);
-    SkAutoTArray<uint16_t> glyphStorage(count);
+    AutoTArray<uint16_t> glyphStorage(count);
     uint16_t* glyphs = glyphStorage.get();
     (void)font.textToGlyphs(text, strlen(text), SkTextEncoding::kUTF8, glyphs, count);
 
-    SkAutoTArray<SkScalar> widthStorage(count);
-    SkAutoTArray<SkScalar> xposStorage(count);
-    SkAutoTArray<SkPoint> posStorage(count);
+    AutoTArray<SkScalar> widthStorage(count);
+    AutoTArray<SkScalar> xposStorage(count);
+    AutoTArray<SkPoint> posStorage(count);
 
     SkScalar* widths = widthStorage.get();
     SkScalar* xpos = xposStorage.get();
@@ -280,4 +243,13 @@ DEF_TEST(Font_getpos, r) {
             }
         }
     }
+}
+
+DEF_TEST(Paint_dither, reporter) {
+    SkPaint p;
+    p.setDither(true);
+
+    bool shouldDither = SkPaintPriv::ShouldDither(p, kBGRA_8888_SkColorType);
+
+    REPORTER_ASSERT(reporter, !shouldDither);
 }

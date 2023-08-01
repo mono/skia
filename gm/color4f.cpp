@@ -84,10 +84,10 @@ DEF_SIMPLE_GM(color4f, canvas, 1024, 260) {
     for (const sk_sp<SkColorSpace>& colorSpace : colorSpaces) {
         const SkImageInfo info = SkImageInfo::Make(1024, 100, kN32_SkColorType, kPremul_SkAlphaType,
                                                    colorSpace);
-        auto surface(SkSurface::MakeRaster(info));
+        auto surface(SkSurfaces::Raster(info));
         surface->getCanvas()->drawPaint(bg);
         draw_into_canvas(surface->getCanvas());
-        surface->draw(canvas, 0, 0, nullptr);
+        surface->draw(canvas, 0, 0);
         canvas->translate(0, 120);
     }
 }
@@ -120,6 +120,43 @@ DEF_SIMPLE_GM(color4shader, canvas, 360, 480) {
         canvas->save();
         for (const auto& s : shaders) {
             paint.setShader(s);
+            canvas->drawRect(r, paint);
+            canvas->translate(r.width() * 6 / 5, 0);
+        }
+        canvas->restore();
+        canvas->translate(0, r.height() * 6 / 5);
+    }
+}
+
+DEF_SIMPLE_GM(color4blendcf, canvas, 360, 480) {
+    canvas->translate(10, 10);
+
+    auto srgb = SkColorSpace::MakeSRGB();
+    auto spin = srgb->makeColorSpin(); // RGB -> GBR
+
+    const SkColor4f colors[] {
+        { 1, 0, 0, 1 },
+        { 0, 1, 0, 1 },
+        { 0, 0, 1, 1 },
+        { 0.5, 0.5, 0.5, 1 },
+    };
+
+    SkPaint paint;
+    paint.setColor(SK_ColorWHITE);
+    SkRect r = SkRect::MakeWH(100, 100);
+
+    for (const auto& c4 : colors) {
+        sk_sp<SkColorFilter> filters[] {
+            // Use kModulate and a paint color of white so the final drawn color is color-space
+            // managed 'c4'.
+            SkColorFilters::Blend(c4, nullptr, SkBlendMode::kModulate),
+            SkColorFilters::Blend(c4, srgb, SkBlendMode::kModulate),
+            SkColorFilters::Blend(c4, spin, SkBlendMode::kModulate),
+        };
+
+        canvas->save();
+        for (const auto& f : filters) {
+            paint.setColorFilter(f);
             canvas->drawRect(r, paint);
             canvas->translate(r.width() * 6 / 5, 0);
         }

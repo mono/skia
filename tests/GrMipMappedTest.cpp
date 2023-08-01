@@ -5,44 +5,99 @@
  * found in the LICENSE file.
  */
 
-#include "include/core/SkTypes.h"
-
+#include "include/core/SkAlphaType.h"
+#include "include/core/SkBitmap.h"
+#include "include/core/SkBlendMode.h"
 #include "include/core/SkCanvas.h"
-#include "include/core/SkPoint.h"
+#include "include/core/SkColor.h"
+#include "include/core/SkColorSpace.h"
+#include "include/core/SkColorType.h"
+#include "include/core/SkImage.h"
+#include "include/core/SkImageInfo.h"
+#include "include/core/SkMatrix.h"
+#include "include/core/SkRect.h"
+#include "include/core/SkRefCnt.h"
+#include "include/core/SkSamplingOptions.h"
 #include "include/core/SkSurface.h"
+#include "include/core/SkSurfaceProps.h"
+#include "include/core/SkTypes.h"
+#include "include/gpu/GpuTypes.h"
 #include "include/gpu/GrBackendSurface.h"
+#include "include/gpu/GrContextOptions.h"
 #include "include/gpu/GrDirectContext.h"
-#include "src/gpu/GrBackendTextureImageGenerator.h"
-#include "src/gpu/GrDirectContextPriv.h"
-#include "src/gpu/GrDrawingManager.h"
-#include "src/gpu/GrGpu.h"
-#include "src/gpu/GrProxyProvider.h"
-#include "src/gpu/GrRecordingContextPriv.h"
-#include "src/gpu/GrRenderTargetContext.h"
-#include "src/gpu/GrSemaphore.h"
-#include "src/gpu/GrSurfaceProxyPriv.h"
-#include "src/gpu/GrTexture.h"
-#include "src/gpu/GrTextureProxy.h"
-#include "src/gpu/SkGpuDevice.h"
-#include "src/image/SkImage_Base.h"
-#include "src/image/SkSurface_Gpu.h"
+#include "include/gpu/GrRecordingContext.h"
+#include "include/gpu/GrTypes.h"
+#include "include/gpu/ganesh/GrTextureGenerator.h"
+#include "include/gpu/ganesh/SkImageGanesh.h"
+#include "include/gpu/ganesh/SkSurfaceGanesh.h"
+#include "include/gpu/mock/GrMockTypes.h"
+#include "include/private/SkColorData.h"
+#include "include/private/gpu/ganesh/GrTypesPriv.h"
+#include "src/gpu/SkBackingFit.h"
+#include "src/gpu/Swizzle.h"
+#include "src/gpu/ganesh/Device_v1.h"
+#include "src/gpu/ganesh/GrBackendTextureImageGenerator.h"
+#include "src/gpu/ganesh/GrCaps.h"
+#include "src/gpu/ganesh/GrColorSpaceXform.h"
+#include "src/gpu/ganesh/GrDirectContextPriv.h"
+#include "src/gpu/ganesh/GrDrawingManager.h"
+#include "src/gpu/ganesh/GrProxyProvider.h"
+#include "src/gpu/ganesh/GrRecordingContextPriv.h"
+#include "src/gpu/ganesh/GrSamplerState.h"
+#include "src/gpu/ganesh/GrSemaphore.h"
+#include "src/gpu/ganesh/GrSurfaceProxy.h"
+#include "src/gpu/ganesh/GrSurfaceProxyPriv.h"
+#include "src/gpu/ganesh/GrSurfaceProxyView.h"
+#include "src/gpu/ganesh/GrTexture.h"
+#include "src/gpu/ganesh/GrTextureProxy.h"
+#include "src/gpu/ganesh/SkGr.h"
+#include "src/gpu/ganesh/SurfaceDrawContext.h"
+#include "src/gpu/ganesh/ops/OpsTask.h"
+#include "src/gpu/ganesh/surface/SkSurface_Ganesh.h"
+#include "tests/CtsEnforcement.h"
 #include "tests/Test.h"
-#include "tests/TestUtils.h"
 #include "tools/gpu/BackendSurfaceFactory.h"
 #include "tools/gpu/BackendTextureImageFactory.h"
 #include "tools/gpu/ManagedBackendTexture.h"
+#include "tools/gpu/ProxyUtils.h"
+
+#include <initializer_list>
+#include <memory>
+#include <utility>
+
+class GrRenderTask;
+
+#if defined(SK_DIRECT3D)
+#include "include/gpu/d3d/GrD3DTypes.h"
+#endif
+
+#if defined(SK_GL)
+#include "include/gpu/gl/GrGLTypes.h"
+#endif
+
+#if defined(SK_VULKAN)
+#include "include/gpu/vk/GrVkTypes.h"
+#endif
+
+#if defined(SK_DAWN)
+#include "include/gpu/dawn/GrDawnTypes.h"
+#include "dawn/webgpu_cpp.h"
+#endif
 
 static constexpr int kSize = 8;
 
 // Test that the correct mip map states are on the GrTextures when wrapping GrBackendTextures in
 // SkImages and SkSurfaces
-DEF_GPUTEST_FOR_RENDERING_CONTEXTS(GrWrappedMipMappedTest, reporter, ctxInfo) {
+DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(GrWrappedMipMappedTest,
+                                       reporter,
+                                       ctxInfo,
+                                       CtsEnforcement::kApiLevel_T) {
     auto dContext = ctxInfo.directContext();
     if (!dContext->priv().caps()->mipmapSupport()) {
         return;
     }
 
-    for (auto mipMapped : {GrMipmapped::kNo, GrMipmapped::kYes}) {
+    for (auto mipmapped : {GrMipmapped::kNo, GrMipmapped::kYes}) {
         for (auto renderable : {GrRenderable::kNo, GrRenderable::kYes}) {
             // createBackendTexture currently doesn't support uploading data to mip maps
             // so we don't send any. However, we pretend there is data for the checks below which is
@@ -52,7 +107,7 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(GrWrappedMipMappedTest, reporter, ctxInfo) {
                                                                          kSize,
                                                                          kRGBA_8888_SkColorType,
                                                                          SkColors::kTransparent,
-                                                                         mipMapped,
+                                                                         mipmapped,
                                                                          renderable,
                                                                          GrProtected::kNo);
             if (!mbet) {
@@ -62,8 +117,8 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(GrWrappedMipMappedTest, reporter, ctxInfo) {
 
             sk_sp<GrTextureProxy> proxy;
             sk_sp<SkImage> image;
-            if (GrRenderable::kYes == renderable) {
-                sk_sp<SkSurface> surface = SkSurface::MakeFromBackendTexture(
+            if (renderable == GrRenderable::kYes) {
+                sk_sp<SkSurface> surface = SkSurfaces::WrapBackendTexture(
                         dContext,
                         mbet->texture(),
                         kTopLeft_GrSurfaceOrigin,
@@ -74,23 +129,19 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(GrWrappedMipMappedTest, reporter, ctxInfo) {
                         sk_gpu_test::ManagedBackendTexture::ReleaseProc,
                         mbet->releaseContext());
 
-                SkGpuDevice* device = ((SkSurface_Gpu*)surface.get())->getDevice();
-                proxy = device->accessRenderTargetContext()->asTextureProxyRef();
+                auto device = ((SkSurface_Ganesh*)surface.get())->getDevice();
+                proxy = device->readSurfaceView().asTextureProxyRef();
             } else {
-                image = SkImage::MakeFromTexture(dContext,
-                                                 mbet->texture(),
-                                                 kTopLeft_GrSurfaceOrigin,
-                                                 kRGBA_8888_SkColorType,
-                                                 kPremul_SkAlphaType,
-                                                 /* color space */ nullptr,
-                                                 sk_gpu_test::ManagedBackendTexture::ReleaseProc,
-                                                 mbet->releaseContext());
-                const GrSurfaceProxyView* view = as_IB(image)->view(dContext);
-                REPORTER_ASSERT(reporter, view);
-                if (!view) {
-                    continue;
-                }
-                proxy = view->asTextureProxyRef();
+                image = SkImages::BorrowTextureFrom(dContext,
+                                                    mbet->texture(),
+                                                    kTopLeft_GrSurfaceOrigin,
+                                                    kRGBA_8888_SkColorType,
+                                                    kPremul_SkAlphaType,
+                                                    /* color space */ nullptr,
+                                                    sk_gpu_test::ManagedBackendTexture::ReleaseProc,
+                                                    mbet->releaseContext());
+                REPORTER_ASSERT(reporter, (mipmapped == GrMipmapped::kYes) == image->hasMipmaps());
+                proxy = sk_ref_sp(sk_gpu_test::GetTextureImageProxy(image.get(), dContext));
             }
             REPORTER_ASSERT(reporter, proxy);
             if (!proxy) {
@@ -105,7 +156,7 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(GrWrappedMipMappedTest, reporter, ctxInfo) {
                 continue;
             }
 
-            if (GrMipmapped::kYes == mipMapped) {
+            if (mipmapped == GrMipmapped::kYes) {
                 REPORTER_ASSERT(reporter, GrMipmapped::kYes == texture->mipmapped());
                 if (GrRenderable::kYes == renderable) {
                     REPORTER_ASSERT(reporter, texture->mipmapsAreDirty());
@@ -121,20 +172,24 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(GrWrappedMipMappedTest, reporter, ctxInfo) {
 
 // Test that we correctly copy or don't copy GrBackendTextures in the GrBackendTextureImageGenerator
 // based on if we will use mips in the draw and the mip status of the GrBackendTexture.
-DEF_GPUTEST_FOR_RENDERING_CONTEXTS(GrBackendTextureImageMipMappedTest, reporter, ctxInfo) {
+DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(GrBackendTextureImageMipMappedTest,
+                                       reporter,
+                                       ctxInfo,
+                                       CtsEnforcement::kApiLevel_T) {
     auto dContext = ctxInfo.directContext();
     if (!dContext->priv().caps()->mipmapSupport()) {
         return;
     }
 
-    for (auto betMipMapped : {GrMipmapped::kNo, GrMipmapped::kYes}) {
-        for (auto requestMipMapped : {GrMipmapped::kNo, GrMipmapped::kYes}) {
+    for (auto betMipmapped : {GrMipmapped::kNo, GrMipmapped::kYes}) {
+        for (auto requestMipmapped : {GrMipmapped::kNo, GrMipmapped::kYes}) {
             auto ii =
                     SkImageInfo::Make({kSize, kSize}, kRGBA_8888_SkColorType, kPremul_SkAlphaType);
             sk_sp<SkImage> image = sk_gpu_test::MakeBackendTextureImage(
-                    dContext, ii, SkColors::kTransparent, betMipMapped);
+                    dContext, ii, SkColors::kTransparent, betMipmapped);
+            REPORTER_ASSERT(reporter, (betMipmapped == GrMipmapped::kYes) == image->hasMipmaps());
 
-            GrTextureProxy* proxy = as_IB(image)->peekProxy();
+            GrTextureProxy* proxy = sk_gpu_test::GetTextureImageProxy(image.get(), dContext);
             REPORTER_ASSERT(reporter, proxy);
             if (!proxy) {
                 return;
@@ -148,19 +203,18 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(GrBackendTextureImageMipMappedTest, reporter,
                 return;
             }
 
-            std::unique_ptr<SkImageGenerator> imageGen = GrBackendTextureImageGenerator::Make(
+            std::unique_ptr<GrTextureGenerator> textureGen = GrBackendTextureImageGenerator::Make(
                     texture, kTopLeft_GrSurfaceOrigin, nullptr, kRGBA_8888_SkColorType,
                     kPremul_SkAlphaType, nullptr);
-            REPORTER_ASSERT(reporter, imageGen);
-            if (!imageGen) {
+            REPORTER_ASSERT(reporter, textureGen);
+            if (!textureGen) {
                 return;
             }
 
-            SkIPoint origin = SkIPoint::Make(0,0);
             SkImageInfo imageInfo = SkImageInfo::Make(kSize, kSize, kRGBA_8888_SkColorType,
                                                       kPremul_SkAlphaType);
-            GrSurfaceProxyView genView = imageGen->generateTexture(
-                    dContext, imageInfo, origin, requestMipMapped, GrImageTexGenPolicy::kDraw);
+            GrSurfaceProxyView genView = textureGen->generateTexture(
+                    dContext, imageInfo, requestMipmapped, GrImageTexGenPolicy::kDraw);
             GrSurfaceProxy* genProxy = genView.proxy();
 
             REPORTER_ASSERT(reporter, genProxy);
@@ -189,11 +243,12 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(GrBackendTextureImageMipMappedTest, reporter,
             GrBackendTexture genBackendTex = genTexture->getBackendTexture();
 
             if (GrBackendApi::kOpenGL == genBackendTex.backend()) {
+#ifdef SK_GL
                 GrGLTextureInfo genTexInfo;
                 GrGLTextureInfo origTexInfo;
                 if (genBackendTex.getGLTextureInfo(&genTexInfo) &&
                     backendTex.getGLTextureInfo(&origTexInfo)) {
-                    if (requestMipMapped == GrMipmapped::kYes && betMipMapped == GrMipmapped::kNo) {
+                    if (requestMipmapped == GrMipmapped::kYes && betMipmapped == GrMipmapped::kNo) {
                         // We did a copy so the texture IDs should be different
                         REPORTER_ASSERT(reporter, origTexInfo.fID != genTexInfo.fID);
                     } else {
@@ -202,13 +257,14 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(GrBackendTextureImageMipMappedTest, reporter,
                 } else {
                     ERRORF(reporter, "Failed to get GrGLTextureInfo");
                 }
+#endif
 #ifdef SK_VULKAN
             } else if (GrBackendApi::kVulkan == genBackendTex.backend()) {
                 GrVkImageInfo genImageInfo;
                 GrVkImageInfo origImageInfo;
                 if (genBackendTex.getVkImageInfo(&genImageInfo) &&
                     backendTex.getVkImageInfo(&origImageInfo)) {
-                    if (requestMipMapped == GrMipmapped::kYes && betMipMapped == GrMipmapped::kNo) {
+                    if (requestMipmapped == GrMipmapped::kYes && betMipmapped == GrMipmapped::kNo) {
                         // We did a copy so the texture IDs should be different
                         REPORTER_ASSERT(reporter, origImageInfo.fImage != genImageInfo.fImage);
                     } else {
@@ -224,11 +280,29 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(GrBackendTextureImageMipMappedTest, reporter,
                 GrMtlTextureInfo origImageInfo;
                 if (genBackendTex.getMtlTextureInfo(&genImageInfo) &&
                     backendTex.getMtlTextureInfo(&origImageInfo)) {
-                    if (requestMipMapped == GrMipmapped::kYes && betMipMapped == GrMipmapped::kNo) {
+                    if (requestMipmapped == GrMipmapped::kYes && betMipmapped == GrMipmapped::kNo) {
                         // We did a copy so the texture IDs should be different
                         REPORTER_ASSERT(reporter, origImageInfo.fTexture != genImageInfo.fTexture);
                     } else {
                         REPORTER_ASSERT(reporter, origImageInfo.fTexture == genImageInfo.fTexture);
+                    }
+                } else {
+                    ERRORF(reporter, "Failed to get GrMtlTextureInfo");
+                }
+#endif
+#ifdef SK_DIRECT3D
+            } else if (GrBackendApi::kDirect3D == genBackendTex.backend()) {
+                GrD3DTextureResourceInfo genImageInfo;
+                GrD3DTextureResourceInfo origImageInfo;
+                if (genBackendTex.getD3DTextureResourceInfo(&genImageInfo) &&
+                    backendTex.getD3DTextureResourceInfo(&origImageInfo)) {
+                    if (requestMipmapped == GrMipmapped::kYes && betMipmapped == GrMipmapped::kNo) {
+                        // We did a copy so the texture resources should be different
+                        REPORTER_ASSERT(reporter,
+                                        origImageInfo.fResource != genImageInfo.fResource);
+                    } else {
+                        REPORTER_ASSERT(reporter,
+                                        origImageInfo.fResource == genImageInfo.fResource);
                     }
                 } else {
                     ERRORF(reporter, "Failed to get GrMtlTextureInfo");
@@ -240,7 +314,7 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(GrBackendTextureImageMipMappedTest, reporter,
                 GrDawnTextureInfo origImageInfo;
                 if (genBackendTex.getDawnTextureInfo(&genImageInfo) &&
                     backendTex.getDawnTextureInfo(&origImageInfo)) {
-                    if (requestMipMapped == GrMipmapped::kYes && betMipMapped == GrMipmapped::kNo) {
+                    if (requestMipmapped == GrMipmapped::kYes && betMipmapped == GrMipmapped::kNo) {
                         // We did a copy so the texture IDs should be different
                         REPORTER_ASSERT(reporter,
                             origImageInfo.fTexture.Get() != genImageInfo.fTexture.Get());
@@ -261,7 +335,10 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(GrBackendTextureImageMipMappedTest, reporter,
 
 // Test that when we call makeImageSnapshot on an SkSurface we retains the same mip status as the
 // resource we took the snapshot of.
-DEF_GPUTEST_FOR_RENDERING_CONTEXTS(GrImageSnapshotMipMappedTest, reporter, ctxInfo) {
+DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(GrImageSnapshotMipMappedTest,
+                                       reporter,
+                                       ctxInfo,
+                                       CtsEnforcement::kApiLevel_T) {
     auto dContext = ctxInfo.directContext();
     if (!dContext->priv().caps()->mipmapSupport()) {
         return;
@@ -271,7 +348,7 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(GrImageSnapshotMipMappedTest, reporter, ctxIn
 
     for (auto willUseMips : {false, true}) {
         for (auto isWrapped : {false, true}) {
-            GrMipmapped mipMapped = willUseMips ? GrMipmapped::kYes : GrMipmapped::kNo;
+            GrMipmapped mipmapped = willUseMips ? GrMipmapped::kYes : GrMipmapped::kNo;
             sk_sp<SkSurface> surface;
             SkImageInfo info =
                     SkImageInfo::Make(kSize, kSize, kRGBA_8888_SkColorType, kPremul_SkAlphaType);
@@ -280,40 +357,44 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(GrImageSnapshotMipMappedTest, reporter, ctxIn
                                                                  info,
                                                                  kTopLeft_GrSurfaceOrigin,
                                                                  /* sample count */ 1,
-                                                                 mipMapped);
+                                                                 mipmapped);
             } else {
-                surface = SkSurface::MakeRenderTarget(dContext,
-                                                      SkBudgeted::kYes,
-                                                      info,
-                                                      /* sample count */ 1,
-                                                      kTopLeft_GrSurfaceOrigin,
-                                                      nullptr,
-                                                      willUseMips);
+                surface = SkSurfaces::RenderTarget(dContext,
+                                                   skgpu::Budgeted::kYes,
+                                                   info,
+                                                   /* sample count */ 1,
+                                                   kTopLeft_GrSurfaceOrigin,
+                                                   nullptr,
+                                                   willUseMips);
             }
             REPORTER_ASSERT(reporter, surface);
-            SkGpuDevice* device = ((SkSurface_Gpu*)surface.get())->getDevice();
-            GrTextureProxy* texProxy = device->accessRenderTargetContext()->asTextureProxy();
-            REPORTER_ASSERT(reporter, mipMapped == texProxy->mipmapped());
+            auto device = ((SkSurface_Ganesh*)surface.get())->getDevice();
+            GrTextureProxy* texProxy = device->readSurfaceView().asTextureProxy();
+            REPORTER_ASSERT(reporter, mipmapped == texProxy->mipmapped());
 
             texProxy->instantiate(resourceProvider);
             GrTexture* texture = texProxy->peekTexture();
-            REPORTER_ASSERT(reporter, mipMapped == texture->mipmapped());
+            REPORTER_ASSERT(reporter, mipmapped == texture->mipmapped());
 
             sk_sp<SkImage> image = surface->makeImageSnapshot();
+            REPORTER_ASSERT(reporter, willUseMips == image->hasMipmaps());
             REPORTER_ASSERT(reporter, image);
-            texProxy = as_IB(image)->peekProxy();
-            REPORTER_ASSERT(reporter, mipMapped == texProxy->mipmapped());
+            texProxy = sk_gpu_test::GetTextureImageProxy(image.get(), dContext);
+            REPORTER_ASSERT(reporter, mipmapped == texProxy->mipmapped());
 
             texProxy->instantiate(resourceProvider);
             texture = texProxy->peekTexture();
-            REPORTER_ASSERT(reporter, mipMapped == texture->mipmapped());
+            REPORTER_ASSERT(reporter, mipmapped == texture->mipmapped());
         }
     }
 }
 
 // Test that we don't create a mip mapped texture if the size is 1x1 even if the filter mode is set
 // to use mips. This test passes by not crashing or hitting asserts in code.
-DEF_GPUTEST_FOR_RENDERING_CONTEXTS(Gr1x1TextureMipMappedTest, reporter, ctxInfo) {
+DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(Gr1x1TextureMipMappedTest,
+                                       reporter,
+                                       ctxInfo,
+                                       CtsEnforcement::kApiLevel_T) {
     auto dContext = ctxInfo.directContext();
     if (!dContext->priv().caps()->mipmapSupport()) {
         return;
@@ -321,7 +402,7 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(Gr1x1TextureMipMappedTest, reporter, ctxInfo)
 
     // Make surface to draw into
     SkImageInfo info = SkImageInfo::MakeN32(16, 16, kPremul_SkAlphaType);
-    sk_sp<SkSurface> surface = SkSurface::MakeRenderTarget(dContext, SkBudgeted::kNo, info);
+    sk_sp<SkSurface> surface = SkSurfaces::RenderTarget(dContext, skgpu::Budgeted::kNo, info);
 
     // Make 1x1 raster bitmap
     SkBitmap bmp;
@@ -329,26 +410,24 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(Gr1x1TextureMipMappedTest, reporter, ctxInfo)
     SkPMColor* pixel = reinterpret_cast<SkPMColor*>(bmp.getPixels());
     *pixel = 0;
 
-    sk_sp<SkImage> bmpImage = SkImage::MakeFromBitmap(bmp);
+    sk_sp<SkImage> bmpImage = bmp.asImage();
 
     // Make sure we scale so we don't optimize out the use of mips.
     surface->getCanvas()->scale(0.5f, 0.5f);
 
-    SkPaint paint;
     // This should upload the image to a non mipped GrTextureProxy.
-    surface->getCanvas()->drawImage(bmpImage, 0, 0, &paint);
+    surface->getCanvas()->drawImage(bmpImage, 0, 0);
     surface->flushAndSubmit();
 
     // Now set the filter quality to high so we use mip maps. We should find the non mipped texture
     // in the cache for the SkImage. Since the texture is 1x1 we should just use that texture
     // instead of trying to do a copy to a mipped texture.
-    paint.setFilterQuality(kHigh_SkFilterQuality);
-    surface->getCanvas()->drawImage(bmpImage, 0, 0, &paint);
+    surface->getCanvas()->drawImage(bmpImage, 0, 0, SkSamplingOptions({1.0f/3, 1.0f/3}));
     surface->flushAndSubmit();
 }
 
 // Create a new render target and draw 'mipmapView' into it using the provided 'filter'.
-static std::unique_ptr<GrRenderTargetContext> draw_mipmap_into_new_render_target(
+static std::unique_ptr<skgpu::ganesh::SurfaceDrawContext> draw_mipmap_into_new_render_target(
         GrRecordingContext* rContext,
         GrColorType colorType,
         SkAlphaType alphaType,
@@ -362,17 +441,18 @@ static std::unique_ptr<GrRenderTargetContext> draw_mipmap_into_new_render_target
                                        1,
                                        GrMipmapped::kNo,
                                        SkBackingFit::kApprox,
-                                       SkBudgeted::kYes,
-                                       GrProtected::kNo);
+                                       skgpu::Budgeted::kYes,
+                                       GrProtected::kNo,
+                                       /*label=*/"DrawMipMapViewTest");
 
-    auto rtc = GrRenderTargetContext::Make(rContext,
-                                           colorType,
-                                           nullptr,
-                                           std::move(renderTarget),
-                                           kTopLeft_GrSurfaceOrigin,
-                                           nullptr);
+    auto sdc = skgpu::ganesh::SurfaceDrawContext::Make(rContext,
+                                                       colorType,
+                                                       std::move(renderTarget),
+                                                       nullptr,
+                                                       kTopLeft_GrSurfaceOrigin,
+                                                       SkSurfaceProps());
 
-    rtc->drawTexture(nullptr,
+    sdc->drawTexture(nullptr,
                      std::move(mipmapView),
                      alphaType,
                      GrSamplerState::Filter::kLinear,
@@ -381,16 +461,18 @@ static std::unique_ptr<GrRenderTargetContext> draw_mipmap_into_new_render_target
                      {1, 1, 1, 1},
                      SkRect::MakeWH(4, 4),
                      SkRect::MakeWH(1, 1),
-                     GrAA::kYes,
                      GrQuadAAFlags::kAll,
                      SkCanvas::kFast_SrcRectConstraint,
                      SkMatrix::I(),
                      nullptr);
-    return rtc;
+    return sdc;
 }
 
 // Test that two opsTasks using the same mipmaps both depend on the same GrTextureResolveRenderTask.
-DEF_GPUTEST(GrManyDependentsMipMappedTest, reporter, /* options */) {
+DEF_GANESH_TEST(GrManyDependentsMipMappedTest,
+                reporter,
+                /* options */,
+                CtsEnforcement::kApiLevel_T) {
     using Enable = GrContextOptions::Enable;
     using MipmapMode = GrSamplerState::MipmapMode;
 
@@ -418,34 +500,45 @@ DEF_GPUTEST(GrManyDependentsMipMappedTest, reporter, /* options */) {
 
         // Create a mipmapped render target.
 
-        sk_sp<GrTextureProxy> mipmapProxy = proxyProvider->createProxy(
-                format, {4, 4}, GrRenderable::kYes, 1, GrMipmapped::kYes, SkBackingFit::kExact,
-                SkBudgeted::kYes, GrProtected::kNo);
+        sk_sp<GrTextureProxy> mipmapProxy =
+                proxyProvider->createProxy(format,
+                                           {4, 4},
+                                           GrRenderable::kYes,
+                                           1,
+                                           GrMipmapped::kYes,
+                                           SkBackingFit::kExact,
+                                           skgpu::Budgeted::kYes,
+                                           GrProtected::kNo,
+                                           /*label=*/"ManyDependentsMipMappedTest");
 
         // Mark the mipmaps clean to ensure things still work properly when they won't be marked
         // dirty again until GrRenderTask::makeClosed().
         mipmapProxy->markMipmapsClean();
 
-        auto mipmapRTC = GrRenderTargetContext::Make(
-            dContext.get(), colorType, nullptr, mipmapProxy, kTopLeft_GrSurfaceOrigin, nullptr);
+        auto mipmapSDC = skgpu::ganesh::SurfaceDrawContext::Make(dContext.get(),
+                                                                 colorType,
+                                                                 mipmapProxy,
+                                                                 nullptr,
+                                                                 kTopLeft_GrSurfaceOrigin,
+                                                                 SkSurfaceProps());
 
-        mipmapRTC->clear({.1f,.2f,.3f,.4f});
+        mipmapSDC->clear(SkPMColor4f{.1f, .2f, .3f, .4f});
         REPORTER_ASSERT(reporter, drawingManager->getLastRenderTask(mipmapProxy.get()));
         // mipmapProxy's last render task should now just be the opsTask containing the clear.
         REPORTER_ASSERT(reporter,
-                mipmapRTC->testingOnly_PeekLastOpsTask() ==
+                mipmapSDC->testingOnly_PeekLastOpsTask() ==
                         drawingManager->getLastRenderTask(mipmapProxy.get()));
 
         // Mipmaps don't get marked dirty until makeClosed().
         REPORTER_ASSERT(reporter, !mipmapProxy->mipmapsAreDirty());
 
-        GrSwizzle swizzle = dContext->priv().caps()->getReadSwizzle(format, colorType);
+        skgpu::Swizzle swizzle = dContext->priv().caps()->getReadSwizzle(format, colorType);
         GrSurfaceProxyView mipmapView(mipmapProxy, kTopLeft_GrSurfaceOrigin, swizzle);
 
         // Draw the dirty mipmap texture into a render target.
-        auto rtc1 = draw_mipmap_into_new_render_target(dContext.get(), colorType, alphaType,
+        auto sdc1 = draw_mipmap_into_new_render_target(dContext.get(), colorType, alphaType,
                                                        mipmapView, MipmapMode::kLinear);
-        auto rtc1Task = sk_ref_sp(rtc1->testingOnly_PeekLastOpsTask());
+        auto sdc1Task = sk_ref_sp(sdc1->testingOnly_PeekLastOpsTask());
 
         // Mipmaps should have gotten marked dirty during makeClosed, then marked clean again as
         // soon as a GrTextureResolveRenderTask was inserted. The way we know they were resolved is
@@ -454,13 +547,13 @@ DEF_GPUTEST(GrManyDependentsMipMappedTest, reporter, /* options */) {
         GrRenderTask* initialMipmapRegenTask = drawingManager->getLastRenderTask(mipmapProxy.get());
         REPORTER_ASSERT(reporter, initialMipmapRegenTask);
         REPORTER_ASSERT(reporter,
-                initialMipmapRegenTask != mipmapRTC->testingOnly_PeekLastOpsTask());
+                initialMipmapRegenTask != mipmapSDC->testingOnly_PeekLastOpsTask());
         REPORTER_ASSERT(reporter, !mipmapProxy->mipmapsAreDirty());
 
         // Draw the now-clean mipmap texture into a second target.
-        auto rtc2 = draw_mipmap_into_new_render_target(dContext.get(), colorType, alphaType,
+        auto sdc2 = draw_mipmap_into_new_render_target(dContext.get(), colorType, alphaType,
                                                        mipmapView, MipmapMode::kLinear);
-        auto rtc2Task = sk_ref_sp(rtc2->testingOnly_PeekLastOpsTask());
+        auto sdc2Task = sk_ref_sp(sdc2->testingOnly_PeekLastOpsTask());
 
         // Make sure the mipmap texture still has the same regen task.
         REPORTER_ASSERT(reporter,
@@ -471,12 +564,12 @@ DEF_GPUTEST(GrManyDependentsMipMappedTest, reporter, /* options */) {
         dContext->flushAndSubmit();
 
         // Mip regen tasks don't get added as dependencies until makeClosed().
-        REPORTER_ASSERT(reporter, rtc1Task->dependsOn(initialMipmapRegenTask));
-        REPORTER_ASSERT(reporter, rtc2Task->dependsOn(initialMipmapRegenTask));
+        REPORTER_ASSERT(reporter, sdc1Task->dependsOn(initialMipmapRegenTask));
+        REPORTER_ASSERT(reporter, sdc2Task->dependsOn(initialMipmapRegenTask));
 
         // Render something to dirty the mips.
-        mipmapRTC->clear({.1f,.2f,.3f,.4f});
-        auto mipmapRTCTask = sk_ref_sp(mipmapRTC->testingOnly_PeekLastOpsTask());
+        mipmapSDC->clear(SkPMColor4f{.1f, .2f, .3f, .4f});
+        auto mipmapRTCTask = sk_ref_sp(mipmapSDC->testingOnly_PeekLastOpsTask());
         REPORTER_ASSERT(reporter, mipmapRTCTask);
 
         // mipmapProxy's last render task should now just be the opsTask containing the clear.
@@ -487,7 +580,7 @@ DEF_GPUTEST(GrManyDependentsMipMappedTest, reporter, /* options */) {
         REPORTER_ASSERT(reporter, !mipmapProxy->mipmapsAreDirty());
 
         // Draw the dirty mipmap texture into a render target, but don't do mipmap filtering.
-        rtc1 = draw_mipmap_into_new_render_target(dContext.get(), colorType, alphaType,
+        sdc1 = draw_mipmap_into_new_render_target(dContext.get(), colorType, alphaType,
                                                   mipmapView, MipmapMode::kNone);
 
         // Mipmaps should have gotten marked dirty during makeClosed() when adding the dependency.
@@ -500,9 +593,9 @@ DEF_GPUTEST(GrManyDependentsMipMappedTest, reporter, /* options */) {
                     mipmapRTCTask.get() == drawingManager->getLastRenderTask(mipmapProxy.get()));
 
         // Draw the stil-dirty mipmap texture into a second target with mipmap filtering.
-        rtc2 = draw_mipmap_into_new_render_target(dContext.get(), colorType, alphaType,
+        sdc2 = draw_mipmap_into_new_render_target(dContext.get(), colorType, alphaType,
                                                   std::move(mipmapView), MipmapMode::kLinear);
-        rtc2Task = sk_ref_sp(rtc2->testingOnly_PeekLastOpsTask());
+        sdc2Task = sk_ref_sp(sdc2->testingOnly_PeekLastOpsTask());
 
         // Make sure the mipmap texture now has a new last render task that regenerates the mips,
         // and that the mipmaps are now clean.
@@ -513,6 +606,6 @@ DEF_GPUTEST(GrManyDependentsMipMappedTest, reporter, /* options */) {
 
         // Mip regen tasks don't get added as dependencies until makeClosed().
         dContext->flushAndSubmit();
-        REPORTER_ASSERT(reporter, rtc2Task->dependsOn(mipRegenTask2));
+        REPORTER_ASSERT(reporter, sdc2Task->dependsOn(mipRegenTask2));
     }
 }

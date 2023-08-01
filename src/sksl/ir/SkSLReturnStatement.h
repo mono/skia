@@ -18,14 +18,15 @@ namespace SkSL {
  */
 class ReturnStatement final : public Statement {
 public:
-    static constexpr Kind kStatementKind = Kind::kReturn;
+    inline static constexpr Kind kIRNodeKind = Kind::kReturn;
 
-    ReturnStatement(int offset)
-        : INHERITED(offset, kStatementKind) {}
-
-    ReturnStatement(std::unique_ptr<Expression> expression)
-        : INHERITED(expression->fOffset, kStatementKind)
+    ReturnStatement(Position pos, std::unique_ptr<Expression> expression)
+        : INHERITED(pos, kIRNodeKind)
         , fExpression(std::move(expression)) {}
+
+    static std::unique_ptr<Statement> Make(Position pos, std::unique_ptr<Expression> expression) {
+        return std::make_unique<ReturnStatement>(pos, std::move(expression));
+    }
 
     std::unique_ptr<Expression>& expression() {
         return fExpression;
@@ -35,18 +36,20 @@ public:
         return fExpression;
     }
 
-    std::unique_ptr<Statement> clone() const override {
-        if (this->expression()) {
-            return std::unique_ptr<Statement>(new ReturnStatement(this->expression()->clone()));
-        }
-        return std::unique_ptr<Statement>(new ReturnStatement(fOffset));
+    void setExpression(std::unique_ptr<Expression> expr) {
+        fExpression = std::move(expr);
     }
 
-    String description() const override {
+    std::unique_ptr<Statement> clone() const override {
+        return std::make_unique<ReturnStatement>(
+                fPosition, this->expression() ? this->expression()->clone() : nullptr);
+    }
+
+    std::string description() const override {
         if (this->expression()) {
             return "return " + this->expression()->description() + ";";
         } else {
-            return String("return;");
+            return "return;";
         }
     }
 

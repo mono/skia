@@ -7,9 +7,12 @@
 
 #include "bench/Benchmark.h"
 #include "include/core/SkCanvas.h"
+#include "include/core/SkColorSpace.h"
 #include "include/core/SkImage.h"
 #include "include/core/SkPaint.h"
 #include "include/core/SkSurface.h"
+#include "include/gpu/GpuTypes.h"
+#include "include/gpu/ganesh/SkSurfaceGanesh.h"
 
 class GrMipMapBench: public Benchmark {
     sk_sp<SkSurface> fSurface;
@@ -39,16 +42,21 @@ protected:
                     SkImageInfo::Make(fW, fH, kRGBA_8888_SkColorType, kPremul_SkAlphaType, srgb);
             // We're benching the regeneration of the mip levels not the need to allocate them every
             // frame. Thus we create the surface with mips to begin with.
-            fSurface = SkSurface::MakeRenderTarget(context, SkBudgeted::kNo, info, 0,
-                                                   kBottomLeft_GrSurfaceOrigin, nullptr, true);
-
+            fSurface = SkSurfaces::RenderTarget(context,
+                                                skgpu::Budgeted::kNo,
+                                                info,
+                                                0,
+                                                kBottomLeft_GrSurfaceOrigin,
+                                                nullptr,
+                                                true);
         }
 
         // Clear surface once:
         fSurface->getCanvas()->clear(SK_ColorBLACK);
 
+        SkSamplingOptions sampling(SkFilterMode::kLinear,
+                                   SkMipmapMode::kLinear);
         SkPaint paint;
-        paint.setFilterQuality(kMedium_SkFilterQuality);
         paint.setColor(SK_ColorWHITE);
         for (int i = 0; i < loops; i++) {
             // Touch surface so mips are dirtied
@@ -57,7 +65,7 @@ protected:
             // Draw reduced version of surface to original canvas, to trigger mip generation
             canvas->save();
             canvas->scale(0.1f, 0.1f);
-            canvas->drawImage(fSurface->makeImageSnapshot(), 0, 0, &paint);
+            canvas->drawImage(fSurface->makeImageSnapshot(), 0, 0, sampling, &paint);
             canvas->restore();
         }
     }

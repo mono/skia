@@ -25,19 +25,17 @@
 #include "include/core/SkTypeface.h"
 #include "include/core/SkTypes.h"
 #include "include/effects/SkGradientShader.h"
-#include "include/gpu/GrConfig.h"
-#include "include/private/GrTypesPriv.h"
 #include "include/private/SkColorData.h"
+#include "include/private/gpu/ganesh/GrTypesPriv.h"
+#include "src/core/SkCanvasPriv.h"
 #include "src/core/SkMatrixProvider.h"
-#include "src/gpu/GrColor.h"
-#include "src/gpu/GrFragmentProcessor.h"
-#include "src/gpu/GrPaint.h"
-#include "src/gpu/GrRenderTargetContext.h"
-#include "src/gpu/GrRenderTargetContextPriv.h"
-#include "src/gpu/SkGr.h"
-#include "src/gpu/effects/generated/GrConstColorProcessor.h"
-#include "src/gpu/ops/GrDrawOp.h"
-#include "src/gpu/ops/GrFillRectOp.h"
+#include "src/gpu/ganesh/GrColor.h"
+#include "src/gpu/ganesh/GrFPArgs.h"
+#include "src/gpu/ganesh/GrFragmentProcessor.h"
+#include "src/gpu/ganesh/GrPaint.h"
+#include "src/gpu/ganesh/SkGr.h"
+#include "src/gpu/ganesh/SurfaceDrawContext.h"
+#include "src/gpu/ganesh/ops/GrOp.h"
 #include "tools/ToolUtils.h"
 #include "tools/gpu/TestOps.h"
 
@@ -45,14 +43,13 @@
 
 namespace skiagm {
 /**
- * This GM directly exercises GrConstColorProcessor, ModulateRGBA and ModulateAlpha.
+ * This GM directly exercises Color and ModulateRGBA.
  */
 class ColorProcessor : public GpuGM {
 public:
     enum class TestMode {
         kConstColor,
-        kModulateRGBA,
-        kModulateAlpha
+        kModulateRGBA
     };
 
     ColorProcessor(TestMode mode) : fMode(mode) {
@@ -64,7 +61,6 @@ protected:
         switch (fMode) {
             case TestMode::kConstColor:    return SkString("const_color_processor");
             case TestMode::kModulateRGBA:  return SkString("modulate_rgba");
-            case TestMode::kModulateAlpha: return SkString("modulate_alpha");
         }
         SkUNREACHABLE;
     }
@@ -76,12 +72,17 @@ protected:
     void onOnceBeforeDraw() override {
         SkColor colors[] = { 0xFFFF0000, 0x2000FF00, 0xFF0000FF};
         SkPoint pts[] = { SkPoint::Make(0, 0), SkPoint::Make(kRectSize, kRectSize) };
-        fShader = SkGradientShader::MakeLinear(pts, colors, nullptr, SK_ARRAY_COUNT(colors),
+        fShader = SkGradientShader::MakeLinear(pts, colors, nullptr, std::size(colors),
                                                SkTileMode::kClamp);
     }
 
-    void onDraw(GrRecordingContext* context, GrRenderTargetContext* renderTargetContext,
-                SkCanvas* canvas) override {
+    DrawResult onDraw(GrRecordingContext* rContext, SkCanvas* canvas, SkString* errorMsg) override {
+        auto sdc = SkCanvasPriv::TopDeviceSurfaceDrawContext(canvas);
+        if (!sdc) {
+            *errorMsg = kErrorMsg_DrawSkippedGpuOnly;
+            return DrawResult::kSkip;
+        }
+
         constexpr GrColor kColors[] = {
             0xFFFFFFFF,
             0xFFFF00FF,
@@ -99,8 +100,8 @@ protected:
         SkScalar y = kPad;
         SkScalar x = kPad;
         SkScalar maxW = 0;
-        for (size_t paintType = 0; paintType < SK_ARRAY_COUNT(kPaintColors) + 1; ++paintType) {
-            for (size_t procColor = 0; procColor < SK_ARRAY_COUNT(kColors); ++procColor) {
+        for (size_t paintType = 0; paintType < std::size(kPaintColors) + 1; ++paintType) {
+            for (size_t procColor = 0; procColor < std::size(kColors); ++procColor) {
                 // translate by x,y for the canvas draws and the test target draws.
                 canvas->save();
                 canvas->translate(x, y);
@@ -110,13 +111,13 @@ protected:
 
                 // Create a base-layer FP for the const color processor to draw on top of.
                 std::unique_ptr<GrFragmentProcessor> baseFP;
-                if (paintType >= SK_ARRAY_COUNT(kPaintColors)) {
+                if (paintType >= std::size(kPaintColors)) {
                     GrColorInfo colorInfo;
-                    GrFPArgs args(context, SkSimpleMatrixProvider(SkMatrix::I()),
-                                  kHigh_SkFilterQuality, &colorInfo);
-                    baseFP = as_SB(fShader)->asFragmentProcessor(args);
+                    SkSurfaceProps props;
+                    GrFPArgs args(rContext, &colorInfo, props);
+                    baseFP = as_SB(fShader)->asRootFragmentProcessor(args, SkMatrix::I());
                 } else {
-                    baseFP = GrConstColorProcessor::Make(
+                    baseFP = GrFragmentProcessor::MakeColor(
                             SkPMColor4f::FromBytes_RGBA(kPaintColors[paintType]));
                 }
 
@@ -124,7 +125,7 @@ protected:
                 std::unique_ptr<GrFragmentProcessor> colorFP;
                 switch (fMode) {
                     case TestMode::kConstColor:
-                        colorFP = GrConstColorProcessor::Make(
+                        colorFP = GrFragmentProcessor::MakeColor(
                                 SkPMColor4f::FromBytes_RGBA(kColors[procColor]));
                         break;
 
@@ -132,20 +133,15 @@ protected:
                         colorFP = GrFragmentProcessor::ModulateRGBA(
                                 std::move(baseFP), SkPMColor4f::FromBytes_RGBA(kColors[procColor]));
                         break;
-
-                    case TestMode::kModulateAlpha:
-                        colorFP = GrFragmentProcessor::ModulateAlpha(
-                                std::move(baseFP), SkPMColor4f::FromBytes_RGBA(kColors[procColor]));
-                        break;
                 }
 
                 // Render the FP tree.
-                if (auto op = sk_gpu_test::test_ops::MakeRect(context,
+                if (auto op = sk_gpu_test::test_ops::MakeRect(rContext,
                                                               std::move(colorFP),
                                                               renderRect.makeOffset(x, y),
                                                               renderRect,
                                                               SkMatrix::I())) {
-                    renderTargetContext->priv().testingOnly_addDrawOp(std::move(op));
+                    sdc->addDrawOp(std::move(op));
                 }
 
                 // Draw labels for the input to the processor and the processor to the right of
@@ -157,7 +153,7 @@ protected:
                 SkPaint labelPaint;
                 labelPaint.setAntiAlias(true);
                 SkString inputLabel("Input: ");
-                if (paintType >= SK_ARRAY_COUNT(kPaintColors)) {
+                if (paintType >= std::size(kPaintColors)) {
                     inputLabel.append("gradient");
                 } else {
                     inputLabel.appendf("0x%08x", kPaintColors[paintType]);
@@ -201,6 +197,8 @@ protected:
                 }
             }
         }
+
+        return DrawResult::kOk;
     }
 
 private:
@@ -208,16 +206,15 @@ private:
     sk_sp<SkShader> fShader;
     TestMode        fMode;
 
-    static constexpr SkScalar       kPad = 10.f;
-    static constexpr SkScalar       kRectSize = 20.f;
-    static constexpr int            kWidth  = 820;
-    static constexpr int            kHeight = 500;
+    inline static constexpr SkScalar       kPad = 10.f;
+    inline static constexpr SkScalar       kRectSize = 20.f;
+    inline static constexpr int            kWidth  = 820;
+    inline static constexpr int            kHeight = 500;
 
     using INHERITED = GM;
 };
 
 DEF_GM(return new ColorProcessor{ColorProcessor::TestMode::kConstColor};)
 DEF_GM(return new ColorProcessor{ColorProcessor::TestMode::kModulateRGBA};)
-DEF_GM(return new ColorProcessor{ColorProcessor::TestMode::kModulateAlpha};)
 
 }  // namespace skiagm

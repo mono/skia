@@ -5,19 +5,24 @@
  * found in the LICENSE file.
  */
 
-// This is a GPU-backend specific test. It relies on static intializers to work
+// This is a GPU-backend specific test. It relies on static initializers to work
 
 #include "include/core/SkTypes.h"
 
-#if SK_SUPPORT_GPU && defined(SK_BUILD_FOR_ANDROID) && __ANDROID_API__ >= 26
+#if defined(SK_GANESH) && defined(SK_BUILD_FOR_ANDROID) && __ANDROID_API__ >= 26
 
+#include "include/android/SkImageAndroid.h"
+#include "include/android/SkSurfaceAndroid.h"
+#include "include/core/SkBitmap.h"
 #include "include/core/SkCanvas.h"
+#include "include/core/SkColorSpace.h"
 #include "include/core/SkImage.h"
 #include "include/core/SkSurface.h"
 #include "include/gpu/GrDirectContext.h"
-#include "src/gpu/GrAHardwareBufferImageGenerator.h"
-#include "src/gpu/GrDirectContextPriv.h"
-#include "src/gpu/GrGpu.h"
+#include "include/gpu/ganesh/SkSurfaceGanesh.h"
+#include "src/gpu/ganesh/GrAHardwareBufferImageGenerator.h"
+#include "src/gpu/ganesh/GrDirectContextPriv.h"
+#include "src/gpu/ganesh/GrGpu.h"
 #include "tests/Test.h"
 #include "tools/gpu/GrContextFactory.h"
 
@@ -168,8 +173,8 @@ static void basic_draw_test_helper(skiatest::Reporter* reporter,
     // Wrap AHardwareBuffer in SkImage
     ///////////////////////////////////////////////////////////////////////////
 
-    sk_sp<SkImage> image = SkImage::MakeFromAHardwareBuffer(buffer, kPremul_SkAlphaType,
-                                                            nullptr, surfaceOrigin);
+    sk_sp<SkImage> image = SkImages::DeferredFromAHardwareBuffer(
+            buffer, kPremul_SkAlphaType, nullptr, surfaceOrigin);
     REPORTER_ASSERT(reporter, image);
 
     ///////////////////////////////////////////////////////////////////////////
@@ -178,8 +183,7 @@ static void basic_draw_test_helper(skiatest::Reporter* reporter,
 
     SkImageInfo imageInfo = SkImageInfo::Make(DEV_W, DEV_H, kRGBA_8888_SkColorType,
                                               kPremul_SkAlphaType);
-    sk_sp<SkSurface> surface = SkSurface::MakeRenderTarget(context, SkBudgeted::kNo,
-                                                           imageInfo);
+    sk_sp<SkSurface> surface = SkSurfaces::RenderTarget(context, skgpu::Budgeted::kNo, imageInfo);
     REPORTER_ASSERT(reporter, surface);
 
     ///////////////////////////////////////////////////////////////////////////
@@ -194,16 +198,23 @@ static void basic_draw_test_helper(skiatest::Reporter* reporter,
     REPORTER_ASSERT(reporter, surface->readPixels(readbackBitmap, 0, 0));
     REPORTER_ASSERT(reporter, check_read(reporter, srcBitmap, readbackBitmap));
 
+    // Draw the image a second time to make sure we get the correct origin when we get the cached
+    // proxy from the generator.
+    surface->getCanvas()->drawImage(image, 0, 0);
+    REPORTER_ASSERT(reporter, surface->readPixels(readbackBitmap, 0, 0));
+    REPORTER_ASSERT(reporter, check_read(reporter, srcBitmap, readbackBitmap));
+
     image.reset();
 
     cleanup_resources(buffer);
-
 }
 
 // Basic test to make sure we can import an AHardwareBuffer into an SkImage and draw it into a
 // surface.
-DEF_GPUTEST_FOR_RENDERING_CONTEXTS(GrAHardwareBuffer_BasicDrawTest,
-                                   reporter, context_info) {
+DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(GrAHardwareBuffer_BasicDrawTest,
+                                       reporter,
+                                       context_info,
+                                       CtsEnforcement::kApiLevel_T) {
     basic_draw_test_helper(reporter, context_info, kTopLeft_GrSurfaceOrigin);
     basic_draw_test_helper(reporter, context_info, kBottomLeft_GrSurfaceOrigin);
 }
@@ -250,15 +261,15 @@ static void surface_draw_test_helper(skiatest::Reporter* reporter,
         return;
     }
 
-    sk_sp<SkSurface> surface = SkSurface::MakeFromAHardwareBuffer(context, buffer, surfaceOrigin,
-                                                                  nullptr, nullptr);
+    sk_sp<SkSurface> surface =
+            SkSurfaces::WrapAndroidHardwareBuffer(context, buffer, surfaceOrigin, nullptr, nullptr);
     if (!surface) {
         ERRORF(reporter, "Failed to make SkSurface.");
         cleanup_resources(buffer);
         return;
     }
 
-    surface->getCanvas()->drawBitmap(srcBitmap, 0, 0);
+    surface->getCanvas()->drawImage(srcBitmap.asImage(), 0, 0);
 
     SkBitmap readbackBitmap;
     readbackBitmap.allocN32Pixels(DEV_W, DEV_H);
@@ -270,8 +281,10 @@ static void surface_draw_test_helper(skiatest::Reporter* reporter,
 }
 
 // Test to make sure we can import an AHardwareBuffer into an SkSurface and draw into it.
-DEF_GPUTEST_FOR_RENDERING_CONTEXTS(GrAHardwareBuffer_ImportAsSurface,
-                                   reporter, context_info) {
+DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(GrAHardwareBuffer_ImportAsSurface,
+                                       reporter,
+                                       context_info,
+                                       CtsEnforcement::kApiLevel_T) {
     surface_draw_test_helper(reporter, context_info, kTopLeft_GrSurfaceOrigin);
     surface_draw_test_helper(reporter, context_info, kBottomLeft_GrSurfaceOrigin);
 }

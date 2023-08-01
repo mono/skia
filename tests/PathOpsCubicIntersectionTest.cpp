@@ -4,20 +4,31 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
+#include "include/core/SkPoint.h"
+#include "include/core/SkScalar.h"
+#include "include/core/SkTypes.h"
+#include "include/private/base/SkDebug.h"
 #include "src/core/SkGeometry.h"
 #include "src/pathops/SkIntersections.h"
+#include "src/pathops/SkPathOpsCubic.h"
+#include "src/pathops/SkPathOpsDebug.h"
+#include "src/pathops/SkPathOpsPoint.h"
 #include "src/pathops/SkPathOpsRect.h"
+#include "src/pathops/SkPathOpsTypes.h"
 #include "src/pathops/SkReduceOrder.h"
 #include "tests/PathOpsCubicIntersectionTestData.h"
 #include "tests/PathOpsTestCommon.h"
 #include "tests/Test.h"
 
-#include <stdlib.h>
+#include <array>
+#include <cstdlib>
 
-const int firstCubicIntersectionTest = 9;
+using namespace PathOpsCubicIntersectionTestData;
+
+static constexpr int kFirstCubicIntersectionTest = 9;
 
 static void standardTestCases(skiatest::Reporter* reporter) {
-    for (size_t index = firstCubicIntersectionTest; index < tests_count; ++index) {
+    for (size_t index = kFirstCubicIntersectionTest; index < tests_count; ++index) {
         int iIndex = static_cast<int>(index);
         const CubicPts& cubic1 = tests[index][0];
         const CubicPts& cubic2 = tests[index][1];
@@ -165,7 +176,7 @@ static const CubicPts testSet[] = {
         {56.4860195, 60.529264}}},
 };
 
-const int testSetCount = (int) SK_ARRAY_COUNT(testSet);
+const int testSetCount = (int) std::size(testSet);
 
 static const CubicPts newTestSet[] = {
 
@@ -384,7 +395,7 @@ static const CubicPts newTestSet[] = {
 {{{0, 3}, {0, 1}, {2, 0}, {1, 0}}},
 };
 
-const int newTestSetCount = (int) SK_ARRAY_COUNT(newTestSet);
+const int newTestSetCount = (int) std::size(newTestSet);
 static void oneOff(skiatest::Reporter* reporter, const CubicPts& cubic1, const CubicPts& cubic2,
         bool coin) {
     SkDCubic c1, c2;
@@ -411,9 +422,6 @@ static void oneOff(skiatest::Reporter* reporter, const CubicPts& cubic1, const C
         SkDebugf("sect%d,\n", index);
     }
 #endif
-    if (coin && intersections.used() < 2) {
-        SkDebugf("");
-    }
     REPORTER_ASSERT(reporter, !coin || intersections.used() >= 2);
     double tt1, tt2;
     SkDPoint xy1, xy2;
@@ -470,11 +478,11 @@ static void oneOffTests(skiatest::Reporter* reporter) {
 
 static void CubicIntersection_RandTest(skiatest::Reporter* reporter) {
     srand(0);
-    const int tests = 10000000;
+    const int kNumTests = 10000000;
 #if !defined(SK_BUILD_FOR_WIN) && !defined(SK_BUILD_FOR_ANDROID)
     unsigned seed = 0;
 #endif
-    for (int test = 0; test < tests; ++test) {
+    for (int test = 0; test < kNumTests; ++test) {
         CubicPts cubic1, cubic2;
         for (int i = 0; i < 4; ++i) {
             cubic1.fPts[i].fX = static_cast<double>(SK_RAND(seed)) / RAND_MAX * 100;
@@ -638,10 +646,10 @@ static const CubicPts selfSet[] = {
     {{{12.81, 7.27}, {7.22, 6.98}, {12.49, 8.97}, {11.42, 6.18}}},
 };
 
-int selfSetCount = (int) SK_ARRAY_COUNT(selfSet);
+int selfSetCount = (int) std::size(selfSet);
 
-static void selfOneOff(skiatest::Reporter* reporter, int index) {
-    const CubicPts& cubic = selfSet[index];
+static void selfOneOff(skiatest::Reporter* reporter, int setIdx) {
+    const CubicPts& cubic = selfSet[setIdx];
     SkPoint c[4];
     for (int i = 0; i < 4; ++i) {
         c[i] = cubic.fPts[i].asSkPoint();
@@ -695,7 +703,7 @@ static const CubicPts coinSet[] = {
             {324.71566772460937, 714.62060546875}, {325, 714.9990234375}}},
 };
 
-static int coinSetCount = (int) SK_ARRAY_COUNT(coinSet);
+static int coinSetCount = (int) std::size(coinSet);
 
 static void coinOneOff(skiatest::Reporter* reporter, int index) {
     const CubicPts& cubic1 = coinSet[index];
@@ -731,6 +739,6 @@ DEF_TEST(PathOpsCubicIntersection, reporter) {
     cubicIntersectionSelfTest(reporter);
     cubicIntersectionCoinTest(reporter);
     standardTestCases(reporter);
-    if (false) CubicIntersection_IntersectionFinder();
-    if (false) CubicIntersection_RandTest(reporter);
+    if ((false)) CubicIntersection_IntersectionFinder();
+    if ((false)) CubicIntersection_RandTest(reporter);
 }

@@ -5,38 +5,76 @@
  * found in the LICENSE file.
  */
 
-#include "include/core/SkTypes.h"
-
+#include "include/core/SkAlphaType.h"
+#include "include/core/SkBitmap.h"
 #include "include/core/SkCanvas.h"
+#include "include/core/SkColor.h"
+#include "include/core/SkColorType.h"
+#include "include/core/SkData.h"
+#include "include/core/SkImageInfo.h"
+#include "include/core/SkPaint.h"
+#include "include/core/SkRect.h"
+#include "include/core/SkRefCnt.h"
+#include "include/core/SkSize.h"
+#include "include/core/SkString.h"
 #include "include/core/SkSurface.h"
+#include "include/core/SkTypes.h"
+#include "include/gpu/GpuTypes.h"
+#include "include/gpu/GrBackendSurface.h"
 #include "include/gpu/GrDirectContext.h"
+#include "include/gpu/GrRecordingContext.h"
+#include "include/gpu/GrTypes.h"
+#include "include/gpu/ganesh/SkSurfaceGanesh.h"
+#include "include/private/base/SkDebug.h"
+#include "include/private/base/SkTDArray.h"
+#include "include/private/base/SkTo.h"
+#include "include/private/gpu/ganesh/GrTypesPriv.h"
+#include "src/base/SkRandom.h"
 #include "src/core/SkMessageBus.h"
-#include "src/core/SkMipmap.h"
-#include "src/gpu/GrDirectContextPriv.h"
-#include "src/gpu/GrGpu.h"
-#include "src/gpu/GrGpuResourceCacheAccess.h"
-#include "src/gpu/GrGpuResourcePriv.h"
-#include "src/gpu/GrProxyProvider.h"
-#include "src/gpu/GrRecordingContextPriv.h"
-#include "src/gpu/GrRenderTarget.h"
-#include "src/gpu/GrResourceCache.h"
-#include "src/gpu/GrResourceProvider.h"
-#include "src/gpu/GrTexture.h"
-#include "src/gpu/SkGr.h"
+#include "src/gpu/GpuTypesPriv.h"
+#include "src/gpu/ResourceKey.h"
+#include "src/gpu/SkBackingFit.h"
+#include "src/gpu/ganesh/GrCaps.h"
+#include "src/gpu/ganesh/GrDirectContextPriv.h"
+#include "src/gpu/ganesh/GrGpu.h"
+#include "src/gpu/ganesh/GrGpuResource.h"
+#include "src/gpu/ganesh/GrGpuResourceCacheAccess.h"
+#include "src/gpu/ganesh/GrGpuResourcePriv.h"
+#include "src/gpu/ganesh/GrProxyProvider.h"
+#include "src/gpu/ganesh/GrRecordingContextPriv.h"
+#include "src/gpu/ganesh/GrRenderTarget.h"
+#include "src/gpu/ganesh/GrResourceCache.h"
+#include "src/gpu/ganesh/GrResourceProvider.h"
+#include "src/gpu/ganesh/GrTexture.h"
+#include "src/gpu/ganesh/GrTextureProxy.h"
+#include "tests/CtsEnforcement.h"
 #include "tests/Test.h"
-#include "tools/gpu/GrContextFactory.h"
 #include "tools/gpu/ManagedBackendTexture.h"
 
+#include <chrono>
+#include <cstddef>
+#include <cstdint>
+#include <initializer_list>
+#include <memory>
+#include <string_view>
 #include <thread>
+#include <utility>
+#include <vector>
+
+class GrAttachment;
+struct GrContextOptions;
 
 static const int gWidth = 640;
 static const int gHeight = 480;
 
 ////////////////////////////////////////////////////////////////////////////////
-DEF_GPUTEST_FOR_RENDERING_CONTEXTS(ResourceCacheCache, reporter, ctxInfo) {
+DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(ResourceCacheCache,
+                                       reporter,
+                                       ctxInfo,
+                                       CtsEnforcement::kApiLevel_T) {
     auto context = ctxInfo.directContext();
     SkImageInfo info = SkImageInfo::MakeN32Premul(gWidth, gHeight);
-    auto surface(SkSurface::MakeRenderTarget(context, SkBudgeted::kNo, info));
+    auto surface(SkSurfaces::RenderTarget(context, skgpu::Budgeted::kNo, info));
     SkCanvas* canvas = surface->getCanvas();
 
     const SkIRect size = SkIRect::MakeWH(gWidth, gHeight);
@@ -60,7 +98,7 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(ResourceCacheCache, reporter, ctxInfo) {
     readback.allocN32Pixels(size.width(), size.height());
 
     for (int i = 0; i < 100; ++i) {
-        canvas->drawBitmap(src, 0, 0);
+        canvas->drawImage(src.asImage(), 0, 0);
         surface->readPixels(readback, 0, 0);
 
         // "modify" the src texture
@@ -78,7 +116,8 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(ResourceCacheCache, reporter, ctxInfo) {
 
 static bool is_rendering_and_not_angle_es3(sk_gpu_test::GrContextFactory::ContextType type) {
     if (type == sk_gpu_test::GrContextFactory::kANGLE_D3D11_ES3_ContextType ||
-        type == sk_gpu_test::GrContextFactory::kANGLE_GL_ES3_ContextType) {
+        type == sk_gpu_test::GrContextFactory::kANGLE_GL_ES3_ContextType ||
+        type == sk_gpu_test::GrContextFactory::kANGLE_Metal_ES3_ContextType) {
         return false;
     }
     return sk_gpu_test::GrContextFactory::IsRenderingContext(type);
@@ -87,17 +126,25 @@ static bool is_rendering_and_not_angle_es3(sk_gpu_test::GrContextFactory::Contex
 static GrAttachment* get_SB(GrRenderTarget* rt) { return rt->getStencilAttachment(); }
 
 static sk_sp<GrRenderTarget> create_RT_with_SB(GrResourceProvider* provider,
-                                               int size, int sampleCount, SkBudgeted budgeted) {
+                                               int size,
+                                               int sampleCount,
+                                               skgpu::Budgeted budgeted) {
     auto format =
             provider->caps()->getDefaultBackendFormat(GrColorType::kRGBA_8888, GrRenderable::kYes);
-    sk_sp<GrTexture> tex(provider->createTexture({size, size}, format, GrRenderable::kYes,
-                                                 sampleCount, GrMipmapped::kNo, budgeted,
-                                                 GrProtected::kNo));
+    sk_sp<GrTexture> tex(provider->createTexture({size, size},
+                                                 format,
+                                                 GrTextureType::k2D,
+                                                 GrRenderable::kYes,
+                                                 sampleCount,
+                                                 GrMipmapped::kNo,
+                                                 budgeted,
+                                                 GrProtected::kNo,
+                                                 /*label=*/{}));
     if (!tex || !tex->asRenderTarget()) {
         return nullptr;
     }
 
-    if (!provider->attachStencilAttachment(tex->asRenderTarget(), sampleCount)) {
+    if (!provider->attachStencilAttachment(tex->asRenderTarget(), sampleCount > 1)) {
         return nullptr;
     }
     SkASSERT(get_SB(tex->asRenderTarget()));
@@ -106,8 +153,12 @@ static sk_sp<GrRenderTarget> create_RT_with_SB(GrResourceProvider* provider,
 }
 
 // This currently fails on ES3 ANGLE contexts
-DEF_GPUTEST_FOR_CONTEXTS(ResourceCacheStencilBuffers, &is_rendering_and_not_angle_es3, reporter,
-                         ctxInfo, nullptr) {
+DEF_GANESH_TEST_FOR_CONTEXTS(ResourceCacheStencilBuffers,
+                             &is_rendering_and_not_angle_es3,
+                             reporter,
+                             ctxInfo,
+                             nullptr,
+                             CtsEnforcement::kApiLevel_T) {
     auto context = ctxInfo.directContext();
     const GrCaps* caps = context->priv().caps();
 
@@ -120,12 +171,14 @@ DEF_GPUTEST_FOR_CONTEXTS(ResourceCacheStencilBuffers, &is_rendering_and_not_angl
     GrColorType grColorType = GrColorType::kRGBA_8888;
     GrBackendFormat format = caps->getDefaultBackendFormat(grColorType, GrRenderable::kYes);
 
-    sk_sp<GrRenderTarget> smallRT0 = create_RT_with_SB(resourceProvider, 4, 1, SkBudgeted::kYes);
+    sk_sp<GrRenderTarget> smallRT0 =
+            create_RT_with_SB(resourceProvider, 4, 1, skgpu::Budgeted::kYes);
     REPORTER_ASSERT(reporter, smallRT0);
 
     {
        // Two budgeted RTs with the same desc should share a stencil buffer.
-       sk_sp<GrRenderTarget> smallRT1 = create_RT_with_SB(resourceProvider, 4, 1, SkBudgeted::kYes);
+       sk_sp<GrRenderTarget> smallRT1 =
+               create_RT_with_SB(resourceProvider, 4, 1, skgpu::Budgeted::kYes);
        REPORTER_ASSERT(reporter, smallRT1);
 
        REPORTER_ASSERT(reporter, get_SB(smallRT0.get()) == get_SB(smallRT1.get()));
@@ -133,7 +186,8 @@ DEF_GPUTEST_FOR_CONTEXTS(ResourceCacheStencilBuffers, &is_rendering_and_not_angl
 
     {
         // An unbudgeted RT with the same desc should also share.
-        sk_sp<GrRenderTarget> smallRT2 = create_RT_with_SB(resourceProvider, 4, 1, SkBudgeted::kNo);
+        sk_sp<GrRenderTarget> smallRT2 =
+                create_RT_with_SB(resourceProvider, 4, 1, skgpu::Budgeted::kNo);
         REPORTER_ASSERT(reporter, smallRT2);
 
         REPORTER_ASSERT(reporter, get_SB(smallRT0.get()) == get_SB(smallRT2.get()));
@@ -141,7 +195,8 @@ DEF_GPUTEST_FOR_CONTEXTS(ResourceCacheStencilBuffers, &is_rendering_and_not_angl
 
     {
         // An RT with a much larger size should not share.
-        sk_sp<GrRenderTarget> bigRT = create_RT_with_SB(resourceProvider, 400, 1, SkBudgeted::kNo);
+        sk_sp<GrRenderTarget> bigRT =
+                create_RT_with_SB(resourceProvider, 400, 1, skgpu::Budgeted::kNo);
         REPORTER_ASSERT(reporter, bigRT);
 
         REPORTER_ASSERT(reporter, get_SB(smallRT0.get()) != get_SB(bigRT.get()));
@@ -151,17 +206,16 @@ DEF_GPUTEST_FOR_CONTEXTS(ResourceCacheStencilBuffers, &is_rendering_and_not_angl
             context->priv().caps()->getRenderTargetSampleCount(2, format);
     if (smallSampleCount > 1) {
         // An RT with a different sample count should not share.
-        sk_sp<GrRenderTarget> smallMSAART0 = create_RT_with_SB(resourceProvider, 4,
-                                                               smallSampleCount, SkBudgeted::kNo);
+        sk_sp<GrRenderTarget> smallMSAART0 =
+                create_RT_with_SB(resourceProvider, 4, smallSampleCount, skgpu::Budgeted::kNo);
         REPORTER_ASSERT(reporter, smallMSAART0);
 
         REPORTER_ASSERT(reporter, get_SB(smallRT0.get()) != get_SB(smallMSAART0.get()));
 
         {
             // A second MSAA RT should share with the first MSAA RT.
-            sk_sp<GrRenderTarget> smallMSAART1 = create_RT_with_SB(resourceProvider, 4,
-                                                                   smallSampleCount,
-                                                                   SkBudgeted::kNo);
+            sk_sp<GrRenderTarget> smallMSAART1 =
+                    create_RT_with_SB(resourceProvider, 4, smallSampleCount, skgpu::Budgeted::kNo);
             REPORTER_ASSERT(reporter, smallMSAART1);
 
             REPORTER_ASSERT(reporter, get_SB(smallMSAART0.get()) == get_SB(smallMSAART1.get()));
@@ -171,9 +225,8 @@ DEF_GPUTEST_FOR_CONTEXTS(ResourceCacheStencilBuffers, &is_rendering_and_not_angl
         // rounded up to the same actual sample count or else they could share.).
         int bigSampleCount = context->priv().caps()->getRenderTargetSampleCount(5, format);
         if (bigSampleCount > 0 && bigSampleCount != smallSampleCount) {
-            sk_sp<GrRenderTarget> smallMSAART2 = create_RT_with_SB(resourceProvider, 4,
-                                                                   bigSampleCount,
-                                                                   SkBudgeted::kNo);
+            sk_sp<GrRenderTarget> smallMSAART2 =
+                    create_RT_with_SB(resourceProvider, 4, bigSampleCount, skgpu::Budgeted::kNo);
             REPORTER_ASSERT(reporter, smallMSAART2);
 
             REPORTER_ASSERT(reporter, get_SB(smallMSAART0.get()) != get_SB(smallMSAART2.get()));
@@ -181,7 +234,10 @@ DEF_GPUTEST_FOR_CONTEXTS(ResourceCacheStencilBuffers, &is_rendering_and_not_angl
     }
 }
 
-DEF_GPUTEST_FOR_RENDERING_CONTEXTS(ResourceCacheWrappedResources, reporter, ctxInfo) {
+DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(ResourceCacheWrappedResources,
+                                       reporter,
+                                       ctxInfo,
+                                       CtsEnforcement::kApiLevel_T) {
     auto context = ctxInfo.directContext();
     GrResourceProvider* resourceProvider = context->priv().resourceProvider();
     GrGpu* gpu = context->priv().getGpu();
@@ -242,23 +298,29 @@ public:
      * For example, textures have width, height, ... */
     enum SimulatedProperty { kA_SimulatedProperty, kB_SimulatedProperty };
 
-    TestResource(GrGpu* gpu, SkBudgeted budgeted = SkBudgeted::kYes, size_t size = kDefaultSize)
-        : INHERITED(gpu)
-        , fToDelete(nullptr)
-        , fSize(size)
-        , fProperty(kA_SimulatedProperty)
-        , fIsScratch(false) {
+    TestResource(GrGpu* gpu,
+                 std::string_view label,
+                 skgpu::Budgeted budgeted = skgpu::Budgeted::kYes,
+                 size_t size = kDefaultSize)
+            : INHERITED(gpu, label)
+            , fToDelete(nullptr)
+            , fSize(size)
+            , fProperty(kA_SimulatedProperty)
+            , fIsScratch(false) {
         ++fNumAlive;
         this->registerWithCache(budgeted);
     }
 
-    static TestResource* CreateScratch(GrGpu* gpu, SkBudgeted budgeted,
-                                       SimulatedProperty property, size_t size = kDefaultSize) {
-        return new TestResource(gpu, budgeted, property, kScratchConstructor, size);
-    }
-    static TestResource* CreateWrapped(GrGpu* gpu, GrWrapCacheable cacheable,
+    static TestResource* CreateScratch(GrGpu* gpu,
+                                       skgpu::Budgeted budgeted,
+                                       SimulatedProperty property,
                                        size_t size = kDefaultSize) {
-        return new TestResource(gpu, cacheable, size);
+        return new TestResource(gpu, budgeted, property, kScratchConstructor, /*label=*/{}, size);
+    }
+    static TestResource* CreateWrapped(GrGpu* gpu,
+                                       GrWrapCacheable cacheable,
+                                       size_t size = kDefaultSize) {
+        return new TestResource(gpu, cacheable, size, /*label=*/{});
     }
 
     ~TestResource() override {
@@ -271,34 +333,38 @@ public:
         fToDelete = std::move(resource);
     }
 
-    static void ComputeScratchKey(SimulatedProperty property, GrScratchKey* key) {
-        static GrScratchKey::ResourceType t = GrScratchKey::GenerateResourceType();
-        GrScratchKey::Builder builder(key, t, kScratchKeyFieldCnt);
+    static void ComputeScratchKey(SimulatedProperty property, skgpu::ScratchKey* key) {
+        static skgpu::ScratchKey::ResourceType t = skgpu::ScratchKey::GenerateResourceType();
+        skgpu::ScratchKey::Builder builder(key, t, kScratchKeyFieldCnt);
         for (int i = 0; i < kScratchKeyFieldCnt; ++i) {
             builder[i] = static_cast<uint32_t>(i + property);
         }
     }
 
     static size_t ExpectedScratchKeySize() {
-        return sizeof(uint32_t) * (kScratchKeyFieldCnt + GrScratchKey::kMetaDataCnt);
+        return sizeof(uint32_t) * (kScratchKeyFieldCnt + skgpu::ScratchKey::kMetaDataCnt);
     }
 private:
     static const int kScratchKeyFieldCnt = 6;
 
-    TestResource(GrGpu* gpu, SkBudgeted budgeted, SimulatedProperty property, ScratchConstructor,
+    TestResource(GrGpu* gpu,
+                 skgpu::Budgeted budgeted,
+                 SimulatedProperty property,
+                 ScratchConstructor,
+                 std::string_view label,
                  size_t size = kDefaultSize)
-        : INHERITED(gpu)
-        , fToDelete(nullptr)
-        , fSize(size)
-        , fProperty(property)
-        , fIsScratch(true) {
+            : INHERITED(gpu, label)
+            , fToDelete(nullptr)
+            , fSize(size)
+            , fProperty(property)
+            , fIsScratch(true) {
         ++fNumAlive;
         this->registerWithCache(budgeted);
     }
 
     // Constructor for simulating resources that wrap backend objects.
-    TestResource(GrGpu* gpu, GrWrapCacheable cacheable, size_t size)
-            : INHERITED(gpu)
+    TestResource(GrGpu* gpu, GrWrapCacheable cacheable, size_t size, std::string_view label)
+            : INHERITED(gpu, label)
             , fToDelete(nullptr)
             , fSize(size)
             , fProperty(kA_SimulatedProperty)
@@ -307,13 +373,14 @@ private:
         this->registerWithCacheWrapped(cacheable);
     }
 
-    void computeScratchKey(GrScratchKey* key) const override {
+    void computeScratchKey(skgpu::ScratchKey* key) const override {
         if (fIsScratch) {
             ComputeScratchKey(fProperty, key);
         }
     }
 
     size_t onGpuMemorySize() const override { return fSize; }
+    void onSetLabel() override{}
     const char* getResourceType() const override { return "Test"; }
 
     sk_sp<TestResource> fToDelete;
@@ -332,7 +399,7 @@ public:
         SkASSERT(fDContext);
         fDContext->setResourceCacheLimit(maxBytes);
         GrResourceCache* cache = fDContext->priv().getResourceCache();
-        cache->purgeAllUnlocked();
+        cache->purgeUnlockedResources();
         SkASSERT(0 == cache->getResourceCount() && 0 == cache->getResourceBytes());
     }
 
@@ -354,10 +421,10 @@ static void test_no_key(skiatest::Reporter* reporter) {
     GrGpu* gpu = mock.gpu();
 
     // Create a bunch of resources with no keys
-    TestResource* a = new TestResource(gpu, SkBudgeted::kYes, 11);
-    TestResource* b = new TestResource(gpu, SkBudgeted::kYes, 12);
-    TestResource* c = new TestResource(gpu, SkBudgeted::kYes, 13 );
-    TestResource* d = new TestResource(gpu, SkBudgeted::kYes, 14 );
+    TestResource* a = new TestResource(gpu, /*label=*/{}, skgpu::Budgeted::kYes, 11);
+    TestResource* b = new TestResource(gpu, /*label=*/{}, skgpu::Budgeted::kYes, 12);
+    TestResource* c = new TestResource(gpu, /*label=*/{}, skgpu::Budgeted::kYes, 13);
+    TestResource* d = new TestResource(gpu, /*label=*/{}, skgpu::Budgeted::kYes, 14);
 
     REPORTER_ASSERT(reporter, 4 == TestResource::NumAlive());
     REPORTER_ASSERT(reporter, 4 == cache->getResourceCount());
@@ -365,7 +432,7 @@ static void test_no_key(skiatest::Reporter* reporter) {
                               d->gpuMemorySize() == cache->getResourceBytes());
 
     // Should be safe to purge without deleting the resources since we still have refs.
-    cache->purgeAllUnlocked();
+    cache->purgeUnlockedResources();
     REPORTER_ASSERT(reporter, 4 == TestResource::NumAlive());
 
     // Since the resources have neither unique nor scratch keys, delete immediately upon unref.
@@ -395,9 +462,9 @@ static void test_no_key(skiatest::Reporter* reporter) {
 
 // Each integer passed as a template param creates a new domain.
 template <int>
-static void make_unique_key(GrUniqueKey* key, int data, const char* tag = nullptr) {
-    static GrUniqueKey::Domain d = GrUniqueKey::GenerateDomain();
-    GrUniqueKey::Builder builder(key, d, 1, tag);
+static void make_unique_key(skgpu::UniqueKey* key, int data, const char* tag = nullptr) {
+    static skgpu::UniqueKey::Domain d = skgpu::UniqueKey::GenerateDomain();
+    skgpu::UniqueKey::Builder builder(key, d, 1, tag);
     builder[0] = data;
 }
 
@@ -407,24 +474,24 @@ static void test_purge_unlocked(skiatest::Reporter* reporter) {
     GrGpu* gpu = mock.gpu();
 
     // Create two resource w/ a unique key and two w/o but all of which have scratch keys.
-    TestResource* a = TestResource::CreateScratch(gpu, SkBudgeted::kYes,
-                                                  TestResource::kA_SimulatedProperty, 11);
+    TestResource* a = TestResource::CreateScratch(
+            gpu, skgpu::Budgeted::kYes, TestResource::kA_SimulatedProperty, 11);
 
-    GrUniqueKey uniqueKey;
+    skgpu::UniqueKey uniqueKey;
     make_unique_key<0>(&uniqueKey, 0);
 
-    TestResource* b = TestResource::CreateScratch(gpu, SkBudgeted::kYes,
-                                                  TestResource::kA_SimulatedProperty, 12);
+    TestResource* b = TestResource::CreateScratch(
+            gpu, skgpu::Budgeted::kYes, TestResource::kA_SimulatedProperty, 12);
     b->resourcePriv().setUniqueKey(uniqueKey);
 
-    TestResource* c = TestResource::CreateScratch(gpu, SkBudgeted::kYes,
-                                                  TestResource::kA_SimulatedProperty, 13);
+    TestResource* c = TestResource::CreateScratch(
+            gpu, skgpu::Budgeted::kYes, TestResource::kA_SimulatedProperty, 13);
 
-    GrUniqueKey uniqueKey2;
+    skgpu::UniqueKey uniqueKey2;
     make_unique_key<0>(&uniqueKey2, 1);
 
-    TestResource* d = TestResource::CreateScratch(gpu, SkBudgeted::kYes,
-                                                  TestResource::kA_SimulatedProperty, 14);
+    TestResource* d = TestResource::CreateScratch(
+            gpu, skgpu::Budgeted::kYes, TestResource::kA_SimulatedProperty, 14);
     d->resourcePriv().setUniqueKey(uniqueKey2);
 
 
@@ -470,11 +537,11 @@ static void test_purge_command_buffer_usage(skiatest::Reporter* reporter) {
     GrGpu* gpu = mock.gpu();
 
     // Create two resource w/ scratch keys.
-    TestResource* a = TestResource::CreateScratch(gpu, SkBudgeted::kYes,
-                                                  TestResource::kA_SimulatedProperty, 11);
+    TestResource* a = TestResource::CreateScratch(
+            gpu, skgpu::Budgeted::kYes, TestResource::kA_SimulatedProperty, 11);
 
-    TestResource* b = TestResource::CreateScratch(gpu, SkBudgeted::kYes,
-                                                  TestResource::kA_SimulatedProperty, 12);
+    TestResource* b = TestResource::CreateScratch(
+            gpu, skgpu::Budgeted::kYes, TestResource::kA_SimulatedProperty, 12);
 
     REPORTER_ASSERT(reporter, 2 == TestResource::NumAlive());
     REPORTER_ASSERT(reporter, 2 == cache->getResourceCount());
@@ -537,23 +604,22 @@ static void test_budgeting(skiatest::Reporter* reporter) {
     GrResourceCache* cache = mock.cache();
     GrGpu* gpu = mock.gpu();
 
-    GrUniqueKey uniqueKey;
+    skgpu::UniqueKey uniqueKey;
     make_unique_key<0>(&uniqueKey, 0);
 
     // Create a scratch, a unique, and a wrapped resource
-    TestResource* scratch =
-            TestResource::CreateScratch(gpu, SkBudgeted::kYes, TestResource::kB_SimulatedProperty,
-                                        10);
-    TestResource* unique = new TestResource(gpu, SkBudgeted::kYes, 11);
+    TestResource* scratch = TestResource::CreateScratch(
+            gpu, skgpu::Budgeted::kYes, TestResource::kB_SimulatedProperty, 10);
+    TestResource* unique = new TestResource(gpu, /*label=*/{}, skgpu::Budgeted::kYes, 11);
     unique->resourcePriv().setUniqueKey(uniqueKey);
     TestResource* wrappedCacheable = TestResource::CreateWrapped(gpu, GrWrapCacheable::kYes, 12);
     TestResource* wrappedUncacheable = TestResource::CreateWrapped(gpu, GrWrapCacheable::kNo, 13);
-    TestResource* unbudgeted = new TestResource(gpu, SkBudgeted::kNo, 14);
+    TestResource* unbudgeted = new TestResource(gpu, /*label=*/{}, skgpu::Budgeted::kNo, 14);
 
     // Make sure we can add a unique key to the wrapped resources
-    GrUniqueKey uniqueKey2;
+    skgpu::UniqueKey uniqueKey2;
     make_unique_key<0>(&uniqueKey2, 1);
-    GrUniqueKey uniqueKey3;
+    skgpu::UniqueKey uniqueKey3;
     make_unique_key<0>(&uniqueKey3, 2);
     wrappedCacheable->resourcePriv().setUniqueKey(uniqueKey2);
     wrappedUncacheable->resourcePriv().setUniqueKey(uniqueKey3);
@@ -579,7 +645,7 @@ static void test_budgeting(skiatest::Reporter* reporter) {
     REPORTER_ASSERT(reporter, 0 == cache->getPurgeableBytes());
 
     // Our refs mean that the resources are non purgeable.
-    cache->purgeAllUnlocked();
+    cache->purgeUnlockedResources();
     REPORTER_ASSERT(reporter, 5 == cache->getResourceCount());
     REPORTER_ASSERT(reporter, scratch->gpuMemorySize() + unique->gpuMemorySize() +
                                               wrappedCacheable->gpuMemorySize() +
@@ -608,7 +674,7 @@ static void test_budgeting(skiatest::Reporter* reporter) {
     REPORTER_ASSERT(reporter, 11 == cache->getPurgeableBytes());
     // This will free 'unique' but not wrappedCacheable which has a key. That requires the key to be
     // removed to be freed.
-    cache->purgeAllUnlocked();
+    cache->purgeUnlockedResources();
     REPORTER_ASSERT(reporter, 4 == cache->getResourceCount());
 
     wrappedCacheableViaKey = cache->findAndRefUniqueResource(uniqueKey2);
@@ -632,7 +698,7 @@ static void test_budgeting(skiatest::Reporter* reporter) {
 
     scratch->unref();
     REPORTER_ASSERT(reporter, 10 == cache->getPurgeableBytes());
-    cache->purgeAllUnlocked();
+    cache->purgeUnlockedResources();
     REPORTER_ASSERT(reporter, 3 == cache->getResourceCount());
     REPORTER_ASSERT(reporter, unbudgeted->gpuMemorySize() + wrappedCacheable->gpuMemorySize() +
                                               wrappedUncacheable->gpuMemorySize() ==
@@ -663,7 +729,7 @@ static void test_unbudgeted(skiatest::Reporter* reporter) {
     GrResourceCache* cache = mock.cache();
     GrGpu* gpu = mock.gpu();
 
-    GrUniqueKey uniqueKey;
+    skgpu::UniqueKey uniqueKey;
     make_unique_key<0>(&uniqueKey, 0);
 
     TestResource* scratch;
@@ -672,8 +738,8 @@ static void test_unbudgeted(skiatest::Reporter* reporter) {
     TestResource* unbudgeted;
 
     // A large uncached or wrapped resource shouldn't evict anything.
-    scratch = TestResource::CreateScratch(gpu, SkBudgeted::kYes,
-                                          TestResource::kB_SimulatedProperty, 10);
+    scratch = TestResource::CreateScratch(
+            gpu, skgpu::Budgeted::kYes, TestResource::kB_SimulatedProperty, 10);
 
     scratch->unref();
     REPORTER_ASSERT(reporter, 1 == cache->getResourceCount());
@@ -682,7 +748,7 @@ static void test_unbudgeted(skiatest::Reporter* reporter) {
     REPORTER_ASSERT(reporter, 10 == cache->getBudgetedResourceBytes());
     REPORTER_ASSERT(reporter, 10 == cache->getPurgeableBytes());
 
-    unique = new TestResource(gpu, SkBudgeted::kYes, 11);
+    unique = new TestResource(gpu, /*label=*/{}, skgpu::Budgeted::kYes, 11);
     unique->resourcePriv().setUniqueKey(uniqueKey);
     unique->unref();
     REPORTER_ASSERT(reporter, 2 == cache->getResourceCount());
@@ -692,7 +758,7 @@ static void test_unbudgeted(skiatest::Reporter* reporter) {
     REPORTER_ASSERT(reporter, 21 == cache->getPurgeableBytes());
 
     size_t large = 2 * cache->getResourceBytes();
-    unbudgeted = new TestResource(gpu, SkBudgeted::kNo, large);
+    unbudgeted = new TestResource(gpu, /*label=*/{}, skgpu::Budgeted::kNo, large);
     REPORTER_ASSERT(reporter, 3 == cache->getResourceCount());
     REPORTER_ASSERT(reporter, 21 + large == cache->getResourceBytes());
     REPORTER_ASSERT(reporter, 2 == cache->getBudgetedResourceCount());
@@ -720,7 +786,7 @@ static void test_unbudgeted(skiatest::Reporter* reporter) {
     REPORTER_ASSERT(reporter, 21 == cache->getBudgetedResourceBytes());
     REPORTER_ASSERT(reporter, 21 == cache->getPurgeableBytes());
 
-    cache->purgeAllUnlocked();
+    cache->purgeUnlockedResources();
     REPORTER_ASSERT(reporter, 0 == cache->getResourceCount());
     REPORTER_ASSERT(reporter, 0 == cache->getResourceBytes());
     REPORTER_ASSERT(reporter, 0 == cache->getBudgetedResourceCount());
@@ -735,9 +801,9 @@ void test_unbudgeted_to_scratch(skiatest::Reporter* reporter);
     GrResourceCache* cache = mock.cache();
     GrGpu* gpu = mock.gpu();
 
-    TestResource* resource =
-        TestResource::CreateScratch(gpu, SkBudgeted::kNo, TestResource::kA_SimulatedProperty);
-    GrScratchKey key;
+    TestResource* resource = TestResource::CreateScratch(
+            gpu, skgpu::Budgeted::kNo, TestResource::kA_SimulatedProperty);
+    skgpu::ScratchKey key;
     TestResource::ComputeScratchKey(TestResource::kA_SimulatedProperty, &key);
 
     size_t size = resource->gpuMemorySize();
@@ -802,29 +868,28 @@ static void test_duplicate_scratch_key(skiatest::Reporter* reporter) {
     GrGpu* gpu = mock.gpu();
 
     // Create two resources that have the same scratch key.
-    TestResource* a = TestResource::CreateScratch(gpu,
-                                                  SkBudgeted::kYes,
-                                                  TestResource::kB_SimulatedProperty, 11);
-    TestResource* b = TestResource::CreateScratch(gpu,
-                                                  SkBudgeted::kYes,
-                                                  TestResource::kB_SimulatedProperty, 12);
-    GrScratchKey scratchKey1;
+    TestResource* a = TestResource::CreateScratch(
+            gpu, skgpu::Budgeted::kYes, TestResource::kB_SimulatedProperty, 11);
+    TestResource* b = TestResource::CreateScratch(
+            gpu, skgpu::Budgeted::kYes, TestResource::kB_SimulatedProperty, 12);
+    skgpu::ScratchKey scratchKey1;
     TestResource::ComputeScratchKey(TestResource::kA_SimulatedProperty, &scratchKey1);
     // Check for negative case consistency. (leaks upon test failure.)
     REPORTER_ASSERT(reporter, !cache->findAndRefScratchResource(scratchKey1));
 
-    GrScratchKey scratchKey;
+    skgpu::ScratchKey scratchKey;
     TestResource::ComputeScratchKey(TestResource::kB_SimulatedProperty, &scratchKey);
 
     // Scratch resources are registered with GrResourceCache just by existing. There are 2.
     REPORTER_ASSERT(reporter, 2 == TestResource::NumAlive());
-    SkDEBUGCODE(REPORTER_ASSERT(reporter, 2 == cache->countScratchEntriesForKey(scratchKey));)
+    // As long as there are outstanding refs on the resources they will not be in the scratch map
+    SkDEBUGCODE(REPORTER_ASSERT(reporter, 0 == cache->countScratchEntriesForKey(scratchKey));)
     REPORTER_ASSERT(reporter, 2 == cache->getResourceCount());
     REPORTER_ASSERT(reporter, a->gpuMemorySize() + b->gpuMemorySize() ==
                               cache->getResourceBytes());
 
     // Our refs mean that the resources are non purgeable.
-    cache->purgeAllUnlocked();
+    cache->purgeUnlockedResources();
     REPORTER_ASSERT(reporter, 2 == TestResource::NumAlive());
     REPORTER_ASSERT(reporter, 2 == cache->getResourceCount());
 
@@ -832,10 +897,11 @@ static void test_duplicate_scratch_key(skiatest::Reporter* reporter) {
     a->unref();
     b->unref();
     REPORTER_ASSERT(reporter, 2 == TestResource::NumAlive());
+    // Since we removed the refs to the resources they will now be in the scratch map
     SkDEBUGCODE(REPORTER_ASSERT(reporter, 2 == cache->countScratchEntriesForKey(scratchKey));)
 
     // Purge again. This time resources should be purgeable.
-    cache->purgeAllUnlocked();
+    cache->purgeUnlockedResources();
     REPORTER_ASSERT(reporter, 0 == TestResource::NumAlive());
     REPORTER_ASSERT(reporter, 0 == cache->getResourceCount());
     SkDEBUGCODE(REPORTER_ASSERT(reporter, 0 == cache->countScratchEntriesForKey(scratchKey));)
@@ -847,14 +913,14 @@ static void test_remove_scratch_key(skiatest::Reporter* reporter) {
     GrGpu* gpu = mock.gpu();
 
     // Create two resources that have the same scratch key.
-    TestResource* a = TestResource::CreateScratch(gpu, SkBudgeted::kYes,
-                                                  TestResource::kB_SimulatedProperty);
-    TestResource* b = TestResource::CreateScratch(gpu, SkBudgeted::kYes,
-                                                  TestResource::kB_SimulatedProperty);
+    TestResource* a = TestResource::CreateScratch(
+            gpu, skgpu::Budgeted::kYes, TestResource::kB_SimulatedProperty);
+    TestResource* b = TestResource::CreateScratch(
+            gpu, skgpu::Budgeted::kYes, TestResource::kB_SimulatedProperty);
     a->unref();
     b->unref();
 
-    GrScratchKey scratchKey;
+    skgpu::ScratchKey scratchKey;
     // Ensure that scratch key lookup is correct for negative case.
     TestResource::ComputeScratchKey(TestResource::kA_SimulatedProperty, &scratchKey);
     // (following leaks upon test failure).
@@ -905,18 +971,18 @@ static void test_scratch_key_consistency(skiatest::Reporter* reporter) {
     GrGpu* gpu = mock.gpu();
 
     // Create two resources that have the same scratch key.
-    TestResource* a = TestResource::CreateScratch(gpu, SkBudgeted::kYes,
-                                                  TestResource::kB_SimulatedProperty);
-    TestResource* b = TestResource::CreateScratch(gpu, SkBudgeted::kYes,
-                                                  TestResource::kB_SimulatedProperty);
+    TestResource* a = TestResource::CreateScratch(
+            gpu, skgpu::Budgeted::kYes, TestResource::kB_SimulatedProperty);
+    TestResource* b = TestResource::CreateScratch(
+            gpu, skgpu::Budgeted::kYes, TestResource::kB_SimulatedProperty);
     a->unref();
     b->unref();
 
-    GrScratchKey scratchKey;
+    skgpu::ScratchKey scratchKey;
     // Ensure that scratch key comparison and assignment is consistent.
-    GrScratchKey scratchKey1;
+    skgpu::ScratchKey scratchKey1;
     TestResource::ComputeScratchKey(TestResource::kA_SimulatedProperty, &scratchKey1);
-    GrScratchKey scratchKey2;
+    skgpu::ScratchKey scratchKey2;
     TestResource::ComputeScratchKey(TestResource::kB_SimulatedProperty, &scratchKey2);
     REPORTER_ASSERT(reporter, scratchKey1.size() == TestResource::ExpectedScratchKeySize());
     REPORTER_ASSERT(reporter, scratchKey1 != scratchKey2);
@@ -963,11 +1029,11 @@ static void test_duplicate_unique_key(skiatest::Reporter* reporter) {
     GrResourceCache* cache = mock.cache();
     GrGpu* gpu = mock.gpu();
 
-    GrUniqueKey key;
+    skgpu::UniqueKey key;
     make_unique_key<0>(&key, 0);
 
     // Create two resources that we will attempt to register with the same unique key.
-    TestResource* a = new TestResource(gpu, SkBudgeted::kYes, 11);
+    TestResource* a = new TestResource(gpu, /*label=*/{}, skgpu::Budgeted::kYes, 11);
 
     // Set key on resource a.
     a->resourcePriv().setUniqueKey(key);
@@ -983,7 +1049,7 @@ static void test_duplicate_unique_key(skiatest::Reporter* reporter) {
     REPORTER_ASSERT(reporter, 1 == TestResource::NumAlive());
 
     // Create resource b and set the same key. It should replace a's unique key cache entry.
-    TestResource* b = new TestResource(gpu, SkBudgeted::kYes, 12);
+    TestResource* b = new TestResource(gpu, /*label=*/{}, skgpu::Budgeted::kYes, 12);
     b->resourcePriv().setUniqueKey(key);
     REPORTER_ASSERT(reporter, b == cache->findAndRefUniqueResource(key));
     b->unref();
@@ -1002,8 +1068,8 @@ static void test_duplicate_unique_key(skiatest::Reporter* reporter) {
     // Now replace b with c, but make sure c can start with one unique key and change it to b's key.
     // Also make b be unreffed when replacement occurs.
     b->unref();
-    TestResource* c = new TestResource(gpu, SkBudgeted::kYes, 13);
-    GrUniqueKey differentKey;
+    TestResource* c = new TestResource(gpu, /*label=*/{}, skgpu::Budgeted::kYes, 13);
+    skgpu::UniqueKey differentKey;
     make_unique_key<0>(&differentKey, 1);
     c->resourcePriv().setUniqueKey(differentKey);
     REPORTER_ASSERT(reporter, 2 == cache->getResourceCount());
@@ -1016,7 +1082,7 @@ static void test_duplicate_unique_key(skiatest::Reporter* reporter) {
     REPORTER_ASSERT(reporter, 1 == TestResource::NumAlive());
 
     // c shouldn't be purged because it is ref'ed.
-    cache->purgeAllUnlocked();
+    cache->purgeUnlockedResources();
     REPORTER_ASSERT(reporter, 1 == cache->getResourceCount());
     REPORTER_ASSERT(reporter, c->gpuMemorySize() == cache->getResourceBytes());
     REPORTER_ASSERT(reporter, 1 == TestResource::NumAlive());
@@ -1036,15 +1102,15 @@ static void test_duplicate_unique_key(skiatest::Reporter* reporter) {
     REPORTER_ASSERT(reporter, 0 == TestResource::NumAlive());
 
     {
-        GrUniqueKey key2;
+        skgpu::UniqueKey key2;
         make_unique_key<0>(&key2, 0);
-        sk_sp<TestResource> d(new TestResource(gpu));
+        sk_sp<TestResource> d(new TestResource(gpu, /*label=*/{}));
         int foo = 4132;
         key2.setCustomData(SkData::MakeWithCopy(&foo, sizeof(foo)));
         d->resourcePriv().setUniqueKey(key2);
     }
 
-    GrUniqueKey key3;
+    skgpu::UniqueKey key3;
     make_unique_key<0>(&key3, 0);
     sk_sp<GrGpuResource> d2(cache->findAndRefUniqueResource(key3));
     REPORTER_ASSERT(reporter, *(int*) d2->getUniqueKey().getCustomData()->data() == 4132);
@@ -1056,16 +1122,16 @@ static void test_purge_invalidated(skiatest::Reporter* reporter) {
     GrResourceCache* cache = mock.cache();
     GrGpu* gpu = mock.gpu();
 
-    GrUniqueKey key1, key2, key3;
+    skgpu::UniqueKey key1, key2, key3;
     make_unique_key<0>(&key1, 1);
     make_unique_key<0>(&key2, 2);
     make_unique_key<0>(&key3, 3);
 
     // Add three resources to the cache. Only c is usable as scratch.
-    TestResource* a = new TestResource(gpu);
-    TestResource* b = new TestResource(gpu);
-    TestResource* c = TestResource::CreateScratch(gpu, SkBudgeted::kYes,
-                                                  TestResource::kA_SimulatedProperty);
+    TestResource* a = new TestResource(gpu, /*label=*/{});
+    TestResource* b = new TestResource(gpu, /*label=*/{});
+    TestResource* c = TestResource::CreateScratch(
+            gpu, skgpu::Budgeted::kYes, TestResource::kA_SimulatedProperty);
     a->resourcePriv().setUniqueKey(key1);
     b->resourcePriv().setUniqueKey(key2);
     c->resourcePriv().setUniqueKey(key3);
@@ -1078,8 +1144,8 @@ static void test_purge_invalidated(skiatest::Reporter* reporter) {
     REPORTER_ASSERT(reporter, cache->hasUniqueKey(key3));
     REPORTER_ASSERT(reporter, 3 == TestResource::NumAlive());
 
-    typedef GrUniqueKeyInvalidatedMessage Msg;
-    typedef SkMessageBus<GrUniqueKeyInvalidatedMessage> Bus;
+    typedef skgpu::UniqueKeyInvalidatedMessage Msg;
+    typedef SkMessageBus<Msg, uint32_t> Bus;
 
     // Invalidate two of the three, they should be purged and no longer accessible via their keys.
     Bus::Post(Msg(key1, dContext->priv().contextID()));
@@ -1103,14 +1169,14 @@ static void test_purge_invalidated(skiatest::Reporter* reporter) {
     REPORTER_ASSERT(reporter, 1 == TestResource::NumAlive());
 
     // Make sure we actually get to c via it's scratch key, before we say goodbye.
-    GrScratchKey scratchKey;
+    skgpu::ScratchKey scratchKey;
     TestResource::ComputeScratchKey(TestResource::kA_SimulatedProperty, &scratchKey);
     GrGpuResource* scratch = cache->findAndRefScratchResource(scratchKey);
     REPORTER_ASSERT(reporter, scratch == c);
     SkSafeUnref(scratch);
 
     // Get rid of c.
-    cache->purgeAllUnlocked();
+    cache->purgeUnlockedResources();
     scratch = cache->findAndRefScratchResource(scratchKey);
     REPORTER_ASSERT(reporter, 0 == TestResource::NumAlive());
     REPORTER_ASSERT(reporter, 0 == cache->getResourceCount());
@@ -1124,12 +1190,12 @@ static void test_cache_chained_purge(skiatest::Reporter* reporter) {
     GrResourceCache* cache = mock.cache();
     GrGpu* gpu = mock.gpu();
 
-    GrUniqueKey key1, key2;
+    skgpu::UniqueKey key1, key2;
     make_unique_key<0>(&key1, 1);
     make_unique_key<0>(&key2, 2);
 
-    sk_sp<TestResource> a(new TestResource(gpu));
-    sk_sp<TestResource> b(new TestResource(gpu));
+    sk_sp<TestResource> a(new TestResource(gpu, /*label=*/{}));
+    sk_sp<TestResource> b(new TestResource(gpu, /*label=*/{}));
     a->resourcePriv().setUniqueKey(key1);
     b->resourcePriv().setUniqueKey(key2);
 
@@ -1145,14 +1211,14 @@ static void test_cache_chained_purge(skiatest::Reporter* reporter) {
 
     REPORTER_ASSERT(reporter, 2 == TestResource::NumAlive());
 
-    cache->purgeAllUnlocked();
+    cache->purgeUnlockedResources();
     REPORTER_ASSERT(reporter, 2 == TestResource::NumAlive());
 
     // Break the cycle
     unownedA->setUnrefWhenDestroyed(nullptr);
     REPORTER_ASSERT(reporter, 2 == TestResource::NumAlive());
 
-    cache->purgeAllUnlocked();
+    cache->purgeUnlockedResources();
     REPORTER_ASSERT(reporter, 0 == TestResource::NumAlive());
 }
 
@@ -1181,10 +1247,10 @@ static void test_timestamp_wrap(skiatest::Reporter* reporter) {
         // Add kCount resources, holding onto resources at random so we have a mix of purgeable and
         // unpurgeable resources.
         for (int j = 0; j < kCount; ++j) {
-            GrUniqueKey key;
+            skgpu::UniqueKey key;
             make_unique_key<0>(&key, j);
 
-            TestResource* r = new TestResource(gpu);
+            TestResource* r = new TestResource(gpu, /*label=*/{});
             r->resourcePriv().setUniqueKey(key);
             if (random.nextU() % kLockedFreq) {
                 // Make this is purgeable.
@@ -1201,10 +1267,10 @@ static void test_timestamp_wrap(skiatest::Reporter* reporter) {
         // Verify that the correct resources were purged.
         int currShouldPurgeIdx = 0;
         for (int j = 0; j < kCount; ++j) {
-            GrUniqueKey key;
+            skgpu::UniqueKey key;
             make_unique_key<0>(&key, j);
             GrGpuResource* res = cache->findAndRefUniqueResource(key);
-            if (currShouldPurgeIdx < shouldPurgeIdxs.count() &&
+            if (currShouldPurgeIdx < shouldPurgeIdxs.size() &&
                 shouldPurgeIdxs[currShouldPurgeIdx] == j) {
                 ++currShouldPurgeIdx;
                 REPORTER_ASSERT(reporter, nullptr == res);
@@ -1214,7 +1280,7 @@ static void test_timestamp_wrap(skiatest::Reporter* reporter) {
             SkSafeUnref(res);
         }
 
-        for (int j = 0; j < resourcesToUnref.count(); ++j) {
+        for (int j = 0; j < resourcesToUnref.size(); ++j) {
             resourcesToUnref[j]->unref();
         }
     }
@@ -1230,21 +1296,21 @@ static void test_time_purge(skiatest::Reporter* reporter) {
     auto nowish = []() {
         // We sleep so that we ensure we get a value that is greater than the last call to
         // GrStdSteadyClock::now().
-        std::this_thread::sleep_for(GrStdSteadyClock::duration(5));
-        auto result = GrStdSteadyClock::now();
+        std::this_thread::sleep_for(skgpu::StdSteadyClock::duration(5));
+        auto result = skgpu::StdSteadyClock::now();
         // Also sleep afterwards so we don't get this value again.
-        std::this_thread::sleep_for(GrStdSteadyClock::duration(5));
+        std::this_thread::sleep_for(skgpu::StdSteadyClock::duration(5));
         return result;
     };
 
     for (int cnt : kCnts) {
-        std::unique_ptr<GrStdSteadyClock::time_point[]> timeStamps(
-                new GrStdSteadyClock::time_point[cnt]);
+        std::unique_ptr<skgpu::StdSteadyClock::time_point[]> timeStamps(
+                new skgpu::StdSteadyClock::time_point[cnt]);
         {
             // Insert resources and get time points between each addition.
             for (int i = 0; i < cnt; ++i) {
-                TestResource* r = new TestResource(gpu);
-                GrUniqueKey k;
+                TestResource* r = new TestResource(gpu, /*label=*/{});
+                skgpu::UniqueKey k;
                 make_unique_key<1>(&k, i);
                 r->resourcePriv().setUniqueKey(k);
                 r->unref();
@@ -1257,7 +1323,7 @@ static void test_time_purge(skiatest::Reporter* reporter) {
                 cache->purgeResourcesNotUsedSince(timeStamps[i]);
                 REPORTER_ASSERT(reporter, cnt - i - 1 == cache->getResourceCount());
                 for (int j = 0; j < i; ++j) {
-                    GrUniqueKey k;
+                    skgpu::UniqueKey k;
                     make_unique_key<1>(&k, j);
                     GrGpuResource* r = cache->findAndRefUniqueResource(k);
                     REPORTER_ASSERT(reporter, !SkToBool(r));
@@ -1266,7 +1332,7 @@ static void test_time_purge(skiatest::Reporter* reporter) {
             }
 
             REPORTER_ASSERT(reporter, 0 == cache->getResourceCount());
-            cache->purgeAllUnlocked();
+            cache->purgeUnlockedResources();
         }
 
         // Do a similar test but where we leave refs on some resources to prevent them from being
@@ -1274,8 +1340,8 @@ static void test_time_purge(skiatest::Reporter* reporter) {
         {
             std::unique_ptr<GrGpuResource* []> refedResources(new GrGpuResource*[cnt / 2]);
             for (int i = 0; i < cnt; ++i) {
-                TestResource* r = new TestResource(gpu);
-                GrUniqueKey k;
+                TestResource* r = new TestResource(gpu, /*label=*/{});
+                skgpu::UniqueKey k;
                 make_unique_key<1>(&k, i);
                 r->resourcePriv().setUniqueKey(k);
                 // Leave a ref on every other resource, beginning with the first.
@@ -1300,7 +1366,38 @@ static void test_time_purge(skiatest::Reporter* reporter) {
                 REPORTER_ASSERT(reporter, cnt / 2 - i - 1 == cache->getResourceCount());
             }
 
-            cache->purgeAllUnlocked();
+            cache->purgeUnlockedResources();
+        }
+
+        REPORTER_ASSERT(reporter, 0 == cache->getResourceCount());
+
+        // Do a similar test where we alternate adding scratch and uniquely keyed resources, but
+        // then purge old scratch resources.
+        {
+            for (int i = 0; i < cnt; ++i) {
+                const bool isScratch = (i % 2 == 0);
+                const skgpu::Budgeted budgeted = skgpu::Budgeted::kYes;
+                const TestResource::SimulatedProperty property = TestResource::kA_SimulatedProperty;
+                TestResource* r = isScratch
+                                          ? TestResource::CreateScratch(gpu, budgeted, property)
+                                          : new TestResource(gpu, /*label=*/{}, budgeted, property);
+                if (!isScratch) {
+                    skgpu::UniqueKey k;
+                    make_unique_key<1>(&k, i);
+                    r->resourcePriv().setUniqueKey(k);
+                }
+                r->unref();
+                timeStamps.get()[i] = nowish();
+            }
+
+            for (int i = 0; i < cnt; ++i) {
+                // Should get a resource purged every other frame, since the uniquely keyed
+                // resources will not be considered.
+                cache->purgeResourcesNotUsedSince(timeStamps[i], /*scratchResourcesOnly=*/true);
+                REPORTER_ASSERT(reporter, cnt - i / 2 - 1 == cache->getResourceCount());
+            }
+            // Unref remaining resources
+            cache->purgeResourcesNotUsedSince(nowish());
         }
 
         REPORTER_ASSERT(reporter, 0 == cache->getResourceCount());
@@ -1309,8 +1406,8 @@ static void test_time_purge(skiatest::Reporter* reporter) {
         // eviction
         dContext->flushAndSubmit();
         for (int i = 0; i < 10; ++i) {
-            TestResource* r = new TestResource(gpu);
-            GrUniqueKey k;
+            TestResource* r = new TestResource(gpu, /*label=*/{});
+            skgpu::UniqueKey k;
             make_unique_key<1>(&k, i);
             r->resourcePriv().setUniqueKey(k);
             r->unref();
@@ -1341,27 +1438,25 @@ static void test_partial_purge(skiatest::Reporter* reporter) {
 
     for (int testCase = 0; testCase < kEndTests_TestCase; testCase++) {
 
-        GrUniqueKey key1, key2, key3;
+        skgpu::UniqueKey key1, key2, key3;
         make_unique_key<0>(&key1, 1);
         make_unique_key<0>(&key2, 2);
         make_unique_key<0>(&key3, 3);
 
         // Add three unique resources to the cache.
-        TestResource *unique1 = new TestResource(gpu, SkBudgeted::kYes, 10);
-        TestResource *unique2 = new TestResource(gpu, SkBudgeted::kYes, 11);
-        TestResource *unique3 = new TestResource(gpu, SkBudgeted::kYes, 12);
+        TestResource* unique1 = new TestResource(gpu, /*label=*/{}, skgpu::Budgeted::kYes, 10);
+        TestResource* unique2 = new TestResource(gpu, /*label=*/{}, skgpu::Budgeted::kYes, 11);
+        TestResource* unique3 = new TestResource(gpu, /*label=*/{}, skgpu::Budgeted::kYes, 12);
 
         unique1->resourcePriv().setUniqueKey(key1);
         unique2->resourcePriv().setUniqueKey(key2);
         unique3->resourcePriv().setUniqueKey(key3);
 
         // Add two scratch resources to the cache.
-        TestResource *scratch1 = TestResource::CreateScratch(gpu, SkBudgeted::kYes,
-                                                             TestResource::kA_SimulatedProperty,
-                                                             13);
-        TestResource *scratch2 = TestResource::CreateScratch(gpu, SkBudgeted::kYes,
-                                                             TestResource::kB_SimulatedProperty,
-                                                             14);
+        TestResource* scratch1 = TestResource::CreateScratch(
+                gpu, skgpu::Budgeted::kYes, TestResource::kA_SimulatedProperty, 13);
+        TestResource* scratch2 = TestResource::CreateScratch(
+                gpu, skgpu::Budgeted::kYes, TestResource::kB_SimulatedProperty, 14);
 
         REPORTER_ASSERT(reporter, 5 == cache->getBudgetedResourceCount());
         REPORTER_ASSERT(reporter, 60 == cache->getBudgetedResourceBytes());
@@ -1420,7 +1515,7 @@ static void test_partial_purge(skiatest::Reporter* reporter) {
         }
 
         // ensure all are purged before the next
-        dContext->priv().testingOnly_purgeAllUnlockedResources();
+        dContext->priv().getResourceCache()->purgeUnlockedResources();
         REPORTER_ASSERT(reporter, 0 == cache->getBudgetedResourceCount());
         REPORTER_ASSERT(reporter, 0 == cache->getPurgeableBytes());
 
@@ -1428,7 +1523,7 @@ static void test_partial_purge(skiatest::Reporter* reporter) {
 }
 
 static void test_custom_data(skiatest::Reporter* reporter) {
-    GrUniqueKey key1, key2;
+    skgpu::UniqueKey key1, key2;
     make_unique_key<0>(&key1, 1);
     make_unique_key<0>(&key2, 2);
     int foo = 4132;
@@ -1437,7 +1532,7 @@ static void test_custom_data(skiatest::Reporter* reporter) {
     REPORTER_ASSERT(reporter, key2.getCustomData() == nullptr);
 
     // Test that copying a key also takes a ref on its custom data.
-    GrUniqueKey key3 = key1;
+    skgpu::UniqueKey key3 = key1;
     REPORTER_ASSERT(reporter, *(int*) key3.getCustomData()->data() == 4132);
 }
 
@@ -1446,7 +1541,7 @@ static void test_abandoned(skiatest::Reporter* reporter) {
     auto dContext = mock.dContext();
     GrGpu* gpu = mock.gpu();
 
-    sk_sp<GrGpuResource> resource(new TestResource(gpu));
+    sk_sp<GrGpuResource> resource(new TestResource(gpu, /*label=*/{}));
     dContext->abandonContext();
 
     REPORTER_ASSERT(reporter, resource->wasDestroyed());
@@ -1464,7 +1559,7 @@ static void test_abandoned(skiatest::Reporter* reporter) {
     resource->resourcePriv().makeBudgeted();
     resource->resourcePriv().makeUnbudgeted();
     resource->resourcePriv().removeScratchKey();
-    GrUniqueKey key;
+    skgpu::UniqueKey key;
     make_unique_key<0>(&key, 1);
     resource->resourcePriv().setUniqueKey(key);
     resource->resourcePriv().removeUniqueKey();
@@ -1489,8 +1584,8 @@ static void test_tags(skiatest::Reporter* reporter) {
 
     for (int i = 0; i < kNumResources; ++i, ++currTagCnt) {
 
-        sk_sp<GrGpuResource> resource(new TestResource(gpu));
-        GrUniqueKey key;
+        sk_sp<GrGpuResource> resource(new TestResource(gpu, /*label=*/{}));
+        skgpu::UniqueKey key;
         if (currTagCnt == tagIdx) {
             tagIdx += 1;
             currTagCnt = 0;
@@ -1518,7 +1613,7 @@ static void test_free_texture_messages(skiatest::Reporter* reporter) {
     GrGpu* gpu = mock.gpu();
 
     GrBackendTexture backends[3];
-    GrTexture* wrapped[3];
+    sk_sp<GrTexture> wrapped[3];
     int freed[3] = { 0, 0, 0 };
 
     auto releaseProc = [](void* ctx) {
@@ -1532,25 +1627,9 @@ static void test_free_texture_messages(skiatest::Reporter* reporter) {
         wrapped[i] = gpu->wrapBackendTexture(backends[i],
                                              GrWrapOwnership::kBorrow_GrWrapOwnership,
                                              (i < 2) ? GrWrapCacheable::kYes : GrWrapCacheable::kNo,
-                                             GrIOType::kRead_GrIOType)
-                             .release();
+                                             GrIOType::kRead_GrIOType);
         wrapped[i]->setRelease(releaseProc, &freed[i]);
     }
-
-    cache->insertDelayedTextureUnref(wrapped[0]);
-    cache->insertDelayedTextureUnref(wrapped[1]);
-
-    // An uncacheable cross-context should not be purged as soon as we drop our ref. This
-    // is because inserting it as a cross-context resource actually holds a ref until the
-    // message is received.
-    cache->insertDelayedTextureUnref(wrapped[2]);
-
-    REPORTER_ASSERT(reporter, 0 == (freed[0] + freed[1] + freed[2]));
-
-    // Have only ref waiting on message.
-    wrapped[0]->unref();
-    wrapped[1]->unref();
-    wrapped[2]->unref();
 
     REPORTER_ASSERT(reporter, 0 == (freed[0] + freed[1] + freed[2]));
 
@@ -1560,26 +1639,26 @@ static void test_free_texture_messages(skiatest::Reporter* reporter) {
     REPORTER_ASSERT(reporter, 0 == (freed[0] + freed[1] + freed[2]));
 
     // Send message to free the first resource
-    GrTextureFreedMessage msg1{wrapped[0], dContext->priv().contextID()};
-    SkMessageBus<GrTextureFreedMessage>::Post(msg1);
+    GrResourceCache::ReturnResourceFromThread(std::move(wrapped[0]), dContext->directContextID());
     cache->purgeAsNeeded();
 
     REPORTER_ASSERT(reporter, 1 == (freed[0] + freed[1] + freed[2]));
     REPORTER_ASSERT(reporter, 1 == freed[0]);
 
-    GrTextureFreedMessage msg2{wrapped[2], dContext->priv().contextID()};
-    SkMessageBus<GrTextureFreedMessage>::Post(msg2);
+    GrResourceCache::ReturnResourceFromThread(std::move(wrapped[2]), dContext->directContextID());
     cache->purgeAsNeeded();
 
     REPORTER_ASSERT(reporter, 2 == (freed[0] + freed[1] + freed[2]));
     REPORTER_ASSERT(reporter, 0 == freed[1]);
+
+    wrapped[1].reset();
 
     mock.reset();
 
     REPORTER_ASSERT(reporter, 3 == (freed[0] + freed[1] + freed[2]));
 }
 
-DEF_GPUTEST(ResourceCacheMisc, reporter, /* options */) {
+DEF_GANESH_TEST(ResourceCacheMisc, reporter, /* options */, CtsEnforcement::kApiLevel_T) {
     // The below tests create their own mock contexts.
     test_no_key(reporter);
     test_purge_unlocked(reporter);
@@ -1604,19 +1683,19 @@ DEF_GPUTEST(ResourceCacheMisc, reporter, /* options */) {
 
 // This simulates a portion of Chrome's context abandonment processing.
 // Please see: crbug.com/1011368 and crbug.com/1014993
-DEF_GPUTEST_FOR_RENDERING_CONTEXTS(ResourceMessagesAfterAbandon, reporter, ctxInfo) {
-    auto context = ctxInfo.directContext();
-    GrGpu* gpu = context->priv().getGpu();
-    GrResourceCache* cache = context->priv().getResourceCache();
+DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(ResourceMessagesAfterAbandon,
+                                       reporter,
+                                       ctxInfo,
+                                       CtsEnforcement::kApiLevel_T) {
+    auto dContext = ctxInfo.directContext();
+    GrGpu* gpu = dContext->priv().getGpu();
 
-    GrBackendTexture backend = context->createBackendTexture(16, 16,
-                                                             SkColorType::kRGBA_8888_SkColorType,
-                                                             GrMipmapped::kNo, GrRenderable::kNo);
-    GrTexture* tex = gpu->wrapBackendTexture(backend,
-                                             GrWrapOwnership::kBorrow_GrWrapOwnership,
-                                             GrWrapCacheable::kYes,
-                                             GrIOType::kRead_GrIOType)
-                             .release();
+    GrBackendTexture backend = dContext->createBackendTexture(
+            16, 16, SkColorType::kRGBA_8888_SkColorType, GrMipmapped::kNo, GrRenderable::kNo);
+    sk_sp<GrTexture> tex = gpu->wrapBackendTexture(backend,
+                                                   GrWrapOwnership::kBorrow_GrWrapOwnership,
+                                                   GrWrapCacheable::kYes,
+                                                   GrIOType::kRead_GrIOType);
 
     auto releaseProc = [](void* ctx) {
         int* index = (int*) ctx;
@@ -1627,27 +1706,22 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(ResourceMessagesAfterAbandon, reporter, ctxIn
 
     tex->setRelease(releaseProc, &freed);
 
-    cache->insertDelayedTextureUnref(tex);
-
-    // Now only the cache is holding a ref to this texture
-    tex->unref();
-
     REPORTER_ASSERT(reporter, 0 == freed);
 
     // We must delete the backend texture before abandoning the context in vulkan. We just do it
     // for all the backends for consistency.
-    context->deleteBackendTexture(backend);
-    context->abandonContext();
+    dContext->deleteBackendTexture(backend);
+    dContext->abandonContext();
 
     REPORTER_ASSERT(reporter, 1 == freed);
 
     // In the past, creating this message could cause an exception due to
-    // an un-safe downcast from GrTexture to GrGpuResource
-    GrTextureFreedMessage msg{tex, context->priv().contextID()};
-    SkMessageBus<GrTextureFreedMessage>::Post(msg);
+    // an un-safe pointer upcast from GrTexture* to GrGpuResource* through virtual inheritance
+    // after deletion of tex.
+    GrResourceCache::ReturnResourceFromThread(std::move(tex), dContext->directContextID());
 
     // This doesn't actually do anything but it does trigger us to read messages
-    context->purgeUnlockedResources(false);
+    dContext->purgeUnlockedResources(false);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1656,8 +1730,15 @@ static sk_sp<GrTexture> make_normal_texture(GrResourceProvider* provider,
                                             SkISize dims,
                                             int sampleCnt) {
     auto format = provider->caps()->getDefaultBackendFormat(GrColorType::kRGBA_8888, renderable);
-    return provider->createTexture(dims, format, renderable, sampleCnt, GrMipmapped::kNo,
-                                   SkBudgeted::kYes, GrProtected::kNo);
+    return provider->createTexture(dims,
+                                   format,
+                                   GrTextureType::k2D,
+                                   renderable,
+                                   sampleCnt,
+                                   GrMipmapped::kNo,
+                                   skgpu::Budgeted::kYes,
+                                   GrProtected::kNo,
+                                   /*label=*/{});
 }
 
 static sk_sp<GrTextureProxy> make_mipmap_proxy(GrRecordingContext* rContext,
@@ -1671,13 +1752,23 @@ static sk_sp<GrTextureProxy> make_mipmap_proxy(GrRecordingContext* rContext,
     const GrBackendFormat format = caps->getDefaultBackendFormat(GrColorType::kRGBA_8888,
                                                                  GrRenderable::kNo);
 
-    return proxyProvider->createProxy(format, dims, renderable, sampleCnt, GrMipmapped::kYes,
-                                      SkBackingFit::kExact, SkBudgeted::kYes, GrProtected::kNo);
+    return proxyProvider->createProxy(format,
+                                      dims,
+                                      renderable,
+                                      sampleCnt,
+                                      GrMipmapped::kYes,
+                                      SkBackingFit::kExact,
+                                      skgpu::Budgeted::kYes,
+                                      GrProtected::kNo,
+                                      /*label=*/{});
 }
 
 // Exercise GrSurface::gpuMemorySize for different combos of MSAA, RT-only,
 // Texture-only, both-RT-and-Texture and MIPmapped
-DEF_GPUTEST_FOR_RENDERING_CONTEXTS(GPUMemorySize, reporter, ctxInfo) {
+DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(GPUMemorySize,
+                                       reporter,
+                                       ctxInfo,
+                                       CtsEnforcement::kApiLevel_T) {
     auto context = ctxInfo.directContext();
     GrResourceProvider* resourceProvider = context->priv().resourceProvider();
     const GrCaps* caps = context->priv().caps();
@@ -1732,8 +1823,45 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(GPUMemorySize, reporter, ctxInfo) {
     }
 }
 
+DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(PurgeToMakeHeadroom,
+                                       reporter,
+                                       ctxInfo,
+                                       CtsEnforcement::kApiLevel_T) {
+    constexpr size_t kTexSize = 16 * 16 * 4;
+
+    auto dContext = ctxInfo.directContext();
+    dContext->setResourceCacheLimit(2 * kTexSize);
+    auto resourceProvider = dContext->priv().resourceProvider();
+    auto resourceCache = dContext->priv().getResourceCache();
+    for (bool success : { true, false }) {
+        reporter->push(SkString(success ? "success" : "failure"));
+
+        resourceCache->releaseAll();
+        REPORTER_ASSERT(reporter, resourceCache->getBudgetedResourceBytes() == 0);
+
+        // Make one unpurgeable texture and one purgeable texture.
+        auto lockedTex = make_normal_texture(resourceProvider, GrRenderable::kNo, {16, 16}, 1);
+        REPORTER_ASSERT(reporter, lockedTex->gpuMemorySize() == kTexSize);
+
+        // N.b. this surface is renderable so "reuseScratchTextures = false" won't mess us up.
+        auto purgeableTex = make_normal_texture(resourceProvider, GrRenderable::kYes, {16, 16}, 1);
+        if (success) {
+            purgeableTex = nullptr;
+        }
+
+        size_t expectedPurgeable = success ? kTexSize : 0;
+        REPORTER_ASSERT(reporter, expectedPurgeable == resourceCache->getPurgeableBytes(),
+                        "%zu vs %zu", expectedPurgeable, resourceCache->getPurgeableBytes());
+        REPORTER_ASSERT(reporter, success == resourceCache->purgeToMakeHeadroom(kTexSize));
+        size_t expectedBudgeted = success ? kTexSize : (2 * kTexSize);
+        REPORTER_ASSERT(reporter, expectedBudgeted == resourceCache->getBudgetedResourceBytes(),
+                        "%zu vs %zu", expectedBudgeted, resourceCache->getBudgetedResourceBytes());
+        reporter->pop();
+    }
+}
+
 #if GR_GPU_STATS
-DEF_GPUTEST_FOR_MOCK_CONTEXT(OverbudgetFlush, reporter, ctxInfo) {
+DEF_GANESH_TEST_FOR_MOCK_CONTEXT(OverbudgetFlush, reporter, ctxInfo) {
     auto context = ctxInfo.directContext();
     context->setResourceCacheLimit(1);
 
@@ -1761,8 +1889,8 @@ DEF_GPUTEST_FOR_MOCK_CONTEXT(OverbudgetFlush, reporter, ctxInfo) {
     };
 
     auto info = SkImageInfo::Make(10, 10, kRGBA_8888_SkColorType, kPremul_SkAlphaType);
-    auto surf1 = SkSurface::MakeRenderTarget(context, SkBudgeted::kYes, info, 1, nullptr);
-    auto surf2 = SkSurface::MakeRenderTarget(context, SkBudgeted::kYes, info, 1, nullptr);
+    auto surf1 = SkSurfaces::RenderTarget(context, skgpu::Budgeted::kYes, info, 1, nullptr);
+    auto surf2 = SkSurfaces::RenderTarget(context, skgpu::Budgeted::kYes, info, 1, nullptr);
 
     drawToSurf(surf1.get());
     drawToSurf(surf2.get());

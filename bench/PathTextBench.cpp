@@ -9,8 +9,8 @@
 #include "include/core/SkCanvas.h"
 #include "include/core/SkPaint.h"
 #include "include/core/SkPath.h"
-#include "include/utils/SkRandom.h"
-#include "src/core/SkScalerCache.h"
+#include "src/base/SkRandom.h"
+#include "src/core/SkStrike.h"
 #include "src/core/SkStrikeCache.h"
 #include "src/core/SkStrikeSpec.h"
 #include "tools/ToolUtils.h"
@@ -48,10 +48,13 @@ private:
     void onDelayedSetup() override {
         SkFont defaultFont;
         SkStrikeSpec strikeSpec = SkStrikeSpec::MakeWithNoDevice(defaultFont);
-        auto strike = strikeSpec.findOrCreateStrike();
+        SkBulkGlyphMetricsAndPaths pathMaker{strikeSpec};
         for (int i = 0; i < kNumGlyphs; ++i) {
-            SkPackedGlyphID id(defaultFont.unicharToGlyph(kGlyphs[i]));
-            sk_ignore_unused_variable(strike->getScalerContext()->getPath(id, &fGlyphs[i]));
+            SkGlyphID id(defaultFont.unicharToGlyph(kGlyphs[i]));
+            const SkGlyph* glyph = pathMaker.glyph(id);
+            if (glyph->path()) {
+                fGlyphs[i] = *glyph->path();
+            }
             fGlyphs[i].setIsVolatile(fUncached);
         }
 

@@ -35,8 +35,8 @@ static void make_transparency(SkCanvas* canvas, SkScalar width, SkScalar height)
             SK_ColorBLUE,
             SK_ColorMAGENTA,
     };
-    const SkScalar kRowHeight = height / SK_ARRAY_COUNT(kColors);
-    for (size_t i = 0; i < SK_ARRAY_COUNT(kColors); ++i) {
+    const SkScalar kRowHeight = height / std::size(kColors);
+    for (size_t i = 0; i < std::size(kColors); ++i) {
         SkColor shaderColors[2];
         shaderColors[0] = SK_AlphaTRANSPARENT;
         shaderColors[1] = kColors[i];
@@ -53,7 +53,7 @@ static sk_sp<SkShader> create_checkerboard_shader(SkColor c1, SkColor c2, int si
     bm.eraseColor(c1);
     bm.eraseArea(SkIRect::MakeLTRB(0, 0, size, size), c2);
     bm.eraseArea(SkIRect::MakeLTRB(size, size, 2 * size, 2 * size), c2);
-    return bm.makeShader(SkTileMode::kRepeat, SkTileMode::kRepeat);
+    return bm.makeShader(SkTileMode::kRepeat, SkTileMode::kRepeat, SkSamplingOptions());
 }
 
 // http://crrev.com/834303005
@@ -71,9 +71,9 @@ DEF_SIMPLE_GM(transparency_check, canvas, 1792, 1080) {
     checkerboard(canvas, 0xFF999999, 0xFF666666, 8);
     {
         SkAutoCanvasRestore autoCanvasRestore(canvas, true);
-        auto surface(SkSurface::MakeRasterN32Premul(256, 9));
+        auto surface(SkSurfaces::Raster(SkImageInfo::MakeN32Premul(256, 9)));
         make_transparency(surface->getCanvas(), 256.0f, 9.0f);
         canvas->scale(7.0f, 120.0f);
-        surface->draw(canvas, 0, 0, nullptr);
+        surface->draw(canvas, 0, 0);
     }
 }

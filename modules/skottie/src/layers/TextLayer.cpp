@@ -19,6 +19,7 @@
 #include "modules/sksg/include/SkSGPaint.h"
 #include "modules/sksg/include/SkSGPath.h"
 #include "modules/sksg/include/SkSGText.h"
+#include "src/base/SkTSearch.h"
 
 #include <string.h>
 
@@ -27,135 +28,75 @@ namespace internal {
 
 namespace {
 
-SkFontStyle FontStyle(const AnimationBuilder* abuilder, const char* style) {
-    static constexpr struct {
-        const char*               fName;
-        const SkFontStyle::Weight fWeight;
-    } gWeightMap[] = {
-        { "Regular"   , SkFontStyle::kNormal_Weight     },
-        { "Medium"    , SkFontStyle::kMedium_Weight     },
-        { "Bold"      , SkFontStyle::kBold_Weight       },
-        { "Light"     , SkFontStyle::kLight_Weight      },
-        { "Black"     , SkFontStyle::kBlack_Weight      },
-        { "Thin"      , SkFontStyle::kThin_Weight       },
-        { "Extra"     , SkFontStyle::kExtraBold_Weight  },
-        { "ExtraBold" , SkFontStyle::kExtraBold_Weight  },
-        { "ExtraLight", SkFontStyle::kExtraLight_Weight },
-        { "ExtraBlack", SkFontStyle::kExtraBlack_Weight },
-        { "SemiBold"  , SkFontStyle::kSemiBold_Weight   },
-        { "Hairline"  , SkFontStyle::kThin_Weight       },
-        { "Normal"    , SkFontStyle::kNormal_Weight     },
-        { "Plain"     , SkFontStyle::kNormal_Weight     },
-        { "Standard"  , SkFontStyle::kNormal_Weight     },
-        { "Roman"     , SkFontStyle::kNormal_Weight     },
-        { "Heavy"     , SkFontStyle::kBlack_Weight      },
-        { "Demi"      , SkFontStyle::kSemiBold_Weight   },
-        { "DemiBold"  , SkFontStyle::kSemiBold_Weight   },
-        { "Ultra"     , SkFontStyle::kExtraBold_Weight  },
-        { "UltraBold" , SkFontStyle::kExtraBold_Weight  },
-        { "UltraBlack", SkFontStyle::kExtraBlack_Weight },
-        { "UltraHeavy", SkFontStyle::kExtraBlack_Weight },
-        { "UltraLight", SkFontStyle::kExtraLight_Weight },
-    };
+template <typename T, typename TMap>
+const char* parse_map(const TMap& map, const char* str, T* result) {
+    // ignore leading whitespace
+    while (*str == ' ') ++str;
 
-    SkFontStyle::Weight weight = SkFontStyle::kNormal_Weight;
-    for (const auto& w : gWeightMap) {
-        const auto name_len = strlen(w.fName);
-        if (!strncmp(style, w.fName, name_len)) {
-            weight = w.fWeight;
-            style += name_len;
-            break;
-        }
-    }
+    const char* next_tok = strchr(str, ' ');
 
-    static constexpr struct {
-        const char*              fName;
-        const SkFontStyle::Slant fSlant;
-    } gSlantMap[] = {
-        { "Italic" , SkFontStyle::kItalic_Slant  },
-        { "Oblique", SkFontStyle::kOblique_Slant },
-    };
-
-    SkFontStyle::Slant slant = SkFontStyle::kUpright_Slant;
-    if (*style != '\0') {
-        for (const auto& s : gSlantMap) {
-            if (!strcmp(style, s.fName)) {
-                slant = s.fSlant;
-                style += strlen(s.fName);
-                break;
+    if (const auto len = next_tok ? (next_tok - str) : strlen(str)) {
+        for (const auto& e : map) {
+            const char* key = std::get<0>(e);
+            if (!strncmp(str, key, len) && key[len] == '\0') {
+                *result = std::get<1>(e);
+                return str + len;
             }
         }
     }
 
-    if (*style != '\0') {
+    return str;
+}
+
+SkFontStyle FontStyle(const AnimationBuilder* abuilder, const char* style) {
+    static constexpr std::tuple<const char*, SkFontStyle::Weight> gWeightMap[] = {
+        { "regular"   , SkFontStyle::kNormal_Weight     },
+        { "medium"    , SkFontStyle::kMedium_Weight     },
+        { "bold"      , SkFontStyle::kBold_Weight       },
+        { "light"     , SkFontStyle::kLight_Weight      },
+        { "black"     , SkFontStyle::kBlack_Weight      },
+        { "thin"      , SkFontStyle::kThin_Weight       },
+        { "extra"     , SkFontStyle::kExtraBold_Weight  },
+        { "extrabold" , SkFontStyle::kExtraBold_Weight  },
+        { "extralight", SkFontStyle::kExtraLight_Weight },
+        { "extrablack", SkFontStyle::kExtraBlack_Weight },
+        { "semibold"  , SkFontStyle::kSemiBold_Weight   },
+        { "hairline"  , SkFontStyle::kThin_Weight       },
+        { "normal"    , SkFontStyle::kNormal_Weight     },
+        { "plain"     , SkFontStyle::kNormal_Weight     },
+        { "standard"  , SkFontStyle::kNormal_Weight     },
+        { "roman"     , SkFontStyle::kNormal_Weight     },
+        { "heavy"     , SkFontStyle::kBlack_Weight      },
+        { "demi"      , SkFontStyle::kSemiBold_Weight   },
+        { "demibold"  , SkFontStyle::kSemiBold_Weight   },
+        { "ultra"     , SkFontStyle::kExtraBold_Weight  },
+        { "ultrabold" , SkFontStyle::kExtraBold_Weight  },
+        { "ultrablack", SkFontStyle::kExtraBlack_Weight },
+        { "ultraheavy", SkFontStyle::kExtraBlack_Weight },
+        { "ultralight", SkFontStyle::kExtraLight_Weight },
+    };
+    static constexpr std::tuple<const char*, SkFontStyle::Slant> gSlantMap[] = {
+        { "italic" , SkFontStyle::kItalic_Slant  },
+        { "oblique", SkFontStyle::kOblique_Slant },
+    };
+
+    auto weight = SkFontStyle::kNormal_Weight;
+    auto slant  = SkFontStyle::kUpright_Slant;
+
+    // style is case insensitive.
+    SkAutoAsciiToLC lc_style(style);
+    style = lc_style.lc();
+    style = parse_map(gWeightMap, style, &weight);
+    style = parse_map(gSlantMap , style, &slant );
+
+    // ignore trailing whitespace
+    while (*style == ' ') ++style;
+
+    if (*style) {
         abuilder->log(Logger::Level::kWarning, nullptr, "Unknown font style: %s.", style);
     }
 
     return SkFontStyle(weight, SkFontStyle::kNormal_Width, slant);
-}
-
-bool parse_glyph_path(const skjson::ObjectValue* jdata,
-                      const AnimationBuilder* abuilder,
-                      SkPath* path) {
-    // Glyph path encoding:
-    //
-    //   "data": {
-    //       "shapes": [                         // follows the shape layer format
-    //           {
-    //               "ty": "gr",                 // group shape type
-    //               "it": [                     // group items
-    //                   {
-    //                       "ty": "sh",         // actual shape
-    //                       "ks": <path data>   // animatable path format, but always static
-    //                   },
-    //                   ...
-    //               ]
-    //           },
-    //           ...
-    //       ]
-    //   }
-
-    if (!jdata) {
-        return false;
-    }
-
-    const skjson::ArrayValue* jshapes = (*jdata)["shapes"];
-    if (!jshapes) {
-        // Space/empty glyph.
-        return true;
-    }
-
-    for (const skjson::ObjectValue* jgrp : *jshapes) {
-        if (!jgrp) {
-            return false;
-        }
-
-        const skjson::ArrayValue* jit = (*jgrp)["it"];
-        if (!jit) {
-            return false;
-        }
-
-        for (const skjson::ObjectValue* jshape : *jit) {
-            if (!jshape) {
-                return false;
-            }
-
-            // Glyph paths should never be animated.  But they are encoded as
-            // animatable properties, so we use the appropriate helpers.
-            AnimationBuilder::AutoScope ascope(abuilder);
-            auto path_node = abuilder->attachPath((*jshape)["ks"]);
-            auto animators = ascope.release();
-
-            if (!path_node || !animators.empty()) {
-                return false;
-            }
-
-            // Successfully parsed a static path.  Whew.
-            path->addPath(path_node->getPath());
-        }
-    }
-
-    return true;
 }
 
 } // namespace
@@ -165,15 +106,6 @@ bool AnimationBuilder::FontInfo::matches(const char family[], const char style[]
         && 0 == strcmp(fStyle.c_str(), style);
 }
 
-#ifdef SK_NO_FONTS
-void AnimationBuilder::parseFonts(const skjson::ObjectValue* jfonts,
-                                  const skjson::ArrayValue* jchars) {}
-
-sk_sp<sksg::RenderNode> AnimationBuilder::attachTextLayer(const skjson::ObjectValue& jlayer,
-                                                          LayerInfo*) const {
-    return nullptr;
-}
-#else
 void AnimationBuilder::parseFonts(const skjson::ObjectValue* jfonts,
                                   const skjson::ArrayValue* jchars) {
     // Optional array of font entries, referenced (by name) from text layer document nodes. E.g.
@@ -212,7 +144,7 @@ void AnimationBuilder::parseFonts(const skjson::ObjectValue* jfonts,
 
         if (!jname   || !jname->size() ||
             !jfamily || !jfamily->size() ||
-            !jstyle  || !jstyle->size()) {
+            !jstyle) {
             this->log(Logger::Level::kError, jfont, "Invalid font.");
             continue;
         }
@@ -224,13 +156,39 @@ void AnimationBuilder::parseFonts(const skjson::ObjectValue* jfonts,
                       jpath ? SkString(  jpath->begin(),   jpath->size()) : SkString(),
                       ParseDefault((*jfont)["ascent"] , 0.0f),
                       nullptr, // placeholder
-                      SkCustomTypefaceBuilder()
+                      CustomFont::Builder()
                   });
     }
 
+    const auto has_comp_glyphs = [](const skjson::ArrayValue* jchars) {
+        if (!jchars) {
+            return false;
+        }
+
+        for (const skjson::ObjectValue* jchar : *jchars) {
+            if (!jchar) {
+                continue;
+            }
+            if (ParseDefault<int>((*jchar)["t"], 0) == 1) {
+                return true;
+            }
+        }
+
+        return false;
+    };
+
+    // Historically, Skottie has been loading native fonts before embedded glyphs, unless
+    // the opposite is explicitly requested via kPreferEmbeddedFonts.  That's mostly because
+    // embedded glyphs used to be just a path representation of system fonts at export time,
+    // (and thus lower quality).
+    //
+    // OTOH embedded glyph *compositions* must be prioritized, as they are presumably more
+    // expressive than the system font equivalent.
+    const auto prioritize_embedded_fonts =
+            (fFlags & Animation::Builder::kPreferEmbeddedFonts) || has_comp_glyphs(jchars);
+
     // Optional pass.
-    if (jchars && (fFlags & Animation::Builder::kPreferEmbeddedFonts) &&
-        this->resolveEmbeddedTypefaces(*jchars)) {
+    if (jchars && prioritize_embedded_fonts && this->resolveEmbeddedTypefaces(*jchars)) {
         return;
     }
 
@@ -240,8 +198,8 @@ void AnimationBuilder::parseFonts(const skjson::ObjectValue* jfonts,
     }
 
     // Embedded typeface fallback.
-    if (jchars && !(fFlags & Animation::Builder::kPreferEmbeddedFonts) &&
-        this->resolveEmbeddedTypefaces(*jchars)) {
+    if (jchars && !prioritize_embedded_fonts) {
+        this->resolveEmbeddedTypefaces(*jchars);
     }
 }
 
@@ -273,8 +231,8 @@ bool AnimationBuilder::resolveNativeTypefaces() {
         }
 
         if (!finfo->fTypeface) {
-            finfo->fTypeface.reset(fmgr->matchFamilyStyle(finfo->fFamily.c_str(),
-                                                          FontStyle(this, finfo->fStyle.c_str())));
+            finfo->fTypeface = fmgr->matchFamilyStyle(finfo->fFamily.c_str(),
+                                                      FontStyle(this, finfo->fStyle.c_str()));
 
             if (!finfo->fTypeface) {
                 this->log(Logger::Level::kError, nullptr, "Could not create typeface for %s|%s.",
@@ -295,14 +253,9 @@ bool AnimationBuilder::resolveEmbeddedTypefaces(const skjson::ArrayValue& jchars
     // Optional array of glyphs, to be associated with one of the declared fonts. E.g.
     // "chars": [
     //     {
-    //         "ch": "t",
-    //         "data": {
-    //             "shapes": [...]        // shape-layer-like geometry
-    //         },
     //         "fFamily": "Roboto",       // part of the font key
-    //         "size": 50,                // apparently ignored
     //         "style": "Regular",        // part of the font key
-    //         "w": 32.67                 // width/advance (1/100 units)
+    //         ...                        // glyph data
     //    }
     // ]
     FontInfo* current_font = nullptr;
@@ -312,32 +265,13 @@ bool AnimationBuilder::resolveEmbeddedTypefaces(const skjson::ArrayValue& jchars
             continue;
         }
 
-        const skjson::StringValue* jch = (*jchar)["ch"];
-        if (!jch) {
-            continue;
-        }
-
         const skjson::StringValue* jfamily = (*jchar)["fFamily"];
         const skjson::StringValue* jstyle  = (*jchar)["style"]; // "style", not "fStyle"...
 
-        const auto* ch_ptr = jch->begin();
-        const auto  ch_len = jch->size();
-
-        if (!jfamily || !jstyle || (SkUTF::CountUTF8(ch_ptr, ch_len) != 1)) {
+        if (!jfamily || !jstyle) {
             this->log(Logger::Level::kError, jchar, "Invalid glyph.");
             continue;
         }
-
-        const auto uni = SkUTF::NextUTF8(&ch_ptr, ch_ptr + ch_len);
-        SkASSERT(uni != -1);
-        if (!SkTFitsIn<SkGlyphID>(uni)) {
-            // Custom font keys are SkGlyphIDs.  We could implement a remapping scheme if needed,
-            // but for now direct mapping seems to work well enough.
-            this->log(Logger::Level::kError, jchar, "Unsupported glyph ID.");
-            continue;
-        }
-        const auto glyph_id = SkTo<SkGlyphID>(uni);
-
         const auto* family = jfamily->begin();
         const auto* style  = jstyle->begin();
 
@@ -355,39 +289,40 @@ bool AnimationBuilder::resolveEmbeddedTypefaces(const skjson::ArrayValue& jchars
             });
             if (!current_font) {
                 this->log(Logger::Level::kError, nullptr,
-                          "Font not found for codepoint (%d, %s, %s).", uni, family, style);
+                          "Font not found (%s, %s).", family, style);
                 continue;
             }
         }
 
-        SkPath path;
-        if (!parse_glyph_path((*jchar)["data"], this, &path)) {
-            continue;
+        if (!current_font->fCustomFontBuilder.parseGlyph(this, *jchar)) {
+            this->log(Logger::Level::kError, jchar, "Invalid glyph.");
         }
-
-        const auto advance = ParseDefault((*jchar)["w"], 0.0f);
-
-        // Interestingly, glyph paths are defined in a percentage-based space,
-        // regardless of declared glyph size...
-        static constexpr float kPtScale = 0.01f;
-
-        // Normalize the path and advance for 1pt.
-        path.transform(SkMatrix::Scale(kPtScale, kPtScale));
-
-        current_font->fCustomBuilder.setGlyph(glyph_id, advance * kPtScale, path);
     }
 
     // Final pass to commit custom typefaces.
     auto has_unresolved = false;
-    fFonts.foreach([&has_unresolved](const SkString&, FontInfo* finfo) {
+    std::vector<std::unique_ptr<CustomFont>> custom_fonts;
+    fFonts.foreach([&has_unresolved, &custom_fonts](const SkString&, FontInfo* finfo) {
         if (finfo->fTypeface) {
             return; // already resolved
         }
 
-        finfo->fTypeface = finfo->fCustomBuilder.detach();
+        auto font = finfo->fCustomFontBuilder.detach();
+
+        finfo->fTypeface = font->typeface();
+
+        if (font->glyphCompCount() > 0) {
+            custom_fonts.push_back(std::move(font));
+        }
 
         has_unresolved |= !finfo->fTypeface;
     });
+
+    // Stash custom font data for later use.
+    if (!custom_fonts.empty()) {
+        custom_fonts.shrink_to_fit();
+        fCustomGlyphMapper = sk_make_sp<CustomFont::GlyphCompMapper>(std::move(custom_fonts));
+    }
 
     return !has_unresolved;
 }
@@ -397,9 +332,9 @@ sk_sp<sksg::RenderNode> AnimationBuilder::attachTextLayer(const skjson::ObjectVa
     return this->attachDiscardableAdapter<TextAdapter>(jlayer,
                                                        this,
                                                        fLazyFontMgr.getMaybeNull(),
+                                                       fCustomGlyphMapper,
                                                        fLogger);
 }
-#endif
 
 const AnimationBuilder::FontInfo* AnimationBuilder::findFont(const SkString& font_name) const {
     return fFonts.find(font_name);

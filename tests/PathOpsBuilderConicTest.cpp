@@ -5,10 +5,20 @@
  * found in the LICENSE file.
  */
 
+#include "include/core/SkBitmap.h"
+#include "include/core/SkMatrix.h"
+#include "include/core/SkPath.h"
+#include "include/core/SkPathTypes.h"
+#include "include/core/SkRect.h"
 #include "include/core/SkRegion.h"
-#include "include/utils/SkRandom.h"
+#include "include/core/SkScalar.h"
+#include "include/pathops/SkPathOps.h"
+#include "include/private/base/SkFloatBits.h"
+#include "include/utils/SkParsePath.h"
+#include "src/base/SkRandom.h"
 #include "tests/PathOpsExtendedTest.h"
-#include "tests/SubsetPath.h"
+#include "tests/Test.h"
+#include "tools/flags/CommandLineFlags.h"
 
 #define DEBUG_SIMPLIFY_FAILS 0
 
@@ -87,8 +97,6 @@ static void setupOne(skiatest::Reporter* reporter, int col, int row, int rot, in
         r.nextRangeScalar(5, 50) * scale, r.nextRangeScalar(50, 90) * scale);
     testOne(reporter, set);
 }
-
-#include "tools/flags/CommandLineFlags.h"
 
 static DEFINE_int(processOffset, 0,
                     "Offset the test by this value. This permits multiple processes "
@@ -623,20 +631,20 @@ const char ovalsAsQuads[] = "M 146.4187316894531 136.5"
 " Q 146.3946533203125 126.4554138183594 146.4066772460938 129.8022613525391"
 " Q 146.4187316894531 133.1491088867188 146.4187316894531 136.5 Z";
 
-#include "include/utils/SkParsePath.h"
-
 DEF_TEST(PathOpsOvalsAsQuads, reporter) {
-    return; // don't execute this for now
-    SkPath path;
-    SkParsePath::FromSVGString(ovalsAsQuads, &path);
-    Simplify(path, &path);
+    if ((false)) { // don't execute this for now
+        SkPath path;
+        SkParsePath::FromSVGString(ovalsAsQuads, &path);
+        Simplify(path, &path);
+    }
 }
 
 DEF_TEST(PathOps64OvalsAsQuads, reporter) {
-    return; // don't execute this for now
-    SkPath path, result;
-    SkOpBuilder builder;
-    SkParsePath::FromSVGString(ovalsAsQuads, &path);
-    OvalSet set = {{0, 0, 0, 0}, 2, 3, 9, 100, 100};
-    testOvalSet(set, path, &builder, nullptr, &result);
+    if ((false)) { // don't execute this for now
+        SkPath path, result;
+        SkOpBuilder builder;
+        SkParsePath::FromSVGString(ovalsAsQuads, &path);
+        OvalSet set = {{0, 0, 0, 0}, 2, 3, 9, 100, 100};
+        testOvalSet(set, path, &builder, nullptr, &result);
+    }
 }

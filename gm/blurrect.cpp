@@ -29,10 +29,10 @@
 #include "include/core/SkTypes.h"
 #include "include/effects/SkGradientShader.h"
 #include "include/gpu/GrRecordingContext.h"
-#include "include/private/SkTo.h"
+#include "include/private/base/SkTo.h"
 #include "src/core/SkBlurMask.h"
 #include "src/core/SkMask.h"
-#include "src/gpu/GrRecordingContextPriv.h"
+#include "src/gpu/ganesh/GrRecordingContextPriv.h"
 #include "tools/timer/TimeUtils.h"
 
 #include <vector>
@@ -80,7 +80,7 @@ static void draw_donut_skewed(SkCanvas* canvas, const SkRect& r, const SkPaint& 
 }
 
 /*
- * Spits out a dummy gradient to test blur with shader on paint
+ * Spits out an arbitrary gradient to test blur with shader on paint
  */
 static sk_sp<SkShader> make_radial() {
     SkPoint pts[2] = {
@@ -100,7 +100,7 @@ static sk_sp<SkShader> make_radial() {
                 SkScalarInterp(pts[0].fY, pts[1].fY, SkIntToScalar(1)/4));
     return SkGradientShader::MakeTwoPointConical(center1, (pts[1].fX - pts[0].fX) / 7,
                                                  center0, (pts[1].fX - pts[0].fX) / 2,
-                                                 colors, pos, SK_ARRAY_COUNT(colors), tm,
+                                                 colors, pos, std::size(colors), tm,
                                                  0, &scale);
 }
 
@@ -132,9 +132,9 @@ private:
         SkRect  r = { 0, 0, 100, 50 };
         SkScalar scales[] = { SK_Scalar1, 0.6f };
 
-        for (size_t s = 0; s < SK_ARRAY_COUNT(scales); ++s) {
+        for (size_t s = 0; s < std::size(scales); ++s) {
             canvas->save();
-            for (size_t f = 0; f < SK_ARRAY_COUNT(fMaskFilters); ++f) {
+            for (size_t f = 0; f < std::size(fMaskFilters); ++f) {
                 SkPaint paint;
                 paint.setMaskFilter(fMaskFilters[f]);
                 paint.setAlpha(fAlpha);
@@ -148,16 +148,16 @@ private:
 
                 canvas->save();
                 canvas->scale(scales[s], scales[s]);
-                this->drawProcs(canvas, r, paint, false, procs, SK_ARRAY_COUNT(procs));
+                this->drawProcs(canvas, r, paint, false, procs, std::size(procs));
                 canvas->translate(r.width() * 4/3, 0);
-                this->drawProcs(canvas, r, paintWithRadial, false, procs, SK_ARRAY_COUNT(procs));
+                this->drawProcs(canvas, r, paintWithRadial, false, procs, std::size(procs));
                 canvas->translate(r.width() * 4/3, 0);
-                this->drawProcs(canvas, r, paint, true, procs, SK_ARRAY_COUNT(procs));
+                this->drawProcs(canvas, r, paint, true, procs, std::size(procs));
                 canvas->translate(r.width() * 4/3, 0);
-                this->drawProcs(canvas, r, paintWithRadial, true, procs, SK_ARRAY_COUNT(procs));
+                this->drawProcs(canvas, r, paintWithRadial, true, procs, std::size(procs));
                 canvas->restore();
 
-                canvas->translate(0, SK_ARRAY_COUNT(procs) * r.height() * 4/3 * scales[s]);
+                canvas->translate(0, std::size(procs) * r.height() * 4/3 * scales[s]);
             }
             canvas->restore();
             canvas->translate(4 * r.width() * 4/3 * scales[s], 0);
@@ -200,16 +200,16 @@ DEF_SIMPLE_GM(blurrect_gallery, canvas, 1200, 1024) {
 
         int max_height = 0;
 
-        for (size_t i = 0 ; i < SK_ARRAY_COUNT(widths) ; i++) {
+        for (size_t i = 0 ; i < std::size(widths) ; i++) {
             int width = widths[i];
             int height = heights[i];
             SkRect r;
             r.setWH(SkIntToScalar(width), SkIntToScalar(height));
             SkAutoCanvasRestore autoRestore(canvas, true);
 
-            for (size_t j = 0 ; j < SK_ARRAY_COUNT(radii) ; j++) {
+            for (size_t j = 0 ; j < std::size(radii) ; j++) {
                 float radius = radii[j];
-                for (size_t k = 0 ; k < SK_ARRAY_COUNT(styles) ; k++) {
+                for (size_t k = 0 ; k < std::size(styles) ; k++) {
                     SkBlurStyle style = styles[k];
 
                     SkMask mask;
@@ -232,7 +232,7 @@ DEF_SIMPLE_GM(blurrect_gallery, canvas, 1200, 1024) {
                     canvas->save();
                     canvas->translate((SkScalar)cur_x, (SkScalar)cur_y);
                     canvas->translate(-(bm.width() - r.width())/2, -(bm.height()-r.height())/2);
-                    canvas->drawBitmap(bm, 0.f, 0.f, nullptr);
+                    canvas->drawImage(bm.asImage(), 0.f, 0.f);
                     canvas->restore();
 
                     cur_x += bm.width() + fPadding;
@@ -306,7 +306,7 @@ protected:
                                 break;
                         }
                         auto pad = PadForSigma(sigma);
-                        canvas->drawImage(img, -pad, -pad, &paint);
+                        canvas->drawImage(img, -pad, -pad, SkSamplingOptions(), &paint);
 #if 0  // Uncomment to hairline stroke around blurred rect in red on top of the blur result.
        // The rect is defined at integer coords. We inset by 1/2 pixel so our stroke lies on top
        // of the edge pixels.
@@ -373,11 +373,11 @@ private:
                     // the single x-pass value from our precomputed row.
                     float tdiff = numSubpixels * pad - (y * numSubpixels + ys + 0.5f);
                     float bdiff = tdiff + h;
-                    auto w = def_integral_approx(tdiff, bdiff);
+                    auto integral = def_integral_approx(tdiff, bdiff);
                     for (int x = 0; x < maskW; ++x) {
                         for (int xs = 0; xs < numSubpixels; ++xs) {
                             int rowIdx = x * numSubpixels + xs;
-                            accums[x] += w * row[rowIdx];
+                            accums[x] += integral * row[rowIdx];
                         }
                     }
                 }
@@ -386,7 +386,7 @@ private:
                     *bmp.getAddr8(x, y) = SkToU8(sk_float_round2int(255.f * result));
                 }
             }
-            return SkImage::MakeFromBitmap(bmp);
+            return bmp.asImage();
         };
 
         // Number of times to subsample (in both X and Y). If fRecalcMasksForAnimation is true
@@ -470,9 +470,9 @@ private:
                     SkPaint paint;
                     paint.setBlendMode(SkBlendMode::kSrc);
                     paint.setColorFilter(std::move(greenifyCF));
-                    surf->getCanvas()->drawImage(a, 0, 0, &paint);
+                    surf->getCanvas()->drawImage(a, 0, 0, SkSamplingOptions(), &paint);
                     paint.setBlendMode(SkBlendMode::kDifference);
-                    surf->getCanvas()->drawImage(r, 0, 0, &paint);
+                    surf->getCanvas()->drawImage(r, 0, 0, SkSamplingOptions(), &paint);
                     d = surf->makeImageSnapshot();
                 }
             }
@@ -483,10 +483,10 @@ private:
     // related to big blurs are fully visible.
     static int PadForSigma(float sigma) { return sk_float_ceil2int(4 * sigma); }
 
-    static constexpr int kSizes[] = {1, 2, 4, 8, 16, 32};
-    static constexpr float kSigmas[] = {0.5f, 1.2f, 2.3f, 3.9f, 7.4f};
-    static constexpr size_t kNumSizes = SK_ARRAY_COUNT(kSizes);
-    static constexpr size_t kNumSigmas = SK_ARRAY_COUNT(kSigmas);
+    inline static constexpr int kSizes[] = {1, 2, 4, 8, 16, 32};
+    inline static constexpr float kSigmas[] = {0.5f, 1.2f, 2.3f, 3.9f, 7.4f};
+    inline static constexpr size_t kNumSizes = std::size(kSizes);
+    inline static constexpr size_t kNumSigmas = std::size(kSigmas);
 
     sk_sp<SkImage> fReferenceMasks[kNumSigmas][kNumSizes][kNumSizes];
     sk_sp<SkImage> fActualMasks[kNumSigmas][kNumSizes][kNumSizes];
@@ -509,7 +509,7 @@ DEF_GM(return new skiagm::BlurRectCompareGM();)
 DEF_SIMPLE_GM(blur_matrix_rect, canvas, 650, 685) {
     static constexpr auto kRect = SkRect::MakeWH(14, 60);
     static constexpr float kSigmas[] = {0.5f, 1.2f, 2.3f, 3.9f, 7.4f};
-    static constexpr size_t kNumSigmas = SK_ARRAY_COUNT(kSigmas);
+    static constexpr size_t kNumSigmas = std::size(kSigmas);
 
     const SkPoint c = {kRect.centerX(), kRect.centerY()};
 

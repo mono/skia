@@ -4,7 +4,7 @@
 // HASH=2d991a231e49d1de13eeb2ba9b440e01
 REG_FIDDLE(Surface_readPixels_3, 256, 256, false, 0) {
 void draw(SkCanvas* canvas) {
-    sk_sp<SkSurface> surf(SkSurface::MakeRasterN32Premul(64, 64));
+    sk_sp<SkSurface> surf(SkSurfaces::Raster(SkImageInfo::MakeN32Premul(64, 64)));
     auto surfCanvas = surf->getCanvas();
     surfCanvas->clear(SK_ColorGREEN);
     SkPaint paint;
@@ -18,6 +18,6 @@ void draw(SkCanvas* canvas) {
             surf->readPixels(bitmap, x, y);
         }
     }
-    canvas->drawBitmap(bitmap, 0, 0);
+    canvas->drawImage(bitmap.asImage(), 0, 0);
 }
 }  // END FIDDLE

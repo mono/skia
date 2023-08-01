@@ -4,11 +4,17 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
-#include "src/core/SkTSort.h"
+#include "src/pathops/SkPathWriter.h"
+
+#include "include/core/SkTypes.h"
+#include "include/private/base/SkMath.h"
+#include "src/base/SkTSort.h"
 #include "src/pathops/SkOpSegment.h"
 #include "src/pathops/SkOpSpan.h"
-#include "src/pathops/SkPathOpsPoint.h"
-#include "src/pathops/SkPathWriter.h"
+#include "src/pathops/SkPathOpsDebug.h"
+#include "src/pathops/SkPathOpsTypes.h"
+
+using namespace skia_private;
 
 // wrap path to keep track of whether the contour is initialized and non-empty
 SkPathWriter::SkPathWriter(SkPath& path)
@@ -170,7 +176,7 @@ SkPoint SkPathWriter::update(const SkOpPtT* pt) {
 
 bool SkPathWriter::someAssemblyRequired() {
     this->finishContour();
-    return fEndPtTs.count() > 0;
+    return !fEndPtTs.empty();
 }
 
 bool SkPathWriter::changedSlopes(const SkOpPtT* ptT) const {
@@ -206,9 +212,9 @@ void SkPathWriter::assemble() {
     SkDebugf("%s\n", __FUNCTION__);
 #endif
     SkOpPtT const* const* runs = fEndPtTs.begin();  // starts, ends of partial contours
-    int endCount = fEndPtTs.count(); // all starts and ends
+    int endCount = fEndPtTs.size(); // all starts and ends
     SkASSERT(endCount > 0);
-    SkASSERT(endCount == fPartials.count() * 2);
+    SkASSERT(endCount == fPartials.size() * 2);
 #if DEBUG_ASSEMBLE
     for (int index = 0; index < endCount; index += 2) {
         const SkOpPtT* eStart = runs[index];
@@ -222,8 +228,8 @@ void SkPathWriter::assemble() {
     // lengthen any partial contour adjacent to a simple segment
     for (int pIndex = 0; pIndex < endCount; pIndex++) {
         SkOpPtT* opPtT = const_cast<SkOpPtT*>(runs[pIndex]);
-        SkPath dummy;
-        SkPathWriter partWriter(dummy);
+        SkPath p;
+        SkPathWriter partWriter(p);
         do {
             if (!zero_or_one(opPtT->fT)) {
                 break;
@@ -246,8 +252,8 @@ void SkPathWriter::assemble() {
             *runsPtr = opPtT;
         } while (true);
         partWriter.finishContour();
-        const SkTArray<SkPath>& partPartials = partWriter.partials();
-        if (!partPartials.count()) {
+        const TArray<SkPath>& partPartials = partWriter.partials();
+        if (partPartials.empty()) {
             continue;
         }
         // if pIndex is even, reverse and prepend to fPartials; otherwise, append
@@ -271,9 +277,9 @@ void SkPathWriter::assemble() {
         sLink[rIndex] = eLink[rIndex] = SK_MaxS32;
     }
     const int entries = endCount * (endCount - 1) / 2;  // folded triangle
-    SkSTArray<8, double, true> distances(entries);
-    SkSTArray<8, int, true> sortedDist(entries);
-    SkSTArray<8, int, true> distLookup(entries);
+    STArray<8, double, true> distances(entries);
+    STArray<8, int, true> sortedDist(entries);
+    STArray<8, int, true> distLookup(entries);
     int rRow = 0;
     int dIndex = 0;
     for (rIndex = 0; rIndex < endCount - 1; ++rIndex) {
@@ -364,7 +370,6 @@ void SkPathWriter::assemble() {
                        connect by following segments from one to the other, rather than introducing
                        a diagonal to connect the two.
                      */
-                    SkDebugf("");
                 }
             }
             if (forward) {

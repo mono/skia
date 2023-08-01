@@ -49,7 +49,7 @@ fi
 # Use -O0 for larger builds (but generally quicker)
 # Use -Oz for (much slower, but smaller/faster) production builds
 export EMCC_CLOSURE_ARGS="--externs $BASE_DIR/externs.js "
-RELEASE_CONF="-Oz --closure 1 -s EVAL_CTORS=1 -DSK_RELEASE"
+RELEASE_CONF="-Oz --closure 1 -DSK_RELEASE"
 # It is very important for the -DSK_RELEASE/-DSK_DEBUG to match on the libskia.a, otherwise
 # things like SKDEBUGCODE are sometimes compiled in and sometimes not, which can cause headaches
 # like sizeof() mismatching between .cpp files and .h files.
@@ -60,45 +60,36 @@ if [[ $@ == *test* ]]; then
 elif [[ $@ == *debug* ]]; then
   echo "Building a Debug build"
   EXTRA_CFLAGS="\"-DSK_DEBUG\""
-  RELEASE_CONF="-O0 --js-opts 0 -s SAFE_HEAP=1 -s ASSERTIONS=1 -g3 -DPATHKIT_TESTING -DSK_DEBUG"
+  RELEASE_CONF="-O0 --js-opts 0 -sSAFE_HEAP=1 -sASSERTIONS=1 -g3 -DPATHKIT_TESTING -DSK_DEBUG"
 fi
 
-WASM_CONF="-s WASM=1"
+WASM_CONF="-sWASM=1"
 if [[ $@ == *asm.js* ]]; then
   echo "Building with asm.js instead of WASM"
-  WASM_CONF="-s WASM=0 -s ALLOW_MEMORY_GROWTH=1"
+  WASM_CONF="-sWASM=0 -sALLOW_MEMORY_GROWTH=1"
 fi
 
 OUTPUT="-o $BUILD_DIR/pathkit.js"
 
 source $EMSDK/emsdk_env.sh
-EMCC=`which emcc`
 EMCXX=`which em++`
-EMAR=`which emar`
 
-# Turn off exiting while we check for ninja (which may not be on PATH)
-set +e
-NINJA=`which ninja`
-if [[ -z $NINJA ]]; then
-  git clone "https://chromium.googlesource.com/chromium/tools/depot_tools.git" --depth 1 $BUILD_DIR/depot_tools
-  NINJA=$BUILD_DIR/depot_tools/ninja
-fi
-# Re-enable error checking
-set -e
+./bin/fetch-ninja
+NINJA=third_party/ninja/ninja
 
 echo "Compiling bitcode"
 
 ./bin/fetch-gn
+
 ./bin/gn gen ${BUILD_DIR} \
-  --args="cc=\"${EMCC}\" \
-  cxx=\"${EMCXX}\" \
-  ar=\"${EMAR}\" \
-  extra_cflags=[\"-s\", \"WARN_UNALIGNED=1\",
-    \"-s\", \"MAIN_MODULE=1\",
+  --args="skia_emsdk_dir=\"${EMSDK}\" \
+  extra_cflags=[
+    \"-sMAIN_MODULE=1\",
     ${EXTRA_CFLAGS}
   ] \
   is_debug=false \
   is_official_build=true \
+  is_trivial_abi=true \
   is_component_build=false \
   werror=true \
   target_cpu=\"wasm\" "
@@ -114,19 +105,19 @@ ${EMCXX} $RELEASE_CONF -std=c++17 \
 --pre-js $BASE_DIR/helper.js \
 --pre-js $BASE_DIR/chaining.js \
 -fno-rtti -fno-exceptions -DEMSCRIPTEN_HAS_UNBOUND_TYPE_NAMES=0 \
+"-DSK_TRIVIAL_ABI=[[clang::trivial_abi]]" \
 $WASM_CONF \
--s ERROR_ON_UNDEFINED_SYMBOLS=1 \
--s EXPORT_NAME="PathKitInit" \
--s MODULARIZE=1 \
--s NO_EXIT_RUNTIME=1 \
--s NO_FILESYSTEM=1 \
--s STRICT=1 \
+-sERROR_ON_UNDEFINED_SYMBOLS=1 \
+-sEXPORT_NAME="PathKitInit" \
+-sMODULARIZE=1 \
+-sNO_EXIT_RUNTIME=1 \
+-sNO_FILESYSTEM=1 \
+-sDYNAMIC_EXECUTION=0 \
+-sINITIAL_MEMORY=32MB \
+-sALLOW_MEMORY_GROWTH=1 \
+-sSTRICT=1 \
 $OUTPUT \
 $BASE_DIR/pathkit_wasm_bindings.cpp \
 ${BUILD_DIR}/libpathkit.a
 
-if [[ $@ == *serve* ]]; then
-  pushd $BUILD_DIR
-  python serve.py
-fi
 

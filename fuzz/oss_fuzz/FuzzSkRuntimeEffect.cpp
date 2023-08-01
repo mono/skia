@@ -6,54 +6,90 @@
  */
 
 #include "include/core/SkCanvas.h"
+#include "include/core/SkColorFilter.h"
 #include "include/core/SkPaint.h"
+#include "include/core/SkShader.h"
 #include "include/core/SkSurface.h"
+#include "include/effects/SkBlenders.h"
 #include "include/effects/SkRuntimeEffect.h"
-#include "src/core/SkRuntimeEffectPriv.h"
-#include "src/gpu/GrShaderCaps.h"
+#include "src/gpu/ganesh/GrShaderCaps.h"
 
 #include "fuzz/Fuzz.h"
 
-static constexpr size_t kReservedBytes = 256;
 /**
- * The fuzzer will take in the bytes and divide into two parts.
- * original bytes : [... code bytes ... | 256 bytes]
- * The first part is codeBytes, the original bytes minus 256 bytes, which will be treated
- * as sksl code, intending to create SkRuntimeEffect.
- * For the second part, it will first reserve 256 bytes and then allocate bytes with same size
- * as effect->inputSize() to uniformBytes. The uniformBytes is intended to create makeShader().
- * Note that if uniformBytes->size() != effect->inputSize() the shader won't be created.
+ * The fuzzer treats the input bytes as an SkSL program. The requested number of uniforms and
+ * children are automatically synthesized to match the program's needs.
  *
  * We fuzz twice, with two different settings for inlining in the SkSL compiler. By default, the
  * compiler inlines most small to medium functions. This can hide bugs related to function-calling.
- * So we run the fuzzer once with inlining disabled, and again with it enabled (aggressively).
+ * So we run the fuzzer once with inlining disabled, and again with it enabled.
  * This gives us better coverage, and eases the burden on the fuzzer to inject useless noise into
  * functions to suppress inlining.
  */
-static bool FuzzSkRuntimeEffect_Once(sk_sp<SkData> bytes) {
-    if (bytes->size() < kReservedBytes) {
+static bool FuzzSkRuntimeEffect_Once(sk_sp<SkData> codeBytes,
+                                     const SkRuntimeEffect::Options& options) {
+    SkString shaderText{static_cast<const char*>(codeBytes->data()), codeBytes->size()};
+    SkRuntimeEffect::Result result = SkRuntimeEffect::MakeForShader(shaderText, options);
+    SkRuntimeEffect* effect = result.effect.get();
+    if (!effect) {
         return false;
     }
-    sk_sp<SkData> codeBytes = SkData::MakeSubset(bytes.get(), 0, bytes->size() - kReservedBytes);
 
-    SkRuntimeEffect::EffectResult tuple = SkRuntimeEffect::Make(
-        SkString((const char*) codeBytes->data(), codeBytes->size())
-    );
-    SkRuntimeEffect* effect = std::get<0>(tuple).get();
+    // Create storage for our uniforms.
+    sk_sp<SkData> uniformBytes = SkData::MakeZeroInitialized(effect->uniformSize());
+    void* uniformData = uniformBytes->writable_data();
 
-    if (!effect || effect->uniformSize() > kReservedBytes) { // if there is not enough uniform bytes
-        return false;
+    for (const SkRuntimeEffect::Uniform& u : effect->uniforms()) {
+        // We treat scalars, vectors, matrices and arrays the same. We just figure out how many
+        // uniform slots need to be filled, and write consecutive numbers into those slots.
+        static_assert(sizeof(int) == 4 && sizeof(float) == 4);
+        size_t numFields = u.sizeInBytes() / 4;
+
+        if (u.type == SkRuntimeEffect::Uniform::Type::kInt ||
+            u.type == SkRuntimeEffect::Uniform::Type::kInt2 ||
+            u.type == SkRuntimeEffect::Uniform::Type::kInt3 ||
+            u.type == SkRuntimeEffect::Uniform::Type::kInt4) {
+            int intVal = 0;
+            while (numFields--) {
+                // Assign increasing integer values to each slot (0, 1, 2, ...).
+                *static_cast<int*>(uniformData) = intVal++;
+                uniformData = static_cast<int*>(uniformData) + 1;
+            }
+        } else {
+            float floatVal = 0.0f;
+            while (numFields--) {
+                // Assign increasing float values to each slot (0.0, 1.0, 2.0, ...).
+                *static_cast<float*>(uniformData) = floatVal++;
+                uniformData = static_cast<float*>(uniformData) + 1;
+            }
+        }
     }
-    sk_sp<SkData> uniformBytes =
-            SkData::MakeSubset(bytes.get(), bytes->size() - kReservedBytes, effect->uniformSize());
-    auto shader = effect->makeShader(uniformBytes, nullptr, 0, nullptr, false);
+
+    // Create valid children for any requested child effects.
+    std::vector<SkRuntimeEffect::ChildPtr> children;
+    children.reserve(effect->children().size());
+    for (const SkRuntimeEffect::Child& c : effect->children()) {
+        switch (c.type) {
+            case SkRuntimeEffect::ChildType::kShader:
+                children.push_back(SkShaders::Color(SK_ColorRED));
+                break;
+            case SkRuntimeEffect::ChildType::kColorFilter:
+                children.push_back(SkColorFilters::Blend(SK_ColorBLUE, SkBlendMode::kModulate));
+                break;
+            case SkRuntimeEffect::ChildType::kBlender:
+                children.push_back(SkBlenders::Arithmetic(0.50f, 0.25f, 0.10f, 0.05f, false));
+                break;
+        }
+    }
+
+    sk_sp<SkShader> shader = effect->makeShader(uniformBytes, SkSpan(children));
     if (!shader) {
         return false;
     }
     SkPaint paint;
     paint.setShader(std::move(shader));
 
-    sk_sp<SkSurface> s = SkSurface::MakeRasterN32Premul(128, 128);
+    sk_sp<SkSurface> s = SkSurfaces::Raster(SkImageInfo::MakeN32Premul(4, 4));
     if (!s) {
         return false;
     }
@@ -63,13 +99,14 @@ static bool FuzzSkRuntimeEffect_Once(sk_sp<SkData> bytes) {
 }
 
 bool FuzzSkRuntimeEffect(sk_sp<SkData> bytes) {
-    // Inline nothing
-    SkRuntimeEffect_SetInlineThreshold(0);
-    bool result = FuzzSkRuntimeEffect_Once(bytes);
+    // Test once with optimization disabled...
+    SkRuntimeEffect::Options options;
+    options.forceUnoptimized = true;
+    bool result = FuzzSkRuntimeEffect_Once(bytes, options);
 
-    // Inline everything
-    SkRuntimeEffect_SetInlineThreshold(std::numeric_limits<int>::max());
-    result = FuzzSkRuntimeEffect_Once(bytes) || result;
+    // ... and then with optimization enabled.
+    options.forceUnoptimized = false;
+    result = FuzzSkRuntimeEffect_Once(bytes, options) || result;
 
     return result;
 }

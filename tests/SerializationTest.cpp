@@ -5,30 +5,66 @@
  * found in the LICENSE file.
  */
 
+#include "include/core/SkAnnotation.h"
+#include "include/core/SkBitmap.h"
+#include "include/core/SkBlendMode.h"
 #include "include/core/SkCanvas.h"
+#include "include/core/SkColor.h"
+#include "include/core/SkColorFilter.h"
+#include "include/core/SkData.h"
+#include "include/core/SkFont.h"
+#include "include/core/SkFontArguments.h"
 #include "include/core/SkFontMetrics.h"
 #include "include/core/SkFontMgr.h"
+#include "include/core/SkFontStyle.h"
 #include "include/core/SkImage.h"
-#include "include/core/SkMallocPixelRef.h"
+#include "include/core/SkImageFilter.h"
+#include "include/core/SkImageInfo.h"
+#include "include/core/SkMatrix.h"
+#include "include/core/SkPaint.h"
+#include "include/core/SkPath.h"
+#include "include/core/SkPathEffect.h"
+#include "include/core/SkPicture.h"
 #include "include/core/SkPictureRecorder.h"
+#include "include/core/SkPoint.h"
+#include "include/core/SkPoint3.h"
+#include "include/core/SkRRect.h"
+#include "include/core/SkRect.h"
+#include "include/core/SkRefCnt.h"
+#include "include/core/SkRegion.h"
+#include "include/core/SkSamplingOptions.h"
+#include "include/core/SkScalar.h"
+#include "include/core/SkSerialProcs.h"
+#include "include/core/SkStream.h"
+#include "include/core/SkString.h"
+#include "include/core/SkSurface.h"
 #include "include/core/SkTextBlob.h"
 #include "include/core/SkTypeface.h"
+#include "include/core/SkTypes.h"
 #include "include/effects/SkDashPathEffect.h"
 #include "include/effects/SkImageFilters.h"
-#include "include/effects/SkTableColorFilter.h"
-#include "include/private/SkFixed.h"
-#include "include/private/SkTemplates.h"
+#include "include/private/base/SkAlign.h"
+#include "include/private/base/SkMalloc.h"
+#include "include/private/base/SkTemplates.h"
+#include "src/base/SkAutoMalloc.h"
 #include "src/core/SkAnnotationKeys.h"
-#include "src/core/SkAutoMalloc.h"
-#include "src/core/SkMatrixPriv.h"
-#include "src/core/SkOSFile.h"
+#include "src/core/SkColorFilterBase.h"
+#include "src/core/SkImageFilter_Base.h"
 #include "src/core/SkPicturePriv.h"
 #include "src/core/SkReadBuffer.h"
 #include "src/core/SkWriteBuffer.h"
-#include "src/shaders/SkShaderBase.h"
 #include "tests/Test.h"
 #include "tools/Resources.h"
 #include "tools/ToolUtils.h"
+
+#include <algorithm>
+#include <array>
+#include <cstdint>
+#include <cstring>
+#include <memory>
+#include <utility>
+
+using namespace skia_private;
 
 static const uint32_t kArraySize = 64;
 static const int kBitmapSize = 256;
@@ -271,9 +307,9 @@ static void TestBitmapSerialization(const SkBitmap& validBitmap,
                                     const SkBitmap& invalidBitmap,
                                     bool shouldSucceed,
                                     skiatest::Reporter* reporter) {
-    sk_sp<SkImage> validImage(SkImage::MakeFromBitmap(validBitmap));
+    sk_sp<SkImage> validImage(validBitmap.asImage());
     sk_sp<SkImageFilter> validBitmapSource(SkImageFilters::Image(std::move(validImage)));
-    sk_sp<SkImage> invalidImage(SkImage::MakeFromBitmap(invalidBitmap));
+    sk_sp<SkImage> invalidImage(invalidBitmap.asImage());
     sk_sp<SkImageFilter> invalidBitmapSource(SkImageFilters::Image(std::move(invalidImage)));
     sk_sp<SkImageFilter> xfermodeImageFilter(
         SkImageFilters::Blend(SkBlendMode::kSrcOver,
@@ -281,8 +317,8 @@ static void TestBitmapSerialization(const SkBitmap& validBitmap,
                               std::move(validBitmapSource), nullptr));
 
     sk_sp<SkImageFilter> deserializedFilter(
-        TestFlattenableSerialization<SkImageFilter>(
-            xfermodeImageFilter.get(), shouldSucceed, reporter));
+        TestFlattenableSerialization<SkImageFilter_Base>(
+            (SkImageFilter_Base*)xfermodeImageFilter.get(), shouldSucceed, reporter));
 
     // Try to render a small bitmap using the invalid deserialized filter
     // to make sure we don't crash while trying to render it
@@ -294,7 +330,7 @@ static void TestBitmapSerialization(const SkBitmap& validBitmap,
         SkPaint paint;
         paint.setImageFilter(deserializedFilter);
         canvas.clipRect(SkRect::MakeXYWH(0, 0, SkIntToScalar(24), SkIntToScalar(24)));
-        canvas.drawBitmap(bitmap, 0, 0, &paint);
+        canvas.drawImage(bitmap.asImage(), 0, 0, SkSamplingOptions(), &paint);
     }
 }
 
@@ -303,7 +339,7 @@ static void TestColorFilterSerialization(skiatest::Reporter* reporter) {
     for (int i = 0; i < 256; ++i) {
         table[i] = (i * 41) % 256;
     }
-    auto filter = SkTableColorFilter::Make(table);
+    auto filter = SkColorFilters::Table(table);
     sk_sp<SkColorFilter> copy(
         TestFlattenableSerialization(as_CFB(filter.get()), true, reporter));
 }
@@ -354,7 +390,7 @@ static sk_sp<SkTypeface> deserialize_typeface_proc(const void* data, size_t leng
     }
     memcpy(&stream, data, sizeof(stream));
 
-    SkFontID id;
+    SkTypefaceID id;
     if (!stream->read(&id, sizeof(id))) {
         return nullptr;
     }
@@ -405,7 +441,7 @@ static sk_sp<SkTypeface> makeDistortableWithNonDefaultAxes(skiatest::Reporter* r
         { SkSetFourByteTag('w','g','h','t'), SK_ScalarSqrt2 },
     };
     SkFontArguments params;
-    params.setVariationDesignPosition({position, SK_ARRAY_COUNT(position)});
+    params.setVariationDesignPosition({position, std::size(position)});
 
     sk_sp<SkFontMgr> fm = SkFontMgr::RefDefault();
 
@@ -448,6 +484,59 @@ static void TestPictureTypefaceSerialization(const SkSerialProcs* serial_procs,
     }
 }
 
+SkString DumpTypeface(const SkTypeface& typeface) {
+    int index;
+    std::unique_ptr<SkStreamAsset> typefaceStream = typeface.openStream(&index);
+    if (!typefaceStream) {
+        return SkString("No Stream");
+    }
+    size_t length = typefaceStream->getLength();
+
+    SkString s;
+    s.appendf("Index: %d\n", index);
+    s.appendf("Length: %zu\n", length);
+    return s;
+}
+SkString DumpFontMetrics(const SkFontMetrics& metrics) {
+    SkString m("Flags:\n");
+
+    if (metrics.fFlags == 0) {
+        m += "  No flags\n";
+    } else {
+        if (metrics.fFlags & SkFontMetrics::kUnderlineThicknessIsValid_Flag) {
+            m += "  UnderlineThicknessIsValid\n";
+        }
+        if (metrics.fFlags & SkFontMetrics::kUnderlinePositionIsValid_Flag) {
+            m += "  kUnderlinePositionIsValid\n";
+        }
+        if (metrics.fFlags & SkFontMetrics::kStrikeoutThicknessIsValid_Flag) {
+            m += "  kStrikeoutThicknessIsValid\n";
+        }
+        if (metrics.fFlags & SkFontMetrics::kStrikeoutPositionIsValid_Flag) {
+            m += "  kStrikeoutPositionIsValid\n";
+        }
+        if (metrics.fFlags & SkFontMetrics::kBoundsInvalid_Flag) {
+            m += "  kBoundsInvalid\n";
+        }
+    }
+
+    m.appendf("Top: %f\n", metrics.fTop);
+    m.appendf("Ascent: %f\n", metrics.fAscent);
+    m.appendf("Descent: %f\n", metrics.fDescent);
+    m.appendf("Bottom: %f\n", metrics.fBottom);
+    m.appendf("Leading: %f\n", metrics.fLeading);
+    m.appendf("AvgCharWidth: %f\n", metrics.fAvgCharWidth);
+    m.appendf("MaxCharWidth: %f\n", metrics.fMaxCharWidth);
+    m.appendf("XMin: %f\n", metrics.fXMin);
+    m.appendf("XMax: %f\n", metrics.fXMax);
+    m.appendf("XHeight: %f\n", metrics.fXHeight);
+    m.appendf("CapHeight: %f\n", metrics.fCapHeight);
+    m.appendf("UnderlineThickness: %f\n", metrics.fUnderlineThickness);
+    m.appendf("UnderlinePosition: %f\n", metrics.fUnderlinePosition);
+    m.appendf("StrikeoutThickness: %f\n", metrics.fStrikeoutThickness);
+    m.appendf("StrikeoutPosition: %f\n", metrics.fStrikeoutPosition);
+    return m;
+}
 static void TestTypefaceSerialization(skiatest::Reporter* reporter, sk_sp<SkTypeface> typeface) {
     SkDynamicMemoryWStream typefaceWStream;
     typeface->serialize(&typefaceWStream);
@@ -456,14 +545,29 @@ static void TestTypefaceSerialization(skiatest::Reporter* reporter, sk_sp<SkType
     sk_sp<SkTypeface> cloneTypeface = SkTypeface::MakeDeserialize(typefaceStream.get());
     SkASSERT(cloneTypeface);
 
+    SkString name, cloneName;
+    typeface->getFamilyName(&name);
+    cloneTypeface->getFamilyName(&cloneName);
+
+    REPORTER_ASSERT(reporter, typeface->countGlyphs() == cloneTypeface->countGlyphs(),
+        "Typeface: \"%s\" CloneTypeface: \"%s\"", name.c_str(), cloneName.c_str());
+    REPORTER_ASSERT(reporter, typeface->fontStyle() == cloneTypeface->fontStyle(),
+        "Typeface: \"%s\" CloneTypeface: \"%s\"", name.c_str(), cloneName.c_str());
+
     SkFont font(typeface, 12);
     SkFont clone(cloneTypeface, 12);
     SkFontMetrics fontMetrics, cloneMetrics;
     font.getMetrics(&fontMetrics);
     clone.getMetrics(&cloneMetrics);
-    REPORTER_ASSERT(reporter, fontMetrics == cloneMetrics);
-    REPORTER_ASSERT(reporter, typeface->countGlyphs() == cloneTypeface->countGlyphs());
-    REPORTER_ASSERT(reporter, typeface->fontStyle() == cloneTypeface->fontStyle());
+    REPORTER_ASSERT(reporter, fontMetrics == cloneMetrics,
+        "Typeface: \"%s\"\n-Metrics---\n%s-Data---\n%s\n\n"
+        "CloneTypeface: \"%s\"\n-Metrics---\n%s-Data---\n%s",
+        name.c_str(),
+        DumpFontMetrics(fontMetrics).c_str(),
+        DumpTypeface(*typeface).c_str(),
+        cloneName.c_str(),
+        DumpFontMetrics(cloneMetrics).c_str(),
+        DumpTypeface(*cloneTypeface).c_str());
 }
 DEF_TEST(Serialization_Typeface, reporter) {
     SkFont font;
@@ -475,7 +579,8 @@ static void setup_bitmap_for_canvas(SkBitmap* bitmap) {
     bitmap->allocN32Pixels(kBitmapSize, kBitmapSize);
 }
 
-static void make_checkerboard_bitmap(SkBitmap& bitmap) {
+static sk_sp<SkImage> make_checkerboard_image() {
+    SkBitmap bitmap;
     setup_bitmap_for_canvas(&bitmap);
 
     SkCanvas canvas(bitmap);
@@ -497,20 +602,17 @@ static void make_checkerboard_bitmap(SkBitmap& bitmap) {
             canvas.restore();
         }
     }
+    return bitmap.asImage();
 }
 
 static void draw_something(SkCanvas* canvas) {
-    SkPaint paint;
-    SkBitmap bitmap;
-    make_checkerboard_bitmap(bitmap);
-
     canvas->save();
     canvas->scale(0.5f, 0.5f);
-    canvas->drawBitmap(bitmap, 0, 0, nullptr);
+    canvas->drawImage(make_checkerboard_image(), 0, 0);
     canvas->restore();
 
+    SkPaint paint;
     paint.setAntiAlias(true);
-
     paint.setColor(SK_ColorRED);
     canvas->drawCircle(SkIntToScalar(kBitmapSize/2), SkIntToScalar(kBitmapSize/2), SkIntToScalar(kBitmapSize/3), paint);
     paint.setColor(SK_ColorBLACK);
@@ -521,8 +623,8 @@ static void draw_something(SkCanvas* canvas) {
 }
 
 static sk_sp<SkImage> render(const SkPicture& p) {
-    auto surf = SkSurface::MakeRasterN32Premul(SkScalarRoundToInt(p.cullRect().width()),
-                                               SkScalarRoundToInt(p.cullRect().height()));
+    auto surf = SkSurfaces::Raster(SkImageInfo::MakeN32Premul(
+            SkScalarRoundToInt(p.cullRect().width()), SkScalarRoundToInt(p.cullRect().height())));
     if (!surf) {
         return nullptr; // bounds are empty?
     }
@@ -695,7 +797,7 @@ DEF_TEST(Serialization, reporter) {
         SkBinaryWriteBuffer writer;
         SkPicturePriv::Flatten(pict, writer);
         size_t size = writer.bytesWritten();
-        SkAutoTMalloc<unsigned char> data(size);
+        AutoTMalloc<unsigned char> data(size);
         writer.writeToMemory(static_cast<void*>(data.get()));
 
         // Deserialize picture
@@ -720,7 +822,6 @@ DEF_TEST(Serialization, reporter) {
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
-#include "include/core/SkAnnotation.h"
 
 static sk_sp<SkPicture> copy_picture_via_serialization(SkPicture* src) {
     SkDynamicMemoryWStream wstream;
@@ -796,7 +897,7 @@ DEF_TEST(Annotations, reporter) {
     sk_sp<SkPicture> pict0(recorder.finishRecordingAsPicture());
     sk_sp<SkPicture> pict1(copy_picture_via_serialization(pict0.get()));
 
-    TestAnnotationCanvas canvas(reporter, recs, SK_ARRAY_COUNT(recs));
+    TestAnnotationCanvas canvas(reporter, recs, std::size(recs));
     canvas.drawPicture(pict1);
 }
 
@@ -840,7 +941,7 @@ DEF_TEST(WriteBuffer_external_memory_textblob, reporter) {
     std::fill(run.glyphs, run.glyphs + glyph_count, 0);
     auto blob = builder.make();
     SkSerialProcs procs;
-    SkAutoTMalloc<uint8_t> storage;
+    AutoTMalloc<uint8_t> storage;
     size_t blob_size = 0u;
     size_t storage_size = 0u;
 
@@ -859,7 +960,7 @@ DEF_TEST(WriteBuffer_external_memory_flattenable, reporter) {
     auto path_effect = SkDashPathEffect::Make(intervals, 2, 0);
     size_t path_size = SkAlign4(path_effect->serialize()->size());
     REPORTER_ASSERT(reporter, path_size > 4u);
-    SkAutoTMalloc<uint8_t> storage;
+    AutoTMalloc<uint8_t> storage;
 
     size_t storage_size = path_size - 4;
     storage.realloc(storage_size);

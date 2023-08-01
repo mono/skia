@@ -6,15 +6,28 @@
  */
 
 #include "include/codec/SkAndroidCodec.h"
+#include "include/codec/SkCodec.h"
 #include "include/core/SkBitmap.h"
-#include "include/core/SkCanvas.h"
+#include "include/core/SkColor.h"
+#include "include/core/SkColorType.h"
 #include "include/core/SkData.h"
 #include "include/core/SkImage.h"
+#include "include/core/SkImageInfo.h"
+#include "include/core/SkRect.h"
+#include "include/core/SkRefCnt.h"
 #include "include/core/SkStream.h"
+#include "include/core/SkString.h"
 #include "include/core/SkTypes.h"
+#include "include/core/SkUnPreMultiply.h"
 #include "tests/CodecPriv.h"
 #include "tests/Test.h"
 #include "tools/Resources.h"
+
+#include <cstring>
+#include <initializer_list>
+#include <memory>
+#include <utility>
+#include <vector>
 
 static unsigned char gGIFData[] = {
   0x47, 0x49, 0x46, 0x38, 0x37, 0x61, 0x03, 0x00, 0x03, 0x00, 0xe3, 0x08,
@@ -188,47 +201,6 @@ DEF_TEST(Gif, reporter) {
     test_gif_data_no_colormap(reporter, static_cast<void *>(gGIFDataNoColormap),
                               sizeof(gGIFDataNoColormap));
 
-#ifdef SK_HAS_WUFFS_LIBRARY
-    // We are transitioning from an old GIF implementation to a new (Wuffs) GIF
-    // implementation.
-    //
-    // This test (without SK_HAS_WUFFS_LIBRARY) is overly specific to the old
-    // implementation. It claims that, for invalid (truncated) input, we can
-    // still 'decode' all of the pixels because no matter what palette index
-    // each pixel is, they're all equivalently transparent. It's not obvious
-    // that this off-spec behavior is worth preserving. Are real world users
-    // decoding truncated all-transparent GIF images??
-    //
-    // Once the transition is complete, we can remove the #ifdef and delete the
-    // #else branch.
-#else
-    // Since there is no color map, we do not even need to parse the image data
-    // to know that we should draw transparent. Truncate the file before the
-    // data. This should still succeed.
-    test_gif_data_no_colormap(reporter, static_cast<void *>(gGIFDataNoColormap), 31);
-
-    // Likewise, incremental decoding should succeed here.
-    {
-        sk_sp<SkData> data = SkData::MakeWithoutCopy(gGIFDataNoColormap, 31);
-        std::unique_ptr<SkCodec> codec(SkCodec::MakeFromData(data));
-        REPORTER_ASSERT(reporter, codec);
-        if (codec) {
-            auto info = codec->getInfo().makeColorType(kN32_SkColorType);
-            SkBitmap bm;
-            bm.allocPixels(info);
-            REPORTER_ASSERT(reporter, SkCodec::kSuccess == codec->startIncrementalDecode(
-                    info, bm.getPixels(), bm.rowBytes()));
-            REPORTER_ASSERT(reporter, SkCodec::kSuccess == codec->incrementalDecode());
-            REPORTER_ASSERT(reporter, bm.width() == 1);
-            REPORTER_ASSERT(reporter, bm.height() == 1);
-            REPORTER_ASSERT(reporter, !(bm.empty()));
-            if (!(bm.empty())) {
-                REPORTER_ASSERT(reporter, bm.getColor(0, 0) == 0x00000000);
-            }
-        }
-    }
-#endif
-
     // test short Gif.  80 is missing a few bytes.
     test_gif_data_short(reporter, static_cast<void *>(gGIFData), 80);
     // "libgif warning [DGifGetLine]"
@@ -377,26 +349,16 @@ DEF_TEST(Codec_GifTruncated2, r) {
             return;
         }
 
-#ifdef SK_HAS_WUFFS_LIBRARY
-        // We are transitioning from an old GIF implementation to a new (Wuffs)
-        // GIF implementation.
-        //
         // The input is truncated in the Image Descriptor, before the local
         // color table, and before (21) or after (22, 23) the first frame's
         // XYWH (left / top / width / height) can be decoded. A detailed
         // breakdown of those 23 bytes is in a comment above this function.
         //
-        // With the old implementation, this test claimed that "no frame is
-        // complete enough that it has its metadata". In terms of the
-        // underlying file format, this claim is true for truncating at 21
-        // bytes, but not true for 22 or 23.
-        //
-        // At 21 bytes, both the old and new implementation's MakeFromStream
-        // factory method returns a nullptr SkCodec*, because creating a
-        // SkCodec requires knowing the image width and height (as its
-        // constructor takes an SkEncodedInfo argument), and specifically for
-        // GIF, decoding the image width and height requires decoding the first
-        // frame's XYWH, as per
+        // At 21 bytes, the MakeFromStream factory method returns a nullptr
+        // SkCodec*, because creating a SkCodec requires knowing the image width
+        // and height (as its constructor takes an SkEncodedInfo argument), and
+        // specifically for GIF, decoding the image width and height requires
+        // decoding the first frame's XYWH, as per
         // https://raw.githubusercontent.com/google/wuffs/master/test/data/artificial/gif-frame-out-of-bounds.gif.make-artificial.txt
         //
         // At 22 or 23 bytes, the first frame is complete enough that we can
@@ -406,26 +368,10 @@ DEF_TEST(Codec_GifTruncated2, r) {
         // palette entries, as we do know the frame rectangle and that every
         // palette entry is fully opaque, due to the lack of a Graphic Control
         // Extension before the Image Descriptor.
-        //
-        // The new implementation correctly reports that the first frame's
-        // metadata is complete enough. The old implementation does not.
-        //
-        // Once the transition is complete, we can remove the #ifdef and delete
-        // the #else code.
         REPORTER_ASSERT(r, codec->getFrameCount() == 1);
-#else
-        // The old implementation claimed:
-        //
-        // Although we correctly created a codec, no frame is
-        // complete enough that it has its metadata. Returning 0
-        // ensures that Chromium will not try to create a frame
-        // too early.
-        REPORTER_ASSERT(r, codec->getFrameCount() == 0);
-#endif
     }
 }
 
-#ifdef SK_HAS_WUFFS_LIBRARY
 // This tests that, after truncating the input, the pixels are still
 // zero-initialized. If you comment out the SkSampler::Fill call in
 // SkWuffsCodec::onStartIncrementalDecode, the test could still pass (in a
@@ -437,7 +383,7 @@ DEF_TEST(Codec_GifTruncated3, r) {
     }
 
     data = SkData::MakeSubset(data.get(), 0, 23);
-    sk_sp<SkImage> image(SkImage::MakeFromEncoded(data));
+    sk_sp<SkImage> image(SkImages::DeferredFromEncodedData(data));
 
     if (!image) {
         ERRORF(r, "Missing image");
@@ -454,9 +400,11 @@ DEF_TEST(Codec_GifTruncated3, r) {
     }
 
     bm.eraseColor(SK_ColorTRANSPARENT);
-
-    SkCanvas canvas(bm);
-    canvas.drawImage(image, 0, 0, nullptr);
+    REPORTER_ASSERT(r, image->readPixels(nullptr,
+                                         bm.info(),
+                                         bm.getPixels(),
+                                         200 * 4,
+                                         0, 0));
 
     for (int i = 0; i < image->width();  ++i)
     for (int j = 0; j < image->height(); ++j) {
@@ -466,7 +414,6 @@ DEF_TEST(Codec_GifTruncated3, r) {
         }
     }
 }
-#endif
 
 DEF_TEST(Codec_gif_out_of_palette, r) {
     if (GetResourcePath().isEmpty()) {
@@ -545,20 +492,6 @@ DEF_TEST(Codec_AnimatedTransparentGif, r) {
             options.fFrameIndex = i;
             options.fPriorFrame = (i > 0) ? (i - 1) : SkCodec::kNoFrame;
             auto result = codec->getPixels(bm.pixmap(), &options);
-#ifdef SK_HAS_WUFFS_LIBRARY
-            // No-op. Wuffs' GIF decoder supports animated 565.
-#else
-            if (use565 && i > 0) {
-                // Unsupported. Quoting libgifcodec/SkLibGifCodec.cpp:
-                //
-                // In theory, we might be able to support this, but it's not
-                // clear that it is necessary (Chromium does not decode to 565,
-                // and Android does not decode frames beyond the first).
-                REPORTER_ASSERT(r, result != SkCodec::kSuccess,
-                                "Unexpected success to decode frame %i", i);
-                continue;
-            }
-#endif
             REPORTER_ASSERT(r, result == SkCodec::kSuccess, "Failed to decode frame %i", i);
 
             // Per above: the first frame is full of various red pixels.
@@ -599,5 +532,48 @@ DEF_TEST(Codec_AnimatedTransparentGif, r) {
                 }
             }
         }
+    }
+}
+
+// This test verifies that a GIF frame outside the image dimensions is handled
+// as desired:
+// - The image reports a size of 0 x 0, but the first frame is 100 x 90. The
+// image (or "canvas") is expanded to fit the first frame. The first frame is red.
+// - The second frame is a green 75 x 75 rectangle, reporting its x-offset and
+// y-offset to be 105, placing it off screen. The decoder interprets this as no
+// change from the first frame.
+DEF_TEST(Codec_xOffsetTooBig, r) {
+    const char* path = "images/xOffsetTooBig.gif";
+    auto data = GetResourceAsData(path);
+    if (!data) {
+        ERRORF(r, "failed to find %s", path);
+        return;
+    }
+
+    auto codec = SkCodec::MakeFromData(std::move(data));
+    if (!codec) {
+        ERRORF(r, "Could not create codec from %s", path);
+        return;
+    }
+
+    REPORTER_ASSERT(r, codec->getFrameCount() == 2);
+
+    auto info = codec->getInfo();
+    REPORTER_ASSERT(r, info.width() == 100 && info.height() == 90);
+
+    SkBitmap bm;
+    bm.allocPixels(info);
+    for (int i = 0; i < 2; i++) {
+        SkCodec::FrameInfo frameInfo;
+        REPORTER_ASSERT(r, codec->getFrameInfo(i, &frameInfo));
+
+        SkIRect expectedRect = i == 0 ? SkIRect{0, 0, 100, 90} : SkIRect{100, 90, 100, 90};
+        REPORTER_ASSERT(r, expectedRect == frameInfo.fFrameRect);
+
+        SkCodec::Options options;
+        options.fFrameIndex = i;
+        REPORTER_ASSERT(r, SkCodec::kSuccess == codec->getPixels(bm.pixmap(), &options));
+
+        REPORTER_ASSERT(r, bm.getColor(0, 0) == SK_ColorRED);
     }
 }

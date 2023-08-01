@@ -7,24 +7,26 @@
 
 #include "include/core/SkM44.h"
 #include "include/core/SkMatrix.h"
-#include "include/private/SkVx.h"
+#include "src/base/SkVx.h"
 
-typedef skvx::Vec<4, float> sk4f;
+#include "src/core/SkMatrixInvert.h"
+#include "src/core/SkMatrixPriv.h"
+#include "src/core/SkPathPriv.h"
 
 bool SkM44::operator==(const SkM44& other) const {
     if (this == &other) {
         return true;
     }
 
-    sk4f a0 = sk4f::Load(fMat +  0);
-    sk4f a1 = sk4f::Load(fMat +  4);
-    sk4f a2 = sk4f::Load(fMat +  8);
-    sk4f a3 = sk4f::Load(fMat + 12);
+    auto a0 = skvx::float4::Load(fMat +  0);
+    auto a1 = skvx::float4::Load(fMat +  4);
+    auto a2 = skvx::float4::Load(fMat +  8);
+    auto a3 = skvx::float4::Load(fMat + 12);
 
-    sk4f b0 = sk4f::Load(other.fMat +  0);
-    sk4f b1 = sk4f::Load(other.fMat +  4);
-    sk4f b2 = sk4f::Load(other.fMat +  8);
-    sk4f b3 = sk4f::Load(other.fMat + 12);
+    auto b0 = skvx::float4::Load(other.fMat +  0);
+    auto b1 = skvx::float4::Load(other.fMat +  4);
+    auto b2 = skvx::float4::Load(other.fMat +  8);
+    auto b3 = skvx::float4::Load(other.fMat + 12);
 
     auto eq = (a0 == b0) & (a1 == b1) & (a2 == b2) & (a3 == b3);
     return (eq[0] & eq[1] & eq[2] & eq[3]) == ~0;
@@ -42,19 +44,19 @@ void SkM44::getRowMajor(SkScalar v[]) const {
 }
 
 SkM44& SkM44::setConcat(const SkM44& a, const SkM44& b) {
-    sk4f c0 = sk4f::Load(a.fMat +  0);
-    sk4f c1 = sk4f::Load(a.fMat +  4);
-    sk4f c2 = sk4f::Load(a.fMat +  8);
-    sk4f c3 = sk4f::Load(a.fMat + 12);
+    auto c0 = skvx::float4::Load(a.fMat +  0);
+    auto c1 = skvx::float4::Load(a.fMat +  4);
+    auto c2 = skvx::float4::Load(a.fMat +  8);
+    auto c3 = skvx::float4::Load(a.fMat + 12);
 
-    auto compute = [&](const sk4f& r) {
+    auto compute = [&](const skvx::float4 r) {
         return c0*r[0] + (c1*r[1] + (c2*r[2] + c3*r[3]));
     };
 
-    sk4f m0 = compute(sk4f::Load(b.fMat +  0));
-    sk4f m1 = compute(sk4f::Load(b.fMat +  4));
-    sk4f m2 = compute(sk4f::Load(b.fMat +  8));
-    sk4f m3 = compute(sk4f::Load(b.fMat + 12));
+    auto m0 = compute(skvx::float4::Load(b.fMat +  0));
+    auto m1 = compute(skvx::float4::Load(b.fMat +  4));
+    auto m2 = compute(skvx::float4::Load(b.fMat +  8));
+    auto m3 = compute(skvx::float4::Load(b.fMat + 12));
 
     m0.store(fMat +  0);
     m1.store(fMat +  4);
@@ -64,17 +66,17 @@ SkM44& SkM44::setConcat(const SkM44& a, const SkM44& b) {
 }
 
 SkM44& SkM44::preConcat(const SkMatrix& b) {
-    sk4f c0 = sk4f::Load(fMat +  0);
-    sk4f c1 = sk4f::Load(fMat +  4);
-    sk4f c3 = sk4f::Load(fMat + 12);
+    auto c0 = skvx::float4::Load(fMat +  0);
+    auto c1 = skvx::float4::Load(fMat +  4);
+    auto c3 = skvx::float4::Load(fMat + 12);
 
     auto compute = [&](float r0, float r1, float r3) {
         return (c0*r0 + (c1*r1 + c3*r3));
     };
 
-    sk4f m0 = compute(b[0], b[3], b[6]);
-    sk4f m1 = compute(b[1], b[4], b[7]);
-    sk4f m3 = compute(b[2], b[5], b[8]);
+    auto m0 = compute(b[0], b[3], b[6]);
+    auto m1 = compute(b[1], b[4], b[7]);
+    auto m3 = compute(b[2], b[5], b[8]);
 
     m0.store(fMat +  0);
     m1.store(fMat +  4);
@@ -83,10 +85,10 @@ SkM44& SkM44::preConcat(const SkMatrix& b) {
 }
 
 SkM44& SkM44::preTranslate(SkScalar x, SkScalar y, SkScalar z) {
-    sk4f c0 = sk4f::Load(fMat +  0);
-    sk4f c1 = sk4f::Load(fMat +  4);
-    sk4f c2 = sk4f::Load(fMat +  8);
-    sk4f c3 = sk4f::Load(fMat + 12);
+    auto c0 = skvx::float4::Load(fMat +  0);
+    auto c1 = skvx::float4::Load(fMat +  4);
+    auto c2 = skvx::float4::Load(fMat +  8);
+    auto c3 = skvx::float4::Load(fMat + 12);
 
     // only need to update the last column
     (c0*x + (c1*y + (c2*z + c3))).store(fMat + 12);
@@ -94,32 +96,129 @@ SkM44& SkM44::preTranslate(SkScalar x, SkScalar y, SkScalar z) {
 }
 
 SkM44& SkM44::postTranslate(SkScalar x, SkScalar y, SkScalar z) {
-    sk4f t = { x, y, z, 0 };
-    (t * fMat[ 3] + sk4f::Load(fMat +  0)).store(fMat +  0);
-    (t * fMat[ 7] + sk4f::Load(fMat +  4)).store(fMat +  4);
-    (t * fMat[11] + sk4f::Load(fMat +  8)).store(fMat +  8);
-    (t * fMat[15] + sk4f::Load(fMat + 12)).store(fMat + 12);
+    skvx::float4 t = { x, y, z, 0 };
+    (t * fMat[ 3] + skvx::float4::Load(fMat +  0)).store(fMat +  0);
+    (t * fMat[ 7] + skvx::float4::Load(fMat +  4)).store(fMat +  4);
+    (t * fMat[11] + skvx::float4::Load(fMat +  8)).store(fMat +  8);
+    (t * fMat[15] + skvx::float4::Load(fMat + 12)).store(fMat + 12);
     return *this;
 }
 
 SkM44& SkM44::preScale(SkScalar x, SkScalar y) {
-    sk4f c0 = sk4f::Load(fMat +  0);
-    sk4f c1 = sk4f::Load(fMat +  4);
+    auto c0 = skvx::float4::Load(fMat +  0);
+    auto c1 = skvx::float4::Load(fMat +  4);
 
     (c0 * x).store(fMat + 0);
     (c1 * y).store(fMat + 4);
     return *this;
 }
 
+SkM44& SkM44::preScale(SkScalar x, SkScalar y, SkScalar z) {
+    auto c0 = skvx::float4::Load(fMat +  0);
+    auto c1 = skvx::float4::Load(fMat +  4);
+    auto c2 = skvx::float4::Load(fMat +  8);
+
+    (c0 * x).store(fMat + 0);
+    (c1 * y).store(fMat + 4);
+    (c2 * z).store(fMat + 8);
+    return *this;
+}
+
 SkV4 SkM44::map(float x, float y, float z, float w) const {
-    sk4f c0 = sk4f::Load(fMat +  0);
-    sk4f c1 = sk4f::Load(fMat +  4);
-    sk4f c2 = sk4f::Load(fMat +  8);
-    sk4f c3 = sk4f::Load(fMat + 12);
+    auto c0 = skvx::float4::Load(fMat +  0);
+    auto c1 = skvx::float4::Load(fMat +  4);
+    auto c2 = skvx::float4::Load(fMat +  8);
+    auto c3 = skvx::float4::Load(fMat + 12);
 
     SkV4 v;
     (c0*x + (c1*y + (c2*z + c3*w))).store(&v.x);
     return v;
+}
+
+static SkRect map_rect_affine(const SkRect& src, const float mat[16]) {
+    // When multiplied against vectors of the form <x,y,x,y>, 'flip' allows a single min()
+    // to compute both the min and "negated" max between the xy coordinates. Once finished, another
+    // multiplication produces the original max.
+    const skvx::float4 flip{1.f, 1.f, -1.f, -1.f};
+
+    // Since z = 0 and it's assumed ther's no perspective, only load the upper 2x2 and (tx,ty) in c3
+    auto c0 = skvx::shuffle<0,1,0,1>(skvx::float2::Load(mat + 0)) * flip;
+    auto c1 = skvx::shuffle<0,1,0,1>(skvx::float2::Load(mat + 4)) * flip;
+    auto c3 = skvx::shuffle<0,1,0,1>(skvx::float2::Load(mat + 12));
+
+    // Compute the min and max of the four transformed corners pre-translation; then translate once
+    // at the end.
+    auto minMax = c3 + flip * min(min(c0 * src.fLeft  + c1 * src.fTop,
+                                      c0 * src.fRight + c1 * src.fTop),
+                                  min(c0 * src.fLeft  + c1 * src.fBottom,
+                                      c0 * src.fRight + c1 * src.fBottom));
+
+    // minMax holds (min x, min y, max x, max y) so can be copied into an SkRect expecting l,t,r,b
+    SkRect r;
+    minMax.store(&r);
+    return r;
+}
+
+static SkRect map_rect_perspective(const SkRect& src, const float mat[16]) {
+    // Like map_rect_affine, z = 0 so we can skip the 3rd column, but we do need to compute w's
+    // for each corner of the src rect.
+    auto c0 = skvx::float4::Load(mat + 0);
+    auto c1 = skvx::float4::Load(mat + 4);
+    auto c3 = skvx::float4::Load(mat + 12);
+
+    // Unlike map_rect_affine, we do not defer the 4th column since we may need to homogeneous
+    // coordinates to clip against the w=0 plane
+    auto tl = c0 * src.fLeft  + c1 * src.fTop    + c3;
+    auto tr = c0 * src.fRight + c1 * src.fTop    + c3;
+    auto bl = c0 * src.fLeft  + c1 * src.fBottom + c3;
+    auto br = c0 * src.fRight + c1 * src.fBottom + c3;
+
+    // After clipping to w>0 and projecting to 2d, 'project' employs the same negation trick to
+    // compute min and max at the same time.
+    const skvx::float4 flip{1.f, 1.f, -1.f, -1.f};
+    auto project = [&flip](const skvx::float4& p0, const skvx::float4& p1, const skvx::float4& p2) {
+        float w0 = p0[3];
+        if (w0 >= SkPathPriv::kW0PlaneDistance) {
+            // Unclipped, just divide by w
+            return flip * skvx::shuffle<0,1,0,1>(p0) / w0;
+        } else {
+            auto clip = [&](const skvx::float4& p) {
+                float w = p[3];
+                if (w >= SkPathPriv::kW0PlaneDistance) {
+                    float t = (SkPathPriv::kW0PlaneDistance - w0) / (w - w0);
+                    auto c = (t * skvx::shuffle<0,1>(p) + (1.f - t) * skvx::shuffle<0,1>(p0)) /
+                                  SkPathPriv::kW0PlaneDistance;
+
+                    return flip * skvx::shuffle<0,1,0,1>(c);
+                } else {
+                    return skvx::float4(SK_ScalarInfinity);
+                }
+            };
+            // Clip both edges leaving p0, and return the min/max of the two clipped points
+            // (since clip returns infinity when both p0 and 2nd vertex have w<0, it'll
+            // automatically be ignored).
+            return min(clip(p1), clip(p2));
+        }
+    };
+
+    // Project all 4 corners, and pass in their adjacent vertices for clipping if it has w < 0,
+    // then accumulate the min and max xy's.
+    auto minMax = flip * min(min(project(tl, tr, bl), project(tr, br, tl)),
+                             min(project(br, bl, tr), project(bl, tl, br)));
+
+    SkRect r;
+    minMax.store(&r);
+    return r;
+}
+
+SkRect SkMatrixPriv::MapRect(const SkM44& m, const SkRect& src) {
+    const bool hasPerspective =
+            m.fMat[3] != 0 || m.fMat[7] != 0 || m.fMat[11] != 0 || m.fMat[15] != 1;
+    if (hasPerspective) {
+        return map_rect_perspective(src, m.fMat);
+    } else {
+        return map_rect_affine(src, m.fMat);
+    }
 }
 
 void SkM44::normalizePerspective() {
@@ -129,10 +228,10 @@ void SkM44::normalizePerspective() {
     // and therefore faster (e.g. clients can forward-difference calculations).
     if (fMat[15] != 1 && fMat[15] != 0 && fMat[3] == 0 && fMat[7] == 0 && fMat[11] == 0) {
         double inv = 1.0 / fMat[15];
-        (sk4f::Load(fMat +  0) * inv).store(fMat +  0);
-        (sk4f::Load(fMat +  4) * inv).store(fMat +  4);
-        (sk4f::Load(fMat +  8) * inv).store(fMat +  8);
-        (sk4f::Load(fMat + 12) * inv).store(fMat + 12);
+        (skvx::float4::Load(fMat +  0) * inv).store(fMat +  0);
+        (skvx::float4::Load(fMat +  4) * inv).store(fMat +  4);
+        (skvx::float4::Load(fMat +  8) * inv).store(fMat +  8);
+        (skvx::float4::Load(fMat + 12) * inv).store(fMat + 12);
         fMat[15] = 1.0f;
     }
 }
@@ -144,76 +243,8 @@ void SkM44::normalizePerspective() {
     promoting our SkScalar values to double (if needed).
  */
 bool SkM44::invert(SkM44* inverse) const {
-    double a00 = fMat[0];
-    double a01 = fMat[1];
-    double a02 = fMat[2];
-    double a03 = fMat[3];
-    double a10 = fMat[4];
-    double a11 = fMat[5];
-    double a12 = fMat[6];
-    double a13 = fMat[7];
-    double a20 = fMat[8];
-    double a21 = fMat[9];
-    double a22 = fMat[10];
-    double a23 = fMat[11];
-    double a30 = fMat[12];
-    double a31 = fMat[13];
-    double a32 = fMat[14];
-    double a33 = fMat[15];
-
-    double b00 = a00 * a11 - a01 * a10;
-    double b01 = a00 * a12 - a02 * a10;
-    double b02 = a00 * a13 - a03 * a10;
-    double b03 = a01 * a12 - a02 * a11;
-    double b04 = a01 * a13 - a03 * a11;
-    double b05 = a02 * a13 - a03 * a12;
-    double b06 = a20 * a31 - a21 * a30;
-    double b07 = a20 * a32 - a22 * a30;
-    double b08 = a20 * a33 - a23 * a30;
-    double b09 = a21 * a32 - a22 * a31;
-    double b10 = a21 * a33 - a23 * a31;
-    double b11 = a22 * a33 - a23 * a32;
-
-    // Calculate the determinant
-    double det = b00 * b11 - b01 * b10 + b02 * b09 + b03 * b08 - b04 * b07 + b05 * b06;
-
-    double invdet = sk_ieee_double_divide(1.0, det);
-    // If det is zero, we want to return false. However, we also want to return false if 1/det
-    // overflows to infinity (i.e. det is denormalized). All of this is subsumed by our final check
-    // at the bottom (that all 16 scalar matrix entries are finite).
-
-    b00 *= invdet;
-    b01 *= invdet;
-    b02 *= invdet;
-    b03 *= invdet;
-    b04 *= invdet;
-    b05 *= invdet;
-    b06 *= invdet;
-    b07 *= invdet;
-    b08 *= invdet;
-    b09 *= invdet;
-    b10 *= invdet;
-    b11 *= invdet;
-
-    SkScalar tmp[16] = {
-        SkDoubleToScalar(a11 * b11 - a12 * b10 + a13 * b09),
-        SkDoubleToScalar(a02 * b10 - a01 * b11 - a03 * b09),
-        SkDoubleToScalar(a31 * b05 - a32 * b04 + a33 * b03),
-        SkDoubleToScalar(a22 * b04 - a21 * b05 - a23 * b03),
-        SkDoubleToScalar(a12 * b08 - a10 * b11 - a13 * b07),
-        SkDoubleToScalar(a00 * b11 - a02 * b08 + a03 * b07),
-        SkDoubleToScalar(a32 * b02 - a30 * b05 - a33 * b01),
-        SkDoubleToScalar(a20 * b05 - a22 * b02 + a23 * b01),
-        SkDoubleToScalar(a10 * b10 - a11 * b08 + a13 * b06),
-        SkDoubleToScalar(a01 * b08 - a00 * b10 - a03 * b06),
-        SkDoubleToScalar(a30 * b04 - a31 * b02 + a33 * b00),
-        SkDoubleToScalar(a21 * b02 - a20 * b04 - a23 * b00),
-        SkDoubleToScalar(a11 * b07 - a10 * b09 - a12 * b06),
-        SkDoubleToScalar(a00 * b09 - a01 * b07 + a02 * b06),
-        SkDoubleToScalar(a31 * b01 - a30 * b03 - a32 * b00),
-        SkDoubleToScalar(a20 * b03 - a21 * b01 + a22 * b00),
-    };
-    if (!SkScalarsAreFinite(tmp, 16)) {
+    SkScalar tmp[16];
+    if (SkInvert4x4Matrix(fMat, tmp) == 0.0f) {
         return false;
     }
     memcpy(inverse->fMat, tmp, sizeof(tmp));
@@ -256,22 +287,46 @@ SkM44& SkM44::setRotate(SkV3 axis, SkScalar radians) {
 ///////////////////////////////////////////////////////////////////////////////
 
 void SkM44::dump() const {
-    static const char* format = "|%g %g %g %g|\n"
-                                "|%g %g %g %g|\n"
-                                "|%g %g %g %g|\n"
-                                "|%g %g %g %g|\n";
-    SkDebugf(format,
+    SkDebugf("|%g %g %g %g|\n"
+             "|%g %g %g %g|\n"
+             "|%g %g %g %g|\n"
+             "|%g %g %g %g|\n",
              fMat[0], fMat[4], fMat[8],  fMat[12],
              fMat[1], fMat[5], fMat[9],  fMat[13],
              fMat[2], fMat[6], fMat[10], fMat[14],
              fMat[3], fMat[7], fMat[11], fMat[15]);
 }
 
-static SkV3 normalize(SkV3 v) { return v * (1.0f / v.length()); }
+///////////////////////////////////////////////////////////////////////////////
+
+SkM44 SkM44::RectToRect(const SkRect& src, const SkRect& dst) {
+        if (src.isEmpty()) {
+        return SkM44();
+    } else if (dst.isEmpty()) {
+        return SkM44::Scale(0.f, 0.f, 0.f);
+    }
+
+    float sx = dst.width()  / src.width();
+    float sy = dst.height() / src.height();
+
+    float tx = dst.fLeft - sx * src.fLeft;
+    float ty = dst.fTop  - sy * src.fTop;
+
+    return SkM44{sx,  0.f, 0.f, tx,
+                 0.f, sy,  0.f, ty,
+                 0.f, 0.f, 1.f, 0.f,
+                 0.f, 0.f, 0.f, 1.f};
+}
+
+static SkV3 normalize(SkV3 v) {
+    const auto vlen = v.length();
+
+    return SkScalarNearlyZero(vlen) ? v : v * (1.0f / vlen);
+}
 
 static SkV4 v4(SkV3 v, SkScalar w) { return {v.x, v.y, v.z, w}; }
 
-SkM44 Sk3LookAt(const SkV3& eye, const SkV3& center, const SkV3& up) {
+SkM44 SkM44::LookAt(const SkV3& eye, const SkV3& center, const SkV3& up) {
     SkV3 f = normalize(center - eye);
     SkV3 u = normalize(up);
     SkV3 s = normalize(f.cross(u));
@@ -283,12 +338,13 @@ SkM44 Sk3LookAt(const SkV3& eye, const SkV3& center, const SkV3& up) {
     return m;
 }
 
-SkM44 Sk3Perspective(float near, float far, float angle) {
+SkM44 SkM44::Perspective(float near, float far, float angle) {
     SkASSERT(far > near);
 
     float denomInv = sk_ieee_float_divide(1, far - near);
     float halfAngle = angle * 0.5f;
-    float cot = sk_float_cos(halfAngle) / sk_float_sin(halfAngle);
+    SkASSERT(halfAngle != 0);
+    float cot = sk_ieee_float_divide(1, sk_float_tan(halfAngle));
 
     SkM44 m;
     m.setRC(0, 0, cot);

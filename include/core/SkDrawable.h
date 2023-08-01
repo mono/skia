@@ -9,14 +9,22 @@
 #define SkDrawable_DEFINED
 
 #include "include/core/SkFlattenable.h"
-#include "include/core/SkImageInfo.h"
+#include "include/core/SkRefCnt.h"
 #include "include/core/SkScalar.h"
+#include "include/private/base/SkAPI.h"
+
+#include <cstddef>
+#include <cstdint>
+#include <memory>
 
 class GrBackendDrawableInfo;
 class SkCanvas;
 class SkMatrix;
 class SkPicture;
-enum class GrBackendApi : unsigned;
+enum class GrBackendApi : unsigned int;
+struct SkDeserialProcs;
+struct SkIRect;
+struct SkImageInfo;
 struct SkRect;
 
 /**
@@ -85,7 +93,10 @@ public:
         return this->onSnapGpuDrawHandler(backendApi, matrix, clipBounds, bufferInfo);
     }
 
-    SkPicture* newPictureSnapshot();
+    /**
+     * Returns an SkPicture with the contents of this SkDrawable.
+     */
+    sk_sp<SkPicture> makePictureSnapshot();
 
     /**
      *  Return a unique value for this instance. If two calls to this return the same value,
@@ -102,6 +113,12 @@ public:
      *  must return a bounds that is always valid for all possible states.
      */
     SkRect getBounds();
+
+    /**
+     *  Return approximately how many bytes would be freed if this drawable is destroyed.
+     *  The base implementation returns 0 to indicate that this is unknown.
+     */
+    size_t approximateBytesUsed();
 
     /**
      *  Calling this invalidates the previous generation ID, and causes a new one to be computed
@@ -132,6 +149,7 @@ protected:
     SkDrawable();
 
     virtual SkRect onGetBounds() = 0;
+    virtual size_t onApproximateBytesUsed();
     virtual void onDraw(SkCanvas*) = 0;
 
     virtual std::unique_ptr<GpuDrawHandler> onSnapGpuDrawHandler(GrBackendApi, const SkMatrix&,
@@ -151,7 +169,7 @@ protected:
      *  of their drawable. Note: this picture must draw the same as what would be drawn from
      *  onDraw().
      */
-    virtual SkPicture* onNewPictureSnapshot();
+    virtual sk_sp<SkPicture> onMakePictureSnapshot();
 
 private:
     int32_t fGenerationID;

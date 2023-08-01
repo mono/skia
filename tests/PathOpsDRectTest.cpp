@@ -4,12 +4,16 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
+#include "include/core/SkTypes.h"
 #include "src/pathops/SkPathOpsCubic.h"
-#include "src/pathops/SkPathOpsLine.h"
+#include "src/pathops/SkPathOpsPoint.h"
 #include "src/pathops/SkPathOpsQuad.h"
 #include "src/pathops/SkPathOpsRect.h"
 #include "tests/PathOpsTestCommon.h"
 #include "tests/Test.h"
+
+#include <array>
+#include <cstddef>
 
 static const QuadPts quadTests[] = {
     {{{1, 1}, {2, 1}, {0, 2}}},
@@ -25,8 +29,8 @@ static const CubicPts cubicTests[] = {
     {{{3, 0}, {2, 1}, {3, 2}, {1, 1}}},
 };
 
-static const size_t quadTests_count = SK_ARRAY_COUNT(quadTests);
-static const size_t cubicTests_count = SK_ARRAY_COUNT(cubicTests);
+static const size_t quadTests_count = std::size(quadTests);
+static const size_t cubicTests_count = std::size(cubicTests);
 
 static void setRawBounds(const SkDQuad& quad, SkDRect* rect) {
     rect->set(quad[0]);

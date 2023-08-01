@@ -11,14 +11,16 @@
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkScalar.h"
 #include "include/core/SkTypes.h"
-#include "include/private/SkMalloc.h"
-#include "include/private/SkTArray.h"
-#include "include/private/SkTo.h"
+#include "include/private/base/SkTo.h"
+#include "include/private/base/SkTypeTraits.h"
 
-#include <stdarg.h>
-#include <string.h>
 #include <atomic>
+#include <cstdarg>
+#include <cstddef>
+#include <cstdint>
 #include <string>
+#include <string_view>
+#include <type_traits>
 
 /*  Some helper functions for C strings */
 static inline bool SkStrStartsWith(const char string[], const char prefixStr[]) {
@@ -122,10 +124,12 @@ public:
                 SkString(const SkString&);
                 SkString(SkString&&);
     explicit    SkString(const std::string&);
+    explicit    SkString(std::string_view);
                 ~SkString();
 
     bool        isEmpty() const { return 0 == fRec->fLength; }
     size_t      size() const { return (size_t) fRec->fLength; }
+    const char* data() const { return fRec->data(); }
     const char* c_str() const { return fRec->data(); }
     char operator[](size_t n) const { return this->c_str()[n]; }
 
@@ -171,8 +175,8 @@ public:
     SkString& operator=(SkString&&);
     SkString& operator=(const char text[]);
 
-    char* writable_str();
-    char& operator[](size_t n) { return this->writable_str()[n]; }
+    char* data();
+    char& operator[](size_t n) { return this->data()[n]; }
 
     void reset();
     /** String contents are preserved on resize. (For destructive resize, `set(nullptr, length)`.)
@@ -182,10 +186,12 @@ public:
     void set(const SkString& src) { *this = src; }
     void set(const char text[]);
     void set(const char text[], size_t len);
+    void set(std::string_view str) { this->set(str.data(), str.size()); }
 
-    void insert(size_t offset, const SkString& src) { this->insert(offset, src.c_str(), src.size()); }
     void insert(size_t offset, const char text[]);
     void insert(size_t offset, const char text[], size_t len);
+    void insert(size_t offset, const SkString& str) { this->insert(offset, str.c_str(), str.size()); }
+    void insert(size_t offset, std::string_view str) { this->insert(offset, str.data(), str.size()); }
     void insertUnichar(size_t offset, SkUnichar);
     void insertS32(size_t offset, int32_t value);
     void insertS64(size_t offset, int64_t value, int minDigits = 0);
@@ -194,9 +200,10 @@ public:
     void insertHex(size_t offset, uint32_t value, int minDigits = 0);
     void insertScalar(size_t offset, SkScalar);
 
-    void append(const SkString& str) { this->insert((size_t)-1, str); }
     void append(const char text[]) { this->insert((size_t)-1, text); }
     void append(const char text[], size_t len) { this->insert((size_t)-1, text, len); }
+    void append(const SkString& str) { this->insert((size_t)-1, str.c_str(), str.size()); }
+    void append(std::string_view str) { this->insert((size_t)-1, str.data(), str.size()); }
     void appendUnichar(SkUnichar uni) { this->insertUnichar((size_t)-1, uni); }
     void appendS32(int32_t value) { this->insertS32((size_t)-1, value); }
     void appendS64(int64_t value, int minDigits = 0) { this->insertS64((size_t)-1, value, minDigits); }
@@ -205,9 +212,10 @@ public:
     void appendHex(uint32_t value, int minDigits = 0) { this->insertHex((size_t)-1, value, minDigits); }
     void appendScalar(SkScalar value) { this->insertScalar((size_t)-1, value); }
 
-    void prepend(const SkString& str) { this->insert(0, str); }
     void prepend(const char text[]) { this->insert(0, text); }
     void prepend(const char text[], size_t len) { this->insert(0, text, len); }
+    void prepend(const SkString& str) { this->insert(0, str.c_str(), str.size()); }
+    void prepend(std::string_view str) { this->insert(0, str.data(), str.size()); }
     void prependUnichar(SkUnichar uni) { this->insertUnichar(0, uni); }
     void prependS32(int32_t value) { this->insertS32(0, value); }
     void prependS64(int32_t value, int minDigits = 0) { this->insertS64(0, value, minDigits); }
@@ -215,11 +223,11 @@ public:
     void prependScalar(SkScalar value) { this->insertScalar((size_t)-1, value); }
 
     void printf(const char format[], ...) SK_PRINTF_LIKE(2, 3);
-    void printVAList(const char format[], va_list);
+    void printVAList(const char format[], va_list) SK_PRINTF_LIKE(2, 0);
     void appendf(const char format[], ...) SK_PRINTF_LIKE(2, 3);
-    void appendVAList(const char format[], va_list);
+    void appendVAList(const char format[], va_list) SK_PRINTF_LIKE(2, 0);
     void prependf(const char format[], ...) SK_PRINTF_LIKE(2, 3);
-    void prependVAList(const char format[], va_list);
+    void prependVAList(const char format[], va_list) SK_PRINTF_LIKE(2, 0);
 
     void remove(size_t offset, size_t length);
 
@@ -233,30 +241,39 @@ public:
      */
     void swap(SkString& other);
 
+    using sk_is_trivially_relocatable = std::true_type;
+
 private:
     struct Rec {
     public:
         constexpr Rec(uint32_t len, int32_t refCnt) : fLength(len), fRefCnt(refCnt) {}
         static sk_sp<Rec> Make(const char text[], size_t len);
-        char* data() { return &fBeginningOfData; }
-        const char* data() const { return &fBeginningOfData; }
+        char* data() { return fBeginningOfData; }
+        const char* data() const { return fBeginningOfData; }
         void ref() const;
         void unref() const;
         bool unique() const;
-
+#ifdef SK_DEBUG
+        int32_t getRefCnt() const;
+#endif
         uint32_t fLength; // logically size_t, but we want it to stay 32 bits
-        mutable std::atomic<int32_t> fRefCnt;
-        char fBeginningOfData = '\0';
 
     private:
+        mutable std::atomic<int32_t> fRefCnt;
+        char fBeginningOfData[1] = {'\0'};
+
         // Ensure the unsized delete is called.
         void operator delete(void* p) { ::operator delete(p); }
     };
     sk_sp<Rec> fRec;
 
+    static_assert(::sk_is_trivially_relocatable<decltype(fRec)>::value);
+
 #ifdef SK_DEBUG
+          SkString& validate();
     const SkString& validate() const;
 #else
+          SkString& validate()       { return *this; }
     const SkString& validate() const { return *this; }
 #endif
 
@@ -271,24 +288,6 @@ static inline SkString SkStringPrintf() { return SkString(); }
 
 static inline void swap(SkString& a, SkString& b) {
     a.swap(b);
-}
-
-enum SkStrSplitMode {
-    // Strictly return all results. If the input is ",," and the separator is ',' this will return
-    // an array of three empty strings.
-    kStrict_SkStrSplitMode,
-
-    // Only nonempty results will be added to the results. Multiple separators will be
-    // coalesced. Separators at the beginning and end of the input will be ignored.  If the input is
-    // ",," and the separator is ',', this will return an empty vector.
-    kCoalesce_SkStrSplitMode
-};
-
-// Split str on any characters in delimiters into out.  (Think, strtok with a sane API.)
-void SkStrSplit(const char* str, const char* delimiters, SkStrSplitMode splitMode,
-                SkTArray<SkString>* out);
-inline void SkStrSplit(const char* str, const char* delimiters, SkTArray<SkString>* out) {
-    SkStrSplit(str, delimiters, kCoalesce_SkStrSplitMode, out);
 }
 
 #endif

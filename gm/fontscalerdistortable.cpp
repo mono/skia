@@ -21,6 +21,8 @@
 #include "include/core/SkTypeface.h"
 #include "include/core/SkTypes.h"
 #include "tools/Resources.h"
+#include "tools/SkMetaData.h"
+#include "tools/ToolUtils.h"
 
 #include <string.h>
 #include <memory>
@@ -44,43 +46,81 @@ private:
         return SkISize::Make(550, 700);
     }
 
-    static constexpr int rows = 2;
-    static constexpr int cols = 5;
-    sk_sp<SkTypeface> typeface[rows][cols];
-    void onOnceBeforeDraw() override {
-        sk_sp<SkFontMgr> fontMgr(SkFontMgr::RefDefault());
+    bool fDirty = true;
+    bool fOverride = false;
 
+    ToolUtils::VariationSliders fVariationSliders;
+
+    bool onGetControls(SkMetaData* controls) override {
+        controls->setBool("Override", fOverride);
+        return fVariationSliders.writeControls(controls);
+    }
+
+    void onSetControls(const SkMetaData& controls) override {
+        bool oldOverride = fOverride;
+        controls.findBool("Override", &fOverride);
+        if (fOverride != oldOverride) {
+            fDirty = true;
+        }
+
+        return fVariationSliders.readControls(controls, &fDirty);
+    }
+
+    struct Info {
+        sk_sp<SkTypeface> distortable;
+        SkFourByteTag axisTag;
+        SkScalar axisMin;
+        SkScalar axisMax;
+    } fInfo;
+
+    void onOnceBeforeDraw() override {
         constexpr SkFourByteTag wght = SkSetFourByteTag('w','g','h','t');
         //constexpr SkFourByteTag wdth = SkSetFourByteTag('w','d','t','h');
-        struct {
-            sk_sp<SkTypeface> distortable;
-            SkFourByteTag axisTag;
-            SkScalar axisMin;
-            SkScalar axisMax;
-        } info = {
+        fInfo = {
             MakeResourceAsTypeface("fonts/Distortable.ttf"), wght, 0.5f, 2.0f
             //SkTypeface::MakeFromFile("/Library/Fonts/Skia.ttf"), wght, 0.48f, 3.2f
             //SkTypeface::MakeFromName("Skia", SkFontStyle()), wdth, 0.62f, 1.3f
             //SkTypeface::MakeFromFile("/System/Library/Fonts/SFNS.ttf"), wght, 100.0f, 900.0f
             //SkTypeface::MakeFromName(".SF NS", SkFontStyle()), wght, 100.0f, 900.0f
         };
-        std::unique_ptr<SkStreamAsset> distortableStream( info.distortable
-                                                        ? info.distortable->openStream(nullptr)
+
+        if (fInfo.distortable) {
+            fVariationSliders = ToolUtils::VariationSliders(fInfo.distortable.get());
+        }
+    }
+
+    inline static constexpr int rows = 2;
+    inline static constexpr int cols = 5;
+    sk_sp<SkTypeface> typeface[rows][cols];
+
+    void updateTypefaces() {
+        sk_sp<SkFontMgr> fontMgr(SkFontMgr::RefDefault());
+
+        std::unique_ptr<SkStreamAsset> distortableStream( fInfo.distortable
+                                                        ? fInfo.distortable->openStream(nullptr)
                                                         : nullptr);
         for (int row = 0; row < rows; ++row) {
             for (int col = 0; col < cols; ++col) {
-                SkScalar styleValue = SkScalarInterp(info.axisMin, info.axisMax,
-                                                     SkScalar(row * cols + col) / (rows * cols));
-                SkFontArguments::VariationPosition::Coordinate coordinates[] = {
-                    {info.axisTag, styleValue},
-                    {info.axisTag, styleValue}
-                };
-                SkFontArguments::VariationPosition position = {
-                    coordinates, SK_ARRAY_COUNT(coordinates)
-                };
+                using Coordinate = SkFontArguments::VariationPosition::Coordinate;
+                SkFontArguments::VariationPosition position;
+                Coordinate coordinates[2];
+
+                if (fOverride) {
+                    SkSpan<const Coordinate> user_coordinates = fVariationSliders.getCoordinates();
+                    position = {user_coordinates.data(), static_cast<int>(user_coordinates.size())};
+
+                } else {
+                    const int coordinateCount = 2;
+                    SkScalar styleValue = SkScalarInterp(fInfo.axisMin, fInfo.axisMax,
+                                                         SkScalar(row*cols + col) / (rows*cols));
+                    coordinates[0] = {fInfo.axisTag, styleValue};
+                    coordinates[1] = {fInfo.axisTag, styleValue};
+                    position = {coordinates, static_cast<int>(coordinateCount)};
+                }
+
                 typeface[row][col] = [&]() -> sk_sp<SkTypeface> {
-                    if (row == 0 && info.distortable) {
-                        return info.distortable->makeClone(
+                    if (row == 0 && fInfo.distortable) {
+                        return fInfo.distortable->makeClone(
                                 SkFontArguments().setVariationDesignPosition(position));
                     }
                     if (distortableStream) {
@@ -91,9 +131,14 @@ private:
                 }();
             }
         }
+        fDirty = false;
     }
 
     DrawResult onDraw(SkCanvas* canvas, SkString* errorMsg) override {
+        if (fDirty) {
+            this->updateTypefaces();
+        }
+
         SkPaint paint;
         paint.setAntiAlias(true);
         SkFont font;

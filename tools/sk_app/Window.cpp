@@ -20,7 +20,7 @@ Window::~Window() {}
 void Window::detach() { fWindowContext = nullptr; }
 
 void Window::visitLayers(std::function<void(Layer*)> visitor) {
-    for (int i = 0; i < fLayers.count(); ++i) {
+    for (int i = 0; i < fLayers.size(); ++i) {
         if (fLayers[i]->fActive) {
             visitor(fLayers[i]);
         }
@@ -28,7 +28,7 @@ void Window::visitLayers(std::function<void(Layer*)> visitor) {
 }
 
 bool Window::signalLayers(std::function<bool(Layer*)> visitor) {
-    for (int i = fLayers.count() - 1; i >= 0; --i) {
+    for (int i = fLayers.size() - 1; i >= 0; --i) {
         if (fLayers[i]->fActive && visitor(fLayers[i])) {
             return true;
         }
@@ -76,6 +76,9 @@ void Window::onPaint() {
     if (!fWindowContext) {
         return;
     }
+    if (!fIsActive) {
+        return;
+    }
     sk_sp<SkSurface> backbuffer = fWindowContext->getBackbufferSurface();
     if (backbuffer == nullptr) {
         printf("no backbuffer!?\n");
@@ -100,6 +103,13 @@ void Window::onResize(int w, int h) {
     }
     fWindowContext->resize(w, h);
     this->visitLayers([=](Layer* layer) { layer->onResize(w, h); });
+}
+
+void Window::onActivate(bool isActive) {
+    if (fWindowContext) {
+        fWindowContext->activate(isActive);
+    }
+    fIsActive = isActive;
 }
 
 int Window::width() const {

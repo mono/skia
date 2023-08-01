@@ -9,18 +9,15 @@
 #include "include/core/SkBitmap.h"
 #include "include/core/SkCanvas.h"
 #include "include/core/SkColor.h"
+#include "include/core/SkImage.h"
 #include "include/core/SkRect.h"
 #include "include/core/SkTypes.h"
 #include "include/gpu/GrDirectContext.h"
 #include "include/gpu/GrRecordingContext.h"
 
-class GrRenderTargetContext;
-
 // This test exercises Ganesh's drawing of tiled bitmaps. In particular, that the offsets and the
-// extents of the tiles don't causes gaps between tiles.
-static void draw_tile_bitmap_with_fractional_offset(GrRecordingContext* context,
-                                                    SkCanvas* canvas,
-                                                    bool vertical) {
+// extents of the tiles don't cause gaps between tiles.
+static void draw_tile_bitmap_with_fractional_offset(SkCanvas* canvas, bool vertical) {
     // This should match kBmpSmallTileSize in SkGpuDevice.cpp. Note that our canvas size is tuned
     // to this constant as well.
     const int kTileSize = 1 << 10;
@@ -30,14 +27,14 @@ static void draw_tile_bitmap_with_fractional_offset(GrRecordingContext* context,
     const int kBitmapLongEdge = 7 * kTileSize;
     const int kBitmapShortEdge = 1 * kTileSize;
 
-    if (auto direct = context->asDirectContext()) {
+    if (auto dContext = GrAsDirectContext(canvas->recordingContext())) {
         // To trigger tiling, we also need the image to be more than 50% of the cache, so we
         // ensure the cache is sized to make that true.
         const int kBitmapArea = kBitmapLongEdge * kBitmapShortEdge;
         const size_t kBitmapBytes = kBitmapArea * sizeof(SkPMColor);
 
         const size_t newMaxResourceBytes = kBitmapBytes + (kBitmapBytes / 2);
-        direct->setResourceCacheLimit(newMaxResourceBytes);
+        dContext->setResourceCacheLimit(newMaxResourceBytes);
     }
 
     // Construct our bitmap as either very wide or very tall
@@ -50,23 +47,25 @@ static void draw_tile_bitmap_with_fractional_offset(GrRecordingContext* context,
     for (int i = 0; i < 10; ++i) {
         float offset = i * 0.1f;
         if (vertical) {
-            canvas->drawBitmapRect(bmp, SkRect::MakeXYWH(0.0f, (kTileSize - 50) + offset,
-                                                         32.0f, 1124.0f),
-                                   SkRect::MakeXYWH(37.0f * i, 0.0f, 32.0f, 1124.0f), nullptr);
+            canvas->drawImageRect(bmp.asImage(),
+                                  SkRect::MakeXYWH(0, (kTileSize - 50) + offset, 32, 1124.0f),
+                                  SkRect::MakeXYWH(37.0f * i, 0.0f, 32.0f, 1124.0f),
+                                  SkSamplingOptions(), nullptr,
+                                  SkCanvas::kStrict_SrcRectConstraint);
         } else {
-            canvas->drawBitmapRect(bmp, SkRect::MakeXYWH((kTileSize - 50) + offset, 0.0f,
-                                                         1124.0f, 32.0f),
-                                   SkRect::MakeXYWH(0.0f, 37.0f * i, 1124.0f, 32.0f), nullptr);
+            canvas->drawImageRect(bmp.asImage(),
+                                  SkRect::MakeXYWH((kTileSize - 50) + offset, 0, 1124, 32),
+                                  SkRect::MakeXYWH(0.0f, 37.0f * i, 1124.0f, 32.0f),
+                                  SkSamplingOptions(), nullptr,
+                                  SkCanvas::kStrict_SrcRectConstraint);
         }
     }
 }
 
-DEF_SIMPLE_GPU_GM_BG(
-        bitmaptiled_fractional_horizontal, context, rtc, canvas, 1124, 365, SK_ColorBLACK) {
-    draw_tile_bitmap_with_fractional_offset(context, canvas, false);
+DEF_SIMPLE_GM_BG(bitmaptiled_fractional_horizontal, canvas, 1124, 365, SK_ColorBLACK) {
+    draw_tile_bitmap_with_fractional_offset(canvas, /* vertical= */ false);
 }
 
-DEF_SIMPLE_GPU_GM_BG(
-        bitmaptiled_fractional_vertical, context, rtc, canvas, 365, 1124, SK_ColorBLACK) {
-    draw_tile_bitmap_with_fractional_offset(context, canvas, true);
+DEF_SIMPLE_GM_BG(bitmaptiled_fractional_vertical, canvas, 365, 1124, SK_ColorBLACK) {
+    draw_tile_bitmap_with_fractional_offset(canvas, /* vertical= */ true);
 }

@@ -42,26 +42,32 @@ typedef ImplicitString Path;
 class Result {
 public:
     enum class Status : int { Ok, Fatal, Skip };
-    Result(Status status, const SkString& s) : fMsg(s), fStatus(status) {}
-    Result(Status status, const char* s) : fMsg(s), fStatus(status) {}
-    template <typename... Args> Result (Status status, const char* s, Args... args)
-        : fMsg(SkStringPrintf(s, args...)), fStatus(status) {}
+
+    Result(Status status, SkString msg) : fMsg(std::move(msg)), fStatus(status) {}
 
     Result(const Result&)            = default;
     Result& operator=(const Result&) = default;
 
-    static Result Ok() { return Result(Status::Ok, nullptr); }
+    static Result Ok() { return Result{Status::Ok, {}}; }
 
-    static Result Fatal(const SkString& s) { return Result(Status::Fatal, s); }
-    static Result Fatal(const char* s) { return Result(Status::Fatal, s); }
-    template <typename... Args> static Result Fatal(const char* s, Args... args) {
-        return Result(Status::Fatal, s, args...);
+    static Result Fatal(const char* fmt, ...) SK_PRINTF_LIKE(1, 2) {
+        SkString msg;
+        va_list args;
+        va_start(args, fmt);
+        msg.printVAList(fmt, args);
+        va_end(args);
+
+        return Result{Status::Fatal, std::move(msg)};
     }
 
-    static Result Skip(const SkString& s) { return Result(Status::Skip, s); }
-    static Result Skip(const char* s) { return Result(Status::Skip, s); }
-    template <typename... Args> static Result Skip(const char* s, Args... args) {
-        return Result(Status::Skip, s, args...);
+    static Result Skip(const char* fmt, ...) SK_PRINTF_LIKE(1, 2) {
+        SkString msg;
+        va_list args;
+        va_start(args, fmt);
+        msg.printVAList(fmt, args);
+        va_end(args);
+
+        return Result{Status::Skip, std::move(msg)};
     }
 
     bool isOk() { return fStatus == Status::Ok; }
@@ -86,18 +92,17 @@ struct SinkFlags {
 
 struct Src {
     virtual ~Src() {}
-    virtual Result SK_WARN_UNUSED_RESULT draw(GrDirectContext*, SkCanvas*) const = 0;
+    virtual Result SK_WARN_UNUSED_RESULT draw(SkCanvas* canvas) const = 0;
     virtual SkISize size() const = 0;
     virtual Name name() const = 0;
     virtual void modifyGrContextOptions(GrContextOptions* options) const {}
     virtual bool veto(SinkFlags) const { return false; }
 
     virtual int pageCount() const { return 1; }
-    virtual Result SK_WARN_UNUSED_RESULT draw(int, GrDirectContext* context,
-                                              SkCanvas* canvas) const {
-        return this->draw(context, canvas);
+    virtual Result SK_WARN_UNUSED_RESULT draw([[maybe_unused]] int page, SkCanvas* canvas) const {
+        return this->draw(canvas);
     }
-    virtual SkISize size(int) const { return this->size(); }
+    virtual SkISize size([[maybe_unused]] int page) const { return this->size(); }
     // Force Tasks using this Src to run on the main thread?
     virtual bool serial() const { return false; }
 
@@ -112,6 +117,9 @@ struct Sink {
     // You may write to either the bitmap or stream.  If you write to log, we'll print that out.
     virtual Result SK_WARN_UNUSED_RESULT draw(const Src&, SkBitmap*, SkWStream*, SkString* log)
         const = 0;
+
+    // Override the color space of this Sink, after creation
+    virtual void setColorSpace(sk_sp<SkColorSpace>) {}
 
     // Force Tasks using this Sink to run on the main thread?
     virtual bool serial() const { return false; }
@@ -131,7 +139,7 @@ class GMSrc : public Src {
 public:
     explicit GMSrc(skiagm::GMFactory);
 
-    Result draw(GrDirectContext*, SkCanvas*) const override;
+    Result draw(SkCanvas*) const override;
     SkISize size() const override;
     Name name() const override;
     void modifyGrContextOptions(GrContextOptions* options) const override;
@@ -163,7 +171,7 @@ public:
     };
     CodecSrc(Path, Mode, DstColorType, SkAlphaType, float);
 
-    Result draw(GrDirectContext*, SkCanvas*) const override;
+    Result draw(SkCanvas*) const override;
     SkISize size() const override;
     Name name() const override;
     bool veto(SinkFlags) const override;
@@ -181,7 +189,7 @@ class AndroidCodecSrc : public Src {
 public:
     AndroidCodecSrc(Path, CodecSrc::DstColorType, SkAlphaType, int sampleSize);
 
-    Result draw(GrDirectContext*, SkCanvas*) const override;
+    Result draw(SkCanvas*) const override;
     SkISize size() const override;
     Name name() const override;
     bool veto(SinkFlags) const override;
@@ -210,7 +218,7 @@ public:
 
     BRDSrc(Path, Mode, CodecSrc::DstColorType, uint32_t);
 
-    Result draw(GrDirectContext*, SkCanvas*) const override;
+    Result draw(SkCanvas*) const override;
     SkISize size() const override;
     Name name() const override;
     bool veto(SinkFlags) const override;
@@ -230,7 +238,7 @@ public:
     };
     ImageGenSrc(Path, Mode, SkAlphaType, bool);
 
-    Result draw(GrDirectContext*, SkCanvas*) const override;
+    Result draw(SkCanvas*) const override;
     SkISize size() const override;
     Name name() const override;
     bool veto(SinkFlags) const override;
@@ -247,7 +255,7 @@ class ColorCodecSrc : public Src {
 public:
     ColorCodecSrc(Path, bool decode_to_dst);
 
-    Result draw(GrDirectContext*, SkCanvas*) const override;
+    Result draw(SkCanvas*) const override;
     SkISize size() const override;
     Name name() const override;
     bool veto(SinkFlags) const override;
@@ -260,7 +268,7 @@ class SKPSrc : public Src {
 public:
     explicit SKPSrc(Path path);
 
-    Result draw(GrDirectContext*, SkCanvas*) const override;
+    Result draw(SkCanvas*) const override;
     SkISize size() const override;
     Name name() const override;
 private:
@@ -274,7 +282,7 @@ class BisectSrc : public SKPSrc {
 public:
     explicit BisectSrc(Path path, const char* trail);
 
-    Result draw(GrDirectContext*, SkCanvas*) const override;
+    Result draw(SkCanvas*) const override;
 
 private:
     SkString fTrail;
@@ -287,46 +295,24 @@ class SkottieSrc final : public Src {
 public:
     explicit SkottieSrc(Path path);
 
-    Result draw(GrDirectContext*, SkCanvas*) const override;
+    Result draw(SkCanvas*) const override;
     SkISize size() const override;
     Name name() const override;
     bool veto(SinkFlags) const override;
 
 private:
     // Generates a kTileCount x kTileCount filmstrip with evenly distributed frames.
-    static constexpr int      kTileCount = 5;
+    inline static constexpr int      kTileCount = 5;
 
     // Fit kTileCount x kTileCount frames to a 1000x1000 film strip.
-    static constexpr SkScalar kTargetSize = 1000;
-    static constexpr SkScalar kTileSize = kTargetSize / kTileCount;
+    inline static constexpr SkScalar kTargetSize = 1000;
+    inline static constexpr SkScalar kTileSize = kTargetSize / kTileCount;
 
     Path                      fPath;
 };
 #endif
 
-#if defined(SK_ENABLE_SKRIVE)
-class SkRiveSrc final : public Src {
-public:
-    explicit SkRiveSrc(Path path);
-
-    Result draw(GrDirectContext*, SkCanvas*) const override;
-    SkISize size() const override;
-    Name name() const override;
-    bool veto(SinkFlags) const override;
-
-private:
-    // Generates a kTileCount x kTileCount filmstrip with evenly distributed frames.
-    static constexpr int      kTileCount  = 5;
-
-    // Fit kTileCount x kTileCount frames to a 1000x1000 film strip.
-    static constexpr SkScalar kTargetSize = 1000;
-    static constexpr SkScalar kTileSize   = kTargetSize / kTileCount;
-
-    const Path fPath;
-};
-#endif
-
-#if defined(SK_XML)
+#if defined(SK_ENABLE_SVG)
 } // namespace DM
 
 class SkSVGDOM;
@@ -337,7 +323,7 @@ class SVGSrc : public Src {
 public:
     explicit SVGSrc(Path path);
 
-    Result draw(GrDirectContext*, SkCanvas*) const override;
+    Result draw(SkCanvas*) const override;
     SkISize size() const override;
     Name name() const override;
     bool veto(SinkFlags) const override;
@@ -349,7 +335,7 @@ private:
 
     using INHERITED = Src;
 };
-#endif // SK_XML
+#endif // SK_ENABLE_SVG
 /*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
 
 class MSKPSrc : public Src {
@@ -357,15 +343,15 @@ public:
     explicit MSKPSrc(Path path);
 
     int pageCount() const override;
-    Result draw(GrDirectContext*, SkCanvas* c) const override;
-    Result draw(int, GrDirectContext*, SkCanvas*) const override;
+    Result draw(SkCanvas* c) const override;
+    Result draw(int, SkCanvas*) const override;
     SkISize size() const override;
     SkISize size(int) const override;
     Name name() const override;
 
 private:
     Path fPath;
-    mutable SkTArray<SkDocumentPage> fPages;
+    mutable skia_private::TArray<SkDocumentPage> fPages;
 };
 
 /*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
@@ -386,14 +372,14 @@ public:
     Result draw(const Src&, SkBitmap*, SkWStream*, SkString*) const override;
     Result onDraw(const Src&, SkBitmap*, SkWStream*, SkString*,
                   const GrContextOptions& baseOptions,
-                  std::function<void(GrDirectContext*)> initContext = nullptr) const;
+                  std::function<void(GrDirectContext*)> initContext = nullptr,
+                  std::function<SkCanvas*(SkCanvas*)> wrapCanvas = nullptr) const;
 
     sk_gpu_test::GrContextFactory::ContextType contextType() const { return fContextType; }
     const sk_gpu_test::GrContextFactory::ContextOverrides& contextOverrides() const {
         return fContextOverrides;
     }
     SkCommandLineConfigGpu::SurfType surfType() const { return fSurfType; }
-    bool useDIText() const { return fUseDIText; }
     bool serial() const override { return true; }
     const char* fileExtension() const override { return "png"; }
     SinkFlags flags() const override {
@@ -402,6 +388,7 @@ public:
         return SinkFlags{ SinkFlags::kGPU, SinkFlags::kDirect, ms };
     }
     const GrContextOptions& baseContextOptions() const { return fBaseContextOptions; }
+    void setColorSpace(sk_sp<SkColorSpace> colorSpace) override { fColorSpace = colorSpace; }
     SkColorInfo colorInfo() const override {
         return SkColorInfo(fColorType, fAlphaType, fColorSpace);
     }
@@ -415,12 +402,35 @@ private:
     sk_gpu_test::GrContextFactory::ContextOverrides   fContextOverrides;
     SkCommandLineConfigGpu::SurfType                  fSurfType;
     int                                               fSampleCount;
-    bool                                              fUseDIText;
+    uint32_t                                          fSurfaceFlags;
     SkColorType                                       fColorType;
     SkAlphaType                                       fAlphaType;
     sk_sp<SkColorSpace>                               fColorSpace;
     GrContextOptions                                  fBaseContextOptions;
     sk_gpu_test::MemoryCache                          fMemoryCache;
+};
+
+// Wrap a gpu canvas in one that routes all text draws through GrSlugs.
+// Note that text blobs that have an RSXForm aren't converted.
+class GPUSlugSink : public GPUSink {
+public:
+    GPUSlugSink(const SkCommandLineConfigGpu*, const GrContextOptions&);
+
+    Result draw(const Src&, SkBitmap*, SkWStream*, SkString*) const override;
+};
+
+class GPUSerializeSlugSink : public GPUSink {
+public:
+    GPUSerializeSlugSink(const SkCommandLineConfigGpu*, const GrContextOptions&);
+
+    Result draw(const Src&, SkBitmap*, SkWStream*, SkString*) const override;
+};
+
+class GPURemoteSlugSink : public GPUSink {
+public:
+    GPURemoteSlugSink(const SkCommandLineConfigGpu*, const GrContextOptions&);
+
+    Result draw(const Src&, SkBitmap*, SkWStream*, SkString*) const override;
 };
 
 class GPUThreadTestingSink : public GPUSink {
@@ -472,21 +482,6 @@ private:
     using INHERITED = GPUSink;
 };
 
-// This sink attempts to emulate Chrome's OOP-R behavior. It:
-//    doesn't use promise images
-//    uses only a single thread for both DDL creation & drawing
-class GPUOOPRSink : public GPUSink {
-public:
-    GPUOOPRSink(const SkCommandLineConfigGpu*, const GrContextOptions&);
-
-    Result draw(const Src&, SkBitmap*, SkWStream*, SkString*) const override;
-
-private:
-    Result ooprDraw(const Src&, sk_sp<SkSurface> dstSurface, GrDirectContext*) const;
-
-    using INHERITED = GPUSink;
-};
-
 // This sink attempts to better simulate the Chrome DDL use-case. It:
 //    creates the DDLs on separate recording threads
 //    performs all the GPU work on a separate GPU thread
@@ -521,6 +516,7 @@ public:
     Result draw(const Src&, SkBitmap*, SkWStream*, SkString*) const override;
     const char* fileExtension() const override { return "pdf"; }
     SinkFlags flags() const override { return SinkFlags{ SinkFlags::kVector, SinkFlags::kDirect }; }
+
     bool fPDFA;
     SkScalar fRasterDpi;
 };
@@ -536,21 +532,24 @@ public:
 
 class RasterSink : public Sink {
 public:
-    explicit RasterSink(SkColorType, sk_sp<SkColorSpace> = nullptr);
+    explicit RasterSink(SkColorType);
 
     Result draw(const Src&, SkBitmap*, SkWStream*, SkString*) const override;
     const char* fileExtension() const override { return "png"; }
     SinkFlags flags() const override { return SinkFlags{ SinkFlags::kRaster, SinkFlags::kDirect }; }
+    void setColorSpace(sk_sp<SkColorSpace> colorSpace) override { fColorSpace = colorSpace; }
+
+    SkColorInfo colorInfo() const override {
+        // If there's an appropriate alpha type for this color type, use it, otherwise use premul.
+        SkAlphaType alphaType = kPremul_SkAlphaType;
+        (void)SkColorTypeValidateAlphaType(fColorType, alphaType, &alphaType);
+
+        return SkColorInfo(fColorType, alphaType, fColorSpace);
+    }
 
 private:
     SkColorType         fColorType;
     sk_sp<SkColorSpace> fColorSpace;
-};
-
-class ThreadedSink : public RasterSink {
-public:
-    explicit ThreadedSink(SkColorType, sk_sp<SkColorSpace> = nullptr);
-    Result draw(const Src&, SkBitmap*, SkWStream*, SkString*) const override;
 };
 
 class SKPSink : public Sink {
@@ -581,6 +580,31 @@ private:
     int fPageIndex;
 };
 
+#if defined(SK_GRAPHITE)
+
+class GraphiteSink : public Sink {
+public:
+    using ContextType = sk_gpu_test::GrContextFactory::ContextType;
+
+    GraphiteSink(const SkCommandLineConfigGraphite*);
+
+    Result draw(const Src&, SkBitmap*, SkWStream*, SkString*) const override;
+    bool serial() const override { return true; }
+    const char* fileExtension() const override { return "png"; }
+    SinkFlags flags() const override { return SinkFlags{ SinkFlags::kGPU, SinkFlags::kDirect }; }
+    void setColorSpace(sk_sp<SkColorSpace> colorSpace) override { fColorSpace = colorSpace; }
+    SkColorInfo colorInfo() const override {
+        return SkColorInfo(fColorType, fAlphaType, fColorSpace);
+    }
+
+private:
+    ContextType fContextType;
+    SkColorType fColorType;
+    SkAlphaType fAlphaType;
+    sk_sp<SkColorSpace> fColorSpace;
+};
+
+#endif
 
 /*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
 
@@ -594,6 +618,9 @@ public:
         flags.approach = SinkFlags::kIndirect;
         return flags;
     }
+    void setColorSpace(sk_sp<SkColorSpace> colorSpace) override {
+        fSink->setColorSpace(colorSpace);
+    }
 protected:
     std::unique_ptr<Sink> fSink;
 };
@@ -602,6 +629,7 @@ class ViaMatrix : public Via {
 public:
     ViaMatrix(SkMatrix, Sink*);
     Result draw(const Src&, SkBitmap*, SkWStream*, SkString*) const override;
+
 private:
     const SkMatrix fMatrix;
 };
@@ -610,6 +638,7 @@ class ViaUpright : public Via {
 public:
     ViaUpright(SkMatrix, Sink*);
     Result draw(const Src&, SkBitmap*, SkWStream*, SkString*) const override;
+
 private:
     const SkMatrix fMatrix;
 };
@@ -626,13 +655,10 @@ public:
     Result draw(const Src&, SkBitmap*, SkWStream*, SkString*) const override;
 };
 
-class ViaDDL : public Via {
+class ViaRuntimeBlend : public Via {
 public:
-    ViaDDL(int numReplays, int numDivisions, Sink* sink);
+    explicit ViaRuntimeBlend(Sink* sink) : Via(sink) {}
     Result draw(const Src&, SkBitmap*, SkWStream*, SkString*) const override;
-private:
-    const int fNumReplays;
-    const int fNumDivisions;
 };
 
 class ViaSVG : public Via {

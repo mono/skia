@@ -52,10 +52,10 @@ static void makebm(SkBitmap* bm, int w, int h) {
 
     SkPaint     paint;
 
-    paint.setShader(SkGradientShader::MakeLinear(kPts0, kColors0, kPos, SK_ARRAY_COUNT(kColors0),
+    paint.setShader(SkGradientShader::MakeLinear(kPts0, kColors0, kPos, std::size(kColors0),
                                                  SkTileMode::kClamp));
     canvas.drawPaint(paint);
-    paint.setShader(SkGradientShader::MakeLinear(kPts1, kColors1, kPos, SK_ARRAY_COUNT(kColors1),
+    paint.setShader(SkGradientShader::MakeLinear(kPts1, kColors1, kPos, std::size(kColors1),
                                                  SkTileMode::kClamp));
     canvas.drawPaint(paint);
 }
@@ -113,7 +113,8 @@ protected:
         int w = 40;
         int h = 40;
         makebm(&fBmp, w, h);
-        fBmShader = fBmp.makeShader(SkTileMode::kRepeat, SkTileMode::kRepeat);
+        fBmShader = fBmp.makeShader(SkTileMode::kRepeat, SkTileMode::kRepeat,
+                                    SkSamplingOptions(SkFilterMode::kLinear));
         int offset = 2;
         int count = 0;
         for (int j = 0; j < NY; ++j) {
@@ -144,7 +145,6 @@ protected:
     void onDraw(int loops, SkCanvas* canvas) override {
         SkPaint paint;
         paint.setAntiAlias(false);
-        paint.setFilterQuality(kLow_SkFilterQuality);
 
         for (int i = 0; i < loops; ++i) {
             for (int j = 0; j < NUM_DRAWS; ++j) {

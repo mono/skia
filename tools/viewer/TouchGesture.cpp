@@ -5,11 +5,16 @@
  * found in the LICENSE file.
  */
 
-#include <algorithm>
+#include "tools/viewer/TouchGesture.h"
 
 #include "include/core/SkMatrix.h"
 #include "include/core/SkTime.h"
-#include "tools/viewer/TouchGesture.h"
+#include "include/core/SkTypes.h"
+#include "include/private/base/SkDebug.h"
+#include "include/private/base/SkFloatingPoint.h"
+
+#include <algorithm>
+#include <cmath>
 
 #define DISCRETIZE_TRANSLATE_TO_AVOID_FLICKER   true
 
@@ -155,7 +160,7 @@ void TouchGesture::touchBegin(void* owner, float x, float y) {
         SkDebugf("---- already exists, removing\n");
     }
 
-    if (fTouches.count() == 2) {
+    if (fTouches.size() == 2) {
         return;
     }
 
@@ -164,7 +169,7 @@ void TouchGesture::touchBegin(void* owner, float x, float y) {
 
     this->appendNewRec(owner, x, y);
 
-    switch (fTouches.count()) {
+    switch (fTouches.size()) {
         case 1:
             fState = kTranslate_State;
             break;
@@ -177,7 +182,7 @@ void TouchGesture::touchBegin(void* owner, float x, float y) {
 }
 
 int TouchGesture::findRec(void* owner) const {
-    for (int i = 0; i < fTouches.count(); i++) {
+    for (int i = 0; i < fTouches.size(); i++) {
         if (owner == fTouches[i].fOwner) {
             return i;
         }
@@ -221,7 +226,7 @@ void TouchGesture::touchMoved(void* owner, float x, float y) {
     Rec& rec = fTouches[index];
 
     // not sure how valuable this is
-    if (fTouches.count() == 2) {
+    if (fTouches.size() == 2) {
         if (close_enough_for_jitter(rec.fLastX, rec.fLastY, x, y)) {
 //            SkDebugf("--- drop touchMove, within jitter tolerance %g %g\n", rec.fLastX - x, rec.fLastY - y);
             return;
@@ -233,7 +238,7 @@ void TouchGesture::touchMoved(void* owner, float x, float y) {
     rec.fPrevT = rec.fLastT;
     rec.fLastT = static_cast<float>(SkTime::GetSecs());
 
-    switch (fTouches.count()) {
+    switch (fTouches.size()) {
         case 1: {
             float dx = rec.fLastX - rec.fStartX;
             float dy = rec.fLastY - rec.fStartY;
@@ -273,7 +278,7 @@ void TouchGesture::touchEnd(void* owner) {
     }
 
     // count() reflects the number before we removed the owner
-    switch (fTouches.count()) {
+    switch (fTouches.size()) {
         case 1: {
             this->flushLocalM();
             float dx = rec.fLastX - rec.fPrevX;

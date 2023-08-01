@@ -25,10 +25,11 @@ public:
 
 protected:
     SkRect onGetBounds() override { return fBounds; }
+    size_t onApproximateBytesUsed() override;
 
     void onDraw(SkCanvas* canvas) override;
 
-    SkPicture* onNewPictureSnapshot() override;
+    sk_sp<SkPicture> onMakePictureSnapshot() override;
 
 private:
     SK_FLATTENABLE_HOOKS(SkRecordedDrawable)

@@ -8,13 +8,10 @@
 #include "include/core/SkFontMgr.h"
 #include "include/core/SkMatrix.h"
 #include "include/core/SkStream.h"
-#include "include/core/SkTextBlob.h"
 #include "include/core/SkTypeface.h"
 #include "modules/skottie/include/Skottie.h"
 #include "modules/skottie/include/SkottieProperty.h"
-#include "modules/skottie/src/text/SkottieShaper.h"
 #include "src/core/SkFontDescriptor.h"
-#include "src/core/SkTextBlobPriv.h"
 #include "tests/Test.h"
 #include "tools/ToolUtils.h"
 
@@ -173,11 +170,17 @@ DEF_TEST(Skottie_Properties, reporter) {
             fTransforms.push_back({SkString(node_name), lh()});
         }
 
-        void onEnterNode(const char node_name[]) override {
+        void onEnterNode(const char node_name[], PropertyObserver::NodeType node_type) override {
+            if (node_name == nullptr) {
+                return;
+            }
             fCurrentNode = fCurrentNode.empty() ? node_name : fCurrentNode + "." + node_name;
         }
 
-        void onLeavingNode(const char node_name[]) override {
+        void onLeavingNode(const char node_name[], PropertyObserver::NodeType node_type) override {
+            if (node_name == nullptr) {
+                return;
+            }
             auto length = strlen(node_name);
             fCurrentNode =
                     fCurrentNode.length() > length
@@ -203,24 +206,23 @@ DEF_TEST(Skottie_Properties, reporter) {
     };
 
     // Returns a single specified typeface for all requests.
-    class DummyFontMgr : public SkFontMgr {
+    class FakeFontMgr : public SkFontMgr {
      public:
-        DummyFontMgr(sk_sp<SkTypeface> test_font) : fTestFont(test_font) {}
+        FakeFontMgr(sk_sp<SkTypeface> test_font) : fTestFont(test_font) {}
 
         int onCountFamilies() const override { return 1; }
         void onGetFamilyName(int index, SkString* familyName) const override {}
-        SkFontStyleSet* onCreateStyleSet(int index) const override { return nullptr; }
-        SkFontStyleSet* onMatchFamily(const char familyName[]) const override { return nullptr; }
-        SkTypeface* onMatchFamilyStyle(const char familyName[],
-                                      const SkFontStyle& fontStyle) const override {
+        sk_sp<SkFontStyleSet> onCreateStyleSet(int index) const override { return nullptr; }
+        sk_sp<SkFontStyleSet> onMatchFamily(const char familyName[]) const override {
             return nullptr;
         }
-        SkTypeface* onMatchFamilyStyleCharacter(const char familyName[], const SkFontStyle&,
-                                                const char* bcp47[], int bcp47Count,
-                                                SkUnichar character) const override {
+        sk_sp<SkTypeface> onMatchFamilyStyle(const char familyName[],
+                                             const SkFontStyle& fontStyle) const override {
             return nullptr;
         }
-        SkTypeface* onMatchFaceStyle(const SkTypeface*, const SkFontStyle&) const override {
+        sk_sp<SkTypeface> onMatchFamilyStyleCharacter(const char familyName[], const SkFontStyle&,
+                                                      const char* bcp47[], int bcp47Count,
+                                                      SkUnichar character) const override {
             return nullptr;
         }
         sk_sp<SkTypeface> onMakeFromData(sk_sp<SkData>, int ttcIndex) const override {
@@ -234,9 +236,6 @@ DEF_TEST(Skottie_Properties, reporter) {
                                                    const SkFontArguments&) const override {
             return fTestFont;
         }
-        sk_sp<SkTypeface> onMakeFromFontData(std::unique_ptr<SkFontData>) const override {
-            return fTestFont;
-        }
         sk_sp<SkTypeface> onMakeFromFile(const char path[], int ttcIndex) const override {
             return fTestFont;
         }
@@ -247,7 +246,7 @@ DEF_TEST(Skottie_Properties, reporter) {
         sk_sp<SkTypeface> fTestFont;
     };
 
-    sk_sp<DummyFontMgr> test_font_manager = sk_make_sp<DummyFontMgr>(test_typeface);
+    sk_sp<FakeFontMgr> test_font_manager = sk_make_sp<FakeFontMgr>(test_typeface);
     SkMemoryStream stream(json, strlen(json));
     auto observer = sk_make_sp<TestPropertyObserver>();
 
@@ -316,20 +315,26 @@ DEF_TEST(Skottie_Properties, reporter) {
       test_typeface,
       SkString("inline_text"),
       100,
+      0, 100,
       0,
       120,
       12,
+      0,
       0,
       SkTextUtils::kLeft_Align,
       Shaper::VAlign::kTopBaseline,
       Shaper::ResizePolicy::kNone,
       Shaper::LinebreakPolicy::kExplicit,
+      Shaper::Direction::kLTR,
+      Shaper::Capitalization::kNone,
       SkRect::MakeEmpty(),
       SK_ColorTRANSPARENT,
       SK_ColorTRANSPARENT,
       TextPaintOrder::kFillStroke,
+      SkPaint::Join::kDefault_Join,
       false,
-      false
+      false,
+      nullptr
     }));
 }
 
@@ -398,313 +403,6 @@ DEF_TEST(Skottie_Annotations, reporter) {
     REPORTER_ASSERT(reporter, std::get<1>(observer->fMarkers[1]) == 0.75f);
     REPORTER_ASSERT(reporter, std::get<2>(observer->fMarkers[1]) == 0.75f);
 }
-
-static SkRect ComputeBlobBounds(const sk_sp<SkTextBlob>& blob) {
-    auto bounds = SkRect::MakeEmpty();
-
-    if (!blob) {
-        return bounds;
-    }
-
-    SkAutoSTArray<16, SkRect> glyphBounds;
-
-    SkTextBlobRunIterator it(blob.get());
-
-    for (SkTextBlobRunIterator it(blob.get()); !it.done(); it.next()) {
-        glyphBounds.reset(SkToInt(it.glyphCount()));
-        it.font().getBounds(it.glyphs(), it.glyphCount(), glyphBounds.get(), nullptr);
-
-        SkASSERT(it.positioning() == SkTextBlobRunIterator::kFull_Positioning);
-        for (uint32_t i = 0; i < it.glyphCount(); ++i) {
-            bounds.join(glyphBounds[i].makeOffset(it.pos()[i * 2    ],
-                                                  it.pos()[i * 2 + 1]));
-        }
-    }
-
-    return bounds;
-}
-
-static SkRect ComputeShapeResultBounds(const skottie::Shaper::Result& res) {
-    auto bounds = SkRect::MakeEmpty();
-
-    for (const auto& fragment : res.fFragments) {
-        bounds.join(ComputeBlobBounds(fragment.fBlob).makeOffset(fragment.fPos.x(),
-                                                                 fragment.fPos.y()));
-    }
-
-    return bounds;
-}
-
-DEF_TEST(Skottie_Shaper_HAlign, reporter) {
-    auto typeface = SkTypeface::MakeDefault();
-    REPORTER_ASSERT(reporter, typeface);
-
-    static constexpr struct {
-        SkScalar text_size,
-                 tolerance;
-    } kTestSizes[] = {
-        // These gross tolerances are required for the test to pass on NativeFonts bots.
-        // Might be worth investigating why we need so much slack.
-        {  5, 2.0f },
-        { 10, 2.0f },
-        { 15, 2.4f },
-        { 25, 4.4f },
-    };
-
-    static constexpr struct {
-        SkTextUtils::Align align;
-        SkScalar           l_selector,
-                           r_selector;
-    } kTestAligns[] = {
-        { SkTextUtils::  kLeft_Align, 0.0f, 1.0f },
-        { SkTextUtils::kCenter_Align, 0.5f, 0.5f },
-        { SkTextUtils:: kRight_Align, 1.0f, 0.0f },
-    };
-
-    const SkString text("Foo, bar.\rBaz.");
-    const SkPoint  text_point = SkPoint::Make(100, 100);
-
-    for (const auto& tsize : kTestSizes) {
-        for (const auto& talign : kTestAligns) {
-            const skottie::Shaper::TextDesc desc = {
-                typeface,
-                tsize.text_size,
-                tsize.text_size,
-                0,
-                0,
-                talign.align,
-                Shaper::VAlign::kTopBaseline,
-                Shaper::ResizePolicy::kNone,
-                Shaper::LinebreakPolicy::kExplicit,
-                Shaper::Flags::kNone
-            };
-
-            const auto shape_result = Shaper::Shape(text, desc, text_point,
-                                                    SkFontMgr::RefDefault());
-            REPORTER_ASSERT(reporter, shape_result.fFragments.size() == 1ul);
-            REPORTER_ASSERT(reporter, shape_result.fFragments[0].fBlob);
-
-            const auto shape_bounds = ComputeShapeResultBounds(shape_result);
-            REPORTER_ASSERT(reporter, !shape_bounds.isEmpty());
-
-            const auto expected_l = text_point.x() - shape_bounds.width() * talign.l_selector;
-            REPORTER_ASSERT(reporter,
-                            std::fabs(shape_bounds.left() - expected_l) < tsize.tolerance,
-                            "%f %f %f %f %d", shape_bounds.left(), expected_l, tsize.tolerance,
-                                              tsize.text_size, talign.align);
-
-            const auto expected_r = text_point.x() + shape_bounds.width() * talign.r_selector;
-            REPORTER_ASSERT(reporter,
-                            std::fabs(shape_bounds.right() - expected_r) < tsize.tolerance,
-                            "%f %f %f %f %d", shape_bounds.right(), expected_r, tsize.tolerance,
-                                              tsize.text_size, talign.align);
-
-        }
-    }
-}
-
-DEF_TEST(Skottie_Shaper_VAlign, reporter) {
-    auto typeface = SkTypeface::MakeDefault();
-    REPORTER_ASSERT(reporter, typeface);
-
-    static constexpr struct {
-        SkScalar text_size,
-                 tolerance;
-    } kTestSizes[] = {
-        // These gross tolerances are required for the test to pass on NativeFonts bots.
-        // Might be worth investigating why we need so much slack.
-        {  5, 2.0f },
-        { 10, 4.0f },
-        { 15, 5.5f },
-        { 25, 8.0f },
-    };
-
-    struct {
-        skottie::Shaper::VAlign align;
-        SkScalar                topFactor;
-    } kTestAligns[] = {
-        { skottie::Shaper::VAlign::kVisualTop   , 0.0f },
-        { skottie::Shaper::VAlign::kVisualCenter, 0.5f },
-        // TODO: any way to test kTopBaseline?
-    };
-
-    const SkString text("Foo, bar.\rBaz.");
-    const auto text_box = SkRect::MakeXYWH(100, 100, 1000, 1000); // large-enough to avoid breaks.
-
-
-    for (const auto& tsize : kTestSizes) {
-        for (const auto& talign : kTestAligns) {
-            const skottie::Shaper::TextDesc desc = {
-                typeface,
-                tsize.text_size,
-                tsize.text_size,
-                0,
-                0,
-                SkTextUtils::Align::kCenter_Align,
-                talign.align,
-                Shaper::ResizePolicy::kNone,
-                Shaper::LinebreakPolicy::kParagraph,
-                Shaper::Flags::kNone
-            };
-
-            const auto shape_result = Shaper::Shape(text, desc, text_box, SkFontMgr::RefDefault());
-            REPORTER_ASSERT(reporter, shape_result.fFragments.size() == 1ul);
-            REPORTER_ASSERT(reporter, shape_result.fFragments[0].fBlob);
-
-            const auto shape_bounds = ComputeShapeResultBounds(shape_result);
-            REPORTER_ASSERT(reporter, !shape_bounds.isEmpty());
-
-            const auto v_diff = text_box.height() - shape_bounds.height();
-
-            const auto expected_t = text_box.top() + v_diff * talign.topFactor;
-            REPORTER_ASSERT(reporter,
-                            std::fabs(shape_bounds.top() - expected_t) < tsize.tolerance,
-                            "%f %f %f %f %d", shape_bounds.top(), expected_t, tsize.tolerance,
-                                              tsize.text_size, SkToU32(talign.align));
-
-            const auto expected_b = text_box.bottom() - v_diff * (1 - talign.topFactor);
-            REPORTER_ASSERT(reporter,
-                            std::fabs(shape_bounds.bottom() - expected_b) < tsize.tolerance,
-                            "%f %f %f %f %d", shape_bounds.bottom(), expected_b, tsize.tolerance,
-                                              tsize.text_size, SkToU32(talign.align));
-        }
-    }
-}
-
-DEF_TEST(Skottie_Shaper_FragmentGlyphs, reporter) {
-    skottie::Shaper::TextDesc desc = {
-        SkTypeface::MakeDefault(),
-        18,
-        18,
-         0,
-         0,
-        SkTextUtils::Align::kCenter_Align,
-        Shaper::VAlign::kTop,
-        Shaper::ResizePolicy::kNone,
-        Shaper::LinebreakPolicy::kParagraph,
-        Shaper::Flags::kNone
-    };
-
-    const SkString text("Foo bar baz");
-    const auto text_box = SkRect::MakeWH(100, 100);
-
-    {
-        const auto shape_result = Shaper::Shape(text, desc, text_box, SkFontMgr::RefDefault());
-        // Default/consolidated mode => single blob result.
-        REPORTER_ASSERT(reporter, shape_result.fFragments.size() == 1ul);
-        REPORTER_ASSERT(reporter, shape_result.fFragments[0].fBlob);
-    }
-
-    {
-        desc.fFlags = Shaper::Flags::kFragmentGlyphs;
-        const auto shape_result = skottie::Shaper::Shape(text, desc, text_box,
-                                                         SkFontMgr::RefDefault());
-        // Fragmented mode => one blob per glyph.
-        const size_t expectedSize = text.size();
-        REPORTER_ASSERT(reporter, shape_result.fFragments.size() == expectedSize);
-        for (size_t i = 0; i < expectedSize; ++i) {
-            REPORTER_ASSERT(reporter, shape_result.fFragments[i].fBlob);
-        }
-    }
-}
-
-#if defined(SK_SHAPER_HARFBUZZ_AVAILABLE) && !defined(SK_BUILD_FOR_WIN)
-
-DEF_TEST(Skottie_Shaper_ExplicitFontMgr, reporter) {
-    class CountingFontMgr : public SkFontMgr {
-    public:
-        size_t fallbackCount() const { return fFallbackCount; }
-
-    protected:
-        int onCountFamilies() const override { return 0; }
-        void onGetFamilyName(int index, SkString* familyName) const override {
-            SkDEBUGFAIL("onGetFamilyName called with bad index");
-        }
-        SkFontStyleSet* onCreateStyleSet(int index) const override {
-            SkDEBUGFAIL("onCreateStyleSet called with bad index");
-            return nullptr;
-        }
-        SkFontStyleSet* onMatchFamily(const char[]) const override {
-            return SkFontStyleSet::CreateEmpty();
-        }
-
-        SkTypeface* onMatchFamilyStyle(const char[], const SkFontStyle&) const override {
-            return nullptr;
-        }
-        SkTypeface* onMatchFamilyStyleCharacter(const char familyName[],
-                                                const SkFontStyle& style,
-                                                const char* bcp47[],
-                                                int bcp47Count,
-                                                SkUnichar character) const override {
-            fFallbackCount++;
-            return nullptr;
-        }
-        SkTypeface* onMatchFaceStyle(const SkTypeface*, const SkFontStyle&) const override {
-            return nullptr;
-        }
-
-        sk_sp<SkTypeface> onMakeFromData(sk_sp<SkData>, int) const override {
-            return nullptr;
-        }
-        sk_sp<SkTypeface> onMakeFromStreamIndex(std::unique_ptr<SkStreamAsset>, int) const override {
-            return nullptr;
-        }
-        sk_sp<SkTypeface> onMakeFromStreamArgs(std::unique_ptr<SkStreamAsset>,
-                                               const SkFontArguments&) const override {
-            return nullptr;
-        }
-        sk_sp<SkTypeface> onMakeFromFontData(std::unique_ptr<SkFontData>) const override {
-            return nullptr;
-        }
-        sk_sp<SkTypeface> onMakeFromFile(const char[], int) const override {
-            return nullptr;
-        }
-        sk_sp<SkTypeface> onLegacyMakeTypeface(const char [], SkFontStyle) const override {
-            return nullptr;
-        }
-    private:
-        mutable size_t fFallbackCount = 0;
-    };
-
-    auto fontmgr = sk_make_sp<CountingFontMgr>();
-
-    skottie::Shaper::TextDesc desc = {
-        ToolUtils::create_portable_typeface(),
-        18,
-        18,
-         0,
-         0,
-        SkTextUtils::Align::kCenter_Align,
-        Shaper::VAlign::kTop,
-        Shaper::ResizePolicy::kNone,
-        Shaper::LinebreakPolicy::kParagraph,
-        Shaper::Flags::kNone
-    };
-
-    const auto text_box = SkRect::MakeWH(100, 100);
-
-    {
-        const auto shape_result = Shaper::Shape(SkString("foo bar"), desc, text_box, fontmgr);
-
-        REPORTER_ASSERT(reporter, shape_result.fFragments.size() == 1ul);
-        REPORTER_ASSERT(reporter, shape_result.fFragments[0].fBlob);
-        REPORTER_ASSERT(reporter, fontmgr->fallbackCount() == 0ul);
-        REPORTER_ASSERT(reporter, shape_result.fMissingGlyphCount == 0);
-    }
-
-    {
-        // An unassigned codepoint should trigger fallback.
-        const auto shape_result = skottie::Shaper::Shape(SkString("foo\U000DFFFFbar"),
-                                                         desc, text_box, fontmgr);
-
-        REPORTER_ASSERT(reporter, shape_result.fFragments.size() == 1ul);
-        REPORTER_ASSERT(reporter, shape_result.fFragments[0].fBlob);
-        REPORTER_ASSERT(reporter, fontmgr->fallbackCount() == 1ul);
-        REPORTER_ASSERT(reporter, shape_result.fMissingGlyphCount == 1ul);
-    }
-}
-
-#endif
 
 DEF_TEST(Skottie_Image_Loading, reporter) {
     class TestResourceProvider final : public skresources::ResourceProvider {
@@ -801,7 +499,7 @@ DEF_TEST(Skottie_Image_Loading, reporter) {
         sk_sp<SkImage> getFrame(float t) override {
             fRequestedFrames.push_back(t);
 
-            return SkSurface::MakeRasterN32Premul(10, 10)->makeImageSnapshot();
+            return SkSurfaces::Raster(SkImageInfo::MakeN32Premul(10, 10))->makeImageSnapshot();
         }
 
         const bool fMultiFrame;
@@ -853,4 +551,30 @@ DEF_TEST(Skottie_Image_Loading, reporter) {
         REPORTER_ASSERT(reporter,  multi_asset->requestedFrames().size() == 2);
         REPORTER_ASSERT(reporter, SkScalarNearlyEqual(multi_asset->requestedFrames()[1], 2));
     }
+}
+
+DEF_TEST(Skottie_Layer_NoType, r) {
+    static constexpr char json[] =
+        R"({
+             "v": "5.2.1",
+             "w": 100,
+             "h": 100,
+             "fr": 10,
+             "ip": 0,
+             "op": 100,
+             "layers": [
+               {
+                 "ind": 0,
+                 "ip": 0,
+                 "op": 100,
+                 "ks": {}
+               }
+             ]
+           })";
+
+    SkMemoryStream stream(json, strlen(json));
+    auto anim = Animation::Make(&stream);
+
+    // passes if we don't crash
+    REPORTER_ASSERT(r, anim);
 }

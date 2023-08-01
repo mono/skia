@@ -10,18 +10,25 @@
 
 #include "include/core/SkBlendMode.h"
 #include "include/core/SkColor.h"
-#include "include/core/SkFilterQuality.h"
 #include "include/core/SkImage.h"
 #include "include/core/SkImageFilter.h"
 #include "include/core/SkPicture.h"
 #include "include/core/SkRect.h"
 #include "include/core/SkTileMode.h"
+#include "include/core/SkTypes.h"
+#include "include/effects/SkRuntimeEffect.h"
 
 #include <cstddef>
 
+class SkBlender;
 class SkColorFilter;
 class SkPaint;
 class SkRegion;
+
+namespace skif {
+  static constexpr SkRect kNoCropRect = {SK_ScalarNegativeInfinity, SK_ScalarNegativeInfinity,
+                                         SK_ScalarInfinity, SK_ScalarInfinity};
+}
 
 // A set of factory functions providing useful SkImageFilter effects. For image filters that take an
 // input filter, providing nullptr means it will automatically use the dynamic source image. This
@@ -33,18 +40,18 @@ public:
     // to those types as a crop rect for the image filter factories. It's not intended to be used
     // directly.
     struct CropRect {
-        static constexpr SkRect kNoCropRect = {SK_ScalarNegativeInfinity, SK_ScalarNegativeInfinity,
-                                               SK_ScalarInfinity, SK_ScalarInfinity};
-        CropRect() : fCropRect(kNoCropRect) {}
+        CropRect() : fCropRect(skif::kNoCropRect) {}
         // Intentionally not explicit so callers don't have to use this type but can use SkIRect or
         // SkRect as desired.
-        CropRect(std::nullptr_t) : fCropRect(kNoCropRect) {}
+        CropRect(std::nullptr_t) : fCropRect(skif::kNoCropRect) {}
         CropRect(const SkIRect& crop) : fCropRect(SkRect::Make(crop)) {}
         CropRect(const SkRect& crop) : fCropRect(crop) {}
         CropRect(const SkIRect* optionalCrop) : fCropRect(optionalCrop ? SkRect::Make(*optionalCrop)
-                                                                       : kNoCropRect) {}
+                                                                       : skif::kNoCropRect) {}
         CropRect(const SkRect* optionalCrop) : fCropRect(optionalCrop ? *optionalCrop
-                                                                      : kNoCropRect) {}
+                                                                      : skif::kNoCropRect) {}
+
+        operator const SkRect*() const { return fCropRect == skif::kNoCropRect ? nullptr : &fCropRect; }
 
         SkRect fCropRect;
     };
@@ -93,6 +100,17 @@ public:
                                       const CropRect& cropRect = {});
 
     /**
+     *  This filter takes an SkBlendMode and uses it to composite the two filters together.
+     *  @param blender       The blender that defines the compositing operation
+     *  @param background The Dst pixels used in blending, if null the source bitmap is used.
+     *  @param foreground The Src pixels used in blending, if null the source bitmap is used.
+     *  @cropRect         Optional rectangle to crop input and output.
+     */
+    static sk_sp<SkImageFilter> Blend(sk_sp<SkBlender> blender, sk_sp<SkImageFilter> background,
+                                      sk_sp<SkImageFilter> foreground = nullptr,
+                                      const CropRect& cropRect = {});
+
+    /**
      *  Create a filter that blurs its input by the separate X and Y sigmas. The provided tile mode
      *  is used when the blur kernel goes outside the input image.
      *  @param sigmaX   The Gaussian sigma value for blurring along the X axis.
@@ -136,7 +154,8 @@ public:
      *  @param yChannelSelector RGBA channel that encodes the y displacement per pixel.
      *  @param scale            Scale applied to displacement extracted from image.
      *  @param displacement     The filter defining the displacement image, or null to use source.
-     *  @param color            The filter providing the color pixels to be displaced.
+     *  @param color            The filter providing the color pixels to be displaced. If null,
+     *                          it will use the source.
      *  @param cropRect         Optional rectangle that crops the color input and output.
      */
     static sk_sp<SkImageFilter> DisplacementMap(SkColorChannel xChannelSelector,
@@ -179,34 +198,72 @@ public:
 
     /**
      *  Create a filter that draws the 'srcRect' portion of image into 'dstRect' using the given
-     *  filter quality. Similar to SkCanvas::drawImageRect. Returns null if 'image' is null.
-     *  @param image         The image that is output by the filter, subset by 'srcRect'.
-     *  @param srcRect       The source pixels sampled into 'dstRect'
-     *  @param dstRect       The local rectangle to draw the image into.
-     *  @param filterQuality The filter quality that is used when sampling the image.
+     *  filter quality. Similar to SkCanvas::drawImageRect. The returned image filter evaluates
+     *  to transparent black if 'image' is null.
+     *
+     *  @param image    The image that is output by the filter, subset by 'srcRect'.
+     *  @param srcRect  The source pixels sampled into 'dstRect'
+     *  @param dstRect  The local rectangle to draw the image into.
+     *  @param sampling The sampling to use when drawing the image.
      */
     static sk_sp<SkImageFilter> Image(sk_sp<SkImage> image, const SkRect& srcRect,
-                                      const SkRect& dstRect, SkFilterQuality filterQuality);
+                                      const SkRect& dstRect, const SkSamplingOptions& sampling);
+
     /**
-     *  Create a filter that produces the image contents.
-     *  @param image The image that is output by the filter.
+     *  Create a filter that draws the image using the given sampling.
+     *  Similar to SkCanvas::drawImage. The returned image filter evaluates to transparent black if
+     *  'image' is null.
+     *
+     *  @param image    The image that is output by the filter.
+     *  @param sampling The sampling to use when drawing the image.
+     */
+    static sk_sp<SkImageFilter> Image(sk_sp<SkImage> image, const SkSamplingOptions& sampling) {
+        if (image) {
+            SkRect r = SkRect::Make(image->bounds());
+            return Image(std::move(image), r, r, sampling);
+        } else {
+            return nullptr;
+        }
+    }
+
+    /**
+     *  Create a filter that draws the image using Mitchel cubic resampling. The returned image
+     *  filter evaluates to transparent black if 'image' is null.
+     *
+     *  @param image    The image that is output by the filter.
      */
     static sk_sp<SkImageFilter> Image(sk_sp<SkImage> image) {
-        // Defaults to kHigh_SkFilterQuality because the dstRect of the image filter will be mapped
-        // by the layer matrix set during filtering. If that has a scale factor, then the image
-        // will not be drawn at a 1-to-1 pixel scale, even that is what this appears to create here.
-        SkRect r = image ? SkRect::MakeWH(image->width(), image->height()) : SkRect::MakeEmpty();
-        return Image(std::move(image), r, r, kHigh_SkFilterQuality);
+        return Image(std::move(image), SkSamplingOptions({1/3.0f, 1/3.0f}));
     }
 
     /**
      *  Create a filter that mimics a zoom/magnifying lens effect.
+     *  DEPRECATED: This factory does not accept enough parameters to fully specify the zoom effect,
+                    and derives the zoom based on the internal allocation size of a saveLayer. This
+                    makes its behavior brittle and respond poorly to SkCanvas transforms.
      *  @param srcRect
      *  @param inset
      *  @param input    The input filter that is magnified, if null the source bitmap is used.
      *  @param cropRect Optional rectangle that crops the input and output.
      */
     static sk_sp<SkImageFilter> Magnifier(const SkRect& srcRect, SkScalar inset,
+                                          sk_sp<SkImageFilter> input,
+                                          const CropRect& cropRect = {});
+
+    /**
+     *  Create a filter that fills 'lensBounds' with a magnification of the input.
+     *
+     *  @param lensBounds The outer bounds of the magnifier effect
+     *  @param zoomAmount The amount of magnification applied to the input image
+     *  @param inset      The size or width of the fish-eye distortion around the magnified content
+     *  @param sampling   The SkSamplingOptions applied to the input image when magnified
+     *  @param input      The input filter that is magnified; if null the source bitmap is used
+     *  @param cropRect   Optional rectangle that crops the input and output.
+     */
+    static sk_sp<SkImageFilter> Magnifier(const SkRect& lensBounds,
+                                          SkScalar zoomAmount,
+                                          SkScalar inset,
+                                          const SkSamplingOptions& sampling,
                                           sk_sp<SkImageFilter> input,
                                           const CropRect& cropRect = {});
 
@@ -239,12 +296,12 @@ public:
      *  Create a filter that transforms the input image by 'matrix'. This matrix transforms the
      *  local space, which means it effectively happens prior to any transformation coming from the
      *  SkCanvas initiating the filtering.
-     *  @param matrix        The matrix to apply to the original content.
-     *  @param filterQuality The filter quality to use when sampling the input image.
-     *  @param input         The image filter to transform, or null to use the source image.
+     *  @param matrix   The matrix to apply to the original content.
+     *  @param sampling How the image will be sampled when it is transformed
+     *  @param input    The image filter to transform, or null to use the source image.
      */
     static sk_sp<SkImageFilter> MatrixTransform(const SkMatrix& matrix,
-                                                SkFilterQuality filterQuality,
+                                                const SkSamplingOptions& sampling,
                                                 sk_sp<SkImageFilter> input);
 
     /**
@@ -280,20 +337,11 @@ public:
                                        const CropRect& cropRect = {});
 
     /**
-     *  Create a filter that fills the output with the given paint.
-     *  @param paint    The paint to fill
-     *  @param cropRect Optional rectangle that will be filled. If null, the source bitmap's bounds
-     *                  are filled even though the source bitmap itself is not used.
+     *  Create a filter that produces the SkPicture as its output, clipped to both 'targetRect' and
+     *  the picture's internal cull rect.
      *
-     * DEPRECATED: Use Shader() instead, since many features of SkPaint are ignored when filling
-     *             the target output, and paint color/alpha can be emulated with SkShaders::Color().
-     */
-    static sk_sp<SkImageFilter> Paint(const SkPaint& paint, const CropRect& cropRect = {});
-
-    /**
-     *  Create a filter that produces the SkPicture as its output, drawn into targetRect. Note that
-     *  the targetRect is not the same as the SkIRect cropRect that many filters accept. Returns
-     *  null if 'pic' is null.
+     *  If 'pic' is null, the returned image filter produces transparent black.
+     *
      *  @param pic        The picture that is drawn for the filter output.
      *  @param targetRect The drawing region for the picture.
      */
@@ -304,6 +352,51 @@ public:
         return Picture(std::move(pic), target);
     }
 
+#ifdef SK_ENABLE_SKSL
+    /**
+     *  Create a filter that fills the output with the per-pixel evaluation of the SkShader produced
+     *  by the SkRuntimeShaderBuilder. The shader is defined in the image filter's local coordinate
+     *  system, so it will automatically be affected by SkCanvas' transform.
+     *
+     *  @param builder         The builder used to produce the runtime shader, that will in turn
+     *                         fill the result image
+     *  @param childShaderName The name of the child shader defined in the builder that will be
+     *                         bound to the input param (or the source image if the input param
+     *                         is null).  If empty, the builder can have exactly one child shader,
+     *                         which automatically binds the input param.
+     *  @param input           The image filter that will be provided as input to the runtime
+     *                         shader. If null the implicit source image is used instead
+     */
+    static sk_sp<SkImageFilter> RuntimeShader(const SkRuntimeShaderBuilder& builder,
+                                              std::string_view childShaderName,
+                                              sk_sp<SkImageFilter> input);
+
+    /**
+     *  Create a filter that fills the output with the per-pixel evaluation of the SkShader produced
+     *  by the SkRuntimeShaderBuilder. The shader is defined in the image filter's local coordinate
+     *  system, so it will automatically be affected by SkCanvas' transform.
+     *
+     *  @param builder          The builder used to produce the runtime shader, that will in turn
+     *                          fill the result image
+     *  @param childShaderNames The names of the child shaders defined in the builder that will be
+     *                          bound to the input params (or the source image if the input param
+     *                          is null). If any name is null, or appears more than once, factory
+     *                          fails and returns nullptr.
+     *  @param inputs           The image filters that will be provided as input to the runtime
+     *                          shader. If any are null, the implicit source image is used instead.
+     *  @param inputCount       How many entries are present in 'childShaderNames' and 'inputs'.
+     */
+    static sk_sp<SkImageFilter> RuntimeShader(const SkRuntimeShaderBuilder& builder,
+                                              std::string_view childShaderNames[],
+                                              const sk_sp<SkImageFilter> inputs[],
+                                              int inputCount);
+#endif  // SK_ENABLE_SKSL
+
+    enum class Dither : bool {
+        kNo = false,
+        kYes = true
+    };
+
     /**
      *  Create a filter that fills the output with the per-pixel evaluation of the SkShader. The
      *  shader is defined in the image filter's local coordinate system, so will automatically
@@ -312,9 +405,16 @@ public:
      *  Like Image() and Picture(), this is a leaf filter that can be used to introduce inputs to
      *  a complex filter graph, but should generally be combined with a filter that as at least
      *  one null input to use the implicit source image.
-     *  @param shader The shader that
+     *
+     *  Returns an image filter that evaluates to transparent black if 'shader' is null.
+     *
+     *  @param shader The shader that fills the result image
      */
-    static sk_sp<SkImageFilter> Shader(sk_sp<SkShader> shader, const CropRect& cropRect = {});
+    static sk_sp<SkImageFilter> Shader(sk_sp<SkShader> shader, const CropRect& cropRect = {}) {
+        return Shader(std::move(shader), Dither::kNo, cropRect);
+    }
+    static sk_sp<SkImageFilter> Shader(sk_sp<SkShader> shader, Dither dither,
+                                       const CropRect& cropRect = {});
 
     /**
      *  Create a tile image filter.
@@ -324,21 +424,6 @@ public:
      */
     static sk_sp<SkImageFilter> Tile(const SkRect& src, const SkRect& dst,
                                      sk_sp<SkImageFilter> input);
-
-    /**
-     *  This filter takes an SkBlendMode and uses it to composite the two filters together.
-     *  @param mode       The blend mode that defines the compositing operation
-     *  @param background The Dst pixels used in blending, if null the source bitmap is used.
-     *  @param foreground The Src pixels used in blending, if null the source bitmap is used.
-     *  @cropRect         Optional rectangle to crop input and output.
-     *
-     *  DEPRECATED: Prefer the more idiomatic Blend function
-     */
-    static sk_sp<SkImageFilter> Xfermode(SkBlendMode mode, sk_sp<SkImageFilter> background,
-                                         sk_sp<SkImageFilter> foreground = nullptr,
-                                         const CropRect& cropRect = {}) {
-        return Blend(mode, std::move(background), std::move(foreground), cropRect);
-    }
 
     // Morphology filter effects
 
@@ -479,8 +564,6 @@ public:
                                                 SkScalar ks, SkScalar shininess,
                                                 sk_sp<SkImageFilter> input,
                                                 const CropRect& cropRect = {});
-
-    static void RegisterFlattenables();
 
 private:
     SkImageFilters() = delete;

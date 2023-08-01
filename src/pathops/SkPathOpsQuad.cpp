@@ -4,12 +4,18 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
+#include "src/pathops/SkPathOpsQuad.h"
+
 #include "src/pathops/SkIntersections.h"
 #include "src/pathops/SkLineParameters.h"
+#include "src/pathops/SkPathOpsConic.h"
 #include "src/pathops/SkPathOpsCubic.h"
-#include "src/pathops/SkPathOpsCurve.h"
-#include "src/pathops/SkPathOpsQuad.h"
+#include "src/pathops/SkPathOpsLine.h"
 #include "src/pathops/SkPathOpsRect.h"
+#include "src/pathops/SkPathOpsTypes.h"
+
+#include <algorithm>
+#include <cmath>
 
 // from blackpawn.com/texts/pointinpoly
 static bool pointInTriangle(const SkDPoint fPts[3], const SkDPoint& test) {
@@ -159,6 +165,7 @@ and using the roots
       t2 = C / Q
 */
 // this does not discard real roots <= 0 or >= 1
+// TODO(skbug.com/14063) Deduplicate with SkQuads::RootsReal
 int SkDQuad::RootsReal(const double A, const double B, const double C, double s[2]) {
     if (!A) {
         return handle_zero(B, C, s);

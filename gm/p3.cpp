@@ -10,24 +10,23 @@
 #include "include/core/SkCanvas.h"
 #include "include/core/SkColor.h"
 #include "include/core/SkColorSpace.h"
-#include "include/core/SkFilterQuality.h"
 #include "include/core/SkFont.h"
+#include "include/core/SkImage.h"
 #include "include/core/SkImageInfo.h"
 #include "include/core/SkMatrix.h"
 #include "include/core/SkPaint.h"
 #include "include/core/SkPathEffect.h"
 #include "include/core/SkPixmap.h"
 #include "include/core/SkPoint.h"
-#include "include/core/SkRefCnt.h"
-#include "include/core/SkScalar.h"
 #include "include/core/SkShader.h"
 #include "include/core/SkString.h"
 #include "include/core/SkTileMode.h"
 #include "include/core/SkTypes.h"
 #include "include/effects/SkDashPathEffect.h"
 #include "include/effects/SkGradientShader.h"
-#include "include/private/SkTPin.h"
+#include "include/private/base/SkTPin.h"
 #include "src/core/SkColorSpaceXformSteps.h"
+#include "src/core/SkImageInfoPriv.h"
 
 #include <math.h>
 #include <string.h>
@@ -61,7 +60,7 @@ static void compare_pixel(const char* label,
     // but we sniff the canvas to grab its current y-translate, so that (x,y)
     // can be written in sort of chunk-relative terms.
     const SkMatrix& m = canvas->getTotalMatrix();
-    SkASSERT(m.isTranslate());
+    SkASSERT(m.isScaleTranslate());
     SkScalar dy = m.getTranslateY();
     SkASSERT(dy == (int)dy);
     y += (int)dy;
@@ -145,47 +144,8 @@ DEF_SIMPLE_GM(p3, canvas, 450, 1300) {
         paint.setColor4f({1,0,0,1}, p3.get());
         SkCanvas{bm}.drawPaint(paint);
 
-        canvas->drawBitmap(bm, 10,10);
+        canvas->drawImage(bm.asImage(), 10,10);
         compare_pixel("drawBitmap P3 red, from drawPaint",
-                      canvas, 10,10,
-                      {1,0,0,1}, p3.get());
-    }
-
-    canvas->translate(0,80);
-
-    // Draw a P3 red bitmap, using SkPixmap::erase().
-    {
-        SkBitmap bm;
-        bm.allocPixels(SkImageInfo::Make(60,60, kRGBA_F16_SkColorType, kPremul_SkAlphaType, p3));
-
-        // At the moment only SkPixmap has an erase() that takes an SkColor4f.
-        SkPixmap pm;
-        SkAssertResult(bm.peekPixels(&pm));
-        SkAssertResult(pm.erase({1,0,0,1}, p3.get()));
-
-        canvas->drawBitmap(bm, 10,10);
-        compare_pixel("drawBitmap P3 red, from SkPixmap::erase",
-                      canvas, 10,10,
-                      {1,0,0,1}, p3.get());
-    }
-
-    canvas->translate(0,80);
-
-    // Draw a P3 red bitmap wrapped in a shader, using SkPixmap::erase().
-    {
-        SkBitmap bm;
-        bm.allocPixels(SkImageInfo::Make(60,60, kRGBA_F16_SkColorType, kPremul_SkAlphaType, p3));
-
-        // At the moment only SkPixmap has an erase() that takes an SkColor4f.
-        SkPixmap pm;
-        SkAssertResult(bm.peekPixels(&pm));
-        SkAssertResult(pm.erase({1,0,0,1}, p3.get()));
-
-        SkPaint paint;
-        paint.setShader(bm.makeShader(SkTileMode::kRepeat, SkTileMode::kRepeat));
-
-        canvas->drawRect({10,10,70,70}, paint);
-        compare_pixel("drawBitmapAsShader P3 red, from SkPixmap::erase",
                       canvas, 10,10,
                       {1,0,0,1}, p3.get());
     }
@@ -202,7 +162,7 @@ DEF_SIMPLE_GM(p3, canvas, 450, 1300) {
 
         SkPaint paint;
         paint.setShader(SkGradientShader::MakeLinear(points, colors, p3,
-                                                     nullptr, SK_ARRAY_COUNT(colors),
+                                                     nullptr, std::size(colors),
                                                      SkTileMode::kClamp));
         canvas->drawRect({10,10,70,70}, paint);
         canvas->save();
@@ -229,7 +189,7 @@ DEF_SIMPLE_GM(p3, canvas, 450, 1300) {
         SkPaint paint;
         paint.setShader(
                 SkGradientShader::MakeLinear(points, colors, p3,
-                                             nullptr, SK_ARRAY_COUNT(colors),
+                                             nullptr, std::size(colors),
                                              SkTileMode::kClamp,
                                              SkGradientShader::kInterpolateColorsInPremul_Flag,
                                              nullptr/*local matrix*/));
@@ -257,7 +217,7 @@ DEF_SIMPLE_GM(p3, canvas, 450, 1300) {
 
         SkPaint paint;
         paint.setShader(SkGradientShader::MakeLinear(points, colors, srgb,
-                                                     nullptr, SK_ARRAY_COUNT(colors),
+                                                     nullptr, std::size(colors),
                                                      SkTileMode::kClamp));
         canvas->drawRect({10,10,70,70}, paint);
         canvas->save();
@@ -284,7 +244,7 @@ DEF_SIMPLE_GM(p3, canvas, 450, 1300) {
         SkPaint paint;
         paint.setShader(
                 SkGradientShader::MakeLinear(points, colors, srgb,
-                                             nullptr, SK_ARRAY_COUNT(colors),
+                                             nullptr, std::size(colors),
                                              SkTileMode::kClamp,
                                              SkGradientShader::kInterpolateColorsInPremul_Flag,
                                              nullptr/*local matrix*/));
@@ -312,7 +272,7 @@ DEF_SIMPLE_GM(p3, canvas, 450, 1300) {
         SkPaint paint;
         paint.setShader(
                 SkGradientShader::MakeLinear(points, colors, p3,
-                                             nullptr, SK_ARRAY_COUNT(colors),
+                                             nullptr, std::size(colors),
                                              SkTileMode::kClamp,
                                              SkGradientShader::kInterpolateColorsInPremul_Flag,
                                              nullptr/*local matrix*/));
@@ -338,19 +298,19 @@ DEF_SIMPLE_GM(p3, canvas, 450, 1300) {
         for (int i = 0; i < 256; i++) {
             mask[i] = 255-i;
         }
+
         SkBitmap bm;
         bm.installPixels(SkImageInfo::MakeA8(16,16), mask, 16);
 
         SkPaint as_bitmap;
         as_bitmap.setColor4f({1,0,0,1}, p3.get());
-        as_bitmap.setFilterQuality(kLow_SkFilterQuality);
+        SkSamplingOptions sampling(SkFilterMode::kLinear);
 
         SkPaint as_shader;
         as_shader.setColor4f({1,0,0,1}, p3.get());
-        as_shader.setFilterQuality(kLow_SkFilterQuality);
-        as_shader.setShader(bm.makeShader());
+        as_shader.setShader(bm.makeShader(sampling));
 
-        canvas->drawBitmap(bm, 10,10, &as_bitmap);
+        canvas->drawImage(bm.asImage(), 10,10, sampling, &as_bitmap);
         compare_pixel("A8 sprite bitmap P3 red",
                       canvas, 10,10,
                       {1,0,0,1}, p3.get());
@@ -367,7 +327,7 @@ DEF_SIMPLE_GM(p3, canvas, 450, 1300) {
 
         canvas->translate(0,80);
 
-        canvas->drawBitmapRect(bm, {10,10,70,70}, &as_bitmap);
+        canvas->drawImageRect(bm.asImage(), {10,10,70,70}, sampling, &as_bitmap);
         compare_pixel("A8 scaled bitmap P3 red",
                       canvas, 10,10,
                       {1,0,0,1}, p3.get());

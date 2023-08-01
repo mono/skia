@@ -10,8 +10,16 @@
 #include "include/core/SkCanvas.h"
 #include "include/core/SkData.h"
 #include "include/core/SkImage.h"
+#include "include/private/base/SkAssert.h"
+
+#include <utility>
 
 ImageSlide::ImageSlide(const SkString& name, const SkString& path) : fPath(path) {
+    fName = name;
+}
+
+ImageSlide::ImageSlide(const SkString& name, sk_sp<SkImage> image)
+        : fImage(std::move(image)), fRetainImage(true) {
     fName = name;
 }
 
@@ -25,10 +33,16 @@ void ImageSlide::draw(SkCanvas* canvas) {
 }
 
 void ImageSlide::load(SkScalar, SkScalar) {
-    sk_sp<SkData> encoded = SkData::MakeFromFileName(fPath.c_str());
-    fImage = SkImage::MakeFromEncoded(encoded);
+    if (fRetainImage) {
+        SkASSERT(fImage);
+    } else {
+        sk_sp<SkData> encoded = SkData::MakeFromFileName(fPath.c_str());
+        fImage = SkImages::DeferredFromEncodedData(encoded);
+    }
 }
 
 void ImageSlide::unload() {
-    fImage.reset(nullptr);
+    if (!fRetainImage) {
+        fImage.reset(nullptr);
+    }
 }

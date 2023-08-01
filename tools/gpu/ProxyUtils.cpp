@@ -5,69 +5,106 @@
  * found in the LICENSE file.
  */
 
+#include "tools/gpu/ProxyUtils.h"
+
 #include "include/core/SkColor.h"
 #include "include/gpu/GrBackendSurface.h"
 #include "include/gpu/GrDirectContext.h"
-#include "src/gpu/GrDirectContextPriv.h"
-#include "src/gpu/GrDrawingManager.h"
-#include "src/gpu/GrGpu.h"
-#include "src/gpu/GrImageInfo.h"
-#include "src/gpu/GrProgramInfo.h"
-#include "src/gpu/GrProxyProvider.h"
-#include "src/gpu/GrSurfaceContext.h"
-#include "src/gpu/SkGr.h"
-#include "src/gpu/ops/GrSimpleMeshDrawOpHelper.h"
-#include "tools/gpu/ProxyUtils.h"
+#include "include/private/gpu/ganesh/GrImageContext.h"
+#include "src/gpu/ganesh/GrDirectContextPriv.h"
+#include "src/gpu/ganesh/GrDrawingManager.h"
+#include "src/gpu/ganesh/GrGpu.h"
+#include "src/gpu/ganesh/GrImageContextPriv.h"
+#include "src/gpu/ganesh/GrPixmap.h"
+#include "src/gpu/ganesh/GrProgramInfo.h"
+#include "src/gpu/ganesh/GrProxyProvider.h"
+#include "src/gpu/ganesh/SkGr.h"
+#include "src/gpu/ganesh/SurfaceContext.h"
+#include "src/gpu/ganesh/image/GrImageUtils.h"
+#include "src/image/SkImage_Base.h"
+
+#if defined(SK_GANESH)
+#include "src/gpu/ganesh/ops/GrSimpleMeshDrawOpHelper.h"
+#endif
 
 namespace sk_gpu_test {
+
+GrTextureProxy* GetTextureImageProxy(SkImage* image, GrRecordingContext* rContext) {
+    if (!as_IB(image)->isGaneshBacked() || as_IB(image)->isYUVA()) {
+        return nullptr;
+    }
+    if (!rContext) {
+        // If the image is backed by a recording context we'll use that.
+        GrImageContext* iContext = as_IB(image)->context();
+        SkASSERT(iContext);
+        rContext = iContext->priv().asRecordingContext();
+        if (!rContext) {
+            return nullptr;
+        }
+    }
+    auto [view, ct] = skgpu::ganesh::AsView(rContext, image, GrMipmapped::kNo);
+    if (!view) {
+        // With the above checks we expect this to succeed unless there is a context mismatch.
+        SkASSERT(!image->isValid(rContext));
+        return nullptr;
+    }
+    GrSurfaceProxy* proxy = view.proxy();
+    SkASSERT(proxy->asTextureProxy());
+    return proxy->asTextureProxy();
+}
 
 GrSurfaceProxyView MakeTextureProxyViewFromData(GrDirectContext* dContext,
                                                 GrRenderable renderable,
                                                 GrSurfaceOrigin origin,
-                                                const GrImageInfo& imageInfo,
-                                                const void* data,
-                                                size_t rowBytes) {
+                                                GrCPixmap pixmap) {
     if (dContext->abandoned()) {
         return {};
     }
 
     const GrCaps* caps = dContext->priv().caps();
 
-    const GrBackendFormat format = caps->getDefaultBackendFormat(imageInfo.colorType(), renderable);
+    const GrBackendFormat format = caps->getDefaultBackendFormat(pixmap.colorType(), renderable);
     if (!format.isValid()) {
         return {};
     }
-    GrSwizzle swizzle = caps->getReadSwizzle(format, imageInfo.colorType());
+    skgpu::Swizzle swizzle = caps->getReadSwizzle(format, pixmap.colorType());
 
     sk_sp<GrTextureProxy> proxy;
-    proxy = dContext->priv().proxyProvider()->createProxy(format, imageInfo.dimensions(),
-                                                          renderable, 1, GrMipmapped::kNo,
-                                                          SkBackingFit::kExact, SkBudgeted::kYes,
-                                                          GrProtected::kNo);
+    proxy = dContext->priv().proxyProvider()->createProxy(format,
+                                                          pixmap.dimensions(),
+                                                          renderable,
+                                                          /*sample count*/ 1,
+                                                          GrMipmapped::kNo,
+                                                          SkBackingFit::kExact,
+                                                          skgpu::Budgeted::kYes,
+                                                          GrProtected::kNo,
+                                                          /*label=*/"TextureProxyViewFromData");
     if (!proxy) {
         return {};
     }
     GrSurfaceProxyView view(proxy, origin, swizzle);
-    auto sContext = GrSurfaceContext::Make(dContext, std::move(view), imageInfo.colorType(),
-                                           imageInfo.alphaType(), imageInfo.refColorSpace());
+    auto sContext = dContext->priv().makeSC(std::move(view), pixmap.colorInfo());
     if (!sContext) {
         return {};
     }
-    if (!sContext->writePixels(dContext, imageInfo, data, rowBytes, {0, 0})) {
+    if (!sContext->writePixels(dContext, pixmap, {0, 0})) {
         return {};
     }
     return sContext->readSurfaceView();
 }
 
+#if defined(SK_GANESH)
 GrProgramInfo* CreateProgramInfo(const GrCaps* caps,
                                  SkArenaAlloc* arena,
-                                 const GrSurfaceProxyView* writeView,
+                                 const GrSurfaceProxyView& writeView,
+                                 bool usesMSAASurface,
                                  GrAppliedClip&& appliedClip,
-                                 const GrXferProcessor::DstProxyView& dstProxyView,
+                                 const GrDstProxyView& dstProxyView,
                                  GrGeometryProcessor* geomProc,
                                  SkBlendMode blendMode,
                                  GrPrimitiveType primitiveType,
                                  GrXferBarrierFlags renderPassXferBarriers,
+                                 GrLoadOp colorLoadOp,
                                  GrPipeline::InputFlags flags,
                                  const GrUserStencilSettings* stencilSettings) {
 
@@ -77,16 +114,16 @@ GrProgramInfo* CreateProgramInfo(const GrCaps* caps,
 
     SkDEBUGCODE(auto analysis =) processors.finalize(analysisColor,
                                                      GrProcessorAnalysisCoverage::kSingleChannel,
-                                                     &appliedClip, stencilSettings, false,
-                                                     *caps, GrClampType::kAuto, &analysisColor);
+                                                     &appliedClip, stencilSettings, *caps,
+                                                     GrClampType::kAuto, &analysisColor);
     SkASSERT(!analysis.requiresDstTexture());
 
-    return GrSimpleMeshDrawOpHelper::CreateProgramInfo(caps, arena, writeView,
+    return GrSimpleMeshDrawOpHelper::CreateProgramInfo(caps, arena, writeView, usesMSAASurface,
                                                        std::move(appliedClip), dstProxyView,
                                                        geomProc, std::move(processors),
-                                                       primitiveType, renderPassXferBarriers, flags,
-                                                       stencilSettings);
+                                                       primitiveType, renderPassXferBarriers,
+                                                       colorLoadOp, flags, stencilSettings);
 }
-
+#endif // defined(SK_GANESH)
 
 }  // namespace sk_gpu_test

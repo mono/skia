@@ -8,83 +8,76 @@
 #ifndef SkSLSampleUsage_DEFINED
 #define SkSLSampleUsage_DEFINED
 
-#include <string>
+#include "include/core/SkTypes.h"
 
 namespace SkSL {
 
 /**
  * Represents all of the ways that a fragment processor is sampled by its parent.
  */
-struct SampleUsage {
+class SampleUsage {
+public:
     enum class Kind {
-        // No sample(child, matrix) call affects the FP.
+        // Child is never sampled
         kNone,
-        // The FP is sampled with a matrix whose value is fixed and based only on literals or
-        // uniforms, and thus the transform can be hoisted to the vertex shader (assuming that
-        // its parent can also be hoisted, i.e. not sampled explicitly).
-        kUniform,
-        // The FP is sampled with a non-literal/uniform value, or matrix-sampled multiple times,
-        // and thus the transform cannot be hoisted to the vertex shader.
-        kVariable
+        // Child is only sampled at the same coordinates as the parent
+        kPassThrough,
+        // Child is sampled with a matrix whose value is uniform
+        kUniformMatrix,
+        // Child is sampled with sk_FragCoord.xy
+        kFragCoord,
+        // Child is sampled using explicit coordinates
+        kExplicit,
     };
 
     // Make a SampleUsage that corresponds to no sampling of the child at all
     SampleUsage() = default;
 
-    // This corresponds to sample(child, color, matrix) calls where every call site in the FP has
-    // the same matrix, and that matrix's value is uniform (some expression only involving literals
-    // and uniform variables).
-    static SampleUsage UniformMatrix(std::string expression, bool hasPerspective = true) {
-        return SampleUsage(Kind::kUniform, std::move(expression), hasPerspective, false, false);
+    SampleUsage(Kind kind, bool hasPerspective) : fKind(kind), fHasPerspective(hasPerspective) {
+        if (kind != Kind::kUniformMatrix) {
+            SkASSERT(!fHasPerspective);
+        }
     }
 
-    // This corresponds to sample(child, color, matrix) where the 3rd argument is an expression that
-    // can't be hoisted to the vertex shader, or where the expression used is not the same at all
-    // call sites in the FP.
-    static SampleUsage VariableMatrix(bool hasPerspective = true) {
-        return SampleUsage(Kind::kVariable, "", hasPerspective, false, false);
+    // Child is sampled with a matrix whose value is uniform. The name is fixed.
+    static SampleUsage UniformMatrix(bool hasPerspective) {
+        return SampleUsage(Kind::kUniformMatrix, hasPerspective);
     }
 
     static SampleUsage Explicit() {
-        return SampleUsage(Kind::kNone, "", false, true, false);
+        return SampleUsage(Kind::kExplicit, false);
     }
 
     static SampleUsage PassThrough() {
-        return SampleUsage(Kind::kNone, "", false, false, true);
+        return SampleUsage(Kind::kPassThrough, false);
     }
+
+    static SampleUsage FragCoord() { return SampleUsage(Kind::kFragCoord, false); }
+
+    bool operator==(const SampleUsage& that) const {
+        return fKind == that.fKind && fHasPerspective == that.fHasPerspective;
+    }
+
+    bool operator!=(const SampleUsage& that) const { return !(*this == that); }
+
+    // Arbitrary name used by all uniform sampling matrices
+    static const char* MatrixUniformName() { return "matrix"; }
 
     SampleUsage merge(const SampleUsage& other);
 
-    bool isSampled() const {
-        return this->hasMatrix() || fExplicitCoords || fPassThrough;
-    }
+    Kind kind() const { return fKind; }
 
-    bool hasMatrix()         const { return fKind != Kind::kNone; }
-    bool hasUniformMatrix()  const { return fKind == Kind::kUniform; }
-    bool hasVariableMatrix() const { return fKind == Kind::kVariable; }
+    bool hasPerspective() const { return fHasPerspective; }
 
+    bool isSampled()       const { return fKind != Kind::kNone; }
+    bool isPassThrough()   const { return fKind == Kind::kPassThrough; }
+    bool isExplicit()      const { return fKind == Kind::kExplicit; }
+    bool isUniformMatrix() const { return fKind == Kind::kUniformMatrix; }
+    bool isFragCoord()     const { return fKind == Kind::kFragCoord; }
+
+private:
     Kind fKind = Kind::kNone;
-    // The uniform expression representing the matrix (only valid when kind == kUniform)
-    std::string fExpression;
-    // FIXME: We can expand this to track a more general matrix type to allow for optimizations on
-    // identity or scale+translate matrices too.
-    bool fHasPerspective = false;
-
-    bool fExplicitCoords = false;
-    bool fPassThrough    = false;
-
-    SampleUsage(Kind kind,
-                std::string expression,
-                bool hasPerspective,
-                bool explicitCoords,
-                bool passThrough)
-            : fKind(kind)
-            , fExpression(expression)
-            , fHasPerspective(hasPerspective)
-            , fExplicitCoords(explicitCoords)
-            , fPassThrough(passThrough) {}
-
-    std::string constructor(std::string perspectiveExpression) const;
+    bool fHasPerspective = false;  // Only valid if fKind is kUniformMatrix
 };
 
 }  // namespace SkSL

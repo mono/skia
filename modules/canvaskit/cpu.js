@@ -1,7 +1,7 @@
 // Adds compile-time JS functions to augment the CanvasKit interface.
 // Implementations in this file are considerate of GPU builds, i.e. some
 // behavior is predicated on whether or not this is being compiled alongside
-// gpu.js.
+// webgl.js or webgpu.js.
 (function(CanvasKit){
   CanvasKit._extraInitializations = CanvasKit._extraInitializations || [];
   CanvasKit._extraInitializations.push(function() {
@@ -15,19 +15,11 @@
           throw 'Canvas with id ' + idOrElement + ' was not found';
         }
       }
-      var width = canvas.width;
-      var height = canvas.height;
       // Maybe better to use clientWidth/height.  See:
       // https://webglfundamentals.org/webgl/lessons/webgl-anti-patterns.html
-      var surface = CanvasKit.MakeSurface(width, height);
+      var surface = CanvasKit.MakeSurface(canvas.width, canvas.height);
       if (surface) {
-        // Set the properties we need in order to flush to the canvas.
         surface._canvas = canvas;
-        surface._width = width;
-        surface._height = height;
-        surface._pixelLen = width * height * 4; // it's 8888, so 4 bytes per pixel
-        // Allocate the buffer of pixels that will be used for readPixels into.
-        surface._pixelPtr = CanvasKit._malloc(surface._pixelLen);
       }
       return surface;
     };
@@ -46,10 +38,32 @@
         'width':  width,
         'height': height,
         'colorType': CanvasKit.ColorType.RGBA_8888,
-        'alphaType': CanvasKit.AlphaType.Premul,
+        // Since we are sending these pixels directly into the HTML canvas,
+        // (and those pixels are un-premultiplied, i.e. straight r,g,b,a)
+        'alphaType': CanvasKit.AlphaType.Unpremul,
         'colorSpace': CanvasKit.ColorSpace.SRGB,
       };
-      return CanvasKit.Surface._makeRaster(imageInfo);
+      var pixelLen = width * height * 4; // it's 8888, so 4 bytes per pixel
+      // Allocate the buffer of pixels to be drawn into.
+      var pixelPtr = CanvasKit._malloc(pixelLen);
+
+      // Experiments with using RasterDirect vs Raster showed a 10% slowdown
+      // over the traditional Surface::MakeRaster approach. This was exacerbated when
+      // the surface was drawing to Premul and we had to convert to Unpremul each frame
+      // (up to a 10x further slowdown).
+      var surface = CanvasKit.Surface._makeRasterDirect(imageInfo, pixelPtr, width*4);
+      if (surface) {
+        surface._canvas = null;
+        surface._width = width;
+        surface._height = height;
+        surface._pixelLen = pixelLen;
+
+        surface._pixelPtr = pixelPtr;
+        // rasterDirectSurface does not initialize the pixels, so we clear them
+        // to transparent black.
+        surface.getCanvas().clear(CanvasKit.TRANSPARENT);
+      }
+      return surface;
     };
 
     CanvasKit.MakeRasterDirectSurface = function(imageInfo, mallocObj, bytesPerRow) {
@@ -59,12 +73,11 @@
     // For GPU builds, simply proxies to native code flush.  For CPU builds,
     // also updates the underlying HTML canvas, optionally with dirtyRect.
     CanvasKit.Surface.prototype.flush = function(dirtyRect) {
+      CanvasKit.setCurrentContext(this._context);
       this._flush();
       // Do we have an HTML canvas to write the pixels to?
       // We will not have a canvas if this a GPU build, for example.
       if (this._canvas) {
-        // TODO(kjlubick) can this be modified to only read the pixels in dirtyRect?
-        this.getCanvas()._readPixelsForCanvas2D(this._pixelPtr, this._width, this._height);
         var pixels = new Uint8ClampedArray(CanvasKit.HEAPU8.buffer, this._pixelPtr, this._pixelLen);
         var imageData = new ImageData(pixels, this._width, this._height);
 
@@ -86,14 +99,15 @@
         CanvasKit._free(this._pixelPtr);
       }
       this.delete();
-    }
-
-    CanvasKit.currentContext = CanvasKit.currentContext || function() {
-      // no op if this is a cpu-only build.
     };
 
     CanvasKit.setCurrentContext = CanvasKit.setCurrentContext || function() {
        // no op if this is a cpu-only build.
+    };
+
+    CanvasKit.getCurrentGrDirectContext = CanvasKit.getCurrentGrDirectContext || function() {
+      // No GrDirectContexts without a GPU backend.
+      return null;
     };
   });
 }(Module)); // When this file is loaded in, the high level object is "Module";

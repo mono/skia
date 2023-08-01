@@ -80,7 +80,7 @@ struct Timer {
 
 static constexpr float kFontSize = 18;
 static const char* kTypefaces[3] = {"sans-serif", "serif", "monospace"};
-static constexpr size_t kTypefaceCount = SK_ARRAY_COUNT(kTypefaces);
+static constexpr size_t kTypefaceCount = std::size(kTypefaces);
 
 static constexpr SkFontStyle::Weight kFontWeight = SkFontStyle::kNormal_Weight;
 static constexpr SkFontStyle::Width  kFontWidth  = SkFontStyle::kNormal_Width;
@@ -209,7 +209,7 @@ struct EditorLayer : public sk_app::Window::Layer {
             switch (c) {
                 case 'p':
                     for (StringView str : fEditor.text()) {
-                        SkDebugf(">>  '%.*s'\n", str.size, str.data);
+                        SkDebugf(">>  '%.*s'\n", (int)str.size, str.data);
                     }
                     return true;
                 case 's':
@@ -366,8 +366,17 @@ struct EditorLayer : public sk_app::Window::Layer {
     }
 };
 
-//static constexpr sk_app::Window::BackendType kBackendType = sk_app::Window::kRaster_BackendType;
+#ifdef SK_VULKAN
+static constexpr sk_app::Window::BackendType kBackendType = sk_app::Window::kVulkan_BackendType;
+#elif SK_METAL
+static constexpr sk_app::Window::BackendType kBackendType = sk_app::Window::kMetal_BackendType;
+#elif SK_GL
 static constexpr sk_app::Window::BackendType kBackendType = sk_app::Window::kNativeGL_BackendType;
+#elif SK_DAWN
+static constexpr sk_app::Window::BackendType kBackendType = sk_app::Window::kDawn_BackendType;
+#else
+static constexpr sk_app::Window::BackendType kBackendType = sk_app::Window::kRaster_BackendType;
+#endif
 
 struct EditorApplication : public sk_app::Application {
     std::unique_ptr<sk_app::Window> fWindow;

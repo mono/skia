@@ -65,12 +65,12 @@ protected:
         // (i.e., unknown pixel geometry)
         c->clear(0x00ffffff);
         c->drawTextBlob(blob, 10, 150, SkPaint());
-        surface->draw(canvas, 0, 0, nullptr);
+        surface->draw(canvas, 0, 0);
     }
 
 private:
-    static constexpr int kWidth = 200;
-    static constexpr int kHeight = 200;
+    inline static constexpr int kWidth = 200;
+    inline static constexpr int kHeight = 200;
 
     using INHERITED = GM;
 };

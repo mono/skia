@@ -20,37 +20,32 @@ namespace SkSL {
  */
 class FunctionReference final : public Expression {
 public:
-    static constexpr Kind kExpressionKind = Kind::kFunctionReference;
+    inline static constexpr Kind kIRNodeKind = Kind::kFunctionReference;
 
-    FunctionReference(const Context& context, int offset,
-                      std::vector<const FunctionDeclaration*> functions)
-        : INHERITED(offset, kExpressionKind, context.fInvalid_Type.get())
-        , fFunctions(std::move(functions)) {}
+    FunctionReference(const Context& context, Position pos,
+                      const FunctionDeclaration* overloadChain)
+        : INHERITED(pos, kIRNodeKind, context.fTypes.fInvalid.get())
+        , fOverloadChain(overloadChain) {}
 
-    const std::vector<const FunctionDeclaration*>& functions() const {
-        return fFunctions;
+    const FunctionDeclaration* overloadChain() const {
+        return fOverloadChain;
     }
 
-    bool hasProperty(Property property) const override {
-        return false;
-    }
-
-    std::unique_ptr<Expression> clone() const override {
-        return std::unique_ptr<Expression>(new FunctionReference(fOffset, this->functions(),
+    std::unique_ptr<Expression> clone(Position pos) const override {
+        return std::unique_ptr<Expression>(new FunctionReference(pos, this->overloadChain(),
                                                                  &this->type()));
     }
 
-    String description() const override {
-        return String("<function>");
+    std::string description(OperatorPrecedence) const override {
+        return "<function>";
     }
 
 private:
-    FunctionReference(int offset, std::vector<const FunctionDeclaration*> functions,
-                      const Type* type)
-        : INHERITED(offset, kExpressionKind, type)
-        , fFunctions(std::move(functions)) {}
+    FunctionReference(Position pos, const FunctionDeclaration* overloadChain, const Type* type)
+            : INHERITED(pos, kIRNodeKind, type)
+            , fOverloadChain(overloadChain) {}
 
-    std::vector<const FunctionDeclaration*> fFunctions;
+    const FunctionDeclaration* fOverloadChain;
 
     using INHERITED = Expression;
 };

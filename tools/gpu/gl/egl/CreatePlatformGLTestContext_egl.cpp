@@ -5,13 +5,18 @@
  * found in the LICENSE file.
  */
 
-#include "src/gpu/gl/GrGLDefines.h"
-#include "src/gpu/gl/GrGLUtil.h"
+#include "src/gpu/ganesh/gl/GrGLDefines_impl.h"
+#include "src/gpu/ganesh/gl/GrGLUtil.h"
 #include "tools/gpu/gl/GLTestContext.h"
 
+#include <vector>
+
+#define EGL_PROTECTED_CONTENT_EXT 0x32C0
 #define GL_GLEXT_PROTOTYPES
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
+
+extern bool gCreateProtectedContext;
 
 namespace {
 
@@ -43,8 +48,6 @@ private:
     std::function<void()> onPlatformGetAutoContextRestore() const override;
     GrGLFuncPtr onPlatformGetProcAddress(const char*) const override;
 
-    void setupFenceSync(sk_sp<const GrGLInterface>);
-
     PFNEGLCREATEIMAGEKHRPROC fEglCreateImageProc = nullptr;
     PFNEGLDESTROYIMAGEKHRPROC fEglDestroyImageProc = nullptr;
 
@@ -56,21 +59,38 @@ private:
 static EGLContext create_gles_egl_context(EGLDisplay display,
                                           EGLConfig surfaceConfig,
                                           EGLContext eglShareContext,
-                                          EGLint eglContextClientVersion) {
-    const EGLint contextAttribsForOpenGLES[] = {
-        EGL_CONTEXT_CLIENT_VERSION,
-        eglContextClientVersion,
-        EGL_NONE
+                                          EGLint eglContextClientVersion,
+                                          bool createProtected) {
+
+    std::vector<EGLint> contextAttribs = {
+            EGL_CONTEXT_CLIENT_VERSION, eglContextClientVersion,
     };
-    return eglCreateContext(display, surfaceConfig, eglShareContext, contextAttribsForOpenGLES);
+
+    if (createProtected) {
+        contextAttribs.push_back(EGL_PROTECTED_CONTENT_EXT);
+        contextAttribs.push_back(EGL_TRUE);
+    }
+
+    contextAttribs.push_back(EGL_NONE);
+
+    return eglCreateContext(display, surfaceConfig, eglShareContext, contextAttribs.data());
 }
+
 static EGLContext create_gl_egl_context(EGLDisplay display,
                                         EGLConfig surfaceConfig,
-                                        EGLContext eglShareContext) {
-    const EGLint contextAttribsForOpenGL[] = {
-        EGL_NONE
-    };
-    return eglCreateContext(display, surfaceConfig, eglShareContext, contextAttribsForOpenGL);
+                                        EGLContext eglShareContext,
+                                        bool createProtected) {
+
+    std::vector<EGLint> contextAttribs;
+
+    if (createProtected) {
+        contextAttribs.push_back(EGL_PROTECTED_CONTENT_EXT);
+        contextAttribs.push_back(EGL_TRUE);
+    }
+
+    contextAttribs.push_back(EGL_NONE);
+
+    return eglCreateContext(display, surfaceConfig, eglShareContext, contextAttribs.data());
 }
 
 EGLGLTestContext::EGLGLTestContext(GrGLStandard forcedGpuAPI, EGLGLTestContext* shareContext)
@@ -85,7 +105,7 @@ EGLGLTestContext::EGLGLTestContext(GrGLStandard forcedGpuAPI, EGLGLTestContext* 
         kGLES_GrGLStandard,
     };
 
-    size_t apiLimit = SK_ARRAY_COUNT(kStandards);
+    size_t apiLimit = std::size(kStandards);
     size_t api = 0;
     if (forcedGpuAPI == kGL_GrGLStandard) {
         apiLimit = 1;
@@ -103,11 +123,13 @@ EGLGLTestContext::EGLGLTestContext(GrGLStandard forcedGpuAPI, EGLGLTestContext* 
         EGLint minorVersion;
         eglInitialize(fDisplay, &majorVersion, &minorVersion);
 
+        const char* extensions = eglQueryString(fDisplay, EGL_EXTENSIONS);
+
 #if 0
         SkDebugf("VENDOR: %s\n", eglQueryString(fDisplay, EGL_VENDOR));
         SkDebugf("APIS: %s\n", eglQueryString(fDisplay, EGL_CLIENT_APIS));
         SkDebugf("VERSION: %s\n", eglQueryString(fDisplay, EGL_VERSION));
-        SkDebugf("EXTENSIONS %s\n", eglQueryString(fDisplay, EGL_EXTENSIONS));
+        SkDebugf("EXTENSIONS %s\n", extensions);
 #endif
         bool gles = kGLES_GrGLStandard == kStandards[api];
 
@@ -137,19 +159,29 @@ EGLGLTestContext::EGLGLTestContext(GrGLStandard forcedGpuAPI, EGLGLTestContext* 
             continue;
         }
 
+        bool createProtected = gCreateProtectedContext;
+        if (createProtected && !strstr(extensions, "EGL_EXT_protected_content")) {
+            SkDebugf("Missing EGL_EXT_protected_content support!\n");
+            createProtected = false;
+        }
+
         if (gles) {
 #ifdef GR_EGL_TRY_GLES3_THEN_GLES2
             // Some older devices (Nexus7/Tegra3) crash when you try this.  So it is (for now)
             // hidden behind this flag.
-            fContext = create_gles_egl_context(fDisplay, surfaceConfig, eglShareContext, 3);
+            fContext = create_gles_egl_context(fDisplay, surfaceConfig, eglShareContext, 3,
+                                               createProtected);
             if (EGL_NO_CONTEXT == fContext) {
-                fContext = create_gles_egl_context(fDisplay, surfaceConfig, eglShareContext, 2);
+                fContext = create_gles_egl_context(fDisplay, surfaceConfig, eglShareContext, 2,
+                                                   createProtected);
             }
 #else
-            fContext = create_gles_egl_context(fDisplay, surfaceConfig, eglShareContext, 2);
+            fContext = create_gles_egl_context(fDisplay, surfaceConfig, eglShareContext, 2,
+                                               createProtected);
 #endif
         } else {
-            fContext = create_gl_egl_context(fDisplay, surfaceConfig, eglShareContext);
+            fContext = create_gl_egl_context(fDisplay, surfaceConfig, eglShareContext,
+                                             createProtected);
         }
         if (EGL_NO_CONTEXT == fContext) {
             SkDebugf("eglCreateContext failed.  EGL Error: 0x%08x\n", eglGetError());
@@ -159,6 +191,8 @@ EGLGLTestContext::EGLGLTestContext(GrGLStandard forcedGpuAPI, EGLGLTestContext* 
         static const EGLint kSurfaceAttribs[] = {
             EGL_WIDTH, 1,
             EGL_HEIGHT, 1,
+            createProtected ? EGL_PROTECTED_CONTENT_EXT : EGL_NONE,
+            createProtected ? EGL_TRUE : EGL_NONE,
             EGL_NONE
         };
 
@@ -184,14 +218,11 @@ EGLGLTestContext::EGLGLTestContext(GrGLStandard forcedGpuAPI, EGLGLTestContext* 
             continue;
         }
 
-        this->setupFenceSync(gl);
-
         if (!gl->validate()) {
             SkDebugf("Failed to validate gl interface.\n");
             this->destroyGLContext();
             continue;
         }
-        const char* extensions = eglQueryString(fDisplay, EGL_EXTENSIONS);
         if (strstr(extensions, "EGL_KHR_image")) {
             fEglCreateImageProc = (PFNEGLCREATEIMAGEKHRPROC)eglGetProcAddress("eglCreateImageKHR");
             fEglDestroyImageProc =
@@ -207,126 +238,6 @@ EGLGLTestContext::EGLGLTestContext(GrGLStandard forcedGpuAPI, EGLGLTestContext* 
 #endif
         break;
     }
-}
-
-static bool supports_egl_extension(EGLDisplay display, const char* extension) {
-    size_t extensionLength = strlen(extension);
-    const char* extensionsStr = eglQueryString(display, EGL_EXTENSIONS);
-    while (const char* match = strstr(extensionsStr, extension)) {
-        // Ensure the string we found is its own extension, not a substring of a larger extension
-        // (e.g. GL_ARB_occlusion_query / GL_ARB_occlusion_query2).
-        if ((match == extensionsStr || match[-1] == ' ') &&
-            (match[extensionLength] == ' ' || match[extensionLength] == '\0')) {
-            return true;
-        }
-        extensionsStr = match + extensionLength;
-    }
-    return false;
-}
-
-void EGLGLTestContext::setupFenceSync(sk_sp<const GrGLInterface> interface) {
-    GrGLInterface* glInt = const_cast<GrGLInterface*>(interface.get());
-
-
-    if (kGL_GrGLStandard == glInt->fStandard) {
-        if (GrGLGetVersion(glInt) >= GR_GL_VER(3,2) || glInt->hasExtension("GL_ARB_sync")) {
-            return;
-        }
-    } else {
-        if (glInt->hasExtension("GL_APPLE_sync") || glInt->hasExtension("GL_NV_fence") ||
-            GrGLGetVersion(glInt) >= GR_GL_VER(3, 0)) {
-            return;
-        }
-    }
-
-    if (!supports_egl_extension(fDisplay, "EGL_KHR_fence_sync")) {
-        return;
-    }
-
-    auto grEGLCreateSyncKHR = (PFNEGLCREATESYNCKHRPROC) eglGetProcAddress("eglCreateSyncKHR");
-    auto grEGLClientWaitSyncKHR =
-            (PFNEGLCLIENTWAITSYNCKHRPROC) eglGetProcAddress("eglClientWaitSyncKHR");
-    auto grEGLDestroySyncKHR = (PFNEGLDESTROYSYNCKHRPROC) eglGetProcAddress("eglDestroySyncKHR");
-    auto grEGLGetSyncAttribKHR =
-            (PFNEGLGETSYNCATTRIBKHRPROC) eglGetProcAddress("eglGetSyncAttribKHR");
-    SkASSERT(grEGLCreateSyncKHR && grEGLClientWaitSyncKHR && grEGLDestroySyncKHR &&
-             grEGLGetSyncAttribKHR);
-
-    PFNEGLWAITSYNCKHRPROC grEGLWaitSyncKHR = nullptr;
-    if (supports_egl_extension(fDisplay, "EGL_KHR_wait_sync")) {
-        grEGLWaitSyncKHR = (PFNEGLWAITSYNCKHRPROC)eglGetProcAddress("eglWaitSyncKHR");
-        SkASSERT(grEGLWaitSyncKHR);
-    }
-
-    // Fake out glSync using eglSync
-    glInt->fExtensions.add("GL_APPLE_sync");
-
-    glInt->fFunctions.fFenceSync =
-            [grEGLCreateSyncKHR, display = fDisplay](GrGLenum condition, GrGLbitfield flags) {
-        SkASSERT(condition == GR_GL_SYNC_GPU_COMMANDS_COMPLETE);
-        SkASSERT(flags == 0);
-
-        EGLSyncKHR sync = grEGLCreateSyncKHR(display, EGL_SYNC_FENCE_KHR, nullptr);
-
-        return reinterpret_cast<GrGLsync>(sync);
-    };
-
-    glInt->fFunctions.fDeleteSync = [grEGLDestroySyncKHR, display = fDisplay](GrGLsync sync) {
-        EGLSyncKHR eglSync = reinterpret_cast<EGLSyncKHR>(sync);
-        grEGLDestroySyncKHR(display, eglSync);
-    };
-
-    glInt->fFunctions.fClientWaitSync =
-            [grEGLClientWaitSyncKHR, display = fDisplay] (GrGLsync sync, GrGLbitfield flags,
-                                                          GrGLuint64 timeout) -> GrGLenum {
-        EGLSyncKHR eglSync = reinterpret_cast<EGLSyncKHR>(sync);
-
-        EGLint egl_flags = 0;
-
-        if (flags & GR_GL_SYNC_FLUSH_COMMANDS_BIT) {
-            egl_flags |= EGL_SYNC_FLUSH_COMMANDS_BIT_KHR;
-        }
-
-        EGLint result = grEGLClientWaitSyncKHR(display, eglSync, egl_flags, timeout);
-
-        switch (result) {
-            case EGL_CONDITION_SATISFIED_KHR:
-                return GR_GL_CONDITION_SATISFIED;
-            case EGL_TIMEOUT_EXPIRED_KHR:
-                return GR_GL_TIMEOUT_EXPIRED;
-            case EGL_FALSE:
-                return GR_GL_WAIT_FAILED;
-        }
-        SkUNREACHABLE;
-    };
-
-    glInt->fFunctions.fWaitSync =
-            [grEGLClientWaitSyncKHR, grEGLWaitSyncKHR, display = fDisplay](GrGLsync sync,
-                                                                           GrGLbitfield flags,
-                                                                           GrGLuint64 timeout) {
-        EGLSyncKHR eglSync = reinterpret_cast<EGLSyncKHR>(sync);
-
-        SkASSERT(timeout == GR_GL_TIMEOUT_IGNORED);
-        SkASSERT(flags == 0);
-
-        if (!grEGLWaitSyncKHR) {
-            grEGLClientWaitSyncKHR(display, eglSync, 0, EGL_FOREVER_KHR);
-            return;
-        }
-
-        SkDEBUGCODE(EGLint result =) grEGLWaitSyncKHR(display, eglSync, 0);
-        SkASSERT(result);
-    };
-
-    glInt->fFunctions.fIsSync =
-            [grEGLGetSyncAttribKHR, display = fDisplay](GrGLsync sync) -> GrGLboolean {
-        EGLSyncKHR eglSync = reinterpret_cast<EGLSyncKHR>(sync);
-        EGLint value;
-        if (grEGLGetSyncAttribKHR(display, eglSync, EGL_SYNC_TYPE_KHR, &value)) {
-            return true;
-        }
-        return false;
-    };
 }
 
 EGLGLTestContext::~EGLGLTestContext() {

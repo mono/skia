@@ -11,10 +11,13 @@
 * found in the LICENSE file.
 */
 
-#include "include/core/SkCanvas.h"
-#include "include/gpu/GrDirectContext.h"
-#include "include/gpu/GrRecordingContext.h"
 #include "tools/viewer/GMSlide.h"
+
+#include "include/core/SkString.h"
+#include <utility>
+
+class SkCanvas;
+class SkMetaData;
 
 GMSlide::GMSlide(std::unique_ptr<skiagm::GM> gm) : fGM(std::move(gm)) {
     fGM->setMode(skiagm::GM::kSample_Mode);
@@ -31,8 +34,7 @@ void GMSlide::gpuTeardown() {
 void GMSlide::draw(SkCanvas* canvas) {
     SkString msg;
 
-    auto direct = GrAsDirectContext(canvas->recordingContext());
-    auto result = fGM->gpuSetup(direct, canvas, &msg);
+    auto result = fGM->gpuSetup(canvas, &msg);
     if (result != skiagm::GM::DrawResult::kOk) {
         return;
     }

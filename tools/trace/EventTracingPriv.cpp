@@ -14,11 +14,24 @@
 #include "tools/trace/ChromeTracingTracer.h"
 #include "tools/trace/SkDebugfTracer.h"
 
+// SkPerfettoTrace is only relevant when Perfetto is requested, and for in-process tracing. It is
+// incompatible with the alternate "direct macro override" approach to using Perfetto, which is
+// currently used for SK_BUILD_FOR_ANDROID_FRAMEWORK. Skia's Perfetto integration is currently in
+// in a transitionary period, see go/skia-perfetto for details.
+#if defined(SK_USE_PERFETTO)
+  #if defined(SK_ANDROID_FRAMEWORK_USE_PERFETTO)
+    #error "SK_USE_PERFETTO and SK_ANDROID_FRAMEWORK_USE_PERFETTO are mutually exclusive"
+  #endif
+
+  #include "tools/trace/SkPerfettoTrace.h"
+#endif
+
 static DEFINE_string(trace,
               "",
               "Log trace events in one of several modes:\n"
               "  debugf     : Show events using SkDebugf\n"
               "  atrace     : Send events to Android ATrace\n"
+              "  perfetto   : Send events to Perfetto (Linux, Android, and Mac only)\n"
               "  <filename> : Any other string is interpreted as a filename. Writes\n"
               "               trace events to specified file as JSON, for viewing\n"
               "               with chrome://tracing");
@@ -41,7 +54,19 @@ void initializeEventTracingForTools(const char* traceFlag) {
         eventTracer = new SkATrace();
     } else if (0 == strcmp(traceFlag, "debugf")) {
         eventTracer = new SkDebugfTracer();
-    } else {
+    } else if (0 == strcmp(traceFlag, "perfetto")) {
+      #if defined(SK_USE_PERFETTO)
+          eventTracer = new SkPerfettoTrace();
+      #else
+          // TODO(b/259248961): update this explanation (and associated docs) as the Perfetto
+          // transition progresses.
+          SkDebugf("Perfetto is not enabled (SK_USE_PERFETTO is false). Perfetto tracing will not "
+                   "be performed.\nTracing tools with Perfetto is only enabled for Linux, Android, "
+                   "and Mac.\n");
+          return;
+      #endif
+    }
+    else {
         eventTracer = new ChromeTracingTracer(traceFlag);
     }
 

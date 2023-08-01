@@ -10,34 +10,53 @@
 
 #include "src/sksl/ir/SkSLLayout.h"
 
-#include <vector>
+#include <cstddef>
+#include <memory>
+#include <string>
 
 namespace SkSL {
+
+class Context;
+class Position;
 
 /**
  * A set of modifier keywords (in, out, uniform, etc.) appearing before a declaration.
  */
 struct Modifiers {
+    /**
+     * OpenGL requires modifiers to be in a strict order:
+     * - invariant-qualifier:     (invariant)
+     * - interpolation-qualifier: flat, noperspective, (smooth)
+     * - storage-qualifier:       const, uniform
+     * - parameter-qualifier:     in, out, inout
+     * - precision-qualifier:     highp, mediump, lowp
+     *
+     * SkSL does not have `invariant` or `smooth`.
+     */
+
     enum Flag {
         kNo_Flag             =       0,
-        kConst_Flag          = 1 <<  0,
-        kIn_Flag             = 1 <<  1,
-        kOut_Flag            = 1 <<  2,
+        // Real GLSL modifiers
+        kFlat_Flag           = 1 <<  0,
+        kNoPerspective_Flag  = 1 <<  1,
+        kConst_Flag          = 1 <<  2,
         kUniform_Flag        = 1 <<  3,
-        kFlat_Flag           = 1 <<  4,
-        kNoPerspective_Flag  = 1 <<  5,
-        kReadOnly_Flag       = 1 <<  6,
-        kWriteOnly_Flag      = 1 <<  7,
-        kCoherent_Flag       = 1 <<  8,
-        kVolatile_Flag       = 1 <<  9,
-        kRestrict_Flag       = 1 << 10,
+        kIn_Flag             = 1 <<  4,
+        kOut_Flag            = 1 <<  5,
+        kHighp_Flag          = 1 <<  6,
+        kMediump_Flag        = 1 <<  7,
+        kLowp_Flag           = 1 <<  8,
+        kReadOnly_Flag       = 1 <<  9,
+        kWriteOnly_Flag      = 1 << 10,
         kBuffer_Flag         = 1 << 11,
-        kHasSideEffects_Flag = 1 << 12,
-        kPLS_Flag            = 1 << 13,
-        kPLSIn_Flag          = 1 << 14,
-        kPLSOut_Flag         = 1 << 15,
-        kVarying_Flag        = 1 << 16,
-        kInline_Flag         = 1 << 17,
+        // Corresponds to the GLSL 'shared' modifier. Only allowed in a compute program.
+        kWorkgroup_Flag      = 1 << 12,
+        // SkSL extensions, not present in GLSL
+        kExport_Flag         = 1 << 13,
+        kES3_Flag            = 1 << 14,
+        kPure_Flag           = 1 << 15,
+        kInline_Flag         = 1 << 16,
+        kNoInline_Flag       = 1 << 17,
     };
 
     Modifiers()
@@ -48,61 +67,76 @@ struct Modifiers {
     : fLayout(layout)
     , fFlags(flags) {}
 
-    String description() const {
-        String result = fLayout.description();
-        if (fFlags & kUniform_Flag) {
-            result += "uniform ";
+    std::string description() const {
+        return fLayout.description() + DescribeFlags(fFlags) + " ";
+    }
+
+    static std::string DescribeFlags(int flags) {
+        // SkSL extensions
+        std::string result;
+        if (flags & kExport_Flag) {
+            result += "$export ";
         }
-        if (fFlags & kConst_Flag) {
-            result += "const ";
+        if (flags & kES3_Flag) {
+            result += "$es3 ";
         }
-        if (fFlags & kFlat_Flag) {
-            result += "flat ";
+        if (flags & kPure_Flag) {
+            result += "$pure ";
         }
-        if (fFlags & kNoPerspective_Flag) {
-            result += "noperspective ";
+        if (flags & kInline_Flag) {
+            result += "inline ";
         }
-        if (fFlags & kReadOnly_Flag) {
-            result += "readonly ";
-        }
-        if (fFlags & kWriteOnly_Flag) {
-            result += "writeonly ";
-        }
-        if (fFlags & kCoherent_Flag) {
-            result += "coherent ";
-        }
-        if (fFlags & kVolatile_Flag) {
-            result += "volatile ";
-        }
-        if (fFlags & kRestrict_Flag) {
-            result += "restrict ";
-        }
-        if (fFlags & kBuffer_Flag) {
-            result += "buffer ";
-        }
-        if (fFlags & kHasSideEffects_Flag) {
-            result += "sk_has_side_effects ";
-        }
-        if (fFlags & kPLS_Flag) {
-            result += "__pixel_localEXT ";
-        }
-        if (fFlags & kPLSIn_Flag) {
-            result += "__pixel_local_inEXT ";
-        }
-        if (fFlags & kPLSOut_Flag) {
-            result += "__pixel_local_outEXT ";
-        }
-        if (fFlags & kVarying_Flag) {
-            result += "varying ";
-        }
-        if ((fFlags & kIn_Flag) && (fFlags & kOut_Flag)) {
-            result += "inout ";
-        } else if (fFlags & kIn_Flag) {
-            result += "in ";
-        } else if (fFlags & kOut_Flag) {
-            result += "out ";
+        if (flags & kNoInline_Flag) {
+            result += "noinline ";
         }
 
+        // Real GLSL qualifiers (must be specified in order in GLSL 4.1 and below)
+        if (flags & kFlat_Flag) {
+            result += "flat ";
+        }
+        if (flags & kNoPerspective_Flag) {
+            result += "noperspective ";
+        }
+        if (flags & kConst_Flag) {
+            result += "const ";
+        }
+        if (flags & kUniform_Flag) {
+            result += "uniform ";
+        }
+        if ((flags & kIn_Flag) && (flags & kOut_Flag)) {
+            result += "inout ";
+        } else if (flags & kIn_Flag) {
+            result += "in ";
+        } else if (flags & kOut_Flag) {
+            result += "out ";
+        }
+        if (flags & kHighp_Flag) {
+            result += "highp ";
+        }
+        if (flags & kMediump_Flag) {
+            result += "mediump ";
+        }
+        if (flags & kLowp_Flag) {
+            result += "lowp ";
+        }
+        if (flags & kReadOnly_Flag) {
+            result += "readonly ";
+        }
+        if (flags & kWriteOnly_Flag) {
+            result += "writeonly ";
+        }
+        if (flags & kBuffer_Flag) {
+            result += "buffer ";
+        }
+
+        // We're using a non-GLSL name for this one; the GLSL equivalent is "shared"
+        if (flags & kWorkgroup_Flag) {
+            result += "workgroup ";
+        }
+
+        if (!result.empty()) {
+            result.pop_back();
+        }
         return result;
     }
 
@@ -113,6 +147,15 @@ struct Modifiers {
     bool operator!=(const Modifiers& other) const {
         return !(*this == other);
     }
+
+    /**
+     * Verifies that only permitted modifiers and layout flags are included. Reports errors and
+     * returns false in the event of a violation.
+     */
+    bool checkPermitted(const Context& context,
+                        Position pos,
+                        int permittedModifierFlags,
+                        int permittedLayoutFlags) const;
 
     Layout fLayout;
     int fFlags;
@@ -125,7 +168,8 @@ namespace std {
 template <>
 struct hash<SkSL::Modifiers> {
     size_t operator()(const SkSL::Modifiers& key) const {
-        return key.fFlags ^ (key.fLayout.fFlags << 8) ^ ((unsigned) key.fLayout.fBuiltin << 16);
+        return (size_t) key.fFlags ^ ((size_t) key.fLayout.fFlags << 8) ^
+               ((size_t) key.fLayout.fBuiltin << 16);
     }
 };
 

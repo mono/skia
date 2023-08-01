@@ -5,8 +5,8 @@
  * found in the LICENSE file.
  */
 
-#include "include/private/SkTDArray.h"
-#include "src/core/SkTSort.h"
+#include "include/private/base/SkTDArray.h"
+#include "src/base/SkTSort.h"
 #include "tools/flags/CommandLineFlags.h"
 
 #include <stdlib.h>
@@ -76,12 +76,12 @@ static bool string_is_in(const char* target, const char* set[], size_t len) {
  */
 static bool parse_bool_arg(const char* string, bool* result) {
     static const char* trueValues[] = {"1", "TRUE", "true"};
-    if (string_is_in(string, trueValues, SK_ARRAY_COUNT(trueValues))) {
+    if (string_is_in(string, trueValues, std::size(trueValues))) {
         *result = true;
         return true;
     }
     static const char* falseValues[] = {"0", "FALSE", "false"};
-    if (string_is_in(string, falseValues, SK_ARRAY_COUNT(falseValues))) {
+    if (string_is_in(string, falseValues, std::size(falseValues))) {
         *result = false;
         return true;
     }
@@ -131,10 +131,9 @@ bool SkFlagInfo::match(const char* string) {
             }
         }
         return compareName->equals(string);
-    } else {
-        // Has no dash
-        return false;
     }
+
+    // Has no dash
     return false;
 }
 
@@ -236,7 +235,7 @@ void CommandLineFlags::Parse(int argc, const char* const* argv) {
                 }
                 helpFlags.append(1, &argv[j]);
             }
-            if (0 == helpFlags.count()) {
+            if (0 == helpFlags.size()) {
                 // Only print general help message if help for specific flags is not requested.
                 SkDebugf("%s\n%s\n", argv[0], gUsage.c_str());
             }
@@ -244,23 +243,23 @@ void CommandLineFlags::Parse(int argc, const char* const* argv) {
                 SkDebugf("Flags:\n");
                 flagsPrinted = true;
             }
-            if (0 == helpFlags.count()) {
+            if (0 == helpFlags.size()) {
                 // If no flags followed --help, print them all
                 SkTDArray<SkFlagInfo*> allFlags;
                 for (SkFlagInfo* flag = CommandLineFlags::gHead; flag; flag = flag->next()) {
                     allFlags.push_back(flag);
                 }
                 SkTQSort(allFlags.begin(), allFlags.end(), CompareFlagsByName());
-                for (int i = 0; i < allFlags.count(); ++i) {
-                    print_help_for_flag(allFlags[i]);
-                    if (allFlags[i]->extendedHelp().size() > 0) {
+                for (SkFlagInfo* flag : allFlags) {
+                    print_help_for_flag(flag);
+                    if (flag->extendedHelp().size() > 0) {
                         SkDebugf("        Use '--help %s' for more information.\n",
-                                 allFlags[i]->name().c_str());
+                                 flag->name().c_str());
                     }
                 }
             } else {
                 for (SkFlagInfo* flag = CommandLineFlags::gHead; flag; flag = flag->next()) {
-                    for (int k = 0; k < helpFlags.count(); k++) {
+                    for (int k = 0; k < helpFlags.size(); k++) {
                         if (flag->name().equals(helpFlags[k]) ||
                             flag->shortName().equals(helpFlags[k])) {
                             print_extended_help_for_flag(flag);
@@ -270,9 +269,9 @@ void CommandLineFlags::Parse(int argc, const char* const* argv) {
                     }
                 }
             }
-            if (helpFlags.count() > 0) {
+            if (helpFlags.size() > 0) {
                 SkDebugf("Requested help for unrecognized flags:\n");
-                for (int k = 0; k < helpFlags.count(); k++) {
+                for (int k = 0; k < helpFlags.size(); k++) {
                     SkDebugf("    --%s\n", helpFlags[k]);
                 }
             }
@@ -359,10 +358,10 @@ void CommandLineFlags::Parse(int argc, const char* const* argv) {
 namespace {
 
 template <typename Strings> bool ShouldSkipImpl(const Strings& strings, const char* name) {
-    int    count      = strings.count();
+    int    count      = strings.size();
     size_t testLen    = strlen(name);
     bool   anyExclude = count == 0;
-    for (int i = 0; i < strings.count(); ++i) {
+    for (int i = 0; i < strings.size(); ++i) {
         const char* matchName = strings[i];
         size_t      matchLen  = strlen(matchName);
         bool        matchExclude, matchStart, matchEnd;

@@ -10,10 +10,10 @@
 #include "include/core/SkFontMgr.h"
 #include "include/core/SkFontStyle.h"
 #include "include/core/SkTypeface.h"
-#include "include/private/SkMutex.h"
+#include "include/private/base/SkMutex.h"
 #include "include/utils/SkCustomTypeface.h"
+#include "src/base/SkUTF.h"
 #include "src/core/SkOSFile.h"
-#include "src/utils/SkUTF.h"
 #include "tools/Resources.h"
 #include "tools/fonts/TestFontMgr.h"
 
@@ -55,12 +55,6 @@ sk_sp<SkTypeface> emoji_typeface() {
         return SkTypeface::MakeFromName("Emoji", SkFontStyle());
     }();
     return emojiTypeface;
-}
-
-const char* emoji_sample_text() {
-    return "\xF0\x9F\x98\x80"
-           " "
-           "\xE2\x99\xA2";  // 😀 ♢
 }
 
 sk_sp<SkTypeface> sample_user_typeface() {

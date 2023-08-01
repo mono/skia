@@ -11,7 +11,7 @@
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
 #include "include/gpu/gl/GrGLAssembleInterface.h"
-#include "src/gpu/gl/GrGLDefines.h"
+#include "src/gpu/ganesh/gl/GrGLDefines_impl.h"
 #include "tools/sk_app/GLWindowContext.h"
 #include "tools/sk_app/win/WindowContextFactory_win.h"
 
@@ -52,12 +52,10 @@ private:
     EGLDisplay fDisplay = EGL_NO_DISPLAY;
     EGLContext fEGLContext = EGL_NO_CONTEXT;
     EGLSurface fEGLSurface = EGL_NO_SURFACE;
-
-    using INHERITED = GLWindowContext;
 };
 
 ANGLEGLWindowContext_win::ANGLEGLWindowContext_win(HWND wnd, const DisplayParams& params)
-        : INHERITED(params), fHWND(wnd) {
+        : GLWindowContext(params), fHWND(wnd) {
     this->initializeContext();
 }
 

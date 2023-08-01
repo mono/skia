@@ -11,6 +11,7 @@
 #include "include/core/SkPaint.h"
 #include "include/core/SkPath.h"
 #include "include/core/SkPathEffect.h"
+#include "include/core/SkPathUtils.h"
 #include "include/core/SkPoint.h"
 #include "include/core/SkRect.h"
 #include "include/core/SkRefCnt.h"
@@ -19,7 +20,10 @@
 #include "include/core/SkSurface.h"
 #include "include/core/SkTypes.h"
 #include "include/effects/SkDashPathEffect.h"
+#include "src/core/SkPathEffectBase.h"
 #include "tests/Test.h"
+
+#include <array>
 
 // crbug.com/348821 was rooted in SkDashPathEffect refusing to flatten and unflatten itself when
 // the effect is nonsense.  Here we test that it fails when passed nonsense parameters.
@@ -73,15 +77,15 @@ DEF_TEST(DashPathEffectTest_asPoints, r) {
     mats[2].setTranslate(10.0f, 10.0f);
 
     for (int i = 0; i < kNumMats; ++i) {
-        for (int j = 0; j < (int)SK_ARRAY_COUNT(testCases); ++j) {
+        for (int j = 0; j < (int)std::size(testCases); ++j) {
             for (int k = 0; k < 2; ++k) {  // exercise alternating endpoints
-                SkPathEffect::PointData results;
+                SkPathEffectBase::PointData results;
                 SkPath src;
 
                 src.moveTo(testCases[j].fPts[k]);
                 src.lineTo(testCases[j].fPts[(k+1)%2]);
 
-                bool actualResult = dash->asPoints(&results, src, rec, mats[i], &cull);
+                bool actualResult = as_PEB(dash)->asPoints(&results, src, rec, mats[i], &cull);
                 if (i < 2) {
                     REPORTER_ASSERT(r, actualResult == testCases[j].fExpectedResult);
                 } else {
@@ -107,12 +111,12 @@ DEF_TEST(DashPath_bug4871, r) {
     paint.setPathEffect(dash);
 
     SkPath fill;
-    paint.getFillPath(path, &fill);
+    skpathutils::FillPathWithPaint(path, paint, &fill);
 }
 
 // Verify that long lines with many dashes don't cause overflows/OOMs.
 DEF_TEST(DashPathEffectTest_asPoints_limit, r) {
-    sk_sp<SkSurface> surface(SkSurface::MakeRaster(SkImageInfo::MakeN32Premul(256, 256)));
+    sk_sp<SkSurface> surface(SkSurfaces::Raster(SkImageInfo::MakeN32Premul(256, 256)));
     SkCanvas* canvas = surface->getCanvas();
 
     SkPaint p;
@@ -120,7 +124,7 @@ DEF_TEST(DashPathEffectTest_asPoints_limit, r) {
     // force the bounds to outset by a large amount
     p.setStrokeWidth(5.0e10f);
     const SkScalar intervals[] = { 1, 1 };
-    p.setPathEffect(SkDashPathEffect::Make(intervals, SK_ARRAY_COUNT(intervals), 0));
+    p.setPathEffect(SkDashPathEffect::Make(intervals, std::size(intervals), 0));
     canvas->drawLine(1, 1, 1, 5.0e10f, p);
 }
 
@@ -128,7 +132,7 @@ DEF_TEST(DashPathEffectTest_asPoints_limit, r) {
 // trying to substract a smal value from a large one in floats.
 DEF_TEST(DashCrazy_crbug_875494, r) {
     SkScalar vals[] = { 98, 94, 2888458849.f, 227, 0, 197 };
-    const int N = SK_ARRAY_COUNT(vals);
+    const int N = std::size(vals);
 
     SkRect cull = SkRect::MakeXYWH(43,236,57,149);
     SkPath path;
@@ -138,5 +142,5 @@ DEF_TEST(DashCrazy_crbug_875494, r) {
     SkPaint paint;
     paint.setStyle(SkPaint::kStroke_Style);
     paint.setPathEffect(SkDashPathEffect::Make(vals, N, 222));
-    paint.getFillPath(path, &path2, &cull);
+    skpathutils::FillPathWithPaint(path, paint, &path2, &cull);
 }

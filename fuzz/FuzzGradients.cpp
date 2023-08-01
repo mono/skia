@@ -9,7 +9,8 @@
 #include "include/core/SkCanvas.h"
 #include "include/core/SkSurface.h"
 #include "include/effects/SkGradientShader.h"
-#include "src/core/SkTLazy.h"
+#include "src/base/SkTLazy.h"
+#include "src/core/SkDebugUtils.h"
 #include "tools/flags/CommandLineFlags.h"
 
 #include <algorithm>
@@ -95,11 +96,7 @@ static void logLinearGradient(const SkPoint pts[2],
     }
     SkDebugf("]\n");
 
-    static const char* gModeName[] = {
-        "kClamp_TileMode", "kRepeat_TileMode", "kMirror_TileMode", "kDecal_TileMode"
-    };
-    SkASSERT((unsigned)mode < SK_ARRAY_COUNT(gModeName));
-    SkDebugf("  mode:\t\t%s\n", gModeName[(unsigned)mode]);
+    SkDebugf("  mode:\t\t%s\n", SkTileModeToStr(mode));
     SkDebugf("  flags:\t0x%x\n", flags);
     logOptionalMatrix("local matrix", localMatrix);
     logOptionalMatrix("global matrix", globalMatrix);
@@ -127,7 +124,7 @@ void fuzzLinearGradient(Fuzz* fuzz) {
     p.setShader(SkGradientShader::MakeLinear(pts, colors.data(), pos.data(),
         colors.size(), mode, flags, localMatrix.getMaybeNull()));
 
-    sk_sp<SkSurface> surface(SkSurface::MakeRasterN32Premul(50, 50));
+    sk_sp<SkSurface> surface(SkSurfaces::Raster(SkImageInfo::MakeN32Premul(50, 50)));
     if (useGlobalMatrix) {
         SkMatrix gm;
         makeMatrix(fuzz, &gm);
@@ -165,8 +162,7 @@ void fuzzRadialGradient(Fuzz* fuzz) {
     p.setShader(SkGradientShader::MakeRadial(center, radius, colors.data(),
         pos.data(), colors.size(), mode, flags, localMatrix.getMaybeNull()));
 
-
-    sk_sp<SkSurface> surface(SkSurface::MakeRasterN32Premul(50, 50));
+    sk_sp<SkSurface> surface(SkSurfaces::Raster(SkImageInfo::MakeN32Premul(50, 50)));
     if (useGlobalMatrix) {
         SkMatrix gm;
         makeMatrix(fuzz, &gm);
@@ -204,7 +200,7 @@ void fuzzTwoPointConicalGradient(Fuzz* fuzz) {
         end, endRadius, colors.data(), pos.data(), colors.size(), mode,
         flags, localMatrix.getMaybeNull()));
 
-    sk_sp<SkSurface> surface(SkSurface::MakeRasterN32Premul(50, 50));
+    sk_sp<SkSurface> surface(SkSurfaces::Raster(SkImageInfo::MakeN32Premul(50, 50)));
     if (useGlobalMatrix) {
         SkMatrix gm;
         makeMatrix(fuzz, &gm);
@@ -240,7 +236,7 @@ void fuzzSweepGradient(Fuzz* fuzz) {
             pos.data(), colors.size()));
     }
 
-    sk_sp<SkSurface> surface(SkSurface::MakeRasterN32Premul(50, 50));
+    sk_sp<SkSurface> surface(SkSurfaces::Raster(SkImageInfo::MakeN32Premul(50, 50)));
     if (useGlobalMatrix) {
         SkMatrix gm;
         makeMatrix(fuzz, &gm);

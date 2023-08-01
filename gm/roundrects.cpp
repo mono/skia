@@ -20,9 +20,11 @@
 #include "include/core/SkTileMode.h"
 #include "include/core/SkTypes.h"
 #include "include/effects/SkGradientShader.h"
-#include "include/private/SkTArray.h"
-#include "include/utils/SkRandom.h"
+#include "include/private/base/SkTArray.h"
+#include "src/base/SkRandom.h"
 #include "tools/ToolUtils.h"
+
+using namespace skia_private;
 
 namespace skiagm {
 
@@ -147,15 +149,15 @@ protected:
     void onDraw(SkCanvas* canvas) override {
         SkRandom rand(1);
         canvas->translate(20 * SK_Scalar1, 20 * SK_Scalar1);
-        const SkRect rect = SkRect::MakeLTRB(-20, -30, 20, 30);
-        SkRRect circleRect;
-        circleRect.setRectXY(rect, 5, 5);
+        const SkRect kRect = SkRect::MakeLTRB(-20, -30, 20, 30);
+        SkRRect circleRRect;
+        circleRRect.setRectXY(kRect, 5, 5);
 
         const SkScalar kXStart = 60.0f;
         const SkScalar kYStart = 80.0f;
         const int kXStep = 150;
         const int kYStep = 160;
-        int maxX = fMatrices.count();
+        int maxX = fMatrices.size();
 
         SkPaint rectPaint;
         rectPaint.setAntiAlias(true);
@@ -164,8 +166,8 @@ protected:
         rectPaint.setColor(SK_ColorLTGRAY);
 
         int testCount = 0;
-        for (int i = 0; i < fPaints.count(); ++i) {
-            for (int j = 0; j < fMatrices.count(); ++j) {
+        for (int i = 0; i < fPaints.size(); ++i) {
+            for (int j = 0; j < fMatrices.size(); ++j) {
                 canvas->save();
                 SkMatrix mat = fMatrices[j];
                 // position the roundrect, and make it at off-integer coords.
@@ -178,8 +180,8 @@ protected:
                 SkColor color = gen_color(&rand);
                 fPaints[i].setColor(color);
 
-                canvas->drawRect(rect, rectPaint);
-                canvas->drawRRect(circleRect, fPaints[i]);
+                canvas->drawRect(kRect, rectPaint);
+                canvas->drawRRect(circleRRect, fPaints[i]);
 
                 canvas->restore();
 
@@ -190,7 +192,7 @@ protected:
         // special cases
 
         // non-scaled tall and skinny roundrect
-        for (int i = 0; i < fPaints.count(); ++i) {
+        for (int i = 0; i < fPaints.size(); ++i) {
             SkRect rect = SkRect::MakeLTRB(-20, -60, 20, 60);
             SkRRect ellipseRect;
             ellipseRect.setRectXY(rect, 5, 10);
@@ -209,7 +211,7 @@ protected:
         }
 
         // non-scaled wide and short roundrect
-        for (int i = 0; i < fPaints.count(); ++i) {
+        for (int i = 0; i < fPaints.size(); ++i) {
             SkRect rect = SkRect::MakeLTRB(-80, -30, 80, 30);
             SkRRect ellipseRect;
             ellipseRect.setRectXY(rect, 20, 5);
@@ -229,7 +231,7 @@ protected:
         }
 
         // super skinny roundrect
-        for (int i = 0; i < fPaints.count(); ++i) {
+        for (int i = 0; i < fPaints.size(); ++i) {
             SkRect rect = SkRect::MakeLTRB(0, -60, 1, 60);
             SkRRect circleRect;
             circleRect.setRectXY(rect, 5, 5);
@@ -247,7 +249,7 @@ protected:
         }
 
         // super short roundrect
-        for (int i = 0; i < fPaints.count(); ++i) {
+        for (int i = 0; i < fPaints.size(); ++i) {
             SkRect rect = SkRect::MakeLTRB(-80, -1, 80, 0);
             SkRRect circleRect;
             circleRect.setRectXY(rect, 5, 5);
@@ -269,10 +271,10 @@ protected:
         SkPoint center = SkPoint::Make(SkIntToScalar(0), SkIntToScalar(0));
         SkColor colors[] = { SK_ColorBLUE, SK_ColorRED, SK_ColorGREEN };
         SkScalar pos[] = { 0, SK_ScalarHalf, SK_Scalar1 };
-        auto shader = SkGradientShader::MakeRadial(center, 20, colors, pos, SK_ARRAY_COUNT(colors),
+        auto shader = SkGradientShader::MakeRadial(center, 20, colors, pos, std::size(colors),
                                                    SkTileMode::kClamp);
 
-        for (int i = 0; i < fPaints.count(); ++i) {
+        for (int i = 0; i < fPaints.size(); ++i) {
             canvas->save();
             // position the path, and make it at off-integer coords.
             canvas->translate(kXStart + SK_Scalar1 * kXStep * 0 + SK_Scalar1 / 4,
@@ -283,8 +285,8 @@ protected:
             fPaints[i].setColor(color);
             fPaints[i].setShader(shader);
 
-            canvas->drawRect(rect, rectPaint);
-            canvas->drawRRect(circleRect, fPaints[i]);
+            canvas->drawRect(kRect, rectPaint);
+            canvas->drawRRect(circleRRect, fPaints[i]);
 
             fPaints[i].setShader(nullptr);
 
@@ -306,7 +308,7 @@ protected:
 
             for (int i = 0; i < 4; ++i) {
                 SkRRect circleRect;
-                circleRect.setRectXY(rect, radii[i][0], radii[i][1]);
+                circleRect.setRectXY(kRect, radii[i][0], radii[i][1]);
 
                 canvas->save();
                 // position the roundrect, and make it at off-integer coords.
@@ -372,8 +374,8 @@ protected:
     }
 
 private:
-    SkTArray<SkPaint> fPaints;
-    SkTArray<SkMatrix> fMatrices;
+    TArray<SkPaint> fPaints;
+    TArray<SkMatrix> fMatrices;
 
     using INHERITED = GM;
 };

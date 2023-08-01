@@ -7,21 +7,18 @@
 
 #include "include/core/SkData.h"
 #include "include/core/SkDataTable.h"
-#include "include/core/SkRWBuffer.h"
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkStream.h"
 #include "include/core/SkString.h"
 #include "include/core/SkTypes.h"
-#include "include/private/SkTArray.h"
-#include "include/private/SkTemplates.h"
+#include "include/private/base/SkMalloc.h"
 #include "src/core/SkOSFile.h"
-#include "src/core/SkTaskGroup.h"
 #include "src/utils/SkOSPath.h"
 #include "tests/Test.h"
 
+#include <array>
 #include <cstdio>
 #include <cstring>
-#include <memory>
 
 static void test_is_equal(skiatest::Reporter* reporter,
                           const SkDataTable* a, const SkDataTable* b) {
@@ -58,7 +55,7 @@ static void test_emptytable(skiatest::Reporter* reporter) {
 
 static void test_simpletable(skiatest::Reporter* reporter) {
     const int idata[] = { 1, 4, 9, 16, 25, 63 };
-    int icount = SK_ARRAY_COUNT(idata);
+    int icount = std::size(idata);
     sk_sp<SkDataTable> itable(SkDataTable::MakeCopyArray(idata, sizeof(idata[0]), icount));
     REPORTER_ASSERT(reporter, itable->count() == icount);
     for (int i = 0; i < icount; ++i) {
@@ -73,8 +70,8 @@ static void test_vartable(skiatest::Reporter* reporter) {
     const char* str[] = {
         "", "a", "be", "see", "deigh", "ef", "ggggggggggggggggggggggggggg"
     };
-    int count = SK_ARRAY_COUNT(str);
-    size_t sizes[SK_ARRAY_COUNT(str)];
+    int count = std::size(str);
+    size_t sizes[std::size(str)];
     for (int i = 0; i < count; ++i) {
         sizes[i] = strlen(str[i]) + 1;
     }
@@ -98,7 +95,7 @@ static void test_globaltable(skiatest::Reporter* reporter) {
     static const int gData[] = {
         0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15
     };
-    int count = SK_ARRAY_COUNT(gData);
+    int count = std::size(gData);
 
     sk_sp<SkDataTable> table(
         SkDataTable::MakeArrayProc(gData, sizeof(gData[0]), count, nullptr, nullptr));
@@ -217,156 +214,12 @@ DEF_TEST(Data_empty, reporter) {
         SkData::MakeWithProc(nullptr, 0, [](const void*, void*){}, nullptr),
         SkData::MakeWithoutCopy(nullptr, 0),
     };
-    constexpr int N = SK_ARRAY_COUNT(array);
+    constexpr int N = std::size(array);
 
     for (int i = 0; i < N; ++i) {
         REPORTER_ASSERT(reporter, array[i]->size() == 0);
         for (int j = 0; j < N; ++j) {
             REPORTER_ASSERT(reporter, array[i]->equals(array[j].get()));
         }
-    }
-}
-
-///////////////////////////////////////////////////////////////////////////////////////////////////
-
-const char gABC[] = "abcdefghijklmnopqrstuvwxyz";
-
-static void check_abcs(skiatest::Reporter* reporter, const char buffer[], size_t size) {
-    REPORTER_ASSERT(reporter, size % 26 == 0);
-    for (size_t offset = 0; offset < size; offset += 26) {
-        REPORTER_ASSERT(reporter, !memcmp(&buffer[offset], gABC, 26));
-    }
-}
-
-// stream should contain an integral number of copies of gABC.
-static void check_alphabet_stream(skiatest::Reporter* reporter, SkStream* stream) {
-    REPORTER_ASSERT(reporter, stream->hasLength());
-    size_t size = stream->getLength();
-    REPORTER_ASSERT(reporter, size % 26 == 0);
-
-    SkAutoTMalloc<char> storage(size);
-    char* array = storage.get();
-    size_t bytesRead = stream->read(array, size);
-    REPORTER_ASSERT(reporter, bytesRead == size);
-    check_abcs(reporter, array, size);
-
-    // try checking backwards
-    for (size_t offset = size; offset > 0; offset -= 26) {
-        REPORTER_ASSERT(reporter, stream->seek(offset - 26));
-        REPORTER_ASSERT(reporter, stream->getPosition() == offset - 26);
-        REPORTER_ASSERT(reporter, stream->read(array, 26) == 26);
-        check_abcs(reporter, array, 26);
-        REPORTER_ASSERT(reporter, stream->getPosition() == offset);
-    }
-}
-
-// reader should contains an integral number of copies of gABC.
-static void check_alphabet_buffer(skiatest::Reporter* reporter, const SkROBuffer* reader) {
-    size_t size = reader->size();
-    REPORTER_ASSERT(reporter, size % 26 == 0);
-
-    SkAutoTMalloc<char> storage(size);
-    SkROBuffer::Iter iter(reader);
-    size_t offset = 0;
-    do {
-        SkASSERT(offset + iter.size() <= size);
-        memcpy(storage.get() + offset, iter.data(), iter.size());
-        offset += iter.size();
-    } while (iter.next());
-    REPORTER_ASSERT(reporter, offset == size);
-    check_abcs(reporter, storage.get(), size);
-}
-
-DEF_TEST(RWBuffer, reporter) {
-    // Knowing that the default capacity is 4096, choose N large enough so we force it to use
-    // multiple buffers internally.
-    static constexpr int N = 1000;
-    SkSTArray<N, sk_sp<SkROBuffer>> readers;
-    SkSTArray<N, std::unique_ptr<SkStream>> streams;
-
-    {
-        SkRWBuffer buffer;
-        for (int i = 0; i < N; ++i) {
-            buffer.append(gABC, 26);
-            readers.push_back(buffer.makeROBufferSnapshot());
-            streams.push_back(buffer.makeStreamSnapshot());
-        }
-        REPORTER_ASSERT(reporter, N*26 == buffer.size());
-    }
-
-    // Verify that although the SkRWBuffer's destructor has run, the readers are still valid.
-    for (int i = 0; i < N; ++i) {
-        REPORTER_ASSERT(reporter, (i + 1) * 26U == readers[i]->size());
-        check_alphabet_buffer(reporter, readers[i].get());
-        check_alphabet_stream(reporter, streams[i].get());
-    }
-}
-
-DEF_TEST(RWBuffer_threaded, reporter) {
-    // Knowing that the default capacity is 4096, choose N large enough so we force it to use
-    // multiple buffers internally.
-    const int N = 1000;
-    SkTaskGroup tasks;
-    SkRWBuffer buffer;
-    for (int i = 0; i < N; ++i) {
-        buffer.append(gABC, 26);
-        sk_sp<SkROBuffer> reader = buffer.makeROBufferSnapshot();
-        SkStream* stream = buffer.makeStreamSnapshot().release();
-        REPORTER_ASSERT(reporter, reader->size() == buffer.size());
-        REPORTER_ASSERT(reporter, stream->getLength() == buffer.size());
-
-        // reader's copy constructor will ref the SkROBuffer, which will be unreffed
-        // when the task ends.
-        // Ownership of stream is passed to the task, which will delete it.
-        tasks.add([reporter, i, reader, stream] {
-            REPORTER_ASSERT(reporter, (i + 1) * 26U == reader->size());
-            REPORTER_ASSERT(reporter, stream->getLength() == reader->size());
-            check_alphabet_buffer(reporter, reader.get());
-            check_alphabet_stream(reporter, stream);
-            REPORTER_ASSERT(reporter, stream->rewind());
-            delete stream;
-        });
-    }
-    REPORTER_ASSERT(reporter, N*26 == buffer.size());
-    tasks.wait();
-}
-
-// Tests that it is safe to call SkROBuffer::Iter::size() when exhausted.
-DEF_TEST(RWBuffer_size, r) {
-    SkRWBuffer buffer;
-    buffer.append(gABC, 26);
-
-    sk_sp<SkROBuffer> roBuffer(buffer.makeROBufferSnapshot());
-    SkROBuffer::Iter iter(roBuffer.get());
-    REPORTER_ASSERT(r, iter.data());
-    REPORTER_ASSERT(r, iter.size() == 26);
-
-    // There is only one block in this buffer.
-    REPORTER_ASSERT(r, !iter.next());
-    REPORTER_ASSERT(r, 0 == iter.size());
-}
-
-// Tests that operations (including the destructor) are safe on an SkRWBuffer
-// without any data appended.
-DEF_TEST(RWBuffer_noAppend, r) {
-    SkRWBuffer buffer;
-    REPORTER_ASSERT(r, 0 == buffer.size());
-
-    sk_sp<SkROBuffer> roBuffer = buffer.makeROBufferSnapshot();
-    REPORTER_ASSERT(r, roBuffer);
-    if (roBuffer) {
-        REPORTER_ASSERT(r, roBuffer->size() == 0);
-        SkROBuffer::Iter iter(roBuffer.get());
-        REPORTER_ASSERT(r, iter.size() == 0);
-        REPORTER_ASSERT(r, !iter.data());
-        REPORTER_ASSERT(r, !iter.next());
-    }
-
-    std::unique_ptr<SkStream> stream(buffer.makeStreamSnapshot());
-    REPORTER_ASSERT(r, stream);
-    if (stream) {
-        REPORTER_ASSERT(r, stream->hasLength());
-        REPORTER_ASSERT(r, stream->getLength() == 0);
-        REPORTER_ASSERT(r, stream->skip(10) == 0);
     }
 }

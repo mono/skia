@@ -16,9 +16,8 @@ if (skia_enable_skshaper) {
     if (skia_use_fonthost_mac) {
       defines += [ "SK_SHAPER_CORETEXT_AVAILABLE" ]
     }
-    if (skia_use_icu && skia_use_harfbuzz) {
+    if (skia_use_harfbuzz && skia_enable_skunicode) {
       defines += [ "SK_SHAPER_HARFBUZZ_AVAILABLE" ]
-      defines += [ "SK_UNICODE_AVAILABLE" ]
     }
   }
 
@@ -27,28 +26,49 @@ if (skia_enable_skshaper) {
     public_configs = [ ":public_config" ]
     public = skia_shaper_public
     deps = [ "../..:skia" ]
-    defines = [
-      "SKSHAPER_IMPLEMENTATION=1",
-      "SKUNICODE_IMPLEMENTATION=1",
-    ]
+    defines = [ "SKSHAPER_IMPLEMENTATION=1" ]
     sources = skia_shaper_primitive_sources
     if (skia_use_fonthost_mac) {
       sources += skia_shaper_coretext_sources
+      if (is_mac) {
+        frameworks = [ "ApplicationServices.framework" ]
+      }
+
+      if (is_ios) {
+        frameworks = [
+          "CoreFoundation.framework",
+          "CoreText.framework",
+        ]
+      }
     }
-    if (skia_use_icu && skia_use_harfbuzz) {
-      sources += skia_shaper_icu_sources
+    if (skia_use_harfbuzz && skia_enable_skunicode) {
       sources += skia_shaper_harfbuzz_sources
       deps += [
+        "../skunicode",
         "//third_party/harfbuzz",
-        "//third_party/icu",
       ]
     }
-    configs += [
-      "../../:skia_private",
-      "../../third_party/icu/config:no_cxx",
-    ]
+    configs += [ "../../:skia_private" ]
+  }
+
+  if (defined(is_skia_standalone) && skia_enable_tools) {
+    skia_source_set("tests") {
+      if (skia_enable_skshaper_tests) {
+        testonly = true
+        sources = skia_shaper_tests
+        deps = [
+          "../..:skia",
+          "../..:test",
+          "../skshaper",
+        ]
+      } else {
+        sources = []
+      }
+    }
   }
 } else {
   group("skshaper") {
+  }
+  group("tests") {
   }
 }

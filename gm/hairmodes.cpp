@@ -75,7 +75,7 @@ static sk_sp<SkShader> make_bg_shader() {
 
     SkMatrix m;
     m.setScale(SkIntToScalar(6), SkIntToScalar(6));
-    return bm.makeShader(SkTileMode::kRepeat, SkTileMode::kRepeat, &m);
+    return bm.makeShader(SkTileMode::kRepeat, SkTileMode::kRepeat, SkSamplingOptions(), m);
 }
 
 namespace skiagm {
@@ -103,7 +103,7 @@ namespace skiagm {
             for (int alpha = 0; alpha < 4; ++alpha) {
                 canvas->save();
                 canvas->save();
-                for (size_t i = 0; i < SK_ARRAY_COUNT(gModes); ++i) {
+                for (size_t i = 0; i < std::size(gModes); ++i) {
                     if (6 == i) {
                         canvas->restore();
                         canvas->translate(W * 5, 0);

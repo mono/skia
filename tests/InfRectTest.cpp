@@ -6,9 +6,13 @@
  */
 
 #include "include/core/SkRect.h"
-#include "include/private/SkFloatingPoint.h"
-#include "include/utils/SkRandom.h"
+#include "include/core/SkScalar.h"
+#include "include/core/SkTypes.h"
+#include "include/private/base/SkFloatingPoint.h"
 #include "tests/Test.h"
+
+#include <array>
+#include <cstddef>
 
 static void check_invalid(skiatest::Reporter* reporter,
                           SkScalar l, SkScalar t, SkScalar r, SkScalar b) {
@@ -32,7 +36,7 @@ DEF_TEST(InfRect, reporter) {
     REPORTER_ASSERT(reporter, rect.isFinite());
 
     const SkScalar invalid[] = { nan, inf, -inf };
-    for (size_t i = 0; i < SK_ARRAY_COUNT(invalid); ++i) {
+    for (size_t i = 0; i < std::size(invalid); ++i) {
         check_invalid(reporter, small, small, big, invalid[i]);
         check_invalid(reporter, small, small, invalid[i], big);
         check_invalid(reporter, small, invalid[i], big, big);

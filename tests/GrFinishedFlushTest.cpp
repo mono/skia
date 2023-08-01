@@ -5,14 +5,32 @@
  * found in the LICENSE file.
  */
 
+#include "include/core/SkAlphaType.h"
+#include "include/core/SkCanvas.h"
+#include "include/core/SkColor.h"
+#include "include/core/SkColorSpace.h"
+#include "include/core/SkColorType.h"
+#include "include/core/SkImage.h"
+#include "include/core/SkImageInfo.h"
+#include "include/core/SkRect.h"
+#include "include/core/SkRefCnt.h"
+#include "include/core/SkSurface.h"
+#include "include/core/SkTypes.h"
+#include "include/gpu/GpuTypes.h"
+#include "include/gpu/GrDirectContext.h"
+#include "include/gpu/GrTypes.h"
+#include "include/gpu/ganesh/SkSurfaceGanesh.h"
+#include "src/gpu/ganesh/GrCaps.h"
+#include "src/gpu/ganesh/GrDirectContextPriv.h"
+#include "tests/CtsEnforcement.h"
 #include "tests/Test.h"
+#include "tools/gpu/FenceSync.h"
+#include "tools/gpu/ManagedBackendTexture.h"
 
 #include <chrono>
-#include "include/core/SkCanvas.h"
-#include "include/core/SkSurface.h"
-#include "include/gpu/GrDirectContext.h"
-#include "src/gpu/GrDirectContextPriv.h"
-#include "src/gpu/GrGpu.h"
+#include <memory>
+
+struct GrContextOptions;
 
 using namespace sk_gpu_test;
 
@@ -36,12 +54,15 @@ static void busy_wait_for_callback(int* count, int expectedValue, GrDirectContex
     }
 }
 
-DEF_GPUTEST_FOR_RENDERING_CONTEXTS(FlushFinishedProcTest, reporter, ctxInfo) {
+DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(FlushFinishedProcTest,
+                                       reporter,
+                                       ctxInfo,
+                                       CtsEnforcement::kApiLevel_T) {
     auto dContext = ctxInfo.directContext();
 
     SkImageInfo info =
             SkImageInfo::Make(8, 8, kRGBA_8888_SkColorType, kPremul_SkAlphaType);
-    sk_sp<SkSurface> surface = SkSurface::MakeRenderTarget(dContext, SkBudgeted::kNo, info);
+    sk_sp<SkSurface> surface = SkSurfaces::RenderTarget(dContext, skgpu::Budgeted::kNo, info);
     SkCanvas* canvas = surface->getCanvas();
 
     canvas->clear(SK_ColorGREEN);
@@ -87,7 +108,7 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(FlushFinishedProcTest, reporter, ctxInfo) {
 
     // Test flushing via the SkImage
     canvas->drawImage(image, 0, 0);
-    image->flush(dContext, flushInfoFinishedProc);
+    dContext->flush(image, flushInfoFinishedProc);
     dContext->submit();
     if (expectAsyncCallback) {
         // On Vulkan the command buffer we just submitted may or may not have finished immediately
@@ -140,3 +161,70 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(FlushFinishedProcTest, reporter, ctxInfo) {
     REPORTER_ASSERT(reporter, count == count2);
 }
 
+
+static void abandon_context(void* context) {
+    ((GrDirectContext*)context)->abandonContext();
+}
+
+static void async_callback(void* c, std::unique_ptr<const SkImage::AsyncReadResult> result) {
+    // We don't actually care about the results so just drop them without doing anything.
+}
+
+// This test checks that calls to the async read pixels callback can safely be made even if the
+// context has been abandoned previously. Specifically there was a bug where the client buffer
+// manager stored on the GrDirectContext was accessed in the async callback after it was deleted.
+// This bug is detected on ASAN bots running non GL backends (GL isn't affected purely based on
+// how we call finish callbacks during abandon).
+DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(FinishedAsyncProcWhenAbandonedTest,
+                                       reporter,
+                                       ctxInfo,
+                                       CtsEnforcement::kApiLevel_T) {
+    auto dContext = ctxInfo.directContext();
+
+    SkImageInfo info =
+            SkImageInfo::Make(8, 8, kRGBA_8888_SkColorType, kPremul_SkAlphaType);
+
+    auto mbet = sk_gpu_test::ManagedBackendTexture::MakeFromInfo(dContext,
+                                                                 info,
+                                                                 GrMipmapped::kNo,
+                                                                 GrRenderable::kYes);
+    if (!mbet) {
+        return;
+    }
+
+    auto surface = SkSurfaces::WrapBackendTexture(dContext,
+                                                  mbet->texture(),
+                                                  kTopLeft_GrSurfaceOrigin,
+                                                  /*sample count*/ 1,
+                                                  kRGBA_8888_SkColorType,
+                                                  /*color space*/ nullptr,
+                                                  /*surface props*/ nullptr,
+                                                  sk_gpu_test::ManagedBackendTexture::ReleaseProc,
+                                                  mbet->releaseContext(nullptr, nullptr));
+
+    if (!surface) {
+        return;
+    }
+    SkCanvas* canvas = surface->getCanvas();
+    canvas->clear(SK_ColorGREEN);
+
+    // To trigger bug we must have a finish callback that abanonds the context before an asyc
+    // read callbck on the same command buffer. So we add the abandon callback first and flush
+    // then add the asyc to enforce this order.
+    GrFlushInfo flushInfo;
+    flushInfo.fFinishedProc = abandon_context;
+    flushInfo.fFinishedContext = dContext;
+
+    dContext->flush(flushInfo);
+
+    surface->asyncRescaleAndReadPixels(info,
+                                       SkIRect::MakeWH(8, 8),
+                                       SkImage::RescaleGamma::kSrc,
+                                       SkImage::RescaleMode::kNearest,
+                                       async_callback,
+                                       nullptr);
+
+    surface.reset();
+
+    dContext->flushAndSubmit(/*syncCpu=*/true);
+}

@@ -8,35 +8,55 @@
 #ifndef SKSL_EXTENSION
 #define SKSL_EXTENSION
 
+#include "src/sksl/SkSLPosition.h"
+#include "src/sksl/ir/SkSLIRNode.h"
 #include "src/sksl/ir/SkSLProgramElement.h"
+
+#include <memory>
+#include <string>
+#include <string_view>
 
 namespace SkSL {
 
+class Context;
+
 /**
- * An extension declaration.
+ * #extension <name> : enable
  */
 class Extension final : public ProgramElement {
 public:
-    static constexpr Kind kProgramElementKind = Kind::kExtension;
+    inline static constexpr Kind kIRNodeKind = Kind::kExtension;
 
-    Extension(int offset, String name)
-        : INHERITED(offset, kProgramElementKind)
-        , fName(std::move(name)) {}
+    Extension(Position pos, std::string_view name)
+            : INHERITED(pos, kIRNodeKind)
+            , fName(name) {}
 
-    const String& name() const {
+    std::string_view name() const {
         return fName;
     }
 
+    // Reports errors via ErrorReporter. This may return null even if no error occurred;
+    // in particular, if the behavior text is `disabled`, no ProgramElement is necessary.
+    static std::unique_ptr<Extension> Convert(const Context& context,
+                                              Position pos,
+                                              std::string_view name,
+                                              std::string_view behaviorText);
+
+    // Asserts if an error is detected.
+    static std::unique_ptr<Extension> Make(const Context& context,
+                                           Position pos,
+                                           std::string_view name);
+
     std::unique_ptr<ProgramElement> clone() const override {
-        return std::unique_ptr<ProgramElement>(new Extension(fOffset, this->name()));
+        return std::make_unique<Extension>(fPosition, fName);
     }
 
-    String description() const override {
-        return "#extension " + this->name() + " : enable";
+    std::string description() const override {
+        return "#extension " + std::string(this->name()) + " : enable";
     }
 
 private:
-    String fName;
+    std::string_view fName;
 
     using INHERITED = ProgramElement;
 };

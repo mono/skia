@@ -16,7 +16,9 @@
 #include "include/core/SkSize.h"
 #include "include/core/SkString.h"
 #include "include/core/SkTypes.h"
-#include "include/private/SkTArray.h"
+#include "include/private/base/SkTArray.h"
+
+using namespace skia_private;
 
 namespace skiagm {
 
@@ -153,10 +155,10 @@ protected:
         canvas->save();
 
         SkScalar x = SkIntToScalar(kMargin);
-        for (int p = 0; p < fPaths.count(); ++p) {
-            for (size_t a = 0; a < SK_ARRAY_COUNT(kAlphaValue); ++a) {
+        for (int p = 0; p < fPaths.size(); ++p) {
+            for (size_t a = 0; a < std::size(kAlphaValue); ++a) {
                 for (int aa = 0; aa < 2; ++aa) {
-                    for (size_t w = 0; w < SK_ARRAY_COUNT(kWidths); w++) {
+                    for (size_t w = 0; w < std::size(kWidths); w++) {
                         const SkRect& bounds = fPaths[p].getBounds();
 
                         if (x + bounds.width() > wrapX) {
@@ -191,7 +193,7 @@ protected:
     }
 
 private:
-    SkTArray<SkPath> fPaths;
+    TArray<SkPath> fPaths;
     using INHERITED = GM;
 };
 

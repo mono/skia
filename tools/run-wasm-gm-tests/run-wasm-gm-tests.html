@@ -60,6 +60,7 @@ array of the test names and what they drew.
       window._failed = [];
       await RunTests(GM);
       if (window._error) {
+        console.log(window._error);
         return;
       }
       await RunGMs(GM);
@@ -74,6 +75,7 @@ array of the test names and what they drew.
 
   const statusElement = document.getElementById('status_text');
   function log(line) {
+    console.log(line);
     line += '\n';
     statusElement.innerText += line;
     window._log += line;
@@ -83,9 +85,6 @@ array of the test names and what they drew.
     for (let i = 0; i < resourceNames.length; i++) {
       const name = resourceNames[i];
       const buffer = resourceBuffers[i];
-      if (name.includes('mandril')) {
-        console.log(name, new Uint8Array(buffer).slice(0, 20));
-      }
       GM.LoadResource(name, buffer);
     }
   }
@@ -106,37 +105,61 @@ array of the test names and what they drew.
   }
 
   const gmSkipList = new Set([
-    // gm names can be added here to skip, if failing.
+    'exoticformats', // Uses SkFILEStream to load resource.
   ]);
 
   async function RunGMs(GM) {
     const canvas = document.getElementById('gm_canvas');
     const ctx = GM.GetWebGLContext(canvas, 2);
     const grcontext = GM.MakeGrContext(ctx);
-    window._results = [];
-
-    const names = GM.ListGMs();
-    names.sort();
-    for (const name of names) {
-      if (gmSkipList.has(name)) {
-        continue;
-      }
-      log(`Starting GM ${name}`);
-      const pngAndMetadata = GM.RunGM(grcontext, name);
-      if (!pngAndMetadata || !pngAndMetadata.hash) {
-        console.debug('No output for ', name);
-        continue; // Was skipped
-      }
-      log(`    drew ${pngAndMetadata.hash}`);
-      window._results.push({
-        name: name,
-        digest: pngAndMetadata.hash,
-      });
-      if (pngAndMetadata.png) {
-        await postPNG(pngAndMetadata.hash, pngAndMetadata.png);
-      }
-      window._testsProgress++;
+    if (!grcontext) {
+      window._error = 'Could not make GrContext for gms';
+      return;
     }
+    window._results = [];
+    // We run these tests in batches so as not to lock up the main thread, which makes it easier
+    // to read the progress as well as making the page more responsive when debugging.
+    await new Promise((resolve, reject) => {
+      const names = GM.ListGMs();
+      names.sort();
+      // When debugging locally, it can be handy to skip to a certain GM by using
+      // names.indexOf here instead of 0.
+      let testIdx = 0;
+      const nextBatch = async () => {
+        for (let i = 0; i < 10 && testIdx < names.length; i++) {
+          testIdx++;
+          const name = names[testIdx];
+          if (!name) {
+            testIdx = names.length;
+            break;
+          }
+          if (gmSkipList.has(name)) {
+            continue;
+          }
+          log(`Starting GM ${name}`);
+          const pngAndMetadata = GM.RunGM(grcontext, name);
+          if (!pngAndMetadata || !pngAndMetadata.hash) {
+            log('    No output (was skipped)');
+            continue; // Was skipped
+          }
+          log(`    drew ${pngAndMetadata.hash}`);
+          window._results.push({
+            name: name,
+            digest: pngAndMetadata.hash,
+          });
+          if (pngAndMetadata.png) {
+            await postPNG(pngAndMetadata.hash, pngAndMetadata.png);
+          }
+          window._testsProgress++;
+        }
+        if (testIdx >= names.length) {
+          resolve();
+          return;
+        }
+        setTimeout(nextBatch);
+      };
+      setTimeout(nextBatch);
+    });
     grcontext.delete();
   }
 
@@ -154,179 +177,78 @@ array of the test names and what they drew.
         successfulPOSTs += 1;
       } else {
         console.error('not ok response', resp);
+        log('not ok response ' + resp.toString());
       }
     }).catch((e) => {
       console.error('Could not post PNG', e);
+      log('Could not post PNG ' + resp.toString());
     });
   }
 
   const testSkipList = new Set([
     // These tests all crash https://bugs.chromium.org/p/skia/issues/detail?id=10869
+
+
+    // note, to catch these crashes, you must compile a debug build,
+    // run with --manual_mode and open the developer console,
+    // and enable pause on exceptions in the sources tab, or the browser will just close
+    // the instant this test crashes.
+
+    // These tests fail when doing a dlopen call
+    // 'To use dlopen, you need to use Emscripten's linking support'
+    // Some of these appear to hit the default case instead of the GLES case in GrContextFactory.cpp
+    // which isn't expected to work. If they had a GLES context, they'd probably pass.
     'AsyncReadPixelsContextShutdown',
-    'BulkFillRectTest',
-    'BulkTextureRectTest',
-    'CharacterizationFBO0nessTest',
-    'ClearOp',
-    'CompressedBackendAllocationTest',
-    'CopySurface',
-    'DDLCompatibilityTest',
-    'DDLCreateCharacterizationFailures',
-    'DDLInvalidRecorder',
-    'DDLMakeRenderTargetTest',
-    'DDLMultipleDDLs',
-    'DDLNonTextureabilityTest',
-    'DDLOperatorEqTest',
-    'DDLSkSurfaceFlush',
-    'DDLSurfaceCharacterizationTest',
-    'DDLTextureFlagsTest',
-    'DDLWrapBackendTest',
-    'Data',
-    'DeferredProxyTest',
-    'DefferredProxyConversionTest',
-    'ES2BlendWithNoTexture',
-    'ExtendedSkColorTypeTests_gpu',
-    'FlushFinishedProcTest',
-    'FlushSubmittedProcTest',
-    'FullScreenClearWithLayers',
-    'GLTextureParameters',
-    'GPUMemorySize',
-    'GrClipStack_SWMask',
-    'GrContextDump',
     'GrContextFactory_abandon',
-    'GrContextFactory_executorAndTaskGroup',
-    'GrContextFactory_sharedContexts',
     'GrContext_abandonContext',
-    'GrContext_colorTypeSupportedAsSurface',
-    'GrContext_maxSurfaceSamplesForColorType',
     'GrContext_oomed',
     'GrDDLImage_MakeSubset',
-    'GrDefaultPathRendererTest',
-    'GrDrawCollapsedPath',
-    'GrMeshTest',
-    'GrPathKeys',
-    'GrPipelineDynamicStateTest',
-    'GrStyledShape',
-    'GrSurface',
-    'GrSurfaceRenderability',
-    'GrTestingBackendTextureUploadTest',
-    'GrTextBlobMoveAround',
-    'GrTextBlobScaleAnimation',
-    'GrUploadPixelsTests',
-    'HalfFloatAlphaTextureTest',
-    'HalfFloatRGBATextureTest',
-    'ImageAsyncReadPixels',
-    'ImageFilterBlurLargeImage_Gpu',
-    'ImageFilterCache_GPUBacked',
-    'ImageFilterCache_ImageBackedGPU',
-    'ImageFilterHugeBlur_Gpu',
-    'ImageIsOpaqueTest_Gpu',
-    'ImageNewShader_GPU',
     'InitialTextureClear',
-    'MatrixColorFilter_TransparentBlack',
-    'OnFlushCallbackTest',
-    'OverbudgetFlush',
-    'OverdrawSurface_Gpu',
     'PinnedImageTest',
-    'PreinstantiatedProxyConversionTest',
-    'PremulAlphaRoundTrip_Gpu',
+    'PromiseImageTextureShutdown',
+
+    // These tests time out
+    'SkTraceMemoryDump_ownedGLRenderTarget',
+    'GrStyledShape',
+
+    // wasm doesn't have threading
+    'GrContextFactory_executorAndTaskGroup',
+    'GrContextFactory_sharedContexts',
+    'RefCnt',
+    'SkRuntimeEffectThreaded',
+    'SkStrikeMultiThread',
+    'String_Threaded',
+
+    // These tests are crashing for unknown reasons
+    'AdvancedBlendTest',
+    'Data',
+    'ES2BlendWithNoTexture',
+    'TextureBindingsResetTest',
+
+    // keys invalid
+    'GrPathKeys',
+
+    // Creates only 35 of 36 expected fragment processor factories
     'ProcessorCloneTest',
     'ProcessorOptimizationValidationTest',
     'ProcessorRefTest',
     'Programs',
-    'PromiseImageNullFulfill',
-    'PromiseImageTest',
-    'PromiseImageTextureFullCache',
-    'PromiseImageTextureShutdown',
-    'ProxyRefTest',
-    'RGB565TextureTest',
-    'RGBA4444TextureTest',
-    'ReadOnlyTexture',
-    'ReadPixels_Texture',
-    'ReadWriteAlpha',
-    'RectangleTexture',
-    'RefCnt',
-    'RenderTargetContextTest',
-    'ReplaceSurfaceBackendTexture',
-    'ResourceAllocatorCurOpsTaskIndexTest',
-    'ResourceAllocatorOverBudgetTest',
-    'ResourceAllocatorStressTest',
-    'ResourceAllocatorTest',
-    'ResourceCacheCache',
-    'ResourceCacheStencilBuffers',
-    'ResourceMessagesAfterAbandon',
-    'SRGBReadWritePixels',
-    'SkRemoteGlyphCache_CacheMissReporting',
-    'SkRemoteGlyphCache_DrawTextAsDFT',
-    'SkRemoteGlyphCache_DrawTextAsPath',
-    'SkRemoteGlyphCache_DrawTextXY',
-    'SkRemoteGlyphCache_StrikeSerialization',
-    'SkRemoteGlyphCache_TypefaceWithNoPaths',
-    'SkRuntimeEffectThreaded',
-    'SkSLCross',
-    'SkScalerCacheMultiThread',
-    'SkTraceMemoryDump_ownedGLBuffer',
-    'SkTraceMemoryDump_ownedGLTexture',
-    'SkTraceMemoryDump_unownedGLRenderTarget',
-    'SkTraceMemoryDump_unownedGLTexture',
-    'SmallBoxBlurBug',
-    'SpecialImage_GPUDevice',
-    'SpecialImage_Gpu',
-    'SpecialSurface_Gpu1',
-    'SrcSrcOverBatchTest',
+
+    // Apparently fail only on release builds / bots
+    'FlushFinishedProcTest',
+    'WritePixelsNonTextureMSAA_Gpu',
+
+    // These SkSL tests fail on the Quadro P400s in the Golo
+    'SkSLCommaSideEffects_GPU',
+    'SkSLMatrixScalarNoOpFolding_GPU',
+    'SkSLPreserveSideEffects_GPU',
+    'SkSLStructFieldNoFolding_GPU',
+
+    // These tests use files on disk, which is not supported for WASM
     'Stream',
     'StreamBuffer',
     'StreamPeek',
-    'String_Threaded',
-    'SurfaceAttachStencil_Gpu',
-    'SurfaceBackendHandleAccessIDs_Gpu',
-    'SurfaceBackendSurfaceAccessCopyOnWrite_Gpu',
-    'SurfaceBudget',
-    'SurfaceCRBug263329_Gpu',
-    'SurfaceCanvasPeek_Gpu',
-    'SurfaceCopyOnWrite_Gpu',
-    'SurfaceNoCanvas_Gpu',
-    'SurfacePartialDraw_Gpu',
-    'SurfacepeekTexture_Gpu',
-    'SurfaceWrappedWithRelease_Gpu',
-    'SurfaceWriteableAfterSnapshotRelease_Gpu',
-    'TextBlobJaggedGlyph',
-    'TextBlobSmoothScroll',
-    'TextBlobStressAbnormal',
-    'TextBlobStressCache',
-    'TextureIdleProcCacheManipulationTest',
-    'TextureIdleProcFlushTest',
-    'TextureIdleProcRerefTest',
-    'TextureIdleProcTest',
-    'TextureIdleStateTest',
-    'TextureProxyTest',
-    'TextureStripAtlasManagerColorFilterTest',
-    'TextureStripAtlasManagerGradientTest',
-    'TriangulatingPathRendererTests',
-    'VertexAttributeCount',
-    'WrappedProxyTest',
-    'WritePixelsNonTextureMSAA_Gpu',
-    'WritePixelsNonTexture_Gpu',
-    'WritePixelsPendingIO',
-    'XfermodeImageFilterCroppedInput_Gpu',
-    'ZeroSizedProxyTest',
-    'skbug5221_GPU',
-
-    // These tests are failing
-    'ApplyGamma',
-    'BlurMaskBiggerThanDest',
-    'Codec_GifPreMap',
-    'Codec_AnimatedTransparentGif',
     'FILEStreamWithOffset',
-    'Gif',
-    'RepeatedClippedBlurTest',
-    'SkTraceMemoryDump_ownedGLRenderTarget',
-    'SurfaceClear_Gpu',
-    'SurfaceSnapshotAlphaType_Gpu',
-    'TestGpuAllContexts',
-    'TestGpuRenderingContexts',
-    'TestMockContext',
-    'TextBlobAbnormal',
-    'TextBlobCache'
   ]);
 
   async function RunTests(GM) {
@@ -338,13 +260,15 @@ array of the test names and what they drew.
       window._error = 'Could not make GrContext for tests';
       return;
     }
-    // We run these tests in batchs so as not to lock up the main thread, which makes it easier
+    // We run these tests in batches so as not to lock up the main thread, which makes it easier
     // to read the progress as well as making the page more responsive when debugging.
     await new Promise((resolve, reject) => {
       const names = GM.ListTests();
       names.sort();
       console.log(names);
-      let testIdx = -1;
+      // When debugging locally, it can be handy to skip to a certain test by using
+      // names.indexOf here instead of 0.
+      let testIdx = 0;
       const nextBatch = () => {
         for (let i = 0; i < 10 && testIdx < names.length; i++) {
           testIdx++;

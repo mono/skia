@@ -8,8 +8,12 @@
 // Unit tests for src/core/SkPoint3.cpp and its header
 
 #include "include/core/SkPoint3.h"
-#include "include/utils/SkRandom.h"
+#include "include/core/SkScalar.h"
+#include "src/base/SkRandom.h"
 #include "tests/Test.h"
+
+#include <array>
+#include <cstddef>
 
 static void test_eq_ops(skiatest::Reporter* reporter) {
     const SkPoint3 p0 = SkPoint3::Make(0, 0, 0);
@@ -136,7 +140,7 @@ DEF_TEST(Point3, reporter) {
         { 3.4e38f, 0.0f, 0.0f, 3.4e38f }         // overflows
     };
 
-    for (size_t i = 0; i < SK_ARRAY_COUNT(gRec); ++i) {
+    for (size_t i = 0; i < std::size(gRec); ++i) {
         test_length(reporter, gRec[i].fX, gRec[i].fY, gRec[i].fZ, gRec[i].fLength);
         test_normalize(reporter, gRec[i].fX, gRec[i].fY, gRec[i].fZ, gRec[i].fLength);
     }

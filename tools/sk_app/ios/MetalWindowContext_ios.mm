@@ -41,13 +41,11 @@ private:
     sk_app::Window_ios*  fWindow;
     UIViewController*    fViewController;
     MetalView*           fMetalView;
-
-    using INHERITED = MetalWindowContext;
 };
 
 MetalWindowContext_ios::MetalWindowContext_ios(const IOSWindowInfo& info,
                                                const DisplayParams& params)
-    : INHERITED(params)
+    : MetalWindowContext(params)
     , fWindow(info.fWindow)
     , fViewController(info.fViewController) {
 
@@ -71,7 +69,7 @@ bool MetalWindowContext_ios::onInitializeContext() {
     [fViewController.view addSubview:fMetalView];
 
     fMetalLayer = (CAMetalLayer*)fMetalView.layer;
-    fMetalLayer.device = fDevice;
+    fMetalLayer.device = fDevice.get();
     fMetalLayer.pixelFormat = MTLPixelFormatBGRA8Unorm;
     fMetalLayer.drawableSize = frameRect.size;
     fMetalLayer.frame = frameRect;

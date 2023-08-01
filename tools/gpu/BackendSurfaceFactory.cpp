@@ -9,8 +9,9 @@
 
 #include "include/core/SkSurface.h"
 #include "include/gpu/GrDirectContext.h"
-#include "src/gpu/GrDirectContextPriv.h"
-#include "src/gpu/GrGpu.h"
+#include "include/gpu/ganesh/SkSurfaceGanesh.h"
+#include "src/gpu/ganesh/GrDirectContextPriv.h"
+#include "src/gpu/ganesh/GrGpu.h"
 #include "tools/gpu/ManagedBackendTexture.h"
 
 namespace sk_gpu_test {
@@ -19,7 +20,7 @@ sk_sp<SkSurface> MakeBackendTextureSurface(GrDirectContext* dContext,
                                            const SkImageInfo& ii,
                                            GrSurfaceOrigin origin,
                                            int sampleCnt,
-                                           GrMipmapped mipMapped,
+                                           GrMipmapped mipmapped,
                                            GrProtected isProtected,
                                            const SkSurfaceProps* props) {
     if (ii.alphaType() == kUnpremul_SkAlphaType) {
@@ -29,21 +30,21 @@ sk_sp<SkSurface> MakeBackendTextureSurface(GrDirectContext* dContext,
                                                        ii.width(),
                                                        ii.height(),
                                                        ii.colorType(),
-                                                       mipMapped,
+                                                       mipmapped,
                                                        GrRenderable::kYes,
                                                        isProtected);
     if (!mbet) {
         return nullptr;
     }
-    return SkSurface::MakeFromBackendTexture(dContext,
-                                             mbet->texture(),
-                                             origin,
-                                             sampleCnt,
-                                             ii.colorType(),
-                                             ii.refColorSpace(),
-                                             props,
-                                             ManagedBackendTexture::ReleaseProc,
-                                             mbet->releaseContext());
+    return SkSurfaces::WrapBackendTexture(dContext,
+                                          mbet->texture(),
+                                          origin,
+                                          sampleCnt,
+                                          ii.colorType(),
+                                          ii.refColorSpace(),
+                                          props,
+                                          ManagedBackendTexture::ReleaseProc,
+                                          mbet->releaseContext());
 }
 
 sk_sp<SkSurface> MakeBackendTextureSurface(GrDirectContext* dContext,
@@ -52,12 +53,12 @@ sk_sp<SkSurface> MakeBackendTextureSurface(GrDirectContext* dContext,
                                            int sampleCnt,
                                            SkColorType colorType,
                                            sk_sp<SkColorSpace> colorSpace,
-                                           GrMipmapped mipMapped,
+                                           GrMipmapped mipmapped,
                                            GrProtected isProtected,
                                            const SkSurfaceProps* props) {
     auto ii = SkImageInfo::Make(dimensions, colorType, kPremul_SkAlphaType, std::move(colorSpace));
     return MakeBackendTextureSurface(
-            dContext, ii, origin, sampleCnt, mipMapped, isProtected, props);
+            dContext, ii, origin, sampleCnt, mipmapped, isProtected, props);
 }
 sk_sp<SkSurface> MakeBackendRenderTargetSurface(GrDirectContext* dContext,
                                                 const SkImageInfo& ii,
@@ -65,7 +66,7 @@ sk_sp<SkSurface> MakeBackendRenderTargetSurface(GrDirectContext* dContext,
                                                 int sampleCnt,
                                                 GrProtected isProtected,
                                                 const SkSurfaceProps* props) {
-    if (ii.alphaType() == kUnpremul_SkAlphaType) {
+    if (ii.alphaType() == kUnpremul_SkAlphaType || ii.alphaType() == kUnknown_SkAlphaType) {
         return nullptr;
     }
     auto ct = SkColorTypeToGrColorType(ii.colorType());
@@ -88,7 +89,7 @@ sk_sp<SkSurface> MakeBackendRenderTargetSurface(GrDirectContext* dContext,
         delete rc;
     };
 
-    return SkSurface::MakeFromBackendRenderTarget(
+    return SkSurfaces::WrapBackendRenderTarget(
             dContext, bert, origin, ii.colorType(), ii.refColorSpace(), props, proc, rc);
 }
 

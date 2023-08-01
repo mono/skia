@@ -4,12 +4,17 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
+#include "include/core/SkTypes.h"
+#include "include/private/base/SkDebug.h"
 #include "src/pathops/SkIntersections.h"
 #include "src/pathops/SkPathOpsConic.h"
+#include "src/pathops/SkPathOpsPoint.h"
 #include "src/pathops/SkPathOpsQuad.h"
 #include "src/pathops/SkReduceOrder.h"
 #include "tests/PathOpsTestCommon.h"
 #include "tests/Test.h"
+
+#include <array>
 
 static struct conicQuad {
     ConicPts conic;
@@ -29,7 +34,7 @@ static struct conicQuad {
     {{{494.355774f, 224.605927f}, {494.363708f, 224.631714f}, {494.370148f, 224.657471f}}}},
 };
 
-static const int conicQuadTests_count = (int) SK_ARRAY_COUNT(conicQuadTests);
+static const int conicQuadTests_count = (int) std::size(conicQuadTests);
 
 static void conicQuadIntersection(skiatest::Reporter* reporter, int index) {
     const ConicPts& c = conicQuadTests[index].conic;

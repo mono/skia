@@ -13,7 +13,7 @@
 
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkSize.h"
-#include "src/core/SkAutoMalloc.h"
+#include "src/base/SkAutoMalloc.h"
 #include "src/core/SkScalerContext.h"
 #include "src/utils/mac/SkUniqueCFRef.h"
 
@@ -44,24 +44,16 @@ public:
     SkScalerContext_Mac(sk_sp<SkTypeface_Mac>, const SkScalerContextEffects&, const SkDescriptor*);
 
 protected:
-    unsigned generateGlyphCount(void) override;
     bool generateAdvance(SkGlyph* glyph) override;
-    void generateMetrics(SkGlyph* glyph) override;
+    void generateMetrics(SkGlyph* glyph, SkArenaAlloc*) override;
     void generateImage(const SkGlyph& glyph) override;
-    bool generatePath(SkGlyphID glyph, SkPath* path) override;
+    bool generatePath(const SkGlyph& glyph, SkPath* path) override;
     void generateFontMetrics(SkFontMetrics*) override;
 
 private:
     class Offscreen {
     public:
-        Offscreen()
-            : fRGBSpace(nullptr)
-            , fCG(nullptr)
-            , fDoAA(false)
-            , fDoLCD(false)
-        {
-            fSize.set(0, 0);
-        }
+        Offscreen(SkColor foregroundColor);
 
         CGRGBPixel* getCG(const SkScalerContext_Mac& context, const SkGlyph& glyph,
                           CGGlyph glyphID, size_t* rowBytesPtr, bool generateA8FromLCD);
@@ -75,6 +67,8 @@ private:
 
         // cached state
         SkUniqueCFRef<CGContextRef> fCG;
+        SkUniqueCFRef<CGColorRef> fCGForegroundColor;
+        SkColor fSKForegroundColor;
         SkISize fSize;
         bool fDoAA;
         bool fDoLCD;
@@ -106,7 +100,6 @@ private:
     CGAffineTransform fInvTransform;
 
     SkUniqueCFRef<CGFontRef> fCGFont;
-    uint16_t fGlyphCount;
     const bool fDoSubPosition;
 
     friend class Offscreen;

@@ -5,22 +5,55 @@
  * found in the LICENSE file.
  */
 
-#include "include/gpu/GrDirectContext.h"
-#include "src/gpu/GrDirectContextPriv.h"
-#include "src/gpu/GrProxyProvider.h"
-#include "src/gpu/GrRenderTargetContext.h"
-#include "src/gpu/GrShaderCaps.h"
-#include "src/gpu/GrTexture.h"
-#include "src/gpu/GrTextureProxyPriv.h"
-#include "src/gpu/gl/GrGLGpu.h"
-#include "src/gpu/gl/GrGLUtil.h"
+
 #include "tests/Test.h"
+
+
+#ifdef SK_GL
+#include "include/core/SkAlphaType.h"
+#include "include/core/SkColorSpace.h"
+#include "include/core/SkColorType.h"
+#include "include/core/SkRefCnt.h"
+#include "include/core/SkTypes.h"
+#include "include/gpu/GpuTypes.h"
+#include "include/gpu/GrBackendSurface.h"
+#include "include/gpu/GrDirectContext.h"
+#include "include/gpu/GrTypes.h"
+#include "include/gpu/gl/GrGLFunctions.h"
+#include "include/gpu/gl/GrGLInterface.h"
+#include "include/gpu/gl/GrGLTypes.h"
+#include "include/private/base/SkDebug.h"
+#include "include/private/base/SkTemplates.h"
+#include "include/private/gpu/ganesh/GrTypesPriv.h"
+#include "src/gpu/RefCntedCallback.h"
+#include "src/gpu/Swizzle.h"
+#include "src/gpu/ganesh/GrCaps.h"
+#include "src/gpu/ganesh/GrColorInfo.h"
+#include "src/gpu/ganesh/GrDirectContextPriv.h"
+#include "src/gpu/ganesh/GrProxyProvider.h"
+#include "src/gpu/ganesh/GrShaderCaps.h"
+#include "src/gpu/ganesh/GrSurfaceProxy.h"
+#include "src/gpu/ganesh/GrSurfaceProxyView.h"
+#include "src/gpu/ganesh/GrTexture.h"
+#include "src/gpu/ganesh/GrTextureProxy.h"
+#include "src/gpu/ganesh/SurfaceContext.h"
+#include "src/gpu/ganesh/SurfaceFillContext.h" // IWYU pragma: keep
+#include "src/gpu/ganesh/gl/GrGLCaps.h"
+#include "src/gpu/ganesh/gl/GrGLDefines_impl.h"
+#include "src/gpu/ganesh/gl/GrGLGpu.h"
+#include "src/gpu/ganesh/gl/GrGLUtil.h"
+#include "tests/CtsEnforcement.h"
 #include "tests/TestUtils.h"
-#include "tools/gpu/GrContextFactory.h"
 #include "tools/gpu/ManagedBackendTexture.h"
 #include "tools/gpu/gl/GLTestContext.h"
 
-#ifdef SK_GL
+#include <cstdint>
+#include <memory>
+#include <utility>
+
+using namespace skia_private;
+
+struct GrContextOptions;
 
 using sk_gpu_test::GLTestContext;
 
@@ -42,7 +75,10 @@ static void cleanup(GLTestContext* glctx0,
     }
 }
 
-DEF_GPUTEST_FOR_GL_RENDERING_CONTEXTS(EGLImageTest, reporter, ctxInfo) {
+DEF_GANESH_TEST_FOR_GL_RENDERING_CONTEXTS(EGLImageTest,
+                                          reporter,
+                                          ctxInfo,
+                                          CtsEnforcement::kApiLevel_T) {
     auto context0 = ctxInfo.directContext();
     sk_gpu_test::GLTestContext* glCtx0 = ctxInfo.glContext();
 
@@ -53,7 +89,7 @@ DEF_GPUTEST_FOR_GL_RENDERING_CONTEXTS(EGLImageTest, reporter, ctxInfo) {
         return;
     }
     GrGLGpu* gpu0 = static_cast<GrGLGpu*>(context0->priv().getGpu());
-    if (!gpu0->glCaps().shaderCaps()->externalTextureSupport()) {
+    if (!gpu0->glCaps().shaderCaps()->fExternalTextureSupport) {
         return;
     }
 
@@ -83,9 +119,13 @@ DEF_GPUTEST_FOR_GL_RENDERING_CONTEXTS(EGLImageTest, reporter, ctxInfo) {
     context1->flushAndSubmit();
     static const int kSize = 100;
 
-    auto mbet = sk_gpu_test::ManagedBackendTexture::MakeWithoutData(
-            context1.get(), kSize, kSize, kRGBA_8888_SkColorType, GrMipmapped::kNo,
-            GrRenderable::kNo, GrProtected::kNo);
+    auto mbet = sk_gpu_test::ManagedBackendTexture::MakeWithoutData(context1.get(),
+                                                                    kSize,
+                                                                    kSize,
+                                                                    kRGBA_8888_SkColorType,
+                                                                    GrMipmapped::kNo,
+                                                                    GrRenderable::kNo,
+                                                                    GrProtected::kNo);
 
     if (!mbet) {
         ERRORF(reporter, "Error creating texture for EGL Image");
@@ -122,7 +162,7 @@ DEF_GPUTEST_FOR_GL_RENDERING_CONTEXTS(EGLImageTest, reporter, ctxInfo) {
     // Populate the texture using GL context 1. Important to use TexSubImage as TexImage orphans
     // the EGL image. Also, this must be done after creating the EGLImage as the texture
     // contents may not be preserved when the image is created.
-    SkAutoTMalloc<uint32_t> pixels(kSize * kSize);
+    AutoTMalloc<uint32_t> pixels(kSize * kSize);
     for (int i = 0; i < kSize*kSize; ++i) {
         pixels.get()[i] = 0xDDAABBCC;
     }
@@ -151,8 +191,7 @@ DEF_GPUTEST_FOR_GL_RENDERING_CONTEXTS(EGLImageTest, reporter, ctxInfo) {
     // Wrap this texture ID in a GrTexture
     GrBackendTexture backendTex(kSize, kSize, GrMipmapped::kNo, externalTexture);
 
-    GrColorType colorType = GrColorType::kRGBA_8888;
-    SkAlphaType alphaType = kPremul_SkAlphaType;
+    GrColorInfo colorInfo(GrColorType::kRGBA_8888, kPremul_SkAlphaType, nullptr);
     // TODO: If I make this TopLeft origin to match resolve_origin calls for kDefault, this test
     // fails on the Nexus5. Why?
     GrSurfaceOrigin origin = kBottomLeft_GrSurfaceOrigin;
@@ -163,14 +202,13 @@ DEF_GPUTEST_FOR_GL_RENDERING_CONTEXTS(EGLImageTest, reporter, ctxInfo) {
         cleanup(glCtx0, externalTexture.fID, glCtx1.get(), context1, image);
         return;
     }
-    GrSwizzle swizzle =
-            context0->priv().caps()->getReadSwizzle(texProxy->backendFormat(), colorType);
+    skgpu::Swizzle swizzle = context0->priv().caps()->getReadSwizzle(texProxy->backendFormat(),
+                                                                     colorInfo.colorType());
     GrSurfaceProxyView view(std::move(texProxy), origin, swizzle);
-    auto surfaceContext =
-            GrSurfaceContext::Make(context0, std::move(view), colorType, alphaType, nullptr);
+    auto surfaceContext = context0->priv().makeSC(std::move(view), colorInfo);
 
     if (!surfaceContext) {
-        ERRORF(reporter, "Error wrapping external texture in GrSurfaceContext.");
+        ERRORF(reporter, "Error wrapping external texture in SurfaceContext.");
         cleanup(glCtx0, externalTexture.fID, glCtx1.get(), context1, image);
         return;
     }
@@ -186,22 +224,31 @@ DEF_GPUTEST_FOR_GL_RENDERING_CONTEXTS(EGLImageTest, reporter, ctxInfo) {
 
     // Should not be able to wrap as a RT
     {
-        auto temp = GrRenderTargetContext::MakeFromBackendTexture(
-                context0, colorType, nullptr, backendTex, 1, origin, nullptr, nullptr);
+        auto temp = context0->priv().makeSFCFromBackendTexture(colorInfo,
+                                                               backendTex,
+                                                               1,
+                                                               origin,
+                                                               /*release helper*/ nullptr);
         if (temp) {
             ERRORF(reporter, "Should not be able to wrap an EXTERNAL texture as a RT.");
         }
     }
 
-    TestReadPixels(reporter, context0, surfaceContext.get(), pixels.get(), "EGLImageTest-read");
+    //TestReadPixels(reporter, context0, surfaceContext.get(), pixels.get(), "EGLImageTest-read");
 
+    SkDebugf("type: %d\n", (int)surfaceContext->asTextureProxy()->textureType());
     // We should not be able to write to an EXTERNAL texture
     TestWritePixels(reporter, context0, surfaceContext.get(), false, "EGLImageTest-write");
 
     // Only test RT-config
     // TODO: why do we always need to draw to copy from an external texture?
-    TestCopyFromSurface(reporter, context0, surfaceContext->asSurfaceProxy(),
-                        surfaceContext->origin(), colorType, pixels.get(), "EGLImageTest-copy");
+    TestCopyFromSurface(reporter,
+                        context0,
+                        surfaceContext->asSurfaceProxyRef(),
+                        surfaceContext->origin(),
+                        colorInfo.colorType(),
+                        pixels.get(),
+                        "EGLImageTest-copy");
 
     cleanup(glCtx0, externalTexture.fID, glCtx1.get(), context1, image);
 }

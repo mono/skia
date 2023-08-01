@@ -8,7 +8,7 @@
 #include "modules/skottie/src/text/RangeSelector.h"
 
 #include "include/core/SkCubicMap.h"
-#include "include/private/SkTPin.h"
+#include "include/private/base/SkTPin.h"
 #include "modules/skottie/src/SkottieJson.h"
 #include "modules/skottie/src/SkottieValue.h"
 #include "modules/skottie/src/animator/Animator.h"
@@ -28,18 +28,18 @@ T ParseEnum(const TArray& arr, const skjson::Value& jenum,
 
     const auto idx = ParseDefault<int>(jenum, 1);
 
-    if (idx > 0 && SkToSizeT(idx) <= SK_ARRAY_COUNT(arr)) {
+    if (idx > 0 && SkToSizeT(idx) <= std::size(arr)) {
         return arr[idx - 1];
     }
 
-    // For animators without selectors, BM emits dummy selector entries with 0 (inval) props.
+    // For animators without selectors, BM emits placeholder selector entries with 0 (inval) props.
     // Supress warnings for these as they are "normal".
     if (idx != 0) {
         abuilder->log(Logger::Level::kWarning, nullptr,
                       "Ignoring unknown range selector %s '%d'", warn_name, idx);
     }
 
-    static_assert(SK_ARRAY_COUNT(arr) > 0, "");
+    SkASSERT(std::size(arr) > 0);
     return arr[0];
 }
 
@@ -363,7 +363,7 @@ void RangeSelector::modulateCoverage(const TextAnimator::DomainMaps& maps,
     auto          r0 = std::get<0>(range),
                  len = std::max(std::get<1>(range) - r0, std::numeric_limits<float>::epsilon());
 
-    SkASSERT(static_cast<size_t>(fShape) < SK_ARRAY_COUNT(gShapeInfo));
+    SkASSERT(static_cast<size_t>(fShape) < std::size(gShapeInfo));
     ShapeGenerator gen(gShapeInfo[static_cast<size_t>(fShape)], ease_lo, ease_hi);
 
     if (fShape == Shape::kSquare) {

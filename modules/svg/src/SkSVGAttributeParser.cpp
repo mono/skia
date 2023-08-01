@@ -5,10 +5,11 @@
  * found in the LICENSE file.
  */
 
-#include "include/private/SkTPin.h"
+#include "include/private/base/SkTPin.h"
 #include "include/utils/SkParse.h"
 #include "modules/svg/include/SkSVGAttributeParser.h"
 #include "modules/svg/include/SkSVGTypes.h"
+#include "src/base/SkUTF.h"
 
 namespace {
 
@@ -19,10 +20,6 @@ inline bool is_between(char c, char min, char max) {
     return (unsigned)(c - min) <= (unsigned)(max - min);
 }
 
-inline bool is_eos(char c) {
-    return !c;
-}
-
 inline bool is_ws(char c) {
     return is_between(c, 1, 32);
 }
@@ -31,22 +28,52 @@ inline bool is_sep(char c) {
     return is_ws(c) || c == ',' || c == ';';
 }
 
+inline bool is_nl(char c) {
+    return c == '\n' || c == '\r' || c == '\f';
+}
+
+inline bool is_hex(char c) {
+    return is_between(c, 'a', 'f') ||
+           is_between(c, 'A', 'F') ||
+           is_between(c, '0', '9');
+}
+
 }  // namespace
 
 SkSVGAttributeParser::SkSVGAttributeParser(const char attributeString[])
-    : fCurPos(attributeString) {}
+    // TODO: need actual UTF-8 with length.
+    : fCurPos(attributeString), fEndPos(fCurPos + strlen(attributeString)) {}
 
 template <typename F>
 inline bool SkSVGAttributeParser::advanceWhile(F f) {
     auto initial = fCurPos;
-    while (f(*fCurPos)) {
+    while (fCurPos < fEndPos && f(*fCurPos)) {
         fCurPos++;
     }
     return fCurPos != initial;
 }
 
+bool SkSVGAttributeParser::matchStringToken(const char* token, const char** newPos) const {
+    const char* c = fCurPos;
+
+    while (c < fEndPos && *token && *c == *token) {
+        c++;
+        token++;
+    }
+
+    if (*token) {
+        return false;
+    }
+
+    if (newPos) {
+        *newPos = c;
+    }
+
+    return true;
+}
+
 bool SkSVGAttributeParser::parseEOSToken() {
-    return is_eos(*fCurPos);
+    return fCurPos == fEndPos;
 }
 
 bool SkSVGAttributeParser::parseSepToken() {
@@ -64,18 +91,12 @@ bool SkSVGAttributeParser::parseCommaWspToken() {
 }
 
 bool SkSVGAttributeParser::parseExpectedStringToken(const char* expected) {
-    const char* c = fCurPos;
-
-    while (*c && *expected && *c == *expected) {
-        c++;
-        expected++;
-    }
-
-    if (*expected) {
+    const char* newPos;
+    if (!matchStringToken(expected, &newPos)) {
         return false;
     }
 
-    fCurPos = c;
+    fCurPos = newPos;
     return true;
 }
 
@@ -95,12 +116,101 @@ bool SkSVGAttributeParser::parseInt32Token(int32_t* res) {
     return false;
 }
 
-bool SkSVGAttributeParser::parseHexToken(uint32_t* res) {
-     if (const char* next = SkParse::FindHex(fCurPos, res)) {
-         fCurPos = next;
-         return true;
-     }
-     return false;
+bool SkSVGAttributeParser::matchHexToken(const char** newPos) const {
+    *newPos = fCurPos;
+    while (*newPos < fEndPos && is_hex(**newPos)) { ++*newPos; }
+    return *newPos != fCurPos;
+}
+
+bool SkSVGAttributeParser::parseEscape(SkUnichar* c) {
+    // \(hexDigit{1,6}whitespace?|[^newline|hexDigit])
+    RestoreCurPos restoreCurPos(this);
+
+    if (!this->parseExpectedStringToken("\\")) {
+        return false;
+    }
+    const char* hexEnd;
+    if (this->matchHexToken(&hexEnd)) {
+        if (hexEnd - fCurPos > 6) {
+            hexEnd = fCurPos + 6;
+        }
+        char hexString[7];
+        size_t hexSize = hexEnd - fCurPos;
+        memcpy(hexString, fCurPos, hexSize);
+        hexString[hexSize] = '\0';
+        uint32_t cp;
+        const char* hexFound = SkParse::FindHex(hexString, &cp);
+        if (!hexFound || cp < 1 || (0xD800 <= cp && cp <= 0xDFFF) || 0x10FFFF < cp) {
+            cp = 0xFFFD;
+        }
+        *c = cp;
+        fCurPos = hexEnd;
+        this->parseWSToken();
+    } else if (this->parseEOSToken() || is_nl(*fCurPos)) {
+        *c = 0xFFFD;
+        return false;
+    } else {
+        if ((*c = SkUTF::NextUTF8(&fCurPos, fEndPos)) < 0) {
+            return false;
+        }
+    }
+
+    restoreCurPos.clear();
+    return true;
+}
+
+bool SkSVGAttributeParser::parseIdentToken(SkString* ident) {
+    // <ident-token>
+    // (--|-?([a-z|A-Z|_|non-ASCII]|escape))([a-z|A-Z|0-9|_|-|non-ASCII]|escape)?
+    RestoreCurPos restoreCurPos(this);
+
+    SkUnichar c;
+    if (this->parseExpectedStringToken("--")) {
+        ident->append("--");
+    } else {
+        if (this->parseExpectedStringToken("-")) {
+            ident->append("-");
+        }
+        if (this->parseEscape(&c)) {
+            ident->appendUnichar(c);
+        } else {
+            if ((c = SkUTF::NextUTF8(&fCurPos, fEndPos)) < 0) {
+                return false;
+            }
+            if ((c < 'a' || 'z' < c) &&
+                (c < 'A' || 'Z' < c) &&
+                (c != '_') &&
+                (c < 0x80 || 0x10FFFF < c))
+            {
+                return false;
+            }
+            ident->appendUnichar(c);
+        }
+    }
+    while (fCurPos < fEndPos) {
+        if (this->parseEscape(&c)) {
+            ident->appendUnichar(c);
+            continue;
+        }
+        const char* next = fCurPos;
+        if ((c = SkUTF::NextUTF8(&next, fEndPos)) < 0) {
+            break;
+        }
+        if ((c < 'a' || 'z' < c) &&
+            (c < 'A' || 'Z' < c) &&
+            (c < '0' || '9' < c) &&
+            (c != '_') &&
+            (c != '-') &&
+            (c < 0x80 || 0x10FFFF < c))
+        {
+            break;
+        }
+        ident->appendUnichar(c);
+        fCurPos = next;
+    }
+
+    restoreCurPos.clear();
+    return true;
 }
 
 bool SkSVGAttributeParser::parseLengthUnitToken(SkSVGLength::Unit* unit) {
@@ -119,7 +229,7 @@ bool SkSVGAttributeParser::parseLengthUnitToken(SkSVGLength::Unit* unit) {
         { "pc", SkSVGLength::Unit::kPC         },
     };
 
-    for (size_t i = 0; i < SK_ARRAY_COUNT(gUnitInfo); ++i) {
+    for (size_t i = 0; i < std::size(gUnitInfo); ++i) {
         if (this->parseExpectedStringToken(gUnitInfo[i].fUnitName)) {
             *unit = gUnitInfo[i].fUnit;
             return true;
@@ -130,26 +240,37 @@ bool SkSVGAttributeParser::parseLengthUnitToken(SkSVGLength::Unit* unit) {
 
 // https://www.w3.org/TR/SVG11/types.html#DataTypeColor
 bool SkSVGAttributeParser::parseNamedColorToken(SkColor* c) {
-    if (const char* next = SkParse::FindNamedColor(fCurPos, strlen(fCurPos), c)) {
-        fCurPos = next;
-        return true;
+    RestoreCurPos restoreCurPos(this);
+
+    SkString ident;
+    if (!this->parseIdentToken(&ident)) {
+        return false;
     }
-    return false;
-}
-
-bool SkSVGAttributeParser::parseHexColorToken(SkColor* c) {
-    uint32_t v;
-    const char* initial = fCurPos;
-
-    if (!this->parseExpectedStringToken("#") || !this->parseHexToken(&v)) {
+    if (!SkParse::FindNamedColor(ident.c_str(), ident.size(), c)) {
         return false;
     }
 
-    switch (fCurPos - initial) {
-    case 7:
+    restoreCurPos.clear();
+    return true;
+}
+
+bool SkSVGAttributeParser::parseHexColorToken(SkColor* c) {
+    RestoreCurPos restoreCurPos(this);
+
+    const char* hexEnd;
+    if (!this->parseExpectedStringToken("#") || !this->matchHexToken(&hexEnd)) {
+        return false;
+    }
+
+    uint32_t v;
+    SkString hexString(fCurPos, hexEnd - fCurPos);
+    SkParse::FindHex(hexString.c_str(), &v);
+
+    switch (hexString.size()) {
+    case 6:
         // matched #xxxxxxx
         break;
-    case 4:
+    case 3:
         // matched '#xxx;
         v = ((v << 12) & 0x00f00000) |
             ((v <<  8) & 0x000ff000) |
@@ -161,6 +282,9 @@ bool SkSVGAttributeParser::parseHexColorToken(SkColor* c) {
     }
 
     *c = v | 0xff000000;
+    fCurPos = hexEnd;
+
+    restoreCurPos.clear();
     return true;
 }
 
@@ -221,27 +345,80 @@ bool SkSVGAttributeParser::parseRGBColorToken(SkColor* c) {
     }, c);
 }
 
+bool SkSVGAttributeParser::parseColorToken(SkColor* c) {
+    return this->parseHexColorToken(c) ||
+           this->parseNamedColorToken(c) ||
+           this->parseRGBColorToken(c);
+}
+
+bool SkSVGAttributeParser::parseSVGColorType(SkSVGColorType* color) {
+    SkColor c;
+    if (!this->parseColorToken(&c)) {
+        return false;
+    }
+    *color = SkSVGColorType(c);
+    return true;
+}
+
 // https://www.w3.org/TR/SVG11/types.html#DataTypeColor
 // And https://www.w3.org/TR/CSS2/syndata.html#color-units for the alternative
 // forms supported by SVG (e.g. RGB percentages).
-bool SkSVGAttributeParser::parseColor(SkSVGColorType* color) {
-    SkColor c;
-
-    // consume preceding whitespace
+template <>
+bool SkSVGAttributeParser::parse(SkSVGColorType* color) {
     this->parseWSToken();
-
-    bool parsedValue = false;
-    if (this->parseHexColorToken(&c)
-        || this->parseNamedColorToken(&c)
-        || this->parseRGBColorToken(&c)) {
-        *color = SkSVGColorType(c);
-        parsedValue = true;
-
-        // consume trailing whitespace
-        this->parseWSToken();
+    if (!this->parseSVGColorType(color)) {
+        return false;
     }
+    this->parseWSToken();
+    return this->parseEOSToken();
+}
 
-    return parsedValue && this->parseEOSToken();
+bool SkSVGAttributeParser::parseSVGColor(SkSVGColor* color, SkSVGColor::Vars&& vars) {
+    static const constexpr int kVarsLimit = 32;
+
+    if (SkSVGColorType c; this->parseSVGColorType(&c)) {
+        *color = SkSVGColor(c, std::move(vars));
+        return true;
+    }
+    if (this->parseExpectedStringToken("currentColor")) {
+        *color = SkSVGColor(SkSVGColor::Type::kCurrentColor, std::move(vars));
+        return true;
+    }
+    // https://drafts.csswg.org/css-variables/#using-variables
+    if (this->parseParenthesized("var", [this, &vars](SkSVGColor* colorResult) -> bool {
+            SkString ident;
+            if (!this->parseIdentToken(&ident) || ident.size() < 2 || !ident.startsWith("--")) {
+                return false;
+            }
+            ident.remove(0, 2);
+            vars.push_back(std::move(ident));
+            this->parseWSToken();
+            if (!this->parseExpectedStringToken(",")) {
+                *colorResult = SkSVGColor(SK_ColorBLACK, std::move(vars));
+                return true;
+            }
+            this->parseWSToken();
+            if (this->matchStringToken(")")) {
+                *colorResult = SkSVGColor(SK_ColorBLACK, std::move(vars));
+                return true;
+            }
+            return vars.size() < kVarsLimit && this->parseSVGColor(colorResult, std::move(vars));
+        }, color))
+    {
+        return true;
+    }
+    return false;
+}
+
+// https://www.w3.org/TR/SVG11/types.html#InterfaceSVGColor
+template <>
+bool SkSVGAttributeParser::parse(SkSVGColor* color) {
+    this->parseWSToken();
+    if (!this->parseSVGColor(color, SkSVGColor::Vars())) {
+        return false;
+    }
+    this->parseWSToken();
+    return this->parseEOSToken();
 }
 
 // https://www.w3.org/TR/SVG11/linking.html#IRIReference
@@ -250,25 +427,29 @@ bool SkSVGAttributeParser::parse(SkSVGIRI* iri) {
     // consume preceding whitespace
     this->parseWSToken();
 
-    // we only support local fragments
-    if (!this->parseExpectedStringToken("#")) {
-        return false;
+    SkSVGIRI::Type iriType;
+    if (this->parseExpectedStringToken("#")) {
+        iriType = SkSVGIRI::Type::kLocal;
+    } else if (this->matchStringToken("data:")) {
+        iriType = SkSVGIRI::Type::kDataURI;
+    } else {
+        iriType = SkSVGIRI::Type::kNonlocal;
     }
+
     const auto* start = fCurPos;
-    this->advanceWhile([](char c) -> bool { return !is_eos(c) && c != ')'; });
-    if (start == fCurPos) {
+    if (!this->advanceWhile([](char c) -> bool { return c != ')'; })) {
         return false;
     }
-    *iri = {SkString(start, fCurPos - start)};
+    *iri = SkSVGIRI(iriType, SkString(start, fCurPos - start));
     return true;
 }
 
 // https://www.w3.org/TR/SVG11/types.html#DataTypeFuncIRI
-bool SkSVGAttributeParser::parseFuncIRI(SkSVGStringType* iri) {
-    return this->parseParenthesized("url", [this](SkSVGStringType* iriString) -> bool {
+bool SkSVGAttributeParser::parseFuncIRI(SkSVGFuncIRI* iri) {
+    return this->parseParenthesized("url", [this](SkSVGFuncIRI* iriResult) -> bool {
         SkSVGIRI iri;
         if (this->parse(&iri)) {
-            *iriString = iri.fIRI;
+            *iriResult = SkSVGFuncIRI(std::move(iri));
             return true;
         }
         return false;
@@ -286,7 +467,8 @@ bool SkSVGAttributeParser::parse(SkSVGStringType* result) {
 }
 
 // https://www.w3.org/TR/SVG11/types.html#DataTypeNumber
-bool SkSVGAttributeParser::parseNumber(SkSVGNumberType* number) {
+template <>
+bool SkSVGAttributeParser::parse(SkSVGNumberType* number) {
     // consume WS
     this->parseWSToken();
 
@@ -358,6 +540,8 @@ bool SkSVGAttributeParser::parseViewBox(SkSVGViewBoxType* vb) {
 
 template <typename Func, typename T>
 bool SkSVGAttributeParser::parseParenthesized(const char* prefix, Func f, T* result) {
+    RestoreCurPos restoreCurPos(this);
+
     this->parseWSToken();
     if (prefix && !this->parseExpectedStringToken(prefix)) {
         return false;
@@ -371,9 +555,14 @@ bool SkSVGAttributeParser::parseParenthesized(const char* prefix, Func f, T* res
     if (!f(result)) {
         return false;
     }
-    this->parseWSToken();
 
-    return this->parseExpectedStringToken(")");
+    this->parseWSToken();
+    if (!this->parseExpectedStringToken(")")) {
+        return false;
+    }
+
+    restoreCurPos.clear();
+    return true;
 }
 
 bool SkSVGAttributeParser::parseMatrixToken(SkMatrix* matrix) {
@@ -503,42 +692,40 @@ bool SkSVGAttributeParser::parse(SkSVGTransformType* t) {
 // https://www.w3.org/TR/SVG11/painting.html#SpecifyingPaint
 template <>
 bool SkSVGAttributeParser::parse(SkSVGPaint* paint) {
-    SkSVGColorType c;
-    SkSVGStringType iri;
+    SkSVGColor c;
+    SkSVGFuncIRI iri;
     bool parsedValue = false;
-    if (this->parseColor(&c)) {
-        *paint = SkSVGPaint(c);
+
+    this->parseWSToken();
+    if (this->parseSVGColor(&c, SkSVGColor::Vars())) {
+        *paint = SkSVGPaint(std::move(c));
         parsedValue = true;
     } else if (this->parseExpectedStringToken("none")) {
         *paint = SkSVGPaint(SkSVGPaint::Type::kNone);
         parsedValue = true;
-    } else if (this->parseExpectedStringToken("currentColor")) {
-        *paint = SkSVGPaint(SkSVGPaint::Type::kCurrentColor);
-        parsedValue = true;
-    } else if (this->parseExpectedStringToken("inherit")) {
-        *paint = SkSVGPaint(SkSVGPaint::Type::kInherit);
-        parsedValue = true;
     } else if (this->parseFuncIRI(&iri)) {
-        *paint = SkSVGPaint(iri);
+        // optional fallback color
+        this->parseWSToken();
+        this->parseSVGColor(&c, SkSVGColor::Vars());
+        *paint = SkSVGPaint(iri.iri(), std::move(c));
         parsedValue = true;
     }
+    this->parseWSToken();
     return parsedValue && this->parseEOSToken();
 }
 
 // https://www.w3.org/TR/SVG11/masking.html#ClipPathProperty
+// https://www.w3.org/TR/SVG11/masking.html#MaskProperty
+// https://www.w3.org/TR/SVG11/filters.html#FilterProperty
 template <>
-bool SkSVGAttributeParser::parse(SkSVGClip* clip) {
+bool SkSVGAttributeParser::parse(SkSVGFuncIRI* firi) {
     SkSVGStringType iri;
     bool parsedValue = false;
 
     if (this->parseExpectedStringToken("none")) {
-        *clip = SkSVGClip(SkSVGClip::Type::kNone);
+        *firi = SkSVGFuncIRI();
         parsedValue = true;
-    } else if (this->parseExpectedStringToken("inherit")) {
-        *clip = SkSVGClip(SkSVGClip::Type::kInherit);
-        parsedValue = true;
-    } else if (this->parseFuncIRI(&iri)) {
-        *clip = SkSVGClip(iri);
+    } else if (this->parseFuncIRI(firi)) {
         parsedValue = true;
     }
 
@@ -549,17 +736,16 @@ bool SkSVGAttributeParser::parse(SkSVGClip* clip) {
 template <>
 bool SkSVGAttributeParser::parse(SkSVGLineCap* cap) {
     static const struct {
-        SkSVGLineCap::Type fType;
+        SkSVGLineCap fType;
         const char*        fName;
     } gCapInfo[] = {
-        { SkSVGLineCap::Type::kButt   , "butt"    },
-        { SkSVGLineCap::Type::kRound  , "round"   },
-        { SkSVGLineCap::Type::kSquare , "square"  },
-        { SkSVGLineCap::Type::kInherit, "inherit" },
+        { SkSVGLineCap::kButt   , "butt"    },
+        { SkSVGLineCap::kRound  , "round"   },
+        { SkSVGLineCap::kSquare , "square"  },
     };
 
     bool parsedValue = false;
-    for (size_t i = 0; i < SK_ARRAY_COUNT(gCapInfo); ++i) {
+    for (size_t i = 0; i < std::size(gCapInfo); ++i) {
         if (this->parseExpectedStringToken(gCapInfo[i].fName)) {
             *cap = SkSVGLineCap(gCapInfo[i].fType);
             parsedValue = true;
@@ -584,7 +770,7 @@ bool SkSVGAttributeParser::parse(SkSVGLineJoin* join) {
     };
 
     bool parsedValue = false;
-    for (size_t i = 0; i < SK_ARRAY_COUNT(gJoinInfo); ++i) {
+    for (size_t i = 0; i < std::size(gJoinInfo); ++i) {
         if (this->parseExpectedStringToken(gJoinInfo[i].fName)) {
             *join = SkSVGLineJoin(gJoinInfo[i].fType);
             parsedValue = true;
@@ -592,23 +778,6 @@ bool SkSVGAttributeParser::parse(SkSVGLineJoin* join) {
         }
     }
 
-    return parsedValue && this->parseEOSToken();
-}
-
-// https://www.w3.org/TR/SVG11/pservers.html#StopElement
-bool SkSVGAttributeParser::parseStopColor(SkSVGStopColor* stopColor) {
-    SkSVGColorType c;
-    bool parsedValue = false;
-    if (this->parseColor(&c)) {
-        *stopColor = SkSVGStopColor(c);
-        parsedValue = true;
-    } else if (this->parseExpectedStringToken("currentColor")) {
-        *stopColor = SkSVGStopColor(SkSVGStopColor::Type::kCurrentColor);
-        parsedValue = true;
-    } else if (this->parseExpectedStringToken("inherit")) {
-        *stopColor = SkSVGStopColor(SkSVGStopColor::Type::kInherit);
-        parsedValue = true;
-    }
     return parsedValue && this->parseEOSToken();
 }
 
@@ -629,8 +798,9 @@ bool SkSVGAttributeParser::parse(SkSVGObjectBoundingBoxUnits* objectBoundingBoxU
 }
 
 // https://www.w3.org/TR/SVG11/shapes.html#PolygonElementPointsAttribute
-bool SkSVGAttributeParser::parsePoints(SkSVGPointsType* points) {
-    SkTDArray<SkPoint> pts;
+template <>
+bool SkSVGAttributeParser::parse(SkSVGPointsType* points) {
+    SkSVGPointsType pts;
 
     // Skip initial wsp.
     // list-of-points:
@@ -669,7 +839,7 @@ bool SkSVGAttributeParser::parsePoints(SkSVGPointsType* points) {
     }
 
     if (parsedValue && this->parseEOSToken()) {
-        *points = pts;
+        *points = std::move(pts);
         return true;
     }
 
@@ -689,31 +859,12 @@ bool SkSVGAttributeParser::parse(SkSVGFillRule* fillRule) {
     };
 
     bool parsedValue = false;
-    for (size_t i = 0; i < SK_ARRAY_COUNT(gFillRuleInfo); ++i) {
+    for (size_t i = 0; i < std::size(gFillRuleInfo); ++i) {
         if (this->parseExpectedStringToken(gFillRuleInfo[i].fName)) {
             *fillRule = SkSVGFillRule(gFillRuleInfo[i].fType);
             parsedValue = true;
             break;
         }
-    }
-
-    return parsedValue && this->parseEOSToken();
-}
-
-// https://www.w3.org/TR/SVG11/filters.html#FilterProperty
-bool SkSVGAttributeParser::parseFilter(SkSVGFilterType* filter) {
-    SkSVGStringType iri;
-    bool parsedValue = false;
-
-    if (this->parseExpectedStringToken("none")) {
-        *filter = SkSVGFilterType(SkSVGFilterType::Type::kNone);
-        parsedValue = true;
-    } else if (this->parseExpectedStringToken("inherit")) {
-        *filter = SkSVGFilterType(SkSVGFilterType::Type::kInherit);
-        parsedValue = true;
-    } else if (this->parseFuncIRI(&iri)) {
-        *filter = SkSVGFilterType(iri);
-        parsedValue = true;
     }
 
     return parsedValue && this->parseEOSToken();
@@ -755,7 +906,7 @@ bool SkSVGAttributeParser::parse(SkSVGDashArray* dashArray) {
         *dashArray = SkSVGDashArray(SkSVGDashArray::Type::kInherit);
         parsedValue = true;
     } else {
-        SkTDArray<SkSVGLength> dashes;
+        std::vector<SkSVGLength> dashes;
         for (;;) {
             SkSVGLength dash;
             // parseLength() also consumes trailing separators.
@@ -919,6 +1070,74 @@ bool SkSVGAttributeParser::parsePreserveAspectRatio(SkSVGPreserveAspectRatio* pa
         // optional scaling selector
         this->parseWSToken();
         this->parseEnumMap(gScaleMap, &par->fScale);
+    }
+
+    return parsedValue && this->parseEOSToken();
+}
+
+template <>
+bool SkSVGAttributeParser::parse(SkSVGPreserveAspectRatio* par) {
+    return this->parsePreserveAspectRatio(par);
+}
+
+// https://www.w3.org/TR/SVG11/types.html#DataTypeCoordinates
+template <typename T>
+bool SkSVGAttributeParser::parseList(std::vector<T>* vals) {
+    SkASSERT(vals->empty());
+
+    T v;
+    for (;;) {
+        if (!this->parse(&v)) {
+            break;
+        }
+
+        vals->push_back(v);
+
+        this->parseCommaWspToken();
+    }
+
+    return !vals->empty() && this->parseEOSToken();
+}
+
+template <>
+bool SkSVGAttributeParser::parse(std::vector<SkSVGLength>* lengths) {
+    return this->parseList(lengths);
+}
+
+template <>
+bool SkSVGAttributeParser::parse(std::vector<SkSVGNumberType>* numbers) {
+    return this->parseList(numbers);
+}
+
+template <>
+bool SkSVGAttributeParser::parse(SkSVGColorspace* colorspace) {
+    static constexpr std::tuple<const char*, SkSVGColorspace> gColorspaceMap[] = {
+        { "auto"     , SkSVGColorspace::kAuto      },
+        { "sRGB"     , SkSVGColorspace::kSRGB      },
+        { "linearRGB", SkSVGColorspace::kLinearRGB },
+    };
+
+    return this->parseEnumMap(gColorspaceMap, colorspace) && this->parseEOSToken();
+}
+
+// https://www.w3.org/TR/SVG11/painting.html#DisplayProperty
+template <>
+bool SkSVGAttributeParser::parse(SkSVGDisplay* display) {
+    static const struct {
+        SkSVGDisplay fType;
+        const char*  fName;
+    } gDisplayInfo[] = {
+        { SkSVGDisplay::kInline, "inline" },
+        { SkSVGDisplay::kNone  , "none"   },
+    };
+
+    bool parsedValue = false;
+    for (const auto& parseInfo : gDisplayInfo) {
+        if (this->parseExpectedStringToken(parseInfo.fName)) {
+            *display = SkSVGDisplay(parseInfo.fType);
+            parsedValue = true;
+            break;
+        }
     }
 
     return parsedValue && this->parseEOSToken();

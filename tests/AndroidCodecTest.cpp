@@ -7,24 +7,21 @@
 
 #include "include/codec/SkAndroidCodec.h"
 #include "include/codec/SkCodec.h"
-#include "include/core/SkBitmap.h"
-#include "include/core/SkColor.h"
+#include "include/codec/SkEncodedImageFormat.h"
 #include "include/core/SkColorSpace.h"
 #include "include/core/SkData.h"
-#include "include/core/SkEncodedImageFormat.h"
-#include "include/core/SkImageGenerator.h"
 #include "include/core/SkImageInfo.h"
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkSize.h"
 #include "include/core/SkString.h"
 #include "include/core/SkTypes.h"
-#include "include/third_party/skcms/skcms.h"
-#include "src/codec/SkCodecImageGenerator.h"
-#include "src/core/SkPixmapPriv.h"
+#include "include/private/SkGainmapInfo.h"  // IWYU pragma: keep
+#include "modules/skcms/skcms.h"
 #include "tests/Test.h"
 #include "tools/Resources.h"
 
-#include <string.h>
+#include <cstdint>
+#include <cstring>
 #include <initializer_list>
 #include <memory>
 #include <utility>
@@ -160,7 +157,8 @@ DEF_TEST(AndroidCodec_wide, r) {
         return;
     }
 
-    auto expected = SkColorSpace::MakeRGB(SkNamedTransferFn::kSRGB, SkNamedGamut::kDisplayP3);
+    // This image has a gamut that is VERY close to sRGB, so SkColorSpace::MakeRGB snaps to sRGB.
+    auto expected = SkColorSpace::MakeSRGB();
     REPORTER_ASSERT(r, SkColorSpace::Equals(cs.get(), expected.get()));
 }
 
@@ -203,100 +201,74 @@ DEF_TEST(AndroidCodec_P3, r) {
     REPORTER_ASSERT(r, 0 == memcmp(&matrix, &kExpected, sizeof(skcms_Matrix3x3)));
 }
 
-DEF_TEST(AndroidCodec_orientation, r) {
+DEF_TEST(AndroidCodec_HLG, r) {
     if (GetResourcePath().isEmpty()) {
         return;
     }
 
-    for (const char* filePathFormatStr : {"images/orientation/%c_420.jpg",
-                                          "images/orientation/%c.webp"})
-    for (char i = '1'; i <= '8'; ++i) {
-        SkString path = SkStringPrintf(filePathFormatStr, i);
-        auto data = GetResourceAsData(path.c_str());
-        auto gen = SkCodecImageGenerator::MakeFromEncodedCodec(data);
-        if (!gen) {
-            ERRORF(r, "failed to decode %s", path.c_str());
-            return;
-        }
-
-        // Dimensions after adjusting for the origin.
-        const SkISize expectedDims = { 100, 80 };
-
-        // SkCodecImageGenerator automatically adjusts for the origin.
-        REPORTER_ASSERT(r, gen->getInfo().dimensions() == expectedDims);
-
-        auto androidCodec = SkAndroidCodec::MakeFromCodec(SkCodec::MakeFromData(data));
-        if (!androidCodec) {
-            ERRORF(r, "failed to decode %s", path.c_str());
-            return;
-        }
-
-        // SkAndroidCodec does not adjust for the origin by default. Dimensions may be reversed.
-        if (SkPixmapPriv::ShouldSwapWidthHeight(androidCodec->codec()->getOrigin())) {
-            auto swappedDims = SkPixmapPriv::SwapWidthHeight(androidCodec->getInfo()).dimensions();
-            REPORTER_ASSERT(r, expectedDims == swappedDims);
-        } else {
-            REPORTER_ASSERT(r, expectedDims == androidCodec->getInfo().dimensions());
-        }
-
-        // Passing kRespect adjusts for the origin.
-        androidCodec = SkAndroidCodec::MakeFromCodec(SkCodec::MakeFromData(std::move(data)),
-                SkAndroidCodec::ExifOrientationBehavior::kRespect);
-        auto info = androidCodec->getInfo();
-        REPORTER_ASSERT(r, info.dimensions() == expectedDims);
-
-        SkBitmap fromGenerator;
-        fromGenerator.allocPixels(info);
-        REPORTER_ASSERT(r, gen->getPixels(info, fromGenerator.getPixels(),
-                                          fromGenerator.rowBytes()));
-
-        SkBitmap fromAndroidCodec;
-        fromAndroidCodec.allocPixels(info);
-        auto result = androidCodec->getPixels(info, fromAndroidCodec.getPixels(),
-                                              fromAndroidCodec.rowBytes());
-        REPORTER_ASSERT(r, result == SkCodec::kSuccess);
-
-        for (int i = 0; i < info.width();  ++i)
-        for (int j = 0; j < info.height(); ++j) {
-            SkColor c1 = *fromGenerator   .getAddr32(i, j);
-            SkColor c2 = *fromAndroidCodec.getAddr32(i, j);
-            if (c1 != c2) {
-                ERRORF(r, "Bitmaps for %s do not match starting at position %i, %i\n"
-                          "\tfromGenerator: %x\tfromAndroidCodec: %x", path.c_str(), i, j,
-                          c1, c2);
-                return;
-            }
-        }
-    }
-}
-
-DEF_TEST(AndroidCodec_sampledOrientation, r) {
-    if (GetResourcePath().isEmpty()) {
-        return;
-    }
-
-    // kRightTop_SkEncodedOrigin    = 6, // Rotated 90 CW
-    auto path = "images/orientation/6_420.jpg";
+    const char* path = "images/red-hlg-profile.png";
     auto data = GetResourceAsData(path);
     if (!data) {
-        ERRORF(r, "Failed to get resource %s", path);
+        ERRORF(r, "Missing file %s", path);
         return;
     }
 
-    auto androidCodec = SkAndroidCodec::MakeFromCodec(SkCodec::MakeFromData(std::move(data)),
-                SkAndroidCodec::ExifOrientationBehavior::kRespect);
-    constexpr int sampleSize = 7;
-    auto sampledDims = androidCodec->getSampledDimensions(sampleSize);
-
-    SkAndroidCodec::AndroidOptions options;
-    options.fSampleSize = sampleSize;
-
-    SkBitmap bm;
-    auto info = androidCodec->getInfo().makeDimensions(sampledDims);
-    bm.allocPixels(info);
-
-    auto result = androidCodec->getAndroidPixels(info, bm.getPixels(), bm.rowBytes(), &options);
-    if (result != SkCodec::kSuccess) {
-        ERRORF(r, "got result \"%s\"\n", SkCodec::ResultToString(result));
+    auto codec = SkAndroidCodec::MakeFromCodec(SkCodec::MakeFromData(std::move(data)));
+    if (!codec) {
+        ERRORF(r, "Failed to create codec from %s", path);
+        return;
     }
+
+    auto info = codec->getInfo();
+    auto cs = codec->computeOutputColorSpace(info.colorType(), nullptr);
+    if (!cs) {
+        ERRORF(r, "%s should have a color space", path);
+        return;
+    }
+
+    skcms_TransferFunction tf;
+    cs->transferFn(&tf);
+    REPORTER_ASSERT(r, skcms_TransferFunction_isHLGish(&tf));
+
+    skcms_Matrix3x3 matrix;
+    cs->toXYZD50(&matrix);
+
+    static constexpr skcms_Matrix3x3 kExpected = SkNamedGamut::kRec2020;
+    REPORTER_ASSERT(r, 0 == memcmp(&matrix, &kExpected, sizeof(skcms_Matrix3x3)));
+}
+
+DEF_TEST(AndroidCodec_PQ, r) {
+    if (GetResourcePath().isEmpty()) {
+        return;
+    }
+
+    const char* path = "images/red-pq-profile.png";
+    auto data = GetResourceAsData(path);
+    if (!data) {
+        ERRORF(r, "Missing file %s", path);
+        return;
+    }
+
+    auto codec = SkAndroidCodec::MakeFromCodec(SkCodec::MakeFromData(std::move(data)));
+    if (!codec) {
+        ERRORF(r, "Failed to create codec from %s", path);
+        return;
+    }
+
+    auto info = codec->getInfo();
+    auto cs = codec->computeOutputColorSpace(info.colorType(), nullptr);
+    if (!cs) {
+        ERRORF(r, "%s should have a color space", path);
+        return;
+    }
+
+    skcms_TransferFunction tf;
+    cs->transferFn(&tf);
+    REPORTER_ASSERT(r, skcms_TransferFunction_isPQish(&tf));
+
+    skcms_Matrix3x3 matrix;
+    cs->toXYZD50(&matrix);
+
+    static constexpr skcms_Matrix3x3 kExpected = SkNamedGamut::kRec2020;
+    REPORTER_ASSERT(r, 0 == memcmp(&matrix, &kExpected, sizeof(skcms_Matrix3x3)));
 }

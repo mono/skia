@@ -9,8 +9,9 @@
 #include "include/core/SkTypes.h"
 #include "include/core/SkUnPreMultiply.h"
 #include "include/private/SkColorData.h"
-#include "include/utils/SkRandom.h"
-#include "src/core/SkMathPriv.h"
+#include "include/private/base/SkCPUTypes.h"
+#include "src/base/SkMathPriv.h"
+#include "src/base/SkRandom.h"
 #include "tests/Test.h"
 
 DEF_TEST(ColorPremul, reporter) {
@@ -50,7 +51,7 @@ DEF_TEST(ColorInterp, reporter) {
         SkPMColor src = SkPreMultiplyColor(colorSrc);
         SkPMColor dst = SkPreMultiplyColor(colorDst);
 
-        if (false) {
+        if ((false)) {
             REPORTER_ASSERT(reporter, SkFourByteInterp(src, dst, a0) == dst);
             REPORTER_ASSERT(reporter, SkFourByteInterp(src, dst, a255) == src);
         }

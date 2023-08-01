@@ -10,8 +10,8 @@
 
 #include "modules/skottie/src/SkottiePriv.h"
 
-#include "include/private/SkTHash.h"
 #include "modules/skottie/src/Layer.h"
+#include "src/core/SkTHash.h"
 
 #include <vector>
 
@@ -35,7 +35,7 @@ private:
     const SkSize              fSize;
 
     std::vector<LayerBuilder> fLayerBuilders;
-    SkTHashMap<int, size_t>   fLayerIndexMap; // Maps layer "ind" to layer builder index.
+    skia_private::THashMap<int, size_t>   fLayerIndexMap; // Maps layer "ind" to layer builder index.
 
     sk_sp<sksg::Transform>    fCameraTransform;
 

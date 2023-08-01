@@ -31,10 +31,10 @@ func (b *taskBuilder) nanobenchFlags(doUpload bool) {
 		if b.extraConfig("BonusConfigs") {
 			configs = []string{
 				"f16",
-				"srgb",
-				"esrgb",
-				"narrow",
-				"enarrow",
+				"srgb-rgba",
+				"srgb-f16",
+				"narrow-rgba",
+				"narrow-f16",
 			}
 		}
 
@@ -47,7 +47,7 @@ func (b *taskBuilder) nanobenchFlags(doUpload bool) {
 
 		glPrefix := "gl"
 		sampleCount := 8
-		if b.os("Android", "iOS") {
+		if b.matchOs("Android") || b.os("iOS") {
 			sampleCount = 4
 			// The NVIDIA_Shield has a regular OpenGL implementation. We bench that
 			// instead of ES.
@@ -57,50 +57,60 @@ func (b *taskBuilder) nanobenchFlags(doUpload bool) {
 			// iOS crashes with MSAA (skia:6399)
 			// Nexus7 (Tegra3) does not support MSAA.
 			// MSAA is disabled on Pixel3a (https://b.corp.google.com/issues/143074513).
-			if b.os("iOS") || b.model("Nexus7", "Pixel3a") {
+			// MSAA is disabled on Pixel5 (https://skbug.com/11152).
+			if b.os("iOS") || b.model("Nexus7", "Pixel3a", "Pixel5") {
 				sampleCount = 0
 			}
+		} else if b.matchGpu("AppleM1") {
+			sampleCount = 4
 		} else if b.matchGpu("Intel") {
 			// MSAA doesn't work well on Intel GPUs chromium:527565, chromium:983926
-			sampleCount = 0
+			if b.gpu("IntelIrisXe") && b.matchOs("Win") && b.extraConfig("ANGLE") {
+				// Make an exception for newer GPUs + D3D
+				args = append(args, "--allowMSAAOnNewIntel", "true")
+			} else {
+				sampleCount = 0
+			}
 		} else if b.os("ChromeOS") {
 			glPrefix = "gles"
 		}
 
-		configs = append(configs, glPrefix, glPrefix+"srgb")
+		configs = append(configs, glPrefix, "srgb-"+glPrefix)
 
-		// glnarrow/glesnarrow tests the case of color converting *all* content
+		if b.os("Ubuntu18") && b.noExtraConfig() {
+			configs = append(configs, glPrefix+"reducedshaders")
+		}
+		// narrow-gl/gles tests the case of color converting *all* content
 		// It hangs on the AndroidOne (Mali400)  skia:10669
-		if (!b.gpu("Mali400MP2")) {
-			configs = append(configs, glPrefix+"narrow")
+		if !b.gpu("Mali400MP2") {
+			configs = append(configs, "narrow-"+glPrefix)
 		}
 
 		// skia:10644 The fake ES2 config is used to compare highest available ES version to
 		// when we're limited to ES2. We could consider adding a MSAA fake config as well.
-		if b.os("Android") && glPrefix == "gles" {
+		if b.matchOs("Android") && glPrefix == "gles" {
 			// These only support ES2. No point in running twice.
-			if (!b.gpu("Mali400MP2", "Tegra3")) {
+			if !b.gpu("Mali400MP2", "Tegra3") {
 				configs = append(configs, "glesfakev2")
 			}
 		}
 
 		if sampleCount > 0 {
 			configs = append(configs, fmt.Sprintf("%smsaa%d", glPrefix, sampleCount))
+			if b.gpu("QuadroP400", "MaliG77", "AppleM1") {
+				configs = append(configs, fmt.Sprintf("%sdmsaa", glPrefix))
+			}
 		}
 
 		// We want to test both the OpenGL config and the GLES config on Linux Intel:
 		// GL is used by Chrome, GLES is used by ChromeOS.
 		if b.matchGpu("Intel") && b.isLinux() {
-			configs = append(configs, "gles", "glessrgb")
-		}
-
-		if b.extraConfig("CommandBuffer") {
-			configs = []string{"commandbuffer"}
+			configs = append(configs, "gles", "srgb-gles")
 		}
 
 		if b.extraConfig("Vulkan") {
 			configs = []string{"vk"}
-			if b.os("Android") {
+			if b.matchOs("Android") {
 				// skbug.com/9274
 				if !b.model("Pixel2XL") {
 					configs = append(configs, "vkmsaa4")
@@ -111,13 +121,19 @@ func (b *taskBuilder) nanobenchFlags(doUpload bool) {
 					configs = append(configs, "vkmsaa8")
 				}
 			}
+			if b.gpu("QuadroP400", "MaliG77") {
+				configs = append(configs, "vkdmsaa")
+			}
 		}
-		if b.extraConfig("Metal") {
+		if b.extraConfig("Metal") && !b.extraConfig("Graphite") {
 			configs = []string{"mtl"}
 			if b.os("iOS") {
 				configs = append(configs, "mtlmsaa4")
 			} else {
 				configs = append(configs, "mtlmsaa8")
+			}
+			if b.model("iPhone11") {
+				configs = append(configs, "mtlreducedshaders")
 			}
 		}
 
@@ -138,14 +154,32 @@ func (b *taskBuilder) nanobenchFlags(doUpload bool) {
 				}
 			}
 		}
+
+		if b.extraConfig("Graphite") {
+			if b.extraConfig("Metal") {
+				configs = []string{"grmtl"}
+			}
+		}
+
 		if b.os("ChromeOS") {
 			// Just run GLES for now - maybe add gles_msaa4 in the future
 			configs = []string{"gles"}
+		}
+		if b.extraConfig("SwiftShader") {
+			configs = []string{"vk", "vkdmsaa"}
 		}
 	}
 
 	args = append(args, "--config")
 	args = append(args, configs...)
+
+	// Use 4 internal msaa samples on mobile and AppleM1, otherwise 8.
+	args = append(args, "--internalSamples")
+	if b.matchOs("Android") || b.os("iOS") || b.matchGpu("AppleM1") {
+		args = append(args, "4")
+	} else {
+		args = append(args, "8")
+	}
 
 	// By default, we test with GPU threading enabled, unless specifically
 	// disabled.
@@ -160,16 +194,11 @@ func (b *taskBuilder) nanobenchFlags(doUpload bool) {
 		args = append(args, "--keepAlive", "true")
 	}
 
-	// skia:9036
-	if b.model("NVIDIA_Shield") {
-		args = append(args, "--dontReduceOpsTaskSplitting")
-	}
-
 	// Some people don't like verbose output.
 	verbose := false
 
 	match := []string{}
-	if b.os("Android") {
+	if b.matchOs("Android") {
 		// Segfaults when run as GPU bench. Very large texture?
 		match = append(match, "~blurroundrect")
 		match = append(match, "~patch_grid") // skia:2847
@@ -186,7 +215,7 @@ func (b *taskBuilder) nanobenchFlags(doUpload bool) {
 		match = append(match, "~path_hairline")
 		match = append(match, "~GLInstancedArraysBench") // skia:4714
 	}
-	if b.os("iOS") && b.extraConfig("Metal") {
+	if b.os("iOS") && b.extraConfig("Metal") && !b.extraConfig("Graphite") {
 		// skia:9799
 		match = append(match, "~compositing_images_tile_size")
 	}
@@ -220,9 +249,6 @@ func (b *taskBuilder) nanobenchFlags(doUpload bool) {
 		// skia:8523 skia:9271
 		match = append(match, "~compositing_images")
 	}
-	if b.model("MacBook10.1") && b.extraConfig("CommandBuffer") {
-		match = append(match, "~^desk_micrographygirlsvg.skp_1.1$")
-	}
 	if b.extraConfig("ASAN") && b.cpu() {
 		// floor2int_undef benches undefined behavior, so ASAN correctly complains.
 		match = append(match, "~^floor2int_undef$")
@@ -239,6 +265,36 @@ func (b *taskBuilder) nanobenchFlags(doUpload bool) {
 	if b.model("Pixel3") && b.extraConfig("Vulkan") {
 		// skia:9972
 		match = append(match, "~^path_text_clipped_uncached$")
+	}
+
+	if b.model("Wembley") {
+		// These tests spin forever on the Wembley.
+		match = append(match, "~^create_backend_texture")
+		match = append(match, "~^draw_coverage")
+		match = append(match, "~^compositing_images")
+	}
+
+	if b.model(DONT_REDUCE_OPS_TASK_SPLITTING_MODELS...) {
+		args = append(args, "--dontReduceOpsTaskSplitting", "true")
+	}
+	if b.model("NUC7i5BNK") {
+		args = append(args, "--gpuResourceCacheLimit", "16777216")
+	}
+	if (!b.isLinux() && b.extraConfig("Vulkan") && b.gpu("QuadroP400")) {
+		// skia:14302 (desk_carsvg.skp hangs indefinitely on Windows QuadroP400 vkdmsaa configs)
+		match = append(match, "~desk_carsvg.skp")
+	}
+
+	if b.extraConfig("DMSAAStats") {
+		// Render tiled, single-frame skps with an extremely tall canvas that hopefully allows for
+		// us to tile most or all of the content.
+		args = append(args,
+			"--sourceType", "skp", "--clip", "0,0,1600,16384", "--GPUbenchTileW", "1600",
+			"--GPUbenchTileH", "512", "--samples", "1", "--loops", "1", "--config", "gldmsaa",
+			"--dmsaaStatsDump")
+		// Don't collect stats on the skps generated from vector content. We want these to actually
+		// trigger dmsaa.
+		match = append(match, "~svg", "~chalkboard", "~motionmark")
 	}
 
 	// We do not need or want to benchmark the decodes of incomplete images.
@@ -287,7 +343,7 @@ func (b *taskBuilder) nanobenchFlags(doUpload bool) {
 		b.asset("svg")
 		b.recipeProp("svgs", "true")
 	}
-	if b.cpu() && b.os("Android") {
+	if b.cpu() && b.matchOs("Android") {
 		// TODO(borenet): Where do these come from?
 		b.recipeProp("textTraces", "true")
 	}
@@ -304,9 +360,8 @@ func (b *taskBuilder) nanobenchFlags(doUpload bool) {
 
 	if doUpload {
 		keysExclude := map[string]bool{
-			"configuration": true,
-			"role":          true,
-			"test_filter":   true,
+			"role":        true,
+			"test_filter": true,
 		}
 		keys := make([]string, 0, len(b.parts))
 		for k := range b.parts {
@@ -315,6 +370,12 @@ func (b *taskBuilder) nanobenchFlags(doUpload bool) {
 		sort.Strings(keys)
 		args = append(args, "--key")
 		for _, k := range keys {
+			// We had not been adding this to our traces for a long time. We then started doing
+			// performance data on an "OptimizeForSize" build. We didn't want to disrupt the
+			// existing traces, so we skip the configuration for Release builds.
+			if k == "configuration" && b.parts[k] == "Release" {
+				continue
+			}
 			if !keysExclude[k] {
 				args = append(args, k, b.parts[k])
 			}

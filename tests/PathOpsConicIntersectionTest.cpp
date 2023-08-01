@@ -4,10 +4,19 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
+#include "include/core/SkPoint.h"
+#include "include/core/SkScalar.h"
+#include "include/core/SkTypes.h"
 #include "src/core/SkGeometry.h"
 #include "src/pathops/SkIntersections.h"
+#include "src/pathops/SkPathOpsConic.h"
+#include "src/pathops/SkPathOpsPoint.h"
+#include "src/pathops/SkPathOpsQuad.h"
+#include "src/pathops/SkPathOpsTypes.h"
 #include "tests/PathOpsTestCommon.h"
 #include "tests/Test.h"
+
+#include <array>
 
 /*
 manually compute the intersection of a pair of circles and see if the conic intersection matches
@@ -42,7 +51,7 @@ static const ConicPts testSet[] = {
 
 };
 
-const int testSetCount = (int) SK_ARRAY_COUNT(testSet);
+const int testSetCount = (int) std::size(testSet);
 
 static void chopCompare(const SkConic chopped[2], const SkDConic dChopped[2]) {
     SkASSERT(roughly_equal(chopped[0].fW, dChopped[0].fWeight));
@@ -60,16 +69,15 @@ static void chopCompare(const SkConic chopped[2], const SkDConic dChopped[2]) {
 #endif
 }
 
+#define DEBUG_VISUALIZE_CONICS 0
+
+#if DEBUG_VISUALIZE_CONICS
 #include "include/core/SkBitmap.h"
 #include "include/core/SkCanvas.h"
-#include "include/core/SkImageEncoder.h"
 #include "include/core/SkPaint.h"
 #include "include/core/SkString.h"
 #include "src/pathops/SkPathOpsRect.h"
 
-#define DEBUG_VISUALIZE_CONICS 0
-
-#if DEBUG_VISUALIZE_CONICS
 static void writePng(const SkConic& c, const SkConic ch[2], const char* name) {
     const int scale = 10;
     SkConic conic, chopped[2];
@@ -110,7 +118,7 @@ static void writePng(const SkConic& c, const SkConic ch[2], const char* name) {
     canvas.drawPath(path, paint);
     SkString filename("c:\\Users\\caryclark\\Documents\\");
     filename.appendf("%s.png", name);
-    ToolUtils::EncodeImageToFile(filename.c_str(), bitmap, SkEncodedImageFormat::kPNG, 100);
+    ToolUtils::EncodeImageToPngFile(filename.c_str(), bitmap);
 }
 
 static void writeDPng(const SkDConic& dC, const char* name) {
@@ -151,7 +159,7 @@ static void writeDPng(const SkDConic& dC, const char* name) {
     canvas.drawPath(path, paint);
     SkString filename("c:\\Users\\caryclark\\Documents\\");
     filename.appendf("%s.png", name);
-    ToolUtils::EncodeImageToFile(filename.c_str(), bitmap, SkEncodedImageFormat::kPNG, 100);
+    ToolUtils::EncodeImageToPngFile(filename.c_str(), bitmap);
 }
 #endif
 
@@ -229,16 +237,16 @@ const SkDConic* frames[] = {
     frame0, frame1, frame2, frame3, frame4, frame5, frame6
 };
 
-const int frameSizes[] = { (int) SK_ARRAY_COUNT(frame0), (int) SK_ARRAY_COUNT(frame1),
-        (int) SK_ARRAY_COUNT(frame2), (int) SK_ARRAY_COUNT(frame3),
-        (int) SK_ARRAY_COUNT(frame4), (int) SK_ARRAY_COUNT(frame5),
-        (int) SK_ARRAY_COUNT(frame6),
+const int frameSizes[] = { (int) std::size(frame0), (int) std::size(frame1),
+        (int) std::size(frame2), (int) std::size(frame3),
+        (int) std::size(frame4), (int) std::size(frame5),
+        (int) std::size(frame6),
 };
 
 static void writeFrames() {
     const int scale = 5;
 
-    for (int index = 0; index < (int) SK_ARRAY_COUNT(frameSizes); ++index) {
+    for (int index = 0; index < (int) std::size(frameSizes); ++index) {
         SkDRect bounds;
         bool boundsSet = false;
         int frameSize = frameSizes[index];
@@ -288,7 +296,7 @@ static void writeFrames() {
         }
         SkString filename("c:\\Users\\caryclark\\Documents\\");
         filename.appendf("f%d.png", index);
-        ToolUtils::EncodeImageToFile(filename.c_str(), bitmap, SkEncodedImageFormat::kPNG, 100);
+        ToolUtils::EncodeImageToPngFile(filename.c_str(), bitmap);
     }
 }
 #endif
@@ -311,9 +319,6 @@ static void oneOff(skiatest::Reporter* reporter, const ConicPts& conic1, const C
     SkASSERT(ValidConic(c2));
     SkIntersections intersections;
     intersections.intersect(c1, c2);
-    if (coin && intersections.used() != 2) {
-        SkDebugf("");
-    }
     REPORTER_ASSERT(reporter, !coin || intersections.used() == 2);
     double tt1, tt2;
     SkDPoint xy1, xy2;

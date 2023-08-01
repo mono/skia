@@ -5,16 +5,37 @@
  * found in the LICENSE file.
  */
 
-#include "include/core/SkColorSpace.h"
-#include "src/core/SkArenaAlloc.h"
+#include "include/core/SkAlphaType.h"
+#include "include/core/SkBlendMode.h"
+#include "include/core/SkColor.h"
+#include "include/core/SkColorType.h"
+#include "include/core/SkImageInfo.h"
+#include "include/core/SkPaint.h"
+#include "include/core/SkPixmap.h"
+#include "include/core/SkRefCnt.h"
+#include "include/core/SkShader.h"
+#include "include/private/base/SkAssert.h"
+#include "src/base/SkArenaAlloc.h"
+#include "src/core/SkBlitter.h"
 #include "src/core/SkColorSpacePriv.h"
 #include "src/core/SkColorSpaceXformSteps.h"
 #include "src/core/SkCoreBlitters.h"
-#include "src/core/SkOpts.h"
+#include "src/core/SkImageInfoPriv.h"
 #include "src/core/SkRasterPipeline.h"
+#include "src/core/SkRasterPipelineOpContexts.h"
+#include "src/core/SkRasterPipelineOpList.h"
 #include "src/core/SkSpriteBlitter.h"
+#include "src/core/SkVMBlitter.h"
 
-extern bool gUseSkVMBlitter;
+#include <cstdint>
+#include <cstring>
+#include <optional>
+#include <utility>
+
+struct SkIRect;
+struct SkMask;
+
+extern bool gSkForceRasterPipelineBlitter;
 
 SkSpriteBlitter::SkSpriteBlitter(const SkPixmap& source)
     : fSource(source) {}
@@ -71,8 +92,8 @@ public:
         if (0xFF != paint.getAlpha()) {
             return false;
         }
-        SkBlendMode mode = paint.getBlendMode();
-        return SkBlendMode::kSrc == mode || (SkBlendMode::kSrcOver == mode && src.isOpaque());
+        const auto mode = paint.asBlendMode();
+        return mode == SkBlendMode::kSrc || (mode == SkBlendMode::kSrcOver && src.isOpaque());
     }
 
     SkSpriteBlitter_Memcpy(const SkPixmap& src)
@@ -119,16 +140,16 @@ public:
         SkRasterPipeline p(fAlloc);
         p.append_load(fSource.colorType(), &fSrcPtr);
 
-        if (fSource.colorType() == kAlpha_8_SkColorType) {
+        if (SkColorTypeIsAlphaOnly(fSource.colorType())) {
             // The color for A8 images comes from the (sRGB) paint color.
             p.append_set_rgb(fAlloc, fPaintColor);
-            p.append(SkRasterPipeline::premul);
+            p.append(SkRasterPipelineOp::premul);
         }
         if (auto dstCS = fDst.colorSpace()) {
             auto srcCS = fSource.colorSpace();
-            if (!srcCS || fSource.colorType() == kAlpha_8_SkColorType) {
+            if (!srcCS || SkColorTypeIsAlphaOnly(fSource.colorType())) {
                 // We treat untagged images as sRGB.
-                // A8 images get their r,g,b from the paint color, so they're also sRGB.
+                // Alpha-only images get their r,g,b from the paint color, so they're also sRGB.
                 srcCS = sk_srgb_singleton();
             }
             auto srcAT = fSource.isOpaque() ? kOpaque_SkAlphaType
@@ -138,7 +159,7 @@ public:
                 ->apply(&p);
         }
         if (fPaintColor.fA != 1.0f) {
-            p.append(SkRasterPipeline::scale_1_float, &fPaintColor.fA);
+            p.append(SkRasterPipelineOp::scale_1_float, &fPaintColor.fA);
         }
 
         bool is_opaque = fSource.isOpaque() && fPaintColor.fA == 1.0f;
@@ -186,10 +207,6 @@ SkBlitter* SkBlitter::ChooseSprite(const SkPixmap& dst, const SkPaint& paint,
     */
     SkASSERT(alloc != nullptr);
 
-    if (gUseSkVMBlitter) {
-        return SkCreateSkVMSpriteBlitter(dst, paint, source,left,top, alloc, std::move(clipShader));
-    }
-
     // TODO: in principle SkRasterPipelineSpriteBlitter could be made to handle this.
     if (source.alphaType() == kUnpremul_SkAlphaType) {
         return nullptr;
@@ -197,7 +214,9 @@ SkBlitter* SkBlitter::ChooseSprite(const SkPixmap& dst, const SkPaint& paint,
 
     SkSpriteBlitter* blitter = nullptr;
 
-    if (0 == SkColorSpaceXformSteps(source,dst).flags.mask() && !clipShader) {
+    if (gSkForceRasterPipelineBlitter) {
+        // Do not use any of these optimized memory blitters
+    } else if (0 == SkColorSpaceXformSteps(source,dst).flags.mask() && !clipShader) {
         if (!blitter && SkSpriteBlitter_Memcpy::Supports(dst, source, paint)) {
             blitter = alloc->make<SkSpriteBlitter_Memcpy>(source);
         }
@@ -205,12 +224,6 @@ SkBlitter* SkBlitter::ChooseSprite(const SkPixmap& dst, const SkPaint& paint,
             switch (dst.colorType()) {
                 case kN32_SkColorType:
                     blitter = SkSpriteBlitter::ChooseL32(source, paint, alloc);
-                    break;
-                case kRGB_565_SkColorType:
-                    blitter = SkSpriteBlitter::ChooseL565(source, paint, alloc);
-                    break;
-                case kAlpha_8_SkColorType:
-                    blitter = SkSpriteBlitter::ChooseLA8(source, paint, alloc);
                     break;
                 default:
                     break;
@@ -225,5 +238,5 @@ SkBlitter* SkBlitter::ChooseSprite(const SkPixmap& dst, const SkPaint& paint,
         return blitter;
     }
 
-    return SkCreateSkVMSpriteBlitter(dst, paint, source,left,top, alloc, std::move(clipShader));
+    return SkVMBlitter::Make(dst, paint, source,left,top, alloc, std::move(clipShader));
 }

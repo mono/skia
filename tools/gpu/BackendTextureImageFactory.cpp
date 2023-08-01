@@ -7,10 +7,12 @@
 
 #include "tools/gpu/BackendTextureImageFactory.h"
 
+#include "include/core/SkColorSpace.h"
 #include "include/core/SkImage.h"
 #include "include/core/SkPixmap.h"
 #include "include/gpu/GrBackendSurface.h"
 #include "include/gpu/GrDirectContext.h"
+#include "include/gpu/ganesh/SkImageGanesh.h"
 #include "src/core/SkAutoPixmapStorage.h"
 #include "tools/gpu/ManagedBackendTexture.h"
 
@@ -18,30 +20,24 @@ namespace sk_gpu_test {
 sk_sp<SkImage> MakeBackendTextureImage(GrDirectContext* dContext,
                                        const SkPixmap& pixmap,
                                        GrRenderable renderable,
-                                       GrSurfaceOrigin origin) {
-    const SkPixmap* src = &pixmap;
-    SkAutoPixmapStorage temp;
-    if (origin == kBottomLeft_GrSurfaceOrigin) {
-        temp.alloc(src->info());
-        auto s = static_cast<const char*>(src->addr(0, pixmap.height() - 1));
-        auto d = static_cast<char*>(temp.writable_addr(0, 0));
-        for (int y = 0; y < temp.height(); ++y, s -= pixmap.rowBytes(), d += temp.rowBytes()) {
-            std::copy_n(s, temp.info().minRowBytes(), d);
-        }
-        src = &temp;
-    }
-    auto mbet = ManagedBackendTexture::MakeWithData(dContext, src, 1, renderable, GrProtected::kNo);
+                                       GrSurfaceOrigin origin,
+                                       GrProtected isProtected) {
+    auto mbet = ManagedBackendTexture::MakeWithData(dContext,
+                                                    pixmap,
+                                                    origin,
+                                                    renderable,
+                                                    isProtected);
     if (!mbet) {
         return nullptr;
     }
-    return SkImage::MakeFromTexture(dContext,
-                                    mbet->texture(),
-                                    origin,
-                                    src->colorType(),
-                                    src->alphaType(),
-                                    src->refColorSpace(),
-                                    ManagedBackendTexture::ReleaseProc,
-                                    mbet->releaseContext());
+    return SkImages::BorrowTextureFrom(dContext,
+                                       mbet->texture(),
+                                       origin,
+                                       pixmap.colorType(),
+                                       pixmap.alphaType(),
+                                       pixmap.refColorSpace(),
+                                       ManagedBackendTexture::ReleaseProc,
+                                       mbet->releaseContext());
 }
 
 sk_sp<SkImage> MakeBackendTextureImage(GrDirectContext* dContext,
@@ -49,7 +45,8 @@ sk_sp<SkImage> MakeBackendTextureImage(GrDirectContext* dContext,
                                        SkColor4f color,
                                        GrMipmapped mipmapped,
                                        GrRenderable renderable,
-                                       GrSurfaceOrigin origin) {
+                                       GrSurfaceOrigin origin,
+                                       GrProtected isProtected) {
     if (info.alphaType() == kOpaque_SkAlphaType) {
         color = color.makeOpaque();
     } else if (info.alphaType() == kPremul_SkAlphaType) {
@@ -63,18 +60,18 @@ sk_sp<SkImage> MakeBackendTextureImage(GrDirectContext* dContext,
                                                     color,
                                                     mipmapped,
                                                     renderable,
-                                                    GrProtected::kNo);
+                                                    isProtected);
     if (!mbet) {
         return nullptr;
     }
-    return SkImage::MakeFromTexture(dContext,
-                                    mbet->texture(),
-                                    origin,
-                                    info.colorType(),
-                                    info.alphaType(),
-                                    info.refColorSpace(),
-                                    ManagedBackendTexture::ReleaseProc,
-                                    mbet->releaseContext());
+    return SkImages::BorrowTextureFrom(dContext,
+                                       mbet->texture(),
+                                       origin,
+                                       info.colorType(),
+                                       info.alphaType(),
+                                       info.refColorSpace(),
+                                       ManagedBackendTexture::ReleaseProc,
+                                       mbet->releaseContext());
 }
 
 }  // namespace sk_gpu_test

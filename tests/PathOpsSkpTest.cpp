@@ -4,7 +4,15 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
+#include "include/core/SkPath.h"
+#include "include/core/SkPathTypes.h"
+#include "include/pathops/SkPathOps.h"
+#include "include/private/base/SkFloatBits.h"
 #include "tests/PathOpsExtendedTest.h"
+#include "tests/Test.h"
+
+#include <array>
+#include <cstddef>
 
 #define TEST(name) { name, #name }
 
@@ -4761,7 +4769,7 @@ static struct TestDesc tests[] = {
     TEST(skpeverytechpro_blogspot_com100),
 };
 
-static const size_t testCount = SK_ARRAY_COUNT(tests);
+static const size_t testCount = std::size(tests);
 
 static bool runReverse = false;
 

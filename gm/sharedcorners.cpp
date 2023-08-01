@@ -17,7 +17,7 @@
 #include "include/core/SkSize.h"
 #include "include/core/SkString.h"
 #include "include/core/SkTypes.h"
-#include "include/utils/SkRandom.h"
+#include "src/base/SkRandom.h"
 #include "tools/ToolUtils.h"
 
 #include <array>
@@ -42,7 +42,7 @@ protected:
 
     SkISize onISize() override {
         constexpr int numRows = 3 * 2;
-        constexpr int numCols = (1 + SK_ARRAY_COUNT(kJitters)) * 2;
+        constexpr int numCols = (1 + std::size(kJitters)) * 2;
         return SkISize::Make(numCols * (kBoxSize + kPadSize) + kPadSize,
                              numRows * (kBoxSize + kPadSize) + kPadSize);
     }
@@ -149,7 +149,7 @@ protected:
 
         for (SkPoint jitter : kJitters) {
             {
-                SkAutoCanvasRestore acr(canvas, true);
+                SkAutoCanvasRestore acr2(canvas, true);
                 canvas->translate(jitter.x(), jitter.y());
                 canvas->drawPath(path, fFillPaint);
             }

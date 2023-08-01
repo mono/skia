@@ -31,8 +31,8 @@ void drawStamp(SkCanvas* canvas, int size) {
 }
 
 sk_sp<SkImage> stampImage(int size) {
-    sk_sp<SkSurface> surface = SkSurface::MakeRaster(
-            SkImageInfo::Make(size, size, colorType, kPremul_SkAlphaType));
+    sk_sp<SkSurface> surface =
+            SkSurfaces::Raster(SkImageInfo::Make(size, size, colorType, kPremul_SkAlphaType));
     drawStamp(surface->getCanvas(), size);
     return surface->makeImageSnapshot();
 }
@@ -40,14 +40,16 @@ sk_sp<SkImage> stampImage(int size) {
 void draw(SkCanvas* canvas) {
     SkPaint paint;
     paint.setColorFilter(SkColorFilters::Blend(0xFF7F00FF, SkBlendMode::kSrcIn));
-    paint.setFilterQuality(kMedium_SkFilterQuality);
     paint.setAntiAlias(true);
+
+    SkSamplingOptions sampling(SkFilterMode::kLinear, SkMipmapMode::kLinear);
+
     canvas->rotate(30);
     canvas->translate(60, 0);
 
     int stampSize = 200;
     if (drawWithRasterImage) {
-        canvas->drawImage(stampImage(stampSize), 0, 0, &paint);
+        canvas->drawImage(stampImage(stampSize), 0, 0, sampling, &paint);
     } else {
         canvas->saveLayer(nullptr, &paint);
         drawStamp(canvas, stampSize);

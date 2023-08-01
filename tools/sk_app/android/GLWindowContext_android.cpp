@@ -23,12 +23,11 @@ public:
 
     ~GLWindowContext_android() override;
 
-    void onSwapBuffers() override;
-
     sk_sp<const GrGLInterface> onInitializeContext() override;
     void onDestroyContext() override;
 
 private:
+    void onSwapBuffers() override;
 
     EGLDisplay fDisplay;
     EGLContext fEGLContext;
@@ -36,17 +35,15 @@ private:
 
     // For setDisplayParams and resize which call onInitializeContext with null platformData
     ANativeWindow* fNativeWindow = nullptr;
-
-    using INHERITED = GLWindowContext;
 };
 
 GLWindowContext_android::GLWindowContext_android(ANativeWindow* window,
                                                  const DisplayParams& params)
-    : INHERITED(params)
-    , fDisplay(EGL_NO_DISPLAY)
-    , fEGLContext(EGL_NO_CONTEXT)
-    , fSurfaceAndroid(EGL_NO_SURFACE)
-    , fNativeWindow(window) {
+        : GLWindowContext(params)
+        , fDisplay(EGL_NO_DISPLAY)
+        , fEGLContext(EGL_NO_CONTEXT)
+        , fSurfaceAndroid(EGL_NO_SURFACE)
+        , fNativeWindow(window) {
 
     // any config code here (particularly for msaa)?
 

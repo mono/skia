@@ -8,28 +8,61 @@
 #ifndef SKSL_SWIZZLE
 #define SKSL_SWIZZLE
 
-#include "src/sksl/SkSLContext.h"
-#include "src/sksl/SkSLIRGenerator.h"
-#include "src/sksl/SkSLUtil.h"
-#include "src/sksl/ir/SkSLConstructor.h"
+#include "include/core/SkTypes.h"
+#include "include/private/SkSLDefines.h"
+#include "src/sksl/SkSLPosition.h"
 #include "src/sksl/ir/SkSLExpression.h"
+#include "src/sksl/ir/SkSLIRNode.h"
+#include "src/sksl/ir/SkSLType.h"
+
+#include <cstdint>
+#include <memory>
+#include <string>
+#include <string_view>
+#include <utility>
 
 namespace SkSL {
 
-/**
- * Represents a vector swizzle operation such as 'float2(1, 2, 3).zyx'.
- */
-struct Swizzle final : public Expression {
-    static constexpr Kind kExpressionKind = Kind::kSwizzle;
+class Context;
+enum class OperatorPrecedence : uint8_t;
 
-    Swizzle(const Context& context, std::unique_ptr<Expression> base,
+/**
+ * Represents a vector swizzle operation such as 'float3(1, 2, 3).zyx'.
+ */
+class Swizzle final : public Expression {
+public:
+    inline static constexpr Kind kIRNodeKind = Kind::kSwizzle;
+
+    Swizzle(const Context& context, Position pos, std::unique_ptr<Expression> base,
             const ComponentArray& components)
-            : INHERITED(base->fOffset, kExpressionKind,
+            : INHERITED(pos, kIRNodeKind,
                         &base->type().componentType().toCompound(context, components.size(), 1))
             , fBase(std::move(base))
             , fComponents(components) {
         SkASSERT(this->components().size() >= 1 && this->components().size() <= 4);
     }
+
+    // Swizzle::Convert permits component arrays containing ZERO or ONE, does typechecking, reports
+    // errors via ErrorReporter, and returns an expression that combines constructors and native
+    // swizzles (comprised solely of X/Y/W/Z).
+    static std::unique_ptr<Expression> Convert(const Context& context,
+                                               Position pos,
+                                               Position maskPos,
+                                               std::unique_ptr<Expression> base,
+                                               ComponentArray inComponents);
+
+    static std::unique_ptr<Expression> Convert(const Context& context,
+                                               Position pos,
+                                               Position maskPos,
+                                               std::unique_ptr<Expression> base,
+                                               std::string_view maskString);
+
+    // Swizzle::Make does not permit ZERO or ONE in the component array, just X/Y/Z/W; errors are
+    // reported via ASSERT.
+    static std::unique_ptr<Expression> Make(const Context& context,
+                                            Position pos,
+                                            std::unique_ptr<Expression> expr,
+                                            ComponentArray inComponents);
 
     std::unique_ptr<Expression>& base() {
         return fBase;
@@ -43,49 +76,17 @@ struct Swizzle final : public Expression {
         return fComponents;
     }
 
-    std::unique_ptr<Expression> constantPropagate(const IRGenerator& irGenerator,
-                                                  const DefinitionMap& definitions) override {
-        if (this->base()->is<Constructor>()) {
-            Constructor& constructor = this->base()->as<Constructor>();
-            if (constructor.isCompileTimeConstant()) {
-                // we're swizzling a constant vector, e.g. float4(1).x. Simplify it.
-                const Type& type = this->type();
-                if (type.isInteger()) {
-                    SkASSERT(this->components().size() == 1);
-                    int64_t value = constructor.getIVecComponent(this->components()[0]);
-                    return std::make_unique<IntLiteral>(irGenerator.fContext, constructor.fOffset,
-                                                        value);
-                } else if (type.isFloat()) {
-                    SkASSERT(this->components().size() == 1);
-                    SKSL_FLOAT value = constructor.getFVecComponent(this->components()[0]);
-                    return std::make_unique<FloatLiteral>(irGenerator.fContext, constructor.fOffset,
-                                                          value);
-                }
-            }
-        }
-        return nullptr;
-    }
-
-    bool hasProperty(Property property) const override {
-        return this->base()->hasProperty(property);
-    }
-
-    std::unique_ptr<Expression> clone() const override {
-        return std::unique_ptr<Expression>(new Swizzle(&this->type(), this->base()->clone(),
+    std::unique_ptr<Expression> clone(Position pos) const override {
+        return std::unique_ptr<Expression>(new Swizzle(pos, &this->type(), this->base()->clone(),
                                                        this->components()));
     }
 
-    String description() const override {
-        String result = this->base()->description() + ".";
-        for (int x : this->components()) {
-            result += "xyzw"[x];
-        }
-        return result;
-    }
+    std::string description(OperatorPrecedence) const override;
 
 private:
-    Swizzle(const Type* type, std::unique_ptr<Expression> base, const ComponentArray& components)
-        : INHERITED(base->fOffset, kExpressionKind, type)
+    Swizzle(Position pos, const Type* type, std::unique_ptr<Expression> base,
+            const ComponentArray& components)
+        : INHERITED(pos, kIRNodeKind, type)
         , fBase(std::move(base))
         , fComponents(components) {
         SkASSERT(this->components().size() >= 1 && this->components().size() <= 4);

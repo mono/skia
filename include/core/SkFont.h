@@ -11,6 +11,9 @@
 #include "include/core/SkFontTypes.h"
 #include "include/core/SkScalar.h"
 #include "include/core/SkTypeface.h"
+#include "include/private/base/SkTemplates.h"
+
+#include <vector>
 
 class SkMatrix;
 class SkPaint;
@@ -329,7 +332,7 @@ public:
         @param text        character storage encoded with SkTextEncoding
         @param byteLength  length of character storage in bytes
         @param bounds      returns bounding box relative to (0, 0) if not nullptr
-        @return            number of glyphs represented by text of length byteLength
+        @return            the sum of the default advance widths
     */
     SkScalar measureText(const void* text, size_t byteLength, SkTextEncoding encoding,
                          SkRect* bounds = nullptr) const {
@@ -345,7 +348,7 @@ public:
         @param byteLength  length of character storage in bytes
         @param bounds      returns bounding box relative to (0, 0) if not nullptr
         @param paint       optional; may be nullptr
-        @return            number of glyphs represented by text of length byteLength
+        @return            the sum of the default advance widths
     */
     SkScalar measureText(const void* text, size_t byteLength, SkTextEncoding encoding,
                          SkRect* bounds, const SkPaint* paint) const;
@@ -440,6 +443,20 @@ public:
      */
     void getXPos(const SkGlyphID glyphs[], int count, SkScalar xpos[], SkScalar origin = 0) const;
 
+    /** Returns intervals [start, end] describing lines parallel to the advance that intersect
+     *  with the glyphs.
+     *
+     *  @param glyphs   the glyphs to intersect
+     *  @param count    the number of glyphs and positions
+     *  @param pos      the position of each glyph
+     *  @param top      the top of the line intersecting
+     *  @param bottom   the bottom of the line intersecting
+        @return         array of pairs of x values [start, end]. May be empty.
+     */
+    std::vector<SkScalar> getIntercepts(const SkGlyphID glyphs[], int count, const SkPoint pos[],
+                                        SkScalar top, SkScalar bottom,
+                                        const SkPaint* = nullptr) const;
+
     /** Modifies path to be the outline of the glyph.
         If the glyph has an outline, modifies path to be the glyph's outline and returns true.
         The glyph outline may be empty. Degenerate contours in the glyph outline will be skipped.
@@ -490,6 +507,8 @@ public:
      */
     void dump() const;
 
+    using sk_is_trivially_relocatable = std::true_type;
+
 private:
     enum PrivFlags {
         kForceAutoHinting_PrivFlag      = 1 << 0,
@@ -515,13 +534,15 @@ private:
     uint8_t     fEdging;
     uint8_t     fHinting;
 
+    static_assert(::sk_is_trivially_relocatable<decltype(fTypeface)>::value);
+
     SkScalar setupForAsPaths(SkPaint*);
     bool hasSomeAntiAliasing() const;
 
     friend class SkFontPriv;
-    friend class SkGlyphRunListPainter;
-    friend class SkTextBlobCacheDiffCanvas;
+    friend class SkGlyphRunListPainterCPU;
     friend class SkStrikeSpec;
+    friend class SkRemoteGlyphCacheTest;
 };
 
 #endif

@@ -10,6 +10,7 @@
 #include "include/core/SkColor.h"
 #include "include/core/SkPaint.h"
 #include "include/core/SkPath.h"
+#include "include/core/SkPathUtils.h"
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkScalar.h"
 #include "include/core/SkSurface.h"
@@ -21,7 +22,7 @@
 #define REPEAT_LOOP 5
 
 static sk_sp<SkSurface> new_surface(int width, int height) {
-    return SkSurface::MakeRasterN32Premul(width, height);
+    return SkSurfaces::Raster(SkImageInfo::MakeN32Premul(width, height));
 }
 
 static void draw_pixel_centers(SkCanvas* canvas) {
@@ -41,7 +42,7 @@ static void draw_fatpath(SkCanvas* canvas, SkSurface* surface, const SkPath& pat
 
     surface->getCanvas()->clear(SK_ColorTRANSPARENT);
     surface->getCanvas()->drawPath(path, paint);
-    surface->draw(canvas, 0, 0, nullptr);
+    surface->draw(canvas, 0, 0);
 
     paint.setAntiAlias(true);
     paint.setColor(SK_ColorRED);
@@ -66,7 +67,7 @@ DEF_SIMPLE_GM(fatpathfill, canvas,
             SkPath line, path;
             line.moveTo(1, 2);
             line.lineTo(SkIntToScalar(4 + i), 1);
-            paint.getFillPath(line, &path);
+            skpathutils::FillPathWithPaint(line, paint, &path);
             draw_fatpath(canvas, surface.get(), path);
 
             canvas->translate(0, SMALL_H);

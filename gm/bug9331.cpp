@@ -7,6 +7,7 @@
 
 #include "gm/gm.h"
 #include "include/core/SkCanvas.h"
+#include "include/core/SkPathEffect.h"
 #include "include/effects/SkDashPathEffect.h"
 
 // Reproduces skbug.com/9331, drawing differently in debug and release builds.
@@ -26,7 +27,7 @@ DEF_SIMPLE_GM(bug9331, canvas, 256, 256) {
         paint.setColor(color);
         paint.setStyle(SkPaint::kStroke_Style);
         paint.setStrokeWidth(10);
-        paint.setPathEffect(SkDashPathEffect::Make(intervals, SK_ARRAY_COUNT(intervals), phase));
+        paint.setPathEffect(SkDashPathEffect::Make(intervals, std::size(intervals), phase));
 
         canvas->save();
             canvas->clipRect(clip);

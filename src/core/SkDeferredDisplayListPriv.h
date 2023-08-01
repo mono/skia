@@ -17,9 +17,9 @@
 class SkDeferredDisplayListPriv {
 public:
 
-#if SK_SUPPORT_GPU
+#if defined(SK_GANESH)
     int numRenderTasks() const {
-        return fDDL->fRenderTasks.count();
+        return fDDL->fRenderTasks.size();
     }
 
     GrRenderTargetProxy* targetProxy() const {
@@ -30,14 +30,17 @@ public:
         return fDDL->fLazyProxyData.get();
     }
 
-    const SkTArray<GrRecordingContext::ProgramData>& programData() const {
+    const skia_private::TArray<GrRecordingContext::ProgramData>& programData() const {
         return fDDL->programData();
+    }
+
+    const skia_private::TArray<sk_sp<GrRenderTask>>& renderTasks() const {
+        return fDDL->fRenderTasks;
     }
 #endif
 
 private:
     explicit SkDeferredDisplayListPriv(SkDeferredDisplayList* ddl) : fDDL(ddl) {}
-    SkDeferredDisplayListPriv(const SkDeferredDisplayListPriv&) = delete;
     SkDeferredDisplayListPriv& operator=(const SkDeferredDisplayListPriv&) = delete;
 
     // No taking addresses of this type.

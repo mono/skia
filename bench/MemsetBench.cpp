@@ -6,16 +6,18 @@
  */
 
 #include "bench/Benchmark.h"
-#include "include/private/SkTemplates.h"
-#include "src/core/SkUtils.h"
+#include "include/private/base/SkTemplates.h"
+#include "src/core/SkOpts.h"
 
-template <typename T, bool kInline>
+using namespace skia_private;
+
+template <typename T>
 class MemsetBench : public Benchmark {
 public:
-    explicit MemsetBench(int n)
-        : fN(n)
-        , fBuffer(n)
-        , fName(SkStringPrintf("memset%zu_%d%s", sizeof(T)*8, n, kInline ? "_inline" : "")) {}
+    explicit MemsetBench(size_t bytes)
+        : fN(bytes / sizeof(T))
+        , fBuffer(fN)
+        , fName(SkStringPrintf("memset%zu_%zu", sizeof(T)*8, bytes)) {}
 
     bool isSuitableFor(Backend backend) override { return backend == kNonRendering_Backend; }
     const char* onGetName() override { return fName.c_str(); }
@@ -24,61 +26,54 @@ public:
 
 private:
     int fN;
-    SkAutoTMalloc<T> fBuffer;
+    AutoTMalloc<T> fBuffer;
     SkString fName;
 };
 
-template <> void MemsetBench<uint32_t, false>::onDraw(int loops, SkCanvas*) {
+template <> void MemsetBench<uint64_t>::onDraw(int loops, SkCanvas*) {
     for (int i = 0; i < 1000*loops; i++) {
-        sk_memset32(fBuffer.get(), 0xFACEB004, fN);
+        SkOpts::memset64(fBuffer.get(), 0xFACEFACEFACEFACE, fN);
     }
 }
 
-template <> void MemsetBench<uint16_t, false>::onDraw(int loops, SkCanvas*) {
+template <> void MemsetBench<uint32_t>::onDraw(int loops, SkCanvas*) {
     for (int i = 0; i < 1000*loops; i++) {
-        sk_memset16(fBuffer.get(), 0x4973, fN);
+        SkOpts::memset32(fBuffer.get(), 0xFACEB004, fN);
     }
 }
 
-template <typename T>
-static void memsetT(T* dst, T val, int n) {
-    for (int i = 0; i < n; i++) { dst[i] = val; }
-}
-
-template <> void MemsetBench<uint32_t, true>::onDraw(int loops, SkCanvas*) {
+template <> void MemsetBench<uint16_t>::onDraw(int loops, SkCanvas*) {
     for (int i = 0; i < 1000*loops; i++) {
-        memsetT<uint32_t>(fBuffer.get(), 0xFACEB004, fN);
+        SkOpts::memset16(fBuffer.get(), 0x4973, fN);
     }
 }
 
-template <> void MemsetBench<uint16_t, true>::onDraw(int loops, SkCanvas*) {
-    for (int i = 0; i < 1000*loops; i++) {
-        memsetT<uint16_t>(fBuffer.get(), 0x4973, fN);
-    }
-}
+DEF_BENCH(return (new MemsetBench<uint64_t>(16)));
+DEF_BENCH(return (new MemsetBench<uint64_t>(64)));
+DEF_BENCH(return (new MemsetBench<uint64_t>(256)));
+DEF_BENCH(return (new MemsetBench<uint64_t>(512)));
+DEF_BENCH(return (new MemsetBench<uint64_t>(768)));
+DEF_BENCH(return (new MemsetBench<uint64_t>(1024)));
+DEF_BENCH(return (new MemsetBench<uint64_t>(2048)));
+DEF_BENCH(return (new MemsetBench<uint64_t>(4096)));
+DEF_BENCH(return (new MemsetBench<uint64_t>(65536)));
 
-DEF_BENCH(return (new MemsetBench<uint32_t,  true>(1)));
-DEF_BENCH(return (new MemsetBench<uint32_t, false>(1)));
-DEF_BENCH(return (new MemsetBench<uint32_t,  true>(10)));
-DEF_BENCH(return (new MemsetBench<uint32_t, false>(10)));
-DEF_BENCH(return (new MemsetBench<uint32_t,  true>(100)));
-DEF_BENCH(return (new MemsetBench<uint32_t, false>(100)));
-DEF_BENCH(return (new MemsetBench<uint32_t,  true>(1000)));
-DEF_BENCH(return (new MemsetBench<uint32_t, false>(1000)));
-DEF_BENCH(return (new MemsetBench<uint32_t,  true>(10000)));
-DEF_BENCH(return (new MemsetBench<uint32_t, false>(10000)));
-DEF_BENCH(return (new MemsetBench<uint32_t,  true>(100000)));
-DEF_BENCH(return (new MemsetBench<uint32_t, false>(100000)));
+DEF_BENCH(return (new MemsetBench<uint32_t>(16)));
+DEF_BENCH(return (new MemsetBench<uint32_t>(64)));
+DEF_BENCH(return (new MemsetBench<uint32_t>(256)));
+DEF_BENCH(return (new MemsetBench<uint32_t>(512)));
+DEF_BENCH(return (new MemsetBench<uint32_t>(768)));
+DEF_BENCH(return (new MemsetBench<uint32_t>(1024)));
+DEF_BENCH(return (new MemsetBench<uint32_t>(2048)));
+DEF_BENCH(return (new MemsetBench<uint32_t>(4096)));
+DEF_BENCH(return (new MemsetBench<uint32_t>(65536)));
 
-DEF_BENCH(return (new MemsetBench<uint16_t,  true>(1)));
-DEF_BENCH(return (new MemsetBench<uint16_t, false>(1)));
-DEF_BENCH(return (new MemsetBench<uint16_t,  true>(10)));
-DEF_BENCH(return (new MemsetBench<uint16_t, false>(10)));
-DEF_BENCH(return (new MemsetBench<uint16_t,  true>(100)));
-DEF_BENCH(return (new MemsetBench<uint16_t, false>(100)));
-DEF_BENCH(return (new MemsetBench<uint16_t,  true>(1000)));
-DEF_BENCH(return (new MemsetBench<uint16_t, false>(1000)));
-DEF_BENCH(return (new MemsetBench<uint16_t,  true>(10000)));
-DEF_BENCH(return (new MemsetBench<uint16_t, false>(10000)));
-DEF_BENCH(return (new MemsetBench<uint16_t,  true>(100000)));
-DEF_BENCH(return (new MemsetBench<uint16_t, false>(100000)));
+DEF_BENCH(return (new MemsetBench<uint16_t>(16)));
+DEF_BENCH(return (new MemsetBench<uint16_t>(64)));
+DEF_BENCH(return (new MemsetBench<uint16_t>(256)));
+DEF_BENCH(return (new MemsetBench<uint16_t>(512)));
+DEF_BENCH(return (new MemsetBench<uint16_t>(768)));
+DEF_BENCH(return (new MemsetBench<uint16_t>(1024)));
+DEF_BENCH(return (new MemsetBench<uint16_t>(2048)));
+DEF_BENCH(return (new MemsetBench<uint16_t>(4096)));
+DEF_BENCH(return (new MemsetBench<uint16_t>(65536)));

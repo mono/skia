@@ -5,17 +5,49 @@
  * found in the LICENSE file.
  */
 
-#include "include/core/SkMatrix.h"
-#include "include/core/SkString.h"
-#include "include/private/SkMalloc.h"
-#include "src/core/SkBuffer.h"
-#include "src/core/SkRRectPriv.h"
-#include "src/core/SkScaleToSides.h"
+#include "include/core/SkRRect.h"
 
-#include <cmath>
-#include <utility>
+#include "include/core/SkMatrix.h"
+#include "include/core/SkPoint.h"
+#include "include/core/SkRect.h"
+#include "include/core/SkScalar.h"
+#include "include/core/SkString.h"
+#include "include/core/SkTypes.h"
+#include "include/private/base/SkDebug.h"
+#include "include/private/base/SkFloatingPoint.h"
+#include "src/base/SkBuffer.h"
+#include "src/core/SkRRectPriv.h"
+#include "src/core/SkRectPriv.h"
+#include "src/core/SkScaleToSides.h"
+#include "src/core/SkStringUtils.h"
+
+#include <algorithm>
+#include <cstring>
+#include <iterator>
 
 ///////////////////////////////////////////////////////////////////////////////
+
+void SkRRect::setOval(const SkRect& oval) {
+    if (!this->initializeRect(oval)) {
+        return;
+    }
+
+    SkScalar xRad = SkRectPriv::HalfWidth(fRect);
+    SkScalar yRad = SkRectPriv::HalfHeight(fRect);
+
+    if (xRad == 0.0f || yRad == 0.0f) {
+        // All the corners will be square
+        memset(fRadii, 0, sizeof(fRadii));
+        fType = kRect_Type;
+    } else {
+        for (int i = 0; i < 4; ++i) {
+            fRadii[i].set(xRad, yRad);
+        }
+        fType = kOval_Type;
+    }
+
+    SkASSERT(this->isValid());
+}
 
 void SkRRect::setRectXY(const SkRect& rect, SkScalar xRad, SkScalar yRad) {
     if (!this->initializeRect(rect)) {
@@ -294,6 +326,17 @@ bool SkRRect::checkCornerContainment(SkScalar x, SkScalar y) const {
     return dist <= SkScalarSquare(fRadii[index].fX * fRadii[index].fY);
 }
 
+bool SkRRectPriv::IsNearlySimpleCircular(const SkRRect& rr, SkScalar tolerance) {
+    SkScalar simpleRadius = rr.fRadii[0].fX;
+    return SkScalarNearlyEqual(simpleRadius, rr.fRadii[0].fY, tolerance) &&
+           SkScalarNearlyEqual(simpleRadius, rr.fRadii[1].fX, tolerance) &&
+           SkScalarNearlyEqual(simpleRadius, rr.fRadii[1].fY, tolerance) &&
+           SkScalarNearlyEqual(simpleRadius, rr.fRadii[2].fX, tolerance) &&
+           SkScalarNearlyEqual(simpleRadius, rr.fRadii[2].fY, tolerance) &&
+           SkScalarNearlyEqual(simpleRadius, rr.fRadii[3].fX, tolerance) &&
+           SkScalarNearlyEqual(simpleRadius, rr.fRadii[3].fY, tolerance);
+}
+
 bool SkRRectPriv::AllCornersCircular(const SkRRect& rr, SkScalar tolerance) {
     return SkScalarNearlyEqual(rr.fRadii[0].fX, rr.fRadii[0].fY, tolerance) &&
            SkScalarNearlyEqual(rr.fRadii[1].fX, rr.fRadii[1].fY, tolerance) &&
@@ -333,7 +376,7 @@ static bool radii_are_nine_patch(const SkVector radii[4]) {
 void SkRRect::computeType() {
     if (fRect.isEmpty()) {
         SkASSERT(fRect.isSorted());
-        for (size_t i = 0; i < SK_ARRAY_COUNT(fRadii); ++i) {
+        for (size_t i = 0; i < std::size(fRadii); ++i) {
             SkASSERT((fRadii[i] == SkVector{0, 0}));
         }
         fType = kEmpty_Type;
@@ -580,9 +623,6 @@ bool SkRRectPriv::ReadFromBuffer(SkRBuffer* buffer, SkRRect* rr) {
            (rr->readFromMemory(&storage, SkRRect::kSizeInMemory) == SkRRect::kSizeInMemory);
 }
 
-#include "include/core/SkString.h"
-#include "src/core/SkStringUtils.h"
-
 SkString SkRRect::dumpToString(bool asHex) const {
     SkScalarAsStringType asType = asHex ? kHex_SkScalarAsStringType : kDec_SkScalarAsStringType;
 
@@ -659,8 +699,8 @@ bool SkRRect::isValid() const {
             }
 
             for (int i = 0; i < 4; ++i) {
-                if (!SkScalarNearlyEqual(fRadii[i].fX, SkScalarHalf(fRect.width())) ||
-                    !SkScalarNearlyEqual(fRadii[i].fY, SkScalarHalf(fRect.height()))) {
+                if (!SkScalarNearlyEqual(fRadii[i].fX, SkRectPriv::HalfWidth(fRect)) ||
+                    !SkScalarNearlyEqual(fRadii[i].fY, SkRectPriv::HalfHeight(fRect))) {
                     return false;
                 }
             }

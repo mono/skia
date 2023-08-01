@@ -11,6 +11,7 @@
 #include "include/core/SkCanvas.h"
 #include "include/core/SkColor.h"
 #include "include/core/SkColorPriv.h"
+#include "include/core/SkImage.h"
 #include "include/core/SkImageInfo.h"
 #include "include/core/SkPaint.h"
 #include "include/core/SkScalar.h"
@@ -34,7 +35,7 @@ static void init_bitmap(SkColorType ct, SkBitmap* bitmap) {
     bitmap->eraseColor(SK_ColorWHITE);
 }
 
-static SkBitmap make_argb8888_gradient() {
+static sk_sp<SkImage> make_argb8888_gradient() {
     SkBitmap bitmap;
     init_bitmap(kN32_SkColorType, &bitmap);
     for (int y = 0; y < SLIDE_SIZE; y++) {
@@ -43,20 +44,20 @@ static SkBitmap make_argb8888_gradient() {
             dst[x] = SkPackARGB32(y, y, y, y);
         }
     }
-    return bitmap;
+    return bitmap.asImage();
 }
 
-static SkBitmap make_argb4444_gradient() {
+static sk_sp<SkImage> make_argb4444_gradient() {
     SkBitmap bitmap;
     init_bitmap(kARGB_4444_SkColorType, &bitmap);
     // Using draw rather than readPixels to suppress dither
     SkPaint paint;
     paint.setBlendMode(SkBlendMode::kSrc);
-    SkCanvas{ bitmap }.drawBitmap(make_argb8888_gradient(), 0, 0, &paint);
-    return bitmap;
+    SkCanvas{ bitmap }.drawImage(make_argb8888_gradient(), 0, 0, SkSamplingOptions(), &paint);
+    return bitmap.asImage();
 }
 
-static SkBitmap make_argb8888_stripes() {
+static sk_sp<SkImage> make_argb8888_stripes() {
     SkBitmap bitmap;
     init_bitmap(kN32_SkColorType, &bitmap);
     uint8_t rowColor = 0;
@@ -72,17 +73,17 @@ static SkBitmap make_argb8888_stripes() {
             rowColor = 0;
         }
     }
-    return bitmap;
+    return bitmap.asImage();
 }
 
-static SkBitmap make_argb4444_stripes() {
+static sk_sp<SkImage> make_argb4444_stripes() {
     SkBitmap bitmap;
     init_bitmap(kARGB_4444_SkColorType, &bitmap);
     // Using draw rather than readPixels to suppress dither
     SkPaint paint;
     paint.setBlendMode(SkBlendMode::kSrc);
-    SkCanvas{ bitmap }.drawBitmap(make_argb8888_stripes(), 0, 0, &paint);
-    return bitmap;
+    SkCanvas{ bitmap }.drawImage(make_argb8888_stripes(), 0, 0, SkSamplingOptions(), &paint);
+    return bitmap.asImage();
 }
 
 namespace skiagm {
@@ -104,10 +105,10 @@ protected:
 
     void onDraw(SkCanvas* canvas) override {
         SkScalar slideSize = SkIntToScalar(SLIDE_SIZE);
-        canvas->drawBitmap(make_argb8888_gradient(), 0, 0);
-        canvas->drawBitmap(make_argb4444_gradient(), slideSize, 0);
-        canvas->drawBitmap(make_argb8888_stripes(), 0, slideSize);
-        canvas->drawBitmap(make_argb4444_stripes(), slideSize, slideSize);
+        canvas->drawImage(make_argb8888_gradient(), 0, 0);
+        canvas->drawImage(make_argb4444_gradient(), slideSize, 0);
+        canvas->drawImage(make_argb8888_stripes(), 0, slideSize);
+        canvas->drawImage(make_argb4444_stripes(), slideSize, slideSize);
     }
 
 private:
@@ -116,3 +117,35 @@ private:
 
 DEF_GM( return new BitmapPremulGM; )
 }  // namespace skiagm
+
+static constexpr int kBoxSize     = 31;
+static constexpr int kPadding     = 5;
+
+static sk_sp<SkImage> make_out_of_gamut_image(SkColorType ct) {
+    SkBitmap bmp;
+    // Odd dimensions so that we hit the different implementation in the SIMD tail handling
+    bmp.allocPixels(SkImageInfo::Make(kBoxSize, kBoxSize, ct, kPremul_SkAlphaType));
+    for (int y = 0; y < kBoxSize; ++y) {
+        for (int x = 0; x < kBoxSize; ++x) {
+            *bmp.getAddr32(x, y) = (0x40000000 | ((x * 8) << 8) | ((y * 8) << 0));
+        }
+    }
+    return bmp.asImage();
+}
+
+DEF_SIMPLE_GM(image_out_of_gamut, canvas, 2 * kBoxSize + 3 * kPadding, kBoxSize + 2 * kPadding) {
+    // This GM draws an image with out-of-gamut colors (RGB > A). Historically, Skia assumed this
+    // was impossible, and contained numerous asserts and optimizations that would break if the
+    // rule were violated. With color spaces and/or SkSL shaders (among other things), it's no
+    // longer reasonable to make this claim. To catch issues with legacy blitters, this draws both
+    // RGBA and BGRA. (This ensures that we always hit the N32 -> N32 case).
+    canvas->clear(SK_ColorGRAY);
+
+    auto rgba = make_out_of_gamut_image(kRGBA_8888_SkColorType),
+         bgra = make_out_of_gamut_image(kBGRA_8888_SkColorType);
+
+    canvas->translate(kPadding, kPadding);
+    canvas->drawImage(rgba, 0, 0);
+    canvas->translate(kBoxSize + kPadding, 0);
+    canvas->drawImage(bgra, 0, 0);
+}

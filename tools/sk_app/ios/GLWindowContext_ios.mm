@@ -34,29 +34,27 @@ public:
 
     ~GLWindowContext_ios() override;
 
-    void onSwapBuffers() override;
-
     sk_sp<const GrGLInterface> onInitializeContext() override;
     void onDestroyContext() override;
 
     void resize(int w, int h) override;
 
 private:
+    void onSwapBuffers() override;
+
     sk_app::Window_ios*  fWindow;
     UIViewController*    fViewController;
     GLView*              fGLView;
     EAGLContext*         fGLContext;
     GLuint               fFramebuffer;
     GLuint               fRenderbuffer;
-
-    using INHERITED = GLWindowContext;
 };
 
 GLWindowContext_ios::GLWindowContext_ios(const IOSWindowInfo& info, const DisplayParams& params)
-    : INHERITED(params)
-    , fWindow(info.fWindow)
-    , fViewController(info.fViewController)
-    , fGLContext(nil) {
+        : GLWindowContext(params)
+        , fWindow(info.fWindow)
+        , fViewController(info.fViewController)
+        , fGLContext(nil) {
 
     // any config code here (particularly for msaa)?
 
@@ -148,7 +146,7 @@ void GLWindowContext_ios::onSwapBuffers() {
 void GLWindowContext_ios::resize(int w, int h) {
     // TODO: handle rotation
     // [fGLContext update];
-     INHERITED::resize(w, h);
+    GLWindowContext::resize(w, h);
 }
 
 }  // anonymous namespace

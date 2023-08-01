@@ -34,7 +34,7 @@
 #include "include/effects/SkGradientShader.h"
 #include "include/effects/SkImageFilters.h"
 #include "include/effects/SkShaderMaskFilter.h"
-#include "include/utils/SkRandom.h"
+#include "src/base/SkRandom.h"
 #include "src/core/SkCanvasPriv.h"
 #include "tools/Resources.h"
 #include "tools/ToolUtils.h"
@@ -42,86 +42,12 @@
 #include <string.h>
 #include <initializer_list>
 
-// This GM tests out the deprecated Android-specific unclipped saveLayer "feature".
-// In particular, it attempts to compare the performance of unclipped saveLayers with alternatives.
-
-static void save_layer_unclipped(SkCanvas* canvas,
-                                 SkScalar l, SkScalar t, SkScalar r, SkScalar b) {
-    SkPaint paint;
-    paint.setAlphaf(0.25f);
-    SkRect rect = SkRect::MakeLTRB(l, t, r, b);
-    canvas->saveLayer({ &rect, &paint, nullptr,
-                        (SkCanvas::SaveLayerFlags) SkCanvasPriv::kDontClipToLayer_SaveLayerFlag });
-}
-
-static void do_draw(SkCanvas* canvas) {
-    SkPaint paint;
-    paint.setColor(0xFFFF0000);
-
-    for (int i = 0; i < 20; ++i) {
-        canvas->drawRect({ 15, 15, 290, 40 }, paint);
-        canvas->translate(0, 30);
-    }
-}
-
-class UnclippedSaveLayerGM : public skiagm::GM {
-public:
-    UnclippedSaveLayerGM() { this->setBGColor(SK_ColorWHITE); }
-
-protected:
-    bool runAsBench() const override { return true; }
-
-    SkString onShortName() override {
-        return SkString("savelayer_unclipped");
-    }
-
-    SkISize onISize() override { return SkISize::Make(320, 640); }
-
-    void onDraw(SkCanvas* canvas) override {
-        const SkScalar L = 10;
-        const SkScalar T = 10;
-        const SkScalar R = 310;
-        const SkScalar B = 630;
-
-        canvas->clipRect({ L, T, R, B });
-
-        SkAutoCanvasRestore acr(canvas, true);
-        save_layer_unclipped(canvas, L, T, R, T + 100);
-        save_layer_unclipped(canvas, L, B - 100, R, B);
-
-        do_draw(canvas);
-    }
-
-private:
-    using INHERITED = skiagm::GM;
-};
-DEF_GM(return new UnclippedSaveLayerGM;)
-
-DEF_SIMPLE_GM(picture_savelayer, canvas, 320, 640) {
-    SkPaint paint1, paint2, paint3;
-    paint1.setAlphaf(0.5f);
-    paint2.setAlphaf(0.25f);
-    paint3.setColor(0xFFFF0000);
-    SkRect rect1{40, 5, 80, 70}, rect2{5, 40, 70, 80}, rect3{10, 10, 70, 70};
-    // In the future, we might also test the clipped case by allowing i = 0
-    for(int i = 1; i < 2; ++i) {
-        canvas->translate(100 * i, 0);
-        auto flag = i ?
-                (SkCanvas::SaveLayerFlags) SkCanvasPriv::kDontClipToLayer_SaveLayerFlag : 0;
-        canvas->saveLayer(SkCanvas::SaveLayerRec(&rect1, &paint1, nullptr, flag));
-        canvas->saveLayer(SkCanvas::SaveLayerRec(&rect2, &paint2, nullptr, flag));
-        canvas->drawRect(rect3, paint3);
-        canvas->restore();
-        canvas->restore();
-    }
-};
-
 // Test kInitWithPrevious_SaveLayerFlag by drawing an image, save a layer with the flag, which
 // should seed the layer with the image (from below). Then we punch a hole in the layer and
 // restore with kPlus mode, which should show the mandrill super-bright on the outside, but
 // normal where we punched the hole.
 DEF_SIMPLE_GM(savelayer_initfromprev, canvas, 256, 256) {
-    canvas->drawImage(GetResourceAsImage("images/mandrill_256.png"), 0, 0, nullptr);
+    canvas->drawImage(GetResourceAsImage("images/mandrill_256.png"), 0, 0);
 
     SkCanvas::SaveLayerRec rec;
     SkPaint paint;
@@ -133,44 +59,6 @@ DEF_SIMPLE_GM(savelayer_initfromprev, canvas, 256, 256) {
     canvas->drawCircle(128, 128, 96, paint);
     canvas->restore();
 };
-
-DEF_SIMPLE_GM(savelayer_coverage, canvas, 500, 500) {
-    canvas->saveLayer(nullptr, nullptr);
-
-    SkRect r = { 0, 0, 200, 200 };
-    SkPaint layerPaint;
-    layerPaint.setBlendMode(SkBlendMode::kModulate);
-
-    auto image = GetResourceAsImage("images/mandrill_128.png");
-
-    auto proc = [layerPaint](SkCanvas* canvas, SkCanvas::SaveLayerRec& rec) {
-        SkPaint paint;
-        paint.setColor(SK_ColorRED);
-
-        canvas->saveLayer(rec);
-        canvas->drawCircle(100, 100, 50, paint);
-        paint.setColor(0x8800FF00);
-        canvas->drawRect({10, 90, 190, 110}, paint);
-        canvas->restore();
-    };
-
-    const int yflags[] = { 0, SkCanvas::kInitWithPrevious_SaveLayerFlag };
-    for (int y = 0; y <= 1; ++y) {
-        const int xflags[] = { 0, SkCanvas::kMaskAgainstCoverage_EXPERIMENTAL_DONT_USE_SaveLayerFlag };
-        for (int x = 0; x <= 1; ++x) {
-            canvas->save();
-            canvas->translate(x * 200.f, y * 200.f);
-
-            SkCanvas::SaveLayerRec rec(&r, &layerPaint, yflags[y] | xflags[x]);
-            canvas->drawImageRect(image, r, nullptr);
-            proc(canvas, rec);
-
-            canvas->restore();
-        }
-    }
-
-    canvas->restore();
-}
 
 static void draw_cell(SkCanvas* canvas, sk_sp<SkTextBlob> blob, SkColor c, SkScalar w, SkScalar h,
                       bool useDrawBehind) {
@@ -264,7 +152,7 @@ DEF_SIMPLE_GM(savelayer_f16, canvas, 900, 300) {
 
     const SkColor colors[] = { SK_ColorRED, SK_ColorGREEN, SK_ColorBLUE, SK_ColorRED };
     paint.setShader(SkGradientShader::MakeSweep(r.centerX(), r.centerY(),
-                                                colors, nullptr, SK_ARRAY_COUNT(colors)));
+                                                colors, nullptr, std::size(colors)));
 
     canvas->drawOval(r, paint);
 

@@ -4,7 +4,7 @@
 # found in the LICENSE file.
 
 declare_args() {
-  skia_use_system_libwebp = is_official_build
+  skia_use_system_libwebp = is_official_build && !is_wasm
 }
 
 import("../third_party.gni")
@@ -33,7 +33,7 @@ if (skia_use_system_libwebp) {
       "../externals/libwebp/src",
       "../externals/libwebp",
     ]
-    configs += [ ":libwebp_defines" ]
+    configs = [ ":libwebp_defines" ]
     sources = [
       "../externals/libwebp/src/dsp/alpha_processing_sse41.c",
       "../externals/libwebp/src/dsp/dec_sse41.c",
@@ -60,9 +60,10 @@ if (skia_use_system_libwebp) {
       deps += [ "//third_party/cpu-features" ]
     }
 
-    configs += [ ":libwebp_defines" ]
+    configs = [ ":libwebp_defines" ]
     sources = [
       "../externals/libwebp/sharpyuv/sharpyuv.c",
+      "../externals/libwebp/sharpyuv/sharpyuv_cpu.c",
       "../externals/libwebp/sharpyuv/sharpyuv_csp.c",
       "../externals/libwebp/sharpyuv/sharpyuv_dsp.c",
       "../externals/libwebp/sharpyuv/sharpyuv_gamma.c",

@@ -6,11 +6,12 @@
  */
 
 #include "gm/gm.h"
+#include "include/codec/SkEncodedImageFormat.h"
+#include "include/core/SkBitmap.h"
 #include "include/core/SkCanvas.h"
 #include "include/core/SkColor.h"
 #include "include/core/SkColorSpace.h"
 #include "include/core/SkData.h"
-#include "include/core/SkEncodedImageFormat.h"
 #include "include/core/SkImage.h"
 #include "include/core/SkImageInfo.h"
 #include "include/core/SkMatrix.h"
@@ -25,6 +26,9 @@
 #include "include/core/SkSurface.h"
 #include "include/core/SkTileMode.h"
 #include "include/core/SkTypes.h"
+#include "include/encode/SkPngEncoder.h"
+#include "include/gpu/GpuTypes.h"
+#include "include/gpu/ganesh/SkSurfaceGanesh.h"
 
 #include <utility>
 
@@ -45,7 +49,7 @@ typedef sk_sp<SkImage> (*ImageMakerProc)(GrRecordingContext*, SkPicture*, const 
 static sk_sp<SkImage> make_raster(GrRecordingContext*,
                                   SkPicture* pic,
                                   const SkImageInfo& info) {
-    auto surface(SkSurface::MakeRaster(info));
+    auto surface(SkSurfaces::Raster(info));
     surface->getCanvas()->clear(0);
     surface->getCanvas()->drawPicture(pic);
     return surface->makeImageSnapshot();
@@ -57,7 +61,7 @@ static sk_sp<SkImage> make_texture(GrRecordingContext* ctx,
     if (!ctx) {
         return nullptr;
     }
-    auto surface(SkSurface::MakeRenderTarget(ctx, SkBudgeted::kNo, info));
+    auto surface(SkSurfaces::RenderTarget(ctx, skgpu::Budgeted::kNo, info));
     if (!surface) {
         return nullptr;
     }
@@ -69,9 +73,12 @@ static sk_sp<SkImage> make_texture(GrRecordingContext* ctx,
 static sk_sp<SkImage> make_pict_gen(GrRecordingContext*,
                                     SkPicture* pic,
                                     const SkImageInfo& info) {
-    return SkImage::MakeFromPicture(sk_ref_sp(pic), info.dimensions(), nullptr, nullptr,
-                                    SkImage::BitDepth::kU8,
-                                    SkColorSpace::MakeSRGB());
+    return SkImages::DeferredFromPicture(sk_ref_sp(pic),
+                                         info.dimensions(),
+                                         nullptr,
+                                         nullptr,
+                                         SkImages::BitDepth::kU8,
+                                         SkColorSpace::MakeSRGB());
 }
 
 static sk_sp<SkImage> make_encode_gen(GrRecordingContext* ctx,
@@ -81,11 +88,11 @@ static sk_sp<SkImage> make_encode_gen(GrRecordingContext* ctx,
     if (!src) {
         return nullptr;
     }
-    sk_sp<SkData> encoded = src->encodeToData(SkEncodedImageFormat::kPNG, 100);
+    sk_sp<SkData> encoded = SkPngEncoder::Encode(nullptr, src.get(), {});
     if (!encoded) {
         return nullptr;
     }
-    return SkImage::MakeFromEncoded(std::move(encoded));
+    return SkImages::DeferredFromEncodedData(std::move(encoded));
 }
 
 const ImageMakerProc gProcs[] = {
@@ -130,7 +137,7 @@ protected:
         const SkTileMode tile = SkTileMode::kRepeat;
         const SkMatrix localM = SkMatrix::Translate(-50, -50);
         SkPaint paint;
-        paint.setShader(image->makeShader(tile, tile, &localM));
+        paint.setShader(image->makeShader(tile, tile, SkSamplingOptions(), &localM));
         paint.setAntiAlias(true);
         canvas->drawCircle(50, 50, 50, paint);
     }
@@ -140,7 +147,7 @@ protected:
 
         const SkImageInfo info = SkImageInfo::MakeN32Premul(100, 100);
 
-        for (size_t i = 0; i < SK_ARRAY_COUNT(gProcs); ++i) {
+        for (size_t i = 0; i < std::size(gProcs); ++i) {
             sk_sp<SkImage> image(gProcs[i](canvas->recordingContext(), fPicture.get(), info));
             if (image) {
                 this->testImage(canvas, image.get());
@@ -153,3 +160,87 @@ private:
     using INHERITED = skiagm::GM;
 };
 DEF_GM( return new ImageShaderGM; )
+
+//////////////////////////////////////////////////////////////////////////////////////////////
+
+#include "tools/ToolUtils.h"
+
+static sk_sp<SkImage> make_checker_img(int w, int h, SkColor c0, SkColor c1, int size) {
+    SkBitmap bm = ToolUtils::create_checkerboard_bitmap(w, h, c0, c1, size);
+    bm.setImmutable();
+    return bm.asImage();
+}
+
+DEF_SIMPLE_GM(drawimage_sampling, canvas, 500, 500) {
+    constexpr int N = 256;
+    constexpr float kScale = 1.0f/6;
+    const SkRect dst = {0, 0, kScale*N, kScale*N};
+
+    auto img = make_checker_img(N, N, SK_ColorBLACK, SK_ColorWHITE, 7)->withDefaultMipmaps();
+    const SkRect src = SkRect::MakeIWH(img->width(), img->height());
+
+    SkMatrix mx = SkMatrix::RectToRect(src, dst);
+
+    SkPaint paint;
+
+    for (auto mm : {SkMipmapMode::kNone, SkMipmapMode::kNearest, SkMipmapMode::kLinear}) {
+        for (auto fm : {SkFilterMode::kNearest, SkFilterMode::kLinear}) {
+            SkSamplingOptions sampling(fm, mm);
+
+            canvas->save();
+
+            canvas->save();
+            canvas->concat(mx);
+            canvas->drawImage(img.get(), 0, 0, sampling);
+            canvas->restore();
+
+            canvas->translate(dst.width() + 4, 0);
+
+            paint.setShader(img->makeShader(SkTileMode::kClamp, SkTileMode::kClamp, sampling, &mx));
+            canvas->drawRect(dst, paint);
+
+            canvas->translate(dst.width() + 4, 0);
+
+            canvas->drawImageRect(img.get(), src, dst, sampling, nullptr,
+                                  SkCanvas::kFast_SrcRectConstraint);
+            canvas->restore();
+
+            canvas->translate(0, dst.height() + 8);
+        }
+    }
+
+}
+
+// Test case for skbug.com/12685 (texture-backed image shaders silently fail drawing to CPU canvas)
+DEF_SIMPLE_GM(textureimage_and_shader, canvas, 100, 50) {
+    canvas->clear(SK_ColorGREEN);
+
+    sk_sp<SkImage> image;
+    if (canvas->getSurface()) {
+        image = canvas->getSurface()->makeImageSnapshot();
+        canvas->clear(SK_ColorRED);
+    } else {
+        auto greenSurface = SkSurfaces::Raster(SkImageInfo::MakeN32Premul(50, 50));
+        greenSurface->getCanvas()->clear(SK_ColorGREEN);
+        image = greenSurface->makeImageSnapshot();
+    }
+
+    // At this point, 'image' contains a green image. If our original canvas is GPU-backed, then
+    // the snapped image will be a (GPU) texture. We will try to draw that image to a non-GPU
+    // surface, to ensure that we get automatic read-back. If all goes well, we will get a pure
+    // green result. If either draw fails, we'll get red (most likely).
+
+    auto surface = SkSurfaces::Raster(SkImageInfo::MakeN32Premul(50, 50));
+
+    // First, use drawImage:
+    surface->getCanvas()->clear(SK_ColorRED);
+    surface->getCanvas()->drawImage(image, 0, 0);
+    canvas->drawImage(surface->makeImageSnapshot(), 0, 0);
+
+    // Now, use an image shader:
+    SkPaint paint;
+    paint.setShader(image->makeShader(SkSamplingOptions()));
+    surface->getCanvas()->clear(SK_ColorRED);
+    surface->getCanvas()->drawPaint(paint);
+    canvas->drawImage(surface->makeImageSnapshot(), 50, 0);
+}

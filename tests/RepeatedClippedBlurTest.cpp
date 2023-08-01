@@ -5,13 +5,34 @@
  * found in the LICENSE file.
  */
 
+#include "include/core/SkAlphaType.h"
+#include "include/core/SkBitmap.h"
 #include "include/core/SkCanvas.h"
+#include "include/core/SkColor.h"
+#include "include/core/SkColorType.h"
+#include "include/core/SkImage.h"
+#include "include/core/SkImageFilter.h"
+#include "include/core/SkImageInfo.h"
+#include "include/core/SkPoint.h"
+#include "include/core/SkRect.h"
+#include "include/core/SkRefCnt.h"
+#include "include/core/SkSamplingOptions.h"
 #include "include/core/SkSurface.h"
+#include "include/core/SkTypes.h"
 #include "include/effects/SkImageFilters.h"
+#include "include/gpu/GpuTypes.h"
 #include "include/gpu/GrDirectContext.h"
-#include "src/gpu/GrDirectContextPriv.h"
-#include "src/gpu/GrResourceCache.h"
+#include "include/gpu/GrTypes.h"
+#include "include/gpu/ganesh/SkImageGanesh.h"
+#include "include/gpu/ganesh/SkSurfaceGanesh.h"
+#include "src/gpu/ganesh/GrDirectContextPriv.h"
+#include "src/gpu/ganesh/GrResourceCache.h"
+#include "tests/CtsEnforcement.h"
 #include "tests/Test.h"
+
+#include <cstddef>
+
+struct GrContextOptions;
 
 // This is the repro of a CastOS memory regression bug (b/138674523).
 // The test simply keeps calling SkImage::makeWithFilter (with a blur image filter) while
@@ -22,14 +43,17 @@
 // In CastOS' case (and, presumably, Linux desktop) they were only using Ganesh for
 // 2D canvas and compositor image filtering. In this case Chrome doesn't regularly purge
 // the cache. This would result in Ganesh quickly running up to its max cache limit.
-DEF_GPUTEST_FOR_RENDERING_CONTEXTS(RepeatedClippedBlurTest, reporter, ctxInfo) {
+DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(RepeatedClippedBlurTest,
+                                       reporter,
+                                       ctxInfo,
+                                       CtsEnforcement::kApiLevel_T) {
     auto dContext = ctxInfo.directContext();
     GrResourceCache* cache = dContext->priv().getResourceCache();
 
     const SkImageInfo ii = SkImageInfo::Make(1024, 600, kRGBA_8888_SkColorType,
                                              kPremul_SkAlphaType);
 
-    sk_sp<SkSurface> dst(SkSurface::MakeRenderTarget(dContext, SkBudgeted::kNo, ii));
+    sk_sp<SkSurface> dst(SkSurfaces::RenderTarget(dContext, skgpu::Budgeted::kNo, ii));
     if (!dst) {
         ERRORF(reporter, "Could not create surfaces for repeated clipped blur test.");
         return;
@@ -52,8 +76,8 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(RepeatedClippedBlurTest, reporter, ctxInfo) {
         bm.eraseColor(SK_ColorRED);
         bm.eraseArea(SkIRect::MakeXYWH(1, 2, 1277, 1274), SK_ColorGREEN);
 
-        sk_sp<SkImage> rasterImg = SkImage::MakeFromBitmap(bm);
-        bigImg = rasterImg->makeTextureImage(dContext);
+        sk_sp<SkImage> rasterImg = bm.asImage();
+        bigImg = SkImages::TextureFromImage(dContext, rasterImg);
     }
 
     sk_sp<SkImage> smImg;
@@ -63,12 +87,11 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(RepeatedClippedBlurTest, reporter, ctxInfo) {
         SkImageInfo screenII = SkImageInfo::Make(1024, 600, kRGBA_8888_SkColorType,
                                                  kPremul_SkAlphaType);
 
-        sk_sp<SkSurface> s = SkSurface::MakeRenderTarget(dContext, SkBudgeted::kYes,
-                                                         screenII, 1, kTopLeft_GrSurfaceOrigin,
-                                                         nullptr);
+        sk_sp<SkSurface> s = SkSurfaces::RenderTarget(
+                dContext, skgpu::Budgeted::kYes, screenII, 1, kTopLeft_GrSurfaceOrigin, nullptr);
         SkCanvas* c = s->getCanvas();
 
-        c->drawImageRect(bigImg, SkRect::MakeWH(1024, 600), nullptr);
+        c->drawImageRect(bigImg, SkRect::MakeWH(1024, 600), SkSamplingOptions());
 
         smImg = s->makeImageSnapshot();
     }
@@ -98,7 +121,8 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(RepeatedClippedBlurTest, reporter, ctxInfo) {
 
         SkRect dstRect = SkRect::MakeXYWH(offset.fX, offset.fY,
                                           outSubset.width(), outSubset.height());
-        dstCanvas->drawImageRect(filteredImg, outSubset, dstRect, nullptr);
+        dstCanvas->drawImageRect(filteredImg, SkRect::Make(outSubset), dstRect, SkSamplingOptions(),
+                                 nullptr, SkCanvas::kStrict_SrcRectConstraint);
 
         // Flush here to mimic Chrome's SkiaHelper::ApplyImageFilter
         dContext->flushAndSubmit();

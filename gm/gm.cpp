@@ -6,32 +6,32 @@
  */
 
 #include "gm/gm.h"
-#include "gm/verifiers/gmverifier.h"
+
+#include "gm/verifiers/gmverifier.h"  // IWYU pragma: keep
 #include "include/core/SkBitmap.h"
 #include "include/core/SkBlendMode.h"
 #include "include/core/SkCanvas.h"
-#include "include/core/SkFilterQuality.h"
 #include "include/core/SkFont.h"
 #include "include/core/SkFontTypes.h"
 #include "include/core/SkMatrix.h"
 #include "include/core/SkPaint.h"
 #include "include/core/SkRect.h"
-#include "include/core/SkShader.h"
+#include "include/core/SkSamplingOptions.h"
+#include "include/core/SkShader.h"  // IWYU pragma: keep
 #include "include/core/SkTileMode.h"
-#include "include/core/SkTypeface.h"
 #include "include/gpu/GrRecordingContext.h"
 #include "src/core/SkTraceEvent.h"
 #include "tools/ToolUtils.h"
 
-#include <stdarg.h>
-
-class GrRenderTargetContext;
+#include <atomic>
+#include <cstdarg>
+#include <cstdint>
 
 using namespace skiagm;
 
-constexpr char GM::kErrorMsg_DrawSkippedGpuOnly[];
+static void draw_failure_message(SkCanvas* canvas, const char format[], ...) SK_PRINTF_LIKE(2, 3);
 
-static void draw_failure_message(SkCanvas* canvas, const char format[], ...)  {
+static void draw_failure_message(SkCanvas* canvas, const char format[], ...) {
     SkString failureMsg;
 
     va_list argp;
@@ -59,8 +59,10 @@ static void draw_gpu_only_message(SkCanvas* canvas) {
     SkMatrix localM;
     localM.setRotate(35.f);
     localM.postTranslate(10.f, 0.f);
-    paint.setShader(bmp.makeShader(SkTileMode::kMirror, SkTileMode::kMirror, &localM));
-    paint.setFilterQuality(kMedium_SkFilterQuality);
+    paint.setShader(bmp.makeShader(SkTileMode::kMirror, SkTileMode::kMirror,
+                                   SkSamplingOptions(SkFilterMode::kLinear,
+                                                     SkMipmapMode::kNearest),
+                                   localM));
     canvas->drawPaint(paint);
 }
 
@@ -81,13 +83,13 @@ GM::GM(SkColor bgColor) {
 
 GM::~GM() {}
 
-DrawResult GM::gpuSetup(GrDirectContext* context, SkCanvas* canvas, SkString* errorMsg) {
+DrawResult GM::gpuSetup(SkCanvas* canvas, SkString* errorMsg) {
     TRACE_EVENT1("GM", TRACE_FUNC, "name", TRACE_STR_COPY(this->getName()));
     if (!fGpuSetup) {
         // When drawn in viewer, gpuSetup will be called multiple times with the same
         // GrContext.
         fGpuSetup = true;
-        fGpuSetupResult = this->onGpuSetup(context, errorMsg);
+        fGpuSetupResult = this->onGpuSetup(canvas, errorMsg);
     }
     if (DrawResult::kOk != fGpuSetupResult) {
         handle_gm_failure(canvas, fGpuSetupResult, *errorMsg);
@@ -142,9 +144,8 @@ DrawResult SimpleGM::onDraw(SkCanvas* canvas, SkString* errorMsg) {
 
 SkISize SimpleGpuGM::onISize() { return fSize; }
 SkString SimpleGpuGM::onShortName() { return fName; }
-DrawResult SimpleGpuGM::onDraw(GrRecordingContext* ctx, GrRenderTargetContext* rtc,
-                               SkCanvas* canvas, SkString* errorMsg) {
-    return fDrawProc(ctx, rtc, canvas, errorMsg);
+DrawResult SimpleGpuGM::onDraw(GrRecordingContext* rContext, SkCanvas* canvas, SkString* errorMsg) {
+    return fDrawProc(rContext, canvas, errorMsg);
 }
 
 const char* GM::getName() {
@@ -187,28 +188,30 @@ void GM::drawSizeBounds(SkCanvas* canvas, SkColor color) {
 // need to explicitly declare this, or we get some weird infinite loop llist
 template GMRegistry* GMRegistry::gHead;
 
-DrawResult GpuGM::onDraw(GrRecordingContext* ctx, GrRenderTargetContext* rtc, SkCanvas* canvas,
-                         SkString* errorMsg) {
-    this->onDraw(ctx, rtc, canvas);
+std::unique_ptr<verifiers::VerifierList> GpuGM::getVerifiers() const {
+    return nullptr;
+}
+
+DrawResult GpuGM::onDraw(GrRecordingContext* rContext, SkCanvas* canvas, SkString* errorMsg) {
+    this->onDraw(rContext, canvas);
     return DrawResult::kOk;
 }
-void GpuGM::onDraw(GrRecordingContext*, GrRenderTargetContext*, SkCanvas*) {
+void GpuGM::onDraw(GrRecordingContext*, SkCanvas*) {
     SK_ABORT("Not implemented.");
 }
 
 DrawResult GpuGM::onDraw(SkCanvas* canvas, SkString* errorMsg) {
 
-    auto ctx = canvas->recordingContext();
-    GrRenderTargetContext* rtc = canvas->internal_private_accessTopLayerRenderTargetContext();
-    if (!ctx || !rtc) {
+    auto rContext = canvas->recordingContext();
+    if (!rContext) {
         *errorMsg = kErrorMsg_DrawSkippedGpuOnly;
         return DrawResult::kSkip;
     }
-    if (ctx->abandoned()) {
+    if (rContext->abandoned()) {
         *errorMsg = "GrContext abandoned.";
         return DrawResult::kSkip;
     }
-    return this->onDraw(ctx, rtc, canvas, errorMsg);
+    return this->onDraw(rContext, canvas, errorMsg);
 }
 
 template <typename Fn>

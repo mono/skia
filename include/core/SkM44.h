@@ -9,9 +9,10 @@
 #define SkM44_DEFINED
 
 #include "include/core/SkMatrix.h"
+#include "include/core/SkRect.h"
 #include "include/core/SkScalar.h"
 
-struct SkV2 {
+struct SK_API SkV2 {
     float x, y;
 
     bool operator==(const SkV2 v) const { return x == v.x && y == v.y; }
@@ -29,6 +30,7 @@ struct SkV2 {
     friend SkV2 operator*(SkV2 v, SkScalar s) { return {v.x*s, v.y*s}; }
     friend SkV2 operator*(SkScalar s, SkV2 v) { return {v.x*s, v.y*s}; }
     friend SkV2 operator/(SkV2 v, SkScalar s) { return {v.x/s, v.y/s}; }
+    friend SkV2 operator/(SkScalar s, SkV2 v) { return {s/v.x, s/v.y}; }
 
     void operator+=(SkV2 v) { *this = *this + v; }
     void operator-=(SkV2 v) { *this = *this - v; }
@@ -47,7 +49,7 @@ struct SkV2 {
     float* ptr() { return &x; }
 };
 
-struct SkV3 {
+struct SK_API SkV3 {
     float x, y, z;
 
     bool operator==(const SkV3& v) const {
@@ -89,13 +91,18 @@ struct SkV3 {
     float* ptr() { return &x; }
 };
 
-struct SkV4 {
+struct SK_API SkV4 {
     float x, y, z, w;
 
     bool operator==(const SkV4& v) const {
         return x == v.x && y == v.y && z == v.z && w == v.w;
     }
     bool operator!=(const SkV4& v) const { return !(*this == v); }
+
+    static SkScalar Dot(const SkV4& a, const SkV4& b) {
+        return a.x*b.x + a.y*b.y + a.z*b.z + a.w*b.w;
+    }
+    static SkV4 Normalize(const SkV4& v) { return v * (1.0f / v.length()); }
 
     SkV4 operator-() const { return {-x, -y, -z, -w}; }
     SkV4 operator+(const SkV4& v) const { return { x + v.x, y + v.y, z + v.z, w + v.w }; }
@@ -108,6 +115,12 @@ struct SkV4 {
         return { v.x*s, v.y*s, v.z*s, v.w*s };
     }
     friend SkV4 operator*(SkScalar s, const SkV4& v) { return v*s; }
+
+    SkScalar lengthSquared() const { return Dot(*this, *this); }
+    SkScalar length() const { return SkScalarSqrt(Dot(*this, *this)); }
+
+    SkScalar dot(const SkV4& v) const { return Dot(*this, v); }
+    SkV4 normalize()            const { return Normalize(*this); }
 
     const float* ptr() const { return &x; }
     float* ptr() { return &x; }
@@ -224,6 +237,12 @@ public:
         m.setRotate(axis, radians);
         return m;
     }
+
+    // Scales and translates 'src' to fill 'dst' exactly.
+    static SkM44 RectToRect(const SkRect& src, const SkRect& dst);
+
+    static SkM44 LookAt(const SkV3& eye, const SkV3& center, const SkV3& up);
+    static SkM44 Perspective(float near, float far, float angle);
 
     bool operator==(const SkM44& other) const;
     bool operator!=(const SkM44& other) const {
@@ -373,7 +392,6 @@ public:
         auto v4 = this->map(v.x, v.y, v.z, 0);
         return {v4.x, v4.y, v4.z};
     }
-
     ////////////////////// Converting to/from SkMatrix
 
     /* When converting from SkM44 to SkMatrix, the third row and
@@ -401,6 +419,7 @@ public:
     SkM44& postTranslate(SkScalar x, SkScalar y, SkScalar z = 0);
 
     SkM44& preScale(SkScalar x, SkScalar y);
+    SkM44& preScale(SkScalar x, SkScalar y, SkScalar z);
     SkM44& preConcat(const SkMatrix&);
 
 private:
@@ -415,8 +434,5 @@ private:
 
     friend class SkMatrixPriv;
 };
-
-SkM44 Sk3LookAt(const SkV3& eye, const SkV3& center, const SkV3& up);
-SkM44 Sk3Perspective(float near, float far, float angle);
 
 #endif

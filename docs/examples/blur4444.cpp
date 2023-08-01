@@ -22,9 +22,9 @@ void draw(SkCanvas* canvas) {
     sk_sp<SkSurface> surf;
     auto ii = SkImageInfo::Make(650, 480, kARGB_4444_SkColorType, kPremul_SkAlphaType);
     if (canvas->recordingContext() && !forceRaster) {
-        surf = SkSurface::MakeRenderTarget(canvas->recordingContext(), SkBudgeted::kNo, ii);
+        surf = SkSurfaces::RenderTarget(canvas->recordingContext(), skgpu::Budgeted::kNo, ii);
     } else {
-        surf = SkSurface::MakeRaster(ii);
+        surf = SkSurfaces::Raster(ii);
     }
     if (!surf) {
         return;
@@ -36,7 +36,6 @@ void draw(SkCanvas* canvas) {
     SkPaint blrPaint;
     blrPaint.setAntiAlias(true);
     blrPaint.setMaskFilter(SkMaskFilter::MakeBlur(kNormal_SkBlurStyle, 12.047));
-    blrPaint.setFilterQuality(kLow_SkFilterQuality);
     blrPaint.setBlendMode(SkBlendMode::kSrc);
     blrPaint.setDither(dither);
 
@@ -57,6 +56,6 @@ void draw(SkCanvas* canvas) {
 
     SkPaint postPaint;
     postPaint.setDither(postDither);
-    surf->draw(canvas, 0, 0, &postPaint);
+    surf->draw(canvas, 0, 0, SkSamplingOptions(), &postPaint);
 }
 }  // END FIDDLE

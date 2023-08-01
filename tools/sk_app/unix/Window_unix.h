@@ -8,7 +8,7 @@
 #ifndef Window_unix_DEFINED
 #define Window_unix_DEFINED
 
-#include "include/private/SkChecksum.h"
+#include "src/core/SkChecksum.h"
 #include "src/core/SkTDynamicHash.h"
 #include "tools/sk_app/Window.h"
 
@@ -98,11 +98,9 @@ private:
     int      fPendingHeight;
     bool     fPendingResize;
 
-    BackendType fBackend;
+    BackendType fBackend = BackendType::kRaster_BackendType;
 
     std::string fClipboardText;
-
-    using INHERITED = Window;
 };
 
 }   // namespace sk_app

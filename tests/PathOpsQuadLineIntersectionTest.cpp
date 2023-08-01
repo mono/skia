@@ -4,14 +4,18 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
+#include "include/core/SkTypes.h"
+#include "include/private/base/SkDebug.h"
 #include "src/pathops/SkIntersections.h"
 #include "src/pathops/SkPathOpsLine.h"
+#include "src/pathops/SkPathOpsPoint.h"
 #include "src/pathops/SkPathOpsQuad.h"
 #include "src/pathops/SkReduceOrder.h"
-#include "tests/PathOpsExtendedTest.h"
 #include "tests/PathOpsTestCommon.h"
 #include "tests/Test.h"
 
+#include <array>
+#include <cstddef>
 #include <utility>
 
 static struct lineQuad {
@@ -28,7 +32,7 @@ static struct lineQuad {
     {{{{0, 0}, {0, 1}, {1, 1}}}, {{{0, 1}, {1, 0}}},  1,  {{.25, .75}, {0, 0}} },
 };
 
-static size_t lineQuadTests_count = SK_ARRAY_COUNT(lineQuadTests);
+static size_t lineQuadTests_count = std::size(lineQuadTests);
 
 static int doIntersect(SkIntersections& intersections, const SkDQuad& quad, const SkDLine& line,
                        bool& flipped) {
@@ -78,7 +82,7 @@ static struct oneLineQuad {
         {{{406.207703, 121.298294}, {348.781738, 123.864815}}}},
 };
 
-static size_t oneOffs_count = SK_ARRAY_COUNT(oneOffs);
+static size_t oneOffs_count = std::size(oneOffs);
 
 static void testOneOffs(skiatest::Reporter* reporter) {
     bool flipped = false;
@@ -98,7 +102,6 @@ static void testOneOffs(skiatest::Reporter* reporter) {
             SkDPoint lineXY = line.ptAtT(lineT);
             if (!quadXY.approximatelyEqual(lineXY)) {
                 quadXY.approximatelyEqual(lineXY);
-                SkDebugf("");
             }
             REPORTER_ASSERT(reporter, quadXY.approximatelyEqual(lineXY));
         }

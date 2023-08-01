@@ -7,13 +7,21 @@
 
 #include "src/utils/SkJSON.h"
 
+#include "include/core/SkData.h"
+#include "include/core/SkRefCnt.h"
 #include "include/core/SkStream.h"
 #include "include/core/SkString.h"
-#include "include/private/SkMalloc.h"
+#include "include/private/base/SkDebug.h"
+#include "include/private/base/SkMalloc.h"
+#include "include/private/base/SkTo.h"
 #include "include/utils/SkParse.h"
-#include "src/utils/SkUTF.h"
+#include "src/base/SkUTF.h"
 
 #include <cmath>
+#include <cstdint>
+#include <cstdlib>
+#include <limits>
+#include <new>
 #include <tuple>
 #include <vector>
 
@@ -137,7 +145,7 @@ public:
 
 private:
     // first byte reserved for tagging, \0 terminator => 6 usable chars
-    static constexpr size_t kMaxInlineStringSize = sizeof(Value) - 2;
+    inline static constexpr size_t kMaxInlineStringSize = sizeof(Value) - 2;
 
     void initLongString(const char* src, size_t size, SkArenaAlloc& alloc) {
         SkASSERT(size > kMaxInlineStringSize);
@@ -282,7 +290,7 @@ static inline float pow10(int32_t exp) {
        1.e+025f, 1.e+026f, 1.e+027f, 1.e+028f, 1.e+029f, 1.e+030f, 1.e+031f
     };
 
-    static constexpr int32_t k_exp_offset = SK_ARRAY_COUNT(g_pow10_table) / 2;
+    static constexpr int32_t k_exp_offset = std::size(g_pow10_table) / 2;
 
     // We only support negative exponents for now.
     SkASSERT(exp <= 0);
@@ -468,11 +476,11 @@ private:
     SkArenaAlloc&         fAlloc;
 
     // Pending values stack.
-    static constexpr size_t kValueStackReserve = 256;
+    inline static constexpr size_t kValueStackReserve = 256;
     std::vector<Value>    fValueStack;
 
     // String unescape buffer.
-    static constexpr size_t kUnescapeBufferReserve = 512;
+    inline static constexpr size_t kUnescapeBufferReserve = 512;
     std::vector<char>     fUnescapeBuffer;
 
     // Tracks the current object/array scope, as an index into fStack:
@@ -874,9 +882,9 @@ void Write(const Value& v, SkWStream* stream) {
         const auto& array = v.as<ArrayValue>();
         stream->writeText("[");
         bool first_value = true;
-        for (const auto& v : array) {
+        for (const auto& entry : array) {
             if (!first_value) stream->writeText(",");
-            Write(v, stream);
+            Write(entry, stream);
             first_value = false;
         }
         stream->writeText("]");

@@ -30,10 +30,10 @@ struct DashExample {
     int* pattern;
     int length;
 } dashExamples[] = {
-    { dash1, SK_ARRAY_COUNT(dash1) },
-    { dash2, SK_ARRAY_COUNT(dash2) },
-    { dash3, SK_ARRAY_COUNT(dash3) },
-    { dash4, SK_ARRAY_COUNT(dash4) }
+    { dash1, std::size(dash1) },
+    { dash2, std::size(dash2) },
+    { dash3, std::size(dash3) },
+    { dash4, std::size(dash4) }
 };
 
 
@@ -143,7 +143,7 @@ protected:
                 {0.1f  , 1.1f  }, // off is > 1*/
         };
 
-        static constexpr int kN = SK_ARRAY_COUNT(kIntervals);
+        static constexpr int kN = std::size(kIntervals);
         static constexpr SkScalar kRadius = 20.f;
         static constexpr SkScalar kStrokeWidth = 15.f;
         static constexpr SkScalar kPad = 5.f;
@@ -154,8 +154,8 @@ protected:
                                                 kThinRadius,  kThinRadius};
         static constexpr SkScalar kThinStrokeWidth = 0.4f;
 
-        sk_sp<SkPathEffect> deffects[SK_ARRAY_COUNT(kIntervals)];
-        sk_sp<SkPathEffect> thinDEffects[SK_ARRAY_COUNT(kIntervals)];
+        sk_sp<SkPathEffect> deffects[std::size(kIntervals)];
+        sk_sp<SkPathEffect> thinDEffects[std::size(kIntervals)];
         for (int i = 0; i < kN; ++i) {
             static constexpr SkScalar kTau = 2 * SK_ScalarPI;
             static constexpr SkScalar kCircumference = kRadius * kTau;
@@ -172,7 +172,7 @@ protected:
 
         SkMatrix rotate;
         rotate.setRotate(25.f);
-        static const SkMatrix kMatrices[]{
+        const SkMatrix kMatrices[]{
                 SkMatrix::I(),
             SkMatrix::Scale(1.2f, 1.2f),
                 SkMatrix::MakeAll(1, 0, 0, 0, -1, 0, 0, 0, 1),  // y flipper
@@ -191,8 +191,8 @@ protected:
 
         // Compute the union of bounds of all of our test cases.
         SkRect bounds = SkRect::MakeEmpty();
-        static const SkRect kBounds = kThinCircle.makeOutset(kThinStrokeWidth / 2.f,
-                                                             kThinStrokeWidth / 2.f);
+        const SkRect kBounds = kThinCircle.makeOutset(kThinStrokeWidth / 2.f,
+                                                      kThinStrokeWidth / 2.f);
         for (const auto& m : kMatrices) {
             SkRect devBounds;
             m.mapRect(&devBounds, kBounds);
@@ -201,7 +201,7 @@ protected:
 
         canvas->save();
         canvas->translate(-bounds.fLeft + kPad, -bounds.fTop + kPad);
-        for (size_t i = 0; i < SK_ARRAY_COUNT(deffects); ++i) {
+        for (size_t i = 0; i < std::size(deffects); ++i) {
             canvas->save();
             for (const auto& m : kMatrices) {
                 canvas->save();

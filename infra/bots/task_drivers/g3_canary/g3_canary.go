@@ -10,6 +10,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"net/http"
 	"strconv"
 	"time"
 
@@ -22,6 +23,7 @@ import (
 	"go.skia.org/infra/go/httputils"
 	"go.skia.org/infra/go/skerr"
 	"go.skia.org/infra/go/sklog"
+	"go.skia.org/infra/promk/go/pushgateway"
 	"go.skia.org/infra/task_driver/go/lib/auth_steps"
 	"go.skia.org/infra/task_driver/go/lib/checkout"
 	"go.skia.org/infra/task_driver/go/td"
@@ -30,11 +32,17 @@ import (
 const (
 	g3CanaryBucketName = "g3-compile-tasks"
 
-	InfraFailureErrorMsg    = "Your run failed due to unknown infrastructure failures. Ask the trooper to investigate (or directly ping rmistry@)."
+	InfraFailureErrorMsg    = "Your run failed due to unknown infrastructure failures. Ask the Infra Gardener to investigate (or file a bug at go/autoroll-bug)."
 	MissingApprovalErrorMsg = "To run the G3 tryjob, changes must be either owned and authored by Googlers or approved (Code-Review+1) by Googlers."
 	MergeConflictErrorMsg   = "G3 tryjob failed because the change is causing a merge conflict when applying it to the Skia hash in G3."
 
 	PatchingInformation = "Tip: If needed, could try patching in the CL into a local G3 client with \"g4 patch\" and then hacking on it."
+
+	// Metric constants for pushgateway.
+	jobName                    = "g3-canary"
+	metricName                 = "g3_canary_infra_failure"
+	metricValue_NoInfraFailure = "0"
+	metricValue_InfraFailure   = "1"
 )
 
 type CanaryStatusType string
@@ -78,7 +86,7 @@ func main() {
 	}
 
 	// Create token source with scope for GCS access.
-	ts, err := auth_steps.Init(ctx, *local, auth.SCOPE_USERINFO_EMAIL, auth.SCOPE_FULL_CONTROL)
+	ts, err := auth_steps.Init(ctx, *local, auth.ScopeUserinfoEmail, auth.ScopeFullControl)
 	if err != nil {
 		td.Fatal(ctx, skerr.Wrap(err))
 	}
@@ -122,7 +130,7 @@ func main() {
 	td.StepText(ctx, "Canary roll doc", "https://goto.google.com/autoroller-canary-bots")
 
 	// Wait for the canary roll to finish.
-	if err := waitForCanaryRoll(ctx, taskFileName, taskStoragePath, gcsClient); err != nil {
+	if err := waitForCanaryRoll(ctx, taskFileName, taskStoragePath, client, gcsClient); err != nil {
 		td.Fatal(ctx, skerr.Wrap(err))
 	}
 }
@@ -154,12 +162,15 @@ func triggerCanaryRoll(ctx context.Context, issue, patchset, taskFileName, taskS
 	return nil
 }
 
-func waitForCanaryRoll(parentCtx context.Context, taskFileName, taskStoragePath string, gcsClient gcs.GCSClient) error {
+func waitForCanaryRoll(parentCtx context.Context, taskFileName, taskStoragePath string, httpClient *http.Client, gcsClient gcs.GCSClient) error {
 	ctx := td.StartStep(parentCtx, td.Props("Wait for canary roll"))
 	defer td.EndStep(ctx)
 
+	// For updating g3_canary_infra_failure metric after run completes.
+	pg := pushgateway.New(httpClient, jobName, pushgateway.DefaultPushgatewayURL)
+
 	// For writing to the step's log stream.
-	stdout := td.NewLogStream(ctx, "stdout", td.Info)
+	stdout := td.NewLogStream(ctx, "stdout", td.SeverityInfo)
 	// Lets add the roll link only once to step data.
 	addedRollLinkStepData := false
 	for {
@@ -196,20 +207,24 @@ func waitForCanaryRoll(parentCtx context.Context, taskFileName, taskStoragePath 
 			time.Sleep(30 * time.Second)
 			continue
 		case ExceptionStatus:
-			if task.Error == "" {
-				return td.FailStep(ctx, fmt.Errorf("Run failed with: %s", task.Error))
-			} else {
-				// Use a general purpose error message.
-				return td.FailStep(ctx, errors.New(InfraFailureErrorMsg))
+			if task.Error != "" {
+				sklog.Errorf("Run failed with: %s", task.Error)
 			}
+			pg.Push(ctx, metricName, metricValue_InfraFailure)
+			// Use a general purpose error message.
+			return td.FailStep(ctx, errors.New(InfraFailureErrorMsg))
 		case MissingApprovalStatus:
+			pg.Push(ctx, metricName, metricValue_NoInfraFailure)
 			return td.FailStep(ctx, errors.New(MissingApprovalErrorMsg))
 		case MergeConflictStatus:
+			pg.Push(ctx, metricName, metricValue_NoInfraFailure)
 			return td.FailStep(ctx, errors.New(MergeConflictErrorMsg))
 		case FailureStatus:
+			pg.Push(ctx, metricName, metricValue_NoInfraFailure)
 			return td.FailStep(ctx, fmt.Errorf("Run failed G3 TAP.\n%s", PatchingInformation))
 		case SuccessStatus:
 			// Run passed G3 TAP.
+			pg.Push(ctx, metricName, metricValue_NoInfraFailure)
 			return nil
 		}
 	}

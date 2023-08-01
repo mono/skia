@@ -5,12 +5,27 @@
  * found in the LICENSE file.
  */
 
-#include "include/core/SkMatrix.h"
+#include "include/core/SkPath.h"
+#include "include/core/SkPathTypes.h"
+#include "include/core/SkPoint.h"
+#include "include/core/SkRect.h"
+#include "include/core/SkTypes.h"
 #include "include/pathops/SkPathOps.h"
-#include "src/core/SkArenaAlloc.h"
+#include "include/private/base/SkPathEnums.h"
+#include "include/private/base/SkTArray.h"
+#include "include/private/base/SkTDArray.h"
+#include "include/private/base/SkTo.h"
+#include "src/base/SkArenaAlloc.h"
 #include "src/core/SkPathPriv.h"
+#include "src/pathops/SkOpContour.h"
 #include "src/pathops/SkOpEdgeBuilder.h"
+#include "src/pathops/SkOpSegment.h"
+#include "src/pathops/SkOpSpan.h"
 #include "src/pathops/SkPathOpsCommon.h"
+#include "src/pathops/SkPathOpsTypes.h"
+#include "src/pathops/SkPathWriter.h"
+
+#include <cstdint>
 
 static bool one_contour(const SkPath& path) {
     SkSTArenaAlloc<256> allocator;
@@ -109,7 +124,7 @@ bool SkOpBuilder::FixWinding(SkPath* path) {
 }
 
 void SkOpBuilder::add(const SkPath& path, SkPathOp op) {
-    if (0 == fOps.count() && op != kUnion_SkPathOp) {
+    if (fOps.empty() && op != kUnion_SkPathOp) {
         fPathRefs.push_back() = SkPath();
         *fOps.append() = kUnion_SkPathOp;
     }
@@ -118,7 +133,7 @@ void SkOpBuilder::add(const SkPath& path, SkPathOp op) {
 }
 
 void SkOpBuilder::reset() {
-    fPathRefs.reset();
+    fPathRefs.clear();
     fOps.reset();
 }
 
@@ -127,7 +142,7 @@ void SkOpBuilder::reset() {
    ops one at a time. */
 bool SkOpBuilder::resolve(SkPath* result) {
     SkPath original = *result;
-    int count = fOps.count();
+    int count = fOps.size();
     bool allUnion = true;
     SkPathFirstDirection firstDir = SkPathFirstDirection::kUnknown;
     for (int index = 0; index < count; ++index) {

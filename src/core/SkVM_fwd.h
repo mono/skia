@@ -7,18 +7,19 @@
 
 #ifndef SkVM_fwd_DEFINED
 #define SkVM_fwd_DEFINED
+#if defined(SK_ENABLE_SKVM)
 
 namespace skvm {
     class Assembler;
     class Builder;
     class Program;
-    struct Arg;
+    struct Ptr;
     struct I32;
     struct F32;
     struct Color;
-    struct Color_Q14;
     struct Coord;
     struct Uniforms;
 }  // namespace skvm
 
-#endif//SkVM_fwd_DEFINED
+#endif  // defined(SK_ENABLE_SKVM)
+#endif  // SkVM_fwd_DEFINED

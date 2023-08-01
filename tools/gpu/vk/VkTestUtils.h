@@ -12,23 +12,35 @@
 
 #ifdef SK_VULKAN
 
-#include "include/gpu/vk/GrVkBackendContext.h"
-#include "include/gpu/vk/GrVkTypes.h"
+#include "include/gpu/vk/VulkanBackendContext.h"
 #include "tools/gpu/vk/GrVulkanDefines.h"
 #include <functional>
 
-class GrVkExtensions;
 struct GrVkBackendContext;
 
+namespace skgpu {
+struct VulkanBackendContext;
+class VulkanExtensions;
+}
+
 namespace sk_gpu_test {
-    bool LoadVkLibraryAndGetProcAddrFuncs(PFN_vkGetInstanceProcAddr*, PFN_vkGetDeviceProcAddr*);
+    bool LoadVkLibraryAndGetProcAddrFuncs(PFN_vkGetInstanceProcAddr*);
 
     using CanPresentFn = std::function<bool(VkInstance, VkPhysicalDevice,
                                             uint32_t queueFamilyIndex)>;
 
-    bool CreateVkBackendContext(GrVkGetProc getProc,
+    bool CreateVkBackendContext(PFN_vkGetInstanceProcAddr getInstProc,
+                                skgpu::VulkanBackendContext* ctx,
+                                skgpu::VulkanExtensions*,
+                                VkPhysicalDeviceFeatures2*,
+                                VkDebugReportCallbackEXT* debugCallback,
+                                uint32_t* presentQueueIndexPtr = nullptr,
+                                CanPresentFn canPresent = CanPresentFn(),
+                                bool isProtected = false);
+
+    bool CreateVkBackendContext(PFN_vkGetInstanceProcAddr getInstProc,
                                 GrVkBackendContext* ctx,
-                                GrVkExtensions*,
+                                skgpu::VulkanExtensions*,
                                 VkPhysicalDeviceFeatures2*,
                                 VkDebugReportCallbackEXT* debugCallback,
                                 uint32_t* presentQueueIndexPtr = nullptr,

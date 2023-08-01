@@ -8,48 +8,76 @@
 #ifndef SKSL_FUNCTIONDECLARATION
 #define SKSL_FUNCTIONDECLARATION
 
-#include "include/private/SkTArray.h"
-#include "src/sksl/ir/SkSLExpression.h"
-#include "src/sksl/ir/SkSLModifiers.h"
+#include "include/core/SkSpan.h"
+#include "include/core/SkTypes.h"
+#include "include/private/base/SkTArray.h"
+#include "src/sksl/SkSLIntrinsicList.h"
+#include "src/sksl/ir/SkSLIRNode.h"
 #include "src/sksl/ir/SkSLSymbol.h"
-#include "src/sksl/ir/SkSLSymbolTable.h"
-#include "src/sksl/ir/SkSLType.h"
-#include "src/sksl/ir/SkSLVariable.h"
+
+#include <memory>
+#include <string>
+#include <string_view>
 
 namespace SkSL {
 
+class Context;
+class ExpressionArray;
 class FunctionDefinition;
+class Position;
+class Type;
+class Variable;
+
+struct Modifiers;
 
 /**
  * A function declaration (not a definition -- does not contain a body).
  */
 class FunctionDeclaration final : public Symbol {
 public:
-    static constexpr Kind kSymbolKind = Kind::kFunctionDeclaration;
+    inline static constexpr Kind kIRNodeKind = Kind::kFunctionDeclaration;
 
-    FunctionDeclaration(int offset, ModifiersPool::Handle modifiers, StringFragment name,
-                        std::vector<const Variable*> parameters, const Type* returnType,
-                        bool builtin)
-    : INHERITED(offset, kSymbolKind, name, /*type=*/nullptr)
-    , fDefinition(nullptr)
-    , fModifiersHandle(modifiers)
-    , fParameters(std::move(parameters))
-    , fReturnType(returnType)
-    , fBuiltin(builtin) {}
+    FunctionDeclaration(Position pos,
+                        const Modifiers* modifiers,
+                        std::string_view name,
+                        skia_private::TArray<Variable*> parameters,
+                        const Type* returnType,
+                        bool builtin);
+
+    static FunctionDeclaration* Convert(const Context& context,
+                                        Position pos,
+                                        Position modifiersPos,
+                                        const Modifiers* modifiers,
+                                        std::string_view name,
+                                        skia_private::TArray<std::unique_ptr<Variable>> parameters,
+                                        Position returnTypePos,
+                                        const Type* returnType);
+
+    void addParametersToSymbolTable(const Context& context);
 
     const Modifiers& modifiers() const {
-        return *fModifiersHandle;
+        return *fModifiers;
+    }
+
+    void setModifiers(const Modifiers* m) {
+        fModifiers = m;
     }
 
     const FunctionDefinition* definition() const {
         return fDefinition;
     }
 
-    void setDefinition(const FunctionDefinition* definition) const {
+    void setDefinition(const FunctionDefinition* definition) {
         fDefinition = definition;
+        fIntrinsicKind = kNotIntrinsic;
     }
 
-    const std::vector<const Variable*>& parameters() const {
+    void setNextOverload(FunctionDeclaration* overload) {
+        SkASSERT(!overload || overload->name() == this->name());
+        fNextOverload = overload;
+    }
+
+    SkSpan<Variable* const> parameters() const {
         return fParameters;
     }
 
@@ -61,34 +89,31 @@ public:
         return fBuiltin;
     }
 
-    String description() const override {
-        String result = this->returnType().displayName() + " " + this->name() + "(";
-        String separator;
-        for (auto p : this->parameters()) {
-            result += separator;
-            separator = ", ";
-            result += p->type().displayName();
-        }
-        result += ")";
-        return result;
+    bool isMain() const {
+        return fIsMain;
     }
 
-    bool matches(const FunctionDeclaration& f) const {
-        if (this->name() != f.name()) {
-            return false;
-        }
-        const std::vector<const Variable*>& parameters = this->parameters();
-        const std::vector<const Variable*>& otherParameters = f.parameters();
-        if (parameters.size() != otherParameters.size()) {
-            return false;
-        }
-        for (size_t i = 0; i < parameters.size(); i++) {
-            if (parameters[i]->type() != otherParameters[i]->type()) {
-                return false;
-            }
-        }
-        return true;
+    IntrinsicKind intrinsicKind() const {
+        return fIntrinsicKind;
     }
+
+    bool isIntrinsic() const {
+        return this->intrinsicKind() != kNotIntrinsic;
+    }
+
+    const FunctionDeclaration* nextOverload() const {
+        return fNextOverload;
+    }
+
+    FunctionDeclaration* mutableNextOverload() const {
+        return fNextOverload;
+    }
+
+    std::string mangledName() const;
+
+    std::string description() const override;
+
+    bool matches(const FunctionDeclaration& f) const;
 
     /**
      * Determine the effective types of this function's parameters and return value when called with
@@ -105,52 +130,20 @@ public:
      * that each argument can actually be coerced to the final parameter type, respecting the
      * narrowing-conversions flag. This is handled in callCost(), or in convertCall() (via coerce).
      */
-    using ParamTypes = SkSTArray<8, const Type*>;
+    using ParamTypes = skia_private::STArray<8, const Type*>;
     bool determineFinalTypes(const ExpressionArray& arguments,
-                             ParamTypes* outParameterTypes, const Type** outReturnType) const {
-        const std::vector<const Variable*>& parameters = this->parameters();
-        SkASSERT(arguments.size() == parameters.size());
-
-        outParameterTypes->reserve_back(arguments.size());
-        int genericIndex = -1;
-        for (size_t i = 0; i < arguments.size(); i++) {
-            const Type& parameterType = parameters[i]->type();
-            if (parameterType.typeKind() == Type::TypeKind::kGeneric) {
-                const std::vector<const Type*>& types = parameterType.coercibleTypes();
-                if (genericIndex == -1) {
-                    for (size_t j = 0; j < types.size(); j++) {
-                        if (arguments[i]->type().canCoerceTo(*types[j], /*allowNarrowing=*/true)) {
-                            genericIndex = j;
-                            break;
-                        }
-                    }
-                    if (genericIndex == -1) {
-                        return false;
-                    }
-                }
-                outParameterTypes->push_back(types[genericIndex]);
-            } else {
-                outParameterTypes->push_back(&parameterType);
-            }
-        }
-        const Type& returnType = this->returnType();
-        if (returnType.typeKind() == Type::TypeKind::kGeneric) {
-            if (genericIndex == -1) {
-                return false;
-            }
-            *outReturnType = returnType.coercibleTypes()[genericIndex];
-        } else {
-            *outReturnType = &returnType;
-        }
-        return true;
-    }
+                             ParamTypes* outParameterTypes,
+                             const Type** outReturnType) const;
 
 private:
-    mutable const FunctionDefinition* fDefinition;
-    ModifiersPool::Handle fModifiersHandle;
-    std::vector<const Variable*> fParameters;
+    const FunctionDefinition* fDefinition;
+    FunctionDeclaration* fNextOverload = nullptr;
+    const Modifiers* fModifiers;
+    skia_private::TArray<Variable*> fParameters;
     const Type* fReturnType;
     bool fBuiltin;
+    bool fIsMain;
+    mutable IntrinsicKind fIntrinsicKind = kNotIntrinsic;
 
     using INHERITED = Symbol;
 };
