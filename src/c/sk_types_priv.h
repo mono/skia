@@ -12,7 +12,7 @@
 
 #include "include/c/sk_types.h"
 
-#include "include/core/SkTypes.h" // required to make sure SK_SUPPORT_GPU is defined
+#include "include/core/SkTypes.h" // required to make sure SK_GANESH is defined
 
 #define SK_SKIP_ARG__(keep, skip, ...) skip
 #define SK_SKIP_ARG_(args) SK_SKIP_ARG__ args
@@ -22,7 +22,7 @@
 #define SK_FIRST_ARG_(args) SK_FIRST_ARG__ args
 #define SK_FIRST_ARG(...) SK_FIRST_ARG_((__VA_ARGS__, ))
 
-#if SK_SUPPORT_GPU
+#if defined(SK_GANESH)
 #    include "include/gpu/GrDirectContext.h"
 #    include "include/gpu/GrBackendSurface.h"
 #    include "include/gpu/gl/GrGLInterface.h"
@@ -31,7 +31,7 @@
 #    if SK_VULKAN
 #        include "include/gpu/vk/GrVkTypes.h"
 #        include "include/gpu/vk/GrVkBackendContext.h"
-#        include "include/gpu/vk/GrVkExtensions.h"
+#        include "include/gpu/vk/VulkanExtensions.h"
 #        define SK_ONLY_VULKAN(...) SK_FIRST_ARG(__VA_ARGS__)
 #    else
 #        define SK_ONLY_VULKAN(...) SK_SKIP_ARG(__VA_ARGS__)
@@ -41,11 +41,11 @@
 #    else
 #        define SK_ONLY_METAL(...) SK_SKIP_ARG(__VA_ARGS__)
 #    endif
-#else // !SK_SUPPORT_GPU
+#else // !SK_GANESH
 #    define SK_ONLY_GPU(...) SK_SKIP_ARG(__VA_ARGS__)
 #    define SK_ONLY_VULKAN(...) SK_SKIP_ARG(__VA_ARGS__)
 #    define SK_ONLY_METAL(...) SK_SKIP_ARG(__VA_ARGS__)
-#endif // SK_SUPPORT_GPU
+#endif // SK_GANESH
 
 
 // Define a mapping between a C++ type and the C type.
@@ -85,7 +85,7 @@
 #define DEF_CLASS_MAP(SkType, sk_type, Name)                   \
     DEF_MAP_DECL(SkType, sk_type, Name, class SkType, )
 
-#define DEF_CLASS_MAP_WITH_NS(Ns, SkType, sk_type, Name)        \
+#define DEF_CLASS_MAP_WITH_NS(Ns, SkType, sk_type, Name)       \
     DEF_MAP_DECL(SkType, sk_type, Name, class SkType, Ns)
 
 #define DEF_STRUCT_MAP(SkType, sk_type, Name)                  \
@@ -94,7 +94,9 @@
 #define DEF_MAP(SkType, sk_type, Name)                         \
     DEF_MAP_DECL(SkType, sk_type, Name, ,)
 
-DEF_CLASS_MAP(Sk3DView, sk_3dview_t, 3DView)
+#define DEF_MAP_WITH_NS(Ns, SkType, sk_type, Name)             \
+    DEF_MAP_DECL(SkType, sk_type, Name, , Ns)
+
 DEF_CLASS_MAP(SkBitmap, sk_bitmap_t, Bitmap)
 DEF_CLASS_MAP(SkCanvas, sk_canvas_t, Canvas)
 DEF_CLASS_MAP(SkCodec, sk_codec_t, Codec)
@@ -106,6 +108,7 @@ DEF_CLASS_MAP(SkDrawable, sk_drawable_t, Drawable)
 DEF_CLASS_MAP(SkDynamicMemoryWStream, sk_wstream_dynamicmemorystream_t, DynamicMemoryWStream)
 DEF_CLASS_MAP(SkFILEStream, sk_stream_filestream_t, FileStream)
 DEF_CLASS_MAP(SkFILEWStream, sk_wstream_filestream_t, FileWStream)
+DEF_CLASS_MAP(SkFlattenable, sk_flattenable_t, Flattenable)
 DEF_CLASS_MAP(SkFont, sk_font_t, Font)
 DEF_CLASS_MAP(SkFontMgr, sk_fontmgr_t, FontMgr)
 DEF_CLASS_MAP(SkFontStyle, sk_fontstyle_t, FontStyle)
@@ -113,7 +116,6 @@ DEF_CLASS_MAP(SkFontStyleSet, sk_fontstyleset_t, FontStyleSet)
 DEF_CLASS_MAP(SkImage, sk_image_t, Image)
 DEF_CLASS_MAP(SkImageFilter, sk_imagefilter_t, ImageFilter)
 DEF_CLASS_MAP(SkMaskFilter, sk_maskfilter_t, MaskFilter)
-DEF_CLASS_MAP(SkMatrix44, sk_matrix44_t, Matrix44)
 DEF_CLASS_MAP(SkMemoryStream, sk_stream_memorystream_t, MemoryStream)
 DEF_CLASS_MAP(SkNWayCanvas, sk_nway_canvas_t, NWayCanvas)
 DEF_CLASS_MAP(SkNoDrawCanvas, sk_nodraw_canvas_t, NoDrawCanvas)
@@ -148,7 +150,7 @@ DEF_CLASS_MAP(GrRecordingContext, gr_recording_context_t, GrRecordingContext)
 DEF_CLASS_MAP(GrBackendTexture, gr_backendtexture_t, GrBackendTexture)
 DEF_CLASS_MAP(GrBackendRenderTarget, gr_backendrendertarget_t, GrBackendRenderTarget)
 
-DEF_CLASS_MAP(GrVkExtensions, gr_vk_extensions_t, GrVkExtensions)
+DEF_MAP_WITH_NS(skgpu, VulkanExtensions, gr_vk_extensions_t, GrVkExtensions)
 
 DEF_STRUCT_MAP(skcms_ICCProfile, sk_colorspace_icc_profile_t, ColorSpaceIccProfile)
 DEF_STRUCT_MAP(SkColorSpacePrimaries, sk_colorspace_primaries_t, ColorSpacePrimaries)
@@ -163,6 +165,8 @@ DEF_STRUCT_MAP(SkPoint3, sk_point3_t, Point3)
 DEF_STRUCT_MAP(SkRect, sk_rect_t, Rect)
 DEF_STRUCT_MAP(SkRSXform, sk_rsxform_t, RSXform)
 DEF_STRUCT_MAP(SkSize, sk_size_t, Size)
+DEF_STRUCT_MAP(SkCubicResampler, sk_cubic_resampler_t, CubicResampler)
+DEF_STRUCT_MAP(SkSamplingOptions, sk_sampling_options_t, SamplingOptions)
 
 DEF_STRUCT_MAP(GrGLTextureInfo, gr_gl_textureinfo_t, GrGLTextureInfo)
 DEF_STRUCT_MAP(GrGLFramebufferInfo, gr_gl_framebufferinfo_t, GrGLFramebufferInfo)
@@ -183,9 +187,6 @@ DEF_MAP(SkCodec::Options, sk_codec_options_t, CodecOptions)
 
 #include "include/core/SkColor.h"
 DEF_MAP(SkColor4f, sk_color4f_t, Color4f)
-
-#include "include/core/SkImageFilter.h"
-DEF_MAP(SkImageFilter::CropRect, sk_imagefilter_croprect_t, ImageFilterCropRect)
 
 #include "include/encode/SkJpegEncoder.h"
 DEF_MAP(SkJpegEncoder::Options, sk_jpegencoder_options_t, JpegEncoderOptions)
@@ -242,6 +243,63 @@ static inline sk_matrix_t ToMatrix(const SkMatrix& matrix) {
     m.persp0 = matrix.get(SkMatrix::kMPersp0);
     m.persp1 = matrix.get(SkMatrix::kMPersp1);
     m.persp2 = matrix.get(SkMatrix::kMPersp2);
+    return m;
+}
+
+#include "include/core/SkM44.h"
+static inline SkM44 AsM44(const sk_matrix44_t* matrix) {
+    return SkM44(
+        matrix->m00, matrix->m01, matrix->m02, matrix->m03,
+        matrix->m10, matrix->m11, matrix->m12, matrix->m13,
+        matrix->m20, matrix->m21, matrix->m22, matrix->m23,
+        matrix->m30, matrix->m31, matrix->m32, matrix->m33);
+}
+static inline sk_matrix44_t ToM44(const SkM44* matrix) {
+    sk_matrix44_t m;
+    // row 0
+    m.m00 = matrix->rc(0, 0);
+    m.m01 = matrix->rc(0, 1);
+    m.m02 = matrix->rc(0, 2);
+    m.m03 = matrix->rc(0, 3);
+    // row 1
+    m.m10 = matrix->rc(1, 0);
+    m.m11 = matrix->rc(1, 1);
+    m.m12 = matrix->rc(1, 2);
+    m.m13 = matrix->rc(1, 3);
+    // row 2
+    m.m20 = matrix->rc(2, 0);
+    m.m21 = matrix->rc(2, 1);
+    m.m22 = matrix->rc(2, 2);
+    m.m23 = matrix->rc(2, 3);
+    // row 3
+    m.m30 = matrix->rc(3, 0);
+    m.m31 = matrix->rc(3, 1);
+    m.m32 = matrix->rc(3, 2);
+    m.m33 = matrix->rc(3, 3);
+    return m;
+}
+static inline sk_matrix44_t ToM44(const SkM44& matrix) {
+    sk_matrix44_t m;
+    // row 0
+    m.m00 = matrix.rc(0, 0);
+    m.m01 = matrix.rc(0, 1);
+    m.m02 = matrix.rc(0, 2);
+    m.m03 = matrix.rc(0, 3);
+    // row 1
+    m.m10 = matrix.rc(1, 0);
+    m.m11 = matrix.rc(1, 1);
+    m.m12 = matrix.rc(1, 2);
+    m.m13 = matrix.rc(1, 3);
+    // row 2
+    m.m20 = matrix.rc(2, 0);
+    m.m21 = matrix.rc(2, 1);
+    m.m22 = matrix.rc(2, 2);
+    m.m23 = matrix.rc(2, 3);
+    // row 3
+    m.m30 = matrix.rc(3, 0);
+    m.m31 = matrix.rc(3, 1);
+    m.m32 = matrix.rc(3, 2);
+    m.m33 = matrix.rc(3, 3);
     return m;
 }
 
@@ -330,7 +388,7 @@ DEF_CLASS_MAP_WITH_NS(skottie, MarkerObserver, skottie_marker_observer_t, Skotti
 #include "modules/sksg/include/SkSGInvalidationController.h"
 DEF_CLASS_MAP_WITH_NS(sksg, InvalidationController, sksg_invalidation_controller_t, SksgInvalidationController)
 
-#if SK_SUPPORT_GPU
+#if defined(SK_GANESH)
 // GPU specific
 
 static inline GrContextOptions AsGrContextOptions(const gr_context_options_t* options) {
@@ -344,7 +402,7 @@ static inline GrContextOptions AsGrContextOptions(const gr_context_options_t* op
     return opts;
 }
 
-#if SK_VULKAN
+#if defined(SK_VULKAN)
 #define DEF_MAP_VK(VkType, vk_type)                 \
     static inline VkType As##VkType(vk_type* t) {   \
         return reinterpret_cast<VkType>(t);         \
@@ -359,7 +417,7 @@ DEF_MAP_VK(VkPhysicalDevice, vk_physical_device_t);
 DEF_MAP_VK(VkQueue, vk_queue_t);
 DEF_MAP(VkPhysicalDeviceFeatures, vk_physical_device_features_t, VkPhysicalDeviceFeatures);
 DEF_MAP(VkPhysicalDeviceFeatures2, vk_physical_device_features_2_t, VkPhysicalDeviceFeatures2);
-DEF_MAP(GrVkMemoryAllocator, gr_vk_memory_allocator_t, GrVkMemoryAllocator);
+DEF_MAP_WITH_NS(skgpu, VulkanMemoryAllocator, gr_vk_memory_allocator_t, GrVkMemoryAllocator);
 
 static inline GrVkBackendContext AsGrVkBackendContext(const gr_vk_backendcontext_t* context) {
     GrVkBackendContext ctx;
@@ -389,7 +447,7 @@ static inline GrVkBackendContext AsGrVkBackendContext(const gr_vk_backendcontext
 
 #endif // SK_VULKAN
 
-#if SK_METAL
+#if defined(SK_METAL)
 
 static inline GrMtlTextureInfo AsGrMtlTextureInfo(const gr_mtl_textureinfo_t* mtlInfo) {
     GrMtlTextureInfo info;
@@ -399,6 +457,6 @@ static inline GrMtlTextureInfo AsGrMtlTextureInfo(const gr_mtl_textureinfo_t* mt
 
 #endif // SK_METAL
 
-#endif // SK_SUPPORT_GPU
+#endif // SK_GANESH
 
 #endif

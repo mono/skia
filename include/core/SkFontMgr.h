@@ -86,8 +86,6 @@ public:
                                                 const char* bcp47[], int bcp47Count,
                                                 SkUnichar character) const;
 
-    SkTypeface* matchFaceStyle(const SkTypeface*, const SkFontStyle&) const;
-
     /**
      *  Create a typeface for the specified data and TTC index (pass 0 for none)
      *  or NULL if the data is not recognized. The caller must call unref() on
@@ -118,6 +116,7 @@ public:
     /** Return the default fontmgr. */
     static sk_sp<SkFontMgr> RefDefault();
 
+    /** Construct a new instance of the fontmgr. */
     static sk_sp<SkFontMgr> MakeDefault() { return SkFontMgr::Factory(); }
 
     /* Returns an empty font manager without any typeface dependencies */

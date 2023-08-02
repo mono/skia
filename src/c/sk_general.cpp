@@ -7,7 +7,6 @@
 
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkTypes.h"
-#include "include/private/GrTypesPriv.h"
 
 #include "include/c/sk_types.h"
 #include "include/c/sk_general.h"

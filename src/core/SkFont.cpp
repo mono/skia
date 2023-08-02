@@ -222,10 +222,8 @@ size_t SkFont::breakText(const void* text, size_t byteLength, SkTextEncoding enc
 
     SkASSERT(text != nullptr);
 
-    SkStrikeSpec strikeSpec = SkStrikeSpec::MakeCanonicalized(*this, paint);
+    auto [strikeSpec, scale] = SkStrikeSpec::MakeCanonicalized(*this, paint);
     SkBulkGlyphMetrics metrics{strikeSpec};
-
-    SkScalar scale = strikeSpec.strikeToSourceRatio();
 
     // adjust max instead of each glyph
     if (scale) {
@@ -241,16 +239,33 @@ size_t SkFont::breakText(const void* text, size_t byteLength, SkTextEncoding enc
 
         // read the glyph and move the pointer
         SkGlyphID glyphID;
-        if (encoding == SkTextEncoding::kGlyphID) {
-            auto glyphs = (const uint16_t*)start;
-            glyphID = *glyphs;
-            glyphs++;
-            start = (const char*)glyphs;
-        } else {
-            auto t = (const void*)start;
-            auto unichar = SkUTFN_Next(encoding, &t, stop);
-            start = (const char*)t;
-            glyphID = unicharToGlyph(unichar);
+        switch (encoding) {
+            case SkTextEncoding::kGlyphID: {
+                auto glyphs = (const uint16_t*)start;
+                glyphID = *glyphs;
+                glyphs++;
+                start = (const char*)glyphs;
+            } break;
+            case SkTextEncoding::kUTF8: {
+                const char* ptr = (const char*)start;
+                auto unichar = SkUTF::NextUTF8(&ptr, (const char*)stop);
+                start = (const char*)ptr;
+                glyphID = unicharToGlyph(unichar);
+            } break;
+            case SkTextEncoding::kUTF16: {
+                const uint16_t* ptr = (const uint16_t*)start;
+                auto unichar = SkUTF::NextUTF16(&ptr, (const uint16_t*)stop);
+                start = (const char*)ptr;
+                glyphID = unicharToGlyph(unichar);
+            } break;
+            case SkTextEncoding::kUTF32: {
+                const int32_t* ptr = (const int32_t*)start;
+                auto unichar = SkUTF::NextUTF32(&ptr, (const int32_t*)stop);
+                start = (const char*)ptr;
+                glyphID = unicharToGlyph(unichar);
+            } break;
+            default:
+                SK_ABORT("unexpected enum");
         }
 
         auto glyph = metrics.glyph(glyphID);

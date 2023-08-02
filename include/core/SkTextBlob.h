@@ -395,7 +395,8 @@ public:
                                  const SkRect* bounds = nullptr);
 
     // RunBuffer.pos points to SkRSXform array
-    const RunBuffer& allocRunRSXform(const SkFont& font, int count);
+    const RunBuffer& allocRunRSXform(const SkFont& font, int count,
+                                     const SkRect* bounds = nullptr);
 
     /** Returns run with storage for glyphs, text, and clusters. Caller must
         write count glyphs to RunBuffer::glyphs, textByteCount UTF-8 code units

@@ -11,6 +11,7 @@
 
 #include "include/core/SkTypes.h"
 #include "include/core/SkDrawable.h"
+#include "include/core/SkPicture.h"
 
 class SkCanvas;
 class SkPicture;
@@ -29,15 +30,17 @@ public:
     ~SkManagedDrawable() override;
 
 public:
-    typedef void       (*DrawProc)               (SkManagedDrawable* d, void* context, SkCanvas* canvas);
-    typedef void       (*GetBoundsProc)          (SkManagedDrawable* d, void* context, SkRect* rect);
-    typedef SkPicture* (*NewPictureSnapshotProc) (SkManagedDrawable* d, void* context);
-    typedef void       (*DestroyProc)            (SkManagedDrawable* d, void* context);
+    typedef void             (*DrawProc)                 (SkManagedDrawable* d, void* context, SkCanvas* canvas);
+    typedef void             (*GetBoundsProc)            (SkManagedDrawable* d, void* context, SkRect* rect);
+    typedef size_t           (*ApproximateBytesUsedProc) (SkManagedDrawable* d, void* context);
+    typedef sk_sp<SkPicture> (*MakePictureSnapshotProc)  (SkManagedDrawable* d, void* context);
+    typedef void             (*DestroyProc)              (SkManagedDrawable* d, void* context);
 
     struct Procs {
         DrawProc fDraw = nullptr;
         GetBoundsProc fGetBounds = nullptr;
-        NewPictureSnapshotProc fNewPictureSnapshot = nullptr;
+        ApproximateBytesUsedProc fApproximateBytesUsed = nullptr;
+        MakePictureSnapshotProc fMakePictureSnapshot = nullptr;
         DestroyProc fDestroy = nullptr;
     };
 
@@ -46,7 +49,8 @@ public:
 protected:
     void onDraw(SkCanvas*) override;
     SkRect onGetBounds() override;
-    SkPicture* onNewPictureSnapshot() override;
+    size_t onApproximateBytesUsed() override;
+    sk_sp<SkPicture> onMakePictureSnapshot() override;
 
 private:
     void* fContext;

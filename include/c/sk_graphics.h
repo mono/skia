@@ -29,8 +29,6 @@ SK_C_API size_t sk_graphics_set_font_cache_limit(size_t bytes);
 SK_C_API int sk_graphics_get_font_cache_count_used(void);
 SK_C_API int sk_graphics_get_font_cache_count_limit(void);
 SK_C_API int sk_graphics_set_font_cache_count_limit(int count);
-SK_C_API int sk_graphics_get_font_cache_point_size_limit(void);
-SK_C_API int sk_graphics_set_font_cache_point_size_limit(int maxPointSize);
 
 // resource cache
 SK_C_API size_t sk_graphics_get_resource_cache_total_bytes_used(void);

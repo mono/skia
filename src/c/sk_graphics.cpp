@@ -53,14 +53,6 @@ int sk_graphics_set_font_cache_count_limit(int count) {
     return SkGraphics::SetFontCacheCountLimit(count);
 }
 
-int sk_graphics_get_font_cache_point_size_limit(void) {
-    return SkGraphics::GetFontCachePointSizeLimit();
-}
-
-int sk_graphics_set_font_cache_point_size_limit(int maxPointSize) {
-    return SkGraphics::SetFontCachePointSizeLimit(maxPointSize);
-}
-
 size_t sk_graphics_get_resource_cache_total_bytes_used(void) {
     return SkGraphics::GetResourceCacheTotalBytesUsed();
 }

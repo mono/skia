@@ -25,6 +25,18 @@ gr_backend_t gr_recording_context_get_backend(gr_recording_context_t* context) {
     return SK_ONLY_GPU((gr_backend_t)AsGrRecordingContext(context)->backend(), (gr_backend_t)0);
 }
 
+bool gr_recording_context_is_abandoned(gr_recording_context_t* context) {
+    return SK_ONLY_GPU(AsGrRecordingContext(context)->abandoned(), true);
+}
+
+int gr_recording_context_max_texture_size(gr_recording_context_t* context) {
+    return SK_ONLY_GPU(AsGrRecordingContext(context)->maxTextureSize(), 0);
+}
+
+int gr_recording_context_max_render_target_size(gr_recording_context_t* context) {
+    return SK_ONLY_GPU(AsGrRecordingContext(context)->maxRenderTargetSize(), 0);
+}
+
 
 // GrDirectContext
 
@@ -37,7 +49,7 @@ gr_direct_context_t* gr_direct_context_make_gl_with_options(const gr_glinterface
         GrContextOptions opts;
         if (options) {
             opts = AsGrContextOptions(options);
-        });
+        })
     return SK_ONLY_GPU(ToGrDirectContext(GrDirectContext::MakeGL(sk_ref_sp(AsGrGLInterface(glInterface)), opts).release()), nullptr);
 }
 
@@ -50,7 +62,7 @@ gr_direct_context_t* gr_direct_context_make_vulkan_with_options(const gr_vk_back
         GrContextOptions opts;
         if (options) {
             opts = AsGrContextOptions(options);
-        });
+        })
     return SK_ONLY_VULKAN(ToGrDirectContext(GrDirectContext::MakeVulkan(AsGrVkBackendContext(&vkBackendContext), opts).release()), nullptr);
 }
 
@@ -63,7 +75,7 @@ gr_direct_context_t* gr_direct_context_make_metal_with_options(void* device, voi
         GrContextOptions opts;
         if (options) {
             opts = AsGrContextOptions(options);
-        });
+        })
     return SK_ONLY_METAL(ToGrDirectContext(GrDirectContext::MakeMetal(device, queue, opts).release()), nullptr);
 }
 
@@ -165,7 +177,7 @@ bool gr_glinterface_has_extension(const gr_glinterface_t* glInterface, const cha
 // GrVkExtensions
 
 gr_vk_extensions_t* gr_vk_extensions_new(void) {
-    return SK_ONLY_VULKAN(ToGrVkExtensions(new GrVkExtensions()), nullptr);
+    return SK_ONLY_VULKAN(ToGrVkExtensions(new skgpu::VulkanExtensions()), nullptr);
 }
 
 void gr_vk_extensions_delete(gr_vk_extensions_t* extensions) {

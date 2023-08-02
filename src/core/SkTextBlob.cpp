@@ -548,8 +548,8 @@ const SkTextBlobBuilder::RunBuffer& SkTextBlobBuilder::allocRunPos(const SkFont&
 }
 
 const SkTextBlobBuilder::RunBuffer&
-SkTextBlobBuilder::allocRunRSXform(const SkFont& font, int count) {
-    this->allocInternal(font, SkTextBlob::kRSXform_Positioning, count, 0, {0, 0}, nullptr);
+SkTextBlobBuilder::allocRunRSXform(const SkFont& font, int count, const SkRect* bounds) {
+    this->allocInternal(font, SkTextBlob::kRSXform_Positioning, count, 0, {0, 0}, bounds);
     return fCurrentRunBuffer;
 }
 

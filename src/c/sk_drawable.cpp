@@ -7,6 +7,7 @@
  */
 
 #include "include/core/SkDrawable.h"
+#include "include/core/SkPicture.h"
 
 #include "include/c/sk_drawable.h"
 #include "include/c/sk_picture.h"
@@ -39,7 +40,7 @@ void sk_drawable_draw(sk_drawable_t* d, sk_canvas_t* c, const sk_matrix_t* matri
 
 sk_picture_t* sk_drawable_new_picture_snapshot(sk_drawable_t* d)
 {
-    return ToPicture(AsDrawable(d)->newPictureSnapshot());
+    return ToPicture(AsDrawable(d)->makePictureSnapshot().release());
 }
 
 void sk_drawable_notify_drawing_changed(sk_drawable_t* d)

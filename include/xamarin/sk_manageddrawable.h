@@ -17,15 +17,17 @@ SK_C_PLUS_PLUS_BEGIN_GUARD
 
 typedef struct sk_manageddrawable_t sk_manageddrawable_t;
 
-typedef void          (*sk_manageddrawable_draw_proc)               (sk_manageddrawable_t* d, void* context, sk_canvas_t* ccanvas);
-typedef void          (*sk_manageddrawable_getBounds_proc)          (sk_manageddrawable_t* d, void* context, sk_rect_t* rect);
-typedef sk_picture_t* (*sk_manageddrawable_newPictureSnapshot_proc) (sk_manageddrawable_t* d, void* context);
-typedef void          (*sk_manageddrawable_destroy_proc)            (sk_manageddrawable_t* d, void* context);
+typedef void          (*sk_manageddrawable_draw_proc)                  (sk_manageddrawable_t* d, void* context, sk_canvas_t* ccanvas);
+typedef void          (*sk_manageddrawable_getBounds_proc)             (sk_manageddrawable_t* d, void* context, sk_rect_t* rect);
+typedef size_t        (*sk_manageddrawable_approximateBytesUsed_proc)  (sk_manageddrawable_t* d, void* context);
+typedef sk_picture_t* (*sk_manageddrawable_makePictureSnapshot_proc)   (sk_manageddrawable_t* d, void* context);
+typedef void          (*sk_manageddrawable_destroy_proc)               (sk_manageddrawable_t* d, void* context);
 
 typedef struct {
     sk_manageddrawable_draw_proc fDraw;
     sk_manageddrawable_getBounds_proc fGetBounds;
-    sk_manageddrawable_newPictureSnapshot_proc fNewPictureSnapshot;
+    sk_manageddrawable_approximateBytesUsed_proc fApproximateBytesUsed;
+    sk_manageddrawable_makePictureSnapshot_proc fMakePictureSnapshot;
     sk_manageddrawable_destroy_proc fDestroy;
 } sk_manageddrawable_procs_t;
 

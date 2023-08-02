@@ -54,10 +54,6 @@ sk_shader_t* sk_shader_new_blend(sk_blendmode_t mode, const sk_shader_t* dst, co
     return ToShader(SkShaders::Blend((SkBlendMode)mode, sk_ref_sp(AsShader(dst)), sk_ref_sp(AsShader(src))).release());
 }
 
-sk_shader_t* sk_shader_new_lerp(float t, const sk_shader_t* dst, const sk_shader_t* src) {
-    return ToShader(SkShaders::Lerp(t, sk_ref_sp(AsShader(dst)), sk_ref_sp(AsShader(src))).release());
-}
-
 // SkGradientShader
 
 sk_shader_t* sk_shader_new_linear_gradient(const sk_point_t points[2], const sk_color_t colors[], const float colorPos[], int colorCount, sk_shader_tilemode_t tileMode, const sk_matrix_t* localMatrix) {
@@ -124,8 +120,4 @@ sk_shader_t* sk_shader_new_perlin_noise_fractal_noise(float baseFrequencyX, floa
 
 sk_shader_t* sk_shader_new_perlin_noise_turbulence(float baseFrequencyX, float baseFrequencyY, int numOctaves, float seed, const sk_isize_t* tileSize) {
     return ToShader(SkPerlinNoiseShader::MakeTurbulence(baseFrequencyX, baseFrequencyY,  numOctaves,  seed,  AsISize(tileSize)).release());
-}
-
-sk_shader_t* sk_shader_new_perlin_noise_improved_noise(float baseFrequencyX, float baseFrequencyY, int numOctaves, float z) {
-    return ToShader(SkPerlinNoiseShader::MakeImprovedNoise(baseFrequencyX, baseFrequencyY, numOctaves, z).release());
 }

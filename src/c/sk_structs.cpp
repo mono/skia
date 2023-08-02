@@ -25,12 +25,12 @@
 #include "include/effects/SkHighContrastFilter.h"
 #include "src/core/SkMask.h"
 
-#if SK_SUPPORT_GPU
+#if defined(SK_GANESH)
 #include "include/gpu/GrTypes.h"
 #include "include/gpu/GrContextOptions.h"
 #include "include/gpu/gl/GrGLTypes.h"
 
-#if SK_VULKAN
+#if defined(SK_VULKAN)
 #include "include/gpu/vk/GrVkTypes.h"
 #endif
 
@@ -69,12 +69,14 @@ static_assert (sizeof (sk_textblob_builder_runbuffer_t) == sizeof (SkTextBlobBui
 static_assert (sizeof (sk_rsxform_t) == sizeof (SkRSXform), ASSERT_MSG(SkRSXform, sk_rsxform_t));
 static_assert (sizeof (sk_color4f_t) == sizeof (SkColor4f), ASSERT_MSG(SkColor4f, sk_color4f_t));
 static_assert (sizeof (sk_colorspace_xyz_t) == sizeof (skcms_Matrix3x3), ASSERT_MSG(skcms_Matrix3x3, sk_colorspace_xyz_t));
+static_assert (sizeof (sk_cubic_resampler_t) == sizeof (SkCubicResampler), ASSERT_MSG(SkCubicResampler, sk_cubic_resampler_t));
+static_assert (sizeof (sk_sampling_options_t) == sizeof (SkSamplingOptions), ASSERT_MSG(SkSamplingOptions, sk_sampling_options_t));
 
-#if SK_SUPPORT_GPU
+#if defined(SK_GANESH)
 static_assert (sizeof (gr_gl_framebufferinfo_t) == sizeof (GrGLFramebufferInfo), ASSERT_MSG(GrGLFramebufferInfo, gr_gl_framebufferinfo_t));
 static_assert (sizeof (gr_gl_textureinfo_t) == sizeof (GrGLTextureInfo), ASSERT_MSG(GrGLTextureInfo, gr_gl_textureinfo_t));
 
-#if SK_VULKAN
+#if defined(SK_VULKAN)
 static_assert (sizeof (gr_vk_alloc_t) == sizeof (GrVkAlloc), ASSERT_MSG(GrVkAlloc, gr_vk_alloc_t));
 static_assert (sizeof (gr_vk_imageinfo_t) == sizeof (GrVkImageInfo), ASSERT_MSG(GrVkImageInfo, gr_vk_imageinfo_t));
 static_assert (sizeof (gr_vk_ycbcrconversioninfo_t) == sizeof (GrVkYcbcrConversionInfo), ASSERT_MSG(GrVkYcbcrConversionInfo, gr_vk_ycbcrconversioninfo_t));

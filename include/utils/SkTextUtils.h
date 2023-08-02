@@ -19,6 +19,7 @@ class SkCanvas;
 class SkFont;
 class SkPaint;
 class SkPath;
+struct SkPoint;
 
 class SK_API SkTextUtils {
 public:
