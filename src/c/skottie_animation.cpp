@@ -8,7 +8,7 @@
 #include "src/utils/SkJSON.h"
 #include "include/core/SkCubicMap.h"
 
-void skottie_animation_keepalive() {
+void skottie_animation_keepalive(void) {
     // This function is needed on Tizen to ensure required types are kept alive
     // It is not meant to be executed.
 

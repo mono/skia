@@ -6,7 +6,7 @@
 
 #include "src/c/sk_types_priv.h"
 
-sksg_invalidation_controller_t* sksg_invalidation_controller_new() {
+sksg_invalidation_controller_t* sksg_invalidation_controller_new(void) {
     return ToSksgInvalidationController(new sksg::InvalidationController());
 }
 
