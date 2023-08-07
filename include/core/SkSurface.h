@@ -941,7 +941,7 @@ public:
                                             SkColorType colorType,
                                             sk_sp<SkColorSpace> colorSpace,
                                             const SkSurfaceProps* surfaceProps)
-            SK_API_AVAILABLE(macos(10.11), ios(9.0));
+            SK_API_AVAILABLE(macos(10.11), ios(9.0), tvos(9.0));
 #endif  // defined(SK_GANESH) && defined(SK_METAL)
 
 #endif  // !defined(SK_DISABLE_LEGACY_SKSURFACE_FACTORIES)

@@ -203,7 +203,7 @@ bool MtlCommandBuffer::beginRenderPass(const RenderPassDesc& renderPassDesc,
             colorAttachment.resolveTexture = ((MtlTexture*)resolveTexture)->mtlTexture();
             // Inclusion of a resolve texture implies the client wants to finish the
             // renderpass with a resolve.
-            if (@available(macOS 10.12, iOS 10.0, *)) {
+            if (@available(macOS 10.12, iOS 10.0, tvOS 10.0, *)) {
                 SkASSERT(colorAttachment.storeAction == MTLStoreActionDontCare);
                 colorAttachment.storeAction = MTLStoreActionMultisampleResolve;
             } else {
@@ -588,7 +588,7 @@ void MtlCommandBuffer::drawIndexed(PrimitiveType type, unsigned int baseIndex,
                                    unsigned int indexCount, unsigned int baseVertex) {
     SkASSERT(fActiveRenderCommandEncoder);
 
-    if (@available(macOS 10.11, iOS 9.0, *)) {
+    if (@available(macOS 10.11, iOS 9.0, tvOS 9.0, *)) {
         auto mtlPrimitiveType = graphite_to_mtl_primitive(type);
         size_t indexOffset =  fCurrentIndexBufferOffset + sizeof(uint16_t )* baseIndex;
         // Use the "instance" variant witha count of 1 so that we can pass in a base vertex
@@ -622,7 +622,7 @@ void MtlCommandBuffer::drawIndexedInstanced(PrimitiveType type,
                                             unsigned int instanceCount) {
     SkASSERT(fActiveRenderCommandEncoder);
 
-    if (@available(macOS 10.11, iOS 9.0, *)) {
+    if (@available(macOS 10.11, iOS 9.0, tvOS 9.0, *)) {
         auto mtlPrimitiveType = graphite_to_mtl_primitive(type);
         size_t indexOffset =  fCurrentIndexBufferOffset + sizeof(uint16_t) * baseIndex;
         fActiveRenderCommandEncoder->drawIndexedPrimitives(mtlPrimitiveType, indexCount,
@@ -638,7 +638,7 @@ void MtlCommandBuffer::drawIndirect(PrimitiveType type) {
     SkASSERT(fActiveRenderCommandEncoder);
     SkASSERT(fCurrentIndirectBuffer);
 
-    if (@available(macOS 10.11, iOS 9.0, *)) {
+    if (@available(macOS 10.11, iOS 9.0, tvOS 9.0, *)) {
         auto mtlPrimitiveType = graphite_to_mtl_primitive(type);
         fActiveRenderCommandEncoder->drawPrimitives(
                 mtlPrimitiveType, fCurrentIndirectBuffer, fCurrentIndirectBufferOffset);
@@ -651,7 +651,7 @@ void MtlCommandBuffer::drawIndexedIndirect(PrimitiveType type) {
     SkASSERT(fActiveRenderCommandEncoder);
     SkASSERT(fCurrentIndirectBuffer);
 
-    if (@available(macOS 10.11, iOS 9.0, *)) {
+    if (@available(macOS 10.11, iOS 9.0, tvOS 9.0, *)) {
         auto mtlPrimitiveType = graphite_to_mtl_primitive(type);
         fActiveRenderCommandEncoder->drawIndexedPrimitives(mtlPrimitiveType,
                                                            MTLIndexTypeUInt32,
