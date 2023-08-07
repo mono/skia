@@ -363,6 +363,32 @@ static_assert ((int)SkRRect::Corner::kLowerLeft_Corner    == (int)LOWER_LEFT_SK_
 static_assert ((int)skottie::Animation::kSkipTopLevelIsolation      == (int)SKIP_TOP_LEVEL_ISOLATION,      ASSERT_MSG(skottie::Animation, skottie_animation_renderflags_t));
 static_assert ((int)skottie::Animation::kDisableTopLevelClipping    == (int)DISABLE_TOP_LEVEL_CLIPPING,    ASSERT_MSG(skottie::Animation, skottie_animation_renderflags_t));
 
+// sk_runtimeeffect_uniform_type_t
+static_assert ((int)SkRuntimeEffect::Uniform::Type::kFloat      == (int)FLOAT_SK_RUNTIMEEFFECT_UNIFORM_TYPE,      ASSERT_MSG(SkRuntimeEffect::Uniform::Type, sk_runtimeeffect_uniform_type_t));
+static_assert ((int)SkRuntimeEffect::Uniform::Type::kFloat2     == (int)FLOAT2_SK_RUNTIMEEFFECT_UNIFORM_TYPE,     ASSERT_MSG(SkRuntimeEffect::Uniform::Type, sk_runtimeeffect_uniform_type_t));
+static_assert ((int)SkRuntimeEffect::Uniform::Type::kFloat3     == (int)FLOAT3_SK_RUNTIMEEFFECT_UNIFORM_TYPE,     ASSERT_MSG(SkRuntimeEffect::Uniform::Type, sk_runtimeeffect_uniform_type_t));
+static_assert ((int)SkRuntimeEffect::Uniform::Type::kFloat4     == (int)FLOAT4_SK_RUNTIMEEFFECT_UNIFORM_TYPE,     ASSERT_MSG(SkRuntimeEffect::Uniform::Type, sk_runtimeeffect_uniform_type_t));
+static_assert ((int)SkRuntimeEffect::Uniform::Type::kFloat2x2   == (int)FLOAT2X2_SK_RUNTIMEEFFECT_UNIFORM_TYPE,   ASSERT_MSG(SkRuntimeEffect::Uniform::Type, sk_runtimeeffect_uniform_type_t));
+static_assert ((int)SkRuntimeEffect::Uniform::Type::kFloat3x3   == (int)FLOAT3X3_SK_RUNTIMEEFFECT_UNIFORM_TYPE,   ASSERT_MSG(SkRuntimeEffect::Uniform::Type, sk_runtimeeffect_uniform_type_t));
+static_assert ((int)SkRuntimeEffect::Uniform::Type::kFloat4x4   == (int)FLOAT4X4_SK_RUNTIMEEFFECT_UNIFORM_TYPE,   ASSERT_MSG(SkRuntimeEffect::Uniform::Type, sk_runtimeeffect_uniform_type_t));
+static_assert ((int)SkRuntimeEffect::Uniform::Type::kInt        == (int)INT_SK_RUNTIMEEFFECT_UNIFORM_TYPE,        ASSERT_MSG(SkRuntimeEffect::Uniform::Type, sk_runtimeeffect_uniform_type_t));
+static_assert ((int)SkRuntimeEffect::Uniform::Type::kInt2       == (int)INT2_SK_RUNTIMEEFFECT_UNIFORM_TYPE,       ASSERT_MSG(SkRuntimeEffect::Uniform::Type, sk_runtimeeffect_uniform_type_t));
+static_assert ((int)SkRuntimeEffect::Uniform::Type::kInt3       == (int)INT3_SK_RUNTIMEEFFECT_UNIFORM_TYPE,       ASSERT_MSG(SkRuntimeEffect::Uniform::Type, sk_runtimeeffect_uniform_type_t));
+static_assert ((int)SkRuntimeEffect::Uniform::Type::kInt4       == (int)INT4_SK_RUNTIMEEFFECT_UNIFORM_TYPE,       ASSERT_MSG(SkRuntimeEffect::Uniform::Type, sk_runtimeeffect_uniform_type_t));
+
+// sk_runtimeeffect_child_type_t
+static_assert ((int)SkRuntimeEffect::ChildType::kShader        == (int)SHADER_SK_RUNTIMEEFFECT_CHILD_TYPE,         ASSERT_MSG(SkRuntimeEffect::ChildType, sk_runtimeeffect_child_type_t));
+static_assert ((int)SkRuntimeEffect::ChildType::kColorFilter   == (int)COLOR_FILTER_SK_RUNTIMEEFFECT_CHILD_TYPE,   ASSERT_MSG(SkRuntimeEffect::ChildType, sk_runtimeeffect_child_type_t));
+static_assert ((int)SkRuntimeEffect::ChildType::kBlender       == (int)BLENDER_SK_RUNTIMEEFFECT_CHILD_TYPE,        ASSERT_MSG(SkRuntimeEffect::ChildType, sk_runtimeeffect_child_type_t));
+
+// sk_runtimeeffect_uniform_flags_t
+static_assert ((int)0                                                      == (int)NONE_SK_RUNTIMEEFFECT_UNIFORM_FLAGS,             ASSERT_MSG(SkRuntimeEffect::Uniform::Flags, sk_runtimeeffect_uniform_flags_t));
+static_assert ((int)SkRuntimeEffect::Uniform::Flags::kArray_Flag           == (int)ARRAY_SK_RUNTIMEEFFECT_UNIFORM_FLAGS,            ASSERT_MSG(SkRuntimeEffect::Uniform::Flags, sk_runtimeeffect_uniform_flags_t));
+static_assert ((int)SkRuntimeEffect::Uniform::Flags::kColor_Flag           == (int)COLOR_SK_RUNTIMEEFFECT_UNIFORM_FLAGS,            ASSERT_MSG(SkRuntimeEffect::Uniform::Flags, sk_runtimeeffect_uniform_flags_t));
+static_assert ((int)SkRuntimeEffect::Uniform::Flags::kVertex_Flag          == (int)VERTEX_SK_RUNTIMEEFFECT_UNIFORM_FLAGS,           ASSERT_MSG(SkRuntimeEffect::Uniform::Flags, sk_runtimeeffect_uniform_flags_t));
+static_assert ((int)SkRuntimeEffect::Uniform::Flags::kFragment_Flag        == (int)FRAGMENT_SK_RUNTIMEEFFECT_UNIFORM_FLAGS,         ASSERT_MSG(SkRuntimeEffect::Uniform::Flags, sk_runtimeeffect_uniform_flags_t));
+static_assert ((int)SkRuntimeEffect::Uniform::Flags::kHalfPrecision_Flag   == (int)HALF_PRECISION_SK_RUNTIMEEFFECT_UNIFORM_FLAGS,   ASSERT_MSG(SkRuntimeEffect::Uniform::Flags, sk_runtimeeffect_uniform_flags_t));
+
 #if defined(SK_GANESH)
 
 // gr_surfaceorigin_t

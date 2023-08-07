@@ -23,6 +23,7 @@
 #include "include/core/SkTextBlob.h"
 #include "include/core/SkTime.h"
 #include "include/effects/SkHighContrastFilter.h"
+#include "include/effects/SkRuntimeEffect.h"
 #include "src/core/SkMask.h"
 
 #if defined(SK_GANESH)
@@ -71,6 +72,8 @@ static_assert (sizeof (sk_color4f_t) == sizeof (SkColor4f), ASSERT_MSG(SkColor4f
 static_assert (sizeof (sk_colorspace_xyz_t) == sizeof (skcms_Matrix3x3), ASSERT_MSG(skcms_Matrix3x3, sk_colorspace_xyz_t));
 static_assert (sizeof (sk_cubic_resampler_t) == sizeof (SkCubicResampler), ASSERT_MSG(SkCubicResampler, sk_cubic_resampler_t));
 static_assert (sizeof (sk_sampling_options_t) == sizeof (SkSamplingOptions), ASSERT_MSG(SkSamplingOptions, sk_sampling_options_t));
+static_assert (sizeof (sk_runtimeeffect_uniform_t) == sizeof (SkRuntimeEffect::Uniform), ASSERT_MSG(SkRuntimeEffect::Uniform, sk_runtimeeffect_uniform_t));
+static_assert (sizeof (sk_runtimeeffect_child_t) == sizeof (SkRuntimeEffect::Child), ASSERT_MSG(SkRuntimeEffect::Child, sk_runtimeeffect_child_t));
 
 #if defined(SK_GANESH)
 static_assert (sizeof (gr_gl_framebufferinfo_t) == sizeof (GrGLFramebufferInfo), ASSERT_MSG(GrGLFramebufferInfo, gr_gl_framebufferinfo_t));

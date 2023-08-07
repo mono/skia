@@ -15,8 +15,6 @@
 
 #include "src/c/sk_types_priv.h"
 
-// sk_runtimeeffect_t
-
 sk_runtimeeffect_t* sk_runtimeeffect_make_for_color_filter(sk_string_t* sksl, sk_string_t* error) {
     auto [effect, errorMessage] = SkRuntimeEffect::MakeForColorFilter(AsString(*sksl));
     if (error && errorMessage.size() > 0)
@@ -66,7 +64,7 @@ sk_colorfilter_t* sk_runtimeeffect_make_color_filter(sk_runtimeeffect_t* effect,
     return ToColorFilter(shader.release());
 }
 
-size_t sk_runtimeeffect_get_uniform_size(const sk_runtimeeffect_t* effect) {
+size_t sk_runtimeeffect_get_uniform_byte_size(const sk_runtimeeffect_t* effect) {
     return AsRuntimeEffect(effect)->uniformSize();
 }
 
@@ -76,18 +74,19 @@ size_t sk_runtimeeffect_get_uniforms_size(const sk_runtimeeffect_t* effect) {
 
 void sk_runtimeeffect_get_uniform_name(const sk_runtimeeffect_t* effect, int index, sk_string_t* name) {
     auto vector = AsRuntimeEffect(effect)->uniforms();
-    auto item = vector.begin() + index;
-    AsString(name)->set(item->name);
+    auto item = vector[index];
+    AsString(name)->set(item.name);
 }
 
-const sk_runtimeeffect_uniform_t* sk_runtimeeffect_get_uniform_from_index(const sk_runtimeeffect_t* effect, int index) {
-    auto vector = AsRuntimeEffect(effect)->uniforms();
-    auto item = vector.begin() + index;
-    return ToRuntimeEffectUniform(&(*item));
+void sk_runtimeeffect_get_uniform_from_index(const sk_runtimeeffect_t* effect, int index, sk_runtimeeffect_uniform_t* cuniform) {
+    auto uniforms = AsRuntimeEffect(effect)->uniforms();
+    auto uniform = uniforms.begin() + index;
+    *cuniform = *ToRuntimeEffectUniform(uniform);
+    // return ToRuntimeEffectUniform(&(*uniform));
 }
 
-const sk_runtimeeffect_uniform_t* sk_runtimeeffect_get_uniform_from_name(const sk_runtimeeffect_t* effect, const char* name, size_t len) {
-    return ToRuntimeEffectUniform(AsRuntimeEffect(effect)->findUniform(name));
+void sk_runtimeeffect_get_uniform_from_name(const sk_runtimeeffect_t* effect, const char* name, size_t len, sk_runtimeeffect_uniform_t* cuniform) {
+    *cuniform = *ToRuntimeEffectUniform(AsRuntimeEffect(effect)->findUniform(std::string_view(name, len)));
 }
 
 size_t sk_runtimeeffect_get_children_size(const sk_runtimeeffect_t* effect) {
@@ -96,16 +95,17 @@ size_t sk_runtimeeffect_get_children_size(const sk_runtimeeffect_t* effect) {
 
 void sk_runtimeeffect_get_child_name(const sk_runtimeeffect_t* effect, int index, sk_string_t* name) {
     auto vector = AsRuntimeEffect(effect)->children();
-    auto item = vector.begin() + index;
-    AsString(name)->set(item->name);
+    auto item = vector[index];
+    AsString(name)->set(item.name);
 }
 
-// sk_runtimeeffect_uniform_t
-
-size_t sk_runtimeeffect_uniform_get_offset(const sk_runtimeeffect_uniform_t* variable) {
-    return AsRuntimeEffectUniform(variable)->offset;
+void sk_runtimeeffect_get_child_from_index(const sk_runtimeeffect_t* effect, int index, sk_runtimeeffect_child_t* cchild) {
+    auto children = AsRuntimeEffect(effect)->children();
+    auto child = children.begin() + index;
+    *cchild = *ToRuntimeEffectChild(child);
+    // return ToRuntimeEffectUniform(&(*child));
 }
 
-size_t sk_runtimeeffect_uniform_get_size_in_bytes(const sk_runtimeeffect_uniform_t* variable) {
-    return AsRuntimeEffectUniform(variable)->sizeInBytes();
+void sk_runtimeeffect_get_child_from_name(const sk_runtimeeffect_t* effect, const char* name, size_t len, sk_runtimeeffect_child_t* cchild) {
+    *cchild = *ToRuntimeEffectChild(AsRuntimeEffect(effect)->findChild(std::string_view(name, len)));
 }

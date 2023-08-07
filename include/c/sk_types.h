@@ -991,7 +991,51 @@ typedef struct {
 typedef struct sk_tracememorydump_t sk_tracememorydump_t;
 
 typedef struct sk_runtimeeffect_t sk_runtimeeffect_t;
-typedef struct sk_runtimeeffect_uniform_t sk_runtimeeffect_uniform_t;
+
+typedef enum {
+    FLOAT_SK_RUNTIMEEFFECT_UNIFORM_TYPE,
+    FLOAT2_SK_RUNTIMEEFFECT_UNIFORM_TYPE,
+    FLOAT3_SK_RUNTIMEEFFECT_UNIFORM_TYPE,
+    FLOAT4_SK_RUNTIMEEFFECT_UNIFORM_TYPE,
+    FLOAT2X2_SK_RUNTIMEEFFECT_UNIFORM_TYPE,
+    FLOAT3X3_SK_RUNTIMEEFFECT_UNIFORM_TYPE,
+    FLOAT4X4_SK_RUNTIMEEFFECT_UNIFORM_TYPE,
+    INT_SK_RUNTIMEEFFECT_UNIFORM_TYPE,
+    INT2_SK_RUNTIMEEFFECT_UNIFORM_TYPE,
+    INT3_SK_RUNTIMEEFFECT_UNIFORM_TYPE,
+    INT4_SK_RUNTIMEEFFECT_UNIFORM_TYPE,
+} sk_runtimeeffect_uniform_type_t;
+
+typedef enum {
+    SHADER_SK_RUNTIMEEFFECT_CHILD_TYPE,
+    COLOR_FILTER_SK_RUNTIMEEFFECT_CHILD_TYPE,
+    BLENDER_SK_RUNTIMEEFFECT_CHILD_TYPE,
+} sk_runtimeeffect_child_type_t;
+
+typedef enum {
+    NONE_SK_RUNTIMEEFFECT_UNIFORM_FLAGS           = 0x00,
+    ARRAY_SK_RUNTIMEEFFECT_UNIFORM_FLAGS          = 0x01,
+    COLOR_SK_RUNTIMEEFFECT_UNIFORM_FLAGS          = 0x02,
+    VERTEX_SK_RUNTIMEEFFECT_UNIFORM_FLAGS         = 0x04,
+    FRAGMENT_SK_RUNTIMEEFFECT_UNIFORM_FLAGS       = 0x08,
+    HALF_PRECISION_SK_RUNTIMEEFFECT_UNIFORM_FLAGS = 0x10,
+} sk_runtimeeffect_uniform_flags_t;
+
+typedef struct {
+    const char* fName;
+    size_t fNameLength;
+    size_t fOffset;
+    sk_runtimeeffect_uniform_type_t fType;
+    int fCount;
+    sk_runtimeeffect_uniform_flags_t fFlags;
+} sk_runtimeeffect_uniform_t;
+
+typedef struct {
+    const char* fName;
+    size_t fNameLength;
+    sk_runtimeeffect_child_type_t fType;
+    int fIndex;
+} sk_runtimeeffect_child_t;
 
 typedef enum {
     NEAREST_SK_FILTER_MODE,
