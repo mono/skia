@@ -150,8 +150,6 @@ DEF_CLASS_MAP(GrRecordingContext, gr_recording_context_t, GrRecordingContext)
 DEF_CLASS_MAP(GrBackendTexture, gr_backendtexture_t, GrBackendTexture)
 DEF_CLASS_MAP(GrBackendRenderTarget, gr_backendrendertarget_t, GrBackendRenderTarget)
 
-DEF_MAP_WITH_NS(skgpu, VulkanExtensions, gr_vk_extensions_t, GrVkExtensions)
-
 DEF_STRUCT_MAP(skcms_ICCProfile, sk_colorspace_icc_profile_t, ColorSpaceIccProfile)
 DEF_STRUCT_MAP(SkColorSpacePrimaries, sk_colorspace_primaries_t, ColorSpacePrimaries)
 DEF_STRUCT_MAP(skcms_TransferFunction, sk_colorspace_transfer_fn_t, ColorSpaceTransferFn)
@@ -419,6 +417,7 @@ DEF_MAP_VK(VkQueue, vk_queue_t);
 DEF_MAP(VkPhysicalDeviceFeatures, vk_physical_device_features_t, VkPhysicalDeviceFeatures);
 DEF_MAP(VkPhysicalDeviceFeatures2, vk_physical_device_features_2_t, VkPhysicalDeviceFeatures2);
 DEF_MAP_WITH_NS(skgpu, VulkanMemoryAllocator, gr_vk_memory_allocator_t, GrVkMemoryAllocator);
+DEF_MAP_WITH_NS(skgpu, VulkanExtensions, gr_vk_extensions_t, GrVkExtensions)
 
 static inline GrVkBackendContext AsGrVkBackendContext(const gr_vk_backendcontext_t* context) {
     GrVkBackendContext ctx;

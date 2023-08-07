@@ -408,28 +408,28 @@ config("default") {
     if (current_cpu == "arm64") {
       asmflags += [
         "-target",
-        "arm64-apple-macos11",
+        "arm64-apple-macos$min_macos_version",
       ]
       cflags += [
         "-target",
-        "arm64-apple-macos11",
+        "arm64-apple-macos$min_macos_version",
       ]
       ldflags += [
         "-target",
-        "arm64-apple-macos11",
+        "arm64-apple-macos$min_macos_version",
       ]
     } else {
       asmflags += [
         "-target",
-        "x86_64-apple-macos10.13",
+        "x86_64-apple-macos$min_macos_version",
       ]
       cflags += [
         "-target",
-        "x86_64-apple-macos10.13",
+        "x86_64-apple-macos$min_macos_version",
       ]
       ldflags += [
         "-target",
-        "x86_64-apple-macos10.13",
+        "x86_64-apple-macos$min_macos_version",
       ]
     }
   }
