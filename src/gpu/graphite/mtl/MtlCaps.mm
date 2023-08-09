@@ -253,7 +253,7 @@ void MtlCaps::initCaps(const id<MTLDevice> device) {
     fStorageBufferSupport = true;
     fStorageBufferPreferred = true;
 
-    if (@available(macOS 10.12, ios 14.0, tvOS 14.0, *)) {
+    if (@available(macOS 10.12, iOS 14.0, tvOS 14.0, *)) {
         fClampToBorderSupport = (this->isMac() || fFamilyGroup >= 7);
     } else {
         fClampToBorderSupport = false;
@@ -763,7 +763,7 @@ TextureInfo MtlCaps::getDefaultSampledTextureInfo(SkColorType colorType,
 MTLStorageMode MtlCaps::getDefaultMSAAStorageMode(Discardable discardable) const {
     // Try to use memoryless if it's available (only on new Apple silicon)
     if (discardable == Discardable::kYes && this->isApple()) {
-        if (@available(macOS 11.0, iOS 10.0, tvOS 9.0, *)) {
+        if (@available(macOS 11.0, iOS 10.0, tvOS 10.0, *)) {
             return MTLStorageModeMemoryless;
         }
     }

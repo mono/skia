@@ -812,7 +812,7 @@ void GrMtlCaps::initFormatTable() {
     }
 
     // Format: BGR10A2Unorm
-    if (@available(macos 10.13, ios 11.0, tvos 11.0, *)) {
+    if (@available(macOS 10.13, iOS 11.0, tvOS 11.0, *)) {
         info = &fFormatTable[GetFormatIndex(MTLPixelFormatBGR10A2Unorm)];
         if (this->isMac() && fFamilyGroup == 1) {
             info->fFlags = FormatInfo::kTexturable_Flag;
