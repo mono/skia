@@ -44,7 +44,7 @@ public:
         Push(table, (*table)->isBuiltin());
     }
     static void Push(std::shared_ptr<SymbolTable>* table, bool isBuiltin) {
-        *table = sk_make_shared<SymbolTable>(*table, isBuiltin);
+        *table = std::make_shared<SymbolTable>(*table, isBuiltin);
     }
 
     /**
@@ -67,7 +67,7 @@ public:
         if (!symbolTable->isBuiltin()) {
             return symbolTable;
         }
-        return sk_make_shared<SymbolTable>(std::move(symbolTable), /*builtin=*/false);
+        return std::make_shared<SymbolTable>(std::move(symbolTable), /*builtin=*/false);
     }
 
     /**

@@ -137,7 +137,7 @@ Compiler::Compiler(const ShaderCaps* caps) : fErrorReporter(this), fCaps(caps) {
     SkASSERT(caps);
 
     auto moduleLoader = ModuleLoader::Get();
-    fContext = sk_make_shared<Context>(moduleLoader.builtinTypes(), /*caps=*/nullptr,
+    fContext = std::make_shared<Context>(moduleLoader.builtinTypes(), /*caps=*/nullptr,
                                          fErrorReporter);
 }
 

@@ -420,7 +420,7 @@ const Module* ModuleLoader::loadGraphiteVertexModule(SkSL::Compiler* compiler) {
 
 void ModuleLoader::Impl::makeRootSymbolTable() {
     auto rootModule = std::make_unique<Module>();
-    rootModule->fSymbols = sk_make_shared<SymbolTable>(/*builtin=*/true);
+    rootModule->fSymbols = std::make_shared<SymbolTable>(/*builtin=*/true);
 
     for (BuiltinTypePtr rootType : kRootTypes) {
         rootModule->fSymbols->addWithoutOwnership((fBuiltinTypes.*rootType).get());
