@@ -188,13 +188,20 @@ if (is_win) {
   if (win_sdk != "" && win_sdk_version == "") {
     win_sdk_version = exec_script("//gn/lowest_version_dir.py", [ "$win_sdk/Include", "[0-9]{2}\.[0-9]\.[0-9]{5}\.[0-9]", min_win_sdk_version ], "trim string")
   }
+  if (clang_win != "" && clang_win_version == "") {
+    clang_win_version = exec_script("//gn/highest_version_dir.py",
+                                    [
+                                      "$clang_win/lib/clang",
+                                      "[0-9]+\.[0-9]+\.[0-9]+",
+                                    ],
+                                    "trim string")
+  }
 }
 
 if (is_tizen) {
   ncli_target = ""
   ncli_platform = ""
   ncli_gccdir = ""
-
   if (target_cpu == "arm") {
     ncli_target = "arm-tizen-linux-gnueabi"
     ncli_platform = "tizen-${ncli_version}/mobile/rootstraps/mobile-${ncli_version}-device.core"
@@ -203,14 +210,6 @@ if (is_tizen) {
     ncli_target = "i586-tizen-linux-gnueabi"
     ncli_platform = "tizen-${ncli_version}/mobile/rootstraps/mobile-${ncli_version}-emulator.core"
     ncli_gccdir = "i586-linux-gnueabi-gcc-${ncli_gcc_version_short}"
-  }
-  if (clang_win != "" && clang_win_version == "") {
-    clang_win_version = exec_script("//gn/highest_version_dir.py",
-                                    [
-                                      "$clang_win/lib/clang",
-                                      "[0-9]+\.[0-9]+\.[0-9]+",
-                                    ],
-                                    "trim string")
   }
 }
 
