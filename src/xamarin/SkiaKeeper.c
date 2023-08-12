@@ -51,6 +51,7 @@
 #include "include/xamarin/sk_managedstream.h"
 #include "include/xamarin/sk_manageddrawable.h"
 #include "include/xamarin/sk_managedtracememorydump.h"
+#include "include/xamarin/sk_compatpaint.h"
 
 SK_X_API void** KeepSkiaCSymbols (void);
 
@@ -98,6 +99,7 @@ void** KeepSkiaCSymbols (void)
         (void*)skottie_animation_keepalive,
 
         // Xamarin
+        (void*)sk_compatpaint_new,
         (void*)sk_managedstream_new,
         (void*)sk_manageddrawable_new,
         (void*)sk_managedtracememorydump_new,
