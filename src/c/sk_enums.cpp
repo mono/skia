@@ -21,6 +21,7 @@
 #include "include/core/SkRRect.h"
 #include "include/core/SkShader.h"
 #include "include/core/SkSurface.h"
+#include "include/core/SkTileMode.h"
 #include "include/core/SkTypeface.h"
 #include "include/core/SkVertices.h"
 #include "include/effects/Sk1DPathEffect.h"

@@ -16,6 +16,7 @@
 #include "include/core/SkPath.h"
 #include "include/core/SkPictureRecorder.h"
 #include "include/core/SkSurface.h"
+#include "include/gpu/ganesh/SkSurfaceGanesh.h"
 
 #include "include/c/sk_canvas.h"
 #include "include/c/sk_data.h"
@@ -30,15 +31,15 @@
 // surface
 
 sk_surface_t* sk_surface_new_null(int width, int height) {
-    return ToSurface(SkSurface::MakeNull(width, height).release());
+    return ToSurface(SkSurfaces::Null(width, height).release());
 }
 
 sk_surface_t* sk_surface_new_raster(const sk_imageinfo_t* cinfo, size_t rowBytes, const sk_surfaceprops_t* props) {
-    return ToSurface(SkSurface::MakeRaster(AsImageInfo(cinfo), rowBytes, AsSurfaceProps(props)).release());
+    return ToSurface(SkSurfaces::Raster(AsImageInfo(cinfo), rowBytes, AsSurfaceProps(props)).release());
 }
 
 sk_surface_t* sk_surface_new_raster_direct(const sk_imageinfo_t* cinfo, void* pixels, size_t rowBytes, const sk_surface_raster_release_proc releaseProc, void* context, const sk_surfaceprops_t* props) {
-    return ToSurface(SkSurface::MakeRasterDirectReleaseProc(AsImageInfo(cinfo), pixels, rowBytes, releaseProc, context, AsSurfaceProps(props)).release());
+    return ToSurface(SkSurfaces::WrapPixels(AsImageInfo(cinfo), pixels, rowBytes, releaseProc, context, AsSurfaceProps(props)).release());
 }
 
 void sk_surface_unref(sk_surface_t* csurf) {
@@ -58,15 +59,15 @@ sk_image_t* sk_surface_new_image_snapshot_with_crop(sk_surface_t* surface, const
 }
 
 sk_surface_t* sk_surface_new_backend_render_target(gr_recording_context_t* context, const gr_backendrendertarget_t* target, gr_surfaceorigin_t origin, sk_colortype_t colorType, sk_colorspace_t* colorspace, const sk_surfaceprops_t* props) {
-    return ToSurface(SkSurface::MakeFromBackendRenderTarget(AsGrRecordingContext(context), *AsGrBackendRenderTarget(target), (GrSurfaceOrigin)origin, (SkColorType)colorType, sk_ref_sp(AsColorSpace(colorspace)), AsSurfaceProps(props)).release());
+    return ToSurface(SkSurfaces::WrapBackendRenderTarget(AsGrRecordingContext(context), *AsGrBackendRenderTarget(target), (GrSurfaceOrigin)origin, (SkColorType)colorType, sk_ref_sp(AsColorSpace(colorspace)), AsSurfaceProps(props)).release());
 }
 
 sk_surface_t* sk_surface_new_backend_texture(gr_recording_context_t* context, const gr_backendtexture_t* texture, gr_surfaceorigin_t origin, int samples, sk_colortype_t colorType, sk_colorspace_t* colorspace, const sk_surfaceprops_t* props) {
-    return ToSurface(SkSurface::MakeFromBackendTexture(AsGrRecordingContext(context), *AsGrBackendTexture(texture), (GrSurfaceOrigin)origin, samples, (SkColorType)colorType, sk_ref_sp(AsColorSpace(colorspace)), AsSurfaceProps(props)).release());
+    return ToSurface(SkSurfaces::WrapBackendTexture(AsGrRecordingContext(context), *AsGrBackendTexture(texture), (GrSurfaceOrigin)origin, samples, (SkColorType)colorType, sk_ref_sp(AsColorSpace(colorspace)), AsSurfaceProps(props)).release());
 }
 
 sk_surface_t* sk_surface_new_render_target(gr_recording_context_t* context, bool budgeted, const sk_imageinfo_t* cinfo, int sampleCount, gr_surfaceorigin_t origin, const sk_surfaceprops_t* props, bool shouldCreateWithMips) {
-    return ToSurface(SkSurface::MakeRenderTarget(AsGrRecordingContext(context), (skgpu::Budgeted)budgeted, AsImageInfo(cinfo), sampleCount, (GrSurfaceOrigin)origin, AsSurfaceProps(props), shouldCreateWithMips).release());
+    return ToSurface(SkSurfaces::RenderTarget(AsGrRecordingContext(context), (skgpu::Budgeted)budgeted, AsImageInfo(cinfo), sampleCount, (GrSurfaceOrigin)origin, AsSurfaceProps(props), shouldCreateWithMips).release());
 }
 
 sk_surface_t* sk_surface_new_metal_layer(gr_recording_context_t* context, gr_mtl_handle_t layer, gr_surfaceorigin_t origin, int sampleCount, sk_colortype_t colorType, sk_colorspace_t* colorspace, const sk_surfaceprops_t* props, gr_mtl_handle_t* drawable) {
