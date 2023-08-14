@@ -10,6 +10,7 @@
 #define GrGLTypes_DEFINED
 
 #include "include/core/SkRefCnt.h"
+#include "include/gpu/GpuTypes.h"
 #include "include/gpu/gl/GrGLConfig.h"
 
 /**
@@ -62,11 +63,13 @@ enum class GrGLFormat {
     kR8,
     kALPHA8,
     kLUMINANCE8,
+    kLUMINANCE8_ALPHA8,
     kBGRA8,
     kRGB565,
     kRGBA16F,
     kR16F,
     kRGB8,
+    kRGBX8,
     kRG8,
     kRGB10_A2,
     kRGBA4,
@@ -178,19 +181,39 @@ struct GrGLTextureInfo {
     GrGLenum fTarget;
     GrGLuint fID;
     GrGLenum fFormat = 0;
+    skgpu::Protected fProtected = skgpu::Protected::kNo;
 
     bool operator==(const GrGLTextureInfo& that) const {
-        return fTarget == that.fTarget && fID == that.fID && fFormat == that.fFormat;
+        return fTarget == that.fTarget &&
+               fID == that.fID &&
+               fFormat == that.fFormat &&
+               fProtected == that.fProtected;
     }
+
+    bool isProtected() const { return fProtected == skgpu::Protected::kYes; }
 };
 
 struct GrGLFramebufferInfo {
     GrGLuint fFBOID;
     GrGLenum fFormat = 0;
+    skgpu::Protected fProtected = skgpu::Protected::kNo;
 
     bool operator==(const GrGLFramebufferInfo& that) const {
-        return fFBOID == that.fFBOID && fFormat == that.fFormat;
+        return fFBOID == that.fFBOID &&
+               fFormat == that.fFormat &&
+               fProtected == that.fProtected;
     }
+
+    bool isProtected() const { return fProtected == skgpu::Protected::kYes; }
+};
+
+struct GrGLSurfaceInfo {
+    uint32_t fSampleCount = 1;
+    uint32_t fLevelCount = 0;
+    skgpu::Protected fProtected = skgpu::Protected::kNo;
+
+    GrGLenum fTarget = 0;
+    GrGLenum fFormat = 0;
 };
 
 #endif

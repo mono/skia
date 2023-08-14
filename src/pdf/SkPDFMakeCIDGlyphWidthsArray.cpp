@@ -8,8 +8,8 @@
 #include "src/pdf/SkPDFMakeCIDGlyphWidthsArray.h"
 
 #include "include/core/SkPaint.h"
-#include "include/private/SkTo.h"
-#include "src/core/SkScalerCache.h"
+#include "include/private/base/SkTo.h"
+#include "src/core/SkStrike.h"
 #include "src/core/SkStrikeSpec.h"
 #include "src/pdf/SkPDFGlyphUse.h"
 
@@ -120,7 +120,7 @@ std::unique_ptr<SkPDFArray> SkPDFMakeCIDGlyphWidthsArray(const SkTypeface& typef
         advances.push_back((int16_t)glyph->advanceX());
     }
     std::sort(advances.begin(), advances.end());
-    int16_t modeAdvance = findMode(SkMakeSpan(advances));
+    int16_t modeAdvance = findMode(SkSpan(advances));
     *defaultAdvance = scale_from_font_units(modeAdvance, emSize);
 #else
     *defaultAdvance = 0;

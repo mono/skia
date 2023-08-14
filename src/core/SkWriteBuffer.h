@@ -8,17 +8,35 @@
 #ifndef SkWriteBuffer_DEFINED
 #define SkWriteBuffer_DEFINED
 
+#include "include/core/SkColor.h"
 #include "include/core/SkData.h"
-#include "include/core/SkFlattenable.h"
+#include "include/core/SkRefCnt.h"
+#include "include/core/SkSamplingOptions.h"
+#include "include/core/SkScalar.h"
 #include "include/core/SkSerialProcs.h"
-#include "include/private/SkTHash.h"
+#include "src/core/SkTHash.h"
 #include "src/core/SkWriter32.h"
 
+#include <cstddef>
+#include <cstdint>
+#include <string_view>
+
 class SkFactorySet;
+class SkFlattenable;
 class SkImage;
 class SkM44;
+class SkMatrix;
+class SkPaint;
 class SkPath;
 class SkRefCntSet;
+class SkRegion;
+class SkStream;
+class SkTypeface;
+class SkWStream;
+struct SkIRect;
+struct SkPoint3;
+struct SkPoint;
+struct SkRect;
 
 class SkWriteBuffer {
 public:
@@ -28,7 +46,7 @@ public:
     virtual void writePad32(const void* buffer, size_t bytes) = 0;
 
     virtual void writeByteArray(const void* data, size_t size) = 0;
-    void writeDataAsByteArray(SkData* data) {
+    void writeDataAsByteArray(const SkData* data) {
         if (!data) {
             this->write32(0);
         } else {
@@ -45,7 +63,7 @@ public:
     void write32(int32_t value) {
         this->writeInt(value);
     }
-    virtual void writeString(const char* value) = 0;
+    virtual void writeString(std::string_view value) = 0;
 
     virtual void writeFlattenable(const SkFlattenable* flattenable) = 0;
     virtual void writeColor(SkColor color) = 0;
@@ -60,6 +78,7 @@ public:
     virtual void writeIRect(const SkIRect& rect) = 0;
     virtual void writeRect(const SkRect& rect) = 0;
     virtual void writeRegion(const SkRegion& region) = 0;
+    virtual void writeSampling(const SkSamplingOptions&) = 0;
     virtual void writePath(const SkPath& path) = 0;
     virtual size_t writeStream(SkStream* stream, size_t length) = 0;
     virtual void writeImage(const SkImage*) = 0;
@@ -107,7 +126,7 @@ public:
     void writeInt(int32_t value) override;
     void writeIntArray(const int32_t* value, uint32_t count) override;
     void writeUInt(uint32_t value) override;
-    void writeString(const char* value) override;
+    void writeString(std::string_view value) override;
 
     void writeFlattenable(const SkFlattenable* flattenable) override;
     void writeColor(SkColor color) override;
@@ -122,6 +141,7 @@ public:
     void writeIRect(const SkIRect& rect) override;
     void writeRect(const SkRect& rect) override;
     void writeRegion(const SkRegion& region) override;
+    void writeSampling(const SkSamplingOptions&) override;
     void writePath(const SkPath& path) override;
     size_t writeStream(SkStream* stream, size_t length) override;
     void writeImage(const SkImage*) override;
@@ -142,7 +162,7 @@ private:
     SkWriter32 fWriter;
 
     // Only used if we do not have an fFactorySet
-    SkTHashMap<const char*, uint32_t> fFlattenableDict;
+    skia_private::THashMap<const char*, uint32_t> fFlattenableDict;
 };
 
 enum SkWriteBufferImageFlags {
@@ -151,6 +171,7 @@ enum SkWriteBufferImageFlags {
 
     kHasSubsetRect  = 1 << 8,
     kHasMipmap      = 1 << 9,
+    kUnpremul       = 1 << 10,
 };
 
 

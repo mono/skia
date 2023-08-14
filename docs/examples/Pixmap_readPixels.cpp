@@ -14,18 +14,18 @@ void draw(SkCanvas* canvas) {
     SkPoint  gradPoints[] = { { 0, 0 }, { 256, 0 } };
     SkPaint paint;
     paint.setShader(SkGradientShader::MakeLinear(gradPoints, gradColors, nullptr,
-                    SK_ARRAY_COUNT(gradColors), SkTileMode::kClamp));
+                    std::size(gradColors), SkTileMode::kClamp));
     SkBitmap bitmap;
     bitmap.installPixels(srcPixmap);
     SkCanvas srcCanvas(bitmap);
     srcCanvas.drawRect(SkRect::MakeWH(width, height), paint);
-    canvas->drawBitmap(bitmap, 0, 0);
+    canvas->drawImage(bitmap.asImage(), 0, 0);
     std::vector<int32_t> dstPixels;
     dstPixels.resize(height * width * 2);
     SkImageInfo dstInfo = srcInfo.makeColorType(kARGB_4444_SkColorType);
     srcPixmap.readPixels(dstInfo, &dstPixels.front(), width * 2);
     SkPixmap dstPixmap(dstInfo, &dstPixels.front(), width * 2);
     bitmap.installPixels(dstPixmap);
-    canvas->drawBitmap(bitmap, 0, 128);
+    canvas->drawImage(bitmap.asImage(), 0, 128);
 }
 }  // END FIDDLE

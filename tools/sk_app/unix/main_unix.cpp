@@ -7,10 +7,12 @@
 */
 
 #include "include/core/SkTypes.h"
-#include "include/private/SkTHash.h"
+#include "src/core/SkTHash.h"
 #include "tools/sk_app/Application.h"
 #include "tools/sk_app/unix/Window_unix.h"
 #include "tools/timer/Timer.h"
+
+using namespace skia_private;
 
 int main(int argc, char**argv) {
     XInitThreads();
@@ -44,7 +46,7 @@ int main(int argc, char**argv) {
         // Only handle a finite number of events before finishing resize and paint..
         if (int count = XPending(display)) {
             // collapse any Expose and Resize events.
-            SkTHashSet<sk_app::Window_unix*> pendingWindows;
+            THashSet<sk_app::Window_unix*> pendingWindows;
             while (count-- && !done) {
                 XEvent event;
                 XNextEvent(display, &event);

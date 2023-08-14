@@ -10,15 +10,22 @@
 #include "include/core/SkData.h"
 #include "include/core/SkString.h"
 #include "include/core/SkTypes.h"
-#include "include/private/SkFixed.h"
-#include "include/private/SkTFitsIn.h"
-#include "include/private/SkTPin.h"
-#include "include/private/SkTo.h"
+#include "include/private/base/SkAlign.h"
+#include "include/private/base/SkDebug.h"
+#include "include/private/base/SkMalloc.h"
+#include "include/private/base/SkTFitsIn.h"
+#include "include/private/base/SkTPin.h"
+#include "include/private/base/SkTemplates.h"
+#include "include/private/base/SkTo.h"
+#include "src/base/SkSafeMath.h"
 #include "src/core/SkOSFile.h"
-#include "src/core/SkSafeMath.h"
 #include "src/core/SkStreamPriv.h"
 
+#include <algorithm>
+#include <cstddef>
+#include <cstring>
 #include <limits>
+#include <new>
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -428,7 +435,7 @@ bool SkFILEWStream::write(const void* buffer, size_t size)
 
     if (sk_fwrite(buffer, size, fFILE) != size)
     {
-        SkDEBUGCODE(SkDebugf("SkFILEWStream failed writing %d bytes\n", size);)
+        SkDEBUGCODE(SkDebugf("SkFILEWStream failed writing %zu bytes\n", size);)
         sk_fclose(fFILE);
         fFILE = nullptr;
         return false;
@@ -891,6 +898,18 @@ std::unique_ptr<SkStreamAsset> SkDynamicMemoryWStream::detachAsStream() {
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+
+bool SkDebugfStream::write(const void* buffer, size_t size) {
+    SkDebugf("%.*s", (int)size, (const char*)buffer);
+    fBytesWritten += size;
+    return true;
+}
+
+size_t SkDebugfStream::bytesWritten() const {
+    return fBytesWritten;
+}
+
+///////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////
 
 static sk_sp<SkData> mmap_filename(const char path[]) {
@@ -956,4 +975,12 @@ bool SkStreamCopy(SkWStream* out, SkStream* input) {
             return false;
         }
     }
+}
+
+bool StreamRemainingLengthIsBelow(SkStream* stream, size_t len) {
+    if (stream->hasLength() && stream->hasPosition()) {
+        size_t remainingBytes = stream->getLength() - stream->getPosition();
+        return len > remainingBytes;
+    }
+    return false;
 }

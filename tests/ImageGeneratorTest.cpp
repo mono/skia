@@ -5,14 +5,26 @@
  * found in the LICENSE file.
  */
 
+#include "include/core/SkAlphaType.h"
 #include "include/core/SkCanvas.h"
+#include "include/core/SkColor.h"
+#include "include/core/SkColorSpace.h"
+#include "include/core/SkColorType.h"
 #include "include/core/SkData.h"
-
 #include "include/core/SkGraphics.h"
+#include "include/core/SkImage.h"
 #include "include/core/SkImageGenerator.h"
-#include "include/core/SkYUVAIndex.h"
-#include "include/private/SkImageInfoPriv.h"
+#include "include/core/SkImageInfo.h"
+#include "include/core/SkPicture.h"
+#include "include/core/SkPictureRecorder.h"
+#include "include/core/SkRefCnt.h"
+#include "include/core/SkYUVAInfo.h"
+#include "include/core/SkYUVAPixmaps.h"
+#include "src/base/SkAutoMalloc.h"
+#include "src/image/SkImageGeneratorPriv.h"
 #include "tests/Test.h"
+
+#include <memory>
 
 #if defined(SK_BUILD_FOR_MAC) || defined(SK_BUILD_FOR_IOS)
     #include "include/ports/SkImageGeneratorCG.h"
@@ -35,13 +47,13 @@ static void test_imagegenerator_factory(skiatest::Reporter* reporter) {
 
     REPORTER_ASSERT(reporter, !gMyFactoryWasCalled);
 
-    std::unique_ptr<SkImageGenerator> gen = SkImageGenerator::MakeFromEncoded(data);
+    std::unique_ptr<SkImageGenerator> gen = SkImageGenerators::MakeFromEncoded(data);
     REPORTER_ASSERT(reporter, nullptr == gen);
     REPORTER_ASSERT(reporter, !gMyFactoryWasCalled);
 
     // Test is racy, in that it hopes no other thread is changing this global...
     auto prev = SkGraphics::SetImageGeneratorFromEncodedDataFactory(my_factory);
-    gen = SkImageGenerator::MakeFromEncoded(data);
+    gen = SkImageGenerators::MakeFromEncoded(data);
     REPORTER_ASSERT(reporter, nullptr == gen);
     REPORTER_ASSERT(reporter, gMyFactoryWasCalled);
 
@@ -77,13 +89,10 @@ DEF_TEST(ImageGenerator, reporter) {
     ig.getYUVAPlanes(yuvaPixmaps);
 
     // Suppressed due to https://code.google.com/p/skia/issues/detail?id=4339
-    if (false) {
+    if ((false)) {
         test_imagegenerator_factory(reporter);
     }
 }
-
-#include "include/core/SkPictureRecorder.h"
-#include "src/core/SkAutoMalloc.h"
 
 static sk_sp<SkPicture> make_picture() {
     SkPictureRecorder recorder;
@@ -111,8 +120,8 @@ DEF_TEST(PictureImageGenerator, reporter) {
 
     auto colorspace = SkColorSpace::MakeSRGB();
     auto picture = make_picture();
-    auto gen = SkImageGenerator::MakeFromPicture({100, 100}, picture, nullptr, nullptr,
-                                                 SkImage::BitDepth::kU8, colorspace);
+    auto gen = SkImageGenerators::MakeFromPicture(
+            {100, 100}, picture, nullptr, nullptr, SkImages::BitDepth::kU8, colorspace);
 
     // worst case for all requests
     SkAutoMalloc storage(100 * 100 * SkColorTypeBytesPerPixel(kRGBA_F32_SkColorType));

@@ -13,7 +13,7 @@
 #include "include/core/SkRect.h"
 #include "include/core/SkScalar.h"
 #include "include/core/SkTypes.h"
-#include "include/utils/SkRandom.h"
+#include "src/base/SkRandom.h"
 
 static void test_hittest(SkCanvas* canvas, const SkPath& path) {
     SkPaint paint;
@@ -35,7 +35,7 @@ static void test_hittest(SkCanvas* canvas, const SkPath& path) {
 }
 
 DEF_SIMPLE_GM_CAN_FAIL(hittestpath, canvas, errorMsg, 700, 460) {
-    if (canvas->recordingContext()) {
+    if (canvas->recordingContext() || canvas->recorder()) {
         // GPU rasterization results vary greatly from platform to platform. We can't use them as
         // an expected result for our internal SkPath::contains().
         *errorMsg = "This test is for CPU configs only.";
@@ -49,7 +49,7 @@ DEF_SIMPLE_GM_CAN_FAIL(hittestpath, canvas, errorMsg, 700, 460) {
     for (int i = 0; i < 4; ++i) {
         // get the random values deterministically
         SkScalar randoms[12];
-        for (int index = 0; index < (int) SK_ARRAY_COUNT(randoms); ++index) {
+        for (int index = 0; index < (int) std::size(randoms); ++index) {
             randoms[index] = rand.nextUScalar1();
         }
         b.lineTo(randoms[0] * scale, randoms[1] * scale)

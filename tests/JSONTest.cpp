@@ -5,12 +5,17 @@
  * found in the LICENSE file.
  */
 
-#include "tests/Test.h"
-
+#include "include/core/SkData.h"
+#include "include/core/SkRefCnt.h"
+#include "include/core/SkScalar.h"
 #include "include/core/SkStream.h"
 #include "include/core/SkString.h"
-#include "src/core/SkArenaAlloc.h"
+#include "src/base/SkArenaAlloc.h"
 #include "src/utils/SkJSON.h"
+#include "tests/Test.h"
+
+#include <cstring>
+#include <string_view>
 
 using namespace skjson;
 
@@ -179,19 +184,21 @@ static void check_vector(skiatest::Reporter* reporter, const Value& v, size_t ex
 static void check_string(skiatest::Reporter* reporter, const Value& v, const char* s) {
     check_vector<StringValue>(reporter, v, s ? strlen(s) : 0, !!s);
     if (s) {
+        REPORTER_ASSERT(reporter, v.as<StringValue>().str() == s);
         REPORTER_ASSERT(reporter, !strcmp(v.as<StringValue>().begin(), s));
     }
 }
 
 DEF_TEST(JSON_DOM_visit, reporter) {
-    static constexpr char json[] = "{ \n\
-        \"k1\": null,                \n\
-        \"k2\": false,               \n\
-        \"k3\": true,                \n\
-        \"k4\": 42,                  \n\
-        \"k5\": .75,                 \n\
-        \"k6\": \"foo\",             \n\
-        \"k7\": [ 1, true, \"bar\" ], \n\
+    static constexpr char json[] = "{     \n\
+        \"k1\": null,                     \n\
+        \"k2\": false,                    \n\
+        \"k3\": true,                     \n\
+        \"k4\": 42,                       \n\
+        \"k5\": .75,                      \n\
+        \"k6\": \"foo\",                  \n\
+        \"k6b\": \"this string is long\", \n\
+        \"k7\": [ 1, true, \"bar\" ],     \n\
         \"k8\": { \"kk1\": 2, \"kk2\": false, \"kk1\": \"baz\" } \n\
     }";
 
@@ -268,6 +275,18 @@ DEF_TEST(JSON_DOM_visit, reporter) {
         check_primitive<float, NumberValue>(reporter, v, 0, false);
 
         check_string(reporter, v, "foo");
+        check_vector<ArrayValue >(reporter, v, 0, false);
+        check_vector<ObjectValue>(reporter, v, 0, false);
+    }
+
+    {
+        const auto& v = jroot["k6b"];
+        REPORTER_ASSERT(reporter, !v.is<NullValue>());
+
+        check_primitive<bool, BoolValue>(reporter, v, false, false);
+        check_primitive<float, NumberValue>(reporter, v, 0, false);
+
+        check_string(reporter, v, "this string is long");
         check_vector<ArrayValue >(reporter, v, 0, false);
         check_vector<ObjectValue>(reporter, v, 0, false);
     }
@@ -364,7 +383,7 @@ DEF_TEST(JSON_DOM_build, reporter) {
     check_value<ArrayValue>(reporter, v9, "[]");
 
     const Value values0[] = { v0, v3, v9 };
-    const auto v10 = ArrayValue(values0, SK_ARRAY_COUNT(values0), alloc);
+    const auto v10 = ArrayValue(values0, std::size(values0), alloc);
     check_value<ArrayValue>(reporter, v10, "[null,0,[]]");
 
     const auto v11 = ObjectValue(nullptr, 0, alloc);
@@ -375,7 +394,7 @@ DEF_TEST(JSON_DOM_build, reporter) {
         { StringValue("key_1", 5, alloc), v4  },
         { StringValue("key_2", 5, alloc), v11 },
     };
-    const auto v12 = ObjectValue(members0, SK_ARRAY_COUNT(members0), alloc);
+    const auto v12 = ObjectValue(members0, std::size(members0), alloc);
     check_value<ObjectValue>(reporter, v12, "{"
                                                 "\"key_0\":true,"
                                                 "\"key_1\":42,"
@@ -383,7 +402,7 @@ DEF_TEST(JSON_DOM_build, reporter) {
                                             "}");
 
     const Value values1[] = { v2, v6, v12 };
-    const auto v13 = ArrayValue(values1, SK_ARRAY_COUNT(values1), alloc);
+    const auto v13 = ArrayValue(values1, std::size(values1), alloc);
     check_value<ArrayValue>(reporter, v13, "["
                                                "false,"
                                                "\"\","
@@ -399,7 +418,7 @@ DEF_TEST(JSON_DOM_build, reporter) {
         { StringValue("key_01", 6, alloc), v7  },
         { StringValue("key_02", 6, alloc), v13 },
     };
-    const auto v14 = ObjectValue(members1, SK_ARRAY_COUNT(members1), alloc);
+    const auto v14 = ObjectValue(members1, std::size(members1), alloc);
     check_value<ObjectValue>(reporter, v14, "{"
                                                 "\"key_00\":42.75,"
                                                 "\"key_01\":\" foo \","

@@ -143,7 +143,7 @@ private:
 int main(int argc, char** argv) {
     CommandLineFlags::Parse(argc, argv);
 
-    for (int i = 0; i < FLAGS_skps.count(); i++) {
+    for (int i = 0; i < FLAGS_skps.size(); i++) {
         if (CommandLineFlags::ShouldSkip(FLAGS_match, FLAGS_skps[i])) {
             continue;
         }
@@ -181,11 +181,11 @@ int main(int argc, char** argv) {
         printf("%s %s\n", FLAGS_optimize ? "optimized" : "not-optimized", FLAGS_skps[i]);
 
         Dumper dumper(&canvas, record.count());
-        for (int i = 0; i < record.count(); i++) {
-            record.visit(i, dumper);
+        for (int j = 0; j < record.count(); j++) {
+            record.visit(j, dumper);
         }
 
-        if (FLAGS_write.count() > 0) {
+        if (FLAGS_write.size() > 0) {
             SkPictureRecorder r;
             SkRecordDraw(record,
                          r.beginRecording(SkRect::MakeIWH(w, h)),

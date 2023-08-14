@@ -8,9 +8,24 @@
 #ifndef SkCanvasStack_DEFINED
 #define SkCanvasStack_DEFINED
 
+#include "include/core/SkCanvas.h"
+#include "include/core/SkM44.h"
+#include "include/core/SkPoint.h"
+#include "include/core/SkRefCnt.h"
 #include "include/core/SkRegion.h"
-#include "include/private/SkTArray.h"
+#include "include/core/SkTypes.h"
+#include "include/private/base/SkTArray.h"
+#include "include/private/base/SkTypeTraits.h"
 #include "include/utils/SkNWayCanvas.h"
+
+#include <memory>
+#include <type_traits>
+
+class SkPath;
+class SkRRect;
+class SkShader;
+enum class SkClipOp;
+struct SkRect;
 
 /**
  *  Like NWayCanvas, in that it forwards all canvas methods to each sub-canvas that is "pushed".
@@ -36,7 +51,7 @@ public:
     void removeCanvas(SkCanvas*) override { SkDEBUGFAIL("Invalid Op"); }
 
 protected:
-    void didSetMatrix(const SkMatrix&) override;
+    void didSetM44(const SkM44&) override;
 
     void onClipRect(const SkRect&, SkClipOp, ClipEdgeStyle) override;
     void onClipRRect(const SkRRect&, SkClipOp, ClipEdgeStyle) override;
@@ -51,9 +66,15 @@ private:
         SkIPoint origin;
         SkRegion requiredClip;
         std::unique_ptr<SkCanvas> ownedCanvas;
+
+        static_assert(::sk_is_trivially_relocatable<decltype(origin)>::value);
+        static_assert(::sk_is_trivially_relocatable<decltype(requiredClip)>::value);
+        static_assert(::sk_is_trivially_relocatable<decltype(ownedCanvas)>::value);
+
+        using sk_is_trivially_relocatable = std::true_type;
     };
 
-    SkTArray<CanvasData> fCanvasData;
+    skia_private::TArray<CanvasData> fCanvasData;
 
     using INHERITED = SkNWayCanvas;
 };

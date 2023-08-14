@@ -9,9 +9,21 @@
 
 #include "include/core/SkCanvas.h"
 #include "include/core/SkFont.h"
+#include "include/core/SkMatrix.h"
+#include "include/core/SkPaint.h"
+#include "include/core/SkRect.h"
+#include "include/core/SkRefCnt.h"
+#include "include/core/SkScalar.h"
+#include "include/core/SkSize.h"
 #include "include/core/SkString.h"
 #include "include/core/SkSurface.h"
 #include "include/core/SkTime.h"
+#include "include/core/SkTypeface.h"
+#include "include/private/base/SkAssert.h"
+#include "include/private/base/SkTDArray.h"
+
+#include <algorithm>
+#include <string>
 
 StatsLayer::StatsLayer()
     : fCurrentMeasurement(-1)
@@ -23,7 +35,7 @@ StatsLayer::StatsLayer()
 }
 
 void StatsLayer::resetMeasurements() {
-    for (int i = 0; i < fTimers.count(); ++i) {
+    for (int i = 0; i < fTimers.size(); ++i) {
         memset(fTimers[i].fTimes, 0, sizeof(fTimers[i].fTimes));
     }
     memset(fTotalTimes, 0, sizeof(fTotalTimes));
@@ -34,7 +46,7 @@ void StatsLayer::resetMeasurements() {
 }
 
 StatsLayer::Timer StatsLayer::addTimer(const char* label, SkColor color, SkColor labelColor) {
-    Timer newTimer = fTimers.count();
+    Timer newTimer = fTimers.size();
     TimerData& newData = fTimers.push_back();
     memset(newData.fTimes, 0, sizeof(newData.fTimes));
     newData.fLabel = label;
@@ -68,7 +80,7 @@ void StatsLayer::onPrePaint() {
 
 void StatsLayer::onPaint(SkSurface* surface) {
     int nextMeasurement = (fCurrentMeasurement + 1) & (kMeasurementCount - 1);
-    for (int i = 0; i < fTimers.count(); ++i) {
+    for (int i = 0; i < fTimers.size(); ++i) {
         fTimers[i].fTimes[nextMeasurement] = 0;
     }
 
@@ -98,12 +110,11 @@ void StatsLayer::onPaint(SkSurface* surface) {
     canvas->save();
 
     // Scale the canvas while keeping the right edge in place.
-    canvas->concat(SkMatrix::MakeRectToRect(SkRect::Make(canvasSize),
-                                            SkRect::MakeXYWH(canvasSize.width()  * (1 - kScale),
-                                                             0,
-                                                             canvasSize.width()  * kScale,
-                                                             canvasSize.height() * kScale),
-                                            SkMatrix::kFill_ScaleToFit));
+    canvas->concat(SkMatrix::RectToRect(SkRect::Make(canvasSize),
+                                        SkRect::MakeXYWH(canvasSize.width()  * (1 - kScale),
+                                                         0,
+                                                         canvasSize.width()  * kScale,
+                                                         canvasSize.height() * kScale)));
 
     paint.setColor(SK_ColorBLACK);
     canvas->drawRect(rect, paint);
@@ -120,15 +131,15 @@ void StatsLayer::onPaint(SkSurface* surface) {
     const int xStep = 3;
     int i = nextMeasurement;
     SkTDArray<double> sumTimes;
-    sumTimes.setCount(fTimers.count());
-    memset(sumTimes.begin(), 0, sumTimes.count() * sizeof(double));
+    sumTimes.resize(fTimers.size());
+    memset(sumTimes.begin(), 0, sumTimes.size() * sizeof(double));
     int count = 0;
     double totalTime = 0;
     int totalCount = 0;
     do {
         int startY = SkScalarTruncToInt(rect.fBottom);
         double inc = 0;
-        for (int timer = 0; timer < fTimers.count(); ++timer) {
+        for (int timer = 0; timer < fTimers.size(); ++timer) {
             int height = (int)(fTimers[timer].fTimes[i] * kPixelPerMS + 0.5);
             int endY = std::max(startY - height, kDisplayPadding + kTextHeight);
             paint.setColor(fTimers[timer].fColor);
@@ -166,7 +177,7 @@ void StatsLayer::onPaint(SkSurface* surface) {
     canvas->drawString(SkStringPrintf("%4.3f ms -> %4.3f ms", time, measure),
                        rect.fLeft + 3, rect.fTop + 14, font, paint);
 
-    for (int timer = 0; timer < fTimers.count(); ++timer) {
+    for (int timer = 0; timer < fTimers.size(); ++timer) {
         paint.setColor(fTimers[timer].fLabelColor);
         canvas->drawString(SkStringPrintf("%s: %4.3f ms", fTimers[timer].fLabel.c_str(),
                                           sumTimes[timer] / std::max(1, count)),

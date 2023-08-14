@@ -23,14 +23,15 @@
 #include "include/core/SkTextBlob.h"
 #include "include/core/SkTime.h"
 #include "include/effects/SkHighContrastFilter.h"
+#include "include/effects/SkRuntimeEffect.h"
 #include "src/core/SkMask.h"
 
-#if SK_SUPPORT_GPU
+#if defined(SK_GANESH)
 #include "include/gpu/GrTypes.h"
 #include "include/gpu/GrContextOptions.h"
 #include "include/gpu/gl/GrGLTypes.h"
 
-#if SK_VULKAN
+#if defined(SK_VULKAN)
 #include "include/gpu/vk/GrVkTypes.h"
 #endif
 
@@ -56,7 +57,6 @@ static_assert (sizeof (sk_point3_t) == sizeof (SkPoint3), ASSERT_MSG(SkPoint3, s
 static_assert (sizeof (sk_imageinfo_t) == sizeof (SkImageInfo), ASSERT_MSG(SkImageInfo, sk_imageinfo_t));
 static_assert (sizeof (sk_fontmetrics_t) == sizeof (SkFontMetrics), ASSERT_MSG(SkFontMetrics, sk_fontmetrics_t));
 static_assert (sizeof (sk_codec_options_t) == sizeof (SkCodec::Options), ASSERT_MSG(SkCodec::Options, sk_codec_options_t));
-static_assert (sizeof (sk_mask_t) == sizeof (SkMask), ASSERT_MSG(SkMask, sk_mask_t));
 static_assert (sizeof (sk_lattice_t) == sizeof (SkCanvas::Lattice), ASSERT_MSG(SkCanvas::Lattice, sk_lattice_t));
 static_assert (sizeof (sk_time_datetime_t) == sizeof (SkTime::DateTime), ASSERT_MSG(SkTime::DateTime, sk_time_datetime_t));
 static_assert (sizeof (sk_codec_frameinfo_t) == sizeof (SkCodec::FrameInfo), ASSERT_MSG(SkCodec::FrameInfo, sk_codec_frameinfo_t));
@@ -70,12 +70,16 @@ static_assert (sizeof (sk_textblob_builder_runbuffer_t) == sizeof (SkTextBlobBui
 static_assert (sizeof (sk_rsxform_t) == sizeof (SkRSXform), ASSERT_MSG(SkRSXform, sk_rsxform_t));
 static_assert (sizeof (sk_color4f_t) == sizeof (SkColor4f), ASSERT_MSG(SkColor4f, sk_color4f_t));
 static_assert (sizeof (sk_colorspace_xyz_t) == sizeof (skcms_Matrix3x3), ASSERT_MSG(skcms_Matrix3x3, sk_colorspace_xyz_t));
+static_assert (sizeof (sk_cubic_resampler_t) == sizeof (SkCubicResampler), ASSERT_MSG(SkCubicResampler, sk_cubic_resampler_t));
+static_assert (sizeof (sk_sampling_options_t) == sizeof (SkSamplingOptions), ASSERT_MSG(SkSamplingOptions, sk_sampling_options_t));
+static_assert (sizeof (sk_runtimeeffect_uniform_t) == sizeof (SkRuntimeEffect::Uniform), ASSERT_MSG(SkRuntimeEffect::Uniform, sk_runtimeeffect_uniform_t));
+static_assert (sizeof (sk_runtimeeffect_child_t) == sizeof (SkRuntimeEffect::Child), ASSERT_MSG(SkRuntimeEffect::Child, sk_runtimeeffect_child_t));
 
-#if SK_SUPPORT_GPU
+#if defined(SK_GANESH)
 static_assert (sizeof (gr_gl_framebufferinfo_t) == sizeof (GrGLFramebufferInfo), ASSERT_MSG(GrGLFramebufferInfo, gr_gl_framebufferinfo_t));
 static_assert (sizeof (gr_gl_textureinfo_t) == sizeof (GrGLTextureInfo), ASSERT_MSG(GrGLTextureInfo, gr_gl_textureinfo_t));
 
-#if SK_VULKAN
+#if defined(SK_VULKAN)
 static_assert (sizeof (gr_vk_alloc_t) == sizeof (GrVkAlloc), ASSERT_MSG(GrVkAlloc, gr_vk_alloc_t));
 static_assert (sizeof (gr_vk_imageinfo_t) == sizeof (GrVkImageInfo), ASSERT_MSG(GrVkImageInfo, gr_vk_imageinfo_t));
 static_assert (sizeof (gr_vk_ycbcrconversioninfo_t) == sizeof (GrVkYcbcrConversionInfo), ASSERT_MSG(GrVkYcbcrConversionInfo, gr_vk_ycbcrconversioninfo_t));

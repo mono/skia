@@ -12,15 +12,17 @@ void draw(SkCanvas* canvas) {
     SkColor colors[] = {0xFF334455, 0xFF662211 };
     SkPaint paint;
     paint.setShader(SkGradientShader::MakeLinear(
-                     points, colors, nullptr, SK_ARRAY_COUNT(colors),
+                     points, colors, nullptr, std::size(colors),
                      SkTileMode::kClamp));
     paint.setDither(true);
+    auto img = bm32.asImage();
     c32.drawPaint(paint);
     canvas->scale(12, 12);
-    canvas->drawBitmap(bm32, 0, 0);
+    canvas->drawImage(img, 0, 0);
     paint.setBlendMode(SkBlendMode::kPlus);
-    canvas->drawBitmap(bm32, 0, 11, &paint);
-    canvas->drawBitmap(bm32, 0, 11, &paint);
-    canvas->drawBitmap(bm32, 0, 11, &paint);
+    SkSamplingOptions sampling;
+    canvas->drawImage(img, 0, 11, sampling, &paint);
+    canvas->drawImage(img, 0, 11, sampling, &paint);
+    canvas->drawImage(img, 0, 11, sampling, &paint);
 }
 }  // END FIDDLE

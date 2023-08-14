@@ -13,7 +13,7 @@
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkString.h"
 #include "include/core/SkTypes.h"
-#include "include/private/SkTArray.h"
+#include "include/private/base/SkTArray.h"
 #include "src/ports/SkFontHost_FreeType_common.h"
 
 class SkData;
@@ -57,24 +57,6 @@ private:
     using INHERITED = SkTypeface_Custom;
 };
 
-/** The stream SkTypeface implementation for the custom font manager. */
-class SkTypeface_Stream : public SkTypeface_Custom {
-public:
-    SkTypeface_Stream(std::unique_ptr<SkFontData> fontData,
-                      const SkFontStyle& style, bool isFixedPitch, bool sysFont,
-                      const SkString familyName);
-
-protected:
-    std::unique_ptr<SkStreamAsset> onOpenStream(int* ttcIndex) const override;
-    std::unique_ptr<SkFontData> onMakeFontData() const override;
-    sk_sp<SkTypeface> onMakeClone(const SkFontArguments& args) const override;
-
-private:
-    const std::unique_ptr<const SkFontData> fData;
-
-    using INHERITED = SkTypeface_Custom;
-};
-
 /** The file SkTypeface implementation for the custom font manager. */
 class SkTypeface_File : public SkTypeface_Custom {
 public:
@@ -104,15 +86,15 @@ public:
     explicit SkFontStyleSet_Custom(const SkString familyName);
 
     /** Should only be called during the initial build phase. */
-    void appendTypeface(sk_sp<SkTypeface_Custom> typeface);
+    void appendTypeface(sk_sp<SkTypeface> typeface);
     int count() override;
     void getStyle(int index, SkFontStyle* style, SkString* name) override;
-    SkTypeface* createTypeface(int index) override;
-    SkTypeface* matchStyle(const SkFontStyle& pattern) override;
+    sk_sp<SkTypeface> createTypeface(int index) override;
+    sk_sp<SkTypeface> matchStyle(const SkFontStyle& pattern) override;
     SkString getFamilyName();
 
 private:
-    SkTArray<sk_sp<SkTypeface_Custom>> fStyles;
+    skia_private::TArray<sk_sp<SkTypeface>> fStyles;
     SkString fFamilyName;
 
     friend class SkFontMgr_Custom;
@@ -127,7 +109,7 @@ private:
  */
 class SkFontMgr_Custom : public SkFontMgr {
 public:
-    typedef SkTArray<sk_sp<SkFontStyleSet_Custom>> Families;
+    typedef skia_private::TArray<sk_sp<SkFontStyleSet_Custom>> Families;
     class SystemFontLoader {
     public:
         virtual ~SystemFontLoader() { }
@@ -138,25 +120,22 @@ public:
 protected:
     int onCountFamilies() const override;
     void onGetFamilyName(int index, SkString* familyName) const override;
-    SkFontStyleSet_Custom* onCreateStyleSet(int index) const override;
-    SkFontStyleSet_Custom* onMatchFamily(const char familyName[]) const override;
-    SkTypeface* onMatchFamilyStyle(const char familyName[],
-                                   const SkFontStyle& fontStyle) const override;
-    SkTypeface* onMatchFamilyStyleCharacter(const char familyName[], const SkFontStyle&,
-                                            const char* bcp47[], int bcp47Count,
-                                            SkUnichar character) const override;
-    SkTypeface* onMatchFaceStyle(const SkTypeface* familyMember,
-                                 const SkFontStyle& fontStyle) const override;
+    sk_sp<SkFontStyleSet> onCreateStyleSet(int index) const override;
+    sk_sp<SkFontStyleSet> onMatchFamily(const char familyName[]) const override;
+    sk_sp<SkTypeface> onMatchFamilyStyle(const char familyName[],
+                                         const SkFontStyle& fontStyle) const override;
+    sk_sp<SkTypeface> onMatchFamilyStyleCharacter(const char familyName[], const SkFontStyle&,
+                                                  const char* bcp47[], int bcp47Count,
+                                                  SkUnichar character) const override;
     sk_sp<SkTypeface> onMakeFromData(sk_sp<SkData> data, int ttcIndex) const override;
     sk_sp<SkTypeface> onMakeFromStreamIndex(std::unique_ptr<SkStreamAsset>, int ttcIndex) const override;
     sk_sp<SkTypeface> onMakeFromStreamArgs(std::unique_ptr<SkStreamAsset>, const SkFontArguments&) const override;
-    sk_sp<SkTypeface> onMakeFromFontData(std::unique_ptr<SkFontData> data) const override;
     sk_sp<SkTypeface> onMakeFromFile(const char path[], int ttcIndex) const override;
     sk_sp<SkTypeface> onLegacyMakeTypeface(const char familyName[], SkFontStyle style) const override;
 
 private:
     Families fFamilies;
-    SkFontStyleSet_Custom* fDefaultFamily;
+    sk_sp<SkFontStyleSet> fDefaultFamily;
     SkTypeface_FreeType::Scanner fScanner;
 };
 

@@ -22,7 +22,7 @@ DEF_SIMPLE_GM(bug6643, canvas, 200, 200) {
 
     SkPaint p;
     p.setAntiAlias(true);
-    p.setShader(SkGradientShader::MakeSweep(100, 100, colors, nullptr, SK_ARRAY_COUNT(colors),
+    p.setShader(SkGradientShader::MakeSweep(100, 100, colors, nullptr, std::size(colors),
                                             SkGradientShader::kInterpolateColorsInPremul_Flag,
                                             nullptr));
 
@@ -30,7 +30,8 @@ DEF_SIMPLE_GM(bug6643, canvas, 200, 200) {
     recorder.beginRecording(200, 200)->drawPaint(p);
 
     p.setShader(recorder.finishRecordingAsPicture()->makeShader(
-                                            SkTileMode::kRepeat, SkTileMode::kRepeat));
+                                            SkTileMode::kRepeat, SkTileMode::kRepeat,
+                                            SkFilterMode::kNearest, nullptr, nullptr));
     canvas->drawColor(SK_ColorWHITE);
     canvas->drawPaint(p);
 }

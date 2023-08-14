@@ -8,21 +8,21 @@
 #ifndef SkBitSet_DEFINED
 #define SkBitSet_DEFINED
 
-#include "include/private/SkMalloc.h"
-#include "include/private/SkTemplates.h"
-#include "src/core/SkMathPriv.h"
+#include "include/private/base/SkMalloc.h"
+#include "include/private/base/SkTemplates.h"
+#include "src/base/SkMathPriv.h"
+
 #include <climits>
 #include <cstring>
 #include <limits>
 #include <memory>
+#include <optional>
 
 class SkBitSet {
 public:
     explicit SkBitSet(size_t size)
         : fSize(size)
-        // May http://wg21.link/p0593 be accepted.
-        , fChunks((Chunk*)sk_calloc_throw(NumChunksFor(fSize) * sizeof(Chunk)))
-    {}
+        , fChunks((Chunk*)sk_calloc_throw(NumChunksFor(fSize) * sizeof(Chunk))) {}
 
     SkBitSet(const SkBitSet&) = delete;
     SkBitSet& operator=(const SkBitSet&) = delete;
@@ -89,38 +89,7 @@ public:
         }
     }
 
-    // Use std::optional<size_t> when possible.
-    class OptionalIndex {
-        bool fHasValue;
-        size_t fValue;
-    public:
-        OptionalIndex() : fHasValue(false) {}
-        constexpr OptionalIndex(size_t index) : fHasValue(true), fValue(index) {}
-
-        constexpr size_t* operator->() { return &fValue; }
-        constexpr const size_t* operator->() const { return &fValue; }
-        constexpr size_t& operator*() & { return fValue; }
-        constexpr const size_t& operator*() const& { return fValue; }
-        constexpr size_t&& operator*() && { return std::move(fValue); }
-        constexpr const size_t&& operator*() const&& { return std::move(fValue); }
-
-        constexpr explicit operator bool() const noexcept { return fHasValue; }
-        constexpr bool has_value() const noexcept { return fHasValue; }
-
-        constexpr size_t& value() & { return fValue; }
-        constexpr const size_t& value() const & { return fValue; }
-        constexpr size_t&& value() && { return std::move(fValue); }
-        constexpr const size_t&& value() const && { return std::move(fValue); }
-
-        template<typename U> constexpr size_t value_or(U&& defaultValue) const& {
-            return bool(*this) ? **this
-                               : static_cast<size_t>(std::forward<U>(defaultValue));
-        }
-        template<typename U> constexpr size_t value_or(U&& defaultValue) && {
-            return bool(*this) ? std::move(**this)
-                               : static_cast<size_t>(std::forward<U>(defaultValue));
-        }
-    };
+    using OptionalIndex = std::optional<size_t>;
 
     // If any bits are set, returns the index of the first.
     OptionalIndex findFirst() {
@@ -158,9 +127,9 @@ private:
 
     using Chunk = uint32_t;
     static_assert(std::numeric_limits<Chunk>::radix == 2);
-    static constexpr size_t kChunkBits = std::numeric_limits<Chunk>::digits;
+    inline static constexpr size_t kChunkBits = std::numeric_limits<Chunk>::digits;
     static_assert(kChunkBits == sizeof(Chunk)*CHAR_BIT, "SkBitSet must use every bit in a Chunk");
-    std::unique_ptr<Chunk, SkFunctionWrapper<void(void*), sk_free>> fChunks;
+    std::unique_ptr<Chunk, SkOverloadedFunctionObject<void(void*), sk_free>> fChunks;
 
     Chunk* chunkFor(size_t index) const {
         return fChunks.get() + (index / kChunkBits);

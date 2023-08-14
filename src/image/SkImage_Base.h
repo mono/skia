@@ -8,35 +8,71 @@
 #ifndef SkImage_Base_DEFINED
 #define SkImage_Base_DEFINED
 
+#include "include/core/SkData.h"
 #include "include/core/SkImage.h"
-#include "include/core/SkSurface.h"
+#include "include/core/SkRefCnt.h"
+#include "include/core/SkTypes.h"
 #include "src/core/SkMipmap.h"
+
 #include <atomic>
-
-#if SK_SUPPORT_GPU
-#include "include/private/SkTDArray.h"
-#include "src/gpu/GrSurfaceProxyView.h"
-#include "src/gpu/GrTextureProxy.h"
-
-class GrTexture;
-#endif
-
-#include <new>
+#include <cstddef>
+#include <cstdint>
 
 class GrDirectContext;
 class GrImageContext;
-class GrSamplerState;
-class SkCachedData;
-struct SkYUVASizeInfo;
+class GrRecordingContext;
+class SkBitmap;
+class SkColorSpace;
+class SkImageFilter;
+class SkImageFilter_Base;
+class SkPixmap;
+class SkSpecialImage;
+enum SkColorType : int;
+enum SkYUVColorSpace : int;
+struct SkIPoint;
+struct SkIRect;
+struct SkISize;
+struct SkImageInfo;
 
 enum {
     kNeedNewImageUniqueID = 0
 };
 
+namespace skif {
+class Context;
+}
+
+namespace skgpu { namespace graphite { class Recorder; } }
+
 class SkImage_Base : public SkImage {
 public:
     ~SkImage_Base() override;
 
+    // From SkImage.h
+    sk_sp<SkImage> makeColorSpace(GrDirectContext*, sk_sp<SkColorSpace>) const override;
+    sk_sp<SkImage> makeColorSpace(skgpu::graphite::Recorder*,
+                                  sk_sp<SkColorSpace>,
+                                  RequiredProperties) const override;
+    sk_sp<SkImage> makeColorTypeAndColorSpace(GrDirectContext* dContext,
+                                              SkColorType targetColorType,
+                                              sk_sp<SkColorSpace> targetCS) const override;
+    sk_sp<SkImage> makeColorTypeAndColorSpace(skgpu::graphite::Recorder*,
+                                              SkColorType,
+                                              sk_sp<SkColorSpace>,
+                                              RequiredProperties) const override;
+    sk_sp<SkImage> makeSubset(GrDirectContext* direct, const SkIRect& subset) const override;
+    sk_sp<SkImage> makeSubset(skgpu::graphite::Recorder*,
+                              const SkIRect&,
+                              RequiredProperties) const override;
+    sk_sp<SkImage> makeWithFilter(GrRecordingContext* context,
+                                  const SkImageFilter* filter,
+                                  const SkIRect& subset,
+                                  const SkIRect& clipBounds,
+                                  SkIRect* outSubset,
+                                  SkIPoint* offset) const override;
+    size_t textureSize() const override { return 0; }
+
+    // Methods that we want to use elsewhere in Skia, but not be a part of the public API.
     virtual bool onPeekPixels(SkPixmap*) const { return false; }
 
     virtual const SkBitmap* onPeekBitmap() const { return nullptr; }
@@ -49,6 +85,8 @@ public:
                               int srcY,
                               CachingHint) const = 0;
 
+    virtual bool onHasMipmaps() const = 0;
+
     virtual SkMipmap* onPeekMips() const { return nullptr; }
 
     sk_sp<SkMipmap> refMips() const {
@@ -59,80 +97,88 @@ public:
      * Default implementation does a rescale/read and then calls the callback.
      */
     virtual void onAsyncRescaleAndReadPixels(const SkImageInfo&,
-                                             const SkIRect& srcRect,
+                                             SkIRect srcRect,
                                              RescaleGamma,
-                                             SkFilterQuality,
+                                             RescaleMode,
                                              ReadPixelsCallback,
-                                             ReadPixelsContext);
+                                             ReadPixelsContext) const;
     /**
      * Default implementation does a rescale/read/yuv conversion and then calls the callback.
      */
     virtual void onAsyncRescaleAndReadPixelsYUV420(SkYUVColorSpace,
                                                    sk_sp<SkColorSpace> dstColorSpace,
-                                                   const SkIRect& srcRect,
-                                                   const SkISize& dstSize,
+                                                   SkIRect srcRect,
+                                                   SkISize dstSize,
                                                    RescaleGamma,
-                                                   SkFilterQuality,
+                                                   RescaleMode,
                                                    ReadPixelsCallback,
-                                                   ReadPixelsContext);
+                                                   ReadPixelsContext) const;
 
     virtual GrImageContext* context() const { return nullptr; }
 
     /** this->context() try-casted to GrDirectContext. Useful for migrations – avoid otherwise! */
-    GrDirectContext* directContext() const;
+    virtual GrDirectContext* directContext() const { return nullptr; }
 
-#if SK_SUPPORT_GPU
-    virtual GrSemaphoresSubmitted onFlush(GrDirectContext*, const GrFlushInfo&) {
-        return GrSemaphoresSubmitted::kNo;
-    }
-
-    // Return the proxy if this image is backed by a single proxy. For YUVA images, this
-    // will return nullptr unless the YUVA planes have been converted to RGBA in which case
-    // that single backing proxy will be returned.
-    virtual GrTextureProxy* peekProxy() const { return nullptr; }
-
-    // If it exists, this returns a pointer to the GrSurfaceProxyView of image. The caller does not
-    // own the returned view and must copy it if they want to gain a ref to the internal proxy.
-    // If the returned view is not null, then it is guaranteed to have a valid proxy. Additionally
-    // this call will flatten a SkImage_GpuYUV to a single texture.
-    virtual const GrSurfaceProxyView* view(GrRecordingContext*) const { return nullptr; }
-
-    virtual GrSurfaceProxyView refView(GrRecordingContext*, GrMipmapped) const = 0;
-    virtual GrSurfaceProxyView refPinnedView(GrRecordingContext*, uint32_t* uniqueID) const {
-        return {};
-    }
-    virtual bool isYUVA() const { return false; }
-#endif
-    virtual GrBackendTexture onGetBackendTexture(bool flushPendingGrContextIO,
-                                                 GrSurfaceOrigin* origin) const;
+    // If this image is the current cached image snapshot of a surface then this is called when the
+    // surface is destroyed to indicate no further writes may happen to surface backing store.
+    virtual void generatingSurfaceIsDeleted() {}
 
     // return a read-only copy of the pixels. We promise to not modify them,
     // but only inspect them (or encode them).
     virtual bool getROPixels(GrDirectContext*, SkBitmap*,
                              CachingHint = kAllow_CachingHint) const = 0;
 
-    virtual sk_sp<SkImage> onMakeSubset(const SkIRect&, GrDirectContext*) const = 0;
+    virtual sk_sp<SkImage> onMakeSubset(GrDirectContext*, const SkIRect&) const = 0;
 
     virtual sk_sp<SkData> onRefEncoded() const { return nullptr; }
 
     virtual bool onAsLegacyBitmap(GrDirectContext*, SkBitmap*) const;
 
-    // True for picture-backed and codec-backed
-    virtual bool onIsLazyGenerated() const { return false; }
+    enum class Type {
+        kRaster,
+        kRasterPinnable,
+        kLazy,
+        kLazyPicture,
+        kGanesh,
+        kGaneshYUVA,
+        kGraphite,
+        kGraphiteYUVA,
+    };
 
-    // True for images instantiated in GPU memory
-    virtual bool onIsTextureBacked() const { return false; }
+    virtual Type type() const = 0;
+
+    // True for picture-backed and codec-backed
+    bool isLazyGenerated() const override {
+        return this->type() == Type::kLazy || this->type() == Type::kLazyPicture;
+    }
+
+    bool isRasterBacked() const {
+        return this->type() == Type::kRaster || this->type() == Type::kRasterPinnable;
+    }
+
+    // True for images instantiated by Ganesh in GPU memory
+    bool isGaneshBacked() const {
+        return this->type() == Type::kGanesh || this->type() == Type::kGaneshYUVA;
+    }
+
+    // True for images instantiated by Graphite in GPU memory
+    bool isGraphiteBacked() const {
+        return this->type() == Type::kGraphite || this->type() == Type::kGraphiteYUVA;
+    }
+
+    bool isYUVA() const {
+        return this->type() == Type::kGaneshYUVA || this->type() == Type::kGraphiteYUVA;
+    }
+
+    bool isTextureBacked() const override {
+        return this->isGaneshBacked() || this->isGraphiteBacked();
+    }
 
     // Call when this image is part of the key to a resourcecache entry. This allows the cache
     // to know automatically those entries can be purged when this SkImage deleted.
     virtual void notifyAddedToRasterCache() const {
         fAddedToRasterCache.store(true);
     }
-
-    virtual bool onIsValid(GrRecordingContext*) const = 0;
-
-    virtual bool onPinAsTexture(GrRecordingContext*) const { return false; }
-    virtual void onUnpinAsTexture(GrRecordingContext*) const {}
 
     virtual sk_sp<SkImage> onMakeColorTypeAndColorSpace(SkColorType, sk_sp<SkColorSpace>,
                                                         GrDirectContext*) const = 0;
@@ -144,14 +190,24 @@ public:
         return nullptr;
     }
 
+    virtual sk_sp<SkImage> onMakeSubset(skgpu::graphite::Recorder*,
+                                        const SkIRect&,
+                                        RequiredProperties) const = 0;
+
 protected:
     SkImage_Base(const SkImageInfo& info, uint32_t uniqueID);
+
+    sk_sp<SkImage> filterSpecialImage(skif::Context context,
+                                      const SkImageFilter_Base* filter,
+                                      const SkSpecialImage* specialImage,
+                                      const SkIRect& subset,
+                                      const SkIRect& clipBounds,
+                                      SkIRect* outSubset,
+                                      SkIPoint* offset) const;
 
 private:
     // Set true by caches when they cache content that's derived from the current pixels.
     mutable std::atomic<bool> fAddedToRasterCache;
-
-    using INHERITED = SkImage;
 };
 
 static inline SkImage_Base* as_IB(SkImage* image) {
@@ -164,6 +220,10 @@ static inline SkImage_Base* as_IB(const sk_sp<SkImage>& image) {
 
 static inline const SkImage_Base* as_IB(const SkImage* image) {
     return static_cast<const SkImage_Base*>(image);
+}
+
+static inline const SkImage_Base* as_IB(sk_sp<const SkImage> image) {
+    return static_cast<const SkImage_Base*>(image.get());
 }
 
 #endif

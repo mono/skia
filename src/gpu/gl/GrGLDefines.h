@@ -243,6 +243,10 @@
 #define GR_GL_MULTISAMPLE_COVERAGE_MODES     0x8E12
 #define GR_GL_MAX_TEXTURE_BUFFER_SIZE        0x8C2B
 
+#define GR_GL_CONTEXT_FLAGS                  0x821E
+#define GR_GL_CONTEXT_FLAG_PROTECTED_CONTENT_BIT_EXT  0x00000010
+#define GR_GL_TEXTURE_PROTECTED_EXT          0x8BFA
+
 /* GetTextureParameter */
 /*      GL_TEXTURE_MAG_FILTER */
 /*      GL_TEXTURE_MIN_FILTER */
@@ -467,6 +471,7 @@
 
 /* Luminance sized formats */
 #define GR_GL_LUMINANCE8                     0x8040
+#define GR_GL_LUMINANCE8_ALPHA8              0x8045
 #define GR_GL_LUMINANCE16F                   0x881E
 
 /* Alpha sized formats */
@@ -503,6 +508,7 @@
 #define GR_GL_RGB565                         0x8D62
 #define GR_GL_RGB8                           0x8051
 #define GR_GL_SRGB8                          0x8C41
+#define GR_GL_RGBX8                          0x96BA
 
 /* RGB integer sized formats */
 #define GR_GL_RGB8I                          0x8D8F
@@ -544,7 +550,6 @@
 /* Shaders */
 #define GR_GL_FRAGMENT_SHADER                          0x8B30
 #define GR_GL_VERTEX_SHADER                            0x8B31
-#define GR_GL_GEOMETRY_SHADER                          0x8DD9
 #define GR_GL_TESS_CONTROL_SHADER                      0x8E88
 #define GR_GL_TESS_EVALUATION_SHADER                   0x8E87
 #define GR_GL_MAX_VERTEX_ATTRIBS                       0x8869
@@ -626,6 +631,8 @@
 #define GR_GL_TEXTURE_WRAP_S                 0x2802
 #define GR_GL_TEXTURE_WRAP_T                 0x2803
 #define GR_GL_TEXTURE_USAGE                  0x93A2
+#define GR_GL_TEXTURE_MAX_ANISOTROPY         0x84FE
+#define GR_GL_MAX_TEXTURE_MAX_ANISOTROPY     0x84FF
 
 /* TextureTarget */
 /*      GL_TEXTURE_2D */
@@ -865,6 +872,7 @@
 
 /* Program Binary */
 #define GR_GL_NUM_PROGRAM_BINARY_FORMATS     0x87FE
+#define GR_GL_PROGRAM_BINARY_FORMATS         0x87FF
 
 /* Shader Precision-Specified Types */
 #define GR_GL_LOW_FLOAT                      0x8DF0
@@ -1105,7 +1113,7 @@
 #define GR_GL_NUM_SAMPLE_COUNTS                             0x9380
 
 /* EGL Defines */
-#define GR_EGL_NO_DISPLAY                                   ((GrEGLDisplay)0)
+#define GR_EGL_NO_DISPLAY                                   ((GrEGLDisplay)nullptr)
 #define GR_EGL_EXTENSIONS                                   0x3055
 #define GR_EGL_GL_TEXTURE_2D                                0x30B1
 #define GR_EGL_GL_TEXTURE_LEVEL                             0x30BC
@@ -1113,7 +1121,7 @@
 #define GR_EGL_FALSE                                        0x0
 #define GR_EGL_TRUE                                         0x1
 #define GR_EGL_NONE                                         0x3038
-#define GR_EGL_NO_IMAGE                                    ((GrEGLImage)0)
+#define GR_EGL_NO_IMAGE                                     ((GrEGLImage)nullptr)
 
 /* Programs */
 #define GR_GL_PROGRAM_BINARY_RETRIEVABLE_HINT               0x8257

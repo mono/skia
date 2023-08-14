@@ -4,7 +4,7 @@
 // HASH=a9889b519a26896b900da0444e423c61
 REG_FIDDLE(Surface_makeSurface, 256, 96, false, 0) {
 void draw(SkCanvas* canvas) {
-    sk_sp<SkSurface> big(SkSurface::MakeRasterN32Premul(64, 64));
+    sk_sp<SkSurface> big(SkSurfaces::Raster(SkImageInfo::MakeN32Premul(64, 64)));
     sk_sp<SkSurface> lil(big->makeSurface(SkImageInfo::MakeN32(32, 32, kPremul_SkAlphaType)));
     big->getCanvas()->clear(SK_ColorRED);
     lil->getCanvas()->clear(SK_ColorBLACK);
@@ -12,12 +12,12 @@ void draw(SkCanvas* canvas) {
     if (big->peekPixels(&pixmap)) {
         SkBitmap bigBits;
         bigBits.installPixels(pixmap);
-        canvas->drawBitmap(bigBits, 0, 0);
+        canvas->drawImage(bigBits.asImage(), 0, 0);
     }
     if (lil->peekPixels(&pixmap)) {
         SkBitmap lilBits;
         lilBits.installPixels(pixmap);
-        canvas->drawBitmap(lilBits, 64, 64);
+        canvas->drawImage(lilBits.asImage(), 64, 64);
     }
 }
 }  // END FIDDLE

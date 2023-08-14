@@ -6,13 +6,22 @@
  */
 
 #include "include/core/SkPathBuilder.h"
+
+#include "include/core/SkMatrix.h"
 #include "include/core/SkRRect.h"
 #include "include/private/SkPathRef.h"
-#include "include/private/SkSafe32.h"
+#include "include/private/base/SkPathEnums.h"
+#include "include/private/base/SkSafe32.h"
+#include "src/base/SkVx.h"
 #include "src/core/SkGeometry.h"
 #include "src/core/SkPathPriv.h"
-// need SkDVector
-#include "src/pathops/SkPathOpsPoint.h"
+
+#include <algorithm>
+#include <cmath>
+#include <cstdint>
+#include <cstring>
+#include <iterator>
+#include <utility>
 
 SkPathBuilder::SkPathBuilder() {
     this->reset();
@@ -31,9 +40,9 @@ SkPathBuilder::~SkPathBuilder() {
 }
 
 SkPathBuilder& SkPathBuilder::reset() {
-    fPts.reset();
-    fVerbs.reset();
-    fConicWeights.reset();
+    fPts.clear();
+    fVerbs.clear();
+    fConicWeights.clear();
     fFillType = SkPathFillType::kWinding;
     fIsVolatile = false;
 
@@ -41,10 +50,8 @@ SkPathBuilder& SkPathBuilder::reset() {
 
     fSegmentMask = 0;
     fLastMovePoint = {0, 0};
+    fLastMoveIndex = -1;        // illegal
     fNeedsMoveVerb = true;
-
-    // testing
-    fOverrideConvexity = SkPathConvexity::kUnknown;
 
     return *this;
 }
@@ -66,13 +73,13 @@ SkPathBuilder& SkPathBuilder::operator=(const SkPath& src) {
 }
 
 void SkPathBuilder::incReserve(int extraPtCount, int extraVbCount) {
-    fPts.setReserve(  Sk32_sat_add(fPts.count(),   extraPtCount));
-    fVerbs.setReserve(Sk32_sat_add(fVerbs.count(), extraVbCount));
+    fPts.reserve_back(  Sk32_sat_add(fPts.size(),   extraPtCount));
+    fVerbs.reserve_back(Sk32_sat_add(fVerbs.size(), extraVbCount));
 }
 
 SkRect SkPathBuilder::computeBounds() const {
     SkRect bounds;
-    bounds.setBounds(fPts.begin(), fPts.count());
+    bounds.setBounds(fPts.begin(), fPts.size());
     return bounds;
 }
 
@@ -85,6 +92,9 @@ SkRect SkPathBuilder::computeBounds() const {
  */
 
 SkPathBuilder& SkPathBuilder::moveTo(SkPoint pt) {
+    // only needed while SkPath is mutable
+    fLastMoveIndex = SkToInt(fPts.size());
+
     fPts.push_back(pt);
     fVerbs.push_back((uint8_t)SkPathVerb::kMove);
 
@@ -106,7 +116,7 @@ SkPathBuilder& SkPathBuilder::lineTo(SkPoint pt) {
 SkPathBuilder& SkPathBuilder::quadTo(SkPoint pt1, SkPoint pt2) {
     this->ensureMove();
 
-    SkPoint* p = fPts.append(2);
+    SkPoint* p = fPts.push_back_n(2);
     p[0] = pt1;
     p[1] = pt2;
     fVerbs.push_back((uint8_t)SkPathVerb::kQuad);
@@ -118,7 +128,7 @@ SkPathBuilder& SkPathBuilder::quadTo(SkPoint pt1, SkPoint pt2) {
 SkPathBuilder& SkPathBuilder::conicTo(SkPoint pt1, SkPoint pt2, SkScalar w) {
     this->ensureMove();
 
-    SkPoint* p = fPts.append(2);
+    SkPoint* p = fPts.push_back_n(2);
     p[0] = pt1;
     p[1] = pt2;
     fVerbs.push_back((uint8_t)SkPathVerb::kConic);
@@ -131,7 +141,7 @@ SkPathBuilder& SkPathBuilder::conicTo(SkPoint pt1, SkPoint pt2, SkScalar w) {
 SkPathBuilder& SkPathBuilder::cubicTo(SkPoint pt1, SkPoint pt2, SkPoint pt3) {
     this->ensureMove();
 
-    SkPoint* p = fPts.append(3);
+    SkPoint* p = fPts.push_back_n(3);
     p[0] = pt1;
     p[1] = pt2;
     p[2] = pt3;
@@ -142,7 +152,7 @@ SkPathBuilder& SkPathBuilder::cubicTo(SkPoint pt1, SkPoint pt2, SkPoint pt3) {
 }
 
 SkPathBuilder& SkPathBuilder::close() {
-    if (fVerbs.count() > 0) {
+    if (!fVerbs.empty()) {
         this->ensureMove();
 
         fVerbs.push_back((uint8_t)SkPathVerb::kClose);
@@ -198,15 +208,24 @@ SkPath SkPathBuilder::make(sk_sp<SkPathRef> pr) const {
         default: break;
     }
 
-    if (fOverrideConvexity != SkPathConvexity::kUnknown) {
-        convexity = fOverrideConvexity;
-    }
-
     // Wonder if we can combine convexity and dir internally...
     //  unknown, convex_cw, convex_ccw, concave
     // Do we ever have direction w/o convexity, or viceversa (inside path)?
     //
-    return SkPath(std::move(pr), fFillType, fIsVolatile, convexity, dir);
+    auto path = SkPath(std::move(pr), fFillType, fIsVolatile, convexity, dir);
+
+    // This hopefully can go away in the future when Paths are immutable,
+    // but if while they are still editable, we need to correctly set this.
+    const uint8_t* start = path.fPathRef->verbsBegin();
+    const uint8_t* stop  = path.fPathRef->verbsEnd();
+    if (start < stop) {
+        SkASSERT(fLastMoveIndex >= 0);
+        // peek at the last verb, to know if our last contour is closed
+        const bool isClosed = (stop[-1] == (uint8_t)SkPathVerb::kClose);
+        path.fLastMoveToIndex = isClosed ? ~fLastMoveIndex : fLastMoveIndex;
+    }
+
+    return path;
 }
 
 SkPath SkPathBuilder::snapshot() const {
@@ -314,7 +333,7 @@ SkPathBuilder& SkPathBuilder::arcTo(const SkRect& oval, SkScalar startAngle, SkS
         return *this;
     }
 
-    if (fVerbs.count() == 0) {
+    if (fVerbs.empty()) {
         forceMoveTo = true;
     }
 
@@ -406,22 +425,25 @@ SkPathBuilder& SkPathBuilder::arcTo(SkPoint p1, SkPoint p2, SkScalar radius) {
     SkPoint start = fPts.back();
 
     // need double precision for these calcs.
-    SkDVector befored, afterd;
-    befored.set({p1.fX - start.fX, p1.fY - start.fY}).normalize();
-    afterd.set({p2.fX - p1.fX, p2.fY - p1.fY}).normalize();
-    double cosh = befored.dot(afterd);
-    double sinh = befored.cross(afterd);
+    skvx::double2 befored = normalize(skvx::double2{p1.fX - start.fX, p1.fY - start.fY});
+    skvx::double2 afterd = normalize(skvx::double2{p2.fX - p1.fX, p2.fY - p1.fY});
+    double cosh = dot(befored, afterd);
+    double sinh = cross(befored, afterd);
 
-    if (!befored.isFinite() || !afterd.isFinite() || SkScalarNearlyZero(SkDoubleToScalar(sinh))) {
+    // If the previous point equals the first point, befored will be denormalized.
+    // If the two points equal, afterd will be denormalized.
+    // If the second point equals the first point, sinh will be zero.
+    // In all these cases, we cannot construct an arc, so we construct a line to the first point.
+    if (!isfinite(befored) || !isfinite(afterd) || SkScalarNearlyZero(SkDoubleToScalar(sinh))) {
         return this->lineTo(p1);
     }
 
     // safe to convert back to floats now
-    SkVector before = befored.asSkVector();
-    SkVector after = afterd.asSkVector();
     SkScalar dist = SkScalarAbs(SkDoubleToScalar(radius * (1 - cosh) / sinh));
-    SkScalar xx = p1.fX - dist * before.fX;
-    SkScalar yy = p1.fY - dist * before.fY;
+    SkScalar xx = p1.fX - dist * befored[0];
+    SkScalar yy = p1.fY - dist * befored[1];
+
+    SkVector after = SkVector::Make(afterd[0], afterd[1]);
     after.setLength(dist);
     this->lineTo(xx, yy);
     SkScalar weight = SkScalarSqrt(SkDoubleToScalar(SK_ScalarHalf + cosh * 0.5));
@@ -479,7 +501,7 @@ SkPathBuilder& SkPathBuilder::arcTo(SkPoint rad, SkScalar angle, SkPathBuilder::
     pointTransform.preRotate(-angle);
 
     SkPoint unitPts[2];
-    pointTransform.mapPoints(unitPts, srcPts, (int) SK_ARRAY_COUNT(unitPts));
+    pointTransform.mapPoints(unitPts, srcPts, (int) std::size(unitPts));
     SkVector delta = unitPts[1] - unitPts[0];
 
     SkScalar d = delta.fX * delta.fX + delta.fY * delta.fY;
@@ -541,7 +563,7 @@ SkPathBuilder& SkPathBuilder::arcTo(SkPoint rad, SkScalar angle, SkPathBuilder::
         unitPts[0] = unitPts[1];
         unitPts[0].offset(t * sinEndTheta, -t * cosEndTheta);
         SkPoint mapped[2];
-        pointTransform.mapPoints(mapped, unitPts, (int) SK_ARRAY_COUNT(unitPts));
+        pointTransform.mapPoints(mapped, unitPts, (int) std::size(unitPts));
         /*
         Computing the arc width introduces rounding errors that cause arcs to start
         outside their marks. A round rect may lose convexity as a result. If the input
@@ -557,11 +579,9 @@ SkPathBuilder& SkPathBuilder::arcTo(SkPoint rad, SkScalar angle, SkPathBuilder::
         startTheta = endTheta;
     }
 
-#ifndef SK_LEGACY_PATH_ARCTO_ENDPOINT
     // The final point should match the input point (by definition); replace it to
     // ensure that rounding errors in the above math don't cause any problems.
     fPts.back() = endPt;
-#endif
     return *this;
 }
 
@@ -760,8 +780,8 @@ SkPathBuilder& SkPathBuilder::polylineTo(const SkPoint pts[], int count) {
         this->ensureMove();
 
         this->incReserve(count, count);
-        memcpy(fPts.append(count), pts, count * sizeof(SkPoint));
-        memset(fVerbs.append(count), (uint8_t)SkPathVerb::kLine, count);
+        memcpy(fPts.push_back_n(count), pts, count * sizeof(SkPoint));
+        memset(fVerbs.push_back_n(count), (uint8_t)SkPathVerb::kLine, count);
         fSegmentMask |= kLine_SkPathSegmentMask;
     }
     return *this;
@@ -773,6 +793,26 @@ SkPathBuilder& SkPathBuilder::offset(SkScalar dx, SkScalar dy) {
     for (auto& p : fPts) {
         p += {dx, dy};
     }
+    return *this;
+}
+
+SkPathBuilder& SkPathBuilder::addPath(const SkPath& src) {
+    SkPath::RawIter iter(src);
+    SkPoint pts[4];
+    SkPath::Verb verb;
+
+    while ((verb = iter.next(pts)) != SkPath::kDone_Verb) {
+        switch (verb) {
+            case SkPath::kMove_Verb:  this->moveTo (pts[0]); break;
+            case SkPath::kLine_Verb:  this->lineTo (pts[1]); break;
+            case SkPath::kQuad_Verb:  this->quadTo (pts[1], pts[2]); break;
+            case SkPath::kCubic_Verb: this->cubicTo(pts[1], pts[2], pts[3]); break;
+            case SkPath::kConic_Verb: this->conicTo(pts[1], pts[2], iter.conicWeight()); break;
+            case SkPath::kClose_Verb: this->close(); break;
+            case SkPath::kDone_Verb: SkUNREACHABLE;
+        }
+    }
+
     return *this;
 }
 

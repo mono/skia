@@ -27,8 +27,12 @@
 #include "include/core/SkTypeface.h"
 #include "include/core/SkTypes.h"
 #include "include/effects/SkGradientShader.h"
+#include "include/gpu/GrDirectContext.h"
+#include "include/gpu/GrRecordingContext.h"
+#include "include/gpu/ganesh/SkSurfaceGanesh.h"
 #include "include/utils/SkTextUtils.h"
 #include "tools/ToolUtils.h"
+#include "tools/gpu/BackendSurfaceFactory.h"
 
 #define W 200
 #define H 100
@@ -46,9 +50,9 @@ static sk_sp<SkSurface> make_surface(GrRecordingContext* ctx,
                                      SkPixelGeometry geo) {
     SkSurfaceProps props(0, geo);
     if (ctx) {
-        return SkSurface::MakeRenderTarget(ctx, SkBudgeted::kNo, info, 0, &props);
+        return SkSurfaces::RenderTarget(ctx, skgpu::Budgeted::kNo, info, 0, &props);
     } else {
-        return SkSurface::MakeRaster(info, &props);
+        return SkSurfaces::Raster(info, &props);
     }
 }
 
@@ -108,7 +112,7 @@ protected:
                 continue;
             }
             test_draw(surface->getCanvas(), rec.fLabel);
-            surface->draw(canvas, x, y, nullptr);
+            surface->draw(canvas, x, y);
             y += H;
         }
     }
@@ -148,7 +152,7 @@ protected:
         drawInto(surf->getCanvas());
 
         sk_sp<SkImage> image(surf->makeImageSnapshot());
-        canvas->drawImage(image, 10, 10, nullptr);
+        canvas->drawImage(image, 10, 10);
 
         auto surf2(surf->makeSurface(info));
         drawInto(surf2->getCanvas());
@@ -157,7 +161,7 @@ protected:
         SkASSERT(equal(surf->props(), surf2->props()));
 
         sk_sp<SkImage> image2(surf2->makeImageSnapshot());
-        canvas->drawImage(image2.get(), 10 + SkIntToScalar(image->width()) + 10, 10, nullptr);
+        canvas->drawImage(image2.get(), 10 + SkIntToScalar(image->width()) + 10, 10);
     }
 
 private:
@@ -167,9 +171,77 @@ DEF_GM( return new NewSurfaceGM )
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-DEF_SIMPLE_GM(copy_on_write_retain, canvas, 256, 256) {
+// The GPU backend may behave differently when images are snapped from wrapped textures and
+// render targets compared.
+namespace {
+enum SurfaceType {
+    kManaged,
+    kBackendTexture,
+    kBackendRenderTarget
+};
+}
+
+static sk_sp<SkSurface> make_surface(const SkImageInfo& ii, SkCanvas* canvas, SurfaceType type) {
+    GrDirectContext* direct = GrAsDirectContext(canvas->recordingContext());
+    switch (type) {
+        case kManaged:
+            return ToolUtils::makeSurface(canvas, ii);
+        case kBackendTexture:
+            if (!direct) {
+                return nullptr;
+            }
+            return sk_gpu_test::MakeBackendTextureSurface(direct, ii, kTopLeft_GrSurfaceOrigin, 1);
+        case kBackendRenderTarget:
+            return sk_gpu_test::MakeBackendRenderTargetSurface(direct,
+                                                               ii,
+                                                               kTopLeft_GrSurfaceOrigin,
+                                                               1);
+    }
+    return nullptr;
+}
+
+using MakeSurfaceFn = std::function<sk_sp<SkSurface>(const SkImageInfo&)>;
+
+#define DEF_BASIC_SURFACE_TEST(name, canvas, main, W, H)            \
+    DEF_SIMPLE_GM(name, canvas, W, H) {                             \
+        auto make = [canvas](const SkImageInfo& ii) {               \
+            return make_surface(ii, canvas, SurfaceType::kManaged); \
+        };                                                          \
+        main(canvas, MakeSurfaceFn(make));                          \
+    }
+
+#define DEF_BACKEND_SURFACE_TEST(name, canvas, main, type, W, H)                                \
+    DEF_SIMPLE_GM_CAN_FAIL(name, canvas, err_msg, W, H) {                                       \
+        GrDirectContext* direct = GrAsDirectContext(canvas->recordingContext());                \
+        if (!direct || direct->abandoned()) {                                                   \
+            *err_msg = "Requires non-abandoned GrDirectContext";                                \
+            return skiagm::DrawResult::kSkip;                                                   \
+        }                                                                                       \
+        auto make = [canvas](const SkImageInfo& ii) { return make_surface(ii, canvas, type); }; \
+        main(canvas, MakeSurfaceFn(make));                                                      \
+        return skiagm::DrawResult::kOk;                                                         \
+    }
+
+#define DEF_BET_SURFACE_TEST(name, canvas, main, W, H)                  \
+    DEF_BACKEND_SURFACE_TEST(SK_MACRO_CONCAT(name, _bet), canvas, main, \
+                             SurfaceType::kBackendTexture, W, H)
+
+#define DEF_BERT_SURFACE_TEST(name, canvas, main, W, H)                  \
+    DEF_BACKEND_SURFACE_TEST(SK_MACRO_CONCAT(name, _bert), canvas, main, \
+                             SurfaceType::kBackendRenderTarget, W, H)
+
+// This makes 3 GMs from the same code, normal, wrapped backend texture, and wrapped backend
+// render target.
+#define DEF_SURFACE_TESTS(name, canvas, W, H)                                  \
+    static void SK_MACRO_CONCAT(name, _main)(SkCanvas*, const MakeSurfaceFn&); \
+    DEF_BASIC_SURFACE_TEST(name, canvas, SK_MACRO_CONCAT(name, _main), W, H)   \
+    DEF_BET_SURFACE_TEST  (name, canvas, SK_MACRO_CONCAT(name, _main), W, H)   \
+    DEF_BERT_SURFACE_TEST (name, canvas, SK_MACRO_CONCAT(name, _main), W, H)   \
+    static void SK_MACRO_CONCAT(name, _main)(SkCanvas * canvas, const MakeSurfaceFn& make)
+
+DEF_SURFACE_TESTS(copy_on_write_retain, canvas, 256, 256) {
     const SkImageInfo info = SkImageInfo::MakeN32Premul(256, 256);
-    sk_sp<SkSurface>  surf = ToolUtils::makeSurface(canvas, info);
+    sk_sp<SkSurface> surf = make(info);
 
     surf->getCanvas()->clear(SK_ColorRED);
     // its important that image survives longer than the next draw, so the surface will see
@@ -182,12 +254,95 @@ DEF_SIMPLE_GM(copy_on_write_retain, canvas, 256, 256) {
     surf->getCanvas()->clear(SK_ColorBLUE);
 
     // expect to see two rects: blue | red
-    canvas->drawImage(surf->makeImageSnapshot(), 0, 0, nullptr);
+    canvas->drawImage(surf->makeImageSnapshot(), 0, 0);
 }
 
-DEF_SIMPLE_GM(copy_on_write_savelayer, canvas, 256, 256) {
+// Like copy_on_write_retain but draws the snapped image back to the surface it was snapped from.
+DEF_SURFACE_TESTS(copy_on_write_retain2, canvas, 256, 256) {
     const SkImageInfo info = SkImageInfo::MakeN32Premul(256, 256);
-    sk_sp<SkSurface>  surf = ToolUtils::makeSurface(canvas, info);
+    sk_sp<SkSurface> surf = make(info);
+
+    surf->getCanvas()->clear(SK_ColorBLUE);
+    // its important that image survives longer than the next draw, so the surface will see
+    // an outstanding image, and have to decide if it should retain or discard those pixels
+    sk_sp<SkImage> image = surf->makeImageSnapshot();
+
+    surf->getCanvas()->clear(SK_ColorRED);
+    // normally a clear+opaque should trigger the discard optimization, but since we have a clip
+    // it should not (we need the previous red pixels).
+    surf->getCanvas()->clipRect(SkRect::MakeWH(128, 256));
+    surf->getCanvas()->drawImage(image, 0, 0);
+
+    // expect to see two rects: blue | red
+    canvas->drawImage(surf->makeImageSnapshot(), 0, 0);
+}
+
+DEF_SURFACE_TESTS(simple_snap_image, canvas, 256, 256) {
+    const SkImageInfo info = SkImageInfo::MakeN32Premul(256, 256);
+    sk_sp<SkSurface> surf = make(info);
+
+    surf->getCanvas()->clear(SK_ColorRED);
+    sk_sp<SkImage> image = surf->makeImageSnapshot();
+    // expect to see just red
+    canvas->drawImage(std::move(image), 0, 0);
+}
+
+// Like simple_snap_image but the surface dies before the image.
+DEF_SURFACE_TESTS(simple_snap_image2, canvas, 256, 256) {
+    const SkImageInfo info = SkImageInfo::MakeN32Premul(256, 256);
+    sk_sp<SkSurface> surf = make(info);
+
+    surf->getCanvas()->clear(SK_ColorRED);
+    sk_sp<SkImage> image = surf->makeImageSnapshot();
+    surf.reset();
+    // expect to see just red
+    canvas->drawImage(std::move(image), 0, 0);
+}
+
+DEF_SIMPLE_GM(snap_with_mips, canvas, 80, 75) {
+    auto ct = canvas->imageInfo().colorType() == kUnknown_SkColorType
+                      ? kRGBA_8888_SkColorType
+                      : canvas->imageInfo().colorType();
+    auto ii = SkImageInfo::Make({32, 32},
+                                ct,
+                                kPremul_SkAlphaType,
+                                canvas->imageInfo().refColorSpace());
+    auto surface = SkSurfaces::Raster(ii);
+
+    auto nextImage = [&](SkColor color) {
+        surface->getCanvas()->clear(color);
+        SkPaint paint;
+        paint.setColor(~color | 0xFF000000);
+        surface->getCanvas()->drawRect(SkRect::MakeLTRB(surface->width() *2/5.f,
+                                                        surface->height()*2/5.f,
+                                                        surface->width() *3/5.f,
+                                                        surface->height()*3/5.f),
+                                    paint);
+        return surface->makeImageSnapshot()->withDefaultMipmaps();
+    };
+
+    static constexpr int kPad = 8;
+    static const SkSamplingOptions kSampling{SkFilterMode::kLinear, SkMipmapMode::kLinear};
+
+    canvas->save();
+    for (int y = 0; y < 3; ++y) {
+        canvas->save();
+        SkColor kColors[] = {0xFFF0F0F0, SK_ColorBLUE};
+        for (int x = 0; x < 2; ++x) {
+            auto image = nextImage(kColors[x]);
+            canvas->drawImage(image, 0, 0, kSampling);
+            canvas->translate(ii.width() + kPad, 0);
+        }
+        canvas->restore();
+        canvas->translate(0, ii.width() + kPad);
+        canvas->scale(.4f, .4f);
+    }
+    canvas->restore();
+}
+
+DEF_SURFACE_TESTS(copy_on_write_savelayer, canvas, 256, 256) {
+    const SkImageInfo info = SkImageInfo::MakeN32Premul(256, 256);
+    sk_sp<SkSurface> surf = make(info);
     surf->getCanvas()->clear(SK_ColorRED);
     // its important that image survives longer than the next draw, so the surface will see
     // an outstanding image, and have to decide if it should retain or discard those pixels
@@ -203,12 +358,12 @@ DEF_SIMPLE_GM(copy_on_write_savelayer, canvas, 256, 256) {
     surf->getCanvas()->restore();
 
     // expect to see two rects: blue blended on red
-    canvas->drawImage(surf->makeImageSnapshot(), 0, 0, nullptr);
+    canvas->drawImage(surf->makeImageSnapshot(), 0, 0);
 }
 
-DEF_SIMPLE_GM(surface_underdraw, canvas, 256, 256) {
+DEF_SURFACE_TESTS(surface_underdraw, canvas, 256, 256) {
     SkImageInfo info = SkImageInfo::MakeN32Premul(256, 256, nullptr);
-    auto        surf = ToolUtils::makeSurface(canvas, info);
+    auto surf = make(info);
 
     const SkIRect subset = SkIRect::MakeLTRB(180, 0, 256, 256);
 
@@ -258,9 +413,9 @@ DEF_SIMPLE_GM(surface_underdraw, canvas, 256, 256) {
         paint.setBlendMode(SkBlendMode::kDstOver);
         surf->getCanvas()->drawImage(saveImg,
                                      SkIntToScalar(subset.left()), SkIntToScalar(subset.top()),
-                                     &paint);
+                                     SkSamplingOptions(), &paint);
     }
 
     // show it on screen
-   surf->draw(canvas, 0, 0, nullptr);
+   surf->draw(canvas, 0, 0);
 }

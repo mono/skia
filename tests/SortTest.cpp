@@ -5,11 +5,13 @@
  * found in the LICENSE file.
  */
 
-#include "include/utils/SkRandom.h"
-#include "src/core/SkTSort.h"
+#include "src/base/SkRandom.h"
+#include "src/base/SkTSort.h"
 #include "tests/Test.h"
 
-#include <stdlib.h>
+#include <cstdlib>
+#include <cstring>
+#include <string>
 
 extern "C" {
     static int compare_int(const void* a, const void* b) {
@@ -37,14 +39,14 @@ DEF_TEST(Sort, reporter) {
     /** An array of random numbers to be sorted. */
     int randomArray[500];
     /** The reference sort of the random numbers. */
-    int sortedArray[SK_ARRAY_COUNT(randomArray)];
+    int sortedArray[std::size(randomArray)];
     /** The random numbers are copied into this array, sorted by an SkSort,
         then this array is compared against the reference sort. */
-    int workingArray[SK_ARRAY_COUNT(randomArray)];
+    int workingArray[std::size(randomArray)];
     SkRandom    rand;
 
     for (int i = 0; i < 10000; i++) {
-        int count = rand.nextRangeU(1, SK_ARRAY_COUNT(randomArray));
+        int count = rand.nextRangeU(1, std::size(randomArray));
         rand_array(rand, randomArray, count);
 
         // Use qsort as the reference sort.

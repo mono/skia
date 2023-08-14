@@ -8,11 +8,31 @@
 #ifndef JsonWriteBuffer_DEFINED
 #define JsonWriteBuffer_DEFINED
 
+#include "include/core/SkColor.h"
+#include "include/core/SkM44.h"
+#include "include/core/SkScalar.h"
+#include "include/core/SkTypes.h"
 #include "src/core/SkWriteBuffer.h"
 
+#include <cstddef>
+#include <cstdint>
+#include <string_view>
+
+class SkFlattenable;
+class SkImage;
 class SkJSONWriter;
+class SkMatrix;
+class SkPaint;
 class SkPath;
+class SkRegion;
+struct SkSamplingOptions;
+class SkStream;
+class SkTypeface;
 class UrlDataManager;
+struct SkIRect;
+struct SkPoint3;
+struct SkPoint;
+struct SkRect;
 
 class JsonWriteBuffer final : public SkWriteBuffer {
 public:
@@ -27,7 +47,7 @@ public:
     void writeInt(int32_t value) override;
     void writeIntArray(const int32_t* value, uint32_t count) override;
     void writeUInt(uint32_t value) override;
-    void writeString(const char* value) override;
+    void writeString(std::string_view value) override;
 
     void   writeFlattenable(const SkFlattenable* flattenable) override;
     void   writeColor(SkColor color) override;
@@ -43,6 +63,7 @@ public:
     void   writeRect(const SkRect& rect) override;
     void   writeRegion(const SkRegion& region) override;
     void   writePath(const SkPath& path) override;
+    void   writeSampling(const SkSamplingOptions&) override;
     size_t writeStream(SkStream* stream, size_t length) override;
     void   writeImage(const SkImage*) override;
     void   writeTypeface(SkTypeface* typeface) override;

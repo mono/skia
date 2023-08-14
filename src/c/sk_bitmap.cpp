@@ -11,7 +11,6 @@
 #include "include/core/SkColor.h"
 #include "include/core/SkColorPriv.h"
 #include "include/core/SkImageInfo.h"
-#include "include/core/SkMath.h"
 #include "include/core/SkShader.h"
 #include "include/core/SkUnPreMultiply.h"
 
@@ -113,10 +112,6 @@ bool sk_bitmap_install_pixels_with_pixmap(sk_bitmap_t* cbitmap, const sk_pixmap_
     return AsBitmap(cbitmap)->installPixels(*AsPixmap(cpixmap));
 }
 
-bool sk_bitmap_install_mask_pixels(sk_bitmap_t* cbitmap, const sk_mask_t* cmask) {
-    return AsBitmap(cbitmap)->installMaskPixels(*AsMask(cmask));
-}
-
 bool sk_bitmap_try_alloc_pixels(sk_bitmap_t* cbitmap, const sk_imageinfo_t* requestedInfo, size_t rowBytes) {
     return AsBitmap(cbitmap)->tryAllocPixels(AsImageInfo(requestedInfo), rowBytes);
 }
@@ -149,10 +144,10 @@ void sk_bitmap_swap(sk_bitmap_t* cbitmap, sk_bitmap_t* cother) {
     AsBitmap(cbitmap)->swap(*AsBitmap(cother));
 }
 
-sk_shader_t* sk_bitmap_make_shader(sk_bitmap_t* cbitmap, sk_shader_tilemode_t tmx, sk_shader_tilemode_t tmy, const sk_matrix_t* cmatrix) {
+sk_shader_t* sk_bitmap_make_shader(sk_bitmap_t* cbitmap, sk_shader_tilemode_t tmx, sk_shader_tilemode_t tmy, sk_sampling_options_t* sampling, const sk_matrix_t* cmatrix) {
     SkMatrix m;
     if (cmatrix) {
         m = AsMatrix(cmatrix);
     }
-    return ToShader(AsBitmap(cbitmap)->makeShader((SkTileMode)tmx, (SkTileMode)tmy, cmatrix ? &m : nullptr).release());
+    return ToShader(AsBitmap(cbitmap)->makeShader((SkTileMode)tmx, (SkTileMode)tmy, *AsSamplingOptions(sampling), cmatrix ? &m : nullptr).release());
 }

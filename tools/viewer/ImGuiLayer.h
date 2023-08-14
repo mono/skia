@@ -8,12 +8,29 @@
 #ifndef ImGuiLayer_DEFINED
 #define ImGuiLayer_DEFINED
 
+#include "include/core/SkMatrix.h"
 #include "include/core/SkPaint.h"
-#include "include/private/SkTArray.h"
-#include "include/private/SkTPin.h"
+#include "include/core/SkPoint.h"
+#include "include/core/SkScalar.h"
+#include "include/core/SkTypes.h"
+#include "include/private/base/SkTArray.h"
+#include "include/private/base/SkTPin.h"
+#include "include/private/base/SkTemplates.h"
 #include "tools/sk_app/Window.h"
 
+#include <algorithm>
+#include <functional>
+
 #include "imgui.h"
+
+class SkCanvas;
+class SkSurface;
+
+namespace skui {
+enum class InputState;
+enum class Key;
+enum class ModifierKey;
+}  // namespace skui
 
 namespace ImGui {
 
@@ -101,7 +118,7 @@ struct DragCanvas {
     ImVec2 fSize;
 
     // Screen coordinates of points (for additional user drawing)
-    SkSTArray<4, ImVec2, true> fScreenPoints;
+    skia_private::STArray<4, ImVec2, true> fScreenPoints;
 
     // To simplify dragPoint
     SkMatrix fLocalToScreen;
@@ -118,6 +135,8 @@ public:
     ImGuiLayer();
     ~ImGuiLayer() override;
 
+    void setScaleFactor(float scaleFactor);
+
     typedef std::function<void(SkCanvas*)> SkiaWidgetFunc;
     void skiaWidget(const ImVec2& size, SkiaWidgetFunc func);
 
@@ -132,7 +151,7 @@ public:
 private:
     sk_app::Window* fWindow;
     SkPaint fFontPaint;
-    SkTArray<SkiaWidgetFunc> fSkiaWidgetFuncs;
+    skia_private::TArray<SkiaWidgetFunc> fSkiaWidgetFuncs;
 };
 
 #endif

@@ -8,11 +8,11 @@
 #include "modules/skottie/src/effects/MotionBlurEffect.h"
 
 #include "include/core/SkCanvas.h"
-#include "include/core/SkMath.h"
 #include "include/core/SkPixmap.h"
-#include "include/private/SkVx.h"
+#include "include/private/base/SkMath.h"
 #include "modules/skottie/src/animator/Animator.h"
-#include "src/core/SkMathPriv.h"
+#include "src/base/SkMathPriv.h"
+#include "src/base/SkVx.h"
 
 namespace skottie {
 namespace internal {
@@ -210,7 +210,7 @@ void MotionBlurEffect::onRender(SkCanvas* canvas, const RenderContext* ctx) cons
         return;
     }
 
-    SkAutoCanvasRestore acr(canvas, false);
+    SkAutoCanvasRestore acr1(canvas, false);
 
     // Accumulate in F16 for more precision.
     canvas->saveLayer(SkCanvas::SaveLayerRec(&this->bounds(), nullptr, SkCanvas::kF16ColorType));
@@ -222,13 +222,13 @@ void MotionBlurEffect::onRender(SkCanvas* canvas, const RenderContext* ctx) cons
     ScopedRenderContext frame_ctx(canvas, ctx);
     SkPaint             frame_paint;
 
-    const bool isolate_frames = frame_ctx->fBlendMode != SkBlendMode::kSrcOver;
+    const bool isolate_frames = !!frame_ctx->fBlender;
     if (isolate_frames) {
         frame_paint.setAlphaf(frame_alpha);
         frame_paint.setBlendMode(SkBlendMode::kPlus);
     } else {
         frame_ctx = frame_ctx.modulateOpacity(frame_alpha)
-                             .modulateBlendMode(SkBlendMode::kPlus);
+                             .modulateBlender(SkBlender::Mode(SkBlendMode::kPlus));
     }
 
     SkDEBUGCODE(size_t frames_rendered = 0;)
@@ -239,7 +239,7 @@ void MotionBlurEffect::onRender(SkCanvas* canvas, const RenderContext* ctx) cons
             continue;
         }
 
-        SkAutoCanvasRestore acr(canvas, false);
+        SkAutoCanvasRestore acr2(canvas, false);
         if (isolate_frames) {
             canvas->saveLayer(nullptr, &frame_paint);
         }

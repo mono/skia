@@ -7,18 +7,26 @@
 
 #include "include/core/SkYUVAPixmaps.h"
 
-#include "include/core/SkYUVAIndex.h"
-#include "include/core/SkYUVASizeInfo.h"
-#include "include/private/SkImageInfoPriv.h"
-#include "src/core/SkConvertPixels.h"
+#include "include/core/SkAlphaType.h"
+#include "include/private/base/SkDebug.h"
+#include "src/base/SkRectMemcpy.h"
+#include "src/core/SkImageInfoPriv.h"
+#include "src/core/SkYUVAInfoLocation.h"
 
-#if SK_SUPPORT_GPU
-#include "include/private/GrImageContext.h"
+#include <algorithm>
+#include <cstdint>
+#include <utility>
+
+#if defined(SK_GANESH)
+#include "include/gpu/GpuTypes.h"
+#include "include/gpu/GrBackendSurface.h"
+#include "include/gpu/GrTypes.h"
+#include "include/private/gpu/ganesh/GrImageContext.h"
 #endif
 
 
 SkYUVAPixmapInfo::SupportedDataTypes::SupportedDataTypes(const GrImageContext& context) {
-#if SK_SUPPORT_GPU
+#if defined(SK_GANESH)
     for (int n = 1; n <= 4; ++n) {
         if (context.defaultBackendFormat(DefaultColorTypeForDataType(DataType::kUnorm8, n),
                                          GrRenderable::kNo).isValid()) {
@@ -285,36 +293,14 @@ SkYUVAPixmapInfo SkYUVAPixmaps::pixmapsInfo() const {
     return {fYUVAInfo, colorTypes, rowBytes};
 }
 
-bool SkYUVAPixmaps::toYUVAIndices(SkYUVAIndex yuvaIndices[SkYUVAIndex::kIndexCount]) const {
-    SkASSERT(yuvaIndices);
+SkYUVAInfo::YUVALocations SkYUVAPixmaps::toYUVALocations() const {
     uint32_t channelFlags[] = {SkColorTypeChannelFlags(fPlanes[0].colorType()),
                                SkColorTypeChannelFlags(fPlanes[1].colorType()),
                                SkColorTypeChannelFlags(fPlanes[2].colorType()),
                                SkColorTypeChannelFlags(fPlanes[3].colorType())};
-    bool result = fYUVAInfo.toYUVAIndices(channelFlags, yuvaIndices);
-    SkASSERT(result == this->isValid());
+    auto result = fYUVAInfo.toYUVALocations(channelFlags);
+    SkDEBUGCODE(int numPlanes;)
+    SkASSERT(SkYUVAInfo::YUVALocation::AreValidLocations(result, &numPlanes));
+    SkASSERT(numPlanes == this->numPlanes());
     return result;
-}
-
-bool SkYUVAPixmaps::toLegacy(SkYUVASizeInfo* yuvaSizeInfo, SkYUVAIndex yuvaIndices[4]) const {
-    if (!this->isValid()) {
-        return false;
-    }
-    SkYUVAIndex tempIndices[4];
-    if (!yuvaIndices) {
-        yuvaIndices = tempIndices;
-    }
-    if (!this->toYUVAIndices(yuvaIndices)) {
-        return false;
-    }
-
-    if (yuvaSizeInfo) {
-        yuvaSizeInfo->fOrigin = fYUVAInfo.origin();
-        int n = fYUVAInfo.numPlanes();
-        for (int i = 0; i < n; ++i) {
-            yuvaSizeInfo->fSizes[i] = fPlanes[i].dimensions();
-            yuvaSizeInfo->fWidthBytes[i] = fPlanes[i].rowBytes();
-        }
-    }
-    return true;
 }

@@ -8,12 +8,14 @@
 #include "include/android/SkAnimatedImage.h"
 #include "include/codec/SkAndroidCodec.h"
 #include "include/codec/SkCodec.h"
+#include "include/core/SkAlphaType.h"
 #include "include/core/SkBitmap.h"
 #include "include/core/SkCanvas.h"
 #include "include/core/SkColor.h"
 #include "include/core/SkData.h"
 #include "include/core/SkImageInfo.h"
 #include "include/core/SkPicture.h"
+#include "include/core/SkRect.h"
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkSize.h"
 #include "include/core/SkString.h"
@@ -24,10 +26,125 @@
 #include "tools/Resources.h"
 #include "tools/ToolUtils.h"
 
+#include <cstddef>
 #include <initializer_list>
 #include <memory>
 #include <utility>
 #include <vector>
+
+DEF_TEST(AnimatedImage_simple, r) {
+    if (GetResourcePath().isEmpty()) {
+        return;
+    }
+
+    const char* file = "images/stoplight_h.webp";
+    auto data = GetResourceAsData(file);
+    if (!data) {
+        ERRORF(r, "Could not get %s", file);
+        return;
+    }
+
+    // An animated image with a non-default exif orientation is no longer
+    // "simple"; verify that the assert has been removed.
+    auto androidCodec = SkAndroidCodec::MakeFromData(std::move(data));
+    auto animatedImage = SkAnimatedImage::Make(std::move(androidCodec));
+    REPORTER_ASSERT(r, animatedImage);
+}
+
+DEF_TEST(AnimatedImage_rotation, r) {
+    if (GetResourcePath().isEmpty()) {
+        return;
+    }
+
+    // These images use different exif orientations to achieve the same final
+    // dimensions
+    const auto expectedBounds = SkRect::MakeIWH(100, 80);
+    for (int i = 1; i <=8; i++) {
+        for (const SkString& name : { SkStringPrintf("images/orientation/%d.webp", i),
+                                      SkStringPrintf("images/orientation/%d_444.jpg", i) }) {
+
+            const char* file = name.c_str();
+            auto data = GetResourceAsData(file);
+            if (!data) {
+                ERRORF(r, "Could not get %s", file);
+                return;
+            }
+
+            auto androidCodec = SkAndroidCodec::MakeFromData(std::move(data));
+            auto animatedImage = SkAnimatedImage::Make(std::move(androidCodec));
+            if (!animatedImage) {
+                ERRORF(r, "Failed to create animated image from %s", file);
+                return;
+            }
+
+            auto bounds = animatedImage->getBounds();
+            if (bounds != expectedBounds) {
+                ERRORF(r, "Mismatched bounds for %s", file);
+                bounds.dump();
+            }
+        }
+    }
+}
+
+DEF_TEST(AnimatedImage_invalidCrop, r) {
+    if (GetResourcePath().isEmpty()) {
+        return;
+    }
+
+    const char* file = "images/alphabetAnim.gif";
+    auto data = GetResourceAsData(file);
+    if (!data) {
+        ERRORF(r, "Could not get %s", file);
+        return;
+    }
+
+    const struct Rec {
+        bool    valid;
+        SkISize scaledSize;
+        SkIRect cropRect;
+    } gRecs[] = {
+        // cropRect contained by original dimensions
+        { true,  {100, 100}, {   0,  0, 100, 100} },
+        { true,  {100, 100}, {   0,  0,  50,  50} },
+        { true,  {100, 100}, {  10, 10, 100, 100} },
+        { true,  {100, 100}, {   0,  0, 100, 100} },
+
+        // unsorted cropRect
+        { false, {100, 100}, {   0, 100, 100,   0} },
+        { false, {100, 100}, { 100,   0,   0, 100} },
+
+        // cropRect not contained by original dimensions
+        { false, {100, 100}, {   0,   1, 100, 101} },
+        { false, {100, 100}, {   0,  -1, 100,  99} },
+        { false, {100, 100}, {  -1,   0,  99, 100} },
+        { false, {100, 100}, { 100, 100, 200, 200} },
+
+        // cropRect contained by scaled dimensions
+        { true,  { 50,  50}, {   0,   0,  50,  50} },
+        { true,  { 50,  50}, {   0,   0,  25,  25} },
+        { true,  {200, 200}, {   0,   1, 100, 101} },
+
+        // cropRect not contained by scaled dimensions
+        { false, { 50,  50}, {   0,   0,  75,  25} },
+        { false, { 50,  50}, {   0,   0,  25,  75} },
+
+    };
+    for (const auto& rec : gRecs) {
+        auto codec = SkAndroidCodec::MakeFromData(data);
+        if (!codec) {
+            ERRORF(r, "Could not create codec for %s", file);
+            return;
+        }
+
+        auto info = codec->getInfo();
+        REPORTER_ASSERT(r, info.dimensions() == SkISize::Make(100, 100));
+
+        auto image = SkAnimatedImage::Make(std::move(codec), info.makeDimensions(rec.scaledSize),
+                rec.cropRect, nullptr);
+
+        REPORTER_ASSERT(r, rec.valid == !!image.get());
+    }
+}
 
 DEF_TEST(AnimatedImage_scaled, r) {
     if (GetResourcePath().isEmpty()) {
@@ -104,7 +221,7 @@ DEF_TEST(AnimatedImage_copyOnWrite, r) {
     }
     for (const char* file : { "images/alphabetAnim.gif",
                               "images/colorTables.gif",
-                              "images/webp-animated.webp",
+                              "images/stoplight.webp",
                               "images/required.webp",
                               }) {
         auto data = GetResourceAsData(file);
@@ -142,7 +259,7 @@ DEF_TEST(AnimatedImage_copyOnWrite, r) {
             bm.eraseColor(SK_ColorTRANSPARENT);
             SkCanvas canvas(bm);
 
-            pictures[i].reset(animatedImage->newPictureSnapshot());
+            pictures[i] = animatedImage->makePictureSnapshot();
             canvas.drawPicture(pictures[i]);
 
             const auto duration = animatedImage->decodeNextFrame();
@@ -175,7 +292,7 @@ DEF_TEST(AnimatedImage, r) {
     }
     for (const char* file : { "images/alphabetAnim.gif",
                               "images/colorTables.gif",
-                              "images/webp-animated.webp",
+                              "images/stoplight.webp",
                               "images/required.webp",
                               }) {
         auto data = GetResourceAsData(file);
@@ -190,11 +307,23 @@ DEF_TEST(AnimatedImage, r) {
             continue;
         }
 
-        const int defaultRepetitionCount = codec->getRepetitionCount();
         std::vector<SkCodec::FrameInfo> frameInfos = codec->getFrameInfo();
         std::vector<SkBitmap> frames(frameInfos.size());
         // Used down below for our test image.
         const auto imageInfo = codec->getInfo().makeAlphaType(kPremul_SkAlphaType);
+
+        // Get the repetition count after the codec->getFrameInfo() call above
+        // has walked to the end of the encoded image.
+        //
+        // At the file format level, GIF images can declare their repetition
+        // count multiple times and our codec goes with "last one wins".
+        // Furthermore, for single-frame (still) GIF images, a zero, positive
+        // or infinite repetition count are all equivalent in practice (in all
+        // cases, the pixels do not change over time), so the codec has some
+        // leeway in what to return for single-frame GIF images, but it cannot
+        // distinguish single-frame from multiple-frame GIFs until we count the
+        // number of frames (e.g. call getFrameInfo).
+        const int defaultRepetitionCount = codec->getRepetitionCount();
 
         for (size_t i = 0; i < frameInfos.size(); ++i) {
             auto info = codec->getInfo().makeAlphaType(frameInfos[i].fAlphaType);

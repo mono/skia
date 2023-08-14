@@ -5,6 +5,33 @@
  * found in the LICENSE file.
  */
 
+#include "include/core/SkTypes.h"
+#ifdef SK_XML
+
+#include "include/core/SkBitmap.h"
+#include "include/core/SkCanvas.h"
+#include "include/core/SkColorFilter.h"
+#include "include/core/SkData.h"
+#include "include/core/SkImage.h"
+#include "include/core/SkPathEffect.h"
+#include "include/core/SkShader.h"
+#include "include/core/SkStream.h"
+#include "include/core/SkTextBlob.h"
+#include "include/effects/SkDashPathEffect.h"
+#include "include/private/base/SkTo.h"
+#include "include/svg/SkSVGCanvas.h"
+#include "include/utils/SkParse.h"
+#include "src/shaders/SkImageShader.h"
+#include "src/svg/SkSVGDevice.h"
+#include "src/xml/SkDOM.h"
+#include "src/xml/SkXMLWriter.h"
+#include "tests/Test.h"
+#include "tools/ToolUtils.h"
+
+#include <string>
+
+using namespace skia_private;
+
 #define ABORT_TEST(r, cond, ...)                                   \
     do {                                                           \
         if (cond) {                                                \
@@ -13,29 +40,6 @@
         }                                                          \
     } while (0)
 
-#include "include/core/SkBitmap.h"
-#include "include/core/SkCanvas.h"
-#include "include/core/SkColorFilter.h"
-#include "include/core/SkData.h"
-#include "include/core/SkImage.h"
-#include "include/core/SkShader.h"
-#include "include/core/SkStream.h"
-#include "include/core/SkTextBlob.h"
-#include "include/effects/SkDashPathEffect.h"
-#include "include/private/SkTo.h"
-#include "include/svg/SkSVGCanvas.h"
-#include "include/utils/SkParse.h"
-#include "src/shaders/SkImageShader.h"
-#include "tests/Test.h"
-#include "tools/ToolUtils.h"
-
-#include <string.h>
-
-#ifdef SK_XML
-
-#include "src/svg/SkSVGDevice.h"
-#include "src/xml/SkDOM.h"
-#include "src/xml/SkXMLWriter.h"
 
 static std::unique_ptr<SkCanvas> MakeDOMCanvas(SkDOM* dom, uint32_t flags = 0) {
     auto svgDevice = SkSVGDevice::Make(SkISize::Make(100, 100),
@@ -82,7 +86,7 @@ void check_text_node(skiatest::Reporter* reporter,
         int xposCount = textLen;
         REPORTER_ASSERT(reporter, SkParse::Count(x) == xposCount);
 
-        SkAutoTMalloc<SkScalar> xpos(xposCount);
+        AutoTMalloc<SkScalar> xpos(xposCount);
         SkParse::FindScalars(x, xpos.get(), xposCount);
         if (scalarsPerPos < 1) {
             // For default-positioned text, we cannot make any assumptions regarding
@@ -103,7 +107,7 @@ void check_text_node(skiatest::Reporter* reporter,
         int yposCount = (scalarsPerPos < 2) ? 1 : textLen;
         REPORTER_ASSERT(reporter, SkParse::Count(y) == yposCount);
 
-        SkAutoTMalloc<SkScalar> ypos(yposCount);
+        AutoTMalloc<SkScalar> ypos(yposCount);
         SkParse::FindScalars(y, ypos.get(), yposCount);
         if (scalarsPerPos < 2) {
             REPORTER_ASSERT(reporter, ypos[0] == offset.y());
@@ -132,7 +136,7 @@ void test_whitespace_pos(skiatest::Reporter* reporter,
     check_text_node(reporter, dom, dom.finishParsing(), offset, 0, txt, expected);
 
     {
-        SkAutoTMalloc<SkScalar> xpos(len);
+        AutoTMalloc<SkScalar> xpos(len);
         for (int i = 0; i < SkToInt(len); ++i) {
             xpos[i] = SkIntToScalar(txt[i]);
         }
@@ -143,7 +147,7 @@ void test_whitespace_pos(skiatest::Reporter* reporter,
     check_text_node(reporter, dom, dom.finishParsing(), offset, 1, txt, expected);
 
     {
-        SkAutoTMalloc<SkPoint> pos(len);
+        AutoTMalloc<SkPoint> pos(len);
         for (int i = 0; i < SkToInt(len); ++i) {
             pos[i] = SkPoint::Make(SkIntToScalar(txt[i]), 150 - SkIntToScalar(txt[i]));
         }
@@ -173,15 +177,15 @@ DEF_TEST(SVGDevice_whitespace_pos, reporter) {
         { "\t\t  \t ab \t\t  \t cd \t\t   \t  ", "ab cd " },
     };
 
-    for (unsigned i = 0; i < SK_ARRAY_COUNT(tests); ++i) {
+    for (unsigned i = 0; i < std::size(tests); ++i) {
         test_whitespace_pos(reporter, tests[i].tst_in, tests[i].tst_out);
     }
 }
 
 void SetImageShader(SkPaint* paint, int imageWidth, int imageHeight, SkTileMode xTile,
                     SkTileMode yTile) {
-    auto surface = SkSurface::MakeRasterN32Premul(imageWidth, imageHeight);
-    paint->setShader(surface->makeImageSnapshot()->makeShader(xTile, yTile, nullptr));
+    auto surface = SkSurfaces::Raster(SkImageInfo::MakeN32Premul(imageWidth, imageHeight));
+    paint->setShader(surface->makeImageSnapshot()->makeShader(xTile, yTile, SkSamplingOptions()));
 }
 
 // Attempt to find the three nodes on which we have expectations:
@@ -409,7 +413,7 @@ DEF_TEST(SVGDevice_textpath, reporter) {
 
     // We also use paths in the presence of path effects.
     SkScalar intervals[] = {10, 5};
-    paint.setPathEffect(SkDashPathEffect::Make(intervals, SK_ARRAY_COUNT(intervals), 0));
+    paint.setPathEffect(SkDashPathEffect::Make(intervals, std::size(intervals), 0));
     check_text(0, /*expect_path=*/true);
 }
 
@@ -567,5 +571,62 @@ DEF_TEST(SVGDevice_path_effect, reporter) {
     REPORTER_ASSERT(reporter, mCount == 3);
 }
 
+DEF_TEST(SVGDevice_relative_path_encoding, reporter) {
+    SkDOM dom;
+    {
+        auto svgCanvas = MakeDOMCanvas(&dom, SkSVGCanvas::kRelativePathEncoding_Flag);
+        SkPath path;
+        path.moveTo(100, 50);
+        path.lineTo(200, 50);
+        path.lineTo(200, 150);
+        path.close();
+
+        svgCanvas->drawPath(path, SkPaint());
+    }
+
+    const auto* rootElement = dom.finishParsing();
+    REPORTER_ASSERT(reporter, rootElement, "root element not found");
+    const auto* pathElement = dom.getFirstChild(rootElement, "path");
+    REPORTER_ASSERT(reporter, pathElement, "path element not found");
+    const auto* d = dom.findAttr(pathElement, "d");
+    REPORTER_ASSERT(reporter, !strcmp(d, "m100 50l100 0l0 100l-100 -100Z"));
+}
+
+DEF_TEST(SVGDevice_color_shader, reporter) {
+    SkDOM dom;
+    {
+        auto svgCanvas = MakeDOMCanvas(&dom);
+
+        SkPaint paint;
+        paint.setShader(SkShaders::Color(0xffffff00));
+
+        svgCanvas->drawCircle(100, 100, 100, paint);
+    }
+
+    const auto* rootElement = dom.finishParsing();
+    REPORTER_ASSERT(reporter, rootElement, "root element not found");
+    const auto* ellipseElement = dom.getFirstChild(rootElement, "ellipse");
+    REPORTER_ASSERT(reporter, ellipseElement, "ellipse element not found");
+    const auto* fill = dom.findAttr(ellipseElement, "fill");
+    REPORTER_ASSERT(reporter, fill, "fill attribute not found");
+    REPORTER_ASSERT(reporter, !strcmp(fill, "yellow"));
+}
+
+DEF_TEST(SVGDevice_parse_minmax, reporter) {
+    auto check = [&](int64_t n, bool expected) {
+        const auto str = std::to_string(n);
+
+        int val;
+        REPORTER_ASSERT(reporter, SkToBool(SkParse::FindS32(str.c_str(), &val)) == expected);
+        if (expected) {
+            REPORTER_ASSERT(reporter, val == n);
+        }
+    };
+
+    check(std::numeric_limits<int>::max(), true);
+    check(std::numeric_limits<int>::min(), true);
+    check(static_cast<int64_t>(std::numeric_limits<int>::max()) + 1, false);
+    check(static_cast<int64_t>(std::numeric_limits<int>::min()) - 1, false);
+}
 
 #endif

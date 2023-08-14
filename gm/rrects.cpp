@@ -17,17 +17,17 @@
 #include "include/core/SkSize.h"
 #include "include/core/SkString.h"
 #include "include/core/SkTypes.h"
-#include "include/private/GrSharedEnums.h"
-#include "include/private/GrTypesPriv.h"
-#include "src/gpu/GrCaps.h"
-#include "src/gpu/GrFragmentProcessor.h"
-#include "src/gpu/GrPaint.h"
-#include "src/gpu/GrRenderTargetContext.h"
-#include "src/gpu/GrRenderTargetContextPriv.h"
-#include "src/gpu/effects/GrPorterDuffXferProcessor.h"
-#include "src/gpu/effects/GrRRectEffect.h"
-#include "src/gpu/ops/GrDrawOp.h"
-#include "src/gpu/ops/GrFillRectOp.h"
+#include "include/effects/SkGradientShader.h"
+#include "include/private/gpu/ganesh/GrTypesPriv.h"
+#include "src/core/SkCanvasPriv.h"
+#include "src/gpu/ganesh/GrCaps.h"
+#include "src/gpu/ganesh/GrFragmentProcessor.h"
+#include "src/gpu/ganesh/GrPaint.h"
+#include "src/gpu/ganesh/SurfaceDrawContext.h"
+#include "src/gpu/ganesh/effects/GrPorterDuffXferProcessor.h"
+#include "src/gpu/ganesh/effects/GrRRectEffect.h"
+#include "src/gpu/ganesh/ops/FillRectOp.h"
+#include "src/gpu/ganesh/ops/GrDrawOp.h"
 
 #include <memory>
 #include <utility>
@@ -79,10 +79,10 @@ protected:
     SkISize onISize() override { return SkISize::Make(kImageWidth, kImageHeight); }
 
     DrawResult onDraw(SkCanvas* canvas, SkString* errorMsg) override {
-        GrRenderTargetContext* renderTargetContext =
-            canvas->internal_private_accessTopLayerRenderTargetContext();
-        auto context = canvas->recordingContext();
-        if (kEffect_Type == fType && (!renderTargetContext || !context)) {
+        auto sdc = SkCanvasPriv::TopDeviceSurfaceDrawContext(canvas);
+
+        auto rContext = canvas->recordingContext();
+        if (kEffect_Type == fType && (!sdc || !rContext)) {
             *errorMsg = kErrorMsg_DrawSkippedGpuOnly;
             return DrawResult::kSkip;
         }
@@ -92,8 +92,14 @@ protected:
             paint.setAntiAlias(true);
         }
 
-        const SkRect kMaxTileBound = SkRect::MakeWH(SkIntToScalar(kTileX),
-                                                     SkIntToScalar(kTileY));
+        if (fType == kBW_Clip_Type || fType == kAA_Clip_Type) {
+            // Add a gradient to the paint to ensure local coords are respected.
+            SkPoint pts[3] = {{0, 0}, {1.5f, 1}};
+            SkColor colors[3] = {SK_ColorBLACK, SK_ColorYELLOW};
+            paint.setShader(SkGradientShader::MakeLinear(pts, colors, nullptr, 2,
+                                                         SkTileMode::kClamp));
+        }
+
 #ifdef SK_DEBUG
         const SkRect kMaxImageBound = SkRect::MakeWH(SkIntToScalar(kImageWidth),
                                                      SkIntToScalar(kImageHeight));
@@ -107,18 +113,26 @@ protected:
             for (int curRRect = 0; curRRect < kNumRRects; ++curRRect) {
                 bool drew = true;
 #ifdef SK_DEBUG
-                SkASSERT(kMaxTileBound.contains(fRRects[curRRect].getBounds()));
-                SkRect imageSpaceBounds = fRRects[curRRect].getBounds();
-                imageSpaceBounds.offset(SkIntToScalar(x), SkIntToScalar(y));
-                SkASSERT(kMaxImageBound.contains(imageSpaceBounds));
+                if (curRRect != kNumRRects - 1) { // skip last rrect, which is large but clipped
+                    SkRect imageSpaceBounds = fRRects[curRRect].getBounds();
+                    imageSpaceBounds.offset(SkIntToScalar(x), SkIntToScalar(y));
+                    SkASSERT(kMaxImageBound.contains(imageSpaceBounds));
+                }
 #endif
                 canvas->save();
                     canvas->translate(SkIntToScalar(x), SkIntToScalar(y));
+
+                    SkRRect rrect = fRRects[curRRect];
+                    if (curRRect == kNumRRects - 1) {
+                        canvas->clipRect({0, 0, kTileX - 2, kTileY - 2});
+                        canvas->translate(-0.14f * rrect.rect().width(),
+                                          -0.14f * rrect.rect().height());
+                    }
                     if (kEffect_Type == fType) {
-                        SkRRect rrect = fRRects[curRRect];
-                        rrect.offset(SkIntToScalar(x), SkIntToScalar(y));
+                        fRRects[curRRect].transform(canvas->getLocalToDeviceAs3x3(), &rrect);
+
                         GrClipEdgeType edgeType = (GrClipEdgeType) et;
-                        const auto& caps = *renderTargetContext->caps()->shaderCaps();
+                        const auto& caps = *rContext->priv().caps()->shaderCaps();
                         auto [success, fp] = GrRRectEffect::Make(/*inputFP=*/nullptr,
                                                                  edgeType, rrect, caps);
                         if (success) {
@@ -128,21 +142,25 @@ protected:
                             grPaint.setColor4f({ 0, 0, 0, 1.f });
 
                             SkRect bounds = rrect.getBounds();
-                            bounds.outset(2.f, 2.f);
+                            bounds.intersect(SkRect::MakeXYWH(x, y, kTileX - 2, kTileY - 2));
+                            if (et >= (int) GrClipEdgeType::kInverseFillBW) {
+                                bounds.outset(2.f, 2.f);
+                            }
 
-                            renderTargetContext->priv().testingOnly_addDrawOp(
-                                    GrFillRectOp::MakeNonAARect(context, std::move(grPaint),
-                                                                SkMatrix::I(), bounds));
+                            sdc->addDrawOp(skgpu::ganesh::FillRectOp::MakeNonAARect(
+                                    rContext, std::move(grPaint), SkMatrix::I(), bounds));
                         } else {
                             drew = false;
                         }
-                    } else if (kBW_Clip_Type == fType || kAA_Clip_Type == fType) {
+                    } else if (fType == kBW_Clip_Type || fType == kAA_Clip_Type) {
                         bool aaClip = (kAA_Clip_Type == fType);
-                        canvas->clipRRect(fRRects[curRRect], aaClip);
-                        canvas->drawRect(kMaxTileBound, paint);
+                        canvas->clipRRect(rrect, aaClip);
+                        canvas->setMatrix(SkMatrix::Scale(kImageWidth, kImageHeight));
+                        canvas->drawRect(SkRect::MakeWH(1, 1), paint);
                     } else {
-                        canvas->drawRRect(fRRects[curRRect], paint);
+                        canvas->drawRRect(rrect, paint);
                     }
+
                 canvas->restore();
                 if (drew) {
                     x = x + kTileX;
@@ -175,25 +193,29 @@ protected:
 
         // The first complex case needs special handling since it is a square
         fRRects[kNumSimpleCases].setRectRadii(SkRect::MakeWH(kTileY-2, kTileY-2), gRadii[0]);
-        for (size_t i = 1; i < SK_ARRAY_COUNT(gRadii); ++i) {
+        for (size_t i = 1; i < std::size(gRadii); ++i) {
             fRRects[kNumSimpleCases+i].setRectRadii(SkRect::MakeWH(kTileX-2, kTileY-2), gRadii[i]);
         }
+        // The last case is larger than kTileX-2 x kTileY-2 but will be drawn at an offset
+        // into a clip rect that respects the tile size and highlights the rrect's corner curve.
+        fRRects[kNumRRects - 1].setRectXY({9.f, 9.f, 1699.f, 1699.f}, 843.749f, 843.75f);
     }
 
 private:
     Type fType;
 
-    static constexpr int kImageWidth = 640;
-    static constexpr int kImageHeight = 480;
+    inline static constexpr int kImageWidth = 640;
+    inline static constexpr int kImageHeight = 480;
 
-    static constexpr int kTileX = 80;
-    static constexpr int kTileY = 40;
+    inline static constexpr int kTileX = 80;
+    inline static constexpr int kTileY = 40;
 
-    static constexpr int kNumSimpleCases = 7;
-    static constexpr int kNumComplexCases = 35;
+    inline static constexpr int kNumSimpleCases = 7;
+    inline static constexpr int kNumComplexCases = 35;
+
     static const SkVector gRadii[kNumComplexCases][4];
 
-    static constexpr int kNumRRects = kNumSimpleCases + kNumComplexCases;
+    inline static constexpr int kNumRRects = kNumSimpleCases + kNumComplexCases + 1 /* extra big */;
     SkRRect fRRects[kNumRRects];
 
     using INHERITED = GM;
@@ -269,5 +291,183 @@ DEF_GM( return new RRectGM(RRectGM::kBW_Draw_Type); )
 DEF_GM( return new RRectGM(RRectGM::kAA_Clip_Type); )
 DEF_GM( return new RRectGM(RRectGM::kBW_Clip_Type); )
 DEF_GM( return new RRectGM(RRectGM::kEffect_Type); )
+
+// This GM is designed to test a variety of fill and stroked rectangles and round rectangles, with
+// different stroke width and join type scenarios. The geometry parameters are chosen so that
+// Graphite should be able to use its AnalyticRoundRectRenderStep and batch into a single draw.
+DEF_SIMPLE_GM(stroke_rect_rrects, canvas, 1350, 700) {
+    canvas->scale(0.5f, 0.5f);
+    canvas->translate(50.f, 50.f);
+
+    auto draw = [&](int cx, int cy, bool rrect, float width, SkPaint::Join join) {
+        SkPaint p;
+        p.setAntiAlias(true);
+        p.setStrokeWidth(width);
+        p.setStyle(width >= 0.f ? SkPaint::kStroke_Style : SkPaint::kFill_Style);
+        p.setStrokeJoin(join);
+
+        canvas->save();
+        canvas->translate(cx * 110.f, cy * 110.f);
+        float dx = cx % 2 ? 0.5f : 0.f;
+        float dy = cy % 2 ? 0.5f : 0.f;
+        SkRect rect = SkRect::MakeWH(50.f, 40.f);
+        rect.offset(dx, dy);
+
+        if (width < 0.0) {
+            rect.outset(25.f, 25.f); // make it the same size as the largest stroke
+        }
+
+        // Filled rounded rects can have arbitrary corners
+        float cornerScale = std::min(rect.width(), rect.height());
+        SkVector outerRadii[4] = { { 0.25f * cornerScale, 0.75f * cornerScale },
+                                   { 0.f, 0.f},
+                                   { 0.50f * cornerScale, 0.50f * cornerScale },
+                                   { 0.75f * cornerScale, 0.25f * cornerScale } };
+        // Stroked rounded rects will only have circular corners so that they remain compatible with
+        // Graphite's AnalyticRoundRectRenderStep's requirements.
+        SkVector strokeRadii[4] = { { 0.25f * cornerScale, 0.25f * cornerScale },
+                                    { 0.f, 0.f }, // this corner matches join type
+                                    { 0.50f * cornerScale, 0.50f * cornerScale },
+                                    { 0.75f * cornerScale, 0.75f * cornerScale } };
+
+        if (rrect) {
+            SkRRect r;
+            if (width >= 0.0) {
+                r.setRectRadii(rect, strokeRadii);
+            } else {
+                r.setRectRadii(rect, outerRadii);
+            }
+            canvas->drawRRect(r, p);
+        } else {
+            canvas->drawRect(rect, p);
+        }
+        canvas->restore();
+    };
+
+    // The stroke widths are chosen to test when the inner stroke edges have completely crossed
+    // over (50); when the inner corner circles intersect each other (30); a typical "nice"
+    // stroke (10); a skinny stroke (1); and a hairline (0).
+    int i = 0;
+    for (float width : {-1.f, 50.f, 30.f, 10.f, 1.f, 0.f}) {
+        int j = 0;
+        for (SkPaint::Join join : { SkPaint::kMiter_Join,
+                                    SkPaint::kBevel_Join,
+                                    SkPaint::kRound_Join }) {
+            if (width < 0 && join != SkPaint::kMiter_Join) {
+                continue; // Don't repeat fills, since join type is ignored
+            }
+            draw(2*i, 2*j, false, width, join);
+            draw(2*i+1, 2*j, false, width, join);
+            draw(2*i, 2*j+1, false, width, join);
+            draw(2*i+1, 2*j+1, false, width, join);
+            j++;
+        }
+        i++;
+    }
+
+    canvas->translate(0.f, 50.f);
+
+    i = 0;
+    for (float width : {-1.f, 50.f, 30.f, 10.f, 1.f, 0.f}) {
+        int j = 3;
+        for (SkPaint::Join join : { SkPaint::kMiter_Join,
+                                    SkPaint::kBevel_Join,
+                                    SkPaint::kRound_Join }) {
+            if (width < 0 && join != SkPaint::kMiter_Join) {
+                continue;
+            }
+            draw(2*i, 2*j, true, width, join);
+            draw(2*i+1, 2*j, true, width, join);
+            draw(2*i, 2*j+1, true, width, join);
+            draw(2*i+1, 2*j+1, true, width, join);
+            j++;
+        }
+        i++;
+    }
+
+    // Rotated "footballs"
+    auto drawComplex = [&](int cx, int cy, float width, float stretch) {
+        SkPaint p;
+        p.setAntiAlias(true);
+        p.setStrokeWidth(width);
+        p.setStyle(SkPaint::kStroke_Style);
+        p.setStrokeJoin(SkPaint::kBevel_Join);
+
+        canvas->save();
+        canvas->translate(cx * 110.f, cy * 110.f);
+
+        SkRect rect = SkRect::MakeWH(cx % 2 ? 50.f : (40.f + stretch),
+                                     cx % 2 ? (40.f + stretch) : 50.f);
+        const SkVector kBigCorner{30.f, 30.f};
+        const SkVector kRectCorner{0.f, 0.f};
+
+        SkVector strokeRadii[4] = { cy % 2 ? kRectCorner : kBigCorner,
+                                    cy % 2 ? kBigCorner : kRectCorner,
+                                    cy % 2 ? kRectCorner : kBigCorner,
+                                    cy % 2 ? kBigCorner : kRectCorner };
+
+        SkRRect r;
+        r.setRectRadii(rect, strokeRadii);
+        canvas->drawRRect(r, p);
+
+        canvas->restore();
+    };
+
+    canvas->translate(0.f, -50.f);
+    i = 6;
+    for (float width : {50.f, 30.f, 20.f, 10.f, 1.f, 0.f}) {
+        int j = 0;
+        for (float stretch: {0.f, 5.f, 10.f}) {
+            drawComplex(2*i, 2*j, width, stretch);
+            drawComplex(2*i+1, 2*j, width, stretch);
+            drawComplex(2*i, 2*j+1, width, stretch);
+            drawComplex(2*i+1, 2*j+1, width, stretch);
+            j++;
+        }
+        i++;
+    }
+
+    // Rotated "D"s
+    auto drawComplex2 = [&](int cx, int cy, float width, float stretch) {
+        SkPaint p;
+        p.setAntiAlias(true);
+        p.setStrokeWidth(width);
+        p.setStyle(SkPaint::kStroke_Style);
+        p.setStrokeJoin(SkPaint::kMiter_Join);
+
+        canvas->save();
+        canvas->translate(cx * 110.f, cy * 110.f);
+
+        SkRect rect = SkRect::MakeWH(cx % 2 ? 50.f : (40.f + stretch),
+                                     cx % 2 ? (40.f + stretch) : 50.f);
+        const SkVector kBigCorner{30.f, 30.f};
+        const SkVector kRectCorner{0.f, 0.f};
+
+        SkVector strokeRadii[4] = { cx % 2 ? kRectCorner : kBigCorner,
+                                    (cx % 2) ^ (cy % 2) ? kBigCorner : kRectCorner,
+                                    cx % 2 ? kBigCorner : kRectCorner,
+                                    (cx % 2) ^ (cy % 2) ? kRectCorner : kBigCorner };
+
+        SkRRect r;
+        r.setRectRadii(rect, strokeRadii);
+        canvas->drawRRect(r, p);
+
+        canvas->restore();
+    };
+
+    canvas->translate(0.f, 50.f);
+    i = 6;
+    for (float width : {50.f, 30.f, 20.f, 10.f, 1.f, 0.f}) {
+        int j = 3;
+        for (float stretch: {0.f, 5.f, 10.f}) {
+            drawComplex2(2*i, 2*j, width, stretch);
+            drawComplex2(2*i+1, 2*j, width, stretch);
+            drawComplex2(2*i, 2*j+1, width, stretch);
+            drawComplex2(2*i+1, 2*j+1, width, stretch);
+            j++;
+        }
+        i++;
+    }
+}
 
 }  // namespace skiagm

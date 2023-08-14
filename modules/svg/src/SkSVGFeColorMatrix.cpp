@@ -29,17 +29,17 @@ SkColorMatrix SkSVGFeColorMatrix::makeMatrixForType() const {
 
     switch (fType) {
         case SkSVGFeColorMatrixType::kMatrix: {
-            if (fValues.count() < 20) {
+            if (fValues.size() < 20) {
                 return SkColorMatrix();
             }
             SkColorMatrix m;
-            m.setRowMajor(this->fValues.begin());
+            m.setRowMajor(fValues.data());
             return m;
         }
         case SkSVGFeColorMatrixType::kSaturate:
-            return MakeSaturate(fValues.count() > 0 ? fValues[0] : 1);
+            return MakeSaturate(!fValues.empty() ? fValues[0] : 1);
         case SkSVGFeColorMatrixType::kHueRotate:
-            return MakeHueRotate(fValues.count() > 0 ? fValues[0] : 0);
+            return MakeHueRotate(!fValues.empty() ? fValues[0] : 0);
         case SkSVGFeColorMatrixType::kLuminanceToAlpha:
             return MakeLuminanceToAlpha();
     }
@@ -91,26 +91,10 @@ SkColorMatrix SkSVGFeColorMatrix::MakeLuminanceToAlpha() {
 
 sk_sp<SkImageFilter> SkSVGFeColorMatrix::onMakeImageFilter(const SkSVGRenderContext& ctx,
                                                            const SkSVGFilterContext& fctx) const {
-    return SkImageFilters::ColorFilter(SkColorFilters::Matrix(makeMatrixForType()),
-                                       fctx.resolveInput(ctx, this->getIn()),
-                                       fctx.filterEffectsRegion());
-}
-
-template <> bool SkSVGAttributeParser::parse(SkSVGFeColorMatrixValues* values) {
-    SkSVGNumberType value;
-    if (!this->parseNumber(&value)) {
-        return false;
-    }
-
-    values->push_back(value);
-    while (true) {
-        if (!this->parseNumber(&value) || values->count() >= 20) {
-            break;
-        }
-        values->push_back(value);
-    }
-
-    return this->parseEOSToken();
+    return SkImageFilters::ColorFilter(
+            SkColorFilters::Matrix(makeMatrixForType()),
+            fctx.resolveInput(ctx, this->getIn(), this->resolveColorspace(ctx, fctx)),
+            this->resolveFilterSubregion(ctx, fctx));
 }
 
 template <> bool SkSVGAttributeParser::parse(SkSVGFeColorMatrixType* type) {

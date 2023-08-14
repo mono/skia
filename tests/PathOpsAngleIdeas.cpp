@@ -4,14 +4,32 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
-#include "include/private/SkTArray.h"
-#include "include/utils/SkRandom.h"
-#include "src/core/SkTSort.h"
+#include "include/core/SkPoint.h"
+#include "include/core/SkScalar.h"
+#include "include/core/SkTypes.h"
+#include "include/private/base/SkDebug.h"
+#include "include/private/base/SkTArray.h"
+#include "src/base/SkArenaAlloc.h"
+#include "src/base/SkRandom.h"
+#include "src/base/SkTSort.h"
 #include "src/pathops/SkIntersections.h"
+#include "src/pathops/SkOpAngle.h"
 #include "src/pathops/SkOpContour.h"
 #include "src/pathops/SkOpSegment.h"
+#include "src/pathops/SkPathOpsLine.h"
+#include "src/pathops/SkPathOpsPoint.h"
+#include "src/pathops/SkPathOpsQuad.h"
+#include "src/pathops/SkPathOpsRect.h"
+#include "src/pathops/SkPathOpsTypes.h"
 #include "tests/PathOpsTestCommon.h"
 #include "tests/Test.h"
+
+#include <algorithm>
+#include <array>
+#include <cfloat>
+#include <cmath>
+
+using namespace skia_private;
 
 static bool gPathOpsAngleIdeasVerbose = false;
 static bool gPathOpsAngleIdeasEnableBruteCheck = false;
@@ -72,7 +90,7 @@ static double testArc(skiatest::Reporter* reporter, const SkDQuad& quad, const S
 }
 
 static void orderQuads(skiatest::Reporter* reporter, const SkDQuad& quad, double radius,
-        SkTArray<double, false>* tArray) {
+        TArray<double, false>* tArray) {
     double r = radius;
     double s = r * SK_ScalarTanPIOver8;
     double m = r * SK_ScalarRoot2Over2;
@@ -92,7 +110,7 @@ static void orderQuads(skiatest::Reporter* reporter, const SkDQuad& quad, double
         if (t < 0) {
             continue;
         }
-        for (int index = 0; index < tArray->count(); ++index) {
+        for (int index = 0; index < tArray->size(); ++index) {
             double matchT = (*tArray)[index];
             if (approximately_equal(t, matchT)) {
                 goto next;
@@ -227,10 +245,10 @@ static bool radianBetween(double start, double test, double end) {
 
 static bool orderTRange(skiatest::Reporter* reporter, const SkDQuad& quad1, const SkDQuad& quad2,
         double r, TRange* result) {
-    SkTArray<double, false> t1Array, t2Array;
+    TArray<double, false> t1Array, t2Array;
     orderQuads(reporter, quad1, r, &t1Array);
     orderQuads(reporter,quad2, r, &t2Array);
-    if (!t1Array.count() || !t2Array.count()) {
+    if (t1Array.empty() || t2Array.empty()) {
         return false;
     }
     SkTQSort<double>(t1Array.begin(), t1Array.end());
@@ -267,7 +285,7 @@ static double maxDist(const SkDQuad& quad) {
         { bounds.fRight - quad[0].fX, bounds.fBottom - quad[0].fY }
     };
     double max = 0;
-    for (unsigned index = 0; index < SK_ARRAY_COUNT(corner); ++index) {
+    for (unsigned index = 0; index < std::size(corner); ++index) {
         max = std::max(max, corner[index].length());
     }
     return max;
@@ -334,9 +352,6 @@ static bool bruteMinT(skiatest::Reporter* reporter, const SkDQuad& quad1, const 
             rStep /= 2;
         } while (rStep > FLT_EPSILON);
         if (bestCCW < 0) {
-            if (bestR >= maxRadius) {
-                SkDebugf("");
-            }
             REPORTER_ASSERT(reporter, bestR < maxRadius);
             return false;
         }
@@ -484,7 +499,7 @@ static void testQuadAngles(skiatest::Reporter* reporter, const SkDQuad& quad1, c
     double maxWidth = 0;
     bool useIntersect = false;
     double smallestTs[] = {1, 1};
-    for (unsigned index = 0; index < SK_ARRAY_COUNT(quads); ++index) {
+    for (unsigned index = 0; index < std::size(quads); ++index) {
         const SkDQuad& q = *quads[index];
         midSpokes[index] = q.ptAtT(0.5) - origin;
         minX = std::min(std::min(std::min(minX, origin.fX), q[1].fX), q[2].fX);
@@ -564,7 +579,7 @@ DEF_TEST(PathOpsAngleOverlapHullsOne, reporter) {
 {{{939.4808349609375, 914.355224609375}, {-357.7921142578125, 590.842529296875}, {736.8936767578125, -350.717529296875}}},
 {{{939.4808349609375, 914.355224609375}, {-182.85418701171875, 634.4552001953125}, {-509.62615966796875, 576.1182861328125}}}
     };
-    for (int index = 0; index < (int) SK_ARRAY_COUNT(quads); index += 2) {
+    for (int index = 0; index < (int) std::size(quads); index += 2) {
         SkDQuad quad0, quad1;
         quad0.debugSet(quads[index].fPts);
         quad1.debugSet(quads[index + 1].fPts);
@@ -660,8 +675,8 @@ DEF_TEST(PathOpsAngleBruteTOne, reporter) {
 {{{598.857421875, 846.345458984375}, {715.7142333984375, 955.3599853515625}, {-919.9478759765625, 691.611328125}}},
     };
     TRange lowerRange, upperRange;
-    SkDQuad quads[SK_ARRAY_COUNT(qPts)];
-    for (int index = 0; index < (int) SK_ARRAY_COUNT(qPts); ++index) {
+    SkDQuad quads[std::size(qPts)];
+    for (int index = 0; index < (int) std::size(qPts); ++index) {
         quads[index].debugSet(qPts[index].fPts);
     }
     bruteMinT(reporter, quads[0], quads[1], &lowerRange, &upperRange);
@@ -810,7 +825,7 @@ DEF_TEST(PathOpsAngleExtreme, reporter) {
         return;
     }
     double maxR = SK_ScalarMax;
-    for (int index = 0; index < (int) SK_ARRAY_COUNT(extremeTests); ++index) {
+    for (int index = 0; index < (int) std::size(extremeTests); ++index) {
         const QuadPts& qu1 = extremeTests[index][0];
         const QuadPts& qu2 = extremeTests[index][1];
         SkDQuad quad1, quad2;

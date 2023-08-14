@@ -8,12 +8,12 @@
 #include "modules/skottie/src/animator/VectorKeyframeAnimator.h"
 
 #include "include/core/SkTypes.h"
-#include "include/private/SkNx.h"
-#include "include/private/SkTPin.h"
+#include "include/private/base/SkTPin.h"
 #include "modules/skottie/src/SkottieJson.h"
 #include "modules/skottie/src/SkottieValue.h"
 #include "modules/skottie/src/animator/Animator.h"
-#include "src/core/SkSafeMath.h"
+#include "src/base/SkSafeMath.h"
+#include "src/base/SkVx.h"
 
 #include <algorithm>
 #include <cstring>
@@ -98,7 +98,9 @@ private:
         const auto* v1  = fStorage.data() + lerp_info.vrec1.idx;
               auto* dst = fTarget->data();
 
-        if (lerp_info.isConstant()) {
+        const auto is_constant = lerp_info.vrec0.equals(lerp_info.vrec1,
+                                                        Keyframe::Value::Type::kIndex);
+        if (is_constant) {
             if (0 != std::memcmp(dst, v0, fVecLen * sizeof(float))) {
                 std::copy(v0, v0 + fVecLen, dst);
                 return true;
@@ -110,10 +112,12 @@ private:
         bool changed = false;
 
         while (count >= 4) {
-            const auto old_val = Sk4f::Load(dst),
-                       new_val = Lerp(Sk4f::Load(v0), Sk4f::Load(v1), lerp_info.weight);
+            const auto old_val = skvx::float4::Load(dst),
+                       new_val = Lerp(skvx::float4::Load(v0),
+                                      skvx::float4::Load(v1),
+                                      lerp_info.weight);
 
-            changed |= (new_val != old_val).anyTrue();
+            changed |= any(new_val != old_val);
             new_val.store(dst);
 
             v0    += 4;
@@ -140,16 +144,44 @@ private:
     using INHERITED = KeyframeAnimator;
 };
 
+class VectorExpressionAnimator final : public Animator {
+public:
+    VectorExpressionAnimator(sk_sp<ExpressionEvaluator<std::vector<float>>> expression_evaluator,
+        std::vector<float>* target_value)
+        : fExpressionEvaluator(std::move(expression_evaluator))
+        , fTarget(target_value) {}
+
+private:
+
+    StateChanged onSeek(float t) override {
+        std::vector<float> result = fExpressionEvaluator->evaluate(t);
+        bool changed = false;
+        for (size_t i = 0; i < fTarget->size(); i++) {
+            // Use 0 as a default if the result is too small.
+            float val = i >= result.size() ? 0 : result[i];
+            if (!SkScalarNearlyEqual(val, (*fTarget)[i])) {
+                changed = true;
+            }
+            (*fTarget)[i] = val;
+        }
+
+        return changed;
+    }
+
+    sk_sp<ExpressionEvaluator<std::vector<float>>> fExpressionEvaluator;
+    std::vector<float>* fTarget;
+};
 } // namespace
 
-VectorKeyframeAnimatorBuilder::VectorKeyframeAnimatorBuilder(std::vector<float>* target,
+VectorAnimatorBuilder::VectorAnimatorBuilder(std::vector<float>* target,
                                                              VectorLenParser  parse_len,
                                                              VectorDataParser parse_data)
-    : fParseLen(parse_len)
+    : INHERITED(Keyframe::Value::Type::kIndex)
+    , fParseLen(parse_len)
     , fParseData(parse_data)
     , fTarget(target) {}
 
-sk_sp<KeyframeAnimator> VectorKeyframeAnimatorBuilder::make(const AnimationBuilder& abuilder,
+sk_sp<KeyframeAnimator> VectorAnimatorBuilder::makeFromKeyframes(const AnimationBuilder& abuilder,
                                                             const skjson::ArrayValue& jkfs) {
     SkASSERT(jkfs.size() > 0);
 
@@ -186,7 +218,13 @@ sk_sp<KeyframeAnimator> VectorKeyframeAnimatorBuilder::make(const AnimationBuild
                                            fTarget));
 }
 
-bool VectorKeyframeAnimatorBuilder::parseValue(const AnimationBuilder&,
+sk_sp<Animator> VectorAnimatorBuilder::makeFromExpression(ExpressionManager& em, const char* expr) {
+    sk_sp<ExpressionEvaluator<std::vector<SkScalar>>> expression_evaluator =
+            em.createArrayExpressionEvaluator(expr);
+    return sk_make_sp<VectorExpressionAnimator>(expression_evaluator, fTarget);
+}
+
+bool VectorAnimatorBuilder::parseValue(const AnimationBuilder&,
                                                const skjson::Value& jv) const {
     size_t vec_len;
     if (!this->fParseLen(jv, &vec_len)) {
@@ -197,7 +235,7 @@ bool VectorKeyframeAnimatorBuilder::parseValue(const AnimationBuilder&,
     return fParseData(jv, vec_len, fTarget->data());
 }
 
-bool VectorKeyframeAnimatorBuilder::parseKFValue(const AnimationBuilder&,
+bool VectorAnimatorBuilder::parseKFValue(const AnimationBuilder&,
                                                  const skjson::ObjectValue&,
                                                  const skjson::Value& jv,
                                                  Keyframe::Value* kfv) {
@@ -236,7 +274,7 @@ bool AnimatablePropertyContainer::bind<VectorValue>(const AnimationBuilder& abui
 
     if (!ParseDefault<bool>((*jprop)["s"], false)) {
         // Regular (static or keyframed) vector value.
-        VectorKeyframeAnimatorBuilder builder(
+        VectorAnimatorBuilder builder(
                     v,
                     // Len parser.
                     [](const skjson::Value& jv, size_t* len) -> bool {
@@ -256,9 +294,10 @@ bool AnimatablePropertyContainer::bind<VectorValue>(const AnimationBuilder& abui
 
     // Separate-dimensions vector value: each component is animated independently.
     *v = { 0, 0, 0 };
-    return this->bind(abuilder, (*jprop)["x"], v->data() + 0)
-         | this->bind(abuilder, (*jprop)["y"], v->data() + 1)
-         | this->bind(abuilder, (*jprop)["z"], v->data() + 2);
+    bool boundX = this->bind(abuilder, (*jprop)["x"], v->data() + 0);
+    bool boundY = this->bind(abuilder, (*jprop)["y"], v->data() + 1);
+    bool boundZ = this->bind(abuilder, (*jprop)["z"], v->data() + 2);
+    return boundX || boundY || boundZ;
 }
 
 } // namespace internal

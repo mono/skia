@@ -4,18 +4,29 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
+
+#include "include/core/SkPath.h"
+#include "include/core/SkPathTypes.h"
+#include "include/core/SkPoint.h"
+#include "include/core/SkTypes.h"
+#include "src/base/SkTSort.h"
 #include "src/core/SkPathPriv.h"
-#include "src/core/SkTSort.h"
 #include "src/pathops/SkPathOpsBounds.h"
 #include "src/pathops/SkPathOpsConic.h"
 #include "src/pathops/SkPathOpsCubic.h"
 #include "src/pathops/SkPathOpsLine.h"
 #include "src/pathops/SkPathOpsQuad.h"
+#include "src/pathops/SkPathOpsRect.h"
 #include "src/pathops/SkPathOpsTSect.h"
+#include "src/pathops/SkPathOpsTypes.h"
 #include "src/pathops/SkReduceOrder.h"
 #include "tests/PathOpsTestCommon.h"
 
+#include <cmath>
+#include <string>
 #include <utility>
+
+using namespace skia_private;
 
 static double calc_t_div(const SkDCubic& cubic, double precision, double start) {
     const double adjust = sqrt(3.) / 36;
@@ -33,14 +44,14 @@ static double calc_t_div(const SkDCubic& cubic, double precision, double start) 
     double dy = c[3].fY - 3 * (c[2].fY - c[1].fY) - c[0].fY;
     double dist = sqrt(dx * dx + dy * dy);
     double tDiv3 = precision / (adjust * dist);
-    double t = SkDCubeRoot(tDiv3);
+    double t = std::cbrt(tDiv3);
     if (start > 0) {
         t = start + (1 - start) * t;
     }
     return t;
 }
 
-static bool add_simple_ts(const SkDCubic& cubic, double precision, SkTArray<double, true>* ts) {
+static bool add_simple_ts(const SkDCubic& cubic, double precision, TArray<double, true>* ts) {
     double tDiv = calc_t_div(cubic, precision, 0);
     if (tDiv >= 1) {
         return true;
@@ -53,7 +64,7 @@ static bool add_simple_ts(const SkDCubic& cubic, double precision, SkTArray<doub
 }
 
 static void addTs(const SkDCubic& cubic, double precision, double start, double end,
-        SkTArray<double, true>* ts) {
+        TArray<double, true>* ts) {
     double tDiv = calc_t_div(cubic, precision, 0);
     double parts = ceil(1.0 / tDiv);
     for (double index = 0; index < parts; ++index) {
@@ -64,7 +75,7 @@ static void addTs(const SkDCubic& cubic, double precision, double start, double 
     }
 }
 
-static void toQuadraticTs(const SkDCubic* cubic, double precision, SkTArray<double, true>* ts) {
+static void toQuadraticTs(const SkDCubic* cubic, double precision, TArray<double, true>* ts) {
     SkReduceOrder reducer;
     int order = reducer.reduce(*cubic, SkReduceOrder::kAllow_Quadratics);
     if (order < 3) {
@@ -134,17 +145,17 @@ static void toQuadraticTs(const SkDCubic* cubic, double precision, SkTArray<doub
     addTs(*cubic, precision, 0, 1, ts);
 }
 
-void CubicToQuads(const SkDCubic& cubic, double precision, SkTArray<SkDQuad, true>& quads) {
-    SkTArray<double, true> ts;
+void CubicToQuads(const SkDCubic& cubic, double precision, TArray<SkDQuad, true>& quads) {
+    TArray<double, true> ts;
     toQuadraticTs(&cubic, precision, &ts);
-    if (ts.count() <= 0) {
+    if (ts.empty()) {
         SkDQuad quad = cubic.toQuad();
         quads.push_back(quad);
         return;
     }
     double tStart = 0;
-    for (int i1 = 0; i1 <= ts.count(); ++i1) {
-        const double tEnd = i1 < ts.count() ? ts[i1] : 1;
+    for (int i1 = 0; i1 <= ts.size(); ++i1) {
+        const double tEnd = i1 < ts.size() ? ts[i1] : 1;
         SkDRect bounds;
         bounds.setBounds(cubic);
         SkDCubic part = cubic.subDivide(tStart, tEnd);
@@ -167,7 +178,7 @@ void CubicToQuads(const SkDCubic& cubic, double precision, SkTArray<SkDQuad, tru
 void CubicPathToQuads(const SkPath& cubicPath, SkPath* quadPath) {
     quadPath->reset();
     SkDCubic cubic;
-    SkTArray<SkDQuad, true> quads;
+    TArray<SkDQuad, true> quads;
     for (auto [verb, pts, w] : SkPathPriv::Iterate(cubicPath)) {
         switch (verb) {
             case SkPathVerb::kMove:
@@ -180,10 +191,10 @@ void CubicPathToQuads(const SkPath& cubicPath, SkPath* quadPath) {
                 quadPath->quadTo(pts[1].fX, pts[1].fY, pts[2].fX, pts[2].fY);
                 break;
             case SkPathVerb::kCubic:
-                quads.reset();
+                quads.clear();
                 cubic.set(pts);
                 CubicToQuads(cubic, cubic.calcPrecision(), quads);
-                for (int index = 0; index < quads.count(); ++index) {
+                for (int index = 0; index < quads.size(); ++index) {
                     SkPoint qPts[2] = {
                         quads[index][1].asSkPoint(),
                         quads[index][2].asSkPoint()

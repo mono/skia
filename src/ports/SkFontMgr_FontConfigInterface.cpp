@@ -11,43 +11,33 @@
 #include "include/core/SkTypeface.h"
 #include "include/ports/SkFontConfigInterface.h"
 #include "include/ports/SkFontMgr_FontConfigInterface.h"
-#include "include/private/SkMutex.h"
+#include "include/private/base/SkMutex.h"
 #include "src/core/SkFontDescriptor.h"
 #include "src/core/SkResourceCache.h"
 #include "src/core/SkTypefaceCache.h"
 #include "src/ports/SkFontConfigTypeface.h"
 #include <new>
 
+using namespace skia_private;
+
 std::unique_ptr<SkStreamAsset> SkTypeface_FCI::onOpenStream(int* ttcIndex) const {
     *ttcIndex =  this->getIdentity().fTTCIndex;
-
-    if (fFontData) {
-        SkStreamAsset* stream = fFontData->getStream();
-        if (!stream) {
-            return nullptr;
-        }
-        return stream->duplicate();
-    }
-
     return std::unique_ptr<SkStreamAsset>(fFCI->openStream(this->getIdentity()));
 }
 
 std::unique_ptr<SkFontData> SkTypeface_FCI::onMakeFontData() const {
-    if (fFontData) {
-        return std::make_unique<SkFontData>(*fFontData);
-    }
-
     const SkFontConfigInterface::FontIdentity& id = this->getIdentity();
     return std::make_unique<SkFontData>(std::unique_ptr<SkStreamAsset>(fFCI->openStream(id)),
-                                          id.fTTCIndex, nullptr, 0);
+                                        id.fTTCIndex, 0, nullptr, 0, nullptr, 0);
 }
 
-void SkTypeface_FCI::onGetFontDescriptor(SkFontDescriptor* desc, bool* isLocalStream) const {
+void SkTypeface_FCI::onGetFontDescriptor(SkFontDescriptor* desc, bool* serialize) const {
     SkString name;
     this->getFamilyName(&name);
     desc->setFamilyName(name.c_str());
     desc->setStyle(this->fontStyle());
-    *isLocalStream = SkToBool(fFontData);
+    desc->setFactoryId(SkTypeface_FreeType::FactoryId);
+    *serialize = true;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -58,8 +48,8 @@ public:
 
     int count() override { return 0; }
     void getStyle(int index, SkFontStyle*, SkString* style) override { SkASSERT(false); }
-    SkTypeface* createTypeface(int index) override { SkASSERT(false); return nullptr; }
-    SkTypeface* matchStyle(const SkFontStyle& pattern) override { return nullptr; }
+    sk_sp<SkTypeface> createTypeface(int index) override { SkASSERT(false); return nullptr; }
+    sk_sp<SkTypeface> matchStyle(const SkFontStyle& pattern) override { return nullptr; }
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -167,7 +157,9 @@ public:
     SkFontMgr_FCI(sk_sp<SkFontConfigInterface> fci)
         : fFCI(std::move(fci))
         , fCache(kMaxSize)
-    {}
+    {
+        SkASSERT_RELEASE(fFCI);
+    }
 
 protected:
     int onCountFamilies() const override {
@@ -178,18 +170,26 @@ protected:
         SK_ABORT("Not implemented.");
     }
 
-    SkFontStyleSet* onCreateStyleSet(int index) const override {
+    sk_sp<SkFontStyleSet> onCreateStyleSet(int index) const override {
         SK_ABORT("Not implemented.");
     }
 
-    SkFontStyleSet* onMatchFamily(const char familyName[]) const override {
+    sk_sp<SkFontStyleSet> onMatchFamily(const char familyName[]) const override {
         SK_ABORT("Not implemented.");
     }
 
-    SkTypeface* onMatchFamilyStyle(const char requestedFamilyName[],
-                                   const SkFontStyle& requestedStyle) const override
+    sk_sp<SkTypeface> onMatchFamilyStyle(const char requestedFamilyName[],
+                                         const SkFontStyle& requestedStyle) const override
     {
         SkAutoMutexExclusive ama(fMutex);
+
+        // Check if this request is already in the request cache.
+        using Request = SkFontRequestCache::Request;
+        std::unique_ptr<Request> request(Request::Create(requestedFamilyName, requestedStyle));
+        sk_sp<SkTypeface> face = fCache.findAndRef(request.get());
+        if (face) {
+            return sk_sp<SkTypeface>(face);
+        }
 
         SkFontConfigInterface::FontIdentity identity;
         SkString outFamilyName;
@@ -201,22 +201,21 @@ protected:
         }
 
         // Check if a typeface with this FontIdentity is already in the FontIdentity cache.
-        sk_sp<SkTypeface> face = fTFCache.findByProcAndRef(find_by_FontIdentity, &identity);
+        face = fTFCache.findByProcAndRef(find_by_FontIdentity, &identity);
         if (!face) {
             face.reset(SkTypeface_FCI::Create(fFCI, identity, std::move(outFamilyName), outStyle));
             // Add this FontIdentity to the FontIdentity cache.
             fTFCache.add(face);
         }
-        return face.release();
+        // Add this request to the request cache.
+        fCache.add(face, request.release());
+
+        return face;
     }
 
-    SkTypeface* onMatchFamilyStyleCharacter(const char familyName[], const SkFontStyle&,
+    sk_sp<SkTypeface> onMatchFamilyStyleCharacter(const char familyName[], const SkFontStyle&,
                                             const char* bcp47[], int bcp47Count,
                                             SkUnichar character) const override {
-        SK_ABORT("Not implemented.");
-    }
-
-    SkTypeface* onMatchFaceStyle(const SkTypeface*, const SkFontStyle&) const override {
         SK_ABORT("Not implemented.");
     }
 
@@ -226,30 +225,12 @@ protected:
 
     sk_sp<SkTypeface> onMakeFromStreamIndex(std::unique_ptr<SkStreamAsset> stream,
                                             int ttcIndex) const override {
-        const size_t length = stream->getLength();
-        if (!length) {
-            return nullptr;
-        }
-        if (length >= 1024 * 1024 * 1024) {
-            return nullptr;  // don't accept too large fonts (>= 1GB) for safety.
-        }
-
-        // TODO should the caller give us the style or should we get it from freetype?
-        SkString name;
-        SkFontStyle style;
-        bool isFixedPitch = false;
-        if (!fScanner.scanFont(stream.get(), 0, &name, &style, &isFixedPitch, nullptr)) {
-            return nullptr;
-        }
-
-        auto fontData = std::make_unique<SkFontData>(std::move(stream), ttcIndex, nullptr, 0);
-        return sk_sp<SkTypeface>(SkTypeface_FCI::Create(std::move(fontData), std::move(name),
-                                                        style, isFixedPitch));
+        return this->makeFromStream(std::move(stream),
+                                    SkFontArguments().setCollectionIndex(ttcIndex));
     }
 
     sk_sp<SkTypeface> onMakeFromStreamArgs(std::unique_ptr<SkStreamAsset> stream,
                                            const SkFontArguments& args) const override {
-        using Scanner = SkTypeface_FreeType::Scanner;
         const size_t length = stream->getLength();
         if (!length) {
             return nullptr;
@@ -258,53 +239,12 @@ protected:
             return nullptr;  // don't accept too large fonts (>= 1GB) for safety.
         }
 
-        SkString name;
-        SkFontStyle style;
-        bool isFixedPitch = false;
-        Scanner::AxisDefinitions axisDefinitions;
-        if (!fScanner.scanFont(stream.get(), args.getCollectionIndex(),
-                               &name, &style, &isFixedPitch, &axisDefinitions))
-        {
-            return nullptr;
-        }
-
-        SkAutoSTMalloc<4, SkFixed> axisValues(axisDefinitions.count());
-        Scanner::computeAxisValues(axisDefinitions, args.getVariationDesignPosition(),
-                                   axisValues, name);
-
-        auto fontData = std::make_unique<SkFontData>(std::move(stream),
-                                                     args.getCollectionIndex(),
-                                                     axisValues.get(),
-                                                     axisDefinitions.count());
-        return sk_sp<SkTypeface>(SkTypeface_FCI::Create(std::move(fontData), std::move(name),
-                                                        style, isFixedPitch));
+        return SkTypeface_FreeType::MakeFromStream(std::move(stream), args);
     }
 
     sk_sp<SkTypeface> onMakeFromFile(const char path[], int ttcIndex) const override {
         std::unique_ptr<SkStreamAsset> stream = SkStream::MakeFromFile(path);
         return stream ? this->makeFromStream(std::move(stream), ttcIndex) : nullptr;
-    }
-
-    sk_sp<SkTypeface> onMakeFromFontData(std::unique_ptr<SkFontData> fontData) const override {
-        SkStreamAsset* stream(fontData->getStream());
-        const size_t length = stream->getLength();
-        if (!length) {
-            return nullptr;
-        }
-        if (length >= 1024 * 1024 * 1024) {
-            return nullptr;  // don't accept too large fonts (>= 1GB) for safety.
-        }
-
-        const int ttcIndex = fontData->getIndex();
-        SkString name;
-        SkFontStyle style;
-        bool isFixedPitch = false;
-        if (!fScanner.scanFont(stream, ttcIndex, &name, &style, &isFixedPitch, nullptr)) {
-            return nullptr;
-        }
-
-        return sk_sp<SkTypeface>(SkTypeface_FCI::Create(std::move(fontData), std::move(name),
-                                                        style, isFixedPitch));
     }
 
     sk_sp<SkTypeface> onLegacyMakeTypeface(const char requestedFamilyName[],

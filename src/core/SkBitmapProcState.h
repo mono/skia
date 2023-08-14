@@ -8,15 +8,23 @@
 #ifndef SkBitmapProcState_DEFINED
 #define SkBitmapProcState_DEFINED
 
-#include "include/core/SkBitmap.h"
-#include "include/core/SkPaint.h"
-#include "include/core/SkShader.h"
-#include "include/private/SkFixed.h"
-#include "include/private/SkFloatBits.h"
-#include "include/private/SkTemplates.h"
-#include "src/core/SkArenaAlloc.h"
-#include "src/core/SkBitmapController.h"
+#include "include/core/SkColor.h"
+#include "include/core/SkMatrix.h"
+#include "include/core/SkPixmap.h"
+#include "include/core/SkPoint.h"
+#include "include/core/SkSamplingOptions.h"
+#include "include/core/SkScalar.h"
+#include "include/private/base/SkAssert.h"
+#include "include/private/base/SkCPUTypes.h"
+#include "include/private/base/SkFixed.h"
+#include "src/base/SkArenaAlloc.h"
 #include "src/core/SkMatrixPriv.h"
+
+#include <cstddef>
+#include <cstdint>
+
+class SkImage_Base;
+enum class SkTileMode;
 
 typedef SkFixed3232    SkFractionalInt;
 #define SkScalarToFractionalInt(x)  SkScalarToFixed3232(x)
@@ -24,13 +32,11 @@ typedef SkFixed3232    SkFractionalInt;
 #define SkFixedToFractionalInt(x)   SkFixedToFixed3232(x)
 #define SkFractionalIntToInt(x)     SkFixed3232ToInt(x)
 
-class SkPaint;
-
 struct SkBitmapProcState {
     SkBitmapProcState(const SkImage_Base* image, SkTileMode tmx, SkTileMode tmy);
 
-    bool setup(const SkMatrix& inv, const SkPaint& paint) {
-        return this->init(inv, paint)
+    bool setup(const SkMatrix& inv, SkColor color, const SkSamplingOptions& sampling) {
+        return this->init(inv, color, sampling)
             && this->chooseProcs();
     }
 
@@ -50,10 +56,10 @@ struct SkBitmapProcState {
 
     SkPixmap                fPixmap;
     SkMatrix                fInvMatrix;         // This changes based on tile mode.
-    SkColor                 fPaintColor;
+    SkAlpha                 fPaintAlpha;
     SkTileMode              fTileModeX;
     SkTileMode              fTileModeY;
-    SkFilterQuality         fFilterQuality;
+    bool                    fBilerp;
 
     SkMatrixPriv::MapXYProc fInvProc;           // chooseProcs
     SkFractionalInt     fInvSxFractionalInt;
@@ -91,14 +97,13 @@ private:
         kBMStateSize = 136  // found by inspection. if too small, we will call new/delete
     };
     SkSTArenaAlloc<kBMStateSize> fAlloc;
-    SkBitmapController::State* fBMState;
 
     ShaderProc32        fShaderProc32;      // chooseProcs
     // These are used if the shaderproc is nullptr
     MatrixProc          fMatrixProc;        // chooseProcs
     SampleProc32        fSampleProc32;      // chooseProcs
 
-    bool init(const SkMatrix& inverse, const SkPaint&);
+    bool init(const SkMatrix& inverse, SkAlpha, const SkSamplingOptions&);
     bool chooseProcs();
     MatrixProc chooseMatrixProc(bool trivial_matrix);
     ShaderProc32 chooseShaderProc32();
@@ -161,17 +166,17 @@ public:
                    SkIntToScalar(x) + SK_ScalarHalf,
                    SkIntToScalar(y) + SK_ScalarHalf, &pt);
 
-        SkFixed biasX, biasY;
-        if (s.fFilterQuality == kNone_SkFilterQuality) {
-            // SkFixed epsilon bias to ensure inverse-mapped bitmap coordinates are rounded
-            // consistently WRT geometry.  Note that we only need the bias for positive scales:
-            // for negative scales, the rounding is intrinsically correct.
-            // We scale it to persist SkFractionalInt -> SkFixed conversions.
-            biasX = (s.fInvMatrix.getScaleX() > 0);
-            biasY = (s.fInvMatrix.getScaleY() > 0);
-        } else {
+        SkFixed biasX = 0, biasY = 0;
+        if (s.fBilerp) {
             biasX = s.fFilterOneX >> 1;
             biasY = s.fFilterOneY >> 1;
+        } else {
+            // Our rasterizer biases upward. That is a rect from 0.5...1.5 fills pixel 1 and not
+            // pixel 0. To make an image that is mapped 1:1 with device pixels but at a half pixel
+            // offset select every pixel from the src image once we make exact integer pixel sample
+            // values round down not up. Note that a mirror mapping will not have this property.
+            biasX = 1;
+            biasY = 1;
         }
 
         // punt to unsigned for defined underflow behavior
@@ -198,5 +203,13 @@ public:
 private:
     SkFractionalInt fX, fY;
 };
+
+namespace sktests {
+    // f is the value to pack, max is the largest the value can be.
+    uint32_t pack_clamp(SkFixed f, unsigned max);
+    // As above, but width is the width of the pretend bitmap.
+    uint32_t pack_repeat(SkFixed f, unsigned max, size_t width);
+    uint32_t pack_mirror(SkFixed f, unsigned max, size_t width);
+}
 
 #endif

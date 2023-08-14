@@ -8,6 +8,7 @@
 
 import json
 
+PYTHON_VERSION_COMPATIBILITY = "PY3"
 
 DEPS = [
   'env',
@@ -20,10 +21,12 @@ DEPS = [
   'recipe_engine/python',
   'recipe_engine/raw_io',
   'recipe_engine/step',
+  'gold_upload',
   'run',
   'vars',
 ]
 
+DM_JSON = 'dm.json'
 
 def test_steps(api):
   """Run the DM test."""
@@ -60,39 +63,42 @@ def test_steps(api):
         api.python.inline,
         'get uninteresting hashes',
         program="""
-        import contextlib
-        import math
-        import socket
-        import sys
-        import time
-        import urllib2
+import contextlib
+import math
+import socket
+import sys
+import time
 
-        HASHES_URL = sys.argv[1]
-        RETRIES = 5
-        TIMEOUT = 60
-        WAIT_BASE = 15
+from urllib.request import urlopen
 
-        socket.setdefaulttimeout(TIMEOUT)
-        for retry in range(RETRIES):
-          try:
-            with contextlib.closing(
-                urllib2.urlopen(HASHES_URL, timeout=TIMEOUT)) as w:
-              hashes = w.read()
-              with open(sys.argv[2], 'w') as f:
-                f.write(hashes)
-                break
-          except Exception as e:
-            print 'Failed to get uninteresting hashes from %s:' % HASHES_URL
-            print e
-            if retry == RETRIES:
-              raise
-            waittime = WAIT_BASE * math.pow(2, retry)
-            print 'Retry in %d seconds.' % waittime
-            time.sleep(waittime)
+HASHES_URL = sys.argv[1]
+RETRIES = 5
+TIMEOUT = 60
+WAIT_BASE = 15
+
+socket.setdefaulttimeout(TIMEOUT)
+for retry in range(RETRIES):
+  try:
+    with contextlib.closing(
+        urlopen(HASHES_URL, timeout=TIMEOUT)) as w:
+      hashes = w.read().decode('utf-8')
+      with open(sys.argv[2], 'w') as f:
+        f.write(hashes)
+        break
+  except Exception as e:
+    print('Failed to get uninteresting hashes from %s:' % HASHES_URL)
+    print(e)
+    if retry == RETRIES:
+      raise
+    waittime = WAIT_BASE * math.pow(2, retry)
+    print('Retry in %d seconds.' % waittime)
+    time.sleep(waittime)
         """,
         args=[api.properties['gold_hashes_url'], host_hashes_file],
-        abort_on_failure=False,
-        fail_build_on_failure=False,
+        # If this fails, we want to know about it because it means Gold is down
+        # and proceeding onwards would take a very long time, but be hard to notice.
+        abort_on_failure=True,
+        fail_build_on_failure=True,
         infra_step=True)
 
     if api.path.exists(host_hashes_file):
@@ -127,7 +133,10 @@ def test_steps(api):
             api.flavor.device_dirs.images_dir, 'colorspace'),
     ])
   if svgs:
-    args.extend(['--svgs', api.flavor.device_dirs.svg_dir])
+    # svg_dir is the root of the SVG corpus. Within that directory,
+    # the *.svg inputs are in the 'svg' subdirectory. See skbug.com/11229
+    args.extend(['--svgs', api.flavor.device_path_join(
+      api.flavor.device_dirs.svg_dir, "svg")])
   if lotties:
     args.extend([
       '--lotties',
@@ -148,6 +157,9 @@ def test_steps(api):
     # Copy images and JSON to host machine if needed.
     api.flavor.copy_directory_contents_to_host(
         api.flavor.device_dirs.dm_dir, api.flavor.host_dirs.dm_dir)
+    # https://bugs.chromium.org/p/chromium/issues/detail?id=1192611
+    if 'Win' not in api.vars.builder_cfg.get('os', ''):
+      api.gold_upload.upload()
 
 
 def RunSteps(api):
@@ -163,7 +175,7 @@ def RunSteps(api):
 
 
 TEST_BUILDERS = [
-  'Test-Android-Clang-Pixel-GPU-Adreno530-arm-Debug-All-Android_ASAN',
+  'Test-Android-Clang-Pixel2XL-GPU-Adreno540-arm-Debug-All-Android_ASAN',
   'Test-Android-Clang-Pixel2XL-GPU-Adreno540-arm64-Debug-All-Android',
   'Test-Debian10-Clang-GCE-CPU-AVX2-x86_64-Release-All-Lottie',
   'Test-Win10-Clang-ShuttleC-GPU-GTX960-x86_64-Debug-All-ANGLE',
@@ -175,11 +187,15 @@ def GenTests(api):
     props = dict(
       buildername=builder,
       buildbucket_build_id='123454321',
-      dm_flags='["dm","--dummy","--flags"]',
+      dm_flags='["dm","--example","--flags"]',
       dm_properties=('{"key1":"value1","key2":"",'
                      '"bot":"${SWARMING_BOT_ID}",'
                      '"task":"${SWARMING_TASK_ID}"}'),
       revision='abc123',
+      gs_bucket='skia-infra-gm',
+      patch_ref='89/456789/12',
+      patch_set=7,
+      patch_issue=1234,
       path_config='kitchen',
       gold_hashes_url='https://example.com/hashes.txt',
       swarm_out_dir='[SWARM_OUT_DIR]',
@@ -212,7 +228,7 @@ def GenTests(api):
       api.step_data('get swarming task id',
           stdout=api.raw_io.output('123456'))
     )
-    if 'Win' in builder and not 'LenovoYogaC630' in builder:
+    if 'Win' in builder:
       test += api.platform('win', 64)
 
     yield test

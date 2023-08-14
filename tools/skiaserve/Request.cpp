@@ -9,10 +9,14 @@
 
 #include <memory>
 
+#include "include/core/SkBitmap.h"
+#include "include/core/SkColorSpace.h"
 #include "include/core/SkPictureRecorder.h"
 #include "include/gpu/GrDirectContext.h"
+#include "include/gpu/ganesh/SkSurfaceGanesh.h"
 #include "src/utils/SkJSONWriter.h"
 #include "tools/ToolUtils.h"
+#include "tools/debugger/DrawCommand.h"
 
 using namespace sk_gpu_test;
 
@@ -148,7 +152,7 @@ SkSurface* Request::createCPUSurface() {
                     : SkColorSpace::MakeSRGB();
     SkImageInfo info = SkImageInfo::Make(bounds.size(), cap.fColorType, kPremul_SkAlphaType,
                                          cap.fSRGB ? colorSpace : nullptr);
-    return SkSurface::MakeRaster(info).release();
+    return SkSurfaces::Raster(info).release();
 }
 
 SkSurface* Request::createGPUSurface() {
@@ -160,7 +164,7 @@ SkSurface* Request::createGPUSurface() {
                     : SkColorSpace::MakeSRGB();
     SkImageInfo info = SkImageInfo::Make(bounds.size(), cap.fColorType, kPremul_SkAlphaType,
                                          cap.fSRGB ? colorSpace : nullptr);
-    SkSurface* surface = SkSurface::MakeRenderTarget(context, SkBudgeted::kNo, info).release();
+    SkSurface* surface = SkSurfaces::RenderTarget(context, skgpu::Budgeted::kNo, info).release();
     return surface;
 }
 
@@ -186,7 +190,7 @@ bool Request::enableGPU(bool enable) {
             // TODO understand what is actually happening here
             if (fDebugCanvas) {
                 fDebugCanvas->drawTo(this->getCanvas(), this->getLastOp());
-                this->getCanvas()->flush();
+                fSurface->flush();
             }
 
             return true;
@@ -216,7 +220,7 @@ bool Request::initPictureFromStream(SkStream* stream) {
 
     // for some reason we need to 'flush' the debug canvas by drawing all of the ops
     fDebugCanvas->drawTo(this->getCanvas(), this->getLastOp());
-    this->getCanvas()->flush();
+    fSurface->flush();
     return true;
 }
 
@@ -226,7 +230,7 @@ sk_sp<SkData> Request::getJsonOps() {
     SkJSONWriter writer(&stream, SkJSONWriter::Mode::kFast);
     writer.beginObject(); // root
 
-    writer.appendString("mode", fGPUEnabled ? "gpu" : "cpu");
+    writer.appendCString("mode", fGPUEnabled ? "gpu" : "cpu");
     writer.appendBool("drawGpuOpBounds", fDebugCanvas->getDrawGpuOpBounds());
     writer.appendS32("colorMode", fColorMode);
     fDebugCanvas->toJSON(writer, fUrlDataManager, canvas);
@@ -260,12 +264,12 @@ sk_sp<SkData> Request::getJsonInfo(int n) {
     SkDynamicMemoryWStream stream;
     SkJSONWriter writer(&stream, SkJSONWriter::Mode::kFast);
 
-    SkMatrix vm = fDebugCanvas->getCurrentMatrix();
+    SkM44 vm = fDebugCanvas->getCurrentMatrix();
     SkIRect clip = fDebugCanvas->getCurrentClip();
 
     writer.beginObject(); // root
     writer.appendName("ViewMatrix");
-    DrawCommand::MakeJsonMatrix(writer, vm);
+    DrawCommand::MakeJsonMatrix44(writer, vm);
     writer.appendName("ClipRect");
     DrawCommand::MakeJsonIRect(writer, clip);
     writer.endObject(); // root

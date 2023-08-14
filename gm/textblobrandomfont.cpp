@@ -31,10 +31,8 @@
 #include <string.h>
 #include <utility>
 
-class GrRenderTargetContext;
-
 namespace skiagm {
-class TextBlobRandomFont : public GpuGM {
+class TextBlobRandomFont : public GM {
 public:
     // This gm tests that textblobs can be translated and scaled with a font that returns random
     // but deterministic masks
@@ -107,9 +105,20 @@ protected:
         return SkISize::Make(kWidth, kHeight);
     }
 
-    DrawResult onDraw(GrRecordingContext* context, GrRenderTargetContext*, SkCanvas* canvas,
-                      SkString* errorMsg) override {
-        // This GM exists to test a specific feature of the GPU backend.
+    DrawResult onDraw(SkCanvas* canvas, SkString* errorMsg) override {
+        GrDirectContext* dContext = GrAsDirectContext(canvas->recordingContext());
+        bool isGPU = SkToBool(dContext);
+
+#if defined(SK_GRAPHITE)
+        skgpu::graphite::Recorder* recorder = canvas->recorder();
+        isGPU = isGPU || SkToBool(recorder);
+#endif
+
+        if (!isGPU) {
+            *errorMsg = skiagm::GM::kErrorMsg_DrawSkippedGpuOnly;
+            return skiagm::DrawResult::kSkip;
+        }
+
         // This GM uses ToolUtils::makeSurface which doesn't work well with vias.
         // This GM uses SkRandomTypeface which doesn't work well with serialization.
         canvas->drawColor(SK_ColorWHITE);
@@ -145,12 +154,12 @@ protected:
         // Rotate in the surface canvas, not the final canvas, to avoid aliasing
         surfaceCanvas->rotate(-0.05f);
         surfaceCanvas->drawTextBlob(fBlob, 10, yOffset, paint);
-        surface->draw(canvas, 0, 0, nullptr);
+        surface->draw(canvas, 0, 0);
         yOffset += stride;
 
-        if (auto direct = context->asDirectContext()) {
+        if (dContext) {
             // free gpu resources and verify
-            direct->freeGpuResources();
+            dContext->freeGpuResources();
         }
 
         canvas->rotate(-0.05f);
@@ -162,8 +171,8 @@ protected:
 private:
     sk_sp<SkTextBlob> fBlob;
 
-    static constexpr int kWidth = 2000;
-    static constexpr int kHeight = 1600;
+    inline static constexpr int kWidth = 2000;
+    inline static constexpr int kHeight = 1600;
 
     using INHERITED = GM;
 };

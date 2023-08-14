@@ -8,14 +8,13 @@
 #ifndef SkEffectPriv_DEFINED
 #define SkEffectPriv_DEFINED
 
-#include "include/core/SkImageInfo.h"
-#include "include/core/SkMatrix.h"
+#include "include/core/SkColor.h"
+#include "include/core/SkColorType.h"
 
 class SkArenaAlloc;
 class SkColorSpace;
-class SkMatrixProvider;
-class SkPaint;
 class SkRasterPipeline;
+class SkSurfaceProps;
 
 // Passed to effects that will add stages to rasterpipeline
 struct SkStageRec {
@@ -23,9 +22,8 @@ struct SkStageRec {
     SkArenaAlloc*           fAlloc;
     SkColorType             fDstColorType;
     SkColorSpace*           fDstCS;         // may be nullptr
-    const SkPaint&          fPaint;
-    const SkMatrix*         fLocalM;        // may be nullptr
-    const SkMatrixProvider& fMatrixProvider;
+    SkColor4f               fPaintColor;
+    const SkSurfaceProps&   fSurfaceProps;
 };
 
 #endif // SkEffectPriv_DEFINED

@@ -4,15 +4,22 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
+#include "include/core/SkPath.h"
+#include "include/core/SkPoint.h"
+#include "include/core/SkTypes.h"
+#include "include/private/base/SkDebug.h"
 #include "src/core/SkGeometry.h"
 #include "src/pathops/SkIntersections.h"
 #include "src/pathops/SkPathOpsConic.h"
 #include "src/pathops/SkPathOpsLine.h"
+#include "src/pathops/SkPathOpsPoint.h"
+#include "src/pathops/SkPathOpsQuad.h"
 #include "src/pathops/SkReduceOrder.h"
-#include "tests/PathOpsExtendedTest.h"
 #include "tests/PathOpsTestCommon.h"
 #include "tests/Test.h"
 
+#include <array>
+#include <cstddef>
 #include <utility>
 
 static struct lineConic {
@@ -29,7 +36,7 @@ static struct lineConic {
     },
 };
 
-static size_t lineConicTests_count = SK_ARRAY_COUNT(lineConicTests);
+static size_t lineConicTests_count = std::size(lineConicTests);
 
 static int doIntersect(SkIntersections& intersections, const SkDConic& conic, const SkDLine& line,
                        bool& flipped) {
@@ -68,7 +75,7 @@ static struct oneLineConic {
       {{{25.6499996,20.6499996}, {45.6500015,20.6499996}}}}
 };
 
-static size_t oneOffs_count = SK_ARRAY_COUNT(oneOffs);
+static size_t oneOffs_count = std::size(oneOffs);
 
 static void testOneOffs(skiatest::Reporter* reporter) {
     bool flipped = false;
@@ -88,7 +95,6 @@ static void testOneOffs(skiatest::Reporter* reporter) {
             SkDPoint lineXY = line.ptAtT(lineT);
             if (!conicXY.approximatelyEqual(lineXY)) {
                 conicXY.approximatelyEqual(lineXY);
-                SkDebugf("");
             }
             REPORTER_ASSERT(reporter, conicXY.approximatelyEqual(lineXY));
         }

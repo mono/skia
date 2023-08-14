@@ -3,10 +3,13 @@
 
 #include "tools/skottie_ios_app/SkMetalViewBridge.h"
 
+#include "include/core/SkColorSpace.h"
+#include "include/core/SkColorType.h"
 #include "include/core/SkSurface.h"
 #include "include/gpu/GrBackendSurface.h"
 #include "include/gpu/GrContextOptions.h"
 #include "include/gpu/GrDirectContext.h"
+#include "include/gpu/ganesh/mtl/SkSurfaceMetal.h"
 #include "include/gpu/mtl/GrMtlTypes.h"
 
 #import <Metal/Metal.h>
@@ -25,8 +28,13 @@ sk_sp<SkSurface> SkMtkViewToSurface(MTKView* mtkView, GrRecordingContext* rConte
     const SkSurfaceProps surfaceProps;
     int sampleCount = (int)[mtkView sampleCount];
 
-    return SkSurface::MakeFromMTKView(rContext, (__bridge GrMTLHandle)mtkView, origin, sampleCount,
-                                      colorType, colorSpace, &surfaceProps);
+    return SkSurfaces::WrapMTKView(rContext,
+                                   (__bridge GrMTLHandle)mtkView,
+                                   origin,
+                                   sampleCount,
+                                   colorType,
+                                   colorSpace,
+                                   &surfaceProps);
 }
 
 GrContextHolder SkMetalDeviceToGrContext(id<MTLDevice> device, id<MTLCommandQueue> queue) {

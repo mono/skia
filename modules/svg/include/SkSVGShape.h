@@ -14,10 +14,8 @@
 class SkSVGLengthContext;
 class SkPaint;
 
-class SkSVGShape : public SkSVGTransformableNode {
+class SK_API SkSVGShape : public SkSVGTransformableNode {
 public:
-    ~SkSVGShape() override = default;
-
     void appendChild(sk_sp<SkSVGNode>) override;
 
 protected:

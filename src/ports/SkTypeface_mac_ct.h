@@ -18,7 +18,7 @@
 #include "include/core/SkScalar.h"
 #include "include/core/SkStream.h"
 #include "include/core/SkTypeface.h"
-#include "include/private/SkOnce.h"
+#include "include/private/base/SkOnce.h"
 #include "src/utils/mac/SkUniqueCFRef.h"
 
 #ifdef SK_BUILD_FOR_MAC
@@ -50,11 +50,10 @@ struct OpszVariation {
 };
 
 struct CTFontVariation {
-    SkUniqueCFRef<CFDictionaryRef> dict;
+    SkUniqueCFRef<CFDictionaryRef> variation;
+    SkUniqueCFRef<CFDictionaryRef> wrongOpszVariation;
     OpszVariation opsz;
 };
-
-CTFontVariation SkCTVariationFromSkFontArguments(CTFontRef ct, const SkFontArguments& args);
 
 SkUniqueCFRef<CTFontRef> SkCTFontCreateExactCopy(CTFontRef baseFont, CGFloat textSize,
                                                  OpszVariation opsz);
@@ -86,13 +85,27 @@ public:
                                   OpszVariation opszVariation,
                                   std::unique_ptr<SkStreamAsset> providedData);
 
+    static constexpr SkTypeface::FactoryId FactoryId = SkSetFourByteTag('c','t','x','t');
+    static sk_sp<SkTypeface> MakeFromStream(std::unique_ptr<SkStreamAsset>, const SkFontArguments&);
+
     SkUniqueCFRef<CTFontRef> fFontRef;
     const OpszVariation fOpszVariation;
     const bool fHasColorGlyphs;
 
+    /**
+     * CTFontCopyVariationAxes provides the localized name of all axes, making it very slow.
+     * This is unfortunate, its result is needed just to see if there are any axes at all.
+     * To avoid calling internal APIs cache the result of CTFontCopyVariationAxes.
+     * https://github.com/WebKit/WebKit/commit/1842365d413ed87868e7d33d4fad1691fa3a8129
+     * https://bugs.webkit.org/show_bug.cgi?id=232690
+     */
+    CFArrayRef getVariationAxes() const;
+
 protected:
     int onGetUPEM() const override;
     std::unique_ptr<SkStreamAsset> onOpenStream(int* ttcIndex) const override;
+    std::unique_ptr<SkStreamAsset> onOpenExistingStream(int* ttcIndex) const override;
+    bool onGlyphMaskNeedsCurrentColor() const override;
     int onGetVariationDesignPosition(SkFontArguments::VariationPosition::Coordinate coordinates[],
                                      int coordinateCount) const override;
     void onGetFamilyName(SkString* familyName) const override;
@@ -101,8 +114,8 @@ protected:
     int onGetTableTags(SkFontTableTag tags[]) const override;
     size_t onGetTableData(SkFontTableTag, size_t offset, size_t length, void* data) const override;
     sk_sp<SkData> onCopyTableData(SkFontTableTag) const override;
-    SkScalerContext* onCreateScalerContext(const SkScalerContextEffects&,
-                                           const SkDescriptor*) const override;
+    std::unique_ptr<SkScalerContext> onCreateScalerContext(const SkScalerContextEffects&,
+                                                           const SkDescriptor*) const override;
     void onFilterRec(SkScalerContextRec*) const override;
     void onGetFontDescriptor(SkFontDescriptor*, bool*) const override;
     void getGlyphToUnicodeMap(SkUnichar*) const override;
@@ -118,8 +131,10 @@ protected:
 
 private:
     mutable std::unique_ptr<SkStreamAsset> fStream;
+    mutable SkUniqueCFRef<CFArrayRef> fVariationAxes;
     bool fIsFromStream;
     mutable SkOnce fInitStream;
+    mutable SkOnce fInitVariationAxes;
 
     using INHERITED = SkTypeface;
 };

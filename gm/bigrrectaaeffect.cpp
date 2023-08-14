@@ -17,17 +17,16 @@
 #include "include/core/SkSize.h"
 #include "include/core/SkString.h"
 #include "include/core/SkTypes.h"
-#include "include/private/GrSharedEnums.h"
-#include "include/private/GrTypesPriv.h"
-#include "src/gpu/GrCaps.h"
-#include "src/gpu/GrFragmentProcessor.h"
-#include "src/gpu/GrPaint.h"
-#include "src/gpu/GrRenderTargetContext.h"
-#include "src/gpu/GrRenderTargetContextPriv.h"
-#include "src/gpu/effects/GrPorterDuffXferProcessor.h"
-#include "src/gpu/effects/GrRRectEffect.h"
-#include "src/gpu/ops/GrDrawOp.h"
-#include "src/gpu/ops/GrFillRectOp.h"
+#include "include/private/gpu/ganesh/GrTypesPriv.h"
+#include "src/core/SkCanvasPriv.h"
+#include "src/gpu/ganesh/GrCaps.h"
+#include "src/gpu/ganesh/GrFragmentProcessor.h"
+#include "src/gpu/ganesh/GrPaint.h"
+#include "src/gpu/ganesh/SurfaceDrawContext.h"
+#include "src/gpu/ganesh/effects/GrPorterDuffXferProcessor.h"
+#include "src/gpu/ganesh/effects/GrRRectEffect.h"
+#include "src/gpu/ganesh/ops/FillRectOp.h"
+#include "src/gpu/ganesh/ops/GrDrawOp.h"
 #include "tools/ToolUtils.h"
 
 #include <memory>
@@ -66,9 +65,12 @@ protected:
 
     SkISize onISize() override { return SkISize::Make(fWidth, fHeight); }
 
-    void onDraw(GrRecordingContext* context, GrRenderTargetContext* renderTargetContext,
-                SkCanvas* canvas) override {
-        SkPaint paint;
+    DrawResult onDraw(GrRecordingContext* rContext, SkCanvas* canvas, SkString* errorMsg) override {
+        auto sdc = SkCanvasPriv::TopDeviceSurfaceDrawContext(canvas);
+        if (!sdc) {
+            *errorMsg = kErrorMsg_DrawSkippedGpuOnly;
+            return DrawResult::kSkip;
+        }
 
         int y = kPad;
         int x = kPad;
@@ -77,7 +79,7 @@ protected:
             GrClipEdgeType::kInverseFillAA,
         };
         SkRect testBounds = SkRect::MakeIWH(fTestWidth, fTestHeight);
-        for (size_t et = 0; et < SK_ARRAY_COUNT(kEdgeTypes); ++et) {
+        for (size_t et = 0; et < std::size(kEdgeTypes); ++et) {
             GrClipEdgeType edgeType = kEdgeTypes[et];
             canvas->save();
                 canvas->translate(SkIntToScalar(x), SkIntToScalar(y));
@@ -89,7 +91,7 @@ protected:
 
                 SkRRect rrect = fRRect;
                 rrect.offset(SkIntToScalar(x + kGap), SkIntToScalar(y + kGap));
-                const auto& caps = *renderTargetContext->caps()->shaderCaps();
+                const auto& caps = *rContext->priv().caps()->shaderCaps();
                 auto [success, fp] = GrRRectEffect::Make(/*inputFP=*/nullptr, edgeType, rrect,
                                                          caps);
                 SkASSERT(success);
@@ -103,20 +105,21 @@ protected:
                     SkRect bounds = testBounds;
                     bounds.offset(SkIntToScalar(x), SkIntToScalar(y));
 
-                    renderTargetContext->priv().testingOnly_addDrawOp(
-                            GrFillRectOp::MakeNonAARect(context, std::move(grPaint),
-                                                        SkMatrix::I(), bounds));
+                    sdc->addDrawOp(skgpu::ganesh::FillRectOp::MakeNonAARect(
+                            rContext, std::move(grPaint), SkMatrix::I(), bounds));
                 }
             canvas->restore();
             x = x + fTestOffsetX;
         }
+
+        return DrawResult::kOk;
     }
 
 private:
     // pad between test cases
-    static constexpr int kPad = 7;
+    inline static constexpr int kPad = 7;
     // gap between rect for each case that is rendered and exterior of rrect
-    static constexpr int kGap = 3;
+    inline static constexpr int kGap = 3;
 
     SkRRect fRRect;
     int fWidth;

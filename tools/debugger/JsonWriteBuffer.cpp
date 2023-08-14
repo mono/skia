@@ -7,7 +7,21 @@
 
 #include "tools/debugger/JsonWriteBuffer.h"
 
+#include "include/core/SkFlattenable.h"
+#include "include/core/SkPoint.h"
+#include "include/core/SkString.h"
+#include "src/utils/SkJSONWriter.h"
 #include "tools/debugger/DrawCommand.h"
+
+class SkImage;
+class SkMatrix;
+class SkPaint;
+class SkRegion;
+class SkStream;
+class SkTypeface;
+struct SkIRect;
+struct SkPoint3;
+struct SkRect;
 
 void JsonWriteBuffer::append(const char* type) {
     SkString fullName = SkStringPrintf("%02d_%s", fCount++, type);
@@ -20,7 +34,7 @@ void JsonWriteBuffer::writePad32(const void* data, size_t size) {
     const uint8_t* bytes = reinterpret_cast<const uint8_t*>(data);
     for (size_t i = 0; i < size; ++i) {
         SkString hexByte = SkStringPrintf("%02x", bytes[i]);
-        fWriter->appendString(hexByte.c_str());
+        fWriter->appendString(hexByte);
     }
     fWriter->endArray();
 }
@@ -31,7 +45,7 @@ void JsonWriteBuffer::writeByteArray(const void* data, size_t size) {
     const uint8_t* bytes = reinterpret_cast<const uint8_t*>(data);
     for (size_t i = 0; i < size; ++i) {
         SkString hexByte = SkStringPrintf("%02x", bytes[i]);
-        fWriter->appendString(hexByte.c_str());
+        fWriter->appendString(hexByte);
     }
     fWriter->endArray();
 }
@@ -74,9 +88,9 @@ void JsonWriteBuffer::writeUInt(uint32_t value) {
     fWriter->appendU32(value);
 }
 
-void JsonWriteBuffer::writeString(const char* value) {
+void JsonWriteBuffer::writeString(std::string_view value) {
     this->append("string");
-    fWriter->appendString(value);
+    fWriter->appendString(value.data(), value.size());
 }
 
 void JsonWriteBuffer::writeFlattenable(const SkFlattenable* flattenable) {
@@ -176,6 +190,11 @@ void JsonWriteBuffer::writeRegion(const SkRegion& region) {
 void JsonWriteBuffer::writePath(const SkPath& path) {
     this->append("path");
     DrawCommand::MakeJsonPath(*fWriter, path);
+}
+
+void JsonWriteBuffer::writeSampling(const SkSamplingOptions& sampling) {
+    this->append("sampling");
+    DrawCommand::MakeJsonSampling(*fWriter, sampling);
 }
 
 size_t JsonWriteBuffer::writeStream(SkStream* stream, size_t length) {

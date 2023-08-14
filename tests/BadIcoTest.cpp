@@ -14,6 +14,8 @@
 #include "tests/Test.h"
 #include "tools/Resources.h"
 
+#include <array>
+#include <cstddef>
 #include <memory>
 #include <utility>
 
@@ -28,11 +30,12 @@ DEF_TEST(BadImage, reporter) {
         "skbug3442.webp",
         "skbug3429.webp",
         "b38116746.ico",
+        "skbug5883.gif",
     };
 
     const char* badImagesFolder = "invalid_images";
 
-    for (size_t i = 0; i < SK_ARRAY_COUNT(badImages); ++i) {
+    for (size_t i = 0; i < std::size(badImages); ++i) {
         SkString resourcePath = SkOSPath::Join(badImagesFolder, badImages[i]);
         std::unique_ptr<SkStream> stream(GetResourceAsStream(resourcePath.c_str()));
         std::unique_ptr<SkCodec> codec(SkCodec::MakeFromStream(std::move(stream)));

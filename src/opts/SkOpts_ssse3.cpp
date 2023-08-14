@@ -6,15 +6,16 @@
  */
 
 #include "src/core/SkOpts.h"
+
+#if !defined(SK_ENABLE_OPTIMIZE_SIZE)
+
 #define SK_OPTS_NS ssse3
 #include "src/opts/SkBitmapProcState_opts.h"
 #include "src/opts/SkBlitMask_opts.h"
 #include "src/opts/SkSwizzler_opts.h"
-#include "src/opts/SkXfermode_opts.h"
 
 namespace SkOpts {
     void Init_ssse3() {
-        create_xfermode = ssse3::create_xfermode;
         blit_mask_d32_a8 = ssse3::blit_mask_d32_a8;
 
         RGBA_to_BGRA          = ssse3::RGBA_to_BGRA;
@@ -31,3 +32,5 @@ namespace SkOpts {
         S32_alpha_D32_filter_DX  = ssse3::S32_alpha_D32_filter_DX;
     }
 }  // namespace SkOpts
+
+#endif // SK_ENABLE_OPTIMIZE_SIZE

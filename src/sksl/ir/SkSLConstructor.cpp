@@ -7,193 +7,233 @@
 
 #include "src/sksl/ir/SkSLConstructor.h"
 
+#include "include/core/SkTypes.h"
+#include "include/private/base/SkTArray.h"
+#include "src/sksl/SkSLContext.h"
+#include "src/sksl/SkSLErrorReporter.h"
+#include "src/sksl/SkSLOperator.h"
+#include "src/sksl/SkSLString.h"
+#include "src/sksl/ir/SkSLConstructorArray.h"
+#include "src/sksl/ir/SkSLConstructorCompound.h"
+#include "src/sksl/ir/SkSLConstructorCompoundCast.h"
+#include "src/sksl/ir/SkSLConstructorDiagonalMatrix.h"
+#include "src/sksl/ir/SkSLConstructorMatrixResize.h"
+#include "src/sksl/ir/SkSLConstructorScalarCast.h"
+#include "src/sksl/ir/SkSLConstructorSplat.h"
+#include "src/sksl/ir/SkSLConstructorStruct.h"
+#include "src/sksl/ir/SkSLType.h"
+
 namespace SkSL {
 
-std::unique_ptr<Expression> Constructor::constantPropagate(
-                                                        const IRGenerator& irGenerator,
-                                                        const DefinitionMap& definitions) {
-    if (this->arguments().size() == 1 && this->arguments()[0]->is<IntLiteral>()) {
-        const Context& context = irGenerator.fContext;
-        const Type& type = this->type();
-        int64_t intValue = this->arguments()[0]->as<IntLiteral>().value();
+static std::unique_ptr<Expression> convert_compound_constructor(const Context& context,
+                                                                Position pos,
+                                                                const Type& type,
+                                                                ExpressionArray args) {
+    SkASSERT(type.isVector() || type.isMatrix());
 
-        if (type.isFloat()) {
-            // promote float(1) to 1.0
-            return std::make_unique<FloatLiteral>(context, fOffset, intValue);
-        } else if (type.isInteger()) {
-            // promote uint(1) to 1u
-            return std::make_unique<IntLiteral>(fOffset, intValue, &type);
-        } else if (&type == context.fBool_Type.get()) {
-            // promote bool(k) to true/false
-            return std::make_unique<BoolLiteral>(context, fOffset, intValue != 0);
+    // The meaning of a compound constructor containing a single argument varies significantly in
+    // GLSL/SkSL, depending on the argument type.
+    if (args.size() == 1) {
+        std::unique_ptr<Expression>& argument = args.front();
+        if (type.isVector() && argument->type().isVector() &&
+            argument->type().componentType().matches(type.componentType()) &&
+            argument->type().slotCount() > type.slotCount()) {
+            // Casting a vector-type into a smaller matching vector-type is a slice in GLSL.
+            // We don't allow those casts in SkSL; recommend a swizzle instead.
+            // Only `.xy` and `.xyz` are valid recommendations here, because `.x` would imply a
+            // scalar(vector) cast, and nothing has more slots than `.xyzw`.
+            const char* swizzleHint;
+            switch (type.slotCount()) {
+                case 2:  swizzleHint = "; use '.xy' instead"; break;
+                case 3:  swizzleHint = "; use '.xyz' instead"; break;
+                default: swizzleHint = ""; SkDEBUGFAIL("unexpected slicing cast"); break;
+            }
+
+            context.fErrors->error(pos, "'" + argument->type().displayName() +
+                    "' is not a valid parameter to '" + type.displayName() + "' constructor" +
+                    swizzleHint);
+            return nullptr;
+        }
+
+        if (argument->type().isScalar()) {
+            // A constructor containing a single scalar is a splat (for vectors) or diagonal matrix
+            // (for matrices). It's legal regardless of the scalar's type, so synthesize an explicit
+            // conversion to the proper type. (This cast is a no-op if it's unnecessary; it can fail
+            // if we're casting a literal that exceeds the limits of the type.)
+            std::unique_ptr<Expression> typecast = ConstructorScalarCast::Convert(
+                        context, pos, type.componentType(), std::move(args));
+            if (!typecast) {
+                return nullptr;
+            }
+
+            // Matrix-from-scalar creates a diagonal matrix; vector-from-scalar creates a splat.
+            return type.isMatrix()
+                       ? ConstructorDiagonalMatrix::Make(context, pos, type, std::move(typecast))
+                       : ConstructorSplat::Make(context, pos, type, std::move(typecast));
+        } else if (argument->type().isVector()) {
+            // A vector constructor containing a single vector with the same number of columns is a
+            // cast (e.g. float3 -> int3).
+            if (type.isVector() && argument->type().columns() == type.columns()) {
+                return ConstructorCompoundCast::Make(context, pos, type, std::move(argument));
+            }
+        } else if (argument->type().isMatrix()) {
+            // A matrix constructor containing a single matrix can be a resize, typecast, or both.
+            // GLSL lumps these into one category, but internally SkSL keeps them distinct.
+            if (type.isMatrix()) {
+                // First, handle type conversion. If the component types differ, synthesize the
+                // destination type with the argument's rows/columns. (This will be a no-op if it's
+                // already the right type.)
+                const Type& typecastType = type.componentType().toCompound(
+                        context,
+                        argument->type().columns(),
+                        argument->type().rows());
+                argument = ConstructorCompoundCast::Make(context, pos, typecastType,
+                                                         std::move(argument));
+
+                // Casting a matrix type into another matrix type is a resize.
+                return ConstructorMatrixResize::Make(context, pos, type,
+                                                     std::move(argument));
+            }
+
+            // A vector constructor containing a single matrix can be compound construction if the
+            // matrix is 2x2 and the vector is 4-slot.
+            if (type.isVector() && type.columns() == 4 && argument->type().slotCount() == 4) {
+                // Casting a 2x2 matrix to a vector is a form of compound construction.
+                // First, reshape the matrix into a 4-slot vector of the same type.
+                const Type& vectorType = argument->type().componentType().toCompound(context,
+                                                                                     /*columns=*/4,
+                                                                                     /*rows=*/1);
+                std::unique_ptr<Expression> vecCtor =
+                        ConstructorCompound::Make(context, pos, vectorType, std::move(args));
+
+                // Then, add a typecast to the result expression to ensure the types match.
+                // This will be a no-op if no typecasting is needed.
+                return ConstructorCompoundCast::Make(context, pos, type, std::move(vecCtor));
+            }
         }
     }
+
+    // For more complex cases, we walk the argument list and fix up the arguments as needed.
+    int expected = type.rows() * type.columns();
+    int actual = 0;
+    for (std::unique_ptr<Expression>& arg : args) {
+        if (!arg->type().isScalar() && !arg->type().isVector()) {
+            context.fErrors->error(pos, "'" + arg->type().displayName() +
+                    "' is not a valid parameter to '" + type.displayName() + "' constructor");
+            return nullptr;
+        }
+
+        // Rely on Constructor::Convert to force this subexpression to the proper type. If it's a
+        // literal, this will make sure it's the right type of literal. If an expression of matching
+        // type, the expression will be returned as-is. If it's an expression of mismatched type,
+        // this adds a cast.
+        const Type& ctorType = type.componentType().toCompound(context, arg->type().columns(),
+                                                               /*rows=*/1);
+        ExpressionArray ctorArg;
+        ctorArg.push_back(std::move(arg));
+        arg = Constructor::Convert(context, pos, ctorType, std::move(ctorArg));
+        if (!arg) {
+            return nullptr;
+        }
+        actual += ctorType.columns();
+    }
+
+    if (actual != expected) {
+        context.fErrors->error(pos, "invalid arguments to '" + type.displayName() +
+                                     "' constructor (expected " + std::to_string(expected) +
+                                     " scalars, but found " + std::to_string(actual) + ")");
+        return nullptr;
+    }
+
+    return ConstructorCompound::Make(context, pos, type, std::move(args));
+}
+
+std::unique_ptr<Expression> Constructor::Convert(const Context& context,
+                                                 Position pos,
+                                                 const Type& type,
+                                                 ExpressionArray args) {
+    if (args.size() == 1 && args[0]->type().matches(type) && !type.componentType().isOpaque()) {
+        // Don't generate redundant casts; if the expression is already of the correct type, just
+        // return it as-is.
+        args[0]->fPosition = pos;
+        return std::move(args[0]);
+    }
+    if (type.isScalar()) {
+        return ConstructorScalarCast::Convert(context, pos, type, std::move(args));
+    }
+    if (type.isVector() || type.isMatrix()) {
+        return convert_compound_constructor(context, pos, type, std::move(args));
+    }
+    if (type.isArray() && type.columns() > 0) {
+        return ConstructorArray::Convert(context, pos, type, std::move(args));
+    }
+    if (type.isStruct() && type.fields().size() > 0) {
+        return ConstructorStruct::Convert(context, pos, type, std::move(args));
+    }
+
+    context.fErrors->error(pos, "cannot construct '" + type.displayName() + "'");
     return nullptr;
 }
 
-bool Constructor::compareConstant(const Context& context, const Expression& other) const {
-    const Constructor& c = other.as<Constructor>();
-    const Type& myType = this->type();
-    const Type& otherType = c.type();
-    SkASSERT(myType == otherType);
-    if (otherType.typeKind() == Type::TypeKind::kVector) {
-        bool isFloat = otherType.columns() > 1 ? otherType.componentType().isFloat()
-                                             : otherType.isFloat();
-        for (int i = 0; i < myType.columns(); i++) {
-            if (isFloat) {
-                if (this->getFVecComponent(i) != c.getFVecComponent(i)) {
-                    return false;
-                }
-            } else if (this->getIVecComponent(i) != c.getIVecComponent(i)) {
-                return false;
-            }
+std::optional<double> AnyConstructor::getConstantValue(int n) const {
+    SkASSERT(n >= 0 && n < (int)this->type().slotCount());
+    for (const std::unique_ptr<Expression>& arg : this->argumentSpan()) {
+        int argSlots = arg->type().slotCount();
+        if (n < argSlots) {
+            return arg->getConstantValue(n);
         }
-        return true;
+        n -= argSlots;
     }
-    // shouldn't be possible to have a constant constructor that isn't a vector or matrix;
-    // a constant scalar constructor should have been collapsed down to the appropriate
-    // literal
-    SkASSERT(myType.typeKind() == Type::TypeKind::kMatrix);
-    for (int col = 0; col < myType.columns(); col++) {
-        for (int row = 0; row < myType.rows(); row++) {
-            if (getMatComponent(col, row) != c.getMatComponent(col, row)) {
-                return false;
-            }
-        }
-    }
-    return true;
+
+    SkDEBUGFAIL("argument-list slot count doesn't match constructor-type slot count");
+    return std::nullopt;
 }
 
-template <typename resultType>
-resultType Constructor::getVecComponent(int index) const {
-    SkASSERT(this->type().typeKind() == Type::TypeKind::kVector);
-    if (this->arguments().size() == 1 &&
-        this->arguments()[0]->type().typeKind() == Type::TypeKind::kScalar) {
-        // This constructor just wraps a scalar. Propagate out the value.
-        if (std::is_floating_point<resultType>::value) {
-            return this->arguments()[0]->getConstantFloat();
-        } else {
-            return this->arguments()[0]->getConstantInt();
-        }
+Expression::ComparisonResult AnyConstructor::compareConstant(const Expression& other) const {
+    SkASSERT(this->type().slotCount() == other.type().slotCount());
+
+    if (!other.supportsConstantValues()) {
+        return ComparisonResult::kUnknown;
     }
 
-    // Walk through all the constructor arguments until we reach the index we're searching for.
-    int current = 0;
-    for (const std::unique_ptr<Expression>& arg : this->arguments()) {
-        if (current > index) {
-            // Somehow, we went past the argument we're looking for. Bail.
-            break;
+    int exprs = this->type().slotCount();
+    for (int n = 0; n < exprs; ++n) {
+        // Get the n'th subexpression from each side. If either one is null, return "unknown."
+        std::optional<double> left = this->getConstantValue(n);
+        if (!left.has_value()) {
+            return ComparisonResult::kUnknown;
         }
-
-        if (arg->type().typeKind() == Type::TypeKind::kScalar) {
-            if (index == current) {
-                // We're on the proper argument, and it's a scalar; fetch it.
-                if (std::is_floating_point<resultType>::value) {
-                    return arg->getConstantFloat();
-                } else {
-                    return arg->getConstantInt();
-                }
-            }
-            current++;
-            continue;
+        std::optional<double> right = other.getConstantValue(n);
+        if (!right.has_value()) {
+            return ComparisonResult::kUnknown;
         }
-
-        switch (arg->kind()) {
-            case Kind::kConstructor: {
-                const Constructor& constructor = static_cast<const Constructor&>(*arg);
-                if (current + constructor.type().columns() > index) {
-                    // We've found a constructor that overlaps the proper argument. Descend into
-                    // it, honoring the type.
-                    if (constructor.type().componentType().isFloat()) {
-                        return resultType(constructor.getVecComponent<SKSL_FLOAT>(index - current));
-                    } else {
-                        return resultType(constructor.getVecComponent<SKSL_INT>(index - current));
-                    }
-                }
-                break;
-            }
-            case Kind::kPrefix: {
-                const PrefixExpression& prefix = static_cast<const PrefixExpression&>(*arg);
-                if (current + prefix.type().columns() > index) {
-                    // We found a prefix operator that contains the proper argument. Descend
-                    // into it. We only support for constant propagation of the unary minus, so
-                    // we shouldn't see any other tokens here.
-                    SkASSERT(prefix.getOperator() == Token::Kind::TK_MINUS);
-
-                    // We expect the - prefix to always be attached to a constructor.
-                    SkASSERT(prefix.operand()->kind() == Kind::kConstructor);
-                    const Constructor& constructor =
-                            static_cast<const Constructor&>(*prefix.operand());
-
-                    // Descend into this constructor, honoring the type.
-                    if (constructor.type().componentType().isFloat()) {
-                        return -resultType(constructor.getVecComponent<SKSL_FLOAT>(index -
-                                                                                   current));
-                    } else {
-                        return -resultType(constructor.getVecComponent<SKSL_INT>(index - current));
-                    }
-                }
-                break;
-            }
-            default: {
-                SkDEBUGFAILF("unexpected component %d { %s } in %s\n",
-                             index, arg->description().c_str(), description().c_str());
-                break;
-            }
+        // Both sides are known and can be compared for equality directly.
+        if (*left != *right) {
+            return ComparisonResult::kNotEqual;
         }
-
-        current += arg->type().columns();
     }
-
-    SkDEBUGFAILF("failed to find vector component %d in %s\n", index, description().c_str());
-    return -1;
+    return ComparisonResult::kEqual;
 }
-template int Constructor::getVecComponent(int) const;
-template float Constructor::getVecComponent(int) const;
 
+AnyConstructor& Expression::asAnyConstructor() {
+    SkASSERT(this->isAnyConstructor());
+    return static_cast<AnyConstructor&>(*this);
+}
 
-SKSL_FLOAT Constructor::getMatComponent(int col, int row) const {
-    SkDEBUGCODE(const Type& myType = this->type();)
-    SkASSERT(this->isCompileTimeConstant());
-    SkASSERT(myType.typeKind() == Type::TypeKind::kMatrix);
-    SkASSERT(col < myType.columns() && row < myType.rows());
-    if (this->arguments().size() == 1) {
-        const Type& argType = this->arguments()[0]->type();
-        if (argType.typeKind() == Type::TypeKind::kScalar) {
-            // single scalar argument, so matrix is of the form:
-            // x 0 0
-            // 0 x 0
-            // 0 0 x
-            // return x if col == row
-            return col == row ? this->arguments()[0]->getConstantFloat() : 0.0;
-        }
-        if (argType.typeKind() == Type::TypeKind::kMatrix) {
-            SkASSERT(this->arguments()[0]->kind() == Expression::Kind::kConstructor);
-            // single matrix argument. make sure we're within the argument's bounds.
-            if (col < argType.columns() && row < argType.rows()) {
-                // within bounds, defer to argument
-                return ((Constructor&) *this->arguments()[0]).getMatComponent(col, row);
-            }
-            // out of bounds
-            return 0.0;
-        }
+const AnyConstructor& Expression::asAnyConstructor() const {
+    SkASSERT(this->isAnyConstructor());
+    return static_cast<const AnyConstructor&>(*this);
+}
+
+std::string AnyConstructor::description(OperatorPrecedence) const {
+    std::string result = this->type().description() + "(";
+    auto separator = SkSL::String::Separator();
+    for (const std::unique_ptr<Expression>& arg : this->argumentSpan()) {
+        result += separator();
+        result += arg->description(OperatorPrecedence::kSequence);
     }
-    int currentIndex = 0;
-    int targetIndex = col * this->type().rows() + row;
-    for (const auto& arg : this->arguments()) {
-        const Type& argType = arg->type();
-        SkASSERT(targetIndex >= currentIndex);
-        SkASSERT(argType.rows() == 1);
-        if (currentIndex + argType.columns() > targetIndex) {
-            if (argType.columns() == 1) {
-                return arg->getConstantFloat();
-            } else {
-                return arg->getFVecComponent(targetIndex - currentIndex);
-            }
-        }
-        currentIndex += argType.columns();
-    }
-    ABORT("can't happen, matrix component out of bounds");
+    result.push_back(')');
+    return result;
 }
 
 }  // namespace SkSL

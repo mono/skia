@@ -9,7 +9,10 @@
 #define SkRectPriv_DEFINED
 
 #include "include/core/SkRect.h"
-#include "src/core/SkMathPriv.h"
+#include "src/base/SkMathPriv.h"
+
+class SkM44;
+class SkMatrix;
 
 class SkRectPriv {
 public:
@@ -59,6 +62,15 @@ public:
                 SkTFitsIn<int16_t>(r.fRight) && SkTFitsIn<int16_t>(r.fBottom);
     }
 
+    // Returns r.width()/2 but divides first to avoid width() overflowing.
+    static SkScalar HalfWidth(const SkRect& r) {
+        return SkScalarHalf(r.fRight) - SkScalarHalf(r.fLeft);
+    }
+    // Returns r.height()/2 but divides first to avoid height() overflowing.
+    static SkScalar HalfHeight(const SkRect& r) {
+        return SkScalarHalf(r.fBottom) - SkScalarHalf(r.fTop);
+    }
+
     // Evaluate A-B. If the difference shape cannot be represented as a rectangle then false is
     // returned and 'out' is set to the largest rectangle contained in said shape. If true is
     // returned then A-B is representable as a rectangle, which is stored in 'out'.
@@ -77,6 +89,10 @@ public:
         Subtract(a, b, &diff);
         return diff;
     }
+
+    // Returns true if the quadrilateral formed by transforming the four corners of 'a' contains 'b'
+    static bool QuadContainsRect(const SkMatrix& m, const SkIRect& a, const SkIRect& b);
+    static bool QuadContainsRect(const SkM44& m, const SkRect& a, const SkRect& b);
 };
 
 

@@ -11,8 +11,8 @@
 #include "include/core/SkPaint.h"
 #include "include/core/SkPath.h"
 #include "include/core/SkString.h"
-#include "include/private/SkChecksum.h"
-#include "include/private/SkTemplates.h"
+#include "include/private/base/SkTemplates.h"
+#include "src/core/SkChecksum.h"
 
 #include "bench/gUniqueGlyphIDs.h"
 
@@ -101,8 +101,8 @@ static void dump_array(const uint16_t array[], int count) {
 class FontCacheEfficiency : public Benchmark {
 public:
     FontCacheEfficiency()  {
-        if (false) dump_array(nullptr, 0);
-        if (false) rotr(0, 0);
+        if ((false)) dump_array(nullptr, 0);
+        if ((false)) rotr(0, 0);
     }
 
 protected:
@@ -120,7 +120,7 @@ protected:
         for (int hashBits = 6; hashBits <= 12; hashBits += 1) {
             int hashMask = ((1 << hashBits) - 1);
             for (int limit = 32; limit <= 1024; limit <<= 1) {
-                for (size_t i = 0; i < SK_ARRAY_COUNT(gRec); ++i) {
+                for (size_t i = 0; i < std::size(gRec); ++i) {
                     int collisions = 0;
                     int glyphs = 0;
                     const uint16_t* array = gUniqueGlyphIDs;
@@ -169,20 +169,20 @@ protected:
 
     void onDelayedSetup() override {
         fFont.setSize(32);
-        for (size_t i = 0; i < SK_ARRAY_COUNT(fGlyphs); ++i) {
+        for (size_t i = 0; i < std::size(fGlyphs); ++i) {
             fGlyphs[i] = i;
         }
     }
 
     void onDraw(int loops, SkCanvas* canvas) override {
         SkPath path;
-        for (int i = 0; i < loops; ++i) {
+        for (int loop = 0; loop < loops; ++loop) {
             if (fOneAtATime) {
-                for (size_t i = 0; i < SK_ARRAY_COUNT(fGlyphs); ++i) {
+                for (size_t i = 0; i < std::size(fGlyphs); ++i) {
                     fFont.getPath(fGlyphs[i], &path);
                 }
             } else {
-                fFont.getPaths(fGlyphs, SK_ARRAY_COUNT(fGlyphs),
+                fFont.getPaths(fGlyphs, std::size(fGlyphs),
                                [](const SkPath* src, const SkMatrix& mx, void* ctx) {
                                    if (src) {
                                        src->transform(mx, static_cast<SkPath*>(ctx));

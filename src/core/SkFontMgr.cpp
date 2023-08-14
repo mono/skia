@@ -8,7 +8,7 @@
 #include "include/core/SkFontMgr.h"
 #include "include/core/SkStream.h"
 #include "include/core/SkTypes.h"
-#include "include/private/SkOnce.h"
+#include "include/private/base/SkOnce.h"
 #include "src/core/SkFontDescriptor.h"
 
 class SkFontStyle;
@@ -20,16 +20,18 @@ public:
     void getStyle(int, SkFontStyle*, SkString*) override {
         SkDEBUGFAIL("SkFontStyleSet::getStyle called on empty set");
     }
-    SkTypeface* createTypeface(int index) override {
+    sk_sp<SkTypeface> createTypeface(int index) override {
         SkDEBUGFAIL("SkFontStyleSet::createTypeface called on empty set");
         return nullptr;
     }
-    SkTypeface* matchStyle(const SkFontStyle&) override {
+    sk_sp<SkTypeface> matchStyle(const SkFontStyle&) override {
         return nullptr;
     }
 };
 
-SkFontStyleSet* SkFontStyleSet::CreateEmpty() { return new SkEmptyFontStyleSet; }
+sk_sp<SkFontStyleSet> SkFontStyleSet::CreateEmpty() {
+    return sk_sp<SkFontStyleSet>(new SkEmptyFontStyleSet);
+}
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -41,25 +43,22 @@ protected:
     void onGetFamilyName(int index, SkString* familyName) const override {
         SkDEBUGFAIL("onGetFamilyName called with bad index");
     }
-    SkFontStyleSet* onCreateStyleSet(int index) const override {
+    sk_sp<SkFontStyleSet> onCreateStyleSet(int index) const override {
         SkDEBUGFAIL("onCreateStyleSet called with bad index");
         return nullptr;
     }
-    SkFontStyleSet* onMatchFamily(const char[]) const override {
+    sk_sp<SkFontStyleSet> onMatchFamily(const char[]) const override {
         return SkFontStyleSet::CreateEmpty();
     }
 
-    SkTypeface* onMatchFamilyStyle(const char[], const SkFontStyle&) const override {
+    sk_sp<SkTypeface> onMatchFamilyStyle(const char[], const SkFontStyle&) const override {
         return nullptr;
     }
-    SkTypeface* onMatchFamilyStyleCharacter(const char familyName[],
-                                            const SkFontStyle& style,
-                                            const char* bcp47[],
-                                            int bcp47Count,
-                                            SkUnichar character) const override {
-        return nullptr;
-    }
-    SkTypeface* onMatchFaceStyle(const SkTypeface*, const SkFontStyle&) const override {
+    sk_sp<SkTypeface> onMatchFamilyStyleCharacter(const char familyName[],
+                                                  const SkFontStyle& style,
+                                                  const char* bcp47[],
+                                                  int bcp47Count,
+                                                  SkUnichar character) const override {
         return nullptr;
     }
 
@@ -73,9 +72,6 @@ protected:
                                            const SkFontArguments&) const override {
         return nullptr;
     }
-    sk_sp<SkTypeface> onMakeFromFontData(std::unique_ptr<SkFontData>) const override {
-        return nullptr;
-    }
     sk_sp<SkTypeface> onMakeFromFile(const char[], int) const override {
         return nullptr;
     }
@@ -84,11 +80,11 @@ protected:
     }
 };
 
-static SkFontStyleSet* emptyOnNull(SkFontStyleSet* fsset) {
-    if (nullptr == fsset) {
+static sk_sp<SkFontStyleSet> emptyOnNull(sk_sp<SkFontStyleSet>&& fsset) {
+    if (!fsset) {
         fsset = SkFontStyleSet::CreateEmpty();
     }
-    return fsset;
+    return std::move(fsset);
 }
 
 int SkFontMgr::countFamilies() const {
@@ -99,28 +95,23 @@ void SkFontMgr::getFamilyName(int index, SkString* familyName) const {
     this->onGetFamilyName(index, familyName);
 }
 
-SkFontStyleSet* SkFontMgr::createStyleSet(int index) const {
+sk_sp<SkFontStyleSet> SkFontMgr::createStyleSet(int index) const {
     return emptyOnNull(this->onCreateStyleSet(index));
 }
 
-SkFontStyleSet* SkFontMgr::matchFamily(const char familyName[]) const {
+sk_sp<SkFontStyleSet> SkFontMgr::matchFamily(const char familyName[]) const {
     return emptyOnNull(this->onMatchFamily(familyName));
 }
 
-SkTypeface* SkFontMgr::matchFamilyStyle(const char familyName[],
+sk_sp<SkTypeface> SkFontMgr::matchFamilyStyle(const char familyName[],
                                         const SkFontStyle& fs) const {
     return this->onMatchFamilyStyle(familyName, fs);
 }
 
-SkTypeface* SkFontMgr::matchFamilyStyleCharacter(const char familyName[], const SkFontStyle& style,
+sk_sp<SkTypeface> SkFontMgr::matchFamilyStyleCharacter(const char familyName[], const SkFontStyle& style,
                                                  const char* bcp47[], int bcp47Count,
                                                  SkUnichar character) const {
     return this->onMatchFamilyStyleCharacter(familyName, style, bcp47, bcp47Count, character);
-}
-
-SkTypeface* SkFontMgr::matchFaceStyle(const SkTypeface* face,
-                                      const SkFontStyle& fs) const {
-    return this->onMatchFaceStyle(face, fs);
 }
 
 sk_sp<SkTypeface> SkFontMgr::makeFromData(sk_sp<SkData> data, int ttcIndex) const {
@@ -146,13 +137,6 @@ sk_sp<SkTypeface> SkFontMgr::makeFromStream(std::unique_ptr<SkStreamAsset> strea
     return this->onMakeFromStreamArgs(std::move(stream), args);
 }
 
-sk_sp<SkTypeface> SkFontMgr::makeFromFontData(std::unique_ptr<SkFontData> data) const {
-    if (nullptr == data) {
-        return nullptr;
-    }
-    return this->onMakeFromFontData(std::move(data));
-}
-
 sk_sp<SkTypeface> SkFontMgr::makeFromFile(const char path[], int ttcIndex) const {
     if (nullptr == path) {
         return nullptr;
@@ -164,8 +148,9 @@ sk_sp<SkTypeface> SkFontMgr::legacyMakeTypeface(const char familyName[], SkFontS
     return this->onLegacyMakeTypeface(familyName, style);
 }
 
-sk_sp<SkTypeface> SkFontMgr::onMakeFromFontData(std::unique_ptr<SkFontData> data) const {
-    return this->makeFromStream(data->detachStream(), data->getIndex());
+sk_sp<SkFontMgr> SkFontMgr::RefEmpty() {
+    static SkEmptyFontMgr singleton;
+    return sk_ref_sp(&singleton);
 }
 
 // A global function pointer that's not declared, but can be overriden at startup by test tools.
@@ -178,7 +163,7 @@ sk_sp<SkFontMgr> SkFontMgr::RefDefault() {
     once([]{
         sk_sp<SkFontMgr> fm = gSkFontMgr_DefaultFactory ? gSkFontMgr_DefaultFactory()
                                                         : SkFontMgr::Factory();
-        singleton = fm ? std::move(fm) : sk_make_sp<SkEmptyFontMgr>();
+        singleton = fm ? std::move(fm) : RefEmpty();
     });
     return singleton;
 }
@@ -208,7 +193,7 @@ sk_sp<SkFontMgr> SkFontMgr::RefDefault() {
 * If pattern.weight is 500, 400 is checked first
 *   and then the rule for pattern.weight < 400 is used.
 */
-SkTypeface* SkFontStyleSet::matchStyleCSS3(const SkFontStyle& pattern) {
+sk_sp<SkTypeface> SkFontStyleSet::matchStyleCSS3(const SkFontStyle& pattern) {
     int count = this->count();
     if (0 == count) {
         return nullptr;

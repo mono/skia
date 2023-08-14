@@ -5,16 +5,31 @@
  * found in the LICENSE file.
  */
 
-#include "include/core/SkPath.h"
-#include "include/core/SkString.h"
-#include "include/private/SkMutex.h"
-#include "src/core/SkOSFile.h"
-#include "src/core/SkPathPriv.h"
-#include "src/pathops/SkOpCoincidence.h"
-#include "src/pathops/SkOpContour.h"
 #include "src/pathops/SkPathOpsDebug.h"
 
-#include <utility>
+#include "include/core/SkPath.h"
+#include "include/core/SkPathTypes.h"
+#include "include/core/SkPoint.h"
+#include "include/core/SkScalar.h"
+#include "include/core/SkString.h"
+#include "include/private/base/SkDebug.h"
+#include "include/private/base/SkMath.h"
+#include "include/private/base/SkMutex.h"
+#include "src/core/SkPathPriv.h"
+#include "src/pathops/SkIntersections.h"
+#include "src/pathops/SkOpAngle.h"
+#include "src/pathops/SkOpCoincidence.h"
+#include "src/pathops/SkOpSegment.h"
+#include "src/pathops/SkOpSpan.h"
+#include "src/pathops/SkPathOpsConic.h"
+#include "src/pathops/SkPathOpsCubic.h"
+#include "src/pathops/SkPathOpsPoint.h"
+#include "src/pathops/SkPathOpsQuad.h"
+#include "src/pathops/SkPathOpsRect.h"
+#include "src/pathops/SkPathOpsTypes.h"
+
+#include <cstdint>
+#include <cstring>
 
 #if DEBUG_DUMP_VERIFY
 bool SkPathOpsDebug::gDumpOp;  // set to true to write op to file before a crash
@@ -24,8 +39,7 @@ bool SkPathOpsDebug::gVerifyOp;  // set to true to compare result against region
 bool SkPathOpsDebug::gRunFail;  // set to true to check for success on tests known to fail
 bool SkPathOpsDebug::gVeryVerbose;  // set to true to run extensive checking tests
 
-#undef FAIL_IF
-#define FAIL_IF(cond, coin) \
+#define FAIL_IF_COIN(cond, coin) \
          do { if (cond) log->record(SkPathOpsDebug::kFail_Glitch, coin); } while (false)
 
 #undef FAIL_WITH_NULL_IF
@@ -35,8 +49,6 @@ bool SkPathOpsDebug::gVeryVerbose;  // set to true to run extensive checking tes
 #define RETURN_FALSE_IF(cond, span) \
          do { if (cond) log->record(SkPathOpsDebug::kReturnFalse_Glitch, span); \
          } while (false)
-
-class SkCoincidentSpans;
 
 #if DEBUG_SORT
 int SkPathOpsDebug::gSortCountDefault = SK_MaxS32;
@@ -54,7 +66,7 @@ int SkPathOpsDebug::gSegmentID = 0;
 
 bool SkPathOpsDebug::ChaseContains(const SkTDArray<SkOpSpanBase* >& chaseArray,
         const SkOpSpanBase* span) {
-    for (int index = 0; index < chaseArray.count(); ++index) {
+    for (int index = 0; index < chaseArray.size(); ++index) {
         const SkOpSpanBase* entry = chaseArray[index];
         if (entry == span) {
             return true;
@@ -69,6 +81,7 @@ SkString SkPathOpsDebug::gActiveSpans;
 #endif
 
 #if DEBUG_COIN
+class SkCoincidentSpans;
 
 SkPathOpsDebug::CoinDict SkPathOpsDebug::gCoinSumChangedDict;
 SkPathOpsDebug::CoinDict SkPathOpsDebug::gCoinSumVisitedDict;
@@ -265,9 +278,7 @@ static void missing_coincidence(SkPathOpsDebug::GlitchLog* glitches, const SkOpC
 static void move_multiples(SkPathOpsDebug::GlitchLog* glitches, const SkOpContourHead* contourList) {
     const SkOpContour* contour = contourList;
     do {
-        if (contour->debugMoveMultiples(glitches), false) {
-            return;
-        }
+        contour->debugMoveMultiples(glitches);
     } while ((contour = contour->next()));
     return;
 }
@@ -292,7 +303,7 @@ void SkOpGlobalState::debugAddToCoinChangedDict() {
     SkPathOpsDebug::GlitchLog glitches;
     const char* funcName = fCoinDictEntry.fFunctionName;
     if (!strcmp("calc_angles", funcName)) {
-        ;
+        //
     } else if (!strcmp("missing_coincidence", funcName)) {
         missing_coincidence(&glitches, fContourHead);
     } else if (!strcmp("move_multiples", funcName)) {
@@ -311,11 +322,11 @@ void SkOpGlobalState::debugAddToCoinChangedDict() {
     } else if (!strcmp("expand", funcName)) {
         fCoincidence->debugExpand(&glitches);
     } else if (!strcmp("findOverlaps", funcName)) {
-        ;
+        //
     } else if (!strcmp("mark", funcName)) {
         fCoincidence->debugMark(&glitches);
     } else if (!strcmp("apply", funcName)) {
-        ;
+        //
     } else {
         SkASSERT(0);   // add missing case
     }
@@ -337,7 +348,7 @@ void SkPathOpsDebug::ShowActiveSpans(SkOpContourHead* contourList) {
         const char* s = str.c_str();
         const char* end;
         while ((end = strchr(s, '\n'))) {
-            SkDebugf("%.*s", end - s + 1, s);
+            SkDebugf("%.*s", (int) (end - s + 1), s);
             s = end + 1;
         }
         gActiveSpans.set(str);
@@ -546,10 +557,6 @@ void SkPathOpsDebug::ShowPath(const SkPath& a, const SkPath& b, SkPathOp shapeOp
     show_op(shapeOp, "path", "pathB");
 }
 
-#include "src/pathops/SkIntersectionHelper.h"
-#include "src/pathops/SkIntersections.h"
-#include "src/pathops/SkPathOpsTypes.h"
-
 #if DEBUG_COIN
 
 void SkOpGlobalState::debugAddToGlobalCoinDicts() {
@@ -564,7 +571,7 @@ void SkOpGlobalState::debugAddToGlobalCoinDicts() {
 #if DEBUG_T_SECT_LOOP_COUNT
 void SkOpGlobalState::debugAddLoopCount(SkIntersections* i, const SkIntersectionHelper& wt,
         const SkIntersectionHelper& wn) {
-    for (int index = 0; index < (int) SK_ARRAY_COUNT(fDebugLoopCount); ++index) {
+    for (int index = 0; index < (int) std::size(fDebugLoopCount); ++index) {
         SkIntersections::DebugLoop looper = (SkIntersections::DebugLoop) index;
         if (fDebugLoopCount[index] >= i->debugLoopCount(looper)) {
             continue;
@@ -584,7 +591,7 @@ void SkOpGlobalState::debugAddLoopCount(SkIntersections* i, const SkIntersection
 }
 
 void SkOpGlobalState::debugDoYourWorst(SkOpGlobalState* local) {
-    for (int index = 0; index < (int) SK_ARRAY_COUNT(fDebugLoopCount); ++index) {
+    for (int index = 0; index < (int) std::size(fDebugLoopCount); ++index) {
         if (fDebugLoopCount[index] >= local->fDebugLoopCount[index]) {
             continue;
         }
@@ -627,7 +634,7 @@ static void dump_curve(SkPath::Verb verb, const SkPoint& pts, float weight) {
 void SkOpGlobalState::debugLoopReport() {
     const char* loops[] = { "iterations", "coinChecks", "perpCalcs" };
     SkDebugf("\n");
-    for (int index = 0; index < (int) SK_ARRAY_COUNT(fDebugLoopCount); ++index) {
+    for (int index = 0; index < (int) std::size(fDebugLoopCount); ++index) {
         SkDebugf("%s: %d\n", loops[index], fDebugLoopCount[index]);
         dump_curve(fDebugWorstVerb[index * 2], fDebugWorstPts[index * 2 * 4],
                 fDebugWorstWeight[index * 2]);
@@ -682,9 +689,6 @@ void SkIntersections::debugResetLoopCount() {
 }
 #endif
 
-#include "src/pathops/SkPathOpsConic.h"
-#include "src/pathops/SkPathOpsCubic.h"
-
 SkDCubic SkDQuad::debugToCubic() const {
     SkDCubic cubic;
     cubic[0] = fPts[0];
@@ -715,9 +719,6 @@ void SkDConic::debugSet(const SkDPoint* pts, SkScalar weight) {
 void SkDRect::debugInit() {
     fLeft = fTop = fRight = fBottom = SK_ScalarNaN;
 }
-
-#include "src/pathops/SkOpAngle.h"
-#include "src/pathops/SkOpSegment.h"
 
 #if DEBUG_COIN
 // commented-out lines keep this in sync with addT()
@@ -1197,7 +1198,7 @@ void SkOpSegment::debugShowNewWinding(const char* fun, const SkOpSpan* span, int
         SkDebugf(" %1.9g,%1.9g", fPts[vIndex].fX, fPts[vIndex].fY);
     }
     SkDebugf(") t=%1.9g [%d] (%1.9g,%1.9g) tEnd=%1.9g newWindSum=",
-            span->t(), span->debugID(), pt.fX, pt.fY, span->next()->t(), winding, oppWinding);
+            span->t(), span->debugID(), pt.fX, pt.fY, span->next()->t());
     if (winding == SK_MinS32) {
         SkDebugf("?");
     } else {
@@ -1368,7 +1369,7 @@ void SkOpAngle::debugValidateNext() const {
 #if !FORCE_RELEASE
     const SkOpAngle* first = this;
     const SkOpAngle* next = first;
-    SkTDArray<const SkOpAngle*>(angles);
+    SkTDArray<const SkOpAngle*> angles;
     do {
 //        SkASSERT_RELEASE(next->fSegment->debugContains(next));
         angles.push_back(next);
@@ -1525,9 +1526,7 @@ void SkOpCoincidence::debugAddEndMovedSpans(SkPathOpsDebug::GlitchLog* log, cons
                 swap(oppTs, oppTe);
             }
             bool added;
-            if (this->debugAddOrOverlap(log, coinSeg, oppSeg, coinTs, coinTe, oppTs, oppTe, &added), false) {
-                return;
-            }
+            this->debugAddOrOverlap(log, coinSeg, oppSeg, coinTs, coinTe, oppTs, oppTe, &added);
         }
     }
     return;
@@ -1535,19 +1534,15 @@ void SkOpCoincidence::debugAddEndMovedSpans(SkPathOpsDebug::GlitchLog* log, cons
 
 // description below
 void SkOpCoincidence::debugAddEndMovedSpans(SkPathOpsDebug::GlitchLog* log, const SkOpPtT* ptT) const {
-    FAIL_IF(!ptT->span()->upCastable(), ptT->span());
+    FAIL_IF_COIN(!ptT->span()->upCastable(), ptT->span());
     const SkOpSpan* base = ptT->span()->upCast();
     const SkOpSpan* prev = base->prev();
-    FAIL_IF(!prev, ptT->span());
+    FAIL_IF_COIN(!prev, ptT->span());
     if (!prev->isCanceled()) {
-        if (this->debugAddEndMovedSpans(log, base, base->prev()), false) {
-            return;
-        }
+        this->debugAddEndMovedSpans(log, base, base->prev());
     }
     if (!base->isCanceled()) {
-        if (this->debugAddEndMovedSpans(log, base, base->next()), false) {
-            return;
-        }
+        this->debugAddEndMovedSpans(log, base, base->next());
     }
     return;
 }
@@ -1570,19 +1565,15 @@ void SkOpCoincidence::debugAddEndMovedSpans(SkPathOpsDebug::GlitchLog* log) cons
 //    fHead = nullptr;
     do {
         if (span->coinPtTStart()->fPt != span->oppPtTStart()->fPt) {
-            FAIL_IF(1 == span->coinPtTStart()->fT, span);
+            FAIL_IF_COIN(1 == span->coinPtTStart()->fT, span);
             bool onEnd = span->coinPtTStart()->fT == 0;
             bool oOnEnd = zero_or_one(span->oppPtTStart()->fT);
             if (onEnd) {
                 if (!oOnEnd) {  // if both are on end, any nearby intersect was already found
-                    if (this->debugAddEndMovedSpans(log, span->oppPtTStart()), false) {
-                        return;
-                    }
+                    this->debugAddEndMovedSpans(log, span->oppPtTStart());
                 }
             } else if (oOnEnd) {
-                if (this->debugAddEndMovedSpans(log, span->coinPtTStart()), false) {
-                    return;
-                }
+                this->debugAddEndMovedSpans(log, span->coinPtTStart());
             }
         }
         if (span->coinPtTEnd()->fPt != span->oppPtTEnd()->fPt) {
@@ -1590,14 +1581,10 @@ void SkOpCoincidence::debugAddEndMovedSpans(SkPathOpsDebug::GlitchLog* log) cons
             bool oOnEnd = zero_or_one(span->oppPtTEnd()->fT);
             if (onEnd) {
                 if (!oOnEnd) {
-                    if (this->debugAddEndMovedSpans(log, span->oppPtTEnd()), false) {
-                        return;
-                    }
+                    this->debugAddEndMovedSpans(log, span->oppPtTEnd());
                 }
             } else if (oOnEnd) {
-                if (this->debugAddEndMovedSpans(log, span->coinPtTEnd()), false) {
-                    return;
-                }
+                this->debugAddEndMovedSpans(log, span->coinPtTEnd());
             }
         }
     } while ((span = span->next()));
@@ -1619,18 +1606,18 @@ void SkOpCoincidence::debugAddExpanded(SkPathOpsDebug::GlitchLog* log) const {
         const SkOpPtT* oStartPtT = coin->oppPtTStart();
         double priorT = startPtT->fT;
         double oPriorT = oStartPtT->fT;
-        FAIL_IF(!startPtT->contains(oStartPtT), coin);
+        FAIL_IF_COIN(!startPtT->contains(oStartPtT), coin);
         SkOPASSERT(coin->coinPtTEnd()->contains(coin->oppPtTEnd()));
         const SkOpSpanBase* start = startPtT->span();
         const SkOpSpanBase* oStart = oStartPtT->span();
         const SkOpSpanBase* end = coin->coinPtTEnd()->span();
         const SkOpSpanBase* oEnd = coin->oppPtTEnd()->span();
-        FAIL_IF(oEnd->deleted(), coin);
-        FAIL_IF(!start->upCastable(), coin);
+        FAIL_IF_COIN(oEnd->deleted(), coin);
+        FAIL_IF_COIN(!start->upCastable(), coin);
         const SkOpSpanBase* test = start->upCast()->next();
-        FAIL_IF(!coin->flipped() && !oStart->upCastable(), coin);
+        FAIL_IF_COIN(!coin->flipped() && !oStart->upCastable(), coin);
         const SkOpSpanBase* oTest = coin->flipped() ? oStart->prev() : oStart->upCast()->next();
-        FAIL_IF(!oTest, coin);
+        FAIL_IF_COIN(!oTest, coin);
         const SkOpSegment* seg = start->segment();
         const SkOpSegment* oSeg = oStart->segment();
         while (test != end || oTest != oEnd) {
@@ -1650,22 +1637,22 @@ void SkOpCoincidence::debugAddExpanded(SkPathOpsDebug::GlitchLog* log) const {
                     const SkOpSpanBase* walk = test;
                     const SkOpPtT* walkOpp;
                     do {
-                        FAIL_IF(!walk->upCastable(), coin);
+                        FAIL_IF_COIN(!walk->upCastable(), coin);
                         walk = walk->upCast()->next();
                     } while (!(walkOpp = walk->ptT()->contains(oSeg))
                             && walk != coin->coinPtTEnd()->span());
-                    FAIL_IF(!walkOpp, coin);
+                    FAIL_IF_COIN(!walkOpp, coin);
                     nextT = walk->t();
                     oNextT = walkOpp->fT;
                 }
                 // use t ranges to guess which one is missing
                 double startRange = nextT - priorT;
-                FAIL_IF(!startRange, coin);
+                FAIL_IF_COIN(!startRange, coin);
                 double startPart = (test->t() - priorT) / startRange;
                 double oStartRange = oNextT - oPriorT;
-                FAIL_IF(!oStartRange, coin);
+                FAIL_IF_COIN(!oStartRange, coin);
                 double oStartPart = (oTest->t() - oStartPtT->fT) / oStartRange;
-                FAIL_IF(startPart == oStartPart, coin);
+                FAIL_IF_COIN(startPart == oStartPart, coin);
                 bool addToOpp = !containedOpp && !containedThis ? startPart < oStartPart
                         : !!containedThis;
                 bool startOver = false;
@@ -1673,7 +1660,7 @@ void SkOpCoincidence::debugAddExpanded(SkPathOpsDebug::GlitchLog* log) const {
                         oPriorT + oStartRange * startPart, test)
                         : log->record(SkPathOpsDebug::kAddExpandedCoin_Glitch,
                         priorT + startRange * oStartPart, oTest);
-         //       FAIL_IF(!success, coin);
+         //       FAIL_IF_COIN(!success, coin);
                 if (startOver) {
                     test = start;
                     oTest = oStart;
@@ -1682,14 +1669,14 @@ void SkOpCoincidence::debugAddExpanded(SkPathOpsDebug::GlitchLog* log) const {
                 oEnd = coin->oppPtTEnd()->span();
             }
             if (test != end) {
-                FAIL_IF(!test->upCastable(), coin);
+                FAIL_IF_COIN(!test->upCastable(), coin);
                 priorT = test->t();
                 test = test->upCast()->next();
             }
             if (oTest != oEnd) {
                 oPriorT = oTest->t();
                 oTest = coin->flipped() ? oTest->prev() : oTest->upCast()->next();
-                FAIL_IF(!oTest, coin);
+                FAIL_IF_COIN(!oTest, coin);
             }
         }
     } while ((coin = coin->next()));
@@ -2028,7 +2015,7 @@ void SkOpCoincidence::debugMark(SkPathOpsDebug::GlitchLog* log) const {
         return;
     }
     do {
-        FAIL_IF(!coin->coinPtTStartWritable()->span()->upCastable(), coin);
+        FAIL_IF_COIN(!coin->coinPtTStartWritable()->span()->upCastable(), coin);
         const SkOpSpan* start = coin->coinPtTStartWritable()->span()->upCast();
 //         SkASSERT(start->deleted());
         const SkOpSpanBase* end = coin->coinPtTEndWritable()->span();
@@ -2051,23 +2038,19 @@ void SkOpCoincidence::debugMark(SkPathOpsDebug::GlitchLog* log) const {
         const SkOpSpanBase* next = start;
         const SkOpSpanBase* oNext = oStart;
         bool ordered;
-        FAIL_IF(!coin->ordered(&ordered), coin);
+        FAIL_IF_COIN(!coin->ordered(&ordered), coin);
         while ((next = next->upCast()->next()) != end) {
-            FAIL_IF(!next->upCastable(), coin);
-            if (next->upCast()->debugInsertCoincidence(log, oSegment, flipped, ordered), false) {
-                return;
-            }
+            FAIL_IF_COIN(!next->upCastable(), coin);
+            next->upCast()->debugInsertCoincidence(log, oSegment, flipped, ordered);
         }
         while ((oNext = oNext->upCast()->next()) != oEnd) {
-            FAIL_IF(!oNext->upCastable(), coin);
-            if (oNext->upCast()->debugInsertCoincidence(log, segment, flipped, ordered), false) {
-                return;
-            }
+            FAIL_IF_COIN(!oNext->upCastable(), coin);
+            oNext->upCast()->debugInsertCoincidence(log, segment, flipped, ordered);
         }
     } while ((coin = coin->next()));
     return;
 }
-#endif
+#endif // DEBUG_COIN
 
 #if DEBUG_COIN
 // Commented-out lines keep this in sync with markCollapsed()
@@ -2092,7 +2075,7 @@ void SkOpCoincidence::debugMarkCollapsed(SkPathOpsDebug::GlitchLog* log, const S
     this->debugMarkCollapsed(log, fHead, test);
     this->debugMarkCollapsed(log, fTop, test);
 }
-#endif
+#endif // DEBUG_COIN
 
 void SkCoincidentSpans::debugShow() const {
     SkDebugf("coinSpan - id=%d t=%1.9g tEnd=%1.9g\n", coinPtTStart()->segment()->debugID(),
@@ -2108,7 +2091,7 @@ void SkOpCoincidence::debugShowCoincidence() const {
         span->debugShow();
         span = span->next();
     }
-#endif
+#endif // DEBUG_COINCIDENCE
 }
 
 #if DEBUG_COIN
@@ -2241,7 +2224,7 @@ static void DebugValidate(const SkCoincidentSpans* head, const SkCoincidentSpans
     }
     DebugCheckOverlapTop(head, opt, log);
 }
-#endif
+#endif // DEBUG_COIN
 
 void SkOpCoincidence::debugValidate() const {
 #if DEBUG_COINCIDENCE
@@ -2309,9 +2292,7 @@ void SkOpContour::debugMissingCoincidence(SkPathOpsDebug::GlitchLog* log) const 
     const SkOpSegment* segment = &fHead;
 //    bool result = false;
     do {
-        if (segment->debugMissingCoincidence(log), false) {
-//          result = true;
-        }
+        segment->debugMissingCoincidence(log);
         segment = segment->next();
     } while (segment);
     return;
@@ -2321,9 +2302,7 @@ void SkOpContour::debugMoveMultiples(SkPathOpsDebug::GlitchLog* log) const {
     SkASSERT(fCount > 0);
     const SkOpSegment* segment = &fHead;
     do {
-        if (segment->debugMoveMultiples(log), false) {
-            return;
-        }
+        segment->debugMoveMultiples(log);
     } while ((segment = segment->next()));
     return;
 }
@@ -2650,27 +2629,25 @@ void SkOpSpan::debugInsertCoincidence(SkPathOpsDebug::GlitchLog* log, const SkOp
             if (!ordered) {
                 const SkOpSpanBase* spanEnd = fNext->contains(segment)->span();
                 const SkOpPtT* start = base->ptT()->starter(spanEnd->ptT());
-                FAIL_IF(!start->span()->upCastable(), this);
+                FAIL_IF_COIN(!start->span()->upCastable(), this);
                 span = const_cast<SkOpSpan*>(start->span()->upCast());
             }
             else if (flipped) {
                 span = base->prev();
-                FAIL_IF(!span, this);
+                FAIL_IF_COIN(!span, this);
             }
             else {
-                FAIL_IF(!base->upCastable(), this);
+                FAIL_IF_COIN(!base->upCastable(), this);
                 span = base->upCast();
             }
             log->record(SkPathOpsDebug::kMarkCoinInsert_Glitch, span);
             return;
         }
     }
-#if DEBUG_COIN
     log->record(SkPathOpsDebug::kMarkCoinMissing_Glitch, segment, this);
-#endif
     return;
 }
-#endif
+#endif // DEBUG_COIN
 
 // called only by test code
 int SkIntersections::debugCoincidentUsed() const {
@@ -2693,8 +2670,6 @@ int SkIntersections::debugCoincidentUsed() const {
     SkASSERT(count == count2);
     return count;
 }
-
-#include "src/pathops/SkOpContour.h"
 
 // Commented-out lines keep this in sync with addOpp()
 void SkOpPtT::debugAddOpp(const SkOpPtT* opp, const SkOpPtT* oppPrev) const {
@@ -2915,22 +2890,22 @@ void SkPathOpsDebug::ShowOnePath(const SkPath& path, const char* name, bool incl
 #include "include/core/SkData.h"
 #include "include/core/SkStream.h"
 
-static void dump_path(FILE* file, const SkPath& path, bool force, bool dumpAsHex) {
+static void dump_path(FILE* file, const SkPath& path, bool dumpAsHex) {
     SkDynamicMemoryWStream wStream;
-    path.dump(&wStream, force, dumpAsHex);
+    path.dump(&wStream, dumpAsHex);
     sk_sp<SkData> data(wStream.detachAsData());
     fprintf(file, "%.*s\n", (int) data->size(), (char*) data->data());
 }
 
 static int dumpID = 0;
 
-void SkPathOpsDebug::DumpOp(const SkPath& one, const SkPath& two, SkPathOp op,
+void DumpOp(const SkPath& one, const SkPath& two, SkPathOp op,
         const char* testName) {
     FILE* file = sk_fopen("op_dump.txt", kWrite_SkFILE_Flag);
     DumpOp(file, one, two, op, testName);
 }
 
-void SkPathOpsDebug::DumpOp(FILE* file, const SkPath& one, const SkPath& two, SkPathOp op,
+void DumpOp(FILE* file, const SkPath& one, const SkPath& two, SkPathOp op,
         const char* testName) {
     const char* name = testName ? testName : "op";
     fprintf(file,
@@ -2938,30 +2913,30 @@ void SkPathOpsDebug::DumpOp(FILE* file, const SkPath& one, const SkPath& two, Sk
             name, ++dumpID);
     fprintf(file, "    SkPath path;\n");
     fprintf(file, "    path.setFillType((SkPath::FillType) %d);\n", one.getFillType());
-    dump_path(file, one, false, true);
+    dump_path(file, one, true);
     fprintf(file, "    SkPath path1(path);\n");
     fprintf(file, "    path.reset();\n");
     fprintf(file, "    path.setFillType((SkPath::FillType) %d);\n", two.getFillType());
-    dump_path(file, two, false, true);
+    dump_path(file, two, true);
     fprintf(file, "    SkPath path2(path);\n");
     fprintf(file, "    testPathOp(reporter, path1, path2, (SkPathOp) %d, filename);\n", op);
     fprintf(file, "}\n\n");
     fclose(file);
 }
 
-void SkPathOpsDebug::DumpSimplify(const SkPath& path, const char* testName) {
+void DumpSimplify(const SkPath& path, const char* testName) {
     FILE* file = sk_fopen("simplify_dump.txt", kWrite_SkFILE_Flag);
     DumpSimplify(file, path, testName);
 }
 
-void SkPathOpsDebug::DumpSimplify(FILE* file, const SkPath& path, const char* testName) {
+void DumpSimplify(FILE* file, const SkPath& path, const char* testName) {
     const char* name = testName ? testName : "simplify";
     fprintf(file,
             "\nstatic void %s_%d(skiatest::Reporter* reporter, const char* filename) {\n",
             name, ++dumpID);
     fprintf(file, "    SkPath path;\n");
     fprintf(file, "    path.setFillType((SkPath::FillType) %d);\n", path.getFillType());
-    dump_path(file, path, false, true);
+    dump_path(file, path, true);
     fprintf(file, "    testSimplify(reporter, path, filename);\n");
     fprintf(file, "}\n\n");
     fclose(file);
@@ -2970,6 +2945,7 @@ void SkPathOpsDebug::DumpSimplify(FILE* file, const SkPath& path, const char* te
 #include "include/core/SkBitmap.h"
 #include "include/core/SkCanvas.h"
 #include "include/core/SkPaint.h"
+#include "include/core/SkRegion.h"
 
 const int bitWidth = 64;
 const int bitHeight = 64;
@@ -3036,17 +3012,17 @@ static int debug_paths_draw_the_same(const SkPath& one, const SkPath& two, SkBit
     return errors;
 }
 
-void SkPathOpsDebug::ReportOpFail(const SkPath& one, const SkPath& two, SkPathOp op) {
+void ReportOpFail(const SkPath& one, const SkPath& two, SkPathOp op) {
     SkDebugf("// Op did not expect failure\n");
     DumpOp(stderr, one, two, op, "opTest");
     fflush(stderr);
 }
 
-void SkPathOpsDebug::VerifyOp(const SkPath& one, const SkPath& two, SkPathOp op,
+void VerifyOp(const SkPath& one, const SkPath& two, SkPathOp op,
         const SkPath& result) {
     SkPath pathOut, scaledPathOut;
     SkRegion rgnA, rgnB, openClip, rgnOut;
-    openClip.setRect(-16000, -16000, 16000, 16000);
+    openClip.setRect({-16000, -16000, 16000, 16000});
     rgnA.setPath(one, openClip);
     rgnB.setPath(two, openClip);
     rgnOut.op(rgnA, rgnB, (SkRegion::Op) op);
@@ -3076,16 +3052,16 @@ void SkPathOpsDebug::VerifyOp(const SkPath& one, const SkPath& two, SkPathOp op,
     }
 }
 
-void SkPathOpsDebug::ReportSimplifyFail(const SkPath& path) {
+void ReportSimplifyFail(const SkPath& path) {
     SkDebugf("// Simplify did not expect failure\n");
     DumpSimplify(stderr, path, "simplifyTest");
     fflush(stderr);
 }
 
-void SkPathOpsDebug::VerifySimplify(const SkPath& path, const SkPath& result) {
+void VerifySimplify(const SkPath& path, const SkPath& result) {
     SkPath pathOut, scaledPathOut;
     SkRegion rgnA, openClip, rgnOut;
-    openClip.setRect(-16000, -16000, 16000, 16000);
+    openClip.setRect({-16000, -16000, 16000, 16000});
     rgnA.setPath(path, openClip);
     rgnOut.getBoundaryPath(&pathOut);
     SkMatrix scale;
@@ -3108,8 +3084,7 @@ void SkPathOpsDebug::VerifySimplify(const SkPath& path, const SkPath& result) {
         fflush(stderr);
     }
 }
-
-#endif
+#endif // DEBUG_DUMP_VERIFY
 
 // global path dumps for msvs Visual Studio 17 to use from Immediate Window
 void Dump(const SkPath& path) {

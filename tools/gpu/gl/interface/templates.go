@@ -17,7 +17,7 @@ const ASSEMBLE_INTERFACE_GL_ES = `/*
 
 #include "include/gpu/gl/GrGLAssembleHelpers.h"
 #include "include/gpu/gl/GrGLAssembleInterface.h"
-#include "src/gpu/gl/GrGLUtil.h"
+#include "src/gpu/ganesh/gl/GrGLUtil.h"
 
 #define GET_PROC(F) functions->f##F = (GrGL##F##Fn*)get(ctx, "gl" #F)
 #define GET_PROC_SUFFIX(F, S) functions->f##F = (GrGL##F##Fn*)get(ctx, "gl" #F #S)
@@ -94,7 +94,7 @@ const ASSEMBLE_INTERFACE_GL = `/*
 
 #include "include/gpu/gl/GrGLAssembleHelpers.h"
 #include "include/gpu/gl/GrGLAssembleInterface.h"
-#include "src/gpu/gl/GrGLUtil.h"
+#include "src/gpu/ganesh/gl/GrGLUtil.h"
 
 #define GET_PROC(F) functions->f##F = (GrGL##F##Fn*)get(ctx, "gl" #F)
 #define GET_PROC_SUFFIX(F, S) functions->f##F = (GrGL##F##Fn*)get(ctx, "gl" #F #S)
@@ -161,7 +161,7 @@ const ASSEMBLE_INTERFACE_WEBGL = `/*
 
 #include "include/gpu/gl/GrGLAssembleHelpers.h"
 #include "include/gpu/gl/GrGLAssembleInterface.h"
-#include "src/gpu/gl/GrGLUtil.h"
+#include "src/gpu/ganesh/gl/GrGLUtil.h"
 
 #if SK_DISABLE_WEBGL_INTERFACE || !defined(SK_USE_WEBGL)
 sk_sp<const GrGLInterface> GrGLMakeAssembledWebGLInterface(void *ctx, GrGLGetProc get) {
@@ -170,10 +170,10 @@ sk_sp<const GrGLInterface> GrGLMakeAssembledWebGLInterface(void *ctx, GrGLGetPro
 #else
 
 // Located https://github.com/emscripten-core/emscripten/tree/7ba7700902c46734987585409502f3c63beb650f/system/include/webgl
-#include "webgl/webgl1.h"
-#include "webgl/webgl1_ext.h"
-#include "webgl/webgl2.h"
-#include "webgl/webgl2_ext.h"
+#include <webgl/webgl1.h>
+#include <webgl/webgl1_ext.h>
+#include <webgl/webgl2.h>
+#include <webgl/webgl2_ext.h>
 
 #define GET_PROC(F) functions->f##F = emscripten_gl##F
 #define GET_PROC_SUFFIX(F, S) functions->f##F = emscripten_gl##F##S
@@ -233,7 +233,7 @@ const VALIDATE_INTERFACE = `/*
 
 #include "include/gpu/gl/GrGLExtensions.h"
 #include "include/gpu/gl/GrGLInterface.h"
-#include "src/gpu/gl/GrGLUtil.h"
+#include "src/gpu/ganesh/gl/GrGLUtil.h"
 
 #include <stdio.h>
 

@@ -19,51 +19,15 @@ namespace SkSL {
  */
 class ProgramElement : public IRNode {
 public:
-    enum class Kind {
-        kEnum = 0,
-        kExtension,
-        kFunction,
-        kFunctionPrototype,
-        kInterfaceBlock,
-        kModifiers,
-        kSection,
-        kGlobalVar,
+    using Kind = ProgramElementKind;
 
-        kFirst = kEnum,
-        kLast = kGlobalVar
-    };
-
-    ProgramElement(int offset, Kind kind)
-        : INHERITED(offset, (int) kind) {
+    ProgramElement(Position pos, Kind kind)
+        : INHERITED(pos, (int) kind) {
         SkASSERT(kind >= Kind::kFirst && kind <= Kind::kLast);
     }
 
     Kind kind() const {
         return (Kind) fKind;
-    }
-
-    /**
-     *  Use is<T> to check the type of a program element.
-     *  e.g. replace `el.kind() == ProgramElement::Kind::kEnum` with `el.is<Enum>()`.
-     */
-    template <typename T>
-    bool is() const {
-        return this->kind() == T::kProgramElementKind;
-    }
-
-    /**
-     *  Use as<T> to downcast program elements. e.g. replace `(Enum&) el` with `el.as<Enum>()`.
-     */
-    template <typename T>
-    const T& as() const {
-        SkASSERT(this->is<T>());
-        return static_cast<const T&>(*this);
-    }
-
-    template <typename T>
-    T& as() {
-        SkASSERT(this->is<T>());
-        return static_cast<T&>(*this);
     }
 
     virtual std::unique_ptr<ProgramElement> clone() const = 0;

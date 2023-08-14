@@ -11,15 +11,17 @@
 #include "include/core/SkMatrix.h"
 #include "include/core/SkRect.h"
 #include "tools/Resources.h"
+#include "tools/ToolUtils.h"
 
 // https://bug.skia.org/4374
 DEF_SIMPLE_GM(draw_bitmap_rect_skbug4734, canvas, 64, 64) {
-    SkBitmap source;
-    if (GetResourceAsBitmap("images/randPixels.png", &source)) {
-        SkRect rect = SkRect::Make(source.bounds());
+    auto img = ToolUtils::MakeTextureImage(canvas, GetResourceAsImage("images/randPixels.png"));
+    if (img) {
+        SkRect rect = SkRect::Make(img->bounds());
         rect.inset(0.5, 1.5);
         SkRect dst;
         SkMatrix::Scale(8, 8).mapRect(&dst, rect);
-        canvas->drawBitmapRect(source, rect, dst, nullptr);
+        canvas->drawImageRect(img, rect, dst, SkSamplingOptions(), nullptr,
+                              SkCanvas::kStrict_SrcRectConstraint);
     }
 }

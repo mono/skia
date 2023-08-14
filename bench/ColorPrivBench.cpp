@@ -7,7 +7,7 @@
 #include "bench/Benchmark.h"
 #include "include/core/SkString.h"
 #include "include/private/SkColorData.h"
-#include "include/utils/SkRandom.h"
+#include "src/base/SkRandom.h"
 
 template <bool kFast, bool kScale>
 class FourByteInterpBench : public Benchmark {
@@ -41,7 +41,7 @@ public:
 
     void onDraw(int loops, SkCanvas*) override {
         // We xor results of FourByteInterp into junk to make sure the function runs.
-        volatile SkPMColor junk = 0;
+        [[maybe_unused]] volatile SkPMColor junk = 0;
 
         for (int loop = 0; loop < loops; loop++) {
             for (int i = 0; i < kInputs; i++) {

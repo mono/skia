@@ -4,16 +4,15 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
+#include "src/core/SkAlphaRuns.h"
 
-#include "include/private/SkTo.h"
-#include "src/core/SkAntiRun.h"
-#include "src/core/SkUtils.h"
+#include "src/core/SkOpts.h"
 
 void SkAlphaRuns::reset(int width) {
     SkASSERT(width > 0);
 
 #ifdef SK_DEBUG
-    sk_memset16((uint16_t*)fRuns, (uint16_t)(-42), width);
+    SkOpts::memset16((uint16_t*)fRuns, (uint16_t)(-42), width);
 #endif
     fRuns[0] = SkToS16(width);
     fRuns[width] = 0;

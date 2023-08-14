@@ -9,7 +9,6 @@
 #include "include/core/SkBitmap.h"
 #include "include/core/SkCanvas.h"
 #include "include/core/SkColor.h"
-#include "include/core/SkFilterQuality.h"
 #include "include/core/SkFont.h"
 #include "include/core/SkImageInfo.h"
 #include "include/core/SkPaint.h"
@@ -27,6 +26,14 @@
 #include "include/utils/SkTextUtils.h"
 #include "tools/ToolUtils.h"
 
+const SkSamplingOptions gSamplings[] = {
+    SkSamplingOptions(SkFilterMode::kNearest),
+    SkSamplingOptions(SkFilterMode::kLinear),
+    SkSamplingOptions(SkFilterMode::kLinear, SkMipmapMode::kLinear),
+    SkSamplingOptions(SkCubicResampler::Mitchell()),
+    SkSamplingOptions::Aniso(16),
+};
+
 static void makebm(SkBitmap* bm, SkColorType ct, int w, int h) {
     bm->allocPixels(SkImageInfo::Make(w, h, ct, kPremul_SkAlphaType));
     bm->eraseColor(SK_ColorTRANSPARENT);
@@ -39,14 +46,13 @@ static void makebm(SkBitmap* bm, SkColorType ct, int w, int h) {
 
     paint.setDither(true);
     paint.setShader(SkGradientShader::MakeLinear(pts, colors, pos,
-                SK_ARRAY_COUNT(colors), SkTileMode::kClamp));
+                std::size(colors), SkTileMode::kClamp));
     canvas.drawPaint(paint);
 }
 
-static void setup(SkPaint* paint, const SkBitmap& bm, SkFilterQuality filter_level,
+static void setup(SkPaint* paint, const SkBitmap& bm, const SkSamplingOptions& sampling,
                   SkTileMode tmx, SkTileMode tmy) {
-    paint->setShader(bm.makeShader(tmx, tmy));
-    paint->setFilterQuality(filter_level);
+    paint->setShader(bm.makeShader(tmx, tmy, sampling));
 }
 
 constexpr SkColorType gColorTypes[] = {
@@ -60,7 +66,7 @@ public:
             : fPowerOfTwoSize(powerOfTwoSize) {
     }
 
-    SkBitmap    fTexture[SK_ARRAY_COUNT(gColorTypes)];
+    SkBitmap    fTexture[std::size(gColorTypes)];
 
 protected:
     enum {
@@ -76,11 +82,11 @@ protected:
         return name;
     }
 
-    SkISize onISize() override { return SkISize::Make(880, 760); }
+    SkISize onISize() override { return SkISize::Make(880, 880); }
 
     void onOnceBeforeDraw() override {
         int size = fPowerOfTwoSize ? kPOTSize : kNPOTSize;
-        for (size_t i = 0; i < SK_ARRAY_COUNT(gColorTypes); i++) {
+        for (size_t i = 0; i < std::size(gColorTypes); i++) {
             makebm(&fTexture[i], gColorTypes[i], size, size);
         }
     }
@@ -95,14 +101,9 @@ protected:
 
         SkRect r = { 0, 0, SkIntToScalar(size*2), SkIntToScalar(size*2) };
 
-        const char* gColorTypeNames[] = { "8888" , "565", "4444" };
+        const char* gColorTypeNames[] = { "8888", "565" };
 
-        constexpr SkFilterQuality gFilterQualitys[] =
-            { kNone_SkFilterQuality,
-              kLow_SkFilterQuality,
-              kMedium_SkFilterQuality,
-              kHigh_SkFilterQuality };
-        const char* gFilterNames[] = { "None", "Low", "Medium", "High" };
+        const char* gFilterNames[] = { "Nearest", "Linear", "Trilinear", "Mitchell", "Aniso" };
 
         constexpr SkTileMode gModes[] = {
             SkTileMode::kClamp, SkTileMode::kRepeat, SkTileMode::kMirror };
@@ -111,8 +112,8 @@ protected:
         SkScalar y = SkIntToScalar(24);
         SkScalar x = SkIntToScalar(10)/scale;
 
-        for (size_t kx = 0; kx < SK_ARRAY_COUNT(gModes); kx++) {
-            for (size_t ky = 0; ky < SK_ARRAY_COUNT(gModes); ky++) {
+        for (size_t kx = 0; kx < std::size(gModes); kx++) {
+            for (size_t ky = 0; ky < std::size(gModes); ky++) {
                 SkString str;
                 str.printf("[%s,%s]", gModeNames[kx], gModeNames[ky]);
 
@@ -125,11 +126,11 @@ protected:
 
         y = SkIntToScalar(40) / scale;
 
-        for (size_t i = 0; i < SK_ARRAY_COUNT(gColorTypes); i++) {
-            for (size_t j = 0; j < SK_ARRAY_COUNT(gFilterQualitys); j++) {
+        for (size_t i = 0; i < std::size(gColorTypes); i++) {
+            for (size_t j = 0; j < std::size(gSamplings); j++) {
                 x = SkIntToScalar(10)/scale;
-                for (size_t kx = 0; kx < SK_ARRAY_COUNT(gModes); kx++) {
-                    for (size_t ky = 0; ky < SK_ARRAY_COUNT(gModes); ky++) {
+                for (size_t kx = 0; kx < std::size(gModes); kx++) {
+                    for (size_t ky = 0; ky < std::size(gModes); ky++) {
                         SkPaint paint;
 #if 1 // Temporary change to regen bitmap before each draw. This may help tracking down an issue
       // on SGX where resizing NPOT textures to POT textures exhibits a driver bug.
@@ -137,7 +138,7 @@ protected:
                             makebm(&fTexture[i], gColorTypes[i], size, size);
                         }
 #endif
-                        setup(&paint, fTexture[i], gFilterQualitys[j], gModes[kx], gModes[ky]);
+                        setup(&paint, fTexture[i], gSamplings[j], gModes[kx], gModes[ky]);
                         paint.setDither(true);
 
                         canvas->save();
@@ -168,7 +169,7 @@ constexpr int gHeight = 32;
 static sk_sp<SkShader> make_bm(SkTileMode tx, SkTileMode ty) {
     SkBitmap bm;
     makebm(&bm, kN32_SkColorType, gWidth, gHeight);
-    return bm.makeShader(tx, ty);
+    return bm.makeShader(tx, ty, SkSamplingOptions());
 }
 
 static sk_sp<SkShader> make_grad(SkTileMode tx, SkTileMode ty) {
@@ -180,11 +181,11 @@ static sk_sp<SkShader> make_grad(SkTileMode tx, SkTileMode ty) {
     int index = (int)ty;
     switch (index % 3) {
         case 0:
-            return SkGradientShader::MakeLinear(pts, colors, nullptr, SK_ARRAY_COUNT(colors), tx);
+            return SkGradientShader::MakeLinear(pts, colors, nullptr, std::size(colors), tx);
         case 1:
-            return SkGradientShader::MakeRadial(center, rad, colors, nullptr, SK_ARRAY_COUNT(colors), tx);
+            return SkGradientShader::MakeRadial(center, rad, colors, nullptr, std::size(colors), tx);
         case 2:
-            return SkGradientShader::MakeSweep(center.fX, center.fY, colors, nullptr, SK_ARRAY_COUNT(colors));
+            return SkGradientShader::MakeSweep(center.fX, center.fY, colors, nullptr, std::size(colors));
     }
 
     return nullptr;
@@ -222,7 +223,7 @@ private:
 
         SkFont font(ToolUtils::create_portable_typeface());
 
-        for (size_t kx = 0; kx < SK_ARRAY_COUNT(gModes); kx++) {
+        for (size_t kx = 0; kx < std::size(gModes); kx++) {
             SkString str(gModeNames[kx]);
             SkTextUtils::DrawString(canvas, str.c_str(), x + r.width()/2, y, font, SkPaint(),
                                     SkTextUtils::kCenter_Align);
@@ -231,14 +232,14 @@ private:
 
         y += SkIntToScalar(16) + h;
 
-        for (size_t ky = 0; ky < SK_ARRAY_COUNT(gModes); ky++) {
+        for (size_t ky = 0; ky < std::size(gModes); ky++) {
             x = SkIntToScalar(16) + w;
 
             SkString str(gModeNames[ky]);
             SkTextUtils::DrawString(canvas, str.c_str(), x, y + h/2, font, SkPaint(), SkTextUtils::kRight_Align);
 
             x += SkIntToScalar(50);
-            for (size_t kx = 0; kx < SK_ARRAY_COUNT(gModes); kx++) {
+            for (size_t kx = 0; kx < std::size(gModes); kx++) {
                 SkPaint paint;
                 paint.setShader(fProc(gModes[kx], gModes[ky]));
 

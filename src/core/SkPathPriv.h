@@ -8,8 +8,25 @@
 #ifndef SkPathPriv_DEFINED
 #define SkPathPriv_DEFINED
 
+#include "include/core/SkPath.h"
 #include "include/core/SkPathBuilder.h"
+#include "include/core/SkPathTypes.h"
+#include "include/core/SkPoint.h"
+#include "include/core/SkRect.h"
+#include "include/core/SkRefCnt.h"
+#include "include/core/SkScalar.h"
+#include "include/core/SkTypes.h"
 #include "include/private/SkIDChangeListener.h"
+#include "include/private/SkPathRef.h"
+#include "include/private/base/SkDebug.h"
+#include "include/private/base/SkPathEnums.h"
+
+#include <cstdint>
+#include <iterator>
+#include <utility>
+
+class SkMatrix;
+class SkRRect;
 
 static_assert(0 == static_cast<int>(SkPathFillType::kWinding), "fill_type_mismatch");
 static_assert(1 == static_cast<int>(SkPathFillType::kEvenOdd), "fill_type_mismatch");
@@ -18,14 +35,9 @@ static_assert(3 == static_cast<int>(SkPathFillType::kInverseEvenOdd), "fill_type
 
 class SkPathPriv {
 public:
-#ifdef SK_BUILD_FOR_ANDROID_FRAMEWORK
-    static const int kPathRefGenIDBitCnt = 30; // leave room for the fill type (skbug.com/1762)
-#else
-    static const int kPathRefGenIDBitCnt = 32;
-#endif
-
-    // skbug.com/9906: Not a perfect solution for W plane clipping, but 1/1024 is a reasonable limit
-    static constexpr SkScalar kW0PlaneDistance = 1.f / 1024.f;
+    // skbug.com/9906: Not a perfect solution for W plane clipping, but 1/16384 is a
+    // reasonable limit (roughly 5e-5)
+    inline static constexpr SkScalar kW0PlaneDistance = 1.f / (1 << 14);
 
     static SkPathFirstDirection AsFirstDirection(SkPathDirection dir) {
         // since we agree numerically for the values in Direction, we can just cast.
@@ -74,6 +86,20 @@ public:
             }
         }
         return false;
+    }
+
+    // In some scenarios (e.g. fill or convexity checking all but the last leading move to are
+    // irrelevant to behavior). SkPath::injectMoveToIfNeeded should ensure that this is always at
+    // least 1.
+    static int LeadingMoveToCount(const SkPath& path) {
+        int verbCount = path.countVerbs();
+        auto verbs = path.fPathRef->verbsBegin();
+        for (int i = 0; i < verbCount; i++) {
+            if (verbs[i] != SkPath::Verb::kMove_Verb) {
+                return i;
+            }
+        }
+        return verbCount; // path is all move verbs
     }
 
     static void AddGenIDChangeListener(const SkPath& path, sk_sp<SkIDChangeListener> listener) {
@@ -188,15 +214,6 @@ public:
         return path.fPathRef->conicWeights();
     }
 
-    /** Returns true if path formed by pts is convex.
-
-        @param pts    SkPoint array of path
-        @param count  number of entries in array
-
-        @return       true if pts represent a convex geometry
-    */
-    static bool IsConvex(const SkPoint pts[], int count);
-
     /** Returns true if the underlying SkPathRef has one single owner. */
     static bool TestingOnly_unique(const SkPath& path) {
         return path.fPathRef->unique();
@@ -296,7 +313,7 @@ public:
             0   // kDone
         };
 
-        SkASSERT(verb < SK_ARRAY_COUNT(gPtsInVerb));
+        SkASSERT(verb < std::size(gPtsInVerb));
         return gPtsInVerb[verb];
     }
 
@@ -313,14 +330,11 @@ public:
             0   // kDone
         };
 
-        SkASSERT(verb < SK_ARRAY_COUNT(gPtsInVerb));
+        SkASSERT(verb < std::size(gPtsInVerb));
         return gPtsInVerb[verb];
     }
 
-    static bool IsAxisAligned(const SkPath& path) {
-        SkRect tmp;
-        return (path.fPathRef->fIsRRect | path.fPathRef->fIsOval) || path.isRect(&tmp);
-    }
+    static bool IsAxisAligned(const SkPath& path);
 
     static bool AllPointsEq(const SkPoint pts[], int count) {
         for (int i = 1; i < count; ++i) {
@@ -330,6 +344,8 @@ public:
         }
         return true;
     }
+
+    static int LastMoveToIndex(const SkPath& path) { return path.fLastMoveToIndex; }
 
     static bool IsRectContour(const SkPath&, bool allowPartial, int* currVerb,
                               const SkPoint** ptsPtr, bool* isClosed, SkPathDirection* direction,
@@ -397,9 +413,6 @@ public:
     static void SetConvexity(const SkPath& path, SkPathConvexity c) {
         path.setConvexity(c);
     }
-    static void SetConvexity(SkPathBuilder* builder, SkPathConvexity c) {
-        builder->privateSetConvexity(c);
-    }
     static void ForceComputeConvexity(const SkPath& path) {
         path.setConvexity(SkPathConvexity::kUnknown);
         (void)path.isConvex();
@@ -407,6 +420,17 @@ public:
 
     static void ReverseAddPath(SkPathBuilder* builder, const SkPath& reverseMe) {
         builder->privateReverseAddPath(reverseMe);
+    }
+
+    static SkPath MakePath(const SkPathVerbAnalysis& analysis,
+                           const SkPoint points[],
+                           const uint8_t verbs[],
+                           int verbCount,
+                           const SkScalar conics[],
+                           SkPathFillType fillType,
+                           bool isVolatile) {
+        return SkPath::MakeInternal(analysis, points, verbs, verbCount, conics, fillType,
+                                    isVolatile);
     }
 };
 
@@ -424,7 +448,7 @@ class SkPathEdgeIter {
     SkPoint         fScratch[2];    // for auto-close lines
     bool            fNeedsCloseLine;
     bool            fNextIsNewContour;
-    SkDEBUGCODE(bool fIsConic);
+    SkDEBUGCODE(bool fIsConic;)
 
     enum {
         kIllegalEdgeValue = 99
@@ -455,7 +479,7 @@ public:
         bool            fIsNewContour;
 
         // Returns true when it holds an Edge, false when the path is done.
-        operator bool() { return fPts != nullptr; }
+        explicit operator bool() { return fPts != nullptr; }
     };
 
     Result next() {
@@ -486,6 +510,7 @@ public:
                         return res;
                     }
                     fMoveToPtr = fPts++;
+                    fNextIsNewContour = true;
                 } break;
                 case SkPath::kClose_Verb:
                     if (fNeedsCloseLine) return closeline();

@@ -5,7 +5,7 @@
  * found in the LICENSE file.
  */
 
-#include "include/private/SkTPin.h"
+#include "include/private/base/SkTPin.h"
 #include "modules/skottie/src/Adapter.h"
 #include "modules/skottie/src/SkottieJson.h"
 #include "modules/skottie/src/SkottiePriv.h"
@@ -31,7 +31,7 @@ public:
         };
 
         const auto join = ParseDefault<int>(joffset["lj"], 1) - 1;
-        this->node()->setJoin(gJoinMap[SkTPin<int>(join, 0, SK_ARRAY_COUNT(gJoinMap) - 1)]);
+        this->node()->setJoin(gJoinMap[SkTPin<int>(join, 0, std::size(gJoinMap) - 1)]);
 
         this->bind(abuilder, joffset["a" ], fAmount);
         this->bind(abuilder, joffset["ml"], fMiterLimit);

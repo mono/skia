@@ -23,7 +23,8 @@
 #include "include/core/SkString.h"
 #include "include/core/SkTypes.h"
 #include "include/gpu/GrDirectContext.h"
-#include "include/third_party/skcms/skcms.h"
+#include "include/gpu/ganesh/SkImageGanesh.h"
+#include "modules/skcms/skcms.h"
 #include "tools/Resources.h"
 
 #include <string.h>
@@ -40,19 +41,15 @@ static sk_sp<SkImage> make_raster_image(SkColorType colorType) {
         return nullptr;
     }
 
-    SkBitmap bitmap;
     SkImageInfo info = codec->getInfo().makeWH(kWidth, kHeight)
                                        .makeColorType(colorType)
                                        .makeAlphaType(kPremul_SkAlphaType);
-    bitmap.allocPixels(info);
-    codec->getPixels(info, bitmap.getPixels(), bitmap.rowBytes());
-    bitmap.setImmutable();
-    return SkImage::MakeFromBitmap(bitmap);
+    return std::get<0>(codec->getImage(info));
 }
 
 static sk_sp<SkImage> make_codec_image() {
     sk_sp<SkData> encoded = GetResourceAsData("images/randPixels.png");
-    return SkImage::MakeFromEncoded(encoded);
+    return SkImages::DeferredFromEncodedData(encoded);
 }
 
 static void draw_contents(SkCanvas* canvas) {
@@ -70,10 +67,12 @@ static void draw_contents(SkCanvas* canvas) {
 static sk_sp<SkImage> make_picture_image() {
     SkPictureRecorder recorder;
     draw_contents(recorder.beginRecording(SkRect::MakeIWH(kWidth, kHeight)));
-    return SkImage::MakeFromPicture(recorder.finishRecordingAsPicture(),
-                                    SkISize::Make(kWidth, kHeight), nullptr, nullptr,
-                                    SkImage::BitDepth::kU8,
-                                    SkColorSpace::MakeSRGB());
+    return SkImages::DeferredFromPicture(recorder.finishRecordingAsPicture(),
+                                         SkISize::Make(kWidth, kHeight),
+                                         nullptr,
+                                         nullptr,
+                                         SkImages::BitDepth::kU8,
+                                         SkColorSpace::MakeSRGB());
 }
 
 static sk_sp<SkColorSpace> make_parametric_transfer_fn(const SkColorSpacePrimaries& primaries) {
@@ -123,8 +122,8 @@ static void draw_image(GrDirectContext* dContext, SkCanvas* canvas, SkImage* ima
 
     // Now that we have called readPixels(), dump the raw pixels into an srgb image.
     sk_sp<SkColorSpace> srgb = SkColorSpace::MakeSRGB();
-    sk_sp<SkImage> raw = SkImage::MakeRasterData(dstInfo.makeColorSpace(srgb), data, rowBytes);
-    canvas->drawImage(raw.get(), 0.0f, 0.0f, nullptr);
+    sk_sp<SkImage> raw = SkImages::RasterFromData(dstInfo.makeColorSpace(srgb), data, rowBytes);
+    canvas->drawImage(raw.get(), 0.0f, 0.0f);
 }
 
 class ReadPixelsGM : public skiagm::GM {
@@ -165,7 +164,7 @@ protected:
                 }
                 auto dContext = GrAsDirectContext(canvas->recordingContext());
                 if (dContext) {
-                    image = image->makeTextureImage(dContext);
+                    image = SkImages::TextureFromImage(dContext, image);
                 }
                 if (image) {
                     for (SkColorType dstColorType : colorTypes) {

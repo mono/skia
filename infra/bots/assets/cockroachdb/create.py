@@ -10,12 +10,18 @@
 
 
 import argparse
+import os
 import shutil
 import subprocess
+import sys
+
+FILE_DIR = os.path.dirname(os.path.abspath(__file__))
+INFRA_BOTS_DIR = os.path.realpath(os.path.join(FILE_DIR, os.pardir, os.pardir))
+sys.path.insert(0, INFRA_BOTS_DIR)
 import utils
 
 
-URL = "https://binaries.cockroachdb.com/cockroach-v20.1.3.linux-amd64.tgz"
+URL = "https://binaries.cockroachdb.com/cockroach-v20.2.8.linux-amd64.tgz"
 
 def create_asset(target_dir):
   """Create the asset."""
@@ -24,7 +30,7 @@ def create_asset(target_dir):
     p2 = subprocess.Popen(["tar", "-xzf" "-"], stdin=p1.stdout)
     p1.stdout.close()  # Allow p1 to receive a SIGPIPE if p2 exits.
     _,_ = p2.communicate()
-    shutil.move('./cockroach-v20.1.3.linux-amd64/cockroach', target_dir)
+    shutil.move('./cockroach-v20.2.8.linux-amd64/cockroach', target_dir)
 
 
 def main():

@@ -203,7 +203,7 @@ static sk_sp<SkShader> make_grad(SkScalar width) {
     };
     SkPoint pts[] = {{0, 0}, {width, 0}};
 
-    return SkGradientShader::MakeLinear(pts, colors, nullptr, SK_ARRAY_COUNT(colors),
+    return SkGradientShader::MakeLinear(pts, colors, nullptr, std::size(colors),
                                         SkTileMode::kClamp);
 }
 
@@ -247,7 +247,7 @@ DEF_SIMPLE_GM(HSL_duck, canvas, 1110, 620) {
             p.setShader(nullptr);
             p.setBlendMode(mode);
             p.setAlphaf(src_a);
-            canvas->drawImageRect(src, r, &p);
+            canvas->drawImageRect(src, r, SkSamplingOptions(), &p);
 
             canvas->translate(r.width() + 10, 0);
         }

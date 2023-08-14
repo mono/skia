@@ -7,11 +7,13 @@
 
 package org.skia.skottie;
 
+import android.animation.Animator;
 import android.content.Context;
 import android.content.res.TypedArray;
 import android.graphics.Color;
 import android.net.Uri;
 import android.util.AttributeSet;
+import android.util.Log;
 import android.view.SurfaceView;
 import android.view.TextureView;
 
@@ -20,7 +22,7 @@ import android.view.ViewGroup;
 import android.widget.FrameLayout;
 import java.io.FileNotFoundException;
 import java.io.InputStream;
-import org.skia.skottie.SkottieRunner.SkottieAnimation;
+
 import org.skia.skottielib.R;
 
 public class SkottieView extends FrameLayout {
@@ -30,15 +32,49 @@ public class SkottieView extends FrameLayout {
     private int mBackgroundColor;
     // Repeat follows Animator API, infinite is represented by -1 (see Animator.DURATION_INFINITE)
     private int mRepeatCount;
-
     private static final int BACKING_VIEW_TEXTURE = 0;
     private static final int BACKING_VIEW_SURFACE = 1;
+    private final String LOG_TAG = "SkottieView";
+
+    /*
+     * Build function for SkottieViews backed with a texture view
+     * Is the same as calling for a default SkottieView
+     */
+    public SkottieView buildAsTexture(Context context) {
+        return new SkottieView(context);
+    }
+
+    /*
+     * Build function for SkottieViews backed with a surface view
+     * Backs the animation surface with a SurfaceView instead, requires background color
+     */
+    public SkottieView buildAsSurface(Context context, int backgroundColor) {
+        SkottieView s = new SkottieView(context);
+        s.mBackingView = new SurfaceView(context);
+        s.mBackgroundColor = backgroundColor;
+        return s;
+    }
+
+    // Basic SkottieView, backing view defaults to TextureView
+    public SkottieView(Context context) {
+        super(context);
+        mBackingView = new TextureView(context);
+        initBackingView();
+    }
+
+    public SkottieView(Context context, AttributeSet attrs) {
+        this(context, attrs, 0, 0);
+    }
+
+    public SkottieView(Context context, AttributeSet attrs, int defStyleAttr) {
+        this(context, attrs, defStyleAttr, 0);
+    }
 
     // SkottieView constructor when initialized in XML layout
-    public SkottieView(Context context, AttributeSet attrs) {
+    public SkottieView(Context context, AttributeSet attrs, int defStyleAttr, int defStyleRes) {
         super(context, attrs);
         TypedArray a = context.getTheme()
-            .obtainStyledAttributes(attrs, R.styleable.SkottieView, 0, 0);
+            .obtainStyledAttributes(attrs, R.styleable.SkottieView, defStyleAttr, defStyleRes);
         try {
             // set mRepeatCount
             mRepeatCount = a.getInteger(R.styleable.SkottieView_android_repeatCount, 0);
@@ -50,12 +86,12 @@ public class SkottieView extends FrameLayout {
                     mBackgroundColor = a.getColor(R.styleable.SkottieView_background_color, 0);
                     break;
                 case BACKING_VIEW_SURFACE:
-                    mBackingView = new SurfaceView(context);
-                    mBackgroundColor = a.getColor(R.styleable.SkottieView_background_color, -1);
-                    if (mBackgroundColor == -1) {
+                    if (!a.hasValue(R.styleable.SkottieView_background_color)) {
                         throw new RuntimeException("background_color attribute "
                             + "needed for SurfaceView");
                     }
+                    mBackingView = new SurfaceView(context);
+                    mBackgroundColor = a.getColor(R.styleable.SkottieView_background_color, -1);
                     if (Color.alpha(mBackgroundColor) != 255) {
                         throw new RuntimeException("background_color cannot be transparent");
                     }
@@ -71,20 +107,6 @@ public class SkottieView extends FrameLayout {
             }
         } finally {
             a.recycle();
-        }
-        initBackingView();
-    }
-    
-    // SkottieView builder constructor
-    private SkottieView(Context context, SkottieViewBuilder builder) {
-        super(context, builder.attrs, builder.defStyleAttr);
-        // create the backing view
-        if (builder.advancedFeatures) {
-            // backing view must be SurfaceView
-            mBackingView = new SurfaceView(context);
-        } else {
-            mBackingView = new TextureView(context);
-            ((TextureView) mBackingView).setOpaque(false);
         }
         initBackingView();
     }
@@ -111,67 +133,91 @@ public class SkottieView extends FrameLayout {
     }
 
     private SkottieAnimation setSourceHelper(InputStream inputStream) {
+        SkottieAnimation.Config config = null;
+        SkottieAnimation animation;
+        // if there is already an animation, save config and finalize it so as to not confuse GL
+        if (mAnimation != null) {
+            config = mAnimation.getBackingViewConfig();
+            try {
+                mAnimation.finalize();
+            } catch (Throwable t) {
+                Log.e(LOG_TAG, "existing animation couldn't finalize before setting new src");
+            }
+        }
         if (mBackingView instanceof TextureView) {
-            return SkottieRunner.getInstance()
+            animation = SkottieRunner.getInstance()
                 .createAnimation(((TextureView) mBackingView), inputStream, mBackgroundColor, mRepeatCount);
         } else {
-            return SkottieRunner.getInstance()
+            animation = SkottieRunner.getInstance()
                 .createAnimation(((SurfaceView) mBackingView), inputStream, mBackgroundColor, mRepeatCount);
         }
+        // restore config settings from previous animation if needed
+        if (config != null) {
+            animation.setBackingViewConfig(config);
+            animation.setProgress(0f);
+        }
+        return animation;
     }
 
     protected SkottieAnimation getSkottieAnimation() {
         return mAnimation;
     }
 
+    public void removeListener(Animator.AnimatorListener listener) {
+        mAnimation.removeListener(listener);
+    }
+
+    public void addListener(Animator.AnimatorListener listener) {
+        mAnimation.addListener(listener);
+    }
+
     // progress: a float from 0 to 1 representing the percent into the animation
     public void seek(float progress) {
-        mAnimation.setProgress(progress);
+        if(mAnimation != null) {
+            mAnimation.setProgress(progress);
+        }
     }
 
     public void play() {
-        mAnimation.resume();
+        if(mAnimation != null) {
+            mAnimation.resume();
+        }
     }
 
     public void pause() {
-        mAnimation.pause();
+        if(mAnimation != null) {
+            mAnimation.pause();
+        }
     }
 
     public void start() {
-        mAnimation.start();
+        if(mAnimation != null) {
+            mAnimation.start();
+        }
     }
 
     public void stop() {
-        mAnimation.end();
+        if(mAnimation != null) {
+            mAnimation.end();
+        }
     }
 
     public float getProgress() {
-        return mAnimation.getProgress();
+        if(mAnimation != null) {
+            return mAnimation.getProgress();
+        }
+        return -1;
     }
 
-    // Builder accessed by user to generate SkottieViews
-    public static class SkottieViewBuilder {
-        protected AttributeSet attrs;
-        protected int defStyleAttr;
+    public void setRepeatCount(int repeatCount) {
+        mRepeatCount = repeatCount;
+    }
 
-        // if true, backing view will be surface view
-        protected boolean advancedFeatures;
-        // TODO private variable backgroundColor
+    public void setBackgroundColor(int colorRGB) {
+        mBackgroundColor = colorRGB;
+    }
 
-        public void setAttrs(AttributeSet attrs) {
-          this.attrs = attrs;
-        }
-
-        public void setDefStyleAttr(int defStyleAttr) {
-          this.defStyleAttr = defStyleAttr;
-        }
-
-        public void setAdvancedFeatures(boolean advancedFeatures) {
-          this.advancedFeatures = advancedFeatures;
-        }
-
-        public SkottieView build(Context context) {
-          return new SkottieView(context, this);
-        }
+    static public void setMaxCacheSize(int maxCacheSize) {
+        SkottieRunner.getInstance().setMaxCacheSize(maxCacheSize);
     }
 }

@@ -7,17 +7,24 @@
 
 #include "tools/debugger/DebugLayerManager.h"
 
+#include "include/core/SkAlphaType.h"
+#include "include/core/SkColorSpace.h"
+#include "include/core/SkColorType.h"
 #include "include/core/SkImage.h"
 #include "include/core/SkImageInfo.h"
 #include "include/core/SkPicture.h"
+#include "include/core/SkRect.h"
 #include "include/core/SkSurface.h"
-#include "include/private/SkTHash.h"
+#include "include/core/SkTypes.h"
+#include "include/private/base/SkDebug.h"
+#include "src/core/SkTHash.h"
 #include "tools/debugger/DebugCanvas.h"
 
+#include <cstdint>
 #include <memory>
-#include <vector>
-#include <tuple>
 #include <unordered_map>
+#include <utility>
+#include <vector>
 
 void DebugLayerManager::setCommand(int nodeId, int frame, int command) {
   auto* drawEvent = fDraws.find({frame, nodeId});
@@ -31,8 +38,8 @@ void DebugLayerManager::setCommand(int nodeId, int frame, int command) {
   // Invalidate stored images that depended on this combination of node and frame.
   // actually this does all of the events for this nodeId, but close enough.
   auto relevantFrames = listFramesForNode(nodeId);
-  for (const auto& frame : relevantFrames) {
-    fDraws[{frame, nodeId}].image = nullptr;
+  for (const auto& f : relevantFrames) {
+    fDraws[{f, nodeId}].image = nullptr;
   }
 }
 
@@ -66,10 +73,10 @@ void DebugLayerManager::storeSkPicture(int nodeId, int frame, sk_sp<SkPicture> p
   keys.push_back(k);
 }
 
-void DebugLayerManager::drawLayerEventTo(SkCanvas* canvas, const int nodeId, const int frame) {
+void DebugLayerManager::drawLayerEventTo(SkSurface* surface, const int nodeId, const int frame) {
     auto& evt = fDraws[{frame, nodeId}];
-    evt.debugCanvas->drawTo(canvas, evt.command);
-    canvas->flush();
+    evt.debugCanvas->drawTo(surface->getCanvas(), evt.command);
+    surface->flush();
 }
 
 sk_sp<SkImage> DebugLayerManager::getLayerAsImage(const int nodeId, const int frame) {
@@ -100,14 +107,13 @@ sk_sp<SkImage> DebugLayerManager::getLayerAsImage(const int nodeId, const int fr
   // the color type and alpha type are chosen here to match wasm-skp-debugger/cpu.js which was
   // chosen to match the capabilities of HTML canvas, which this ultimately has to be drawn into.
   // TODO(nifong): introduce a method of letting the user choose the backend for this.
-  auto surface = SkSurface::MakeRaster(SkImageInfo::Make(drawEvent.layerBounds,
-    kRGBA_8888_SkColorType, kUnpremul_SkAlphaType, nullptr));
+  auto surface = SkSurfaces::Raster(SkImageInfo::Make(
+          drawEvent.layerBounds, kRGBA_8888_SkColorType, kUnpremul_SkAlphaType, nullptr));
   // draw everything from the last full redraw up to the current frame.
   // other frames drawn are partial, meaning they were clipped to not completely cover the layer.
   // count back up with i
-  auto* canvas = surface->getCanvas();
   for (; i<relevantFrames.size() && relevantFrames[i]<=frameN; i++) {
-    drawLayerEventTo(canvas, nodeId, relevantFrames[i]);
+    drawLayerEventTo(surface.get(), nodeId, relevantFrames[i]);
   }
   drawEvent.image = surface->makeImageSnapshot();
   return drawEvent.image;

@@ -5,6 +5,9 @@
  * found in the LICENSE file.
  */
 
+#include "include/core/SkPathBuilder.h"
+#include "include/private/base/SkAssert.h"
+#include "include/utils/SkCustomTypeface.h"
 #include "src/core/SkFontDescriptor.h"
 #include "tools/ToolUtils.h"
 #include "tools/fonts/TestFontMgr.h"
@@ -17,12 +20,6 @@
 #include <vector>
 
 namespace {
-
-#include "test_font_monospace.inc"
-#include "test_font_sans_serif.inc"
-#include "test_font_serif.inc"
-
-#include "test_font_index.inc"
 
 class FontStyleSet final : public SkFontStyleSet {
 public:
@@ -46,11 +43,11 @@ public:
         }
     }
 
-    SkTypeface* createTypeface(int index) override {
-        return SkRef(fTypefaces[index].fTypeface.get());
+    sk_sp<SkTypeface> createTypeface(int index) override {
+        return fTypefaces[index].fTypeface;
     }
 
-    SkTypeface* matchStyle(const SkFontStyle& pattern) override {
+    sk_sp<SkTypeface> matchStyle(const SkFontStyle& pattern) override {
         return this->matchStyleCSS3(pattern);
     }
 
@@ -63,39 +60,24 @@ public:
 class FontMgr final : public SkFontMgr {
 public:
     FontMgr() {
-        for (const auto& sub : gSubFonts) {
-            sk_sp<TestTypeface> typeface =
-                    sk_make_sp<TestTypeface>(sk_make_sp<SkTestFont>(sub.fFont), sub.fStyle);
-            bool defaultFamily = false;
-            if (&sub - gSubFonts == gDefaultFontIndex) {
-                defaultFamily    = true;
-                fDefaultTypeface = typeface;
-            }
-            bool found = false;
-            for (const auto& family : fFamilies) {
-                if (family->getFamilyName().equals(sub.fFamilyName)) {
-                    family->fTypefaces.emplace_back(
-                            std::move(typeface), sub.fStyle, sub.fStyleName);
-                    found = true;
-                    if (defaultFamily) {
-                        fDefaultFamily = family;
-                    }
-                    break;
-                }
-            }
-            if (!found) {
-                fFamilies.emplace_back(sk_make_sp<FontStyleSet>(sub.fFamilyName));
-                fFamilies.back()->fTypefaces.emplace_back(
-                        // NOLINTNEXTLINE(bugprone-use-after-move)
-                        std::move(typeface),
-                        sub.fStyle,
-                        sub.fStyleName);
-                if (defaultFamily) {
-                    fDefaultFamily = fFamilies.back();
+        auto&& list = TestTypeface::Typefaces();
+        for (auto&& family : list.families) {
+            auto&& ss = fFamilies.emplace_back(sk_make_sp<FontStyleSet>(family.name));
+            for (auto&& face : family.faces) {
+                ss->fTypefaces.emplace_back(face.typeface, face.typeface->fontStyle(), face.name);
+                if (face.isDefault) {
+                    fDefaultFamily = ss;
+                    fDefaultTypeface = face.typeface;
                 }
             }
         }
-#ifdef SK_XML
+        if (!fDefaultFamily) {
+            SkASSERTF(false, "expected TestTypeface to return a default");
+            fDefaultFamily = fFamilies[0];
+            fDefaultTypeface = fDefaultFamily->fTypefaces[0].fTypeface;
+        }
+
+#if defined(SK_ENABLE_SVG)
         fFamilies.emplace_back(sk_make_sp<FontStyleSet>("Emoji"));
         fFamilies.back()->fTypefaces.emplace_back(
                 TestSVGTypeface::Default(), SkFontStyle::Normal(), "Normal");
@@ -112,12 +94,12 @@ public:
         *familyName = fFamilies[index]->getFamilyName();
     }
 
-    SkFontStyleSet* onCreateStyleSet(int index) const override {
+    sk_sp<SkFontStyleSet> onCreateStyleSet(int index) const override {
         sk_sp<SkFontStyleSet> ref = fFamilies[index];
-        return ref.release();
+        return ref;
     }
 
-    SkFontStyleSet* onMatchFamily(const char familyName[]) const override {
+    sk_sp<SkFontStyleSet> onMatchFamily(const char familyName[]) const override {
         if (familyName) {
             if (strstr(familyName, "ono")) {
                 return this->createStyleSet(0);
@@ -128,7 +110,7 @@ public:
             if (strstr(familyName, "erif")) {
                 return this->createStyleSet(2);
             }
-#ifdef SK_XML
+#if defined(SK_ENABLE_SVG)
             if (strstr(familyName, "oji")) {
                 return this->createStyleSet(6);
             }
@@ -140,27 +122,21 @@ public:
         return nullptr;
     }
 
-    SkTypeface* onMatchFamilyStyle(const char         familyName[],
-                                   const SkFontStyle& style) const override {
+    sk_sp<SkTypeface> onMatchFamilyStyle(const char         familyName[],
+                                         const SkFontStyle& style) const override {
         sk_sp<SkFontStyleSet> styleSet(this->matchFamily(familyName));
         return styleSet->matchStyle(style);
     }
 
-    SkTypeface* onMatchFamilyStyleCharacter(const char         familyName[],
-                                            const SkFontStyle& style,
-                                            const char*        bcp47[],
-                                            int                bcp47Count,
-                                            SkUnichar          character) const override {
+    sk_sp<SkTypeface> onMatchFamilyStyleCharacter(const char         familyName[],
+                                                  const SkFontStyle& style,
+                                                  const char*        bcp47[],
+                                                  int                bcp47Count,
+                                                  SkUnichar          character) const override {
         (void)bcp47;
         (void)bcp47Count;
         (void)character;
         return this->matchFamilyStyle(familyName, style);
-    }
-
-    SkTypeface* onMatchFaceStyle(const SkTypeface* tf, const SkFontStyle& style) const override {
-        SkString familyName;
-        tf->getFamilyName(&familyName);
-        return this->matchFamilyStyle(familyName.c_str(), style);
     }
 
     sk_sp<SkTypeface> onMakeFromData(sk_sp<SkData>, int ttcIndex) const override { return nullptr; }
@@ -170,9 +146,6 @@ public:
     }
     sk_sp<SkTypeface> onMakeFromStreamArgs(std::unique_ptr<SkStreamAsset>,
                                            const SkFontArguments&) const override {
-        return nullptr;
-    }
-    sk_sp<SkTypeface> onMakeFromFontData(std::unique_ptr<SkFontData>) const override {
         return nullptr;
     }
     sk_sp<SkTypeface> onMakeFromFile(const char path[], int ttcIndex) const override {

@@ -9,6 +9,8 @@
 
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkSurface.h"
+#include "include/ports/SkCFObject.h"
+#include "include/private/gpu/ganesh/GrMtlTypesPriv.h"
 
 #include "tools/sk_app/WindowContext.h"
 
@@ -23,11 +25,13 @@ public:
 
     bool isValid() override { return fValid; }
 
-    void swapBuffers() override;
-
     void setDisplayParams(const DisplayParams& params) override;
 
+    void activate(bool isActive) override;
+
 protected:
+    static NSURL* CacheURL();
+
     MetalWindowContext(const DisplayParams&);
     // This should be called by subclass constructor. It is also called when window/display
     // parameters change. This will in turn call onInitializeContext().
@@ -40,11 +44,17 @@ protected:
     void destroyContext();
     virtual void onDestroyContext() = 0;
 
+    void onSwapBuffers() override;
+
     bool                        fValid;
-    id<MTLDevice>               fDevice;
-    id<MTLCommandQueue>         fQueue;
+    sk_cfp<id<MTLDevice>>       fDevice;
+    sk_cfp<id<MTLCommandQueue>> fQueue;
     CAMetalLayer*               fMetalLayer;
     GrMTLHandle                 fDrawableHandle;
+#if SKGPU_GRAPHITE_METAL_SDK_VERSION >= 230
+    // wrapping this in sk_cfp throws up an availability warning, so we'll track lifetime manually
+    id<MTLBinaryArchive>        fPipelineArchive SK_API_AVAILABLE(macos(11.0),ios(14.0),tvos(14.0));
+#endif
 };
 
 }   // namespace sk_app

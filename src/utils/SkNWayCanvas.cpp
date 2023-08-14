@@ -5,9 +5,42 @@
  * found in the LICENSE file.
  */
 
-#include "include/core/SkShader.h"
 #include "include/utils/SkNWayCanvas.h"
+
+#include "include/core/SkCanvas.h"
+#include "include/core/SkColor.h"
+#include "include/core/SkMatrix.h"
+#include "include/core/SkPoint.h"
+#include "include/core/SkRect.h"
+#include "include/core/SkRefCnt.h"
+#include "include/core/SkScalar.h"
+#include "include/core/SkShader.h"
+#include "include/core/SkTypes.h"
+#include "include/private/base/SkTDArray.h"
+#include "include/utils/SkNoDrawCanvas.h"
 #include "src/core/SkCanvasPriv.h"
+
+#include <algorithm>
+#include <iterator>
+#include <utility>
+
+namespace sktext {
+class GlyphRunList;
+}
+
+class SkData;
+class SkDrawable;
+class SkImage;
+class SkPaint;
+class SkPath;
+class SkPicture;
+class SkRRect;
+class SkRegion;
+class SkTextBlob;
+class SkVertices;
+enum class SkBlendMode;
+enum class SkClipOp;
+struct SkDrawShadowRec;
 
 SkNWayCanvas::SkNWayCanvas(int width, int height) : INHERITED(width, height) {}
 
@@ -16,15 +49,21 @@ SkNWayCanvas::~SkNWayCanvas() {
 }
 
 void SkNWayCanvas::addCanvas(SkCanvas* canvas) {
+    if (!fList.empty()) {
+        // We are using the nway canvas as a wrapper for the originally added canvas, and the device
+        // on the nway may contradict calls for the device on this canvas. So, to add a second
+        // canvas, the devices on the first canvas, and the nway base device must be different.
+        SkASSERT(fList[0]->baseDevice() != this->baseDevice());
+    }
     if (canvas) {
         *fList.append() = canvas;
     }
 }
 
 void SkNWayCanvas::removeCanvas(SkCanvas* canvas) {
-    int index = fList.find(canvas);
-    if (index >= 0) {
-        fList.removeShuffle(index);
+    auto found = std::find(fList.begin(), fList.end(), canvas);
+    if (found != fList.end()) {
+        fList.removeShuffle(std::distance(fList.begin(), found));
     }
 }
 
@@ -41,7 +80,7 @@ public:
         fIndex = 0;
     }
     bool next() {
-        if (fIndex < fList.count()) {
+        if (fIndex < fList.size()) {
             fCanvas = fList[fIndex++];
             return true;
         }
@@ -93,14 +132,6 @@ void SkNWayCanvas::willRestore() {
     this->INHERITED::willRestore();
 }
 
-void SkNWayCanvas::onMarkCTM(const char* name) {
-    Iter iter(fList);
-    while (iter.next()) {
-        iter->markCTM(name);
-    }
-    this->INHERITED::onMarkCTM(name);
-}
-
 void SkNWayCanvas::didConcat44(const SkM44& m) {
     Iter iter(fList);
     while (iter.next()) {
@@ -108,14 +139,7 @@ void SkNWayCanvas::didConcat44(const SkM44& m) {
     }
 }
 
-void SkNWayCanvas::didConcat(const SkMatrix& matrix) {
-    Iter iter(fList);
-    while (iter.next()) {
-        iter->concat(matrix);
-    }
-}
-
-void SkNWayCanvas::didSetMatrix(const SkMatrix& matrix) {
+void SkNWayCanvas::didSetM44(const SkM44& matrix) {
     Iter iter(fList);
     while (iter.next()) {
         iter->setMatrix(matrix);
@@ -174,6 +198,14 @@ void SkNWayCanvas::onClipRegion(const SkRegion& deviceRgn, SkClipOp op) {
         iter->clipRegion(deviceRgn, op);
     }
     this->INHERITED::onClipRegion(deviceRgn, op);
+}
+
+void SkNWayCanvas::onResetClip() {
+    Iter iter(fList);
+    while (iter.next()) {
+        SkCanvasPriv::ResetClip(iter.get());
+    }
+    this->INHERITED::onResetClip();
 }
 
 void SkNWayCanvas::onDrawPaint(const SkPaint& paint) {
@@ -248,35 +280,47 @@ void SkNWayCanvas::onDrawPath(const SkPath& path, const SkPaint& paint) {
     }
 }
 
-void SkNWayCanvas::onDrawImage(const SkImage* image, SkScalar left, SkScalar top,
-                               const SkPaint* paint) {
+void SkNWayCanvas::onDrawImage2(const SkImage* image, SkScalar left, SkScalar top,
+                                const SkSamplingOptions& sampling, const SkPaint* paint) {
     Iter iter(fList);
     while (iter.next()) {
-        iter->drawImage(image, left, top, paint);
+        iter->drawImage(image, left, top, sampling, paint);
     }
 }
 
-void SkNWayCanvas::onDrawImageRect(const SkImage* image, const SkRect* src, const SkRect& dst,
-                                   const SkPaint* paint, SrcRectConstraint constraint) {
+void SkNWayCanvas::onDrawImageRect2(const SkImage* image, const SkRect& src, const SkRect& dst,
+                                    const SkSamplingOptions& sampling, const SkPaint* paint,
+                                    SrcRectConstraint constraint) {
     Iter iter(fList);
     while (iter.next()) {
-        iter->legacy_drawImageRect(image, src, dst, paint, constraint);
+        iter->drawImageRect(image, src, dst, sampling, paint, constraint);
     }
 }
 
-void SkNWayCanvas::onDrawImageNine(const SkImage* image, const SkIRect& center, const SkRect& dst,
-                                   const SkPaint* paint) {
+void SkNWayCanvas::onDrawImageLattice2(const SkImage* image, const Lattice& lattice,
+                                       const SkRect& dst, SkFilterMode filter,
+                                       const SkPaint* paint) {
     Iter iter(fList);
     while (iter.next()) {
-        iter->drawImageNine(image, center, dst, paint);
+        iter->drawImageLattice(image, lattice, dst, filter, paint);
     }
 }
 
-void SkNWayCanvas::onDrawImageLattice(const SkImage* image, const Lattice& lattice,
-                                      const SkRect& dst, const SkPaint* paint) {
+void SkNWayCanvas::onDrawAtlas2(const SkImage* image, const SkRSXform xform[], const SkRect tex[],
+                                const SkColor colors[], int count, SkBlendMode bmode,
+                                const SkSamplingOptions& sampling, const SkRect* cull,
+                                const SkPaint* paint) {
     Iter iter(fList);
     while (iter.next()) {
-        iter->drawImageLattice(image, lattice, dst, paint);
+        iter->drawAtlas(image, xform, tex, colors, count, bmode, sampling, cull, paint);
+    }
+}
+
+void SkNWayCanvas::onDrawGlyphRunList(const sktext::GlyphRunList& list,
+                                      const SkPaint &paint) {
+    Iter iter(fList);
+    while (iter.next()) {
+        iter->onDrawGlyphRunList(list, paint);
     }
 }
 
@@ -287,6 +331,15 @@ void SkNWayCanvas::onDrawTextBlob(const SkTextBlob* blob, SkScalar x, SkScalar y
         iter->drawTextBlob(blob, x, y, paint);
     }
 }
+
+#if defined(SK_GANESH)
+void SkNWayCanvas::onDrawSlug(const sktext::gpu::Slug* slug) {
+    Iter iter(fList);
+    while (iter.next()) {
+        iter->drawSlug(slug);
+    }
+}
+#endif
 
 void SkNWayCanvas::onDrawPicture(const SkPicture* picture, const SkMatrix* matrix,
                                  const SkPaint* paint) {
@@ -320,15 +373,6 @@ void SkNWayCanvas::onDrawPatch(const SkPoint cubics[12], const SkColor colors[4]
     }
 }
 
-void SkNWayCanvas::onDrawAtlas(const SkImage* image, const SkRSXform xform[], const SkRect tex[],
-                               const SkColor colors[], int count, SkBlendMode bmode,
-                               const SkRect* cull, const SkPaint* paint) {
-    Iter iter(fList);
-    while (iter.next()) {
-        iter->drawAtlas(image, xform, tex, colors, count, bmode, cull, paint);
-    }
-}
-
 void SkNWayCanvas::onDrawShadowRec(const SkPath& path, const SkDrawShadowRec& rec) {
     Iter iter(fList);
     while (iter.next()) {
@@ -351,13 +395,14 @@ void SkNWayCanvas::onDrawEdgeAAQuad(const SkRect& rect, const SkPoint clip[4],
     }
 }
 
-void SkNWayCanvas::onDrawEdgeAAImageSet(const ImageSetEntry set[], int count,
-                                        const SkPoint dstClips[], const SkMatrix preViewMatrices[],
-                                        const SkPaint* paint, SrcRectConstraint constraint) {
+void SkNWayCanvas::onDrawEdgeAAImageSet2(const ImageSetEntry set[], int count,
+                                         const SkPoint dstClips[], const SkMatrix preViewMatrices[],
+                                         const SkSamplingOptions& sampling, const SkPaint* paint,
+                                         SrcRectConstraint constraint) {
     Iter iter(fList);
     while (iter.next()) {
         iter->experimental_DrawEdgeAAImageSet(
-                set, count, dstClips, preViewMatrices, paint, constraint);
+                set, count, dstClips, preViewMatrices, sampling, paint, constraint);
     }
 }
 

@@ -9,19 +9,38 @@
 
 #include "include/core/SkTypes.h"
 
-#if SK_SUPPORT_GPU && defined(SK_VULKAN)
+#if defined(SK_GANESH) && defined(SK_VULKAN)
 
+#include "include/core/SkAlphaType.h"
+#include "include/core/SkBlendMode.h"
+#include "include/core/SkBlurTypes.h"
 #include "include/core/SkCanvas.h"
+#include "include/core/SkColor.h"
+#include "include/core/SkColorSpace.h"
+#include "include/core/SkColorType.h"
+#include "include/core/SkImageInfo.h"
 #include "include/core/SkMaskFilter.h"
 #include "include/core/SkPaint.h"
+#include "include/core/SkPath.h"
+#include "include/core/SkRect.h"
+#include "include/core/SkRefCnt.h"
 #include "include/core/SkSurface.h"
+#include "include/core/SkSurfaceProps.h"
+#include "include/core/SkTypes.h"
+#include "include/gpu/GpuTypes.h"
 #include "include/gpu/GrBackendSurface.h"
-#include "include/gpu/vk/GrVkBackendContext.h"
-#include "include/gpu/vk/GrVkExtensions.h"
+#include "include/gpu/GrDirectContext.h"
+#include "include/gpu/GrTypes.h"
+#include "include/gpu/ganesh/SkSurfaceGanesh.h"
+#include "tests/CtsEnforcement.h"
 #include "tests/Test.h"
 #include "tools/gpu/BackendSurfaceFactory.h"
-#include "tools/gpu/GrContextFactory.h"
 #include "tools/gpu/vk/VkTestHelper.h"
+
+#include <memory>
+#include <utility>
+
+struct GrContextOptions;
 
 static sk_sp<SkSurface> create_protected_sksurface(GrDirectContext* dContext,
                                                    skiatest::Reporter* reporter,
@@ -55,32 +74,41 @@ static sk_sp<SkSurface> create_protected_sksurface(GrDirectContext* dContext,
         return nullptr;
     }
     if (textureable) {
-        GrBackendTexture backendTex =
-                surface->getBackendTexture(SkSurface::kFlushRead_BackendHandleAccess);
+        GrBackendTexture backendTex = SkSurfaces::GetBackendTexture(
+                surface.get(), SkSurfaces::BackendHandleAccess::kFlushRead);
         REPORTER_ASSERT(reporter, backendTex.isValid());
         REPORTER_ASSERT(reporter, backendTex.isProtected());
     } else {
-        GrBackendRenderTarget backendRT =
-                surface->getBackendRenderTarget(SkSurface::kFlushRead_BackendHandleAccess);
+        GrBackendRenderTarget backendRT = SkSurfaces::GetBackendRenderTarget(
+                surface.get(), SkSurfaces::BackendHandleAccess::kFlushRead);
         REPORTER_ASSERT(reporter, backendRT.isValid());
         REPORTER_ASSERT(reporter, backendRT.isProtected());
     }
     return surface;
 }
 
-DEF_GPUTEST(VkProtectedContext_CreateNonprotectedContext, reporter, options) {
+DEF_GANESH_TEST(VkProtectedContext_CreateNonprotectedContext,
+                reporter,
+                options,
+                CtsEnforcement::kNever) {
     auto nonprotectedTestHelper = std::make_unique<VkTestHelper>(false);
     REPORTER_ASSERT(reporter, nonprotectedTestHelper->init());
 }
 
-DEF_GPUTEST(VkProtectedContext_CreateProtectedContext, reporter, options) {
+DEF_GANESH_TEST(VkProtectedContext_CreateProtectedContext,
+                reporter,
+                options,
+                CtsEnforcement::kNever) {
     auto protectedTestHelper = std::make_unique<VkTestHelper>(true);
     if (!protectedTestHelper->init()) {
         return;
     }
 }
 
-DEF_GPUTEST(VkProtectedContext_CreateProtectedSkSurface, reporter, options) {
+DEF_GANESH_TEST(VkProtectedContext_CreateProtectedSkSurface,
+                reporter,
+                options,
+                CtsEnforcement::kNever) {
     auto protectedTestHelper = std::make_unique<VkTestHelper>(true);
     if (!protectedTestHelper->init()) {
         return;
@@ -92,7 +120,10 @@ DEF_GPUTEST(VkProtectedContext_CreateProtectedSkSurface, reporter, options) {
     create_protected_sksurface(dContext, reporter, /*textureable*/ false);
 }
 
-DEF_GPUTEST(VkProtectedContext_CreateNonprotectedTextureInProtectedContext, reporter, options) {
+DEF_GANESH_TEST(VkProtectedContext_CreateNonprotectedTextureInProtectedContext,
+                reporter,
+                options,
+                CtsEnforcement::kNever) {
     auto protectedTestHelper = std::make_unique<VkTestHelper>(true);
     if (!protectedTestHelper->init()) {
         return;
@@ -108,7 +139,10 @@ DEF_GPUTEST(VkProtectedContext_CreateNonprotectedTextureInProtectedContext, repo
     REPORTER_ASSERT(reporter, !backendTex.isValid());
 }
 
-DEF_GPUTEST(VkProtectedContext_CreateProtectedTextureInNonprotectedContext, reporter, options) {
+DEF_GANESH_TEST(VkProtectedContext_CreateProtectedTextureInNonprotectedContext,
+                reporter,
+                options,
+                CtsEnforcement::kNever) {
     auto protectedTestHelper = std::make_unique<VkTestHelper>(false);
     if (!protectedTestHelper->init()) {
         return;
@@ -118,13 +152,19 @@ DEF_GPUTEST(VkProtectedContext_CreateProtectedTextureInNonprotectedContext, repo
     const int kW = 8;
     const int kH = 8;
     GrBackendTexture backendTex =
-        protectedTestHelper->directContext()->createBackendTexture(
-            kW, kH, kRGBA_8888_SkColorType, GrMipmapped::kNo, GrRenderable::kNo,
-            GrProtected::kYes);
+            protectedTestHelper->directContext()->createBackendTexture(kW,
+                                                                       kH,
+                                                                       kRGBA_8888_SkColorType,
+                                                                       GrMipmapped::kNo,
+                                                                       GrRenderable::kNo,
+                                                                       GrProtected::kYes);
     REPORTER_ASSERT(reporter, !backendTex.isValid());
 }
 
-DEF_GPUTEST(VkProtectedContext_ReadFromProtectedSurface, reporter, options) {
+DEF_GANESH_TEST(VkProtectedContext_ReadFromProtectedSurface,
+                reporter,
+                options,
+                CtsEnforcement::kNever) {
     auto protectedTestHelper = std::make_unique<VkTestHelper>(true);
     if (!protectedTestHelper->init()) {
         return;
@@ -147,11 +187,14 @@ static void async_callback(void* c, std::unique_ptr<const SkSurface::AsyncReadRe
     auto context = static_cast<AsyncContext*>(c);
     context->fResult = std::move(result);
     context->fCalled = true;
-};
+}
 
 }  // anonymous namespace
 
-DEF_GPUTEST(VkProtectedContext_AsyncReadFromProtectedSurface, reporter, options) {
+DEF_GANESH_TEST(VkProtectedContext_AsyncReadFromProtectedSurface,
+                reporter,
+                options,
+                CtsEnforcement::kNever) {
     auto protectedTestHelper = std::make_unique<VkTestHelper>(true);
     if (!protectedTestHelper->init()) {
         return;
@@ -168,7 +211,8 @@ DEF_GPUTEST(VkProtectedContext_AsyncReadFromProtectedSurface, reporter, options)
                                       SkColorSpace::MakeSRGB());
     surface->asyncRescaleAndReadPixelsYUV420(kIdentity_SkYUVColorSpace, SkColorSpace::MakeSRGB(),
                                              image_info.bounds(), image_info.dimensions(),
-                                             SkSurface::RescaleGamma::kSrc, kNone_SkFilterQuality,
+                                             SkSurface::RescaleGamma::kSrc,
+                                             SkSurface::RescaleMode::kNearest,
                                              &async_callback, &cbContext);
     dContext->submit();
     while (!cbContext.fCalled) {
@@ -177,7 +221,7 @@ DEF_GPUTEST(VkProtectedContext_AsyncReadFromProtectedSurface, reporter, options)
     REPORTER_ASSERT(reporter, !cbContext.fResult);
 }
 
-DEF_GPUTEST(VkProtectedContext_DrawRectangle, reporter, options) {
+DEF_GANESH_TEST(VkProtectedContext_DrawRectangle, reporter, options, CtsEnforcement::kNever) {
     auto protectedTestHelper = std::make_unique<VkTestHelper>(true);
     if (!protectedTestHelper->init()) {
         return;
@@ -193,7 +237,10 @@ DEF_GPUTEST(VkProtectedContext_DrawRectangle, reporter, options) {
     canvas->drawRect(SkRect::MakeWH(4, 4), paint);
 }
 
-DEF_GPUTEST(VkProtectedContext_DrawRectangleWithAntiAlias, reporter, options) {
+DEF_GANESH_TEST(VkProtectedContext_DrawRectangleWithAntiAlias,
+                reporter,
+                options,
+                CtsEnforcement::kNever) {
     auto protectedTestHelper = std::make_unique<VkTestHelper>(true);
     if (!protectedTestHelper->init()) {
         return;
@@ -210,7 +257,10 @@ DEF_GPUTEST(VkProtectedContext_DrawRectangleWithAntiAlias, reporter, options) {
     canvas->drawRect(SkRect::MakeWH(4, 4), paint);
 }
 
-DEF_GPUTEST(VkProtectedContext_DrawRectangleWithBlendMode, reporter, options) {
+DEF_GANESH_TEST(VkProtectedContext_DrawRectangleWithBlendMode,
+                reporter,
+                options,
+                CtsEnforcement::kNever) {
     auto protectedTestHelper = std::make_unique<VkTestHelper>(true);
     if (!protectedTestHelper->init()) {
         return;
@@ -227,7 +277,10 @@ DEF_GPUTEST(VkProtectedContext_DrawRectangleWithBlendMode, reporter, options) {
     canvas->drawRect(SkRect::MakeWH(4, 4), paint);
 }
 
-DEF_GPUTEST(VkProtectedContext_DrawRectangleWithFilter, reporter, options) {
+DEF_GANESH_TEST(VkProtectedContext_DrawRectangleWithFilter,
+                reporter,
+                options,
+                CtsEnforcement::kNever) {
     auto protectedTestHelper = std::make_unique<VkTestHelper>(true);
     if (!protectedTestHelper->init()) {
         return;
@@ -246,7 +299,7 @@ DEF_GPUTEST(VkProtectedContext_DrawRectangleWithFilter, reporter, options) {
     canvas->drawRect(SkRect::MakeWH(4, 4), paint);
 }
 
-DEF_GPUTEST(VkProtectedContext_DrawThinPath, reporter, options) {
+DEF_GANESH_TEST(VkProtectedContext_DrawThinPath, reporter, options, CtsEnforcement::kNever) {
     auto protectedTestHelper = std::make_unique<VkTestHelper>(true);
     if (!protectedTestHelper->init()) {
         return;
@@ -265,7 +318,7 @@ DEF_GPUTEST(VkProtectedContext_DrawThinPath, reporter, options) {
     canvas->drawPath(SkPath().moveTo(4, 4).lineTo(6, 6), paint);
 }
 
-DEF_GPUTEST(VkProtectedContext_SaveLayer, reporter, options) {
+DEF_GANESH_TEST(VkProtectedContext_SaveLayer, reporter, options, CtsEnforcement::kNever) {
     auto protectedTestHelper = std::make_unique<VkTestHelper>(true);
     if (!protectedTestHelper->init()) {
         return;
@@ -283,8 +336,10 @@ DEF_GPUTEST(VkProtectedContext_SaveLayer, reporter, options) {
     canvas->restore();
 }
 
-
-DEF_GPUTEST(VkProtectedContext_DrawProtectedImageOnProtectedSurface, reporter, options) {
+DEF_GANESH_TEST(VkProtectedContext_DrawProtectedImageOnProtectedSurface,
+                reporter,
+                options,
+                CtsEnforcement::kNever) {
     auto protectedTestHelper = std::make_unique<VkTestHelper>(true);
     if (!protectedTestHelper->init()) {
         return;
@@ -306,31 +361,4 @@ DEF_GPUTEST(VkProtectedContext_DrawProtectedImageOnProtectedSurface, reporter, o
     canvas->drawImage(image, 0, 0);
 }
 
-//////////////////////////////////////////////////////////////////////////////////////////////////
-// Test out DDLs using a protected Vulkan context
-
-void DDLMakeRenderTargetTestImpl(GrDirectContext*, skiatest::Reporter*);
-
-DEF_GPUTEST(VkProtectedContext_DDLMakeRenderTargetTest, reporter, ctxInfo) {
-    auto protectedTestHelper = std::make_unique<VkTestHelper>(true);
-    if (!protectedTestHelper->init()) {
-        return;
-    }
-    REPORTER_ASSERT(reporter, protectedTestHelper->directContext() != nullptr);
-
-    DDLMakeRenderTargetTestImpl(protectedTestHelper->directContext(), reporter);
-}
-
-void DDLSurfaceCharacterizationTestImpl(GrDirectContext*, skiatest::Reporter*);
-
-DEF_GPUTEST(VkProtectedContext_DDLSurfaceCharacterizationTest, reporter, ctxInfo) {
-    auto protectedTestHelper = std::make_unique<VkTestHelper>(true);
-    if (!protectedTestHelper->init()) {
-        return;
-    }
-    REPORTER_ASSERT(reporter, protectedTestHelper->directContext() != nullptr);
-
-    DDLSurfaceCharacterizationTestImpl(protectedTestHelper->directContext(), reporter);
-}
-
-#endif  // SK_SUPPORT_GPU && defined(SK_VULKAN)
+#endif  // defined(SK_GANESH) && defined(SK_VULKAN)

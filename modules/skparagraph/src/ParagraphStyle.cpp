@@ -2,9 +2,8 @@
 
 #include "modules/skparagraph/include/DartTypes.h"
 #include "modules/skparagraph/include/ParagraphStyle.h"
-#include "modules/skshaper/src/SkUnicode.h"
+#include "src/base/SkUTF.h"
 #include "src/core/SkStringUtils.h"
-#include "src/utils/SkUTF.h"
 
 namespace skia {
 namespace textlayout {
@@ -16,6 +15,7 @@ StrutStyle::StrutStyle() {
     fLeading = -1;
     fForceHeight = false;
     fHeightOverride = false;
+    fHalfLeading = false;
     fEnabled = false;
 }
 
@@ -26,6 +26,7 @@ ParagraphStyle::ParagraphStyle() {
     fHeight = 1;
     fTextHeightBehavior = TextHeightBehavior::kAll;
     fHintingIsOn = true;
+    fReplaceTabCharacters = false;
 }
 
 TextAlign ParagraphStyle::effective_align() const {

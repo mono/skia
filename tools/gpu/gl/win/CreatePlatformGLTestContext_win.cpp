@@ -57,7 +57,7 @@ ATOM WinGLTestContext::gWC = 0;
 WinGLTestContext::WinGLTestContext(GrGLStandard forcedGpuAPI, WinGLTestContext* shareContext)
     : fWindow(nullptr)
     , fDeviceContext(nullptr)
-    , fGlRenderContext(0)
+    , fGlRenderContext(nullptr)
     , fPbufferContext(nullptr) {
     HINSTANCE hInstance = (HINSTANCE)GetModuleHandle(nullptr);
 
@@ -96,11 +96,12 @@ WinGLTestContext::WinGLTestContext(GrGLStandard forcedGpuAPI, WinGLTestContext* 
         this->destroyGLContext();
         return;
     }
-    // Requesting a Core profile would bar us from using NVPR. So we request
-    // compatibility profile or GL ES.
+
+    // We request a compatibility context since glMultiDrawArraysIndirect, apparently, doesn't
+    // work correctly on Intel Iris GPUs with the core profile (skbug.com/11787).
     SkWGLContextRequest contextType =
-        kGLES_GrGLStandard == forcedGpuAPI ?
-        kGLES_SkWGLContextRequest : kGLPreferCompatibilityProfile_SkWGLContextRequest;
+        kGLES_GrGLStandard == forcedGpuAPI ? kGLES_SkWGLContextRequest
+                                           : kGLPreferCompatibilityProfile_SkWGLContextRequest;
 
     HGLRC winShareContext = nullptr;
     if (shareContext) {
@@ -122,9 +123,9 @@ WinGLTestContext::WinGLTestContext(GrGLStandard forcedGpuAPI, WinGLTestContext* 
         glrc = fGlRenderContext;
     } else {
         ReleaseDC(fWindow, fDeviceContext);
-        fDeviceContext = 0;
+        fDeviceContext = nullptr;
         DestroyWindow(fWindow);
-        fWindow = 0;
+        fWindow = nullptr;
 
         dc = fPbufferContext->getDC();
         glrc = fPbufferContext->getGLRC();
@@ -169,20 +170,20 @@ void WinGLTestContext::destroyGLContext() {
     if (fGlRenderContext) {
         // This deletes the context immediately even if it is current.
         wglDeleteContext(fGlRenderContext);
-        fGlRenderContext = 0;
+        fGlRenderContext = nullptr;
     }
     if (fWindow && fDeviceContext) {
         ReleaseDC(fWindow, fDeviceContext);
-        fDeviceContext = 0;
+        fDeviceContext = nullptr;
     }
     if (fWindow) {
         DestroyWindow(fWindow);
-        fWindow = 0;
+        fWindow = nullptr;
     }
 }
 
 void WinGLTestContext::onPlatformMakeNotCurrent() const {
-    if (!wglMakeCurrent(NULL, NULL)) {
+    if (!wglMakeCurrent(nullptr, nullptr)) {
         SkDebugf("Could not null out the rendering context.\n");
     }
 }

@@ -8,12 +8,12 @@ void draw(SkCanvas* canvas) {
     SkImageInfo info = SkImageInfo::Make(100, 100, SkColorType::kRGBA_F16_SkColorType,
                                          SkAlphaType::kPremul_SkAlphaType, colorSpace);
 
-    sk_sp<SkSurface> offscreen = SkSurface::MakeRaster(info);
+    sk_sp<SkSurface> offscreen = SkSurfaces::Raster(info);
     SkPaint paint;
     offscreen->getCanvas()->drawRect(SkRect::MakeXYWH(25, 25, 50, 50), paint);
 
     // Take a snapshot from surface and draw it on the canvas
     sk_sp<SkImage> img = offscreen->makeImageSnapshot();
-    canvas->drawImageRect(img, SkRect::MakeWH(100, 100), nullptr);
+    canvas->drawImageRect(img, SkRect::MakeWH(100, 100), SkSamplingOptions());
 }
 }  // END FIDDLE

@@ -6,7 +6,9 @@
  */
 
 #include "include/core/SkColor.h"
+#include "include/core/SkImageInfo.h"
 #include "include/core/SkRefCnt.h"
+#include "include/gpu/GpuTypes.h"
 #include "include/gpu/GrTypes.h"
 
 class GrDirectContext;
@@ -26,14 +28,16 @@ namespace sk_gpu_test {
 sk_sp<SkImage> MakeBackendTextureImage(GrDirectContext*,
                                        const SkPixmap&,
                                        GrRenderable,
-                                       GrSurfaceOrigin);
+                                       GrSurfaceOrigin,
+                                       GrProtected = GrProtected::kNo);
 
 /** Creates an image of with a solid color. */
 sk_sp<SkImage> MakeBackendTextureImage(GrDirectContext*,
                                        const SkImageInfo& info,
                                        SkColor4f,
-                                       GrMipmapped = GrMipmapped::kNo,
+                                       skgpu::Mipmapped = skgpu::Mipmapped::kNo,
                                        GrRenderable = GrRenderable::kNo,
-                                       GrSurfaceOrigin = GrSurfaceOrigin::kTopLeft_GrSurfaceOrigin);
+                                       GrSurfaceOrigin = GrSurfaceOrigin::kTopLeft_GrSurfaceOrigin,
+                                       GrProtected isProtected = GrProtected::kNo);
 
 }  // namespace sk_gpu_test

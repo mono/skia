@@ -37,15 +37,15 @@ protected:
     }
 
     void onOnceBeforeDraw() override {
-        fBitmap.allocN32Pixels(135, 135);
-        SkCanvas canvas(fBitmap);
-        canvas.clear(0x0);
+        auto surf = SkSurfaces::Raster(SkImageInfo::MakeN32Premul(135, 135));
 
         SkFont  font(ToolUtils::create_portable_typeface(), 64.0f);
         SkPaint paint;
         paint.setColor(0xFFFFFFFF);
-        canvas.drawString("ABC", 10, 55,  font, paint);
-        canvas.drawString("XYZ", 10, 110, font, paint);
+        surf->getCanvas()->drawString("ABC", 10, 55,  font, paint);
+        surf->getCanvas()->drawString("XYZ", 10, 110, font, paint);
+
+        fImage = surf->makeImageSnapshot();
     }
 
     SkISize onISize() override {
@@ -55,9 +55,8 @@ protected:
     void drawClippedBitmap(SkCanvas* canvas, const SkPaint& paint, int x, int y) {
         canvas->save();
         canvas->translate(SkIntToScalar(x), SkIntToScalar(y));
-        canvas->clipRect(SkRect::MakeWH(
-          SkIntToScalar(fBitmap.width()), SkIntToScalar(fBitmap.height())));
-        canvas->drawBitmap(fBitmap, 0, 0, &paint);
+        canvas->clipIRect(fImage->bounds());
+        canvas->drawImage(fImage, 0, 0, SkSamplingOptions(), &paint);
         canvas->restore();
     }
 
@@ -76,7 +75,7 @@ protected:
         SkIRect cropRect = SkIRect::MakeXYWH(25, 20, 100, 80);
 
         for (unsigned j = 0; j < 4; ++j) {
-            for (unsigned i = 0; i < SK_ARRAY_COUNT(samples); ++i) {
+            for (unsigned i = 0; i < std::size(samples); ++i) {
                 const SkIRect* cr = j & 0x02 ? &cropRect : nullptr;
                 if (j & 0x01) {
                     paint.setImageFilter(SkImageFilters::Erode(
@@ -91,7 +90,7 @@ protected:
     }
 
 private:
-    SkBitmap fBitmap;
+    sk_sp<SkImage> fImage;
 
     using INHERITED = GM;
 };

@@ -12,6 +12,8 @@
 #include "include/core/SkPicture.h"
 #include "include/core/SkRefCnt.h"
 
+#include <memory>
+
 #ifdef SK_BUILD_FOR_ANDROID_FRAMEWORK
 namespace android {
     class Picture;
@@ -20,7 +22,6 @@ namespace android {
 
 class SkCanvas;
 class SkDrawable;
-class SkMiniRecorder;
 class SkPictureRecord;
 class SkRecord;
 class SkRecorder;
@@ -85,7 +86,7 @@ public:
      *  Unlike finishRecordingAsPicture(), which returns an immutable picture, the returned drawable
      *  may contain live references to other drawables (if they were added to the recording canvas)
      *  and therefore this drawable will reflect the current state of those nested drawables anytime
-     *  it is drawn or a new picture is snapped from it (by calling drawable->newPictureSnapshot()).
+     *  it is drawn or a new picture is snapped from it (by calling drawable->makePictureSnapshot()).
      */
     sk_sp<SkDrawable> finishRecordingAsDrawable();
 
@@ -106,7 +107,6 @@ private:
     sk_sp<SkBBoxHierarchy>      fBBH;
     std::unique_ptr<SkRecorder> fRecorder;
     sk_sp<SkRecord>             fRecord;
-    std::unique_ptr<SkMiniRecorder> fMiniRecorder;
 
     SkPictureRecorder(SkPictureRecorder&&) = delete;
     SkPictureRecorder& operator=(SkPictureRecorder&&) = delete;

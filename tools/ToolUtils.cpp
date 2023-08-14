@@ -5,14 +5,18 @@
  * found in the LICENSE file.
  */
 
+#include "tools/ToolUtils.h"
+
 #include "include/core/SkBitmap.h"
 #include "include/core/SkBlendMode.h"
 #include "include/core/SkCanvas.h"
 #include "include/core/SkColorPriv.h"
+#include "include/core/SkColorSpace.h"
 #include "include/core/SkImage.h"
 #include "include/core/SkMatrix.h"
 #include "include/core/SkPaint.h"
 #include "include/core/SkPathBuilder.h"
+#include "include/core/SkPicture.h"
 #include "include/core/SkPixelRef.h"
 #include "include/core/SkPixmap.h"
 #include "include/core/SkPoint3.h"
@@ -20,18 +24,40 @@
 #include "include/core/SkShader.h"
 #include "include/core/SkSurface.h"
 #include "include/core/SkTextBlob.h"
-#include "include/ports/SkTypeface_win.h"
+#include "include/encode/SkPngEncoder.h"
 #include "include/private/SkColorData.h"
-#include "include/private/SkFloatingPoint.h"
-#include "src/core/SkFontMgrPriv.h"
+#include "include/private/base/SkFloatingPoint.h"
 #include "src/core/SkFontPriv.h"
-#include "tools/ToolUtils.h"
-#include "tools/flags/CommandLineFlags.h"
-#include "tools/fonts/TestFontMgr.h"
 
 #include <cmath>
 #include <cstring>
-#include <memory>
+
+#if defined(SK_GRAPHITE)
+#include "include/gpu/graphite/Image.h"
+#include "include/gpu/graphite/ImageProvider.h"
+
+#include <unordered_map>
+#endif
+
+#if defined(SK_ENABLE_SVG)
+#include "modules/svg/include/SkSVGDOM.h"
+#include "modules/svg/include/SkSVGNode.h"
+#include "src/xml/SkDOM.h"
+#endif
+
+#if defined(SK_GANESH)
+#include "include/gpu/GrDirectContext.h"
+#include "include/gpu/GrRecordingContext.h"
+#include "include/gpu/ganesh/SkImageGanesh.h"
+#include "src/gpu/ganesh/GrCaps.h"
+#include "src/gpu/ganesh/GrDirectContextPriv.h"
+#endif
+
+#ifdef SK_BUILD_FOR_WIN
+#include "include/ports/SkTypeface_win.h"
+#endif
+
+using namespace skia_private;
 
 namespace ToolUtils {
 
@@ -42,8 +68,7 @@ const char* alphatype_name(SkAlphaType at) {
         case kPremul_SkAlphaType:   return "Premul";
         case kUnpremul_SkAlphaType: return "Unpremul";
     }
-    SkASSERT(false);
-    return "unexpected alphatype";
+    SkUNREACHABLE;
 }
 
 const char* colortype_name(SkColorType ct) {
@@ -55,12 +80,14 @@ const char* colortype_name(SkColorType ct) {
         case kRGB_565_SkColorType:            return "RGB_565";
         case kARGB_4444_SkColorType:          return "ARGB_4444";
         case kRGBA_8888_SkColorType:          return "RGBA_8888";
+        case kSRGBA_8888_SkColorType:         return "SRGBA_8888";
         case kRGB_888x_SkColorType:           return "RGB_888x";
         case kBGRA_8888_SkColorType:          return "BGRA_8888";
         case kRGBA_1010102_SkColorType:       return "RGBA_1010102";
         case kBGRA_1010102_SkColorType:       return "BGRA_1010102";
         case kRGB_101010x_SkColorType:        return "RGB_101010x";
         case kBGR_101010x_SkColorType:        return "BGR_101010x";
+        case kBGR_101010x_XR_SkColorType:     return "BGR_101010x_XR";
         case kGray_8_SkColorType:             return "Gray_8";
         case kRGBA_F16Norm_SkColorType:       return "RGBA_F16Norm";
         case kRGBA_F16_SkColorType:           return "RGBA_F16";
@@ -69,9 +96,9 @@ const char* colortype_name(SkColorType ct) {
         case kR16G16_unorm_SkColorType:       return "R16G16_unorm";
         case kR16G16_float_SkColorType:       return "R16G16_float";
         case kR16G16B16A16_unorm_SkColorType: return "R16G16B16A16_unorm";
+        case kR8_unorm_SkColorType:           return "R8_unorm";
     }
-    SkASSERT(false);
-    return "unexpected colortype";
+    SkUNREACHABLE;
 }
 
 const char* colortype_depth(SkColorType ct) {
@@ -83,23 +110,25 @@ const char* colortype_depth(SkColorType ct) {
         case kRGB_565_SkColorType:            return "565";
         case kARGB_4444_SkColorType:          return "4444";
         case kRGBA_8888_SkColorType:          return "8888";
+        case kSRGBA_8888_SkColorType:         return "8888";
         case kRGB_888x_SkColorType:           return "888";
         case kBGRA_8888_SkColorType:          return "8888";
         case kRGBA_1010102_SkColorType:       return "1010102";
         case kBGRA_1010102_SkColorType:       return "1010102";
         case kRGB_101010x_SkColorType:        return "101010";
         case kBGR_101010x_SkColorType:        return "101010";
+        case kBGR_101010x_XR_SkColorType:     return "101010";
         case kGray_8_SkColorType:             return "G8";
-        case kRGBA_F16Norm_SkColorType:       return "F16Norm";  // TODO: "F16"?
+        case kRGBA_F16Norm_SkColorType:       return "F16Norm";
         case kRGBA_F16_SkColorType:           return "F16";
         case kRGBA_F32_SkColorType:           return "F32";
         case kR8G8_unorm_SkColorType:         return "88";
         case kR16G16_unorm_SkColorType:       return "1616";
         case kR16G16_float_SkColorType:       return "F16F16";
         case kR16G16B16A16_unorm_SkColorType: return "16161616";
+        case kR8_unorm_SkColorType:           return "R8";
     }
-    SkASSERT(false);
-    return "unexpected colortype";
+    SkUNREACHABLE;
 }
 
 const char* tilemode_name(SkTileMode mode) {
@@ -109,8 +138,7 @@ const char* tilemode_name(SkTileMode mode) {
         case SkTileMode::kMirror: return "mirror";
         case SkTileMode::kDecal:  return "decal";
     }
-    SkASSERT(false);
-    return "unexpected tilemode";
+    SkUNREACHABLE;
 }
 
 SkColor color_to_565(SkColor color) {
@@ -130,7 +158,7 @@ sk_sp<SkShader> create_checkerboard_shader(SkColor c1, SkColor c2, int size) {
     bm.eraseColor(c1);
     bm.eraseArea(SkIRect::MakeLTRB(0, 0, size, size), c2);
     bm.eraseArea(SkIRect::MakeLTRB(size, size, 2 * size, 2 * size), c2);
-    return bm.makeShader(SkTileMode::kRepeat, SkTileMode::kRepeat);
+    return bm.makeShader(SkTileMode::kRepeat, SkTileMode::kRepeat, SkSamplingOptions());
 }
 
 SkBitmap create_checkerboard_bitmap(int w, int h, SkColor c1, SkColor c2, int checkSize) {
@@ -142,6 +170,12 @@ SkBitmap create_checkerboard_bitmap(int w, int h, SkColor c1, SkColor c2, int ch
     return bitmap;
 }
 
+sk_sp<SkImage> create_checkerboard_image(int w, int h, SkColor c1, SkColor c2, int checkSize) {
+    auto surf = SkSurfaces::Raster(SkImageInfo::MakeN32Premul(w, h));
+    ToolUtils::draw_checkerboard(surf->getCanvas(), c1, c2, checkSize);
+    return surf->makeImageSnapshot();
+}
+
 void draw_checkerboard(SkCanvas* canvas, SkColor c1, SkColor c2, int size) {
     SkPaint paint;
     paint.setShader(create_checkerboard_shader(c1, c2, size));
@@ -149,8 +183,40 @@ void draw_checkerboard(SkCanvas* canvas, SkColor c1, SkColor c2, int size) {
     canvas->drawPaint(paint);
 }
 
-SkBitmap
-create_string_bitmap(int w, int h, SkColor c, int x, int y, int textSize, const char* str) {
+int make_pixmaps(SkColorType ct,
+                 SkAlphaType at,
+                 bool withMips,
+                 const SkColor4f colors[6],
+                 SkPixmap pixmaps[6],
+                 std::unique_ptr<char[]>* mem) {
+
+    int levelSize = 32;
+    int numMipLevels = withMips ? 6 : 1;
+    size_t size = 0;
+    SkImageInfo ii[6];
+    size_t rowBytes[6];
+    for (int level = 0; level < numMipLevels; ++level) {
+        ii[level] = SkImageInfo::Make(levelSize, levelSize, ct, at);
+        rowBytes[level] = ii[level].minRowBytes();
+        // Make sure we test row bytes that aren't tight.
+        if (!(level % 2)) {
+            rowBytes[level] += (level + 1)*SkColorTypeBytesPerPixel(ii[level].colorType());
+        }
+        size += rowBytes[level]*ii[level].height();
+        levelSize /= 2;
+    }
+    mem->reset(new char[size]);
+    char* addr = mem->get();
+    for (int level = 0; level < numMipLevels; ++level) {
+        pixmaps[level].reset(ii[level], addr, rowBytes[level]);
+        addr += rowBytes[level]*ii[level].height();
+        pixmaps[level].erase(colors[level]);
+    }
+    return numMipLevels;
+}
+
+SkBitmap create_string_bitmap(int w, int h, SkColor c, int x, int y, int textSize,
+                              const char* str) {
     SkBitmap bitmap;
     bitmap.allocN32Pixels(w, h);
     SkCanvas canvas(bitmap);
@@ -175,6 +241,11 @@ create_string_bitmap(int w, int h, SkColor c, int x, int y, int textSize, const 
     result.setInfo(SkImageInfo::MakeS32(w, h, kPremul_SkAlphaType));
     result.setPixelRef(sk_ref_sp(bitmap.pixelRef()), 0, 0);
     return result;
+}
+
+sk_sp<SkImage> create_string_image(int w, int h, SkColor c, int x, int y, int textSize,
+                                   const char* str) {
+    return create_string_bitmap(w, h, c, x, y, textSize, str).asImage();
 }
 
 void add_to_text_blob_w_len(SkTextBlobBuilder* builder,
@@ -208,7 +279,7 @@ void get_text_path(const SkFont&  font,
                    const SkPoint  pos[]) {
     SkAutoToGlyphs        atg(font, text, length, encoding);
     const int             count = atg.count();
-    SkAutoTArray<SkPoint> computedPos;
+    AutoTArray<SkPoint> computedPos;
     if (pos == nullptr) {
         computedPos.reset(count);
         font.getPos(atg.glyphs(), count, &computedPos[0]);
@@ -246,7 +317,7 @@ SkPath make_star(const SkRect& bounds, int numPts, int step) {
         builder.lineTo(x, y);
     }
     SkPath path = builder.detach();
-    path.transform(SkMatrix::MakeRectToRect(path.getBounds(), bounds, SkMatrix::kFill_ScaleToFit));
+    path.transform(SkMatrix::RectToRect(path.getBounds(), bounds));
     return path;
 }
 
@@ -358,17 +429,6 @@ void create_tetra_normal_map(SkBitmap* bm, const SkIRect& dst) {
     }
 }
 
-#if !defined(__clang__) && defined(_MSC_VER)
-// MSVC takes ~2 minutes to compile this function with optimization.
-// We don't really care to wait that long for this function.
-#pragma optimize("", off)
-#endif
-SkPath make_big_path() {
-    SkPathBuilder path;
-#include "BigPathBench.inc"  // IWYU pragma: keep
-    return path.detach();
-}
-
 bool copy_to(SkBitmap* dst, SkColorType dstColorType, const SkBitmap& src) {
     SkPixmap srcPM;
     if (!src.peekPixels(&srcPM)) {
@@ -465,28 +525,228 @@ sk_sp<SkSurface> makeSurface(SkCanvas*             canvas,
                              const SkSurfaceProps* props) {
     auto surf = canvas->makeSurface(info, props);
     if (!surf) {
-        surf = SkSurface::MakeRaster(info, props);
+        surf = SkSurfaces::Raster(info, props);
     }
     return surf;
 }
 
-static DEFINE_bool(nativeFonts, true,
-                   "If true, use native font manager and rendering. "
-                   "If false, fonts will draw as portably as possible.");
-#if defined(SK_BUILD_FOR_WIN)
-    static DEFINE_bool(gdi, false,
-                       "Use GDI instead of DirectWrite for font rendering.");
-#endif
+void sniff_paths(const char filepath[], std::function<PathSniffCallback> callback) {
+    SkFILEStream stream(filepath);
+    if (!stream.isValid()) {
+        SkDebugf("sniff_paths: invalid input file at \"%s\"\n", filepath);
+        return;
+    }
 
-void SetDefaultFontMgr() {
-    if (!FLAGS_nativeFonts) {
-        gSkFontMgr_DefaultFactory = &ToolUtils::MakePortableFontMgr;
+    class PathSniffer : public SkCanvas {
+    public:
+        PathSniffer(std::function<PathSniffCallback> callback)
+                : SkCanvas(4096, 4096, nullptr)
+                , fPathSniffCallback(callback) {}
+    private:
+        void onDrawPath(const SkPath& path, const SkPaint& paint) override {
+            fPathSniffCallback(this->getTotalMatrix(), path, paint);
+        }
+        std::function<PathSniffCallback> fPathSniffCallback;
+    };
+
+    PathSniffer pathSniffer(callback);
+    if (const char* ext = strrchr(filepath, '.'); ext && !strcmp(ext, ".svg")) {
+#if defined(SK_ENABLE_SVG)
+        sk_sp<SkSVGDOM> svg = SkSVGDOM::MakeFromStream(stream);
+        if (!svg) {
+            SkDebugf("sniff_paths: couldn't load svg at \"%s\"\n", filepath);
+            return;
+        }
+        svg->setContainerSize(SkSize::Make(pathSniffer.getBaseLayerSize()));
+        svg->render(&pathSniffer);
+#endif
+    } else {
+        sk_sp<SkPicture> skp = SkPicture::MakeFromStream(&stream);
+        if (!skp) {
+            SkDebugf("sniff_paths: couldn't load skp at \"%s\"\n", filepath);
+            return;
+        }
+        skp->playback(&pathSniffer);
     }
-#if defined(SK_BUILD_FOR_WIN)
-    if (FLAGS_gdi) {
-        gSkFontMgr_DefaultFactory = &SkFontMgr_New_GDI;
+}
+
+sk_sp<SkImage> MakeTextureImage(SkCanvas* canvas, sk_sp<SkImage> orig) {
+    if (!orig) {
+        return nullptr;
+    }
+
+#if defined(SK_GANESH)
+    if (canvas->recordingContext() && canvas->recordingContext()->asDirectContext()) {
+        GrDirectContext* dContext = canvas->recordingContext()->asDirectContext();
+        const GrCaps* caps = dContext->priv().caps();
+
+        if (orig->width() >= caps->maxTextureSize() || orig->height() >= caps->maxTextureSize()) {
+            // Ganesh is able to tile large SkImage draws. Always forcing SkImages to be uploaded
+            // prevents this feature from being tested by our tools. For now, leave excessively
+            // large SkImages as bitmaps.
+            return orig;
+        }
+
+        return SkImages::TextureFromImage(dContext, orig);
     }
 #endif
+#if defined(SK_GRAPHITE)
+    if (canvas->recorder()) {
+        return SkImages::TextureFromImage(canvas->recorder(), orig, {false});
+    }
+#endif
+    return orig;
+}
+
+VariationSliders::VariationSliders(SkTypeface* typeface,
+                                   SkFontArguments::VariationPosition variationPosition) {
+    if (!typeface) {
+        return;
+    }
+
+    int numAxes = typeface->getVariationDesignParameters(nullptr, 0);
+    if (numAxes < 0) {
+        return;
+    }
+
+    std::unique_ptr<SkFontParameters::Variation::Axis[]> copiedAxes =
+            std::make_unique<SkFontParameters::Variation::Axis[]>(numAxes);
+
+    numAxes = typeface->getVariationDesignParameters(copiedAxes.get(), numAxes);
+    if (numAxes < 0) {
+        return;
+    }
+
+    auto argVariationPositionOrDefault = [&variationPosition](SkFourByteTag tag,
+                                                              SkScalar defaultValue) -> SkScalar {
+        for (int i = 0; i < variationPosition.coordinateCount; ++i) {
+            if (variationPosition.coordinates[i].axis == tag) {
+                return variationPosition.coordinates[i].value;
+            }
+        }
+        return defaultValue;
+    };
+
+    fAxisSliders.resize(numAxes);
+    fCoords = std::make_unique<SkFontArguments::VariationPosition::Coordinate[]>(numAxes);
+    for (int i = 0; i < numAxes; ++i) {
+        fAxisSliders[i].axis = copiedAxes[i];
+        fAxisSliders[i].current =
+                argVariationPositionOrDefault(copiedAxes[i].tag, copiedAxes[i].def);
+        fAxisSliders[i].name = tagToString(fAxisSliders[i].axis.tag);
+        fCoords[i] = { fAxisSliders[i].axis.tag, fAxisSliders[i].current };
+    }
+}
+
+/* static */
+SkString VariationSliders::tagToString(SkFourByteTag tag) {
+    char tagAsString[5];
+    tagAsString[4] = 0;
+    tagAsString[0] = (char)(uint8_t)(tag >> 24);
+    tagAsString[1] = (char)(uint8_t)(tag >> 16);
+    tagAsString[2] = (char)(uint8_t)(tag >> 8);
+    tagAsString[3] = (char)(uint8_t)(tag >> 0);
+    return SkString(tagAsString);
+}
+
+bool VariationSliders::writeControls(SkMetaData* controls) {
+    for (size_t i = 0; i < fAxisSliders.size(); ++i) {
+        SkScalar axisVars[kAxisVarsSize];
+
+        axisVars[0] = fAxisSliders[i].current;
+        axisVars[1] = fAxisSliders[i].axis.min;
+        axisVars[2] = fAxisSliders[i].axis.max;
+        controls->setScalars(fAxisSliders[i].name.c_str(), kAxisVarsSize, axisVars);
+    }
+    return true;
+}
+
+void VariationSliders::readControls(const SkMetaData& controls, bool* changed) {
+    for (size_t i = 0; i < fAxisSliders.size(); ++i) {
+        SkScalar axisVars[kAxisVarsSize] = {0};
+        int resultAxisVarsSize = 0;
+        SkASSERT_RELEASE(controls.findScalars(
+                tagToString(fAxisSliders[i].axis.tag).c_str(), &resultAxisVarsSize, axisVars));
+        SkASSERT_RELEASE(resultAxisVarsSize == kAxisVarsSize);
+        if (changed) {
+            *changed |= fAxisSliders[i].current != axisVars[0];
+        }
+        fAxisSliders[i].current = axisVars[0];
+        fCoords[i] = { fAxisSliders[i].axis.tag, fAxisSliders[i].current };
+    }
+}
+
+SkSpan<const SkFontArguments::VariationPosition::Coordinate> VariationSliders::getCoordinates() {
+    return SkSpan<const SkFontArguments::VariationPosition::Coordinate>{fCoords.get(),
+                                                                        fAxisSliders.size()};
+}
+
+#if defined(SK_GRAPHITE)
+
+// Currently, we give each new Recorder its own ImageProvider. This means we don't have to deal
+// w/ any threading issues.
+// TODO: We should probably have this class generate and report some cache stats
+// TODO: Hook up to listener system?
+// TODO: add testing of a single ImageProvider passed to multiple recorders
+class TestingImageProvider : public skgpu::graphite::ImageProvider {
+public:
+    ~TestingImageProvider() override {}
+
+    sk_sp<SkImage> findOrCreate(skgpu::graphite::Recorder* recorder,
+                                const SkImage* image,
+                                SkImage::RequiredProperties requiredProps) override {
+        if (!requiredProps.fMipmapped) {
+            // If no mipmaps are required, check to see if we have a mipmapped version anyway -
+            // since it can be used in that case.
+            // TODO: we could get fancy and, if ever a mipmapped key eclipsed a non-mipmapped
+            // key, we could remove the hidden non-mipmapped key/image from the cache.
+            uint64_t mipMappedKey = ((uint64_t)image->uniqueID() << 32) | 0x1;
+            auto result = fCache.find(mipMappedKey);
+            if (result != fCache.end()) {
+                return result->second;
+            }
+        }
+
+        uint64_t key = ((uint64_t)image->uniqueID() << 32) | (requiredProps.fMipmapped ? 0x1 : 0x0);
+
+        auto result = fCache.find(key);
+        if (result != fCache.end()) {
+            return result->second;
+        }
+
+        sk_sp<SkImage> newImage = SkImages::TextureFromImage(recorder, image, requiredProps);
+        if (!newImage) {
+            return nullptr;
+        }
+
+        auto [iter, success] = fCache.insert({ key, newImage });
+        SkASSERT(success);
+
+        return iter->second;
+    }
+
+private:
+    std::unordered_map<uint64_t, sk_sp<SkImage>> fCache;
+};
+
+skgpu::graphite::RecorderOptions CreateTestingRecorderOptions() {
+    skgpu::graphite::RecorderOptions options;
+
+    options.fImageProvider.reset(new TestingImageProvider);
+
+    return options;
+}
+
+#endif // SK_GRAPHITE
+
+bool EncodeImageToPngFile(const char* path, const SkBitmap& src) {
+    SkFILEWStream file(path);
+    return file.isValid() && SkPngEncoder::Encode(&file, src.pixmap(), {});
+}
+
+bool EncodeImageToPngFile(const char* path, const SkPixmap& src) {
+    SkFILEWStream file(path);
+    return file.isValid() && SkPngEncoder::Encode(&file, src, {});
 }
 
 }  // namespace ToolUtils

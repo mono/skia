@@ -8,7 +8,7 @@
 #ifndef Window_ios_DEFINED
 #define Window_ios_DEFINED
 
-#include "include/private/SkChecksum.h"
+#include "src/core/SkChecksum.h"
 #include "src/core/SkTDynamicHash.h"
 #include "tools/sk_app/Window.h"
 
@@ -19,7 +19,7 @@ namespace sk_app {
 class Window_ios : public Window {
 public:
     Window_ios()
-            : INHERITED()
+            : Window()
             , fWindow(nil) {}
     ~Window_ios() override { this->closeWindow(); }
 
@@ -44,8 +44,6 @@ private:
     UIWindow*    fWindow;
 
     static Window_ios* gWindow; // there should be only one
-
-    using INHERITED = Window;
 };
 
 }   // namespace sk_app

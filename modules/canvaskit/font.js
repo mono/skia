@@ -1,24 +1,33 @@
 CanvasKit._extraInitializations = CanvasKit._extraInitializations || [];
 CanvasKit._extraInitializations.push(function() {
 
-  // str can be either a text string or a ShapedText object
   CanvasKit.Canvas.prototype.drawText = function(str, x, y, paint, font) {
-    if (typeof str === 'string') {
-      // lengthBytesUTF8 and stringToUTF8Array are defined in the emscripten
-      // JS.  See https://kripken.github.io/emscripten-site/docs/api_reference/preamble.js.html#stringToUTF8
-      var strLen = lengthBytesUTF8(str);
-      // Add 1 for null terminator, which we need when copying/converting, but can ignore
-      // when we call into Skia.
-      var strPtr = CanvasKit._malloc(strLen + 1);
-      stringToUTF8(str, strPtr, strLen + 1);
-      this._drawSimpleText(strPtr, strLen, x, y, font, paint);
-      CanvasKit._free(strPtr);
-    } else {
-      this._drawShapedText(str, x, y, paint);
-    }
-  }
+    // lengthBytesUTF8 and stringToUTF8Array are defined in the emscripten
+    // JS.  See https://kripken.github.io/emscripten-site/docs/api_reference/preamble.js.html#stringToUTF8
+    var strLen = lengthBytesUTF8(str);
+    // Add 1 for null terminator, which we need when copying/converting, but can ignore
+    // when we call into Skia.
+    var strPtr = CanvasKit._malloc(strLen + 1);
+    stringToUTF8(str, strPtr, strLen + 1);
+    this._drawSimpleText(strPtr, strLen, x, y, font, paint);
+    CanvasKit._free(strPtr);
+  };
 
-  // Glyphs should be a Uint32Array of glyph ids, e.g. provided by Font.getGlyphIDs.
+  CanvasKit.Canvas.prototype.drawGlyphs = function(glyphs, positions, x, y, font, paint) {
+    if (!(glyphs.length*2 <= positions.length)) {
+        throw 'Not enough positions for the array of gyphs';
+    }
+    CanvasKit.setCurrentContext(this._context);
+    const glyphs_ptr    = copy1dArray(glyphs, 'HEAPU16');
+    const positions_ptr = copy1dArray(positions, 'HEAPF32');
+
+    this._drawGlyphs(glyphs.length, glyphs_ptr, positions_ptr, x, y, font, paint);
+
+    freeArraysThatAreNotMallocedByUsers(positions_ptr, positions);
+    freeArraysThatAreNotMallocedByUsers(glyphs_ptr,    glyphs);
+  };
+
+  // Glyphs should be a Uint16Array of glyph ids, e.g. provided by Font.getGlyphIDs.
   // If using a Malloc'd array, be sure to use CanvasKit.MallocGlyphIDs() to get the right type.
   // The return value will be a Float32Array that is 4 times as long as the input array. For each
   // glyph, there will be 4 floats for left, top, right, bottom (relative to 0, 0) for that glyph.
@@ -67,12 +76,20 @@ CanvasKit._extraInitializations.push(function() {
       CanvasKit._free(glyphPtr);
       return optionalOutputArray;
     }
-    var rv = Uint32Array.from(glyphs);
+    var rv = Uint16Array.from(glyphs);
     CanvasKit._free(glyphPtr);
     return rv;
   };
 
-  // Glyphs should be a Uint32Array of glyph ids, e.g. provided by Font.getGlyphIDs.
+  CanvasKit.Font.prototype.getGlyphIntercepts = function(glyphs, positions, top, bottom) {
+    var gPtr = copy1dArray(glyphs, 'HEAPU16');
+    var pPtr = copy1dArray(positions, 'HEAPF32');
+    return this._getGlyphIntercepts(gPtr, glyphs.length, !wasMalloced(glyphs),
+                                    pPtr, positions.length, !wasMalloced(positions),
+                                    top, bottom);
+  };
+
+  // Glyphs should be a Uint16Array of glyph ids, e.g. provided by Font.getGlyphIDs.
   // If using a Malloc'd array, be sure to use CanvasKit.MallocGlyphIDs() to get the right type.
   // The return value will be a Float32Array that has one width per input glyph.
   CanvasKit.Font.prototype.getGlyphWidths = function(glyphs, paint, optionalOutputArray) {
@@ -92,37 +109,6 @@ CanvasKit._extraInitializations.push(function() {
     CanvasKit._free(widthPtr);
     return rv;
   };
-
-  // Returns an array of the widths of the glyphs in this string.
-  // TODO(kjlubick) Remove this API - getGlyphWidths is the better API.
-  CanvasKit.Font.prototype.getWidths = function(str) {
-    // add 1 for null terminator
-    var codePoints = str.length + 1;
-    // lengthBytesUTF8 and stringToUTF8Array are defined in the emscripten
-    // JS.  See https://kripken.github.io/emscripten-site/docs/api_reference/preamble.js.html#stringToUTF8
-    // Add 1 for null terminator
-    var strBytes = lengthBytesUTF8(str) + 1;
-    var strPtr = CanvasKit._malloc(strBytes);
-    stringToUTF8(str, strPtr, strBytes);
-
-    var bytesPerFloat = 4;
-    // allocate widths == numCodePoints
-    var widthPtr = CanvasKit._malloc(codePoints * bytesPerFloat);
-    if (!this._getWidths(strPtr, strBytes, codePoints, widthPtr)) {
-      Debug('Could not compute widths');
-      CanvasKit._free(strPtr);
-      CanvasKit._free(widthPtr);
-      return null;
-    }
-    // reminder, this shouldn't copy the data, just is a nice way to
-    // wrap 4 bytes together into a float.
-    var widths = new Float32Array(CanvasKit.HEAPU8.buffer, widthPtr, codePoints);
-    // This copies the data so we can free the CanvasKit memory
-    var retVal = Array.from(widths);
-    CanvasKit._free(strPtr);
-    CanvasKit._free(widthPtr);
-    return retVal;
-  }
 
   // arguments should all be arrayBuffers or be an array of arrayBuffers.
   CanvasKit.FontMgr.FromData = function() {
@@ -154,14 +140,13 @@ CanvasKit._extraInitializations.push(function() {
     CanvasKit._free(datasPtr);
     CanvasKit._free(sizesPtr);
     return fm;
-  }
+  };
 
-  // fontData should be an arrayBuffer
-  CanvasKit.FontMgr.prototype.MakeTypefaceFromData = function(fontData) {
+  CanvasKit.Typeface.MakeFreeTypeFaceFromData = function(fontData) {
     var data = new Uint8Array(fontData);
 
     var fptr = copy1dArray(data, 'HEAPU8');
-    var font = this._makeTypefaceFromData(fptr, data.byteLength);
+    var font = CanvasKit.Typeface._MakeFreeTypeFaceFromData(fptr, data.byteLength);
     if (!font) {
       Debug('Could not decode font data');
       // We do not need to free the data since the C++ will do that for us
@@ -169,20 +154,39 @@ CanvasKit._extraInitializations.push(function() {
       return null;
     }
     return font;
-  }
+  };
 
-  // Clients can pass in a Float32Array with length 4 to this and the results
-  // will be copied into that array. Otherwise, a new TypedArray will be allocated
-  // and returned.
-  CanvasKit.ShapedText.prototype.getBounds = function(optionalOutputArray) {
-    this._getBounds(_scratchRectPtr);
-    var ta = _scratchRect['toTypedArray']();
+  CanvasKit.Typeface.prototype.getGlyphIDs = function(str, numGlyphIDs, optionalOutputArray) {
+    if (!numGlyphIDs) {
+      numGlyphIDs = str.length;
+    }
+    // lengthBytesUTF8 and stringToUTF8Array are defined in the emscripten
+    // JS.  See https://kripken.github.io/emscripten-site/docs/api_reference/preamble.js.html#stringToUTF8
+    // Add 1 for null terminator
+    var strBytes = lengthBytesUTF8(str) + 1;
+    var strPtr = CanvasKit._malloc(strBytes);
+    stringToUTF8(str, strPtr, strBytes); // This includes the null terminator
+
+    var bytesPerGlyph = 2;
+    var glyphPtr = CanvasKit._malloc(numGlyphIDs * bytesPerGlyph);
+    // We don't need to compute the id for the null terminator, so subtract 1.
+    var actualIDs = this._getGlyphIDs(strPtr, strBytes - 1, numGlyphIDs, glyphPtr);
+    CanvasKit._free(strPtr);
+    if (actualIDs < 0) {
+      Debug('Could not get glyphIDs');
+      CanvasKit._free(glyphPtr);
+      return null;
+    }
+    var glyphs = new Uint16Array(CanvasKit.HEAPU8.buffer, glyphPtr, actualIDs);
     if (optionalOutputArray) {
-      optionalOutputArray.set(ta);
+      optionalOutputArray.set(glyphs);
+      CanvasKit._free(glyphPtr);
       return optionalOutputArray;
     }
-    return ta.slice();
-  }
+    var rv = Uint16Array.from(glyphs);
+    CanvasKit._free(glyphPtr);
+    return rv;
+  };
 
   CanvasKit.TextBlob.MakeOnPath = function(str, path, font, initialOffset) {
     if (!str || !str.length) {
@@ -202,17 +206,22 @@ CanvasKit._extraInitializations.push(function() {
       initialOffset = 0;
     }
 
-    var widths = font.getWidths(str);
+    var ids = font.getGlyphIDs(str);
+    var widths = font.getGlyphWidths(ids);
 
-    var rsx = new CanvasKit.RSXFormBuilder();
-    var meas = new CanvasKit.PathMeasure(path, false, 1);
+    var rsx = [];
+    var meas = new CanvasKit.ContourMeasureIter(path, false, 1);
+    var cont = meas.next();
     var dist = initialOffset;
-    for (var i = 0; i < str.length; i++) {
+    var xycs = new Float32Array(4);
+    for (var i = 0; i < str.length && cont; i++) {
       var width = widths[i];
       dist += width/2;
-      if (dist > meas.getLength()) {
+      if (dist > cont.length()) {
         // jump to next contour
-        if (!meas.nextContour()) {
+        cont.delete();
+        cont = meas.next();
+        if (!cont) {
           // We have come to the end of the path - terminate the string
           // right here.
           str = str.substring(0, i);
@@ -223,7 +232,7 @@ CanvasKit._extraInitializations.push(function() {
 
       // Gives us the (x, y) coordinates as well as the cos/sin of the tangent
       // line at that position.
-      var xycs = meas.getPosTan(dist);
+      cont.getPosTan(dist, xycs);
       var cx = xycs[0];
       var cy = xycs[1];
       var cosT = xycs[2];
@@ -236,12 +245,12 @@ CanvasKit._extraInitializations.push(function() {
       dist += width/2;
     }
     var retVal = this.MakeFromRSXform(str, rsx, font);
-    rsx.delete();
+    cont && cont.delete();
     meas.delete();
     return retVal;
-  }
+  };
 
-  CanvasKit.TextBlob.MakeFromRSXform = function(str, rsxBuilderOrArray, font) {
+  CanvasKit.TextBlob.MakeFromRSXform = function(str, rsxForms, font) {
     // lengthBytesUTF8 and stringToUTF8Array are defined in the emscripten
     // JS.  See https://kripken.github.io/emscripten-site/docs/api_reference/preamble.js.html#stringToUTF8
     // Add 1 for null terminator
@@ -250,12 +259,7 @@ CanvasKit._extraInitializations.push(function() {
     // Add 1 for the null terminator.
     stringToUTF8(str, strPtr, strLen);
 
-    var rPtr = nullptr;
-    if (rsxBuilderOrArray.build) {
-      rPtr = rsxBuilderOrArray.build();
-    } else {
-      rPtr = copy1dArray(rsxBuilderOrArray, 'HEAPF32');
-    }
+    var rPtr = copy1dArray(rsxForms, 'HEAPF32');
 
     var blob = CanvasKit.TextBlob._MakeFromRSXform(strPtr, strLen - 1, rPtr, font);
     CanvasKit._free(strPtr);
@@ -264,21 +268,16 @@ CanvasKit._extraInitializations.push(function() {
       return null;
     }
     return blob;
-  }
+  };
 
   // Glyphs should be a Uint32Array of glyph ids, e.g. provided by Font.getGlyphIDs.
   // If using a Malloc'd array, be sure to use CanvasKit.MallocGlyphIDs() to get the right type.
-  CanvasKit.TextBlob.MakeFromRSXformGlyphs = function(glyphs, rsxBuilderOrArray, font) {
+  CanvasKit.TextBlob.MakeFromRSXformGlyphs = function(glyphs, rsxForms, font) {
     // Currently on the C++ side, glyph ids are 16bit, but there is an effort to change that.
     var glyphPtr = copy1dArray(glyphs, 'HEAPU16');
     var bytesPerGlyph = 2;
 
-    var rPtr = nullptr;
-    if (rsxBuilderOrArray.build) {
-      rPtr = rsxBuilderOrArray.build();
-    } else {
-      rPtr = copy1dArray(rsxBuilderOrArray, 'HEAPF32');
-    }
+    var rPtr = copy1dArray(rsxForms, 'HEAPF32');
 
     var blob = CanvasKit.TextBlob._MakeFromRSXformGlyphs(glyphPtr, glyphs.length * bytesPerGlyph, rPtr, font);
     freeArraysThatAreNotMallocedByUsers(glyphPtr, glyphs);
@@ -287,7 +286,7 @@ CanvasKit._extraInitializations.push(function() {
       return null;
     }
     return blob;
-  }
+  };
 
   // Glyphs should be a Uint32Array of glyph ids, e.g. provided by Font.getGlyphIDs.
   // If using a Malloc'd array, be sure to use CanvasKit.MallocGlyphIDs() to get the right type.
@@ -302,7 +301,7 @@ CanvasKit._extraInitializations.push(function() {
       return null;
     }
     return blob;
-  }
+  };
 
   CanvasKit.TextBlob.MakeFromText = function(str, font) {
     // lengthBytesUTF8 and stringToUTF8Array are defined in the emscripten
@@ -320,7 +319,7 @@ CanvasKit._extraInitializations.push(function() {
       return null;
     }
     return blob;
-  }
+  };
 
   // A helper to return the right type for GlyphIDs stored internally. When that changes, this
   // will also be changed, which will help avoid future breakages.

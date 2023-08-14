@@ -8,7 +8,7 @@
 #include "modules/skottie/src/effects/Effects.h"
 
 #include "include/private/SkColorData.h"
-#include "include/private/SkTPin.h"
+#include "include/private/base/SkTPin.h"
 #include "modules/skottie/src/SkottieJson.h"
 #include "modules/skottie/src/SkottieValue.h"
 #include "modules/sksg/include/SkSGColorFilter.h"
@@ -87,7 +87,7 @@ private:
             {             0,              0,              0, 0, 1}, // kFullOn
             {             0,              0,              0, 0, 0}, // kFullOff
         };
-        static_assert(SK_ARRAY_COUNT(gSourceCoeffs) == static_cast<size_t>(Source::kMax), "");
+        static_assert(std::size(gSourceCoeffs) == static_cast<size_t>(Source::kMax), "");
 
         auto coeffs = [](float src) {
             // Channel sources are encoded as Source enum values.

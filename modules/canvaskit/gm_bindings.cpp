@@ -20,12 +20,14 @@
 #include "include/core/SkSurface.h"
 #include "include/gpu/GrContextOptions.h"
 #include "include/gpu/GrDirectContext.h"
+#include "include/gpu/ganesh/SkSurfaceGanesh.h"
 #include "include/gpu/gl/GrGLInterface.h"
 #include "include/gpu/gl/GrGLTypes.h"
 #include "modules/canvaskit/WasmCommon.h"
 #include "src/core/SkFontMgrPriv.h"
 #include "src/core/SkMD5.h"
 #include "tests/Test.h"
+#include "tests/TestHarness.h"
 #include "tools/HashAndEncode.h"
 #include "tools/ResourceFactory.h"
 #include "tools/flags/CommandLineFlags.h"
@@ -73,7 +75,7 @@ static sk_sp<GrDirectContext> MakeGrContext(EMSCRIPTEN_WEBGL_CONTEXT_HANDLE cont
     // setup GrDirectContext
     auto interface = GrGLMakeNativeInterface();
     // setup contexts
-    sk_sp<GrDirectContext> dContext(GrDirectContext::MakeGL(interface));
+    sk_sp<GrDirectContext> dContext((GrDirectContext::MakeGL(interface)));
     return dContext;
 }
 
@@ -94,7 +96,7 @@ static sk_sp<SkData> getResource(const char* name) {
   return it->second;
 }
 
-static void LoadResource(std::string name, uintptr_t /* byte* */ bPtr, size_t len) {
+static void LoadResource(std::string name, WASMPointerU8 bPtr, size_t len) {
   const uint8_t* bytes = reinterpret_cast<const uint8_t*>(bPtr);
   auto data = SkData::MakeFromMalloc(bytes, len);
   gResources[name] = std::move(data);
@@ -123,11 +125,8 @@ static JSObject RunGM(sk_sp<GrDirectContext> ctx, std::string name) {
     auto colorType = SkColorType::kN32_SkColorType;
     SkISize size = gm->getISize();
     SkImageInfo info = SkImageInfo::Make(size, colorType, alphaType);
-    sk_sp<SkSurface> surface(SkSurface::MakeRenderTarget(ctx.get(),
-                             SkBudgeted::kYes,
-                             info, 0,
-                             kBottomLeft_GrSurfaceOrigin,
-                             nullptr, true));
+    sk_sp<SkSurface> surface(SkSurfaces::RenderTarget(
+            ctx.get(), skgpu::Budgeted::kYes, info, 0, kBottomLeft_GrSurfaceOrigin, nullptr, true));
     if (!surface) {
         SkDebugf("Could not make surface\n");
         return result;
@@ -137,7 +136,7 @@ static JSObject RunGM(sk_sp<GrDirectContext> ctx, std::string name) {
     gm->onceBeforeDraw();
     SkString msg;
     // Based on GMSrc::draw from DM.
-    auto gpuSetupResult = gm->gpuSetup(ctx.get(), canvas, &msg);
+    auto gpuSetupResult = gm->gpuSetup(canvas, &msg);
     if (gpuSetupResult == skiagm::DrawResult::kFail) {
         SkDebugf("Error with gpu setup for gm %s: %s\n", name.c_str(), msg.c_str());
         return result;
@@ -204,21 +203,21 @@ static JSArray ListTests() {
     SkDebugf("Listing Tests\n");
     JSArray tests = emscripten::val::array();
     for (auto test : skiatest::TestRegistry::Range()) {
-        SkDebugf("test %s\n", test.name);
-        tests.call<void>("push", std::string(test.name));
+        SkDebugf("test %s\n", test.fName);
+        tests.call<void>("push", std::string(test.fName));
     }
     return tests;
 }
 
 static skiatest::Test getTestWithName(std::string name, bool* ok) {
     for (auto test : skiatest::TestRegistry::Range()) {
-        if (name == test.name) {
+        if (name == test.fName) {
           *ok = true;
           return test;
         }
     }
     *ok = false;
-    return skiatest::Test(nullptr, false, nullptr);
+    return skiatest::Test::MakeCPU(nullptr, nullptr);
 }
 
 // Based on DM.cpp:run_test
@@ -249,49 +248,33 @@ static JSObject RunTest(std::string name) {
         return result;
     }
     GrContextOptions grOpts;
-    if (test.needsGpu) {
+    if (test.fTestType == skiatest::TestType::kGanesh) {
         result.set("result", "passed"); // default to passing - the reporter will mark failed.
         WasmReporter reporter(name, result);
-        test.run(&reporter, grOpts);
+        test.modifyGrContextOptions(&grOpts);
+        test.ganesh(&reporter, grOpts);
+        return result;
+    } else if (test.fTestType == skiatest::TestType::kGraphite) {
+        SkDebugf("Graphite test %s not yet supported\n", name.c_str());
         return result;
     }
 
     result.set("result", "passed"); // default to passing - the reporter will mark failed.
     WasmReporter reporter(name, result);
-    test.run(&reporter, grOpts);
+    test.cpu(&reporter);
     return result;
 }
 
 namespace skiatest {
 
-class WasmContextInfo : public sk_gpu_test::ContextInfo {
-public:
-    WasmContextInfo(GrDirectContext* context,
-                    const GrContextOptions& options)
-          : fContext(context), fOptions(options) {}
-
-    GrDirectContext* directContext() const { return fContext; }
-    sk_gpu_test::TestContext* testContext() const { return nullptr; }
-
-    sk_gpu_test::GLTestContext* glContext() const { return nullptr; }
-
-    const GrContextOptions& options() const { return fOptions; }
-private:
-    GrDirectContext* fContext = nullptr;
-    GrContextOptions fOptions;
-};
-
 using ContextType = sk_gpu_test::GrContextFactory::ContextType;
 
-// These are the supported GrContextTypeFilterFn
+// These are the supported GrContextTypeFilterFn. They are defined in Test.h and implemented here.
 bool IsGLContextType(ContextType ct) {
     return GrBackendApi::kOpenGL == sk_gpu_test::GrContextFactory::ContextTypeBackend(ct);
 }
 bool IsRenderingGLContextType(ContextType ct) {
     return IsGLContextType(ct) && sk_gpu_test::GrContextFactory::IsRenderingContext(ct);
-}
-bool IsRenderingGLOrMetalContextType(ContextType ct) {
-    return IsRenderingGLContextType(ct);
 }
 bool IsMockContextType(ContextType ct) {
     return ct == ContextType::kMock_ContextType;
@@ -302,39 +285,73 @@ bool IsMetalContextType(ContextType) {return false;}
 bool IsDirect3DContextType(ContextType) {return false;}
 bool IsDawnContextType(ContextType) {return false;}
 
-void RunWithGPUTestContexts(GrContextTestFn* test, GrContextTypeFilterFn* contextTypeFilter,
-                            Reporter* reporter, const GrContextOptions& options) {
+void RunWithGaneshTestContexts(GrContextTestFn* testFn, GrContextTypeFilterFn* filter,
+                               Reporter* reporter, const GrContextOptions& options) {
     for (auto contextType : {ContextType::kGLES_ContextType, ContextType::kMock_ContextType}) {
-        if (contextTypeFilter && !(*contextTypeFilter)(contextType)) {
+        if (filter && !(*filter)(contextType)) {
             continue;
         }
-        sk_sp<GrDirectContext> ctx = (contextType == ContextType::kGLES_ContextType) ?
-                                     GrDirectContext::MakeGL(options) :
-                                     GrDirectContext::MakeMock(nullptr, options);
-        if (!ctx) {
-            SkDebugf("Could not make context\n");
+
+        sk_gpu_test::GrContextFactory factory(options);
+        sk_gpu_test::ContextInfo ctxInfo = factory.getContextInfo(contextType);
+
+        REPORTER_ASSERT(reporter, ctxInfo.directContext() != nullptr);
+        if (!ctxInfo.directContext()) {
             return;
         }
-        WasmContextInfo ctxInfo(ctx.get(), options);
-
+        ctxInfo.testContext()->makeCurrent();
         // From DMGpuTestProcs.cpp
-        (*test)(reporter, ctxInfo);
+        (*testFn)(reporter, ctxInfo);
         // Sync so any release/finished procs get called.
         ctxInfo.directContext()->flushAndSubmit(/*sync*/true);
     }
 }
 } // namespace skiatest
 
+namespace {
+
+// A GLtestContext that we can return from CreatePlatformGLTestContext below.
+// It doesn't have to do anything WebGL-specific that I know of but we can't return
+// a GLTestContext because it has pure virtual methods that need to be implemented.
+class WasmWebGlTestContext : public sk_gpu_test::GLTestContext {
+public:
+    WasmWebGlTestContext() {}
+    ~WasmWebGlTestContext() override {
+        this->teardown();
+    }
+    // We assume WebGL only has one context and that it is always current.
+    // Therefore these context related functions return null intentionally.
+    // It's possible that more tests will pass if these were correctly implemented.
+    std::unique_ptr<GLTestContext> makeNew() const override {
+        // This is supposed to create a new GL context in a new GLTestContext.
+        // Specifically for tests that do not want to re-use the existing one.
+        return nullptr;
+    }
+    void onPlatformMakeNotCurrent() const override { }
+    void onPlatformMakeCurrent() const override { }
+    std::function<void()> onPlatformGetAutoContextRestore() const override {
+        return nullptr;
+    }
+    GrGLFuncPtr onPlatformGetProcAddress(const char* procName) const override {
+        return nullptr;
+    }
+};
+} // namespace
+
 namespace sk_gpu_test {
 GLTestContext *CreatePlatformGLTestContext(GrGLStandard forcedGpuAPI,
                                            GLTestContext *shareContext) {
-    return nullptr;
+    return new WasmWebGlTestContext();
 }
 } // namespace sk_gpu_test
 
 void Init() {
     // Use the portable fonts.
     gSkFontMgr_DefaultFactory = &ToolUtils::MakePortableFontMgr;
+}
+
+TestHarness CurrentTestHarness() {
+    return TestHarness::kWasmGMTests;
 }
 
 EMSCRIPTEN_BINDINGS(GMs) {

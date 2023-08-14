@@ -5,54 +5,55 @@
  * found in the LICENSE file.
  */
 
+#include "include/core/SkAlphaType.h"
 #include "include/core/SkBitmap.h"
-#include "include/core/SkBlendMode.h"
 #include "include/core/SkBlurTypes.h"
 #include "include/core/SkCanvas.h"
 #include "include/core/SkColor.h"
 #include "include/core/SkColorPriv.h"
-#include "include/core/SkDrawLooper.h"
+#include "include/core/SkColorType.h"
 #include "include/core/SkImageInfo.h"
 #include "include/core/SkMaskFilter.h"
-#include "include/core/SkMath.h"
 #include "include/core/SkPaint.h"
 #include "include/core/SkPath.h"
+#include "include/core/SkPathUtils.h"
 #include "include/core/SkPixmap.h"
 #include "include/core/SkPoint.h"
 #include "include/core/SkRRect.h"
 #include "include/core/SkRect.h"
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkScalar.h"
-#include "include/core/SkShader.h"
 #include "include/core/SkSize.h"
 #include "include/core/SkSurface.h"
 #include "include/core/SkTypes.h"
-#include "include/effects/SkBlurDrawLooper.h"
-#include "include/effects/SkLayerDrawLooper.h"
 #include "include/effects/SkPerlinNoiseShader.h"
+#include "include/gpu/GpuTypes.h"
 #include "include/gpu/GrDirectContext.h"
-#include "include/private/SkFloatBits.h"
-#include "include/private/SkTPin.h"
+#include "include/gpu/ganesh/SkSurfaceGanesh.h"
+#include "include/private/base/SkFloatBits.h"
+#include "include/private/base/SkTPin.h"
+#include "src/base/SkMathPriv.h"
 #include "src/core/SkBlurMask.h"
 #include "src/core/SkGpuBlurUtils.h"
 #include "src/core/SkMask.h"
 #include "src/core/SkMaskFilterBase.h"
-#include "src/core/SkMathPriv.h"
 #include "src/effects/SkEmbossMaskFilter.h"
+#include "tests/CtsEnforcement.h"
 #include "tests/Test.h"
 #include "tools/ToolUtils.h"
-#include "tools/gpu/GrContextFactory.h"
 
 #include <math.h>
 #include <string.h>
+#include <array>
+#include <cstddef>
+#include <cstdint>
 #include <initializer_list>
-#include <utility>
+
+struct GrContextOptions;
 
 #define WRITE_CSV 0
 
 ///////////////////////////////////////////////////////////////////////////////
-
-#define ILLEGAL_MODE    ((SkXfermode::Mode)-1)
 
 static const int outset = 100;
 static const SkColor bgColor = SK_ColorWHITE;
@@ -136,11 +137,11 @@ DEF_TEST(BlurDrawing, reporter) {
         for (bool respectCTM : { false, true }) {
             paint.setMaskFilter(SkMaskFilter::MakeBlur(blurStyle, sigma, respectCTM));
 
-            for (size_t test = 0; test < SK_ARRAY_COUNT(tests); ++test) {
+            for (size_t test = 0; test < std::size(tests); ++test) {
                 SkPath path;
                 tests[test].addPath(&path);
                 SkPath strokedPath;
-                paint.getFillPath(path, &strokedPath);
+                skpathutils::FillPathWithPaint(path, paint, &strokedPath);
                 SkRect refBound = strokedPath.getBounds();
                 SkIRect iref;
                 refBound.roundOut(&iref);
@@ -326,7 +327,7 @@ DEF_TEST(BlurSigmaRange, reporter) {
         { 2.3f, 50.3f }     // a little divet to throw off the rect special case
     };
     SkPath polyPath;
-    polyPath.addPoly(polyPts, SK_ARRAY_COUNT(polyPts), true);
+    polyPath.addPoly(polyPts, std::size(polyPts), true);
 
     int rectSpecialCaseResult[kSize];
     int generalCaseResult[kSize];
@@ -359,91 +360,6 @@ DEF_TEST(BlurSigmaRange, reporter) {
 
 ///////////////////////////////////////////////////////////////////////////////////////////
 
-static void test_blurDrawLooper(skiatest::Reporter* reporter, SkScalar sigma, SkBlurStyle style) {
-    if (kNormal_SkBlurStyle != style) {
-        return; // blurdrawlooper only supports normal
-    }
-
-    const SkColor color = 0xFF335577;
-    const SkScalar dx = 10;
-    const SkScalar dy = -5;
-    sk_sp<SkDrawLooper> lp(SkBlurDrawLooper::Make(color, sigma, dx, dy));
-    const bool expectSuccess = sigma > 0;
-
-    if (nullptr == lp) {
-        REPORTER_ASSERT(reporter, sigma <= 0);
-    } else {
-        SkDrawLooper::BlurShadowRec rec;
-        bool success = lp->asABlurShadow(&rec);
-        REPORTER_ASSERT(reporter, success == expectSuccess);
-        if (success) {
-            REPORTER_ASSERT(reporter, rec.fSigma == sigma);
-            REPORTER_ASSERT(reporter, rec.fOffset.x() == dx);
-            REPORTER_ASSERT(reporter, rec.fOffset.y() == dy);
-            REPORTER_ASSERT(reporter, rec.fColor == color);
-            REPORTER_ASSERT(reporter, rec.fStyle == style);
-        }
-    }
-}
-
-static void test_looper(skiatest::Reporter* reporter, sk_sp<SkDrawLooper> lp, SkScalar sigma,
-                        SkBlurStyle style, bool expectSuccess) {
-    SkDrawLooper::BlurShadowRec rec;
-    bool success = lp->asABlurShadow(&rec);
-    REPORTER_ASSERT(reporter, success == expectSuccess);
-    if (success != expectSuccess) {
-        lp->asABlurShadow(&rec);
-    }
-    if (success) {
-        REPORTER_ASSERT(reporter, rec.fSigma == sigma);
-        REPORTER_ASSERT(reporter, rec.fStyle == style);
-    }
-}
-
-static void make_noop_layer(SkLayerDrawLooper::Builder* builder) {
-    SkLayerDrawLooper::LayerInfo info;
-
-    info.fPaintBits = 0;
-    info.fColorMode = SkBlendMode::kDst;
-    builder->addLayer(info);
-}
-
-static void make_blur_layer(SkLayerDrawLooper::Builder* builder, sk_sp<SkMaskFilter> mf) {
-    SkLayerDrawLooper::LayerInfo info;
-
-    info.fPaintBits = SkLayerDrawLooper::kMaskFilter_Bit;
-    info.fColorMode = SkBlendMode::kSrc;
-    SkPaint* paint = builder->addLayer(info);
-    paint->setMaskFilter(std::move(mf));
-}
-
-static void test_layerDrawLooper(skiatest::Reporter* reporter, sk_sp<SkMaskFilter> mf,
-                                 SkScalar sigma, SkBlurStyle style, bool expectSuccess) {
-
-    SkLayerDrawLooper::LayerInfo info;
-    SkLayerDrawLooper::Builder builder;
-
-    // 1 layer is too few
-    make_noop_layer(&builder);
-    test_looper(reporter, builder.detach(), sigma, style, false);
-
-    // 2 layers is good, but need blur
-    make_noop_layer(&builder);
-    make_noop_layer(&builder);
-    test_looper(reporter, builder.detach(), sigma, style, false);
-
-    // 2 layers is just right
-    make_noop_layer(&builder);
-    make_blur_layer(&builder, mf);
-    test_looper(reporter, builder.detach(), sigma, style, expectSuccess);
-
-    // 3 layers is too many
-    make_noop_layer(&builder);
-    make_blur_layer(&builder, mf);
-    make_noop_layer(&builder);
-    test_looper(reporter, builder.detach(), sigma, style, false);
-}
-
 DEF_TEST(BlurAsABlur, reporter) {
     const SkBlurStyle styles[] = {
         kNormal_SkBlurStyle, kSolid_SkBlurStyle, kOuter_SkBlurStyle, kInner_SkBlurStyle
@@ -455,9 +371,9 @@ DEF_TEST(BlurAsABlur, reporter) {
 
     // Test asABlur for SkBlurMaskFilter
     //
-    for (size_t i = 0; i < SK_ARRAY_COUNT(styles); ++i) {
+    for (size_t i = 0; i < std::size(styles); ++i) {
         const SkBlurStyle style = styles[i];
-        for (size_t j = 0; j < SK_ARRAY_COUNT(sigmas); ++j) {
+        for (size_t j = 0; j < std::size(sigmas); ++j) {
             const SkScalar sigma = sigmas[j];
             for (bool respectCTM : { false, true }) {
                 sk_sp<SkMaskFilter> mf(SkMaskFilter::MakeBlur(style, sigma, respectCTM));
@@ -474,9 +390,14 @@ DEF_TEST(BlurAsABlur, reporter) {
                     } else {
                         REPORTER_ASSERT(reporter, !success);
                     }
-                    test_layerDrawLooper(reporter, std::move(mf), sigma, style, success);
+
+                    const SkRect src = {0, 0, 100, 100};
+                    const auto dst = mf->approximateFilteredBounds(src);
+
+                    // This is a very conservative test. With more knowledge, we could
+                    // consider more stringent tests.
+                    REPORTER_ASSERT(reporter, dst.contains(src));
                 }
-                test_blurDrawLooper(reporter, sigma, style);
             }
         }
     }
@@ -487,7 +408,7 @@ DEF_TEST(BlurAsABlur, reporter) {
         SkEmbossMaskFilter::Light light = {
             { 1, 1, 1 }, 0, 127, 127
         };
-        for (size_t j = 0; j < SK_ARRAY_COUNT(sigmas); ++j) {
+        for (size_t j = 0; j < std::size(sigmas); ++j) {
             const SkScalar sigma = sigmas[j];
             auto mf(SkEmbossMaskFilter::Make(sigma, light));
             if (mf) {
@@ -501,10 +422,9 @@ DEF_TEST(BlurAsABlur, reporter) {
 
 // This exercises the problem discovered in crbug.com/570232. The return value from
 // SkBlurMask::BoxBlur wasn't being checked in SkBlurMaskFilter.cpp::GrRRectBlurEffect::Create
-DEF_GPUTEST_FOR_RENDERING_CONTEXTS(SmallBoxBlurBug, reporter, ctxInfo) {
-
+DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(SmallBoxBlurBug, reporter, ctxInfo, CtsEnforcement::kNever) {
     SkImageInfo info = SkImageInfo::MakeN32Premul(128, 128);
-    auto surface(SkSurface::MakeRenderTarget(ctxInfo.directContext(), SkBudgeted::kNo, info));
+    auto surface(SkSurfaces::RenderTarget(ctxInfo.directContext(), skgpu::Budgeted::kNo, info));
     SkCanvas* canvas = surface->getCanvas();
 
     SkRect r = SkRect::MakeXYWH(10, 10, 100, 100);
@@ -587,14 +507,14 @@ DEF_TEST(EmbossPerlinCrash, reporter) {
     p.setMaskFilter(SkEmbossMaskFilter::Make(1, light));
     p.setShader(SkPerlinNoiseShader::MakeFractalNoise(1.0f, 1.0f, 2, 0.0f));
 
-    sk_sp<SkSurface> surface = SkSurface::MakeRasterN32Premul(100, 100);
+    sk_sp<SkSurface> surface = SkSurfaces::Raster(SkImageInfo::MakeN32Premul(100, 100));
     surface->getCanvas()->drawPaint(p);
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////
 
 DEF_TEST(BlurZeroSigma, reporter) {
-    auto surf = SkSurface::MakeRasterN32Premul(20, 20);
+    auto surf = SkSurfaces::Raster(SkImageInfo::MakeN32Premul(20, 20));
     SkPaint paint;
     paint.setAntiAlias(true);
 
@@ -625,12 +545,15 @@ DEF_TEST(BlurZeroSigma, reporter) {
 
 ///////////////////////////////////////////////////////////////////////////////////////////
 
-DEF_GPUTEST_FOR_RENDERING_CONTEXTS(BlurMaskBiggerThanDest, reporter, ctxInfo) {
+DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(BlurMaskBiggerThanDest,
+                                       reporter,
+                                       ctxInfo,
+                                       CtsEnforcement::kApiLevel_T) {
     auto context = ctxInfo.directContext();
 
     SkImageInfo ii = SkImageInfo::Make(32, 32, kRGBA_8888_SkColorType, kPremul_SkAlphaType);
 
-    sk_sp<SkSurface> dst(SkSurface::MakeRenderTarget(context, SkBudgeted::kNo, ii));
+    sk_sp<SkSurface> dst(SkSurfaces::RenderTarget(context, skgpu::Budgeted::kNo, ii));
     if (!dst) {
         ERRORF(reporter, "Could not create surface for test.");
         return;

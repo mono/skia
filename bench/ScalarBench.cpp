@@ -7,8 +7,8 @@
 #include "bench/Benchmark.h"
 #include "include/core/SkRect.h"
 #include "include/core/SkString.h"
-#include "include/private/SkFloatBits.h"
-#include "include/utils/SkRandom.h"
+#include "include/private/base/SkFloatBits.h"
+#include "src/base/SkRandom.h"
 
 class ScalarBench : public Benchmark {
     SkString    fName;
@@ -59,7 +59,7 @@ protected:
     int mulLoopCount() const override { return 4; }
     void performTest() override {
         // xoring into a volatile prevents the compiler from optimizing these checks away.
-        volatile bool junk = false;
+        [[maybe_unused]] volatile bool junk = false;
         junk ^= (fArray[6] != 0.0f || fArray[7] != 0.0f || fArray[8] != 1.0f);
         junk ^= (fArray[2] != 0.0f || fArray[5] != 0.0f);
     }
@@ -78,7 +78,7 @@ protected:
     int mulLoopCount() const override { return 4; }
     void performTest() override {
         // xoring into a volatile prevents the compiler from optimizing these checks away.
-        volatile int32_t junk = 0;
+        [[maybe_unused]] volatile int32_t junk = 0;
         junk ^= (SkScalarAs2sCompliment(fArray[6]) |
                  SkScalarAs2sCompliment(fArray[7]) |
                 (SkScalarAs2sCompliment(fArray[8]) - kPersp1Int));
@@ -150,7 +150,7 @@ protected:
 
     void onDraw(int loops, SkCanvas* canvas) override {
         SkRect r;
-        for (int i = 0; i < loops; ++i) {
+        for (int loop = 0; loop < loops; ++loop) {
             for (int i = 0; i < 1000; ++i) {
                 r.setBounds(fPts, PTS);
             }

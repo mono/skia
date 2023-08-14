@@ -9,7 +9,6 @@
 #include "include/core/SkBitmap.h"
 #include "include/core/SkCanvas.h"
 #include "include/core/SkColor.h"
-#include "include/core/SkFilterQuality.h"
 #include "include/core/SkImage.h"
 #include "include/core/SkImageFilter.h"
 #include "include/core/SkMatrix.h"
@@ -27,9 +26,11 @@
 #include "include/core/SkSurface.h"
 #include "include/core/SkTypes.h"
 #include "include/effects/SkImageFilters.h"
-#include "include/private/SkTArray.h"
+#include "include/private/base/SkTArray.h"
 
 #include <utility>
+
+using namespace skia_private;
 
 namespace skiagm {
 
@@ -87,27 +88,28 @@ static void draw_bitmap(SkCanvas* canvas, const SkRect& r, const SkPaint& p) {
     SkCanvas temp(bm);
     temp.clear(SK_ColorMAGENTA);
 
-    canvas->drawBitmapRect(bm, r, &p);
+    canvas->drawImageRect(bm.asImage(), r, SkSamplingOptions(), &p);
 }
 
 constexpr drawMth gDrawMthds[] = {
     draw_rect, draw_oval, draw_rrect, draw_drrect, draw_path, draw_points, draw_bitmap
 };
 
-static void add_paint(SkTArray<SkPaint>* paints, sk_sp<SkImageFilter> filter) {
+static void add_paint(TArray<SkPaint>* paints, sk_sp<SkImageFilter> filter) {
     SkPaint& p = paints->push_back();
     p.setImageFilter(std::move(filter));
     SkASSERT(p.canComputeFastBounds());
 }
 
 // Create a selection of imagefilter-based paints to test
-static void create_paints(SkTArray<SkPaint>* paints, sk_sp<SkImageFilter> source) {
+static void create_paints(TArray<SkPaint>* paints, sk_sp<SkImageFilter> source) {
     {
         SkMatrix scale;
         scale.setScale(2.0f, 2.0f);
 
         sk_sp<SkImageFilter> scaleMIF(
-            SkImageFilters::MatrixTransform(scale, kLow_SkFilterQuality, source));
+            SkImageFilters::MatrixTransform(scale, SkSamplingOptions(SkFilterMode::kLinear),
+                                            source));
 
         add_paint(paints, std::move(scaleMIF));
     }
@@ -117,7 +119,7 @@ static void create_paints(SkTArray<SkPaint>* paints, sk_sp<SkImageFilter> source
         rot.setRotate(-33.3f);
 
         sk_sp<SkImageFilter> rotMIF(
-            SkImageFilters::MatrixTransform(rot, kLow_SkFilterQuality, source));
+            SkImageFilters::MatrixTransform(rot, SkSamplingOptions(SkFilterMode::kLinear), source));
 
         add_paint(paints, std::move(rotMIF));
     }
@@ -157,15 +159,15 @@ public:
     }
 
 protected:
-    static constexpr int kTileWidth = 100;
-    static constexpr int kTileHeight = 100;
-    static constexpr int kNumVertTiles = 7;
-    static constexpr int kNumXtraCols = 2;
+    inline static constexpr int kTileWidth = 100;
+    inline static constexpr int kTileHeight = 100;
+    inline static constexpr int kNumVertTiles = 7;
+    inline static constexpr int kNumXtraCols = 2;
 
     SkString onShortName() override { return SkString("filterfastbounds"); }
 
     SkISize onISize() override {
-        return SkISize::Make((SK_ARRAY_COUNT(gDrawMthds) + kNumXtraCols) * kTileWidth,
+        return SkISize::Make((std::size(gDrawMthds) + kNumXtraCols) * kTileWidth,
                              kNumVertTiles * kTileHeight);
     }
 
@@ -233,7 +235,7 @@ protected:
 
         //-----------
         // Normal paints (no source)
-        SkTArray<SkPaint> paints;
+        TArray<SkPaint> paints;
         create_paints(&paints, nullptr);
 
         //-----------
@@ -248,13 +250,13 @@ protected:
             pic = rec.finishRecordingAsPicture();
         }
 
-        SkTArray<SkPaint> pifPaints;
+        TArray<SkPaint> pifPaints;
         create_paints(&pifPaints, SkImageFilters::Picture(pic));
 
         //-----------
         // Paints with a SkImageSource as a source
 
-        auto surface(SkSurface::MakeRasterN32Premul(10, 10));
+        auto surface(SkSurfaces::Raster(SkImageInfo::MakeN32Premul(10, 10)));
         {
             SkPaint p;
             SkCanvas* temp = surface->getCanvas();
@@ -267,46 +269,46 @@ protected:
 
         sk_sp<SkImage> image(surface->makeImageSnapshot());
         sk_sp<SkImageFilter> imageSource(SkImageFilters::Image(std::move(image)));
-        SkTArray<SkPaint> bmsPaints;
+        TArray<SkPaint> bmsPaints;
         create_paints(&bmsPaints, std::move(imageSource));
 
         //-----------
-        SkASSERT(paints.count() == kNumVertTiles);
-        SkASSERT(paints.count() == pifPaints.count());
-        SkASSERT(paints.count() == bmsPaints.count());
+        SkASSERT(paints.size() == kNumVertTiles);
+        SkASSERT(paints.size() == pifPaints.size());
+        SkASSERT(paints.size() == bmsPaints.size());
 
         // horizontal separators
-        for (int i = 1; i < paints.count(); ++i) {
+        for (int i = 1; i < paints.size(); ++i) {
             canvas->drawLine(0,
                              i*SkIntToScalar(kTileHeight),
-                             SkIntToScalar((SK_ARRAY_COUNT(gDrawMthds) + kNumXtraCols)*kTileWidth),
+                             SkIntToScalar((std::size(gDrawMthds) + kNumXtraCols)*kTileWidth),
                              i*SkIntToScalar(kTileHeight),
                              blackFill);
         }
         // vertical separators
-        for (int i = 0; i < (int)SK_ARRAY_COUNT(gDrawMthds) + kNumXtraCols; ++i) {
+        for (int i = 0; i < (int)std::size(gDrawMthds) + kNumXtraCols; ++i) {
             canvas->drawLine(SkIntToScalar(i * kTileWidth),
                              0,
                              SkIntToScalar(i * kTileWidth),
-                             SkIntToScalar(paints.count() * kTileWidth),
+                             SkIntToScalar(paints.size() * kTileWidth),
                              blackFill);
         }
 
         // A column of saveLayers with PictureImageFilters
-        for (int i = 0; i < pifPaints.count(); ++i) {
+        for (int i = 0; i < pifPaints.size(); ++i) {
             draw_savelayer_with_paint(SkIPoint::Make(0, i*kTileHeight),
                                       canvas, pifPaints[i]);
         }
 
         // A column of saveLayers with BitmapSources
-        for (int i = 0; i < pifPaints.count(); ++i) {
+        for (int i = 0; i < pifPaints.size(); ++i) {
             draw_savelayer_with_paint(SkIPoint::Make(kTileWidth, i*kTileHeight),
                                       canvas, bmsPaints[i]);
         }
 
         // Multiple columns with different geometry
-        for (int i = 0; i < (int)SK_ARRAY_COUNT(gDrawMthds); ++i) {
-            for (int j = 0; j < paints.count(); ++j) {
+        for (int i = 0; i < (int)std::size(gDrawMthds); ++i) {
+            for (int j = 0; j < paints.size(); ++j) {
                 draw_geom_with_paint(*gDrawMthds[i],
                                      SkIPoint::Make((i+kNumXtraCols) * kTileWidth, j*kTileHeight),
                                      canvas, paints[j]);

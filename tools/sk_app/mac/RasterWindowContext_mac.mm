@@ -34,27 +34,25 @@ public:
 
     sk_sp<SkSurface> getBackbufferSurface() override;
 
-    void onSwapBuffers() override;
-
     sk_sp<const GrGLInterface> onInitializeContext() override;
     void onDestroyContext() override {}
 
     void resize(int w, int h) override;
 
 private:
+    void onSwapBuffers() override;
+
     NSView*              fMainView;
     NSOpenGLContext*     fGLContext;
     NSOpenGLPixelFormat* fPixelFormat;
     sk_sp<SkSurface>     fBackbufferSurface;
-
-    using INHERITED = GLWindowContext;
 };
 
 RasterWindowContext_mac::RasterWindowContext_mac(const MacWindowInfo& info,
                                                  const DisplayParams& params)
-    : INHERITED(params)
-    , fMainView(info.fMainView)
-    , fGLContext(nil) {
+        : GLWindowContext(params)
+        , fMainView(info.fMainView)
+        , fGLContext(nil) {
 
     // any config code here (particularly for msaa)?
 
@@ -115,6 +113,7 @@ sk_sp<const GrGLInterface> RasterWindowContext_mac::onInitializeContext() {
             return nullptr;
         }
 
+        [fMainView setWantsBestResolutionOpenGLSurface:YES];
         [fGLContext setView:fMainView];
 
         GLint swapInterval = fDisplayParams.fDisableVsync ? 0 : 1;
@@ -137,15 +136,15 @@ sk_sp<const GrGLInterface> RasterWindowContext_mac::onInitializeContext() {
     fSampleCount = sampleCount;
     fSampleCount = std::max(fSampleCount, 1);
 
-    const NSRect viewportRect = [fMainView frame];
-    fWidth = viewportRect.size.width;
-    fHeight = viewportRect.size.height;
+    CGFloat backingScaleFactor = sk_app::GetBackingScaleFactor(fMainView);
+    fWidth = fMainView.bounds.size.width * backingScaleFactor;
+    fHeight = fMainView.bounds.size.height * backingScaleFactor;
     glViewport(0, 0, fWidth, fHeight);
 
     // make the offscreen image
     SkImageInfo info = SkImageInfo::Make(fWidth, fHeight, fDisplayParams.fColorType,
                                          kPremul_SkAlphaType, fDisplayParams.fColorSpace);
-    fBackbufferSurface = SkSurface::MakeRaster(info);
+    fBackbufferSurface = SkSurfaces::Raster(info);
     return GrGLMakeNativeInterface();
 }
 
@@ -156,7 +155,7 @@ void RasterWindowContext_mac::onSwapBuffers() {
         // We made/have an off-screen surface. Get the contents as an SkImage:
         sk_sp<SkImage> snapshot = fBackbufferSurface->makeImageSnapshot();
 
-        sk_sp<SkSurface> gpuSurface = INHERITED::getBackbufferSurface();
+        sk_sp<SkSurface> gpuSurface = GLWindowContext::getBackbufferSurface();
         SkCanvas* gpuCanvas = gpuSurface->getCanvas();
         gpuCanvas->drawImage(snapshot, 0, 0);
         gpuCanvas->flush();
@@ -167,7 +166,9 @@ void RasterWindowContext_mac::onSwapBuffers() {
 
 void RasterWindowContext_mac::resize(int w, int h) {
     [fGLContext update];
-    INHERITED::resize(w, h);
+
+    // The super class always recreates the context.
+    GLWindowContext::resize(0, 0);
 }
 
 }  // anonymous namespace

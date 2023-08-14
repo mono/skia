@@ -8,10 +8,18 @@
 #include "tools/viewer/SlideDir.h"
 
 #include "include/core/SkCanvas.h"
+#include "include/core/SkColor.h"
 #include "include/core/SkCubicMap.h"
+#include "include/core/SkFont.h"
+#include "include/core/SkMatrix.h"
+#include "include/core/SkRect.h"
+#include "include/core/SkString.h"
 #include "include/core/SkTypeface.h"
-#include "include/private/SkTPin.h"
+#include "include/private/SkBitmaskEnum.h"
+#include "include/private/base/SkTPin.h"
+#include "include/utils/SkTextUtils.h"
 #include "modules/sksg/include/SkSGDraw.h"
+#include "modules/sksg/include/SkSGGeometryNode.h"
 #include "modules/sksg/include/SkSGGroup.h"
 #include "modules/sksg/include/SkSGPaint.h"
 #include "modules/sksg/include/SkSGPlane.h"
@@ -20,10 +28,16 @@
 #include "modules/sksg/include/SkSGScene.h"
 #include "modules/sksg/include/SkSGText.h"
 #include "modules/sksg/include/SkSGTransform.h"
+#include "tools/skui/InputState.h"
+#include "tools/skui/ModifierKey.h"
 #include "tools/timer/TimeUtils.h"
 
 #include <cmath>
 #include <utility>
+
+namespace sksg { class InvalidationController; }
+
+using namespace skia_private;
 
 class SlideDir::Animator : public SkRefCnt {
 public:
@@ -102,15 +116,12 @@ private:
     }
 
     const sk_sp<Slide> fSlide;
-
-    using INHERITED = sksg::RenderNode;
 };
 
 SkMatrix SlideMatrix(const sk_sp<Slide>& slide, const SkRect& dst) {
     const auto slideSize = slide->getDimensions();
-    return SkMatrix::MakeRectToRect(SkRect::MakeIWH(slideSize.width(), slideSize.height()),
-                                    dst,
-                                    SkMatrix::kCenter_ScaleToFit);
+    return SkMatrix::RectToRect(SkRect::MakeIWH(slideSize.width(), slideSize.height()), dst,
+                                SkMatrix::kCenter_ScaleToFit);
 }
 
 } // namespace
@@ -180,9 +191,8 @@ public:
         }
 
         // Map coords to slide space.
-        const auto xform = SkMatrix::MakeRectToRect(fRect,
-                                                    SkRect::MakeSize(fDir->fWinSize),
-                                                    SkMatrix::kCenter_ScaleToFit);
+        const auto xform = SkMatrix::RectToRect(fRect, SkRect::MakeSize(fDir->fWinSize),
+                                                SkMatrix::kCenter_ScaleToFit);
         const auto pt = xform.mapXY(x, y);
 
         return fTarget->fSlide->onMouse(pt.x(), pt.y(), state, modifiers);
@@ -260,11 +270,9 @@ private:
                     fOpacity1 = 1,
                     fTimeBase = 0;
     State           fState    = State::kIdle;
-
-    using INHERITED = Animator;
 };
 
-SlideDir::SlideDir(const SkString& name, SkTArray<sk_sp<Slide>>&& slides, int columns)
+SlideDir::SlideDir(const SkString& name, TArray<sk_sp<Slide>>&& slides, int columns)
     : fSlides(std::move(slides))
     , fColumns(columns) {
     fName = name;
@@ -308,7 +316,7 @@ void SlideDir::load(SkScalar winWidth, SkScalar winHeight) {
 
     fRoot = sksg::Group::Make();
 
-    for (int i = 0; i < fSlides.count(); ++i) {
+    for (int i = 0; i < fSlides.size(); ++i) {
         const auto& slide     = fSlides[i];
         slide->load(winWidth, winHeight);
 
@@ -349,7 +357,7 @@ void SlideDir::unload() {
         slide->unload();
     }
 
-    fRecs.reset();
+    fRecs.clear();
     fScene.reset();
     fFocusController.reset();
     fRoot.reset();
@@ -358,7 +366,7 @@ void SlideDir::unload() {
 
 SkISize SlideDir::getDimensions() const {
     return SkSize::Make(fWinSize.width(),
-                        fCellSize.height() * (1 + (fSlides.count() - 1) / fColumns)).toCeil();
+                        fCellSize.height() * (1 + (fSlides.size() - 1) / fColumns)).toCeil();
 }
 
 void SlideDir::draw(SkCanvas* canvas) {
@@ -438,5 +446,5 @@ const SlideDir::Rec* SlideDir::findCell(float x, float y) const {
               row = static_cast<int>(y / fCellSize.height()),
               idx = row * fColumns + col;
 
-    return idx < fRecs.count() ? &fRecs[idx] : nullptr;
+    return idx < (int)fRecs.size() ? &fRecs[idx] : nullptr;
 }

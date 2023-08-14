@@ -2,20 +2,13 @@
 * Copyright 2016 Google Inc.
 *
 * Use of this source code is governed by a BSD-style license that can be
-* f 49
-* Prev
-* Up
-*
-*
 * found in the LICENSE file.
 */
 
-//#include <tchar.h>
-
 #include "tools/sk_app/unix/WindowContextFactory_unix.h"
 
-#include "src/utils/SkUTF.h"
-#include "tools/sk_app/GLWindowContext.h"
+#include "src/base/SkUTF.h"
+#include "tools/sk_app/WindowContext.h"
 #include "tools/sk_app/unix/Window_unix.h"
 #include "tools/skui/ModifierKey.h"
 #include "tools/timer/Timer.h"
@@ -61,6 +54,7 @@ bool Window_unix::initWindow(Display* display) {
     constexpr int initialWidth = 1280;
     constexpr int initialHeight = 960;
 
+#ifdef SK_GL
     // Attempt to create a window that supports GL
 
     // We prefer the more recent glXChooseFBConfig but fall back to glXChooseVisual. They have
@@ -80,7 +74,7 @@ bool Window_unix::initWindow(Display* display) {
     };
     SkASSERT(nullptr == fVisualInfo);
     if (fRequestedDisplayParams.fMSAASampleCount > 1) {
-        static const GLint kChooseFBConifgAttCnt = SK_ARRAY_COUNT(kChooseFBConfigAtt);
+        static const GLint kChooseFBConifgAttCnt = std::size(kChooseFBConfigAtt);
         GLint msaaChooseFBConfigAtt[kChooseFBConifgAttCnt + 4];
         memcpy(msaaChooseFBConfigAtt, kChooseFBConfigAtt, sizeof(kChooseFBConfigAtt));
         SkASSERT(None == msaaChooseFBConfigAtt[kChooseFBConifgAttCnt - 1]);
@@ -94,7 +88,7 @@ bool Window_unix::initWindow(Display* display) {
         if (n > 0) {
             fVisualInfo = glXGetVisualFromFBConfig(fDisplay, *fFBConfig);
         } else {
-            static const GLint kChooseVisualAttCnt = SK_ARRAY_COUNT(chooseVisualAtt);
+            static const GLint kChooseVisualAttCnt = std::size(chooseVisualAtt);
             GLint msaaChooseVisualAtt[kChooseVisualAttCnt + 4];
             memcpy(msaaChooseVisualAtt, chooseVisualAtt, sizeof(chooseVisualAtt));
             SkASSERT(None == msaaChooseVisualAtt[kChooseVisualAttCnt - 1]);
@@ -137,7 +131,9 @@ bool Window_unix::initWindow(Display* display) {
                                 fVisualInfo->visual,
                                 CWEventMask | CWColormap,
                                 &swa);
-    } else {
+    }
+#endif
+    if (!fWindow) {
         // Create a simple window instead.  We will not be able to show GL
         fWindow = XCreateSimpleWindow(display,
                                       DefaultRootWindow(display),
@@ -223,7 +219,7 @@ static skui::Key get_key(KeySym keysym) {
         { 'y',          skui::Key::kY        },
         { 'z',          skui::Key::kZ        },
     };
-    for (size_t i = 0; i < SK_ARRAY_COUNT(gPair); i++) {
+    for (size_t i = 0; i < std::size(gPair); i++) {
         if (gPair[i].fXK == keysym) {
             return gPair[i].fKey;
         }
@@ -242,7 +238,7 @@ static skui::ModifierKey get_modifiers(const XEvent& event) {
     };
 
     skui::ModifierKey modifiers = skui::ModifierKey::kNone;
-    for (size_t i = 0; i < SK_ARRAY_COUNT(gModifiers); ++i) {
+    for (size_t i = 0; i < std::size(gModifiers); ++i) {
         if (event.xkey.state & gModifiers[i].fXMask) {
             modifiers |= gModifiers[i].fSkMask;
         }
@@ -368,8 +364,11 @@ bool Window_unix::handleEvent(const XEvent& event) {
 
 void Window_unix::setTitle(const char* title) {
     XTextProperty textproperty;
-    XStringListToTextProperty(const_cast<char**>(&title), 1, &textproperty);
+    if (!XStringListToTextProperty(const_cast<char**>(&title), 1, &textproperty)) {
+        return;
+    }
     XSetWMName(fDisplay, fWindow, &textproperty);
+    XFree(textproperty.value);
 }
 
 void Window_unix::show() {
@@ -400,6 +399,13 @@ bool Window_unix::attach(BackendType attachType) {
         case kDawn_BackendType:
             fWindowContext =
                     window_context_factory::MakeDawnVulkanForXlib(winInfo, fRequestedDisplayParams);
+            break;
+#endif
+#if defined(SK_DAWN) && defined(SK_GRAPHITE)
+        case kGraphiteDawn_BackendType:
+            fWindowContext =
+                    window_context_factory::MakeGraphiteDawnVulkanForXlib(winInfo,
+                                                                          fRequestedDisplayParams);
             break;
 #endif
 #ifdef SK_VULKAN
@@ -453,7 +459,7 @@ void Window_unix::setRequestedDisplayParams(const DisplayParams& params, bool al
     }
 #endif
 
-    INHERITED::setRequestedDisplayParams(params, allowReattach);
+    Window::setRequestedDisplayParams(params, allowReattach);
 }
 
 const char* Window_unix::getClipboardText() {

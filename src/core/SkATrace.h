@@ -10,6 +10,8 @@
 
 #include "include/utils/SkEventTracer.h"
 
+#include <cstdint>
+
 /**
  * This class is used to support ATrace in android apps. It hooks into the SkEventTracer system. It
  * currently supports the macros TRACE_EVENT*, TRACE_EVENT_INSTANT*, and TRACE_EVENT_BEGIN/END*.
@@ -44,7 +46,13 @@ public:
         return category;
     }
 
+    // Atrace does not yet support splitting up trace output into sections.
+    void newTracingSection(const char* name) override {}
+
 private:
+    SkATrace(const SkATrace&) = delete;
+    SkATrace& operator=(const SkATrace&) = delete;
+
     void (*fBeginSection)(const char*);
     void (*fEndSection)(void);
     bool (*fIsEnabled)(void);

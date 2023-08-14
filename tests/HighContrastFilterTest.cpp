@@ -7,8 +7,16 @@
 
 #include "include/core/SkBitmap.h"
 #include "include/core/SkCanvas.h"
+#include "include/core/SkColor.h"
+#include "include/core/SkColorFilter.h"
+#include "include/core/SkPaint.h"
+#include "include/core/SkRect.h"
+#include "include/core/SkRefCnt.h"
+#include "include/core/SkScalar.h"
 #include "include/effects/SkHighContrastFilter.h"
 #include "tests/Test.h"
+
+#include <initializer_list>
 
 DEF_TEST(HighContrastFilter_FilterImage, reporter) {
     SkHighContrastConfig config;
@@ -45,10 +53,11 @@ DEF_TEST(HighContrastFilter_FilterImage, reporter) {
     }
 }
 
-DEF_TEST(HighContrastFilter_SanityCheck, reporter) {
+DEF_TEST(HighContrastFilter_SmokeTest, reporter) {
     SkHighContrastConfig config;
     config.fInvertStyle = SkHighContrastConfig::InvertStyle::kInvertLightness;
     sk_sp<SkColorFilter> filter = SkHighContrastFilter::Make(config);
+    REPORTER_ASSERT(reporter, filter->isAlphaUnchanged());
 
     SkColor white_inverted = filter->filterColor(SK_ColorWHITE);
     REPORTER_ASSERT(reporter, white_inverted == SK_ColorBLACK);
@@ -76,11 +85,13 @@ DEF_TEST(HighContrastFilter_InvalidInputs, reporter) {
     REPORTER_ASSERT(reporter, !filter);
 
     // Valid contrast
-    config.fInvertStyle = SkHighContrastConfig::InvertStyle::kInvertBrightness;
-    config.fContrast = 0.5f;
-    REPORTER_ASSERT(reporter, config.isValid());
-    filter = SkHighContrastFilter::Make(config);
-    REPORTER_ASSERT(reporter, filter);
+    for (float contrast : {0.5f, +1.0f, -1.0f}) {
+        config.fInvertStyle = SkHighContrastConfig::InvertStyle::kInvertBrightness;
+        config.fContrast = contrast;
+        REPORTER_ASSERT(reporter, config.isValid());
+        filter = SkHighContrastFilter::Make(config);
+        REPORTER_ASSERT(reporter, filter);
+    }
 
     // Invalid contrast
     config.fContrast = 1.1f;

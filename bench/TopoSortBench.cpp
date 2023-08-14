@@ -7,10 +7,12 @@
 
 #include "bench/Benchmark.h"
 #include "include/core/SkString.h"
-#include "include/utils/SkRandom.h"
-#include "src/core/SkTTopoSort.h"
+#include "src/base/SkRandom.h"
+#include "src/gpu/ganesh/GrTTopoSort.h"
 
 #include "tools/ToolUtils.h"
+
+using namespace skia_private;
 
 class TopoSortBench : public Benchmark {
 public:
@@ -45,17 +47,17 @@ protected:
 
     void onDraw(int loops, SkCanvas*) override {
         for (int i = 0; i < loops; ++i) {
-            for (int j = 0; j < fGraph.count(); ++j) {
+            for (int j = 0; j < fGraph.size(); ++j) {
                 fGraph[j]->reset();
             }
 
-            ToolUtils::TopoTestNode::Shuffle(&fGraph, &fRand);
+            ToolUtils::TopoTestNode::Shuffle(fGraph, &fRand);
 
-            SkDEBUGCODE(bool actualResult =) SkTTopoSort<ToolUtils::TopoTestNode>(&fGraph);
+            SkDEBUGCODE(bool actualResult =) GrTTopoSort<ToolUtils::TopoTestNode>(fGraph);
             SkASSERT(actualResult);
 
 #ifdef SK_DEBUG
-            for (int j = 0; j < fGraph.count(); ++j) {
+            for (int j = 0; j < fGraph.size(); ++j) {
                 SkASSERT(fGraph[j]->check());
             }
 #endif
@@ -66,7 +68,7 @@ private:
     static const int kNumElements = 1000;
     static const int kMaxEdges = 5;
 
-    SkTArray<sk_sp<ToolUtils::TopoTestNode>> fGraph;
+    TArray<sk_sp<ToolUtils::TopoTestNode>> fGraph;
     SkRandom fRand;
 
     using INHERITED = Benchmark;

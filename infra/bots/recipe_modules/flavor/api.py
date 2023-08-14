@@ -11,10 +11,8 @@ from recipe_engine import recipe_api
 from . import android
 from . import chromebook
 from . import default
-from . import docker
 from . import ios
 from . import valgrind
-from . import win_ssh
 
 
 """Abstractions for running code on various platforms.
@@ -46,22 +44,12 @@ def is_chromebook(vars_api):
   return ('Chromebook' in vars_api.extra_tokens or
           'ChromeOS' in vars_api.builder_cfg.get('os', ''))
 
-def is_docker(vars_api):
-  return 'Docker' in vars_api.extra_tokens
-
 def is_ios(vars_api):
   return ('iOS' in vars_api.extra_tokens or
           'iOS' == vars_api.builder_cfg.get('os', ''))
 
-def is_test_skqp(vars_api):
-  return ('SKQP' in vars_api.extra_tokens and
-          vars_api.builder_name.startswith('Test'))
-
 def is_valgrind(vars_api):
   return 'Valgrind' in vars_api.extra_tokens
-
-def is_win_ssh(vars_api):
-  return 'LenovoYogaC630' in vars_api.builder_cfg.get('model', '')
 
 
 class SkiaFlavorApi(recipe_api.RecipeApi):
@@ -69,16 +57,12 @@ class SkiaFlavorApi(recipe_api.RecipeApi):
     """Return a flavor utils object specific to the given builder."""
     if is_chromebook(vars_api):
       return chromebook.ChromebookFlavor(self, app_name)
-    if is_android(vars_api) and not is_test_skqp(vars_api):
+    if is_android(vars_api):
       return android.AndroidFlavor(self, app_name)
-    elif is_docker(vars_api):
-      return docker.DockerFlavor(self, app_name)
     elif is_ios(vars_api):
       return ios.iOSFlavor(self, app_name)
     elif is_valgrind(vars_api):
       return valgrind.ValgrindFlavor(self, app_name)
-    elif is_win_ssh(vars_api):
-      return win_ssh.WinSSHFlavor(self, app_name)
     else:
       return default.DefaultFlavor(self, app_name)
 

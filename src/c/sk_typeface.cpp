@@ -10,6 +10,7 @@
 #include "include/core/SkFontMgr.h"
 #include "include/core/SkFontStyle.h"
 #include "include/core/SkTypeface.h"
+#include "include/core/SkStream.h"
 
 #include <memory>
 
@@ -143,23 +144,19 @@ void sk_fontmgr_get_family_name(sk_fontmgr_t* fontmgr, int index, sk_string_t* f
 }
 
 sk_fontstyleset_t* sk_fontmgr_create_styleset(sk_fontmgr_t* fontmgr, int index) {
-    return ToFontStyleSet(AsFontMgr(fontmgr)->createStyleSet(index));
+    return ToFontStyleSet(AsFontMgr(fontmgr)->createStyleSet(index).release());
 }
 
 sk_fontstyleset_t* sk_fontmgr_match_family(sk_fontmgr_t* fontmgr, const char* familyName) {
-    return ToFontStyleSet(AsFontMgr(fontmgr)->matchFamily(familyName));
+    return ToFontStyleSet(AsFontMgr(fontmgr)->matchFamily(familyName).release());
 }
 
 sk_typeface_t* sk_fontmgr_match_family_style(sk_fontmgr_t* fontmgr, const char* familyName, sk_fontstyle_t* style) {
-    return ToTypeface(AsFontMgr(fontmgr)->matchFamilyStyle(familyName, *AsFontStyle(style)));
+    return ToTypeface(AsFontMgr(fontmgr)->matchFamilyStyle(familyName, *AsFontStyle(style)).release());
 }
 
 sk_typeface_t* sk_fontmgr_match_family_style_character(sk_fontmgr_t* fontmgr, const char* familyName, sk_fontstyle_t* style, const char** bcp47, int bcp47Count, int32_t character) {
-    return ToTypeface(AsFontMgr(fontmgr)->matchFamilyStyleCharacter(familyName, *AsFontStyle(style), bcp47, bcp47Count, character));
-}
-
-sk_typeface_t* sk_fontmgr_match_face_style(sk_fontmgr_t* fontmgr, const sk_typeface_t* face, sk_fontstyle_t* style) {
-    return ToTypeface(AsFontMgr(fontmgr)->matchFaceStyle(AsTypeface(face), *AsFontStyle(style)));
+    return ToTypeface(AsFontMgr(fontmgr)->matchFamilyStyleCharacter(familyName, *AsFontStyle(style), bcp47, bcp47Count, character).release());
 }
 
 sk_typeface_t* sk_fontmgr_create_from_data(sk_fontmgr_t* fontmgr, sk_data_t* data, int index) {
@@ -202,7 +199,7 @@ sk_font_style_slant_t sk_fontstyle_get_slant(const sk_fontstyle_t* fs) {
 // font style set
 
 sk_fontstyleset_t* sk_fontstyleset_create_empty(void) {
-    return ToFontStyleSet(SkFontStyleSet::CreateEmpty());
+    return ToFontStyleSet(SkFontStyleSet::CreateEmpty().release());
 }
 
 void sk_fontstyleset_unref(sk_fontstyleset_t* fss) {
@@ -218,9 +215,9 @@ void sk_fontstyleset_get_style(sk_fontstyleset_t* fss, int index, sk_fontstyle_t
 }
 
 sk_typeface_t* sk_fontstyleset_create_typeface(sk_fontstyleset_t* fss, int index) {
-    return ToTypeface(AsFontStyleSet(fss)->createTypeface(index));
+    return ToTypeface(AsFontStyleSet(fss)->createTypeface(index).release());
 }
 
 sk_typeface_t* sk_fontstyleset_match_style(sk_fontstyleset_t* fss, sk_fontstyle_t* style) {
-    return ToTypeface(AsFontStyleSet(fss)->matchStyle(*AsFontStyle(style)));
+    return ToTypeface(AsFontStyleSet(fss)->matchStyle(*AsFontStyle(style)).release());
 }

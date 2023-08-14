@@ -1,4 +1,0 @@
-int func() { return 1; }
-
-void expect_constructor_invocation() { int x = int; }
-void expect_function_call()          { int x = func; }

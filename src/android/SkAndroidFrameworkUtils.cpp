@@ -10,15 +10,15 @@
 #include "include/utils/SkPaintFilterCanvas.h"
 #include "src/core/SkDevice.h"
 #include "src/image/SkSurface_Base.h"
+#include "src/shaders/SkShaderBase.h"
 
 #ifdef SK_BUILD_FOR_ANDROID_FRAMEWORK
 
 #include <log/log.h>
 
-#if SK_SUPPORT_GPU
+#if defined(SK_GANESH)
 bool SkAndroidFrameworkUtils::clipWithStencil(SkCanvas* canvas) {
-    SkBaseDevice* device = canvas->getDevice();
-    return device && device->android_utils_clipWithStencil();
+    return canvas->baseDevice()->android_utils_clipWithStencil();
 }
 #endif
 
@@ -35,18 +35,8 @@ int SkAndroidFrameworkUtils::SaveBehind(SkCanvas* canvas, const SkRect* subset) 
     return canvas->only_axis_aligned_saveBehind(subset);
 }
 
-void SkAndroidFrameworkUtils::ReplaceClip(SkCanvas* canvas, const SkIRect* rect) {
-    SkIRect deviceRestriction;
-    if (!rect) {
-        if (canvas->fClipRestrictionRect.isEmpty()) {
-            deviceRestriction = canvas->imageInfo().bounds();
-        } else {
-            deviceRestriction = canvas->fClipRestrictionRect;
-        }
-    } else {
-        deviceRestriction = *rect;
-    }
-    canvas->androidFramework_replaceClip(deviceRestriction);
+void SkAndroidFrameworkUtils::ResetClip(SkCanvas* canvas) {
+    canvas->internal_private_resetClip();
 }
 
 SkCanvas* SkAndroidFrameworkUtils::getBaseWrappedCanvas(SkCanvas* canvas) {
@@ -58,4 +48,28 @@ SkCanvas* SkAndroidFrameworkUtils::getBaseWrappedCanvas(SkCanvas* canvas) {
     }
     return result;
 }
+
+bool SkAndroidFrameworkUtils::ShaderAsALinearGradient(SkShader* shader,
+                                                      LinearGradientInfo* info) {
+    SkASSERT(shader);
+    SkTLazy<SkShaderBase::GradientInfo> baseInfo;
+    if (info) {
+        baseInfo.init();
+        baseInfo->fColorCount   = info->fColorCount;
+        baseInfo->fColors       = info->fColors;
+        baseInfo->fColorOffsets = info->fColorOffsets;
+    }
+    if (as_SB(shader)->asGradient(baseInfo.getMaybeNull()) != SkShaderBase::GradientType::kLinear) {
+        return false;
+    }
+    if (info) {
+        info->fColorCount    = baseInfo->fColorCount;  // this is inout in asGradient()
+        info->fPoints[0]     = baseInfo->fPoint[0];
+        info->fPoints[1]     = baseInfo->fPoint[1];
+        info->fTileMode      = baseInfo->fTileMode;
+        info->fGradientFlags = baseInfo->fGradientFlags;
+    }
+    return true;
+}
+
 #endif // SK_BUILD_FOR_ANDROID_FRAMEWORK

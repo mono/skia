@@ -34,7 +34,11 @@ SkRect SkManagedDrawable::onGetBounds() {
         fProcs.fGetBounds(this, fContext, &rect);
     return rect;
 }
-SkPicture* SkManagedDrawable::onNewPictureSnapshot() {
-    if (!fProcs.fNewPictureSnapshot) return nullptr;
-    return fProcs.fNewPictureSnapshot(this, fContext);
+size_t SkManagedDrawable::onApproximateBytesUsed() {
+    if (!fProcs.fApproximateBytesUsed) return 0;
+    return fProcs.fApproximateBytesUsed(this, fContext);
+}
+sk_sp<SkPicture> SkManagedDrawable::onMakePictureSnapshot() {
+    if (!fProcs.fMakePictureSnapshot) return nullptr;
+    return fProcs.fMakePictureSnapshot(this, fContext);
 }

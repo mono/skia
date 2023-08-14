@@ -8,7 +8,6 @@
 #include "gm/gm.h"
 #include "include/core/SkCanvas.h"
 #include "include/core/SkColor.h"
-#include "include/core/SkFilterQuality.h"
 #include "include/core/SkFont.h"
 #include "include/core/SkFontTypes.h"
 #include "include/core/SkImage.h"
@@ -52,7 +51,8 @@ protected:
         font.setEmbolden(true);
         font.setSize(24.f);
 
-        sk_sp<SkSurface> surface = SkSurface::MakeRasterN32Premul(kPosterSize, kPosterSize);
+        sk_sp<SkSurface> surface =
+                SkSurfaces::Raster(SkImageInfo::MakeN32Premul(kPosterSize, kPosterSize));
         for (int i = 0; i < kNumAngles; ++i) {
             SkCanvas* canvas = surface->getCanvas();
 
@@ -131,8 +131,8 @@ protected:
                     SkPaint fillPaint;
                     fillPaint.setAntiAlias(true);
                     fillPaint.setAlphaf(0.7f);
-                    fillPaint.setFilterQuality(kLow_SkFilterQuality);
-                    canvas->drawImageRect(fPosterImages[i], poster, &fillPaint);
+                    canvas->drawImageRect(fPosterImages[i], poster,
+                                          SkSamplingOptions(SkFilterMode::kLinear), &fillPaint);
 
                     canvas->restore();
                 }

@@ -118,7 +118,7 @@ class DefaultFlavor(object):
 
   def _py(self, title, script, infra_step=True, args=()):
     return self.m.run(self.m.python, title, script=script, args=args,
-               infra_step=infra_step)
+                      infra_step=infra_step)
 
   def step(self, name, cmd, **unused_kwargs):
     app = self.device_dirs.bin_dir.join(cmd[0])
@@ -128,13 +128,15 @@ class DefaultFlavor(object):
     ld_library_path = []
 
     workdir = self.m.vars.workdir
-    clang_linux = str(workdir.join('clang_linux'))
+    clang_linux = workdir.join('clang_linux')
     extra_tokens = self.m.vars.extra_tokens
 
     if self.m.vars.is_linux:
       if (self.m.vars.builder_cfg.get('cpu_or_gpu', '') == 'GPU'
           and 'Intel' in self.m.vars.builder_cfg.get('cpu_or_gpu_value', '')):
         dri_path = workdir.join('mesa_intel_driver_linux')
+        if ('IntelIrisXe' in self.m.vars.builder_cfg.get('cpu_or_gpu_value', '')):
+          dri_path = workdir.join('mesa_intel_driver_linux_22')
         ld_library_path.append(dri_path)
         env['LIBGL_DRIVERS_PATH'] = str(dri_path)
         env['VK_ICD_FILENAMES'] = str(dri_path.join('intel_icd.x86_64.json'))
@@ -153,54 +155,23 @@ class DefaultFlavor(object):
           env['VK_LAYER_PATH'] = str(workdir.join(
               'linux_vulkan_sdk', 'etc', 'vulkan', 'explicit_layer.d'))
 
-      if 'OpenCL' in extra_tokens:
-        ld_library_path.append(workdir.join('opencl_ocl_icd_linux'))
-        # TODO(dogben): Limit to the appropriate GPUs when we start running on
-        # GPUs other than IntelIris640.
-        # Skylake and later use the NEO driver.
-        neo_path = workdir.join('opencl_intel_neo_linux')
-        ld_library_path.append(neo_path)
-        # Generate vendors dir contaning the ICD file pointing to the NEO OpenCL
-        # library.
-        vendors_dir = self.m.vars.tmp_dir.join('OpenCL', 'vendors')
-        self.m.file.ensure_directory('mkdirs OpenCL/vendors', vendors_dir)
-        self.m.file.write_raw('write NEO OpenCL ICD',
-                              vendors_dir.join('neo.icd'),
-                              '%s\n' % neo_path.join('libigdrcl.so'))
-        env['OPENCL_VENDOR_PATH'] = vendors_dir
-
     if 'SwiftShader' in extra_tokens:
       ld_library_path.append(self.host_dirs.bin_dir.join('swiftshader_out'))
 
     # Find the MSAN/TSAN-built libc++.
     if 'MSAN' in extra_tokens:
-      ld_library_path.append(clang_linux + '/msan')
+      ld_library_path.append(clang_linux.join('msan'))
     elif 'TSAN' in extra_tokens:
-      ld_library_path.append(clang_linux + '/tsan')
+      ld_library_path.append(clang_linux.join('tsan'))
 
     if any('SAN' in t for t in extra_tokens):
       # Sanitized binaries may want to run clang_linux/bin/llvm-symbolizer.
-      path.append(clang_linux + '/bin')
+      path.append(clang_linux.join('bin'))
       # We find that testing sanitizer builds with libc++ uncovers more issues
       # than with the system-provided C++ standard library, which is usually
       # libstdc++. libc++ proactively hooks into sanitizers to help their
       # analyses. We ship a copy of libc++ with our Linux toolchain in /lib.
-      ld_library_path.append(clang_linux + '/lib')
-    elif self.m.vars.is_linux:
-      cmd = ['catchsegv'] + cmd
-    elif 'ProcDump' in extra_tokens:
-      dumps_dir = self.m.path.join(self.m.vars.swarming_out_dir, 'dumps')
-      self.m.file.ensure_directory('makedirs dumps', dumps_dir)
-      procdump = str(self.m.vars.workdir.join('procdump_win',
-                                                'procdump64.exe'))
-      # Full docs for ProcDump here:
-      # https://docs.microsoft.com/en-us/sysinternals/downloads/procdump
-      # -accepteula automatically accepts the license agreement
-      # -mp saves a packed minidump to save space
-      # -e 1 tells procdump to dump once
-      # -x <dump dir> <exe> <args> launches exe and writes dumps to the
-      #   specified dir
-      cmd = [procdump, '-accepteula', '-mp', '-e', '1', '-x', dumps_dir] + cmd
+      ld_library_path.append(clang_linux.join('lib', 'x86_64-unknown-linux-gnu'))
 
     if 'ASAN' in extra_tokens:
       os = self.m.vars.builder_cfg.get('os', '')
@@ -209,6 +180,7 @@ class DefaultFlavor(object):
         env['ASAN_OPTIONS'] = 'symbolize=1'
       else:
         env['ASAN_OPTIONS'] = 'symbolize=1 detect_leaks=1'
+        env['ASAN_SYMBOLIZER_PATH'] = clang_linux.join('bin', 'llvm-symbolizer')
       env[ 'LSAN_OPTIONS'] = 'symbolize=1 print_suppressions=1'
       env['UBSAN_OPTIONS'] = 'symbolize=1 print_stacktrace=1'
 

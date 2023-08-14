@@ -7,14 +7,22 @@
 
 #include "src/codec/SkBmpCodec.h"
 
-#include <memory>
-
+#include "include/core/SkData.h"
+#include "include/core/SkImageInfo.h"
+#include "include/core/SkRefCnt.h"
+#include "include/core/SkSize.h"
 #include "include/core/SkStream.h"
-#include "include/private/SkColorData.h"
+#include "include/private/SkEncodedInfo.h"
+#include "include/private/base/SkAlign.h"
 #include "src/codec/SkBmpMaskCodec.h"
 #include "src/codec/SkBmpRLECodec.h"
 #include "src/codec/SkBmpStandardCodec.h"
 #include "src/codec/SkCodecPriv.h"
+#include "src/codec/SkMasks.h"
+
+#include <cstring>
+#include <memory>
+#include <utility>
 
 /*
  * Defines the version and type of the second bitmap header
@@ -595,6 +603,11 @@ SkCodec::Result SkBmpCodec::ReadHeader(SkStream* stream, bool inIco,
  */
 std::unique_ptr<SkCodec> SkBmpCodec::MakeFromStream(std::unique_ptr<SkStream> stream,
                                                     Result* result, bool inIco) {
+    SkASSERT(result);
+    if (!stream) {
+        *result = SkCodec::kInvalidInput;
+        return nullptr;
+    }
     std::unique_ptr<SkCodec> codec;
     *result = ReadHeader(stream.get(), inIco, &codec);
     if (codec) {
@@ -651,3 +664,31 @@ bool SkBmpCodec::skipRows(int count) {
 bool SkBmpCodec::onSkipScanlines(int count) {
     return this->skipRows(count);
 }
+
+namespace SkBmpDecoder {
+bool IsBmp(const void* data, size_t len) {
+    return SkBmpCodec::IsBmp(data, len);
+}
+
+std::unique_ptr<SkCodec> Decode(std::unique_ptr<SkStream> stream,
+                                SkCodec::Result* outResult,
+                                SkCodecs::DecodeContext) {
+    SkCodec::Result resultStorage;
+    if (!outResult) {
+        outResult = &resultStorage;
+    }
+    return SkBmpCodec::MakeFromStream(std::move(stream), outResult);
+}
+
+std::unique_ptr<SkCodec> Decode(sk_sp<SkData> data,
+                                SkCodec::Result* outResult,
+                                SkCodecs::DecodeContext) {
+    if (!data) {
+        if (outResult) {
+            *outResult = SkCodec::kInvalidInput;
+        }
+        return nullptr;
+    }
+    return Decode(SkMemoryStream::Make(std::move(data)), outResult, nullptr);
+}
+}  // namespace SkBmpDecoder

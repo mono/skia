@@ -5,15 +5,23 @@
  * found in the LICENSE file.
  */
 
+#include "include/core/SkBlendMode.h"
 #include "include/core/SkCanvas.h"
+#include "include/core/SkColor.h"
+#include "include/core/SkImageInfo.h"
+#include "include/core/SkPaint.h"
+#include "include/core/SkPoint.h"
+#include "include/core/SkRefCnt.h"
 #include "include/core/SkSurface.h"
 #include "include/core/SkVertices.h"
-#include "src/core/SkAutoMalloc.h"
+#include "src/base/SkAutoMalloc.h"
 #include "src/core/SkReadBuffer.h"
 #include "src/core/SkVerticesPriv.h"
 #include "src/core/SkWriteBuffer.h"
 #include "tests/Test.h"
 #include "tools/ToolUtils.h"
+
+#include <cstdint>
 
 static bool equal(const SkVertices* vert0, const SkVertices* vert1) {
     SkVerticesPriv v0(vert0->priv()), v1(vert1->priv());
@@ -27,18 +35,7 @@ static bool equal(const SkVertices* vert0, const SkVertices* vert1) {
     if (v0.indexCount() != v1.indexCount()) {
         return false;
     }
-    if (v0.attributeCount() != v1.attributeCount()) {
-        return false;
-    }
-    for (int i = 0; i < v0.attributeCount(); ++i) {
-        if (v0.attributes()[i] != v1.attributes()[i]) {
-            return false;
-        }
-    }
 
-    if (!!v0.customData() != !!v1.customData()) {
-        return false;
-    }
     if (!!v0.texCoords() != !!v1.texCoords()) {
         return false;
     }
@@ -59,12 +56,6 @@ static bool equal(const SkVertices* vert0, const SkVertices* vert1) {
             if (v0.colors()[i] != v1.colors()[i]) {
                 return false;
             }
-        }
-    }
-    size_t totalCustomDataSize = v0.vertexCount() * v0.customDataSize();
-    if (totalCustomDataSize) {
-        if (0 != memcmp(v0.customData(), v1.customData(), totalCustomDataSize)) {
-            return false;
         }
     }
     for (int i = 0; i < v0.indexCount(); ++i) {
@@ -122,41 +113,6 @@ DEF_TEST(Vertices, reporter) {
         }
     }
 
-    // custom data tests
-    using AttrType = SkVertices::Attribute::Type;
-    struct {
-        int count;
-        size_t expected_size;
-        SkVertices::Attribute attrs[4];
-    } attrTests[] = {
-        { 1,  4, { AttrType::kFloat } },
-        { 1,  8, { AttrType::kFloat2 } },
-        { 1, 12, { AttrType::kFloat3 } },
-        { 1, 16, { AttrType::kFloat4 } },
-        { 1,  4, { AttrType::kByte4_unorm } },
-        { 4, 16, { AttrType::kFloat, AttrType::kFloat, AttrType::kFloat, AttrType::kFloat } },
-        { 2, 12, { AttrType::kFloat2, AttrType::kByte4_unorm } },
-        { 2, 12, { AttrType::kByte4_unorm, AttrType::kFloat2 } },
-    };
-
-    for (const auto& test : attrTests) {
-        SkVertices::Builder builder(SkVertices::kTriangles_VertexMode, vCount, iCount,
-                                    test.attrs, test.count);
-
-        float* customData = (float*)builder.customData();
-        int customDataCount = test.expected_size / sizeof(float);
-        for (int i = 0; i < vCount; ++i) {
-            builder.positions()[i].set((float)i, 1);
-            for (int j = 0; j < customDataCount; ++j) {
-                customData[i * customDataCount + j] = (float)j;
-            }
-        }
-        for (int i = 0; i < iCount; ++i) {
-            builder.indices()[i] = i % vCount;
-        }
-        self_test(builder.detach(), reporter);
-    }
-
     {
         // This has the maximum number of vertices to be rewritten as indexed triangles without
         // overflowing a 16bit index.
@@ -188,31 +144,6 @@ DEF_TEST(Vertices, reporter) {
                                     SkVertices::kHasColors_BuilderFlag);
         REPORTER_ASSERT(reporter, !builder.isValid());
     }
-
-    // validity tests for per-vertex-data
-
-    // Check that invalid counts fail to initialize the builder
-    for (int attrCount : {-1, 0, SkVertices::kMaxCustomAttributes + 1}) {
-        SkVertices::Attribute attrs[] = { AttrType::kFloat };
-        SkVertices::Builder builder(SkVertices::kTriangleFan_VertexMode, 10, 0, attrs, attrCount);
-        REPORTER_ASSERT(reporter, !builder.isValid());
-    }
-    {   // nullptr is definitely bad
-        SkVertices::Builder builder(SkVertices::kTriangleFan_VertexMode, 10, 0, nullptr, 4);
-        REPORTER_ASSERT(reporter, !builder.isValid());
-    }
-    {   // "normal" number of per-vertex-data (all floats)
-        SkVertices::Attribute attrs[] = {AttrType::kFloat2, AttrType::kFloat2};
-        SkVertices::Builder builder(SkVertices::kTriangleFan_VertexMode, 10, 0, attrs, 2);
-        REPORTER_ASSERT(reporter, builder.isValid());
-        REPORTER_ASSERT(reporter, builder.customData() != nullptr);
-    }
-    {   // "normal" number of per-vertex-data (with packed bytes)
-        SkVertices::Attribute attrs[] = {AttrType::kFloat2, AttrType::kByte4_unorm};
-        SkVertices::Builder builder(SkVertices::kTriangleFan_VertexMode, 10, 0, attrs, 2);
-        REPORTER_ASSERT(reporter, builder.isValid());
-        REPORTER_ASSERT(reporter, builder.customData() != nullptr);
-    }
 }
 
 static void fill_triangle(SkCanvas* canvas, const SkPoint pts[], SkColor c) {
@@ -225,7 +156,7 @@ DEF_TEST(Vertices_clipping, reporter) {
     // A very large triangle has to be geometrically clipped (since its "fast" clipping is
     // normally done in after building SkFixed coordinates). Check that we handle this.
     // (and don't assert).
-    auto surf = SkSurface::MakeRasterN32Premul(3, 3);
+    auto surf = SkSurfaces::Raster(SkImageInfo::MakeN32Premul(3, 3));
 
     SkPoint pts[] = { { -10, 1 }, { -10, 2 }, { 1e9f, 1.5f } };
     fill_triangle(surf->getCanvas(), pts, SK_ColorBLACK);

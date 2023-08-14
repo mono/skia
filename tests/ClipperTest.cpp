@@ -13,10 +13,12 @@
 #include "include/core/SkRect.h"
 #include "include/core/SkScalar.h"
 #include "include/core/SkTypes.h"
+#include "include/private/base/SkDebug.h"
 #include "src/core/SkEdgeClipper.h"
 #include "src/core/SkLineClipper.h"
 #include "tests/Test.h"
 
+#include <array>
 #include <cstring>
 
 static void test_hairclipping(skiatest::Reporter* reporter) {
@@ -97,10 +99,11 @@ static void test_intersectline(skiatest::Reporter* reporter) {
         { R, T }, { R + 10, T - 10 },
         { R, B }, { R + 10, B + 10 },
     };
-    for (i = 0; i < SK_ARRAY_COUNT(gEmpty); i += 2) {
+    for (i = 0; i < std::size(gEmpty); i += 2) {
         bool valid = SkLineClipper::IntersectLine(&gEmpty[i], gR, dst);
         if (valid) {
-            SkDebugf("----- [%d] %g %g -> %g %g\n", i/2, dst[0].fX, dst[0].fY, dst[1].fX, dst[1].fY);
+            SkDebugf("----- [%zu] %g %g -> %g %g\n",
+                     i/2, dst[0].fX, dst[0].fY, dst[1].fX, dst[1].fY);
         }
         REPORTER_ASSERT(reporter, !valid);
     }
@@ -121,10 +124,11 @@ static void test_intersectline(skiatest::Reporter* reporter) {
         { L, T }, { R, T },
         { L, B }, { R, B },
     };
-    for (i = 0; i < SK_ARRAY_COUNT(gFull); i += 2) {
+    for (i = 0; i < std::size(gFull); i += 2) {
         bool valid = SkLineClipper::IntersectLine(&gFull[i], gR, dst);
         if (!valid || 0 != memcmp(&gFull[i], dst, sizeof(dst))) {
-            SkDebugf("++++ [%d] %g %g -> %g %g\n", i/2, dst[0].fX, dst[0].fY, dst[1].fX, dst[1].fY);
+            SkDebugf("++++ [%zu] %g %g -> %g %g\n",
+                     i/2, dst[0].fX, dst[0].fY, dst[1].fX, dst[1].fY);
         }
         REPORTER_ASSERT(reporter, valid && !memcmp(&gFull[i], dst, sizeof(dst)));
     }
@@ -140,10 +144,11 @@ static void test_intersectline(skiatest::Reporter* reporter) {
         { L - 10, T }, { R + 10, T }, { L, T }, { R, T },
         { L - 10, B }, { R + 10, B }, { L, B }, { R, B },
     };
-    for (i = 0; i < SK_ARRAY_COUNT(gPartial); i += 4) {
+    for (i = 0; i < std::size(gPartial); i += 4) {
         bool valid = SkLineClipper::IntersectLine(&gPartial[i], gR, dst);
         if (!valid || 0 != memcmp(&gPartial[i+2], dst, sizeof(dst))) {
-            SkDebugf("++++ [%d] %g %g -> %g %g\n", i/2, dst[0].fX, dst[0].fY, dst[1].fX, dst[1].fY);
+            SkDebugf("++++ [%zu] %g %g -> %g %g\n",
+                     i/2, dst[0].fX, dst[0].fY, dst[1].fX, dst[1].fY);
         }
         REPORTER_ASSERT(reporter, valid &&
                                   !memcmp(&gPartial[i+2], dst, sizeof(dst)));

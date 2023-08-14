@@ -11,14 +11,16 @@
 #include "include/core/SkCanvas.h"
 #include "include/core/SkImage.h"
 #include "include/core/SkPixmap.h"
+#include "include/core/SkShader.h"
+#include "include/core/SkStream.h"
 #include "include/core/SkSurface.h"
-#include "include/core/SkYUVAIndex.h"
-#include "include/core/SkYUVASizeInfo.h"
 #include "include/encode/SkJpegEncoder.h"
 #include "include/gpu/GrRecordingContext.h"
-#include "include/utils/SkRandom.h"
+#include "include/gpu/ganesh/SkImageGanesh.h"
+#include "src/base/SkRandom.h"
 #include "src/core/SkCachedData.h"
 #include "src/image/SkImage_Base.h"
+#include "tools/Resources.h"
 #include "tools/gpu/YUVUtils.h"
 
 static constexpr int kScale = 10;
@@ -37,7 +39,6 @@ static sk_sp<SkImage> make_image(GrRecordingContext* rContext) {
         }
     }
     bmp.notifyPixelsChanged();
-    SkImage::MakeFromBitmap(bmp);
     SkDynamicMemoryWStream stream;
     SkJpegEncoder::Options options;
     options.fDownsample = SkJpegEncoder::Downsample::k420;
@@ -77,10 +78,71 @@ DEF_SIMPLE_GM_CAN_FAIL(yuv420_odd_dim, canvas, errMsg,
         }
         auto info = canvas->imageInfo().makeColorType(ct);
         info = info.makeAlphaType(kPremul_SkAlphaType);
-        surface = SkSurface::MakeRaster(info);
+        surface = SkSurfaces::Raster(info);
     }
     surface->getCanvas()->drawImage(image, 0, 0);
     canvas->scale(kScale, kScale);
     canvas->drawImage(surface->makeImageSnapshot(), 0, 0);
+    return skiagm::DrawResult::kOk;
+}
+
+// crbug.com/1210557 Subsampled planes weren't repeated at the correct frequency.
+DEF_SIMPLE_GM_CAN_FAIL(yuv420_odd_dim_repeat, canvas, errMsg,
+                       1000,
+                       500) {
+    auto rContext = canvas->recordingContext();
+    if (!rContext) {
+        // This GM exists to exercise GPU planar images.
+        return skiagm::DrawResult::kSkip;
+    }
+    auto image = GetResourceAsImage("images/mandrill_256.png");
+    if (!image) {
+        return rContext->abandoned() ? skiagm::DrawResult::kOk : skiagm::DrawResult::kFail;
+    }
+    // Make sure the image is odd dimensioned.
+    int w = image->width()  & 0b1 ? image->width()  : image->width()  - 1;
+    int h = image->height() & 0b1 ? image->height() : image->height() - 1;
+    image = image->makeSubset(nullptr, SkIRect::MakeWH(w, h));
+
+    auto [planes, yuvaInfo] = sk_gpu_test::MakeYUVAPlanesAsA8(image.get(),
+                                                              kJPEG_SkYUVColorSpace,
+                                                              SkYUVAInfo::Subsampling::k420,
+                                                              nullptr);
+    SkPixmap pixmaps[4];
+    for (int i = 0; i < yuvaInfo.numPlanes(); ++i) {
+        planes[i]->peekPixels(&pixmaps[i]);
+    }
+    auto yuvaPixmaps = SkYUVAPixmaps::FromExternalPixmaps(yuvaInfo, pixmaps);
+    image = SkImages::TextureFromYUVAPixmaps(canvas->recordingContext(),
+                                             yuvaPixmaps,
+                                             GrMipmapped::kYes,
+                                             /* limit to max tex size */ false,
+                                             /* color space */ nullptr);
+    if (!image) {
+        *errMsg = "Could not make YUVA image";
+        return rContext->abandoned() ? skiagm::DrawResult::kSkip : skiagm::DrawResult::kFail;
+    }
+    int i = 0;
+    for (SkMipmapMode mm : {SkMipmapMode::kNone, SkMipmapMode::kLinear}) {
+        int j = 0;
+        for (SkFilterMode filter : {SkFilterMode::kNearest, SkFilterMode::kLinear}) {
+            canvas->save();
+            canvas->clipRect(SkRect::MakeXYWH(500.f*j, 250.f*i, 500.f, 250.f));
+            canvas->rotate(30.f);
+            canvas->scale(0.4f, 0.4f);  // so mipmaps sampling doesn't just use base level.
+            // Large translation so that if U/V planes aren't repeated correctly WRT to Y plane we
+            // accumulate a lot of error.
+            canvas->translate(-240000.f, -240000.f);
+            auto shader = image->makeShader(SkTileMode::kRepeat,
+                                            SkTileMode::kRepeat,
+                                            SkSamplingOptions(filter, mm));
+            SkPaint paint;
+            paint.setShader(std::move(shader));
+            canvas->drawPaint(paint);
+            canvas->restore();
+            ++j;
+        }
+        ++i;
+    }
     return skiagm::DrawResult::kOk;
 }

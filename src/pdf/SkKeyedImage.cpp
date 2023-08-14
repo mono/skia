@@ -24,7 +24,7 @@ SkKeyedImage::SkKeyedImage(sk_sp<SkImage> i) : fImage(std::move(i)) {
     fKey = SkBitmapKeyFromImage(fImage.get());
 }
 
-SkKeyedImage::SkKeyedImage(const SkBitmap& bm) : fImage(SkImage::MakeFromBitmap(bm)) {
+SkKeyedImage::SkKeyedImage(const SkBitmap& bm) : fImage(bm.asImage()) {
     if (fImage) {
         fKey = {bm.getSubset(), bm.getGenerationID()};
     }
@@ -33,7 +33,7 @@ SkKeyedImage::SkKeyedImage(const SkBitmap& bm) : fImage(SkImage::MakeFromBitmap(
 SkKeyedImage SkKeyedImage::subset(SkIRect subset) const {
     SkKeyedImage img;
     if (fImage && subset.intersect(fImage->bounds())) {
-        img.fImage = fImage->makeSubset(subset);
+        img.fImage = fImage->makeSubset(nullptr, subset);
         if (img.fImage) {
             img.fKey = {subset.makeOffset(fKey.fSubset.topLeft()), fKey.fID};
         }

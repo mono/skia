@@ -18,17 +18,21 @@ namespace SkSL {
  */
 class BreakStatement final : public Statement {
 public:
-    static constexpr Kind kStatementKind = Kind::kBreak;
+    inline static constexpr Kind kIRNodeKind = Kind::kBreak;
 
-    BreakStatement(int offset)
-    : INHERITED(offset, kStatementKind) {}
+    BreakStatement(Position pos)
+        : INHERITED(pos, kIRNodeKind) {}
 
-    std::unique_ptr<Statement> clone() const override {
-        return std::unique_ptr<Statement>(new BreakStatement(fOffset));
+    static std::unique_ptr<Statement> Make(Position pos) {
+        return std::make_unique<BreakStatement>(pos);
     }
 
-    String description() const override {
-        return String("break;");
+    std::unique_ptr<Statement> clone() const override {
+        return std::make_unique<BreakStatement>(fPosition);
+    }
+
+    std::string description() const override {
+        return "break;";
     }
 
 private:

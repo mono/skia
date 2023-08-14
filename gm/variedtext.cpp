@@ -20,7 +20,7 @@
 #include "include/core/SkString.h"
 #include "include/core/SkTypeface.h"
 #include "include/core/SkTypes.h"
-#include "include/utils/SkRandom.h"
+#include "src/base/SkRandom.h"
 #include "tools/ToolUtils.h"
 
 /**
@@ -63,7 +63,7 @@ protected:
         SkScalar w = SkIntToScalar(size.fWidth);
         SkScalar h = SkIntToScalar(size.fHeight);
 
-        static_assert(4 == SK_ARRAY_COUNT(fTypefaces), "typeface_cnt");
+        SkASSERTF(4 == std::size(fTypefaces), "typeface_cnt");
         fTypefaces[0] = ToolUtils::create_portable_typeface("sans-serif", SkFontStyle());
         fTypefaces[1] = ToolUtils::create_portable_typeface("sans-serif", SkFontStyle::Bold());
         fTypefaces[2] = ToolUtils::create_portable_typeface("serif", SkFontStyle());
@@ -87,7 +87,7 @@ protected:
 
             fPtSizes[i] = random.nextRangeScalar(kMinPtSize, kMaxPtSize);
 
-            fTypefaceIndices[i] = random.nextULessThan(SK_ARRAY_COUNT(fTypefaces));
+            fTypefaceIndices[i] = random.nextULessThan(std::size(fTypefaces));
 
             SkRect r;
             fPaint.setColor(fColors[i]);
@@ -143,9 +143,9 @@ protected:
     bool runAsBench() const override { return true; }
 
 private:
-    static constexpr int kCnt = 30;
-    static constexpr int kMinLength = 15;
-    static constexpr int kMaxLength = 40;
+    inline static constexpr int kCnt = 30;
+    inline static constexpr int kMinLength = 15;
+    inline static constexpr int kMaxLength = 40;
 
     bool        fEffectiveClip;
     bool        fLCD;

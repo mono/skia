@@ -21,13 +21,10 @@
       } else if (arguments.length === 2) {
         // Takes SVGMatrix, which has its args in a counter-intuitive order
         // https://developer.mozilla.org/en-US/docs/Web/SVG/Attribute/transform#Transform_functions
-        /**
-         * @type {SVGMatrix}
-         */
         var sm = arguments[1];
-        this._addPath(path, sm.a, sm.c, sm.e,
-                            sm.b, sm.d, sm.f,
-                               0,    0,    1);
+        this._addPath(path, sm['a'], sm['c'], sm['e'],
+                            sm['b'], sm['d'], sm['f'],
+                                  0,       0,       1);
       } else if (arguments.length === 7) {
         // User provided the 6 params for an SVGMatrix directly.
         var a = arguments;
@@ -145,10 +142,11 @@
        * @type {StrokeOpts}
        */
       opts = opts || {};
-      opts.width = opts.width || 1;
-      opts.miter_limit = opts.miter_limit || 4;
-      opts.cap = opts.cap || PathKit.StrokeCap.BUTT;
-      opts.join = opts.join || PathKit.StrokeJoin.MITER;
+      opts['width'] = opts['width'] || 1;
+      opts['miter_limit'] = opts['miter_limit'] || 4;
+      opts['cap'] = opts['cap'] || PathKit.StrokeCap.BUTT;
+      opts['join'] = opts['join'] || PathKit.StrokeJoin.MITER;
+      opts['res_scale'] = opts['res_scale'] || 1;
       if (this._stroke(opts)) {
         return this;
       }

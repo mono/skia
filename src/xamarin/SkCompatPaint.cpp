@@ -15,6 +15,8 @@ SkCompatPaint::SkCompatPaint()
     : fFont(SkFont())
     , fTextAlign(SkTextUtils::Align::kLeft_Align)
     , fTextEncoding(SkTextEncoding::kUTF8)
+    , fFilterQuality(SkFilterQuality::None)
+    , fLcdRenderText(false)
 {
     fFont.setLinearMetrics(true);
     fFont.setEdging(SkFont::Edging::kAlias);
@@ -26,7 +28,10 @@ SkCompatPaint::SkCompatPaint(const SkFont* font)
     : fFont(*font)
     , fTextAlign(SkTextUtils::Align::kLeft_Align)
     , fTextEncoding(SkTextEncoding::kUTF8)
+    , fFilterQuality(SkFilterQuality::None)
+    , fLcdRenderText(font->getEdging() == SkFont::Edging::kSubpixelAntiAlias)
 {
+    updateFontEdging();
 }
 
 SkCompatPaint::~SkCompatPaint() = default;
@@ -57,4 +62,36 @@ void SkCompatPaint::setTextEncoding(SkTextEncoding encoding) {
 
 SkTextEncoding SkCompatPaint::getTextEncoding() const {
     return fTextEncoding;
+}
+
+void SkCompatPaint::setFilterQuality(SkFilterQuality quality) {
+    fFilterQuality = quality;
+}
+
+SkFilterQuality SkCompatPaint::getFilterQuality() const {
+    return fFilterQuality;
+}
+
+void SkCompatPaint::setLcdRenderText(bool lcdRenderText) {
+    fLcdRenderText = lcdRenderText;
+    updateFontEdging();
+}
+
+bool SkCompatPaint::getLcdRenderText() const {
+    return fLcdRenderText;
+}
+
+void SkCompatPaint::setAntiAlias(bool aa) {
+    SkPaint::setAntiAlias(aa);
+    updateFontEdging();
+}
+
+void SkCompatPaint::updateFontEdging() {
+    SkFont::Edging edging = SkFont::Edging::kAlias;
+    if (isAntiAlias()) {
+        edging = fLcdRenderText
+            ? SkFont::Edging::kSubpixelAntiAlias
+            : SkFont::Edging::kAntiAlias;
+    }
+    fFont.setEdging(edging);
 }

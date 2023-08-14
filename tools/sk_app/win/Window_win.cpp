@@ -5,15 +5,13 @@
 * found in the LICENSE file.
 */
 
-#include "include/gpu/vk/GrVkVulkan.h"
-
 #include "tools/sk_app/win/Window_win.h"
 
 #include <tchar.h>
 #include <windows.h>
 #include <windowsx.h>
 
-#include "src/core/SkUtils.h"
+#include "src/base/SkUTF.h"
 #include "tools/sk_app/WindowContext.h"
 #include "tools/sk_app/win/WindowContextFactory_win.h"
 #include "tools/skui/ModifierKey.h"
@@ -152,7 +150,7 @@ static skui::Key get_key(WPARAM vk) {
         { 'Y',        skui::Key::kY        },
         { 'Z',        skui::Key::kZ        },
     };
-    for (size_t i = 0; i < SK_ARRAY_COUNT(gPair); i++) {
+    for (size_t i = 0; i < std::size(gPair); i++) {
         if (gPair[i].fVK == vk) {
             return gPair[i].fKey;
         }
@@ -210,7 +208,6 @@ static skui::ModifierKey get_modifiers(UINT message, WPARAM wParam, LPARAM lPara
 LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
     PAINTSTRUCT ps;
-    HDC hdc;
 
     Window_win* window = (Window_win*) GetWindowLongPtr(hWnd, GWLP_USERDATA);
 
@@ -218,7 +215,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
     switch (message) {
         case WM_PAINT:
-            hdc = BeginPaint(hWnd, &ps);
+            BeginPaint(hWnd, &ps);
             window->onPaint();
             EndPaint(hWnd, &ps);
             eventHandled = true;
@@ -244,9 +241,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             break;
 
         case WM_CHAR: {
-            const uint16_t* c = reinterpret_cast<uint16_t*>(&wParam);
-            eventHandled = window->onChar(SkUTF16_NextUnichar(&c),
-                                          get_modifiers(message, wParam, lParam));
+            const uint16_t* cPtr = reinterpret_cast<uint16_t*>(&wParam);
+            SkUnichar c = SkUTF::NextUTF16(&cPtr, cPtr + 2);
+            eventHandled = window->onChar(c, get_modifiers(message, wParam, lParam));
         } break;
 
         case WM_KEYDOWN:
@@ -348,6 +345,7 @@ void Window_win::show() {
 
 bool Window_win::attach(BackendType attachType) {
     fBackend = attachType;
+    fInitializedBackend = true;
 
     switch (attachType) {
 #ifdef SK_GL
@@ -366,6 +364,12 @@ bool Window_win::attach(BackendType attachType) {
             fWindowContext =
                     window_context_factory::MakeDawnD3D12ForWin(fHWnd, fRequestedDisplayParams);
             break;
+#if defined(SK_GRAPHITE)
+        case kGraphiteDawn_BackendType:
+            fWindowContext = window_context_factory::MakeGraphiteDawnD3D12ForWin(
+                    fHWnd, fRequestedDisplayParams);
+            break;
+#endif
 #endif
         case kRaster_BackendType:
             fWindowContext =
@@ -403,10 +407,12 @@ void Window_win::setRequestedDisplayParams(const DisplayParams& params, bool all
         fWindowContext = nullptr;
         this->closeWindow();
         this->init(fHInstance);
-        this->attach(fBackend);
+        if (fInitializedBackend) {
+            this->attach(fBackend);
+        }
     }
 
-    INHERITED::setRequestedDisplayParams(params, allowReattach);
+    Window::setRequestedDisplayParams(params, allowReattach);
 }
 
 }   // namespace sk_app

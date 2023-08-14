@@ -8,7 +8,7 @@ import("../third_party.gni")
 import("icu.gni")
 
 declare_args() {
-  skia_use_system_icu = is_official_build
+  skia_use_system_icu = is_official_build && !is_wasm
 }
 
 if (skia_use_system_icu) {
@@ -37,7 +37,7 @@ if (skia_use_system_icu) {
   action("make_data_assembly") {
     if (target_cpu == "wasm") {
       _u_icu_version_major_num =
-          "65"  # defined in source/common/unicode/uvernum.h
+          "69"  # defined in source/common/unicode/uvernum.h
       script = "make_data_cpp.py"
       inputs = [ "$data_dir/icudtl.dat" ]
       outputs = [ data_assembly ]
@@ -60,6 +60,18 @@ if (skia_use_system_icu) {
     }
   }
 
+  third_party("headers") {
+    public_include_dirs = [
+      "../externals/icu/source/common",
+      "../externals/icu/source/i18n",
+      ".",
+    ]
+    public_defines = [
+      "U_USING_ICU_NAMESPACE=0",
+      "U_DISABLE_RENAMING",
+    ]
+  }
+
   third_party("icu") {
     public_include_dirs = [
       "../externals/icu/source/common",
@@ -71,7 +83,7 @@ if (skia_use_system_icu) {
       "U_DISABLE_RENAMING",
       "SK_USING_THIRD_PARTY_ICU",
     ]
-    configs -= [ "//gn:no_rtti" ]
+    configs = [ "//gn/portable:add_rtti" ]
     defines = [
       # http://userguide.icu-project.org/howtouseicu
       "U_COMMON_IMPLEMENTATION",

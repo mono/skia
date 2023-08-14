@@ -1,8 +1,13 @@
 // Copyright 2018 Google LLC.
 // Use of this source code is governed by a BSD-style license that can be found in the LICENSE file.
 
-#include "src/utils/SkUTF.h"
+#include "include/core/SkTypes.h"
+#include "src/base/SkUTF.h"
 #include "tests/Test.h"
+
+#include <cstdint>
+#include <cstddef>
+#include <string>
 
 DEF_TEST(SkUTF_UTF16, reporter) {
     // Test non-basic-multilingual-plane unicode.
@@ -16,7 +21,7 @@ DEF_TEST(SkUTF_UTF16, reporter) {
         size_t count2 = SkUTF::CountUTF16(buf, sizeof(buf));
         REPORTER_ASSERT(reporter, count2 == 1);
         const uint16_t* ptr = buf;
-        SkUnichar c = SkUTF::NextUTF16(&ptr, buf + SK_ARRAY_COUNT(buf));
+        SkUnichar c = SkUTF::NextUTF16(&ptr, buf + std::size(buf));
         REPORTER_ASSERT(reporter, c == uni);
         REPORTER_ASSERT(reporter, ptr - buf == 2);
     }

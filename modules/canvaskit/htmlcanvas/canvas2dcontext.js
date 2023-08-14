@@ -23,9 +23,6 @@ function CanvasRenderingContext2D(skcanvas) {
   this._lineDashList   = [];
   // aka BlendMode
   this._globalCompositeOperation = CanvasKit.BlendMode.SrcOver;
-  this._imageFilterQuality = CanvasKit.FilterQuality.Low;
-  this._imageSmoothingEnabled = true;
-
 
   this._paint.setStrokeWidth(this._strokeWidth);
   this._paint.setBlendMode(this._globalCompositeOperation);
@@ -294,37 +291,20 @@ function CanvasRenderingContext2D(skcanvas) {
   Object.defineProperty(this, 'imageSmoothingEnabled', {
     enumerable: true,
     get: function() {
-      return this._imageSmoothingEnabled;
+      return true;
     },
-    set: function(newVal) {
-      this._imageSmoothingEnabled = !!newVal;
+    set: function(a) {
+      // ignored, we always use high quality image smoothing.
     }
   });
 
   Object.defineProperty(this, 'imageSmoothingQuality', {
     enumerable: true,
     get: function() {
-      switch (this._imageFilterQuality) {
-        case CanvasKit.FilterQuality.Low:
-          return 'low';
-        case CanvasKit.FilterQuality.Medium:
-          return 'medium';
-        case CanvasKit.FilterQuality.High:
           return 'high';
-      }
     },
-    set: function(newQuality) {
-      switch (newQuality) {
-        case 'low':
-          this._imageFilterQuality = CanvasKit.FilterQuality.Low;
-          return;
-        case 'medium':
-          this._imageFilterQuality = CanvasKit.FilterQuality.Medium;
-          return;
-        case 'high':
-          this._imageFilterQuality = CanvasKit.FilterQuality.High;
-          return;
-      }
+    set: function(a) {
+      // ignored, we always use high quality image smoothing.
     }
   });
 
@@ -585,16 +565,6 @@ function CanvasRenderingContext2D(skcanvas) {
     return rcg;
   };
 
-  this._imagePaint = function() {
-    var iPaint = this._fillPaint();
-    if (!this._imageSmoothingEnabled) {
-      iPaint.setFilterQuality(CanvasKit.FilterQuality.None);
-    } else {
-      iPaint.setFilterQuality(this._imageFilterQuality);
-    }
-    return iPaint;
-  };
-
   this.drawImage = function(img) {
     // 3 potential sets of arguments
     // - image, dx, dy
@@ -602,7 +572,10 @@ function CanvasRenderingContext2D(skcanvas) {
     // - image, sx, sy, sWidth, sHeight, dx, dy, dWidth, dHeight
     // use the fillPaint, which has the globalAlpha in it
     // which drawImageRect will use.
-    var iPaint = this._imagePaint();
+    if (img instanceof HTMLImage) {
+      img = img.getSkImage();
+    }
+    var iPaint = this._fillPaint();
     if (arguments.length === 3 || arguments.length === 5) {
       var destRect = CanvasKit.XYWHRect(arguments[1], arguments[2],
                         arguments[3] || img.width(), arguments[4] || img.height());
@@ -808,7 +781,15 @@ function CanvasRenderingContext2D(skcanvas) {
   };
 
   this.measureText = function(text) {
-    throw new Error('Clients wishing to properly measure text should use the Paragraph API').
+    const ids = this._font.getGlyphIDs(text);
+    const widths = this._font.getGlyphWidths(ids);
+    let totalWidth = 0;
+    for (const w of widths) {
+      totalWidth += w;
+    }
+    return {
+      "width": totalWidth,
+    };
   };
 
   this.moveTo = function(x, y) {
@@ -849,10 +830,13 @@ function CanvasRenderingContext2D(skcanvas) {
     if (dirtyWidth <= 0 || dirtyHeight <= 0) {
       return;
     }
-    var img = CanvasKit.MakeImage(imageData.data, imageData.width, imageData.height,
-                                  CanvasKit.AlphaType.Unpremul,
-                                  CanvasKit.ColorType.RGBA_8888,
-                                  CanvasKit.ColorSpace.SRGB);
+    var img = CanvasKit.MakeImage({
+      'width': imageData.width,
+      'height': imageData.height,
+      'alphaType': CanvasKit.AlphaType.Unpremul,
+      'colorType': CanvasKit.ColorType.RGBA_8888,
+      'colorSpace': CanvasKit.ColorSpace.SRGB
+    }, imageData.data, 4 * imageData.width);
     var src = CanvasKit.XYWHRect(dirtyX, dirtyY, dirtyWidth, dirtyHeight);
     var dst = CanvasKit.XYWHRect(x+dirtyX, y+dirtyY, dirtyWidth, dirtyHeight);
     var inverted = CanvasKit.Matrix.invert(this._currentTransform);
@@ -909,8 +893,6 @@ function CanvasRenderingContext2D(skcanvas) {
     this._globalAlpha = newState.ga;
     this._globalCompositeOperation = newState.gco;
     this._lineDashOffset = newState.ldo;
-    this._imageSmoothingEnabled = newState.ise;
-    this._imageFilterQuality = newState.isq;
     this._fontString = newState.fontstr;
 
     //TODO: textAlign, textBaseline
@@ -960,8 +942,6 @@ function CanvasRenderingContext2D(skcanvas) {
       ga:      this._globalAlpha,
       ldo:     this._lineDashOffset,
       gco:     this._globalCompositeOperation,
-      ise:     this._imageSmoothingEnabled,
-      isq:     this._imageFilterQuality,
       paint:   this._paint.copy(),
       fontstr: this._fontString,
       //TODO: textAlign, textBaseline

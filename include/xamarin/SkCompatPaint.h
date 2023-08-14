@@ -14,6 +14,14 @@
 #include "include/utils/SkTextUtils.h"
 
 
+enum class SkFilterQuality
+{
+    None = 0,
+    Low = 1,
+    Medium = 2,
+    High = 3,
+};
+
 class SkCompatPaint : public SkPaint {
 public:
     SkCompatPaint();
@@ -34,10 +42,23 @@ public:
     void setTextEncoding(SkTextEncoding encoding);
     SkTextEncoding getTextEncoding() const;
 
+    void setFilterQuality(SkFilterQuality quality);
+    SkFilterQuality getFilterQuality() const;
+
+    void setLcdRenderText(bool lcdRenderText);
+    bool getLcdRenderText() const;
+
+    void setAntiAlias(bool aa);
+
+private:
+    void updateFontEdging();
+
 private:
     SkFont fFont;
     SkTextUtils::Align fTextAlign;
     SkTextEncoding fTextEncoding;
+    SkFilterQuality fFilterQuality;
+    bool fLcdRenderText;
 
     typedef SkPaint INHERITED;
 };

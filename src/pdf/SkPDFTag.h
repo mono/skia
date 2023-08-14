@@ -9,9 +9,9 @@
 #define SkPDFTag_DEFINED
 
 #include "include/docs/SkPDFDocument.h"
-#include "include/private/SkTArray.h"
-#include "include/private/SkTHash.h"
-#include "src/core/SkArenaAlloc.h"
+#include "include/private/base/SkTArray.h"
+#include "src/base/SkArenaAlloc.h"
+#include "src/core/SkTHash.h"
 
 class SkPDFDocument;
 struct SkPDFIndirectReference;
@@ -45,15 +45,15 @@ private:
     static void Copy(SkPDF::StructureElementNode& node,
                      SkPDFTagNode* dst,
                      SkArenaAlloc* arena,
-                     SkTHashMap<int, SkPDFTagNode*>* nodeMap);
+                     skia_private::THashMap<int, SkPDFTagNode*>* nodeMap);
     SkPDFIndirectReference PrepareTagTreeToEmit(SkPDFIndirectReference parent,
                                                 SkPDFTagNode* node,
                                                 SkPDFDocument* doc);
 
     SkArenaAlloc fArena;
-    SkTHashMap<int, SkPDFTagNode*> fNodeMap;
+    skia_private::THashMap<int, SkPDFTagNode*> fNodeMap;
     SkPDFTagNode* fRoot = nullptr;
-    SkTArray<SkTArray<SkPDFTagNode*>> fMarksPerPage;
+    skia_private::TArray<skia_private::TArray<SkPDFTagNode*>> fMarksPerPage;
     std::vector<IDTreeEntry> fIdTreeEntries;
     std::vector<int> fParentTreeAnnotationNodeIds;
 

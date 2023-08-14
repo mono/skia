@@ -5,9 +5,19 @@
  * found in the LICENSE file.
  */
 
+#include "include/core/SkContourMeasure.h"
+#include "include/core/SkPath.h"
 #include "include/core/SkPathMeasure.h"
+#include "include/core/SkPoint.h"
+#include "include/core/SkRefCnt.h"
+#include "include/core/SkScalar.h"
+#include "include/core/SkTypes.h"
 #include "src/core/SkPathPriv.h"
 #include "tests/Test.h"
+
+#include <array>
+#include <cstddef>
+#include <initializer_list>
 
 static void test_small_segment3() {
     SkPath path;
@@ -18,7 +28,7 @@ static void test_small_segment3() {
     };
 
     path.moveTo(pts[0]);
-    for (size_t i = 1; i < SK_ARRAY_COUNT(pts); i += 3) {
+    for (size_t i = 1; i < std::size(pts); i += 3) {
         path.cubicTo(pts[i], pts[i + 1], pts[i + 2]);
     }
 
@@ -35,7 +45,7 @@ static void test_small_segment2() {
     };
 
     path.moveTo(pts[0]);
-    for (size_t i = 1; i < SK_ARRAY_COUNT(pts); i += 2) {
+    for (size_t i = 1; i < std::size(pts); i += 2) {
         path.quadTo(pts[i], pts[i + 1]);
     }
     SkPathMeasure meas(path, false);
@@ -53,7 +63,7 @@ static void test_small_segment() {
     };
 
     path.moveTo(pts[0]);
-    for (size_t i = 1; i < SK_ARRAY_COUNT(pts); ++i) {
+    for (size_t i = 1; i < std::size(pts); ++i) {
         path.lineTo(pts[i]);
     }
     SkPathMeasure meas(path, false);
@@ -228,8 +238,6 @@ DEF_TEST(PathMeasure_nextctr, reporter) {
     // only expect 1 contour, even if we didn't explicitly call getLength() ourselves
     REPORTER_ASSERT(reporter, !meas.nextContour());
 }
-
-#include "include/core/SkContourMeasure.h"
 
 static void test_90_degrees(sk_sp<SkContourMeasure> cm, SkScalar radius,
                             skiatest::Reporter* reporter) {

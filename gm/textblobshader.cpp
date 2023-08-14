@@ -22,7 +22,7 @@
 #include "include/core/SkTypeface.h"
 #include "include/core/SkTypes.h"
 #include "include/effects/SkGradientShader.h"
-#include "include/private/SkTDArray.h"
+#include "include/private/base/SkTDArray.h"
 #include "tools/ToolUtils.h"
 
 #include <math.h>
@@ -40,7 +40,7 @@ private:
             const char* txt = "Blobber";
             size_t txtLen = strlen(txt);
             fGlyphs.append(font.countText(txt, txtLen, SkTextEncoding::kUTF8));
-            font.textToGlyphs(txt, txtLen, SkTextEncoding::kUTF8, fGlyphs.begin(), fGlyphs.count());
+            font.textToGlyphs(txt, txtLen, SkTextEncoding::kUTF8, fGlyphs.begin(), fGlyphs.size());
         }
 
         SkFont font;
@@ -50,7 +50,7 @@ private:
         font.setTypeface(ToolUtils::create_portable_typeface());
 
         SkTextBlobBuilder builder;
-        int glyphCount = fGlyphs.count();
+        int glyphCount = fGlyphs.size();
         const SkTextBlobBuilder::RunBuffer* run;
 
         run = &builder.allocRun(font, glyphCount, 10, 10, nullptr);
@@ -75,16 +75,16 @@ private:
         colors[0] = SK_ColorRED;
         colors[1] = SK_ColorGREEN;
 
-        SkScalar pos[SK_ARRAY_COUNT(colors)];
-        for (unsigned i = 0; i < SK_ARRAY_COUNT(pos); ++i) {
-            pos[i] = (float)i / (SK_ARRAY_COUNT(pos) - 1);
+        SkScalar pos[std::size(colors)];
+        for (unsigned i = 0; i < std::size(pos); ++i) {
+            pos[i] = (float)i / (std::size(pos) - 1);
         }
 
         SkISize sz = this->onISize();
         fShader = SkGradientShader::MakeRadial(SkPoint::Make(SkIntToScalar(sz.width() / 2),
                                                SkIntToScalar(sz.height() / 2)),
                                                sz.width() * .66f, colors, pos,
-                                               SK_ARRAY_COUNT(colors),
+                                               std::size(colors),
                                                SkTileMode::kRepeat);
     }
 

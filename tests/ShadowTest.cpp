@@ -6,13 +6,24 @@
  */
 
 #include "include/core/SkCanvas.h"
+#include "include/core/SkMatrix.h"
 #include "include/core/SkPath.h"
+#include "include/core/SkPoint.h"
+#include "include/core/SkPoint3.h"
+#include "include/core/SkRRect.h"
+#include "include/core/SkRect.h"
+#include "include/core/SkRefCnt.h"
+#include "include/core/SkScalar.h"
+#include "include/core/SkTypes.h"
 #include "include/core/SkVertices.h"
-#include "include/utils/SkShadowUtils.h"
+#include "include/private/SkShadowFlags.h"
+#include "include/private/base/SkTo.h"
 #include "src/core/SkDrawShadowInfo.h"
 #include "src/core/SkVerticesPriv.h"
 #include "src/utils/SkShadowTessellator.h"
 #include "tests/Test.h"
+
+#if !defined(SK_ENABLE_OPTIMIZE_SIZE)
 
 enum ExpectVerts {
     kDont_ExpectVerts,
@@ -43,10 +54,17 @@ void tessellate_shadow(skiatest::Reporter* reporter, const SkPath& path, const S
     verts = SkShadowTessellator::MakeAmbient(path, ctm, heightParams, false);
     check_result(reporter, verts, expectVerts, expectSuccess);
 
-    verts = SkShadowTessellator::MakeSpot(path, ctm, heightParams, {0, 0, 128}, 128.f, true);
+    verts = SkShadowTessellator::MakeSpot(path, ctm, heightParams, {0, 0, 128}, 128.f, true, false);
     check_result(reporter, verts, expectVerts, expectSuccess);
 
-    verts = SkShadowTessellator::MakeSpot(path, ctm, heightParams, {0, 0, 128}, 128.f, false);
+    verts = SkShadowTessellator::MakeSpot(path, ctm, heightParams, {0, 0, 128}, 128.f, false,
+                                          false);
+    check_result(reporter, verts, expectVerts, expectSuccess);
+
+    verts = SkShadowTessellator::MakeSpot(path, ctm, heightParams, {0, 0, 128}, 128.f, true, true);
+    check_result(reporter, verts, expectVerts, expectSuccess);
+
+    verts = SkShadowTessellator::MakeSpot(path, ctm, heightParams, {0, 0, 128}, 128.f, false, true);
     check_result(reporter, verts, expectVerts, expectSuccess);
 }
 
@@ -116,7 +134,7 @@ DEF_TEST(ShadowUtils, reporter) {
 }
 
 void check_xformed_bounds(skiatest::Reporter* reporter, const SkPath& path, const SkMatrix& ctm) {
-    const SkDrawShadowRec rec = {
+    SkDrawShadowRec rec = {
         SkPoint3::Make(0, 0, 4),
         SkPoint3::Make(100, 0, 600),
         800.f,
@@ -124,6 +142,7 @@ void check_xformed_bounds(skiatest::Reporter* reporter, const SkPath& path, cons
         0x40000000,
         0
     };
+    // point light
     SkRect bounds;
     SkDrawShadowMetrics::GetLocalBounds(path, rec, ctm, &bounds);
     ctm.mapRect(&bounds);
@@ -136,7 +155,26 @@ void check_xformed_bounds(skiatest::Reporter* reporter, const SkPath& path, cons
     SkPoint mapXY = ctm.mapXY(rec.fLightPos.fX, rec.fLightPos.fY);
     SkPoint3 devLightPos = SkPoint3::Make(mapXY.fX, mapXY.fY, rec.fLightPos.fZ);
     verts = SkShadowTessellator::MakeSpot(path, ctm, rec.fZPlaneParams, devLightPos,
-                                          rec.fLightRadius, false);
+                                          rec.fLightRadius, false, false);
+    if (verts) {
+        REPORTER_ASSERT(reporter, bounds.contains(verts->bounds()));
+    }
+
+    // directional light
+    rec.fFlags |= SkShadowFlags::kDirectionalLight_ShadowFlag;
+    rec.fLightRadius = 2.0f;
+    SkDrawShadowMetrics::GetLocalBounds(path, rec, ctm, &bounds);
+    ctm.mapRect(&bounds);
+
+    verts = SkShadowTessellator::MakeAmbient(path, ctm, rec.fZPlaneParams, true);
+    if (verts) {
+        REPORTER_ASSERT(reporter, bounds.contains(verts->bounds()));
+    }
+
+    devLightPos = rec.fLightPos;
+    devLightPos.normalize();
+    verts = SkShadowTessellator::MakeSpot(path, ctm, rec.fZPlaneParams, devLightPos,
+                                          rec.fLightRadius, false, true);
     if (verts) {
         REPORTER_ASSERT(reporter, bounds.contains(verts->bounds()));
     }
@@ -180,3 +218,5 @@ DEF_TEST(ShadowBounds, reporter) {
     path.cubicTo(100, 50, 20, 100, 0, 0);
     check_bounds(reporter, path);
 }
+
+#endif // !defined(SK_ENABLE_OPTIMIZE_SIZE)

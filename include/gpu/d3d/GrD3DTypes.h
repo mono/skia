@@ -19,10 +19,10 @@
 // * MemoryBarrier
 //
 // You should only include this header if you need the Direct3D definitions and are
-// prepared to rename those identifiers. Otherwise use GrD3DTypesMinimal.h.
+// prepared to rename those identifiers.
 
 #include "include/core/SkRefCnt.h"
-#include "include/gpu/d3d/GrD3DTypesMinimal.h"
+#include "include/gpu/GpuTypes.h"
 #include <d3d12.h>
 #include <dxgi1_4.h>
 
@@ -166,6 +166,11 @@ public:
                                                  D3D12_RESOURCE_STATES initialResourceState,
                                                  sk_sp<GrD3DAlloc>* allocation,
                                                  const D3D12_CLEAR_VALUE*) = 0;
+    virtual gr_cp<ID3D12Resource> createAliasingResource(sk_sp<GrD3DAlloc>& allocation,
+                                                         uint64_t localOffset,
+                                                         const D3D12_RESOURCE_DESC*,
+                                                         D3D12_RESOURCE_STATES initialResourceState,
+                                                         const D3D12_CLEAR_VALUE*) = 0;
 };
 
 // Note: there is no notion of Borrowed or Adopted resources in the D3D backend,
@@ -179,7 +184,7 @@ struct GrD3DTextureResourceInfo {
     uint32_t                 fSampleCount          = 1;
     uint32_t                 fLevelCount           = 0;
     unsigned int             fSampleQualityPattern = DXGI_STANDARD_MULTISAMPLE_QUALITY_PATTERN;
-    GrProtected              fProtected            = GrProtected::kNo;
+    skgpu::Protected         fProtected            = skgpu::Protected::kNo;
 
     GrD3DTextureResourceInfo() = default;
 
@@ -190,7 +195,7 @@ struct GrD3DTextureResourceInfo {
                              uint32_t sampleCount,
                              uint32_t levelCount,
                              unsigned int sampleQualityLevel,
-                             GrProtected isProtected = GrProtected::kNo)
+                             skgpu::Protected isProtected = skgpu::Protected::kNo)
             : fResource(resource)
             , fAlloc(alloc)
             , fResourceState(resourceState)
@@ -201,10 +206,10 @@ struct GrD3DTextureResourceInfo {
             , fProtected(isProtected) {}
 
     GrD3DTextureResourceInfo(const GrD3DTextureResourceInfo& info,
-                             GrD3DResourceStateEnum resourceState)
+                             D3D12_RESOURCE_STATES resourceState)
             : fResource(info.fResource)
             , fAlloc(info.fAlloc)
-            , fResourceState(static_cast<D3D12_RESOURCE_STATES>(resourceState))
+            , fResourceState(resourceState)
             , fFormat(info.fFormat)
             , fSampleCount(info.fSampleCount)
             , fLevelCount(info.fLevelCount)
@@ -229,6 +234,15 @@ struct GrD3DFenceInfo {
 
     gr_cp<ID3D12Fence> fFence;
     uint64_t           fValue;  // signal value for the fence
+};
+
+struct GrD3DSurfaceInfo {
+    uint32_t fSampleCount = 1;
+    uint32_t fLevelCount = 0;
+    skgpu::Protected fProtected = skgpu::Protected::kNo;
+
+    DXGI_FORMAT fFormat = DXGI_FORMAT_UNKNOWN;
+    unsigned int fSampleQualityPattern = DXGI_STANDARD_MULTISAMPLE_QUALITY_PATTERN;
 };
 
 #endif

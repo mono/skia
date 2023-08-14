@@ -10,6 +10,7 @@
 #include "modules/skparagraph/include/Paragraph.h"
 #include "modules/skparagraph/include/ParagraphStyle.h"
 #include "modules/skparagraph/include/TextStyle.h"
+#include "modules/skunicode/include/SkUnicode.h"
 
 namespace skia {
 namespace textlayout {
@@ -39,12 +40,12 @@ public:
 
     virtual TextStyle peekStyle() = 0;
 
-    // Adds text to the builder. Forms the proper runs to use the upper-most style
-    // on the style_stack
+    // Adds UTF16-encoded text to the builder. Forms the proper runs to use the upper-most style
+    // on the style_stack.
     virtual void addText(const std::u16string& text) = 0;
 
-    // Adds text to the builder, using the top-most style on on the style_stack.
-    virtual void addText(const char* text) = 0; // Don't use this one - going away soon
+    // Adds UTF8-encoded text to the builder, using the top-most style on the style_stack.
+    virtual void addText(const char* text) = 0;
     virtual void addText(const char* text, size_t len) = 0;
 
     // Pushes the information required to leave an open space, where Flutter may
@@ -52,11 +53,27 @@ public:
     // Internally, this method adds a single object replacement character (0xFFFC)
     virtual void addPlaceholder(const PlaceholderStyle& placeholderStyle) = 0;
 
-    virtual void setParagraphStyle(const ParagraphStyle& style) = 0;
-
     // Constructs a SkParagraph object that can be used to layout and paint the text to a SkCanvas.
     virtual std::unique_ptr<Paragraph> Build() = 0;
 
+    virtual SkSpan<char> getText() = 0;
+    virtual const ParagraphStyle& getParagraphStyle() const = 0;
+
+    // Mainly, support for "Client" unicode
+    virtual void setWordsUtf8(std::vector<SkUnicode::Position> wordsUtf8) = 0;
+    virtual void setWordsUtf16(std::vector<SkUnicode::Position> wordsUtf16) = 0;
+
+    virtual void setGraphemeBreaksUtf8(std::vector<SkUnicode::Position> graphemesUtf8) = 0;
+    virtual void setGraphemeBreaksUtf16(std::vector<SkUnicode::Position> graphemesUtf16) = 0;
+
+    virtual void setLineBreaksUtf8(std::vector<SkUnicode::LineBreakBefore> lineBreaksUtf8) = 0;
+    virtual void setLineBreaksUtf16(std::vector<SkUnicode::LineBreakBefore> lineBreaksUtf16) = 0;
+
+    virtual void SetUnicode(std::unique_ptr<SkUnicode> unicode) = 0;
+
+    // Resets this builder to its initial state, discarding any text, styles, placeholders that have
+    // been added, but keeping the initial ParagraphStyle.
+    virtual void Reset() = 0;
 
     // Just until we fix all the google3 code
     static std::unique_ptr<ParagraphBuilder> make(const ParagraphStyle& style,

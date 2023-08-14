@@ -7,11 +7,24 @@
 
 #include "src/codec/SkBmpRLECodec.h"
 
-#include <memory>
-
+#include "include/core/SkAlphaType.h"
+#include "include/core/SkColor.h"
+#include "include/core/SkColorPriv.h"
+#include "include/core/SkColorType.h"
+#include "include/core/SkImageInfo.h"
+#include "include/core/SkSize.h"
 #include "include/core/SkStream.h"
 #include "include/private/SkColorData.h"
+#include "include/private/SkEncodedInfo.h"
+#include "include/private/base/SkAlign.h"
+#include "include/private/base/SkMalloc.h"
+#include "include/private/base/SkTemplates.h"
 #include "src/codec/SkCodecPriv.h"
+
+#include <algorithm>
+#include <cstring>
+#include <memory>
+#include <utility>
 
 /*
  * Creates an instance of the decoder
@@ -411,14 +424,11 @@ int SkBmpRLECodec::decodeRLE(const SkImageInfo& dstInfo, void* dst, size_t dstRo
                     uint8_t numPixels = task;
                     const size_t rowBytes = compute_row_bytes(numPixels,
                             this->bitsPerPixel());
-                    // Abort if setting numPixels moves us off the edge of the
-                    // image.
                     if (x + numPixels > width) {
                         SkCodecPrintf("Warning: invalid RLE input.\n");
-                        return y;
                     }
 
-                    // Also abort if there are not enough bytes
+                    // Abort if there are not enough bytes
                     // remaining in the stream to set numPixels.
 
                     // At most, alignedRowBytes can be 255 (max uint8_t) *
@@ -435,7 +445,7 @@ int SkBmpRLECodec::decodeRLE(const SkImageInfo& dstInfo, void* dst, size_t dstRo
                         }
                     }
                     // Set numPixels number of pixels
-                    while (numPixels > 0) {
+                    while ((numPixels > 0) && (x < width)) {
                         switch(this->bitsPerPixel()) {
                             case 4: {
                                 SkASSERT(fCurrRLEByte < fBytesBuffered);
