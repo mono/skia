@@ -67,6 +67,8 @@ var gniExportDescs = []exporter.GNIExportDesc{
 				"//src/opts:private_hdrs",
 				"//src/shaders:shader_hdrs",
 				"//src/shaders:shader_srcs",
+				"//src/shaders:sksl_hdrs",
+				"//src/shaders:sksl_srcs",
 				"//src/text:text_hdrs",
 				"//src/text:text_srcs",
 			}},
@@ -130,8 +132,21 @@ var gniExportDescs = []exporter.GNIExportDesc{
 				"//src/effects:legacy_draw_looper",
 				"//src/shaders/gradients:gradient_hdrs",
 				"//src/shaders/gradients:gradient_srcs",
-			}}},
-	},
+			}},
+		{Var: "skia_colorfilters_sources",
+			Rules: []string{
+				"//src/effects/colorfilters:colorfilter_srcs",
+				"//src/effects/colorfilters:colorfilter_hdrs",
+			}},
+		{Var: "skia_colorfilters_sksl_sources",
+			Rules: []string{
+				"//src/effects/colorfilters:sksl_srcs",
+			}},
+		{Var: "skia_colorfilters_nosksl_sources",
+			Rules: []string{
+				"//src/effects/colorfilters:no_sksl_srcs",
+			}},
+	}},
 	{GNI: "gn/effects_imagefilters.gni", Vars: []exporter.GNIFileListExportDesc{
 		{Var: "skia_effects_imagefilter_public",
 			Rules: []string{
@@ -149,8 +164,12 @@ var gniExportDescs = []exporter.GNIExportDesc{
 			Rules: []string{
 				"//src/pdf:pdf_hdrs",
 				"//src/pdf:pdf_srcs",
-			}}},
-	},
+			}},
+		{Var: "skia_pdf_jpeginfo_lib",
+			Rules: []string{"//src/pdf:jpeg_info_libjpeg"}},
+		{Var: "skia_pdf_jpeginfo_none",
+			Rules: []string{"//src/pdf:jpeg_info_none"}},
+	}},
 	{GNI: "gn/sksl.gni", Vars: []exporter.GNIFileListExportDesc{
 		{Var: "skia_sksl_sources",
 			Rules: []string{
@@ -200,8 +219,6 @@ var gniExportDescs = []exporter.GNIExportDesc{
 		{Var: "sksl_metal_tests", Rules: []string{"//resources/sksl:sksl_metal_tests"}},
 		{Var: "sksl_spirv_tests", Rules: []string{"//resources/sksl:sksl_spirv_tests"}},
 		{Var: "sksl_wgsl_tests", Rules: []string{"//resources/sksl:sksl_wgsl_tests"}},
-		{Var: "sksl_inverse_hyperbolic_intrinsics_tests",
-			Rules: []string{"//resources/sksl:sksl_inverse_hyperbolic_intrinsics_tests"}},
 		{Var: "sksl_shared_tests", Rules: []string{"//resources/sksl:sksl_shared_tests"}},
 		{Var: "sksl_folding_tests", Rules: []string{"//resources/sksl:sksl_folding_tests"}},
 		{Var: "sksl_inliner_tests", Rules: []string{"//resources/sksl:sksl_inliner_tests"}},
@@ -302,7 +319,6 @@ var gniExportDescs = []exporter.GNIExportDesc{
 				"//src/gpu/ganesh/gl:core_srcs",
 				"//src/gpu/ganesh/gl/builders:builder_hdrs",
 				"//src/gpu/ganesh/gl/builders:builder_srcs",
-				"//src/gpu/gl:gl_hdrs",
 			}},
 		{Var: "skia_null_gpu_sources",
 			Rules: []string{

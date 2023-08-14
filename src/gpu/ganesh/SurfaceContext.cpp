@@ -584,6 +584,11 @@ void SurfaceContext::asyncRescaleAndReadPixels(GrDirectContext* dContext,
         colorTypeOfFinalContext = dstCT;
         backendFormatOfFinalContext =
                 this->caps()->getDefaultBackendFormat(dstCT, GrRenderable::kYes);
+        if (!backendFormatOfFinalContext.isValid()) {
+            constexpr int kSampleCnt = 1;
+            std::tie(colorTypeOfFinalContext, backendFormatOfFinalContext) =
+                    this->caps()->getFallbackColorTypeAndFormat(colorTypeOfFinalContext, kSampleCnt);
+        }
     }
     auto readInfo = this->caps()->supportedReadPixelsColorType(colorTypeOfFinalContext,
                                                                backendFormatOfFinalContext,
@@ -698,9 +703,8 @@ void SurfaceContext::asyncReadPixels(GrDirectContext* dContext,
     flushInfo.fFinishedContext = finishContext;
     flushInfo.fFinishedProc = finishCallback;
 
-    dContext->priv().flushSurface(this->asSurfaceProxy(),
-                                  SkSurface::BackendSurfaceAccess::kNoAccess,
-                                  flushInfo);
+    dContext->priv().flushSurface(
+            this->asSurfaceProxy(), SkSurfaces::BackendSurfaceAccess::kNoAccess, flushInfo);
 }
 
 void SurfaceContext::asyncRescaleAndReadPixelsYUV420(GrDirectContext* dContext,
@@ -949,9 +953,8 @@ void SurfaceContext::asyncRescaleAndReadPixelsYUV420(GrDirectContext* dContext,
     GrFlushInfo flushInfo;
     flushInfo.fFinishedContext = finishContext;
     flushInfo.fFinishedProc = finishCallback;
-    dContext->priv().flushSurface(this->asSurfaceProxy(),
-                                  SkSurface::BackendSurfaceAccess::kNoAccess,
-                                  flushInfo);
+    dContext->priv().flushSurface(
+            this->asSurfaceProxy(), SkSurfaces::BackendSurfaceAccess::kNoAccess, flushInfo);
 }
 
 sk_sp<GrRenderTask> SurfaceContext::copy(sk_sp<GrSurfaceProxy> src,

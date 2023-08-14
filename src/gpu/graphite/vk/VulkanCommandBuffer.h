@@ -12,6 +12,7 @@
 
 #include "include/gpu/vk/VulkanTypes.h"
 #include "src/gpu/graphite/DrawPass.h"
+#include "src/gpu/graphite/vk/VulkanGraphicsPipeline.h"
 
 namespace skgpu::graphite {
 
@@ -73,19 +74,27 @@ private:
 
     void addDrawPass(const DrawPass*);
 
+    // Track descriptor changes for binding prior to draw calls
+    void recordBufferBindingInfo(const BindBufferInfo& info, UniformSlot);
+    void recordTextureAndSamplerDescSet(
+            const DrawPass&, const DrawPassCommands::BindTexturesAndSamplers&);
+
+    void bindTextureSamplers();
+    void bindUniformBuffers();
+    void syncDescriptorSets();
+
     // TODO: Populate the following methods to handle the possible commands in a draw pass.
     void bindGraphicsPipeline(const GraphicsPipeline*);
     void setBlendConstants(float* blendConstants);
-    void bindUniformBuffer(const BindBufferInfo& info, UniformSlot);
     void bindDrawBuffers(const BindBufferInfo& vertices,
                          const BindBufferInfo& instances,
                          const BindBufferInfo& indices,
                          const BindBufferInfo& indirect);
     void bindVertexBuffers(const Buffer* vertexBuffer, size_t vertexOffset,
                            const Buffer* instanceBuffer, size_t instanceOffset);
+    void bindInputBuffer(const Buffer* buffer, VkDeviceSize offset, uint32_t binding);
     void bindIndexBuffer(const Buffer* indexBuffer, size_t offset);
     void bindIndirectBuffer(const Buffer* indirectBuffer, size_t offset);
-    void bindTextureAndSamplers(const DrawPass&, const DrawPassCommands::BindTexturesAndSamplers&);
     void setScissor(unsigned int left, unsigned int top,
                     unsigned int width, unsigned int height);
 
@@ -151,7 +160,11 @@ private:
     // end). A nullptr means there is no active render pass. The VulkanCommandBuffer does not own
     // the render pass.
     // TODO: define what this is once we implement renderpasses.
-    const void* fActiveRenderPass = nullptr;
+    //const void* fActiveRenderPass = nullptr;
+    // For now, use this to track whether we're between beginRendering/endRendering calls.
+    bool fActiveRenderPass = false;
+
+    const VulkanGraphicsPipeline* fActiveGraphicsPipeline = nullptr;
 
     VkFence fSubmitFence = VK_NULL_HANDLE;
 
@@ -162,6 +175,19 @@ private:
     VkPipelineStageFlags fSrcStageMask = 0;
     VkPipelineStageFlags fDstStageMask = 0;
 
+    // Track whether certain descriptor sets need to be bound
+    bool fBindUniformBuffers = false;
+    bool fBindTextureSamplers = false;
+    skia_private::TArray<BindBufferInfo> fUniformBuffersToBind;
+    VkDescriptorSet fTextureSamplerDescSetToBind = VK_NULL_HANDLE;
+
+    VkBuffer fBoundInputBuffers[VulkanGraphicsPipeline::kNumInputBuffers];
+    size_t fBoundInputBufferOffsets[VulkanGraphicsPipeline::kNumInputBuffers];
+
+    VkBuffer fBoundIndexBuffer = VK_NULL_HANDLE;
+    VkBuffer fBoundIndirectBuffer = VK_NULL_HANDLE;
+    size_t fBoundIndexBufferOffset = 0;
+    size_t fBoundIndirectBufferOffset = 0;
 };
 
 } // namespace skgpu::graphite

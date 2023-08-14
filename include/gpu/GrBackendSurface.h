@@ -8,36 +8,38 @@
 #ifndef GrBackendSurface_DEFINED
 #define GrBackendSurface_DEFINED
 
-// This include of GrBackendSurfaceMutableState is not needed here, but some clients were depending
-// on the include here instead of including it themselves. Adding this back here until we can fix
-// up clients so it can be removed.
-#include "include/gpu/GrBackendSurfaceMutableState.h"
-
-#include "include/gpu/GrSurfaceInfo.h"
+#include "include/core/SkRefCnt.h"
+#include "include/core/SkSize.h"
+#include "include/gpu/GpuTypes.h"
 #include "include/gpu/GrTypes.h"
-#include "include/gpu/MutableTextureState.h"
+#include "include/private/base/SkAPI.h"
+#include "include/private/gpu/ganesh/GrTypesPriv.h"
+
 #ifdef SK_GL
 #include "include/gpu/gl/GrGLTypes.h"
 #include "include/private/gpu/ganesh/GrGLTypesPriv.h"
 #endif
+
 #include "include/gpu/mock/GrMockTypes.h"
+
 #ifdef SK_VULKAN
 #include "include/gpu/vk/GrVkTypes.h"
 #include "include/private/gpu/ganesh/GrVkTypesPriv.h"
+#include "include/private/gpu/vk/SkiaVulkan.h"
 #endif
 
 #ifdef SK_DAWN
 #include "include/gpu/dawn/GrDawnTypes.h"
 #endif
 
+#include <cstdint>
 #include <string>
+#include <string_view>
 
-class GrVkImageLayout;
-class GrGLTextureParameters;
-class GrColorFormatDesc;
 enum class SkTextureCompressionType;
 
 namespace skgpu {
+class MutableTextureState;
 class MutableTextureStateRef;
 }
 
@@ -57,33 +59,6 @@ class GrD3DResourceState;
 #if defined(SK_DEBUG) || GR_TEST_UTILS
 class SkString;
 #endif
-
-#if !defined(SK_GANESH)
-
-// SkSurfaceCharacterization always needs a minimal version of this
-class SK_API GrBackendFormat {
-public:
-    bool isValid() const { return false; }
-};
-
-// SkSurface and SkImage rely on a minimal version of these always being available
-class SK_API GrBackendTexture {
-public:
-    GrBackendTexture() {}
-
-    bool isValid() const { return false; }
-};
-
-class SK_API GrBackendRenderTarget {
-public:
-    GrBackendRenderTarget() {}
-
-    bool isValid() const { return false; }
-    bool isFramebufferOnly() const { return false; }
-};
-#else
-
-enum class GrGLFormat;
 
 class SK_API GrBackendFormat {
 public:
@@ -661,7 +636,5 @@ private:
 #endif
     sk_sp<skgpu::MutableTextureStateRef> fMutableState;
 };
-
-#endif
 
 #endif

@@ -28,8 +28,9 @@
 #include "include/gpu/GrDirectContext.h"
 #include "include/gpu/GrRecordingContext.h"
 #include "include/gpu/GrTypes.h"
-#include "include/gpu/ganesh/GrTextureGenerator.h"
+#include "include/gpu/ganesh/GrExternalTextureGenerator.h"
 #include "include/gpu/ganesh/SkSurfaceGanesh.h"
+#include "include/private/gpu/ganesh/GrTextureGenerator.h"
 #include "include/private/gpu/ganesh/GrTypesPriv.h"
 #include "src/gpu/ganesh/GrRecordingContextPriv.h"
 #include "src/gpu/ganesh/GrSamplerState.h"
@@ -232,14 +233,6 @@ protected:
                 budgeted,
                 /*label=*/"SurfaceProxyView_GenerateTexture");
     }
-
-#if defined(SK_GRAPHITE)
-    sk_sp<SkImage> onMakeTextureImage(skgpu::graphite::Recorder*,
-                                      const SkImageInfo&,
-                                      skgpu::Mipmapped) override {
-        return fImage;
-    }
-#endif
 
 private:
     sk_sp<GrRecordingContext> fRContext;

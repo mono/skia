@@ -48,7 +48,7 @@ DEF_SIMPLE_GM_BG(imagemagnifier, canvas, WIDTH, HEIGHT, SK_ColorBLACK) {
         SkPaint filterPaint;
         filterPaint.setImageFilter(
                 SkImageFilters::Magnifier(SkRect::MakeWH(WIDTH, HEIGHT), 2.f, 100.f,
-                                          SkSamplingOptions{SkFilterMode::kLinear}, nullptr));
+                                          SkFilterMode::kLinear, nullptr));
         canvas->saveLayer(nullptr, &filterPaint);
         draw_content(canvas, 300.f, 25);
         canvas->restore();
@@ -80,7 +80,7 @@ static sk_sp<SkImage> make_img() {
 }
 
 DEF_SIMPLE_GM_BG(imagemagnifier_cropped, canvas, WIDTH_HEIGHT, WIDTH_HEIGHT, SK_ColorBLACK) {
-    sk_sp<SkImageFilter> imageSource(SkImageFilters::Image(make_img()));
+    sk_sp<SkImageFilter> imageSource(SkImageFilters::Image(make_img(), SkFilterMode::kNearest));
 
     // Crop out a 16 pixel ring around the result
     const SkIRect cropRect = SkIRect::MakeXYWH(16, 16, WIDTH_HEIGHT-32, WIDTH_HEIGHT-32);
@@ -168,8 +168,7 @@ private:
         // canvas matrix and available input automatically.
         sk_sp<SkImageFilter> magnifier =
                 SkImageFilters::Magnifier(widgetBounds, kZoomAmount, inset,
-                                          SkSamplingOptions{SkFilterMode::kLinear},
-                                          nullptr, kOutBounds);
+                                          SkFilterMode::kLinear, nullptr, kOutBounds);
 
         // Draw once as a backdrop filter
         canvas->save();

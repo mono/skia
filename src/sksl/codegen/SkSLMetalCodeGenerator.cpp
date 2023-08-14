@@ -621,14 +621,14 @@ void MetalCodeGenerator::writeArgumentList(const ExpressionArray& arguments) {
 bool MetalCodeGenerator::writeIntrinsicCall(const FunctionCall& c, IntrinsicKind kind) {
     const ExpressionArray& arguments = c.arguments();
     switch (kind) {
-        case k_read_IntrinsicKind: {
+        case k_textureRead_IntrinsicKind: {
             this->writeExpression(*arguments[0], Precedence::kExpression);
             this->write(".read(");
             this->writeExpression(*arguments[1], Precedence::kSequence);
             this->write(")");
             return true;
         }
-        case k_write_IntrinsicKind: {
+        case k_textureWrite_IntrinsicKind: {
             this->writeExpression(*arguments[0], Precedence::kExpression);
             this->write(".write(");
             this->writeExpression(*arguments[2], Precedence::kSequence);
@@ -637,12 +637,12 @@ bool MetalCodeGenerator::writeIntrinsicCall(const FunctionCall& c, IntrinsicKind
             this->write(")");
             return true;
         }
-        case k_width_IntrinsicKind: {
+        case k_textureWidth_IntrinsicKind: {
             this->writeExpression(*arguments[0], Precedence::kExpression);
             this->write(".get_width()");
             return true;
         }
-        case k_height_IntrinsicKind: {
+        case k_textureHeight_IntrinsicKind: {
             this->writeExpression(*arguments[0], Precedence::kExpression);
             this->write(".get_height()");
             return true;
@@ -1610,10 +1610,7 @@ void MetalCodeGenerator::writeFieldAccess(const FieldAccess& f) {
 void MetalCodeGenerator::writeSwizzle(const Swizzle& swizzle) {
     this->writeExpression(*swizzle.base(), Precedence::kPostfix);
     this->write(".");
-    for (int c : swizzle.components()) {
-        SkASSERT(c >= 0 && c <= 3);
-        this->write(&("x\0y\0z\0w\0"[c * 2]));
-    }
+    this->write(Swizzle::MaskString(swizzle.components()));
 }
 
 void MetalCodeGenerator::writeMatrixTimesEqualHelper(const Type& left, const Type& right,
@@ -1935,29 +1932,30 @@ void MetalCodeGenerator::writeTernaryExpression(const TernaryExpression& t,
 void MetalCodeGenerator::writePrefixExpression(const PrefixExpression& p,
                                                Precedence parentPrecedence) {
     // According to the MSL specification, the arithmetic unary operators (+ and –) do not act
-    // upon matrix type operands. We treat the unary "+" as NOP for all operands.
+    // upon matrix type operands. We treat the unary "+" as a no-op for all operands.
     const Operator op = p.getOperator();
     if (op.kind() == Operator::Kind::PLUS) {
-        return this->writeExpression(*p.operand(), Precedence::kPrefix);
+        this->writeExpression(*p.operand(), Precedence::kPrefix);
+        return;
     }
 
-    const bool matrixNegation =
-            op.kind() == Operator::Kind::MINUS && p.operand()->type().isMatrix();
-    const bool needParens = Precedence::kPrefix >= parentPrecedence || matrixNegation;
+    if (op.kind() == Operator::Kind::MINUS && p.operand()->type().isMatrix()) {
+        // Transform the unary "-" on a matrix type to a multiplication by -1.
+        this->write(p.type().componentType().highPrecision() ? "(-1.0 * "
+                                                             : "(-1.0h * ");
+        this->writeExpression(*p.operand(), Precedence::kMultiplicative);
+        this->write(")");
+        return;
+    }
 
-    if (needParens) {
+    if (Precedence::kPrefix >= parentPrecedence) {
         this->write("(");
     }
 
-    // Transform the unary "-" on a matrix type to a multiplication by -1.
-    if (matrixNegation) {
-        this->write("-1.0 * ");
-    } else {
-        this->write(p.getOperator().tightOperatorName());
-    }
+    this->write(p.getOperator().tightOperatorName());
     this->writeExpression(*p.operand(), Precedence::kPrefix);
 
-    if (needParens) {
+    if (Precedence::kPrefix >= parentPrecedence) {
         this->write(")");
     }
 }

@@ -17,55 +17,40 @@
 #include "include/core/SkSurfaceProps.h"
 #include "include/core/SkTypes.h"
 
-#if defined(SK_GRAPHITE)
-#include "include/gpu/GpuTypes.h"
-namespace skgpu::graphite {
-class BackendTexture;
-}
-#endif
-
-#if defined(SK_BUILD_FOR_ANDROID) && __ANDROID_API__ >= 26
-#include <android/hardware_buffer.h>
-class GrDirectContext;
-#endif
-
-#if defined(SK_GANESH) && defined(SK_METAL)
-#include "include/gpu/mtl/GrMtlTypes.h"
-#endif
-
 #include <cstddef>
 #include <cstdint>
 #include <memory>
 
-class GrBackendRenderTarget;
 class GrBackendSemaphore;
 class GrBackendTexture;
 class GrRecordingContext;
+class GrSurfaceCharacterization;
+enum GrSurfaceOrigin : int;
 class SkBitmap;
 class SkCanvas;
 class SkCapabilities;
 class SkColorSpace;
-class SkDeferredDisplayList;
 class SkPaint;
 class SkSurface;
-class SkSurfaceCharacterization;
-enum GrSurfaceOrigin : int;
-enum SkColorType : int;
-enum class GrSemaphoresSubmitted : bool;
-struct GrFlushInfo;
 struct SkIRect;
 struct SkISize;
-
-namespace skgpu {
-class MutableTextureState;
-enum class Budgeted : bool;
-}
 
 namespace skgpu::graphite {
 class Recorder;
 }
 
+#if !defined(SK_DISABLE_LEGACY_SKSURFACE_FLUSH)
+enum class GrSemaphoresSubmitted : bool;
+struct GrFlushInfo;
+namespace skgpu { class MutableTextureState; }
+#endif
+
 namespace SkSurfaces {
+
+enum class BackendSurfaceAccess {
+    kNoAccess,  //!< back-end surface will not be used by client
+    kPresent,   //!< back-end surface will be used for presenting to screen
+};
 
 /** Returns SkSurface without backing pixels. Drawing to SkCanvas returned from SkSurface
     has no effect. Calling makeImageSnapshot() on returned SkSurface returns nullptr.
@@ -184,13 +169,13 @@ public:
     /** Is this surface compatible with the provided characterization?
 
         This method can be used to determine if an existing SkSurface is a viable destination
-        for an SkDeferredDisplayList.
+        for an GrDeferredDisplayList.
 
         @param characterization  The characterization for which a compatibility check is desired
         @return                  true if this surface is compatible with the characterization;
                                  false otherwise
     */
-    bool isCompatible(const SkSurfaceCharacterization& characterization) const;
+    bool isCompatible(const GrSurfaceCharacterization& characterization) const;
 
     /** Returns pixel count in each row; may be zero or greater.
 
@@ -350,34 +335,6 @@ public:
         example: https://fiddle.skia.org/c/@Surface_makeImageSnapshot_2
      */
     sk_sp<SkImage> makeImageSnapshot(const SkIRect& bounds);
-
-#if defined(SK_GRAPHITE)
-    /**
-     * The 'asImage' and 'makeImageCopy' API/entry points are currently only available for
-     * Graphite.
-     *
-     * In this API, SkSurface no longer supports copy-on-write behavior. Instead, when creating
-     * an image for a surface, the client must explicitly indicate if a copy should be made.
-     * In both of the below calls the resource backing the surface will never change.
-     *
-     * The 'asImage' entry point has some major ramifications for the mutability of the
-     * returned SkImage. Since the originating surface and the returned image share the
-     * same backing, care must be taken by the client to ensure that the contents of the image
-     * reflect the desired contents when it is consumed by the gpu.
-     * Note: if the backing GPU buffer isn't textureable this method will return null. Graphite
-     * will not attempt to make a copy.
-     * Note: For 'asImage', the mipmapping of the image will match that of the source surface.
-     *
-     * The 'makeImageCopy' entry point allows subsetting and the addition of mipmaps (since
-     * a copy is already being made).
-     *
-     * In Graphite, the legacy API call (i.e., makeImageSnapshot) will just always make a copy.
-     */
-    sk_sp<SkImage> asImage();
-
-    sk_sp<SkImage> makeImageCopy(const SkIRect* subset = nullptr,
-                                 skgpu::Mipmapped mipmapped = skgpu::Mipmapped::kNo);
-#endif
 
     /** Draws SkSurface contents to canvas, with its top-left corner at (x, y).
 
@@ -638,131 +595,6 @@ public:
     */
     const SkSurfaceProps& props() const { return fProps; }
 
-    /** Call to ensure all reads/writes of the surface have been issued to the underlying 3D API.
-        Skia will correctly order its own draws and pixel operations. This must to be used to ensure
-        correct ordering when the surface backing store is accessed outside Skia (e.g. direct use of
-        the 3D API or a windowing system). GrDirectContext has additional flush and submit methods
-        that apply to all surfaces and images created from a GrDirectContext. This is equivalent to
-        calling SkSurface::flush with a default GrFlushInfo followed by
-        GrDirectContext::submit(syncCpu).
-    */
-    void flushAndSubmit(bool syncCpu = false);
-
-    enum class BackendSurfaceAccess {
-        kNoAccess,  //!< back-end object will not be used by client
-        kPresent,   //!< back-end surface will be used for presenting to screen
-    };
-
-#if defined(SK_GANESH)
-    /** If a surface is GPU texture backed, is being drawn with MSAA, and there is a resolve
-        texture, this call will insert a resolve command into the stream of gpu commands. In order
-        for the resolve to actually have an effect, the work still needs to be flushed and submitted
-        to the GPU after recording the resolve command. If a resolve is not supported or the
-        SkSurface has no dirty work to resolve, then this call is a no-op.
-
-        This call is most useful when the SkSurface is created by wrapping a single sampled gpu
-        texture, but asking Skia to render with MSAA. If the client wants to use the wrapped texture
-        outside of Skia, the only way to trigger a resolve is either to call this command or use
-        SkSurface::flush.
-     */
-    void resolveMSAA();
-
-    /** Issues pending SkSurface commands to the GPU-backed API objects and resolves any SkSurface
-        MSAA. A call to GrDirectContext::submit is always required to ensure work is actually sent
-        to the gpu. Some specific API details:
-            GL: Commands are actually sent to the driver, but glFlush is never called. Thus some
-                sync objects from the flush will not be valid until a submission occurs.
-
-            Vulkan/Metal/D3D/Dawn: Commands are recorded to the backend APIs corresponding command
-                buffer or encoder objects. However, these objects are not sent to the gpu until a
-                submission occurs.
-
-        The work that is submitted to the GPU will be dependent on the BackendSurfaceAccess that is
-        passed in.
-
-        If BackendSurfaceAccess::kNoAccess is passed in all commands will be issued to the GPU.
-
-        If BackendSurfaceAccess::kPresent is passed in and the backend API is not Vulkan, it is
-        treated the same as kNoAccess. If the backend API is Vulkan, the VkImage that backs the
-        SkSurface will be transferred back to its original queue. If the SkSurface was created by
-        wrapping a VkImage, the queue will be set to the queue which was originally passed in on
-        the GrVkImageInfo. Additionally, if the original queue was not external or foreign the
-        layout of the VkImage will be set to VK_IMAGE_LAYOUT_PRESENT_SRC_KHR.
-
-        The GrFlushInfo describes additional options to flush. Please see documentation at
-        GrFlushInfo for more info.
-
-        If the return is GrSemaphoresSubmitted::kYes, only initialized GrBackendSemaphores will be
-        submitted to the gpu during the next submit call (it is possible Skia failed to create a
-        subset of the semaphores). The client should not wait on these semaphores until after submit
-        has been called, but must keep them alive until then. If a submit flag was passed in with
-        the flush these valid semaphores can we waited on immediately. If this call returns
-        GrSemaphoresSubmitted::kNo, the GPU backend will not submit any semaphores to be signaled on
-        the GPU. Thus the client should not have the GPU wait on any of the semaphores passed in
-        with the GrFlushInfo. Regardless of whether semaphores were submitted to the GPU or not, the
-        client is still responsible for deleting any initialized semaphores.
-        Regardless of semaphore submission the context will still be flushed. It should be
-        emphasized that a return value of GrSemaphoresSubmitted::kNo does not mean the flush did not
-        happen. It simply means there were no semaphores submitted to the GPU. A caller should only
-        take this as a failure if they passed in semaphores to be submitted.
-
-        Pending surface commands are flushed regardless of the return result.
-
-        @param access  type of access the call will do on the backend object after flush
-        @param info    flush options
-    */
-    GrSemaphoresSubmitted flush(BackendSurfaceAccess access, const GrFlushInfo& info);
-
-    /** Issues pending SkSurface commands to the GPU-backed API objects and resolves any SkSurface
-        MSAA. A call to GrDirectContext::submit is always required to ensure work is actually sent
-        to the gpu. Some specific API details:
-            GL: Commands are actually sent to the driver, but glFlush is never called. Thus some
-                sync objects from the flush will not be valid until a submission occurs.
-
-            Vulkan/Metal/D3D/Dawn: Commands are recorded to the backend APIs corresponding command
-                buffer or encoder objects. However, these objects are not sent to the gpu until a
-                submission occurs.
-
-        The GrFlushInfo describes additional options to flush. Please see documentation at
-        GrFlushInfo for more info.
-
-        If a skgpu::MutableTextureState is passed in, at the end of the flush we will transition
-        the surface to be in the state requested by the skgpu::MutableTextureState. If the surface
-        (or SkImage or GrBackendSurface wrapping the same backend object) is used again after this
-        flush the state may be changed and no longer match what is requested here. This is often
-        used if the surface will be used for presenting or external use and the client wants backend
-        object to be prepped for that use. A finishedProc or semaphore on the GrFlushInfo will also
-        include the work for any requested state change.
-
-        If the backend API is Vulkan, the caller can set the skgpu::MutableTextureState's
-        VkImageLayout to VK_IMAGE_LAYOUT_UNDEFINED or queueFamilyIndex to VK_QUEUE_FAMILY_IGNORED to
-        tell Skia to not change those respective states.
-
-        If the return is GrSemaphoresSubmitted::kYes, only initialized GrBackendSemaphores will be
-        submitted to the gpu during the next submit call (it is possible Skia failed to create a
-        subset of the semaphores). The client should not wait on these semaphores until after submit
-        has been called, but must keep them alive until then. If a submit flag was passed in with
-        the flush these valid semaphores can we waited on immediately. If this call returns
-        GrSemaphoresSubmitted::kNo, the GPU backend will not submit any semaphores to be signaled on
-        the GPU. Thus the client should not have the GPU wait on any of the semaphores passed in
-        with the GrFlushInfo. Regardless of whether semaphores were submitted to the GPU or not, the
-        client is still responsible for deleting any initialized semaphores.
-        Regardleess of semaphore submission the context will still be flushed. It should be
-        emphasized that a return value of GrSemaphoresSubmitted::kNo does not mean the flush did not
-        happen. It simply means there were no semaphores submitted to the GPU. A caller should only
-        take this as a failure if they passed in semaphores to be submitted.
-
-        Pending surface commands are flushed regardless of the return result.
-
-        @param info    flush options
-        @param access  optional state change request after flush
-    */
-    GrSemaphoresSubmitted flush(const GrFlushInfo& info,
-                                const skgpu::MutableTextureState* newState = nullptr);
-#endif // defined(SK_GANESH)
-
-    void flush();
-
     /** Inserts a list of GPU semaphores that the current GPU-backed API must wait on before
         executing any more commands on the GPU for this surface. If this call returns false, then
         the GPU back-end will not wait on any passed in semaphores, and the client will still own
@@ -781,9 +613,9 @@ public:
     bool wait(int numSemaphores, const GrBackendSemaphore* waitSemaphores,
               bool deleteSemaphoresAfterWait = true);
 
-    /** Initializes SkSurfaceCharacterization that can be used to perform GPU back-end
+    /** Initializes GrSurfaceCharacterization that can be used to perform GPU back-end
         processing in a separate thread. Typically this is used to divide drawing
-        into multiple tiles. SkDeferredDisplayListRecorder records the drawing commands
+        into multiple tiles. GrDeferredDisplayListRecorder records the drawing commands
         for each tile.
 
         Return true if SkSurface supports characterization. raster surface returns false.
@@ -793,27 +625,7 @@ public:
 
         example: https://fiddle.skia.org/c/@Surface_characterize
     */
-    bool characterize(SkSurfaceCharacterization* characterization) const;
-
-    /** Draws the deferred display list created via a SkDeferredDisplayListRecorder.
-        If the deferred display list is not compatible with this SkSurface, the draw is skipped
-        and false is return.
-
-        The xOffset and yOffset parameters are experimental and, if not both zero, will cause
-        the draw to be ignored.
-        When implemented, if xOffset or yOffset are non-zero, the DDL will be drawn offset by that
-        amount into the surface.
-
-        @param deferredDisplayList  drawing commands
-        @param xOffset              x-offset at which to draw the DDL
-        @param yOffset              y-offset at which to draw the DDL
-        @return                     false if deferredDisplayList is not compatible
-
-        example: https://fiddle.skia.org/c/@Surface_draw_2
-    */
-    bool draw(sk_sp<const SkDeferredDisplayList> deferredDisplayList,
-              int xOffset = 0,
-              int yOffset = 0);
+    bool characterize(GrSurfaceCharacterization* characterization) const;
 
 protected:
     SkSurface(int width, int height, const SkSurfaceProps* surfaceProps);
@@ -833,118 +645,23 @@ private:
     using INHERITED = SkRefCnt;
 
 public:
-#if !defined(SK_DISABLE_LEGACY_SKSURFACE_METHODS) && defined(SK_GANESH)
-    GrBackendTexture getBackendTexture(BackendHandleAccess backendHandleAccess);
-    GrBackendRenderTarget getBackendRenderTarget(BackendHandleAccess backendHandleAccess);
+#if !defined(SK_DISABLE_LEGACY_SKSURFACE_FLUSH) && defined(SK_GANESH)
+    using BackendSurfaceAccess = SkSurfaces::BackendSurfaceAccess;
+    GrSemaphoresSubmitted flush(BackendSurfaceAccess access, const GrFlushInfo& info);
+    GrSemaphoresSubmitted flush(const GrFlushInfo& info,
+                                const skgpu::MutableTextureState* newState = nullptr);
+    void resolveMSAA();
 #endif
 
-#if !defined(SK_DISABLE_LEGACY_SKSURFACE_FACTORIES)
-    using RenderTargetReleaseProc = void (*)(ReleaseContext);
-
-    static sk_sp<SkSurface> MakeNull(int width, int height);
-    static sk_sp<SkSurface> MakeRasterDirect(const SkImageInfo& imageInfo,
-                                             void* pixels,
-                                             size_t rowBytes,
-                                             const SkSurfaceProps* surfaceProps = nullptr);
-    static sk_sp<SkSurface> MakeRasterDirect(const SkPixmap& pm,
-                                             const SkSurfaceProps* props = nullptr);
-    static sk_sp<SkSurface> MakeRasterDirectReleaseProc(
-            const SkImageInfo& imageInfo,
-            void* pixels,
-            size_t rowBytes,
-            void (*releaseProc)(void* pixels, void* context),
-            void* context,
-            const SkSurfaceProps* surfaceProps = nullptr);
-    static sk_sp<SkSurface> MakeRaster(const SkImageInfo& imageInfo,
-                                       size_t rowBytes,
-                                       const SkSurfaceProps* surfaceProps);
-    static sk_sp<SkSurface> MakeRaster(const SkImageInfo& imageInfo,
-                                       const SkSurfaceProps* props = nullptr);
-    static sk_sp<SkSurface> MakeRasterN32Premul(int width,
-                                                int height,
-                                                const SkSurfaceProps* surfaceProps = nullptr);
-
-#if defined(SK_GANESH)
-    static sk_sp<SkSurface> MakeFromBackendTexture(GrRecordingContext* context,
-                                                   const GrBackendTexture& backendTexture,
-                                                   GrSurfaceOrigin origin,
-                                                   int sampleCnt,
-                                                   SkColorType colorType,
-                                                   sk_sp<SkColorSpace> colorSpace,
-                                                   const SkSurfaceProps* surfaceProps,
-                                                   TextureReleaseProc textureReleaseProc = nullptr,
-                                                   ReleaseContext releaseContext = nullptr);
-    static sk_sp<SkSurface> MakeFromBackendRenderTarget(
-            GrRecordingContext* context,
-            const GrBackendRenderTarget& backendRenderTarget,
-            GrSurfaceOrigin origin,
-            SkColorType colorType,
-            sk_sp<SkColorSpace> colorSpace,
-            const SkSurfaceProps* surfaceProps,
-            RenderTargetReleaseProc releaseProc = nullptr,
-            ReleaseContext releaseContext = nullptr);
-    static sk_sp<SkSurface> MakeRenderTarget(GrRecordingContext* context,
-                                             skgpu::Budgeted budgeted,
-                                             const SkImageInfo& imageInfo,
-                                             int sampleCount,
-                                             GrSurfaceOrigin surfaceOrigin,
-                                             const SkSurfaceProps* surfaceProps,
-                                             bool shouldCreateWithMips = false);
-    static sk_sp<SkSurface> MakeRenderTarget(GrRecordingContext* context,
-                                             skgpu::Budgeted budgeted,
-                                             const SkImageInfo& imageInfo,
-                                             int sampleCount,
-                                             const SkSurfaceProps* surfaceProps);
-    static sk_sp<SkSurface> MakeRenderTarget(GrRecordingContext* context,
-                                             skgpu::Budgeted budgeted,
-                                             const SkImageInfo& imageInfo);
-    static sk_sp<SkSurface> MakeRenderTarget(GrRecordingContext* context,
-                                             const SkSurfaceCharacterization& characterization,
-                                             skgpu::Budgeted budgeted);
-#endif  // defined(SK_GANESH)
-
-#if defined(SK_BUILD_FOR_ANDROID) && __ANDROID_API__ >= 26
-    static sk_sp<SkSurface> MakeFromAHardwareBuffer(GrDirectContext* context,
-                                                    AHardwareBuffer* hardwareBuffer,
-                                                    GrSurfaceOrigin origin,
-                                                    sk_sp<SkColorSpace> colorSpace,
-                                                    const SkSurfaceProps* surfaceProps,
-                                                    bool fromWindow = false);
+#if !defined(SK_DISABLE_LEGACY_SKSURFACE_FLUSH)
+    void flushAndSubmit(bool syncCpu = false);
+    void flush();
 #endif
 
-#if defined(SK_GRAPHITE)
-    static sk_sp<SkSurface> MakeGraphite(skgpu::graphite::Recorder*,
-                                         const SkImageInfo& imageInfo,
-                                         skgpu::Mipmapped = skgpu::Mipmapped::kNo,
-                                         const SkSurfaceProps* surfaceProps = nullptr);
-    static sk_sp<SkSurface> MakeGraphiteFromBackendTexture(skgpu::graphite::Recorder*,
-                                                           const skgpu::graphite::BackendTexture&,
-                                                           SkColorType colorType,
-                                                           sk_sp<SkColorSpace> colorSpace,
-                                                           const SkSurfaceProps* props);
-#endif  // defined(SK_GRAPHITE)
+#if !defined(SK_DISABLE_LEGACY_SKSURFACE_AS_IMAGE) && defined(SK_GRAPHITE)
+    sk_sp<SkImage> asImage();
+#endif
 
-#if defined(SK_GANESH) && defined(SK_METAL)
-    static sk_sp<SkSurface> MakeFromCAMetalLayer(GrRecordingContext* context,
-                                                 GrMTLHandle layer,
-                                                 GrSurfaceOrigin origin,
-                                                 int sampleCnt,
-                                                 SkColorType colorType,
-                                                 sk_sp<SkColorSpace> colorSpace,
-                                                 const SkSurfaceProps* surfaceProps,
-                                                 GrMTLHandle* drawable)
-            SK_API_AVAILABLE_CA_METAL_LAYER;
-    static sk_sp<SkSurface> MakeFromMTKView(GrRecordingContext* context,
-                                            GrMTLHandle mtkView,
-                                            GrSurfaceOrigin origin,
-                                            int sampleCnt,
-                                            SkColorType colorType,
-                                            sk_sp<SkColorSpace> colorSpace,
-                                            const SkSurfaceProps* surfaceProps)
-            SK_API_AVAILABLE(macos(10.11), ios(9.0), tvos(9.0));
-#endif  // defined(SK_GANESH) && defined(SK_METAL)
-
-#endif  // !defined(SK_DISABLE_LEGACY_SKSURFACE_FACTORIES)
 };
 
 #endif

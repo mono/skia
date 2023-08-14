@@ -8,7 +8,7 @@
 #include "src/gpu/ganesh/GrRecordingContextPriv.h"
 
 #include "include/core/SkColorSpace.h"
-#include "src/gpu/ganesh/Device_v1.h"
+#include "src/gpu/ganesh/Device.h"
 #include "src/gpu/ganesh/GrCaps.h"
 #include "src/gpu/ganesh/GrDrawingManager.h"
 #include "src/gpu/ganesh/GrProxyProvider.h"
@@ -59,7 +59,7 @@ sk_sp<skgpu::ganesh::Device> GrRecordingContextPriv::createDevice(
                                        init);
 }
 
-void GrRecordingContextPriv::moveRenderTasksToDDL(SkDeferredDisplayList* ddl) {
+void GrRecordingContextPriv::moveRenderTasksToDDL(GrDeferredDisplayList* ddl) {
     this->context()->drawingManager()->moveRenderTasksToDDL(ddl);
 }
 

@@ -7,12 +7,13 @@
 
 #include "tools/DDLPromiseImageHelper.h"
 
-#include "include/core/SkDeferredDisplayListRecorder.h"
 #include "include/core/SkPicture.h"
 #include "include/core/SkSerialProcs.h"
+#include "include/gpu/GrContextThreadSafeProxy.h"
 #include "include/gpu/GrDirectContext.h"
 #include "include/gpu/GrYUVABackendTextures.h"
 #include "include/gpu/ganesh/SkImageGanesh.h"
+#include "include/private/chromium/SkImageChromium.h"
 #include "src/codec/SkCodecImageGenerator.h"
 #include "src/core/SkCachedData.h"
 #include "src/core/SkMipmap.h"
@@ -82,7 +83,7 @@ PromiseImageCallbackContext::~PromiseImageCallbackContext() {
 void PromiseImageCallbackContext::setBackendTexture(const GrBackendTexture& backendTexture) {
     SkASSERT(!fPromiseImageTexture);
     SkASSERT(fBackendFormat == backendTexture.getBackendFormat());
-    fPromiseImageTexture = SkPromiseImageTexture::Make(backendTexture);
+    fPromiseImageTexture = GrPromiseImageTexture::Make(backendTexture);
 }
 
 void PromiseImageCallbackContext::destroyBackendTexture() {

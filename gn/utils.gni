@@ -72,7 +72,6 @@ skia_utils_private = [
   "$_src/utils/SkFloatToDecimal.cpp",
   "$_src/utils/SkFloatToDecimal.h",
   "$_src/utils/SkFloatUtils.h",
-  "$_src/utils/SkGaussianColorFilter.cpp",
   "$_src/utils/SkJSON.cpp",
   "$_src/utils/SkJSON.h",
   "$_src/utils/SkJSONWriter.cpp",
@@ -130,7 +129,3 @@ if (!is_winrt) {
     "$_src/utils/win/SkWGL_win.cpp",
   ]
 }
-
-# TODO(kjlubick) Update pdfium to use the individual target
-# instead of the monolithic ones.
-skia_utils_sources = skia_utils_private + skia_utils_chromium

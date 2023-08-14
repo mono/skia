@@ -9,18 +9,12 @@
 #define SkSurface_Base_DEFINED
 
 #include "include/core/SkCanvas.h"
-#include "include/core/SkDeferredDisplayList.h" // IWYU pragma: keep
 #include "include/core/SkImage.h"
-#include "include/core/SkPoint.h"
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkSamplingOptions.h"
 #include "include/core/SkScalar.h"
 #include "include/core/SkSurface.h"
 #include "include/core/SkTypes.h"
-
-#if defined(SK_GANESH)
-#include "include/gpu/GrTypes.h"
-#endif
 
 #include <cstdint>
 #include <memory>
@@ -32,10 +26,10 @@ class SkCapabilities;
 class SkColorSpace;
 class SkPaint;
 class SkPixmap;
-class SkSurfaceCharacterization;
+class GrSurfaceCharacterization;
 class SkSurfaceProps;
+enum GrSurfaceOrigin : int;
 enum SkYUVColorSpace : int;
-namespace skgpu { class MutableTextureState; }
 namespace skgpu { namespace graphite { class Recorder; } }
 struct SkIRect;
 struct SkISize;
@@ -78,20 +72,6 @@ public:
     virtual GrRecordingContext* onGetRecordingContext() const;
     virtual skgpu::graphite::Recorder* onGetRecorder() const;
 
-#if defined(SK_GANESH)
-    virtual void onResolveMSAA() {}
-
-    /**
-     * Issue any pending surface IO to the current backend 3D API and resolve any surface MSAA.
-     * Inserts the requested number of semaphores for the gpu to signal when work is complete on the
-     * gpu and inits the array of GrBackendSemaphores with the signaled semaphores.
-     */
-    virtual GrSemaphoresSubmitted onFlush(BackendSurfaceAccess access, const GrFlushInfo&,
-                                          const skgpu::MutableTextureState*) {
-        return GrSemaphoresSubmitted::kNo;
-    }
-#endif
-
     /**
      *  Allocate a canvas that will draw into this surface. We will cache this
      *  canvas, to return the same object to the caller multiple times. We
@@ -112,15 +92,6 @@ public:
      *  on copy-on-write.
      */
     virtual sk_sp<SkImage> onNewImageSnapshot(const SkIRect* subset = nullptr) { return nullptr; }
-
-#if defined(SK_GRAPHITE)
-    virtual sk_sp<SkImage> onAsImage() { return nullptr; }
-
-    virtual sk_sp<SkImage> onMakeImageCopy(const SkIRect* /* subset */,
-                                           skgpu::Mipmapped) {
-        return nullptr;
-    }
-#endif
 
     virtual void onWritePixels(const SkPixmap&, int x, int y) = 0;
 
@@ -187,11 +158,8 @@ public:
         return false;
     }
 
-    virtual bool onCharacterize(SkSurfaceCharacterization*) const { return false; }
-    virtual bool onIsCompatible(const SkSurfaceCharacterization&) const { return false; }
-    virtual bool onDraw(sk_sp<const SkDeferredDisplayList>, SkIPoint offset) {
-        return false;
-    }
+    virtual bool onCharacterize(GrSurfaceCharacterization*) const { return false; }
+    virtual bool onIsCompatible(const GrSurfaceCharacterization&) const { return false; }
 
     // TODO: Remove this (make it pure virtual) after updating Android (which has a class derived
     // from SkSurface_Base).
