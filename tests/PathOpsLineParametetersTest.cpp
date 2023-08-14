@@ -4,9 +4,18 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
+#include "include/core/SkTypes.h"
+#include "include/private/base/SkDebug.h"
 #include "src/pathops/SkLineParameters.h"
+#include "src/pathops/SkPathOpsCubic.h"
+#include "src/pathops/SkPathOpsTypes.h"
 #include "tests/PathOpsTestCommon.h"
 #include "tests/Test.h"
+
+#include <array>
+#include <cfloat>
+#include <cmath>
+#include <cstddef>
 
 // tests to verify that distance calculations are coded correctly
 static const CubicPts tests[] = {
@@ -35,7 +44,7 @@ static const double answers[][2] = {
     {1.5894571940104115e-07, 7.9472859700520577e-08},
 };
 
-static const size_t tests_count = SK_ARRAY_COUNT(tests);
+static const size_t tests_count = std::size(tests);
 
 DEF_TEST(PathOpsLineParameters, reporter) {
     for (size_t index = 0; index < tests_count; ++index) {

@@ -42,14 +42,14 @@ public:
 
     sk_sp<SkSurface> getBackbufferSurface() override;
 
-    void onSwapBuffers() override;
-
     sk_sp<const GrGLInterface> onInitializeContext() override;
     void onDestroyContext() override;
 
     void resize(int w, int h) override;
 
 private:
+    void onSwapBuffers() override;
+
     sk_app::Window_ios*  fWindow;
     UIViewController*    fViewController;
     RasterView*          fRasterView;
@@ -57,16 +57,14 @@ private:
     GLuint               fFramebuffer;
     GLuint               fRenderbuffer;
     sk_sp<SkSurface>     fBackbufferSurface;
-
-    using INHERITED = GLWindowContext;
 };
 
 RasterWindowContext_ios::RasterWindowContext_ios(const IOSWindowInfo& info,
                                                  const DisplayParams& params)
-    : INHERITED(params)
-    , fWindow(info.fWindow)
-    , fViewController(info.fViewController)
-    , fGLContext(nil) {
+        : GLWindowContext(params)
+        , fWindow(info.fWindow)
+        , fViewController(info.fViewController)
+        , fGLContext(nil) {
 
     // any config code here (particularly for msaa)?
 
@@ -142,7 +140,7 @@ sk_sp<const GrGLInterface> RasterWindowContext_ios::onInitializeContext() {
     // make the offscreen image
     SkImageInfo info = SkImageInfo::Make(fWidth, fHeight, fDisplayParams.fColorType,
                                          kPremul_SkAlphaType, fDisplayParams.fColorSpace);
-    fBackbufferSurface = SkSurface::MakeRaster(info);
+    fBackbufferSurface = SkSurfaces::Raster(info);
     return GrGLMakeNativeInterface();
 }
 
@@ -163,7 +161,7 @@ void RasterWindowContext_ios::onSwapBuffers() {
         // We made/have an off-screen surface. Get the contents as an SkImage:
         sk_sp<SkImage> snapshot = fBackbufferSurface->makeImageSnapshot();
 
-        sk_sp<SkSurface> gpuSurface = INHERITED::getBackbufferSurface();
+        sk_sp<SkSurface> gpuSurface = GLWindowContext::getBackbufferSurface();
         SkCanvas* gpuCanvas = gpuSurface->getCanvas();
         gpuCanvas->drawImage(snapshot, 0, 0);
         gpuCanvas->flush();
@@ -175,7 +173,7 @@ void RasterWindowContext_ios::onSwapBuffers() {
 void RasterWindowContext_ios::resize(int w, int h) {
     // TODO: handle rotation
     // [fGLContext update];
-     INHERITED::resize(w, h);
+    GLWindowContext::resize(w, h);
 }
 
 }  // anonymous namespace

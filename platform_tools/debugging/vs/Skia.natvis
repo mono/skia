@@ -86,8 +86,8 @@
     <DisplayString>{fName}</DisplayString>
   </Type>
 
-  <!-- SkAutoTArray -->
-  <Type Name="SkAutoTArray&lt;*&gt;">
+  <!-- AutoTArray -->
+  <Type Name="skia_private::AutoTArray&lt;*&gt;">
     <DisplayString>{{size = {fCount}}}</DisplayString>
     <Expand>
       <Item Name="[size]">fCount</Item>
@@ -98,14 +98,14 @@
     </Expand>
   </Type>
 
-  <!-- SkTArray -->
-  <Type Name="SkTArray&lt;*&gt;">
-    <DisplayString>{{size = {fCount}}}</DisplayString>
+  <!-- TArray -->
+  <Type Name="skia_private::TArray&lt;*&gt;">
+    <DisplayString>{{size = {fSize}}}</DisplayString>
     <Expand>
-      <Item Name="[size]">fCount</Item>
+      <Item Name="[size]">fSize</Item>
       <ArrayItems>
-        <Size>fCount</Size>
-        <ValuePointer>fItemArray</ValuePointer>
+        <Size>fSize</Size>
+        <ValuePointer>fData</ValuePointer>
       </ArrayItems>
     </Expand>
   </Type>
@@ -119,8 +119,8 @@
     </Expand>
   </Type>
 
-  <!-- SkTHashMap -->
-  <Type Name="SkTHashMap&lt;*,*,*&gt;">
+  <!-- THashMap -->
+  <Type Name="skia_private::THashMap&lt;*,*,*&gt;">
     <DisplayString>{{size = {fTable.fCount}}}</DisplayString>
     <Expand>
       <CustomListItems>

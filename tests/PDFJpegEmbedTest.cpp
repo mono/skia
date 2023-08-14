@@ -5,14 +5,25 @@
  * found in the LICENSE file.
  */
 
+#include "include/codec/SkEncodedOrigin.h"
 #include "include/core/SkCanvas.h"
+#include "include/core/SkColor.h"
 #include "include/core/SkData.h"
-#include "include/core/SkImageGenerator.h"
+#include "include/core/SkDocument.h"
+#include "include/core/SkImage.h"
+#include "include/core/SkRefCnt.h"
+#include "include/core/SkSize.h"
 #include "include/core/SkStream.h"
+#include "include/core/SkTypes.h"
 #include "include/docs/SkPDFDocument.h"
-
+#include "include/private/SkEncodedInfo.h"
+#include "src/pdf/SkJpegInfo.h"
 #include "tests/Test.h"
 #include "tools/Resources.h"
+
+#include <array>
+#include <cstdint>
+#include <cstring>
 
 static bool is_subset_of(SkData* smaller, SkData* larger) {
     SkASSERT(smaller && larger);
@@ -60,10 +71,10 @@ DEF_TEST(SkPDF_JpegEmbedTest, r) {
 
     canvas->clear(SK_ColorLTGRAY);
 
-    sk_sp<SkImage> im1(SkImage::MakeFromEncoded(mandrillData));
-    canvas->drawImage(im1.get(), 65.0, 0.0, nullptr);
-    sk_sp<SkImage> im2(SkImage::MakeFromEncoded(cmykData));
-    canvas->drawImage(im2.get(), 0.0, 512.0, nullptr);
+    sk_sp<SkImage> im1(SkImages::DeferredFromEncodedData(mandrillData));
+    canvas->drawImage(im1.get(), 65.0, 0.0);
+    sk_sp<SkImage> im2(SkImages::DeferredFromEncodedData(cmykData));
+    canvas->drawImage(im2.get(), 0.0, 512.0);
 
     document->endPage();
     document->close();
@@ -80,8 +91,6 @@ DEF_TEST(SkPDF_JpegEmbedTest, r) {
 }
 
 #ifdef SK_SUPPORT_PDF
-
-#include "src/pdf/SkJpegInfo.h"
 
 struct SkJFIFInfo {
     SkISize fSize;
@@ -118,7 +127,7 @@ DEF_TEST(SkPDF_JpegIdentification, r) {
                   {"images/grayscale.jpg", true, SkJFIFInfo::kGrayscale},
                   {"images/mandrill_512_q075.jpg", true, SkJFIFInfo::kYCbCr},
                   {"images/randPixels.jpg", true, SkJFIFInfo::kYCbCr}};
-    for (size_t i = 0; i < SK_ARRAY_COUNT(kTests); ++i) {
+    for (size_t i = 0; i < std::size(kTests); ++i) {
         sk_sp<SkData> data(load_resource(r, "JpegIdentification", kTests[i].path));
         if (!data) {
             continue;

@@ -5,12 +5,19 @@
  * found in the LICENSE file.
  */
 
+#include "include/core/SkCanvas.h"
+#include "include/core/SkColor.h"
+#include "include/core/SkImage.h"
 #include "include/core/SkPaint.h"
 #include "include/core/SkPicture.h"
 #include "include/core/SkPictureRecorder.h"
+#include "include/core/SkPixmap.h"
 #include "include/core/SkRect.h"
+#include "include/core/SkRefCnt.h"
 #include "tests/Test.h"
 #include "tools/debugger/DebugLayerManager.h"
+
+#include <vector>
 
 // Adds one full update, one partial update, and requests one image a few frames later.
 static void test_basic(skiatest::Reporter* reporter) {
@@ -25,7 +32,6 @@ static void test_basic(skiatest::Reporter* reporter) {
   SkPaint paint;
   paint.setColor(SK_ColorBLUE);
   canvas->drawOval(SkRect::MakeLTRB(1,1,99,99), paint);
-  canvas->flush();
   auto picture1 = rec.finishRecordingAsPicture();
   SkIRect dirtyRectFull = SkIRect::MakeLTRB(0, 0, layerWidth, layerHeight);
 
@@ -34,7 +40,6 @@ static void test_basic(skiatest::Reporter* reporter) {
   canvas = rec2.beginRecording(layerWidth, layerHeight);
   paint.setColor(SK_ColorGREEN);
   canvas->drawOval(SkRect::MakeLTRB(40,40,60,60), paint);
-  canvas->flush();
   auto picture2 = rec2.finishRecordingAsPicture();
   SkIRect dirtyRectPartial = SkIRect::MakeLTRB(40,40,60,60);
 

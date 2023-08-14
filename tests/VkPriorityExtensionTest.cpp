@@ -7,64 +7,75 @@
 
 #include "include/core/SkTypes.h"
 
-#if SK_SUPPORT_GPU && defined(SK_VULKAN)
+#if defined(SK_GANESH) && defined(SK_VULKAN)
 
-#include "include/gpu/vk/GrVkTypes.h"
-#include "src/core/SkAutoMalloc.h"
+#include "include/core/SkTypes.h"
+#include "include/gpu/vk/VulkanTypes.h"
+#include "src/base/SkAutoMalloc.h"
+#include "tests/CtsEnforcement.h"
 #include "tests/Test.h"
 #include "tools/gpu/vk/VkTestUtils.h"
 
-#define ACQUIRE_VK_PROC_NOCHECK(name, instance, device) \
-    PFN_vk##name grVk##name = reinterpret_cast<PFN_vk##name>(getProc("vk" #name, instance, device))
+#include <algorithm>
+#include <cstdint>
+#include <functional>
+#include <initializer_list>
+#include <string>
+#include <vulkan/vulkan_core.h>
 
-#define ACQUIRE_VK_PROC(name, instance, device)                                    \
-    PFN_vk##name grVk##name =                                                      \
-            reinterpret_cast<PFN_vk##name>(getProc("vk" #name, instance, device)); \
-    do {                                                                           \
-        if (grVk##name == nullptr) {                                               \
-            if (device != VK_NULL_HANDLE) {                                        \
-                destroy_instance(getProc, inst);                                   \
-            }                                                                      \
-            return;                                                                \
-        }                                                                          \
+struct GrContextOptions;
+
+#define ACQUIRE_VK_PROC_NOCHECK(name, instance) \
+    PFN_vk##name grVk##name =                                                              \
+            reinterpret_cast<PFN_vk##name>(getProc("vk" #name, instance, VK_NULL_HANDLE))
+
+#define ACQUIRE_VK_PROC(name, instance)                                                    \
+    PFN_vk##name grVk##name =                                                              \
+            reinterpret_cast<PFN_vk##name>(getProc("vk" #name, instance, VK_NULL_HANDLE)); \
+    do {                                                                                   \
+        if (grVk##name == nullptr) {                                                       \
+            if (instance != VK_NULL_HANDLE) {                                              \
+                destroy_instance(getProc, instance);                                       \
+            }                                                                              \
+            return;                                                                        \
+        }                                                                                  \
     } while (0)
 
-#define ACQUIRE_VK_PROC_LOCAL(name, instance, device)                              \
-    PFN_vk##name grVk##name =                                                      \
-            reinterpret_cast<PFN_vk##name>(getProc("vk" #name, instance, device)); \
-    do {                                                                           \
-        if (grVk##name == nullptr) {                                               \
-            return;                                                                \
-        }                                                                          \
+#define ACQUIRE_VK_PROC_LOCAL(name, instance)                                              \
+    PFN_vk##name grVk##name =                                                              \
+            reinterpret_cast<PFN_vk##name>(getProc("vk" #name, instance, VK_NULL_HANDLE)); \
+    do {                                                                                   \
+        if (grVk##name == nullptr) {                                                       \
+            return;                                                                        \
+        }                                                                                  \
     } while (0)
 
-#define GET_PROC_LOCAL(F, inst, device) PFN_vk ## F F = (PFN_vk ## F) getProc("vk" #F, inst, device)
+#define GET_PROC_LOCAL(F, inst) PFN_vk ## F F = (PFN_vk ## F) getProc("vk" #F, inst, VK_NULL_HANDLE)
 
-static void destroy_instance(GrVkGetProc getProc, VkInstance inst) {
-    ACQUIRE_VK_PROC_LOCAL(DestroyInstance, inst, VK_NULL_HANDLE);
+static void destroy_instance(skgpu::VulkanGetProc getProc, VkInstance inst) {
+    ACQUIRE_VK_PROC_LOCAL(DestroyInstance, inst);
     grVkDestroyInstance(inst, nullptr);
 }
 
 // If the extension VK_EXT_GLOBAL_PRIORITY is supported, this test just tries to create a VkDevice
 // using the various global priorities. The test passes if no errors are reported or the test
 // doesn't crash.
-DEF_GPUTEST(VulkanPriorityExtension, reporter, options) {
+DEF_GANESH_TEST_FOR_VULKAN_CONTEXT(VulkanPriorityExtension,
+                                   reporter,
+                                   context_info,
+                                   CtsEnforcement::kApiLevel_T) {
     PFN_vkGetInstanceProcAddr instProc;
-    PFN_vkGetDeviceProcAddr devProc;
-    if (!sk_gpu_test::LoadVkLibraryAndGetProcAddrFuncs(&instProc, &devProc)) {
+    if (!sk_gpu_test::LoadVkLibraryAndGetProcAddrFuncs(&instProc)) {
         return;
     }
-    auto getProc = [instProc, devProc](const char* proc_name,
-                                       VkInstance instance, VkDevice device) {
-        if (device != VK_NULL_HANDLE) {
-            return devProc(device, proc_name);
-        }
+    // This isn't the most effecient but we just use the instProc to get all ptrs.
+    auto getProc = [instProc](const char* proc_name, VkInstance instance, VkDevice) {
         return instProc(instance, proc_name);
     };
 
     VkResult err;
 
-    ACQUIRE_VK_PROC_NOCHECK(EnumerateInstanceVersion, VK_NULL_HANDLE, VK_NULL_HANDLE);
+    ACQUIRE_VK_PROC_NOCHECK(EnumerateInstanceVersion, VK_NULL_HANDLE);
     uint32_t instanceVersion = 0;
     if (!grVkEnumerateInstanceVersion) {
         instanceVersion = VK_MAKE_VERSION(1, 0, 0);
@@ -112,21 +123,21 @@ DEF_GPUTEST(VulkanPriorityExtension, reporter, options) {
         nullptr,                                   // ppEnabledExtensionNames
     };
 
-    ACQUIRE_VK_PROC(CreateInstance, VK_NULL_HANDLE, VK_NULL_HANDLE);
+    ACQUIRE_VK_PROC(CreateInstance, VK_NULL_HANDLE);
     err = grVkCreateInstance(&instance_create, nullptr, &inst);
     if (err < 0) {
         ERRORF(reporter, "Failed to create VkInstance");
         return;
     }
 
-    ACQUIRE_VK_PROC(EnumeratePhysicalDevices, inst, VK_NULL_HANDLE);
-    ACQUIRE_VK_PROC(GetPhysicalDeviceProperties, inst, VK_NULL_HANDLE);
-    ACQUIRE_VK_PROC(GetPhysicalDeviceQueueFamilyProperties, inst, VK_NULL_HANDLE);
-    ACQUIRE_VK_PROC(GetPhysicalDeviceFeatures, inst, VK_NULL_HANDLE);
-    ACQUIRE_VK_PROC(CreateDevice, inst, VK_NULL_HANDLE);
-    ACQUIRE_VK_PROC(GetDeviceQueue, inst, VK_NULL_HANDLE);
-    ACQUIRE_VK_PROC(DeviceWaitIdle, inst, VK_NULL_HANDLE);
-    ACQUIRE_VK_PROC(DestroyDevice, inst, VK_NULL_HANDLE);
+    ACQUIRE_VK_PROC(EnumeratePhysicalDevices, inst);
+    ACQUIRE_VK_PROC(GetPhysicalDeviceProperties, inst);
+    ACQUIRE_VK_PROC(GetPhysicalDeviceQueueFamilyProperties, inst);
+    ACQUIRE_VK_PROC(GetPhysicalDeviceFeatures, inst);
+    ACQUIRE_VK_PROC(CreateDevice, inst);
+    ACQUIRE_VK_PROC(GetDeviceQueue, inst);
+    ACQUIRE_VK_PROC(DeviceWaitIdle, inst);
+    ACQUIRE_VK_PROC(DestroyDevice, inst);
 
     uint32_t gpuCount;
     err = grVkEnumeratePhysicalDevices(inst, &gpuCount, nullptr);
@@ -136,7 +147,8 @@ DEF_GPUTEST(VulkanPriorityExtension, reporter, options) {
         return;
     }
     if (!gpuCount) {
-        ERRORF(reporter, "vkEnumeratePhysicalDevices returned no supported devices.");
+        // Don't throw and error here, because this behavior is allowed by Android CTS. A device
+        // count of 0 effectively means Vulkan is not supported.
         destroy_instance(getProc, inst);
         return;
     }
@@ -180,8 +192,8 @@ DEF_GPUTEST(VulkanPriorityExtension, reporter, options) {
         return;
     }
 
-    GET_PROC_LOCAL(EnumerateDeviceExtensionProperties, inst, VK_NULL_HANDLE);
-    GET_PROC_LOCAL(EnumerateDeviceLayerProperties, inst, VK_NULL_HANDLE);
+    GET_PROC_LOCAL(EnumerateDeviceExtensionProperties, inst);
+    GET_PROC_LOCAL(EnumerateDeviceLayerProperties, inst);
 
     if (!EnumerateDeviceExtensionProperties ||
         !EnumerateDeviceLayerProperties) {

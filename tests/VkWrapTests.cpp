@@ -5,25 +5,35 @@
  * found in the LICENSE file.
  */
 
-// This is a GPU-backend specific test. It relies on static intializers to work
+// This is a GPU-backend specific test. It relies on static initializers to work
 
 #include "include/core/SkTypes.h"
 
 #if defined(SK_VULKAN)
 
+#include "include/core/SkColorType.h"
+#include "include/core/SkRefCnt.h"
+#include "include/gpu/GpuTypes.h"
 #include "include/gpu/GrBackendSurface.h"
 #include "include/gpu/GrDirectContext.h"
+#include "include/gpu/GrTypes.h"
 #include "include/gpu/vk/GrVkTypes.h"
-#include "include/gpu/vk/GrVkVulkan.h"
-#include "src/gpu/GrDirectContextPriv.h"
-#include "src/gpu/GrRenderTarget.h"
-#include "src/gpu/GrTexture.h"
-#include "src/gpu/vk/GrVkCaps.h"
-#include "src/gpu/vk/GrVkGpu.h"
-#include "src/gpu/vk/GrVkMemory.h"
+#include "include/gpu/vk/VulkanTypes.h"
+#include "include/private/base/SkTo.h"
+#include "include/private/gpu/ganesh/GrTypesPriv.h"
+#include "src/gpu/ganesh/GrCaps.h"
+#include "src/gpu/ganesh/GrDirectContextPriv.h"
+#include "src/gpu/ganesh/GrGpu.h"
+#include "src/gpu/ganesh/GrRenderTarget.h"
+#include "src/gpu/ganesh/GrTexture.h"
+#include "tests/CtsEnforcement.h"
 #include "tests/Test.h"
-#include "tools/gpu/GrContextFactory.h"
 #include "tools/gpu/ManagedBackendTexture.h"
+
+#include <vulkan/vulkan_core.h>
+#include <initializer_list>
+
+struct GrContextOptions;
 
 using sk_gpu_test::GrContextFactory;
 
@@ -68,7 +78,7 @@ void wrap_tex_test(skiatest::Reporter* reporter, GrDirectContext* dContext) {
     // alloc is null
     {
         GrVkImageInfo backendCopy = imageInfo;
-        backendCopy.fAlloc = GrVkAlloc();
+        backendCopy.fAlloc = skgpu::VulkanAlloc();
         GrBackendTexture backendTex = GrBackendTexture(kW, kH, backendCopy);
         sk_sp<GrTexture> tex = gpu->wrapBackendTexture(
                 backendTex, kBorrow_GrWrapOwnership, GrWrapCacheable::kNo, kRead_GrIOType);
@@ -126,7 +136,7 @@ void wrap_rt_test(skiatest::Reporter* reporter, GrDirectContext* dContext) {
         // alloc is null
         {
             GrVkImageInfo backendCopy = imageInfo;
-            backendCopy.fAlloc = GrVkAlloc();
+            backendCopy.fAlloc = skgpu::VulkanAlloc();
             // can wrap null alloc
             GrBackendRenderTarget backendRT(kW, kH, 1, backendCopy);
             rt = gpu->wrapBackendRenderTarget(backendRT);
@@ -171,7 +181,7 @@ void wrap_trt_test(skiatest::Reporter* reporter, GrDirectContext* dContext) {
     // alloc is null
     {
         GrVkImageInfo backendCopy = imageInfo;
-        backendCopy.fAlloc = GrVkAlloc();
+        backendCopy.fAlloc = skgpu::VulkanAlloc();
         GrBackendTexture backendTex = GrBackendTexture(kW, kH, backendCopy);
         tex = gpu->wrapRenderableBackendTexture(backendTex, 1, kBorrow_GrWrapOwnership,
                                                 GrWrapCacheable::kNo);
@@ -204,7 +214,7 @@ void wrap_trt_test(skiatest::Reporter* reporter, GrDirectContext* dContext) {
     }
 }
 
-DEF_GPUTEST_FOR_VULKAN_CONTEXT(VkWrapTests, reporter, ctxInfo) {
+DEF_GANESH_TEST_FOR_VULKAN_CONTEXT(VkWrapTests, reporter, ctxInfo, CtsEnforcement::kNever) {
     auto dContext = ctxInfo.directContext();
 
     wrap_tex_test(reporter, dContext);

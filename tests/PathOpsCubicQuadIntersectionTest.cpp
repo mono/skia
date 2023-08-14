@@ -4,13 +4,17 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
-#include "include/utils/SkRandom.h"
+#include "include/core/SkTypes.h"
+#include "include/private/base/SkDebug.h"
 #include "src/pathops/SkIntersections.h"
 #include "src/pathops/SkPathOpsCubic.h"
+#include "src/pathops/SkPathOpsPoint.h"
 #include "src/pathops/SkPathOpsQuad.h"
 #include "src/pathops/SkReduceOrder.h"
 #include "tests/PathOpsTestCommon.h"
 #include "tests/Test.h"
+
+#include <array>
 
 static struct quadCubic {
     CubicPts cubic;
@@ -49,7 +53,7 @@ static struct quadCubic {
      {{{12.342399597167969,228.3424072265625}, {10,230.68629455566406}, {10,234}}}},
 };
 
-static const int quadCubicTests_count = (int) SK_ARRAY_COUNT(quadCubicTests);
+static const int quadCubicTests_count = (int) std::size(quadCubicTests);
 
 static void cubicQuadIntersection(skiatest::Reporter* reporter, int index) {
     int iIndex = static_cast<int>(index);

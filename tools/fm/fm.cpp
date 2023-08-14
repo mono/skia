@@ -2,7 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be found in the LICENSE file.
 
 #include "gm/gm.h"
+#include "include/codec/SkBmpDecoder.h"
 #include "include/codec/SkCodec.h"
+#include "include/codec/SkGifDecoder.h"
+#include "include/codec/SkIcoDecoder.h"
+#include "include/codec/SkJpegDecoder.h"
+#include "include/codec/SkPngDecoder.h"
+#include "include/codec/SkWbmpDecoder.h"
+#include "include/codec/SkWebpDecoder.h"
 #include "include/core/SkCanvas.h"
 #include "include/core/SkColorSpace.h"
 #include "include/core/SkGraphics.h"
@@ -11,15 +18,17 @@
 #include "include/docs/SkPDFDocument.h"
 #include "include/gpu/GrContextOptions.h"
 #include "include/gpu/GrDirectContext.h"
-#include "include/private/SkTHash.h"
-#include "modules/svg/include/SkSVGDOM.h"
+#include "include/gpu/ganesh/SkSurfaceGanesh.h"
 #include "src/core/SkColorSpacePriv.h"
 #include "src/core/SkMD5.h"
 #include "src/core/SkOSFile.h"
-#include "src/gpu/GrDirectContextPriv.h"
-#include "src/gpu/GrGpu.h"
+#include "src/core/SkTHash.h"
+#include "src/core/SkTaskGroup.h"
+#include "src/gpu/ganesh/GrDirectContextPriv.h"
+#include "src/gpu/ganesh/GrGpu.h"
 #include "src/utils/SkOSPath.h"
 #include "tests/Test.h"
+#include "tests/TestHarness.h"
 #include "tools/AutoreleasePool.h"
 #include "tools/CrashHandler.h"
 #include "tools/HashAndEncode.h"
@@ -33,13 +42,38 @@
 
 #include <chrono>
 #include <functional>
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
+
+#if defined(SK_ENABLE_SVG)
+#include "modules/svg/include/SkSVGDOM.h"
+#include "modules/svg/include/SkSVGNode.h"
+#include "modules/svg/include/SkSVGOpenTypeSVGDecoder.h"
+#endif
 
 #if defined(SK_ENABLE_SKOTTIE)
     #include "modules/skottie/include/Skottie.h"
     #include "modules/skresources/include/SkResources.h"
 #endif
+
+#ifdef SK_CODEC_DECODES_AVIF
+#include "include/codec/SkAvifDecoder.h"
+#endif
+
+#ifdef SK_HAS_HEIF_LIBRARY
+#include "include/android/SkHeifDecoder.h"
+#endif
+
+#ifdef SK_CODEC_DECODES_JPEGXL
+#include "include/codec/SkJpegxlDecoder.h"
+#endif
+
+#ifdef SK_CODEC_DECODES_RAW
+#include "include/codec/SkRawDecoder.h"
+#endif
+
+using namespace skia_private;
 
 using sk_gpu_test::GrContextFactory;
 
@@ -54,14 +88,12 @@ static DEFINE_string(at    , "premul", "The alpha type for any raster backend.")
 static DEFINE_string(gamut ,   "srgb", "The color gamut for any raster backend.");
 static DEFINE_string(tf    ,   "srgb", "The transfer function for any raster backend.");
 static DEFINE_bool  (legacy,    false, "Use a null SkColorSpace instead of --gamut and --tf?");
-static DEFINE_bool  (skvm  ,    false, "Use SkVMBlitter when supported?");
-static DEFINE_bool  (jit   ,     true, "JIT SkVM?");
-static DEFINE_bool  (dylib ,    false, "JIT SkVM via dylib?");
 
-static DEFINE_int   (samples ,         0, "Samples per pixel in GPU backends.");
-static DEFINE_bool  (stencils,      true, "If false, avoid stencil buffers in GPU backends.");
-static DEFINE_bool  (dit     ,     false, "Use device-independent text in GPU backends.");
-static DEFINE_string(surf    , "default", "Backing store for GPU backend surfaces.");
+static DEFINE_bool  (reducedshaders,    false, "Use reduced shader set for any GPU backend.");
+static DEFINE_int   (samples       ,         0, "Samples per pixel in GPU backends.");
+static DEFINE_bool  (stencils      ,      true, "If false, avoid stencil buffers in GPU backends.");
+static DEFINE_bool  (dit           ,     false, "Use device-independent text in GPU backends.");
+static DEFINE_string(surf          , "default", "Backing store for GPU backend surfaces.");
 
 static DEFINE_bool(       preAbandonGpuContext, false, "Abandon the GrContext before drawing.");
 static DEFINE_bool(          abandonGpuContext, false, "Abandon the GrContext after drawing.");
@@ -75,9 +107,13 @@ static DEFINE_double(rasterDPI, SK_ScalarDefaultRasterDPI,
                      "DPI for rasterized content in vector backends like --backend pdf.");
 static DEFINE_bool(PDFA, false, "Create PDF/A with --backend pdf?");
 
+static DEFINE_int(clipW, INT_MAX, "Limit source width.");
+static DEFINE_int(clipH, INT_MAX, "Limit source height.");
+
 static DEFINE_bool   (cpuDetect, true, "Detect CPU features for runtime optimizations?");
 static DEFINE_string2(writePath, w, "", "Write .pngs to this directory if set.");
 static DEFINE_bool   (quick, false, "Skip image hashing and encoding?");
+static DEFINE_int    (race, 0, "If >0, use threads to induce race conditions?");
 
 static DEFINE_string(writeShaders, "", "Write GLSL shaders to this directory if set.");
 
@@ -109,20 +145,15 @@ static bool parse_flag(const CommandLineFlags::StringArray& flag,
 }
 
 struct Result {
-    enum { Ok, Skip, Fail} status;
-    SkString               failure;
+    enum { Ok, Skip, Fail } status;
+    SkString                failure;
 };
-static const Result ok = {Result::Ok,   {}},
-                  skip = {Result::Skip, {}};
+static const Result ok   = {Result::Ok,   {}},
+                    skip = {Result::Skip, {}};
 
-static Result fail(const char* why) {
-    return { Result::Fail, SkString(why) };
+static Result fail(SkString why) {
+    return {Result::Fail, why};
 }
-template <typename... Args>
-static Result fail(const char* whyFmt, Args... args) {
-    return { Result::Fail, SkStringPrintf(whyFmt, args...) };
-}
-
 
 struct Source {
     SkString                               name;
@@ -135,19 +166,18 @@ static void init(Source* source, std::shared_ptr<skiagm::GM> gm) {
     source->size  = gm->getISize();
     source->tweak = [gm](GrContextOptions* options) { gm->modifyGrContextOptions(options); };
     source->draw  = [gm](SkCanvas* canvas) {
-        auto direct = GrAsDirectContext(canvas->recordingContext());
 
         SkString err;
-        switch (gm->gpuSetup(direct, canvas, &err)) {
+        switch (gm->gpuSetup(canvas, &err)) {
             case skiagm::DrawResult::kOk  : break;
             case skiagm::DrawResult::kSkip: return skip;
-            case skiagm::DrawResult::kFail: return fail(err.c_str());
+            case skiagm::DrawResult::kFail: return fail(err);
         }
 
         switch (gm->draw(canvas, &err)) {
             case skiagm::DrawResult::kOk:   break;
             case skiagm::DrawResult::kSkip: return skip;
-            case skiagm::DrawResult::kFail: return fail(err.c_str());
+            case skiagm::DrawResult::kFail: return fail(err);
         }
         return ok;
     };
@@ -169,27 +199,27 @@ static void init(Source* source, std::shared_ptr<SkCodec> codec) {
             info = canvas->imageInfo().makeDimensions(info.dimensions());
         }
 
-        SkBitmap bm;
-        bm.allocPixels(info);
-        switch (SkCodec::Result result = codec->getPixels(info, bm.getPixels(), bm.rowBytes())) {
-            case SkCodec::kSuccess:
-            case SkCodec::kErrorInInput:
-            case SkCodec::kIncompleteInput: canvas->drawBitmap(bm, 0,0);
-                                            break;
-            default: return fail("codec->getPixels() failed: %d\n", result);
+        auto [image, result] = codec->getImage(info);
+        if (image) {
+            canvas->drawImage(image, 0,0);
+            return ok;
         }
-        return ok;
+        return fail(SkStringPrintf("codec->getPixels() failed: %d\n", result));
     };
 }
 
+#if defined(SK_ENABLE_SVG)
 static void init(Source* source, sk_sp<SkSVGDOM> svg) {
-    source->size = svg->containerSize().isEmpty() ? SkISize{1000,1000}
-                                                  : svg->containerSize().toCeil();
+    if (svg->containerSize().isEmpty()) {
+        svg->setContainerSize({1000,1000});
+    }
+    source->size = svg->containerSize().toCeil();
     source->draw = [svg](SkCanvas* canvas) {
         svg->render(canvas);
         return ok;
     };
 }
+#endif
 
 #if defined(SK_ENABLE_SKOTTIE)
 static void init(Source* source, sk_sp<skottie::Animation> animation) {
@@ -200,7 +230,7 @@ static void init(Source* source, sk_sp<skottie::Animation> animation) {
         // Draw frames in a shuffled order to exercise nonlinear frame progression.
         // The film strip will still be in time order, just drawn out of order.
         const int order[] = { 4, 0, 3, 1, 2 };
-        const int tiles = SK_ARRAY_COUNT(order);
+        const int tiles = std::size(order);
         const float dim = 1000.0f / tiles;
 
         const float dt = 1.0f / (tiles*tiles - 1);
@@ -211,9 +241,8 @@ static void init(Source* source, sk_sp<skottie::Animation> animation) {
 
             SkAutoCanvasRestore _(canvas, /*doSave=*/true);
             canvas->clipRect(dst, /*doAntiAlias=*/true);
-            canvas->concat(SkMatrix::MakeRectToRect(SkRect::MakeSize(animation->size()),
-                                                    dst,
-                                                    SkMatrix::kCenter_ScaleToFit));
+            canvas->concat(SkMatrix::RectToRect(SkRect::MakeSize(animation->size()), dst,
+                                                SkMatrix::kCenter_ScaleToFit));
             float t = (y*tiles + x) * dt;
             animation->seek(t);
             animation->render(canvas);
@@ -223,7 +252,30 @@ static void init(Source* source, sk_sp<skottie::Animation> animation) {
 }
 #endif
 
-static void init(Source* source, const skiatest::Test& test) {
+static void register_codecs() {
+    SkCodecs::Register(SkPngDecoder::Decoder());
+    SkCodecs::Register(SkJpegDecoder::Decoder());
+    SkCodecs::Register(SkWebpDecoder::Decoder());
+    SkCodecs::Register(SkGifDecoder::Decoder());
+    SkCodecs::Register(SkBmpDecoder::Decoder());
+    SkCodecs::Register(SkWbmpDecoder::Decoder());
+    SkCodecs::Register(SkIcoDecoder::Decoder());
+
+#ifdef SK_CODEC_DECODES_AVIF
+    SkCodecs::Register(SkAvifDecoder::Decoder());
+#endif
+#ifdef SK_HAS_HEIF_LIBRARY
+    SkCodecs::Register(SkHeifDecoder::Decoder());
+#endif
+#ifdef SK_CODEC_DECODES_JPEGXL
+    SkCodecs::Register(SkJpegxlDecoder::Decoder());
+#endif
+#ifdef SK_CODEC_DECODES_RAW
+    SkCodecs::Register(SkRawDecoder::Decoder());
+#endif
+}
+
+static void init_cpu_test(Source* source, const skiatest::Test& test) {
     source->size  = {1,1};
     source->draw  = [test](SkCanvas* canvas) {
         struct Reporter : public skiatest::Reporter {
@@ -235,7 +287,7 @@ static void init(Source* source, const skiatest::Test& test) {
             }
         } reporter;
 
-        test.run(&reporter, GrContextOptions{});
+        test.cpu(&reporter);
 
         if (reporter.msg.isEmpty()) {
             canvas->clear(SK_ColorGREEN);
@@ -243,13 +295,13 @@ static void init(Source* source, const skiatest::Test& test) {
         }
 
         canvas->clear(SK_ColorRED);
-        return fail(reporter.msg.c_str());
+        return fail(reporter.msg);
     };
 }
 
 static sk_sp<SkImage> draw_with_cpu(std::function<bool(SkCanvas*)> draw,
                                     SkImageInfo info) {
-    if (sk_sp<SkSurface> surface = SkSurface::MakeRaster(info)) {
+    if (sk_sp<SkSurface> surface = SkSurfaces::Raster(info)) {
         if (draw(surface->getCanvas())) {
             return surface->makeImageSnapshot();
         }
@@ -314,11 +366,8 @@ static sk_sp<SkImage> draw_with_gpu(std::function<bool(SkCanvas*)> draw,
 
     switch (surfaceType) {
         case SurfaceType::kDefault:
-            surface = SkSurface::MakeRenderTarget(context,
-                                                  SkBudgeted::kNo,
-                                                  info,
-                                                  FLAGS_samples,
-                                                  &props);
+            surface = SkSurfaces::RenderTarget(
+                    context, skgpu::Budgeted::kNo, info, FLAGS_samples, &props);
             break;
 
         case SurfaceType::kBackendTexture:
@@ -364,27 +413,31 @@ static sk_sp<SkImage> draw_with_gpu(std::function<bool(SkCanvas*)> draw,
     return image;
 }
 
-extern bool gUseSkVMBlitter;
-extern bool gSkVMAllowJIT;
-extern bool gSkVMJITViaDylib;
+TestHarness CurrentTestHarness() {
+    return TestHarness::kFM;
+}
 
 int main(int argc, char** argv) {
     CommandLineFlags::Parse(argc, argv);
     SetupCrashHandler();
+    SkTaskGroup::Enabler enabled(FLAGS_race);
 
     if (FLAGS_cpuDetect) {
         SkGraphics::Init();
     }
-    gUseSkVMBlitter  = FLAGS_skvm;
-    gSkVMAllowJIT    = FLAGS_jit;
-    gSkVMJITViaDylib = FLAGS_dylib;
+#if defined(SK_ENABLE_SVG)
+    SkGraphics::SetOpenTypeSVGDecoderFactory(SkSVGOpenTypeSVGDecoder::Make);
+#endif
+
+    register_codecs();
 
     initializeEventTracingForTools();
-    ToolUtils::SetDefaultFontMgr();
-    SetAnalyticAAFromCommonFlags();
+    CommonFlags::SetDefaultFontMgr();
+    CommonFlags::SetAnalyticAA();
 
     GrContextOptions baseOptions;
-    SetCtxOptionsFromCommonFlags(&baseOptions);
+    CommonFlags::SetCtxOptions(&baseOptions);
+    baseOptions.fReducedShaderVariations = FLAGS_reducedshaders;
 
     sk_gpu_test::MemoryCache memoryCache;
     if (!FLAGS_writeShaders.isEmpty()) {
@@ -392,7 +445,7 @@ int main(int argc, char** argv) {
         baseOptions.fShaderCacheStrategy = GrContextOptions::ShaderCacheStrategy::kBackendSource;
     }
 
-    SkTHashMap<SkString, skiagm::GMFactory> gm_factories;
+    THashMap<SkString, skiagm::GMFactory> gm_factories;
     for (skiagm::GMFactory factory : skiagm::GMRegistry::Range()) {
         std::unique_ptr<skiagm::GM> gm{factory()};
         if (FLAGS_listGMs) {
@@ -402,15 +455,15 @@ int main(int argc, char** argv) {
         }
     }
 
-    SkTHashMap<SkString, const skiatest::Test*> tests;
+    THashMap<SkString, const skiatest::Test*> tests;
     for (const skiatest::Test& test : skiatest::TestRegistry::Range()) {
-        if (test.needsGpu) {
+        if (test.fTestType != skiatest::TestType::kCPU) {
             continue;  // TODO
         }
         if (FLAGS_listTests) {
-            fprintf(stdout, "%s\n", test.name);
+            fprintf(stdout, "%s\n", test.fName);
         } else {
-            tests.set(SkString{test.name}, &test);
+            tests.set(SkString{test.fName}, &test);
         }
     }
 
@@ -422,38 +475,41 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    SkTArray<Source> sources;
-    for (const SkString& name : FLAGS_sources) {
+    const int replicas = std::max(1, FLAGS_race);
+
+    TArray<Source> sources;
+    for (const SkString& name : FLAGS_sources)
+    for (int replica = 0; replica < replicas; replica++) {
         Source* source = &sources.push_back();
+        source->name = name;
 
         if (skiagm::GMFactory* factory = gm_factories.find(name)) {
             std::shared_ptr<skiagm::GM> gm{(*factory)()};
-            source->name = name;
             init(source, std::move(gm));
             continue;
         }
 
         if (const skiatest::Test** test = tests.find(name)) {
-            source->name = name;
-            init(source, **test);
+            init_cpu_test(source, **test);
             continue;
         }
 
         if (sk_sp<SkData> blob = SkData::MakeFromFileName(name.c_str())) {
-            source->name = SkOSPath::Basename(name.c_str());
-
             if (name.endsWith(".skp")) {
                 if (sk_sp<SkPicture> pic = SkPicture::MakeFromData(blob.get())) {
                     init(source, pic);
                     continue;
                 }
-            } else if (name.endsWith(".svg")) {
+            }
+#if defined(SK_ENABLE_SVG)
+            else if (name.endsWith(".svg")) {
                 SkMemoryStream stream{blob};
                 if (sk_sp<SkSVGDOM> svg = SkSVGDOM::MakeFromStream(stream)) {
                     init(source, svg);
                     continue;
                 }
             }
+#endif
 #if defined(SK_ENABLE_SKOTTIE)
             else if (name.endsWith(".json")) {
                 const SkString dir  = SkOSPath::Dirname(name.c_str());
@@ -491,14 +547,15 @@ int main(int argc, char** argv) {
         { "angle_d3d11_es3", GrContextFactory::kANGLE_D3D11_ES3_ContextType },
         { "angle_gl_es2"   , GrContextFactory::kANGLE_GL_ES2_ContextType },
         { "angle_gl_es3"   , GrContextFactory::kANGLE_GL_ES3_ContextType },
-        { "commandbuffer"  , GrContextFactory::kCommandBuffer_ContextType },
+        { "angle_mtl_es2"  , GrContextFactory::kANGLE_Metal_ES2_ContextType },
+        { "angle_mtl_es3"  , GrContextFactory::kANGLE_Metal_ES3_ContextType },
         { "vk"             , GrContextFactory::kVulkan_ContextType },
         { "mtl"            , GrContextFactory::kMetal_ContextType },
         { "mock"           , GrContextFactory::kMock_ContextType },
     };
     const FlagOption<SkColorType> kColorTypes[] = {
         { "a8",                  kAlpha_8_SkColorType },
-        { "g8",                   kGray_8_SkColorType },
+        { "r8",                 kR8_unorm_SkColorType },
         { "565",                 kRGB_565_SkColorType },
         { "4444",              kARGB_4444_SkColorType },
         { "8888",                    kN32_SkColorType },
@@ -512,6 +569,7 @@ int main(int argc, char** argv) {
         { "f32",                kRGBA_F32_SkColorType },
         { "rgba",              kRGBA_8888_SkColorType },
         { "bgra",              kBGRA_8888_SkColorType },
+        { "srgba",            kSRGBA_8888_SkColorType },
         { "16161616", kR16G16B16A16_unorm_SkColorType },
     };
     const FlagOption<SkAlphaType> kAlphaTypes[] = {
@@ -549,15 +607,19 @@ int main(int argc, char** argv) {
 
     sk_sp<SkColorSpace> cs = FLAGS_legacy ? nullptr
                                           : SkColorSpace::MakeRGB(tf,gamut);
-    const SkImageInfo unsized_info = SkImageInfo::Make(0,0, ct,at,cs);
+    const SkColorInfo color_info{ct,at,cs};
 
-    AutoreleasePool pool;
-    for (auto source : sources) {
+    for (int i = 0; i < sources.size(); i += replicas)
+    SkTaskGroup{}.batch(replicas, [=](int replica) {
+        Source source = sources[i+replica];
+
+        AutoreleasePool pool;
         const auto start = std::chrono::steady_clock::now();
-        fprintf(stdout, "%50s", source.name.c_str());
-        fflush(stdout);
 
-        const SkImageInfo info = unsized_info.makeDimensions(source.size);
+        auto [w,h] = source.size;
+        w = std::min(w, FLAGS_clipW);
+        h = std::min(h, FLAGS_clipH);
+        const SkImageInfo info = SkImageInfo::Make({w,h}, color_info);
 
         auto draw = [&source](SkCanvas* canvas) {
             Result result = source.draw(canvas);
@@ -594,16 +656,22 @@ int main(int argc, char** argv) {
                 break;
         }
 
-        if (!image && !blob) {
-            fprintf(stdout, "\tskipped\n");
-            continue;
-        }
-
         // We read back a bitmap even when --quick is set and we won't use it,
         // to keep us honest about deferred work, flushing pipelines, etc.
         SkBitmap bitmap;
         if (image && !image->asLegacyBitmap(&bitmap)) {
             SK_ABORT("SkImage::asLegacyBitmap() failed.");
+        }
+
+        // Our --race replicas have done their job by now if they're going to catch anything.
+        if (replica != 0) {
+            return;
+        }
+
+        if (!image && !blob) {
+            fprintf(stdout, "%50s  skipped\n", source.name.c_str());
+            fflush(stdout);
+            return;
         }
 
         SkString md5;
@@ -618,15 +686,21 @@ int main(int argc, char** argv) {
                 }
 
                 SkMD5::Digest digest = hash.finish();
-                for (int i = 0; i < 16; i++) {
-                    md5.appendf("%02x", digest.data[i]);
+                for (int j = 0; j < 16; j++) {
+                    md5.appendf("%02x", digest.data[j]);
                 }
             }
 
             if (!FLAGS_writePath.isEmpty()) {
-                sk_mkdir(FLAGS_writePath[0]);
                 SkString path = SkStringPrintf("%s/%s%s",
                                                FLAGS_writePath[0], source.name.c_str(), ext);
+                for (char* it = path.data(); *it != '\0'; it++) {
+                    if (*it == '/' || *it == '\\') {
+                        char prev = std::exchange(*it, '\0');
+                        sk_mkdir(path.c_str());
+                        *it = prev;
+                    }
+                }
 
                 SkFILEWStream file(path.c_str());
                 if (image) {
@@ -641,11 +715,13 @@ int main(int argc, char** argv) {
         }
 
         const auto elapsed = std::chrono::steady_clock::now() - start;
-        fprintf(stdout, "\t%s\t%7dms\n",
+        fprintf(stdout, "%50s  %s  %7dms\n",
+                source.name.c_str(),
                 md5.c_str(),
                 (int)std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count());
-        pool.drain();
-    }
+        fflush(stdout);
+    });
+
 
     if (!FLAGS_writeShaders.isEmpty()) {
         sk_mkdir(FLAGS_writeShaders[0]);

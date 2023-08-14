@@ -31,26 +31,36 @@ EffectBuilder::EffectBuilderT EffectBuilder::findBuilder(const skjson::ObjectVal
         const char*    fName;
         EffectBuilderT fBuilder;
     } gBuilderInfo[] = {
+        // alphabetized for binary search lookup
         { "ADBE Black&White"            , &EffectBuilder::attachBlackAndWhiteEffect      },
         { "ADBE Brightness & Contrast 2", &EffectBuilder::attachBrightnessContrastEffect },
+        { "ADBE Bulge"                  , &EffectBuilder::attachBulgeEffect              },
         { "ADBE Corner Pin"             , &EffectBuilder::attachCornerPinEffect          },
         { "ADBE Displacement Map"       , &EffectBuilder::attachDisplacementMapEffect    },
         { "ADBE Drop Shadow"            , &EffectBuilder::attachDropShadowEffect         },
         { "ADBE Easy Levels2"           , &EffectBuilder::attachEasyLevelsEffect         },
         { "ADBE Fill"                   , &EffectBuilder::attachFillEffect               },
+        { "ADBE Fractal Noise"          , &EffectBuilder::attachFractalNoiseEffect       },
         { "ADBE Gaussian Blur 2"        , &EffectBuilder::attachGaussianBlurEffect       },
         { "ADBE Geometry2"              , &EffectBuilder::attachTransformEffect          },
         { "ADBE HUE SATURATION"         , &EffectBuilder::attachHueSaturationEffect      },
         { "ADBE Invert"                 , &EffectBuilder::attachInvertEffect             },
         { "ADBE Linear Wipe"            , &EffectBuilder::attachLinearWipeEffect         },
+        { "ADBE Motion Blur"            , &EffectBuilder::attachDirectionalBlurEffect    },
         { "ADBE Pro Levels2"            , &EffectBuilder::attachProLevelsEffect          },
         { "ADBE Radial Wipe"            , &EffectBuilder::attachRadialWipeEffect         },
         { "ADBE Ramp"                   , &EffectBuilder::attachGradientEffect           },
+        { "ADBE Sharpen"                , &EffectBuilder::attachSharpenEffect            },
         { "ADBE Shift Channels"         , &EffectBuilder::attachShiftChannelsEffect      },
+        { "ADBE Threshold2"             , &EffectBuilder::attachThresholdEffect          },
         { "ADBE Tile"                   , &EffectBuilder::attachMotionTileEffect         },
         { "ADBE Tint"                   , &EffectBuilder::attachTintEffect               },
         { "ADBE Tritone"                , &EffectBuilder::attachTritoneEffect            },
         { "ADBE Venetian Blinds"        , &EffectBuilder::attachVenetianBlindsEffect     },
+        { "CC Sphere"                   , &EffectBuilder::attachSphereEffect             },
+        { "CC Toner"                    , &EffectBuilder::attachCCTonerEffect            },
+        { "SkSL Color Filter"           , &EffectBuilder::attachSkSLColorFilter          },
+        { "SkSL Shader"                 , &EffectBuilder::attachSkSLShader               },
     };
 
     const skjson::StringValue* mn = jeffect["mn"];
@@ -62,7 +72,6 @@ EffectBuilder::EffectBuilderT EffectBuilder::findBuilder(const skjson::ObjectVal
                                              [](const BuilderInfo& a, const BuilderInfo& b) {
                                                  return strcmp(a.fName, b.fName) < 0;
                                              });
-
         if (binfo != std::end(gBuilderInfo) && !strcmp(binfo->fName, key.fName)) {
             return binfo->fBuilder;
         }
@@ -112,7 +121,7 @@ sk_sp<sksg::RenderNode> EffectBuilder::attachEffects(const skjson::ArrayValue& j
             continue;
         }
 
-        const AnimationBuilder::AutoPropertyTracker apt(fBuilder, *jeffect);
+        const AnimationBuilder::AutoPropertyTracker apt(fBuilder, *jeffect, PropertyObserver::NodeType::EFFECT);
         layer = (this->*builder)(*jprops, std::move(layer));
 
         if (!layer) {
@@ -149,8 +158,8 @@ sk_sp<sksg::RenderNode> EffectBuilder::attachStyles(const skjson::ArrayValue& js
 
         const auto style_type =
                 ParseDefault<size_t>((*jstyle)["ty"], std::numeric_limits<size_t>::max());
-        auto builder = style_type < SK_ARRAY_COUNT(gStyleBuilders) ? gStyleBuilders[style_type]
-                                                                   : nullptr;
+        auto builder = style_type < std::size(gStyleBuilders) ? gStyleBuilders[style_type]
+                                                              : nullptr;
 
         if (!builder) {
             fBuilder->log(Logger::Level::kWarning, jstyle, "Unsupported layer style.");

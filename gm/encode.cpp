@@ -6,17 +6,19 @@
  */
 
 #include "gm/gm.h"
+
 #include "include/core/SkBitmap.h"
 #include "include/core/SkCanvas.h"
 #include "include/core/SkData.h"
-#include "include/core/SkEncodedImageFormat.h"
 #include "include/core/SkFont.h"
 #include "include/core/SkImage.h"
-#include "include/core/SkImageEncoder.h"
 #include "include/core/SkPaint.h"
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkSize.h"
+#include "include/core/SkStream.h"
 #include "include/core/SkString.h"
+#include "include/encode/SkJpegEncoder.h"
+#include "include/encode/SkPngEncoder.h"
 #include "tools/Resources.h"
 
 namespace skiagm {
@@ -37,11 +39,16 @@ protected:
     void onDraw(SkCanvas* canvas) override {
         SkBitmap orig;
         GetResourceAsBitmap("images/mandrill_512_q075.jpg", &orig);
-        auto pngData = SkEncodeBitmap(orig, SkEncodedImageFormat::kPNG, 100);
-        auto jpgData = SkEncodeBitmap(orig, SkEncodedImageFormat::kJPEG, 100);
+        SkDynamicMemoryWStream stream;
+        SkASSERT_RELEASE(SkPngEncoder::Encode(&stream, orig.pixmap(), {}));
+        sk_sp<SkData> pngData = stream.detachAsData();
+        stream.reset();
 
-        sk_sp<SkImage> pngImage = SkImage::MakeFromEncoded(pngData);
-        sk_sp<SkImage> jpgImage = SkImage::MakeFromEncoded(jpgData);
+        SkASSERT_RELEASE(SkJpegEncoder::Encode(&stream, orig.pixmap(), {}));
+        sk_sp<SkData> jpgData = stream.detachAsData();
+
+        sk_sp<SkImage> pngImage = SkImages::DeferredFromEncodedData(pngData);
+        sk_sp<SkImage> jpgImage = SkImages::DeferredFromEncodedData(jpgData);
         canvas->drawImage(pngImage.get(), 0.0f, 0.0f);
         canvas->drawImage(jpgImage.get(), 512.0f, 0.0f);
 
@@ -68,7 +75,7 @@ DEF_SIMPLE_GM(jpeg_orientation, canvas, 1000, 1000) {
             path.printf("/skia/orientation/Landscape_%d.jpg", i + 1);
             auto stream = SkStream::MakeFromFile(path.c_str());
             auto data = SkData::MakeFromStream(stream.get(), stream->getLength());
-            imgs[i] = SkImage::MakeFromEncoded(data, nullptr);
+            imgs[i] = SkImages::DeferredFromEncodedData(data, nullptr);
         }
     }
     canvas->scale(0.25, 0.25);

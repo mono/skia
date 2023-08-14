@@ -18,7 +18,12 @@
 #include "include/core/SkSurface.h"
 #include "include/core/SkTypes.h"
 #include "include/gpu/GrDirectContext.h"
+#include "include/gpu/ganesh/SkSurfaceGanesh.h"
 #include "tools/ToolUtils.h"
+
+#if defined(SK_GRAPHITE)
+#include "include/gpu/graphite/Surface.h"
+#endif
 
 namespace {
 
@@ -35,14 +40,14 @@ class MaskGenerator final : public SkImageGenerator {
 public:
     MaskGenerator(const SkImageInfo& info) : INHERITED(info) {}
 
-    bool onGetPixels(const SkImageInfo& info, void* pixels, size_t rowBytes, const Options&)
-    override {
+    bool onGetPixels(const SkImageInfo& info, void* pixels,
+                     size_t rowBytes, const Options&) override {
         SkImageInfo surfaceInfo = info;
         if (kAlpha_8_SkColorType == info.colorType()) {
             surfaceInfo = surfaceInfo.makeColorSpace(nullptr);
         }
 
-        make_mask(SkSurface::MakeRasterDirect(surfaceInfo, pixels, rowBytes));
+        make_mask(SkSurfaces::WrapPixels(surfaceInfo, pixels, rowBytes));
         return true;
     }
 
@@ -52,22 +57,29 @@ private:
 
 using MakerT = sk_sp<SkImage>(*)(SkCanvas*, const SkImageInfo&);
 const MakerT makers[] = {
-    // SkImage_Raster
-    [](SkCanvas*, const SkImageInfo& info) -> sk_sp<SkImage> {
-        return make_mask(SkSurface::MakeRaster(info));
-    },
+        // SkImage_Raster
+        [](SkCanvas*, const SkImageInfo& info) -> sk_sp<SkImage> {
+            return make_mask(SkSurfaces::Raster(info));
+        },
 
-    // SkImage_Gpu
-    [](SkCanvas* c, const SkImageInfo& info) -> sk_sp<SkImage> {
-        sk_sp<SkSurface> surface;
-        surface = SkSurface::MakeRenderTarget(c->recordingContext(), SkBudgeted::kNo, info);
-        return make_mask(surface ? surface : SkSurface::MakeRaster(info));
-    },
+        // SkImage_Ganesh
+        [](SkCanvas* c, const SkImageInfo& info) -> sk_sp<SkImage> {
+            sk_sp<SkSurface> surface;
+            if (c->recordingContext()) {
+                surface =
+                        SkSurfaces::RenderTarget(c->recordingContext(), skgpu::Budgeted::kNo, info);
+            } else {
+#if defined(SK_GRAPHITE)
+                surface = SkSurfaces::RenderTarget(c->recorder(), info);
+#endif
+            }
+            return make_mask(surface ? surface : SkSurfaces::Raster(info));
+        },
 
-    // SkImage_Lazy
-    [](SkCanvas*, const SkImageInfo& info) -> sk_sp<SkImage> {
-        return SkImage::MakeFromGenerator(std::make_unique<MaskGenerator>(info));
-    },
+        // SkImage_Lazy
+        [](SkCanvas*, const SkImageInfo& info) -> sk_sp<SkImage> {
+            return SkImages::DeferredFromGenerator(std::make_unique<MaskGenerator>(info));
+        },
 };
 
 }  // namespace
@@ -79,13 +91,23 @@ DEF_SIMPLE_GM(imagemasksubset, canvas, 480, 480) {
 
     const SkImageInfo info = SkImageInfo::MakeA8(kSize.width(), kSize.height());
 
-    for (size_t i = 0; i < SK_ARRAY_COUNT(makers); ++i) {
-        sk_sp<SkImage> image = makers[i](canvas, info);
+    for (size_t i = 0; i < std::size(makers); ++i) {
+        sk_sp<SkImage> image = ToolUtils::MakeTextureImage(canvas, makers[i](canvas, info));
         if (image) {
-            canvas->drawImageRect(image, SkRect::Make(kSubset), kDest, &paint);
-            auto direct = GrAsDirectContext(canvas->recordingContext());
-            sk_sp<SkImage> subset = image->makeSubset(kSubset, direct);
-            canvas->drawImageRect(subset, kDest.makeOffset(kSize.width() * 1.5f, 0), &paint);
+            canvas->drawImageRect(image, SkRect::Make(kSubset), kDest, SkSamplingOptions(),
+                                  &paint, SkCanvas::kStrict_SrcRectConstraint);
+            sk_sp<SkImage> subset;
+
+            if (auto direct = GrAsDirectContext(canvas->recordingContext())) {
+                subset = image->makeSubset(direct, kSubset);
+            } else {
+#if defined(SK_GRAPHITE)
+                subset = image->makeSubset(canvas->recorder(), kSubset, {});
+#endif
+            }
+
+            canvas->drawImageRect(subset, kDest.makeOffset(kSize.width() * 1.5f, 0),
+                                  SkSamplingOptions(), &paint);
         }
         canvas->translate(0, kSize.height() * 1.5f);
     }

@@ -19,9 +19,11 @@
 #include "include/core/SkTileMode.h"
 #include "include/core/SkTypes.h"
 #include "include/effects/SkGradientShader.h"
-#include "include/private/SkTArray.h"
-#include "include/utils/SkRandom.h"
+#include "include/private/base/SkTArray.h"
+#include "src/base/SkRandom.h"
 #include "tools/ToolUtils.h"
+
+using namespace skia_private;
 
 namespace skiagm {
 
@@ -146,13 +148,13 @@ protected:
     void onDraw(SkCanvas* canvas) override {
         SkRandom rand(1);
         canvas->translate(20 * SK_Scalar1, 20 * SK_Scalar1);
-        SkRect oval = SkRect::MakeLTRB(-20, -30, 20, 30);
+        const SkRect kOval = SkRect::MakeLTRB(-20, -30, 20, 30);
 
         const SkScalar kXStart = 60.0f;
         const SkScalar kYStart = 80.0f;
         const int kXStep = 150;
         const int kYStep = 160;
-        int maxX = fMatrices.count();
+        int maxX = fMatrices.size();
 
         SkPaint rectPaint;
         rectPaint.setAntiAlias(true);
@@ -161,8 +163,8 @@ protected:
         rectPaint.setColor(SK_ColorLTGRAY);
 
         int testCount = 0;
-        for (int i = 0; i < fPaints.count(); ++i) {
-            for (int j = 0; j < fMatrices.count(); ++j) {
+        for (int i = 0; i < fPaints.size(); ++i) {
+            for (int j = 0; j < fMatrices.size(); ++j) {
                 canvas->save();
                 SkMatrix mat = fMatrices[j];
                 // position the oval, and make it at off-integer coords.
@@ -175,8 +177,8 @@ protected:
                 SkColor color = genColor(&rand);
                 fPaints[i].setColor(color);
 
-                canvas->drawRect(oval, rectPaint);
-                canvas->drawOval(oval, fPaints[i]);
+                canvas->drawRect(kOval, rectPaint);
+                canvas->drawOval(kOval, fPaints[i]);
 
                 canvas->restore();
 
@@ -187,7 +189,7 @@ protected:
         // special cases
 
         // non-scaled tall and skinny oval
-        for (int i = 0; i < fPaints.count(); ++i) {
+        for (int i = 0; i < fPaints.size(); ++i) {
             SkRect oval = SkRect::MakeLTRB(-20, -60, 20, 60);
             canvas->save();
             // position the oval, and make it at off-integer coords.
@@ -203,7 +205,7 @@ protected:
         }
 
         // non-scaled wide and short oval
-        for (int i = 0; i < fPaints.count(); ++i) {
+        for (int i = 0; i < fPaints.size(); ++i) {
             SkRect oval = SkRect::MakeLTRB(-80, -30, 80, 30);
             canvas->save();
             // position the oval, and make it at off-integer coords.
@@ -220,7 +222,7 @@ protected:
         }
 
         // super skinny oval
-        for (int i = 0; i < fPaints.count(); ++i) {
+        for (int i = 0; i < fPaints.size(); ++i) {
             SkRect oval = SkRect::MakeLTRB(0, -60, 1, 60);
             canvas->save();
             // position the oval, and make it at off-integer coords.
@@ -235,7 +237,7 @@ protected:
         }
 
         // super short oval
-        for (int i = 0; i < fPaints.count(); ++i) {
+        for (int i = 0; i < fPaints.size(); ++i) {
             SkRect oval = SkRect::MakeLTRB(-80, -1, 80, 0);
             canvas->save();
             // position the oval, and make it at off-integer coords.
@@ -254,10 +256,10 @@ protected:
         SkPoint center = SkPoint::Make(SkIntToScalar(0), SkIntToScalar(0));
         SkColor colors[] = { SK_ColorBLUE, SK_ColorRED, SK_ColorGREEN };
         SkScalar pos[] = { 0, SK_ScalarHalf, SK_Scalar1 };
-        auto shader = SkGradientShader::MakeRadial(center, 20, colors, pos, SK_ARRAY_COUNT(colors),
+        auto shader = SkGradientShader::MakeRadial(center, 20, colors, pos, std::size(colors),
                                                    SkTileMode::kClamp);
 
-        for (int i = 0; i < fPaints.count(); ++i) {
+        for (int i = 0; i < fPaints.size(); ++i) {
             canvas->save();
             // position the path, and make it at off-integer coords.
             canvas->translate(kXStart + SK_Scalar1 * kXStep * 0 + SK_Scalar1 / 4,
@@ -268,8 +270,8 @@ protected:
             fPaints[i].setColor(color);
             fPaints[i].setShader(shader);
 
-            canvas->drawRect(oval, rectPaint);
-            canvas->drawOval(oval, fPaints[i]);
+            canvas->drawRect(kOval, rectPaint);
+            canvas->drawOval(kOval, fPaints[i]);
 
             fPaints[i].setShader(nullptr);
 
@@ -277,7 +279,7 @@ protected:
         }
 
         // reflected oval
-        for (int i = 0; i < fPaints.count(); ++i) {
+        for (int i = 0; i < fPaints.size(); ++i) {
             SkRect oval = SkRect::MakeLTRB(-30, -30, 30, 30);
             canvas->save();
             // position the oval, and make it at off-integer coords.
@@ -298,8 +300,8 @@ protected:
     }
 
 private:
-    SkTArray<SkPaint> fPaints;
-    SkTArray<SkMatrix> fMatrices;
+    TArray<SkPaint> fPaints;
+    TArray<SkMatrix> fMatrices;
 
     using INHERITED = GM;
 };

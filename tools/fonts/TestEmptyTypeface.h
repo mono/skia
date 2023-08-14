@@ -24,11 +24,11 @@ protected:
     sk_sp<SkTypeface> onMakeClone(const SkFontArguments& args) const override {
         return sk_ref_sp(this);
     }
-    SkScalerContext* onCreateScalerContext(const SkScalerContextEffects& effects,
-                                           const SkDescriptor* desc) const override {
-        return SkScalerContext::MakeEmptyContext(
+    std::unique_ptr<SkScalerContext> onCreateScalerContext(
+        const SkScalerContextEffects& effects, const SkDescriptor* desc) const override
+    {
+        return SkScalerContext::MakeEmpty(
                 sk_ref_sp(const_cast<TestEmptyTypeface*>(this)), effects, desc);
-
     }
     void onFilterRec(SkScalerContextRec*) const override {}
     std::unique_ptr<SkAdvancedTypefaceMetrics> onGetAdvancedMetrics() const override {
@@ -51,6 +51,7 @@ protected:
     SkTypeface::LocalizedStrings* onCreateFamilyNameIterator() const override {
         return new EmptyLocalizedStrings;
     }
+    bool onGlyphMaskNeedsCurrentColor() const override { return false; }
     int onGetVariationDesignPosition(SkFontArguments::VariationPosition::Coordinate coordinates[],
                                      int coordinateCount) const override {
         return 0;

@@ -6,14 +6,17 @@
  */
 
 #include "bench/Benchmark.h"
+#include "include/core/SkBitmap.h"
 #include "include/core/SkCanvas.h"
 #include "include/core/SkImage.h"
 #include "include/core/SkPaint.h"
 #include "include/gpu/GrDirectContext.h"
-#include "include/utils/SkRandom.h"
-
-#include "src/gpu/GrRenderTargetContext.h"
-#include "src/gpu/SkGr.h"
+#include "include/gpu/ganesh/SkImageGanesh.h"
+#include "src/base/SkRandom.h"
+#include "src/core/SkCanvasPriv.h"
+#include "src/gpu/ganesh/GrOpsTypes.h"
+#include "src/gpu/ganesh/SkGr.h"
+#include "src/gpu/ganesh/SurfaceDrawContext.h"
 
 // Benchmarks that exercise the bulk image and solid color quad APIs, under a variety of patterns:
 enum class ImageMode {
@@ -40,16 +43,17 @@ public:
     static_assert(kImageMode == ImageMode::kNone || kDrawMode != DrawMode::kQuad,
                   "kQuad only supported for solid color draws");
 
-    static constexpr int kWidth      = 1024;
-    static constexpr int kHeight     = 1024;
+    inline static constexpr int kWidth      = 1024;
+    inline static constexpr int kHeight     = 1024;
 
     // There will either be 0 images, 1 image, or 1 image per rect
-    static constexpr int kImageCount = kImageMode == ImageMode::kShared ?
+    inline static constexpr int kImageCount = kImageMode == ImageMode::kShared ?
             1 : (kImageMode == ImageMode::kNone ? 0 : kRectCount);
 
     bool isSuitableFor(Backend backend) override {
         if (kDrawMode == DrawMode::kBatch && kImageMode == ImageMode::kNone) {
-            // Currently the bulk color quad API is only available on GrRenderTargetContext
+            // Currently the bulk color quad API is only available on
+            // skgpu::ganesh::SurfaceDrawContext
             return backend == kGPU_Backend;
         } else {
             return this->INHERITED::isSuitableFor(backend);
@@ -102,9 +106,9 @@ protected:
 
         SkPaint paint;
         paint.setAntiAlias(true);
-        paint.setFilterQuality(kLow_SkFilterQuality);
 
-        canvas->experimental_DrawEdgeAAImageSet(batch, kRectCount, nullptr, nullptr, &paint,
+        canvas->experimental_DrawEdgeAAImageSet(batch, kRectCount, nullptr, nullptr,
+                                                SkSamplingOptions(SkFilterMode::kLinear), &paint,
                                                 SkCanvas::kFast_SrcRectConstraint);
     }
 
@@ -114,13 +118,13 @@ protected:
 
         SkPaint paint;
         paint.setAntiAlias(true);
-        paint.setFilterQuality(kLow_SkFilterQuality);
 
         for (int i = 0; i < kRectCount; ++i) {
             int imageIndex = kImageMode == ImageMode::kShared ? 0 : i;
-            SkIRect srcRect = SkIRect::MakeWH(fImages[imageIndex]->width(),
-                                              fImages[imageIndex]->height());
-            canvas->drawImageRect(fImages[imageIndex].get(), srcRect, fRects[i], &paint,
+            SkRect srcRect = SkRect::MakeIWH(fImages[imageIndex]->width(),
+                                             fImages[imageIndex]->height());
+            canvas->drawImageRect(fImages[imageIndex].get(), srcRect, fRects[i],
+                                  SkSamplingOptions(SkFilterMode::kLinear), &paint,
                                   SkCanvas::kFast_SrcRectConstraint);
         }
     }
@@ -132,7 +136,7 @@ protected:
         auto context = canvas->recordingContext();
         SkASSERT(context);
 
-        GrRenderTargetContext::QuadSetEntry batch[kRectCount];
+        GrQuadSetEntry batch[kRectCount];
         for (int i = 0; i < kRectCount; ++i) {
             batch[i].fRect = fRects[i];
             batch[i].fColor = fColors[i].premul();
@@ -144,12 +148,12 @@ protected:
         paint.setColor(SK_ColorWHITE);
         paint.setAntiAlias(true);
 
-        GrRenderTargetContext* rtc = canvas->internal_private_accessTopLayerRenderTargetContext();
-        SkMatrix view = canvas->getTotalMatrix();
-        SkSimpleMatrixProvider matrixProvider(view);
+        auto sdc = SkCanvasPriv::TopDeviceSurfaceDrawContext(canvas);
+        SkMatrix view = canvas->getLocalToDeviceAs3x3();
+        SkSurfaceProps props;
         GrPaint grPaint;
-        SkPaintToGrPaint(context, rtc->colorInfo(), paint, matrixProvider, &grPaint);
-        rtc->drawQuadSet(nullptr, std::move(grPaint), GrAA::kYes, view, batch, kRectCount);
+        SkPaintToGrPaint(context, sdc->colorInfo(), paint, view, props, &grPaint);
+        sdc->drawQuadSet(nullptr, std::move(grPaint), view, batch, kRectCount);
     }
 
     void drawSolidColorsRef(SkCanvas* canvas) const {
@@ -220,9 +224,13 @@ protected:
             SkBitmap bm;
             bm.allocN32Pixels(256, 256);
             bm.eraseColor(fColors[i].toSkColor());
-            auto image = SkImage::MakeFromBitmap(bm);
+            auto image = bm.asImage();
 
-            fImages[i] = direct ? image->makeTextureImage(direct) : std::move(image);
+            if (direct) {
+                fImages[i] = SkImages::TextureFromImage(direct, image);
+            } else {
+                fImages[i] = std::move(image);
+            }
         }
     }
 

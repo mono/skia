@@ -5,10 +5,12 @@
  * found in the LICENSE file.
  */
 
-#include "tests/Test.h"
-
 #include "include/core/SkBitmap.h"
+#include "include/core/SkColor.h"
 #include "include/core/SkImage.h"
+#include "include/core/SkRect.h"
+#include "include/core/SkRefCnt.h"
+#include "tests/Test.h"
 
 // https://bug.skia.org/5096
 // Test that when we make an image from a subset of a bitmap, that it
@@ -22,9 +24,9 @@ DEF_TEST(ImageBitmapIdentity, r) {
     (void)bm.extractSubset(&a, SkIRect::MakeXYWH(0, 0, 32, 32));
     (void)bm.extractSubset(&b, SkIRect::MakeXYWH(0, 32, 32, 32));
     REPORTER_ASSERT(r, a.getGenerationID() == b.getGenerationID());
-    auto img = SkImage::MakeFromBitmap(bm);
-    auto imgA = SkImage::MakeFromBitmap(a);
-    auto imgB = SkImage::MakeFromBitmap(b);
+    auto img = bm.asImage();
+    auto imgA = a.asImage();
+    auto imgB = b.asImage();
     REPORTER_ASSERT(r, img->uniqueID() == bm.getGenerationID());
     REPORTER_ASSERT(r, img->uniqueID() != imgA->uniqueID());
     REPORTER_ASSERT(r, img->uniqueID() != imgB->uniqueID());

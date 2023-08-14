@@ -6,9 +6,8 @@
  */
 
 #include "bench/Benchmark.h"
-#include "include/private/GrTypesPriv.h"
-#include "include/utils/SkRandom.h"
-#include "src/gpu/GrMemoryPool.h"
+#include "src/base/SkRandom.h"
+#include "src/gpu/ganesh/GrMemoryPool.h"
 
 #include <type_traits>
 
@@ -30,7 +29,7 @@ static_assert(sizeof(Unaligned) == 30);
 static_assert(sizeof(Unaligned) % GrMemoryPool::kAlignment != 0);
 
 // When max_align_t == 16, 8, or 4 the padded Unaligned will also be 32
-static_assert(GrAlignTo(sizeof(Unaligned), GrMemoryPool::kAlignment) == sizeof(Aligned));
+static_assert(SkAlignTo(sizeof(Unaligned), GrMemoryPool::kAlignment) == sizeof(Aligned));
 
 // All benchmarks create and delete the same number of objects. The key difference is the order
 // of operations, the size of the objects being allocated, and the size of the pool.

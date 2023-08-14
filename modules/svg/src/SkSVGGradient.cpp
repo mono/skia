@@ -5,7 +5,7 @@
  * found in the LICENSE file.
  */
 
-#include "include/private/SkTPin.h"
+#include "include/private/base/SkTPin.h"
 #include "modules/svg/include/SkSVGGradient.h"
 #include "modules/svg/include/SkSVGRenderContext.h"
 #include "modules/svg/include/SkSVGStop.h"
@@ -36,14 +36,14 @@ void SkSVGGradient::collectColorStops(const SkSVGRenderContext& ctx,
 
         const auto& stop = static_cast<const SkSVGStop&>(*child);
         colors->push_back(this->resolveStopColor(ctx, stop));
-        pos->push_back(SkTPin(ltx.resolve(stop.offset(), SkSVGLengthContext::LengthType::kOther),
+        pos->push_back(SkTPin(ltx.resolve(stop.getOffset(), SkSVGLengthContext::LengthType::kOther),
                               0.f, 1.f));
     }
 
-    SkASSERT(colors->count() == pos->count());
+    SkASSERT(colors->size() == pos->size());
 
-    if (pos->empty() && !fHref.fIRI.isEmpty()) {
-        const auto ref = ctx.findNodeById(fHref.fIRI);
+    if (pos->empty() && !fHref.iri().isEmpty()) {
+        const auto ref = ctx.findNodeById(fHref);
         if (ref && (ref->tag() == SkSVGTag::kLinearGradient ||
                     ref->tag() == SkSVGTag::kRadialGradient)) {
             static_cast<const SkSVGGradient*>(ref.get())->collectColorStops(ctx, pos, colors);
@@ -51,27 +51,19 @@ void SkSVGGradient::collectColorStops(const SkSVGRenderContext& ctx,
     }
 }
 
-SkColor SkSVGGradient::resolveStopColor(const SkSVGRenderContext& ctx,
-                                        const SkSVGStop& stop) const {
-    const SkSVGStopColor& stopColor = stop.stopColor();
-    SkColor color;
-    switch (stopColor.type()) {
-        case SkSVGStopColor::Type::kColor:
-            color = stopColor.color();
-            break;
-        case SkSVGStopColor::Type::kCurrentColor:
-            color = *ctx.presentationContext().fInherited.fColor;
-            break;
-        case SkSVGStopColor::Type::kICCColor:
-            SkDebugf("unimplemented 'icccolor' stop-color type\n");
-            color = SK_ColorBLACK;
-            break;
-        case SkSVGStopColor::Type::kInherit:
-            SkDebugf("unimplemented 'inherit' stop-color type\n");
-            color = SK_ColorBLACK;
-            break;
+SkColor4f SkSVGGradient::resolveStopColor(const SkSVGRenderContext& ctx,
+                                          const SkSVGStop& stop) const {
+    const auto& stopColor = stop.getStopColor();
+    const auto& stopOpacity = stop.getStopOpacity();
+    // Uninherited presentation attrs should have a concrete value at this point.
+    if (!stopColor.isValue() || !stopOpacity.isValue()) {
+        SkDebugf("unhandled: stop-color or stop-opacity has no value\n");
+        return SkColors::kBlack;
     }
-    return SkColorSetA(color, SkScalarRoundToInt(stop.stopOpacity() * 255));
+
+    const auto color = SkColor4f::FromColor(ctx.resolveSvgColor(*stopColor));
+
+    return { color.fR, color.fG, color.fB, *stopOpacity };
 }
 
 bool SkSVGGradient::onAsPaint(const SkSVGRenderContext& ctx, SkPaint* paint) const {
@@ -94,16 +86,12 @@ bool SkSVGGradient::onAsPaint(const SkSVGRenderContext& ctx, SkPaint* paint) con
                   SkTileMode::kMirror, "SkSVGSpreadMethod::Type is out of sync");
     const auto tileMode = static_cast<SkTileMode>(fSpreadMethod.type());
 
-    SkMatrix localMatrix = SkMatrix::I();
-    if (fGradientUnits.type() == SkSVGObjectBoundingBoxUnits::Type::kObjectBoundingBox) {
-        SkASSERT(ctx.node());
-        const SkRect objBounds = ctx.node()->objectBoundingBox(ctx);
-        localMatrix.preTranslate(objBounds.fLeft, objBounds.fTop);
-        localMatrix.preScale(objBounds.width(), objBounds.height());
-    }
-    localMatrix.preConcat(fGradientTransform);
+    const auto obbt = ctx.transformForCurrentOBB(fGradientUnits);
+    const auto localMatrix = SkMatrix::Translate(obbt.offset.x, obbt.offset.y)
+                           * SkMatrix::Scale(obbt.scale.x, obbt.scale.y)
+                           * fGradientTransform;
 
-    paint->setShader(this->onMakeShader(ctx, colors.begin(), pos.begin(), colors.count(), tileMode,
+    paint->setShader(this->onMakeShader(ctx, colors.begin(), pos.begin(), colors.size(), tileMode,
                                         localMatrix));
     return true;
 }
@@ -121,7 +109,7 @@ bool SkSVGAttributeParser::parse(SkSVGSpreadMethod* spread) {
     };
 
     bool parsedValue = false;
-    for (size_t i = 0; i < SK_ARRAY_COUNT(gSpreadInfo); ++i) {
+    for (size_t i = 0; i < std::size(gSpreadInfo); ++i) {
         if (this->parseExpectedStringToken(gSpreadInfo[i].fName)) {
             *spread = SkSVGSpreadMethod(gSpreadInfo[i].fType);
             parsedValue = true;

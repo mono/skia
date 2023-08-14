@@ -8,7 +8,20 @@
 #ifndef SkEmbossMaskFilter_DEFINED
 #define SkEmbossMaskFilter_DEFINED
 
+#include "include/core/SkFlattenable.h"
+#include "include/core/SkMaskFilter.h"
+#include "include/core/SkRect.h"
+#include "include/core/SkRefCnt.h"
+#include "include/core/SkScalar.h"
+#include "src/core/SkMask.h"
 #include "src/core/SkMaskFilterBase.h"
+
+#include <cstdint>
+
+class SkMatrix;
+class SkReadBuffer;
+class SkWriteBuffer;
+struct SkIPoint;
 
 /** \class SkEmbossMaskFilter
 
@@ -31,6 +44,7 @@ public:
     //  This method is not exported to java.
     bool filterMask(SkMask* dst, const SkMask& src, const SkMatrix&,
                     SkIPoint* margin) const override;
+    SkMaskFilterBase::Type type() const override { return SkMaskFilterBase::Type::kEmboss; }
 
 protected:
     SkEmbossMaskFilter(SkScalar blurSigma, const Light& light);

@@ -5,6 +5,7 @@
 
 # Recipe module for Skia Swarming compile.
 
+PYTHON_VERSION_COMPATIBILITY = "PY3"
 
 DEPS = [
   'build',
@@ -43,7 +44,7 @@ def RunSteps(api):
 # [VPYTHON:BEGIN]
 # wheel: <
 #  name: "infra/python/wheels/psutil/${vpython_platform}"
-#  version: "version:5.4.7"
+#  version: "version:5.8.0.chromium.2"
 # >
 # [VPYTHON:END]
 
@@ -74,10 +75,7 @@ def GenTests(api):
                      repository='https://skia.googlesource.com/skia.git',
                      revision='abc123',
                      path_config='kitchen',
-                     swarm_out_dir='[SWARM_OUT_DIR]') +
-      api.path.exists(
-          api.path['start_dir'].join('tmp', 'uninteresting_hashes.txt')
-      )
+                     swarm_out_dir='[SWARM_OUT_DIR]')
     )
     if 'Win' in builder:
       test += api.platform('win', 64)

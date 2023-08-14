@@ -5,17 +5,24 @@
  * found in the LICENSE file.
  */
 
+#include "include/core/SkAlphaType.h"
 #include "include/core/SkBitmap.h"
 #include "include/core/SkColor.h"
+#include "include/core/SkColorPriv.h"
 #include "include/core/SkColorSpace.h"
+#include "include/core/SkColorType.h"
 #include "include/core/SkImageInfo.h"
 #include "include/core/SkPoint.h"
 #include "include/core/SkRect.h"
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkSize.h"
 #include "include/core/SkTypes.h"
+#include "src/core/SkOpts.h"
 #include "tests/Test.h"
 #include "tools/ToolUtils.h"
+
+#include <array>
+#include <cstddef>
 
 static void init_src(const SkBitmap& bitmap) {
     if (bitmap.getPixels()) {
@@ -64,11 +71,10 @@ static const Pair gPairs[] = {
     { kRGBA_F16_SkColorType,    "0101011"  },
 };
 
-static const int W = 20;
-static const int H = 33;
-
 static void setup_src_bitmaps(SkBitmap* srcOpaque, SkBitmap* srcPremul,
                               SkColorType ct) {
+    const int W = 20;
+    const int H = 33;
     sk_sp<SkColorSpace> colorSpace = nullptr;
     if (kRGBA_F16_SkColorType == ct) {
         colorSpace = SkColorSpace::MakeSRGB();
@@ -81,7 +87,8 @@ static void setup_src_bitmaps(SkBitmap* srcOpaque, SkBitmap* srcPremul,
 }
 
 DEF_TEST(BitmapCopy_extractSubset, reporter) {
-    for (size_t i = 0; i < SK_ARRAY_COUNT(gPairs); i++) {
+    const int W = 20;
+    for (size_t i = 0; i < std::size(gPairs); i++) {
         SkBitmap srcOpaque, srcPremul;
         setup_src_bitmaps(&srcOpaque, &srcPremul, gPairs[i].fColorType);
 
@@ -98,7 +105,7 @@ DEF_TEST(BitmapCopy_extractSubset, reporter) {
             REPORTER_ASSERT(reporter, subset.alphaType() == bitmap.alphaType());
 
             // Test copying an extracted subset.
-            for (size_t j = 0; j < SK_ARRAY_COUNT(gPairs); j++) {
+            for (size_t j = 0; j < std::size(gPairs); j++) {
                 SkBitmap copy;
                 bool     success = ToolUtils::copy_to(&copy, gPairs[j].fColorType, subset);
                 if (!success) {
@@ -124,9 +131,6 @@ DEF_TEST(BitmapCopy_extractSubset, reporter) {
     }
 }
 
-#include "include/core/SkColorPriv.h"
-#include "src/core/SkUtils.h"
-
 /**
  *  Construct 4x4 pixels where we can look at a color and determine where it should be in the grid.
  *  alpha = 0xFF, blue = 0x80, red = x, green = y
@@ -151,7 +155,7 @@ static bool check_4x4_pixel(SkPMColor color, unsigned x, unsigned y) {
  *  Fill with all zeros, which will never match any value from fill_4x4_pixels
  */
 static void clear_4x4_pixels(SkPMColor colors[16]) {
-    sk_memset32(colors, 0, 16);
+    SkOpts::memset32(colors, 0, 16);
 }
 
 // Much of readPixels is exercised by copyTo testing, since readPixels is the backend for that
@@ -185,7 +189,7 @@ DEF_TEST(BitmapReadPixels, reporter) {
         { false, {-1,-1 }, { 1, 1 }, { 0, 0 }, { 0, 0, 0, 0 } },
     };
 
-    for (size_t i = 0; i < SK_ARRAY_COUNT(gRec); ++i) {
+    for (size_t i = 0; i < std::size(gRec); ++i) {
         clear_4x4_pixels(dstPixels);
 
         dstInfo = dstInfo.makeDimensions(gRec[i].fRequestedDstSize);

@@ -9,200 +9,120 @@
 #include "include/gpu/GrBackendSurface.h"
 #include "include/gpu/GrContextOptions.h"
 #include "include/gpu/GrRecordingContext.h"
-#include "include/private/SkTo.h"
-#include "src/core/SkMathPriv.h"
-#include "src/gpu/GrClip.h"
-#include "src/gpu/GrDirectContextPriv.h"
-#include "src/gpu/GrDrawOpAtlas.h"
-#include "src/gpu/GrDrawingManager.h"
-#include "src/gpu/GrGpu.h"
-#include "src/gpu/GrGpuResourceCacheAccess.h"
-#include "src/gpu/GrMemoryPool.h"
-#include "src/gpu/GrRecordingContextPriv.h"
-#include "src/gpu/GrRenderTargetContext.h"
-#include "src/gpu/GrRenderTargetContextPriv.h"
-#include "src/gpu/GrRenderTargetProxy.h"
-#include "src/gpu/GrResourceCache.h"
-#include "src/gpu/GrSemaphore.h"
-#include "src/gpu/GrSurfaceContextPriv.h"
-#include "src/gpu/GrTexture.h"
-#include "src/gpu/SkGr.h"
-#include "src/gpu/ccpr/GrCCPathCache.h"
-#include "src/gpu/ccpr/GrCoverageCountingPathRenderer.h"
-#include "src/gpu/ops/GrMeshDrawOp.h"
-#include "src/gpu/text/GrStrikeCache.h"
-#include "src/gpu/text/GrTextBlobCache.h"
-#include "src/image/SkImage_Gpu.h"
+#include "include/private/base/SkTo.h"
+#include "src/base/SkMathPriv.h"
+#include "src/base/SkRandom.h"
+#include "src/gpu/ganesh/GrClip.h"
+#include "src/gpu/ganesh/GrDirectContextPriv.h"
+#include "src/gpu/ganesh/GrDrawOpAtlas.h"
+#include "src/gpu/ganesh/GrDrawingManager.h"
+#include "src/gpu/ganesh/GrGpu.h"
+#include "src/gpu/ganesh/GrGpuResourceCacheAccess.h"
+#include "src/gpu/ganesh/GrMemoryPool.h"
+#include "src/gpu/ganesh/GrRecordingContextPriv.h"
+#include "src/gpu/ganesh/GrRenderTargetProxy.h"
+#include "src/gpu/ganesh/GrResourceCache.h"
+#include "src/gpu/ganesh/GrSemaphore.h"
+#include "src/gpu/ganesh/GrTexture.h"
+#include "src/gpu/ganesh/SkGr.h"
+#include "src/gpu/ganesh/SurfaceDrawContext.h"
+#include "src/gpu/ganesh/image/SkImage_Ganesh.h"
+#include "src/text/gpu/StrikeCache.h"
+#include "src/text/gpu/TextBlobRedrawCoordinator.h"
 
 #include <algorithm>
 
-///////////////////////////////////////////////////////////////////////////////
-
-void GrResourceCache::changeTimestamp(uint32_t newTimestamp) { fTimestamp = newTimestamp; }
-
-#ifdef SK_DEBUG
-int GrResourceCache::countUniqueKeysWithTag(const char* tag) const {
-    int count = 0;
-    fUniqueHash.foreach([&](const GrGpuResource& resource){
-        if (0 == strcmp(tag, resource.getUniqueKey().tag())) {
-            ++count;
-        }
-    });
-    return count;
-}
-#endif
-
-///////////////////////////////////////////////////////////////////////////////
-
-#define ASSERT_SINGLE_OWNER GR_ASSERT_SINGLE_OWNER(fRenderTargetContext->singleOwner())
-
-uint32_t GrRenderTargetContextPriv::testingOnly_getOpsTaskID() {
-    return fRenderTargetContext->getOpsTask()->uniqueID();
-}
-
-void GrRenderTargetContextPriv::testingOnly_addDrawOp(GrOp::Owner op) {
-    this->testingOnly_addDrawOp(nullptr, std::move(op), {});
-}
-
-void GrRenderTargetContextPriv::testingOnly_addDrawOp(
-        const GrClip* clip,
-        GrOp::Owner op,
-        const std::function<GrRenderTargetContext::WillAddOpFn>& willAddFn) {
-    ASSERT_SINGLE_OWNER
-    if (fRenderTargetContext->fContext->abandoned()) {
-        return;
-    }
-    SkDEBUGCODE(fRenderTargetContext->validate());
-    GR_AUDIT_TRAIL_AUTO_FRAME(fRenderTargetContext->auditTrail(),
-                              "GrRenderTargetContext::testingOnly_addDrawOp");
-    fRenderTargetContext->addDrawOp(clip, std::move(op), willAddFn);
-}
-
-#undef ASSERT_SINGLE_OWNER
-
 //////////////////////////////////////////////////////////////////////////////
 
-void GrCoverageCountingPathRenderer::testingOnly_drawPathDirectly(const DrawPathArgs& args) {
-    // Call onDrawPath() directly: We want to test paths that might fail onCanDrawPath() simply for
-    // performance reasons, and GrPathRenderer::drawPath() assert that this call returns true.
-    // The test is responsible to not draw any paths that CCPR is not actually capable of.
-    this->onDrawPath(args);
-}
-
-const GrCCPerFlushResources*
-GrCoverageCountingPathRenderer::testingOnly_getCurrentFlushResources() {
-    SkASSERT(fFlushing);
-    if (fFlushingPaths.empty()) {
-        return nullptr;
-    }
-    // All pending paths should share the same resources.
-    const GrCCPerFlushResources* resources = fFlushingPaths.front()->fFlushResources.get();
-#ifdef SK_DEBUG
-    for (const auto& flushingPaths : fFlushingPaths) {
-        SkASSERT(flushingPaths->fFlushResources.get() == resources);
-    }
-#endif
-    return resources;
-}
-
-const GrCCPathCache* GrCoverageCountingPathRenderer::testingOnly_getPathCache() const {
-    return fPathCache.get();
-}
-
-const GrTexture* GrCCPerFlushResources::testingOnly_frontCopyAtlasTexture() const {
-    if (fCopyAtlasStack.empty()) {
-        return nullptr;
-    }
-    const GrTextureProxy* proxy = fCopyAtlasStack.front().textureProxy();
-    return (proxy) ? proxy->peekTexture() : nullptr;
-}
-
-const GrTexture* GrCCPerFlushResources::testingOnly_frontRenderedAtlasTexture() const {
-    if (fRenderedAtlasStack.empty()) {
-        return nullptr;
-    }
-    const GrTextureProxy* proxy = fRenderedAtlasStack.front().textureProxy();
-    return (proxy) ? proxy->peekTexture() : nullptr;
-}
-
-const SkTHashTable<GrCCPathCache::HashNode, const GrCCPathCache::Key&>&
-GrCCPathCache::testingOnly_getHashTable() const {
-    return fHashTable;
-}
-
-const SkTInternalLList<GrCCPathCacheEntry>& GrCCPathCache::testingOnly_getLRU() const {
-    return fLRU;
-}
-
-int GrCCPathCacheEntry::testingOnly_peekOnFlushRefCnt() const { return fOnFlushRefCnt; }
-
-int GrCCCachedAtlas::testingOnly_peekOnFlushRefCnt() const { return fOnFlushRefCnt; }
-
-//////////////////////////////////////////////////////////////////////////////
-
-#define DRAW_OP_TEST_EXTERN(Op) \
-    extern GrOp::Owner Op##__Test(GrPaint&&, SkRandom*, \
-                                    GrRecordingContext*, int numSamples)
+#define DRAW_OP_TEST_EXTERN(Op)    \
+    extern GrOp::Owner Op##__Test( \
+            GrPaint&&, SkRandom*, GrRecordingContext*, skgpu::ganesh::SurfaceDrawContext*, int)
 #define DRAW_OP_TEST_ENTRY(Op) Op##__Test
 
 DRAW_OP_TEST_EXTERN(AAConvexPathOp);
 DRAW_OP_TEST_EXTERN(AAFlatteningConvexPathOp);
 DRAW_OP_TEST_EXTERN(AAHairlineOp);
 DRAW_OP_TEST_EXTERN(AAStrokeRectOp);
+DRAW_OP_TEST_EXTERN(AtlasTextOp);
+#if !defined(SK_ENABLE_OPTIMIZE_SIZE)
+DRAW_OP_TEST_EXTERN(ButtCapDashedCircleOp);
 DRAW_OP_TEST_EXTERN(CircleOp);
-DRAW_OP_TEST_EXTERN(DashOp);
+#endif
+DRAW_OP_TEST_EXTERN(DashOpImpl);
 DRAW_OP_TEST_EXTERN(DefaultPathOp);
+DRAW_OP_TEST_EXTERN(DrawAtlasOp);
+#if !defined(SK_ENABLE_OPTIMIZE_SIZE)
 DRAW_OP_TEST_EXTERN(DIEllipseOp);
 DRAW_OP_TEST_EXTERN(EllipseOp);
+#endif
 DRAW_OP_TEST_EXTERN(FillRectOp);
-DRAW_OP_TEST_EXTERN(GrAtlasTextOp);
-DRAW_OP_TEST_EXTERN(DrawAtlasOp);
-DRAW_OP_TEST_EXTERN(DrawVerticesOp);
 DRAW_OP_TEST_EXTERN(NonAALatticeOp);
 DRAW_OP_TEST_EXTERN(NonAAStrokeRectOp);
-DRAW_OP_TEST_EXTERN(ShadowRRectOp);
-DRAW_OP_TEST_EXTERN(SmallPathOp);
 DRAW_OP_TEST_EXTERN(RegionOp);
+#if !defined(SK_ENABLE_OPTIMIZE_SIZE)
 DRAW_OP_TEST_EXTERN(RRectOp);
+#endif
+DRAW_OP_TEST_EXTERN(ShadowRRectOp);
+#if !defined(SK_ENABLE_OPTIMIZE_SIZE)
+DRAW_OP_TEST_EXTERN(SmallPathOp);
+#endif
+DRAW_OP_TEST_EXTERN(TextureOpImpl);
+#if !defined(SK_ENABLE_OPTIMIZE_SIZE)
 DRAW_OP_TEST_EXTERN(TriangulatingPathOp);
-DRAW_OP_TEST_EXTERN(TextureOp);
+#endif
 
-void GrDrawRandomOp(SkRandom* random, GrRenderTargetContext* renderTargetContext, GrPaint&& paint) {
-    auto context = renderTargetContext->surfPriv().getContext();
-    using MakeDrawOpFn = GrOp::Owner (GrPaint&&, SkRandom*,
-                                      GrRecordingContext*, int numSamples);
+void GrDrawRandomOp(SkRandom* random, skgpu::ganesh::SurfaceDrawContext* sdc, GrPaint&& paint) {
+    auto rContext = sdc->recordingContext();
+    using MakeDrawOpFn = GrOp::Owner(GrPaint&&,
+                                     SkRandom*,
+                                     GrRecordingContext*,
+                                     skgpu::ganesh::SurfaceDrawContext*,
+                                     int numSamples);
     static constexpr MakeDrawOpFn* gFactories[] = {
             DRAW_OP_TEST_ENTRY(AAConvexPathOp),
             DRAW_OP_TEST_ENTRY(AAFlatteningConvexPathOp),
             DRAW_OP_TEST_ENTRY(AAHairlineOp),
             DRAW_OP_TEST_ENTRY(AAStrokeRectOp),
+            DRAW_OP_TEST_ENTRY(AtlasTextOp),
+#if !defined(SK_ENABLE_OPTIMIZE_SIZE)
+            DRAW_OP_TEST_ENTRY(ButtCapDashedCircleOp),
             DRAW_OP_TEST_ENTRY(CircleOp),
-            DRAW_OP_TEST_ENTRY(DashOp),
+#endif
+            DRAW_OP_TEST_ENTRY(DashOpImpl),
             DRAW_OP_TEST_ENTRY(DefaultPathOp),
+            DRAW_OP_TEST_ENTRY(DrawAtlasOp),
+#if !defined(SK_ENABLE_OPTIMIZE_SIZE)
             DRAW_OP_TEST_ENTRY(DIEllipseOp),
             DRAW_OP_TEST_ENTRY(EllipseOp),
+#endif
             DRAW_OP_TEST_ENTRY(FillRectOp),
-            DRAW_OP_TEST_ENTRY(GrAtlasTextOp),
-            DRAW_OP_TEST_ENTRY(DrawAtlasOp),
-            DRAW_OP_TEST_ENTRY(DrawVerticesOp),
             DRAW_OP_TEST_ENTRY(NonAALatticeOp),
             DRAW_OP_TEST_ENTRY(NonAAStrokeRectOp),
-            DRAW_OP_TEST_ENTRY(ShadowRRectOp),
-            DRAW_OP_TEST_ENTRY(SmallPathOp),
             DRAW_OP_TEST_ENTRY(RegionOp),
+#if !defined(SK_ENABLE_OPTIMIZE_SIZE)
             DRAW_OP_TEST_ENTRY(RRectOp),
+#endif
+            DRAW_OP_TEST_ENTRY(ShadowRRectOp),
+#if !defined(SK_ENABLE_OPTIMIZE_SIZE)
+            DRAW_OP_TEST_ENTRY(SmallPathOp),
+#endif
+            DRAW_OP_TEST_ENTRY(TextureOpImpl),
+#if !defined(SK_ENABLE_OPTIMIZE_SIZE)
             DRAW_OP_TEST_ENTRY(TriangulatingPathOp),
-            DRAW_OP_TEST_ENTRY(TextureOp),
+#endif
     };
 
-    static constexpr size_t kTotal = SK_ARRAY_COUNT(gFactories);
+    static constexpr size_t kTotal = std::size(gFactories);
     uint32_t index = random->nextULessThan(static_cast<uint32_t>(kTotal));
-    auto op = gFactories[index](
-            std::move(paint), random, context, renderTargetContext->numSamples());
+    auto op = gFactories[index](std::move(paint),
+                                random,
+                                rContext,
+                                sdc,
+                                sdc->numSamples());
 
     // Creating a GrAtlasTextOp my not produce an op if for example, it is totally outside the
     // render target context.
     if (op) {
-        renderTargetContext->priv().testingOnly_addDrawOp(std::move(op));
+        sdc->addDrawOp(std::move(op));
     }
 }

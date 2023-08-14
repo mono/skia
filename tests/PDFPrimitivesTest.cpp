@@ -9,44 +9,63 @@
 
 #ifdef SK_SUPPORT_PDF
 
-#include "include/core/SkBitmap.h"
+#include "include/core/SkBlendMode.h"
 #include "include/core/SkCanvas.h"
-#include "include/core/SkData.h"
-#include "include/core/SkImageEncoder.h"
-#include "include/core/SkMatrix.h"
+#include "include/core/SkColor.h"
+#include "include/core/SkDocument.h"
+#include "include/core/SkFlattenable.h"
+#include "include/core/SkFont.h"
+#include "include/core/SkFontStyle.h"
+#include "include/core/SkFontTypes.h"
+#include "include/core/SkImageFilter.h"
+#include "include/core/SkPaint.h"
+#include "include/core/SkPath.h"
+#include "include/core/SkPoint.h"
+#include "include/core/SkRect.h"
+#include "include/core/SkRefCnt.h"
 #include "include/core/SkScalar.h"
+#include "include/core/SkSpan.h"
 #include "include/core/SkStream.h"
+#include "include/core/SkString.h"
 #include "include/core/SkTypes.h"
-#include "include/effects/SkMorphologyImageFilter.h"
+#include "include/docs/SkPDFDocument.h"
+#include "include/effects/SkImageFilters.h"
 #include "include/effects/SkPerlinNoiseShader.h"
-#include "include/private/SkTo.h"
-#include "src/core/SkGlyphRun.h"
+#include "include/private/base/SkDebug.h"
+#include "include/private/base/SkFloatingPoint.h"
+#include "include/private/base/SkTo.h"
+#include "src/base/SkRandom.h"
 #include "src/core/SkImageFilter_Base.h"
 #include "src/core/SkReadBuffer.h"
 #include "src/core/SkSpecialImage.h"
 #include "src/pdf/SkClusterator.h"
-#include "src/pdf/SkDeflate.h"
-#include "src/pdf/SkPDFDevice.h"
 #include "src/pdf/SkPDFDocumentPriv.h"
 #include "src/pdf/SkPDFFont.h"
 #include "src/pdf/SkPDFTypes.h"
 #include "src/pdf/SkPDFUnion.h"
 #include "src/pdf/SkPDFUtils.h"
+#include "src/text/GlyphRun.h"
+#include "src/utils/SkFloatToDecimal.h"
 #include "tools/Resources.h"
 #include "tools/ToolUtils.h"
 
-#include <cstdlib>
+#include <cfloat>
 #include <cmath>
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include <memory>
+#include <utility>
 
-#define DUMMY_TEXT "DCT compessed stream."
+class SkTypeface;
 
 template <typename T>
 static SkString emit_to_string(T& obj) {
     SkDynamicMemoryWStream buffer;
     obj.emitObject(&buffer);
     SkString tmp(buffer.bytesWritten());
-    buffer.copyTo(tmp.writable_str());
+    buffer.copyTo(tmp.data());
     return tmp;
 }
 
@@ -119,15 +138,15 @@ static void TestPDFUnion(skiatest::Reporter* reporter) {
     assert_emit_eq_number(reporter, 50000000.1f);  // biggerScalar
     assert_emit_eq_number(reporter, 1.0f / 65536);  // smallScalar
 
-    SkPDFUnion stringSimple = SkPDFUnion::String("test ) string ( foo");
+    SkPDFUnion stringSimple = SkPDFUnion::TextString("test ) string ( foo");
     assert_emit_eq(reporter, stringSimple, "(test \\) string \\( foo)");
 
     SkString stringComplexInput("\ttest ) string ( foo");
-    SkPDFUnion stringComplex = SkPDFUnion::String(stringComplexInput);
+    SkPDFUnion stringComplex = SkPDFUnion::TextString(stringComplexInput);
     assert_emit_eq(reporter, stringComplex, "(\\011test \\) string \\( foo)");
 
     SkString binaryStringInput("\1\2\3\4\5\6\7\10\11\12\13\14\15\16\17\20");
-    SkPDFUnion binaryString = SkPDFUnion::String(binaryStringInput);
+    SkPDFUnion binaryString = SkPDFUnion::ByteString(binaryStringInput);
     assert_emit_eq(reporter, binaryString, "<0102030405060708090A0B0C0D0E0F10>");
 
     SkString nameInput("Test name\twith#tab");
@@ -176,11 +195,11 @@ static void TestPDFArray(skiatest::Reporter* reporter) {
     array->appendName(SkString("AnotherName"));
     assert_emit_eq(reporter, *array, "[42 .5 0 true /ThisName /AnotherName]");
 
-    array->appendString("This String");
+    array->appendTextString("This String");
     assert_emit_eq(reporter, *array,
                    "[42 .5 0 true /ThisName /AnotherName (This String)]");
 
-    array->appendString(SkString("Another String"));
+    array->appendByteString(SkString("Another String"));
     assert_emit_eq(reporter, *array,
                    "[42 .5 0 true /ThisName /AnotherName (This String) "
                    "(Another String)]");
@@ -233,11 +252,11 @@ static void TestPDFDict(skiatest::Reporter* reporter) {
     assert_emit_eq(reporter, *dict, "<</n1 24\n/n2 99\n/n3 .5\n/n4 /AName\n"
                    "/n5 /AnotherName>>");
 
-    dict->insertString("n6", "A String");
+    dict->insertTextString("n6", "A String");
     assert_emit_eq(reporter, *dict, "<</n1 24\n/n2 99\n/n3 .5\n/n4 /AName\n"
                    "/n5 /AnotherName\n/n6 (A String)>>");
 
-    dict->insertString("n7", SkString("Another String"));
+    dict->insertByteString("n7", SkString("Another String"));
     assert_emit_eq(reporter, *dict, "<</n1 24\n/n2 99\n/n3 .5\n/n4 /AName\n"
                    "/n5 /AnotherName\n/n6 (A String)\n/n7 (Another String)>>");
 
@@ -254,10 +273,10 @@ DEF_TEST(SkPDF_Primitives, reporter) {
 
 namespace {
 
-class DummyImageFilter : public SkImageFilter_Base {
+class TestImageFilter : public SkImageFilter_Base {
 public:
-    static sk_sp<DummyImageFilter> Make(bool visited = false) {
-        return sk_sp<DummyImageFilter>(new DummyImageFilter(visited));
+    static sk_sp<TestImageFilter> Make(bool visited = false) {
+        return sk_sp<TestImageFilter>(new TestImageFilter(visited));
     }
 
     bool visited() const { return fVisited; }
@@ -270,18 +289,18 @@ protected:
     }
 
 private:
-    SK_FLATTENABLE_HOOKS(DummyImageFilter)
-    DummyImageFilter(bool visited) : INHERITED(nullptr, 0, nullptr), fVisited(visited) {}
+    SK_FLATTENABLE_HOOKS(TestImageFilter)
+    TestImageFilter(bool visited) : INHERITED(nullptr, 0, nullptr), fVisited(visited) {}
 
     mutable bool fVisited;
 
     using INHERITED = SkImageFilter_Base;
 };
 
-sk_sp<SkFlattenable> DummyImageFilter::CreateProc(SkReadBuffer& buffer) {
+sk_sp<SkFlattenable> TestImageFilter::CreateProc(SkReadBuffer& buffer) {
     SK_IMAGEFILTER_UNFLATTEN_COMMON(common, 0);
     bool visited = buffer.readBool();
-    return DummyImageFilter::Make(visited);
+    return TestImageFilter::Make(visited);
 }
 
 }  // namespace
@@ -294,7 +313,7 @@ DEF_TEST(SkPDF_ImageFilter, reporter) {
     auto doc = SkPDF::MakeDocument(&stream);
     SkCanvas* canvas = doc->beginPage(100.0f, 100.0f);
 
-    sk_sp<DummyImageFilter> filter(DummyImageFilter::Make());
+    sk_sp<TestImageFilter> filter(TestImageFilter::Make());
 
     // Filter just created; should be unvisited.
     REPORTER_ASSERT(reporter, !filter->visited());
@@ -386,14 +405,15 @@ DEF_TEST(SkPDF_Primitives_Color, reporter) {
     }
 }
 
-static SkGlyphRun make_run(size_t len, const SkGlyphID* glyphs, SkPoint* pos,
+static sktext::GlyphRun make_run(size_t len, const SkGlyphID* glyphs, SkPoint* pos,
                            const SkFont& font, const uint32_t* clusters,
                            size_t utf8TextByteLength, const char* utf8Text) {
-    return SkGlyphRun(font,
-                      SkSpan<const SkPoint>{pos, len},
-                      SkSpan<const SkGlyphID>{glyphs, len},
-                      SkSpan<const char>{utf8Text, utf8TextByteLength},
-                      SkSpan<const uint32_t>{clusters, len});
+    return sktext::GlyphRun(font,
+                            SkSpan<const SkPoint>{pos, len},
+                            SkSpan<const SkGlyphID>{glyphs, len},
+                            SkSpan<const char>{utf8Text, utf8TextByteLength},
+                            SkSpan<const uint32_t>{clusters, len},
+                            SkSpan<const SkVector>{});
 }
 
 DEF_TEST(SkPDF_Clusterator, reporter) {
@@ -405,7 +425,7 @@ DEF_TEST(SkPDF_Clusterator, reporter) {
         SkPoint pos[len] = {{0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0},
                                   {0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}};
         const char text[] = "abcdefgh";
-        SkGlyphRun run = make_run(len, glyphs, pos, font, clusters, strlen(text), text);
+        sktext::GlyphRun run = make_run(len, glyphs, pos, font, clusters, strlen(text), text);
         SkClusterator clusterator(run);
         SkClusterator::Cluster expectations[] = {
             {&text[3], 1, 0, 1},
@@ -428,7 +448,7 @@ DEF_TEST(SkPDF_Clusterator, reporter) {
         const SkGlyphID glyphs[len] = { 43, 167, 79, 79, 82, };
         SkPoint pos[len] = {{0, 0}, {0, 0}, {0, 0}, {0, 0}, {0, 0}};
         const char text[] = "Ha\xCC\x8A" "llo";
-        SkGlyphRun run = make_run(len, glyphs, pos, font, clusters, strlen(text), text);
+        sktext::GlyphRun run = make_run(len, glyphs, pos, font, clusters, strlen(text), text);
         SkClusterator clusterator(run);
         SkClusterator::Cluster expectations[] = {
             {&text[0], 1, 0, 1},
@@ -453,7 +473,7 @@ DEF_TEST(fuzz875632f0, reporter) {
     SkAutoCanvasRestore autoCanvasRestore(canvas, false);
 
     SkPaint layerPaint({0, 0, 0, 0});
-    layerPaint.setImageFilter(SkDilateImageFilter::Make(536870912, 0, nullptr, nullptr));
+    layerPaint.setImageFilter(SkImageFilters::Dilate(536870912, 0, nullptr, nullptr));
     layerPaint.setBlendMode(SkBlendMode::kClear);
 
     canvas->saveLayer(nullptr, &layerPaint);

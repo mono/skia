@@ -15,9 +15,9 @@
 #include "include/core/SkRect.h"
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkStream.h"
-#include "include/private/SkTHash.h"
 #include "src/core/SkClipStack.h"
 #include "src/core/SkClipStackDevice.h"
+#include "src/core/SkTHash.h"
 #include "src/core/SkTextBlobPriv.h"
 #include "src/pdf/SkKeyedImage.h"
 #include "src/pdf/SkPDFGraphicStackState.h"
@@ -25,7 +25,11 @@
 
 #include <vector>
 
-class SkGlyphRunList;
+namespace sktext {
+class GlyphRun;
+class GlyphRunList;
+}
+
 class SkKeyedImage;
 class SkPDFArray;
 class SkPDFDevice;
@@ -81,10 +85,17 @@ public:
     void drawImageRect(const SkImage*,
                        const SkRect* src,
                        const SkRect& dst,
+                       const SkSamplingOptions&,
                        const SkPaint&,
                        SkCanvas::SrcRectConstraint) override;
-    void drawGlyphRunList(const SkGlyphRunList& glyphRunList) override;
-    void drawVertices(const SkVertices*, SkBlendMode, const SkPaint&) override;
+    void onDrawGlyphRunList(SkCanvas*,
+                            const sktext::GlyphRunList&,
+                            const SkPaint& initialPaint,
+                            const SkPaint& drawingPaint) override;
+    void drawVertices(const SkVertices*, sk_sp<SkBlender>, const SkPaint&, bool) override;
+#ifdef SK_ENABLE_SKSL
+    void drawMesh(const SkMesh&, sk_sp<SkBlender>, const SkPaint&) override;
+#endif
 
     // PDF specific methods.
     void drawSprite(const SkBitmap& bitmap, int x, int y,
@@ -100,8 +111,6 @@ public:
     SkISize size() const { return this->imageInfo().dimensions(); }
     SkIRect bounds() const { return this->imageInfo().bounds(); }
 
-    void DrawGlyphRunAsPath(SkPDFDevice* dev, const SkGlyphRun& glyphRun, SkPoint offset);
-
     const SkMatrix& initialTransform() const { return fInitialTransform; }
 
 protected:
@@ -109,8 +118,9 @@ protected:
 
     void drawAnnotation(const SkRect&, const char key[], SkData* value) override;
 
-    void drawDevice(SkBaseDevice*, const SkPaint&) override;
-    void drawSpecial(SkSpecialImage*, const SkMatrix&, const SkPaint&) override;
+    void drawDevice(SkBaseDevice*, const SkSamplingOptions&, const SkPaint&) override;
+    void drawSpecial(SkSpecialImage*, const SkMatrix&, const SkSamplingOptions&,
+                     const SkPaint&) override;
 
     sk_sp<SkSpecialImage> makeSpecial(const SkBitmap&) override;
     sk_sp<SkSpecialImage> makeSpecial(const SkImage*) override;
@@ -123,10 +133,10 @@ private:
 
     SkMatrix fInitialTransform;
 
-    SkTHashSet<SkPDFIndirectReference> fGraphicStateResources;
-    SkTHashSet<SkPDFIndirectReference> fXObjectResources;
-    SkTHashSet<SkPDFIndirectReference> fShaderResources;
-    SkTHashSet<SkPDFIndirectReference> fFontResources;
+    skia_private::THashSet<SkPDFIndirectReference> fGraphicStateResources;
+    skia_private::THashSet<SkPDFIndirectReference> fXObjectResources;
+    skia_private::THashSet<SkPDFIndirectReference> fShaderResources;
+    skia_private::THashSet<SkPDFIndirectReference> fFontResources;
     int fNodeId;
 
     SkDynamicMemoryWStream fContent;
@@ -160,12 +170,15 @@ private:
     void finishContentEntry(const SkClipStack*, SkBlendMode, SkPDFIndirectReference, SkPath*);
     bool isContentEmpty();
 
-    void internalDrawGlyphRun(const SkGlyphRun& glyphRun, SkPoint offset, const SkPaint& runPaint);
-    void drawGlyphRunAsPath(const SkGlyphRun& glyphRun, SkPoint offset, const SkPaint& runPaint);
+    void internalDrawGlyphRun(
+            const sktext::GlyphRun& glyphRun, SkPoint offset, const SkPaint& runPaint);
+    void drawGlyphRunAsPath(
+            const sktext::GlyphRun& glyphRun, SkPoint offset, const SkPaint& runPaint);
 
     void internalDrawImageRect(SkKeyedImage,
                                const SkRect* src,
                                const SkRect& dst,
+                               const SkSamplingOptions&,
                                const SkPaint&,
                                const SkMatrix& canvasTransformationMatrix);
 

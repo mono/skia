@@ -10,48 +10,37 @@
 #ifdef SK_VULKAN
 
 #include "include/gpu/GrDirectContext.h"
-#include "include/gpu/vk/GrVkExtensions.h"
+#include "include/gpu/vk/VulkanExtensions.h"
 #include "tools/gpu/vk/VkTestUtils.h"
 
 namespace {
-
-#define ACQUIRE_VK_PROC(name, device)                                               \
-    f##name = reinterpret_cast<PFN_vk##name>(getProc("vk" #name, nullptr, device)); \
-    SkASSERT(f##name)
 
 class VkTestContextImpl : public sk_gpu_test::VkTestContext {
 public:
     static VkTestContext* Create(VkTestContext* sharedContext) {
         GrVkBackendContext backendContext;
-        GrVkExtensions* extensions;
+        skgpu::VulkanExtensions* extensions;
         VkPhysicalDeviceFeatures2* features;
         bool ownsContext = true;
         VkDebugReportCallbackEXT debugCallback = VK_NULL_HANDLE;
         PFN_vkDestroyDebugReportCallbackEXT destroyCallback = nullptr;
         if (sharedContext) {
             backendContext = sharedContext->getVkBackendContext();
-            extensions = const_cast<GrVkExtensions*>(sharedContext->getVkExtensions());
+            extensions = const_cast<skgpu::VulkanExtensions*>(sharedContext->getVkExtensions());
             features = const_cast<VkPhysicalDeviceFeatures2*>(sharedContext->getVkFeatures());
             // We always delete the parent context last so make sure the child does not think they
             // own the vulkan context.
             ownsContext = false;
         } else {
             PFN_vkGetInstanceProcAddr instProc;
-            PFN_vkGetDeviceProcAddr devProc;
-            if (!sk_gpu_test::LoadVkLibraryAndGetProcAddrFuncs(&instProc, &devProc)) {
+            if (!sk_gpu_test::LoadVkLibraryAndGetProcAddrFuncs(&instProc)) {
                 return nullptr;
             }
-            auto getProc = [instProc, devProc](const char* proc_name,
-                                               VkInstance instance, VkDevice device) {
-                if (device != VK_NULL_HANDLE) {
-                    return devProc(device, proc_name);
-                }
-                return instProc(instance, proc_name);
-            };
-            extensions = new GrVkExtensions();
+
+            extensions = new skgpu::VulkanExtensions();
             features = new VkPhysicalDeviceFeatures2;
             memset(features, 0, sizeof(VkPhysicalDeviceFeatures2));
-            if (!sk_gpu_test::CreateVkBackendContext(getProc, &backendContext, extensions,
+            if (!sk_gpu_test::CreateVkBackendContext(instProc, &backendContext, extensions,
                                                      features, &debugCallback)) {
                 sk_gpu_test::FreeVulkanFeaturesStructs(features);
                 delete features;
@@ -111,8 +100,10 @@ protected:
     }
 
 private:
-    VkTestContextImpl(const GrVkBackendContext& backendContext, const GrVkExtensions* extensions,
-                      VkPhysicalDeviceFeatures2* features, bool ownsContext,
+    VkTestContextImpl(const GrVkBackendContext& backendContext,
+                      const skgpu::VulkanExtensions* extensions,
+                      VkPhysicalDeviceFeatures2* features,
+                      bool ownsContext,
                       VkDebugReportCallbackEXT debugCallback,
                       PFN_vkDestroyDebugReportCallbackEXT destroyCallback)
             : VkTestContext(backendContext, extensions, features, ownsContext, debugCallback,

@@ -1,11 +1,22 @@
 ---
 # Typical usage is to apply this to the lines you've modified in a local
-# change. Stage your changes with "git add" and then run:
+# change. Make sure to install git-clang-format [1] by adding it to your
+# path and make it executable.
+#
+# Stage your changes with "git add" and then run:
 # $ git clang-format
 # You can optionally use the "--" file filter to restrict formatting to certain
 # files or directories. The tool will display  the list of files that were
 # modified. These have been modified without being staged. You can review the
 # modifications using "git diff".
+#
+# Some clients are running on older versions of clang-format, so please limit
+# flag choices to options supported by clang-format version 10 and below.
+# - XcodeClangFormat: clang-format 10
+# - bin/clang-format: clang-format 11
+# - brew:             clang-format 14
+#
+# [1] https://raw.githubusercontent.com/llvm-mirror/clang/master/tools/clang-format/git-clang-format
 #
 # IF YOU UPDATE THE CPP SECTION ALSO UPDATE THE OBJECTIVE-C SECTION. IF YOU
 # KNOW HOW TO SHARE SETTINGS BETWEEN THE TWO YOU'RE A TRUE HERO.
@@ -29,7 +40,7 @@ AlwaysBreakAfterDefinitionReturnType: None
 AlwaysBreakAfterReturnType: None
 AlwaysBreakBeforeMultilineStrings: true
 AlwaysBreakTemplateDeclarations: false
-BinPackArguments: true
+BinPackArguments: false
 BinPackParameters: false
 BraceWrapping:
   AfterClass:      false
@@ -57,7 +68,7 @@ ContinuationIndentWidth: 8
 Cpp11BracedListStyle: true
 DerivePointerAlignment: false
 DisableFormat:   false
-ExperimentalAutoDetectBinPacking: true
+ExperimentalAutoDetectBinPacking: false
 ForEachMacros:   [ foreach, Q_FOREACH, BOOST_FOREACH ]
 IncludeCategories:
   - Regex:           '^<.*\.h>'
@@ -120,7 +131,7 @@ AlwaysBreakAfterDefinitionReturnType: None
 AlwaysBreakAfterReturnType: None
 AlwaysBreakBeforeMultilineStrings: true
 AlwaysBreakTemplateDeclarations: false
-BinPackArguments: true
+BinPackArguments: false
 BinPackParameters: false
 BraceWrapping:
   AfterClass:      false
@@ -148,7 +159,7 @@ ContinuationIndentWidth: 8
 Cpp11BracedListStyle: true
 DerivePointerAlignment: false
 DisableFormat:   false
-ExperimentalAutoDetectBinPacking: true
+ExperimentalAutoDetectBinPacking: false
 ForEachMacros:   [ foreach, Q_FOREACH, BOOST_FOREACH ]
 IncludeCategories:
   - Regex:           '^<.*\.h>'

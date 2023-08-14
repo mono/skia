@@ -13,14 +13,14 @@
 #include "include/core/SkTypes.h"
 
 class SkDeferredDisplayListPriv;
+class SkPromiseImageTexture;
 
-#if SK_SUPPORT_GPU
+#if defined(SK_GANESH)
 #include "include/gpu/GrRecordingContext.h"
-#include "include/private/SkTArray.h"
+#include "include/private/base/SkTArray.h"
 #include <map>
 class GrRenderTask;
 class GrRenderTargetProxy;
-struct GrCCPerOpsTaskPaths;
 #else
 using GrRenderTargetProxy = SkRefCnt;
 #endif
@@ -37,7 +37,7 @@ public:
         return fCharacterization;
     }
 
-#if SK_SUPPORT_GPU
+#if defined(SK_GANESH)
     /**
      * Iterate through the programs required by the DDL.
      */
@@ -53,7 +53,7 @@ public:
 
     private:
         GrDirectContext*                                 fDContext;
-        const SkTArray<GrRecordingContext::ProgramData>& fProgramData;
+        const skia_private::TArray<GrRecordingContext::ProgramData>& fProgramData;
         int                                              fIndex;
     };
 #endif
@@ -71,7 +71,7 @@ private:
     // texture when the DDL is replayed. It has to be separately ref counted bc the lazy proxy
     // can outlive the DDL.
     class LazyProxyData : public SkRefCnt {
-#if SK_SUPPORT_GPU
+#if defined(SK_GANESH)
     public:
         // Upon being replayed - this field will be filled in (by the DrawingManager) with the
         // proxy backing the destination SkSurface. Note that, since there is no good place to
@@ -88,29 +88,21 @@ private:
                                  sk_sp<GrRenderTargetProxy> fTargetProxy,
                                  sk_sp<LazyProxyData>);
 
-#if SK_SUPPORT_GPU
-    const SkTArray<GrRecordingContext::ProgramData>& programData() const {
+#if defined(SK_GANESH)
+    const skia_private::TArray<GrRecordingContext::ProgramData>& programData() const {
         return fProgramData;
     }
 #endif
 
     const SkSurfaceCharacterization fCharacterization;
 
-#if SK_SUPPORT_GPU
-    // This needs to match the same type in GrCoverageCountingPathRenderer.h
-    using PendingPathsMap = std::map<uint32_t, sk_sp<GrCCPerOpsTaskPaths>>;
-
-    // When programs are stored in 'fProgramData' their memory is actually allocated in
-    // 'fArenas.fRecordTimeAllocator'. In that case that arena must be freed before
-    // 'fPendingPaths' which relies on uniquely holding the atlas proxies used by the
-    // GrCCClipPaths.
-    PendingPathsMap                 fPendingPaths;  // This is the path data from CCPR.
+#if defined(SK_GANESH)
     // These are ordered such that the destructor cleans op tasks up first (which may refer back
     // to the arena and memory pool in their destructors).
     GrRecordingContext::OwnedArenas fArenas;
-    SkTArray<sk_sp<GrRenderTask>>   fRenderTasks;
+    skia_private::TArray<sk_sp<GrRenderTask>>   fRenderTasks;
 
-    SkTArray<GrRecordingContext::ProgramData> fProgramData;
+    skia_private::TArray<GrRecordingContext::ProgramData> fProgramData;
     sk_sp<GrRenderTargetProxy>      fTargetProxy;
     sk_sp<LazyProxyData>            fLazyProxyData;
 #endif

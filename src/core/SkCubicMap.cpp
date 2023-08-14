@@ -6,50 +6,56 @@
  */
 
 #include "include/core/SkCubicMap.h"
-#include "include/private/SkNx.h"
-#include "include/private/SkTPin.h"
-#include "src/core/SkOpts.h"
 
-//#define CUBICMAP_TRACK_MAX_ERROR
+#include "include/private/base/SkFloatingPoint.h"
+#include "include/private/base/SkTPin.h"
+#include "src/base/SkVx.h"
 
-#ifdef CUBICMAP_TRACK_MAX_ERROR
-#include "src/pathops/SkPathOpsCubic.h"
+#include <algorithm>
+
+static float eval_poly(float t, float b) { return b; }
+
+template <typename... Rest>
+static float eval_poly(float t, float m, float b, Rest... rest) {
+    return eval_poly(t, sk_fmaf(m, t, b), rest...);
+}
+
+static float cubic_solver(float A, float B, float C, float D) {
+#ifdef SK_DEBUG
+    auto valid = [](float t) { return t >= 0 && t <= 1; };
 #endif
+
+    auto guess_nice_cubic_root = [](float a, float b, float c, float d) { return -d; };
+    float t = guess_nice_cubic_root(A, B, C, D);
+
+    int iters = 0;
+    const int MAX_ITERS = 8;
+    for (; iters < MAX_ITERS; ++iters) {
+        SkASSERT(valid(t));
+        float f = eval_poly(t, A, B, C, D);        // f   = At^3 + Bt^2 + Ct + D
+        if (sk_float_abs(f) <= 0.00005f) {
+            break;
+        }
+        float fp = eval_poly(t, 3*A, 2*B, C);      // f'  = 3At^2 + 2Bt + C
+        float fpp = eval_poly(t, 3*A + 3*A, 2*B);  // f'' = 6At + 2B
+
+        float numer = 2 * fp * f;
+        float denom = sk_fmaf(2 * fp, fp, -(f * fpp));
+
+        t -= numer / denom;
+    }
+
+    SkASSERT(valid(t));
+    return t;
+}
 
 static inline bool nearly_zero(SkScalar x) {
     SkASSERT(x >= 0);
     return x <= 0.0000000001f;
 }
 
-#ifdef CUBICMAP_TRACK_MAX_ERROR
-    static int max_iters;
-#endif
-
-#ifdef CUBICMAP_TRACK_MAX_ERROR
-static float compute_slow(float A, float B, float C, float x) {
-    double roots[3];
-    SkDEBUGCODE(int count =) SkDCubic::RootsValidT(A, B, C, -x, roots);
-    SkASSERT(count == 1);
-    return (float)roots[0];
-}
-
-static float max_err;
-#endif
-
 static float compute_t_from_x(float A, float B, float C, float x) {
-#ifdef CUBICMAP_TRACK_MAX_ERROR
-    float answer = compute_slow(A, B, C, x);
-#endif
-    float answer2 = SkOpts::cubic_solver(A, B, C, -x);
-
-#ifdef CUBICMAP_TRACK_MAX_ERROR
-    float err = sk_float_abs(answer - answer2);
-    if (err > max_err) {
-        max_err = err;
-        SkDebugf("max error %g\n", max_err);
-    }
-#endif
-    return answer2;
+    return cubic_solver(A, B, C, -x);
 }
 
 float SkCubicMap::computeYFromX(float x) const {
@@ -84,10 +90,10 @@ SkCubicMap::SkCubicMap(SkPoint p1, SkPoint p2) {
     p1.fX = std::min(std::max(p1.fX, 0.0f), 1.0f);
     p2.fX = std::min(std::max(p2.fX, 0.0f), 1.0f);
 
-    Sk2s s1 = Sk2s::Load(&p1) * 3;
-    Sk2s s2 = Sk2s::Load(&p2) * 3;
+    auto s1 = skvx::float2::Load(&p1) * 3;
+    auto s2 = skvx::float2::Load(&p2) * 3;
 
-    (Sk2s(1) + s1 - s2).store(&fCoeff[0]);
+    (1 + s1 - s2).store(&fCoeff[0]);
     (s2 - s1 - s1).store(&fCoeff[1]);
     s1.store(&fCoeff[2]);
 
@@ -100,9 +106,9 @@ SkCubicMap::SkCubicMap(SkPoint p1, SkPoint p2) {
 }
 
 SkPoint SkCubicMap::computeFromT(float t) const {
-    Sk2s a = Sk2s::Load(&fCoeff[0]);
-    Sk2s b = Sk2s::Load(&fCoeff[1]);
-    Sk2s c = Sk2s::Load(&fCoeff[2]);
+    auto a = skvx::float2::Load(&fCoeff[0]);
+    auto b = skvx::float2::Load(&fCoeff[1]);
+    auto c = skvx::float2::Load(&fCoeff[2]);
 
     SkPoint result;
     (((a * t + b) * t + c) * t).store(&result);

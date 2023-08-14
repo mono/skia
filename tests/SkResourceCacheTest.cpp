@@ -5,17 +5,33 @@
  * found in the LICENSE file.
  */
 
+#include "include/core/SkBitmap.h"
 #include "include/core/SkCanvas.h"
-#include "include/core/SkGraphics.h"
-#include "include/core/SkPicture.h"
+#include "include/core/SkColor.h"
+#include "include/core/SkColorSpace.h"
+#include "include/core/SkImage.h"
+#include "include/core/SkImageInfo.h"
+#include "include/core/SkMatrix.h"
 #include "include/core/SkPictureRecorder.h"
+#include "include/core/SkRefCnt.h"
+#include "include/core/SkSamplingOptions.h"
+#include "include/core/SkSize.h"
 #include "include/core/SkSurface.h"
+#include "include/core/SkTypes.h"
+#include "include/private/chromium/SkDiscardableMemory.h"
 #include "src/core/SkBitmapCache.h"
+#include "src/core/SkCachedData.h"
 #include "src/core/SkMipmap.h"
 #include "src/core/SkResourceCache.h"
 #include "src/image/SkImage_Base.h"
 #include "src/lazy/SkDiscardableMemoryPool.h"
 #include "tests/Test.h"
+
+#include <array>
+#include <cstddef>
+#include <cstdint>
+#include <initializer_list>
+#include <memory>
 
 ////////////////////////////////////////////////////////////////////////////////////////
 
@@ -43,7 +59,7 @@ static void test_mipmapcache(skiatest::Reporter* reporter, SkResourceCache* cach
     SkBitmap src;
     src.allocN32Pixels(5, 5);
     src.setImmutable();
-    sk_sp<SkImage> img = SkImage::MakeFromBitmap(src);
+    sk_sp<SkImage> img = src.asImage();
     const auto desc = SkBitmapCacheDesc::Make(img.get());
 
     const SkMipmap* mipmap = SkMipmapCache::FindAndRef(desc, cache);
@@ -85,7 +101,7 @@ static void test_mipmap_notify(skiatest::Reporter* reporter, SkResourceCache* ca
     for (int i = 0; i < N; ++i) {
         src[i].allocN32Pixels(5, 5);
         src[i].setImmutable();
-        img[i] = SkImage::MakeFromBitmap(src[i]);
+        img[i] = src[i].asImage();
         SkMipmapCache::AddAndRef(as_IB(img[i].get()), cache)->unref();
         desc[i] = SkBitmapCacheDesc::Make(img[i].get());
     }
@@ -106,8 +122,6 @@ static void test_mipmap_notify(skiatest::Reporter* reporter, SkResourceCache* ca
         REPORTER_ASSERT(reporter, !mipmap);
     }
 }
-
-#include "src/lazy/SkDiscardableMemoryPool.h"
 
 static SkDiscardableMemoryPool* gPool = nullptr;
 static int gFactoryCalls = 0;
@@ -142,7 +156,7 @@ DEF_TEST(BitmapCache_discarded_bitmap, reporter) {
 
 static void test_discarded_image(skiatest::Reporter* reporter, const SkMatrix& transform,
                                  sk_sp<SkImage> (*buildImage)()) {
-    auto surface(SkSurface::MakeRasterN32Premul(10, 10));
+    auto surface(SkSurfaces::Raster(SkImageInfo::MakeN32Premul(10, 10)));
     SkCanvas* canvas = surface->getCanvas();
 
     // SkBitmapCache is global, so other threads could be evicting our bitmaps.  Loop a few times
@@ -153,14 +167,11 @@ static void test_discarded_image(skiatest::Reporter* reporter, const SkMatrix& t
 
         sk_sp<SkImage> image(buildImage());
 
-        // always use high quality to ensure caching when scaled
-        SkPaint paint;
-        paint.setFilterQuality(kHigh_SkFilterQuality);
-
         // draw the image (with a transform, to tickle different code paths) to ensure
         // any associated resources get cached
         canvas->concat(transform);
-        canvas->drawImage(image, 0, 0, &paint);
+        // always use high quality to ensure caching when scaled
+        canvas->drawImage(image, 0, 0, SkSamplingOptions({1.0f/3, 1.0f/3}));
 
         const auto desc = SkBitmapCacheDesc::Make(image.get());
 
@@ -189,9 +200,9 @@ DEF_TEST(BitmapCache_discarded_image, reporter) {
         SkMatrix::Scale(1.7f, 0.5f),
     };
 
-    for (size_t i = 0; i < SK_ARRAY_COUNT(xforms); ++i) {
+    for (size_t i = 0; i < std::size(xforms); ++i) {
         test_discarded_image(reporter, xforms[i], []() {
-            auto surface(SkSurface::MakeRasterN32Premul(10, 10));
+            auto surface(SkSurfaces::Raster(SkImageInfo::MakeN32Premul(10, 10)));
             surface->getCanvas()->clear(SK_ColorCYAN);
             return surface->makeImageSnapshot();
         });
@@ -200,10 +211,12 @@ DEF_TEST(BitmapCache_discarded_image, reporter) {
             SkPictureRecorder recorder;
             SkCanvas* canvas = recorder.beginRecording(10, 10);
             canvas->clear(SK_ColorCYAN);
-            return SkImage::MakeFromPicture(recorder.finishRecordingAsPicture(),
-                                            SkISize::Make(10, 10), nullptr, nullptr,
-                                            SkImage::BitDepth::kU8,
-                                            SkColorSpace::MakeSRGB());
+            return SkImages::DeferredFromPicture(recorder.finishRecordingAsPicture(),
+                                                 SkISize::Make(10, 10),
+                                                 nullptr,
+                                                 nullptr,
+                                                 SkImages::BitDepth::kU8,
+                                                 SkColorSpace::MakeSRGB());
         });
     }
 }

@@ -4,18 +4,24 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
-#include "src/pathops/SkIntersections.h"
-#include "src/pathops/SkPathOpsRect.h"
+#include "include/core/SkTypes.h"
+#include "include/private/base/SkDebug.h"
+#include "include/private/base/SkMath.h"
+#include "src/pathops/SkPathOpsQuad.h"
 #include "src/pathops/SkReduceOrder.h"
 #include "tests/PathOpsQuadIntersectionTestData.h"
+#include "tests/PathOpsTestCommon.h"
 #include "tests/Test.h"
+
+#include <array>
+#include <cstddef>
 
 static const QuadPts testSet[] = {
     {{{1, 1}, {2, 2}, {1, 1.000003}}},
     {{{1, 0}, {2, 6}, {3, 0}}}
 };
 
-static const size_t testSetCount = SK_ARRAY_COUNT(testSet);
+static const size_t testSetCount = std::size(testSet);
 
 static void oneOffTest(skiatest::Reporter* reporter) {
     for (size_t index = 0; index < testSetCount; ++index) {

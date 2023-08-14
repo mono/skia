@@ -1,7 +1,7 @@
 [
   {
     "cmd": [
-      "vpython",
+      "vpython3",
       "-u",
       "RECIPE_MODULE[recipe_engine::file]/resources/fileutil.py",
       "--json-output",
@@ -18,7 +18,7 @@
   },
   {
     "cmd": [
-      "vpython",
+      "vpython3",
       "-u",
       "RECIPE_MODULE[recipe_engine::file]/resources/fileutil.py",
       "--json-output",
@@ -31,7 +31,7 @@
   },
   {
     "cmd": [
-      "vpython",
+      "vpython3",
       "-u",
       "RECIPE_MODULE[recipe_engine::file]/resources/fileutil.py",
       "--json-output",
@@ -44,7 +44,7 @@
   },
   {
     "cmd": [
-      "vpython",
+      "vpython3",
       "-u",
       "RECIPE_MODULE[recipe_engine::file]/resources/fileutil.py",
       "--json-output",
@@ -59,7 +59,7 @@
   },
   {
     "cmd": [
-      "vpython",
+      "vpython3",
       "-u",
       "RECIPE_MODULE[recipe_engine::file]/resources/fileutil.py",
       "--json-output",
@@ -72,7 +72,7 @@
   },
   {
     "cmd": [
-      "vpython",
+      "vpython3",
       "-u",
       "RECIPE_MODULE[recipe_engine::file]/resources/fileutil.py",
       "--json-output",
@@ -87,7 +87,7 @@
   },
   {
     "cmd": [
-      "vpython",
+      "vpython3",
       "-u",
       "RECIPE_MODULE[recipe_engine::file]/resources/fileutil.py",
       "--json-output",
@@ -105,7 +105,7 @@
   },
   {
     "cmd": [
-      "vpython",
+      "vpython3",
       "-u",
       "RECIPE_MODULE[recipe_engine::file]/resources/fileutil.py",
       "--json-output",
@@ -123,7 +123,7 @@
   },
   {
     "cmd": [
-      "vpython",
+      "vpython3",
       "-u",
       "RECIPE_MODULE[recipe_engine::file]/resources/fileutil.py",
       "--json-output",
@@ -141,7 +141,7 @@
   },
   {
     "cmd": [
-      "vpython",
+      "vpython3",
       "-u",
       "RECIPE_MODULE[recipe_engine::file]/resources/fileutil.py",
       "--json-output",
@@ -159,7 +159,7 @@
   },
   {
     "cmd": [
-      "vpython",
+      "vpython3",
       "-u",
       "RECIPE_MODULE[recipe_engine::file]/resources/fileutil.py",
       "--json-output",
@@ -177,7 +177,7 @@
   },
   {
     "cmd": [
-      "vpython",
+      "vpython3",
       "-u",
       "RECIPE_MODULE[recipe_engine::file]/resources/fileutil.py",
       "--json-output",
@@ -196,7 +196,6 @@
   {
     "cmd": [
       "python",
-      "-u",
       "RECIPE_MODULE[skia::flavor]/resources/symbolize_stack_trace.py",
       "[START_DIR]",
       "[START_DIR]/build/dm",
@@ -205,8 +204,9 @@
     "cwd": "[START_DIR]/skia",
     "env": {
       "ASAN_OPTIONS": "symbolize=1 detect_leaks=1 fast_unwind_on_malloc=0",
+      "ASAN_SYMBOLIZER_PATH": "[START_DIR]/clang_linux/bin/llvm-symbolizer",
       "CHROME_HEADLESS": "1",
-      "LD_LIBRARY_PATH": "[START_DIR]/mesa_intel_driver_linux:[START_DIR]/linux_vulkan_sdk/lib:[START_DIR]/clang_linux/lib",
+      "LD_LIBRARY_PATH": "[START_DIR]/mesa_intel_driver_linux:[START_DIR]/linux_vulkan_sdk/lib:[START_DIR]/clang_linux/lib/x86_64-unknown-linux-gnu",
       "LIBGL_DRIVERS_PATH": "[START_DIR]/mesa_intel_driver_linux",
       "LSAN_OPTIONS": "symbolize=1 print_suppressions=1 fast_unwind_on_malloc=0",
       "PATH": "<PATH>:RECIPE_REPO[depot_tools]:[START_DIR]/linux_vulkan_sdk/bin:[START_DIR]/clang_linux/bin",

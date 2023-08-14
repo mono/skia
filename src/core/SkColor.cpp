@@ -6,9 +6,13 @@
  */
 
 #include "include/core/SkColor.h"
+#include "include/core/SkColorPriv.h"
 #include "include/private/SkColorData.h"
-#include "include/private/SkFixed.h"
-#include "include/private/SkTPin.h"
+#include "include/private/base/SkTPin.h"
+#include "src/base/SkVx.h"
+#include "src/core/SkSwizzlePriv.h"
+
+#include <algorithm>
 
 SkPMColor SkPreMultiplyARGB(U8CPU a, U8CPU r, U8CPU g, U8CPU b) {
     return SkPremultiplyARGBInline(a, r, g, b);
@@ -115,12 +119,12 @@ SkColor4f SkColor4f::FromColor(SkColor bgra) {
 
 template <>
 SkColor SkColor4f::toSkColor() const {
-    return Sk4f_toL32(swizzle_rb(Sk4f::Load(this->vec())));
+    return Sk4f_toL32(swizzle_rb(skvx::float4::Load(this->vec())));
 }
 
 template <>
 uint32_t SkColor4f::toBytes_RGBA() const {
-    return Sk4f_toL32(Sk4f::Load(this->vec()));
+    return Sk4f_toL32(skvx::float4::Load(this->vec()));
 }
 
 template <>
@@ -139,7 +143,7 @@ SkPMColor4f SkPMColor4f::FromPMColor(SkPMColor c) {
 
 template <>
 uint32_t SkPMColor4f::toBytes_RGBA() const {
-    return Sk4f_toL32(Sk4f::Load(this->vec()));
+    return Sk4f_toL32(skvx::float4::Load(this->vec()));
 }
 
 template <>

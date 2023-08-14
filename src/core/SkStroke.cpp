@@ -7,8 +7,8 @@
 
 #include "src/core/SkStrokerPriv.h"
 
-#include "include/private/SkMacros.h"
-#include "include/private/SkTo.h"
+#include "include/private/base/SkMacros.h"
+#include "include/private/base/SkTo.h"
 #include "src/core/SkGeometry.h"
 #include "src/core/SkPathPriv.h"
 #include "src/core/SkPointPriv.h"
@@ -33,11 +33,11 @@ static const int kRecursiveLimits[] = { 5*3, 24, 11*3, 11*3 };
 
 static_assert(0 == kTangent_RecursiveLimit, "cubic_stroke_relies_on_tangent_equalling_zero");
 static_assert(1 == kCubic_RecursiveLimit, "cubic_stroke_relies_on_cubic_equalling_one");
-static_assert(SK_ARRAY_COUNT(kRecursiveLimits) == kQuad_RecursiveLimit + 1,
+static_assert(std::size(kRecursiveLimits) == kQuad_RecursiveLimit + 1,
               "recursive_limits_mismatch");
 
 #if defined SK_DEBUG && QUAD_STROKE_APPROX_EXTENDED_DEBUGGING
-    int gMaxRecursion[SK_ARRAY_COUNT(kRecursiveLimits)] = { 0 };
+    int gMaxRecursion[std::size(kRecursiveLimits)] = { 0 };
 #endif
 #ifndef DEBUG_QUAD_STROKER
     #define DEBUG_QUAD_STROKER 0
@@ -63,7 +63,7 @@ static_assert(SK_ARRAY_COUNT(kRecursiveLimits) == kQuad_RecursiveLimit + 1,
 #if DEBUG_CUBIC_RECURSION_DEPTHS
     /* Prints a histogram of recursion depths at process termination. */
     static struct DepthHistogram {
-        static constexpr int kMaxDepth = 75;
+        inline static constexpr int kMaxDepth = 75;
         int fCubicDepths[kMaxDepth + 1];
 
         DepthHistogram() { memset(fCubicDepths, 0, sizeof(fCubicDepths)); }
@@ -1470,7 +1470,6 @@ void SkStroke::strokePath(const SkPath& src, SkPath* dst) const {
             case SkPath::kConic_Verb: {
                 stroker.conicTo(pts[1], pts[2], iter.conicWeight());
                 lastSegment = SkPath::kConic_Verb;
-                break;
             } break;
             case SkPath::kCubic_Verb:
                 stroker.cubicTo(pts[1], pts[2], pts[3]);

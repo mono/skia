@@ -5,44 +5,54 @@
  * found in the LICENSE file.
  */
 
+#include "include/core/SkAlphaType.h"
+#include "include/core/SkColorType.h"
 #include "include/core/SkImageInfo.h"
 #include "include/core/SkPoint.h"
 #include "include/core/SkRect.h"
-#include "include/core/SkRefCnt.h"
 #include "include/core/SkTypes.h"
+#include "include/gpu/GpuTypes.h"
+#include "include/gpu/GrBackendSurface.h"
 #include "include/gpu/GrDirectContext.h"
 #include "include/gpu/GrTypes.h"
-#include "include/private/GrTypesPriv.h"
-#include "include/private/SkTemplates.h"
-#include "src/core/SkUtils.h"
-#include "src/gpu/GrCaps.h"
-#include "src/gpu/GrDirectContextPriv.h"
-#include "src/gpu/GrImageInfo.h"
-#include "src/gpu/GrRenderTargetContext.h"
-#include "src/gpu/GrSurfaceContext.h"
-#include "src/gpu/GrSurfaceProxy.h"
-#include "src/gpu/GrTextureProxy.h"
-#include "src/gpu/SkGr.h"
+#include "include/private/base/SkTemplates.h"
+#include "src/core/SkOpts.h"
+#include "src/gpu/ganesh/GrDirectContextPriv.h"
+#include "src/gpu/ganesh/GrImageInfo.h"
+#include "src/gpu/ganesh/GrPixmap.h"
+#include "src/gpu/ganesh/GrSurfaceProxyView.h"
+#include "src/gpu/ganesh/SurfaceContext.h"
+#include "src/gpu/ganesh/SurfaceFillContext.h"
+#include "tests/CtsEnforcement.h"
 #include "tests/Test.h"
-#include "tools/gpu/GrContextFactory.h"
 #include "tools/gpu/ProxyUtils.h"
 
+#include <cstddef>
+#include <cstdint>
 #include <initializer_list>
+#include <memory>
 #include <utility>
 
-DEF_GPUTEST_FOR_RENDERING_CONTEXTS(CopySurface, reporter, ctxInfo) {
+using namespace skia_private;
+
+struct GrContextOptions;
+
+DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(CopySurface,
+                                       reporter,
+                                       ctxInfo,
+                                       CtsEnforcement::kApiLevel_T) {
     auto dContext = ctxInfo.directContext();
 
     static const int kW = 10;
     static const int kH = 10;
     static const size_t kRowBytes = sizeof(uint32_t) * kW;
 
-    SkAutoTMalloc<uint32_t> srcPixels(kW * kH);
+    AutoTMalloc<uint32_t> srcPixels(kW * kH);
     for (int i = 0; i < kW * kH; ++i) {
         srcPixels.get()[i] = i;
     }
 
-    SkAutoTMalloc<uint32_t> dstPixels(kW * kH);
+    AutoTMalloc<uint32_t> dstPixels(kW * kH);
     for (int i = 0; i < kW * kH; ++i) {
         dstPixels.get()[i] = ~i;
     }
@@ -69,7 +79,7 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(CopySurface, reporter, ctxInfo) {
         SkImageInfo::Make(kW, kH, kBGRA_8888_SkColorType, kPremul_SkAlphaType)
     };
 
-    SkAutoTMalloc<uint32_t> read(kW * kH);
+    AutoTMalloc<uint32_t> read(kW * kH);
 
     for (auto sOrigin : {kBottomLeft_GrSurfaceOrigin, kTopLeft_GrSurfaceOrigin}) {
         for (auto dOrigin : {kBottomLeft_GrSurfaceOrigin, kTopLeft_GrSurfaceOrigin}) {
@@ -78,12 +88,12 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(CopySurface, reporter, ctxInfo) {
                     for (const SkIRect& srcRect : kSrcRects) {
                         for (const SkIPoint& dstPoint : kDstPoints) {
                             for (const SkImageInfo& ii: kImageInfos) {
+                                GrCPixmap srcPM(ii, srcPixels.get(), kRowBytes);
+                                GrPixmap  dstPM(ii, dstPixels.get(), kRowBytes);
                                 auto srcView = sk_gpu_test::MakeTextureProxyViewFromData(
-                                        dContext, sRenderable, sOrigin, ii, srcPixels.get(),
-                                        kRowBytes);
+                                        dContext, sRenderable, sOrigin, srcPM);
                                 auto dstView = sk_gpu_test::MakeTextureProxyViewFromData(
-                                        dContext, dRenderable, dOrigin, ii, dstPixels.get(),
-                                        kRowBytes);
+                                        dContext, dRenderable, dOrigin, dstPM);
 
                                 // Should always work if the color type is RGBA, but may not work
                                 // for BGRA
@@ -105,20 +115,17 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(CopySurface, reporter, ctxInfo) {
                                     }
                                 }
 
-                                GrColorType grColorType = SkColorTypeToGrColorType(ii.colorType());
-                                auto dstContext = GrSurfaceContext::Make(dContext,
-                                                                         std::move(dstView),
-                                                                         grColorType,
-                                                                         ii.alphaType(), nullptr);
+                                auto dstContext = dContext->priv().makeSC(std::move(dstView),
+                                                                          ii.colorInfo());
 
                                 bool result = false;
                                 if (sOrigin == dOrigin) {
-                                    result = dstContext->testCopy(srcView.proxy(),
+                                    result = dstContext->testCopy(srcView.refProxy(),
                                                                   srcRect,
                                                                   dstPoint);
                                 } else if (dRenderable == GrRenderable::kYes) {
-                                    SkASSERT(dstContext->asRenderTargetContext());
-                                    result = dstContext->asRenderTargetContext()->blitTexture(
+                                    SkASSERT(dstContext->asFillContext());
+                                    result = dstContext->asFillContext()->blitTexture(
                                             std::move(srcView), srcRect, dstPoint);
                                 }
 
@@ -163,9 +170,9 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(CopySurface, reporter, ctxInfo) {
                                     continue;
                                 }
 
-                                sk_memset32(read.get(), 0, kW * kH);
-                                if (!dstContext->readPixels(
-                                        dContext, ii, read.get(), kRowBytes, {0, 0})) {
+                                SkOpts::memset32(read.get(), 0, kW * kH);
+                                GrPixmap readPM(ii, read.get(), kRowBytes);
+                                if (!dstContext->readPixels(dContext, readPM, {0, 0})) {
                                     ERRORF(reporter, "Error calling readPixels");
                                     continue;
                                 }

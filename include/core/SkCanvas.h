@@ -12,6 +12,7 @@
 #include "include/core/SkClipOp.h"
 #include "include/core/SkColor.h"
 #include "include/core/SkFontTypes.h"
+#include "include/core/SkImageFilter.h"
 #include "include/core/SkImageInfo.h"
 #include "include/core/SkM44.h"
 #include "include/core/SkMatrix.h"
@@ -20,41 +21,67 @@
 #include "include/core/SkRasterHandleAllocator.h"
 #include "include/core/SkRect.h"
 #include "include/core/SkRefCnt.h"
+#include "include/core/SkSamplingOptions.h"
 #include "include/core/SkScalar.h"
 #include "include/core/SkSize.h"
 #include "include/core/SkString.h"
 #include "include/core/SkSurfaceProps.h"
 #include "include/core/SkTypes.h"
-#include "include/private/SkDeque.h"
-#include "include/private/SkMacros.h"
+#include "include/private/base/SkCPUTypes.h"
+#include "include/private/base/SkDeque.h"
 
+#include <cstdint>
 #include <cstring>
 #include <memory>
-#include <vector>
+#include <optional>
 
+#ifndef SK_SUPPORT_LEGACY_GETTOTALMATRIX
+#define SK_SUPPORT_LEGACY_GETTOTALMATRIX
+#endif
+
+namespace sktext {
+class GlyphRunBuilder;
+class GlyphRunList;
+}
+
+class AutoLayerForImageFilter;
 class GrRecordingContext;
-class GrRenderTargetContext;
+
 class SkBaseDevice;
 class SkBitmap;
+class SkBlender;
 class SkData;
 class SkDrawable;
-struct SkDrawShadowRec;
 class SkFont;
-class SkGlyphRunBuilder;
 class SkImage;
-class SkImageFilter;
-class SkMarkerStack;
+class SkMesh;
 class SkPaintFilterCanvas;
 class SkPath;
 class SkPicture;
 class SkPixmap;
-class SkRegion;
 class SkRRect;
-struct SkRSXform;
+class SkRegion;
+class SkShader;
+class SkSpecialImage;
 class SkSurface;
 class SkSurface_Base;
 class SkTextBlob;
 class SkVertices;
+struct SkDrawShadowRec;
+struct SkRSXform;
+
+namespace skgpu::graphite { class Recorder; }
+namespace sktext::gpu { class Slug; }
+namespace SkRecords { class Draw; }
+
+#if defined(SK_BUILD_FOR_ANDROID_FRAMEWORK) && defined(SK_GANESH)
+class GrBackendRenderTarget;
+#endif
+
+// TODO:
+// This is not ideal but Chrome is depending on a forward decl of GrSlug here.
+// It should be removed once Chrome has migrated to sktext::gpu::Slug.
+using GrSlug = sktext::gpu::Slug;
 
 /** \class SkCanvas
     SkCanvas provides an interface for drawing, and how the drawing is clipped and transformed.
@@ -79,10 +106,6 @@ class SkVertices;
     This approach may be deprecated in the future.
 */
 class SK_API SkCanvas {
-    enum PrivateSaveLayerFlags {
-        kDontClipToLayer_PrivateSaveLayerFlag   = 1U << 31,
-    };
-
 public:
 
     /** Allocates raster SkCanvas that will draw directly into pixels.
@@ -246,14 +269,33 @@ public:
         @param props  storage for writable SkSurfaceProps
         @return       true if SkSurfaceProps was copied
 
+        DEPRECATED: Replace usage with getBaseProps() or getTopProps()
+
         example: https://fiddle.skia.org/c/@Canvas_getProps
     */
     bool getProps(SkSurfaceProps* props) const;
+
+    /** Returns the SkSurfaceProps associated with the canvas (i.e., at the base of the layer
+        stack).
+
+        @return  base SkSurfaceProps
+    */
+    SkSurfaceProps getBaseProps() const;
+
+    /** Returns the SkSurfaceProps associated with the canvas that are currently active (i.e., at
+        the top of the layer stack). This can differ from getBaseProps depending on the flags
+        passed to saveLayer (see SaveLayerFlagsSet).
+
+        @return  SkSurfaceProps active in the current/top layer
+    */
+    SkSurfaceProps getTopProps() const;
 
     /** Triggers the immediate execution of all pending draw operations.
         If SkCanvas is associated with GPU surface, resolves all pending GPU operations.
         If SkCanvas is associated with raster surface, has no effect; raster draw
         operations are never deferred.
+
+        DEPRECATED: Replace usage with GrDirectContext::flush()
     */
     void flush();
 
@@ -288,6 +330,12 @@ public:
         example: https://fiddle.skia.org/c/@Canvas_recordingContext
      */
     virtual GrRecordingContext* recordingContext();
+
+    /** Returns Recorder for the GPU surface associated with SkCanvas.
+
+        @return  Recorder, if available; nullptr otherwise
+     */
+    virtual skgpu::graphite::Recorder* recorder();
 
     /** Sometimes a canvas is owned by a surface. If it is, getSurface() will return a bare
      *  pointer to that surface, else this will return nullptr.
@@ -549,14 +597,14 @@ public:
     */
     int save();
 
-    /** Saves SkMatrix and clip, and allocates a SkBitmap for subsequent drawing.
-        Calling restore() discards changes to SkMatrix and clip, and draws the SkBitmap.
+    /** Saves SkMatrix and clip, and allocates a SkSurface for subsequent drawing.
+        Calling restore() discards changes to SkMatrix and clip, and draws the SkSurface.
 
         SkMatrix may be changed by translate(), scale(), rotate(), skew(), concat(),
         setMatrix(), and resetMatrix(). Clip may be changed by clipRect(), clipRRect(),
         clipPath(), clipRegion().
 
-        SkRect bounds suggests but does not define the SkBitmap size. To clip drawing to
+        SkRect bounds suggests but does not define the SkSurface size. To clip drawing to
         a specific rectangle, use clipRect().
 
         Optional SkPaint paint applies alpha, SkColorFilter, SkImageFilter, and
@@ -573,8 +621,8 @@ public:
     */
     int saveLayer(const SkRect* bounds, const SkPaint* paint);
 
-    /** Saves SkMatrix and clip, and allocates a SkBitmap for subsequent drawing.
-        Calling restore() discards changes to SkMatrix and clip, and draws the SkBitmap.
+    /** Saves SkMatrix and clip, and allocates a SkSurface for subsequent drawing.
+        Calling restore() discards changes to SkMatrix and clip, and draws the SkSurface.
 
         SkMatrix may be changed by translate(), scale(), rotate(), skew(), concat(),
         setMatrix(), and resetMatrix(). Clip may be changed by clipRect(), clipRRect(),
@@ -596,7 +644,7 @@ public:
         return this->saveLayer(&bounds, paint);
     }
 
-    /** Saves SkMatrix and clip, and allocates SkBitmap for subsequent drawing.
+    /** Saves SkMatrix and clip, and allocates SkSurface for subsequent drawing.
 
         Calling restore() discards changes to SkMatrix and clip,
         and blends layer with alpha opacity onto prior layer.
@@ -608,7 +656,7 @@ public:
         SkRect bounds suggests but does not define layer size. To clip drawing to
         a specific rectangle, use clipRect().
 
-        alpha of zero is fully transparent, 255 is fully opaque.
+        alpha of zero is fully transparent, 1.0f is fully opaque.
 
         Call restoreToCount() with returned value to restore this and subsequent saves.
 
@@ -618,7 +666,11 @@ public:
 
         example: https://fiddle.skia.org/c/@Canvas_saveLayerAlpha
     */
-    int saveLayerAlpha(const SkRect* bounds, U8CPU alpha);
+    int saveLayerAlphaf(const SkRect* bounds, float alpha);
+    // Helper that accepts an int between 0 and 255, and divides it by 255.0
+    int saveLayerAlpha(const SkRect* bounds, U8CPU alpha) {
+        return this->saveLayerAlphaf(bounds, alpha * (1.0f / 255));
+    }
 
     /** \enum SkCanvas::SaveLayerFlagsSet
         SaveLayerFlags provides options that may be used in any combination in SaveLayerRec,
@@ -628,14 +680,8 @@ public:
     enum SaveLayerFlagsSet {
         kPreserveLCDText_SaveLayerFlag  = 1 << 1,
         kInitWithPrevious_SaveLayerFlag = 1 << 2, //!< initializes with previous contents
-        kMaskAgainstCoverage_EXPERIMENTAL_DONT_USE_SaveLayerFlag =
-                                          1 << 3, //!< experimental: do not use
         // instead of matching previous layer's colortype, use F16
         kF16ColorType                   = 1 << 4,
-#ifdef SK_SUPPORT_LEGACY_CLIPTOLAYERFLAG
-        kDontClipToLayer_Legacy_SaveLayerFlag =
-           kDontClipToLayer_PrivateSaveLayerFlag, //!< deprecated
-#endif
     };
 
     typedef uint32_t SaveLayerFlags;
@@ -644,7 +690,6 @@ public:
         SaveLayerRec contains the state used to create the layer.
     */
     struct SaveLayerRec {
-
         /** Sets fBounds, fPaint, and fBackdrop to nullptr. Clears fSaveLayerFlags.
 
             @return  empty SaveLayerRec
@@ -659,10 +704,7 @@ public:
             @return                SaveLayerRec with empty fBackdrop
         */
         SaveLayerRec(const SkRect* bounds, const SkPaint* paint, SaveLayerFlags saveLayerFlags = 0)
-            : fBounds(bounds)
-            , fPaint(paint)
-            , fSaveLayerFlags(saveLayerFlags)
-        {}
+            : SaveLayerRec(bounds, paint, nullptr, 1.f, saveLayerFlags) {}
 
         /** Sets fBounds, fPaint, fBackdrop, and fSaveLayerFlags.
 
@@ -678,11 +720,7 @@ public:
         */
         SaveLayerRec(const SkRect* bounds, const SkPaint* paint, const SkImageFilter* backdrop,
                      SaveLayerFlags saveLayerFlags)
-            : fBounds(bounds)
-            , fPaint(paint)
-            , fBackdrop(backdrop)
-            , fSaveLayerFlags(saveLayerFlags)
-        {}
+            : SaveLayerRec(bounds, paint, backdrop, 1.f, saveLayerFlags) {}
 
         /** hints at layer size limit */
         const SkRect*        fBounds         = nullptr;
@@ -700,12 +738,28 @@ public:
 
         /** preserves LCD text, creates with prior layer contents */
         SaveLayerFlags       fSaveLayerFlags = 0;
+
+    private:
+        friend class SkCanvas;
+        friend class SkCanvasPriv;
+
+        SaveLayerRec(const SkRect* bounds, const SkPaint* paint, const SkImageFilter* backdrop,
+                     SkScalar backdropScale, SaveLayerFlags saveLayerFlags)
+            : fBounds(bounds)
+            , fPaint(paint)
+            , fBackdrop(backdrop)
+            , fSaveLayerFlags(saveLayerFlags)
+            , fExperimentalBackdropScale(backdropScale) {}
+
+        // Relative scale factor that the image content used to initialize the layer when the
+        // kInitFromPrevious flag or a backdrop filter is used.
+        SkScalar             fExperimentalBackdropScale = 1.f;
     };
 
-    /** Saves SkMatrix and clip, and allocates SkBitmap for subsequent drawing.
+    /** Saves SkMatrix and clip, and allocates SkSurface for subsequent drawing.
 
         Calling restore() discards changes to SkMatrix and clip,
-        and blends SkBitmap with alpha opacity onto the prior layer.
+        and blends SkSurface with alpha opacity onto the prior layer.
 
         SkMatrix may be changed by translate(), scale(), rotate(), skew(), concat(),
         setMatrix(), and resetMatrix(). Clip may be changed by clipRect(), clipRRect(),
@@ -845,20 +899,6 @@ public:
     void concat(const SkMatrix& matrix);
     void concat(const SkM44&);
 
-    /**
-     *  Record a marker (provided by caller) for the current CTM. This does not change anything
-     *  about the ctm or clip, but does "name" this matrix value, so it can be referenced by
-     *  custom effects (who access it by specifying the same name).
-     *
-     *  Within a save frame, marking with the same name more than once just replaces the previous
-     *  value. However, between save frames, marking with the same name does not lose the marker
-     *  in the previous save frame. It is "visible" when the current save() is balanced with
-     *  a restore().
-     */
-    void markCTM(const char* name);
-
-    bool findMarkedCTM(const char* name, SkM44*) const;
-
     /** Replaces SkMatrix with matrix.
         Unlike concat(), any prior matrix state is overwritten.
 
@@ -866,6 +906,9 @@ public:
 
         example: https://fiddle.skia.org/c/@Canvas_setMatrix
     */
+    void setMatrix(const SkM44& matrix);
+
+    // DEPRECATED -- use SkM44 version
     void setMatrix(const SkMatrix& matrix);
 
     /** Sets SkMatrix to the identity matrix.
@@ -908,6 +951,10 @@ public:
     */
     void clipRect(const SkRect& rect, bool doAntiAlias = false) {
         this->clipRect(rect, SkClipOp::kIntersect, doAntiAlias);
+    }
+
+    void clipIRect(const SkIRect& irect, SkClipOp op = SkClipOp::kIntersect) {
+        this->clipRect(SkRect::Make(irect), op, false);
     }
 
     /** Sets the maximum clip rectangle, which can be set by clipRect(), clipRRect() and
@@ -1422,222 +1469,42 @@ public:
     */
     void drawPath(const SkPath& path, const SkPaint& paint);
 
-    /** Draws SkImage image, with its top-left corner at (left, top),
-        using clip, SkMatrix, and optional SkPaint paint.
-
-        This is equivalent to drawImageRect() using a dst rect at (x,y) with the
-        same width and height of the image.
-
-        @param image  uncompressed rectangular map of pixels
-        @param left   left side of image
-        @param top    top side of image
-        @param paint  SkPaint containing SkBlendMode, SkColorFilter, SkImageFilter,
-                      and so on; or nullptr
-    */
-    void drawImage(const SkImage* image, SkScalar left, SkScalar top,
-                   const SkPaint* paint = nullptr);
-
-    /** Draws SkImage image, with its top-left corner at (left, top),
-        using clip, SkMatrix, and optional SkPaint paint.
-
-        This is equivalent to drawImageRect() using a dst rect at (x,y) with the
-        same width and height of the image.
-
-        @param image  uncompressed rectangular map of pixels
-        @param left   left side of image
-        @param top    pop side of image
-        @param paint  SkPaint containing SkBlendMode, SkColorFilter, SkImageFilter,
-                      and so on; or nullptr
-    */
-    void drawImage(const sk_sp<SkImage>& image, SkScalar left, SkScalar top,
-                   const SkPaint* paint = nullptr) {
-        this->drawImage(image.get(), left, top, paint);
+    void drawImage(const SkImage* image, SkScalar left, SkScalar top) {
+        this->drawImage(image, left, top, SkSamplingOptions(), nullptr);
+    }
+    void drawImage(const sk_sp<SkImage>& image, SkScalar left, SkScalar top) {
+        this->drawImage(image.get(), left, top, SkSamplingOptions(), nullptr);
     }
 
     /** \enum SkCanvas::SrcRectConstraint
         SrcRectConstraint controls the behavior at the edge of source SkRect,
-        provided to drawImageRect(), trading off speed for precision.
-
-        SkFilterQuality in SkPaint may sample multiple pixels in the image. Source SkRect
-        restricts the bounds of pixels that may be read. SkFilterQuality may slow down if
-        it cannot read outside the bounds, when sampling near the edge of source SkRect.
-        SrcRectConstraint specifies whether an SkImageFilter is allowed to read pixels
-        outside source SkRect.
+        provided to drawImageRect() when there is any filtering. If kStrict is set,
+        then extra code is used to ensure it never samples outside of the src-rect.
+        kStrict_SrcRectConstraint disables the use of mipmaps and anisotropic filtering.
     */
     enum SrcRectConstraint {
         kStrict_SrcRectConstraint, //!< sample only inside bounds; slower
         kFast_SrcRectConstraint,   //!< sample outside bounds; faster
     };
 
-    /** Draws SkRect src of SkImage image, scaled and translated to fill SkRect dst.
-        Additionally transform draw using clip, SkMatrix, and optional SkPaint paint.
-
-        If SkPaint paint is supplied, apply SkColorFilter, alpha, SkImageFilter, and
-        SkBlendMode. If image is kAlpha_8_SkColorType, apply SkShader.
-        If paint contains SkMaskFilter, generate mask from image bounds.
-
-        If generated mask extends beyond image bounds, replicate image edge colors, just
-        as SkShader made from SkImage::makeShader with SkShader::kClamp_TileMode set
-        replicates the image edge color when it samples outside of its bounds.
-
-        When using a shader or shader mask filter, its coordinate system is based on the
-        current CTM, so will reflect the dst rect geometry and is equivalent to
-        drawRect(dst). The src rect is only used to access the provided image.
-
-        constraint set to kStrict_SrcRectConstraint limits SkPaint SkFilterQuality to
-        sample within src; set to kFast_SrcRectConstraint allows sampling outside to
-        improve performance.
-
-        @param image       SkImage containing pixels, dimensions, and format
-        @param src         source SkRect of image to draw from
-        @param dst         destination SkRect of image to draw to
-        @param paint       SkPaint containing SkBlendMode, SkColorFilter, SkImageFilter,
-                           and so on; or nullptr
-        @param constraint  filter strictly within src or draw faster
-    */
-    void drawImageRect(const SkImage* image, const SkRect& src, const SkRect& dst,
-                       const SkPaint* paint,
-                       SrcRectConstraint constraint = kStrict_SrcRectConstraint);
-
-    /** Draws SkIRect isrc of SkImage image, scaled and translated to fill SkRect dst.
-        Note that isrc is on integer pixel boundaries; dst may include fractional
-        boundaries. Additionally transform draw using clip, SkMatrix, and optional SkPaint
-        paint.
-
-        If SkPaint paint is supplied, apply SkColorFilter, alpha, SkImageFilter, and
-        SkBlendMode. If image is kAlpha_8_SkColorType, apply SkShader.
-        If paint contains SkMaskFilter, generate mask from image bounds.
-
-        If generated mask extends beyond image bounds, replicate image edge colors, just
-        as SkShader made from SkImage::makeShader with SkShader::kClamp_TileMode set
-        replicates the image edge color when it samples outside of its bounds.
-
-        When using a shader or shader mask filter, its coordinate system is based on the
-        current CTM, so will reflect the dst rect geometry and is equivalent to
-        drawRect(dst). The src rect is only used to access the provided image.
-
-        constraint set to kStrict_SrcRectConstraint limits SkPaint SkFilterQuality to
-        sample within isrc; set to kFast_SrcRectConstraint allows sampling outside to
-        improve performance.
-
-        @param image       SkImage containing pixels, dimensions, and format
-        @param isrc        source SkIRect of image to draw from
-        @param dst         destination SkRect of image to draw to
-        @param paint       SkPaint containing SkBlendMode, SkColorFilter, SkImageFilter,
-                           and so on; or nullptr
-        @param constraint  filter strictly within isrc or draw faster
-    */
-    void drawImageRect(const SkImage* image, const SkIRect& isrc, const SkRect& dst,
-                       const SkPaint* paint,
-                       SrcRectConstraint constraint = kStrict_SrcRectConstraint);
-
-    /** Draws SkImage image, scaled and translated to fill SkRect dst, using clip, SkMatrix,
-        and optional SkPaint paint.
-
-        If SkPaint paint is supplied, apply SkColorFilter, alpha, SkImageFilter, and
-        SkBlendMode. If image is kAlpha_8_SkColorType, apply SkShader.
-        If paint contains SkMaskFilter, generate mask from image bounds.
-
-        If generated mask extends beyond image bounds, replicate image edge colors, just
-        as SkShader made from SkImage::makeShader with SkShader::kClamp_TileMode set
-        replicates the image edge color when it samples outside of its bounds.
-
-        When using a shader or shader mask filter, its coordinate system is based on the
-        current CTM, so will reflect the dst rect geometry and is equivalent to
-        drawRect(dst).
-
-        @param image       SkImage containing pixels, dimensions, and format
-        @param dst         destination SkRect of image to draw to
-        @param paint       SkPaint containing SkBlendMode, SkColorFilter, SkImageFilter,
-                           and so on; or nullptr
-
-        example: https://fiddle.skia.org/c/@Canvas_drawImageRect_3
-    */
-    void drawImageRect(const SkImage* image, const SkRect& dst, const SkPaint* paint);
-
-    /** Draws SkRect src of SkImage image, scaled and translated to fill SkRect dst.
-        Additionally transform draw using clip, SkMatrix, and optional SkPaint paint.
-
-        If SkPaint paint is supplied, apply SkColorFilter, alpha, SkImageFilter, and
-        SkBlendMode. If image is kAlpha_8_SkColorType, apply SkShader.
-        If paint contains SkMaskFilter, generate mask from image bounds.
-
-        If generated mask extends beyond image bounds, replicate image edge colors, just
-        as SkShader made from SkImage::makeShader with SkShader::kClamp_TileMode set
-        replicates the image edge color when it samples outside of its bounds.
-
-        When using a shader or shader mask filter, its coordinate system is based on the
-        current CTM, so will reflect the dst rect geometry and is equivalent to
-        drawRect(dst). The src rect is only used to access the provided image.
-
-        @param image       SkImage containing pixels, dimensions, and format
-        @param src         source SkRect of image to draw from
-        @param dst         destination SkRect of image to draw to
-        @param paint       SkPaint containing SkBlendMode, SkColorFilter, SkImageFilter,
-                           and so on; or nullptr
-        @param constraint  filter strictly within src or draw faster
-    */
+    void drawImage(const SkImage*, SkScalar x, SkScalar y, const SkSamplingOptions&,
+                   const SkPaint* = nullptr);
+    void drawImage(const sk_sp<SkImage>& image, SkScalar x, SkScalar y,
+                   const SkSamplingOptions& sampling, const SkPaint* paint = nullptr) {
+        this->drawImage(image.get(), x, y, sampling, paint);
+    }
+    void drawImageRect(const SkImage*, const SkRect& src, const SkRect& dst,
+                       const SkSamplingOptions&, const SkPaint*, SrcRectConstraint);
+    void drawImageRect(const SkImage*, const SkRect& dst, const SkSamplingOptions&,
+                       const SkPaint* = nullptr);
     void drawImageRect(const sk_sp<SkImage>& image, const SkRect& src, const SkRect& dst,
-                       const SkPaint* paint,
-                       SrcRectConstraint constraint = kStrict_SrcRectConstraint) {
-        this->drawImageRect(image.get(), src, dst, paint, constraint);
+                       const SkSamplingOptions& sampling, const SkPaint* paint,
+                       SrcRectConstraint constraint) {
+        this->drawImageRect(image.get(), src, dst, sampling, paint, constraint);
     }
-
-    /** Draws SkIRect isrc of SkImage image, scaled and translated to fill SkRect dst.
-        isrc is on integer pixel boundaries; dst may include fractional boundaries.
-        Additionally transform draw using clip, SkMatrix, and optional SkPaint paint.
-
-        If SkPaint paint is supplied, apply SkColorFilter, alpha, SkImageFilter, and
-        SkBlendMode. If image is kAlpha_8_SkColorType, apply SkShader.
-        If paint contains SkMaskFilter, generate mask from image bounds.
-
-        If generated mask extends beyond image bounds, replicate image edge colors, just
-        as SkShader made from SkImage::makeShader with SkShader::kClamp_TileMode set
-        replicates the image edge color when it samples outside of its bounds.
-
-        When using a shader or shader mask filter, its coordinate system is based on the
-        current CTM, so will reflect the dst rect geometry and is equivalent to
-        drawRect(dst). The src rect is only used to access the provided image.
-
-        constraint set to kStrict_SrcRectConstraint limits SkPaint SkFilterQuality to
-        sample within image; set to kFast_SrcRectConstraint allows sampling outside to
-        improve performance.
-
-        @param image       SkImage containing pixels, dimensions, and format
-        @param isrc        source SkIRect of image to draw from
-        @param dst         destination SkRect of image to draw to
-        @param paint       SkPaint containing SkBlendMode, SkColorFilter, SkImageFilter,
-                           and so on; or nullptr
-        @param constraint  filter strictly within image or draw faster
-    */
-    void drawImageRect(const sk_sp<SkImage>& image, const SkIRect& isrc, const SkRect& dst,
-                       const SkPaint* paint,
-                       SrcRectConstraint constraint = kStrict_SrcRectConstraint) {
-        this->drawImageRect(image.get(), isrc, dst, paint, constraint);
-    }
-
-    /** Draws SkImage image, scaled and translated to fill SkRect dst,
-        using clip, SkMatrix, and optional SkPaint paint.
-
-        If SkPaint paint is supplied, apply SkColorFilter, alpha, SkImageFilter, and
-        SkBlendMode. If image is kAlpha_8_SkColorType, apply SkShader.
-        If paint contains SkMaskFilter, generate mask from image bounds.
-
-        If generated mask extends beyond image bounds, replicate image edge colors, just
-        as SkShader made from SkImage::makeShader with SkShader::kClamp_TileMode set
-        replicates the image edge color when it samples outside of its bounds.
-
-        When using a shader or shader mask filter, its coordinate system is based on the
-        current CTM, so will reflect the dst rect geometry and is equivalent to
-        drawRect(dst).
-
-        @param image       SkImage containing pixels, dimensions, and format
-        @param dst         destination SkRect of image to draw to
-        @param paint       SkPaint containing SkBlendMode, SkColorFilter, SkImageFilter,
-                           and so on; or nullptr
-    */
-    void drawImageRect(const sk_sp<SkImage>& image, const SkRect& dst, const SkPaint* paint) {
-        this->drawImageRect(image.get(), dst, paint);
+    void drawImageRect(const sk_sp<SkImage>& image, const SkRect& dst,
+                       const SkSamplingOptions& sampling, const SkPaint* paint = nullptr) {
+        this->drawImageRect(image.get(), dst, sampling, paint);
     }
 
     /** Draws SkImage image stretched proportionally to fit into SkRect dst.
@@ -1649,9 +1516,7 @@ public:
 
         If SkPaint paint is supplied, apply SkColorFilter, alpha, SkImageFilter, and
         SkBlendMode. If image is kAlpha_8_SkColorType, apply SkShader.
-        If paint contains SkMaskFilter, generate mask from image bounds. If paint
-        SkFilterQuality set to kNone_SkFilterQuality, disable pixel filtering. For all
-        other values of paint SkFilterQuality, use kLow_SkFilterQuality to filter pixels.
+        If paint contains SkMaskFilter, generate mask from image bounds.
         Any SkMaskFilter on paint is ignored as is paint anti-aliasing state.
 
         If generated mask extends beyond image bounds, replicate image edge colors, just
@@ -1661,142 +1526,12 @@ public:
         @param image   SkImage containing pixels, dimensions, and format
         @param center  SkIRect edge of image corners and sides
         @param dst     destination SkRect of image to draw to
+        @param filter  what technique to use when sampling the image
         @param paint   SkPaint containing SkBlendMode, SkColorFilter, SkImageFilter,
                        and so on; or nullptr
     */
     void drawImageNine(const SkImage* image, const SkIRect& center, const SkRect& dst,
-                       const SkPaint* paint = nullptr);
-
-    /** Draws SkImage image stretched proportionally to fit into SkRect dst.
-        SkIRect center divides the image into nine sections: four sides, four corners, and
-        the center. Corners are not scaled, or scaled down proportionately if their sides
-        are larger than dst; center and four sides are scaled to fit remaining space, if any.
-
-        Additionally transform draw using clip, SkMatrix, and optional SkPaint paint.
-
-        If SkPaint paint is supplied, apply SkColorFilter, alpha, SkImageFilter, and
-        SkBlendMode. If image is kAlpha_8_SkColorType, apply SkShader.
-        If paint contains SkMaskFilter, generate mask from image bounds. If paint
-        SkFilterQuality set to kNone_SkFilterQuality, disable pixel filtering. For all
-        other values of paint SkFilterQuality, use kLow_SkFilterQuality to filter pixels.
-        Any SkMaskFilter on paint is ignored as is paint anti-aliasing state.
-
-        If generated mask extends beyond image bounds, replicate image edge colors, just
-        as SkShader made from SkImage::makeShader with SkShader::kClamp_TileMode set
-        replicates the image edge color when it samples outside of its bounds.
-
-        @param image   SkImage containing pixels, dimensions, and format
-        @param center  SkIRect edge of image corners and sides
-        @param dst     destination SkRect of image to draw to
-        @param paint   SkPaint containing SkBlendMode, SkColorFilter, SkImageFilter,
-                       and so on; or nullptr
-    */
-    void drawImageNine(const sk_sp<SkImage>& image, const SkIRect& center, const SkRect& dst,
-                       const SkPaint* paint = nullptr) {
-        this->drawImageNine(image.get(), center, dst, paint);
-    }
-
-    /** Draws SkBitmap bitmap, with its top-left corner at (left, top),
-        using clip, SkMatrix, and optional SkPaint paint.
-
-        If SkPaint paint is not nullptr, apply SkColorFilter, alpha, SkImageFilter, and
-        SkBlendMode. If bitmap is kAlpha_8_SkColorType, apply SkShader.
-        If paint contains SkMaskFilter, generate mask from bitmap bounds.
-
-        If generated mask extends beyond bitmap bounds, replicate bitmap edge colors,
-        just as SkShader made from SkShader::MakeBitmapShader with
-        SkShader::kClamp_TileMode set replicates the bitmap edge color when it samples
-        outside of its bounds.
-
-        @param bitmap  SkBitmap containing pixels, dimensions, and format
-        @param left    left side of bitmap
-        @param top     top side of bitmap
-        @param paint   SkPaint containing SkBlendMode, SkColorFilter, SkImageFilter,
-                       and so on; or nullptr
-    */
-    void drawBitmap(const SkBitmap& bitmap, SkScalar left, SkScalar top,
-                    const SkPaint* paint = nullptr);
-
-    /** Draws SkRect src of SkBitmap bitmap, scaled and translated to fill SkRect dst.
-        Additionally transform draw using clip, SkMatrix, and optional SkPaint paint.
-
-        If SkPaint paint is supplied, apply SkColorFilter, alpha, SkImageFilter, and
-        SkBlendMode. If bitmap is kAlpha_8_SkColorType, apply SkShader.
-        If paint contains SkMaskFilter, generate mask from bitmap bounds.
-
-        If generated mask extends beyond bitmap bounds, replicate bitmap edge colors,
-        just as SkShader made from SkShader::MakeBitmapShader with
-        SkShader::kClamp_TileMode set replicates the bitmap edge color when it samples
-        outside of its bounds.
-
-        constraint set to kStrict_SrcRectConstraint limits SkPaint SkFilterQuality to
-        sample within src; set to kFast_SrcRectConstraint allows sampling outside to
-        improve performance.
-
-        @param bitmap      SkBitmap containing pixels, dimensions, and format
-        @param src         source SkRect of image to draw from
-        @param dst         destination SkRect of image to draw to
-        @param paint       SkPaint containing SkBlendMode, SkColorFilter, SkImageFilter,
-                           and so on; or nullptr
-        @param constraint  filter strictly within src or draw faster
-    */
-    void drawBitmapRect(const SkBitmap& bitmap, const SkRect& src, const SkRect& dst,
-                        const SkPaint* paint,
-                        SrcRectConstraint constraint = kStrict_SrcRectConstraint);
-
-    /** Draws SkIRect isrc of SkBitmap bitmap, scaled and translated to fill SkRect dst.
-        isrc is on integer pixel boundaries; dst may include fractional boundaries.
-        Additionally transform draw using clip, SkMatrix, and optional SkPaint paint.
-
-        If SkPaint paint is supplied, apply SkColorFilter, alpha, SkImageFilter, and
-        SkBlendMode. If bitmap is kAlpha_8_SkColorType, apply SkShader.
-        If paint contains SkMaskFilter, generate mask from bitmap bounds.
-
-        If generated mask extends beyond bitmap bounds, replicate bitmap edge colors,
-        just as SkShader made from SkShader::MakeBitmapShader with
-        SkShader::kClamp_TileMode set replicates the bitmap edge color when it samples
-        outside of its bounds.
-
-        constraint set to kStrict_SrcRectConstraint limits SkPaint SkFilterQuality to
-        sample within isrc; set to kFast_SrcRectConstraint allows sampling outside to
-        improve performance.
-
-        @param bitmap      SkBitmap containing pixels, dimensions, and format
-        @param isrc        source SkIRect of image to draw from
-        @param dst         destination SkRect of image to draw to
-        @param paint       SkPaint containing SkBlendMode, SkColorFilter, SkImageFilter,
-                           and so on; or nullptr
-        @param constraint  sample strictly within isrc, or draw faster
-    */
-    void drawBitmapRect(const SkBitmap& bitmap, const SkIRect& isrc, const SkRect& dst,
-                        const SkPaint* paint,
-                        SrcRectConstraint constraint = kStrict_SrcRectConstraint);
-
-    /** Draws SkBitmap bitmap, scaled and translated to fill SkRect dst.
-        bitmap bounds is on integer pixel boundaries; dst may include fractional boundaries.
-        Additionally transform draw using clip, SkMatrix, and optional SkPaint paint.
-
-        If SkPaint paint is supplied, apply SkColorFilter, alpha, SkImageFilter, and
-        SkBlendMode. If bitmap is kAlpha_8_SkColorType, apply SkShader.
-        If paint contains SkMaskFilter, generate mask from bitmap bounds.
-
-        If generated mask extends beyond bitmap bounds, replicate bitmap edge colors,
-        just as SkShader made from SkShader::MakeBitmapShader with
-        SkShader::kClamp_TileMode set replicates the bitmap edge color when it samples
-        outside of its bounds.
-
-        constraint set to kStrict_SrcRectConstraint limits SkPaint SkFilterQuality to
-        sample within bitmap; set to kFast_SrcRectConstraint allows sampling outside to
-        improve performance.
-
-        @param bitmap      SkBitmap containing pixels, dimensions, and format
-        @param dst         destination SkRect of image to draw to
-        @param paint       SkPaint containing SkBlendMode, SkColorFilter, SkImageFilter,
-                           and so on; or nullptr
-        @param constraint  filter strictly within bitmap or draw faster
-    */
-    void drawBitmapRect(const SkBitmap& bitmap, const SkRect& dst, const SkPaint* paint,
-                        SrcRectConstraint constraint = kStrict_SrcRectConstraint);
+                       SkFilterMode filter, const SkPaint* paint = nullptr);
 
     /** \struct SkCanvas::Lattice
         SkCanvas::Lattice divides SkBitmap or SkImage into a rectangular grid.
@@ -1831,8 +1566,8 @@ public:
     /** Draws SkImage image stretched proportionally to fit into SkRect dst.
 
         SkCanvas::Lattice lattice divides image into a rectangular grid.
-        Each intersection of an even-numbered row and column is fixed; like the corners
-        of drawBitmapNine(), fixed lattice elements never scale larger than their initial
+        Each intersection of an even-numbered row and column is fixed;
+        fixed lattice elements never scale larger than their initial
         size and shrink proportionately when all fixed elements exceed the bitmap
         dimension. All other grid elements scale to fill the available space, if any.
 
@@ -1840,9 +1575,7 @@ public:
 
         If SkPaint paint is supplied, apply SkColorFilter, alpha, SkImageFilter, and
         SkBlendMode. If image is kAlpha_8_SkColorType, apply SkShader.
-        If paint contains SkMaskFilter, generate mask from image bounds. If paint
-        SkFilterQuality set to kNone_SkFilterQuality, disable pixel filtering. For all
-        other values of paint SkFilterQuality, use kLow_SkFilterQuality to filter pixels.
+        If paint contains SkMaskFilter, generate mask from image bounds.
         Any SkMaskFilter on paint is ignored as is paint anti-aliasing state.
 
         If generated mask extends beyond bitmap bounds, replicate bitmap edge colors,
@@ -1853,11 +1586,15 @@ public:
         @param image    SkImage containing pixels, dimensions, and format
         @param lattice  division of bitmap into fixed and variable rectangles
         @param dst      destination SkRect of image to draw to
+        @param filter   what technique to use when sampling the image
         @param paint    SkPaint containing SkBlendMode, SkColorFilter, SkImageFilter,
                         and so on; or nullptr
     */
     void drawImageLattice(const SkImage* image, const Lattice& lattice, const SkRect& dst,
-                          const SkPaint* paint = nullptr);
+                          SkFilterMode filter, const SkPaint* paint = nullptr);
+    void drawImageLattice(const SkImage* image, const Lattice& lattice, const SkRect& dst) {
+        this->drawImageLattice(image, lattice, dst, SkFilterMode::kNearest, nullptr);
+    }
 
     /**
      * Experimental. Controls anti-aliasing of each edge of images in an image-set.
@@ -1950,7 +1687,7 @@ public:
      */
     void experimental_DrawEdgeAAImageSet(const ImageSetEntry imageSet[], int cnt,
                                          const SkPoint dstClips[], const SkMatrix preViewMatrices[],
-                                         const SkPaint* paint = nullptr,
+                                         const SkSamplingOptions&, const SkPaint* paint = nullptr,
                                          SrcRectConstraint constraint = kStrict_SrcRectConstraint);
 
     /** Draws text, with origin at (x, y), using clip, SkMatrix, SkFont font,
@@ -2040,6 +1777,75 @@ public:
                     const SkPaint& paint) {
         this->drawSimpleText(str.c_str(), str.size(), SkTextEncoding::kUTF8, x, y, font, paint);
     }
+
+    /** Draws count glyphs, at positions relative to origin styled with font and paint with
+        supporting utf8 and cluster information.
+
+       This function draw glyphs at the given positions relative to the given origin.
+       It does not perform typeface fallback for glyphs not found in the SkTypeface in font.
+
+       The drawing obeys the current transform matrix and clipping.
+
+       All elements of paint: SkPathEffect, SkMaskFilter, SkShader,
+       SkColorFilter, and SkImageFilter; apply to text. By
+       default, draws filled black glyphs.
+
+       @param count           number of glyphs to draw
+       @param glyphs          the array of glyphIDs to draw
+       @param positions       where to draw each glyph relative to origin
+       @param clusters        array of size count of cluster information
+       @param textByteCount   size of the utf8text
+       @param utf8text        utf8text supporting information for the glyphs
+       @param origin          the origin of all the positions
+       @param font            typeface, text size and so, used to describe the text
+       @param paint           blend, color, and so on, used to draw
+    */
+    void drawGlyphs(int count, const SkGlyphID glyphs[], const SkPoint positions[],
+                    const uint32_t clusters[], int textByteCount, const char utf8text[],
+                    SkPoint origin, const SkFont& font, const SkPaint& paint);
+
+    /** Draws count glyphs, at positions relative to origin styled with font and paint.
+
+        This function draw glyphs at the given positions relative to the given origin.
+        It does not perform typeface fallback for glyphs not found in the SkTypeface in font.
+
+        The drawing obeys the current transform matrix and clipping.
+
+        All elements of paint: SkPathEffect, SkMaskFilter, SkShader,
+        SkColorFilter, and SkImageFilter; apply to text. By
+        default, draws filled black glyphs.
+
+        @param count       number of glyphs to draw
+        @param glyphs      the array of glyphIDs to draw
+        @param positions   where to draw each glyph relative to origin
+        @param origin      the origin of all the positions
+        @param font        typeface, text size and so, used to describe the text
+        @param paint       blend, color, and so on, used to draw
+    */
+    void drawGlyphs(int count, const SkGlyphID glyphs[], const SkPoint positions[],
+                    SkPoint origin, const SkFont& font, const SkPaint& paint);
+
+    /** Draws count glyphs, at positions relative to origin styled with font and paint.
+
+        This function draw glyphs using the given scaling and rotations. They are positioned
+        relative to the given origin. It does not perform typeface fallback for glyphs not found
+        in the SkTypeface in font.
+
+        The drawing obeys the current transform matrix and clipping.
+
+        All elements of paint: SkPathEffect, SkMaskFilter, SkShader,
+        SkColorFilter, and SkImageFilter; apply to text. By
+        default, draws filled black glyphs.
+
+        @param count    number of glyphs to draw
+        @param glyphs   the array of glyphIDs to draw
+        @param xforms   where to draw and orient each glyph
+        @param origin   the origin of all the positions
+        @param font     typeface, text size and so, used to describe the text
+        @param paint    blend, color, and so on, used to draw
+    */
+    void drawGlyphs(int count, const SkGlyphID glyphs[], const SkRSXform xforms[],
+                    SkPoint origin, const SkFont& font, const SkPaint& paint);
 
     /** Draws SkTextBlob blob at (x, y), using clip, SkMatrix, and SkPaint paint.
 
@@ -2149,54 +1955,68 @@ public:
         If paint contains an SkShader and vertices does not contain texCoords, the shader
         is mapped using the vertices' positions.
 
-        If vertices colors are defined in vertices, and SkPaint paint contains SkShader,
-        SkBlendMode mode combines vertices colors with SkShader.
+        SkBlendMode is ignored if SkVertices does not have colors. Otherwise, it combines
+           - the SkShader if SkPaint contains SkShader
+           - or the opaque SkPaint color if SkPaint does not contain SkShader
+        as the src of the blend and the interpolated vertex colors as the dst.
+
+        SkMaskFilter, SkPathEffect, and antialiasing on SkPaint are ignored.
 
         @param vertices  triangle mesh to draw
-        @param mode      combines vertices colors with SkShader, if both are present
-        @param paint     specifies the SkShader, used as SkVertices texture; may be nullptr
+        @param mode      combines vertices' colors with SkShader if present or SkPaint opaque color
+                         if not. Ignored if the vertices do not contain color.
+        @param paint     specifies the SkShader, used as SkVertices texture, and SkColorFilter.
 
         example: https://fiddle.skia.org/c/@Canvas_drawVertices
     */
     void drawVertices(const SkVertices* vertices, SkBlendMode mode, const SkPaint& paint);
 
-    /** Variant of 3-parameter drawVertices, using the default of Modulate for the blend
-     *  parameter. Note that SkVertices that include per-vertex-data ignore this mode parameter.
-     */
-    void drawVertices(const SkVertices* vertices, const SkPaint& paint) {
-        this->drawVertices(vertices, SkBlendMode::kModulate, paint);
-    }
-
     /** Draws SkVertices vertices, a triangle mesh, using clip and SkMatrix.
         If paint contains an SkShader and vertices does not contain texCoords, the shader
         is mapped using the vertices' positions.
 
-        If vertices colors are defined in vertices, and SkPaint paint contains SkShader,
-        SkBlendMode mode combines vertices colors with SkShader.
+        SkBlendMode is ignored if SkVertices does not have colors. Otherwise, it combines
+           - the SkShader if SkPaint contains SkShader
+           - or the opaque SkPaint color if SkPaint does not contain SkShader
+        as the src of the blend and the interpolated vertex colors as the dst.
+
+        SkMaskFilter, SkPathEffect, and antialiasing on SkPaint are ignored.
 
         @param vertices  triangle mesh to draw
-        @param mode      combines vertices colors with SkShader, if both are present
+        @param mode      combines vertices' colors with SkShader if present or SkPaint opaque color
+                         if not. Ignored if the vertices do not contain color.
         @param paint     specifies the SkShader, used as SkVertices texture, may be nullptr
 
         example: https://fiddle.skia.org/c/@Canvas_drawVertices_2
     */
     void drawVertices(const sk_sp<SkVertices>& vertices, SkBlendMode mode, const SkPaint& paint);
 
-    /** Variant of 3-parameter drawVertices, using the default of Modulate for the blend
-     *  parameter. Note that SkVertices that include per-vertex-data ignore this mode parameter.
-     */
-    void drawVertices(const sk_sp<SkVertices>& vertices, const SkPaint& paint) {
-        this->drawVertices(vertices, SkBlendMode::kModulate, paint);
-    }
+#if defined(SK_ENABLE_SKSL)
+    /**
+        Experimental, under active development, and subject to change without notice.
+
+        Draws a mesh using a user-defined specification (see SkMeshSpecification).
+
+        SkBlender is ignored if SkMesh's specification does not output fragment shader color.
+        Otherwise, it combines
+            - the SkShader if SkPaint contains SkShader
+            - or the opaque SkPaint color if SkPaint does not contain SkShader
+        as the src of the blend and the mesh's fragment color as the dst.
+
+        SkMaskFilter, SkPathEffect, and antialiasing on SkPaint are ignored.
+
+        @param mesh      the mesh vertices and compatible specification.
+        @param blender   combines vertices colors with SkShader if present or SkPaint opaque color
+                         if not. Ignored if the custom mesh does not output color. Defaults to
+                         SkBlendMode::kModulate if nullptr.
+        @param paint     specifies the SkShader, used as SkVertices texture, may be nullptr
+    */
+    void drawMesh(const SkMesh& mesh, sk_sp<SkBlender> blender, const SkPaint& paint);
+#endif
 
     /** Draws a Coons patch: the interpolation of four cubics with shared corners,
         associating a color, and optionally a texture SkPoint, with each corner.
 
-        Coons patch uses clip and SkMatrix, paint SkShader, SkColorFilter,
-        alpha, SkImageFilter, and SkBlendMode. If SkShader is provided it is treated
-        as Coons patch texture; SkBlendMode mode combines color colors and SkShader if
-        both are provided.
-
         SkPoint array cubics specifies four SkPath cubic starting at the top-left corner,
         in clockwise order, sharing every fourth point. The last SkPath cubic ends at the
         first point.
@@ -2208,52 +2028,32 @@ public:
         corners in top-left, top-right, bottom-right, bottom-left order. If texCoords is
         nullptr, SkShader is mapped using positions (derived from cubics).
 
+        SkBlendMode is ignored if colors is null. Otherwise, it combines
+            - the SkShader if SkPaint contains SkShader
+            - or the opaque SkPaint color if SkPaint does not contain SkShader
+        as the src of the blend and the interpolated patch colors as the dst.
+
+        SkMaskFilter, SkPathEffect, and antialiasing on SkPaint are ignored.
+
         @param cubics     SkPath cubic array, sharing common points
         @param colors     color array, one for each corner
         @param texCoords  SkPoint array of texture coordinates, mapping SkShader to corners;
                           may be nullptr
-        @param mode       SkBlendMode for colors, and for SkShader if paint has one
+        @param mode       combines patch's colors with SkShader if present or SkPaint opaque color
+                          if not. Ignored if colors is null.
         @param paint      SkShader, SkColorFilter, SkBlendMode, used to draw
     */
     void drawPatch(const SkPoint cubics[12], const SkColor colors[4],
                    const SkPoint texCoords[4], SkBlendMode mode, const SkPaint& paint);
-
-    /** Draws SkPath cubic Coons patch: the interpolation of four cubics with shared corners,
-        associating a color, and optionally a texture SkPoint, with each corner.
-
-        Coons patch uses clip and SkMatrix, paint SkShader, SkColorFilter,
-        alpha, SkImageFilter, and SkBlendMode. If SkShader is provided it is treated
-        as Coons patch texture; SkBlendMode mode combines color colors and SkShader if
-        both are provided.
-
-        SkPoint array cubics specifies four SkPath cubic starting at the top-left corner,
-        in clockwise order, sharing every fourth point. The last SkPath cubic ends at the
-        first point.
-
-        Color array color associates colors with corners in top-left, top-right,
-        bottom-right, bottom-left order.
-
-        If paint contains SkShader, SkPoint array texCoords maps SkShader as texture to
-        corners in top-left, top-right, bottom-right, bottom-left order. If texCoords is
-        nullptr, SkShader is mapped using positions (derived from cubics).
-
-        @param cubics     SkPath cubic array, sharing common points
-        @param colors     color array, one for each corner
-        @param texCoords  SkPoint array of texture coordinates, mapping SkShader to corners;
-                          may be nullptr
-        @param paint      SkShader, SkColorFilter, SkBlendMode, used to draw
-    */
-    void drawPatch(const SkPoint cubics[12], const SkColor colors[4],
-                   const SkPoint texCoords[4], const SkPaint& paint) {
-        this->drawPatch(cubics, colors, texCoords, SkBlendMode::kModulate, paint);
-    }
 
     /** Draws a set of sprites from atlas, using clip, SkMatrix, and optional SkPaint paint.
         paint uses anti-alias, alpha, SkColorFilter, SkImageFilter, and SkBlendMode
         to draw, if present. For each entry in the array, SkRect tex locates sprite in
         atlas, and SkRSXform xform transforms it into destination space.
 
-        xform, text, and colors if present, must contain count entries.
+        SkMaskFilter and SkPathEffect on paint are ignored.
+
+        xform, tex, and colors if present, must contain count entries.
         Optional colors are applied for each sprite using SkBlendMode mode, treating
         sprite as source and colors as destination.
         Optional cullRect is a conservative bounds of all transformed sprites.
@@ -2267,80 +2067,13 @@ public:
         @param colors    one per sprite, blended with sprite using SkBlendMode; may be nullptr
         @param count     number of sprites to draw
         @param mode      SkBlendMode combining colors and sprites
+        @param sampling  SkSamplingOptions used when sampling from the atlas image
         @param cullRect  bounds of transformed sprites for efficient clipping; may be nullptr
         @param paint     SkColorFilter, SkImageFilter, SkBlendMode, and so on; may be nullptr
     */
     void drawAtlas(const SkImage* atlas, const SkRSXform xform[], const SkRect tex[],
-                   const SkColor colors[], int count, SkBlendMode mode, const SkRect* cullRect,
-                   const SkPaint* paint);
-
-    /** Draws a set of sprites from atlas, using clip, SkMatrix, and optional SkPaint paint.
-        paint uses anti-alias, alpha, SkColorFilter, SkImageFilter, and SkBlendMode
-        to draw, if present. For each entry in the array, SkRect tex locates sprite in
-        atlas, and SkRSXform xform transforms it into destination space.
-
-        xform, text, and colors if present, must contain count entries.
-        Optional colors is applied for each sprite using SkBlendMode.
-        Optional cullRect is a conservative bounds of all transformed sprites.
-        If cullRect is outside of clip, canvas can skip drawing.
-
-        @param atlas     SkImage containing sprites
-        @param xform     SkRSXform mappings for sprites in atlas
-        @param tex       SkRect locations of sprites in atlas
-        @param colors    one per sprite, blended with sprite using SkBlendMode; may be nullptr
-        @param count     number of sprites to draw
-        @param mode      SkBlendMode combining colors and sprites
-        @param cullRect  bounds of transformed sprites for efficient clipping; may be nullptr
-        @param paint     SkColorFilter, SkImageFilter, SkBlendMode, and so on; may be nullptr
-    */
-    void drawAtlas(const sk_sp<SkImage>& atlas, const SkRSXform xform[], const SkRect tex[],
-                   const SkColor colors[], int count, SkBlendMode mode, const SkRect* cullRect,
-                   const SkPaint* paint) {
-        this->drawAtlas(atlas.get(), xform, tex, colors, count, mode, cullRect, paint);
-    }
-
-    /** Draws a set of sprites from atlas, using clip, SkMatrix, and optional SkPaint paint.
-        paint uses anti-alias, alpha, SkColorFilter, SkImageFilter, and SkBlendMode
-        to draw, if present. For each entry in the array, SkRect tex locates sprite in
-        atlas, and SkRSXform xform transforms it into destination space.
-
-        xform and text must contain count entries.
-        Optional cullRect is a conservative bounds of all transformed sprites.
-        If cullRect is outside of clip, canvas can skip drawing.
-
-        @param atlas     SkImage containing sprites
-        @param xform     SkRSXform mappings for sprites in atlas
-        @param tex       SkRect locations of sprites in atlas
-        @param count     number of sprites to draw
-        @param cullRect  bounds of transformed sprites for efficient clipping; may be nullptr
-        @param paint     SkColorFilter, SkImageFilter, SkBlendMode, and so on; may be nullptr
-    */
-    void drawAtlas(const SkImage* atlas, const SkRSXform xform[], const SkRect tex[], int count,
-                   const SkRect* cullRect, const SkPaint* paint) {
-        this->drawAtlas(atlas, xform, tex, nullptr, count, SkBlendMode::kDst, cullRect, paint);
-    }
-
-    /** Draws a set of sprites from atlas, using clip, SkMatrix, and optional SkPaint paint.
-        paint uses anti-alias, alpha, SkColorFilter, SkImageFilter, and SkBlendMode
-        to draw, if present. For each entry in the array, SkRect tex locates sprite in
-        atlas, and SkRSXform xform transforms it into destination space.
-
-        xform and text must contain count entries.
-        Optional cullRect is a conservative bounds of all transformed sprites.
-        If cullRect is outside of clip, canvas can skip drawing.
-
-        @param atlas     SkImage containing sprites
-        @param xform     SkRSXform mappings for sprites in atlas
-        @param tex       SkRect locations of sprites in atlas
-        @param count     number of sprites to draw
-        @param cullRect  bounds of transformed sprites for efficient clipping; may be nullptr
-        @param paint     SkColorFilter, SkImageFilter, SkBlendMode, and so on; may be nullptr
-    */
-    void drawAtlas(const sk_sp<SkImage>& atlas, const SkRSXform xform[], const SkRect tex[],
-                   int count, const SkRect* cullRect, const SkPaint* paint) {
-        this->drawAtlas(atlas.get(), xform, tex, nullptr, count, SkBlendMode::kDst,
-                        cullRect, paint);
-    }
+                   const SkColor colors[], int count, SkBlendMode mode,
+                   const SkSamplingOptions& sampling, const SkRect* cullRect, const SkPaint* paint);
 
     /** Draws SkDrawable drawable using clip and SkMatrix, concatenated with
         optional matrix.
@@ -2428,7 +2161,16 @@ public:
      */
     SkM44 getLocalToDevice() const;
 
-    /** Legacy version of getLocalToDevice(), which strips away any Z information, and
+    /**
+     *  Throws away the 3rd row and column in the matrix, so be warned.
+     */
+    SkMatrix getLocalToDeviceAs3x3() const {
+        return this->getLocalToDevice().asM33();
+    }
+
+#ifdef SK_SUPPORT_LEGACY_GETTOTALMATRIX
+    /** DEPRECATED
+     *  Legacy version of getLocalToDevice(), which strips away any Z information, and
      *  just returns a 3x3 version.
      *
      *  @return 3x3 version of getLocalToDevice()
@@ -2437,17 +2179,15 @@ public:
      *  example: https://fiddle.skia.org/c/@Clip
      */
     SkMatrix getTotalMatrix() const;
+#endif
 
     ///////////////////////////////////////////////////////////////////////////
 
-    // don't call
-    virtual GrRenderTargetContext* internal_private_accessTopLayerRenderTargetContext();
-    SkIRect internal_private_getTopLayerBounds() const { return getTopLayerBounds(); }
-
-    // TEMP helpers until we switch virtual over to const& for src-rect
-    void legacy_drawImageRect(const SkImage* image, const SkRect* src, const SkRect& dst,
-                              const SkPaint* paint,
-                              SrcRectConstraint constraint = kStrict_SrcRectConstraint);
+#if defined(SK_BUILD_FOR_ANDROID_FRAMEWORK) && defined(SK_GANESH)
+    // These methods exist to support WebView in Android Framework.
+    SkIRect topLayerBounds() const;
+    GrBackendRenderTarget topLayerBackendRenderTarget() const;
+#endif
 
     /**
      *  Returns the global clip as a region. If the clip contains AA, then only the bounds
@@ -2466,7 +2206,7 @@ protected:
     virtual bool onPeekPixels(SkPixmap* pixmap);
     virtual bool onAccessTopLayerPixels(SkPixmap* pixmap);
     virtual SkImageInfo onImageInfo() const;
-    virtual bool onGetProps(SkSurfaceProps* props) const;
+    virtual bool onGetProps(SkSurfaceProps* props, bool top) const;
     virtual void onFlush();
 
     // Subclass save/restore notifiers.
@@ -2488,10 +2228,8 @@ protected:
     virtual void willRestore() {}
     virtual void didRestore() {}
 
-    virtual void onMarkCTM(const char*) {}
     virtual void didConcat44(const SkM44&) {}
-    virtual void didConcat(const SkMatrix& ) {}
-    virtual void didSetMatrix(const SkMatrix& ) {}
+    virtual void didSetM44(const SkM44&) {}
     virtual void didTranslate(SkScalar, SkScalar) {}
     virtual void didScale(SkScalar, SkScalar) {}
 
@@ -2512,25 +2250,32 @@ protected:
     virtual void onDrawTextBlob(const SkTextBlob* blob, SkScalar x, SkScalar y,
                                 const SkPaint& paint);
 
+    virtual void onDrawGlyphRunList(const sktext::GlyphRunList& glyphRunList, const SkPaint& paint);
+
     virtual void onDrawPatch(const SkPoint cubics[12], const SkColor colors[4],
                            const SkPoint texCoords[4], SkBlendMode mode, const SkPaint& paint);
     virtual void onDrawPoints(PointMode mode, size_t count, const SkPoint pts[],
                               const SkPaint& paint);
 
+    virtual void onDrawImage2(const SkImage*, SkScalar dx, SkScalar dy, const SkSamplingOptions&,
+                              const SkPaint*);
+    virtual void onDrawImageRect2(const SkImage*, const SkRect& src, const SkRect& dst,
+                                  const SkSamplingOptions&, const SkPaint*, SrcRectConstraint);
+    virtual void onDrawImageLattice2(const SkImage*, const Lattice&, const SkRect& dst,
+                                     SkFilterMode, const SkPaint*);
+    virtual void onDrawAtlas2(const SkImage*, const SkRSXform[], const SkRect src[],
+                              const SkColor[], int count, SkBlendMode, const SkSamplingOptions&,
+                              const SkRect* cull, const SkPaint*);
+    virtual void onDrawEdgeAAImageSet2(const ImageSetEntry imageSet[], int count,
+                                       const SkPoint dstClips[], const SkMatrix preViewMatrices[],
+                                       const SkSamplingOptions&, const SkPaint*,
+                                       SrcRectConstraint);
+
     virtual void onDrawVerticesObject(const SkVertices* vertices, SkBlendMode mode,
                                       const SkPaint& paint);
-    virtual void onDrawImage(const SkImage* image, SkScalar dx, SkScalar dy, const SkPaint* paint);
-    virtual void onDrawImageRect(const SkImage* image, const SkRect* src, const SkRect& dst,
-                                 const SkPaint* paint, SrcRectConstraint constraint);
-    virtual void onDrawImageNine(const SkImage* image, const SkIRect& center, const SkRect& dst,
-                                 const SkPaint* paint);
-    virtual void onDrawImageLattice(const SkImage* image, const Lattice& lattice, const SkRect& dst,
-                                    const SkPaint* paint);
-
-    virtual void onDrawAtlas(const SkImage* atlas, const SkRSXform xform[], const SkRect rect[],
-                             const SkColor colors[], int count, SkBlendMode mode,
-                             const SkRect* cull, const SkPaint* paint);
-
+#ifdef SK_ENABLE_SKSL
+    virtual void onDrawMesh(const SkMesh&, sk_sp<SkBlender>, const SkPaint&);
+#endif
     virtual void onDrawAnnotation(const SkRect& rect, const char key[], SkData* value);
     virtual void onDrawShadowRec(const SkPath&, const SkDrawShadowRec&);
 
@@ -2540,9 +2285,6 @@ protected:
 
     virtual void onDrawEdgeAAQuad(const SkRect& rect, const SkPoint clip[4], QuadAAFlags aaFlags,
                                   const SkColor4f& color, SkBlendMode mode);
-    virtual void onDrawEdgeAAImageSet(const ImageSetEntry imageSet[], int count,
-                                      const SkPoint dstClips[], const SkMatrix preViewMatrices[],
-                                      const SkPaint* paint, SrcRectConstraint constraint);
 
     enum ClipEdgeStyle {
         kHard_ClipEdgeStyle,
@@ -2554,63 +2296,22 @@ protected:
     virtual void onClipPath(const SkPath& path, SkClipOp op, ClipEdgeStyle edgeStyle);
     virtual void onClipShader(sk_sp<SkShader>, SkClipOp);
     virtual void onClipRegion(const SkRegion& deviceRgn, SkClipOp op);
+    virtual void onResetClip();
 
     virtual void onDiscard();
 
-    // Clip rectangle bounds. Called internally by saveLayer.
-    // returns false if the entire rectangle is entirely clipped out
-    // If non-NULL, The imageFilter parameter will be used to expand the clip
-    // and offscreen bounds for any margin required by the filter DAG.
-    bool clipRectBounds(const SkRect* bounds, SaveLayerFlags flags, SkIRect* intersection,
-                        const SkImageFilter* imageFilter = nullptr);
+#if (defined(SK_GANESH) || defined(SK_GRAPHITE))
+    /** Experimental
+     */
+    virtual sk_sp<sktext::gpu::Slug> onConvertGlyphRunListToSlug(
+            const sktext::GlyphRunList& glyphRunList, const SkPaint& paint);
 
-    SkBaseDevice* getTopDevice() const;
+    /** Experimental
+     */
+    virtual void onDrawSlug(const sktext::gpu::Slug* slug);
+#endif
 
 private:
-    /** After calling saveLayer(), there can be any number of devices that make
-     up the top-most drawing area. LayerIter can be used to iterate through
-     those devices. Note that the iterator is only valid until the next API
-     call made on the canvas. Ownership of all pointers in the iterator stays
-     with the canvas, so none of them should be modified or deleted.
-     */
-    class LayerIter /*: SkNoncopyable*/ {
-    public:
-        /** Initialize iterator with canvas, and set values for 1st device */
-        LayerIter(SkCanvas*);
-        ~LayerIter();
-
-        /** Return true if the iterator is done */
-        bool done() const { return fDone; }
-        /** Cycle to the next device */
-        void next();
-
-        // These reflect the current device in the iterator
-
-        SkBaseDevice*   device() const;
-        const SkMatrix& matrix() const;
-        SkIRect clipBounds() const;
-        const SkPaint&  paint() const;
-        int             x() const;
-        int             y() const;
-
-    private:
-        // used to embed the SkDrawIter object directly in our instance, w/o
-        // having to expose that class def to the public. There is an assert
-        // in our constructor to ensure that fStorage is large enough
-        // (though needs to be a compile-time-assert!). We use intptr_t to work
-        // safely with 32 and 64 bit machines (to ensure the storage is enough)
-        intptr_t          fStorage[32];
-        class SkDrawIter* fImpl;    // this points at fStorage
-        SkPaint           fDefaultPaint;
-        SkIPoint          fDeviceOrigin;
-        bool              fDone;
-    };
-
-    static bool BoundsAffectsClip(SaveLayerFlags);
-
-    static void DrawDeviceWithFilter(SkBaseDevice* src, const SkImageFilter* filter,
-                                     SkBaseDevice* dst, const SkIPoint& dstOrigin,
-                                     const SkMatrix& ctm);
 
     enum ShaderOverrideOpacity {
         kNone_ShaderOverrideOpacity,        //!< there is no overriding shader (bitmap or image)
@@ -2620,31 +2321,96 @@ private:
 
     // notify our surface (if we have one) that we are about to draw, so it
     // can perform copy-on-write or invalidate any cached images
-    void predrawNotify(bool willOverwritesEntireSurface = false);
-    void predrawNotify(const SkRect* rect, const SkPaint* paint, ShaderOverrideOpacity);
-    void predrawNotify(const SkRect* rect, const SkPaint* paint, bool shaderOverrideIsOpaque) {
-        this->predrawNotify(rect, paint, shaderOverrideIsOpaque ? kOpaque_ShaderOverrideOpacity
-                                                                : kNotOpaque_ShaderOverrideOpacity);
+    // returns false if the copy failed
+    bool SK_WARN_UNUSED_RESULT predrawNotify(bool willOverwritesEntireSurface = false);
+    bool SK_WARN_UNUSED_RESULT predrawNotify(const SkRect*, const SkPaint*, ShaderOverrideOpacity);
+
+    enum class CheckForOverwrite : bool {
+        kNo = false,
+        kYes = true
+    };
+    // call the appropriate predrawNotify and create a layer if needed.
+    std::optional<AutoLayerForImageFilter> aboutToDraw(
+        SkCanvas* canvas,
+        const SkPaint& paint,
+        const SkRect* rawBounds = nullptr,
+        CheckForOverwrite = CheckForOverwrite::kNo,
+        ShaderOverrideOpacity = kNone_ShaderOverrideOpacity);
+
+    // The bottom-most device in the stack, only changed by init(). Image properties and the final
+    // canvas pixels are determined by this device.
+    SkBaseDevice* baseDevice() const {
+        SkASSERT(fBaseDevice);
+        return fBaseDevice.get();
     }
 
-    SkBaseDevice* getDevice() const;
+    // The top-most device in the stack, will change within saveLayer()'s. All drawing and clipping
+    // operations should route to this device.
+    SkBaseDevice* topDevice() const;
 
-    class MCRec;
+    // Canvases maintain a sparse stack of layers, where the top-most layer receives the drawing,
+    // clip, and matrix commands. There is a layer per call to saveLayer() using the
+    // kFullLayer_SaveLayerStrategy.
+    struct Layer {
+        sk_sp<SkBaseDevice>  fDevice;
+        sk_sp<SkImageFilter> fImageFilter; // applied to layer *before* being drawn by paint
+        SkPaint              fPaint;
+        bool                 fDiscard;
+
+        Layer(sk_sp<SkBaseDevice> device, sk_sp<SkImageFilter> imageFilter, const SkPaint& paint);
+    };
+
+    // Encapsulate state needed to restore from saveBehind()
+    struct BackImage {
+        // Out of line to avoid including SkSpecialImage.h
+        BackImage(sk_sp<SkSpecialImage>, SkIPoint);
+        BackImage(const BackImage&);
+        BackImage(BackImage&&);
+        BackImage& operator=(const BackImage&);
+        ~BackImage();
+
+        sk_sp<SkSpecialImage> fImage;
+        SkIPoint              fLoc;
+    };
+
+    class MCRec {
+    public:
+        // If not null, this MCRec corresponds with the saveLayer() record that made the layer.
+        // The base "layer" is not stored here, since it is stored inline in SkCanvas and has no
+        // restoration behavior.
+        std::unique_ptr<Layer> fLayer;
+
+        // This points to the device of the top-most layer (which may be lower in the stack), or
+        // to the canvas's fBaseDevice. The MCRec does not own the device.
+        SkBaseDevice* fDevice;
+
+        std::unique_ptr<BackImage> fBackImage;
+        SkM44 fMatrix;
+        int fDeferredSaveCount = 0;
+
+        MCRec(SkBaseDevice* device);
+        MCRec(const MCRec* prev);
+        ~MCRec();
+
+        void newLayer(sk_sp<SkBaseDevice> layerDevice,
+                      sk_sp<SkImageFilter> filter,
+                      const SkPaint& restorePaint);
+
+        void reset(SkBaseDevice* device);
+    };
+
+    // the first N recs that can fit here mean we won't call malloc
+    static constexpr int kMCRecSize      = 96; // most recent measurement
+    static constexpr int kMCRecCount     = 32; // common depth for save/restores
+
+    intptr_t fMCRecStorage[kMCRecSize * kMCRecCount / sizeof(intptr_t)];
 
     SkDeque     fMCStack;
     // points to top of stack
     MCRec*      fMCRec;
 
-    sk_sp<SkMarkerStack> fMarkerStack;
-
-    // the first N recs that can fit here mean we won't call malloc
-    static constexpr int kMCRecSize      = 128;  // most recent measurement
-    static constexpr int kMCRecCount     = 32;   // common depth for save/restores
-    static constexpr int kDeviceCMSize   = 64;   // most recent measurement
-
-    intptr_t fMCRecStorage[kMCRecSize * kMCRecCount / sizeof(intptr_t)];
-    intptr_t fDeviceCMStorage[kDeviceCMSize / sizeof(intptr_t)];
-
+    // Installed via init()
+    sk_sp<SkBaseDevice> fBaseDevice;
     const SkSurfaceProps fProps;
 
     int         fSaveCount;         // value returned by getSaveCount()
@@ -2657,34 +2423,53 @@ private:
         fSurfaceBase = sb;
     }
     friend class SkSurface_Base;
-    friend class SkSurface_Gpu;
+    friend class SkSurface_Ganesh;
 
     SkIRect fClipRestrictionRect = SkIRect::MakeEmpty();
+    int fClipRestrictionSaveCount = -1;
 
     void doSave();
     void checkForDeferredSave();
-    void internalSetMatrix(const SkMatrix&);
+    void internalSetMatrix(const SkM44&);
 
     friend class SkAndroidFrameworkUtils;
-    friend class SkCanvasPriv;      // needs kDontClipToLayer_PrivateSaveLayerFlag
-    friend class SkDrawIter;        // needs setupDrawForLayerDevice()
+    friend class SkCanvasPriv;      // needs to expose android functions for testing outside android
     friend class AutoLayerForImageFilter;
     friend class SkSurface_Raster;  // needs getDevice()
     friend class SkNoDrawCanvas;    // needs resetForNextPicture()
+    friend class SkNWayCanvas;
     friend class SkPictureRecord;   // predrawNotify (why does it need it? <reed>)
     friend class SkOverdrawCanvas;
     friend class SkRasterHandleAllocator;
+    friend class SkRecords::Draw;
+    template <typename Key>
+    friend class SkTestCanvas;
+
 protected:
     // For use by SkNoDrawCanvas (via SkCanvasVirtualEnforcer, which can't be a friend)
     SkCanvas(const SkIRect& bounds);
 private:
     SkCanvas(const SkBitmap&, std::unique_ptr<SkRasterHandleAllocator>,
-             SkRasterHandleAllocator::Handle);
+             SkRasterHandleAllocator::Handle, const SkSurfaceProps* props);
 
     SkCanvas(SkCanvas&&) = delete;
     SkCanvas(const SkCanvas&) = delete;
     SkCanvas& operator=(SkCanvas&&) = delete;
     SkCanvas& operator=(const SkCanvas&) = delete;
+
+#if (defined(SK_GANESH) || defined(SK_GRAPHITE))
+    friend class sktext::gpu::Slug;
+    /** Experimental
+     * Convert a SkTextBlob to a sktext::gpu::Slug using the current canvas state.
+     */
+    sk_sp<sktext::gpu::Slug> convertBlobToSlug(const SkTextBlob& blob, SkPoint origin,
+                                               const SkPaint& paint);
+
+    /** Experimental
+     * Draw an sktext::gpu::Slug given the current canvas state.
+     */
+    void drawSlug(const sktext::gpu::Slug* slug);
+#endif
 
     /** Experimental
      *  Saves the specified subset of the current pixels in the current layer,
@@ -2707,29 +2492,46 @@ private:
     // needs gettotalclip()
     friend class SkCanvasStateUtils;
 
-    // call this each time we attach ourselves to a device
-    //  - constructor
-    //  - internalSaveLayer
-    void setupDevice(SkBaseDevice*);
-
     void init(sk_sp<SkBaseDevice>);
 
-    /**
-     * Gets the bounds of the top level layer in global canvas coordinates. We don't want this
-     * to be public because it exposes decisions about layer sizes that are internal to the canvas.
-     */
-    SkIRect getTopLayerBounds() const;
+    // All base onDrawX() functions should call this and skip drawing if it returns true.
+    // If 'matrix' is non-null, it maps the paint's fast bounds before checking for quick rejection
+    bool internalQuickReject(const SkRect& bounds, const SkPaint& paint,
+                             const SkMatrix* matrix = nullptr);
 
     void internalDrawPaint(const SkPaint& paint);
     void internalSaveLayer(const SaveLayerRec&, SaveLayerStrategy);
     void internalSaveBehind(const SkRect*);
-    void internalDrawDevice(SkBaseDevice*, const SkPaint*);
 
     void internalConcat44(const SkM44&);
 
     // shared by save() and saveLayer()
     void internalSave();
     void internalRestore();
+
+    enum class DeviceCompatibleWithFilter : bool {
+        // Check the src device's local-to-device matrix for compatibility with the filter, and if
+        // it is not compatible, introduce an intermediate image and transformation that allows the
+        // filter to be evaluated on the modified src content.
+        kUnknown = false,
+        // Assume that the src device's local-to-device matrix is compatible with the filter.
+        kYes     = true
+    };
+    /**
+     * Filters the contents of 'src' and draws the result into 'dst'. The filter is evaluated
+     * relative to the current canvas matrix, and src is drawn to dst using their relative transform
+     * 'paint' is applied after the filter and must not have a mask or image filter of its own.
+     * A null 'filter' behaves as if the identity filter were used.
+     *
+     * 'scaleFactor' is an extra uniform scale transform applied to downscale the 'src' image
+     * before any filtering, or as part of the copy, and is then drawn with 1/scaleFactor to 'dst'.
+     * Must be 1.0 if 'compat' is kYes (i.e. any scale factor has already been baked into the
+     * relative transforms between the devices).
+     */
+    void internalDrawDeviceWithFilter(SkBaseDevice* src, SkBaseDevice* dst,
+                                      const SkImageFilter* filter, const SkPaint& paint,
+                                      DeviceCompatibleWithFilter compat,
+                                      SkScalar scaleFactor = 1.f);
 
     /*
      *  Returns true if drawing the specified rect (or all if it is null) with the specified
@@ -2741,7 +2543,8 @@ private:
     /**
      *  Returns true if the paint's imagefilter can be invoked directly, without needed a layer.
      */
-    bool canDrawBitmapAsSprite(SkScalar x, SkScalar y, int w, int h, const SkPaint&);
+    bool canDrawBitmapAsSprite(SkScalar x, SkScalar y, int w, int h, const SkSamplingOptions&,
+                               const SkPaint&);
 
     /**
      *  Returns true if the clip (for any active layer) contains antialiasing.
@@ -2750,44 +2553,26 @@ private:
     bool androidFramework_isClipAA() const;
 
     /**
-     * Reset the clip to be just the intersection with the global-space 'rect'. This operates within
-     * the save/restore stack of the canvas, so restore() will bring back any saved clip. However,
-     * since 'rect' is already in global space, it is not modified by the canvas matrix.
+     * Reset the clip to be wide-open (modulo any separately specified device clip restriction).
+     * This operate within the save/restore clip stack so it can be undone by restoring to an
+     * earlier save point.
      */
-    void androidFramework_replaceClip(const SkIRect& rect);
+    void internal_private_resetClip();
 
     virtual SkPaintFilterCanvas* internal_private_asPaintFilterCanvas() const { return nullptr; }
 
-    /**
-     *  Keep track of the device clip bounds and if the matrix is scale-translate.  This allows
-     *  us to do a fast quick reject in the common case.
-     */
-    bool   fIsScaleTranslate;
-    SkRect fDeviceClipBounds;
+    // Keep track of the device clip bounds in the canvas' global space to reject draws before
+    // invoking the top-level device.
+    SkRect fQuickRejectBounds;
 
-    class AutoValidateClip {
-    public:
-        explicit AutoValidateClip(SkCanvas* canvas) : fCanvas(canvas) {
-            fCanvas->validateClip();
-        }
-        ~AutoValidateClip() { fCanvas->validateClip(); }
+    // Compute the clip's bounds based on all clipped SkDevice's reported device bounds transformed
+    // into the canvas' global space.
+    SkRect computeDeviceClipBounds(bool outsetForAA=true) const;
 
-    private:
-        const SkCanvas* fCanvas;
-
-        AutoValidateClip(AutoValidateClip&&) = delete;
-        AutoValidateClip(const AutoValidateClip&) = delete;
-        AutoValidateClip& operator=(AutoValidateClip&&) = delete;
-        AutoValidateClip& operator=(const AutoValidateClip&) = delete;
-    };
-
-#ifdef SK_DEBUG
+    class AutoUpdateQRBounds;
     void validateClip() const;
-#else
-    void validateClip() const {}
-#endif
 
-    std::unique_ptr<SkGlyphRunBuilder> fScratchGlyphRunBuilder;
+    std::unique_ptr<sktext::GlyphRunBuilder> fScratchGlyphRunBuilder;
 
     using INHERITED = SkRefCnt;
 };

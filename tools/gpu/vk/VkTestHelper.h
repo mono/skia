@@ -14,7 +14,7 @@
 
 #include "include/core/SkRefCnt.h"
 #include "include/gpu/vk/GrVkBackendContext.h"
-#include "include/gpu/vk/GrVkExtensions.h"
+#include "include/gpu/vk/VulkanExtensions.h"
 
 class GrDirectContext;
 class SkSurface;
@@ -39,6 +39,7 @@ private:
     DECLARE_VK_PROC(DestroyInstance);
     DECLARE_VK_PROC(DeviceWaitIdle);
     DECLARE_VK_PROC(DestroyDevice);
+    DECLARE_VK_PROC(GetDeviceProcAddr);
 
     DECLARE_VK_PROC(GetPhysicalDeviceFormatProperties);
     DECLARE_VK_PROC(GetPhysicalDeviceMemoryProperties);
@@ -57,7 +58,7 @@ private:
     bool fIsProtected = false;
     VkDevice fDevice = VK_NULL_HANDLE;
 
-    GrVkExtensions fExtensions;
+    skgpu::VulkanExtensions fExtensions;
     VkPhysicalDeviceFeatures2 fFeatures = {};
     VkDebugReportCallbackEXT fDebugCallback = VK_NULL_HANDLE;
     PFN_vkDestroyDebugReportCallbackEXT fDestroyDebugCallback = nullptr;

@@ -1,4 +1,4 @@
-EMSDK_VERSION=2.0.6_v1
+EMSDK_VERSION=3.1.26_v2
 
 publish_canvaskit_emsdk:
 	docker build -t canvaskit-emsdk ./canvaskit-emsdk/

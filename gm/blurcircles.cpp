@@ -52,7 +52,7 @@ protected:
         for (size_t i = 0; i < kNumBlurs; ++i) {
             SkAutoCanvasRestore autoRestore(canvas, true);
             canvas->translate(0, 150.f*i);
-            for (size_t j = 0; j < SK_ARRAY_COUNT(circleRadii); ++j) {
+            for (size_t j = 0; j < std::size(circleRadii); ++j) {
                 SkPaint paint;
                 paint.setColor(SK_ColorBLACK);
                 paint.setMaskFilter(fBlurFilters[i]);
@@ -68,7 +68,7 @@ protected:
         }
     }
 private:
-    static constexpr int kNumBlurs = 4;
+    inline static constexpr int kNumBlurs = 4;
 
     sk_sp<SkMaskFilter> fBlurFilters[kNumBlurs];
 

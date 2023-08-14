@@ -8,10 +8,19 @@
 #ifndef SkPathBuilder_DEFINED
 #define SkPathBuilder_DEFINED
 
-#include "include/core/SkMatrix.h"
 #include "include/core/SkPath.h"
 #include "include/core/SkPathTypes.h"
-#include "include/private/SkTDArray.h"
+#include "include/core/SkPoint.h"
+#include "include/core/SkRect.h"
+#include "include/core/SkRefCnt.h"
+#include "include/core/SkScalar.h"
+#include "include/core/SkTypes.h"
+#include "include/private/SkPathRef.h"
+#include "include/private/base/SkTo.h"
+
+#include <initializer_list>
+
+class SkRRect;
 
 class SK_API SkPathBuilder {
 public:
@@ -202,6 +211,8 @@ public:
         return this->addPolygon(list.begin(), SkToInt(list.size()), isClosed);
     }
 
+    SkPathBuilder& addPath(const SkPath&);
+
     // Performance hint, to reserve extra storage for subsequent calls to lineTo, quadTo, etc.
 
     void incReserve(int extraPtCount, int extraVerbCount);
@@ -217,15 +228,16 @@ public:
     }
 
 private:
-    SkTDArray<SkPoint>  fPts;
-    SkTDArray<uint8_t>  fVerbs;
-    SkTDArray<SkScalar> fConicWeights;
+    SkPathRef::PointsArray fPts;
+    SkPathRef::VerbsArray fVerbs;
+    SkPathRef::ConicWeightsArray fConicWeights;
 
     SkPathFillType      fFillType;
     bool                fIsVolatile;
 
     unsigned    fSegmentMask;
     SkPoint     fLastMovePoint;
+    int         fLastMoveIndex; // only needed until SkPath is immutable
     bool        fNeedsMoveVerb;
 
     enum IsA {
@@ -238,10 +250,7 @@ private:
     int fIsAStart = -1;     // tracks direction iff fIsA is not unknown
     bool fIsACCW  = false;  // tracks direction iff fIsA is not unknown
 
-    // for testing
-    SkPathConvexity fOverrideConvexity = SkPathConvexity::kUnknown;
-
-    int countVerbs() const { return fVerbs.count(); }
+    int countVerbs() const { return fVerbs.size(); }
 
     // called right before we add a (non-move) verb
     void ensureMove() {
@@ -254,9 +263,6 @@ private:
     SkPath make(sk_sp<SkPathRef>) const;
 
     SkPathBuilder& privateReverseAddPath(const SkPath&);
-
-    // For testing
-    void privateSetConvexity(SkPathConvexity c) { fOverrideConvexity = c; }
 
     friend class SkPathPriv;
 };

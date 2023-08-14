@@ -9,6 +9,13 @@
 
 #include "include/core/SkCanvas.h"
 #include "include/core/SkFont.h"
+#include "include/core/SkFontTypes.h"
+#include "include/core/SkPaint.h"
+#include "include/core/SkScalar.h"
+#include "src/core/SkStringUtils.h"
+#include "tools/sk_app/Window.h"
+
+#include <algorithm>
 
 namespace sk_app {
 
@@ -77,12 +84,6 @@ void CommandSet::addCommand(skui::Key k, const char* keyName, const char* group,
                             const char* description, std::function<void(void)> function) {
     fCommands.push_back(Command(k, keyName, group, description, function));
 }
-
-#if defined(SK_BUILD_FOR_WIN)
-    #define SK_strcasecmp   _stricmp
-#else
-    #define SK_strcasecmp   strcasecmp
-#endif
 
 bool CommandSet::compareCommandKey(const Command& first, const Command& second) {
     return SK_strcasecmp(first.fKeyName.c_str(), second.fKeyName.c_str()) < 0;

@@ -12,10 +12,10 @@
 #include "include/core/SkMatrix.h"
 #include "include/core/SkPath.h"
 #include "include/core/SkTypes.h"
-#include "include/private/SkNoncopyable.h"
+#include "include/private/base/SkNoncopyable.h"
 #include "modules/svg/include/SkSVGTypes.h"
 
-class SkSVGValue : public SkNoncopyable {
+class SK_API SkSVGValue : public SkNoncopyable {
 public:
     enum class Type {
         kColor,
@@ -23,8 +23,6 @@ public:
         kLength,
         kNumber,
         kObjectBoundingBoxUnits,
-        kPath,
-        kPoints,
         kPreserveAspectRatio,
         kStopColor,
         kString,
@@ -49,7 +47,7 @@ private:
 };
 
 template <typename T, SkSVGValue::Type ValueType>
-class SkSVGWrapperValue final : public SkSVGValue {
+class SK_API SkSVGWrapperValue final : public SkSVGValue {
 public:
     static constexpr Type TYPE = ValueType;
 
@@ -71,13 +69,10 @@ private:
 };
 
 using SkSVGColorValue        = SkSVGWrapperValue<SkSVGColorType    , SkSVGValue::Type::kColor     >;
-using SkSVGFilterValue       = SkSVGWrapperValue<SkSVGFilterType   , SkSVGValue::Type::kFilter    >;
 using SkSVGLengthValue       = SkSVGWrapperValue<SkSVGLength       , SkSVGValue::Type::kLength    >;
-using SkSVGPathValue         = SkSVGWrapperValue<SkPath            , SkSVGValue::Type::kPath      >;
 using SkSVGTransformValue    = SkSVGWrapperValue<SkSVGTransformType, SkSVGValue::Type::kTransform >;
 using SkSVGViewBoxValue      = SkSVGWrapperValue<SkSVGViewBoxType  , SkSVGValue::Type::kViewBox   >;
 using SkSVGNumberValue       = SkSVGWrapperValue<SkSVGNumberType   , SkSVGValue::Type::kNumber    >;
-using SkSVGPointsValue       = SkSVGWrapperValue<SkSVGPointsType   , SkSVGValue::Type::kPoints    >;
 using SkSVGStringValue       = SkSVGWrapperValue<SkSVGStringType   , SkSVGValue::Type::kString    >;
 using SkSVGStopColorValue    = SkSVGWrapperValue<SkSVGStopColor    , SkSVGValue::Type::kStopColor >;
 

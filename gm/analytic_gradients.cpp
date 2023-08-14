@@ -6,8 +6,8 @@
  */
 
 /*
- * This GM presents a variety of gradients meant to test the correctness of the analytic
- * GrUnrolledBinaryGradientColorizer, which can handle arbitrary gradients with 1 to 8 interpolation
+ * This GM presents a variety of gradients meant to test the correctness of the analytic unrolled
+ * binary gradient colorizer, which can handle arbitrary gradients with 1 to 8 interpolation
  * intervals. These intervals can be either hardstops or smooth color transitions.
  *
  * It produces an image similar to that of GM_hardstop_gradients, but is arranged as follows:
@@ -48,7 +48,9 @@
 #include "include/core/SkTileMode.h"
 #include "include/core/SkTypes.h"
 #include "include/effects/SkGradientShader.h"
-#include "include/private/SkTemplates.h"
+#include "include/private/base/SkTemplates.h"
+
+using namespace skia_private;
 
 // All positions must be divided by the target interval count, which will produce the expected
 // normalized position array for that interval number (assuming an appropriate color count is
@@ -91,7 +93,7 @@ const int* INTERVAL_COLOR_COUNTS[] = {
     INT7_COLOR_COUNTS,
     INT8_COLOR_COUNTS
 };
-const int COLOR_COUNT = SK_ARRAY_COUNT(COLORS);
+const int COLOR_COUNT = std::size(COLORS);
 
 const int* M_POSITIONS[] = {
     M1_POSITIONS,
@@ -160,8 +162,8 @@ protected:
 
                 // Collect positions and colors specific to the interval+mode normalizing the
                 // position based on the interval count (== cellRow+1)
-                SkAutoSTMalloc<4, SkColor> colors(colorCount);
-                SkAutoSTMalloc<4, SkScalar> positions(colorCount);
+                AutoSTMalloc<4, SkColor> colors(colorCount);
+                AutoSTMalloc<4, SkScalar> positions(colorCount);
                 int j = 0;
                 for (int i = 0; i < colorCount; i++) {
                     positions[i] = SkIntToScalar(layout[i]) / (cellRow + 1);

@@ -23,11 +23,12 @@
 #include "include/core/SkTypes.h"
 #include "include/effects/SkGradientShader.h"
 #include "include/gpu/GrRecordingContext.h"
-#include "include/private/GrTypesPriv.h"
+#include "include/private/gpu/ganesh/GrTypesPriv.h"
+#include "src/core/SkCanvasPriv.h"
 #include "src/core/SkMatrixProvider.h"
-#include "src/gpu/GrPaint.h"
-#include "src/gpu/GrRenderTargetContext.h"
-#include "src/gpu/SkGr.h"
+#include "src/gpu/ganesh/GrPaint.h"
+#include "src/gpu/ganesh/SkGr.h"
+#include "src/gpu/ganesh/SurfaceDrawContext.h"
 #include "tools/ToolUtils.h"
 
 #include <utility>
@@ -48,9 +49,9 @@ static void draw_gradient_tiles(SkCanvas* canvas, bool alignGradients) {
     static constexpr SkPoint pts[] = { {0.f, 0.f}, {0.25f * kTileWidth, 0.25f * kTileHeight} };
     static constexpr SkColor colors[] = { SK_ColorBLUE, SK_ColorWHITE };
 
-    GrRenderTargetContext* rtc = canvas->internal_private_accessTopLayerRenderTargetContext();
+    auto sdc = SkCanvasPriv::TopDeviceSurfaceDrawContext(canvas);
 
-    auto context = canvas->recordingContext();
+    auto rContext = canvas->recordingContext();
 
     auto gradient = SkGradientShader::MakeLinear(pts, colors, nullptr, 2, SkTileMode::kMirror);
     SkPaint paint;
@@ -80,13 +81,13 @@ static void draw_gradient_tiles(SkCanvas* canvas, bool alignGradients) {
                 aa |= SkCanvas::kRight_QuadAAFlag;
             }
 
-            if (rtc) {
+            if (sdc) {
                 // Use non-public API to leverage general GrPaint capabilities
-                SkMatrix view = canvas->getTotalMatrix();
-                SkSimpleMatrixProvider matrixProvider(view);
+                const SkMatrix& view = canvas->getTotalMatrix();
+                SkSurfaceProps props;
                 GrPaint grPaint;
-                SkPaintToGrPaint(context, rtc->colorInfo(), paint, matrixProvider, &grPaint);
-                rtc->fillRectWithEdgeAA(nullptr, std::move(grPaint), GrAA::kYes,
+                SkPaintToGrPaint(rContext, sdc->colorInfo(), paint, view, props, &grPaint);
+                sdc->fillRectWithEdgeAA(nullptr, std::move(grPaint),
                                         static_cast<GrQuadAAFlags>(aa), view, tile);
             } else {
                 // Fallback to solid color on raster backend since the public API only has color
@@ -172,7 +173,7 @@ static TileRenderer kTileSets[] = {
     [](SkCanvas* canvas) { draw_color_tiles(canvas, /* multicolor */true); },
 };
 static const char* kTileSetNames[] = { "Local", "Aligned", "Green", "Multicolor" };
-static_assert(SK_ARRAY_COUNT(kTileSets) == SK_ARRAY_COUNT(kTileSetNames), "Count mismatch");
+static_assert(std::size(kTileSets) == std::size(kTileSetNames), "Count mismatch");
 
 namespace skiagm {
 
@@ -204,12 +205,12 @@ private:
         SkAssertResult(rowMatrices[4].setPolyToPoly(src, dst, 4));
         rowMatrices[4].preTranslate(0.f, +10.f);
         static const char* matrixNames[] = { "Identity", "T+S", "Rotate", "Skew", "Perspective" };
-        static_assert(SK_ARRAY_COUNT(matrixNames) == SK_ARRAY_COUNT(rowMatrices), "Count mismatch");
+        static_assert(std::size(matrixNames) == std::size(rowMatrices), "Count mismatch");
 
         // Print a column header
         canvas->save();
         canvas->translate(110.f, 20.f);
-        for (size_t j = 0; j < SK_ARRAY_COUNT(kTileSetNames); ++j) {
+        for (size_t j = 0; j < std::size(kTileSetNames); ++j) {
             draw_text(canvas, kTileSetNames[j]);
             canvas->translate(kColCount * kTileWidth + 30.f, 0.f);
         }
@@ -217,13 +218,13 @@ private:
         canvas->translate(0.f, 40.f);
 
         // Render all tile variations
-        for (size_t i = 0; i < SK_ARRAY_COUNT(rowMatrices); ++i) {
+        for (size_t i = 0; i < std::size(rowMatrices); ++i) {
             canvas->save();
             canvas->translate(10.f, 0.5f * kRowCount * kTileHeight);
             draw_text(canvas, matrixNames[i]);
 
             canvas->translate(100.f, -0.5f * kRowCount * kTileHeight);
-            for (size_t j = 0; j < SK_ARRAY_COUNT(kTileSets); ++j) {
+            for (size_t j = 0; j < std::size(kTileSets); ++j) {
                 canvas->save();
                 draw_tile_boundaries(canvas, rowMatrices[i]);
 

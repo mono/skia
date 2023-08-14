@@ -7,50 +7,41 @@
 
 #include "modules/skottie/src/text/SkottieShaper.h"
 
+#include "include/core/SkCanvas.h"
 #include "include/core/SkFontMetrics.h"
 #include "include/core/SkFontMgr.h"
-#include "include/core/SkTextBlob.h"
-#include "include/private/SkTemplates.h"
+#include "include/private/base/SkTArray.h"
+#include "include/private/base/SkTPin.h"
+#include "include/private/base/SkTemplates.h"
 #include "modules/skshaper/include/SkShaper.h"
-#include "src/core/SkTLazy.h"
-#include "src/core/SkTextBlobPriv.h"
-#include "src/utils/SkUTF.h"
+#include "src/base/SkTLazy.h"
+#include "src/base/SkUTF.h"
+#include "src/core/SkFontPriv.h"
 
+#ifdef SK_UNICODE_AVAILABLE
+#include "modules/skunicode/include/SkUnicode.h"
+#endif
+
+#include <algorithm>
 #include <limits.h>
+#include <numeric>
+
+using namespace skia_private;
 
 namespace skottie {
 namespace {
 
-SkRect ComputeBlobBounds(const sk_sp<SkTextBlob>& blob) {
-    auto bounds = SkRect::MakeEmpty();
-
-    if (!blob) {
-        return bounds;
-    }
-
-    SkAutoSTArray<16, SkRect> glyphBounds;
-
-    SkTextBlobRunIterator it(blob.get());
-
-    for (SkTextBlobRunIterator it(blob.get()); !it.done(); it.next()) {
-        glyphBounds.reset(SkToInt(it.glyphCount()));
-        it.font().getBounds(it.glyphs(), it.glyphCount(), glyphBounds.get(), nullptr);
-
-        SkASSERT(it.positioning() == SkTextBlobRunIterator::kFull_Positioning);
-        for (uint32_t i = 0; i < it.glyphCount(); ++i) {
-            bounds.join(glyphBounds[i].makeOffset(it.pos()[i * 2    ],
-                                                  it.pos()[i * 2 + 1]));
-        }
-    }
-
-    return bounds;
+static bool is_whitespace(char c) {
+    // TODO: we've been getting away with this simple heuristic,
+    // but ideally we should use SkUicode::isWhiteSpace().
+    return c == ' ' || c == '\t' || c == '\r' || c == '\n';
 }
 
 // Helper for interfacing with SkShaper: buffers shaper-fed runs and performs
 // per-line position adjustments (for external line breaking, horizontal alignment, etc).
-class BlobMaker final : public SkShaper::RunHandler {
+class ResultBuilder final : public SkShaper::RunHandler {
 public:
-    BlobMaker(const Shaper::TextDesc& desc, const SkRect& box, const sk_sp<SkFontMgr>& fontmgr)
+    ResultBuilder(const Shaper::TextDesc& desc, const SkRect& box, const sk_sp<SkFontMgr>& fontmgr)
         : fDesc(desc)
         , fBox(box)
         , fHAlignFactor(HAlignFactor(fDesc.fHAlign))
@@ -67,7 +58,7 @@ public:
         fLineGlyphs.reset(0);
         fLinePos.reset(0);
         fLineClusters.reset(0);
-        fLineRuns.reset();
+        fLineRuns.clear();
         fLineGlyphCount = 0;
 
         fCurrentPosition = fOffset;
@@ -116,11 +107,58 @@ public:
     void commitLine() override {
         fOffset.fY += fDesc.fLineHeight;
 
-        // TODO: justification adjustments
+        // Observed AE handling of whitespace, for alignment purposes:
+        //
+        //   - leading whitespace contributes to alignment
+        //   - trailing whitespace is ignored
+        //   - auto line breaking retains all separating whitespace on the first line (no artificial
+        //     leading WS is created).
+        auto adjust_trailing_whitespace = [this]() {
+            // For left-alignment, trailing WS doesn't make any difference.
+            if (fLineRuns.empty() || fDesc.fHAlign == SkTextUtils::Align::kLeft_Align) {
+                return;
+            }
+
+            // Technically, trailing whitespace could span multiple runs, but realistically,
+            // SkShaper has no reason to split it.  Hence we're only checking the last run.
+            size_t ws_count = 0;
+            for (size_t i = 0; i < fLineRuns.back().fSize; ++i) {
+                if (is_whitespace(fUTF8[fLineClusters[SkToInt(fLineGlyphCount - i - 1)]])) {
+                    ++ws_count;
+                } else {
+                    break;
+                }
+            }
+
+            // No trailing whitespace.
+            if (!ws_count) {
+                return;
+            }
+
+            // Compute the cumulative whitespace advance.
+            fAdvanceBuffer.resize(ws_count);
+            fLineRuns.back().fFont.getWidths(fLineGlyphs.data() + fLineGlyphCount - ws_count,
+                                             SkToInt(ws_count), fAdvanceBuffer.data(), nullptr);
+
+            const auto ws_advance = std::accumulate(fAdvanceBuffer.begin(),
+                                                    fAdvanceBuffer.end(),
+                                                    0.0f);
+
+            // Offset needed to compensate for whitespace.
+            const auto offset = ws_advance*-fHAlignFactor;
+
+            // Shift the whole line horizontally by the computed offset.
+            std::transform(fLinePos.data(),
+                           fLinePos.data() + fLineGlyphCount,
+                           fLinePos.data(),
+                           [&offset](SkPoint pos) { return SkPoint{pos.fX + offset, pos.fY}; });
+        };
+
+        adjust_trailing_whitespace();
 
         const auto commit_proc = (fDesc.fFlags & Shaper::Flags::kFragmentGlyphs)
-            ? &BlobMaker::commitFragementedRun
-            : &BlobMaker::commitConsolidatedRun;
+            ? &ResultBuilder::commitFragementedRun
+            : &ResultBuilder::commitConsolidatedRun;
 
         size_t run_offset = 0;
         for (const auto& rec : fLineRuns) {
@@ -130,7 +168,7 @@ public:
                         fLinePos.get()      + run_offset,
                         fLineClusters.get() + run_offset,
                         fLineCount);
-            run_offset += rec.fGlyphCount;
+            run_offset += rec.fSize;
         }
 
         fLineCount++;
@@ -138,10 +176,8 @@ public:
 
     Shaper::Result finalize(SkSize* shaped_size) {
         if (!(fDesc.fFlags & Shaper::Flags::kFragmentGlyphs)) {
-            // All glyphs are pending in a single blob.
-            SkASSERT(fResult.fFragments.empty());
-            fResult.fFragments.reserve(1);
-            fResult.fFragments.push_back({fBuilder.make(), {fBox.x(), fBox.y()}, 0, 0, 0, false});
+            // All glyphs (if any) are pending in a single fragment.
+            SkASSERT(fResult.fFragments.size() <= 1);
         }
 
         const auto ascent = this->ascent();
@@ -155,18 +191,22 @@ public:
         //
         //   b) leading/trailing empty lines are still taken into account for alignment purposes
 
-        auto extent_box = [&]() {
+        auto extent_box = [&](bool include_typographical_extent) {
             auto box = fResult.computeVisualBounds();
 
-            // By default, first line is vertically-aligned on a baseline of 0.
-            // The typographical height considered for vertical alignment is the distance between
-            // the first line top (ascent) to the last line bottom (descent).
-            const auto typographical_top    = fBox.fTop + ascent,
-                       typographical_bottom = fBox.fTop + fLastLineDescent + fDesc.fLineHeight *
-                                                           (fLineCount > 0 ? fLineCount - 1 : 0ul);
+            if (include_typographical_extent) {
+                // Hybrid visual alignment mode, based on typographical extent.
 
-            box.fTop    = std::min(box.fTop,    typographical_top);
-            box.fBottom = std::max(box.fBottom, typographical_bottom);
+                // By default, first line is vertically-aligned on a baseline of 0.
+                // The typographical height considered for vertical alignment is the distance
+                // between the first line top (ascent) to the last line bottom (descent).
+                const auto typographical_top    = fBox.fTop + ascent,
+                           typographical_bottom = fBox.fTop + fLastLineDescent +
+                                          fDesc.fLineHeight*(fLineCount > 0 ? fLineCount - 1 : 0ul);
+
+                box.fTop    = std::min(box.fTop,    typographical_top);
+                box.fBottom = std::max(box.fBottom, typographical_bottom);
+            }
 
             return box;
         };
@@ -184,37 +224,40 @@ public:
         case Shaper::VAlign::kTopBaseline:
             // Default behavior.
             break;
+        case Shaper::VAlign::kHybridTop:
         case Shaper::VAlign::kVisualTop:
-            ebox.init(extent_box());
+            ebox.init(extent_box(fDesc.fVAlign == Shaper::VAlign::kHybridTop));
             v_offset += fBox.fTop - ebox->fTop;
             break;
+        case Shaper::VAlign::kHybridCenter:
         case Shaper::VAlign::kVisualCenter:
-            ebox.init(extent_box());
+            ebox.init(extent_box(fDesc.fVAlign == Shaper::VAlign::kHybridCenter));
             v_offset += fBox.centerY() - ebox->centerY();
             break;
+        case Shaper::VAlign::kHybridBottom:
         case Shaper::VAlign::kVisualBottom:
-            ebox.init(extent_box());
+            ebox.init(extent_box(fDesc.fVAlign == Shaper::VAlign::kHybridBottom));
             v_offset += fBox.fBottom - ebox->fBottom;
             break;
         }
 
         if (shaped_size) {
             if (!ebox.isValid()) {
-                ebox.init(extent_box());
+                ebox.init(extent_box(true));
             }
             *shaped_size = SkSize::Make(ebox->width(), ebox->height());
         }
 
         if (v_offset) {
             for (auto& fragment : fResult.fFragments) {
-                fragment.fPos.fY += v_offset;
+                fragment.fOrigin.fY += v_offset;
             }
         }
 
         return std::move(fResult);
     }
 
-    void shapeLine(const char* start, const char* end) {
+    void shapeLine(const char* start, const char* end, size_t utf8_offset) {
         if (!fShaper) {
             return;
         }
@@ -224,6 +267,30 @@ public:
             // SkShaper doesn't care for empty lines.
             this->beginLine();
             this->commitLine();
+
+            // The calls above perform bookkeeping, but they do not add any fragments (since there
+            // are no runs to commit).
+            //
+            // Certain Skottie features (line-based range selectors) do require accurate indexing
+            // information even for empty lines though -- so we inject empty fragments solely for
+            // line index tracking.
+            //
+            // Note: we don't add empty fragments in consolidated mode because 1) consolidated mode
+            // assumes there is a single result fragment and 2) kFragmentGlyphs is always enabled
+            // for cases where line index tracking is relevant.
+            //
+            // TODO(fmalita): investigate whether it makes sense to move this special case down
+            // to commitFragmentedRun().
+            if (fDesc.fFlags & Shaper::Flags::kFragmentGlyphs) {
+                fResult.fFragments.push_back({
+                    Shaper::ShapedGlyphs(),
+                    {fBox.x(),fBox.y()},
+                    0, 0,
+                    fLineCount - 1,
+                    false
+                });
+            }
+
             return;
         }
 
@@ -240,79 +307,90 @@ public:
         const auto shape_width = fDesc.fLinebreak == Shaper::LinebreakPolicy::kExplicit
                                     ? SK_ScalarMax
                                     : fBox.width();
+        const auto shape_ltr   = fDesc.fDirection == Shaper::Direction::kLTR;
 
         fUTF8 = start;
-        fShaper->shape(start, SkToSizeT(end - start), fFont, true, shape_width, this);
+        fUTF8Offset = utf8_offset;
+        fShaper->shape(start, SkToSizeT(end - start), fFont, shape_ltr, shape_width, this);
         fUTF8 = nullptr;
     }
 
 private:
-    struct RunRec {
-        SkFont fFont;
-        size_t fGlyphCount;
-    };
-
-    void commitFragementedRun(const RunRec& rec,
+    void commitFragementedRun(const skottie::Shaper::RunRec& run,
                               const SkGlyphID* glyphs,
                               const SkPoint* pos,
                               const uint32_t* clusters,
                               uint32_t line_index) {
-
-        static const auto is_whitespace = [](char c) {
-            return c == ' ' || c == '\t' || c == '\r' || c == '\n';
-        };
-
         float ascent = 0;
 
         if (fDesc.fFlags & Shaper::Flags::kTrackFragmentAdvanceAscent) {
             SkFontMetrics metrics;
-            rec.fFont.getMetrics(&metrics);
+            run.fFont.getMetrics(&metrics);
             ascent = metrics.fAscent;
 
             // Note: we use per-glyph advances for anchoring, but it's unclear whether this
             // is exactly the same as AE.  E.g. are 'acute' glyphs anchored separately for fonts
             // in which they're distinct?
-            fAdvanceBuffer.resize(rec.fGlyphCount);
-            fFont.getWidths(glyphs, SkToInt(rec.fGlyphCount), fAdvanceBuffer.data());
+            fAdvanceBuffer.resize(run.fSize);
+            fFont.getWidths(glyphs, SkToInt(run.fSize), fAdvanceBuffer.data());
         }
 
         // In fragmented mode we immediately push the glyphs to fResult,
-        // one fragment (blob) per glyph.  Glyph positioning is externalized
+        // one fragment per glyph.  Glyph positioning is externalized
         // (positions returned in Fragment::fPos).
-        for (size_t i = 0; i < rec.fGlyphCount; ++i) {
-            const auto& blob_buffer = fBuilder.allocRunPos(rec.fFont, 1);
-            blob_buffer.glyphs[0] = glyphs[i];
-            blob_buffer.pos[0] = blob_buffer.pos[1] = 0;
-
+        for (size_t i = 0; i < run.fSize; ++i) {
             const auto advance = (fDesc.fFlags & Shaper::Flags::kTrackFragmentAdvanceAscent)
                     ? fAdvanceBuffer[SkToInt(i)]
                     : 0.0f;
 
+            fResult.fFragments.push_back({
+                {
+                    { {run.fFont, 1} },
+                    { glyphs[i] },
+                    { {0,0} },
+                    fDesc.fFlags & Shaper::kClusters
+                        ? std::vector<size_t>{ fUTF8Offset + clusters[i] }
+                        : std::vector<size_t>({}),
+                },
+                { fBox.x() + pos[i].fX, fBox.y() + pos[i].fY },
+                advance, ascent,
+                line_index, is_whitespace(fUTF8[clusters[i]])
+            });
+
             // Note: we only check the first code point in the cluster for whitespace.
             // It's unclear whether thers's a saner approach.
-            fResult.fFragments.push_back({fBuilder.make(),
-                                          { fBox.x() + pos[i].fX, fBox.y() + pos[i].fY },
-                                          advance, ascent,
-                                          line_index, is_whitespace(fUTF8[clusters[i]])
-                                         });
             fResult.fMissingGlyphCount += (glyphs[i] == kMissingGlyphID);
         }
     }
 
-    void commitConsolidatedRun(const RunRec& rec,
+    void commitConsolidatedRun(const skottie::Shaper::RunRec& run,
                                const SkGlyphID* glyphs,
                                const SkPoint* pos,
-                               const uint32_t*,
+                               const uint32_t* clusters,
                                uint32_t) {
-        // In consolidated mode we just accumulate glyphs to the blob builder, then push
-        // to fResult as a single blob in finalize().  Glyph positions are baked in the
-        // blob (Fragment::fPos only reflects the box origin).
-        const auto& blob_buffer = fBuilder.allocRunPos(rec.fFont, rec.fGlyphCount);
-        for (size_t i = 0; i < rec.fGlyphCount; ++i) {
-            blob_buffer.glyphs[i] = glyphs[i];
+        // In consolidated mode we just accumulate glyphs to a single fragment in ResultBuilder.
+        // Glyph positions are baked in the fragment runs (Fragment::fPos only reflects the
+        // box origin).
+
+        if (fResult.fFragments.empty()) {
+            fResult.fFragments.push_back({{{}, {}, {}, {}}, {fBox.x(), fBox.y()}, 0, 0, 0, false});
+        }
+
+        auto& current_glyphs = fResult.fFragments.back().fGlyphs;
+        current_glyphs.fRuns.push_back(run);
+        current_glyphs.fGlyphIDs.insert(current_glyphs.fGlyphIDs.end(), glyphs, glyphs + run.fSize);
+        current_glyphs.fGlyphPos.insert(current_glyphs.fGlyphPos.end(), pos   , pos    + run.fSize);
+
+        for (size_t i = 0; i < run.fSize; ++i) {
             fResult.fMissingGlyphCount += (glyphs[i] == kMissingGlyphID);
         }
-        sk_careful_memcpy(blob_buffer.pos   , pos   , rec.fGlyphCount * sizeof(SkPoint));
+
+        if (fDesc.fFlags & Shaper::kClusters) {
+            current_glyphs.fClusters.reserve(current_glyphs.fClusters.size() + run.fSize);
+            for (size_t i = 0; i < run.fSize; ++i) {
+                current_glyphs.fClusters.push_back(fUTF8Offset + clusters[i]);
+            }
+        }
     }
 
     static float HAlignFactor(SkTextUtils::Align align) {
@@ -330,23 +408,22 @@ private:
         return fDesc.fAscent ? fDesc.fAscent : fFirstLineAscent;
     }
 
-    static constexpr SkGlyphID kMissingGlyphID = 0;
+    inline static constexpr SkGlyphID kMissingGlyphID = 0;
 
     const Shaper::TextDesc&   fDesc;
     const SkRect&             fBox;
     const float               fHAlignFactor;
 
     SkFont                    fFont;
-    SkTextBlobBuilder         fBuilder;
     std::unique_ptr<SkShaper> fShaper;
 
-    SkAutoSTMalloc<64, SkGlyphID> fLineGlyphs;
-    SkAutoSTMalloc<64, SkPoint>   fLinePos;
-    SkAutoSTMalloc<64, uint32_t>  fLineClusters;
-    SkSTArray<16, RunRec>         fLineRuns;
-    size_t                        fLineGlyphCount = 0;
+    AutoSTMalloc<64, SkGlyphID>          fLineGlyphs;
+    AutoSTMalloc<64, SkPoint>            fLinePos;
+    AutoSTMalloc<64, uint32_t>           fLineClusters;
+    STArray<16, skottie::Shaper::RunRec> fLineRuns;
+    size_t                                 fLineGlyphCount = 0;
 
-    SkSTArray<64, float, true>    fAdvanceBuffer;
+    STArray<64, float, true> fAdvanceBuffer;
 
     SkPoint  fCurrentPosition{ 0, 0 };
     SkPoint  fOffset{ 0, 0 };
@@ -355,7 +432,8 @@ private:
     float    fFirstLineAscent = 0,
              fLastLineDescent = 0;
 
-    const char* fUTF8 = nullptr; // only valid during shapeLine() calls
+    const char* fUTF8       = nullptr; // only valid during shapeLine() calls
+    size_t      fUTF8Offset = 0;       // current line offset within the original string
 
     Shaper::Result fResult;
 };
@@ -370,18 +448,35 @@ Shaper::Result ShapeImpl(const SkString& txt, const Shaper::TextDesc& desc,
 
     const char* ptr        = txt.c_str();
     const char* line_start = ptr;
+    const char* begin      = ptr;
     const char* end        = ptr + txt.size();
 
-    BlobMaker blobMaker(desc, box, fontmgr);
+    ResultBuilder rbuilder(desc, box, fontmgr);
     while (ptr < end) {
         if (is_line_break(SkUTF::NextUTF8(&ptr, end))) {
-            blobMaker.shapeLine(line_start, ptr - 1);
+            rbuilder.shapeLine(line_start, ptr - 1, SkToSizeT(line_start - begin));
             line_start = ptr;
         }
     }
-    blobMaker.shapeLine(line_start, ptr);
+    rbuilder.shapeLine(line_start, ptr, SkToSizeT(line_start - begin));
 
-    return blobMaker.finalize(shaped_size);
+    return rbuilder.finalize(shaped_size);
+}
+
+bool result_fits(const Shaper::Result& res, const SkSize& res_size,
+                 const SkRect& box, const Shaper::TextDesc& desc) {
+    // optional max line count constraint
+    if (desc.fMaxLines) {
+        const auto line_count = res.fFragments.empty()
+                ? 0
+                : res.fFragments.back().fLineIndex + 1;
+        if (line_count > desc.fMaxLines) {
+            return false;
+        }
+    }
+
+    // geometric constraint
+    return res_size.width() <= box.width() && res_size.height() <= box.height();
 }
 
 Shaper::Result ShapeToFit(const SkString& txt, const Shaper::TextDesc& orig_desc,
@@ -394,9 +489,12 @@ Shaper::Result ShapeToFit(const SkString& txt, const Shaper::TextDesc& orig_desc
 
     auto desc = orig_desc;
 
-    float in_scale = 0,                                 // maximum scale that fits inside
-         out_scale = std::numeric_limits<float>::max(), // minimum scale that doesn't fit
-         try_scale = 1;                                 // current probe
+    const auto min_scale = std::max(desc.fMinTextSize / desc.fTextSize, 0.0f),
+               max_scale = std::max(desc.fMaxTextSize / desc.fTextSize, min_scale);
+
+    float in_scale = min_scale,                          // maximum scale that fits inside
+         out_scale = max_scale,                          // minimum scale that doesn't fit
+         try_scale = SkTPin(1.0f, min_scale, max_scale); // current probe
 
     // Perform a binary search for the best vertical fit (SkShaper already handles
     // horizontal fitting), starting with the specified text size.
@@ -414,61 +512,162 @@ Shaper::Result ShapeToFit(const SkString& txt, const Shaper::TextDesc& orig_desc
         SkSize res_size = {0, 0};
         auto res = ShapeImpl(txt, desc, box, fontmgr, &res_size);
 
-        if (res_size.width() > box.width() || res_size.height() > box.height()) {
+        const auto prev_scale = try_scale;
+        if (!result_fits(res, res_size, box, desc)) {
             out_scale = try_scale;
-            try_scale = (in_scale == 0)
-                    ? try_scale * 0.5f // initial in_scale not found yet - search exponentially
-                    : (in_scale + out_scale) * 0.5f; // in_scale found - binary search
+            try_scale = (in_scale == min_scale)
+                    // initial in_scale not found yet - search exponentially
+                    ? std::max(min_scale, try_scale * 0.5f)
+                    // in_scale found - binary search
+                    : (in_scale + out_scale) * 0.5f;
         } else {
             // It fits - so it's a candidate.
             best_result = std::move(res);
+            best_result.fScale = try_scale;
 
             in_scale = try_scale;
-            try_scale = (out_scale == std::numeric_limits<float>::max())
-                    ? try_scale * 2 // initial out_scale not found yet - search exponentially
-                    : (in_scale + out_scale) * 0.5f; // out_scale found - binary search
+            try_scale = (out_scale == max_scale)
+                    // initial out_scale not found yet - search exponentially
+                    ? std::min(max_scale, try_scale * 2)
+                    // out_scale found - binary search
+                    : (in_scale + out_scale) * 0.5f;
+        }
+
+        if (try_scale == prev_scale) {
+            // no more progress
+            break;
         }
     }
 
     return best_result;
 }
 
+
+// Applies capitalization rules.
+class AdjustedText {
+public:
+    AdjustedText(const SkString& txt, const Shaper::TextDesc& desc)
+        : fText(txt) {
+        switch (desc.fCapitalization) {
+        case Shaper::Capitalization::kNone:
+            break;
+        case Shaper::Capitalization::kUpperCase:
+#ifdef SK_UNICODE_AVAILABLE
+            if (auto skuni = SkUnicode::Make()) {
+                *fText.writable() = skuni->toUpper(*fText);
+            }
+#endif
+            break;
+        }
+    }
+
+    operator const SkString&() const { return *fText; }
+
+private:
+    SkTCopyOnFirstWrite<SkString> fText;
+};
+
 } // namespace
 
-Shaper::Result Shaper::Shape(const SkString& txt, const TextDesc& desc, const SkPoint& point,
+Shaper::Result Shaper::Shape(const SkString& text, const TextDesc& desc, const SkPoint& point,
                              const sk_sp<SkFontMgr>& fontmgr) {
+    const AdjustedText adjText(text, desc);
+
     return (desc.fResize == ResizePolicy::kScaleToFit ||
             desc.fResize == ResizePolicy::kDownscaleToFit) // makes no sense in point mode
             ? Result()
-            : ShapeImpl(txt, desc, SkRect::MakeEmpty().makeOffset(point.x(), point.y()), fontmgr);
+            : ShapeImpl(adjText, desc, SkRect::MakeEmpty().makeOffset(point.x(), point.y()),
+                        fontmgr);
 }
 
-Shaper::Result Shaper::Shape(const SkString& txt, const TextDesc& desc, const SkRect& box,
+Shaper::Result Shaper::Shape(const SkString& text, const TextDesc& desc, const SkRect& box,
                              const sk_sp<SkFontMgr>& fontmgr) {
+    const AdjustedText adjText(text, desc);
+
     switch(desc.fResize) {
     case ResizePolicy::kNone:
-        return ShapeImpl(txt, desc, box, fontmgr);
+        return ShapeImpl(adjText, desc, box, fontmgr);
     case ResizePolicy::kScaleToFit:
-        return ShapeToFit(txt, desc, box, fontmgr);
+        return ShapeToFit(adjText, desc, box, fontmgr);
     case ResizePolicy::kDownscaleToFit: {
         SkSize size;
-        auto result = ShapeImpl(txt, desc, box, fontmgr, &size);
+        auto result = ShapeImpl(adjText, desc, box, fontmgr, &size);
 
-        return (size.width() <= box.width() && size.height() <= box.height())
+        return result_fits(result, size, box, desc)
                 ? result
-                : ShapeToFit(txt, desc, box, fontmgr);
+                : ShapeToFit(adjText, desc, box, fontmgr);
     }
     }
 
     SkUNREACHABLE;
 }
 
+SkRect Shaper::ShapedGlyphs::computeBounds(BoundsType btype) const {
+    auto bounds = SkRect::MakeEmpty();
+
+    AutoSTArray<16, SkRect> glyphBounds;
+
+    size_t offset = 0;
+    for (const auto& run : fRuns) {
+        SkRect font_bounds;
+        if (btype == BoundsType::kConservative) {
+            font_bounds = SkFontPriv::GetFontBounds(run.fFont);
+
+            // Empty font bounds is likely a font bug -- fall back to tight bounds.
+            if (font_bounds.isEmpty()) {
+                btype = BoundsType::kTight;
+            }
+        }
+
+        switch (btype) {
+        case BoundsType::kConservative: {
+            SkRect run_bounds;
+            run_bounds.setBounds(fGlyphPos.data() + offset, SkToInt(run.fSize));
+            run_bounds.fLeft   += font_bounds.left();
+            run_bounds.fTop    += font_bounds.top();
+            run_bounds.fRight  += font_bounds.right();
+            run_bounds.fBottom += font_bounds.bottom();
+
+            bounds.join(run_bounds);
+        } break;
+        case BoundsType::kTight: {
+            glyphBounds.reset(SkToInt(run.fSize));
+            run.fFont.getBounds(fGlyphIDs.data() + offset,
+                                SkToInt(run.fSize), glyphBounds.data(), nullptr);
+
+            for (size_t i = 0; i < run.fSize; ++i) {
+                bounds.join(glyphBounds[SkToInt(i)].makeOffset(fGlyphPos[offset + i]));
+            }
+        } break;
+        }
+
+        offset += run.fSize;
+    }
+
+    return bounds;
+}
+
+void Shaper::ShapedGlyphs::draw(SkCanvas* canvas,
+                                const SkPoint& origin,
+                                const SkPaint& paint) const {
+    size_t offset = 0;
+    for (const auto& run : fRuns) {
+        canvas->drawGlyphs(SkToInt(run.fSize),
+                           fGlyphIDs.data() + offset,
+                           fGlyphPos.data() + offset,
+                           origin,
+                           run.fFont,
+                           paint);
+        offset += run.fSize;
+    }
+}
+
 SkRect Shaper::Result::computeVisualBounds() const {
     auto bounds = SkRect::MakeEmpty();
 
-    for (const auto& fragment : fFragments) {
-        bounds.join(ComputeBlobBounds(fragment.fBlob).makeOffset(fragment.fPos.x(),
-                                                                 fragment.fPos.y()));
+    for (const auto& frag: fFragments) {
+        bounds.join(frag.fGlyphs.computeBounds(ShapedGlyphs::BoundsType::kTight)
+                                .makeOffset(frag.fOrigin));
     }
 
     return bounds;

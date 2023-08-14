@@ -9,22 +9,22 @@
 
 #include "include/core/SkString.h"
 #include "include/gpu/GrDirectContext.h"
-#include "include/private/SkHalf.h"
+#include "src/base/SkHalf.h"
 #include "src/core/SkColorSpacePriv.h"
-#include "src/gpu/GrDirectContextPriv.h"
-#include "src/gpu/GrGeometryProcessor.h"
-#include "src/gpu/GrMemoryPool.h"
-#include "src/gpu/GrProgramInfo.h"
-#include "src/gpu/GrRenderTargetContext.h"
-#include "src/gpu/GrRenderTargetContextPriv.h"
-#include "src/gpu/SkGr.h"
-#include "src/gpu/glsl/GrGLSLColorSpaceXformHelper.h"
-#include "src/gpu/glsl/GrGLSLFragmentShaderBuilder.h"
-#include "src/gpu/glsl/GrGLSLGeometryProcessor.h"
-#include "src/gpu/glsl/GrGLSLVarying.h"
-#include "src/gpu/glsl/GrGLSLVertexGeoBuilder.h"
-#include "src/gpu/ops/GrMeshDrawOp.h"
-#include "src/gpu/ops/GrSimpleMeshDrawOpHelper.h"
+#include "src/gpu/KeyBuilder.h"
+#include "src/gpu/ganesh/GrCaps.h"
+#include "src/gpu/ganesh/GrDirectContextPriv.h"
+#include "src/gpu/ganesh/GrGeometryProcessor.h"
+#include "src/gpu/ganesh/GrMemoryPool.h"
+#include "src/gpu/ganesh/GrProgramInfo.h"
+#include "src/gpu/ganesh/SkGr.h"
+#include "src/gpu/ganesh/SurfaceDrawContext.h"
+#include "src/gpu/ganesh/glsl/GrGLSLColorSpaceXformHelper.h"
+#include "src/gpu/ganesh/glsl/GrGLSLFragmentShaderBuilder.h"
+#include "src/gpu/ganesh/glsl/GrGLSLVarying.h"
+#include "src/gpu/ganesh/glsl/GrGLSLVertexGeoBuilder.h"
+#include "src/gpu/ganesh/ops/GrMeshDrawOp.h"
+#include "src/gpu/ganesh/ops/GrSimpleMeshDrawOpHelper.h"
 
 namespace {
 
@@ -39,16 +39,26 @@ class GP : public GrGeometryProcessor {
 public:
     static GrGeometryProcessor* Make(SkArenaAlloc* arena, Mode mode,
                                      sk_sp<GrColorSpaceXform> colorSpaceXform) {
-        return arena->make<GP>(mode, std::move(colorSpaceXform));
+        return arena->make([&](void* ptr) {
+            return new (ptr) GP(mode, std::move(colorSpaceXform));
+        });
     }
 
     const char* name() const override { return "VertexColorXformGP"; }
 
-    GrGLSLPrimitiveProcessor* createGLSLInstance(const GrShaderCaps&) const override {
-        class GLSLGP : public GrGLSLGeometryProcessor {
+    std::unique_ptr<ProgramImpl> makeProgramImpl(const GrShaderCaps&) const override {
+        class Impl : public ProgramImpl {
         public:
+            void setData(const GrGLSLProgramDataManager& pdman,
+                         const GrShaderCaps&,
+                         const GrGeometryProcessor& geomProc) override {
+                const GP& gp = geomProc.cast<GP>();
+                fColorSpaceHelper.setData(pdman, gp.fColorSpaceXform.get());
+            }
+
+        private:
             void onEmitCode(EmitArgs& args, GrGPArgs* gpArgs) override {
-                const GP& gp = args.fGP.cast<GP>();
+                const GP& gp = args.fGeomProc.cast<GP>();
                 GrGLSLVertexBuilder* vertBuilder = args.fVertBuilder;
                 GrGLSLFPFragmentBuilder* fragBuilder = args.fFragBuilder;
                 GrGLSLVaryingHandler* varyingHandler = args.fVaryingHandler;
@@ -57,7 +67,7 @@ public:
                 varyingHandler->emitAttributes(gp);
 
                 // Setup color
-                GrGLSLVarying varying(kHalf4_GrSLType);
+                GrGLSLVarying varying(SkSLType::kHalf4);
                 varyingHandler->addVarying("color", &varying);
                 vertBuilder->codeAppendf("half4 color = %s;", gp.fInColor.name());
 
@@ -71,51 +81,45 @@ public:
                 }
 
                 vertBuilder->codeAppendf("%s = color;", varying.vsOut());
-                fragBuilder->codeAppendf("%s = %s;", args.fOutputColor, varying.fsIn());
+                fragBuilder->codeAppendf("half4 %s = %s;", args.fOutputColor, varying.fsIn());
 
                 // Position
-                this->writeOutputPosition(args.fVertBuilder, gpArgs, gp.fInPosition.name());
+                WriteOutputPosition(args.fVertBuilder, gpArgs, gp.fInPosition.name());
 
                 // Coverage
-                fragBuilder->codeAppendf("%s = half4(1);", args.fOutputCoverage);
-            }
-            void setData(const GrGLSLProgramDataManager& pdman,
-                         const GrPrimitiveProcessor& primProc) override {
-                const GP& gp = primProc.cast<GP>();
-                fColorSpaceHelper.setData(pdman, gp.fColorSpaceXform.get());
+                fragBuilder->codeAppendf("const half4 %s = half4(1);", args.fOutputCoverage);
             }
 
             GrGLSLColorSpaceXformHelper fColorSpaceHelper;
         };
-        return new GLSLGP();
+
+        return std::make_unique<Impl>();
     }
 
-    void getGLSLProcessorKey(const GrShaderCaps&, GrProcessorKeyBuilder* b) const override {
+    void addToKey(const GrShaderCaps&, skgpu::KeyBuilder* b) const override {
         b->add32(fMode);
         b->add32(GrColorSpaceXform::XformKey(fColorSpaceXform.get()));
     }
 
 private:
-    friend class ::SkArenaAlloc; // for access to ctor
-
     GP(Mode mode, sk_sp<GrColorSpaceXform> colorSpaceXform)
             : INHERITED(kVertexColorSpaceBenchGP_ClassID)
             , fMode(mode)
             , fColorSpaceXform(std::move(colorSpaceXform)) {
-        fInPosition = {"inPosition", kFloat2_GrVertexAttribType, kFloat2_GrSLType};
+        fInPosition = {"inPosition", kFloat2_GrVertexAttribType, SkSLType::kFloat2};
         switch (fMode) {
             case kBaseline_Mode:
             case kShader_Mode:
-                fInColor = {"inColor", kUByte4_norm_GrVertexAttribType, kHalf4_GrSLType};
+                fInColor = {"inColor", kUByte4_norm_GrVertexAttribType, SkSLType::kHalf4};
                 break;
             case kFloat_Mode:
-                fInColor = {"inColor", kFloat4_GrVertexAttribType, kHalf4_GrSLType};
+                fInColor = {"inColor", kFloat4_GrVertexAttribType, SkSLType::kHalf4};
                 break;
             case kHalf_Mode:
-                fInColor = {"inColor", kHalf4_GrVertexAttribType, kHalf4_GrSLType};
+                fInColor = {"inColor", kHalf4_GrVertexAttribType, SkSLType::kHalf4};
                 break;
         }
-        this->setVertexAttributes(&fInPosition, 2);
+        this->setVertexAttributesWithImplicitOffsets(&fInPosition, 2);
     }
 
     Mode fMode;
@@ -160,8 +164,7 @@ public:
         return FixedFunctionFlags::kNone;
     }
 
-    GrProcessorSet::Analysis finalize(const GrCaps&, const GrAppliedClip*,
-                                      bool hasMixedSampledCoverage, GrClampType) override {
+    GrProcessorSet::Analysis finalize(const GrCaps&, const GrAppliedClip*, GrClampType) override {
         return GrProcessorSet::EmptySetAnalysis();
     }
 
@@ -172,30 +175,34 @@ private:
 
     void onCreateProgramInfo(const GrCaps* caps,
                              SkArenaAlloc* arena,
-                             const GrSurfaceProxyView* writeView,
+                             const GrSurfaceProxyView& writeView,
+                             bool usesMSAASurface,
                              GrAppliedClip&& appliedClip,
-                             const GrXferProcessor::DstProxyView& dstProxyView,
-                             GrXferBarrierFlags renderPassXferBarriers) override {
+                             const GrDstProxyView& dstProxyView,
+                             GrXferBarrierFlags renderPassXferBarriers,
+                             GrLoadOp colorLoadOp) override {
         GrGeometryProcessor* gp = GP::Make(arena, fMode, fColorSpaceXform);
 
         fProgramInfo = GrSimpleMeshDrawOpHelper::CreateProgramInfo(caps,
                                                                    arena,
                                                                    writeView,
+                                                                   usesMSAASurface,
                                                                    std::move(appliedClip),
                                                                    dstProxyView,
                                                                    gp,
                                                                    GrProcessorSet::MakeEmptySet(),
                                                                    GrPrimitiveType::kTriangleStrip,
                                                                    renderPassXferBarriers,
+                                                                   colorLoadOp,
                                                                    GrPipeline::InputFlags::kNone);
     }
 
-    void onPrepareDraws(Target* target) override {
+    void onPrepareDraws(GrMeshDrawTarget* target) override {
         if (!fProgramInfo) {
             this->createProgramInfo(target);
         }
 
-        size_t vertexStride = fProgramInfo->primProc().vertexStride();
+        size_t vertexStride = fProgramInfo->geomProc().vertexStride();
         const int kVertexCount = 1024;
         sk_sp<const GrBuffer> vertexBuffer;
         int firstVertex = 0;
@@ -226,11 +233,7 @@ private:
             };
             SkASSERT(sizeof(V) == vertexStride);
             uint64_t color;
-            Sk4h halfColor = SkFloatToHalf_finite_ftz(Sk4f::Load(&fColor4f));
-            color = (uint64_t)halfColor[0] << 48 |
-                    (uint64_t)halfColor[1] << 32 |
-                    (uint64_t)halfColor[2] << 16 |
-                    (uint64_t)halfColor[3] << 0;
+            SkFloatToHalf_finite_ftz(skvx::float4::Load(&fColor4f)).store(&color);
             V* v = (V*)verts;
             for (int i = 0; i < kVertexCount; i += 2) {
                 v[i + 0].fPos.set(dx * i, 0.0f);
@@ -263,7 +266,7 @@ private:
         }
 
         flushState->bindPipelineAndScissorClip(*fProgramInfo, chainBounds);
-        flushState->bindTextures(fProgramInfo->primProc(), nullptr, fProgramInfo->pipeline());
+        flushState->bindTextures(fProgramInfo->geomProc(), nullptr, fProgramInfo->pipeline());
         flushState->drawMesh(*fMesh);
     }
 
@@ -307,9 +310,15 @@ public:
         const int kDrawsPerLoop = 32;
 
         for (int i = 0; i < loops; ++i) {
-            auto rtc = GrRenderTargetContext::Make(
-                    context, GrColorType::kRGBA_8888, p3, SkBackingFit::kApprox, {100, 100});
-            SkASSERT(rtc);
+            auto sdc =
+                    skgpu::ganesh::SurfaceDrawContext::Make(context,
+                                                            GrColorType::kRGBA_8888,
+                                                            p3,
+                                                            SkBackingFit::kApprox,
+                                                            {100, 100},
+                                                            SkSurfaceProps(),
+                                                            /*label=*/"DrawVertexColorSpaceBench");
+            SkASSERT(sdc);
 
             for (int j = 0; j < kDrawsPerLoop; ++j) {
                 SkColor c = r.nextU();
@@ -329,7 +338,7 @@ public:
                         op = GrOp::Make<Op>(rContext, c4f, fMode);
                     }
                 }
-                rtc->priv().testingOnly_addDrawOp(std::move(op));
+                sdc->addDrawOp(std::move(op));
             }
 
             context->flushAndSubmit();

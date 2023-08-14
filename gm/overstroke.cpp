@@ -13,11 +13,8 @@
  * overlap and create holes. There is not a really great algorithm for this
  * and several other 2D graphics engines have the same bug.
  *
- * If we run this using Nvidia Path Renderer with:
- * `path/to/dm --match OverStroke -w gm_out --gpu --config nvpr16`
- * then we get correct results, so that is a possible direction of attack -
- * use the GPU and a completely different algorithm to get correctness in
- * Skia.
+ * The old Nvidia Path Renderer used to yield correct results, so a possible
+ * direction of attack is to use the GPU and a completely different algorithm.
  *
  * See crbug.com/589769 skbug.com/5405 skbug.com/5406
  */
@@ -28,6 +25,7 @@
 #include "include/core/SkPaint.h"
 #include "include/core/SkPathBuilder.h"
 #include "include/core/SkPathMeasure.h"
+#include "include/core/SkPathUtils.h"
 #include "include/core/SkPoint.h"
 #include "include/core/SkRect.h"
 #include "include/core/SkScalar.h"
@@ -146,7 +144,7 @@ void draw_quad_fillpath(SkCanvas *canvas) {
     fillp.setColor(SK_ColorMAGENTA);
 
     SkPath fillpath;
-    p.getFillPath(path, &fillpath);
+    skpathutils::FillPathWithPaint(path, p, &fillpath);
 
     canvas->drawPath(fillpath, fillp);
 }
@@ -183,7 +181,7 @@ void draw_cubic_fillpath(SkCanvas *canvas) {
     fillp.setColor(SK_ColorMAGENTA);
 
     SkPath fillpath;
-    p.getFillPath(path, &fillpath);
+    skpathutils::FillPathWithPaint(path, p, &fillpath);
 
     canvas->drawPath(fillpath, fillp);
 }
@@ -221,7 +219,7 @@ void draw_oval_fillpath(SkCanvas *canvas) {
     fillp.setColor(SK_ColorMAGENTA);
 
     SkPath fillpath;
-    p.getFillPath(path, &fillpath);
+    skpathutils::FillPathWithPaint(path, p, &fillpath);
 
     canvas->drawPath(fillpath, fillp);
 }

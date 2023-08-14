@@ -6,11 +6,15 @@
  */
 
 #include "include/core/SkData.h"
+
 #include "include/core/SkStream.h"
-#include "include/private/SkOnce.h"
+#include "include/private/base/SkAssert.h"
+#include "include/private/base/SkMalloc.h"
+#include "include/private/base/SkOnce.h"
 #include "src/core/SkOSFile.h"
-#include "src/core/SkReadBuffer.h"
-#include "src/core/SkWriteBuffer.h"
+#include "src/core/SkStreamPriv.h"
+
+#include <cstring>
 #include <new>
 
 SkData::SkData(const void* ptr, size_t size, ReleaseProc proc, void* context)
@@ -57,7 +61,9 @@ size_t SkData::copyRange(size_t offset, size_t length, void* buffer) const {
     }
     SkASSERT(length > 0);
 
-    memcpy(buffer, this->bytes() + offset, length);
+    if (buffer) {
+        memcpy(buffer, this->bytes() + offset, length);
+    }
     return length;
 }
 
@@ -81,7 +87,7 @@ sk_sp<SkData> SkData::PrivateNewWithCopy(const void* srcOrNull, size_t length) {
     return data;
 }
 
-void SkData::DummyReleaseProc(const void*, void*) {}
+void SkData::NoopReleaseProc(const void*, void*) {}
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -109,6 +115,14 @@ sk_sp<SkData> SkData::MakeWithCopy(const void* src, size_t length) {
 
 sk_sp<SkData> SkData::MakeUninitialized(size_t length) {
     return PrivateNewWithCopy(nullptr, length);
+}
+
+sk_sp<SkData> SkData::MakeZeroInitialized(size_t length) {
+    auto data = MakeUninitialized(length);
+    if (length != 0) {
+        memset(data->writable_data(), 0, data->size());
+    }
+    return data;
 }
 
 sk_sp<SkData> SkData::MakeWithProc(const void* ptr, size_t length, ReleaseProc proc, void* ctx) {
@@ -192,6 +206,11 @@ sk_sp<SkData> SkData::MakeWithCString(const char cstr[]) {
 ///////////////////////////////////////////////////////////////////////////////
 
 sk_sp<SkData> SkData::MakeFromStream(SkStream* stream, size_t size) {
+    // reduce the chance of OOM by checking that the stream has enough bytes to read from before
+    // allocating that potentially large buffer.
+    if (StreamRemainingLengthIsBelow(stream, size)) {
+        return nullptr;
+    }
     sk_sp<SkData> data(SkData::MakeUninitialized(size));
     if (stream->read(data->writable_data(), size) != size) {
         return nullptr;

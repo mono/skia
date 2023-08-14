@@ -5,12 +5,30 @@
  * found in the LICENSE file.
  */
 
+#include "include/core/SkAlphaType.h"
+#include "include/core/SkBitmap.h"
 #include "include/core/SkCanvas.h"
+#include "include/core/SkColor.h"
+#include "include/core/SkColorType.h"
+#include "include/core/SkImage.h"
+#include "include/core/SkImageInfo.h"
+#include "include/core/SkPaint.h"
+#include "include/core/SkRect.h"
+#include "include/core/SkRefCnt.h"
+#include "include/core/SkSamplingOptions.h"
 #include "include/core/SkSurface.h"
+#include "include/core/SkTypes.h"
+#include "include/gpu/GpuTypes.h"
 #include "include/gpu/GrDirectContext.h"
-#include "src/gpu/GrDirectContextPriv.h"
-#include "src/gpu/GrGpu.h"
+#include "include/gpu/ganesh/SkSurfaceGanesh.h"
+#include "src/gpu/ganesh/GrDirectContextPriv.h"
+#include "src/gpu/ganesh/GrGpu.h"
+#include "tests/CtsEnforcement.h"
 #include "tests/Test.h"
+
+#include <cstdint>
+
+struct GrContextOptions;
 
 static bool check_read(skiatest::Reporter* reporter, const SkBitmap& bitmap) {
     bool result = true;
@@ -25,17 +43,20 @@ static bool check_read(skiatest::Reporter* reporter, const SkBitmap& bitmap) {
     return result;
 }
 
-DEF_GPUTEST_FOR_RENDERING_CONTEXTS(GrOpsTaskFlushCount, reporter, ctxInfo) {
+DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(OpsTaskFlushCount,
+                                       reporter,
+                                       ctxInfo,
+                                       CtsEnforcement::kApiLevel_T) {
     auto context = ctxInfo.directContext();
     GrGpu* gpu = context->priv().getGpu();
 
     SkImageInfo imageInfo = SkImageInfo::Make(1000, 1, kRGBA_8888_SkColorType, kPremul_SkAlphaType);
 
-    sk_sp<SkSurface> surface1 = SkSurface::MakeRenderTarget(context, SkBudgeted::kYes, imageInfo);
+    sk_sp<SkSurface> surface1 = SkSurfaces::RenderTarget(context, skgpu::Budgeted::kYes, imageInfo);
     if (!surface1) {
         return;
     }
-    sk_sp<SkSurface> surface2 = SkSurface::MakeRenderTarget(context, SkBudgeted::kYes, imageInfo);
+    sk_sp<SkSurface> surface2 = SkSurfaces::RenderTarget(context, skgpu::Budgeted::kYes, imageInfo);
     if (!surface2) {
         return;
     }
@@ -46,7 +67,7 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(GrOpsTaskFlushCount, reporter, ctxInfo) {
     canvas1->clear(SK_ColorRED);
     canvas2->clear(SK_ColorRED);
 
-    SkIRect srcRect = SkIRect::MakeWH(1, 1);
+    SkRect srcRect = SkRect::MakeWH(1, 1);
     SkRect dstRect = SkRect::MakeWH(1, 1);
     SkPaint paint;
     paint.setColor(SK_ColorGREEN);
@@ -57,12 +78,14 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(GrOpsTaskFlushCount, reporter, ctxInfo) {
         srcRect.fRight = srcRect.fLeft + 1;
 
         sk_sp<SkImage> image = surface1->makeImageSnapshot();
-        canvas2->drawImageRect(image.get(), srcRect, dstRect, nullptr);
+        canvas2->drawImageRect(image.get(), srcRect, dstRect, SkSamplingOptions(), nullptr,
+                               SkCanvas::kStrict_SrcRectConstraint);
         if (i != 999) {
             dstRect.fLeft = i+1;
             dstRect.fRight = dstRect.fLeft + 1;
             image = surface2->makeImageSnapshot();
-            canvas1->drawImageRect(image.get(), srcRect, dstRect, nullptr);
+            canvas1->drawImageRect(image.get(), srcRect, dstRect, SkSamplingOptions(), nullptr,
+                                   SkCanvas::kStrict_SrcRectConstraint);
         }
     }
     context->flushAndSubmit();

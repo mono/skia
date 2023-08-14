@@ -7,31 +7,36 @@
 
 #include "include/core/SkBlendMode.h"
 #include "include/gpu/GrDirectContext.h"
-#include "include/private/GrTypesPriv.h"
 #include "include/private/SkColorData.h"
-#include "src/gpu/GrBlend.h"
-#include "src/gpu/GrCaps.h"
-#include "src/gpu/GrDirectContextPriv.h"
-#include "src/gpu/GrPaint.h"
-#include "src/gpu/GrProcessorAnalysis.h"
-#include "src/gpu/GrProcessorSet.h"
-#include "src/gpu/GrUserStencilSettings.h"
-#include "src/gpu/GrXferProcessor.h"
-#include "src/gpu/effects/GrCustomXfermode.h"
+#include "include/private/gpu/ganesh/GrTypesPriv.h"
+#include "src/gpu/Blend.h"
+#include "src/gpu/ganesh/GrCaps.h"
+#include "src/gpu/ganesh/GrDirectContextPriv.h"
+#include "src/gpu/ganesh/GrPaint.h"
+#include "src/gpu/ganesh/GrProcessorAnalysis.h"
+#include "src/gpu/ganesh/GrProcessorSet.h"
+#include "src/gpu/ganesh/GrUserStencilSettings.h"
+#include "src/gpu/ganesh/GrXferProcessor.h"
+#include "src/gpu/ganesh/effects/GrCustomXfermode.h"
+#include "tests/CtsEnforcement.h"
 #include "tests/Test.h"
-#include "tools/gpu/GrContextFactory.h"
 
 #include <utility>
 
-DEF_GPUTEST_FOR_RENDERING_CONTEXTS(AdvancedBlendTest, reporter, ctxInfo) {
+struct GrContextOptions;
+
+DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(AdvancedBlendTest,
+                                       reporter,
+                                       ctxInfo,
+                                       CtsEnforcement::kApiLevel_T) {
     static constexpr auto opaque = GrProcessorAnalysisColor::Opaque::kYes;
     static constexpr auto coverage = GrProcessorAnalysisCoverage::kSingleChannel;
     const GrCaps& caps = *ctxInfo.directContext()->priv().caps();
 
     for (int mode = (int)SkBlendMode::kLastMode; mode > (int)SkBlendMode::kLastCoeffMode; --mode) {
         const SkBlendMode blendMode = (SkBlendMode)mode;
-        const GrBlendEquation blendEquation =
-                (GrBlendEquation)(mode + (kOverlay_GrBlendEquation - (int)SkBlendMode::kOverlay));
+        const skgpu::BlendEquation blendEquation = (skgpu::BlendEquation)(mode +
+                ((int)skgpu::BlendEquation::kOverlay - (int)SkBlendMode::kOverlay));
         const GrXPFactory* xpf = GrCustomXfermode::Get(blendMode);
 
         GrXPFactory::AnalysisProperties xpfAnalysis =
@@ -40,11 +45,10 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(AdvancedBlendTest, reporter, ctxInfo) {
         GrPaint paint;
         paint.setXPFactory(xpf);
         GrProcessorSet procs(std::move(paint));
-        bool hasMixedSampledCoverage = false;
         SkPMColor4f overrideColor;
         GrProcessorSet::Analysis processorAnalysis = procs.finalize(
-                opaque, coverage, nullptr, &GrUserStencilSettings::kUnused, hasMixedSampledCoverage,
-                caps, GrClampType::kAuto, &overrideColor);
+                opaque, coverage, nullptr, &GrUserStencilSettings::kUnused, caps,
+                GrClampType::kAuto, &overrideColor);
 
         if (caps.advancedBlendEquationSupport() &&
                 !caps.isAdvancedBlendEquationDisabled(blendEquation)) {

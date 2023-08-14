@@ -6,66 +6,103 @@
 # found in the LICENSE file.
 
 import os
+import shlex
 import subprocess
 import sys
+import tempfile
+
+batchCompile = True
 
 skslc = sys.argv[1]
 lang = sys.argv[2]
 settings = sys.argv[3]
-inputs = sys.argv[4:]
+input_root_dir = sys.argv[4]
+output_root_dir = sys.argv[5]
+# The last arg is a file containing a space seperated list of filenames
+input_file = sys.argv[6]
+with open(input_file, 'r') as reader:
+    inputs = shlex.split(reader.read())
 
-def makeEmptyFile(path):
+def executeWorklist(input, worklist):
+    # Invoke skslc, passing in the worklist.
+    worklist.close()
     try:
-        open(path, 'wb').close()
-    except OSError:
-        pass
-
-def compile(skslc, input, target, extension):
-    target += extension
-    try:
-        subprocess.check_output([
-            skslc, input, target, settings], stderr=subprocess.STDOUT).decode('utf-8')
-        return True
-
+        output = subprocess.check_output([
+            skslc, worklist.name], stderr=subprocess.STDOUT).decode('utf-8', errors='ignore')
     except subprocess.CalledProcessError as err:
-        with open(target, 'wb') as dst:
-            dst.write("### Compilation failed:\n\n")
-            dst.write("\n".join(err.output.decode('utf-8').splitlines()))
-            dst.write("\n")
-        return False
+        if err.returncode != 1:
+            print("### " + input + " skslc error:\n")
+            print("\n".join(err.output.decode('utf-8', errors='ignore').splitlines()))
+            sys.exit(err.returncode)
+        pass  # Compile errors (exit code 1) are expected and normal in test code
+
+    # Delete the worklist file now that execution is complete.
+    os.remove(worklist.name)
+
+def extensionForSpirvAsm(ext):
+    return ext if (ext == '.frag' or ext == '.vert') else '.frag'
 
 if settings != "--settings" and settings != "--nosettings":
     sys.exit("### Expected --settings or --nosettings, got " + settings)
 
+worklist = tempfile.NamedTemporaryFile(suffix='.worklist', delete=False, mode='w')
+
+# Here we loop over the inputs and convert them into a worklist file for sksl-minify.
 for input in inputs:
+    # Derive the target path from the input filename and remove the extension so it can
+    # end with .minified.sksl
+    target = input.replace(input_root_dir, output_root_dir)
+    target = os.path.splitext(target)[0]
+    target_dir = os.path.dirname(target)
+    if not os.path.isdir(target_dir):
+        os.mkdir(target_dir)
+
     noExt, ext = os.path.splitext(input)
     head, tail = os.path.split(noExt)
-    targetDir = os.path.join(head, "golden")
-    if not os.path.isdir(targetDir):
-        os.mkdir(targetDir)
 
-    target = os.path.join(targetDir, tail)
     if settings == "--nosettings":
         target += "StandaloneSettings"
 
-    if lang == "--fp":
-        # First, compile the CPP. If we get an error, stop here.
-        if compile(skslc, input, target, ".cpp"):
-            # Next, compile the header.
-            if compile(skslc, input, target, ".h"):
-                # Both files built successfully.
-                continue
-            else:
-                # The header generated an error; this counts as an overall failure for this test.
-                # Blank out the passing CPP output since it's not relevant in a failure case.
-                makeEmptyFile(target + ".cpp")
-        else:
-            # The CPP generated an error. We didn't actually generate a header at all, but Ninja
-            # expects an output file to exist or it won't reach steady-state.
-            makeEmptyFile(target + ".h")
-    elif lang == "--glsl":
-        compile(skslc, input, target, ".glsl")
+    if lang == "--glsl":
+        worklist.write(input + "\n")
+        worklist.write(target + ".glsl\n")
+        worklist.write(settings + "\n\n")
     elif lang == "--metal":
-        compile(skslc, input, target, ".metal")
+        worklist.write(input + "\n")
+        worklist.write(target + ".metal\n")
+        worklist.write(settings + "\n\n")
+    elif lang == "--hlsl":
+        worklist.write(input + "\n")
+        worklist.write(target + ".hlsl\n")
+        worklist.write(settings + "\n\n")
+    elif lang == "--spirv":
+        worklist.write(input + "\n")
+        worklist.write(target + ".asm" + extensionForSpirvAsm(ext) + "\n")
+        worklist.write(settings + "\n\n")
+    elif lang == "--skrp":
+        worklist.write(input + "\n")
+        worklist.write(target + ".skrp\n")
+        worklist.write(settings + "\n\n")
+    elif lang == "--stage":
+        worklist.write(input + "\n")
+        worklist.write(target + ".stage\n")
+        worklist.write(settings + "\n\n")
+    elif lang == "--wgsl":
+        worklist.write(input + "\n")
+        worklist.write(target + ".wgsl\n")
+        worklist.write(settings + "\n\n")
     else:
-        sys.exit("### Expected one of: --fp --glsl --metal, got " + lang)
+        sys.exit("### Expected one of: --glsl --metal --hlsl --spirv --skrp " +
+                 "--stage --wgsl, got " + lang)
+
+    # Compile items one at a time.
+    if not batchCompile:
+        executeWorklist(input, worklist)
+        worklist = tempfile.NamedTemporaryFile(suffix='.worklist', delete=False, mode='w')
+
+# Compile everything all in one go.
+if batchCompile:
+    executeWorklist("", worklist)
+else:
+    worklist.close()
+    os.remove(worklist.name)

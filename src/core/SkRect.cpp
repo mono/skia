@@ -7,8 +7,11 @@
 
 #include "include/core/SkRect.h"
 
-#include "include/private/SkMalloc.h"
+#include "include/core/SkM44.h"
+#include "include/private/base/SkDebug.h"
 #include "src/core/SkRectPriv.h"
+
+class SkMatrix;
 
 bool SkIRect::intersect(const SkIRect& a, const SkIRect& b) {
     SkIRect tmp = {
@@ -52,7 +55,7 @@ void SkRect::toQuad(SkPoint quad[4]) const {
     quad[3].set(fLeft, fBottom);
 }
 
-#include "include/private/SkNx.h"
+#include "src/base/SkVx.h"
 
 bool SkRect::setBoundsCheck(const SkPoint pts[], int count) {
     SkASSERT((pts && count > 0) || count == 0);
@@ -62,29 +65,28 @@ bool SkRect::setBoundsCheck(const SkPoint pts[], int count) {
         return true;
     }
 
-    Sk4s min, max;
+    skvx::float4 min, max;
     if (count & 1) {
-        min = max = Sk4s(pts->fX, pts->fY,
-                         pts->fX, pts->fY);
+        min = max = skvx::float2::Load(pts).xyxy();
         pts   += 1;
         count -= 1;
     } else {
-        min = max = Sk4s::Load(pts);
+        min = max = skvx::float4::Load(pts);
         pts   += 2;
         count -= 2;
     }
 
-    Sk4s accum = min * 0;
+    skvx::float4 accum = min * 0;
     while (count) {
-        Sk4s xy = Sk4s::Load(pts);
+        skvx::float4 xy = skvx::float4::Load(pts);
         accum = accum * xy;
-        min = Sk4s::Min(min, xy);
-        max = Sk4s::Max(max, xy);
+        min = skvx::min(min, xy);
+        max = skvx::max(max, xy);
         pts   += 2;
         count -= 2;
     }
 
-    bool all_finite = (accum * 0 == 0).allTrue();
+    const bool all_finite = all(accum * 0 == 0);
     if (all_finite) {
         this->setLTRB(std::min(min[0], min[2]), std::min(min[1], min[3]),
                       std::max(max[0], max[2]), std::max(max[1], max[3]));
@@ -170,11 +172,9 @@ void SkRect::dump(bool asHex) const {
 
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
-template<typename R, typename C>
+template<typename R>
 static bool subtract(const R& a, const R& b, R* out) {
-    static constexpr C kZero = C(0);
-
-    if (!R::Intersects(a, b)) {
+    if (a.isEmpty() || b.isEmpty() || !R::Intersects(a, b)) {
         // Either already empty, or subtracting the empty rect, or there's no intersection, so
         // in all cases the answer is A.
         *out = a;
@@ -188,33 +188,36 @@ static bool subtract(const R& a, const R& b, R* out) {
     // 2. Right part of A:  (B.right, A.top,    A.right, A.bottom)
     // 3. Top part of A:    (A.left,  A.top,    A.right, B.top)
     // 4. Bottom part of A: (A.left,  B.bottom, A.right, A.bottom)
-
-    C height = a.height();
-    C width = a.width();
-
-    // Compute the areas of the 4 rects described above. Depending on how B intersects A, there
-    // will be 1 to 4 positive areas:
+    //
+    // Depending on how B intersects A, there will be 1 to 4 positive areas:
     //  - 4 occur when A contains B
     //  - 3 occur when B intersects a single edge
     //  - 2 occur when B intersects at a corner, or spans two opposing edges
     //  - 1 occurs when B spans two opposing edges and contains a 3rd, resulting in an exact rect
     //  - 0 occurs when B contains A, resulting in the empty rect
-    C leftArea = kZero, rightArea = kZero, topArea = kZero, bottomArea = kZero;
+    //
+    // Compute the relative areas of the 4 rects described above. Since each subrectangle shares
+    // either the width or height of A, we only have to divide by the other dimension, which avoids
+    // overflow on int32 types, and even if the float relative areas overflow to infinity, the
+    // comparisons work out correctly and (one of) the infinitely large subrects will be chosen.
+    float aHeight = (float) a.height();
+    float aWidth = (float) a.width();
+    float leftArea = 0.f, rightArea = 0.f, topArea = 0.f, bottomArea = 0.f;
     int positiveCount = 0;
     if (b.fLeft > a.fLeft) {
-        leftArea = (b.fLeft - a.fLeft) * height;
+        leftArea = (b.fLeft - a.fLeft) / aWidth;
         positiveCount++;
     }
     if (a.fRight > b.fRight) {
-        rightArea = (a.fRight - b.fRight) * height;
+        rightArea = (a.fRight - b.fRight) / aWidth;
         positiveCount++;
     }
     if (b.fTop > a.fTop) {
-        topArea = (b.fTop - a.fTop) * width;
+        topArea = (b.fTop - a.fTop) / aHeight;
         positiveCount++;
     }
     if (a.fBottom > b.fBottom) {
-        bottomArea = (a.fBottom - b.fBottom) * width;
+        bottomArea = (a.fBottom - b.fBottom) / aHeight;
         positiveCount++;
     }
 
@@ -236,7 +239,7 @@ static bool subtract(const R& a, const R& b, R* out) {
         out->fBottom = b.fTop;
     } else {
         // Bottom chunk of A, so the new top edge is B's bottom edge
-        SkASSERT(bottomArea > kZero);
+        SkASSERT(bottomArea > 0.f);
         out->fTop = b.fBottom;
     }
 
@@ -246,9 +249,61 @@ static bool subtract(const R& a, const R& b, R* out) {
 }
 
 bool SkRectPriv::Subtract(const SkRect& a, const SkRect& b, SkRect* out) {
-    return subtract<SkRect, SkScalar>(a, b, out);
+    return subtract<SkRect>(a, b, out);
 }
 
 bool SkRectPriv::Subtract(const SkIRect& a, const SkIRect& b, SkIRect* out) {
-    return subtract<SkIRect, int>(a, b, out);
+    return subtract<SkIRect>(a, b, out);
+}
+
+
+bool SkRectPriv::QuadContainsRect(const SkMatrix& m, const SkIRect& a, const SkIRect& b) {
+    return QuadContainsRect(SkM44(m), SkRect::Make(a), SkRect::Make(b));
+}
+
+bool SkRectPriv::QuadContainsRect(const SkM44& m, const SkRect& a, const SkRect& b) {
+    SkDEBUGCODE(SkM44 inverse;)
+    SkASSERT(m.invert(&inverse));
+    // With empty rectangles, the calculated edges could give surprising results. If 'a' were not
+    // sorted, its normals would point outside the sorted rectangle, so lots of potential rects
+    // would be seen as "contained". If 'a' is all 0s, its edge equations are also (0,0,0) so every
+    // point has a distance of 0, and would be interpreted as inside.
+    if (a.isEmpty()) {
+        return false;
+    }
+    // However, 'b' is only used to define its 4 corners to check against the transformed edges.
+    // This is valid regardless of b's emptiness or sortedness.
+
+    // Calculate the 4 homogenous coordinates of 'a' transformed by 'm' where Z=0 and W=1.
+    auto ax = skvx::float4{a.fLeft, a.fRight, a.fRight, a.fLeft};
+    auto ay = skvx::float4{a.fTop, a.fTop, a.fBottom, a.fBottom};
+
+    auto max = m.rc(0,0)*ax + m.rc(0,1)*ay + m.rc(0,3);
+    auto may = m.rc(1,0)*ax + m.rc(1,1)*ay + m.rc(1,3);
+    auto maw = m.rc(3,0)*ax + m.rc(3,1)*ay + m.rc(3,3);
+
+    if (all(maw < 0.f)) {
+        // If all points of A are mapped to w < 0, then the edge equations end up representing the
+        // convex hull of projected points when A should in fact be considered empty.
+        return false;
+    }
+
+    // Cross product of adjacent vertices provides homogenous lines for the 4 sides of the quad
+    auto lA = may*skvx::shuffle<1,2,3,0>(maw) - maw*skvx::shuffle<1,2,3,0>(may);
+    auto lB = maw*skvx::shuffle<1,2,3,0>(max) - max*skvx::shuffle<1,2,3,0>(maw);
+    auto lC = max*skvx::shuffle<1,2,3,0>(may) - may*skvx::shuffle<1,2,3,0>(max);
+
+    // Before transforming, the corners of 'a' were in CW order, but afterwards they may become CCW,
+    // so the sign corrects the direction of the edge normals to point inwards.
+    float sign = (lA[0]*lB[1] - lB[0]*lA[1]) < 0 ? -1.f : 1.f;
+
+    // Calculate distance from 'b' to each edge. Since 'b' has presumably been transformed by 'm'
+    // *and* projected, this assumes W = 1.
+    auto d0 = sign * (lA*b.fLeft  + lB*b.fTop    + lC);
+    auto d1 = sign * (lA*b.fRight + lB*b.fTop    + lC);
+    auto d2 = sign * (lA*b.fRight + lB*b.fBottom + lC);
+    auto d3 = sign * (lA*b.fLeft  + lB*b.fBottom + lC);
+
+    // 'b' is contained in the mapped rectangle if all distances are >= 0
+    return all((d0 >= 0.f) & (d1 >= 0.f) & (d2 >= 0.f) & (d3 >= 0.f));
 }

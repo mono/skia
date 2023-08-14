@@ -13,6 +13,8 @@
 #include "include/core/SkPaint.h"
 #include "include/core/SkPath.h"
 #include "include/core/SkPathEffect.h"
+#include "include/core/SkPathTypes.h"
+#include "include/core/SkPathUtils.h"
 #include "include/core/SkPoint.h"
 #include "include/core/SkRRect.h"
 #include "include/core/SkRect.h"
@@ -24,13 +26,15 @@
 #include "include/effects/SkDashPathEffect.h"
 #include "tests/Test.h"
 
+#include <cstdint>
+
 // test that we can draw an aa-rect at coordinates > 32K (bigger than fixedpoint)
 static void test_big_aa_rect(skiatest::Reporter* reporter) {
     SkBitmap output;
     SkPMColor pixel[1];
     output.installPixels(SkImageInfo::MakeN32Premul(1, 1), pixel, 4);
 
-    auto surf = SkSurface::MakeRasterN32Premul(300, 33300);
+    auto surf = SkSurfaces::Raster(SkImageInfo::MakeN32Premul(300, 33300));
     SkCanvas* canvas = surf->getCanvas();
 
     SkRect r = { 0, 33000, 300, 33300 };
@@ -106,7 +110,7 @@ static void test_crbug131181() {
     moveToH(&path, &data[0]);
     cubicToH(&path, &data[2]);
 
-    auto surface(SkSurface::MakeRasterN32Premul(640, 480));
+    auto surface(SkSurfaces::Raster(SkImageInfo::MakeN32Premul(640, 480)));
 
     SkPaint paint;
     paint.setAntiAlias(true);
@@ -126,6 +130,54 @@ static void test_crbug_140803() {
     canvas.drawPath(SkPath().moveTo(2762, 20).quadTo(11, 21702, 10, 21706), paint);
 }
 
+static void test_crbug_1239558(skiatest::Reporter* reporter) {
+    SkBitmap bm;
+    bm.allocN32Pixels(256, 256);
+
+    SkCanvas canvas(bm);
+    canvas.clear(SK_ColorWHITE);
+
+    // This creates a single cubic where the control points form an extremely skinny, vertical
+    // triangle contained within the x=0 column of pixels. Since it is convex (ignoring the leading
+    // moveTo's) it uses the convex aaa optimized edge walking algorithm after clipping the path to
+    // the device bounds. However, due to fixed-point math while walking these edges, the edge
+    // walking evaluates to coords that are very slightly less than 0 (i.e. 0.0012). Both the left
+    // and right edges would be out of bounds, but the edge walking is optimized to only clamp the
+    // left edge to the left bounds, and the right edge to the right bounds. After this clamping,
+    // the left and right edges are no longer sorted. This then led to incorrect behavior in various
+    // forms (described below).
+    SkPath path;
+    path.setFillType(SkPathFillType::kWinding);
+    path.moveTo(7.00649e-45f,  2.f);
+    path.moveTo(0.0160219f,    7.45063e-09f);
+    path.moveTo(192.263f,      8.40779e-44f);
+    path.moveTo(7.34684e-40f,  194.25f);
+    path.moveTo(2.3449e-38f,   6.01858e-36f);
+    path.moveTo(7.34684e-40f,  194.25f);
+    path.cubicTo(5.07266e-39f, 56.0488f,
+                 0.0119172f,   0.f,
+                 7.34684e-40f, 194.25f);
+
+    SkPaint paint;
+    paint.setColor(SK_ColorRED);
+    paint.setAntiAlias(true);
+    // On debug builds, the inverted left/right edges led to a negative coverage that triggered an
+    // assert while converting to a uint8 alpha value. On release builds with UBSAN, it would
+    // detect a negative left shift when computing the pixel address and crash. On regular release
+    // builds it would write a saturate coverage value to pixels that wrapped around to the far edge
+    canvas.drawPath(path, paint);
+
+    // UBSAN and debug builds would fail inside the drawPath() call above, but detect the incorrect
+    // memory access on release builds so that the test would fail. Given the path, it should only
+    // touch pixels with x=0 but the incorrect addressing would wrap to the right edge.
+    for (int y = 0; y < 256; ++y) {
+        if (bm.getColor(255, y) != SK_ColorWHITE) {
+            REPORTER_ASSERT(reporter, false, "drawPath modified incorrect pixels");
+            break;
+        }
+    }
+}
+
 // Need to exercise drawing an inverse-path whose bounds intersect the clip,
 // but whose edges do not (since its a quad which draws only in the bottom half
 // of its bounds).
@@ -140,7 +192,7 @@ static void test_inversepathwithclip() {
 
     SkPaint paint;
 
-    auto surface(SkSurface::MakeRasterN32Premul(640, 480));
+    auto surface(SkSurfaces::Raster(SkImageInfo::MakeN32Premul(640, 480)));
     SkCanvas* canvas = surface->getCanvas();
     canvas->save();
     canvas->clipRect(SkRect::MakeWH(19, 11));
@@ -179,7 +231,7 @@ static void test_bug533() {
     SkPaint paint;
     paint.setAntiAlias(true);
 
-    auto surface(SkSurface::MakeRasterN32Premul(640, 480));
+    auto surface(SkSurfaces::Raster(SkImageInfo::MakeN32Premul(640, 480)));
     surface->getCanvas()->drawPath(path, paint);
 }
 
@@ -221,7 +273,7 @@ static void test_bigcubic() {
     SkPaint paint;
     paint.setAntiAlias(true);
 
-    auto surface(SkSurface::MakeRasterN32Premul(640, 480));
+    auto surface(SkSurfaces::Raster(SkImageInfo::MakeN32Premul(640, 480)));
     surface->getCanvas()->drawPath(path, paint);
 }
 
@@ -249,7 +301,7 @@ static void test_halfway() {
     m.postTranslate(0.001f, 0.001f);
     path.transform(m, &p2);
 
-    auto surface(SkSurface::MakeRasterN32Premul(640, 480));
+    auto surface(SkSurfaces::Raster(SkImageInfo::MakeN32Premul(640, 480)));
     SkCanvas* canvas = surface->getCanvas();
     canvas->translate(-16366, -1383);
     canvas->drawPath(p2, paint);
@@ -270,7 +322,7 @@ static void test_halfway() {
 static void test_giantaa() {
     const int W = 400;
     const int H = 400;
-    auto surface(SkSurface::MakeRasterN32Premul(33000, 10));
+    auto surface(SkSurfaces::Raster(SkImageInfo::MakeN32Premul(33000, 10)));
 
     SkPaint paint;
     paint.setAntiAlias(true);
@@ -296,7 +348,7 @@ static void test_infinite_dash(skiatest::Reporter* reporter) {
     paint.setStyle(SkPaint::kStroke_Style);
     paint.setPathEffect(dash);
 
-    paint.getFillPath(path, &filteredPath);
+    skpathutils::FillPathWithPaint(path, paint, &filteredPath);
     // If we reach this, we passed.
     REPORTER_ASSERT(reporter, true);
 }
@@ -324,7 +376,7 @@ static void test_crbug_165432(skiatest::Reporter* reporter) {
 // http://crbug.com/472147
 // This is a simplified version from the bug. RRect radii not properly scaled.
 static void test_crbug_472147_simple(skiatest::Reporter* reporter) {
-    auto surface(SkSurface::MakeRasterN32Premul(1000, 1000));
+    auto surface(SkSurfaces::Raster(SkImageInfo::MakeN32Premul(1000, 1000)));
     SkCanvas* canvas = surface->getCanvas();
     SkPaint p;
     SkRect r = SkRect::MakeLTRB(-246.0f, 33.0f, 848.0f, 33554464.0f);
@@ -339,7 +391,7 @@ static void test_crbug_472147_simple(skiatest::Reporter* reporter) {
 // http://crbug.com/472147
 // RRect radii not properly scaled.
 static void test_crbug_472147_actual(skiatest::Reporter* reporter) {
-    auto surface(SkSurface::MakeRasterN32Premul(1000, 1000));
+    auto surface(SkSurfaces::Raster(SkImageInfo::MakeN32Premul(1000, 1000)));
     SkCanvas* canvas = surface->getCanvas();
     SkPaint p;
     SkRect r = SkRect::MakeLTRB(-246.0f, 33.0f, 848.0f, 33554464.0f);
@@ -363,11 +415,12 @@ DEF_TEST(DrawPath, reporter) {
     test_crbug_140803();
     test_inversepathwithclip();
     // why?
-    if (false) test_crbug131181();
+    if ((false)) test_crbug131181();
     test_infinite_dash(reporter);
     test_crbug_165432(reporter);
     test_crbug_472147_simple(reporter);
     test_crbug_472147_actual(reporter);
+    test_crbug_1239558(reporter);
     test_big_aa_rect(reporter);
     test_halfway();
 }

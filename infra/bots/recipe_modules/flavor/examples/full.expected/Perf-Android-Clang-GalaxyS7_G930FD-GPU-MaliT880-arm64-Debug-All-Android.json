@@ -2,13 +2,12 @@
   {
     "cmd": [
       "python",
-      "-u",
-      "import os\nprint os.environ.get('SWARMING_BOT_ID', '')\n"
+      "import os\nprint(os.environ.get('SWARMING_BOT_ID', ''))\n"
     ],
     "name": "get swarming bot id",
     "~followup_annotations": [
       "@@@STEP_LOG_LINE@python.inline@import os@@@",
-      "@@@STEP_LOG_LINE@python.inline@print os.environ.get('SWARMING_BOT_ID', '')@@@",
+      "@@@STEP_LOG_LINE@python.inline@print(os.environ.get('SWARMING_BOT_ID', ''))@@@",
       "@@@STEP_LOG_END@python.inline@@@"
     ]
   },
@@ -32,6 +31,23 @@
     "cmd": [
       "/opt/infra-android/tools/adb",
       "shell",
+      "test",
+      "-f",
+      "file.txt"
+    ],
+    "cwd": "[START_DIR]/skia",
+    "env": {
+      "ADB_VENDOR_KEYS": "/home/chrome-bot/.android/chrome_infrastructure_adbkey",
+      "CHROME_HEADLESS": "1",
+      "PATH": "<PATH>:RECIPE_REPO[depot_tools]"
+    },
+    "infra_step": true,
+    "name": "check if file.txt exists"
+  },
+  {
+    "cmd": [
+      "/opt/infra-android/tools/adb",
+      "shell",
       "cat",
       "file.txt"
     ],
@@ -47,8 +63,7 @@
   {
     "cmd": [
       "python",
-      "-u",
-      "\nimport subprocess\nimport sys\n\n# Remove the path.\nadb = sys.argv[1]\npath = sys.argv[2]\nprint('Removing %s' % path)\ncmd = [adb, 'shell', 'rm', '-rf', path]\nprint(' '.join(cmd))\nsubprocess.check_call(cmd)\n\n# Verify that the path was deleted.\nprint('Checking for existence of %s' % path)\ncmd = [adb, 'shell', 'ls', path]\nprint(' '.join(cmd))\ntry:\n  output = subprocess.check_output(cmd, stderr=subprocess.STDOUT)\nexcept subprocess.CalledProcessError as e:\n  output = e.output\nprint('Output was:')\nprint('======')\nprint(output)\nprint('======')\nif 'No such file or directory' not in output:\n  raise Exception('%s exists despite being deleted' % path)\n",
+      "\nimport subprocess\nimport sys\n\n# Remove the path.\nadb = sys.argv[1]\npath = sys.argv[2]\nprint('Removing %s' % path)\ncmd = [adb, 'shell', 'rm', '-rf', path]\nprint(' '.join(cmd))\nsubprocess.check_call(cmd)\n\n# Verify that the path was deleted.\nprint('Checking for existence of %s' % path)\ncmd = [adb, 'shell', 'ls', path]\nprint(' '.join(cmd))\ntry:\n  output = subprocess.check_output(\n      cmd, stderr=subprocess.STDOUT).decode('utf-8')\nexcept subprocess.CalledProcessError as e:\n  output = e.output.decode('utf-8')\nprint('Output was:')\nprint('======')\nprint(output)\nprint('======')\nif 'No such file or directory' not in output:\n  raise Exception('%s exists despite being deleted' % path)\n",
       "/opt/infra-android/tools/adb",
       "file.txt"
     ],
@@ -76,9 +91,10 @@
       "@@@STEP_LOG_LINE@python.inline@cmd = [adb, 'shell', 'ls', path]@@@",
       "@@@STEP_LOG_LINE@python.inline@print(' '.join(cmd))@@@",
       "@@@STEP_LOG_LINE@python.inline@try:@@@",
-      "@@@STEP_LOG_LINE@python.inline@  output = subprocess.check_output(cmd, stderr=subprocess.STDOUT)@@@",
+      "@@@STEP_LOG_LINE@python.inline@  output = subprocess.check_output(@@@",
+      "@@@STEP_LOG_LINE@python.inline@      cmd, stderr=subprocess.STDOUT).decode('utf-8')@@@",
       "@@@STEP_LOG_LINE@python.inline@except subprocess.CalledProcessError as e:@@@",
-      "@@@STEP_LOG_LINE@python.inline@  output = e.output@@@",
+      "@@@STEP_LOG_LINE@python.inline@  output = e.output.decode('utf-8')@@@",
       "@@@STEP_LOG_LINE@python.inline@print('Output was:')@@@",
       "@@@STEP_LOG_LINE@python.inline@print('======')@@@",
       "@@@STEP_LOG_LINE@python.inline@print(output)@@@",
@@ -90,7 +106,7 @@
   },
   {
     "cmd": [
-      "vpython",
+      "vpython3",
       "-u",
       "RECIPE_MODULE[recipe_engine::file]/resources/fileutil.py",
       "--json-output",
@@ -103,7 +119,7 @@
   },
   {
     "cmd": [
-      "vpython",
+      "vpython3",
       "-u",
       "RECIPE_MODULE[recipe_engine::file]/resources/fileutil.py",
       "--json-output",
@@ -119,8 +135,7 @@
   {
     "cmd": [
       "python",
-      "-u",
-      "\nimport subprocess\nimport sys\n\n# Remove the path.\nadb = sys.argv[1]\npath = sys.argv[2]\nprint('Removing %s' % path)\ncmd = [adb, 'shell', 'rm', '-rf', path]\nprint(' '.join(cmd))\nsubprocess.check_call(cmd)\n\n# Verify that the path was deleted.\nprint('Checking for existence of %s' % path)\ncmd = [adb, 'shell', 'ls', path]\nprint(' '.join(cmd))\ntry:\n  output = subprocess.check_output(cmd, stderr=subprocess.STDOUT)\nexcept subprocess.CalledProcessError as e:\n  output = e.output\nprint('Output was:')\nprint('======')\nprint(output)\nprint('======')\nif 'No such file or directory' not in output:\n  raise Exception('%s exists despite being deleted' % path)\n",
+      "\nimport subprocess\nimport sys\n\n# Remove the path.\nadb = sys.argv[1]\npath = sys.argv[2]\nprint('Removing %s' % path)\ncmd = [adb, 'shell', 'rm', '-rf', path]\nprint(' '.join(cmd))\nsubprocess.check_call(cmd)\n\n# Verify that the path was deleted.\nprint('Checking for existence of %s' % path)\ncmd = [adb, 'shell', 'ls', path]\nprint(' '.join(cmd))\ntry:\n  output = subprocess.check_output(\n      cmd, stderr=subprocess.STDOUT).decode('utf-8')\nexcept subprocess.CalledProcessError as e:\n  output = e.output.decode('utf-8')\nprint('Output was:')\nprint('======')\nprint(output)\nprint('======')\nif 'No such file or directory' not in output:\n  raise Exception('%s exists despite being deleted' % path)\n",
       "/opt/infra-android/tools/adb",
       "device_results_dir"
     ],
@@ -148,9 +163,10 @@
       "@@@STEP_LOG_LINE@python.inline@cmd = [adb, 'shell', 'ls', path]@@@",
       "@@@STEP_LOG_LINE@python.inline@print(' '.join(cmd))@@@",
       "@@@STEP_LOG_LINE@python.inline@try:@@@",
-      "@@@STEP_LOG_LINE@python.inline@  output = subprocess.check_output(cmd, stderr=subprocess.STDOUT)@@@",
+      "@@@STEP_LOG_LINE@python.inline@  output = subprocess.check_output(@@@",
+      "@@@STEP_LOG_LINE@python.inline@      cmd, stderr=subprocess.STDOUT).decode('utf-8')@@@",
       "@@@STEP_LOG_LINE@python.inline@except subprocess.CalledProcessError as e:@@@",
-      "@@@STEP_LOG_LINE@python.inline@  output = e.output@@@",
+      "@@@STEP_LOG_LINE@python.inline@  output = e.output.decode('utf-8')@@@",
       "@@@STEP_LOG_LINE@python.inline@print('Output was:')@@@",
       "@@@STEP_LOG_LINE@python.inline@print('======')@@@",
       "@@@STEP_LOG_LINE@python.inline@print(output)@@@",
@@ -211,37 +227,31 @@
     "name": "push nanobench"
   },
   {
-    "cmd": [],
-    "name": "push [START_DIR]/skia/resources/* /sdcard/revenge_of_the_skiabot/resources"
-  },
-  {
     "cmd": [
-      "vpython",
+      "vpython3",
       "-u",
       "RECIPE_MODULE[recipe_engine::file]/resources/fileutil.py",
       "--json-output",
       "/path/to/tmp/json",
-      "listdir",
+      "glob",
       "[START_DIR]/skia/resources",
-      "--recursive"
+      "*"
     ],
     "infra_step": true,
-    "name": "push [START_DIR]/skia/resources/* /sdcard/revenge_of_the_skiabot/resources.list [START_DIR]/skia/resources",
+    "name": "ls [START_DIR]/skia/resources/*",
     "~followup_annotations": [
-      "@@@STEP_NEST_LEVEL@1@@@",
-      "@@@STEP_LOG_LINE@listdir@[START_DIR]/skia/resources/.file3@@@",
-      "@@@STEP_LOG_LINE@listdir@[START_DIR]/skia/resources/.ignore/file4@@@",
-      "@@@STEP_LOG_LINE@listdir@[START_DIR]/skia/resources/file1@@@",
-      "@@@STEP_LOG_LINE@listdir@[START_DIR]/skia/resources/subdir/file2@@@",
-      "@@@STEP_LOG_END@listdir@@@"
+      "@@@STEP_LOG_LINE@glob@[START_DIR]/skia/resources/bar.jpg@@@",
+      "@@@STEP_LOG_LINE@glob@[START_DIR]/skia/resources/foo.png@@@",
+      "@@@STEP_LOG_END@glob@@@"
     ]
   },
   {
     "cmd": [
       "/opt/infra-android/tools/adb",
       "push",
-      "[START_DIR]/skia/resources/.file3",
-      "/sdcard/revenge_of_the_skiabot/resources/.file3"
+      "[START_DIR]/skia/resources/bar.jpg",
+      "[START_DIR]/skia/resources/foo.png",
+      "/sdcard/revenge_of_the_skiabot/resources"
     ],
     "cwd": "[START_DIR]/skia",
     "env": {
@@ -250,52 +260,11 @@
       "PATH": "<PATH>:RECIPE_REPO[depot_tools]"
     },
     "infra_step": true,
-    "name": "push [START_DIR]/skia/resources/* /sdcard/revenge_of_the_skiabot/resources.push [START_DIR]/skia/resources/.file3",
-    "~followup_annotations": [
-      "@@@STEP_NEST_LEVEL@1@@@"
-    ]
+    "name": "push [START_DIR]/skia/resources/* /sdcard/revenge_of_the_skiabot/resources"
   },
   {
     "cmd": [
-      "/opt/infra-android/tools/adb",
-      "push",
-      "[START_DIR]/skia/resources/file1",
-      "/sdcard/revenge_of_the_skiabot/resources/file1"
-    ],
-    "cwd": "[START_DIR]/skia",
-    "env": {
-      "ADB_VENDOR_KEYS": "/home/chrome-bot/.android/chrome_infrastructure_adbkey",
-      "CHROME_HEADLESS": "1",
-      "PATH": "<PATH>:RECIPE_REPO[depot_tools]"
-    },
-    "infra_step": true,
-    "name": "push [START_DIR]/skia/resources/* /sdcard/revenge_of_the_skiabot/resources.push [START_DIR]/skia/resources/file1",
-    "~followup_annotations": [
-      "@@@STEP_NEST_LEVEL@1@@@"
-    ]
-  },
-  {
-    "cmd": [
-      "/opt/infra-android/tools/adb",
-      "push",
-      "[START_DIR]/skia/resources/subdir/file2",
-      "/sdcard/revenge_of_the_skiabot/resources/subdir/file2"
-    ],
-    "cwd": "[START_DIR]/skia",
-    "env": {
-      "ADB_VENDOR_KEYS": "/home/chrome-bot/.android/chrome_infrastructure_adbkey",
-      "CHROME_HEADLESS": "1",
-      "PATH": "<PATH>:RECIPE_REPO[depot_tools]"
-    },
-    "infra_step": true,
-    "name": "push [START_DIR]/skia/resources/* /sdcard/revenge_of_the_skiabot/resources.push [START_DIR]/skia/resources/subdir/file2",
-    "~followup_annotations": [
-      "@@@STEP_NEST_LEVEL@1@@@"
-    ]
-  },
-  {
-    "cmd": [
-      "vpython",
+      "vpython3",
       "-u",
       "RECIPE_MODULE[recipe_engine::file]/resources/fileutil.py",
       "--json-output",
@@ -313,7 +282,7 @@
   },
   {
     "cmd": [
-      "vpython",
+      "vpython3",
       "-u",
       "RECIPE_MODULE[recipe_engine::file]/resources/fileutil.py",
       "--json-output",
@@ -328,6 +297,23 @@
       "@@@STEP_LOG_LINE@SKP_VERSION@42@@@",
       "@@@STEP_LOG_END@SKP_VERSION@@@"
     ]
+  },
+  {
+    "cmd": [
+      "/opt/infra-android/tools/adb",
+      "shell",
+      "test",
+      "-f",
+      "/sdcard/revenge_of_the_skiabot/SKP_VERSION"
+    ],
+    "cwd": "[START_DIR]/skia",
+    "env": {
+      "ADB_VENDOR_KEYS": "/home/chrome-bot/.android/chrome_infrastructure_adbkey",
+      "CHROME_HEADLESS": "1",
+      "PATH": "<PATH>:RECIPE_REPO[depot_tools]"
+    },
+    "infra_step": true,
+    "name": "check if /sdcard/revenge_of_the_skiabot/SKP_VERSION exists"
   },
   {
     "cmd": [
@@ -348,8 +334,7 @@
   {
     "cmd": [
       "python",
-      "-u",
-      "\nimport subprocess\nimport sys\n\n# Remove the path.\nadb = sys.argv[1]\npath = sys.argv[2]\nprint('Removing %s' % path)\ncmd = [adb, 'shell', 'rm', '-rf', path]\nprint(' '.join(cmd))\nsubprocess.check_call(cmd)\n\n# Verify that the path was deleted.\nprint('Checking for existence of %s' % path)\ncmd = [adb, 'shell', 'ls', path]\nprint(' '.join(cmd))\ntry:\n  output = subprocess.check_output(cmd, stderr=subprocess.STDOUT)\nexcept subprocess.CalledProcessError as e:\n  output = e.output\nprint('Output was:')\nprint('======')\nprint(output)\nprint('======')\nif 'No such file or directory' not in output:\n  raise Exception('%s exists despite being deleted' % path)\n",
+      "\nimport subprocess\nimport sys\n\n# Remove the path.\nadb = sys.argv[1]\npath = sys.argv[2]\nprint('Removing %s' % path)\ncmd = [adb, 'shell', 'rm', '-rf', path]\nprint(' '.join(cmd))\nsubprocess.check_call(cmd)\n\n# Verify that the path was deleted.\nprint('Checking for existence of %s' % path)\ncmd = [adb, 'shell', 'ls', path]\nprint(' '.join(cmd))\ntry:\n  output = subprocess.check_output(\n      cmd, stderr=subprocess.STDOUT).decode('utf-8')\nexcept subprocess.CalledProcessError as e:\n  output = e.output.decode('utf-8')\nprint('Output was:')\nprint('======')\nprint(output)\nprint('======')\nif 'No such file or directory' not in output:\n  raise Exception('%s exists despite being deleted' % path)\n",
       "/opt/infra-android/tools/adb",
       "/sdcard/revenge_of_the_skiabot/SKP_VERSION"
     ],
@@ -377,9 +362,10 @@
       "@@@STEP_LOG_LINE@python.inline@cmd = [adb, 'shell', 'ls', path]@@@",
       "@@@STEP_LOG_LINE@python.inline@print(' '.join(cmd))@@@",
       "@@@STEP_LOG_LINE@python.inline@try:@@@",
-      "@@@STEP_LOG_LINE@python.inline@  output = subprocess.check_output(cmd, stderr=subprocess.STDOUT)@@@",
+      "@@@STEP_LOG_LINE@python.inline@  output = subprocess.check_output(@@@",
+      "@@@STEP_LOG_LINE@python.inline@      cmd, stderr=subprocess.STDOUT).decode('utf-8')@@@",
       "@@@STEP_LOG_LINE@python.inline@except subprocess.CalledProcessError as e:@@@",
-      "@@@STEP_LOG_LINE@python.inline@  output = e.output@@@",
+      "@@@STEP_LOG_LINE@python.inline@  output = e.output.decode('utf-8')@@@",
       "@@@STEP_LOG_LINE@python.inline@print('Output was:')@@@",
       "@@@STEP_LOG_LINE@python.inline@print('======')@@@",
       "@@@STEP_LOG_LINE@python.inline@print(output)@@@",
@@ -392,8 +378,7 @@
   {
     "cmd": [
       "python",
-      "-u",
-      "\nimport subprocess\nimport sys\n\n# Remove the path.\nadb = sys.argv[1]\npath = sys.argv[2]\nprint('Removing %s' % path)\ncmd = [adb, 'shell', 'rm', '-rf', path]\nprint(' '.join(cmd))\nsubprocess.check_call(cmd)\n\n# Verify that the path was deleted.\nprint('Checking for existence of %s' % path)\ncmd = [adb, 'shell', 'ls', path]\nprint(' '.join(cmd))\ntry:\n  output = subprocess.check_output(cmd, stderr=subprocess.STDOUT)\nexcept subprocess.CalledProcessError as e:\n  output = e.output\nprint('Output was:')\nprint('======')\nprint(output)\nprint('======')\nif 'No such file or directory' not in output:\n  raise Exception('%s exists despite being deleted' % path)\n",
+      "\nimport subprocess\nimport sys\n\n# Remove the path.\nadb = sys.argv[1]\npath = sys.argv[2]\nprint('Removing %s' % path)\ncmd = [adb, 'shell', 'rm', '-rf', path]\nprint(' '.join(cmd))\nsubprocess.check_call(cmd)\n\n# Verify that the path was deleted.\nprint('Checking for existence of %s' % path)\ncmd = [adb, 'shell', 'ls', path]\nprint(' '.join(cmd))\ntry:\n  output = subprocess.check_output(\n      cmd, stderr=subprocess.STDOUT).decode('utf-8')\nexcept subprocess.CalledProcessError as e:\n  output = e.output.decode('utf-8')\nprint('Output was:')\nprint('======')\nprint(output)\nprint('======')\nif 'No such file or directory' not in output:\n  raise Exception('%s exists despite being deleted' % path)\n",
       "/opt/infra-android/tools/adb",
       "/sdcard/revenge_of_the_skiabot/skps"
     ],
@@ -421,9 +406,10 @@
       "@@@STEP_LOG_LINE@python.inline@cmd = [adb, 'shell', 'ls', path]@@@",
       "@@@STEP_LOG_LINE@python.inline@print(' '.join(cmd))@@@",
       "@@@STEP_LOG_LINE@python.inline@try:@@@",
-      "@@@STEP_LOG_LINE@python.inline@  output = subprocess.check_output(cmd, stderr=subprocess.STDOUT)@@@",
+      "@@@STEP_LOG_LINE@python.inline@  output = subprocess.check_output(@@@",
+      "@@@STEP_LOG_LINE@python.inline@      cmd, stderr=subprocess.STDOUT).decode('utf-8')@@@",
       "@@@STEP_LOG_LINE@python.inline@except subprocess.CalledProcessError as e:@@@",
-      "@@@STEP_LOG_LINE@python.inline@  output = e.output@@@",
+      "@@@STEP_LOG_LINE@python.inline@  output = e.output.decode('utf-8')@@@",
       "@@@STEP_LOG_LINE@python.inline@print('Output was:')@@@",
       "@@@STEP_LOG_LINE@python.inline@print('======')@@@",
       "@@@STEP_LOG_LINE@python.inline@print(output)@@@",
@@ -451,37 +437,31 @@
     "name": "mkdir /sdcard/revenge_of_the_skiabot/skps"
   },
   {
-    "cmd": [],
-    "name": "push [START_DIR]/skp/* /sdcard/revenge_of_the_skiabot/skps"
-  },
-  {
     "cmd": [
-      "vpython",
+      "vpython3",
       "-u",
       "RECIPE_MODULE[recipe_engine::file]/resources/fileutil.py",
       "--json-output",
       "/path/to/tmp/json",
-      "listdir",
+      "glob",
       "[START_DIR]/skp",
-      "--recursive"
+      "*"
     ],
     "infra_step": true,
-    "name": "push [START_DIR]/skp/* /sdcard/revenge_of_the_skiabot/skps.list [START_DIR]/skp",
+    "name": "ls [START_DIR]/skp/*",
     "~followup_annotations": [
-      "@@@STEP_NEST_LEVEL@1@@@",
-      "@@@STEP_LOG_LINE@listdir@[START_DIR]/skp/.file3@@@",
-      "@@@STEP_LOG_LINE@listdir@[START_DIR]/skp/.ignore/file4@@@",
-      "@@@STEP_LOG_LINE@listdir@[START_DIR]/skp/file1@@@",
-      "@@@STEP_LOG_LINE@listdir@[START_DIR]/skp/subdir/file2@@@",
-      "@@@STEP_LOG_END@listdir@@@"
+      "@@@STEP_LOG_LINE@glob@[START_DIR]/skp/bar.jpg@@@",
+      "@@@STEP_LOG_LINE@glob@[START_DIR]/skp/foo.png@@@",
+      "@@@STEP_LOG_END@glob@@@"
     ]
   },
   {
     "cmd": [
       "/opt/infra-android/tools/adb",
       "push",
-      "[START_DIR]/skp/.file3",
-      "/sdcard/revenge_of_the_skiabot/skps/.file3"
+      "[START_DIR]/skp/bar.jpg",
+      "[START_DIR]/skp/foo.png",
+      "/sdcard/revenge_of_the_skiabot/skps"
     ],
     "cwd": "[START_DIR]/skia",
     "env": {
@@ -490,48 +470,7 @@
       "PATH": "<PATH>:RECIPE_REPO[depot_tools]"
     },
     "infra_step": true,
-    "name": "push [START_DIR]/skp/* /sdcard/revenge_of_the_skiabot/skps.push [START_DIR]/skp/.file3",
-    "~followup_annotations": [
-      "@@@STEP_NEST_LEVEL@1@@@"
-    ]
-  },
-  {
-    "cmd": [
-      "/opt/infra-android/tools/adb",
-      "push",
-      "[START_DIR]/skp/file1",
-      "/sdcard/revenge_of_the_skiabot/skps/file1"
-    ],
-    "cwd": "[START_DIR]/skia",
-    "env": {
-      "ADB_VENDOR_KEYS": "/home/chrome-bot/.android/chrome_infrastructure_adbkey",
-      "CHROME_HEADLESS": "1",
-      "PATH": "<PATH>:RECIPE_REPO[depot_tools]"
-    },
-    "infra_step": true,
-    "name": "push [START_DIR]/skp/* /sdcard/revenge_of_the_skiabot/skps.push [START_DIR]/skp/file1",
-    "~followup_annotations": [
-      "@@@STEP_NEST_LEVEL@1@@@"
-    ]
-  },
-  {
-    "cmd": [
-      "/opt/infra-android/tools/adb",
-      "push",
-      "[START_DIR]/skp/subdir/file2",
-      "/sdcard/revenge_of_the_skiabot/skps/subdir/file2"
-    ],
-    "cwd": "[START_DIR]/skia",
-    "env": {
-      "ADB_VENDOR_KEYS": "/home/chrome-bot/.android/chrome_infrastructure_adbkey",
-      "CHROME_HEADLESS": "1",
-      "PATH": "<PATH>:RECIPE_REPO[depot_tools]"
-    },
-    "infra_step": true,
-    "name": "push [START_DIR]/skp/* /sdcard/revenge_of_the_skiabot/skps.push [START_DIR]/skp/subdir/file2",
-    "~followup_annotations": [
-      "@@@STEP_NEST_LEVEL@1@@@"
-    ]
+    "name": "push [START_DIR]/skp/* /sdcard/revenge_of_the_skiabot/skps"
   },
   {
     "cmd": [
@@ -551,7 +490,7 @@
   },
   {
     "cmd": [
-      "vpython",
+      "vpython3",
       "-u",
       "RECIPE_MODULE[recipe_engine::file]/resources/fileutil.py",
       "--json-output",
@@ -569,7 +508,7 @@
   },
   {
     "cmd": [
-      "vpython",
+      "vpython3",
       "-u",
       "RECIPE_MODULE[recipe_engine::file]/resources/fileutil.py",
       "--json-output",
@@ -584,6 +523,23 @@
       "@@@STEP_LOG_LINE@SK_IMAGE_VERSION@42@@@",
       "@@@STEP_LOG_END@SK_IMAGE_VERSION@@@"
     ]
+  },
+  {
+    "cmd": [
+      "/opt/infra-android/tools/adb",
+      "shell",
+      "test",
+      "-f",
+      "/sdcard/revenge_of_the_skiabot/SK_IMAGE_VERSION"
+    ],
+    "cwd": "[START_DIR]/skia",
+    "env": {
+      "ADB_VENDOR_KEYS": "/home/chrome-bot/.android/chrome_infrastructure_adbkey",
+      "CHROME_HEADLESS": "1",
+      "PATH": "<PATH>:RECIPE_REPO[depot_tools]"
+    },
+    "infra_step": true,
+    "name": "check if /sdcard/revenge_of_the_skiabot/SK_IMAGE_VERSION exists"
   },
   {
     "cmd": [
@@ -604,8 +560,7 @@
   {
     "cmd": [
       "python",
-      "-u",
-      "\nimport subprocess\nimport sys\n\n# Remove the path.\nadb = sys.argv[1]\npath = sys.argv[2]\nprint('Removing %s' % path)\ncmd = [adb, 'shell', 'rm', '-rf', path]\nprint(' '.join(cmd))\nsubprocess.check_call(cmd)\n\n# Verify that the path was deleted.\nprint('Checking for existence of %s' % path)\ncmd = [adb, 'shell', 'ls', path]\nprint(' '.join(cmd))\ntry:\n  output = subprocess.check_output(cmd, stderr=subprocess.STDOUT)\nexcept subprocess.CalledProcessError as e:\n  output = e.output\nprint('Output was:')\nprint('======')\nprint(output)\nprint('======')\nif 'No such file or directory' not in output:\n  raise Exception('%s exists despite being deleted' % path)\n",
+      "\nimport subprocess\nimport sys\n\n# Remove the path.\nadb = sys.argv[1]\npath = sys.argv[2]\nprint('Removing %s' % path)\ncmd = [adb, 'shell', 'rm', '-rf', path]\nprint(' '.join(cmd))\nsubprocess.check_call(cmd)\n\n# Verify that the path was deleted.\nprint('Checking for existence of %s' % path)\ncmd = [adb, 'shell', 'ls', path]\nprint(' '.join(cmd))\ntry:\n  output = subprocess.check_output(\n      cmd, stderr=subprocess.STDOUT).decode('utf-8')\nexcept subprocess.CalledProcessError as e:\n  output = e.output.decode('utf-8')\nprint('Output was:')\nprint('======')\nprint(output)\nprint('======')\nif 'No such file or directory' not in output:\n  raise Exception('%s exists despite being deleted' % path)\n",
       "/opt/infra-android/tools/adb",
       "/sdcard/revenge_of_the_skiabot/SK_IMAGE_VERSION"
     ],
@@ -633,9 +588,10 @@
       "@@@STEP_LOG_LINE@python.inline@cmd = [adb, 'shell', 'ls', path]@@@",
       "@@@STEP_LOG_LINE@python.inline@print(' '.join(cmd))@@@",
       "@@@STEP_LOG_LINE@python.inline@try:@@@",
-      "@@@STEP_LOG_LINE@python.inline@  output = subprocess.check_output(cmd, stderr=subprocess.STDOUT)@@@",
+      "@@@STEP_LOG_LINE@python.inline@  output = subprocess.check_output(@@@",
+      "@@@STEP_LOG_LINE@python.inline@      cmd, stderr=subprocess.STDOUT).decode('utf-8')@@@",
       "@@@STEP_LOG_LINE@python.inline@except subprocess.CalledProcessError as e:@@@",
-      "@@@STEP_LOG_LINE@python.inline@  output = e.output@@@",
+      "@@@STEP_LOG_LINE@python.inline@  output = e.output.decode('utf-8')@@@",
       "@@@STEP_LOG_LINE@python.inline@print('Output was:')@@@",
       "@@@STEP_LOG_LINE@python.inline@print('======')@@@",
       "@@@STEP_LOG_LINE@python.inline@print(output)@@@",
@@ -648,8 +604,7 @@
   {
     "cmd": [
       "python",
-      "-u",
-      "\nimport subprocess\nimport sys\n\n# Remove the path.\nadb = sys.argv[1]\npath = sys.argv[2]\nprint('Removing %s' % path)\ncmd = [adb, 'shell', 'rm', '-rf', path]\nprint(' '.join(cmd))\nsubprocess.check_call(cmd)\n\n# Verify that the path was deleted.\nprint('Checking for existence of %s' % path)\ncmd = [adb, 'shell', 'ls', path]\nprint(' '.join(cmd))\ntry:\n  output = subprocess.check_output(cmd, stderr=subprocess.STDOUT)\nexcept subprocess.CalledProcessError as e:\n  output = e.output\nprint('Output was:')\nprint('======')\nprint(output)\nprint('======')\nif 'No such file or directory' not in output:\n  raise Exception('%s exists despite being deleted' % path)\n",
+      "\nimport subprocess\nimport sys\n\n# Remove the path.\nadb = sys.argv[1]\npath = sys.argv[2]\nprint('Removing %s' % path)\ncmd = [adb, 'shell', 'rm', '-rf', path]\nprint(' '.join(cmd))\nsubprocess.check_call(cmd)\n\n# Verify that the path was deleted.\nprint('Checking for existence of %s' % path)\ncmd = [adb, 'shell', 'ls', path]\nprint(' '.join(cmd))\ntry:\n  output = subprocess.check_output(\n      cmd, stderr=subprocess.STDOUT).decode('utf-8')\nexcept subprocess.CalledProcessError as e:\n  output = e.output.decode('utf-8')\nprint('Output was:')\nprint('======')\nprint(output)\nprint('======')\nif 'No such file or directory' not in output:\n  raise Exception('%s exists despite being deleted' % path)\n",
       "/opt/infra-android/tools/adb",
       "/sdcard/revenge_of_the_skiabot/images"
     ],
@@ -677,9 +632,10 @@
       "@@@STEP_LOG_LINE@python.inline@cmd = [adb, 'shell', 'ls', path]@@@",
       "@@@STEP_LOG_LINE@python.inline@print(' '.join(cmd))@@@",
       "@@@STEP_LOG_LINE@python.inline@try:@@@",
-      "@@@STEP_LOG_LINE@python.inline@  output = subprocess.check_output(cmd, stderr=subprocess.STDOUT)@@@",
+      "@@@STEP_LOG_LINE@python.inline@  output = subprocess.check_output(@@@",
+      "@@@STEP_LOG_LINE@python.inline@      cmd, stderr=subprocess.STDOUT).decode('utf-8')@@@",
       "@@@STEP_LOG_LINE@python.inline@except subprocess.CalledProcessError as e:@@@",
-      "@@@STEP_LOG_LINE@python.inline@  output = e.output@@@",
+      "@@@STEP_LOG_LINE@python.inline@  output = e.output.decode('utf-8')@@@",
       "@@@STEP_LOG_LINE@python.inline@print('Output was:')@@@",
       "@@@STEP_LOG_LINE@python.inline@print('======')@@@",
       "@@@STEP_LOG_LINE@python.inline@print(output)@@@",
@@ -707,37 +663,31 @@
     "name": "mkdir /sdcard/revenge_of_the_skiabot/images"
   },
   {
-    "cmd": [],
-    "name": "push [START_DIR]/skimage/* /sdcard/revenge_of_the_skiabot/images"
-  },
-  {
     "cmd": [
-      "vpython",
+      "vpython3",
       "-u",
       "RECIPE_MODULE[recipe_engine::file]/resources/fileutil.py",
       "--json-output",
       "/path/to/tmp/json",
-      "listdir",
+      "glob",
       "[START_DIR]/skimage",
-      "--recursive"
+      "*"
     ],
     "infra_step": true,
-    "name": "push [START_DIR]/skimage/* /sdcard/revenge_of_the_skiabot/images.list [START_DIR]/skimage",
+    "name": "ls [START_DIR]/skimage/*",
     "~followup_annotations": [
-      "@@@STEP_NEST_LEVEL@1@@@",
-      "@@@STEP_LOG_LINE@listdir@[START_DIR]/skimage/.file3@@@",
-      "@@@STEP_LOG_LINE@listdir@[START_DIR]/skimage/.ignore/file4@@@",
-      "@@@STEP_LOG_LINE@listdir@[START_DIR]/skimage/file1@@@",
-      "@@@STEP_LOG_LINE@listdir@[START_DIR]/skimage/subdir/file2@@@",
-      "@@@STEP_LOG_END@listdir@@@"
+      "@@@STEP_LOG_LINE@glob@[START_DIR]/skimage/bar.jpg@@@",
+      "@@@STEP_LOG_LINE@glob@[START_DIR]/skimage/foo.png@@@",
+      "@@@STEP_LOG_END@glob@@@"
     ]
   },
   {
     "cmd": [
       "/opt/infra-android/tools/adb",
       "push",
-      "[START_DIR]/skimage/.file3",
-      "/sdcard/revenge_of_the_skiabot/images/.file3"
+      "[START_DIR]/skimage/bar.jpg",
+      "[START_DIR]/skimage/foo.png",
+      "/sdcard/revenge_of_the_skiabot/images"
     ],
     "cwd": "[START_DIR]/skia",
     "env": {
@@ -746,48 +696,7 @@
       "PATH": "<PATH>:RECIPE_REPO[depot_tools]"
     },
     "infra_step": true,
-    "name": "push [START_DIR]/skimage/* /sdcard/revenge_of_the_skiabot/images.push [START_DIR]/skimage/.file3",
-    "~followup_annotations": [
-      "@@@STEP_NEST_LEVEL@1@@@"
-    ]
-  },
-  {
-    "cmd": [
-      "/opt/infra-android/tools/adb",
-      "push",
-      "[START_DIR]/skimage/file1",
-      "/sdcard/revenge_of_the_skiabot/images/file1"
-    ],
-    "cwd": "[START_DIR]/skia",
-    "env": {
-      "ADB_VENDOR_KEYS": "/home/chrome-bot/.android/chrome_infrastructure_adbkey",
-      "CHROME_HEADLESS": "1",
-      "PATH": "<PATH>:RECIPE_REPO[depot_tools]"
-    },
-    "infra_step": true,
-    "name": "push [START_DIR]/skimage/* /sdcard/revenge_of_the_skiabot/images.push [START_DIR]/skimage/file1",
-    "~followup_annotations": [
-      "@@@STEP_NEST_LEVEL@1@@@"
-    ]
-  },
-  {
-    "cmd": [
-      "/opt/infra-android/tools/adb",
-      "push",
-      "[START_DIR]/skimage/subdir/file2",
-      "/sdcard/revenge_of_the_skiabot/images/subdir/file2"
-    ],
-    "cwd": "[START_DIR]/skia",
-    "env": {
-      "ADB_VENDOR_KEYS": "/home/chrome-bot/.android/chrome_infrastructure_adbkey",
-      "CHROME_HEADLESS": "1",
-      "PATH": "<PATH>:RECIPE_REPO[depot_tools]"
-    },
-    "infra_step": true,
-    "name": "push [START_DIR]/skimage/* /sdcard/revenge_of_the_skiabot/images.push [START_DIR]/skimage/subdir/file2",
-    "~followup_annotations": [
-      "@@@STEP_NEST_LEVEL@1@@@"
-    ]
+    "name": "push [START_DIR]/skimage/* /sdcard/revenge_of_the_skiabot/images"
   },
   {
     "cmd": [
@@ -807,7 +716,7 @@
   },
   {
     "cmd": [
-      "vpython",
+      "vpython3",
       "-u",
       "RECIPE_MODULE[recipe_engine::file]/resources/fileutil.py",
       "--json-output",
@@ -825,7 +734,7 @@
   },
   {
     "cmd": [
-      "vpython",
+      "vpython3",
       "-u",
       "RECIPE_MODULE[recipe_engine::file]/resources/fileutil.py",
       "--json-output",
@@ -840,6 +749,23 @@
       "@@@STEP_LOG_LINE@SVG_VERSION@42@@@",
       "@@@STEP_LOG_END@SVG_VERSION@@@"
     ]
+  },
+  {
+    "cmd": [
+      "/opt/infra-android/tools/adb",
+      "shell",
+      "test",
+      "-f",
+      "/sdcard/revenge_of_the_skiabot/SVG_VERSION"
+    ],
+    "cwd": "[START_DIR]/skia",
+    "env": {
+      "ADB_VENDOR_KEYS": "/home/chrome-bot/.android/chrome_infrastructure_adbkey",
+      "CHROME_HEADLESS": "1",
+      "PATH": "<PATH>:RECIPE_REPO[depot_tools]"
+    },
+    "infra_step": true,
+    "name": "check if /sdcard/revenge_of_the_skiabot/SVG_VERSION exists"
   },
   {
     "cmd": [
@@ -860,8 +786,7 @@
   {
     "cmd": [
       "python",
-      "-u",
-      "\nimport subprocess\nimport sys\n\n# Remove the path.\nadb = sys.argv[1]\npath = sys.argv[2]\nprint('Removing %s' % path)\ncmd = [adb, 'shell', 'rm', '-rf', path]\nprint(' '.join(cmd))\nsubprocess.check_call(cmd)\n\n# Verify that the path was deleted.\nprint('Checking for existence of %s' % path)\ncmd = [adb, 'shell', 'ls', path]\nprint(' '.join(cmd))\ntry:\n  output = subprocess.check_output(cmd, stderr=subprocess.STDOUT)\nexcept subprocess.CalledProcessError as e:\n  output = e.output\nprint('Output was:')\nprint('======')\nprint(output)\nprint('======')\nif 'No such file or directory' not in output:\n  raise Exception('%s exists despite being deleted' % path)\n",
+      "\nimport subprocess\nimport sys\n\n# Remove the path.\nadb = sys.argv[1]\npath = sys.argv[2]\nprint('Removing %s' % path)\ncmd = [adb, 'shell', 'rm', '-rf', path]\nprint(' '.join(cmd))\nsubprocess.check_call(cmd)\n\n# Verify that the path was deleted.\nprint('Checking for existence of %s' % path)\ncmd = [adb, 'shell', 'ls', path]\nprint(' '.join(cmd))\ntry:\n  output = subprocess.check_output(\n      cmd, stderr=subprocess.STDOUT).decode('utf-8')\nexcept subprocess.CalledProcessError as e:\n  output = e.output.decode('utf-8')\nprint('Output was:')\nprint('======')\nprint(output)\nprint('======')\nif 'No such file or directory' not in output:\n  raise Exception('%s exists despite being deleted' % path)\n",
       "/opt/infra-android/tools/adb",
       "/sdcard/revenge_of_the_skiabot/SVG_VERSION"
     ],
@@ -889,9 +814,10 @@
       "@@@STEP_LOG_LINE@python.inline@cmd = [adb, 'shell', 'ls', path]@@@",
       "@@@STEP_LOG_LINE@python.inline@print(' '.join(cmd))@@@",
       "@@@STEP_LOG_LINE@python.inline@try:@@@",
-      "@@@STEP_LOG_LINE@python.inline@  output = subprocess.check_output(cmd, stderr=subprocess.STDOUT)@@@",
+      "@@@STEP_LOG_LINE@python.inline@  output = subprocess.check_output(@@@",
+      "@@@STEP_LOG_LINE@python.inline@      cmd, stderr=subprocess.STDOUT).decode('utf-8')@@@",
       "@@@STEP_LOG_LINE@python.inline@except subprocess.CalledProcessError as e:@@@",
-      "@@@STEP_LOG_LINE@python.inline@  output = e.output@@@",
+      "@@@STEP_LOG_LINE@python.inline@  output = e.output.decode('utf-8')@@@",
       "@@@STEP_LOG_LINE@python.inline@print('Output was:')@@@",
       "@@@STEP_LOG_LINE@python.inline@print('======')@@@",
       "@@@STEP_LOG_LINE@python.inline@print(output)@@@",
@@ -904,8 +830,7 @@
   {
     "cmd": [
       "python",
-      "-u",
-      "\nimport subprocess\nimport sys\n\n# Remove the path.\nadb = sys.argv[1]\npath = sys.argv[2]\nprint('Removing %s' % path)\ncmd = [adb, 'shell', 'rm', '-rf', path]\nprint(' '.join(cmd))\nsubprocess.check_call(cmd)\n\n# Verify that the path was deleted.\nprint('Checking for existence of %s' % path)\ncmd = [adb, 'shell', 'ls', path]\nprint(' '.join(cmd))\ntry:\n  output = subprocess.check_output(cmd, stderr=subprocess.STDOUT)\nexcept subprocess.CalledProcessError as e:\n  output = e.output\nprint('Output was:')\nprint('======')\nprint(output)\nprint('======')\nif 'No such file or directory' not in output:\n  raise Exception('%s exists despite being deleted' % path)\n",
+      "\nimport subprocess\nimport sys\n\n# Remove the path.\nadb = sys.argv[1]\npath = sys.argv[2]\nprint('Removing %s' % path)\ncmd = [adb, 'shell', 'rm', '-rf', path]\nprint(' '.join(cmd))\nsubprocess.check_call(cmd)\n\n# Verify that the path was deleted.\nprint('Checking for existence of %s' % path)\ncmd = [adb, 'shell', 'ls', path]\nprint(' '.join(cmd))\ntry:\n  output = subprocess.check_output(\n      cmd, stderr=subprocess.STDOUT).decode('utf-8')\nexcept subprocess.CalledProcessError as e:\n  output = e.output.decode('utf-8')\nprint('Output was:')\nprint('======')\nprint(output)\nprint('======')\nif 'No such file or directory' not in output:\n  raise Exception('%s exists despite being deleted' % path)\n",
       "/opt/infra-android/tools/adb",
       "/sdcard/revenge_of_the_skiabot/svgs"
     ],
@@ -933,9 +858,10 @@
       "@@@STEP_LOG_LINE@python.inline@cmd = [adb, 'shell', 'ls', path]@@@",
       "@@@STEP_LOG_LINE@python.inline@print(' '.join(cmd))@@@",
       "@@@STEP_LOG_LINE@python.inline@try:@@@",
-      "@@@STEP_LOG_LINE@python.inline@  output = subprocess.check_output(cmd, stderr=subprocess.STDOUT)@@@",
+      "@@@STEP_LOG_LINE@python.inline@  output = subprocess.check_output(@@@",
+      "@@@STEP_LOG_LINE@python.inline@      cmd, stderr=subprocess.STDOUT).decode('utf-8')@@@",
       "@@@STEP_LOG_LINE@python.inline@except subprocess.CalledProcessError as e:@@@",
-      "@@@STEP_LOG_LINE@python.inline@  output = e.output@@@",
+      "@@@STEP_LOG_LINE@python.inline@  output = e.output.decode('utf-8')@@@",
       "@@@STEP_LOG_LINE@python.inline@print('Output was:')@@@",
       "@@@STEP_LOG_LINE@python.inline@print('======')@@@",
       "@@@STEP_LOG_LINE@python.inline@print(output)@@@",
@@ -963,37 +889,31 @@
     "name": "mkdir /sdcard/revenge_of_the_skiabot/svgs"
   },
   {
-    "cmd": [],
-    "name": "push [START_DIR]/svg/* /sdcard/revenge_of_the_skiabot/svgs"
-  },
-  {
     "cmd": [
-      "vpython",
+      "vpython3",
       "-u",
       "RECIPE_MODULE[recipe_engine::file]/resources/fileutil.py",
       "--json-output",
       "/path/to/tmp/json",
-      "listdir",
+      "glob",
       "[START_DIR]/svg",
-      "--recursive"
+      "*"
     ],
     "infra_step": true,
-    "name": "push [START_DIR]/svg/* /sdcard/revenge_of_the_skiabot/svgs.list [START_DIR]/svg",
+    "name": "ls [START_DIR]/svg/*",
     "~followup_annotations": [
-      "@@@STEP_NEST_LEVEL@1@@@",
-      "@@@STEP_LOG_LINE@listdir@[START_DIR]/svg/.file3@@@",
-      "@@@STEP_LOG_LINE@listdir@[START_DIR]/svg/.ignore/file4@@@",
-      "@@@STEP_LOG_LINE@listdir@[START_DIR]/svg/file1@@@",
-      "@@@STEP_LOG_LINE@listdir@[START_DIR]/svg/subdir/file2@@@",
-      "@@@STEP_LOG_END@listdir@@@"
+      "@@@STEP_LOG_LINE@glob@[START_DIR]/svg/bar.jpg@@@",
+      "@@@STEP_LOG_LINE@glob@[START_DIR]/svg/foo.png@@@",
+      "@@@STEP_LOG_END@glob@@@"
     ]
   },
   {
     "cmd": [
       "/opt/infra-android/tools/adb",
       "push",
-      "[START_DIR]/svg/.file3",
-      "/sdcard/revenge_of_the_skiabot/svgs/.file3"
+      "[START_DIR]/svg/bar.jpg",
+      "[START_DIR]/svg/foo.png",
+      "/sdcard/revenge_of_the_skiabot/svgs"
     ],
     "cwd": "[START_DIR]/skia",
     "env": {
@@ -1002,48 +922,7 @@
       "PATH": "<PATH>:RECIPE_REPO[depot_tools]"
     },
     "infra_step": true,
-    "name": "push [START_DIR]/svg/* /sdcard/revenge_of_the_skiabot/svgs.push [START_DIR]/svg/.file3",
-    "~followup_annotations": [
-      "@@@STEP_NEST_LEVEL@1@@@"
-    ]
-  },
-  {
-    "cmd": [
-      "/opt/infra-android/tools/adb",
-      "push",
-      "[START_DIR]/svg/file1",
-      "/sdcard/revenge_of_the_skiabot/svgs/file1"
-    ],
-    "cwd": "[START_DIR]/skia",
-    "env": {
-      "ADB_VENDOR_KEYS": "/home/chrome-bot/.android/chrome_infrastructure_adbkey",
-      "CHROME_HEADLESS": "1",
-      "PATH": "<PATH>:RECIPE_REPO[depot_tools]"
-    },
-    "infra_step": true,
-    "name": "push [START_DIR]/svg/* /sdcard/revenge_of_the_skiabot/svgs.push [START_DIR]/svg/file1",
-    "~followup_annotations": [
-      "@@@STEP_NEST_LEVEL@1@@@"
-    ]
-  },
-  {
-    "cmd": [
-      "/opt/infra-android/tools/adb",
-      "push",
-      "[START_DIR]/svg/subdir/file2",
-      "/sdcard/revenge_of_the_skiabot/svgs/subdir/file2"
-    ],
-    "cwd": "[START_DIR]/skia",
-    "env": {
-      "ADB_VENDOR_KEYS": "/home/chrome-bot/.android/chrome_infrastructure_adbkey",
-      "CHROME_HEADLESS": "1",
-      "PATH": "<PATH>:RECIPE_REPO[depot_tools]"
-    },
-    "infra_step": true,
-    "name": "push [START_DIR]/svg/* /sdcard/revenge_of_the_skiabot/svgs.push [START_DIR]/svg/subdir/file2",
-    "~followup_annotations": [
-      "@@@STEP_NEST_LEVEL@1@@@"
-    ]
+    "name": "push [START_DIR]/svg/* /sdcard/revenge_of_the_skiabot/svgs"
   },
   {
     "cmd": [
@@ -1063,7 +942,7 @@
   },
   {
     "cmd": [
-      "vpython",
+      "vpython3",
       "-u",
       "RECIPE_MODULE[recipe_engine::file]/resources/fileutil.py",
       "--json-output",
@@ -1097,31 +976,6 @@
   },
   {
     "cmd": [
-      "python",
-      "-u",
-      "\nimport subprocess\ndef run(*cmd):\n  print('====================================')\n  print(' '.join(cmd))\n  print('====================================')\n  subprocess.call(cmd)\nadb = '/opt/infra-android/tools/adb'\nrun('uptime')\nrun(adb, 'shell', 'uptime')\nrun(adb, 'shell', 'ps')\nrun(adb, 'logcat', '-d')\n",
-      "/data/local/tmp/",
-      "nanobench.sh"
-    ],
-    "name": "debugging",
-    "~followup_annotations": [
-      "@@@STEP_LOG_LINE@python.inline@@@@",
-      "@@@STEP_LOG_LINE@python.inline@import subprocess@@@",
-      "@@@STEP_LOG_LINE@python.inline@def run(*cmd):@@@",
-      "@@@STEP_LOG_LINE@python.inline@  print('====================================')@@@",
-      "@@@STEP_LOG_LINE@python.inline@  print(' '.join(cmd))@@@",
-      "@@@STEP_LOG_LINE@python.inline@  print('====================================')@@@",
-      "@@@STEP_LOG_LINE@python.inline@  subprocess.call(cmd)@@@",
-      "@@@STEP_LOG_LINE@python.inline@adb = '/opt/infra-android/tools/adb'@@@",
-      "@@@STEP_LOG_LINE@python.inline@run('uptime')@@@",
-      "@@@STEP_LOG_LINE@python.inline@run(adb, 'shell', 'uptime')@@@",
-      "@@@STEP_LOG_LINE@python.inline@run(adb, 'shell', 'ps')@@@",
-      "@@@STEP_LOG_LINE@python.inline@run(adb, 'logcat', '-d')@@@",
-      "@@@STEP_LOG_END@python.inline@@@"
-    ]
-  },
-  {
-    "cmd": [
       "/opt/infra-android/tools/adb",
       "logcat",
       "-c"
@@ -1138,8 +992,7 @@
   {
     "cmd": [
       "python",
-      "-u",
-      "\nimport subprocess\nimport sys\nbin_dir = sys.argv[1]\nsh      = sys.argv[2]\nsubprocess.check_call(['/opt/infra-android/tools/adb', 'shell', 'sh', bin_dir + sh])\ntry:\n  sys.exit(int(subprocess.check_output(['/opt/infra-android/tools/adb', 'shell', 'cat',\n                                        bin_dir + 'rc'])))\nexcept ValueError:\n  print \"Couldn't read the return code.  Probably killed for OOM.\"\n  sys.exit(1)\n",
+      "\nimport subprocess\nimport sys\nbin_dir = sys.argv[1]\nsh      = sys.argv[2]\nsubprocess.check_call(['/opt/infra-android/tools/adb', 'shell', 'sh', bin_dir + sh])\ntry:\n  sys.exit(int(subprocess.check_output([\n      '/opt/infra-android/tools/adb', 'shell', 'cat', bin_dir + 'rc']).decode('utf-8')))\nexcept ValueError:\n  print(\"Couldn't read the return code.  Probably killed for OOM.\")\n  sys.exit(1)\n",
       "/data/local/tmp/",
       "nanobench.sh"
     ],
@@ -1152,10 +1005,10 @@
       "@@@STEP_LOG_LINE@python.inline@sh      = sys.argv[2]@@@",
       "@@@STEP_LOG_LINE@python.inline@subprocess.check_call(['/opt/infra-android/tools/adb', 'shell', 'sh', bin_dir + sh])@@@",
       "@@@STEP_LOG_LINE@python.inline@try:@@@",
-      "@@@STEP_LOG_LINE@python.inline@  sys.exit(int(subprocess.check_output(['/opt/infra-android/tools/adb', 'shell', 'cat',@@@",
-      "@@@STEP_LOG_LINE@python.inline@                                        bin_dir + 'rc'])))@@@",
+      "@@@STEP_LOG_LINE@python.inline@  sys.exit(int(subprocess.check_output([@@@",
+      "@@@STEP_LOG_LINE@python.inline@      '/opt/infra-android/tools/adb', 'shell', 'cat', bin_dir + 'rc']).decode('utf-8')))@@@",
       "@@@STEP_LOG_LINE@python.inline@except ValueError:@@@",
-      "@@@STEP_LOG_LINE@python.inline@  print \"Couldn't read the return code.  Probably killed for OOM.\"@@@",
+      "@@@STEP_LOG_LINE@python.inline@  print(\"Couldn't read the return code.  Probably killed for OOM.\")@@@",
       "@@@STEP_LOG_LINE@python.inline@  sys.exit(1)@@@",
       "@@@STEP_LOG_END@python.inline@@@"
     ]
@@ -1185,7 +1038,7 @@
   },
   {
     "cmd": [
-      "vpython",
+      "vpython3",
       "-u",
       "RECIPE_MODULE[recipe_engine::file]/resources/fileutil.py",
       "--json-output",
@@ -1205,7 +1058,7 @@
   },
   {
     "cmd": [
-      "vpython",
+      "vpython3",
       "-u",
       "RECIPE_MODULE[recipe_engine::file]/resources/fileutil.py",
       "--json-output",
@@ -1222,7 +1075,7 @@
   },
   {
     "cmd": [
-      "vpython",
+      "vpython3",
       "-u",
       "RECIPE_MODULE[recipe_engine::file]/resources/fileutil.py",
       "--json-output",
@@ -1239,9 +1092,35 @@
   },
   {
     "cmd": [
+      "/opt/infra-android/tools/adb",
+      "reboot"
+    ],
+    "env": {
+      "CHROME_HEADLESS": "1",
+      "PATH": "<PATH>:RECIPE_REPO[depot_tools]"
+    },
+    "infra_step": true,
+    "name": "adb reboot device",
+    "timeout": 30
+  },
+  {
+    "cmd": [
+      "/opt/infra-android/tools/adb",
+      "wait-for-device",
+      "shell",
+      "while [[ -z $(getprop sys.boot_completed) ]]; do sleep 1; done"
+    ],
+    "env": {
+      "CHROME_HEADLESS": "1",
+      "PATH": "<PATH>:RECIPE_REPO[depot_tools]"
+    },
+    "name": "wait for device after rebooting",
+    "timeout": 180
+  },
+  {
+    "cmd": [
       "python",
-      "-u",
-      "\nimport os\nimport subprocess\nimport sys\nout = sys.argv[1]\nlog = subprocess.check_output(['/opt/infra-android/tools/adb', 'logcat', '-d'])\nfor line in log.split('\\n'):\n  tokens = line.split()\n  if len(tokens) == 11 and tokens[-7] == 'F' and tokens[-3] == 'pc':\n    addr, path = tokens[-2:]\n    local = os.path.join(out, os.path.basename(path))\n    if os.path.exists(local):\n      try:\n        sym = subprocess.check_output(['addr2line', '-Cfpe', local, addr])\n        line = line.replace(addr, addr + ' ' + sym.strip())\n      except subprocess.CalledProcessError:\n        pass\n  print line\n",
+      "\nimport os\nimport subprocess\nimport sys\nout = sys.argv[1]\nlog = subprocess.check_output([\n    '/opt/infra-android/tools/adb', 'logcat', '-d']).decode('utf-8', errors='ignore')\nfor line in log.split('\\n'):\n  tokens = line.split()\n  if len(tokens) == 11 and tokens[-7] == 'F' and tokens[-3] == 'pc':\n    addr, path = tokens[-2:]\n    local = os.path.join(out, os.path.basename(path))\n    if os.path.exists(local):\n      try:\n        sym = subprocess.check_output([\n            'addr2line', '-Cfpe', local, addr]).decode('utf-8')\n        line = line.replace(addr, addr + ' ' + sym.strip())\n      except subprocess.CalledProcessError:\n        pass\n  print(line)\n",
       "[START_DIR]/build"
     ],
     "env": {
@@ -1257,7 +1136,8 @@
       "@@@STEP_LOG_LINE@python.inline@import subprocess@@@",
       "@@@STEP_LOG_LINE@python.inline@import sys@@@",
       "@@@STEP_LOG_LINE@python.inline@out = sys.argv[1]@@@",
-      "@@@STEP_LOG_LINE@python.inline@log = subprocess.check_output(['/opt/infra-android/tools/adb', 'logcat', '-d'])@@@",
+      "@@@STEP_LOG_LINE@python.inline@log = subprocess.check_output([@@@",
+      "@@@STEP_LOG_LINE@python.inline@    '/opt/infra-android/tools/adb', 'logcat', '-d']).decode('utf-8', errors='ignore')@@@",
       "@@@STEP_LOG_LINE@python.inline@for line in log.split('\\n'):@@@",
       "@@@STEP_LOG_LINE@python.inline@  tokens = line.split()@@@",
       "@@@STEP_LOG_LINE@python.inline@  if len(tokens) == 11 and tokens[-7] == 'F' and tokens[-3] == 'pc':@@@",
@@ -1265,27 +1145,14 @@
       "@@@STEP_LOG_LINE@python.inline@    local = os.path.join(out, os.path.basename(path))@@@",
       "@@@STEP_LOG_LINE@python.inline@    if os.path.exists(local):@@@",
       "@@@STEP_LOG_LINE@python.inline@      try:@@@",
-      "@@@STEP_LOG_LINE@python.inline@        sym = subprocess.check_output(['addr2line', '-Cfpe', local, addr])@@@",
+      "@@@STEP_LOG_LINE@python.inline@        sym = subprocess.check_output([@@@",
+      "@@@STEP_LOG_LINE@python.inline@            'addr2line', '-Cfpe', local, addr]).decode('utf-8')@@@",
       "@@@STEP_LOG_LINE@python.inline@        line = line.replace(addr, addr + ' ' + sym.strip())@@@",
       "@@@STEP_LOG_LINE@python.inline@      except subprocess.CalledProcessError:@@@",
       "@@@STEP_LOG_LINE@python.inline@        pass@@@",
-      "@@@STEP_LOG_LINE@python.inline@  print line@@@",
+      "@@@STEP_LOG_LINE@python.inline@  print(line)@@@",
       "@@@STEP_LOG_END@python.inline@@@"
     ]
-  },
-  {
-    "cmd": [
-      "/opt/infra-android/tools/adb",
-      "kill-server"
-    ],
-    "cwd": "[START_DIR]/skia",
-    "env": {
-      "ADB_VENDOR_KEYS": "/home/chrome-bot/.android/chrome_infrastructure_adbkey",
-      "CHROME_HEADLESS": "1",
-      "PATH": "<PATH>:RECIPE_REPO[depot_tools]"
-    },
-    "infra_step": true,
-    "name": "kill adb server"
   },
   {
     "name": "$result"

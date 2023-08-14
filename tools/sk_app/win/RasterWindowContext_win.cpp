@@ -6,7 +6,7 @@
  */
 
 #include "include/core/SkSurface.h"
-#include "src/core/SkAutoMalloc.h"
+#include "src/base/SkAutoMalloc.h"
 #include "tools/sk_app/RasterWindowContext.h"
 #include "tools/sk_app/win/WindowContextFactory_win.h"
 
@@ -22,22 +22,20 @@ public:
     RasterWindowContext_win(HWND, const DisplayParams&);
 
     sk_sp<SkSurface> getBackbufferSurface() override;
-    void swapBuffers() override;
     bool isValid() override { return SkToBool(fWnd); }
     void resize(int w, int h) override;
     void setDisplayParams(const DisplayParams& params) override;
 
 protected:
+    void onSwapBuffers() override;
+
     SkAutoMalloc fSurfaceMemory;
     sk_sp<SkSurface> fBackbufferSurface;
     HWND fWnd;
-
-private:
-    using INHERITED = RasterWindowContext;
 };
 
 RasterWindowContext_win::RasterWindowContext_win(HWND wnd, const DisplayParams& params)
-    : INHERITED(params)
+    : RasterWindowContext(params)
     , fWnd(wnd) {
     RECT rect;
     GetClientRect(wnd, &rect);
@@ -69,12 +67,12 @@ void RasterWindowContext_win::resize(int w, int h) {
 
     SkImageInfo info = SkImageInfo::Make(w, h, fDisplayParams.fColorType, kPremul_SkAlphaType,
                                          fDisplayParams.fColorSpace);
-    fBackbufferSurface = SkSurface::MakeRasterDirect(info, pixels, sizeof(uint32_t) * w);
+    fBackbufferSurface = SkSurfaces::WrapPixels(info, pixels, sizeof(uint32_t) * w);
 }
 
 sk_sp<SkSurface> RasterWindowContext_win::getBackbufferSurface() { return fBackbufferSurface; }
 
-void RasterWindowContext_win::swapBuffers() {
+void RasterWindowContext_win::onSwapBuffers() {
     BITMAPINFO* bmpInfo = reinterpret_cast<BITMAPINFO*>(fSurfaceMemory.get());
     HDC dc = GetDC(fWnd);
     StretchDIBits(dc, 0, 0, fWidth, fHeight, 0, 0, fWidth, fHeight, bmpInfo->bmiColors, bmpInfo,

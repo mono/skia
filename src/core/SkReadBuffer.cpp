@@ -5,32 +5,47 @@
  * found in the LICENSE file.
  */
 
-#include "include/core/SkBitmap.h"
+#include "src/core/SkReadBuffer.h"
+
+#include "include/core/SkAlphaType.h"
 #include "include/core/SkData.h"
 #include "include/core/SkImage.h"
 #include "include/core/SkImageGenerator.h"
-#include "include/core/SkStream.h"
+#include "include/core/SkImageInfo.h"
+#include "include/core/SkM44.h"
+#include "include/core/SkMatrix.h"
+#include "include/core/SkPath.h"
+#include "include/core/SkPixmap.h"
+#include "include/core/SkPoint3.h"
+#include "include/core/SkRRect.h"
+#include "include/core/SkRegion.h"
+#include "include/core/SkSize.h"
+#include "include/core/SkString.h"
 #include "include/core/SkTypeface.h"
-#include "src/core/SkAutoMalloc.h"
-#include "src/core/SkMathPriv.h"
+#include "include/private/base/SkMalloc.h"
+#include "src/base/SkAutoMalloc.h"
+#include "src/base/SkMathPriv.h"
+#include "src/base/SkSafeMath.h"
 #include "src/core/SkMatrixPriv.h"
-#include "src/core/SkReadBuffer.h"
-#include "src/core/SkSafeMath.h"
+#include "src/core/SkMipmapBuilder.h"
+#include "src/core/SkWriteBuffer.h"
+
+#include <memory>
+#include <optional>
+#include <utility>
 
 namespace {
     // This generator intentionally should always fail on all attempts to get its pixels,
     // simulating a bad or empty codec stream.
     class EmptyImageGenerator final : public SkImageGenerator {
     public:
-        EmptyImageGenerator(const SkImageInfo& info) : INHERITED(info) { }
+        EmptyImageGenerator(const SkImageInfo& info) : SkImageGenerator(info) { }
 
-    private:
-        using INHERITED = SkImageGenerator;
     };
 
     static sk_sp<SkImage> MakeEmptyImage(int width, int height) {
-        return SkImage::MakeFromGenerator(
-              std::make_unique<EmptyImageGenerator>(SkImageInfo::MakeN32Premul(width, height)));
+        return SkImages::DeferredFromGenerator(
+                std::make_unique<EmptyImageGenerator>(SkImageInfo::MakeN32Premul(width, height)));
     }
 
 } // anonymous namespace
@@ -70,6 +85,7 @@ const void* SkReadBuffer::skip(size_t count, size_t size) {
 
 void SkReadBuffer::setDeserialProcs(const SkDeserialProcs& procs) {
     fProcs = procs;
+    this->setAllowSkSL(procs.fAllowSkSL);
 }
 
 bool SkReadBuffer::readBool() {
@@ -200,6 +216,32 @@ void SkReadBuffer::readRect(SkRect* rect) {
     }
 }
 
+SkRect SkReadBuffer::readRect() {
+    SkRect r;
+    if (!this->readPad32(&r, sizeof(SkRect))) {
+        r.setEmpty();
+    }
+    return r;
+}
+
+SkSamplingOptions SkReadBuffer::readSampling() {
+    if (!this->isVersionLT(SkPicturePriv::kAnisotropicFilter)) {
+        int maxAniso = this->readInt();
+        if (maxAniso != 0) {
+            return SkSamplingOptions::Aniso(maxAniso);
+        }
+    }
+    if (this->readBool()) {
+        float B = this->readScalar();
+        float C = this->readScalar();
+        return SkSamplingOptions({B, C});
+    } else {
+        SkFilterMode filter = this->read32LE(SkFilterMode::kLinear);
+        SkMipmapMode mipmap = this->read32LE(SkMipmapMode::kLinear);
+        return SkSamplingOptions(filter, mipmap);
+    }
+}
+
 void SkReadBuffer::readRRect(SkRRect* rrect) {
     size_t size = 0;
     if (!fError) {
@@ -293,85 +335,69 @@ uint32_t SkReadBuffer::getArrayCount() {
     return *((uint32_t*)fCurr);
 }
 
-/*  Format:
- *  (subset) width, height
- *  (subset) origin x, y
- *  size (31bits)
- *  data [ encoded, with raw width/height ]
- */
-sk_sp<SkImage> SkReadBuffer::readImage_preV78() {
-    SkASSERT(this->isVersionLT(SkPicturePriv::kSerializeMipmaps_Version));
-
-    SkIRect bounds;
-    this->readIRect(&bounds);
-
-    const int width = bounds.width();
-    const int height = bounds.height();
-    if (width <= 0 || height <= 0) {    // SkImage never has a zero dimension
-        this->validate(false);
-        return nullptr;
-    }
-
-    int32_t size = this->read32();
-    if (size == SK_NaN32) {
-        // 0x80000000 is never valid, since it cannot be passed to abs().
-        this->validate(false);
-        return nullptr;
-    }
-    if (size == 0) {
-        // The image could not be encoded at serialization time - return an empty placeholder.
-        return MakeEmptyImage(width, height);
-    }
-
-    // we used to negate the size for "custom" encoded images -- ignore that signal (Dec-2017)
-    size = SkAbs32(size);
-    if (size == 1) {
-        // legacy check (we stopped writing this for "raw" images Nov-2017)
-        this->validate(false);
-        return nullptr;
-    }
-
-    // Preflight check to make sure there's enough stuff in the buffer before
-    // we allocate the memory. This helps the fuzzer avoid OOM when it creates
-    // bad/corrupt input.
-    if (!this->validateCanReadN<uint8_t>(size)) {
-        return nullptr;
-    }
-
-    sk_sp<SkData> data = SkData::MakeUninitialized(size);
-    if (!this->readPad32(data->writable_data(), size)) {
-        this->validate(false);
-        return nullptr;
-    }
-
+static sk_sp<SkImage> deserialize_image(sk_sp<SkData> data, SkDeserialProcs dProcs,
+                                        std::optional<SkAlphaType> alphaType) {
     sk_sp<SkImage> image;
-    if (fProcs.fImageProc) {
-        image = fProcs.fImageProc(data->data(), data->size(), fProcs.fImageCtx);
-    }
-    if (!image) {
-        image = SkImage::MakeFromEncoded(std::move(data));
+    if (dProcs.fImageProc) {
+        image = dProcs.fImageProc(data->data(), data->size(), dProcs.fImageCtx);
     }
     if (image) {
-        if (bounds.x() || bounds.y() || width < image->width() || height < image->height()) {
-            image = image->makeSubset(bounds);
-        }
+        return image;
     }
-    // Question: are we correct to return an "empty" image instead of nullptr, if the decoder
-    //           failed for some reason?
-    return image ? image : MakeEmptyImage(width, height);
+    // The default implementation will encode to PNG unless the input SkImages came from
+    // a codec that was built-in (e.g. JPEG/WEBP). Thus, we should be sure to try all
+    // available codecs when reading images out of an SKP.
+    return SkImages::DeferredFromEncodedData(std::move(data), alphaType);
 }
 
-#include "src/core/SkMipmap.h"
+static sk_sp<SkImage> add_mipmaps(sk_sp<SkImage> img, sk_sp<SkData> data,
+                                  SkDeserialProcs dProcs, std::optional<SkAlphaType> alphaType) {
+    SkMipmapBuilder builder(img->imageInfo());
+
+    SkReadBuffer buffer(data->data(), data->size());
+    int count = buffer.read32();
+    if (builder.countLevels() != count) {
+        return img;
+    }
+    for (int i = 0; i < count; ++i) {
+        size_t size = buffer.read32();
+        const void* ptr = buffer.skip(size);
+        if (!ptr) {
+            return img;
+        }
+        sk_sp<SkImage> mip = deserialize_image(SkData::MakeWithoutCopy(ptr, size), dProcs,
+                                               alphaType);
+        if (!mip) {
+            return img;
+        }
+
+        SkPixmap pm = builder.level(i);
+        if (mip->dimensions() != pm.dimensions()) {
+            return img;
+        }
+        if (!mip->readPixels(nullptr, pm, 0, 0)) {
+            return img;
+        }
+    }
+    if (!buffer.isValid()) {
+        return img;
+    }
+    sk_sp<SkImage> raster = img->makeRasterImage();
+    sk_sp<SkImage> rasterWithMips = builder.attachTo(raster);
+    SkASSERT(rasterWithMips); // attachTo should never return null
+    return rasterWithMips;
+}
+
 
 // If we see a corrupt stream, we return null (fail). If we just fail trying to decode
-// the image, we don't fail, but return a dummy image.
+// the image, we don't fail, but return a 1x1 empty image.
 sk_sp<SkImage> SkReadBuffer::readImage() {
-    if (this->isVersionLT(SkPicturePriv::kSerializeMipmaps_Version)) {
-        return this->readImage_preV78();
-    }
-
     uint32_t flags = this->read32();
 
+    std::optional<SkAlphaType> alphaType = std::nullopt;
+    if (flags & SkWriteBufferImageFlags::kUnpremul) {
+        alphaType = kUnpremul_SkAlphaType;
+    }
     sk_sp<SkImage> image;
     {
         sk_sp<SkData> data = this->readByteArrayAsData();
@@ -379,19 +405,15 @@ sk_sp<SkImage> SkReadBuffer::readImage() {
             this->validate(false);
             return nullptr;
         }
-        if (fProcs.fImageProc) {
-            image = fProcs.fImageProc(data->data(), data->size(), fProcs.fImageCtx);
-        }
-        if (!image) {
-            image = SkImage::MakeFromEncoded(std::move(data));
-        }
+        image = deserialize_image(data, fProcs, alphaType);
     }
 
+    // This flag is not written by new SKPs anymore.
     if (flags & SkWriteBufferImageFlags::kHasSubsetRect) {
         SkIRect subset;
         this->readIRect(&subset);
         if (image) {
-            image = image->makeSubset(subset);
+            image = image->makeSubset(nullptr, subset);
         }
     }
 
@@ -402,15 +424,7 @@ sk_sp<SkImage> SkReadBuffer::readImage() {
             return nullptr;
         }
         if (image) {
-            SkMipmapBuilder builder(image->imageInfo());
-            if (SkMipmap::Deserialize(&builder, data->data(), data->size())) {
-                // TODO: need to make lazy images support mips
-                if (auto ri = image->makeRasterImage()) {
-                    image = ri;
-                }
-                image = builder.attachTo(image);
-                SkASSERT(image);    // withMipmaps should never return null
-            }
+            image = add_mipmaps(image, data, fProcs, alphaType);
         }
     }
     return image ? image : MakeEmptyImage(1, 1);
@@ -440,13 +454,17 @@ sk_sp<SkTypeface> SkReadBuffer::readTypeface() {
     }
 }
 
-SkFlattenable* SkReadBuffer::readFlattenable(SkFlattenable::Type ft) {
+SkFlattenable* SkReadBuffer::readRawFlattenable() {
     SkFlattenable::Factory factory = nullptr;
 
     if (fFactoryCount > 0) {
         int32_t index = this->read32();
         if (0 == index || !this->isValid()) {
             return nullptr; // writer failed to give us the flattenable
+        }
+        if (index < 0) {
+            this->validate(false);
+            return nullptr;
         }
         index -= 1;     // we stored the index-base-1
         if ((unsigned)index >= (unsigned)fFactoryCount) {
@@ -493,10 +511,6 @@ SkFlattenable* SkReadBuffer::readFlattenable(SkFlattenable::Type ft) {
             this->validate(false);
             return nullptr;
         }
-        if (obj && obj->getFlattenableType() != ft) {
-            this->validate(false);
-            return nullptr;
-        }
     } else {
         // we must skip the remaining data
         this->skip(sizeRecorded);
@@ -505,6 +519,16 @@ SkFlattenable* SkReadBuffer::readFlattenable(SkFlattenable::Type ft) {
         return nullptr;
     }
     return obj.release();
+}
+
+SkFlattenable* SkReadBuffer::readFlattenable(SkFlattenable::Type ft) {
+    SkFlattenable* obj = this->readRawFlattenable();
+    if (obj && obj->getFlattenableType() != ft) {
+        this->validate(false);
+        obj->unref();
+        return nullptr;
+    }
+    return obj;
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -519,6 +543,6 @@ int32_t SkReadBuffer::checkInt(int32_t min, int32_t max) {
     return value;
 }
 
-SkFilterQuality SkReadBuffer::checkFilterQuality() {
-    return this->checkRange<SkFilterQuality>(kNone_SkFilterQuality, kLast_SkFilterQuality);
+SkLegacyFQ SkReadBuffer::checkFilterQuality() {
+    return this->checkRange<SkLegacyFQ>(kNone_SkLegacyFQ, kLast_SkLegacyFQ);
 }

@@ -4,14 +4,18 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
-#include "include/utils/SkRandom.h"
-#include "src/pathops/SkIntersections.h"
+#include "include/core/SkTypes.h"
+#include "include/private/base/SkDebug.h"
+#include "src/base/SkRandom.h"
 #include "src/pathops/SkPathOpsCubic.h"
-#include "src/pathops/SkPathOpsLine.h"
+#include "src/pathops/SkPathOpsPoint.h"
 #include "src/pathops/SkPathOpsQuad.h"
-#include "src/pathops/SkReduceOrder.h"
 #include "tests/PathOpsTestCommon.h"
 #include "tests/Test.h"
+
+#include <algorithm>
+#include <array>
+#include <cmath>
 
 static bool gPathOpsCubicLineIntersectionIdeasVerbose = false;
 
@@ -31,7 +35,7 @@ static struct CubicLineFailures {
         0.578826774, {-390.17910153915489, -687.21144412296007}},
 };
 
-int cubicLineFailuresCount = (int) SK_ARRAY_COUNT(cubicLineFailures);
+int cubicLineFailuresCount = (int) std::size(cubicLineFailures);
 
 double measuredSteps[] = {
     9.15910731e-007, 8.6600277e-007, 7.4122059e-007, 6.92087618e-007, 8.35290245e-007,
@@ -240,7 +244,7 @@ DEF_TEST(PathOpsCubicLineRoots, reporter) {
     }
     SkDebugf("errors=%d avgIter=%1.9g", errors, (double) iters / errors);
     SkDebugf(" steps: ");
-    int worstLimit = SK_ARRAY_COUNT(worstStep);
+    int worstLimit = std::size(worstStep);
     while (worstStep[--worstLimit] == 0) ;
     for (int idx2 = 0; idx2 <= worstLimit; ++idx2) {
         SkDebugf("%1.9g ", worstStep[idx2]);
@@ -271,17 +275,19 @@ static double testOneFailure(const CubicLineFailures& failure) {
 }
 
 DEF_TEST(PathOpsCubicLineFailures, reporter) {
-    return;  // disable for now
-    for (int index = 0; index < cubicLineFailuresCount; ++index) {
-        const CubicLineFailures& failure = cubicLineFailures[index];
-        double newT = testOneFailure(failure);
-        SkASSERT_RELEASE(newT >= 0);
+    if ((false)) {  // disable for now
+        for (int index = 0; index < cubicLineFailuresCount; ++index) {
+            const CubicLineFailures& failure = cubicLineFailures[index];
+            double newT = testOneFailure(failure);
+            SkASSERT_RELEASE(newT >= 0);
+        }
     }
 }
 
 DEF_TEST(PathOpsCubicLineOneFailure, reporter) {
-    return;  // disable for now
-    const CubicLineFailures& failure = cubicLineFailures[1];
-    double newT = testOneFailure(failure);
-    SkASSERT_RELEASE(newT >= 0);
+    if ((false)) {  // disable for now
+        const CubicLineFailures& failure = cubicLineFailures[1];
+        double newT = testOneFailure(failure);
+        SkASSERT_RELEASE(newT >= 0);
+    }
 }

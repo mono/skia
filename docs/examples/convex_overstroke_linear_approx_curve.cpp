@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be found in the LICENSE file.
 #include "tools/fiddle/examples.h"
 REG_FIDDLE(convex_overstroke_linear_approx_curve, 256, 256, false, 0) {
-#include "math.h"
+#include <math.h>
 
 void draw(SkCanvas* canvas) {
     const float SCALE = 1;
@@ -41,7 +41,7 @@ void draw(SkCanvas* canvas) {
     canvas->drawPath(path, p);
 
     SkPath fillpath;
-    p.getFillPath(path, &fillpath);
+    skpathutils::FillPathWithPaint(path, p, &fillpath);
 
     SkPaint fillp;
     fillp.setColor(SK_ColorBLACK);

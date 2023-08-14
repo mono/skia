@@ -14,6 +14,13 @@
 
 class SkRasterPipeline;
 
+/**
+ *  Sentinel value for SkBlendMode enum.
+ *
+ *  Will never be a valid enum value, but will be storable in a byte.
+ */
+constexpr uint8_t kCustom_SkBlendMode = 0xFF;
+
 bool SkBlendMode_SupportsCoverageAsAlpha(SkBlendMode);
 
 static inline bool SkBlendMode_CaresAboutRBOrder(SkBlendMode mode) {
@@ -25,8 +32,8 @@ void SkBlendMode_AppendStages(SkBlendMode, SkRasterPipeline*);
 
 SkPMColor4f SkBlendMode_Apply(SkBlendMode, const SkPMColor4f& src, const SkPMColor4f& dst);
 
-#if SK_SUPPORT_GPU
-#include "src/gpu/GrXferProcessor.h"
+#if defined(SK_GANESH)
+#include "src/gpu/ganesh/GrXferProcessor.h"
 const GrXPFactory* SkBlendMode_AsXPFactory(SkBlendMode);
 #endif
 

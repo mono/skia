@@ -8,7 +8,6 @@
 #ifndef SkSurfaceCharacterization_DEFINED
 #define SkSurfaceCharacterization_DEFINED
 
-#include "include/gpu/GrTypes.h"
 
 #include "include/core/SkColorSpace.h"
 #include "include/core/SkImageInfo.h"
@@ -17,10 +16,11 @@
 
 class SkColorSpace;
 
-#include "include/gpu/GrBackendSurface.h"
 
-#if SK_SUPPORT_GPU
+#if defined(SK_GANESH)
+#include "include/gpu/GrBackendSurface.h"
 #include "include/gpu/GrContextThreadSafeProxy.h"
+#include "include/gpu/GrTypes.h"
 
 /** \class SkSurfaceCharacterization
     A surface characterization contains all the information Ganesh requires to makes its internal
@@ -118,7 +118,7 @@ public:
     bool isCompatible(const GrBackendTexture&) const;
 
 private:
-    friend class SkSurface_Gpu; // for 'set' & 'config'
+    friend class SkSurface_Ganesh;           // for 'set' & 'config'
     friend class GrVkSecondaryCBDrawContext; // for 'set' & 'config'
     friend class GrContextThreadSafeProxy; // for private ctor
     friend class SkDeferredDisplayListRecorder; // for 'config'
@@ -152,6 +152,10 @@ private:
             , fVulkanSecondaryCBCompatible(vulkanSecondaryCBCompatible)
             , fIsProtected(isProtected)
             , fSurfaceProps(surfaceProps) {
+        if (fSurfaceProps.flags() & SkSurfaceProps::kDynamicMSAA_Flag) {
+            // Dynamic MSAA is not currently supported with DDL.
+            *this = {};
+        }
         SkDEBUGCODE(this->validate());
     }
 
@@ -168,21 +172,25 @@ private:
              VulkanSecondaryCBCompatible vulkanSecondaryCBCompatible,
              GrProtected isProtected,
              const SkSurfaceProps& surfaceProps) {
-        fContextInfo = contextInfo;
-        fCacheMaxResourceBytes = cacheMaxResourceBytes;
+        if (surfaceProps.flags() & SkSurfaceProps::kDynamicMSAA_Flag) {
+            // Dynamic MSAA is not currently supported with DDL.
+            *this = {};
+        } else {
+            fContextInfo = contextInfo;
+            fCacheMaxResourceBytes = cacheMaxResourceBytes;
 
-        fImageInfo = ii;
-        fBackendFormat = backendFormat;
-        fOrigin = origin;
-        fSampleCnt = sampleCnt;
-        fIsTextureable = isTextureable;
-        fIsMipMapped = isMipMapped;
-        fUsesGLFBO0 = usesGLFBO0;
-        fVkRTSupportsInputAttachment = vkRTSupportsInputAttachment;
-        fVulkanSecondaryCBCompatible = vulkanSecondaryCBCompatible;
-        fIsProtected = isProtected;
-        fSurfaceProps = surfaceProps;
-
+            fImageInfo = ii;
+            fBackendFormat = backendFormat;
+            fOrigin = origin;
+            fSampleCnt = sampleCnt;
+            fIsTextureable = isTextureable;
+            fIsMipMapped = isMipMapped;
+            fUsesGLFBO0 = usesGLFBO0;
+            fVkRTSupportsInputAttachment = vkRTSupportsInputAttachment;
+            fVulkanSecondaryCBCompatible = vulkanSecondaryCBCompatible;
+            fIsProtected = isProtected;
+            fSurfaceProps = surfaceProps;
+        }
         SkDEBUGCODE(this->validate());
     }
 
@@ -202,7 +210,8 @@ private:
     SkSurfaceProps                  fSurfaceProps;
 };
 
-#else// !SK_SUPPORT_GPU
+#else// !defined(SK_GANESH)
+class GrBackendFormat;
 
 class SK_API SkSurfaceCharacterization {
 public:

@@ -1,17 +1,26 @@
 # Prerequisites
 
-To compile CanvasKit, you will first need to [install `emscripten`][1].  This
-will set the environment `EMSDK` (among others) which is required for
-compilation. Which version should you use?  [`/infra/wasm-common/docker/emsdk-base/Dockerfile`][2]
-shows the version we build and test with. We try to keep this up-to-date.
+Node v14 or later is required to run tests. We use npm (the Node Package Manager) to install
+test dependencies. Recent installations of Node have npm as well.
+CanvasKit has no other external source dependencies.
 
-[1]: https://emscripten.org/docs/getting_started/downloads.html
-[2]: https://github.com/google/skia/blob/master/infra/wasm-common/docker/emsdk-base/Dockerfile
-
-This document also assumes you have followed the instructions to download Skia and its deps
+## Compiling with GN
+To build with GN, you need to have followed the instructions to download Skia and its deps
 <https://skia.org/user/download>.
 
-## MacOS specific notes
+To compile CanvasKit, you will first need to [download and activate `emscripten`][1] using the
+script in `//bin/activate-emsdk` (or `//bin/git-sync-deps` which also calls activate-emsdk).
+This places the associated files in `//third_party/externals/emsdk` and the GN[2] build scripts
+will use those by default.
+The compile.sh script automates the default GN settings; users are free to set their own. If users
+want to use their own version of emscripten, they should set the `skia_emsdk_dir` argument
+(see `//skia/gn/toolchain/wasm.gni`). For other available arguments, see
+`//modules/canvaskit/BUILD.gn`.
+
+[1]: https://emscripten.org/
+[2]: https://chromium.googlesource.com/chromium/src/tools/gn/+/48062805e19b4697c5fbd926dc649c78b6aaa138/README.md
+
+### MacOS specific notes
 Make sure you have Python3 installed, otherwise the downloading emscripten toolchain
 can fail with errors about SSL certificates. <https://github.com/emscripten-core/emsdk/pull/273>
 
@@ -21,19 +30,23 @@ for a solution to Python3 using the wrong certificates.
 # Compile and Run Local Example
 
 ```
+# The following installs all npm dependencies and only needs to be when setting up
+# or if our npm dependencies have changed (rarely).
+npm ci
+
 make release  # make debug is much faster and has better error messages
 make local-example
 ```
 
 This will print a local endpoint for viewing the example.  You can experiment
-with the CanvasKit API by modifying `./canvaskit/example.html` and refreshing
-the page. For some more experimental APIs, there's also `./canvaskit/extra.html`.
+with the CanvasKit API by modifying `./npm_build/example.html` and refreshing
+the page. For some more experimental APIs, there's also `./npm_build/extra.html`.
 
 For other available build targets, see `Makefile` and `compile.sh`.
 For example, building a stripped-down version of CanvasKit with no text support or
 any of the "extras", one might run:
 
-    ./compile.sh no_skottie no_particles no_font
+    ./compile.sh no_skottie no_font
 
 Such a stripped-down version is about half the size of the default release build.
 
@@ -46,13 +59,13 @@ make debug
 make test-continuous
 ```
 
-This reads karma.conf.js, and opens a chrome browser and begins running all the test
+This reads karma.conf.js, and opens a Chrome browser and begins running all the test
 in `test/` it will detect changes to the tests in that directory and automatically
-run again, however it will automatically rebuild and reload canvaskit. Closing the
+run again, however it will automatically rebuild and reload CanvasKit. Closing the
 chrome window will just cause it to re-opened. Kill the karma process to stop continuous
 monitoring for changes.
 
-The tests are run with whichever build of canvaskit you last made. be sure to also
+The tests are run with whichever build of CanvasKit you last made. be sure to also
 test with `release`, `debug_cpu`, and `release_cpu`. testing with release builds will
 expose problems in closure compilation and usually forgotten externs.
 
@@ -64,22 +77,12 @@ the results will only be useful when testing a debug build. Open
 
 ## Measuring Performance
 
-To measure the runtime of all benchmarks in `perf/`
-
-```
-make release
-make perf
-```
-
-Performacnce benchmarks also use karma, with a different config `karma.bench.conf.js`.
-It will run once and print results.
-
-Typically, you'd want to run these at head, and with your CL to observe the effect of some
-optimization.
+We use puppeteer to run a Chrome browser to gather performance data in a consistent way.
+See `//tools/perf-canvaskit-puppeteer` for more.
 
 ## Adding tests
 
-The tests in `tests/` and `perf/` are grouped into files by topic.
+The tests in `tests/` are grouped into files by topic.
 Within each file there are `describe` blocks further organizing the tests, and within those
 `it()` functions which test particular behaviors. `describe` and `it` are jasmine methods
 which can both be temporarily renamed `fdescribe` and `fit`. Which causes jasmine to only those.
@@ -90,12 +93,12 @@ head.
 
 ## Testing from Gerrit
 
-When submitting a CL in gerrit, click "choose tryjobs" and type canvaskit to filter them.
+When submitting a CL in gerrit, click "choose tryjobs" and type CanvasKit to filter them.
 select all of them, which at the time of this writing is four jobs, for each combination
 of perf/test gpu/cpu.
 
-The performance results are reported to perf.skia.org
-gold results are reported to gold.skia.org
+The performance results are reported to [perf.skia.org] and correctness results are reported to
+[gold.skia.org].
 
 Coverage is not measured while running tests this way.
 
@@ -120,30 +123,40 @@ images used for building and testing.
 This presumes you have updated emscripten locally to a newer version of the
 sdk and verified/fixed any build issues that have arisen.
 
-  1. Edit `$SKIA_ROOT/infra/wasm-common/docker/emsdk-base/Dockerfile` to install
-     and activate the desired version of Emscripten.
-  2. Edit `$SKIA_ROOT/infra/wasm-common/docker/Makefile` to have `EMSDK_VERSION` be
-     set to that desired version. If there is a suffix that is not `_v1`, reset
-     it to be `_v1`. If testing the image later does not work and edits are made
-     to the emsdk-base Dockerfile to correct that, increment to `_v2`,`_v3`, etc
-     to force the bots to pick up the new image.
-  3. In `$SKIA_ROOT/infra/wasm-common/docker/`, run `make publish_emsdk_base`
-  4. Edit `$SKIA_ROOT/infra/canvaskit/docker/canvaskit-emsdk/Dockerfile` to be based
-     off the new version from step 2. CanvasKit has its own docker image because
-     it needs a few extra dependencies to build with font support.
-  5. Edit `$SKIA_ROOT/infra/canvaskit/docker/Makefile` to have the same version
-     from step 2. It's easiest to keep the `emsdk-base` and `canvaskit-emsdk` versions
-     be in lock-step.
-  6. In `$SKIA_ROOT/infra/canvaskit/docker/`, run `make publish_canvaskit_emsdk`.
-  7. In `$SKIA_ROOT/infra/bots/recipe_modules/build/`, update `canvaskit.py`
-     and `pathkit.py` to have `DOCKER_IMAGE` point to the desired tagged Docker
-     containers from steps 2 and 5 (which should be the same).
-  8. In `$SKIA_ROOT/infra/bots/task_drivers/compile_wasm_gm_tests.go`, update dockerImage
-     to refer to the desired Docker containers from steps 2 and 5.
-  9. In `$SKIA_ROOT/infra/bots/`, run `make train` to re-train the recipes.
-  10. Optional: Run something like `git grep 1\\.38\\.` in `$SKIA_ROOT` to see if
-     there are any other references that need updating.
-  11. Upload a CL with all the changes. Run all Test.+CanvasKit, Perf.+CanvasKit,
+  1. Edit `//bin/activate-emsdk` to install and activate the desired version of Emscripten.
+  2. Upload a CL with all the changes. Run all Test.+CanvasKit, Perf.+Puppeteer,
       Test.+PathKit, Perf.+PathKit jobs to make sure the new builds pass all
       tests and don't crash the perf harnesses.
-  12. Send out CL for review. Feel free to point the reviewer at these steps.
+  3. Send out CL for review. Feel free to point the reviewer at these steps.
+
+## Running Skia's GMs and Unit Tests against wasm+WebGL ##
+
+General Tips:
+ - Make use of the skip lists and start indexes in the run-wasm-gm-tests.html to focus in on
+   problematic tests.
+ - `Uncaught (in promise) RuntimeError: function signature mismatch` tends to mean null was
+   dereferenced somewhere. Add SkASSERT to verify.
+
+### Debugging some GMs / Unit Tests
+For faster cycle time, it is recommended to focus on specific GMs instead of re-compiling all
+of them. This can be done by modifying the `compile_gm.sh` script (but not checking this in)
+to set `GMS_TO_BUILD` and/or `TESTS_TO_BUILD` to a minimal set of files. There's an `if false`
+that can be commented out to assist with this.
+
+Run `make gm_tests` or `make_gm_tests_debug` from this folder. This will produce a .js and .wasm
+in a (not checked in) `build` subfolder.
+
+Run `make single-gm` and navigate to <http://localhost:8000/wasm_tools/gms.html>. This will load
+that html file and the freshly built wasm_gm_tests binary and run a single GM and unit test that
+was compiled in. Feel free to modify //modules/canvaskit/wasm_tools/gms.html to run the specific
+GM/unit test or tests that you care about.
+
+### Testing all GMs / Unit Tests
+With the current GN build, this can take quite a while to compile and re-compile (the upcoming
+Bazel build should alleviate this).
+
+Run `make gm_tests` or `make_gm_tests_debug` from this folder. This will produce a .js and .wasm
+in a (not checked in) `build` subfolder.
+
+Change directory to `//tools/run-wasm-gm-tests`. Run `make run_local`, which will put all PNGs
+produced by GMs into `/tmp/wasm-gmtests` and run all unit tests.

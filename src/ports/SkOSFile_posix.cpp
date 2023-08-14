@@ -7,8 +7,8 @@
 
 #include "include/core/SkString.h"
 #include "include/core/SkTypes.h"
-#include "include/private/SkTFitsIn.h"
-#include "include/private/SkTemplates.h"
+#include "include/private/base/SkTFitsIn.h"
+#include "include/private/base/SkTemplates.h"
 #include "src/core/SkOSFile.h"
 
 #include <dirent.h>
@@ -23,6 +23,13 @@
 #ifdef SK_BUILD_FOR_IOS
 #include "src/ports/SkOSFile_ios.h"
 #endif
+
+void sk_fsync(FILE* f) {
+#if !defined(SK_BUILD_FOR_ANDROID) && !defined(__UCLIBC__) && !defined(_NEWLIB_VERSION)
+    int fd = fileno(f);
+    fsync(fd);
+#endif
+}
 
 bool sk_exists(const char *path, SkFILE_Flags flags) {
     int mode = F_OK;

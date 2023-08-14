@@ -21,15 +21,17 @@
 #include "include/core/SkTextBlob.h"
 #include "include/core/SkTypeface.h"
 #include "include/core/SkTypes.h"
-#include "include/private/SkTemplates.h"
+#include "include/private/base/SkTemplates.h"
 #include "tools/Resources.h"
 
 #include <string.h>
 #include <utility>
 
+using namespace skia_private;
+
 static void getGlyphPositions(const SkFont& font, const uint16_t glyphs[],
                              int count, SkScalar x, SkScalar y, SkPoint pos[]) {
-    SkAutoSTMalloc<128, SkScalar> widthStorage(count);
+    AutoSTMalloc<128, SkScalar> widthStorage(count);
     SkScalar* widths = widthStorage.get();
     font.getWidths(glyphs, count, widths);
 
@@ -58,14 +60,14 @@ static void drawKernText(SkCanvas* canvas, const void* text, size_t len,
         return;
     }
 
-    SkAutoSTMalloc<128, uint16_t> glyphStorage(len);
+    AutoSTMalloc<128, uint16_t> glyphStorage(len);
     uint16_t* glyphs = glyphStorage.get();
     int glyphCount = font.textToGlyphs(text, len, SkTextEncoding::kUTF8, glyphs, len);
     if (glyphCount < 1) {
         return;
     }
 
-    SkAutoSTMalloc<128, int32_t> adjustmentStorage(glyphCount - 1);
+    AutoSTMalloc<128, int32_t> adjustmentStorage(glyphCount - 1);
     int32_t* adjustments = adjustmentStorage.get();
     if (!face->getKerningPairAdjustments(glyphs, glyphCount, adjustments)) {
         canvas->drawSimpleText(text, len, SkTextEncoding::kUTF8, x, y, font, paint);
@@ -89,7 +91,7 @@ static constexpr SkFontStyle gStyles[] = {
     SkFontStyle::BoldItalic(),
 };
 
-constexpr int gStylesCount = SK_ARRAY_COUNT(gStyles);
+constexpr int gStylesCount = std::size(gStyles);
 
 class TypefaceStylesGM : public skiagm::GM {
     sk_sp<SkTypeface> fFaces[gStylesCount];
@@ -224,7 +226,7 @@ static void draw_typeface_rendering_gm(SkCanvas* canvas, sk_sp<SkTypeface> face,
 
             for (const AliasType& alias : aliasTypes) {
                 font.setEdging(alias.edging);
-                SkAutoCanvasRestore acr(canvas, false);
+                SkAutoCanvasRestore acr1(canvas, false);
                 if (alias.inLayer) {
                     canvas->saveLayer(nullptr, &paint);
                 }
@@ -239,7 +241,7 @@ static void draw_typeface_rendering_gm(SkCanvas* canvas, sk_sp<SkTypeface> face,
                         font.setHinting(hinting);
 
                         for (const bool& rotateABit : rotateABitTypes) {
-                            SkAutoCanvasRestore acr(canvas, true);
+                            SkAutoCanvasRestore acr2(canvas, true);
                             if (rotateABit) {
                                 canvas->rotate(2, x + subpixel.offset.x(),
                                                   y + subpixel.offset.y());
@@ -359,28 +361,95 @@ static void draw_typeface_rendering_gm(SkCanvas* canvas, sk_sp<SkTypeface> face,
     }
 }
 
-DEF_SIMPLE_GM(typefacerendering, canvas, 640, 840) {
-    if (sk_sp<SkTypeface> face = MakeResourceAsTypeface("fonts/hintgasp.ttf")) {
-        draw_typeface_rendering_gm(canvas, face, face->unicharToGlyph('A'));
-
-        // Should draw nothing and not do anything undefined.
-        draw_typeface_rendering_gm(canvas, face, 0xFFFF);
+DEF_SIMPLE_GM_CAN_FAIL(typefacerendering, canvas, errMsg, 640, 840) {
+    sk_sp<SkTypeface> face = MakeResourceAsTypeface("fonts/hintgasp.ttf");
+    if (!face) {
+        return skiagm::DrawResult::kSkip;
     }
+    draw_typeface_rendering_gm(canvas, face, face->unicharToGlyph('A'));
+
+    // Should draw nothing and not do anything undefined.
+    draw_typeface_rendering_gm(canvas, face, 0xFFFF);
+    return skiagm::DrawResult::kOk;
 }
 
 // Type1 fonts don't currently work in Skia on Windows.
 #ifndef SK_BUILD_FOR_WIN
 
-DEF_SIMPLE_GM(typefacerendering_pfa, canvas, 640, 840) {
-    if (sk_sp<SkTypeface> face = MakeResourceAsTypeface("fonts/Roboto2-Regular.pfa")) {
-        draw_typeface_rendering_gm(canvas, face, face->unicharToGlyph('O'));
+DEF_SIMPLE_GM_CAN_FAIL(typefacerendering_pfa, canvas, errMsg, 640, 840) {
+    sk_sp<SkTypeface> face = MakeResourceAsTypeface("fonts/Roboto2-Regular.pfa");
+    if (!face) {
+       return skiagm::DrawResult::kSkip;
     }
+    draw_typeface_rendering_gm(canvas, face, face->unicharToGlyph('O'));
+    return skiagm::DrawResult::kOk;
 }
 
-DEF_SIMPLE_GM(typefacerendering_pfb, canvas, 640, 840) {
-    if (sk_sp<SkTypeface> face = MakeResourceAsTypeface("fonts/Roboto2-Regular.pfb")) {
-        draw_typeface_rendering_gm(canvas, face, face->unicharToGlyph('O'));
+DEF_SIMPLE_GM_CAN_FAIL(typefacerendering_pfb, canvas, errMsg, 640, 840) {
+    sk_sp<SkTypeface> face = MakeResourceAsTypeface("fonts/Roboto2-Regular.pfb");
+    if (!face) {
+        return skiagm::DrawResult::kSkip;
     }
+    draw_typeface_rendering_gm(canvas, face, face->unicharToGlyph('O'));
+    return skiagm::DrawResult::kOk;
 }
 
 #endif
+
+////////////////////////////////////////////////////////////////////////////////
+
+#include "include/effects/SkStrokeAndFillPathEffect.h"
+
+// Exercise different paint styles and embolden, and compare with strokeandfill patheffect
+DEF_SIMPLE_GM(typeface_styling, canvas, 710, 360) {
+    sk_sp<SkTypeface> face = MakeResourceAsTypeface("fonts/Roboto-Regular.ttf");
+    SkFont font;
+    font.setTypeface(face);
+    font.setSize(100);
+    font.setEdging(SkFont::Edging::kAntiAlias);
+
+    uint16_t glyphs[1] = { font.unicharToGlyph('A') };
+    SkPoint pos[1] = { {0, 0} };
+
+    auto draw = [&](SkPaint::Style style, float width, sk_sp<SkPathEffect> pe) {
+        // Draws 3 rows:
+        //  1. normal
+        //  2. emboldened
+        //  3. normal(white) on top of emboldened (to show the delta)
+
+        SkPaint paint;
+        paint.setStyle(style);
+        paint.setStrokeWidth(width);
+        paint.setPathEffect(pe);
+
+        font.setEmbolden(true);
+        canvas->drawGlyphs(1, glyphs, pos, {20, 120*2}, font, paint);
+        canvas->drawGlyphs(1, glyphs, pos, {20, 120*3}, font, paint);
+
+        font.setEmbolden(false);
+        canvas->drawGlyphs(1, glyphs, pos, {20, 120*1}, font, paint);
+        paint.setColor(SK_ColorYELLOW);
+        canvas->drawGlyphs(1, glyphs, pos, {20, 120*3}, font, paint);
+    };
+
+    const struct {
+        SkPaint::Style  style;
+        float           width;
+        bool            usePE;
+    } recs[] = {
+        { SkPaint::kFill_Style,             0,  false },
+        { SkPaint::kStroke_Style,           0,  false },
+        { SkPaint::kStroke_Style,           3,  false },
+        { SkPaint::kStrokeAndFill_Style,    0,  false },
+        { SkPaint::kStrokeAndFill_Style,    3,  false },
+        { SkPaint::kStroke_Style,           0,  true },
+        { SkPaint::kStroke_Style,           3,  true },
+    };
+
+    canvas->translate(0, -20);
+    auto pe = SkStrokeAndFillPathEffect::Make();
+    for (auto r : recs) {
+        draw(r.style, r.width, r.usePE ? pe : nullptr);
+        canvas->translate(100, 0);
+    }
+}

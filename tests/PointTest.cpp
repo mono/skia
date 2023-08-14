@@ -4,11 +4,19 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
-// Unit tests for src/core/SkPoint.cpp and its header
 
+#include "include/core/SkPoint.h"
 #include "include/core/SkRect.h"
+#include "include/core/SkScalar.h"
+#include "include/core/SkTypes.h"
+#include "include/private/base/SkDebug.h"
 #include "src/core/SkPointPriv.h"
 #include "tests/Test.h"
+
+#include <cfloat>
+#include <cstdint>
+#include <cstring>
+#include <string>
 
 static void test_casts(skiatest::Reporter* reporter) {
     SkPoint p = { 0, 0 };
@@ -133,7 +141,7 @@ DEF_TEST(Point, reporter) {
         { 0.6f, 0.8f, SK_Scalar1 },
     };
 
-    for (size_t i = 0; i < SK_ARRAY_COUNT(gRec); ++i) {
+    for (size_t i = 0; i < std::size(gRec); ++i) {
         test_length(reporter, gRec[i].fX, gRec[i].fY, gRec[i].fLength);
     }
 
@@ -147,7 +155,7 @@ DEF_TEST(Point_setLengthFast, reporter) {
     const float tests[] = { 1.0f, 0.0f, 1.0e-37f, 3.4e38f, 42.0f, 0.00012f };
 
     const SkPoint kOne = {1.0f, 1.0f};
-    for (unsigned i = 0; i < SK_ARRAY_COUNT(tests); i++) {
+    for (unsigned i = 0; i < std::size(tests); i++) {
         SkPoint slow = kOne, fast = kOne;
 
         slow.setLength(tests[i]);

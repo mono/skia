@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 #
 # Copyright 2016 Google Inc.
 #
@@ -20,7 +20,7 @@ SKIA_DIR = os.path.abspath(os.path.join(INFRA_BOTS_DIR, os.pardir, os.pardir))
 
 def test(cmd, cwd):
   try:
-    subprocess.check_output(cmd, cwd=cwd, stderr=subprocess.STDOUT)
+    subprocess.check_output(cmd, cwd=cwd, stderr=subprocess.STDOUT, encoding='utf-8')
   except subprocess.CalledProcessError as e:
     return e.output
 
@@ -29,14 +29,14 @@ def python_unit_tests(train):
   if train:
     return None
   return test(
-      ['python', '-u', '-m', 'unittest', 'discover', '-s', '.', '-p',
+      [sys.executable, '-u', '-m', 'unittest', 'discover', '-s', '.', '-p',
        '*_test.py'],
       INFRA_BOTS_DIR)
 
 
 def recipe_test(train):
   cmd = [
-      'python', '-u', os.path.join(INFRA_BOTS_DIR, 'recipes.py'), 'test']
+      sys.executable, '-u', os.path.join(INFRA_BOTS_DIR, 'recipes.py'), 'test']
   if train:
     cmd.append('train')
   else:
@@ -73,17 +73,17 @@ def main():
       errs.append(err)
 
   if len(errs) > 0:
-    print >> sys.stderr, 'Test failures:\n'
+    print('Test failures:\n', file=sys.stderr)
     for err in errs:
-      print >> sys.stderr, '=============================='
-      print >> sys.stderr, err
-      print >> sys.stderr, '=============================='
+      print('==============================', file=sys.stderr)
+      print(err, file=sys.stderr)
+      print('==============================', file=sys.stderr)
     sys.exit(1)
 
   if train:
-    print 'Trained tests successfully.'
+    print('Trained tests successfully.')
   else:
-    print 'All tests passed!'
+    print('All tests passed!')
 
 
 if __name__ == '__main__':

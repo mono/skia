@@ -5,7 +5,8 @@
  * found in the LICENSE file.
  */
 
-#include "src/core/SkGlyphRun.h"
+#if 0   // should we revitalize this by consing up a device for drawTextBlob() ?
+#include "src/text/GlyphRun.h"
 
 #include "include/core/SkTextBlob.h"
 #include "tests/Test.h"
@@ -13,35 +14,6 @@
 #include <algorithm>
 #include <memory>
 
-DEF_TEST(GlyphRunGlyphIDSetBasic, reporter) {
-    SkGlyphID glyphs[] = {100, 3, 240, 3, 234};
-    auto glyphIDs = SkSpan<const SkGlyphID>(glyphs, SK_ARRAY_COUNT(glyphs));
-    int universeSize = 1000;
-    SkGlyphID uniqueGlyphs[SK_ARRAY_COUNT(glyphs)];
-    uint16_t denseIndices[SK_ARRAY_COUNT(glyphs)];
-
-    SkGlyphIDSet gs;
-    auto uniqueGlyphIDs = gs.uniquifyGlyphIDs(universeSize, glyphIDs, uniqueGlyphs, denseIndices);
-
-    std::vector<SkGlyphID> test{uniqueGlyphIDs.begin(), uniqueGlyphIDs.end()};
-    std::sort(test.begin(), test.end());
-    auto newEnd = std::unique(test.begin(), test.end());
-    REPORTER_ASSERT(reporter, uniqueGlyphIDs.size() == (size_t)(newEnd - test.begin()));
-    REPORTER_ASSERT(reporter, uniqueGlyphIDs.size() == 4);
-    {
-        uint16_t answer[] = {0, 1, 2, 1, 3};
-        REPORTER_ASSERT(reporter,
-                        std::equal(answer, std::end(answer), denseIndices));
-    }
-
-    {
-        SkGlyphID answer[] = {100, 3, 240, 234};
-        REPORTER_ASSERT(reporter,
-                        std::equal(answer, std::end(answer), uniqueGlyphs));
-    }
-}
-
-#if 0   // should we revitalize this by consing up a device for drawTextBlob() ?
 DEF_TEST(GlyphRunBlob, reporter) {
     constexpr uint16_t count = 5;
     constexpr int runCount = 2;
@@ -67,7 +39,7 @@ DEF_TEST(GlyphRunBlob, reporter) {
 
     auto blob = blobBuilder.make();
 
-    SkGlyphRunBuilder runBuilder;
+    sktext::GlyphRunBuilder runBuilder;
     SkPaint legacy_paint;
     font.LEGACY_applyToPaint(&legacy_paint);
     runBuilder.drawTextBlob(legacy_paint, *blob, SkPoint::Make(0, 0));

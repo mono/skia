@@ -79,7 +79,7 @@ static void test_mac_fonts(SkCanvas* canvas, SkScalar size, SkScalar xpos) {
 
     for (SkColorType ct : {kRGBA_8888_SkColorType, kGray_8_SkColorType, kAlpha_8_SkColorType}) {
         SkImageInfo ii = SkImageInfo::Make(w, h, ct, kPremul_SkAlphaType);
-        auto surf = SkSurface::MakeRaster(ii);
+        auto surf = SkSurfaces::Raster(ii);
         SkPixmap pm;
         surf->peekPixels(&pm);
         CGContextRef ctx = make_cg_ctx(pm);
@@ -91,7 +91,7 @@ static void test_mac_fonts(SkCanvas* canvas, SkScalar size, SkScalar xpos) {
             CGContextSetShouldSmoothFonts(ctx, smooth);
             CGContextShowTextAtPoint(ctx, 2 + xpos, 2, "A", 1);
 
-            surf->draw(canvas, x, y, nullptr);
+            surf->draw(canvas, x, y);
             x += pm.width();
         }
         y += pm.height();
@@ -150,7 +150,7 @@ DEF_SIMPLE_GM(macaa_colors, canvas, 800, 500) {
     SkFont font;
     font.setTypeface(SkTypeface::MakeFromName("Times", SkFontStyle()));
 
-    for (size_t i = 0; i < SK_ARRAY_COUNT(colors); i += 2) {
+    for (size_t i = 0; i < std::size(colors); i += 2) {
         canvas->save();
 
         SkPaint paint;

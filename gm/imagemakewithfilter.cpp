@@ -45,7 +45,7 @@ static void show_bounds(SkCanvas* canvas, const SkIRect* clip, const SkIRect* in
     SkPaint paint;
     paint.setStyle(SkPaint::kStroke_Style);
 
-    for (size_t i = 0; i < SK_ARRAY_COUNT(rects); ++i) {
+    for (size_t i = 0; i < std::size(rects); ++i) {
         // Skip null bounds rects, since not all methods have subsets
         if (rects[i]) {
             paint.setColor(colors[i]);
@@ -120,7 +120,7 @@ static sk_sp<SkImageFilter> matrix_factory(sk_sp<SkImage> auxImage, const SkIRec
     matrix.setRotate(45.f, 50.f, 50.f);
 
     // This doesn't support a cropRect
-    return SkImageFilters::MatrixTransform(matrix, kLow_SkFilterQuality, nullptr);
+    return SkImageFilters::MatrixTransform(matrix, SkSamplingOptions(SkFilterMode::kLinear), nullptr);
 }
 
 static sk_sp<SkImageFilter> alpha_threshold_factory(sk_sp<SkImage> auxImage,
@@ -210,13 +210,14 @@ protected:
 
     void onOnceBeforeDraw() override {
         SkImageInfo info = SkImageInfo::MakeN32(100, 100, kUnpremul_SkAlphaType);
-        auto surface = SkSurface::MakeRaster(info, nullptr);
+        auto surface = SkSurfaces::Raster(info, nullptr);
 
         sk_sp<SkImage> colorImage = GetResourceAsImage("images/mandrill_128.png");
         // Resize to 100x100
         surface->getCanvas()->drawImageRect(
                 colorImage, SkRect::MakeWH(colorImage->width(), colorImage->height()),
-                SkRect::MakeWH(info.width(), info.height()), nullptr);
+                SkRect::MakeWH(info.width(), info.height()), SkSamplingOptions(), nullptr,
+                                            SkCanvas::kStrict_SrcRectConstraint);
         fMainImage = surface->makeImageSnapshot();
 
         ToolUtils::draw_checkerboard(surface->getCanvas());
@@ -256,7 +257,7 @@ protected:
             "Lighting",
             "Tile"
         };
-        static_assert(SK_ARRAY_COUNT(filters) == SK_ARRAY_COUNT(filterNames), "filter name length");
+        static_assert(std::size(filters) == std::size(filterNames), "filter name length");
 
         SkIRect clipBounds[] {
             { -20, -20, 100, 100 },
@@ -266,10 +267,6 @@ protected:
             {  20,  20,  50,  50 },
             {  30,  30,  75,  75 }
         };
-
-        // These need to be GPU-backed when on the GPU to ensure that the image filters use the GPU
-        // code paths (otherwise they may choose to do CPU filtering then upload)
-        sk_sp<SkImage> mainImage, auxImage;
 
         auto rContext = canvas->recordingContext();
         // In a DDL context, we can't use the GPU code paths and we will drop the work – skip.
@@ -283,17 +280,17 @@ protected:
                 *errorMsg = "Direct context abandoned.";
                 return DrawResult::kSkip;
             }
-            mainImage = fMainImage->makeTextureImage(dContext);
-            auxImage = fAuxImage->makeTextureImage(dContext);
-        } else {
-            mainImage = fMainImage;
-            auxImage = fAuxImage;
         }
+
+        // These need to be GPU-backed when on the GPU to ensure that the image filters use the GPU
+        // code paths (otherwise they may choose to do CPU filtering then upload)
+        sk_sp<SkImage> mainImage = ToolUtils::MakeTextureImage(canvas, fMainImage);
+        sk_sp<SkImage> auxImage = ToolUtils::MakeTextureImage(canvas, fAuxImage);
         if (!mainImage || !auxImage) {
             return DrawResult::kFail;
         }
-        SkASSERT(mainImage && (mainImage->isTextureBacked() || !rContext));
-        SkASSERT(auxImage && (auxImage->isTextureBacked() || !rContext));
+        SkASSERT(mainImage && (mainImage->isTextureBacked() || !dContext));
+        SkASSERT(auxImage && (auxImage->isTextureBacked() || !dContext));
 
         SkScalar MARGIN = SkIntToScalar(40);
         SkScalar DX = mainImage->width() + MARGIN;
@@ -303,7 +300,7 @@ protected:
         SkPaint textPaint;
         textPaint.setAntiAlias(true);
         SkFont font(nullptr, 12);
-        for (size_t i = 0; i < SK_ARRAY_COUNT(filterNames); ++i) {
+        for (size_t i = 0; i < std::size(filterNames); ++i) {
             canvas->drawString(filterNames[i], DX * i + MARGIN, 15, font, textPaint);
         }
 
@@ -311,7 +308,7 @@ protected:
 
         for (auto clipBound : clipBounds) {
             canvas->save();
-            for (size_t i = 0; i < SK_ARRAY_COUNT(filters); ++i) {
+            for (size_t i = 0; i < std::size(filters); ++i) {
                 SkIRect subset = SkIRect::MakeXYWH(25, 25, 50, 50);
                 SkIRect outSubset;
 
@@ -319,7 +316,7 @@ protected:
                 // filtered result.
                 SkPaint alpha;
                 alpha.setAlphaf(0.3f);
-                canvas->drawImage(mainImage, 0, 0, &alpha);
+                canvas->drawImage(mainImage, 0, 0, SkSamplingOptions(), &alpha);
 
                 this->drawImageWithFilter(canvas, mainImage, auxImage, filters[i], clipBound,
                                           subset, &outSubset);
@@ -368,7 +365,9 @@ private:
             canvas->saveLayer(nullptr, &paint);
 
             // Draw the original subset of the image
-            canvas->drawImageRect(mainImage, subset, SkRect::Make(subset), nullptr);
+            SkRect r = SkRect::Make(subset);
+            canvas->drawImageRect(mainImage, r, r, SkSamplingOptions(),
+                                  nullptr, SkCanvas::kStrict_SrcRectConstraint);
 
             *dstRect = subset;
         } else {
@@ -379,13 +378,17 @@ private:
             auto rContext = canvas->recordingContext();
             result = mainImage->makeWithFilter(rContext, filter.get(), subset, clip,
                                                &outSubset, &offset);
+            if (!result) {
+                return;
+            }
 
-            SkASSERT(result);
             SkASSERT(mainImage->isTextureBacked() == result->isTextureBacked());
 
             *dstRect = SkIRect::MakeXYWH(offset.x(), offset.y(),
                                          outSubset.width(), outSubset.height());
-            canvas->drawImageRect(result, outSubset, SkRect::Make(*dstRect), nullptr);
+            canvas->drawImageRect(result, SkRect::Make(outSubset), SkRect::Make(*dstRect),
+                                  SkSamplingOptions(), nullptr,
+                                  SkCanvas::kStrict_SrcRectConstraint);
         }
     }
 

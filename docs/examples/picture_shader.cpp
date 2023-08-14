@@ -29,8 +29,8 @@ void draw_wheel(SkCanvas* c) {
                                     SK_ColorBLUE, SK_ColorMAGENTA, SK_ColorRED};
     SkMatrix rot;
     rot.setRotate(90.0f);
-    p.setShader(SkGradientShader::MakeSweep(0, 0, sweep_colors, NULL,
-                                            SK_ARRAY_COUNT(sweep_colors), 0, &rot));
+    p.setShader(SkGradientShader::MakeSweep(0, 0, sweep_colors, nullptr,
+                                            std::size(sweep_colors), 0, &rot));
     p.setStrokeWidth(0.05f * scale);
     p.setStyle(SkPaint::kStroke_Style);
     c->drawCircle(0.0f, 0.0f, 0.475f * scale, p);
@@ -54,7 +54,7 @@ void draw(SkCanvas* canvas) {
     SkPictureRecorder rec;
     draw_wheel(rec.beginRecording(512, 512));
     paint.setShader(rec.finishRecordingAsPicture()->makeShader(
-            SkTileMode::kRepeat, SkTileMode::kRepeat, &matrix, nullptr));
+            SkTileMode::kRepeat, SkTileMode::kRepeat, SkFilterMode::kNearest, &matrix, nullptr));
     canvas->drawPaint(paint);
 }
 }  // END FIDDLE

@@ -31,24 +31,25 @@
 #include "include/gpu/GrContextOptions.h"
 #include "include/gpu/GrDirectContext.h"
 #include "include/gpu/GrRecordingContext.h"
-#include "include/private/GrTypesPriv.h"
-#include "include/private/SkTemplates.h"
-#include "src/gpu/GrDirectContextPriv.h"
+#include "include/private/base/SkTemplates.h"
+#include "include/private/gpu/ganesh/GrTypesPriv.h"
+#include "src/gpu/ganesh/GrDirectContextPriv.h"
 #include "tools/ToolUtils.h"
 
-class GrRenderTargetContext;
+using namespace skia_private;
+using MaskFormat = skgpu::MaskFormat;
 
 static sk_sp<SkTextBlob> make_blob(const SkString& text, const SkFont& font) {
     size_t len = text.size();
-    SkAutoTArray<SkScalar>  pos(len);
-    SkAutoTArray<SkGlyphID> glyphs(len);
+    AutoTArray<SkScalar>  pos(len);
+    AutoTArray<SkGlyphID> glyphs(len);
 
     font.textToGlyphs(text.c_str(), len, SkTextEncoding::kUTF8, glyphs.get(), len);
     font.getXPos(glyphs.get(), len, pos.get());
     return SkTextBlob::MakeFromPosTextH(text.c_str(), len, pos.get(), 0, font);
 }
 
-class FontRegenGM : public skiagm::GpuGM {
+class FontRegenGM : public skiagm::GM {
 
     void modifyGrContextOptions(GrContextOptions* options) override {
         options->fGlyphCacheTextureMaximumBytes = 0;
@@ -82,17 +83,18 @@ class FontRegenGM : public skiagm::GpuGM {
         fBlobs[2] = make_blob(kTexts[2], font);
     }
 
-    void onDraw(GrRecordingContext* context, GrRenderTargetContext*, SkCanvas* canvas) override {
-        auto direct = context->asDirectContext();
-        if (!direct) {
-            return;
-        }
+    DrawResult onDraw(SkCanvas* canvas, SkString* errorMsg) override {
+
 
         SkPaint paint;
         paint.setColor(SK_ColorBLACK);
         canvas->drawTextBlob(fBlobs[0], 10, 80, paint);
         canvas->drawTextBlob(fBlobs[1], 10, 225, paint);
-        direct->flushAndSubmit();
+
+        auto dContext = GrAsDirectContext(canvas->recordingContext());
+        if (dContext) {
+            dContext->flushAndSubmit();
+        }
 
         paint.setColor(0xFF010101);
         canvas->drawTextBlob(fBlobs[0], 10, 305, paint);
@@ -100,14 +102,16 @@ class FontRegenGM : public skiagm::GpuGM {
 
         //  Debugging tool for GPU.
         static const bool kShowAtlas = false;
-        if (kShowAtlas) {
-            auto img = direct->priv().testingOnly_getFontAtlasImage(kA8_GrMaskFormat);
+        if (kShowAtlas && dContext) {
+            auto img = dContext->priv().testingOnly_getFontAtlasImage(MaskFormat::kA8);
             canvas->drawImage(img, 200, 0);
         }
+
+        return DrawResult::kOk;
     }
 
 private:
-    static constexpr int kSize = 512;
+    inline static constexpr int kSize = 512;
 
     sk_sp<SkTextBlob> fBlobs[3];
     using INHERITED = GM;
@@ -119,7 +123,7 @@ DEF_GM(return new FontRegenGM())
 
 ///////////////////////////////////////////////////////////////////////////////
 
-class BadAppleGM : public skiagm::GpuGM {
+class BadAppleGM : public skiagm::GM {
 
     SkString onShortName() override { return SkString("badapple"); }
 
@@ -143,7 +147,7 @@ class BadAppleGM : public skiagm::GpuGM {
         fBlobs[1] = make_blob(kTexts[1], font);
     }
 
-    void onDraw(GrRecordingContext* context, GrRenderTargetContext*, SkCanvas* canvas) override {
+    void onDraw(SkCanvas* canvas) override {
         SkPaint paint;
         paint.setColor(0xFF111111);
         canvas->drawTextBlob(fBlobs[0], 10, 260, paint);
@@ -151,7 +155,7 @@ class BadAppleGM : public skiagm::GpuGM {
     }
 
 private:
-    static constexpr int kSize = 512;
+    inline static constexpr int kSize = 512;
 
     sk_sp<SkTextBlob> fBlobs[3];
     using INHERITED = GM;

@@ -5,14 +5,20 @@
  * found in the LICENSE file.
  */
 
-#include "gm/gm.h"
 #include "gm/verifiers/gmverifier.h"
+
+#include "gm/gm.h"
+#include "include/core/SkAlphaType.h"
 #include "include/core/SkBitmap.h"
 #include "include/core/SkCanvas.h"
-#include "include/core/SkSurface.h"
-#include "include/effects/SkImageFilters.h"
-#include "include/encode/SkPngEncoder.h"
-#include "src/utils/SkOSPath.h"
+#include "include/core/SkColorSpace.h"
+#include "include/core/SkColorType.h"
+#include "include/core/SkImage.h" // IWYU pragma: keep
+#include "include/core/SkImageInfo.h"
+#include "include/core/SkSize.h"
+#include "include/private/base/SkAssert.h"
+
+#include <utility>
 
 /** Checks the given VerifierResult. If it is not ok, returns it. */
 #define RETURN_NOT_OK(res)  if (!(res).ok()) return (res)
@@ -68,7 +74,7 @@ SkBitmap GMVerifier::RenderGoldBmp(skiagm::GM* gm, const SkColorInfo& colorInfo)
     goldBmp.allocPixels(SkImageInfo::Make(size, colorInfo));
     SkCanvas canvas(goldBmp);
 
-    if (gm->gpuSetup(nullptr, &canvas) == DrawResult::kOk) {
+    if (gm->gpuSetup(&canvas) == DrawResult::kOk) {
         gm->draw(&canvas);
     }
 
@@ -76,7 +82,7 @@ SkBitmap GMVerifier::RenderGoldBmp(skiagm::GM* gm, const SkColorInfo& colorInfo)
     SkBitmap goldVerifierBmp;
     goldVerifierBmp.allocPixels(SkImageInfo::Make(size, VerifierColorInfo()));
     SkCanvas verifierCanvas(goldVerifierBmp);
-    verifierCanvas.drawBitmap(goldBmp, 0, 0);
+    verifierCanvas.drawImage(goldBmp.asImage(), 0, 0);
 
     return goldVerifierBmp;
 }

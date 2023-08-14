@@ -18,7 +18,7 @@ namespace sk_app {
 class Window_mac : public Window {
 public:
     Window_mac()
-            : INHERITED()
+            : Window()
             , fWindow(nil) {}
     ~Window_mac() override {
         this->closeWindow();
@@ -32,6 +32,8 @@ public:
     bool attach(BackendType) override;
 
     void onInval() override {}
+
+    float scaleFactor() const override;
 
     static void PaintWindows();
 
@@ -51,8 +53,6 @@ private:
     NSInteger    fWindowNumber;
 
     static SkTDynamicHash<Window_mac, NSInteger> gWindowMap;
-
-    using INHERITED = Window;
 };
 
 }   // namespace sk_app

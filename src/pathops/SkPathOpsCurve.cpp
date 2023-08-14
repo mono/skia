@@ -4,9 +4,14 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
-#include "src/pathops/SkPathOpsBounds.h"
 #include "src/pathops/SkPathOpsCurve.h"
+
+#include "include/private/base/SkTemplates.h"
+#include "src/pathops/SkPathOpsBounds.h"
 #include "src/pathops/SkPathOpsRect.h"
+
+#include <algorithm>
+#include <cfloat>
 
  // this cheats and assumes that the perpendicular to the point is the closest ray to the curve
  // this case (where the line and the curve are nearly coincident) may be the only case that counts
@@ -50,13 +55,6 @@ double SkDCurve::nearPoint(SkPath::Verb verb, const SkDPoint& xy, const SkDPoint
         return -1;
     }
     return SkPinT(i[0][minIndex]);
-}
-
-void SkDCurve::offset(SkPath::Verb verb, const SkDVector& off) {
-    int count = SkPathOpsVerbToPoints(verb);
-    for (int index = 0; index <= count; ++index) {
-        fCubic.fPts[index] += off;
-    }
 }
 
 void SkDCurve::setConicBounds(const SkPoint curve[3], SkScalar curveWeight,

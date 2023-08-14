@@ -8,8 +8,12 @@
 #ifndef Resources_DEFINED
 #define Resources_DEFINED
 
+#include "include/core/SkBitmap.h"
+#include "include/core/SkData.h"
 #include "include/core/SkImage.h"
 #include "include/core/SkString.h"
+
+#include <string>
 
 class SkBitmap;
 class SkData;
@@ -24,15 +28,20 @@ bool DecodeDataToBitmap(sk_sp<SkData> data, SkBitmap* dst);
 
 sk_sp<SkData> GetResourceAsData(const char* resource);
 
+inline sk_sp<SkData> GetResourceAsData(std::string resource) {
+    return GetResourceAsData(resource.c_str());
+}
+
 inline bool GetResourceAsBitmap(const char* resource, SkBitmap* dst) {
     return DecodeDataToBitmap(GetResourceAsData(resource), dst);
 }
 
 inline sk_sp<SkImage> GetResourceAsImage(const char* resource) {
-    return SkImage::MakeFromEncoded(GetResourceAsData(resource));
+    return SkImages::DeferredFromEncodedData(GetResourceAsData(resource));
 }
 
-std::unique_ptr<SkStreamAsset> GetResourceAsStream(const char* resource);
+std::unique_ptr<SkStreamAsset> GetResourceAsStream(const char* resource,
+                                                   bool useFileStream = false);
 
 sk_sp<SkTypeface> MakeResourceAsTypeface(const char* resource, int ttcIndex = 0);
 

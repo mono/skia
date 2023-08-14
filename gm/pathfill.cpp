@@ -10,6 +10,8 @@
 #include "include/core/SkColor.h"
 #include "include/core/SkPaint.h"
 #include "include/core/SkPathBuilder.h"
+#include "include/core/SkPathUtils.h"
+#include "include/core/SkRRect.h"
 #include "include/core/SkRect.h"
 #include "include/core/SkScalar.h"
 #include "include/core/SkSize.h"
@@ -32,7 +34,7 @@ static PathDY make_frame() {
     SkPaint paint;
     paint.setStyle(SkPaint::kStroke_Style);
     paint.setStrokeWidth(SkIntToScalar(5));
-    paint.getFillPath(path, &path);
+    skpathutils::FillPathWithPaint(path, paint, &path);
     return {path, 15};
 }
 
@@ -294,7 +296,7 @@ constexpr MakePathProc gProcs[] = {
     make_sawtooth_3,
 };
 
-#define N   SK_ARRAY_COUNT(gProcs)
+#define N   std::size(gProcs)
 
 class PathFillGM : public skiagm::GM {
     SkPath  fPath[N];
@@ -628,7 +630,7 @@ DEF_SIMPLE_GM(bug7792, canvas, 800, 800) {
 
 DEF_SIMPLE_GM(path_stroke_clip_crbug1070835, canvas, 25, 50) {
     SkCanvas* orig = canvas;
-    auto surf = SkSurface::MakeRasterN32Premul(25, 25);
+    auto surf = SkSurfaces::Raster(SkImageInfo::MakeN32Premul(25, 25));
     canvas = surf->getCanvas();
 
     SkPaint p;
@@ -663,7 +665,7 @@ DEF_SIMPLE_GM(path_stroke_clip_crbug1070835, canvas, 25, 50) {
 
     canvas->drawPath(path, p);
 
-    surf->draw(orig, 0, 0, nullptr);
+    surf->draw(orig, 0, 0);
 }
 
 DEF_SIMPLE_GM(path_arcto_skbug_9077, canvas, 200, 200) {
@@ -682,4 +684,35 @@ DEF_SIMPLE_GM(path_arcto_skbug_9077, canvas, 200, 200) {
     path.close();
     path.arcTo(pts[3], pts[4], radius);
     canvas->drawPath(path.detach(), p);
+}
+
+DEF_SIMPLE_GM(path_skbug_11859, canvas, 512, 512) {
+    SkPaint paint;
+    paint.setColor(SK_ColorRED);
+    paint.setAntiAlias(true);
+
+    SkPath path;
+    path.moveTo(258, -2);
+    path.lineTo(258, 258);
+    path.lineTo(237, 258);
+    path.lineTo(240, -2);
+    path.lineTo(258, -2);
+    path.moveTo(-2, -2);
+    path.lineTo(240, -2);
+    path.lineTo(238, 131);
+    path.lineTo(-2, 131);
+    path.lineTo(-2, -2);
+
+    canvas->scale(2, 2);
+    canvas->drawPath(path, paint);
+}
+
+DEF_SIMPLE_GM(path_skbug_11886, canvas, 256, 256) {
+    SkPoint m = {0.f, 770.f};
+    SkPath path;
+    path.moveTo(m);
+    path.cubicTo(m + SkPoint{0.f, 1.f}, m + SkPoint{20.f, -750.f}, m + SkPoint{83.f, -746.f});
+    SkPaint paint;
+    paint.setAntiAlias(true);
+    canvas->drawPath(path, paint);
 }

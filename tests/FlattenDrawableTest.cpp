@@ -6,14 +6,27 @@
  */
 
 #include "include/core/SkCanvas.h"
+#include "include/core/SkColor.h"
+#include "include/core/SkData.h"
 #include "include/core/SkDrawable.h"
+#include "include/core/SkFlattenable.h"
 #include "include/core/SkFont.h"
+#include "include/core/SkImageFilter.h"
+#include "include/core/SkMaskFilter.h"
+#include "include/core/SkPaint.h"
 #include "include/core/SkPictureRecorder.h"
 #include "include/core/SkRect.h"
-#include "include/core/SkStream.h"
+#include "include/core/SkRefCnt.h"
+#include "include/core/SkTypes.h"
+#include "src/core/SkColorFilterBase.h"
+#include "src/core/SkPathEffectBase.h"
 #include "src/core/SkReadBuffer.h"
 #include "src/core/SkWriteBuffer.h"
+#include "src/shaders/SkShaderBase.h"
 #include "tests/Test.h"
+
+#include <cstdint>
+#include <string>
 
 class IntDrawable : public SkDrawable {
 public:
@@ -70,9 +83,7 @@ public:
     }
 
     static sk_sp<SkFlattenable> CreateProc(SkReadBuffer& buffer) {
-        SkPaint paint;
-        buffer.readPaint(&paint, nullptr);
-        return sk_sp<PaintDrawable>(new PaintDrawable(paint));
+        return sk_sp<PaintDrawable>(new PaintDrawable(buffer.readPaint()));
     }
 
     Factory getFactory() const override { return CreateProc; }
@@ -291,12 +302,11 @@ DEF_TEST(Flattenable_EmptyDeserialze, reporter) {
     auto data = SkData::MakeEmpty();
 
     #define test(name)  REPORTER_ASSERT(reporter, !name::Deserialize(data->data(), data->size()))
-    test(SkPathEffect);
+    test(SkPathEffectBase);
     test(SkMaskFilter);
     test(SkShaderBase); // todo: make this just be shader!
     test(SkColorFilterBase);
     test(SkImageFilter);
-    test(SkDrawLooper);
     #undef test
 }
 

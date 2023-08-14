@@ -9,6 +9,7 @@
 #define SkottieTextAdapter_DEFINED
 
 #include "modules/skottie/src/animator/Animator.h"
+#include "modules/skottie/src/text/Font.h"
 #include "modules/skottie/src/text/SkottieShaper.h"
 #include "modules/skottie/src/text/TextAnimator.h"
 #include "modules/skottie/src/text/TextValue.h"
@@ -29,8 +30,11 @@ namespace internal {
 
 class TextAdapter final : public AnimatablePropertyContainer {
 public:
-    static sk_sp<TextAdapter> Make(const skjson::ObjectValue&, const AnimationBuilder*,
-                                   sk_sp<SkFontMgr>, sk_sp<Logger>);
+    static sk_sp<TextAdapter> Make(const skjson::ObjectValue&,
+                                   const AnimationBuilder*,
+                                   sk_sp<SkFontMgr>,
+                                   sk_sp<CustomFont::GlyphCompMapper>,
+                                   sk_sp<Logger>);
 
     ~TextAdapter() override;
 
@@ -43,6 +47,8 @@ protected:
     void onSync() override;
 
 private:
+    class GlyphDecoratorNode;
+
     enum class AnchorPointGrouping : uint8_t {
         kCharacter,
         kWord,
@@ -50,11 +56,15 @@ private:
         kAll,
     };
 
-    TextAdapter(sk_sp<SkFontMgr>, sk_sp<Logger>, AnchorPointGrouping);
+    TextAdapter(sk_sp<SkFontMgr>,
+                sk_sp<CustomFont::GlyphCompMapper>,
+                sk_sp<Logger>,
+                AnchorPointGrouping);
 
     struct FragmentRec {
         SkPoint                      fOrigin; // fragment position
 
+        const Shaper::ShapedGlyphs*  fGlyphs = nullptr;
         sk_sp<sksg::Matrix<SkM44>>   fMatrixNode;
         sk_sp<sksg::Color>           fFillColorNode,
                                      fStrokeColorNode;
@@ -65,29 +75,29 @@ private:
     };
 
     void reshape();
-    void addFragment(const Shaper::Fragment&);
+    void addFragment(Shaper::Fragment&, sksg::Group* container);
     void buildDomainMaps(const Shaper::Result&);
+    std::vector<sk_sp<sksg::RenderNode>> buildGlyphCompNodes(Shaper::ShapedGlyphs&) const;
 
     void pushPropsToFragment(const TextAnimator::ResolvedProps&, const FragmentRec&,
-                             const SkV2&, const TextAnimator::DomainSpan*) const;
-
-    void adjustLineProps(const TextAnimator::ModulatorBuffer&,
-                         const TextAnimator::DomainSpan&,
-                         const SkV2& line_offset,
-                         float line_tracking) const;
+                             const SkV2& frag_offset, const SkV2& grouping_alignment,
+                             const TextAnimator::DomainSpan*) const;
 
     SkV2 fragmentAnchorPoint(const FragmentRec&, const SkV2&,
                              const TextAnimator::DomainSpan*) const;
     uint32_t shaperFlags() const;
 
-    const sk_sp<sksg::Group>         fRoot;
-    const sk_sp<SkFontMgr>           fFontMgr;
-    sk_sp<Logger>                    fLogger;
-    const AnchorPointGrouping        fAnchorPointGrouping;
+    SkM44 fragmentMatrix(const TextAnimator::ResolvedProps&, const FragmentRec&, const SkV2&) const;
 
-    std::vector<sk_sp<TextAnimator>> fAnimators;
-    std::vector<FragmentRec>         fFragments;
-    TextAnimator::DomainMaps         fMaps;
+    const sk_sp<sksg::Group>                 fRoot;
+    const sk_sp<SkFontMgr>                   fFontMgr;
+    const sk_sp<CustomFont::GlyphCompMapper> fCustomGlyphMapper;
+    sk_sp<Logger>                            fLogger;
+    const AnchorPointGrouping                fAnchorPointGrouping;
+
+    std::vector<sk_sp<TextAnimator>>         fAnimators;
+    std::vector<FragmentRec>                 fFragments;
+    TextAnimator::DomainMaps                 fMaps;
 
     // Helps detect external value changes.
     struct TextValueTracker {
@@ -107,11 +117,17 @@ private:
         mutable TextValue fPrevValue;
     };
 
-    TextValueTracker fText;
-    Vec2Value        fGroupingAlignment = {0,0};
+    TextValueTracker          fText;
+    Vec2Value                 fGroupingAlignment = {0,0};
+    float                     fTextShapingScale  = 1;     // size adjustment from auto-scaling
 
-    bool             fHasBlurAnimator     : 1,
-                     fRequiresAnchorPoint : 1;
+    // Optional text path.
+    struct PathInfo;
+    std::unique_ptr<PathInfo> fPathInfo;
+
+    bool                      fHasBlurAnimator         : 1,
+                              fRequiresAnchorPoint     : 1,
+                              fRequiresLineAdjustments : 1;
 };
 
 } // namespace internal

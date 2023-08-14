@@ -5,28 +5,39 @@
  * found in the LICENSE file.
  */
 
-// Make sure SkUserConfig.h is included so #defines are available on
-// Android.
-#include "include/core/SkTypes.h"
-#ifdef SK_ENABLE_ANDROID_UTILS
-#include "client_utils/android/FrontBufferedStream.h"
-#endif
 #include "include/core/SkData.h"
+#include "include/core/SkRefCnt.h"
 #include "include/core/SkStream.h"
-#include "include/private/SkTo.h"
-#include "include/utils/SkRandom.h"
-#include "src/core/SkAutoMalloc.h"
+#include "include/core/SkString.h"
+#include "include/core/SkTypes.h"
+#include "include/private/base/SkTemplates.h"
+#include "include/private/base/SkTo.h"
+#include "src/base/SkAutoMalloc.h"
+#include "src/base/SkBuffer.h"
+#include "src/base/SkRandom.h"
 #include "src/core/SkOSFile.h"
 #include "src/core/SkStreamPriv.h"
 #include "src/utils/SkOSPath.h"
 #include "tests/Test.h"
 #include "tools/Resources.h"
 
+#include <algorithm>
+#include <climits>
+#include <cstdint>
+#include <cstdio>
+#include <cstring>
 #include <functional>
 #include <limits>
+#include <memory>
+#include <string>
+
+using namespace skia_private;
+
+#ifdef SK_ENABLE_ANDROID_UTILS
+#include "client_utils/android/FrontBufferedStream.h"
+#endif
 
 #ifndef SK_BUILD_FOR_WIN
-#include <unistd.h>
 #include <fcntl.h>
 #endif
 
@@ -158,13 +169,13 @@ static void TestPackedUInt(skiatest::Reporter* reporter) {
     size_t i;
     SkDynamicMemoryWStream wstream;
 
-    for (i = 0; i < SK_ARRAY_COUNT(sizes); ++i) {
+    for (i = 0; i < std::size(sizes); ++i) {
         bool success = wstream.writePackedUInt(sizes[i]);
         REPORTER_ASSERT(reporter, success);
     }
 
     std::unique_ptr<SkStreamAsset> rstream(wstream.detachAsStream());
-    for (i = 0; i < SK_ARRAY_COUNT(sizes); ++i) {
+    for (i = 0; i < std::size(sizes); ++i) {
         size_t n;
         if (!rstream->readPackedUInt(&n)) {
             ERRORF(reporter, "[%zu] sizes:%zx could not be read\n", i, sizes[i]);
@@ -405,6 +416,27 @@ DEF_TEST(StreamPeek_BlockMemoryStream, rep) {
     stream_peek_test(rep, asset.get(), expected.get());
 }
 
+DEF_TEST(StreamRemainingLengthIsBelow_MemoryStream, rep) {
+    SkMemoryStream stream(100);
+    REPORTER_ASSERT(rep, !StreamRemainingLengthIsBelow(&stream, 0));
+    REPORTER_ASSERT(rep, !StreamRemainingLengthIsBelow(&stream, 90));
+    REPORTER_ASSERT(rep, !StreamRemainingLengthIsBelow(&stream, 100));
+
+    REPORTER_ASSERT(rep, StreamRemainingLengthIsBelow(&stream, 101));
+    REPORTER_ASSERT(rep, StreamRemainingLengthIsBelow(&stream, ULONG_MAX));
+
+    uint8_t buff[75];
+    REPORTER_ASSERT(rep, stream.read(buff, 75) == 75);
+
+    REPORTER_ASSERT(rep, !StreamRemainingLengthIsBelow(&stream, 0));
+    REPORTER_ASSERT(rep, !StreamRemainingLengthIsBelow(&stream, 24));
+    REPORTER_ASSERT(rep, !StreamRemainingLengthIsBelow(&stream, 25));
+
+    REPORTER_ASSERT(rep, StreamRemainingLengthIsBelow(&stream, 26));
+    REPORTER_ASSERT(rep, StreamRemainingLengthIsBelow(&stream, 100));
+    REPORTER_ASSERT(rep, StreamRemainingLengthIsBelow(&stream, ULONG_MAX));
+}
+
 namespace {
 class DumbStream : public SkStream {
 public:
@@ -469,7 +501,7 @@ DEF_TEST(DynamicMemoryWStream_detachAsData, r) {
 DEF_TEST(StreamCopy, reporter) {
     SkRandom random(123456);
     static const int N = 10000;
-    SkAutoTMalloc<uint8_t> src((size_t)N);
+    AutoTMalloc<uint8_t> src((size_t)N);
     for (int j = 0; j < N; ++j) {
         src[j] = random.nextU() & 0xff;
     }
@@ -506,7 +538,7 @@ DEF_TEST(FILEStreamWithOffset, r) {
     const size_t size = stream1.getLength();
     const size_t middle = size / 2;
     if (!stream1.seek(middle)) {
-        ERRORF(r, "Could not seek SkFILEStream to %lu out of %lu", middle, size);
+        ERRORF(r, "Could not seek SkFILEStream to %zu out of %zu", middle, size);
         return;
     }
     REPORTER_ASSERT(r, stream1.getPosition() == middle);
@@ -518,17 +550,17 @@ DEF_TEST(FILEStreamWithOffset, r) {
     }
 
     if (fseek(file, (long) middle, SEEK_SET) != 0) {
-        ERRORF(r, "Could not fseek FILE to %lu out of %lu", middle, size);
+        ERRORF(r, "Could not fseek FILE to %zu out of %zu", middle, size);
         return;
     }
     SkFILEStream stream2(file);
 
     const size_t remaining = size - middle;
-    SkAutoTMalloc<uint8_t> expected(remaining);
+    AutoTMalloc<uint8_t> expected(remaining);
     REPORTER_ASSERT(r, stream1.read(expected.get(), remaining) == remaining);
 
     auto test_full_read = [&r, &expected, remaining](SkStream* stream) {
-        SkAutoTMalloc<uint8_t> actual(remaining);
+        AutoTMalloc<uint8_t> actual(remaining);
         REPORTER_ASSERT(r, stream->read(actual.get(), remaining) == remaining);
         REPORTER_ASSERT(r, !memcmp(expected.get(), actual.get(), remaining));
 
@@ -540,7 +572,7 @@ DEF_TEST(FILEStreamWithOffset, r) {
         // Rewind goes back to original offset.
         REPORTER_ASSERT(r, stream->rewind());
         REPORTER_ASSERT(r, stream->getPosition() == 0);
-        SkAutoTMalloc<uint8_t> actual(remaining);
+        AutoTMalloc<uint8_t> actual(remaining);
         REPORTER_ASSERT(r, stream->read(actual.get(), remaining) == remaining);
         REPORTER_ASSERT(r, !memcmp(expected.get(), actual.get(), remaining));
     };
@@ -553,7 +585,7 @@ DEF_TEST(FILEStreamWithOffset, r) {
         REPORTER_ASSERT(r, stream->move(std::numeric_limits<long>::min()));
         REPORTER_ASSERT(r, stream->getPosition() == 0);
 
-        SkAutoTMalloc<uint8_t> actual(remaining);
+        AutoTMalloc<uint8_t> actual(remaining);
         REPORTER_ASSERT(r, stream->read(actual.get(), remaining) == remaining);
         REPORTER_ASSERT(r, !memcmp(expected.get(), actual.get(), remaining));
 
@@ -572,7 +604,7 @@ DEF_TEST(FILEStreamWithOffset, r) {
         REPORTER_ASSERT(r, stream->seek(arbitrary));
         REPORTER_ASSERT(r, stream->getPosition() == arbitrary);
         const size_t miniRemaining = remaining - arbitrary;
-        SkAutoTMalloc<uint8_t> actual(miniRemaining);
+        AutoTMalloc<uint8_t> actual(miniRemaining);
         REPORTER_ASSERT(r, stream->read(actual.get(), miniRemaining) == miniRemaining);
         REPORTER_ASSERT(r, !memcmp(expected.get() + arbitrary, actual.get(), miniRemaining));
     };
@@ -581,7 +613,7 @@ DEF_TEST(FILEStreamWithOffset, r) {
         // Seek to the beginning.
         REPORTER_ASSERT(r, stream->seek(0));
         REPORTER_ASSERT(r, stream->getPosition() == 0);
-        SkAutoTMalloc<uint8_t> actual(remaining);
+        AutoTMalloc<uint8_t> actual(remaining);
         REPORTER_ASSERT(r, stream->read(actual.get(), remaining) == remaining);
         REPORTER_ASSERT(r, !memcmp(expected.get(), actual.get(), remaining));
     };
@@ -646,8 +678,6 @@ DEF_TEST(FILEStreamWithOffset, r) {
 
     test_all(&stream2, true);
 }
-
-#include "src/core/SkBuffer.h"
 
 DEF_TEST(RBuffer, reporter) {
     int32_t value = 0;

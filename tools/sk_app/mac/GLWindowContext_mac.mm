@@ -25,8 +25,6 @@ public:
 
     ~GLWindowContext_mac() override;
 
-    void onSwapBuffers() override;
-
     sk_sp<const GrGLInterface> onInitializeContext() override;
     void onDestroyContext() override;
 
@@ -34,18 +32,17 @@ public:
 
 private:
     void teardownContext();
+    void onSwapBuffers() override;
 
     NSView*              fMainView;
     NSOpenGLContext*     fGLContext;
     NSOpenGLPixelFormat* fPixelFormat;
-
-    using INHERITED = GLWindowContext;
 };
 
 GLWindowContext_mac::GLWindowContext_mac(const MacWindowInfo& info, const DisplayParams& params)
-    : INHERITED(params)
-    , fMainView(info.fMainView)
-    , fGLContext(nil) {
+        : GLWindowContext(params)
+        , fMainView(info.fMainView)
+        , fGLContext(nil) {
 
     // any config code here (particularly for msaa)?
 
@@ -111,8 +108,7 @@ sk_sp<const GrGLInterface> GLWindowContext_mac::onInitializeContext() {
             return nullptr;
         }
 
-        // TODO: support Retina displays
-        [fMainView setWantsBestResolutionOpenGLSurface:NO];
+        [fMainView setWantsBestResolutionOpenGLSurface:YES];
         [fGLContext setView:fMainView];
     }
 
@@ -135,10 +131,9 @@ sk_sp<const GrGLInterface> GLWindowContext_mac::onInitializeContext() {
     fSampleCount = sampleCount;
     fSampleCount = std::max(fSampleCount, 1);
 
-    const NSRect viewportRect = [fMainView frame];
-    fWidth = viewportRect.size.width;
-    fHeight = viewportRect.size.height;
-
+    CGFloat backingScaleFactor = sk_app::GetBackingScaleFactor(fMainView);
+    fWidth = fMainView.bounds.size.width * backingScaleFactor;
+    fHeight = fMainView.bounds.size.height * backingScaleFactor;
     glViewport(0, 0, fWidth, fHeight);
 
     return GrGLMakeNativeInterface();
@@ -157,7 +152,9 @@ void GLWindowContext_mac::onSwapBuffers() {
 
 void GLWindowContext_mac::resize(int w, int h) {
     [fGLContext update];
-    INHERITED::resize(w, h);
+
+    // The super class always recreates the context.
+    GLWindowContext::resize(0, 0);
 }
 
 

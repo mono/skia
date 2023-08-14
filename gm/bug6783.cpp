@@ -8,7 +8,6 @@
 #include "gm/gm.h"
 #include "include/core/SkCanvas.h"
 #include "include/core/SkColor.h"
-#include "include/core/SkFilterQuality.h"
 #include "include/core/SkImage.h"
 #include "include/core/SkMatrix.h"
 #include "include/core/SkPaint.h"
@@ -34,7 +33,7 @@
 // the bug were still present.  All stripes should now look roughly the same.
 
 DEF_SIMPLE_GM(bug6783, canvas, 500, 500) {
-    sk_sp<SkSurface> surface = SkSurface::MakeRasterN32Premul(100, 100);
+    sk_sp<SkSurface> surface = SkSurfaces::Raster(SkImageInfo::MakeN32Premul(100, 100));
 
     SkPaint p;
     p.setColor(SK_ColorYELLOW);
@@ -47,10 +46,10 @@ DEF_SIMPLE_GM(bug6783, canvas, 500, 500) {
     SkMatrix m = SkMatrix::Translate(25, 214) * SkMatrix::Scale(2, 2);
     m.preSkew(0.5f, 0.5f);
 
-    // The bug was present at all filter levels, but you might not notice it at kNone.
-    p.setFilterQuality(kLow_SkFilterQuality);
+    // The bug was present at all filter levels, but you might not notice it at nearest.
+    SkSamplingOptions sampling(SkFilterMode::kLinear);
 
     // It's only important to repeat or mirror in x to show off the bug.
-    p.setShader(img->makeShader(SkTileMode::kRepeat, SkTileMode::kClamp, &m));
+    p.setShader(img->makeShader(SkTileMode::kRepeat, SkTileMode::kClamp, sampling, m));
     canvas->drawPaint(p);
 }

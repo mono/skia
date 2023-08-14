@@ -4,12 +4,21 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
+#include "include/core/SkTypes.h"
+#include "include/private/base/SkDebug.h"
+#include "include/private/base/SkFloatBits.h"
 #include "src/pathops/SkIntersections.h"
-#include "src/pathops/SkPathOpsRect.h"
+#include "src/pathops/SkPathOpsDebug.h"
+#include "src/pathops/SkPathOpsPoint.h"
+#include "src/pathops/SkPathOpsQuad.h"
+#include "src/pathops/SkPathOpsTypes.h"
 #include "src/pathops/SkReduceOrder.h"
 #include "tests/PathOpsQuadIntersectionTestData.h"
 #include "tests/PathOpsTestCommon.h"
 #include "tests/Test.h"
+
+#include <array>
+#include <cstddef>
 
 static void standardTestCases(skiatest::Reporter* reporter) {
     bool showSkipped = false;
@@ -330,7 +339,7 @@ static const QuadPts testSet[] = {
     {{{8, 8}, {9, 9}, {10, 8}}}
 };
 
-const size_t testSetCount = SK_ARRAY_COUNT(testSet);
+const size_t testSetCount = std::size(testSet);
 
 static void oneOffTest1(skiatest::Reporter* reporter, size_t outer, size_t inner) {
     const QuadPts& q1 = testSet[outer];
@@ -382,7 +391,7 @@ static const QuadPts coincidentTestSet[] = {
     {{{8, -10}, {10, 10}, {8, 8}}},
 };
 
-static const int coincidentTestSetCount = (int) SK_ARRAY_COUNT(coincidentTestSet);
+static const int coincidentTestSetCount = (int) std::size(coincidentTestSet);
 
 static void coincidentTestOne(skiatest::Reporter* reporter, int test1, int test2) {
     const QuadPts& q1 = coincidentTestSet[test1];
@@ -524,7 +533,7 @@ DEF_TEST(PathOpsQuadIntersection, reporter) {
     oneOffTests(reporter);
     coincidentTest(reporter);
     standardTestCases(reporter);
-    if (false) QuadraticIntersection_IntersectionFinder();
+    if ((false)) QuadraticIntersection_IntersectionFinder();
 }
 
 DEF_TEST(PathOpsQuadBinaryProfile, reporter) {

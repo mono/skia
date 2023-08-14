@@ -7,15 +7,12 @@
 #ifndef SkPathOpsDebug_DEFINED
 #define SkPathOpsDebug_DEFINED
 
-#include "include/core/SkString.h"
 #include "include/core/SkTypes.h"
 #include "include/pathops/SkPathOps.h"
+#include "include/private/base/SkTDArray.h"
 
-#include <stdlib.h>
-#include <stdio.h>
+#include <cstddef>
 
-enum class SkOpPhase : char;
-struct SkDQuad;
 class SkOpAngle;
 class SkOpCoincidence;
 class SkOpContour;
@@ -24,30 +21,15 @@ class SkOpPtT;
 class SkOpSegment;
 class SkOpSpan;
 class SkOpSpanBase;
-struct SkDPoint;
-struct SkDLine;
-struct SkDQuad;
+class SkPath;
 struct SkDConic;
 struct SkDCubic;
-class SkTSect;
+struct SkDLine;
+struct SkDPoint;
+struct SkDQuad;
 
 // define this when running fuzz
 // #define SK_BUILD_FOR_FUZZER
-
-// fake classes to fool msvs Visual Studio 2018 Immediate Window
-#define FakeClasses(a, b) \
-class SkDebugTCoincident##a##b; \
-class SkDebugTSect##a##b; \
-class SkDebugTSpan##a##b
-
-FakeClasses(Quad, Quad);
-FakeClasses(Conic, Quad);
-FakeClasses(Conic, Conic);
-FakeClasses(Cubic, Quad);
-FakeClasses(Cubic, Conic);
-FakeClasses(Cubic, Cubic);
-
-#undef FakeClasses
 
 #ifdef SK_RELEASE
 #define FORCE_RELEASE 1
@@ -65,15 +47,10 @@ FakeClasses(Cubic, Cubic);
 #else
     #define SK_RAND(seed) rand_r(&seed)
 #endif
-#ifdef SK_BUILD_FOR_WIN
-    #define SK_SNPRINTF _snprintf
-#else
-    #define SK_SNPRINTF snprintf
-#endif
 
 #define WIND_AS_STRING(x) char x##Str[12]; \
         if (!SkPathOpsDebug::ValidWind(x)) strcpy(x##Str, "?"); \
-        else SK_SNPRINTF(x##Str, sizeof(x##Str), "%d", x)
+        else snprintf(x##Str, sizeof(x##Str), "%d", x)
 
 #if FORCE_RELEASE
 
@@ -115,12 +92,12 @@ FakeClasses(Cubic, Cubic);
 #define DEBUG_ANGLE 1
 #define DEBUG_ASSEMBLE 1
 #define DEBUG_COINCIDENCE 1
-#define DEBUG_COINCIDENCE_DUMP 0
-#define DEBUG_COINCIDENCE_ORDER 0  // tight arc quads may generate out-of-order coincidence spans
+#define DEBUG_COINCIDENCE_DUMP 1
+#define DEBUG_COINCIDENCE_ORDER 1  // tight arc quads may generate out-of-order coincidence spans
 #define DEBUG_COINCIDENCE_VERBOSE 1
 #define DEBUG_CUBIC_BINARY_SEARCH 0
 #define DEBUG_CUBIC_SPLIT 1
-#define DEBUG_DUMP_VERIFY 0
+#define DEBUG_DUMP_VERIFY 1
 #define DEBUG_DUMP_SEGMENTS 1
 #define DEBUG_FLOW 1
 #define DEBUG_LIMIT_WIND_SUM 15
@@ -172,6 +149,8 @@ FakeClasses(Cubic, Cubic);
 #endif
 
 #if DEBUG_COIN
+enum class SkOpPhase : char;
+
     #define DEBUG_COIN_DECLARE_ONLY_PARAMS() \
             int lineNo, SkOpPhase phase, int iteration
     #define DEBUG_COIN_DECLARE_PARAMS() \

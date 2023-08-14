@@ -36,16 +36,17 @@ class DockerApi(recipe_api.RecipeApi):
       step_stdout = self.m.python.inline(
           name='Get uid and gid',
           program='''import os
-print '%d:%d' % (os.getuid(), os.getgid())
+print('%d:%d' % (os.getuid(), os.getgid()))
 ''',
           stdout=self.m.raw_io.output(),
           step_test_data=(
-              lambda: self.m.raw_io.test_api.stream_output('13:17'))).stdout
+              lambda: self.m.raw_io.test_api.stream_output('13:17'))
+          ).stdout.decode('utf-8')
       uid_gid_pair = step_stdout.rstrip() if step_stdout else ''
       # Make sure out_dir exists, otherwise mounting will fail.
       # (Note that the docker --mount option, unlike the --volume option, does
       # not create this dir as root if it doesn't exist.)
-      self.m.file.ensure_directory('mkdirs out_dir', out_dir, mode=0777)
+      self.m.file.ensure_directory('mkdirs out_dir', out_dir, mode=0o777)
       # ensure_directory won't change the permissions if the dir already exists,
       # so we need to do that explicitly.
       self._chmod(out_dir, '777')
@@ -59,10 +60,12 @@ print '%d:%d' % (os.getuid(), os.getgid())
 
       # Copy any requested files.
       if copies:
-        for src, dest in copies.iteritems():
+        for copy in copies:
+          src = copy['src']
+          dest = copy['dst']
           dirname = self.m.path.dirname(dest)
           self.m.file.ensure_directory(
-              'mkdirs %s' % dirname, dirname, mode=0777)
+              'mkdirs %s' % dirname, dirname, mode=0o777)
           self.m.file.copy('cp %s %s' % (src, dest), src, dest)
           self._chmod(dest, '644')
 

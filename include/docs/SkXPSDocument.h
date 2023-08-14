@@ -31,7 +31,6 @@ SK_API sk_sp<SkDocument> MakeDocument(SkWStream* stream,
 
 namespace SkXPS {
 
-// DEPRECATED; TODO(mattleibow): we should remove this function.
 SK_API sk_sp<SkDocument> MakeDocument(SkWStream*, SkScalar) { return nullptr; }
 
 }  // namespace SkXPS

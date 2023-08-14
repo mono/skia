@@ -23,7 +23,7 @@
 #include <utility>
 
 static sk_sp<SkImage> create_circle_texture(int size, SkColor color) {
-    auto surface(SkSurface::MakeRasterN32Premul(size, size));
+    auto surface(SkSurfaces::Raster(SkImageInfo::MakeN32Premul(size, size)));
     SkCanvas* canvas = surface->getCanvas();
     canvas->clear(0xFF000000);
 
@@ -98,16 +98,16 @@ protected:
             SkRect bound3 = SkRect::MakeXYWH(320, 320,
                                              SkIntToScalar(kBitmapSize),
                                              SkIntToScalar(kBitmapSize));
-            canvas->drawImageRect(fGreenImage.get(), bound2, bound3, nullptr,
+            canvas->drawImageRect(fGreenImage.get(), bound2, bound3, SkSamplingOptions(), nullptr,
                                   SkCanvas::kStrict_SrcRectConstraint);
             canvas->restore();
         }
     }
 
 private:
-    static constexpr int kWidth = 512;
-    static constexpr int kHeight = 512;
-    static constexpr int kBitmapSize = 64;
+    inline static constexpr int kWidth = 512;
+    inline static constexpr int kHeight = 512;
+    inline static constexpr int kBitmapSize = 64;
 
     sk_sp<SkImage> fRedImage;
     sk_sp<SkImage> fGreenImage;

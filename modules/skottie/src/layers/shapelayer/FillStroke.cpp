@@ -49,7 +49,7 @@ public:
             };
             this->node()->setStrokeJoin(
                         gJoins[std::min<size_t>(ParseDefault<size_t>(jpaint["lj"], 1) - 1,
-                                              SK_ARRAY_COUNT(gJoins) - 1)]);
+                                              std::size(gJoins) - 1)]);
 
             static constexpr SkPaint::Cap gCaps[] = {
                 SkPaint::kButt_Cap,
@@ -58,7 +58,7 @@ public:
             };
             this->node()->setStrokeCap(
                         gCaps[std::min<size_t>(ParseDefault<size_t>(jpaint["lc"], 1) - 1,
-                                             SK_ARRAY_COUNT(gCaps) - 1)]);
+                                             std::size(gCaps) - 1)]);
         }
 
         if (fShaderType == ShaderType::kColor) {
@@ -151,18 +151,20 @@ sk_sp<sksg::PaintNode> ShapeBuilder::AttachStroke(const skjson::ObjectValue& jpa
 
 sk_sp<sksg::PaintNode> ShapeBuilder::AttachColorFill(const skjson::ObjectValue& jpaint,
                                                      const AnimationBuilder* abuilder) {
-    auto color_node = sksg::Color::Make(SK_ColorBLACK);
-    abuilder->dispatchColorProperty(color_node);
+    auto color_node  = sksg::Color::Make(SK_ColorBLACK);
+    auto color_paint = AttachFill(jpaint, abuilder, color_node);
+    abuilder->dispatchColorProperty(color_node, jpaint["c"]);
 
-    return AttachFill(jpaint, abuilder, std::move(color_node));
+    return color_paint;
 }
 
 sk_sp<sksg::PaintNode> ShapeBuilder::AttachColorStroke(const skjson::ObjectValue& jpaint,
                                                        const AnimationBuilder* abuilder) {
-    auto color_node = sksg::Color::Make(SK_ColorBLACK);
-    abuilder->dispatchColorProperty(color_node);
+    auto color_node  = sksg::Color::Make(SK_ColorBLACK);
+    auto color_paint = AttachStroke(jpaint, abuilder, color_node);
+    abuilder->dispatchColorProperty(color_node, jpaint["c"]);
 
-    return AttachStroke(jpaint, abuilder, std::move(color_node));
+    return color_paint;
 }
 
 std::vector<sk_sp<sksg::GeometryNode>> ShapeBuilder::AdjustStrokeGeometry(

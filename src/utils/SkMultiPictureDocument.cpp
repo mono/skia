@@ -7,16 +7,28 @@
 
 #include "src/utils/SkMultiPictureDocument.h"
 
+#include "include/core/SkCanvas.h"
+#include "include/core/SkData.h"
+#include "include/core/SkDocument.h"
 #include "include/core/SkPicture.h"
 #include "include/core/SkPictureRecorder.h"
+#include "include/core/SkRect.h"
+#include "include/core/SkScalar.h"
 #include "include/core/SkSerialProcs.h"
 #include "include/core/SkStream.h"
-#include "include/private/SkTArray.h"
-#include "include/private/SkTo.h"
+#include "include/private/base/SkDebug.h"
+#include "include/private/base/SkTArray.h"
+#include "include/private/base/SkTo.h"
 #include "include/utils/SkNWayCanvas.h"
 #include "src/utils/SkMultiPictureDocumentPriv.h"
 
-#include <limits.h>
+#include <algorithm>
+#include <climits>
+#include <cstdint>
+#include <cstring>
+#include <functional>
+
+using namespace skia_private;
 
 /*
   File format:
@@ -39,7 +51,7 @@ static constexpr char kEndPage[] = "SkMultiPictureEndPage";
 
 const uint32_t kVersion = 2;
 
-static SkSize join(const SkTArray<SkSize>& sizes) {
+static SkSize join(const TArray<SkSize>& sizes) {
     SkSize joined = {0, 0};
     for (SkSize s : sizes) {
         joined = SkSize{std::max(joined.width(), s.width()), std::max(joined.height(), s.height())};
@@ -51,11 +63,14 @@ struct MultiPictureDocument final : public SkDocument {
     const SkSerialProcs fProcs;
     SkPictureRecorder fPictureRecorder;
     SkSize fCurrentPageSize;
-    SkTArray<sk_sp<SkPicture>> fPages;
-    SkTArray<SkSize> fSizes;
-    MultiPictureDocument(SkWStream* s, const SkSerialProcs* procs)
+    TArray<sk_sp<SkPicture>> fPages;
+    TArray<SkSize> fSizes;
+    std::function<void(const SkPicture*)> fOnEndPage;
+    MultiPictureDocument(SkWStream* s, const SkSerialProcs* procs,
+        std::function<void(const SkPicture*)> onEndPage)
         : SkDocument(s)
         , fProcs(procs ? *procs : SkSerialProcs())
+        , fOnEndPage(onEndPage)
     {}
     ~MultiPictureDocument() override { this->close(); }
 
@@ -65,14 +80,18 @@ struct MultiPictureDocument final : public SkDocument {
     }
     void onEndPage() override {
         fSizes.push_back(fCurrentPageSize);
-        fPages.push_back(fPictureRecorder.finishRecordingAsPicture());
+        sk_sp<SkPicture> lastPage = fPictureRecorder.finishRecordingAsPicture();
+        fPages.push_back(lastPage);
+        if (fOnEndPage) {
+            fOnEndPage(lastPage.get());
+        }
     }
     void onClose(SkWStream* wStream) override {
         SkASSERT(wStream);
         SkASSERT(wStream->bytesWritten() == 0);
         wStream->writeText(kMagic);
         wStream->write32(kVersion);
-        wStream->write32(SkToU32(fPages.count()));
+        wStream->write32(SkToU32(fPages.size()));
         for (SkSize s : fSizes) {
             wStream->write(&s, sizeof(s));
         }
@@ -85,19 +104,20 @@ struct MultiPictureDocument final : public SkDocument {
         }
         sk_sp<SkPicture> p = fPictureRecorder.finishRecordingAsPicture();
         p->serialize(wStream, &fProcs);
-        fPages.reset();
-        fSizes.reset();
+        fPages.clear();
+        fSizes.clear();
         return;
     }
     void onAbort() override {
-        fPages.reset();
-        fSizes.reset();
+        fPages.clear();
+        fSizes.clear();
     }
 };
 }  // namespace
 
-sk_sp<SkDocument> SkMakeMultiPictureDocument(SkWStream* wStream, const SkSerialProcs* procs) {
-    return sk_make_sp<MultiPictureDocument>(wStream, procs);
+sk_sp<SkDocument> SkMakeMultiPictureDocument(SkWStream* wStream, const SkSerialProcs* procs,
+    std::function<void(const SkPicture*)> onEndPage) {
+    return sk_make_sp<MultiPictureDocument>(wStream, procs, onEndPage);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -190,6 +210,9 @@ bool SkMultiPictureDocumentRead(SkStreamSeekable* stream,
     }
 
     auto picture = SkPicture::MakeFromStream(stream, procs);
+    if (!picture) {
+        return false;
+    }
 
     PagerCanvas canvas(joined.toCeil(), dstArray, dstArrayCount);
     // Must call playback(), not drawPicture() to reach

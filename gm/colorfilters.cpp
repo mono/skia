@@ -18,7 +18,6 @@
 #include "include/core/SkString.h"
 #include "include/core/SkTileMode.h"
 #include "include/core/SkTypes.h"
-#include "include/effects/SkColorMatrixFilter.h"
 #include "include/effects/SkGradientShader.h"
 #include "tools/Resources.h"
 
@@ -34,7 +33,7 @@ static sk_sp<SkShader> make_shader(const SkRect& bounds) {
         SK_ColorRED, SK_ColorGREEN, SK_ColorBLUE, SK_ColorBLACK,
         SK_ColorCYAN, SK_ColorMAGENTA, SK_ColorYELLOW,
     };
-    return SkGradientShader::MakeLinear(pts, colors, nullptr, SK_ARRAY_COUNT(colors),
+    return SkGradientShader::MakeLinear(pts, colors, nullptr, std::size(colors),
                                         SkTileMode::kClamp);
 }
 
@@ -45,7 +44,7 @@ static void install_nothing(SkPaint* paint, uint32_t, uint32_t) {
 }
 
 static void install_lighting(SkPaint* paint, uint32_t mul, uint32_t add) {
-    paint->setColorFilter(SkColorMatrixFilter::MakeLightingFilter(mul, add));
+    paint->setColorFilter(SkColorFilters::Lighting(mul, add));
 }
 
 class ColorFiltersGM : public skiagm::GM {
@@ -73,7 +72,7 @@ class ColorFiltersGM : public skiagm::GM {
         };
 
         canvas->translate(10, 10);
-        for (size_t i = 0; i < SK_ARRAY_COUNT(rec); ++i) {
+        for (size_t i = 0; i < std::size(rec); ++i) {
             rec[i].fProc(&paint, rec[i].fData0, rec[i].fData1);
             canvas->drawRect(r, paint);
             canvas->translate(0, r.height() + 10);
@@ -91,11 +90,9 @@ protected:
 
     void onOnceBeforeDraw() override {
         sk_sp<SkImage> mandrill = GetResourceAsImage("images/mandrill_256.png");
-        const auto lm = SkMatrix::MakeRectToRect(SkRect::MakeWH(mandrill->width(),
-                                                                mandrill->height()),
-                                                 SkRect::MakeWH(kWheelSize, kWheelSize),
-                                                 SkMatrix::kFill_ScaleToFit);
-        fShaders.push_back(mandrill->makeShader(&lm));
+        const auto lm = SkMatrix::RectToRect(SkRect::MakeWH(mandrill->width(), mandrill->height()),
+                                             SkRect::MakeWH(kWheelSize, kWheelSize));
+        fShaders.push_back(mandrill->makeShader(SkSamplingOptions(), &lm));
 
         static constexpr SkColor gGrads[][4] = {
             { 0xffff0000, 0xff00ff00, 0xff0000ff, 0xffff0000 },
@@ -104,7 +101,7 @@ protected:
 
         for (const auto& cols : gGrads) {
             fShaders.push_back(SkGradientShader::MakeSweep(kWheelSize / 2, kWheelSize / 2,
-                                                           cols, nullptr, SK_ARRAY_COUNT(cols),
+                                                           cols, nullptr, std::size(cols),
                                                            SkTileMode::kRepeat, -90, 270, 0,
                                                            nullptr));
         }
@@ -157,8 +154,8 @@ protected:
     }
 
 private:
-    static constexpr SkScalar kWheelSize  = 100;
-    static constexpr size_t   kSteps = 7;
+    inline static constexpr SkScalar kWheelSize  = 100;
+    inline static constexpr size_t   kSteps = 7;
 
     static sk_sp<SkColorFilter> make_filter(float h, float s, float l) {
         // These are roughly AE semantics.

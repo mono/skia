@@ -7,6 +7,7 @@ package gen_tasks_logic
 import (
 	"log"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -42,11 +43,22 @@ var (
 	// not appear in the CasSpec if they are included indirectly via a parent
 	// dir.
 	explicitPaths = []string{
+		".bazelrc",
+		".bazelversion",
 		".clang-format",
 		".clang-tidy",
+		".vpython",
+		"BUILD.bazel",
+		"DEPS", // Needed by bin/fetch-ninja
+		"WORKSPACE.bazel",
+		"bazel",
+		"bin/activate-emsdk",
 		"bin/fetch-clang-format",
 		"bin/fetch-gn",
+		"bin/fetch-ninja",
 		"buildtools",
+		"example",
+		"go_repositories.bzl",
 		"infra/bots/assets/android_ndk_darwin/VERSION",
 		"infra/bots/assets/android_ndk_linux/VERSION",
 		"infra/bots/assets/android_ndk_windows/VERSION",
@@ -54,17 +66,24 @@ var (
 		"infra/bots/assets/clang_linux/VERSION",
 		"infra/bots/assets/clang_win/VERSION",
 		"infra/bots/run_recipe.py",
+		"infra/bots/task_drivers",
 		"infra/canvaskit",
 		"infra/pathkit",
+		"package.json",
+		"package-lock.json",
+		"requirements.txt",
 		"resources",
 		"third_party/externals",
+		"toolchain",
 	}
 )
 
 // getAllCheckedInPaths returns every path checked in to the repo.
-func getAllCheckedInPaths() []string {
+func getAllCheckedInPaths(cfg *Config) []string {
 	cmd := exec.Command("git", "ls-files")
-	cmd.Dir = CheckoutRoot()
+	// Use cfg.PathToSkia to get to the Skia checkout, in case this is used by
+	// another repo.
+	cmd.Dir = filepath.Join(CheckoutRoot(), cfg.PathToSkia)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		log.Fatal(err)
@@ -80,9 +99,9 @@ func getAllCheckedInPaths() []string {
 }
 
 // getRelevantPaths returns all paths needed by compile tasks.
-func getRelevantPaths() []string {
+func getRelevantPaths(cfg *Config) []string {
 	rv := []string{}
-	for _, path := range getAllCheckedInPaths() {
+	for _, path := range getAllCheckedInPaths(cfg) {
 		for _, regex := range pathRegexes {
 			if regex.MatchString(path) {
 				rv = append(rv, path)
@@ -210,9 +229,9 @@ func (t *tree) entries() []string {
 }
 
 // generateCompileCAS creates the CasSpec used for tasks which build Skia.
-func generateCompileCAS(b *specs.TasksCfgBuilder) {
+func generateCompileCAS(b *specs.TasksCfgBuilder, cfg *Config) {
 	t := newTree()
-	for _, path := range getRelevantPaths() {
+	for _, path := range getRelevantPaths(cfg) {
 		t.add(path)
 	}
 	spec := &specs.CasSpec{

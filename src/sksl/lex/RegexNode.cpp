@@ -7,7 +7,11 @@
 
 #include "src/sksl/lex/RegexNode.h"
 
+#include "src/sksl/lex/LexUtil.h"
 #include "src/sksl/lex/NFA.h"
+#include "src/sksl/lex/NFAState.h"
+
+#include <string>
 
 std::vector<int> RegexNode::createStates(NFA* nfa, const std::vector<int>& accept) const {
     std::vector<int> result;
@@ -67,7 +71,7 @@ std::vector<int> RegexNode::createStates(NFA* nfa, const std::vector<int>& accep
             result.insert(result.end(), accept.begin(), accept.end());
             break;
         case kRange_Kind:
-            ABORT("unreachable");
+            SkUNREACHABLE;
         case kStar_Kind: {
             std::vector<int> next = accept;
             std::vector<int> placeholder;

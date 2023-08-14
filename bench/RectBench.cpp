@@ -12,7 +12,7 @@
 #include "include/core/SkShader.h"
 #include "include/core/SkString.h"
 #include "include/effects/SkGradientShader.h"
-#include "include/utils/SkRandom.h"
+#include "src/base/SkRandom.h"
 #include "tools/flags/CommandLineFlags.h"
 
 static DEFINE_double(strokeWidth, -1.0, "If set, use this stroke width in RectBench.");
@@ -228,7 +228,7 @@ protected:
         SkScalar gSizes[] = {
             SkIntToScalar(7), 0
         };
-        size_t sizes = SK_ARRAY_COUNT(gSizes);
+        size_t sizes = std::size(gSizes);
 
         if (FLAGS_strokeWidth >= 0) {
             gSizes[0] = (SkScalar)FLAGS_strokeWidth;
@@ -279,7 +279,7 @@ protected:
         SkScalar gSizes[] = {
             SkIntToScalar(13), SkIntToScalar(24)
         };
-        size_t sizes = SK_ARRAY_COUNT(gSizes);
+        size_t sizes = std::size(gSizes);
 
         if (FLAGS_strokeWidth >= 0) {
             gSizes[0] = (SkScalar)FLAGS_strokeWidth;
@@ -295,7 +295,7 @@ protected:
             srcBM.allocN32Pixels(10, 1);
             srcBM.eraseColor(0xFF00FF00);
 
-            paint.setShader(srcBM.makeShader());
+            paint.setShader(srcBM.makeShader(SkSamplingOptions()));
         }
         for (int loop = 0; loop < loops; loop++) {
             for (size_t i = 0; i < sizes; i++) {

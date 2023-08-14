@@ -6,9 +6,9 @@ REG_FIDDLE(Surface_MakeRasterDirect, 256, 256, true, 0) {
 void draw(SkCanvas* ) {
     SkImageInfo info = SkImageInfo::MakeN32Premul(3, 3);
     const size_t size = info.computeMinByteSize();
-    SkAutoTMalloc<SkPMColor> storage(size);
+    AutoTMalloc<SkPMColor> storage(size);
     SkPMColor* pixels = storage.get();
-    sk_sp<SkSurface> surface(SkSurface::MakeRasterDirect(info, pixels, info.minRowBytes()));
+    sk_sp<SkSurface> surface(SkSurfaces::WrapPixels(info, pixels, info.minRowBytes()));
     SkCanvas* canvas = surface->getCanvas();
     canvas->clear(SK_ColorWHITE);
     SkPMColor pmWhite = pixels[0];

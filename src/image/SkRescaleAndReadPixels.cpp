@@ -5,19 +5,31 @@
  * found in the LICENSE file.
  */
 
+#include "src/image/SkRescaleAndReadPixels.h"
+
+#include "include/core/SkBitmap.h"
+#include "include/core/SkBlendMode.h"
 #include "include/core/SkCanvas.h"
+#include "include/core/SkColorSpace.h"
+#include "include/core/SkColorType.h"
 #include "include/core/SkImageInfo.h"
 #include "include/core/SkPaint.h"
+#include "include/core/SkPixmap.h"
 #include "include/core/SkRect.h"
+#include "include/core/SkRefCnt.h"
+#include "include/core/SkSamplingOptions.h"
 #include "include/core/SkSurface.h"
 
 #include <cmath>
+#include <cstddef>
+#include <memory>
+#include <utility>
 
 void SkRescaleAndReadPixels(SkBitmap bmp,
                             const SkImageInfo& resultInfo,
                             const SkIRect& srcRect,
                             SkImage::RescaleGamma rescaleGamma,
-                            SkFilterQuality rescaleQuality,
+                            SkImage::RescaleMode rescaleMode,
                             SkImage::ReadPixelsCallback callback,
                             SkImage::ReadPixelsContext context) {
     int srcW = srcRect.width();
@@ -28,7 +40,7 @@ void SkRescaleAndReadPixels(SkBitmap bmp,
     // How many bilerp/bicubic steps to do in X and Y. + means upscaling, - means downscaling.
     int stepsX;
     int stepsY;
-    if (rescaleQuality > kNone_SkFilterQuality) {
+    if (rescaleMode != SkImage::RescaleMode::kNearest) {
         stepsX = static_cast<int>((sx > 1.f) ? std::ceil(std::log2f(sx))
                                              : std::floor(std::log2f(sx)));
         stepsY = static_cast<int>((sy > 1.f) ? std::ceil(std::log2f(sy))
@@ -43,9 +55,24 @@ void SkRescaleAndReadPixels(SkBitmap bmp,
     if (stepsX < 0 || stepsY < 0) {
         // Don't trigger MIP generation. We don't currently have a way to trigger bicubic for
         // downscaling draws.
-        rescaleQuality = std::min(rescaleQuality, kLow_SkFilterQuality);
+
+        // TODO: should we trigger cubic now that we can?
+        if (rescaleMode != SkImage::RescaleMode::kNearest) {
+            rescaleMode = SkImage::RescaleMode::kRepeatedLinear;
+        }
     }
-    paint.setFilterQuality(rescaleQuality);
+
+    auto rescaling_to_sampling = [](SkImage::RescaleMode rescaleMode) {
+        SkSamplingOptions sampling;
+        if (rescaleMode == SkImage::RescaleMode::kRepeatedLinear) {
+            sampling = SkSamplingOptions(SkFilterMode::kLinear);
+        } else if (rescaleMode == SkImage::RescaleMode::kRepeatedCubic) {
+            sampling = SkSamplingOptions({1.0f/3, 1.0f/3});
+        }
+        return sampling;
+    };
+    SkSamplingOptions sampling = rescaling_to_sampling(rescaleMode);
+
     sk_sp<SkSurface> tempSurf;
     sk_sp<SkImage> srcImage;
     int srcX = srcRect.fLeft;
@@ -59,12 +86,12 @@ void SkRescaleAndReadPixels(SkBitmap bmp,
         // Promote to F16 color type to preserve precision.
         auto ii = SkImageInfo::Make(srcW, srcH, kRGBA_F16_SkColorType, bmp.info().alphaType(),
                                     std::move(cs));
-        auto linearSurf = SkSurface::MakeRaster(ii);
+        auto linearSurf = SkSurfaces::Raster(ii);
         if (!linearSurf) {
             callback(context, nullptr);
             return;
         }
-        linearSurf->getCanvas()->drawBitmap(bmp, -srcX, -srcY, &paint);
+        linearSurf->getCanvas()->drawImage(bmp.asImage().get(), -srcX, -srcY, sampling, &paint);
         tempSurf = std::move(linearSurf);
         srcImage = tempSurf->makeImageSnapshot();
         srcX = 0;
@@ -72,7 +99,7 @@ void SkRescaleAndReadPixels(SkBitmap bmp,
         constraint = SkCanvas::kFast_SrcRectConstraint;
     } else {
         // MakeFromBitmap would trigger a copy if bmp is mutable.
-        srcImage = SkImage::MakeFromRaster(bmp.pixmap(), nullptr, nullptr);
+        srcImage = SkImages::RasterFromPixmap(bmp.pixmap(), nullptr, nullptr);
     }
     while (stepsX || stepsY) {
         int nextW = resultInfo.width();
@@ -100,14 +127,14 @@ void SkRescaleAndReadPixels(SkBitmap bmp,
             // Might as well fold conversion to final info in the last step.
             ii = resultInfo;
         }
-        auto next = SkSurface::MakeRaster(ii);
+        auto next = SkSurfaces::Raster(ii);
         if (!next) {
             callback(context, nullptr);
             return;
         }
         next->getCanvas()->drawImageRect(
-                std::move(srcImage), SkIRect::MakeXYWH(srcX, srcY, srcW, srcH),
-                SkRect::MakeWH((float)nextW, (float)nextH), &paint, constraint);
+                srcImage.get(), SkRect::Make(SkIRect::MakeXYWH(srcX, srcY, srcW, srcH)),
+                SkRect::MakeIWH(nextW, nextH), sampling, &paint, constraint);
         tempSurf = std::move(next);
         srcImage = tempSurf->makeImageSnapshot();
         srcX = srcY = 0;

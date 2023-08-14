@@ -9,10 +9,9 @@
 #include "include/core/SkBitmap.h"
 #include "include/core/SkCanvas.h"
 #include "include/core/SkImageFilter.h"
-#include "include/effects/SkColorMatrixFilter.h"
+#include "include/core/SkSurface.h"
 #include "include/effects/SkGradientShader.h"
 #include "include/effects/SkImageFilters.h"
-#include "include/effects/SkTableColorFilter.h"
 
 // Chains several matrix color filters image filter or several
 // table filter image filters and draws a bitmap.
@@ -40,30 +39,29 @@ protected:
         for(int i = 0; i < loops; i++) {
             SkPaint paint;
             paint.setImageFilter(fImageFilter);
-            canvas->drawBitmap(fBitmap, 0, 0, &paint);
+            canvas->drawImage(fImage, 0, 0, SkSamplingOptions(), &paint);
         }
     }
 
 private:
     sk_sp<SkImageFilter> fImageFilter;
-    SkBitmap fBitmap;
+    sk_sp<SkImage> fImage;
 
     void makeBitmap() {
         int W = 400;
         int H = 400;
-        fBitmap.allocN32Pixels(W, H);
-        fBitmap.eraseColor(SK_ColorTRANSPARENT);
+        auto surf = SkSurfaces::Raster(SkImageInfo::MakeN32Premul(W, H));
 
-        SkCanvas canvas(fBitmap);
         SkPaint paint;
         SkPoint pts[] = { {0, 0}, {SkIntToScalar(W), SkIntToScalar(H)} };
         SkColor colors[] = {
             SK_ColorBLACK, SK_ColorGREEN, SK_ColorCYAN,
             SK_ColorRED, 0, SK_ColorBLUE, SK_ColorWHITE
         };
-        paint.setShader(SkGradientShader::MakeLinear(pts, colors, nullptr, SK_ARRAY_COUNT(colors),
+        paint.setShader(SkGradientShader::MakeLinear(pts, colors, nullptr, std::size(colors),
                                                      SkTileMode::kClamp));
-        canvas.drawPaint(paint);
+        surf->getCanvas()->drawPaint(paint);
+        fImage = surf->makeImageSnapshot();       // shader->makeImage()
     }
 };
 
@@ -85,12 +83,12 @@ protected:
         }
 
         sk_sp<SkColorFilter> colorFilters[] = {
-            SkTableColorFilter::Make(table1),
-            SkTableColorFilter::Make(table2),
-            SkTableColorFilter::Make(table3),
+            SkColorFilters::Table(table1),
+            SkColorFilters::Table(table2),
+            SkColorFilters::Table(table3),
         };
 
-        this->doPreDraw(colorFilters, SK_ARRAY_COUNT(colorFilters));
+        this->doPreDraw(colorFilters, std::size(colorFilters));
     }
 
 private:
@@ -128,7 +126,7 @@ protected:
             make_brightness(-0.1f),
         };
 
-        this->doPreDraw(colorFilters, SK_ARRAY_COUNT(colorFilters));
+        this->doPreDraw(colorFilters, std::size(colorFilters));
     }
 };
 

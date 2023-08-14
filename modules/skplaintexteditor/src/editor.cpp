@@ -6,7 +6,7 @@
 #include "include/core/SkCanvas.h"
 #include "include/core/SkExecutor.h"
 #include "include/core/SkPath.h"
-#include "src/utils/SkUTF.h"
+#include "src/base/SkUTF.h"
 
 #include "modules/skplaintexteditor/src/shape.h"
 
@@ -485,7 +485,6 @@ void Editor::reshapeAll() {
         }
         while (jobCount-- > 0) { semaphore.wait(); }
         #else
-        int i = 0;
         for (TextLine& line : fLines) {
             if (!line.fShaped) {
                 ShapeResult result = Shape(line.fText.begin(), line.fText.size(),
@@ -497,7 +496,6 @@ void Editor::reshapeAll() {
                 line.fHeight         = result.verticalAdvance;
                 line.fShaped = true;
             }
-            ++i;
         }
         #endif
         int y = 0;

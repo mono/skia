@@ -6,8 +6,15 @@
  */
 
 #include "include/svg/SkSVGCanvas.h"
+
+#include "include/core/SkCanvas.h"
+#include "include/core/SkRect.h"
+#include "include/core/SkRefCnt.h"
+#include "include/private/base/SkTo.h"
 #include "src/svg/SkSVGDevice.h"
 #include "src/xml/SkXMLWriter.h"
+
+#include <utility>
 
 std::unique_ptr<SkCanvas> SkSVGCanvas::Make(const SkRect& bounds, SkWStream* writer,
                                             uint32_t flags) {
@@ -22,10 +29,4 @@ std::unique_ptr<SkCanvas> SkSVGCanvas::Make(const SkRect& bounds, SkWStream* wri
 
     return svgDevice ? std::make_unique<SkCanvas>(std::move(svgDevice))
                      : nullptr;
-}
-
-std::unique_ptr<SkCanvas> SkSVGCanvas::Make(const SkRect& bounds, SkXMLWriter* writer, uint32_t flags) {
-    const auto size = bounds.roundOut().size();
-    auto svgDevice = SkSVGDevice::Make(size, std::unique_ptr<SkXMLWriter>(writer), flags);
-    return svgDevice ? std::make_unique<SkCanvas>(std::move(svgDevice)) : nullptr;
 }

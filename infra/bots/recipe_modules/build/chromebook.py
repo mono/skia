@@ -5,23 +5,12 @@
 from . import util
 import os
 
-IMAGES = {
-    # Used to build ChromeOS for Pixelbook in Debian9, to align GLIBC versions.
-    'Debian9': (
-        'gcr.io/skia-public/debian9@sha256:'
-        'f48edc56b621a44ee2f985555f9b09c2802da15d56bb4e43666faabbec80d569'),
-}
-
 def compile_fn(api, checkout_root, out_dir):
   skia_dir      = checkout_root.join('skia')
   configuration = api.vars.builder_cfg.get('configuration')
   target_arch   = api.vars.builder_cfg.get('target_arch')
-  os_name = api.vars.builder_cfg.get('os', '')
-  builder_name = api.vars.builder_name
 
-  # Currently we mount this directory to /SRC in Docker.
-  # TODO(westont): Add docker module API to match binding to actual structure.
-  top_level = '/SRC' if 'Docker' in builder_name else str(api.vars.workdir)
+  top_level = str(api.vars.workdir)
 
   clang_linux = os.path.join(top_level, 'clang_linux')
   # This is a pretty typical arm-linux-gnueabihf sysroot
@@ -58,8 +47,8 @@ def compile_fn(api, checkout_root, out_dir):
       '--sysroot=%s' % sysroot_dir,
       '-I%s' % os.path.join(gl_dir, 'include'),
       '-I%s' % os.path.join(sysroot_dir, 'include'),
-      '-I%s' % os.path.join(sysroot_dir, 'include', 'c++', '6'),
-      '-I%s' % os.path.join(sysroot_dir, 'include', 'c++', '6', 'arm-linux-gnueabihf'),
+      '-I%s' % os.path.join(sysroot_dir, 'include', 'c++', '10'),
+      '-I%s' % os.path.join(sysroot_dir, 'include', 'c++', '10', 'arm-linux-gnueabihf'),
       '-DMESA_EGL_NO_X11_HEADERS',
       '-U_GLIBCXX_DEBUG',
     ]
@@ -91,22 +80,13 @@ def compile_fn(api, checkout_root, out_dir):
       '-fuse-ld=lld',
     ]
 
-  args['extra_cflags'].append('-DDUMMY_clang_linux_version=%s' %
+  args['extra_cflags'].append('-DREBUILD_IF_CHANGED_clang_linux_version=%s' %
                       api.run.asset_version('clang_linux', skia_dir))
 
   if configuration != 'Debug':
     args['is_debug'] = False
 
   gn = skia_dir.join('bin', 'gn')
-
-  if os_name == 'Debian9' and 'Docker' in builder_name:
-    script = api.build.resource('docker-chromeos-compile.sh')
-    image_hash = IMAGES[os_name]
-    # Invalidate incremental build cache if image changes.
-    args['extra_cflags'].append('-DDUMMY_docker_image=%s' % image_hash)
-    api.docker.run('Run build script in Docker', image_hash,
-                   checkout_root, out_dir, script, args=[util.py_to_gn(args)])
-    return
 
   with api.context(cwd=skia_dir, env=env):
     api.run(api.python, 'fetch-gn',

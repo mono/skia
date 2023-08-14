@@ -5,18 +5,49 @@
  * found in the LICENSE file.
  */
 
+#include "include/core/SkAlphaType.h"
+#include "include/core/SkBlendMode.h"
+#include "include/core/SkMatrix.h"
+#include "include/core/SkRect.h"
+#include "include/core/SkRefCnt.h"
+#include "include/core/SkSamplingOptions.h"
+#include "include/core/SkSize.h"
+#include "include/core/SkTypes.h"
+#include "include/gpu/GpuTypes.h"
+#include "include/gpu/GrBackendSurface.h"
 #include "include/gpu/GrDirectContext.h"
 #include "include/gpu/GrRecordingContext.h"
-#include "src/gpu/GrDirectContextPriv.h"
-#include "src/gpu/GrProxyProvider.h"
-#include "src/gpu/GrRecordingContextPriv.h"
-#include "src/gpu/ops/GrTextureOp.h"
-#include "src/gpu/ops/GrTextureOp.h"
+#include "include/gpu/GrTypes.h"
+#include "include/private/gpu/ganesh/GrTypesPriv.h"
+#include "src/base/SkArenaAlloc.h"
+#include "src/gpu/SkBackingFit.h"
+#include "src/gpu/Swizzle.h"
+#include "src/gpu/ganesh/GrAppliedClip.h"
+#include "src/gpu/ganesh/GrCaps.h"
+#include "src/gpu/ganesh/GrColorSpaceXform.h"
+#include "src/gpu/ganesh/GrDirectContextPriv.h"
+#include "src/gpu/ganesh/GrProcessorSet.h"
+#include "src/gpu/ganesh/GrProxyProvider.h"
+#include "src/gpu/ganesh/GrRecordingContextPriv.h"
+#include "src/gpu/ganesh/GrSamplerState.h"
+#include "src/gpu/ganesh/GrSurfaceProxy.h"
+#include "src/gpu/ganesh/GrSurfaceProxyView.h"
+#include "src/gpu/ganesh/geometry/GrQuad.h"
+#include "src/gpu/ganesh/ops/GrOp.h"
+#include "src/gpu/ganesh/ops/OpsTask.h"
+#include "src/gpu/ganesh/ops/TextureOp.h"
+#include "tests/CtsEnforcement.h"
 #include "tests/Test.h"
+
+#include <utility>
+
+struct GrContextOptions;
+
+using namespace skgpu::ganesh;
 
 class OpsTaskTestingAccess {
 public:
-    typedef GrOpsTask::OpChain OpChain;
+    typedef skgpu::ganesh::OpsTask::OpChain OpChain;
 };
 
 static void check_chain(OpsTaskTestingAccess::OpChain* chain, SkRect firstRect, SkRect lastRect,
@@ -42,9 +73,16 @@ static sk_sp<GrSurfaceProxy> create_proxy(GrRecordingContext* rContext) {
 
     const GrBackendFormat format = caps->getDefaultBackendFormat(GrColorType::kRGBA_8888,
                                                                  GrRenderable::kYes);
-    return rContext->priv().proxyProvider()->createProxy(
-            format, kDimensions, GrRenderable::kYes, 1, GrMipmapped::kNo, SkBackingFit::kExact,
-            SkBudgeted::kNo, GrProtected::kNo, GrInternalSurfaceFlags::kNone);
+    return rContext->priv().proxyProvider()->createProxy(format,
+                                                         kDimensions,
+                                                         GrRenderable::kYes,
+                                                         1,
+                                                         GrMipmapped::kNo,
+                                                         SkBackingFit::kExact,
+                                                         skgpu::Budgeted::kNo,
+                                                         GrProtected::kNo,
+                                                         /*label=*/"TextureOpTest",
+                                                         GrInternalSurfaceFlags::kNone);
 }
 
 static GrOp::Owner create_op(GrDirectContext* dContext, SkRect rect,
@@ -55,27 +93,26 @@ static GrOp::Owner create_op(GrDirectContext* dContext, SkRect rect,
     quad.fLocal = GrQuad(rect);
     quad.fEdgeFlags = isAA ? GrQuadAAFlags::kAll : GrQuadAAFlags::kNone;
 
-    return GrTextureOp::Make(dContext,
-                             proxyView,
-                             kPremul_SkAlphaType,
-                             nullptr,
-                             GrSamplerState::Filter::kNearest,
-                             GrSamplerState::MipmapMode::kNone,
-                             {1.f, 1.f, 1.f, 1.f},
-                             GrTextureOp::Saturate::kYes,
-                             SkBlendMode::kSrcOver,
-                             isAA ? GrAAType::kCoverage
-                                  : GrAAType::kNone,
-                             &quad,
-                             nullptr);
+    return TextureOp::Make(dContext,
+                           proxyView,
+                           kPremul_SkAlphaType,
+                           nullptr,
+                           GrSamplerState::Filter::kNearest,
+                           GrSamplerState::MipmapMode::kNone,
+                           {1.f, 1.f, 1.f, 1.f},
+                           TextureOp::Saturate::kYes,
+                           SkBlendMode::kSrcOver,
+                           isAA ? GrAAType::kCoverage
+                                : GrAAType::kNone,
+                           &quad,
+                           nullptr);
 }
 
 // This unit test exercises the crbug.com/1112259 case.
-DEF_GPUTEST_FOR_RENDERING_CONTEXTS(TextureOpTest, reporter, ctxInfo) {
-
+DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(TextureOpTest, reporter, ctxInfo, CtsEnforcement::kNever) {
     GrDirectContext* dContext = ctxInfo.directContext();
     const GrCaps* caps = dContext->priv().caps();
-    GrRecordingContext::Arenas arenas = dContext->priv().arenas();
+    SkArenaAlloc arena{nullptr, 0, 1024};
     auto auditTrail = dContext->priv().auditTrail();
 
     if (!caps->dynamicStateArrayGeometryProcessorTextureSupport()) {
@@ -85,13 +122,13 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(TextureOpTest, reporter, ctxInfo) {
 
     GrSurfaceProxyView proxyViewA(create_proxy(dContext),
                                   kTopLeft_GrSurfaceOrigin,
-                                  GrSwizzle::RGBA());
+                                  skgpu::Swizzle::RGBA());
     GrSurfaceProxyView proxyViewB(create_proxy(dContext),
                                   kTopLeft_GrSurfaceOrigin,
-                                  GrSwizzle::RGBA());
+                                  skgpu::Swizzle::RGBA());
     GrSurfaceProxyView proxyViewC(create_proxy(dContext),
                                   kTopLeft_GrSurfaceOrigin,
-                                  GrSwizzle::RGBA());
+                                  skgpu::Swizzle::RGBA());
 
     static const SkRect kOpARect{  0,  0, 16, 16 };
     static const SkRect kOpBRect{ 32,  0, 48, 16 };
@@ -106,7 +143,7 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(TextureOpTest, reporter, ctxInfo) {
     OpsTaskTestingAccess::OpChain chain1(std::move(opA), GrProcessorSet::EmptySetAnalysis(),
                                          &noClip, nullptr);
     chain1.appendOp(std::move(opB), GrProcessorSet::EmptySetAnalysis(), nullptr, &noClip, *caps,
-                    &arenas, dContext->priv().auditTrail());
+                    &arena, dContext->priv().auditTrail());
     check_chain(&chain1, kOpARect, kOpBRect, 2);
 
     // opC & opD can also chain together but can't merge (bc, again, they have different
@@ -118,12 +155,12 @@ DEF_GPUTEST_FOR_RENDERING_CONTEXTS(TextureOpTest, reporter, ctxInfo) {
     OpsTaskTestingAccess::OpChain chain2(std::move(opC), GrProcessorSet::EmptySetAnalysis(),
                                          &noClip, nullptr);
     chain2.appendOp(std::move(opD), GrProcessorSet::EmptySetAnalysis(), nullptr, &noClip, *caps,
-                    &arenas, auditTrail);
+                    &arena, auditTrail);
     check_chain(&chain2, kOpCRect, kOpDRect, 2);
 
     // opA and opD, now in separate chains, can merge when the two chains are combined while
     // opB and opC can still only chain.
-    chain1.prependChain(&chain2, *caps, &arenas, auditTrail);
+    chain1.prependChain(&chain2, *caps, &arena, auditTrail);
 
     // We should end up with the chain
     //   opC - opD/opA - opB

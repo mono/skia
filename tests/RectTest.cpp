@@ -7,10 +7,24 @@
 
 #include "include/core/SkBitmap.h"
 #include "include/core/SkCanvas.h"
+#include "include/core/SkColor.h"
+#include "include/core/SkImageInfo.h"
+#include "include/core/SkM44.h"
+#include "include/core/SkMatrix.h"
+#include "include/core/SkPaint.h"
 #include "include/core/SkPath.h"
+#include "include/core/SkPoint.h"
 #include "include/core/SkRect.h"
+#include "include/core/SkRefCnt.h"
+#include "include/core/SkScalar.h"
+#include "include/core/SkSurface.h"
+#include "include/core/SkTypes.h"
 #include "src/core/SkRectPriv.h"
 #include "tests/Test.h"
+
+#include <climits>
+#include <initializer_list>
+#include <string>
 
 static bool has_green_pixels(const SkBitmap& bm) {
     for (int j = 0; j < bm.height(); ++j) {
@@ -148,16 +162,23 @@ static float make_big_value(skiatest::Reporter* reporter) {
     return reporter ? SK_ScalarMax * 0.75f : 0;
 }
 
-DEF_TEST(Rect_center, reporter) {
-    // ensure we can compute center even when the width/height might overflow
+DEF_TEST(Rect_whOverflow, reporter) {
     const SkScalar big = make_big_value(reporter);
     const SkRect r = { -big, -big, big, big };
 
     REPORTER_ASSERT(reporter, r.isFinite());
-    REPORTER_ASSERT(reporter, SkScalarIsFinite(r.centerX()));
-    REPORTER_ASSERT(reporter, SkScalarIsFinite(r.centerY()));
     REPORTER_ASSERT(reporter, !SkScalarIsFinite(r.width()));
     REPORTER_ASSERT(reporter, !SkScalarIsFinite(r.height()));
+
+    // ensure we can compute center even when the width/height might overflow
+    REPORTER_ASSERT(reporter, SkScalarIsFinite(r.centerX()));
+    REPORTER_ASSERT(reporter, SkScalarIsFinite(r.centerY()));
+
+
+    // ensure we can compute halfWidth and halfHeight even when width/height might overflow,
+    // i.e. for use computing the radii filling a rectangle.
+    REPORTER_ASSERT(reporter, SkScalarIsFinite(SkRectPriv::HalfWidth(r)));
+    REPORTER_ASSERT(reporter, SkScalarIsFinite(SkRectPriv::HalfHeight(r)));
 }
 
 DEF_TEST(Rect_subtract, reporter) {
@@ -233,7 +254,126 @@ DEF_TEST(Rect_subtract, reporter) {
     }
 }
 
-#include "include/core/SkSurface.h"
+DEF_TEST(Rect_subtract_overflow, reporter) {
+    // This rectangle is sorted but whose int32 width overflows and appears negative (so
+    // isEmpty() returns true).
+    SkIRect reallyBig = SkIRect::MakeLTRB(-INT_MAX + 1000, 0, INT_MAX - 1000, 100);
+    // However, because it's sorted, an intersection with a reasonably sized rectangle is still
+    // valid so the assumption that SkIRect::Intersects() returns false when either input is
+    // empty is invalid, leading to incorrect use of negative width (see crbug.com/1243206)
+    SkIRect reasonable = SkIRect::MakeLTRB(-50, -5, 50, 125);
+
+    // Ignoring overflow, "reallyBig - reasonable" should report exact = false and select either the
+    // left or right portion of 'reallyBig' that excludes 'reasonable', e.g.
+    // {-INT_MAX+1000, 0, -50, 100} or {150, 0, INT_MAX-1000, 100}.
+    // This used to assert, but now it should be detected that 'reallyBig' overflows and is
+    // technically empty, so the result should be itself and exact.
+    SkIRect difference;
+    bool exact = SkRectPriv::Subtract(reallyBig, reasonable, &difference);
+    REPORTER_ASSERT(reporter, exact);
+    REPORTER_ASSERT(reporter, difference == reallyBig);
+
+    // Similarly, if we subtract 'reallyBig', since it's technically empty then we expect the
+    // answer to remain 'reasonable'.
+    exact = SkRectPriv::Subtract(reasonable, reallyBig, &difference);
+    REPORTER_ASSERT(reporter, exact);
+    REPORTER_ASSERT(reporter, difference == reasonable);
+}
+
+DEF_TEST(Rect_QuadContainsRect, reporter) {
+    struct TestCase {
+        std::string label;
+        bool expect;
+        SkMatrix m;
+        SkIRect a;
+        SkIRect b;
+    };
+
+    TestCase tests[] = {
+        { "Identity matrix contains success", /*expect=*/true,
+          /*m=*/SkMatrix::I(), /*a=*/{0,0,15,15}, /*b=*/{2,2,10,10} },
+
+        { "Identity matrix contains failure", /*expect=*/false,
+          /*m=*/SkMatrix::I(), /*a=*/{0,0,15,15}, /*b=*/{-2,-2,10,10} },
+
+        { "Identity mapped rect contains itself", /*expect=*/true,
+          /*m=*/SkMatrix::I(), /*a=*/{0,0,10,10}, /*b=*/{ 0,0,10,10} },
+
+        { "Scaled rect contains success", /*expect=*/true,
+          /*m=*/SkMatrix::Scale(2.f, 3.4f), /*a=*/{0,0,4,4}, /*b=*/{1,1,6,6}},
+
+        { "Scaled rect contains failure", /*expect=*/false,
+          /*m=*/SkMatrix::Scale(0.25f, 0.3f), /*a=*/{0,0,8,8}, /*b=*/{0,0,5,5}},
+
+        { "Rotate rect contains success", /*expect=*/true,
+          /*m=*/SkMatrix::RotateDeg(45.f, {10.f, 10.f}), /*a=*/{0,0,20,20}, /*b=*/{3,3,17,17}},
+
+        { "Rotate rect contains failure", /*expect=*/false,
+          /*m=*/SkMatrix::RotateDeg(45.f, {10.f, 10.f}), /*a=*/{0,0,20,20}, /*b=*/{2,2,18,18}},
+
+        { "Negative scale contains success", /*expect=*/true,
+          /*m=*/SkMatrix::Scale(-1.f, 1.f), /*a=*/{0,0,10,10}, /*b=*/{-9,1,-1,9}},
+
+        { "Empty rect contains nothing", /*expect=*/false,
+          /*m=*/SkMatrix::RotateDeg(45.f, {0.f, 0.f}), /*a=*/{10,10,10,20}, /*b=*/{10,14,10,16}},
+
+        { "MakeEmpty() contains nothing", /*expect=*/false,
+          /*m=*/SkMatrix::RotateDeg(45.f, {0.f, 0.f}), /*a=*/SkIRect::MakeEmpty(), /*b=*/{0,0,1,1}},
+
+        { "Unsorted rect contains nothing", /*expect=*/false,
+          /*m=*/SkMatrix::I(), /*a=*/{10,10,0,0}, /*b=*/{2,2,8,8}},
+
+        { "Unsorted rect is contained", /*expect=*/true,
+          /*m=*/SkMatrix::I(), /*a=*/{0,0,10,10}, /*b=*/{8,8,2,2}},
+    };
+
+    for (const TestCase& t : tests) {
+        skiatest::ReporterContext c{reporter, t.label};
+        REPORTER_ASSERT(reporter, SkRectPriv::QuadContainsRect(t.m, t.a, t.b) == t.expect);
+
+        // Generate equivalent tests for SkRect and SkM44 by translating a by 1/2px and 'b' by
+        // 1/2px in post-transform space
+        SkVector bOffset = t.m.mapVector(0.5f, 0.5f);
+        SkRect af = SkRect::Make(t.a).makeOffset(0.5f, 0.5f);
+        SkRect bf = SkRect::Make(t.b).makeOffset(bOffset.fX, bOffset.fY);
+        REPORTER_ASSERT(reporter, SkRectPriv::QuadContainsRect(SkM44(t.m), af, bf) == t.expect);
+    }
+
+    // Test some more complicated scenarios with perspective that don't fit into the TestCase
+    // structure as nicely.
+    const SkRect a = SkRect::MakeLTRB(1.83f, -0.48f, 15.53f, 30.68f); // arbitrary
+
+    // Perspective matrix where the mapped A has all corners' W > 0
+    {
+        skiatest::ReporterContext c{reporter, "Perspective, W > 0"};
+        SkM44 p = SkM44::Perspective(0.01f, 10.f, SK_ScalarPI / 3.f);
+        p.preTranslate(0.f, 5.f, -0.1f);
+        p.preConcat(SkM44::Rotate({0.f, 1.f, 0.f}, 0.008f /* radians */));
+        REPORTER_ASSERT(reporter, SkRectPriv::QuadContainsRect(p, a, {4.f,10.f,20.f,45.f}));
+        REPORTER_ASSERT(reporter, !SkRectPriv::QuadContainsRect(p, a, {2.f,6.f,23.f,50.f}));
+    }
+    // Perspective matrix where the mapped A has some corners' W < 0
+    {
+        skiatest::ReporterContext c{reporter, "Perspective, some W > 0"};
+        SkM44 p;
+        p.setRow(3, {-.2f, -.6f, 0.f, 8.f});
+        REPORTER_ASSERT(reporter, SkRectPriv::QuadContainsRect(p, a, {10.f,50.f,20.f,60.f}));
+        REPORTER_ASSERT(reporter, !SkRectPriv::QuadContainsRect(p, a, {0.f,1.f,10.f,10.f}));
+    }
+    // Perspective matrix where the mapped A has all corners' W < 0)
+    // For B, we use the previous success contains query above; a rectangle that is inside the
+    // convex hull of the mapped corners of A, projecting each corner with its negative W; and a
+    // rectangle that contains said convex hull.
+    {
+        skiatest::ReporterContext c{reporter, "Perspective, no W > 0"};
+        SkM44 p;
+        p.setRow(3, {-.2f, -.6f, 0.f, 8.f});
+        const SkRect na = a.makeOffset(16.f, 31.f);
+        REPORTER_ASSERT(reporter, !SkRectPriv::QuadContainsRect(p, na, {10.f,50.f,20.f,60.f}));
+        REPORTER_ASSERT(reporter, !SkRectPriv::QuadContainsRect(p, na, {-1.1f,-1.8f,-1.f,-1.79f}));
+        REPORTER_ASSERT(reporter, !SkRectPriv::QuadContainsRect(p, na, {-1.9f,-2.3f,-0.4f,-1.6f}));
+    }
+}
 
 // Before the fix, this sequence would trigger a release_assert in the Tiler
 // in SkBitmapDevice.cpp
@@ -246,7 +386,7 @@ DEF_TEST(big_tiled_rect_crbug_927075, reporter) {
         const int h = 1;
         const auto info = SkImageInfo::MakeN32Premul(w, h);
 
-        auto surf = SkSurface::MakeRaster(info);
+        auto surf = SkSurfaces::Raster(info);
         auto canvas = surf->getCanvas();
 
         const SkRect r = { 257, 213, 67109120, 214 };

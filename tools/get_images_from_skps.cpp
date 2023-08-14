@@ -6,21 +6,25 @@
  */
 
 #include "include/codec/SkCodec.h"
+#include "include/codec/SkEncodedImageFormat.h"
 #include "include/core/SkBitmap.h"
 #include "include/core/SkColorSpace.h"
 #include "include/core/SkData.h"
+#include "include/core/SkImage.h"
 #include "include/core/SkPicture.h"
 #include "include/core/SkSerialProcs.h"
 #include "include/core/SkStream.h"
-#include "include/private/SkTHash.h"
 #include "src/core/SkMD5.h"
 #include "src/core/SkOSFile.h"
+#include "src/core/SkTHash.h"
 #include "src/utils/SkJSONWriter.h"
 #include "src/utils/SkOSPath.h"
 #include "tools/flags/CommandLineFlags.h"
 
 #include <iostream>
 #include <map>
+
+using namespace skia_private;
 
 static DEFINE_string2(skps, s, "skps", "A path to a directory of skps or a single skp.");
 static DEFINE_string2(out, o, "img-out", "A path to an output directory.");
@@ -39,7 +43,7 @@ static const char* gOutputDir;
 static std::map<std::string, unsigned int> gSkpToUnknownCount = {};
 static std::map<std::string, unsigned int> gSkpToUnsupportedCount;
 
-static SkTHashSet<SkMD5::Digest> gSeen;
+static THashSet<SkMD5::Digest> gSeen;
 
 struct Sniffer {
 

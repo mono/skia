@@ -6,8 +6,9 @@
  */
 
 #include "bench/Benchmark.h"
+#include "include/core/SkRRect.h"
 #include "include/core/SkRect.h"
-#include "include/utils/SkRandom.h"
+#include "src/base/SkRandom.h"
 #include "src/core/SkGeometry.h"
 #include "src/core/SkPathPriv.h"
 
@@ -51,7 +52,7 @@ protected:
         const SkScalar min = -100;
         const SkScalar max = 100;
         SkRandom rand;
-        for (size_t i = 0; i < SK_ARRAY_COUNT(fRects); ++i) {
+        for (size_t i = 0; i < std::size(fRects); ++i) {
             SkScalar x = rand.nextRangeScalar(min, max);
             SkScalar y = rand.nextRangeScalar(min, max);
             SkScalar w = rand.nextRangeScalar(min, max);
@@ -69,7 +70,7 @@ protected:
     void onDraw(int loops, SkCanvas* canvas) override {
         for (int outer = 0; outer < loops; ++outer) {
             int count = 0;
-            for (size_t i = 0; i < SK_ARRAY_COUNT(fRects); ++i) {
+            for (size_t i = 0; i < std::size(fRects); ++i) {
                 SkRect r = fRects[0];
                 count += r.intersect(fRects[i]);
             }
@@ -87,7 +88,7 @@ protected:
         for (int outer = 0; outer < loops; ++outer) {
             int count = 0;
             SkRect r;
-            for (size_t i = 0; i < SK_ARRAY_COUNT(fRects); ++i) {
+            for (size_t i = 0; i < std::size(fRects); ++i) {
                 count += r.intersect(fRects[0], fRects[i]);
             }
             this->virtualCallToFoilOptimizers(count);
@@ -103,7 +104,7 @@ protected:
     void onDraw(int loops, SkCanvas* canvas) override {
         for (int outer = 0; outer < loops; ++outer) {
             int count = 0;
-            for (size_t i = 0; i < SK_ARRAY_COUNT(fRects); ++i) {
+            for (size_t i = 0; i < std::size(fRects); ++i) {
                 count += SkRect::Intersects(fRects[0], fRects[i]);
             }
             this->virtualCallToFoilOptimizers(count);
@@ -118,7 +119,7 @@ public:
 protected:
     void onDraw(int loops, SkCanvas* canvas) override {
         for (int outer = 0; outer < loops; ++outer) {
-            for (size_t i = 0; i < SK_ARRAY_COUNT(fRects); ++i) {
+            for (size_t i = 0; i < std::size(fRects); ++i) {
                 fRects[i].sort();
             }
         }

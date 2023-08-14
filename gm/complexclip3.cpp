@@ -18,7 +18,6 @@
 #include "include/core/SkString.h"
 #include "include/core/SkTypeface.h"
 #include "include/core/SkTypes.h"
-#include "src/core/SkClipOpPriv.h"
 #include "tools/ToolUtils.h"
 
 #include <utility>
@@ -68,8 +67,8 @@ protected:
             SkClipOp    fOp;
             const char* fName;
         } gOps[] = {
-            {kIntersect_SkClipOp,         "I"},
-            {kDifference_SkClipOp,        "D" },
+            {SkClipOp::kIntersect,         "I"},
+            {SkClipOp::kDifference,        "D" },
         };
 
         canvas->translate(SkIntToScalar(20), SkIntToScalar(20));
@@ -82,7 +81,7 @@ protected:
         for (int invA = 0; invA < 2; ++invA) {
             for (int aaBits = 0; aaBits < 4; ++aaBits) {
                 canvas->save();
-                for (size_t op = 0; op < SK_ARRAY_COUNT(gOps); ++op) {
+                for (size_t op = 0; op < std::size(gOps); ++op) {
                     for (int invB = 0; invB < 2; ++invB) {
                         bool doAAA = SkToBool(aaBits & 1);
                         bool doAAB = SkToBool(aaBits & 2);

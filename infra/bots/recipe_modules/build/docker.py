@@ -5,33 +5,14 @@
 
 from . import util
 
-
-# TODO(dogben): Move this mapping to a machine-editable file.
 IMAGES = {
     'gcc-debian10': (
         'gcr.io/skia-public/gcc-debian10@sha256:'
-        '89a72df1e2fdea6f774a3fa4199bb9aaa4a0526a3ac1f233e604d689b694f95c'),
+        'cd1dd99a3c423332a00998a20c4363aa1d5998b41f21e6e86ca016b412082777'),
     'gcc-debian10-x86': (
         'gcr.io/skia-public/gcc-debian10-x86@sha256:'
-        'b1ec55403ac66d9500d033d6ffd7663894d32335711fbbb0fb4c67dfce812203'),
+        'e30b4616f842fa2fd89329abf3d8e81cf6c25e147640289f37692f18862515c8'),
 }
-
-
-def py_to_gn(val):
-  """Convert val to a string that can be used as GN args."""
-  if isinstance(val, bool):
-    return 'true' if val else 'false'
-  elif isinstance(val, basestring):
-    # TODO(dogben): Handle quoting "$\
-    return '"%s"' % val
-  elif isinstance(val, (list, tuple)):
-    return '[%s]' % (','.join(py_to_gn(x) for x in val))
-  elif isinstance(val, dict):
-    gn = ' '.join(
-        '%s=%s' % (k, py_to_gn(v)) for (k, v) in sorted(val.iteritems()))
-    return gn
-  else:  # pragma: nocover
-    raise Exception('Converting %s to gn is not implemented.' % type(val))
 
 
 def compile_fn(api, checkout_root, out_dir):
@@ -55,7 +36,7 @@ def compile_fn(api, checkout_root, out_dir):
     args['is_debug'] = False
 
   if 'NoGPU' in extra_tokens:
-    args['skia_enable_gpu'] = False
+    args['skia_enable_ganesh'] = False
     extra_tokens.remove('NoGPU')
   if 'Shared' in extra_tokens:
     args['is_component_build'] = True
@@ -82,11 +63,11 @@ def compile_fn(api, checkout_root, out_dir):
   # compile tasks. However, we need to force a recompile when the toolchain
   # changes. The simplest way to do that is using a C define that changes
   # anytime the image changes.
-  args['extra_cflags'].append('-DDUMMY_docker_image=%s' % image_hash)
+  args['extra_cflags'].append('-DREBUILD_IF_CHANGED_docker_image=%s' % image_hash)
 
   script = api.build.resource('docker-compile.sh')
   api.docker.run('Run build script in Docker', image_hash,
-                 checkout_root, out_dir, script, args=[py_to_gn(args)])
+                 checkout_root, out_dir, script, args=[util.py_to_gn(args)])
 
 def copy_build_products(api, src, dst):
   util.copy_listed_files(api, src, dst, util.DEFAULT_BUILD_PRODUCTS)

@@ -11,7 +11,7 @@
 
 // webgpu_cpp.h and X.h don't get along. Include this first, before X11 defines None, Success etc.
 #ifdef SK_DAWN
-#include "dawn/webgpu_cpp.h"
+#include "webgpu/webgpu_cpp.h"
 #endif
 #include <X11/Xlib.h>
 #include <GL/glx.h>
@@ -42,6 +42,11 @@ std::unique_ptr<WindowContext> MakeGLForXlib(const XlibWindowInfo&, const Displa
 
 #ifdef SK_DAWN
 std::unique_ptr<WindowContext> MakeDawnVulkanForXlib(const XlibWindowInfo&, const DisplayParams&);
+#endif
+
+#if defined(SK_DAWN) && defined(SK_GRAPHITE)
+std::unique_ptr<WindowContext> MakeGraphiteDawnVulkanForXlib(const XlibWindowInfo&,
+                                                             const DisplayParams&);
 #endif
 
 std::unique_ptr<WindowContext> MakeRasterForXlib(const XlibWindowInfo&, const DisplayParams&);

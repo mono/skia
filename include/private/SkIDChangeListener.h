@@ -9,8 +9,9 @@
 #define SkIDChangeListener_DEFINED
 
 #include "include/core/SkRefCnt.h"
-#include "include/private/SkMutex.h"
-#include "include/private/SkTDArray.h"
+#include "include/private/base/SkMutex.h"
+#include "include/private/base/SkTArray.h"
+#include "include/private/base/SkThreadAnnotations.h"
 
 #include <atomic>
 
@@ -49,23 +50,23 @@ public:
          * Add a new listener to the list. It must not already be deregistered. Also clears out
          * previously deregistered listeners.
          */
-        void add(sk_sp<SkIDChangeListener> listener, bool singleThreaded = false);
+        void add(sk_sp<SkIDChangeListener> listener) SK_EXCLUDES(fMutex);
 
         /**
          * The number of registered listeners (including deregisterd listeners that are yet-to-be
          * removed.
          */
-        int count();
+        int count() const SK_EXCLUDES(fMutex);
 
         /** Calls changed() on all listeners that haven't been deregistered and resets the list. */
-        void changed(bool singleThreaded = false);
+        void changed() SK_EXCLUDES(fMutex);
 
         /** Resets without calling changed() on the listeners. */
-        void reset(bool singleThreaded = false);
+        void reset() SK_EXCLUDES(fMutex);
 
     private:
-        SkMutex fMutex;
-        SkTDArray<SkIDChangeListener*> fListeners;  // pointers are reffed
+        mutable SkMutex fMutex;
+        skia_private::STArray<1, sk_sp<SkIDChangeListener>> fListeners SK_GUARDED_BY(fMutex);
     };
 
 private:

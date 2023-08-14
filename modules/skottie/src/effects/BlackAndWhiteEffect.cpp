@@ -8,13 +8,15 @@
 #include "modules/skottie/src/effects/Effects.h"
 
 #include "include/effects/SkRuntimeEffect.h"
-#include "include/private/SkTPin.h"
+#include "include/private/base/SkTPin.h"
 #include "modules/skottie/src/Adapter.h"
 #include "modules/skottie/src/SkottieJson.h"
 #include "modules/skottie/src/SkottieValue.h"
 #include "modules/sksg/include/SkSGColorFilter.h"
 
 namespace skottie::internal {
+
+#ifdef SK_ENABLE_SKSL
 
 namespace  {
 
@@ -33,38 +35,35 @@ namespace  {
 // (inspired by https://github.com/RoyiAvital/StackExchangeCodes/blob/master/SignalProcessing/Q688/ApplyBlackWhiteFilter.m)
 
 static sk_sp<SkRuntimeEffect> make_effect() {
-    static constexpr char BLACK_AND_WHITE_EFFECT[] = R"(
-        uniform shader input;
-        uniform half kR, kY, kG, kC, kB, kM;
+    static constexpr char BLACK_AND_WHITE_EFFECT[] =
+        "uniform half kR, kY, kG, kC, kB, kM;"
 
-        half4 main() {
-            half4 c = sample(input);
+        "half4 main(half4 c) {"
+            "half m = min(min(c.r, c.g), c.b),"
 
-            half m = min(min(c.r, c.g), c.b),
-
-                dr = c.r - m,
-                dg = c.g - m,
-                db = c.b - m,
+                "dr = c.r - m,"
+                "dg = c.g - m,"
+                "db = c.b - m,"
 
                 // secondaries weights
-                wy = min(dr,dg),
-                wc = min(dg,db),
-                wm = min(db,dr),
+                "wy = min(dr,dg),"
+                "wc = min(dg,db),"
+                "wm = min(db,dr),"
 
                 // primaries weights
-                wr = dr - wy - wm,
-                wg = dg - wy - wc,
-                wb = db - wc - wm,
+                "wr = dr - wy - wm,"
+                "wg = dg - wy - wc,"
+                "wb = db - wc - wm,"
 
                 // final luminance
-                l = m + kR*wr + kY*wy + kG*wg + kC*wc + kB*wb + kM*wm;
+                "l = m + kR*wr + kY*wy + kG*wg + kC*wc + kB*wb + kM*wm;"
 
-            return half4(l, l, l, c.a);
-        }
-    )";
+            "return half4(l, l, l, c.a);"
+        "}"
+    ;
 
     static const SkRuntimeEffect* effect =
-            std::get<0>(SkRuntimeEffect::Make(SkString(BLACK_AND_WHITE_EFFECT))).release();
+            SkRuntimeEffect::MakeForColorFilter(SkString(BLACK_AND_WHITE_EFFECT)).effect.release();
     SkASSERT(effect);
 
     return sk_ref_sp(effect);
@@ -115,10 +114,8 @@ private:
             (fCoeffs[5] ) / 100,
         };
 
-        sk_sp<SkColorFilter> input;
-
         this->node()->setColorFilter(
-            fEffect->makeColorFilter(SkData::MakeWithCopy(&coeffs, sizeof(coeffs)), &input, 1));
+                fEffect->makeColorFilter(SkData::MakeWithCopy(&coeffs, sizeof(coeffs))));
     }
 
     const sk_sp<SkRuntimeEffect> fEffect;
@@ -130,12 +127,18 @@ private:
 
 } // namespace
 
+#endif  // SK_ENABLE_SKSL
 
 sk_sp<sksg::RenderNode> EffectBuilder::attachBlackAndWhiteEffect(
         const skjson::ArrayValue& jprops, sk_sp<sksg::RenderNode> layer) const {
+#ifdef SK_ENABLE_SKSL
     return fBuilder->attachDiscardableAdapter<BlackAndWhiteAdapter>(jprops,
                                                                     *fBuilder,
                                                                     std::move(layer));
+#else
+    // TODO(skia:12197)
+    return layer;
+#endif
 }
 
 } // namespace skottie::internal

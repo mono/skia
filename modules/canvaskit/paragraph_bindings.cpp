@@ -7,11 +7,11 @@
 
 #include "include/core/SkColor.h"
 #include "include/core/SkFontStyle.h"
+#include "include/core/SkPictureRecorder.h"
 #include "include/core/SkString.h"
 
 #include "modules/skparagraph/include/DartTypes.h"
 #include "modules/skparagraph/include/Paragraph.h"
-#include "modules/skparagraph/include/ParagraphBuilder.h"
 #include "modules/skparagraph/include/TextStyle.h"
 #include "modules/skparagraph/include/TypefaceFontProvider.h"
 #include "modules/skparagraph/src/ParagraphBuilderImpl.h"
@@ -25,10 +25,11 @@
 #include "modules/canvaskit/WasmCommon.h"
 
 using namespace emscripten;
+using namespace skia_private;
 
 namespace para = skia::textlayout;
 
-SkColor4f toSkColor4f(uintptr_t /* float* */ cPtr) {
+SkColor4f toSkColor4f(WASMPointerF32 cPtr) {
     float* fourFloats = reinterpret_cast<float*>(cPtr);
     SkColor4f color = {fourFloats[0], fourFloats[1], fourFloats[2], fourFloats[3]};
     return color;
@@ -41,41 +42,47 @@ struct SimpleFontStyle {
 };
 
 struct SimpleTextStyle {
-    uintptr_t /* float* */ colorPtr;
-    uintptr_t /* float* */ foregroundColorPtr;
-    uintptr_t /* float* */ backgroundColorPtr;
+    WASMPointerF32 colorPtr;
+    WASMPointerF32 foregroundColorPtr;
+    WASMPointerF32 backgroundColorPtr;
     uint8_t decoration;
     SkScalar decorationThickness;
-    uintptr_t /* float* */ decorationColorPtr;
+    WASMPointerF32 decorationColorPtr;
     para::TextDecorationStyle decorationStyle;
     para::TextBaseline textBaseline;
     SkScalar fontSize;
     SkScalar letterSpacing;
     SkScalar wordSpacing;
     SkScalar heightMultiplier;
-    uintptr_t /* const char* */ localePtr;
+    bool halfLeading;
+    WASMPointerU8 localePtr;
     int localeLen;
     SimpleFontStyle fontStyle;
 
-    uintptr_t /* const char** */ fontFamiliesPtr;
+    WASMPointerU8 fontFamiliesPtr;
     int fontFamiliesLen;
 
     int shadowLen;
-    uintptr_t /* SkColor4f* */ shadowColorsPtr;
-    uintptr_t /* SkPoint* */ shadowOffsetsPtr;
-    uintptr_t /* float* */ shadowBlurRadiiPtr;
+    WASMPointerF32 shadowColorsPtr;
+    WASMPointerF32 shadowOffsetsPtr;
+    WASMPointerF32 shadowBlurRadiiPtr;
 
     int fontFeatureLen;
-    uintptr_t /* float* */ fontFeatureNamesPtr;
-    uintptr_t /* float* */ fontFeatureValuesPtr;
+    WASMPointerF32 fontFeatureNamesPtr;
+    WASMPointerF32 fontFeatureValuesPtr;
+
+    int fontVariationLen;
+    WASMPointerF32 fontVariationAxesPtr;
+    WASMPointerF32 fontVariationValuesPtr;
 };
 
 struct SimpleStrutStyle {
-    uintptr_t /* const char** */ fontFamiliesPtr;
+    WASMPointerU32 fontFamiliesPtr;
     int fontFamiliesLen;
     SimpleFontStyle fontStyle;
     SkScalar fontSize;
     SkScalar heightMultiplier;
+    bool halfLeading;
     SkScalar leading;
     bool strutEnabled;
     bool forceStrutHeight;
@@ -96,13 +103,15 @@ para::StrutStyle toStrutStyle(const SimpleStrutStyle& s) {
     SkFontStyle fs(s.fontStyle.weight, s.fontStyle.width, s.fontStyle.slant);
     ss.setFontStyle(fs);
 
-    if (s.fontSize != 0) {
+    if (s.fontSize != -1) {
         ss.setFontSize(s.fontSize);
     }
-    if (s.heightMultiplier != 0) {
+    if (s.heightMultiplier != -1) {
         ss.setHeight(s.heightMultiplier);
         ss.setHeightOverride(true);
     }
+    ss.setHalfLeading(s.halfLeading);
+
     if (s.leading != 0) {
         ss.setLeading(s.leading);
     }
@@ -133,7 +142,7 @@ para::TextStyle toTextStyle(const SimpleTextStyle& s) {
         ts.setBackgroundColor(p2);
     }
 
-    if (s.fontSize != 0) {
+    if (s.fontSize != -1) {
         ts.setFontSize(s.fontSize);
     }
     if (s.letterSpacing != 0) {
@@ -143,10 +152,12 @@ para::TextStyle toTextStyle(const SimpleTextStyle& s) {
         ts.setWordSpacing(s.wordSpacing);
     }
 
-    if (s.heightMultiplier != 0) {
+    if (s.heightMultiplier != -1) {
         ts.setHeight(s.heightMultiplier);
         ts.setHeightOverride(true);
     }
+
+    ts.setHalfLeading(s.halfLeading);
 
     ts.setDecoration(para::TextDecoration(s.decoration));
     ts.setDecorationStyle(s.decorationStyle);
@@ -198,17 +209,41 @@ para::TextStyle toTextStyle(const SimpleTextStyle& s) {
         }
     }
 
+    if (s.fontVariationLen > 0) {
+        const char** fontVariationAxes = reinterpret_cast<const char**>(s.fontVariationAxesPtr);
+        const float* fontVariationValues = reinterpret_cast<const float*>(s.fontVariationValuesPtr);
+        std::vector<SkFontArguments::VariationPosition::Coordinate> coordinates;
+        for (int i = 0; i < s.fontVariationLen; i++) {
+            // Font variation axis tags are 4-character simple strings.
+            SkString axis(fontVariationAxes[i]);
+            if (axis.size() != 4) {
+                continue;
+            }
+            coordinates.push_back({
+                SkSetFourByteTag(axis[0], axis[1], axis[2], axis[3]),
+                fontVariationValues[i]
+            });
+        }
+        SkFontArguments::VariationPosition position = {
+            coordinates.data(),
+            static_cast<int>(coordinates.size())
+        };
+        ts.setFontArguments(SkFontArguments().setVariationDesignPosition(position));
+    }
+
     return ts;
 }
 
 struct SimpleParagraphStyle {
     bool disableHinting;
-    uintptr_t /* const char* */ ellipsisPtr;
+    WASMPointerU8 ellipsisPtr;
     size_t ellipsisLen;
     SkScalar heightMultiplier;
     size_t maxLines;
+    bool replaceTabCharacters;
     para::TextAlign textAlign;
     para::TextDirection textDirection;
+    para::TextHeightBehavior textHeightBehavior;
     SimpleTextStyle textStyle;
     SimpleStrutStyle strutStyle;
 };
@@ -230,12 +265,14 @@ para::ParagraphStyle toParagraphStyle(const SimpleParagraphStyle& s) {
     ps.setTextStyle(ts);
     auto ss = toStrutStyle(s.strutStyle);
     ps.setStrutStyle(ss);
-    if (s.heightMultiplier != 0) {
+    if (s.heightMultiplier != -1) {
         ps.setHeight(s.heightMultiplier);
     }
     if (s.maxLines != 0) {
         ps.setMaxLines(s.maxLines);
     }
+    ps.setTextHeightBehavior(s.textHeightBehavior);
+    ps.setReplaceTabCharacters(s.replaceTabCharacters);
     return ps;
 }
 
@@ -253,7 +290,7 @@ Float32Array TextBoxesToFloat32Array(std::vector<para::TextBox> boxes) {
         return emscripten::val::null();
     }
     SimpleTextBox* rects = new SimpleTextBox[boxes.size()];
-    for (int i = 0; i < boxes.size(); i++) {
+    for (size_t i = 0; i < boxes.size(); i++) {
         rects[i].rect = boxes[i].rect;
         if (boxes[i].direction == para::TextDirection::kRtl) {
             rects[i].direction = 0;
@@ -304,6 +341,112 @@ JSArray GetLineMetrics(para::Paragraph& self) {
     return result;
 }
 
+/*
+ *  Returns Lines[]
+ */
+JSArray GetShapedLines(para::Paragraph& self) {
+    struct LineAccumulate {
+        int         lineNumber  = -1;   // deliberately -1 from starting value
+        uint32_t    minOffset   = 0xFFFFFFFF;
+        uint32_t    maxOffset   = 0;
+        float       minAscent   = 0;
+        float       maxDescent  = 0;
+        // not really accumulated, but definitely set
+        float       baseline    = 0;
+
+        void reset(int newLineNum) {
+            new (this) LineAccumulate;
+            this->lineNumber = newLineNum;
+        }
+    };
+
+    // where we accumulate our js output
+    JSArray  jlines = emscripten::val::array();
+    JSObject jline = emscripten::val::null();
+    JSArray  jruns = emscripten::val::null();
+    LineAccumulate accum;
+
+    self.visit([&](int lineNumber, const para::Paragraph::VisitorInfo* info) {
+        if (!info) {
+            if (!jline) return; // how???
+            // end of current line
+            JSObject range = emscripten::val::object();
+            range.set("first", accum.minOffset);
+            range.set("last",  accum.maxOffset);
+            jline.set("textRange", range);
+
+            jline.set("top", accum.baseline + accum.minAscent);
+            jline.set("bottom", accum.baseline + accum.maxDescent);
+            jline.set("baseline", accum.baseline);
+            return;
+        }
+
+        if (lineNumber != accum.lineNumber) {
+            SkASSERT(lineNumber == accum.lineNumber + 1);   // assume monotonic
+
+            accum.reset(lineNumber);
+            jruns = emscripten::val::array();
+
+            jline = emscripten::val::object();
+            jline.set("runs", jruns);
+            // will assign textRange and metrics on end-of-line signal
+
+            jlines.call<void>("push", jline);
+        }
+
+        // append the run
+        const int N = info->count;   // glyphs
+        const int N1 = N + 1;       // positions, offsets have 1 extra (trailing) slot
+
+        JSObject jrun = emscripten::val::object();
+
+        jrun.set("flags",    info->flags);
+
+// TODO: figure out how to set a wrapped sk_sp<SkTypeface>
+//        jrun.set("typeface", info->font.getTypeface());
+        jrun.set("typeface",    emscripten::val::null());
+        jrun.set("size",        info->font.getSize());
+        if (info->font.getScaleX()) {
+            jrun.set("scaleX",  info->font.getScaleX());
+        }
+
+        jrun.set("glyphs",   MakeTypedArray(N,  info->glyphs));
+        jrun.set("offsets",  MakeTypedArray(N1, info->utf8Starts));
+
+        // we need to modify the positions, so make a temp copy
+        AutoSTMalloc<32, SkPoint> positions(N1);
+        for (int i = 0; i < N; ++i) {
+            positions.get()[i] = info->positions[i] + info->origin;
+        }
+        positions.get()[N] = { info->advanceX, positions.get()[N - 1].fY };
+        jrun.set("positions", MakeTypedArray(N1*2, (const float*)positions.get()));
+
+        jruns.call<void>("push", jrun);
+
+        // update accum
+        {   SkFontMetrics fm;
+            info->font.getMetrics(&fm);
+
+            accum.minAscent  = std::min(accum.minAscent,  fm.fAscent);
+            accum.maxDescent = std::max(accum.maxDescent, fm.fDescent);
+            accum.baseline   = info->origin.fY;
+
+            accum.minOffset  = std::min(accum.minOffset,  info->utf8Starts[0]);
+            accum.maxOffset  = std::max(accum.maxOffset,  info->utf8Starts[N]);
+        }
+
+    });
+    return jlines;
+}
+
+std::vector<SkUnicode::Position> convertArrayU32(WASMPointerU32 array, size_t count) {
+    std::vector<size_t> vec;
+    vec.resize(count);
+    SkUnicode::Position* data = reinterpret_cast<SkUnicode::Position*>(array);
+    std::memcpy(vec.data(), data, count * sizeof(size_t));
+    return vec;
+}
+
 EMSCRIPTEN_BINDINGS(Paragraph) {
 
     class_<para::Paragraph>("Paragraph")
@@ -319,6 +462,7 @@ EMSCRIPTEN_BINDINGS(Paragraph) {
         .function("getMinIntrinsicWidth", &para::Paragraph::getMinIntrinsicWidth)
         .function("_getRectsForPlaceholders", &GetRectsForPlaceholders)
         .function("_getRectsForRange", &GetRectsForRange)
+        .function("getShapedLines", &GetShapedLines)
         .function("getWordBoundary", &para::Paragraph::getWordBoundary)
         .function("layout", &para::Paragraph::layout);
 
@@ -350,12 +494,84 @@ EMSCRIPTEN_BINDINGS(Paragraph) {
                                 static_cast<para::ParagraphBuilderImpl*>(pb.release()));
                     }),
                     allow_raw_pointers())
+            .class_function(
+                    "_MakeFromFontCollection",
+                    optional_override([](SimpleParagraphStyle style,
+                                         sk_sp<para::FontCollection> fontCollection)
+                                              -> std::unique_ptr<para::ParagraphBuilderImpl> {
+                        auto ps = toParagraphStyle(style);
+                        auto pb = para::ParagraphBuilderImpl::make(ps, fontCollection);
+                        return std::unique_ptr<para::ParagraphBuilderImpl>(
+                                static_cast<para::ParagraphBuilderImpl*>(pb.release()));
+                    }),
+                    allow_raw_pointers())
+            .class_function(
+                    "_ShapeText",
+                    optional_override([](JSString jtext, JSArray jruns, float width) -> JSArray {
+                std::string textStorage = jtext.as<std::string>();
+                const char* text = textStorage.data();
+                size_t      textCount = textStorage.size();
+
+                auto fc = sk_make_sp<para::FontCollection>();
+                fc->setDefaultFontManager(SkFontMgr::RefDefault());
+                fc->enableFontFallback();
+
+                para::ParagraphStyle pstyle;
+                {
+                    // For the most part this is ignored, since we set an explicit TextStyle
+                    // for all of our text runs, but it is required by SkParagraph.
+                    para::TextStyle style;
+                    style.setFontFamilies({SkString("sans-serif")});
+                    style.setFontSize(32);
+                    pstyle.setTextStyle(style);
+                }
+
+                auto pb = para::ParagraphBuilder::make(pstyle, fc);
+
+                // tease apart the FontBlock runs
+                size_t runCount = jruns["length"].as<size_t>();
+                for (size_t i = 0; i < runCount; ++i) {
+                    emscripten::val r = jruns[i];
+
+                    para::TextStyle style;
+                    style.setTypeface(r["typeface"].as< sk_sp<SkTypeface> >());
+                    style.setFontSize(r["size"].as<float>());
+
+                    const size_t subTextCount = r["length"].as<size_t>();
+                    if (subTextCount > textCount) {
+                        return emscripten::val("block runs exceed text length!");
+                    }
+
+                    pb->pushStyle(style);
+                    pb->addText(text, subTextCount);
+                    pb->pop();
+
+                    text += subTextCount;
+                    textCount -= subTextCount;
+                }
+                if (textCount != 0) {
+                    return emscripten::val("Didn't have enough block runs to cover text");
+                }
+
+                auto pa = pb->Build();
+                pa->layout(width);
+
+                // workaround until this is fixed in SkParagraph
+                {
+                    SkPictureRecorder rec;
+                    pa->paint(rec.beginRecording({0,0,9999,9999}), 0, 0);
+                }
+                return GetShapedLines(*pa);
+            }),
+            allow_raw_pointers())
+            .class_function("RequiresClientICU", &para::ParagraphBuilderImpl::RequiresClientICU)
             .function("addText",
                       optional_override([](para::ParagraphBuilderImpl& self, std::string text) {
                           return self.addText(text.c_str(), text.length());
                       }))
             .function("build", &para::ParagraphBuilderImpl::Build, allow_raw_pointers())
             .function("pop", &para::ParagraphBuilderImpl::pop)
+            .function("reset", &para::ParagraphBuilderImpl::Reset, allow_raw_pointers())
             .function("_pushStyle", optional_override([](para::ParagraphBuilderImpl& self,
                                                          SimpleTextStyle textStyle) {
                           auto ts = toTextStyle(textStyle);
@@ -382,7 +598,64 @@ EMSCRIPTEN_BINDINGS(Paragraph) {
                                                               SkScalar offset) {
                           para::PlaceholderStyle ps(width, height, alignment, baseline, offset);
                           self.addPlaceholder(ps);
-                      }));
+                      }))
+            .function("getText",
+                      optional_override([](para::ParagraphBuilderImpl& self) -> JSString {
+                          auto text = self.getText();
+                          return emscripten::val(std::string(text.data(), text.size()).c_str());
+                      }))
+            .function("_setWordsUtf8",
+                      optional_override([](para::ParagraphBuilderImpl& self,
+                                           WASMPointerU32 clientWords, size_t wordsNum) {
+                      self.setWordsUtf8(convertArrayU32(clientWords, wordsNum));
+                  }))
+            .function("_setWordsUtf16",
+                      optional_override([](para::ParagraphBuilderImpl& self,
+                                           WASMPointerU32 clientWords, size_t wordsNum) {
+                      self.setWordsUtf16(convertArrayU32(clientWords, wordsNum));
+                  }))
+            .function("_setGraphemeBreaksUtf8",
+                      optional_override([](para::ParagraphBuilderImpl& self,
+                                           WASMPointerU32 clientGraphemes, size_t graphemesNum) {
+                      self.setGraphemeBreaksUtf8(convertArrayU32(clientGraphemes, graphemesNum));
+                  }))
+            .function("_setGraphemeBreaksUtf16",
+                      optional_override([](para::ParagraphBuilderImpl& self,
+                                           WASMPointerU32 clientGraphemes, size_t graphemesNum) {
+                      self.setGraphemeBreaksUtf16(convertArrayU32(clientGraphemes, graphemesNum));
+                  }))
+            .function("_setLineBreaksUtf8",
+                      optional_override([](para::ParagraphBuilderImpl& self,
+                                           WASMPointerU32 clientLineBreaks, size_t lineBreaksNum) {
+                      SkUnicode::Position* lineBreakData = reinterpret_cast<SkUnicode::Position*>(clientLineBreaks);
+                      std::vector<SkUnicode::LineBreakBefore> lineBreaks;
+                      for (size_t i = 0; i < lineBreaksNum; i += 2) {
+                          auto pos = lineBreakData[i];
+                          auto breakType = lineBreakData[i+1];
+                          if (breakType == 0) {
+                              lineBreaks.emplace_back(pos, SkUnicode::LineBreakType::kSoftLineBreak);
+                          } else {
+                              lineBreaks.emplace_back(pos, SkUnicode::LineBreakType::kHardLineBreak);
+                          }
+                      }
+                      self.setLineBreaksUtf8(std::move(lineBreaks));
+                  }))
+            .function("_setLineBreaksUtf16",
+                      optional_override([](para::ParagraphBuilderImpl& self,
+                                           WASMPointerU32 clientLineBreaks, size_t lineBreaksNum) {
+                      SkUnicode::Position* lineBreakData = reinterpret_cast<SkUnicode::Position*>(clientLineBreaks);
+                      std::vector<SkUnicode::LineBreakBefore> lineBreaks;
+                      for (size_t i = 0; i < lineBreaksNum; i += 2) {
+                          auto pos = lineBreakData[i];
+                          auto breakType = lineBreakData[i+1];
+                          if (breakType == 0) {
+                              lineBreaks.emplace_back(pos, SkUnicode::LineBreakType::kSoftLineBreak);
+                          } else {
+                              lineBreaks.emplace_back(pos, SkUnicode::LineBreakType::kHardLineBreak);
+                          }
+                      }
+                      self.setLineBreaksUtf16(std::move(lineBreaks));
+                  }));
 
     class_<para::TypefaceFontProvider, base<SkFontMgr>>("TypefaceFontProvider")
       .smart_ptr<sk_sp<para::TypefaceFontProvider>>("sk_sp<TypefaceFontProvider>")
@@ -391,87 +664,22 @@ EMSCRIPTEN_BINDINGS(Paragraph) {
       }))
       .function("_registerFont", optional_override([](para::TypefaceFontProvider& self,
                                                       sk_sp<SkTypeface> typeface,
-                                                      uintptr_t familyPtr) {
+                                                      WASMPointerU8 familyPtr) {
           const char* fPtr = reinterpret_cast<const char*>(familyPtr);
           SkString fStr(fPtr);
           self.registerTypeface(typeface, fStr);
       }), allow_raw_pointers());
 
-
-    enum_<para::Affinity>("Affinity")
-        .value("Upstream",   para::Affinity::kUpstream)
-        .value("Downstream", para::Affinity::kDownstream);
-
-    enum_<para::TextDecorationStyle>("DecorationStyle")
-        .value("Solid",  para::TextDecorationStyle::kSolid)
-        .value("Double", para::TextDecorationStyle::kDouble)
-        .value("Dotted", para::TextDecorationStyle::kDotted)
-        .value("Dashed", para::TextDecorationStyle::kDashed)
-        .value("Wavy",   para::TextDecorationStyle::kWavy);
-
-    enum_<SkFontStyle::Slant>("FontSlant")
-        .value("Upright",              SkFontStyle::Slant::kUpright_Slant)
-        .value("Italic",               SkFontStyle::Slant::kItalic_Slant)
-        .value("Oblique",              SkFontStyle::Slant::kOblique_Slant);
-
-    enum_<SkFontStyle::Weight>("FontWeight")
-        .value("Invisible",            SkFontStyle::Weight::kInvisible_Weight)
-        .value("Thin",                 SkFontStyle::Weight::kThin_Weight)
-        .value("ExtraLight",           SkFontStyle::Weight::kExtraLight_Weight)
-        .value("Light",                SkFontStyle::Weight::kLight_Weight)
-        .value("Normal",               SkFontStyle::Weight::kNormal_Weight)
-        .value("Medium",               SkFontStyle::Weight::kMedium_Weight)
-        .value("SemiBold",             SkFontStyle::Weight::kSemiBold_Weight)
-        .value("Bold",                 SkFontStyle::Weight::kBold_Weight)
-        .value("ExtraBold",            SkFontStyle::Weight::kExtraBold_Weight)
-        .value("Black"    ,            SkFontStyle::Weight::kBlack_Weight)
-        .value("ExtraBlack",           SkFontStyle::Weight::kExtraBlack_Weight);
-
-    enum_<SkFontStyle::Width>("FontWidth")
-        .value("UltraCondensed",       SkFontStyle::Width::kUltraCondensed_Width)
-        .value("ExtraCondensed",       SkFontStyle::Width::kExtraCondensed_Width)
-        .value("Condensed",            SkFontStyle::Width::kCondensed_Width)
-        .value("SemiCondensed",        SkFontStyle::Width::kSemiCondensed_Width)
-        .value("Normal",               SkFontStyle::Width::kNormal_Width)
-        .value("SemiExpanded",         SkFontStyle::Width::kSemiExpanded_Width)
-        .value("Expanded",             SkFontStyle::Width::kExpanded_Width)
-        .value("ExtraExpanded",        SkFontStyle::Width::kExtraExpanded_Width)
-        .value("UltraExpanded",        SkFontStyle::Width::kUltraExpanded_Width);
-
-    enum_<para::PlaceholderAlignment>("PlaceholderAlignment")
-        .value("Baseline",      para::PlaceholderAlignment::kBaseline)
-        .value("AboveBaseline", para::PlaceholderAlignment::kAboveBaseline)
-        .value("BelowBaseline", para::PlaceholderAlignment::kBelowBaseline)
-        .value("Top",           para::PlaceholderAlignment::kTop)
-        .value("Bottom",        para::PlaceholderAlignment::kBottom)
-        .value("Middle",        para::PlaceholderAlignment::kMiddle);
-
-    enum_<para::RectHeightStyle>("RectHeightStyle")
-        .value("Tight",                     para::RectHeightStyle::kTight)
-        .value("Max",                       para::RectHeightStyle::kMax)
-        .value("IncludeLineSpacingMiddle",  para::RectHeightStyle::kIncludeLineSpacingMiddle)
-        .value("IncludeLineSpacingTop",     para::RectHeightStyle::kIncludeLineSpacingTop)
-        .value("IncludeLineSpacingBottom",  para::RectHeightStyle::kIncludeLineSpacingBottom);
-
-    enum_<para::RectWidthStyle>("RectWidthStyle")
-        .value("Tight",  para::RectWidthStyle::kTight)
-        .value("Max",    para::RectWidthStyle::kMax);
-
-    enum_<para::TextAlign>("TextAlign")
-        .value("Left",    para::TextAlign::kLeft)
-        .value("Right",   para::TextAlign::kRight)
-        .value("Center",  para::TextAlign::kCenter)
-        .value("Justify", para::TextAlign::kJustify)
-        .value("Start",   para::TextAlign::kStart)
-        .value("End",     para::TextAlign::kEnd);
-
-    enum_<para::TextBaseline>("TextBaseline")
-        .value("Alphabetic",  para::TextBaseline::kAlphabetic)
-        .value("Ideographic", para::TextBaseline::kIdeographic);
-
-    enum_<para::TextDirection>("TextDirection")
-        .value("LTR",    para::TextDirection::kLtr)
-        .value("RTL",    para::TextDirection::kRtl);
+    class_<para::FontCollection>("FontCollection")
+      .smart_ptr<sk_sp<para::FontCollection>>("sk_sp<FontCollection>")
+      .class_function("Make", optional_override([]()-> sk_sp<para::FontCollection> {
+          return sk_make_sp<para::FontCollection>();
+      }))
+      .function("setDefaultFontManager", optional_override([](para::FontCollection& self,
+                                                              const sk_sp<para::TypefaceFontProvider>& fontManager) {
+        self.setDefaultFontManager(fontManager);
+      }), allow_raw_pointers())
+      .function("enableFontFallback", &para::FontCollection::enableFontFallback);
 
     // These value objects make it easier to send data across the wire.
     value_object<para::PositionWithAffinity>("PositionWithAffinity")
@@ -484,15 +692,17 @@ EMSCRIPTEN_BINDINGS(Paragraph) {
         .field("width",     &SimpleFontStyle::width);
 
     value_object<SimpleParagraphStyle>("ParagraphStyle")
-        .field("disableHinting",    &SimpleParagraphStyle::disableHinting)
-        .field("_ellipsisPtr",      &SimpleParagraphStyle::ellipsisPtr)
-        .field("_ellipsisLen",      &SimpleParagraphStyle::ellipsisLen)
-        .field("heightMultiplier",  &SimpleParagraphStyle::heightMultiplier)
-        .field("maxLines",          &SimpleParagraphStyle::maxLines)
-        .field("textAlign",         &SimpleParagraphStyle::textAlign)
-        .field("textDirection",     &SimpleParagraphStyle::textDirection)
-        .field("textStyle",         &SimpleParagraphStyle::textStyle)
-        .field("strutStyle",        &SimpleParagraphStyle::strutStyle);
+        .field("disableHinting",       &SimpleParagraphStyle::disableHinting)
+        .field("_ellipsisPtr",         &SimpleParagraphStyle::ellipsisPtr)
+        .field("_ellipsisLen",         &SimpleParagraphStyle::ellipsisLen)
+        .field("heightMultiplier",     &SimpleParagraphStyle::heightMultiplier)
+        .field("maxLines",             &SimpleParagraphStyle::maxLines)
+        .field("replaceTabCharacters", &SimpleParagraphStyle::replaceTabCharacters)
+        .field("textAlign",            &SimpleParagraphStyle::textAlign)
+        .field("textDirection",        &SimpleParagraphStyle::textDirection)
+        .field("textHeightBehavior",   &SimpleParagraphStyle::textHeightBehavior)
+        .field("textStyle",            &SimpleParagraphStyle::textStyle)
+        .field("strutStyle",           &SimpleParagraphStyle::strutStyle);
 
     value_object<SimpleStrutStyle>("StrutStyle")
         .field("_fontFamiliesPtr", &SimpleStrutStyle::fontFamiliesPtr)
@@ -501,6 +711,7 @@ EMSCRIPTEN_BINDINGS(Paragraph) {
         .field("fontSize",         &SimpleStrutStyle::fontSize)
         .field("fontStyle",        &SimpleStrutStyle::fontStyle)
         .field("heightMultiplier", &SimpleStrutStyle::heightMultiplier)
+        .field("halfLeading",      &SimpleStrutStyle::halfLeading)
         .field("leading",          &SimpleStrutStyle::leading)
         .field("forceStrutHeight", &SimpleStrutStyle::forceStrutHeight);
 
@@ -518,6 +729,7 @@ EMSCRIPTEN_BINDINGS(Paragraph) {
         .field("letterSpacing",         &SimpleTextStyle::letterSpacing)
         .field("wordSpacing",           &SimpleTextStyle::wordSpacing)
         .field("heightMultiplier",      &SimpleTextStyle::heightMultiplier)
+        .field("halfLeading",           &SimpleTextStyle::halfLeading)
         .field("_localePtr",            &SimpleTextStyle::localePtr)
         .field("_localeLen",            &SimpleTextStyle::localeLen)
         .field("fontStyle",             &SimpleTextStyle::fontStyle)
@@ -527,7 +739,10 @@ EMSCRIPTEN_BINDINGS(Paragraph) {
         .field("_shadowBlurRadiiPtr",   &SimpleTextStyle::shadowBlurRadiiPtr)
         .field("_fontFeatureLen",       &SimpleTextStyle::fontFeatureLen)
         .field("_fontFeatureNamesPtr",  &SimpleTextStyle::fontFeatureNamesPtr)
-        .field("_fontFeatureValuesPtr", &SimpleTextStyle::fontFeatureValuesPtr);
+        .field("_fontFeatureValuesPtr", &SimpleTextStyle::fontFeatureValuesPtr)
+        .field("_fontVariationLen",     &SimpleTextStyle::fontVariationLen)
+        .field("_fontVariationAxesPtr", &SimpleTextStyle::fontVariationAxesPtr)
+        .field("_fontVariationValuesPtr", &SimpleTextStyle::fontVariationValuesPtr);
 
     // The U stands for unsigned - we can't bind a generic/template object, so we have to specify it
     // with the type we are using.

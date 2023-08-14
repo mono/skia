@@ -12,8 +12,8 @@
 #include "include/core/SkImageFilter.h"
 #include "include/core/SkRegion.h"
 #include "include/core/SkTypes.h"
-#include "include/private/SkMalloc.h"
-#include "include/private/SkTFitsIn.h"
+#include "include/private/base/SkMalloc.h"
+#include "include/private/base/SkTFitsIn.h"
 #include "tools/Registry.h"
 
 #include <limits>
@@ -21,9 +21,14 @@
 #include <signal.h>
 #include <limits>
 
-class Fuzz : SkNoncopyable {
+class Fuzz {
 public:
     explicit Fuzz(sk_sp<SkData> bytes) : fBytes(bytes), fNextByte(0) {}
+    Fuzz() = delete;
+
+    // Make noncopyable
+    Fuzz(Fuzz&) = delete;
+    Fuzz& operator=(Fuzz&) = delete;
 
     // Returns the total number of "random" bytes available.
     size_t size() { return fBytes->size(); }
@@ -75,8 +80,13 @@ public:
 
     // Specialized versions for when true random doesn't quite make sense
     void next(bool* b);
-    void next(SkImageFilter::CropRect* cropRect);
     void next(SkRegion* region);
+
+    bool nextBool() {
+        bool b;
+        this->next(&b);
+        return b;
+    }
 
     void nextRange(float* f, float min, float max);
 

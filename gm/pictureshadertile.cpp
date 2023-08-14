@@ -71,11 +71,12 @@ static void draw_scene(SkCanvas* canvas, SkScalar pictureSize) {
     canvas->clear(SK_ColorWHITE);
 
     SkPaint paint;
-    paint.setColor(SK_ColorGREEN);
     paint.setStyle(SkPaint::kFill_Style);
     paint.setAntiAlias(true);
 
+    paint.setColor(SK_ColorGREEN);
     canvas->drawCircle(pictureSize / 4, pictureSize / 4, pictureSize / 4, paint);
+    paint.setColor(SK_ColorBLUE);
     canvas->drawRect(SkRect::MakeXYWH(pictureSize / 2, pictureSize / 2,
                                       pictureSize / 2, pictureSize / 2), paint);
 
@@ -114,7 +115,7 @@ protected:
         draw_scene(pictureCanvas, kPictureSize);
         sk_sp<SkPicture> offsetPicture(recorder.finishRecordingAsPicture());
 
-        for (unsigned i = 0; i < SK_ARRAY_COUNT(tiles); ++i) {
+        for (unsigned i = 0; i < std::size(tiles); ++i) {
             SkRect tile = SkRect::MakeXYWH(tiles[i].x * kPictureSize,
                                            tiles[i].y * kPictureSize,
                                            tiles[i].w * kPictureSize,
@@ -135,7 +136,7 @@ protected:
             }
 
             fShaders[i] = pictureRef->makeShader(SkTileMode::kRepeat, SkTileMode::kRepeat,
-                                                 &localMatrix, tilePtr);
+                                                 SkFilterMode::kNearest, &localMatrix, tilePtr);
         }
     }
 
@@ -145,7 +146,7 @@ protected:
         SkPaint paint;
         paint.setStyle(SkPaint::kFill_Style);
 
-        for (unsigned i = 0; i < SK_ARRAY_COUNT(fShaders); ++i) {
+        for (unsigned i = 0; i < std::size(fShaders); ++i) {
             paint.setShader(fShaders[i]);
 
             canvas->save();
@@ -157,7 +158,7 @@ protected:
     }
 
 private:
-    sk_sp<SkShader> fShaders[SK_ARRAY_COUNT(tiles)];
+    sk_sp<SkShader> fShaders[std::size(tiles)];
 
     using INHERITED = GM;
 };
