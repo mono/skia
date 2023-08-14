@@ -27,7 +27,6 @@ SK_C_API sk_shader_t* sk_shader_new_empty(void);
 SK_C_API sk_shader_t* sk_shader_new_color(sk_color_t color);
 SK_C_API sk_shader_t* sk_shader_new_color4f(const sk_color4f_t* color, const sk_colorspace_t* colorspace);
 SK_C_API sk_shader_t* sk_shader_new_blend(sk_blendmode_t mode, const sk_shader_t* dst, const sk_shader_t* src);
-SK_C_API sk_shader_t* sk_shader_new_lerp(float t, const sk_shader_t* dst, const sk_shader_t* src);
 
 // SkGradientShader
 
@@ -44,7 +43,6 @@ SK_C_API sk_shader_t* sk_shader_new_two_point_conical_gradient_color4f(const sk_
 
 SK_C_API sk_shader_t* sk_shader_new_perlin_noise_fractal_noise(float baseFrequencyX, float baseFrequencyY, int numOctaves, float seed, const sk_isize_t* tileSize);
 SK_C_API sk_shader_t* sk_shader_new_perlin_noise_turbulence(float baseFrequencyX, float baseFrequencyY, int numOctaves, float seed, const sk_isize_t* tileSize);
-SK_C_API sk_shader_t* sk_shader_new_perlin_noise_improved_noise(float baseFrequencyX, float baseFrequencyY, int numOctaves, float z);
 
 SK_C_PLUS_PLUS_END_GUARD
 

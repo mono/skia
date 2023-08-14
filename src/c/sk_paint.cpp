@@ -11,6 +11,7 @@
 #include "include/core/SkMaskFilter.h"
 #include "include/core/SkPaint.h"
 #include "include/core/SkPathEffect.h"
+#include "include/core/SkPathUtils.h"
 #include "include/core/SkShader.h"
 
 #include "include/c/sk_paint.h"
@@ -140,15 +141,7 @@ sk_imagefilter_t* sk_paint_get_imagefilter(sk_paint_t* cpaint) {
 }
 
 sk_blendmode_t sk_paint_get_blendmode(sk_paint_t* paint) {
-    return (sk_blendmode_t)AsPaint(paint)->getBlendMode();
-}
-
-void sk_paint_set_filter_quality(sk_paint_t* cpaint, sk_filter_quality_t filterQuality) {
-    AsPaint(cpaint)->setFilterQuality((SkFilterQuality)filterQuality);
-}
-
-sk_filter_quality_t sk_paint_get_filter_quality(sk_paint_t* cpaint) {
-    return (sk_filter_quality_t)AsPaint(cpaint)->getFilterQuality();
+    return (sk_blendmode_t)AsPaint(paint)->getBlendMode_or(SkBlendMode::kSrcOver);
 }
 
 sk_path_effect_t* sk_paint_get_path_effect(sk_paint_t* cpaint) {
@@ -159,6 +152,6 @@ void sk_paint_set_path_effect(sk_paint_t* cpaint, sk_path_effect_t* effect) {
     AsPaint(cpaint)->setPathEffect(sk_ref_sp(AsPathEffect(effect)));
 }
 
-bool sk_paint_get_fill_path(const sk_paint_t* cpaint, const sk_path_t* src, sk_path_t* dst, const sk_rect_t* cullRect, float resScale) {
-    return AsPaint(cpaint)->getFillPath(*AsPath(src), AsPath(dst), AsRect(cullRect), resScale);
+bool sk_paint_get_fill_path(const sk_paint_t* cpaint, const sk_path_t* src, sk_path_t* dst, const sk_rect_t* cullRect, const sk_matrix_t* cmatrix) {
+    return skpathutils::FillPathWithPaint(*AsPath(src), *AsPaint(cpaint), AsPath(dst), AsRect(cullRect), AsMatrix(cmatrix));
 }

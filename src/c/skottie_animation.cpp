@@ -8,15 +8,15 @@
 #include "src/utils/SkJSON.h"
 #include "include/core/SkCubicMap.h"
 
-void skottie_animation_keepalive() {
+void skottie_animation_keepalive(void) {
     // This function is needed on Tizen to ensure required types are kept alive
     // It is not meant to be executed.
 
-    skjson::ObjectValue* a;
-    auto r = (*a)["tmp"];
+    skjson::ObjectValue* a = nullptr;
+    auto r = (*a)["tmp"].getType();
 
-    SkCubicMap* b;
-    (*b).computeYFromX(.0f);
+    SkCubicMap* b = nullptr;
+    (*b).computeYFromX((int)r);
 }
 
 void skottie_animation_ref(skottie_animation_t* instance) {

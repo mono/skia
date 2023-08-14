@@ -66,7 +66,7 @@
 #endif
 
 #ifndef SK_C_INCREMENT
-#define SK_C_INCREMENT 1
+#define SK_C_INCREMENT 0
 #endif
 
 ///////////////////////////////////////////////////////////////////////////////////////
@@ -75,6 +75,8 @@ SK_C_PLUS_PLUS_BEGIN_GUARD
 
 typedef struct sk_refcnt_t sk_refcnt_t;
 typedef struct sk_nvrefcnt_t sk_nvrefcnt_t;
+
+typedef struct sk_flattenable_t sk_flattenable_t;
 
 typedef uint32_t sk_color_t;
 typedef uint32_t sk_pmcolor_t;
@@ -105,6 +107,7 @@ typedef enum {
     BGRA_1010102_SK_COLORTYPE,
     RGB_101010X_SK_COLORTYPE,
     BGR_101010X_SK_COLORTYPE,
+    BGR_101010X_XR_SK_COLORTYPE,
     GRAY_8_SK_COLORTYPE,
     RGBA_F16_NORM_SK_COLORTYPE,
     RGBA_F16_SK_COLORTYPE,
@@ -117,6 +120,8 @@ typedef enum {
     A16_UNORM_SK_COLORTYPE,
     R16G16_UNORM_SK_COLORTYPE,
     R16G16B16A16_UNORM_SK_COLORTYPE,
+    SRGBA_8888_SK_COLORTYPE,
+    R8_UNORM_SK_COLORTYPE,
 } sk_colortype_t;
 
 typedef enum {
@@ -163,20 +168,18 @@ typedef struct {
 } sk_rect_t;
 
 typedef struct {
-    float scaleX, skewX, transX;
-    float skewY, scaleY, transY;
+    float scaleX,  skewX, transX;
+    float  skewY, scaleY, transY;
     float persp0, persp1, persp2;
 } sk_matrix_t;
 
-typedef struct sk_matrix44_t sk_matrix44_t;
-
-typedef enum {
-    IDENTITY_SK_MATRIX44_TYPE_MASK = 0,
-    TRANSLATE_SK_MATRIX44_TYPE_MASK = 0x01,
-    SCALE_SK_MATRIX44_TYPE_MASK = 0x02,
-    AFFINE_SK_MATRIX44_TYPE_MASK = 0x04,
-    PERSPECTIVE_SK_MATRIX44_TYPE_MASK = 0x08
-} sk_matrix44_type_mask_t;
+// row major
+typedef struct {
+    float m00, m01, m02, m03;
+    float m10, m11, m12, m13;
+    float m20, m21, m22, m23;
+    float m30, m31, m32, m33;
+} sk_matrix44_t;
 
 /**
     A sk_canvas_t encapsulates all of the state about drawing into a
@@ -346,7 +349,6 @@ typedef struct sk_bitmap_t sk_bitmap_t;
 typedef struct sk_pixmap_t sk_pixmap_t;
 typedef struct sk_colorfilter_t sk_colorfilter_t;
 typedef struct sk_imagefilter_t sk_imagefilter_t;
-typedef struct sk_imagefilter_croprect_t sk_imagefilter_croprect_t;
 
 /**
    A sk_typeface_t pecifies the typeface and intrinsic style of a font.
@@ -415,22 +417,6 @@ typedef enum {
 } sk_font_style_slant_t;
 
 typedef enum {
-    NONE_SK_FILTER_QUALITY,
-    LOW_SK_FILTER_QUALITY,
-    MEDIUM_SK_FILTER_QUALITY,
-    HIGH_SK_FILTER_QUALITY
-} sk_filter_quality_t;
-
-typedef enum {
-    HAS_NONE_SK_CROP_RECT_FLAG   = 0x00,
-    HAS_LEFT_SK_CROP_RECT_FLAG   = 0x01,
-    HAS_TOP_SK_CROP_RECT_FLAG    = 0x02,
-    HAS_WIDTH_SK_CROP_RECT_FLAG  = 0x04,
-    HAS_HEIGHT_SK_CROP_RECT_FLAG = 0x08,
-    HAS_ALL_SK_CROP_RECT_FLAG    = 0x0F,
-} sk_crop_rect_flags_t;
-
-typedef enum {
     R_SK_COLOR_CHANNEL,
     G_SK_COLOR_CHANNEL,
     B_SK_COLOR_CHANNEL,
@@ -471,6 +457,7 @@ typedef enum {
     DNG_SK_ENCODED_FORMAT,
     HEIF_SK_ENCODED_FORMAT,
     AVIF_SK_ENCODED_FORMAT,
+    JPEGXL_SK_ENCODED_FORMAT,
 } sk_encoded_image_format_t;
 
 typedef enum {
@@ -609,30 +596,12 @@ typedef enum {
     SUBPIXEL_ANTIALIAS_SK_FONT_EDGING,
 } sk_font_edging_t;
 
-typedef struct sk_colortable_t sk_colortable_t;
-
 typedef struct sk_pixelref_factory_t sk_pixelref_factory_t;
 
 typedef enum {
     TOP_LEFT_GR_SURFACE_ORIGIN,
     BOTTOM_LEFT_GR_SURFACE_ORIGIN,
 } gr_surfaceorigin_t;
-
-typedef enum {
-    BW_SK_MASK_FORMAT,
-    A8_SK_MASK_FORMAT,
-    THREE_D_SK_MASK_FORMAT,
-    ARGB32_SK_MASK_FORMAT,
-    LCD16_SK_MASK_FORMAT,
-    SDF_SK_MASK_FORMAT,
-} sk_mask_format_t;
-
-typedef struct {
-    uint8_t*          fImage;
-    sk_irect_t        fBounds;
-    uint32_t          fRowBytes;
-    sk_mask_format_t  fFormat;
-} sk_mask_t;
 
 typedef struct {
     bool      fAvoidStencilBuffers;
@@ -670,11 +639,13 @@ typedef struct {
     unsigned int fTarget;
     unsigned int fID;
     unsigned int fFormat;
+    bool fProtected;
 } gr_gl_textureinfo_t;
 
 typedef struct {
     unsigned int fFBOID;
     unsigned int fFormat;
+    bool fProtected;
 } gr_gl_framebufferinfo_t;
 
 typedef struct vk_instance_t vk_instance_t;
@@ -855,20 +826,23 @@ typedef enum {
     RESTORE_PREVIOUS_SK_CODEC_ANIMATION_DISPOSAL_METHOD   = 3,
 } sk_codecanimation_disposalmethod_t;
 
+typedef enum {
+    SRC_OVER_SK_CODEC_ANIMATION_BLEND   = 0,
+    SRC_SK_CODEC_ANIMATION_BLEND        = 1,
+} sk_codecanimation_blend_t;
+
 typedef struct {
     int fRequiredFrame;
     int fDuration;
     bool fFullyReceived;
     sk_alphatype_t fAlphaType;
+    bool fHasAlphaWithinBounds;
     sk_codecanimation_disposalmethod_t fDisposalMethod;
+    sk_codecanimation_blend_t fBlend;
+    sk_irect_t fFrameRect;
 } sk_codec_frameinfo_t;
 
-typedef struct sk_xmlstreamwriter_t sk_xmlstreamwriter_t;
-typedef struct sk_xmlwriter_t sk_xmlwriter_t;
-
 typedef struct sk_svgcanvas_t sk_svgcanvas_t;
-
-typedef struct sk_3dview_t sk_3dview_t;
 
 typedef enum {
     TRIANGLES_SK_VERTICES_VERTEX_MODE,
@@ -943,6 +917,8 @@ typedef struct {
     sk_pngencoder_filterflags_t fFilterFlags;
     int fZLibLevel;
     void* fComments;
+    const sk_colorspace_icc_profile_t* fICCProfile;
+    const char* fICCProfileDescription;
 } sk_pngencoder_options_t;
 
 typedef enum {
@@ -960,6 +936,9 @@ typedef struct {
     int fQuality;
     sk_jpegencoder_downsample_t fDownsample;
     sk_jpegencoder_alphaoption_t fAlphaOption;
+    const sk_data_t* xmpMetadata;
+    const sk_colorspace_icc_profile_t* fICCProfile;
+    const char* fICCProfileDescription;
 } sk_jpegencoder_options_t;
 
 typedef enum {
@@ -970,6 +949,8 @@ typedef enum {
 typedef struct {
     sk_webpencoder_compression_t fCompression;
     float fQuality;
+    const sk_colorspace_icc_profile_t* fICCProfile;
+    const char* fICCProfileDescription;
 } sk_webpencoder_options_t;
 
 typedef struct sk_rrect_t sk_rrect_t;
@@ -1010,7 +991,75 @@ typedef struct {
 typedef struct sk_tracememorydump_t sk_tracememorydump_t;
 
 typedef struct sk_runtimeeffect_t sk_runtimeeffect_t;
-typedef struct sk_runtimeeffect_uniform_t sk_runtimeeffect_uniform_t;
+
+typedef enum {
+    FLOAT_SK_RUNTIMEEFFECT_UNIFORM_TYPE,
+    FLOAT2_SK_RUNTIMEEFFECT_UNIFORM_TYPE,
+    FLOAT3_SK_RUNTIMEEFFECT_UNIFORM_TYPE,
+    FLOAT4_SK_RUNTIMEEFFECT_UNIFORM_TYPE,
+    FLOAT2X2_SK_RUNTIMEEFFECT_UNIFORM_TYPE,
+    FLOAT3X3_SK_RUNTIMEEFFECT_UNIFORM_TYPE,
+    FLOAT4X4_SK_RUNTIMEEFFECT_UNIFORM_TYPE,
+    INT_SK_RUNTIMEEFFECT_UNIFORM_TYPE,
+    INT2_SK_RUNTIMEEFFECT_UNIFORM_TYPE,
+    INT3_SK_RUNTIMEEFFECT_UNIFORM_TYPE,
+    INT4_SK_RUNTIMEEFFECT_UNIFORM_TYPE,
+} sk_runtimeeffect_uniform_type_t;
+
+typedef enum {
+    SHADER_SK_RUNTIMEEFFECT_CHILD_TYPE,
+    COLOR_FILTER_SK_RUNTIMEEFFECT_CHILD_TYPE,
+    BLENDER_SK_RUNTIMEEFFECT_CHILD_TYPE,
+} sk_runtimeeffect_child_type_t;
+
+typedef enum {
+    NONE_SK_RUNTIMEEFFECT_UNIFORM_FLAGS           = 0x00,
+    ARRAY_SK_RUNTIMEEFFECT_UNIFORM_FLAGS          = 0x01,
+    COLOR_SK_RUNTIMEEFFECT_UNIFORM_FLAGS          = 0x02,
+    VERTEX_SK_RUNTIMEEFFECT_UNIFORM_FLAGS         = 0x04,
+    FRAGMENT_SK_RUNTIMEEFFECT_UNIFORM_FLAGS       = 0x08,
+    HALF_PRECISION_SK_RUNTIMEEFFECT_UNIFORM_FLAGS = 0x10,
+} sk_runtimeeffect_uniform_flags_t;
+
+typedef struct {
+    const char* fName;
+    size_t fNameLength;
+    size_t fOffset;
+    sk_runtimeeffect_uniform_type_t fType;
+    int fCount;
+    sk_runtimeeffect_uniform_flags_t fFlags;
+} sk_runtimeeffect_uniform_t;
+
+typedef struct {
+    const char* fName;
+    size_t fNameLength;
+    sk_runtimeeffect_child_type_t fType;
+    int fIndex;
+} sk_runtimeeffect_child_t;
+
+typedef enum {
+    NEAREST_SK_FILTER_MODE,
+    LINEAR_SK_FILTER_MODE,
+} sk_filter_mode_t;
+
+typedef enum {
+    NONE_SK_MIPMAP_MODE,
+    NEAREST_SK_MIPMAP_MODE,
+    LINEAR_SK_MIPMAP_MODE,
+} sk_mipmap_mode_t;
+
+typedef struct {
+    float fB;
+    float fC;
+} sk_cubic_resampler_t;
+
+typedef struct {
+    int fMaxAniso;
+    bool fUseCubic;
+    sk_cubic_resampler_t fCubic;
+    sk_filter_mode_t fFilter;
+    sk_mipmap_mode_t fMipmap;
+} sk_sampling_options_t;
 
 /*
  * Skottie Animation

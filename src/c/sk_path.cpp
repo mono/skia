@@ -237,7 +237,8 @@ bool sk_path_parse_svg_string (sk_path_t* cpath, const char* str) {
 }
 
 void sk_path_to_svg_string (const sk_path_t* cpath, sk_string_t* str) {
-    SkParsePath::ToSVGString(*AsPath(cpath), AsString(str));
+    SkString svg = SkParsePath::ToSVGString(*AsPath(cpath));
+    svg.swap(*AsString(str));
 }
 
 bool sk_path_get_last_point (const sk_path_t* cpath, sk_point_t* point) {

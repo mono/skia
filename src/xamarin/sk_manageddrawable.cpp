@@ -29,9 +29,14 @@ void dGetBounds(SkManagedDrawable* d, void* context, SkRect* rect) {
     if (!gProcs.fGetBounds) return;
     gProcs.fGetBounds(ToManagedDrawable(d), context, ToRect(rect));
 }
-SkPicture* dNewPictureSnapshot(SkManagedDrawable* d, void* context) {
-    if (!gProcs.fNewPictureSnapshot) return nullptr;
-    return AsPicture(gProcs.fNewPictureSnapshot(ToManagedDrawable(d), context));
+size_t dApproximateBytesUsed(SkManagedDrawable* d, void* context) {
+    if (!gProcs.fApproximateBytesUsed) return 0;
+    return gProcs.fApproximateBytesUsed(ToManagedDrawable(d), context);
+}
+sk_sp<SkPicture> dMakePictureSnapshot(SkManagedDrawable* d, void* context) {
+    if (!gProcs.fMakePictureSnapshot) return nullptr;
+    sk_picture_t* pic = gProcs.fMakePictureSnapshot(ToManagedDrawable(d), context);
+    return sk_ref_sp(AsPicture(pic));
 }
 void dDestroy(SkManagedDrawable* d, void* context) {
     if (!gProcs.fDestroy) return;
@@ -50,7 +55,8 @@ void sk_manageddrawable_set_procs(sk_manageddrawable_procs_t procs) {
     SkManagedDrawable::Procs p;
     p.fDraw = dDraw;
     p.fGetBounds = dGetBounds;
-    p.fNewPictureSnapshot = dNewPictureSnapshot;
+    p.fApproximateBytesUsed = dApproximateBytesUsed;
+    p.fMakePictureSnapshot = dMakePictureSnapshot;
     p.fDestroy = dDestroy;
 
     SkManagedDrawable::setProcs(p);

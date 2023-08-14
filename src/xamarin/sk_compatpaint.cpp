@@ -66,3 +66,23 @@ void sk_compatpaint_set_text_encoding(sk_compatpaint_t* paint, sk_text_encoding_
 sk_text_encoding_t sk_compatpaint_get_text_encoding(const sk_compatpaint_t* paint) {
     return (sk_text_encoding_t)AsCompatPaint(paint)->getTextEncoding();
 }
+
+void sk_compatpaint_set_filter_quality(sk_compatpaint_t* paint, int quality) {
+    AsCompatPaint(paint)->setFilterQuality((SkFilterQuality)quality);
+}
+
+int sk_compatpaint_get_filter_quality(const sk_compatpaint_t* paint) {
+    return (int)AsCompatPaint(paint)->getFilterQuality();
+}
+
+void sk_compatpaint_set_lcd_render_text(sk_compatpaint_t* paint, bool lcdRenderText){
+    AsCompatPaint(paint)->setLcdRenderText(lcdRenderText);
+}
+
+bool sk_compatpaint_get_lcd_render_text(const sk_compatpaint_t* paint) {
+    return AsCompatPaint(paint)->getLcdRenderText();
+}
+
+void sk_compatpaint_set_is_antialias(sk_compatpaint_t* paint, bool antialias) {
+    AsCompatPaint(paint)->setAntiAlias(antialias);
+}

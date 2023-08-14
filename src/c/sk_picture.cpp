@@ -56,12 +56,12 @@ void sk_picture_get_cull_rect(sk_picture_t* cpic, sk_rect_t* crect) {
     *crect = ToRect(AsPicture(cpic)->cullRect());
 }
 
-sk_shader_t* sk_picture_make_shader(sk_picture_t* src, sk_shader_tilemode_t tmx, sk_shader_tilemode_t tmy, const sk_matrix_t* localMatrix, const sk_rect_t* tile) {
+sk_shader_t* sk_picture_make_shader(sk_picture_t* src, sk_shader_tilemode_t tmx, sk_shader_tilemode_t tmy, sk_filter_mode_t mode, const sk_matrix_t* localMatrix, const sk_rect_t* tile) {
     SkMatrix m;
     if (localMatrix) {
         m = AsMatrix(localMatrix);
     }
-    return ToShader(AsPicture(src)->makeShader((SkTileMode)tmx, (SkTileMode)tmy, localMatrix ? &m : nullptr, AsRect(tile)).release());
+    return ToShader(AsPicture(src)->makeShader((SkTileMode)tmx, (SkTileMode)tmy, (SkFilterMode)mode, localMatrix ? &m : nullptr, AsRect(tile)).release());
 }
 
 sk_data_t* sk_picture_serialize_to_data(const sk_picture_t* picture) {

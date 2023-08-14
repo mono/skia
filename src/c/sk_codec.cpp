@@ -7,6 +7,7 @@
  * found in the LICENSE file.
  */
 
+#include "include/core/SkStream.h"
 #include "include/codec/SkCodec.h"
 
 #include "include/c/sk_codec.h"

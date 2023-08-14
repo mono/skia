@@ -14,9 +14,14 @@
 
 SK_C_PLUS_PLUS_BEGIN_GUARD
 
+// GrRecordingContext
+
 SK_C_API void gr_recording_context_unref(gr_recording_context_t* context);
 SK_C_API int gr_recording_context_get_max_surface_sample_count_for_color_type(gr_recording_context_t* context, sk_colortype_t colorType);
 SK_C_API gr_backend_t gr_recording_context_get_backend(gr_recording_context_t* context);
+SK_C_API bool gr_recording_context_is_abandoned(gr_recording_context_t* context);
+SK_C_API int gr_recording_context_max_texture_size(gr_recording_context_t* context);
+SK_C_API int gr_recording_context_max_render_target_size(gr_recording_context_t* context);
 
 // GrDirectContext
 
