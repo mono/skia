@@ -367,6 +367,7 @@ typedef struct sk_fontstyleset_t sk_fontstyleset_t;
  *  Abstraction layer directly on top of an image codec.
  */
 typedef struct sk_codec_t sk_codec_t;
+typedef struct sk_android_codec_t sk_android_codec_t;
 typedef struct sk_colorspace_t sk_colorspace_t;
 /**
    Various stream types
@@ -501,6 +502,17 @@ typedef enum {
     TOP_DOWN_SK_CODEC_SCANLINE_ORDER,
     BOTTOM_UP_SK_CODEC_SCANLINE_ORDER,
 } sk_codec_scanline_order_t;
+
+typedef enum {
+    kIgnore,
+    kRespect,
+} sk_android_codec_exif_orientation_behavior_t;
+
+typedef struct {
+    sk_codec_zero_initialized_t fZeroInitialized;
+    sk_irect_t* fSubset;
+    int fSampleSize;
+} sk_android_codec_options_t;
 
 // The verbs that can be foudn on a path
 typedef enum {
