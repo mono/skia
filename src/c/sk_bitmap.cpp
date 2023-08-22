@@ -30,6 +30,10 @@ void sk_bitmap_get_info(sk_bitmap_t* cbitmap, sk_imageinfo_t* info) {
     *info = ToImageInfo(AsBitmap(cbitmap)->info());
 }
 
+bool sk_bitmap_set_info(sk_bitmap_t* cbitmap, const sk_imageinfo_t* requestedInfo, size_t rowBytes) {
+    return AsBitmap(cbitmap)->setInfo(AsImageInfo(requestedInfo), rowBytes);
+}
+
 void* sk_bitmap_get_pixels(sk_bitmap_t* cbitmap, size_t* length) {
     SkBitmap* bmp = AsBitmap(cbitmap);
     *length = bmp->computeByteSize();
@@ -42,6 +46,10 @@ size_t sk_bitmap_get_row_bytes(sk_bitmap_t* cbitmap) {
 
 size_t sk_bitmap_get_byte_count(sk_bitmap_t* cbitmap) {
     return AsBitmap(cbitmap)->computeByteSize();
+}
+
+uint32_t sk_bitmap_get_generation_id(sk_bitmap_t* cbitmap) {
+    return AsBitmap(cbitmap)->getGenerationID();
 }
 
 void sk_bitmap_reset(sk_bitmap_t* cbitmap) {
@@ -92,6 +100,15 @@ bool sk_bitmap_ready_to_draw(sk_bitmap_t* cbitmap) {
     return AsBitmap(cbitmap)->readyToDraw();
 }
 
+bool sk_bitmap_compute_is_opaque(sk_bitmap_t* cbitmap) {
+    return SkBitmap::ComputeIsOpaque(*AsBitmap(cbitmap));
+}
+
+const sk_pixmap_t* sk_bitmap_get_pixmap(sk_bitmap_t* cbitmap) {
+    const SkPixmap& pixmap = AsBitmap(cbitmap)->pixmap();
+    return ToPixmap(&pixmap);
+}
+
 void sk_bitmap_get_pixel_colors(sk_bitmap_t* cbitmap, sk_color_t* colors) {
     SkBitmap* bmp = AsBitmap(cbitmap);
     int w = bmp->width();
@@ -102,6 +119,10 @@ void sk_bitmap_get_pixel_colors(sk_bitmap_t* cbitmap, sk_color_t* colors) {
             colors++;
         }
     }
+}
+
+bool sk_bitmap_write_pixels_at_location(sk_bitmap_t* cbitmap, const sk_pixmap_t* cpixmap, int x, int y) {
+    return AsBitmap(cbitmap)->writePixels(*AsPixmap(cpixmap), x, y);
 }
 
 bool sk_bitmap_install_pixels(sk_bitmap_t* cbitmap, const sk_imageinfo_t* cinfo, void* pixels, size_t rowBytes, const sk_bitmap_release_proc releaseProc, void* context) {

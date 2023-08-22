@@ -347,6 +347,7 @@ typedef struct sk_string_t sk_string_t;
 */
 typedef struct sk_bitmap_t sk_bitmap_t;
 typedef struct sk_pixmap_t sk_pixmap_t;
+typedef struct sk_pngchunkreader_t sk_pngchunkreader_t;
 typedef struct sk_colorfilter_t sk_colorfilter_t;
 typedef struct sk_imagefilter_t sk_imagefilter_t;
 
@@ -459,6 +460,14 @@ typedef enum {
     AVIF_SK_ENCODED_FORMAT,
     JPEGXL_SK_ENCODED_FORMAT,
 } sk_encoded_image_format_t;
+
+/**
+ *  Enum describing selection policy.
+ */
+typedef enum {
+    PREFER_STILL_IMAGE_SK_CODEC_SELECTION_POLICY,
+    PREFER_ANIMATION_SK_CODEC_SELECTION_POLICY,
+} sk_codec_selection_policy_t;
 
 typedef enum {
     TOP_LEFT_SK_ENCODED_ORIGIN     = 1, // Default

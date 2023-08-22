@@ -252,6 +252,10 @@ static_assert ((int)SkCodec::ZeroInitialized::kNo_ZeroInitialized    == (int)NO_
 static_assert ((int)SkCodec::SkScanlineOrder::kTopDown_SkScanlineOrder    == (int)TOP_DOWN_SK_CODEC_SCANLINE_ORDER,    ASSERT_MSG(SkCodec::SkScanlineOrder, sk_codec_scanline_order_t));
 static_assert ((int)SkCodec::SkScanlineOrder::kBottomUp_SkScanlineOrder   == (int)BOTTOM_UP_SK_CODEC_SCANLINE_ORDER,   ASSERT_MSG(SkCodec::SkScanlineOrder, sk_codec_scanline_order_t));
 
+// sk_codec_selection_policy_t
+static_assert ((int)SkCodec::SelectionPolicy::kPreferStillImage   == (int)PREFER_STILL_IMAGE_SK_CODEC_SELECTION_POLICY,   ASSERT_MSG(SkCodec::SelectionPolicy, sk_codec_selection_policy_t));
+static_assert ((int)SkCodec::SelectionPolicy::kPreferAnimation    == (int)PREFER_ANIMATION_SK_CODEC_SELECTION_POLICY,     ASSERT_MSG(SkCodec::SelectionPolicy, sk_codec_selection_policy_t));
+
 // sk_codecanimation_disposalmethod_t
 static_assert ((int)SkCodecAnimation::DisposalMethod::kKeep              == (int)KEEP_SK_CODEC_ANIMATION_DISPOSAL_METHOD,               ASSERT_MSG(SkCodecAnimation::DisposalMethod, sk_codecanimation_disposalmethod_t));
 static_assert ((int)SkCodecAnimation::DisposalMethod::kRestoreBGColor    == (int)RESTORE_BG_COLOR_SK_CODEC_ANIMATION_DISPOSAL_METHOD,   ASSERT_MSG(SkCodecAnimation::DisposalMethod, sk_codecanimation_disposalmethod_t));
