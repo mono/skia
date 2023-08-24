@@ -21,13 +21,6 @@ if (skia_use_system_libjpeg_turbo) {
     ]
 
     defines = [
-      "TURBO_FOR_WINDOWS",
-
-      # Add support for arithmetic encoding (C_) and decoding (D_).
-      # This matches Android. Note that such JPEGs are likely rare, given lack of
-      # support by major browsers.
-      "C_ARITH_CODING_SUPPORTED=1",
-      "D_ARITH_CODING_SUPPORTED=1",
     ]
 
     if (!is_win || is_clang) {
@@ -42,11 +35,13 @@ if (skia_use_system_libjpeg_turbo) {
       "../externals/libjpeg-turbo/jccoefct.c",
       "../externals/libjpeg-turbo/jccolor.c",
       "../externals/libjpeg-turbo/jcdctmgr.c",
+      "../externals/libjpeg-turbo/jcdiffct.c",
       "../externals/libjpeg-turbo/jchuff.c",
       "../externals/libjpeg-turbo/jcinit.c",
+      "../externals/libjpeg-turbo/jclhuff.c",
+      "../externals/libjpeg-turbo/jclossls.c",
       "../externals/libjpeg-turbo/jcmainct.c",
       "../externals/libjpeg-turbo/jcmarker.c",
-      "../externals/libjpeg-turbo/jcmaster.c",
       "../externals/libjpeg-turbo/jcomapi.c",
       "../externals/libjpeg-turbo/jcparam.c",
       "../externals/libjpeg-turbo/jcphuff.c",
@@ -58,8 +53,11 @@ if (skia_use_system_libjpeg_turbo) {
       "../externals/libjpeg-turbo/jdcoefct.c",
       "../externals/libjpeg-turbo/jdcolor.c",
       "../externals/libjpeg-turbo/jddctmgr.c",
+      "../externals/libjpeg-turbo/jddiffct.c",
       "../externals/libjpeg-turbo/jdhuff.c",
       "../externals/libjpeg-turbo/jdinput.c",
+      "../externals/libjpeg-turbo/jdlhuff.c",
+      "../externals/libjpeg-turbo/jdlossls.c",
       "../externals/libjpeg-turbo/jdmainct.c",
       "../externals/libjpeg-turbo/jdmarker.c",
       "../externals/libjpeg-turbo/jdmaster.c",
@@ -77,7 +75,7 @@ if (skia_use_system_libjpeg_turbo) {
       "../externals/libjpeg-turbo/jidctred.c",
       "../externals/libjpeg-turbo/jmemmgr.c",
       "../externals/libjpeg-turbo/jmemnobs.c",
-      "../externals/libjpeg-turbo/jpeg_nbits_table.c",
+      # "../externals/libjpeg-turbo/jpeg_nbits_table.c",
       "../externals/libjpeg-turbo/jquant1.c",
       "../externals/libjpeg-turbo/jquant2.c",
       "../externals/libjpeg-turbo/jutils.c",
@@ -112,8 +110,6 @@ if (skia_use_system_libjpeg_turbo) {
           "../externals/libjpeg-turbo/simd/arm/aarch64/jsimd.c",
         ]
       }
-    } else {
-      sources += [ "../externals/libjpeg-turbo/jsimd_none.c" ]
     }
   }
 }
