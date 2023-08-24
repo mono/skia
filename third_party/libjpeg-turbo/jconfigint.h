@@ -89,6 +89,6 @@
 #define D_ARITH_CODING_SUPPORTED 1
 
 /* Use accelerated SIMD routines. */
-#define WITH_SIMD 1
+// #define WITH_SIMD 1
 
 #endif
