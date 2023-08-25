@@ -14,6 +14,11 @@ if (skia_use_system_libjpeg_turbo) {
     libs = [ "jpeg" ]
   }
 } else {
+  use_simd_optimizations = false
+  if (!is_win && (current_cpu == "arm" || current_cpu == "arm64")) {
+    use_simd_optimizations = true
+  }
+
   libjpeg_include_dirs = [
     ".",
     "../externals/libjpeg-turbo",
@@ -77,14 +82,17 @@ if (skia_use_system_libjpeg_turbo) {
     "../externals/libjpeg-turbo/jfdctflt.c",
     "../externals/libjpeg-turbo/jmemmgr.c",
     "../externals/libjpeg-turbo/jmemnobs.c",
-    "../externals/libjpeg-turbo/jaricom.c",
-    "../externals/libjpeg-turbo/jcarith.c",
-    "../externals/libjpeg-turbo/jdarith.c",
+    "../externals/libjpeg-turbo/jaricom.c", # WITH_ARITH_ENC or WITH_ARITH_DEC
+    "../externals/libjpeg-turbo/jcarith.c", # WITH_ARITH_ENC
+    "../externals/libjpeg-turbo/jdarith.c", # WITH_ARITH_DEC
   ]
 
   source_set("libjpeg16") {
     visibility = [ ":*" ]
     defines = [ "BITS_IN_JSAMPLE=16" ]
+    if (!use_simd_optimizations) {
+      defines += [ "CPU_NO_SIMD" ]
+    }
     include_dirs = libjpeg_include_dirs
     sources = libjpeg16_sources
   }
@@ -92,8 +100,46 @@ if (skia_use_system_libjpeg_turbo) {
   source_set("libjpeg12") {
     visibility = [ ":*" ]
     defines = [ "BITS_IN_JSAMPLE=12" ]
+    if (!use_simd_optimizations) {
+      defines += [ "CPU_NO_SIMD" ]
+    }
     include_dirs = libjpeg_include_dirs
     sources = libjpeg16_sources + libjpeg12_sources
+  }
+
+  source_set("libjpegsimd") {
+    visibility = [ ":*" ]
+    defines = [ "NEON_INTRINSICS" ]
+    include_dirs = libjpeg_include_dirs
+    include_dirs += [
+      "../externals/libjpeg-turbo/simd/arm",
+    ]
+    sources = [
+      "../externals/libjpeg-turbo/simd/arm/jccolor-neon.c",
+      "../externals/libjpeg-turbo/simd/arm/jcgray-neon.c",
+      "../externals/libjpeg-turbo/simd/arm/jcphuff-neon.c",
+      "../externals/libjpeg-turbo/simd/arm/jcsample-neon.c",
+      "../externals/libjpeg-turbo/simd/arm/jdcolor-neon.c",
+      "../externals/libjpeg-turbo/simd/arm/jdmerge-neon.c",
+      "../externals/libjpeg-turbo/simd/arm/jdsample-neon.c",
+      "../externals/libjpeg-turbo/simd/arm/jfdctfst-neon.c",
+      "../externals/libjpeg-turbo/simd/arm/jfdctint-neon.c",
+      "../externals/libjpeg-turbo/simd/arm/jidctfst-neon.c",
+      "../externals/libjpeg-turbo/simd/arm/jidctint-neon.c",
+      "../externals/libjpeg-turbo/simd/arm/jidctred-neon.c",
+      "../externals/libjpeg-turbo/simd/arm/jquanti-neon.c",
+    ]
+    if (current_cpu == "arm") {
+      sources += [
+        "../externals/libjpeg-turbo/simd/arm/aarch32/jchuff-neon.c",
+        "../externals/libjpeg-turbo/simd/arm/aarch32/jsimd.c",
+      ]
+    } else if (current_cpu == "arm64") {
+      sources += [
+        "../externals/libjpeg-turbo/simd/arm/aarch64/jchuff-neon.c",
+        "../externals/libjpeg-turbo/simd/arm/aarch64/jsimd.c",
+      ]
+    }
   }
 
   third_party("libjpeg") {
@@ -103,43 +149,20 @@ if (skia_use_system_libjpeg_turbo) {
     if (!is_win || is_clang) {
       defines += [ "USE_CLZ_INTRINSIC" ]  # Cuts a 64K table.
     }
+    if (!use_simd_optimizations) {
+      defines += [ "CPU_NO_SIMD" ]
+    }
 
     sources = libjpeg16_sources + libjpeg12_sources + libjpeg_sources
-
-    if (!is_win && (current_cpu == "arm" || current_cpu == "arm64")) {
-      defines += [ "NEON_INTRINSICS", "WITH_SIMD" ]
-      sources += [
-        "../externals/libjpeg-turbo/simd/arm/jccolor-neon.c",
-        "../externals/libjpeg-turbo/simd/arm/jcgray-neon.c",
-        "../externals/libjpeg-turbo/simd/arm/jcphuff-neon.c",
-        "../externals/libjpeg-turbo/simd/arm/jcsample-neon.c",
-        "../externals/libjpeg-turbo/simd/arm/jdcolor-neon.c",
-        "../externals/libjpeg-turbo/simd/arm/jdmerge-neon.c",
-        "../externals/libjpeg-turbo/simd/arm/jdsample-neon.c",
-        "../externals/libjpeg-turbo/simd/arm/jfdctfst-neon.c",
-        "../externals/libjpeg-turbo/simd/arm/jfdctint-neon.c",
-        "../externals/libjpeg-turbo/simd/arm/jidctfst-neon.c",
-        "../externals/libjpeg-turbo/simd/arm/jidctint-neon.c",
-        "../externals/libjpeg-turbo/simd/arm/jidctred-neon.c",
-        "../externals/libjpeg-turbo/simd/arm/jquanti-neon.c",
-      ]
-      include_dirs = [ "../externals/libjpeg-turbo/simd/arm" ]
-      if (current_cpu == "arm") {
-        sources += [
-          "../externals/libjpeg-turbo/simd/arm/aarch32/jchuff-neon.c",
-          "../externals/libjpeg-turbo/simd/arm/aarch32/jsimd.c",
-        ]
-      } else if (current_cpu == "arm64") {
-        sources += [
-          "../externals/libjpeg-turbo/simd/arm/aarch64/jchuff-neon.c",
-          "../externals/libjpeg-turbo/simd/arm/aarch64/jsimd.c",
-        ]
-      }
-    }
 
     deps = [
       ":libjpeg16",
       ":libjpeg12",
     ]
+    if (use_simd_optimizations) {
+      deps += [
+        ":libjpegsimd",
+      ]
+    }
   }
 }

@@ -18,8 +18,10 @@
 /* Support in-memory source/destination managers */
 #define MEM_SRCDST_SUPPORTED 1
 
+#ifndef CPU_NO_SIMD
 /* Use accelerated SIMD routines when using 8-bit samples */
-// #define WITH_SIMD 1
+#define WITH_SIMD 1
+#endif
 
 /* This version of libjpeg-turbo supports run-time selection of data precision,
  * so BITS_IN_JSAMPLE is no longer used to specify the data precision at build
