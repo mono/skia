@@ -46,6 +46,6 @@ Requires https://github.com/mono/SkiaSharp/pull/<pr-number>
 
 **PR Checklist**
 
-- [ ] Rebased on top of `skiasharp`` at time of PR
+- [ ] Rebased on top of `skiasharp` at time of PR
 - [ ] Changes adhere to coding standard
 - [ ] Updated documentation
