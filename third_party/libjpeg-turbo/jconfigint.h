@@ -88,7 +88,9 @@
 /* Support arithmetic decoding */
 #define D_ARITH_CODING_SUPPORTED 1
 
+#ifndef CPU_NO_SIMD
 /* Use accelerated SIMD routines. */
 #define WITH_SIMD 1
+#endif
 
 #endif
