@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Bug Report
+    url: https://github.com/mono/SkiaSharp/issues
+    about: Create a report in the SkiaSharp repository.
+  - name: Feature Request
+    url: https://github.com/mono/SkiaSharp/issues
+    about: Suggest an idea in the SkiaSharp repository.
+  - name: Questions and/or Discussions
+    url: https://github.com/mono/SkiaSharp/discussions
+    about: Please ask and answer questions in the SkiaSharp repository.
