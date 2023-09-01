@@ -15,6 +15,8 @@
 
 #include "src/c/sk_types_priv.h"
 
+extern const sk_sampling_options_t default_sampling;
+
 void sk_image_ref(const sk_image_t* cimage) {
     AsImage(cimage)->ref();
 }
@@ -91,7 +93,16 @@ bool sk_image_is_alpha_only(const sk_image_t* image) {
     return AsImage(image)->isAlphaOnly();
 }
 
-sk_shader_t* sk_image_make_shader(const sk_image_t* image, sk_shader_tilemode_t tileX, sk_shader_tilemode_t tileY, const sk_sampling_options_t* sampling, const sk_matrix_t* cmatrix) {
+sk_shader_t* sk_image_make_shader(const sk_image_t* image, sk_shader_tilemode_t tileX, sk_shader_tilemode_t tileY, const sk_matrix_t* cmatrix) {
+    SkMatrix m;
+    if (cmatrix) {
+        m = AsMatrix(cmatrix);
+    }
+    return ToShader(AsImage(image)->makeShader((SkTileMode)tileX, (SkTileMode)tileY, *AsSamplingOptions(&default_sampling), cmatrix ? &m : nullptr).release());
+}
+
+
+sk_shader_t* sk_image_make_shader_v2(const sk_image_t* image, sk_shader_tilemode_t tileX, sk_shader_tilemode_t tileY, const sk_sampling_options_t* sampling, const sk_matrix_t* cmatrix) {
     SkMatrix m;
     if (cmatrix) {
         m = AsMatrix(cmatrix);
@@ -123,7 +134,11 @@ bool sk_image_read_pixels_into_pixmap(const sk_image_t* image, const sk_pixmap_t
     return AsImage(image)->readPixels(*AsPixmap(dst), srcX, srcY, (SkImage::CachingHint)cachingHint);
 }
 
-bool sk_image_scale_pixels(const sk_image_t* image, const sk_pixmap_t* dst, const sk_sampling_options_t* sampling, sk_image_caching_hint_t cachingHint) {
+bool sk_image_scale_pixels(const sk_image_t* image, const sk_pixmap_t* dst, int /*unused*/, sk_image_caching_hint_t cachingHint) {
+    return AsImage(image)->scalePixels(*AsPixmap(dst), *AsSamplingOptions(&default_sampling), (SkImage::CachingHint)cachingHint);
+}
+
+bool sk_image_scale_pixels_v2(const sk_image_t* image, const sk_pixmap_t* dst, const sk_sampling_options_t* sampling, sk_image_caching_hint_t cachingHint) {
     return AsImage(image)->scalePixels(*AsPixmap(dst), *AsSamplingOptions(sampling), (SkImage::CachingHint)cachingHint);
 }
 

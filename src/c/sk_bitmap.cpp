@@ -18,6 +18,8 @@
 
 #include "src/c/sk_types_priv.h"
 
+extern "C" const sk_sampling_options_t default_sampling = {}; // TODO: put this in it's own file?
+
 void sk_bitmap_destructor(sk_bitmap_t* cbitmap) {
     delete AsBitmap(cbitmap);
 }
@@ -144,7 +146,15 @@ void sk_bitmap_swap(sk_bitmap_t* cbitmap, sk_bitmap_t* cother) {
     AsBitmap(cbitmap)->swap(*AsBitmap(cother));
 }
 
-sk_shader_t* sk_bitmap_make_shader(sk_bitmap_t* cbitmap, sk_shader_tilemode_t tmx, sk_shader_tilemode_t tmy, sk_sampling_options_t* sampling, const sk_matrix_t* cmatrix) {
+sk_shader_t* sk_bitmap_make_shader(sk_bitmap_t* cbitmap, sk_shader_tilemode_t tmx, sk_shader_tilemode_t tmy, const sk_matrix_t* cmatrix) {
+    SkMatrix m;
+    if (cmatrix) {
+        m = AsMatrix(cmatrix);
+    }
+    return ToShader(AsBitmap(cbitmap)->makeShader((SkTileMode)tmx, (SkTileMode)tmy, *AsSamplingOptions(&default_sampling), cmatrix ? &m : nullptr).release());
+}
+
+sk_shader_t* sk_bitmap_make_shader_v2(sk_bitmap_t* cbitmap, sk_shader_tilemode_t tmx, sk_shader_tilemode_t tmy, sk_sampling_options_t* sampling, const sk_matrix_t* cmatrix) {
     SkMatrix m;
     if (cmatrix) {
         m = AsMatrix(cmatrix);
