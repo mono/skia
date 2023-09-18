@@ -42,7 +42,7 @@ deps = {
   "third_party/externals/libjpeg-turbo"          : "https://github.com/libjpeg-turbo/libjpeg-turbo.git@6c87537f60941f3c265c339fe60d1e31d2a42ccf",
   "third_party/externals/libjxl"                 : "https://chromium.googlesource.com/external/gitlab.com/wg1/jpeg-xl.git@a205468bc5d3a353fb15dae2398a101dff52f2d3",
   "third_party/externals/libpng"                 : "https://skia.googlesource.com/third_party/libpng.git@f135775ad4e5d4408d2e12ffcc71bb36e6b48551",
-  "third_party/externals/libwebp"                : "https://chromium.googlesource.com/webm/libwebp.git@fd7b5d48464475408d32d2611bdb6947d4246b97",
+  "third_party/externals/libwebp"                : "https://github.com/webmproject/libwebp.git@ca332209cb5567c9b249c86788cb2dbf8847e760",
   "third_party/externals/libyuv"                 : "https://chromium.googlesource.com/libyuv/libyuv.git@d248929c059ff7629a85333699717d7a677d8d96",
   "third_party/externals/microhttpd"             : "https://android.googlesource.com/platform/external/libmicrohttpd@748945ec6f1c67b7efc934ab0808e1d32f2fb98d",
   "third_party/externals/oboe"                   : "https://chromium.googlesource.com/external/github.com/google/oboe.git@b02a12d1dd821118763debec6b83d00a8a0ee419",
