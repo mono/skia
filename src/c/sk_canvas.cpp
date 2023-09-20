@@ -17,6 +17,8 @@
 
 #include "src/c/sk_types_priv.h"
 
+extern const sk_sampling_options_t default_sampling;
+
 void sk_canvas_destroy(sk_canvas_t* ccanvas) {
     delete AsCanvas(ccanvas);
 }
@@ -73,11 +75,19 @@ void sk_canvas_reset_matrix(sk_canvas_t* ccanvas) {
     AsCanvas(ccanvas)->resetMatrix();
 }
 
-void sk_canvas_set_matrix(sk_canvas_t* ccanvas, const sk_matrix44_t* cmatrix) {
+void sk_canvas_set_matrix(sk_canvas_t* ccanvas, const sk_matrix_t* cmatrix) {
+    AsCanvas(ccanvas)->setMatrix(AsMatrix(cmatrix));
+}
+
+void sk_canvas_set_matrix_m44(sk_canvas_t* ccanvas, const sk_matrix44_t* cmatrix) {
     AsCanvas(ccanvas)->setMatrix(AsM44(cmatrix));
 }
 
-void sk_canvas_get_matrix(sk_canvas_t* ccanvas, sk_matrix44_t* cmatrix) {
+void sk_canvas_get_total_matrix(sk_canvas_t* ccanvas, sk_matrix_t* cmatrix) {
+    *cmatrix = ToMatrix((SkMatrix)AsCanvas(ccanvas)->getTotalMatrix());
+}
+
+void sk_canvas_get_matrix_m44(sk_canvas_t* ccanvas, sk_matrix44_t* cmatrix) {
     *cmatrix = ToM44(AsCanvas(ccanvas)->getLocalToDevice());
 }
 
@@ -137,7 +147,11 @@ void sk_canvas_skew(sk_canvas_t* ccanvas, float sx, float sy) {
     AsCanvas(ccanvas)->skew(sx, sy);
 }
 
-void sk_canvas_concat(sk_canvas_t* ccanvas, const sk_matrix44_t* cmatrix) {
+void sk_canvas_concat(sk_canvas_t* ccanvas, const sk_matrix_t* cmatrix) {
+    AsCanvas(ccanvas)->concat(AsMatrix(cmatrix));
+}
+
+void sk_canvas_concat_m44(sk_canvas_t* ccanvas, const sk_matrix44_t* cmatrix) {
     AsCanvas(ccanvas)->concat(AsM44(cmatrix));
 }
 
@@ -177,11 +191,23 @@ void sk_canvas_draw_path(sk_canvas_t* ccanvas, const sk_path_t* cpath, const sk_
     AsCanvas(ccanvas)->drawPath(*AsPath(cpath), *AsPaint(cpaint));
 }
 
-void sk_canvas_draw_image(sk_canvas_t* ccanvas, const sk_image_t* cimage, float x, float y, const sk_sampling_options_t* sampling, const sk_paint_t* cpaint) {
+void sk_canvas_draw_image(sk_canvas_t* ccanvas, const sk_image_t* cimage, float x, float y, const sk_paint_t* cpaint) {
+    AsCanvas(ccanvas)->drawImage(AsImage(cimage), x, y, *AsSamplingOptions(&default_sampling), AsPaint(cpaint));
+}
+
+void sk_canvas_draw_image_v2(sk_canvas_t* ccanvas, const sk_image_t* cimage, float x, float y, const sk_sampling_options_t* sampling, const sk_paint_t* cpaint) {
     AsCanvas(ccanvas)->drawImage(AsImage(cimage), x, y, *AsSamplingOptions(sampling), AsPaint(cpaint));
 }
 
-void sk_canvas_draw_image_rect(sk_canvas_t* ccanvas, const sk_image_t* cimage, const sk_rect_t* csrcR, const sk_rect_t* cdstR, const sk_sampling_options_t* sampling, const sk_paint_t* cpaint) {
+void sk_canvas_draw_image_rect(sk_canvas_t* ccanvas, const sk_image_t* cimage, const sk_rect_t* csrcR, const sk_rect_t* cdstR, const sk_paint_t* cpaint) {
+    if (csrcR) {
+        AsCanvas(ccanvas)->drawImageRect(AsImage(cimage), *AsRect(csrcR), *AsRect(cdstR), *AsSamplingOptions(&default_sampling), AsPaint(cpaint), SkCanvas::SrcRectConstraint::kFast_SrcRectConstraint);
+    } else {
+        AsCanvas(ccanvas)->drawImageRect(AsImage(cimage), *AsRect(cdstR), *AsSamplingOptions(&default_sampling), AsPaint(cpaint));
+    }
+}
+
+void sk_canvas_draw_image_rect_v2(sk_canvas_t* ccanvas, const sk_image_t* cimage, const sk_rect_t* csrcR, const sk_rect_t* cdstR, const sk_sampling_options_t* sampling, const sk_paint_t* cpaint) {
     if (csrcR) {
         AsCanvas(ccanvas)->drawImageRect(AsImage(cimage), *AsRect(csrcR), *AsRect(cdstR), *AsSamplingOptions(sampling), AsPaint(cpaint), SkCanvas::SrcRectConstraint::kFast_SrcRectConstraint);
     } else {
@@ -233,11 +259,19 @@ void sk_canvas_draw_link_destination_annotation(sk_canvas_t* t, const sk_rect_t*
     SkAnnotateLinkToDestination(AsCanvas(t), *AsRect(rect), AsData(value));
 }
 
-void sk_canvas_draw_image_lattice(sk_canvas_t* ccanvas, const sk_image_t* image, const sk_lattice_t* lattice, const sk_rect_t* dst, sk_filter_mode_t mode, const sk_paint_t* paint) {
+void sk_canvas_draw_image_lattice(sk_canvas_t* ccanvas, const sk_image_t* image, const sk_lattice_t* lattice, const sk_rect_t* dst, const sk_paint_t* paint) {
+    AsCanvas(ccanvas)->drawImageLattice(AsImage(image), *AsLattice(lattice), *AsRect(dst), (SkFilterMode)NEAREST_SK_FILTER_MODE, AsPaint(paint));
+}
+
+void sk_canvas_draw_image_lattice_v2(sk_canvas_t* ccanvas, const sk_image_t* image, const sk_lattice_t* lattice, const sk_rect_t* dst, sk_filter_mode_t mode, const sk_paint_t* paint) {
     AsCanvas(ccanvas)->drawImageLattice(AsImage(image), *AsLattice(lattice), *AsRect(dst), (SkFilterMode)mode, AsPaint(paint));
 }
 
-void sk_canvas_draw_image_nine(sk_canvas_t* ccanvas, const sk_image_t* image, const sk_irect_t* center, const sk_rect_t* dst, sk_filter_mode_t mode, const sk_paint_t* paint) {
+void sk_canvas_draw_image_nine(sk_canvas_t* ccanvas, const sk_image_t* image, const sk_irect_t* center, const sk_rect_t* dst, const sk_paint_t* paint) {
+    AsCanvas(ccanvas)->drawImageNine(AsImage(image), *AsIRect(center), *AsRect(dst), (SkFilterMode)NEAREST_SK_FILTER_MODE, AsPaint(paint));
+}
+
+void sk_canvas_draw_image_nine_v2(sk_canvas_t* ccanvas, const sk_image_t* image, const sk_irect_t* center, const sk_rect_t* dst, sk_filter_mode_t mode, const sk_paint_t* paint) {
     AsCanvas(ccanvas)->drawImageNine(AsImage(image), *AsIRect(center), *AsRect(dst), (SkFilterMode)mode, AsPaint(paint));
 }
 
@@ -253,7 +287,11 @@ void sk_canvas_draw_drrect(sk_canvas_t* ccanvas, const sk_rrect_t* outer, const 
     AsCanvas(ccanvas)->drawDRRect(*AsRRect(outer), *AsRRect(inner), *AsPaint(paint));
 }
 
-void sk_canvas_draw_atlas(sk_canvas_t* ccanvas, const sk_image_t* atlas, const sk_rsxform_t* xform, const sk_rect_t* tex, const sk_color_t* colors, int count, sk_blendmode_t mode, const sk_sampling_options_t* sampling, const sk_rect_t* cullRect, const sk_paint_t* paint) {
+void sk_canvas_draw_atlas(sk_canvas_t* ccanvas, const sk_image_t* atlas, const sk_rsxform_t* xform, const sk_rect_t* tex, const sk_color_t* colors, int count, sk_blendmode_t mode, const sk_rect_t* cullRect, const sk_paint_t* paint) {
+    AsCanvas(ccanvas)->drawAtlas(AsImage(atlas), AsRSXform(xform), AsRect(tex), colors, count, (SkBlendMode)mode, *AsSamplingOptions(&default_sampling), AsRect(cullRect), AsPaint(paint));
+}
+
+void sk_canvas_draw_atlas_v2(sk_canvas_t* ccanvas, const sk_image_t* atlas, const sk_rsxform_t* xform, const sk_rect_t* tex, const sk_color_t* colors, int count, sk_blendmode_t mode, const sk_sampling_options_t* sampling, const sk_rect_t* cullRect, const sk_paint_t* paint) {
     AsCanvas(ccanvas)->drawAtlas(AsImage(atlas), AsRSXform(xform), AsRect(tex), colors, count, (SkBlendMode)mode, *AsSamplingOptions(sampling), AsRect(cullRect), AsPaint(paint));
 }
 

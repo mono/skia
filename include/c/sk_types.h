@@ -107,7 +107,6 @@ typedef enum {
     BGRA_1010102_SK_COLORTYPE,
     RGB_101010X_SK_COLORTYPE,
     BGR_101010X_SK_COLORTYPE,
-    BGR_101010X_XR_SK_COLORTYPE,
     GRAY_8_SK_COLORTYPE,
     RGBA_F16_NORM_SK_COLORTYPE,
     RGBA_F16_SK_COLORTYPE,
@@ -122,6 +121,11 @@ typedef enum {
     R16G16B16A16_UNORM_SK_COLORTYPE,
     SRGBA_8888_SK_COLORTYPE,
     R8_UNORM_SK_COLORTYPE,
+
+    // v2
+    BGR_101010X_XR_SK_COLORTYPE,
+
+    // v2 READONLY
 } sk_colortype_t;
 
 typedef enum {
@@ -836,10 +840,10 @@ typedef struct {
     int fDuration;
     bool fFullyReceived;
     sk_alphatype_t fAlphaType;
-    bool fHasAlphaWithinBounds;
     sk_codecanimation_disposalmethod_t fDisposalMethod;
     sk_codecanimation_blend_t fBlend;
     sk_irect_t fFrameRect;
+    bool fHasAlphaWithinBounds;
 } sk_codec_frameinfo_t;
 
 typedef struct sk_svgcanvas_t sk_svgcanvas_t;
