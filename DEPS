@@ -27,7 +27,7 @@ deps = {
   "third_party/externals/libgifcodec"     : "https://skia.googlesource.com/libgifcodec@d06d2a6d42baf6c0c91cacc28df2542a911d05fe",
   "third_party/externals/libjpeg-turbo"   : "https://github.com/libjpeg-turbo/libjpeg-turbo.git@6c87537f60941f3c265c339fe60d1e31d2a42ccf",
   "third_party/externals/libpng"          : "https://skia.googlesource.com/third_party/libpng.git@f135775ad4e5d4408d2e12ffcc71bb36e6b48551",
-  "third_party/externals/libwebp"         : "https://chromium.googlesource.com/webm/libwebp.git@a8e366166ab57bb1b4aaf6739fc775515bc71b51",
+  "third_party/externals/libwebp"         : "https://github.com/webmproject/libwebp.git@ca332209cb5567c9b249c86788cb2dbf8847e760",
   "third_party/externals/lua"             : "https://skia.googlesource.com/external/github.com/lua/lua.git@e354c6355e7f48e087678ec49e340ca0696725b1",
   "third_party/externals/microhttpd"      : "https://android.googlesource.com/platform/external/libmicrohttpd@748945ec6f1c67b7efc934ab0808e1d32f2fb98d",
   "third_party/externals/oboe"            : "https://chromium.googlesource.com/external/github.com/google/oboe.git@b02a12d1dd821118763debec6b83d00a8a0ee419",
