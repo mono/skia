@@ -45,6 +45,7 @@
 // Skottie
 #include "include/c/skottie_animation.h"
 #include "include/c/sksg_invalidation_controller.h"
+#include "include/c/skresources_resource_provider.h"
 
 
 // Xamarin
@@ -97,6 +98,7 @@ void** KeepSkiaCSymbols (void)
         (void*)skottie_animation_make_from_stream,
         (void*)sksg_invalidation_controller_new,
         (void*)skottie_animation_keepalive,
+        (void*)skresources_resource_provider_ref,
 
         // Xamarin
         (void*)sk_compatpaint_new,

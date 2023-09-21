@@ -75,6 +75,8 @@ static_assert (sizeof (sk_sampling_options_t) == sizeof (SkSamplingOptions), ASS
 static_assert (sizeof (sk_runtimeeffect_uniform_t) == sizeof (SkRuntimeEffect::Uniform), ASSERT_MSG(SkRuntimeEffect::Uniform, sk_runtimeeffect_uniform_t));
 static_assert (sizeof (sk_runtimeeffect_child_t) == sizeof (SkRuntimeEffect::Child), ASSERT_MSG(SkRuntimeEffect::Child, sk_runtimeeffect_child_t));
 
+static_assert (sizeof (skottie_animation_builder_stats_t) == sizeof (skottie::Animation::Builder::Stats), ASSERT_MSG(skottie::Animation::Builder::Stats, skottie_animation_builder_stats_t));
+
 #if defined(SK_GANESH)
 static_assert (sizeof (gr_gl_framebufferinfo_t) == sizeof (GrGLFramebufferInfo), ASSERT_MSG(GrGLFramebufferInfo, gr_gl_framebufferinfo_t));
 static_assert (sizeof (gr_gl_textureinfo_t) == sizeof (GrGLTextureInfo), ASSERT_MSG(GrGLTextureInfo, gr_gl_textureinfo_t));

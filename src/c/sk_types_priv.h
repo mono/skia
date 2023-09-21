@@ -378,6 +378,8 @@ static inline SkPDF::Metadata AsDocumentPDFMetadata(const sk_document_pdf_metada
 
 #include "modules/skottie/include/Skottie.h"
 DEF_CLASS_MAP_WITH_NS(skottie, Animation, skottie_animation_t, SkottieAnimation)
+DEF_CLASS_MAP_WITH_NS(skottie::Animation, Builder, skottie_animation_builder_t, SkottieAnimationBuilder)
+DEF_MAP(skottie::Animation::Builder::Stats, skottie_animation_builder_stats_t, SkottieAnimationBuilderStats)
 
 DEF_CLASS_MAP_WITH_NS(skottie, ResourceProvider, skottie_resource_provider_t, SkottieResourceProvider)
 DEF_CLASS_MAP_WITH_NS(skottie, PropertyObserver, skottie_property_observer_t, SkottiePropertyObserver)
@@ -386,6 +388,9 @@ DEF_CLASS_MAP_WITH_NS(skottie, MarkerObserver, skottie_marker_observer_t, Skotti
 
 #include "modules/sksg/include/SkSGInvalidationController.h"
 DEF_CLASS_MAP_WITH_NS(sksg, InvalidationController, sksg_invalidation_controller_t, SksgInvalidationController)
+
+#include "modules/skresources/include/SkResources.h"
+DEF_CLASS_MAP_WITH_NS(skresources, ResourceProvider, skresources_resource_provider_t, SkResourcesResourceProvider)
 
 #if defined(SK_GANESH)
 // GPU specific
