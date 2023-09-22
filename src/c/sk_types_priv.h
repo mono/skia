@@ -391,6 +391,9 @@ DEF_CLASS_MAP_WITH_NS(sksg, InvalidationController, sksg_invalidation_controller
 
 #include "modules/skresources/include/SkResources.h"
 DEF_CLASS_MAP_WITH_NS(skresources, ResourceProvider, skresources_resource_provider_t, SkResourcesResourceProvider)
+DEF_CLASS_MAP_WITH_NS(skresources, ImageAsset, skresources_image_asset_t, SkResourcesImageAsset)
+DEF_CLASS_MAP_WITH_NS(skresources, MultiFrameImageAsset, skresources_multi_frame_image_asset_t, SkResourcesMultiFrameImageAsset)
+DEF_CLASS_MAP_WITH_NS(skresources, ExternalTrackAsset, skresources_external_track_asset_t, SkResourcesExternalTrackAsset)
 
 #if defined(SK_GANESH)
 // GPU specific

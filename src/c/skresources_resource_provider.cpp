@@ -13,8 +13,21 @@ void skresources_resource_provider_delete(skresources_resource_provider_t *insta
     delete AsSkResourcesResourceProvider(instance);
 }
 
-skresources_resource_provider_t* skresources_file_resource_provider_make(const char* base_dir, size_t length, bool predecode){
-    return ToSkResourcesResourceProvider(skresources::FileResourceProvider::Make(SkString(base_dir, length), predecode).release());
+sk_data_t* skresources_resource_provider_load(skresources_resource_provider_t *instance, const char* path, const char* name) {
+    return ToData(AsSkResourcesResourceProvider(instance)->load(path, name).release());
+}
+skresources_image_asset_t* skresources_resource_provider_load_image_asset(skresources_resource_provider_t *instance, const char* path, const char* name, const char* id) {
+    return ToSkResourcesImageAsset(AsSkResourcesResourceProvider(instance)->loadImageAsset(path, name, id).release());
+}
+skresources_external_track_asset_t* skresources_resource_provider_load_audio_asset(skresources_resource_provider_t *instance, const char* path, const char* name, const char* id) {
+    return ToSkResourcesExternalTrackAsset(AsSkResourcesResourceProvider(instance)->loadAudioAsset(path, name, id).release());
+}
+sk_typeface_t* skresources_resource_provider_load_typeface(skresources_resource_provider_t *instance, const char* name, const char* url) {
+    return ToTypeface(AsSkResourcesResourceProvider(instance)->loadTypeface(name, url).release());
+}
+
+skresources_resource_provider_t* skresources_file_resource_provider_make(sk_string_t* base_dir, bool predecode){
+    return ToSkResourcesResourceProvider(skresources::FileResourceProvider::Make(AsString(*base_dir), predecode).release());
 }
 skresources_resource_provider_t* skresources_caching_resource_provider_proxy_make(skresources_resource_provider_t* rp) {
     return ToSkResourcesResourceProvider(skresources::CachingResourceProvider::Make(sk_ref_sp(AsSkResourcesResourceProvider(rp))).release());

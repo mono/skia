@@ -1092,6 +1092,10 @@ typedef struct {
     size_t fAnimatorCount;
 } skottie_animation_builder_stats_t;
 
+typedef struct skresources_image_asset_t skresources_image_asset_t;
+typedef struct skresources_multi_frame_image_asset_t skresources_multi_frame_image_asset_t;
+typedef struct skresources_external_track_asset_t skresources_external_track_asset_t;
+
 typedef struct skresources_resource_provider_t skresources_resource_provider_t;
 
 SK_C_PLUS_PLUS_END_GUARD
