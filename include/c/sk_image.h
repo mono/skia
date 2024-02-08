@@ -33,6 +33,7 @@ SK_C_API sk_colortype_t sk_image_get_color_type(const sk_image_t* image);
 SK_C_API sk_colorspace_t* sk_image_get_colorspace(const sk_image_t* image);
 SK_C_API bool sk_image_is_alpha_only(const sk_image_t* image);
 SK_C_API sk_shader_t* sk_image_make_shader(const sk_image_t* image, sk_shader_tilemode_t tileX, sk_shader_tilemode_t tileY, const sk_sampling_options_t* sampling, const sk_matrix_t* cmatrix);
+SK_C_API sk_shader_t* sk_image_make_raw_shader(const sk_image_t* image, sk_shader_tilemode_t tileX, sk_shader_tilemode_t tileY, const sk_sampling_options_t* sampling, const sk_matrix_t* cmatrix);
 SK_C_API bool sk_image_peek_pixels(const sk_image_t* image, sk_pixmap_t* pixmap);
 SK_C_API bool sk_image_is_texture_backed(const sk_image_t* image);
 SK_C_API bool sk_image_is_lazy_generated(const sk_image_t* image);

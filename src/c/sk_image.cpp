@@ -99,6 +99,14 @@ sk_shader_t* sk_image_make_shader(const sk_image_t* image, sk_shader_tilemode_t 
     return ToShader(AsImage(image)->makeShader((SkTileMode)tileX, (SkTileMode)tileY, *AsSamplingOptions(sampling), cmatrix ? &m : nullptr).release());
 }
 
+sk_shader_t* sk_image_make_raw_shader(const sk_image_t* image, sk_shader_tilemode_t tileX, sk_shader_tilemode_t tileY, const sk_sampling_options_t* sampling, const sk_matrix_t* cmatrix) {
+    SkMatrix m;
+    if (cmatrix) {
+        m = AsMatrix(cmatrix);
+    }
+    return ToShader(AsImage(image)->makeRawShader((SkTileMode)tileX, (SkTileMode)tileY, *AsSamplingOptions(sampling), cmatrix ? &m : nullptr).release());
+}
+
 bool sk_image_peek_pixels(const sk_image_t* image, sk_pixmap_t* pixmap) {
     return AsImage(image)->peekPixels(AsPixmap(pixmap));
 }
