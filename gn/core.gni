@@ -214,6 +214,7 @@ skia_core_sources = [
   "$_src/c/sk_types_priv.h",
   "$_src/c/sk_vertices.cpp",
   "$_src/c/gr_context.cpp",
+  "$_src/c/sk_linker.cpp",
   "$_src/c/skottie_animation.cpp",
   "$_src/c/skresources_resource_provider.cpp",
   "$_src/c/sksg_invalidation_controller.cpp",
