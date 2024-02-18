@@ -1078,6 +1078,26 @@ typedef enum {
     DISABLE_TOP_LEVEL_CLIPPING = 0x02,
 } skottie_animation_renderflags_t;
 
+typedef enum {
+    NONE_SKOTTIE_ANIMATION_BUILDER_FLAGS = 0,
+    DEFER_IMAGE_LOADING_SKOTTIE_ANIMATION_BUILDER_FLAGS = 0x01,
+    PREFER_EMBEDDED_FONTS_SKOTTIE_ANIMATION_BUILDER_FLAGS = 0x02,
+} skottie_animation_builder_flags_t;
+
+typedef struct {
+    float fTotalLoadTimeMS;
+    float fJsonParseTimeMS;
+    float fSceneParseTimeMS;
+    size_t fJsonSize;
+    size_t fAnimatorCount;
+} skottie_animation_builder_stats_t;
+
+typedef struct skresources_image_asset_t skresources_image_asset_t;
+typedef struct skresources_multi_frame_image_asset_t skresources_multi_frame_image_asset_t;
+typedef struct skresources_external_track_asset_t skresources_external_track_asset_t;
+
+typedef struct skresources_resource_provider_t skresources_resource_provider_t;
+
 SK_C_PLUS_PLUS_END_GUARD
 
 #endif

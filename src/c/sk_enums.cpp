@@ -363,6 +363,10 @@ static_assert ((int)SkRRect::Corner::kLowerLeft_Corner    == (int)LOWER_LEFT_SK_
 static_assert ((int)skottie::Animation::kSkipTopLevelIsolation      == (int)SKIP_TOP_LEVEL_ISOLATION,      ASSERT_MSG(skottie::Animation, skottie_animation_renderflags_t));
 static_assert ((int)skottie::Animation::kDisableTopLevelClipping    == (int)DISABLE_TOP_LEVEL_CLIPPING,    ASSERT_MSG(skottie::Animation, skottie_animation_renderflags_t));
 
+// skottie_animation_renderflags_t
+static_assert ((int)skottie::Animation::Builder::Flags::kDeferImageLoading      == (int)DEFER_IMAGE_LOADING_SKOTTIE_ANIMATION_BUILDER_FLAGS,      ASSERT_MSG(skottie::Animation::Builder::Flags, skottie_animation_builder_flags_t));
+static_assert ((int)skottie::Animation::Builder::Flags::kPreferEmbeddedFonts    == (int)PREFER_EMBEDDED_FONTS_SKOTTIE_ANIMATION_BUILDER_FLAGS,    ASSERT_MSG(skottie::Animation::Builder::Flags, skottie_animation_builder_flags_t));
+
 // sk_runtimeeffect_uniform_type_t
 static_assert ((int)SkRuntimeEffect::Uniform::Type::kFloat      == (int)FLOAT_SK_RUNTIMEEFFECT_UNIFORM_TYPE,      ASSERT_MSG(SkRuntimeEffect::Uniform::Type, sk_runtimeeffect_uniform_type_t));
 static_assert ((int)SkRuntimeEffect::Uniform::Type::kFloat2     == (int)FLOAT2_SK_RUNTIMEEFFECT_UNIFORM_TYPE,     ASSERT_MSG(SkRuntimeEffect::Uniform::Type, sk_runtimeeffect_uniform_type_t));

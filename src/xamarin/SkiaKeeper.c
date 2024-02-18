@@ -23,6 +23,7 @@
 #include "include/c/sk_graphics.h"
 #include "include/c/sk_image.h"
 #include "include/c/sk_imagefilter.h"
+#include "include/c/sk_linker.h"
 #include "include/c/sk_maskfilter.h"
 #include "include/c/sk_matrix.h"
 #include "include/c/sk_paint.h"
@@ -45,6 +46,7 @@
 // Skottie
 #include "include/c/skottie_animation.h"
 #include "include/c/sksg_invalidation_controller.h"
+#include "include/c/skresources_resource_provider.h"
 
 
 // Xamarin
@@ -96,13 +98,16 @@ void** KeepSkiaCSymbols (void)
         // Animation
         (void*)skottie_animation_make_from_stream,
         (void*)sksg_invalidation_controller_new,
-        (void*)skottie_animation_keepalive,
+        (void*)skresources_resource_provider_ref,
 
         // Xamarin
         (void*)sk_compatpaint_new,
         (void*)sk_managedstream_new,
         (void*)sk_manageddrawable_new,
         (void*)sk_managedtracememorydump_new,
+
+        // Linker
+        (void*)sk_linker_keep_alive,
     };
     return ret;
 }
