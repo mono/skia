@@ -74,7 +74,7 @@ void sk_canvas_reset_matrix(sk_canvas_t* ccanvas) {
 }
 
 void sk_canvas_set_matrix(sk_canvas_t* ccanvas, const sk_matrix44_t* cmatrix) {
-    AsCanvas(ccanvas)->setMatrix(AsM44(cmatrix));
+    AsCanvas(ccanvas)->setMatrix(*AsM44(cmatrix));
 }
 
 void sk_canvas_get_matrix(sk_canvas_t* ccanvas, sk_matrix44_t* cmatrix) {
@@ -138,7 +138,7 @@ void sk_canvas_skew(sk_canvas_t* ccanvas, float sx, float sy) {
 }
 
 void sk_canvas_concat(sk_canvas_t* ccanvas, const sk_matrix44_t* cmatrix) {
-    AsCanvas(ccanvas)->concat(AsM44(cmatrix));
+    AsCanvas(ccanvas)->concat(*AsM44(cmatrix));
 }
 
 bool sk_canvas_quick_reject(sk_canvas_t* ccanvas, const sk_rect_t* crect) {

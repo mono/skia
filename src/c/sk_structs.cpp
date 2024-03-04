@@ -74,6 +74,7 @@ static_assert (sizeof (sk_cubic_resampler_t) == sizeof (SkCubicResampler), ASSER
 static_assert (sizeof (sk_sampling_options_t) == sizeof (SkSamplingOptions), ASSERT_MSG(SkSamplingOptions, sk_sampling_options_t));
 static_assert (sizeof (sk_runtimeeffect_uniform_t) == sizeof (SkRuntimeEffect::Uniform), ASSERT_MSG(SkRuntimeEffect::Uniform, sk_runtimeeffect_uniform_t));
 static_assert (sizeof (sk_runtimeeffect_child_t) == sizeof (SkRuntimeEffect::Child), ASSERT_MSG(SkRuntimeEffect::Child, sk_runtimeeffect_child_t));
+static_assert (sizeof (sk_matrix44_t) == sizeof (SkM44), ASSERT_MSG(SkM44, sk_matrix44_t));
 
 static_assert (sizeof (skottie_animation_builder_stats_t) == sizeof (skottie::Animation::Builder::Stats), ASSERT_MSG(skottie::Animation::Builder::Stats, skottie_animation_builder_stats_t));
 
