@@ -162,6 +162,7 @@ DEF_STRUCT_MAP(SkPoint, sk_point_t, Point)
 DEF_STRUCT_MAP(SkPoint3, sk_point3_t, Point3)
 DEF_STRUCT_MAP(SkRect, sk_rect_t, Rect)
 DEF_STRUCT_MAP(SkRSXform, sk_rsxform_t, RSXform)
+DEF_STRUCT_MAP(SkM44, sk_matrix44_t, M44)
 DEF_STRUCT_MAP(SkSize, sk_size_t, Size)
 DEF_STRUCT_MAP(SkCubicResampler, sk_cubic_resampler_t, CubicResampler)
 DEF_STRUCT_MAP(SkSamplingOptions, sk_sampling_options_t, SamplingOptions)
@@ -242,63 +243,6 @@ static inline sk_matrix_t ToMatrix(const SkMatrix& matrix) {
     m.persp0 = matrix.get(SkMatrix::kMPersp0);
     m.persp1 = matrix.get(SkMatrix::kMPersp1);
     m.persp2 = matrix.get(SkMatrix::kMPersp2);
-    return m;
-}
-
-#include "include/core/SkM44.h"
-static inline SkM44 AsM44(const sk_matrix44_t* matrix) {
-    return SkM44(
-        matrix->m00, matrix->m01, matrix->m02, matrix->m03,
-        matrix->m10, matrix->m11, matrix->m12, matrix->m13,
-        matrix->m20, matrix->m21, matrix->m22, matrix->m23,
-        matrix->m30, matrix->m31, matrix->m32, matrix->m33);
-}
-static inline sk_matrix44_t ToM44(const SkM44* matrix) {
-    sk_matrix44_t m;
-    // row 0
-    m.m00 = matrix->rc(0, 0);
-    m.m01 = matrix->rc(0, 1);
-    m.m02 = matrix->rc(0, 2);
-    m.m03 = matrix->rc(0, 3);
-    // row 1
-    m.m10 = matrix->rc(1, 0);
-    m.m11 = matrix->rc(1, 1);
-    m.m12 = matrix->rc(1, 2);
-    m.m13 = matrix->rc(1, 3);
-    // row 2
-    m.m20 = matrix->rc(2, 0);
-    m.m21 = matrix->rc(2, 1);
-    m.m22 = matrix->rc(2, 2);
-    m.m23 = matrix->rc(2, 3);
-    // row 3
-    m.m30 = matrix->rc(3, 0);
-    m.m31 = matrix->rc(3, 1);
-    m.m32 = matrix->rc(3, 2);
-    m.m33 = matrix->rc(3, 3);
-    return m;
-}
-static inline sk_matrix44_t ToM44(const SkM44& matrix) {
-    sk_matrix44_t m;
-    // row 0
-    m.m00 = matrix.rc(0, 0);
-    m.m01 = matrix.rc(0, 1);
-    m.m02 = matrix.rc(0, 2);
-    m.m03 = matrix.rc(0, 3);
-    // row 1
-    m.m10 = matrix.rc(1, 0);
-    m.m11 = matrix.rc(1, 1);
-    m.m12 = matrix.rc(1, 2);
-    m.m13 = matrix.rc(1, 3);
-    // row 2
-    m.m20 = matrix.rc(2, 0);
-    m.m21 = matrix.rc(2, 1);
-    m.m22 = matrix.rc(2, 2);
-    m.m23 = matrix.rc(2, 3);
-    // row 3
-    m.m30 = matrix.rc(3, 0);
-    m.m31 = matrix.rc(3, 1);
-    m.m32 = matrix.rc(3, 2);
-    m.m33 = matrix.rc(3, 3);
     return m;
 }
 
