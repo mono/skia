@@ -79,6 +79,22 @@ gr_direct_context_t* gr_direct_context_make_metal_with_options(void* device, voi
     return SK_ONLY_METAL(ToGrDirectContext(GrDirectContext::MakeMetal(device, queue, opts).release()), nullptr);
 }
 
+gr_direct_context_t* gr_direct_context_make_direct3d(const gr_d3d_backendcontext_t d3dBackendContext) {
+    return SK_ONLY_DIRECT3D(
+            ToGrDirectContext(
+                    GrDirectContext::MakeDirect3D(AsGrD3DBackendContext(&d3dBackendContext)).release()),
+            nullptr);
+}
+
+gr_direct_context_t* gr_direct_context_make_direct3d_with_options(const gr_d3d_backendcontext_t d3dBackendContext,
+                                                            const gr_context_options_t* options) {
+    SK_ONLY_DIRECT3D(GrContextOptions opts; if (options) { opts = AsGrContextOptions(options); })
+    return SK_ONLY_DIRECT3D(
+            ToGrDirectContext(GrDirectContext::MakeDirect3D(AsGrD3DBackendContext(&d3dBackendContext), opts)
+                                      .release()),
+            nullptr);
+}
+
 bool gr_direct_context_is_abandoned(gr_direct_context_t* context) {
     return SK_ONLY_GPU(AsGrDirectContext(context)->abandoned(), true);
 }
@@ -213,6 +229,10 @@ gr_backendtexture_t* gr_backendtexture_new_metal(int width, int height, bool mip
     return SK_ONLY_METAL(ToGrBackendTexture(new GrBackendTexture(width, height, (GrMipMapped)mipmapped, AsGrMtlTextureInfo(mtlInfo))), nullptr);
 }
 
+gr_backendtexture_t* gr_backendtexture_new_direct3d(int width, int height, const gr_d3d_textureinfo_t* d3dInfo) {
+    return SK_ONLY_DIRECT3D(ToGrBackendTexture(new GrBackendTexture(width, height, *AsGrD3DTextureResourceInfo(d3dInfo))), nullptr);
+}
+
 void gr_backendtexture_delete(gr_backendtexture_t* texture) {
     SK_ONLY_GPU(delete AsGrBackendTexture(texture));
 }
@@ -254,6 +274,10 @@ gr_backendrendertarget_t* gr_backendrendertarget_new_vulkan(int width, int heigh
 
 gr_backendrendertarget_t* gr_backendrendertarget_new_metal(int width, int height, int samples, const gr_mtl_textureinfo_t* mtlInfo) {
     return SK_ONLY_METAL(ToGrBackendRenderTarget(new GrBackendRenderTarget(width, height, samples, AsGrMtlTextureInfo(mtlInfo))), nullptr);
+}
+
+gr_backendrendertarget_t* gr_backendrendertarget_new_direct3d(int width, int height, const gr_d3d_textureinfo_t* d3dInfo) {
+    return SK_ONLY_DIRECT3D(ToGrBackendRenderTarget(new GrBackendRenderTarget(width, height, *AsGrD3DTextureResourceInfo(d3dInfo))), nullptr);
 }
 
 void gr_backendrendertarget_delete(gr_backendrendertarget_t* rendertarget) {

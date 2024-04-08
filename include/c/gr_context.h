@@ -31,6 +31,8 @@ SK_C_API gr_direct_context_t* gr_direct_context_make_vulkan(const gr_vk_backendc
 SK_C_API gr_direct_context_t* gr_direct_context_make_vulkan_with_options(const gr_vk_backendcontext_t vkBackendContext, const gr_context_options_t* options);
 SK_C_API gr_direct_context_t* gr_direct_context_make_metal(void* device, void* queue);
 SK_C_API gr_direct_context_t* gr_direct_context_make_metal_with_options(void* device, void* queue, const gr_context_options_t* options);
+SK_C_API gr_direct_context_t* gr_direct_context_make_direct3d(const gr_d3d_backendcontext_t d3dBackendContext);
+SK_C_API gr_direct_context_t* gr_direct_context_make_direct3d_with_options(const gr_d3d_backendcontext_t d3dBackendContext, const gr_context_options_t* options);
 
 // TODO: the overloads with GrContextOptions
 
@@ -75,6 +77,7 @@ SK_C_API bool gr_vk_extensions_has_extension(gr_vk_extensions_t* extensions, con
 SK_C_API gr_backendtexture_t* gr_backendtexture_new_gl(int width, int height, bool mipmapped, const gr_gl_textureinfo_t* glInfo);
 SK_C_API gr_backendtexture_t* gr_backendtexture_new_vulkan(int width, int height, const gr_vk_imageinfo_t* vkInfo);
 SK_C_API gr_backendtexture_t* gr_backendtexture_new_metal(int width, int height, bool mipmapped, const gr_mtl_textureinfo_t* mtlInfo);
+SK_C_API gr_backendtexture_t* gr_backendtexture_new_direct3d(int width, int height, const gr_d3d_textureinfo_t* d3dInfo);
 SK_C_API void gr_backendtexture_delete(gr_backendtexture_t* texture);
 
 SK_C_API bool gr_backendtexture_is_valid(const gr_backendtexture_t* texture);
@@ -90,6 +93,7 @@ SK_C_API bool gr_backendtexture_get_gl_textureinfo(const gr_backendtexture_t* te
 SK_C_API gr_backendrendertarget_t* gr_backendrendertarget_new_gl(int width, int height, int samples, int stencils, const gr_gl_framebufferinfo_t* glInfo);
 SK_C_API gr_backendrendertarget_t* gr_backendrendertarget_new_vulkan(int width, int height, int samples, const gr_vk_imageinfo_t* vkImageInfo);
 SK_C_API gr_backendrendertarget_t* gr_backendrendertarget_new_metal(int width, int height, int samples, const gr_mtl_textureinfo_t* mtlInfo);
+SK_C_API gr_backendrendertarget_t* gr_backendrendertarget_new_direct3d(int width, int height, const gr_d3d_textureinfo_t* d3dInfo);
 
 SK_C_API void gr_backendrendertarget_delete(gr_backendrendertarget_t* rendertarget);
 
