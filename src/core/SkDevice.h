@@ -42,6 +42,9 @@ class Context;
 struct ContextInfo;
 class Mapping;
 }
+namespace skgpu {
+class TiledTextureUtils;
+}
 namespace skgpu::ganesh {
 class Device;
 }
@@ -355,13 +358,11 @@ protected:
                                     const SkPaint& drawingPaint) = 0;
 
     // Slug handling routines.
-#if (defined(SK_GANESH) || defined(SK_GRAPHITE))
     virtual sk_sp<sktext::gpu::Slug> convertGlyphRunListToSlug(
             const sktext::GlyphRunList& glyphRunList,
             const SkPaint& initialPaint,
             const SkPaint& drawingPaint);
     virtual void drawSlug(SkCanvas*, const sktext::gpu::Slug* slug, const SkPaint& drawingPaint);
-#endif
 
     /**
      * The SkDevice passed will be an SkDevice which was returned by a call to
@@ -475,6 +476,7 @@ private:
     friend class SkDrawBase;
     friend class SkSurface_Raster;
     friend class DeviceTestingAccess;
+    friend class skgpu::TiledTextureUtils; // for drawEdgeAAImage
 
     void simplifyGlyphRunRSXFormAndRedraw(SkCanvas*,
                                           const sktext::GlyphRunList&,
@@ -509,6 +511,25 @@ private:
     }
 
     virtual SkImageFilterCache* getImageFilterCache() { return nullptr; }
+
+    // Assumes the src and dst rects have already been optimized to fit the proxy.
+    // Only implemented by the gpu devices.
+    // This method is the lowest level draw used for tiled bitmap draws. It doesn't attempt to
+    // modify its parameters (e.g., adjust src & dst) but just draws the image however it can. It
+    // could, almost, be replaced with a drawEdgeAAImageSet call for the tiled bitmap draw use
+    // case but the extra tilemode requirement and the intermediate parameter processing (e.g.,
+    // trying to alter the SrcRectConstraint) currently block that.
+    virtual void drawEdgeAAImage(const SkImage*,
+                                 const SkRect& src,
+                                 const SkRect& dst,
+                                 const SkPoint dstClip[4],
+                                 SkCanvas::QuadAAFlags,
+                                 const SkMatrix& localToDevice,
+                                 const SkSamplingOptions&,
+                                 const SkPaint&,
+                                 SkCanvas::SrcRectConstraint,
+                                 const SkMatrix& srcToDst,
+                                 SkTileMode) {}
 
     friend class SkNoPixelsDevice;
     friend class SkBitmapDevice;

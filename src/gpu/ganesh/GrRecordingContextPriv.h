@@ -12,12 +12,13 @@
 #include "include/core/SkTypes.h"
 #include "include/gpu/GrRecordingContext.h"
 #include "src/gpu/RefCntedCallback.h"
-#include "src/gpu/ganesh/Device_v1.h"
+#include "src/gpu/SkBackingFit.h"
+#include "src/gpu/ganesh/Device.h"
 #include "src/gpu/ganesh/GrImageContextPriv.h"
 #include "src/text/gpu/SDFTControl.h"
 
 class GrImageInfo;
-class SkDeferredDisplayList;
+class GrDeferredDisplayList;
 namespace skgpu {
     class Swizzle;
 }
@@ -63,7 +64,7 @@ public:
 
     GrThreadSafeCache* threadSafeCache() { return this->context()->threadSafeCache(); }
 
-    void moveRenderTasksToDDL(SkDeferredDisplayList*);
+    void moveRenderTasksToDDL(GrDeferredDisplayList*);
 
     /**
      * Registers an object for flush-related callbacks. (See GrOnFlushCallbackObject.)

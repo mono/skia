@@ -21,6 +21,7 @@ tests_sources = [
   "$_tests/BackendSurfaceMutableStateTest.cpp",
   "$_tests/BadIcoTest.cpp",
   "$_tests/BezierCurveTest.cpp",
+  "$_tests/BigImageTest.cpp",
   "$_tests/BitSetTest.cpp",
   "$_tests/BitmapCopyTest.cpp",
   "$_tests/BitmapGetColorTest.cpp",
@@ -112,7 +113,6 @@ tests_sources = [
   "$_tests/GrQuadBufferTest.cpp",
   "$_tests/GrQuadCropTest.cpp",
   "$_tests/GrRenderTaskClusterTest.cpp",
-  "$_tests/GrSlugTest.cpp",
   "$_tests/GrStyledShapeTest.cpp",
   "$_tests/GrSubmittedFlushTest.cpp",
   "$_tests/GrSurfaceResolveTest.cpp",
@@ -275,10 +275,12 @@ tests_sources = [
   "$_tests/SkUTFTest.cpp",
   "$_tests/SkVMTest.cpp",
   "$_tests/SkVxTest.cpp",
+  "$_tests/SkXmpTest.cpp",
   "$_tests/Skbug12214.cpp",
   "$_tests/Skbug5221.cpp",
   "$_tests/Skbug6389.cpp",
   "$_tests/Skbug6653.cpp",
+  "$_tests/SlugTest.cpp",
   "$_tests/SortTest.cpp",
   "$_tests/SpecialImageTest.cpp",
   "$_tests/SpecialSurfaceTest.cpp",
@@ -349,6 +351,7 @@ graphite_tests_sources = [
   "$_tests/graphite/DeviceTest.cpp",
   "$_tests/graphite/GraphitePromiseImageTest.cpp",
   "$_tests/graphite/GraphiteResourceCacheTest.cpp",
+  "$_tests/graphite/GraphiteYUVAPromiseImageTest.cpp",
   "$_tests/graphite/ImageProviderTest.cpp",
   "$_tests/graphite/ImageShaderTest.cpp",
   "$_tests/graphite/IntersectionTreeTest.cpp",
@@ -470,4 +473,7 @@ ganesh_tests_sources = [
 
 tests_sources += ganesh_tests_sources
 
-jpeg_gainmap_tests_sources = [ "$_tests/JpegGainmapTest.cpp" ]
+jpeg_gainmap_tests_sources = [
+  "$_tests/JpegGainmapTest.cpp",
+  "$_tests/SkJpegXmpTest.cpp",
+]

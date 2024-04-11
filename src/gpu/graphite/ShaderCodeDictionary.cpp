@@ -790,7 +790,7 @@ static constexpr Uniform kImageShaderUniforms[] = {
         { "tilemodeY",             SkSLType::kInt },
         { "filterMode",            SkSLType::kInt },
         { "useCubic",              SkSLType::kInt },
-        { "cubicCoeffs",           SkSLType::kFloat4x4 },
+        { "cubicCoeffs",           SkSLType::kHalf4x4 },
         { "readSwizzle",           SkSLType::kInt },
         // The next 6 uniforms are for the color space transformation
         { "csXformFlags",          SkSLType::kInt },
@@ -837,7 +837,7 @@ static constexpr Uniform kYUVImageShaderUniforms[] = {
         { "tilemodeY",             SkSLType::kInt },
         { "filterMode",            SkSLType::kInt },
         { "useCubic",              SkSLType::kInt },
-        { "cubicCoeffs",           SkSLType::kFloat4x4 },
+        { "cubicCoeffs",           SkSLType::kHalf4x4 },
         { "channelSelectY",        SkSLType::kHalf4 },
         { "channelSelectU",        SkSLType::kHalf4 },
         { "channelSelectV",        SkSLType::kHalf4 },
@@ -1015,15 +1015,16 @@ public:
     }
 
     void declareFunction(const char* decl) override {
+        // TODO(skbug.com/14387) - The pipeline generator does not include semicolons for functions
         *fPreamble += std::string(decl) + ";";
     }
 
     void defineStruct(const char* definition) override {
-        *fPreamble += std::string(definition) + ";";
+        *fPreamble += std::string(definition);
     }
 
     void declareGlobal(const char* declaration) override {
-        *fPreamble += std::string(declaration) + ";";
+        *fPreamble += std::string(declaration);
     }
 
     std::string sampleShader(int index, std::string coords) override {

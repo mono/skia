@@ -32,11 +32,11 @@
 #include "include/private/base/SkDebug.h"
 #include "include/private/base/SkTArray.h"
 #include "include/private/base/SkTo.h"
-#include "src/core/SkColorFilterBase.h"
 #include "src/core/SkImageFilterTypes.h"
 #include "src/core/SkRectPriv.h"
 #include "src/core/SkSpecialImage.h"
 #include "src/core/SkSpecialSurface.h"
+#include "src/effects/colorfilters/SkColorFilterBase.h"
 #include "tests/CtsEnforcement.h"
 #include "tests/Test.h"
 #include "tests/TestUtils.h"
@@ -65,6 +65,77 @@ struct GrContextOptions;
 #endif
 
 using namespace skif;
+
+// NOTE: Not in anonymous so that FilterResult can friend it for access to draw() and asShader()
+class FilterResultImageResolver {
+public:
+    enum class Method {
+        kImageAndOffset,
+        kShader,
+        kClippedShader,
+        kDrawToCanvas
+    };
+
+    FilterResultImageResolver(Method method) : fMethod(method) {}
+
+    const char* methodName() const {
+        switch (fMethod) {
+            case Method::kImageAndOffset: return "imageAndOffset";
+            case Method::kShader:         return "asShader";
+            case Method::kClippedShader:  return "asShaderClipped";
+            case Method::kDrawToCanvas:   return "drawToCanvas";
+        }
+        SkUNREACHABLE;
+    }
+
+    std::pair<sk_sp<SkSpecialImage>, SkIPoint> resolve(const Context& ctx,
+                                                       const FilterResult& image) const {
+        if (fMethod == Method::kImageAndOffset) {
+            SkIPoint origin;
+            sk_sp<SkSpecialImage> resolved = image.imageAndOffset(ctx, &origin);
+            return {resolved, origin};
+        } else {
+            if (ctx.desiredOutput().isEmpty()) {
+                return {nullptr, {}};
+            }
+
+            auto surface = ctx.makeSurface(SkISize(ctx.desiredOutput().size()));
+            SkASSERT(surface);
+
+            SkCanvas* canvas = surface->getCanvas();
+            canvas->clear(SK_ColorTRANSPARENT);
+            canvas->translate(-ctx.desiredOutput().left(), -ctx.desiredOutput().top());
+
+            if (fMethod == Method::kShader || fMethod == Method::kClippedShader) {
+                skif::LayerSpace<SkIRect> sampleBounds;
+                if (fMethod == Method::kShader) {
+                    // asShader() applies layer bounds by resolving automatically
+                    // (e.g. kDrawToCanvas), if sampleBounds is larger than the layer bounds. Since
+                    // we want to test the unclipped shader version, pass in layerBounds() for
+                    // sampleBounds and add a clip to the canvas instead.
+                    canvas->clipIRect(SkIRect(image.layerBounds()));
+                    sampleBounds = image.layerBounds();
+                } else {
+                    sampleBounds = ctx.desiredOutput();
+                }
+
+                SkPaint paint;
+                paint.setShader(image.asShader(ctx, FilterResult::kDefaultSampling,
+                                               FilterResult::ShaderFlags::kNone,
+                                               sampleBounds));
+                canvas->drawPaint(paint);
+            } else {
+                SkASSERT(fMethod == Method::kDrawToCanvas);
+                image.draw(canvas);
+            }
+
+            return {surface->makeImageSnapshot(), SkIPoint(ctx.desiredOutput().topLeft())};
+        }
+    }
+
+private:
+    Method fMethod;
+};
 
 namespace {
 
@@ -336,21 +407,37 @@ public:
                        const FilterResult& actual) {
         SkASSERT(expectedImage);
 
-        SkIPoint actualOrigin;
-        sk_sp<SkSpecialImage> actualImage = actual.imageAndOffset(ctx, &actualOrigin);
-
         SkBitmap expectedBM = this->readPixels(expectedImage);
-        SkBitmap actualBM = this->readPixels(actualImage.get()); // empty if actualImage is null
-        TArray<SkIPoint> badPixels;
-        if (!this->compareBitmaps(expectedBM, expectedOrigin, actualBM, actualOrigin, &badPixels)) {
-            this->logBitmaps(expectedBM, actualBM, badPixels);
-            return false;
-        }
 
-        return true;
+        // Resolve actual using all 3 methods to ensure they are approximately equal to the expected
+        // (which is used as a proxy for being approximately equal to each other).
+        return this->compareImages(ctx, expectedBM, expectedOrigin, actual,
+                                   FilterResultImageResolver::Method::kImageAndOffset) &&
+               this->compareImages(ctx, expectedBM, expectedOrigin, actual,
+                                   FilterResultImageResolver::Method::kShader) &&
+               this->compareImages(ctx, expectedBM, expectedOrigin, actual,
+                                   FilterResultImageResolver::Method::kClippedShader) &&
+               this->compareImages(ctx, expectedBM, expectedOrigin, actual,
+                                   FilterResultImageResolver::Method::kDrawToCanvas);
     }
 
 private:
+
+    bool compareImages(const skif::Context& ctx, const SkBitmap& expected, SkIPoint expectedOrigin,
+                       const FilterResult& actual, FilterResultImageResolver::Method method) {
+        FilterResultImageResolver resolver{method};
+        auto [actualImage, actualOrigin] = resolver.resolve(ctx, actual);
+
+        SkBitmap actualBM = this->readPixels(actualImage.get()); // empty if actualImage is null
+        TArray<SkIPoint> badPixels;
+        if (!this->compareBitmaps(expected, expectedOrigin, actualBM, actualOrigin, &badPixels)) {
+            SkDebugf("FilterResult comparison failed for method %s\n", resolver.methodName());
+            this->logBitmaps(expected, actualBM, badPixels);
+            return false;
+        }
+        return true;
+    }
+
 
     bool compareBitmaps(const SkBitmap& expected,
                         SkIPoint expectedOrigin,
@@ -1030,34 +1117,34 @@ DEF_TEST_SUITE(CompatibleSamplingConcatsTransforms, r) {
     TestCase(r, "linear + linear combine")
             .source({0, 0, 8, 8}, SkColors::kGreen)
             .applyTransform(SkMatrix::RotateDeg(2.f, {4.f, 4.f}),
-                            SkSamplingOptions{SkFilterMode::kLinear}, Expect::kDeferredImage)
+                            SkFilterMode::kLinear, Expect::kDeferredImage)
             .applyTransform(SkMatrix::RotateDeg(2.f, {4.f, 4.f}),
-                            SkSamplingOptions{SkFilterMode::kLinear}, Expect::kDeferredImage)
+                            SkFilterMode::kLinear, Expect::kDeferredImage)
             .run(/*requestedOutput=*/{0, 0, 16, 16});
 
     TestCase(r, "equiv. bicubics combine")
             .source({0, 0, 8, 8}, SkColors::kGreen)
             .applyTransform(SkMatrix::RotateDeg(2.f, {4.f, 4.f}),
-                            SkSamplingOptions{SkCubicResampler::Mitchell()}, Expect::kDeferredImage)
+                            SkCubicResampler::Mitchell(), Expect::kDeferredImage)
             .applyTransform(SkMatrix::RotateDeg(2.f, {4.f, 4.f}),
-                            SkSamplingOptions{SkCubicResampler::Mitchell()}, Expect::kDeferredImage)
+                            SkCubicResampler::Mitchell(), Expect::kDeferredImage)
             .run(/*requestedOutput=*/{0, 0, 16, 16});
 
     TestCase(r, "linear + bicubic becomes bicubic")
             .source({0, 0, 8, 8}, SkColors::kGreen)
             .applyTransform(SkMatrix::RotateDeg(2.f, {4.f, 4.f}),
-                            SkSamplingOptions{SkFilterMode::kLinear}, Expect::kDeferredImage)
+                            SkFilterMode::kLinear, Expect::kDeferredImage)
             .applyTransform(SkMatrix::RotateDeg(2.f, {4.f, 4.f}),
-                            SkSamplingOptions{SkCubicResampler::Mitchell()}, Expect::kDeferredImage)
+                            SkCubicResampler::Mitchell(), Expect::kDeferredImage)
             .run(/*requestedOutput=*/{0, 0, 16, 16});
 
     TestCase(r, "bicubic + linear becomes bicubic")
             .source({0, 0, 8, 8}, SkColors::kGreen)
             .applyTransform(SkMatrix::RotateDeg(2.f, {4.f, 4.f}),
-                            SkSamplingOptions{SkCubicResampler::Mitchell()}, Expect::kDeferredImage)
+                            SkCubicResampler::Mitchell(), Expect::kDeferredImage)
             .applyTransform(SkMatrix::RotateDeg(2.f, {4.f, 4.f}),
-                            SkSamplingOptions{SkFilterMode::kLinear}, Expect::kDeferredImage,
-                            /*expectedSampling=*/SkSamplingOptions{SkCubicResampler::Mitchell()})
+                            SkFilterMode::kLinear, Expect::kDeferredImage,
+                            /*expectedSampling=*/SkCubicResampler::Mitchell())
             .run(/*requestedOutput=*/{0, 0, 16, 16});
 
     TestCase(r, "aniso picks max level to combine")
@@ -1080,7 +1167,7 @@ DEF_TEST_SUITE(CompatibleSamplingConcatsTransforms, r) {
     TestCase(r, "linear + aniso becomes aniso")
             .source({0, 0, 8, 8}, SkColors::kGreen)
             .applyTransform(SkMatrix::RotateDeg(2.f, {4.f, 4.f}),
-                            SkSamplingOptions{SkFilterMode::kLinear}, Expect::kDeferredImage)
+                            SkFilterMode::kLinear, Expect::kDeferredImage)
             .applyTransform(SkMatrix::RotateDeg(2.f, {4.f, 4.f}),
                             SkSamplingOptions::Aniso(2.f), Expect::kDeferredImage)
             .run(/*requestedOutput=*/{0, 0, 16, 16});
@@ -1090,7 +1177,7 @@ DEF_TEST_SUITE(CompatibleSamplingConcatsTransforms, r) {
             .applyTransform(SkMatrix::RotateDeg(2.f, {4.f, 4.f}),
                             SkSamplingOptions::Aniso(4.f), Expect::kDeferredImage)
             .applyTransform(SkMatrix::RotateDeg(2.f, {4.f, 4.f}),
-                            SkSamplingOptions{SkFilterMode::kLinear}, Expect::kDeferredImage,
+                            SkFilterMode::kLinear, Expect::kDeferredImage,
                             /*expectedSampling=*/SkSamplingOptions::Aniso(4.f))
             .run(/*requestedOutput=*/{0, 0, 16, 16});
 
@@ -1102,31 +1189,31 @@ DEF_TEST_SUITE(IncompatibleSamplingResolvesImages, r) {
     TestCase(r, "different bicubics do not combine")
             .source({0, 0, 8, 8}, SkColors::kBlue)
             .applyTransform(SkMatrix::RotateDeg(2.f, {4.f, 4.f}),
-                            SkSamplingOptions{SkCubicResampler::Mitchell()}, Expect::kDeferredImage)
+                            SkCubicResampler::Mitchell(), Expect::kDeferredImage)
             .applyTransform(SkMatrix::RotateDeg(2.f, {4.f, 4.f}),
-                            SkSamplingOptions{SkCubicResampler::CatmullRom()}, Expect::kNewImage)
+                            SkCubicResampler::CatmullRom(), Expect::kNewImage)
             .run(/*requestedOutput=*/{0, 0, 16, 16});
 
     TestCase(r, "nearest + linear do not combine")
             .source({0, 0, 8, 8}, SkColors::kBlue)
             .applyTransform(SkMatrix::RotateDeg(2.f, {4.f, 4.f}),
-                            SkSamplingOptions{SkFilterMode::kNearest}, Expect::kDeferredImage)
+                            SkFilterMode::kNearest, Expect::kDeferredImage)
             .applyTransform(SkMatrix::RotateDeg(2.f, {4.f, 4.f}),
-                            SkSamplingOptions{SkFilterMode::kLinear}, Expect::kNewImage)
+                            SkFilterMode::kLinear, Expect::kNewImage)
             .run(/*requestedOutput=*/{0, 0, 16, 16});
 
     TestCase(r, "linear + nearest do not combine")
             .source({0, 0, 8, 8}, SkColors::kBlue)
             .applyTransform(SkMatrix::RotateDeg(2.f, {4.f, 4.f}),
-                            SkSamplingOptions{SkFilterMode::kLinear}, Expect::kDeferredImage)
+                            SkFilterMode::kLinear, Expect::kDeferredImage)
             .applyTransform(SkMatrix::RotateDeg(2.f, {4.f, 4.f}),
-                            SkSamplingOptions{SkFilterMode::kNearest}, Expect::kNewImage)
+                            SkFilterMode::kNearest, Expect::kNewImage)
             .run(/*requestedOutput=*/{0, 0, 16, 16});
 
     TestCase(r, "bicubic + aniso do not combine")
             .source({0, 0, 8, 8}, SkColors::kBlue)
             .applyTransform(SkMatrix::RotateDeg(2.f, {4.f, 4.f}),
-                            SkSamplingOptions{SkCubicResampler::Mitchell()}, Expect::kDeferredImage)
+                            SkCubicResampler::Mitchell(), Expect::kDeferredImage)
             .applyTransform(SkMatrix::RotateDeg(2.f, {4.f, 4.f}),
                             SkSamplingOptions::Aniso(4.f), Expect::kNewImage)
             .run(/*requestedOutput=*/{0, 0, 16, 16});
@@ -1136,15 +1223,15 @@ DEF_TEST_SUITE(IncompatibleSamplingResolvesImages, r) {
             .applyTransform(SkMatrix::RotateDeg(2.f, {4.f, 4.f}),
                             SkSamplingOptions::Aniso(4.f), Expect::kDeferredImage)
             .applyTransform(SkMatrix::RotateDeg(2.f, {4.f, 4.f}),
-                            SkSamplingOptions{SkCubicResampler::Mitchell()}, Expect::kNewImage)
+                            SkCubicResampler::Mitchell(), Expect::kNewImage)
             .run(/*requestedOutput=*/{0, 0, 16, 16});
 
     TestCase(r, "nearest + nearest do not combine")
             .source({0, 0, 8, 8}, SkColors::kBlue)
             .applyTransform(SkMatrix::RotateDeg(2.f, {4.f, 4.f}),
-                            SkSamplingOptions{SkFilterMode::kNearest}, Expect::kDeferredImage)
+                            SkFilterMode::kNearest, Expect::kDeferredImage)
             .applyTransform(SkMatrix::RotateDeg(2.f, {4.f, 4.f}),
-                            SkSamplingOptions{SkFilterMode::kNearest}, Expect::kNewImage)
+                            SkFilterMode::kNearest, Expect::kNewImage)
             .run(/*requestedOutput=*/{0, 0, 16, 16});
 }
 
@@ -1154,19 +1241,19 @@ DEF_TEST_SUITE(IntegerOffsetIgnoresNearestSampling, r) {
     TestCase(r, "integer translate+NN then bicubic combines")
             .source({0, 0, 8, 8}, SkColors::kCyan)
             .applyTransform(SkMatrix::Translate(2, 2),
-                            SkSamplingOptions{SkFilterMode::kNearest}, Expect::kDeferredImage,
+                            SkFilterMode::kNearest, Expect::kDeferredImage,
                             FilterResult::kDefaultSampling)
             .applyTransform(SkMatrix::RotateDeg(2.f, {4.f, 4.f}),
-                            SkSamplingOptions{SkCubicResampler::Mitchell()}, Expect::kDeferredImage)
+                            SkCubicResampler::Mitchell(), Expect::kDeferredImage)
             .run(/*requestedOutput=*/{0, 0, 16, 16});
 
     TestCase(r, "bicubic then integer translate+NN combines")
             .source({0, 0, 8, 8}, SkColors::kCyan)
             .applyTransform(SkMatrix::RotateDeg(2.f, {4.f, 4.f}),
-                            SkSamplingOptions{SkCubicResampler::Mitchell()}, Expect::kDeferredImage)
+                            SkCubicResampler::Mitchell(), Expect::kDeferredImage)
             .applyTransform(SkMatrix::Translate(2, 2),
-                            SkSamplingOptions{SkFilterMode::kNearest}, Expect::kDeferredImage,
-                            /*expectedSampling=*/SkSamplingOptions{SkCubicResampler::Mitchell()})
+                            SkFilterMode::kNearest, Expect::kDeferredImage,
+                            /*expectedSampling=*/SkCubicResampler::Mitchell())
             .run(/*requestedOutput=*/{0, 0, 16, 16});
 }
 

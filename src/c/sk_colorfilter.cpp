@@ -7,10 +7,10 @@
  * found in the LICENSE file.
  */
 
+#include "include/core/SkColorFilter.h"
 #include "include/effects/SkColorMatrixFilter.h"
 #include "include/effects/SkHighContrastFilter.h"
 #include "include/effects/SkLumaColorFilter.h"
-#include "include/effects/SkTableColorFilter.h"
 
 #include "include/c/sk_colorfilter.h"
 
@@ -45,9 +45,9 @@ sk_colorfilter_t* sk_colorfilter_new_high_contrast(const sk_highcontrastconfig_t
 }
 
 sk_colorfilter_t* sk_colorfilter_new_table(const uint8_t table[256]) {
-    return ToColorFilter(SkTableColorFilter::Make(table).release());
+    return ToColorFilter(SkColorFilters::Table(table).release());
 }
 
 sk_colorfilter_t* sk_colorfilter_new_table_argb(const uint8_t tableA[256], const uint8_t tableR[256], const uint8_t tableG[256], const uint8_t tableB[256]) {
-    return ToColorFilter(SkTableColorFilter::MakeARGB(tableA, tableR, tableG, tableB).release());
+    return ToColorFilter(SkColorFilters::TableARGB(tableA, tableR, tableG, tableB).release());
 }

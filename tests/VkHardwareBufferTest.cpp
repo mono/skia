@@ -18,6 +18,7 @@
 #include "include/core/SkSurface.h"
 #include "include/gpu/GrBackendSemaphore.h"
 #include "include/gpu/GrDirectContext.h"
+#include "include/gpu/MutableTextureState.h"
 #include "include/gpu/ganesh/SkImageGanesh.h"
 #include "include/gpu/ganesh/SkSurfaceGanesh.h"
 #include "include/gpu/vk/GrVkBackendContext.h"
@@ -27,7 +28,7 @@
 #include "src/gpu/ganesh/GrGpu.h"
 #include "src/gpu/ganesh/GrProxyProvider.h"
 #include "src/gpu/ganesh/SkGr.h"
-#include "src/gpu/ganesh/gl/GrGLDefines_impl.h"
+#include "src/gpu/ganesh/gl/GrGLDefines.h"
 #include "src/gpu/ganesh/gl/GrGLUtil.h"
 #include "tests/Test.h"
 #include "tools/gpu/GrContextFactory.h"
@@ -318,8 +319,8 @@ sk_sp<SkSurface> EGLTestHelper::importHardwareBufferForWrite(skiatest::Reporter*
 }
 
 bool EGLTestHelper::flushSurfaceAndSignalSemaphore(skiatest::Reporter* reporter,
-                                                      sk_sp<SkSurface> surface) {
-    surface->flushAndSubmit();
+                                                   sk_sp<SkSurface> surface) {
+    skgpu::ganesh::FlushAndSubmit(surface);
 
     EGLDisplay eglDisplay = eglGetCurrentDisplay();
     EGLSyncKHR eglsync = fEGLCreateSyncKHR(eglDisplay, EGL_SYNC_NATIVE_FENCE_ANDROID, nullptr);
@@ -416,7 +417,7 @@ public:
 
     void releaseSurfaceToExternal(SkSurface* surface) override {
         skgpu::MutableTextureState newState(VK_IMAGE_LAYOUT_UNDEFINED, VK_QUEUE_FAMILY_EXTERNAL);
-        surface->flush({}, &newState);
+        fDirectContext->flush(surface, {}, &newState);
     }
 
     void cleanup() override {
@@ -751,6 +752,13 @@ bool VulkanTestHelper::importHardwareBuffer(skiatest::Reporter* reporter,
             }
         }
     }
+
+    // Fallback to align with GrAHardwareBufferUtils
+    if (!foundHeap && hwbProps.memoryTypeBits) {
+        typeIndex = ffs(hwbProps.memoryTypeBits) - 1;
+        foundHeap = true;
+    }
+
     if (!foundHeap) {
         ERRORF(reporter, "Failed to find valid heap for imported memory");
         return false;

@@ -169,6 +169,7 @@ CPU_ONLY_TESTS = [
     "SkSLDebugTraceTest.cpp",
     "SkVMTest.cpp",
     "SkVxTest.cpp",
+    "SkXmpTest.cpp",
     "Skbug6389.cpp",
     "SortTest.cpp",
     "SrcOverTest.cpp",
@@ -212,6 +213,7 @@ GANESH_TESTS = [
     "ApplyGammaTest.cpp",
     "BackendAllocationTest.cpp",
     "BackendSurfaceMutableStateTest.cpp",
+    "BigImageTest.cpp",
     "BlendTest.cpp",
     "BlurTest.cpp",
     "BulkRectTest.cpp",
@@ -252,7 +254,6 @@ GANESH_TESTS = [
     "GrQuadBufferTest.cpp",
     "GrQuadCropTest.cpp",
     "GrRenderTaskClusterTest.cpp",
-    "GrSlugTest.cpp",
     "GrStyledShapeTest.cpp",
     "GrSubmittedFlushTest.cpp",
     "GrSurfaceResolveTest.cpp",
@@ -295,10 +296,11 @@ GANESH_TESTS = [
     # "SkRuntimeEffectTest.cpp",  # TODO(b/277938020): Linux - Fails at a test assertion.
     "SkSLCross.cpp",
     "SkSLES2ConformanceTest.cpp",
-    # "SkSLTest.cpp",  # TODO(b/27793802): Pixel 5 - Fails at a test assertion.
+    # "SkSLTest.cpp",  # TODO(b/277938020): Pixel 5 - Fails at a test assertion.
     "Skbug12214.cpp",
     # "Skbug5221.cpp",  # TODO(b/277938020): Linux - Causes SkRefCnt error after all tests finish.
     "Skbug6653.cpp",
+    "SlugTest.cpp",
     "SpecialImageTest.cpp",
     "SpecialSurfaceTest.cpp",
     "SrcSrcOverBatchTest.cpp",

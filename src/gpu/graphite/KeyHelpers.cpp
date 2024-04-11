@@ -320,10 +320,9 @@ void GradientShaderBlocks::BeginBlock(const KeyContext& keyContext,
                 add_conical_gradient_uniform_data(dict, codeSnippetID, gradData, gatherer);
             }
             break;
-        case SkShaderBase::GradientType::kColor:
         case SkShaderBase::GradientType::kNone:
         default:
-            SkASSERT(0);
+            SkDEBUGFAIL("Expected a gradient shader, but it wasn't one.");
             break;
     }
 
@@ -415,9 +414,9 @@ void add_image_uniform_data(const ShaderCodeDictionary* dict,
     gatherer->write(imgData.fSampling.useCubic);
     if (imgData.fSampling.useCubic) {
         const SkCubicResampler& cubic = imgData.fSampling.cubic;
-        gatherer->write(SkImageShader::CubicResamplerMatrix(cubic.B, cubic.C));
+        gatherer->writeHalf(SkImageShader::CubicResamplerMatrix(cubic.B, cubic.C));
     } else {
-        gatherer->write(SkM44());
+        gatherer->writeHalf(SkM44());
     }
     gatherer->write(SkTo<int>(imgData.fReadSwizzle));
 
@@ -482,9 +481,9 @@ void add_yuv_image_uniform_data(const ShaderCodeDictionary* dict,
     gatherer->write(imgData.fSampling.useCubic);
     if (imgData.fSampling.useCubic) {
         const SkCubicResampler& cubic = imgData.fSampling.cubic;
-        gatherer->write(SkImageShader::CubicResamplerMatrix(cubic.B, cubic.C));
+        gatherer->writeHalf(SkImageShader::CubicResamplerMatrix(cubic.B, cubic.C));
     } else {
-        gatherer->write(SkM44());
+        gatherer->writeHalf(SkM44());
     }
 
     for (int i = 0; i < 4; ++i) {
