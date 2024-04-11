@@ -82,7 +82,7 @@ gr_direct_context_t* gr_direct_context_make_metal_with_options(void* device, voi
 gr_direct_context_t* gr_direct_context_make_direct3d(const gr_d3d_backendcontext_t d3dBackendContext) {
     return SK_ONLY_DIRECT3D(
             ToGrDirectContext(
-                    GrDirectContext::MakeDirect3D(AsGrD3DBackendContext(&d3dBackendContext)).release()),
+                    GrDirectContext::MakeDirect3D(AsGrD3DBackendContext(d3dBackendContext)).release()),
             nullptr);
 }
 
@@ -90,7 +90,7 @@ gr_direct_context_t* gr_direct_context_make_direct3d_with_options(const gr_d3d_b
                                                             const gr_context_options_t* options) {
     SK_ONLY_DIRECT3D(GrContextOptions opts; if (options) { opts = AsGrContextOptions(options); })
     return SK_ONLY_DIRECT3D(
-            ToGrDirectContext(GrDirectContext::MakeDirect3D(AsGrD3DBackendContext(&d3dBackendContext), opts)
+            ToGrDirectContext(GrDirectContext::MakeDirect3D(AsGrD3DBackendContext(d3dBackendContext), opts)
                                       .release()),
             nullptr);
 }
@@ -229,7 +229,7 @@ gr_backendtexture_t* gr_backendtexture_new_metal(int width, int height, bool mip
     return SK_ONLY_METAL(ToGrBackendTexture(new GrBackendTexture(width, height, (GrMipMapped)mipmapped, AsGrMtlTextureInfo(mtlInfo))), nullptr);
 }
 
-gr_backendtexture_t* gr_backendtexture_new_direct3d(int width, int height, const gr_d3d_textureinfo_t* d3dInfo) {
+gr_backendtexture_t* gr_backendtexture_new_direct3d(int width, int height, const gr_d3d_textureresourceinfo_t* d3dInfo) {
     return SK_ONLY_DIRECT3D(ToGrBackendTexture(new GrBackendTexture(width, height, *AsGrD3DTextureResourceInfo(d3dInfo))), nullptr);
 }
 
@@ -276,7 +276,7 @@ gr_backendrendertarget_t* gr_backendrendertarget_new_metal(int width, int height
     return SK_ONLY_METAL(ToGrBackendRenderTarget(new GrBackendRenderTarget(width, height, samples, AsGrMtlTextureInfo(mtlInfo))), nullptr);
 }
 
-gr_backendrendertarget_t* gr_backendrendertarget_new_direct3d(int width, int height, const gr_d3d_textureinfo_t* d3dInfo) {
+gr_backendrendertarget_t* gr_backendrendertarget_new_direct3d(int width, int height, const gr_d3d_textureresourceinfo_t* d3dInfo) {
     return SK_ONLY_DIRECT3D(ToGrBackendRenderTarget(new GrBackendRenderTarget(width, height, *AsGrD3DTextureResourceInfo(d3dInfo))), nullptr);
 }
 

@@ -1104,12 +1104,12 @@ SK_C_PLUS_PLUS_END_GUARD
 typedef struct d3d_dxgi_adapter_t d3d_dxgi_adapter_t;
 typedef struct d3d_d12_device_t d3d_d12_device_t;
 typedef struct d3d_d12_command_queue_t d3d_d12_command_queue_t;
-typedef struct d3d_memory_allocator_t d3d_memory_allocator_t;
+typedef struct gr_d3d_memory_allocator_t gr_d3d_memory_allocator_t;
 typedef struct {
     d3d_dxgi_adapter_t* fAdapter;
     d3d_d12_device_t* fDevice;
     d3d_d12_command_queue_t* fQueue;
-    d3d_memory_allocator_t* fMemoryAllocator;
+    gr_d3d_memory_allocator_t* fMemoryAllocator;
     bool fProtectedContext;
 } gr_d3d_backendcontext_t;
 
@@ -1124,6 +1124,6 @@ typedef struct {
     uint32_t fLevelCount;
     unsigned int fSampleQualityPattern;
     bool fProtected;
-} gr_d3d_textureinfo_t;
+} gr_d3d_textureresourceinfo_t;
 
 #endif
