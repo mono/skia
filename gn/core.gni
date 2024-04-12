@@ -151,6 +151,7 @@ skia_core_public = [
 #  //src/text:text_srcs
 skia_core_sources = [
   "$_include/c/sk_bitmap.h",
+  "$_include/c/sk_blender.h",
   "$_include/c/sk_canvas.h",
   "$_include/c/sk_codec.h",
   "$_include/c/sk_colorfilter.h",
@@ -184,6 +185,7 @@ skia_core_sources = [
   "$_include/c/sk_vertices.h",
   "$_include/c/gr_context.h",
   "$_src/c/sk_bitmap.cpp",
+  "$_src/c/sk_blender.cpp",
   "$_src/c/sk_canvas.cpp",
   "$_src/c/sk_codec.cpp",
   "$_src/c/sk_colorfilter.cpp",

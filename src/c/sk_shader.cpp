@@ -54,6 +54,10 @@ sk_shader_t* sk_shader_new_blend(sk_blendmode_t mode, const sk_shader_t* dst, co
     return ToShader(SkShaders::Blend((SkBlendMode)mode, sk_ref_sp(AsShader(dst)), sk_ref_sp(AsShader(src))).release());
 }
 
+sk_shader_t* sk_shader_new_blender(sk_blender_t* blender, const sk_shader_t* dst, const sk_shader_t* src) {
+    return ToShader(SkShaders::Blend(sk_ref_sp(AsBlender(blender)), sk_ref_sp(AsShader(dst)), sk_ref_sp(AsShader(src))).release());
+}
+
 // SkGradientShader
 
 sk_shader_t* sk_shader_new_linear_gradient(const sk_point_t points[2], const sk_color_t colors[], const float colorPos[], int colorCount, sk_shader_tilemode_t tileMode, const sk_matrix_t* localMatrix) {

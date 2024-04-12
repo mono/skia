@@ -32,6 +32,10 @@ sk_imagefilter_t* sk_imagefilter_new_blend(sk_blendmode_t mode, const sk_imagefi
     return ToImageFilter(SkImageFilters::Blend((SkBlendMode)mode, sk_ref_sp(AsImageFilter(background)), sk_ref_sp(AsImageFilter(foreground)), AsRect(cropRect)).release());
 }
 
+sk_imagefilter_t* sk_imagefilter_new_blender(sk_blender_t* blender, const sk_imagefilter_t* background, const sk_imagefilter_t* foreground, const sk_rect_t* cropRect) {
+    return ToImageFilter(SkImageFilters::Blend(sk_ref_sp(AsBlender(blender)), sk_ref_sp(AsImageFilter(background)), sk_ref_sp(AsImageFilter(foreground)), AsRect(cropRect)).release());
+}
+
 sk_imagefilter_t* sk_imagefilter_new_blur(float sigmaX, float sigmaY, sk_shader_tilemode_t tileMode, const sk_imagefilter_t* input, const sk_rect_t* cropRect) {
     return ToImageFilter(SkImageFilters::Blur(sigmaX, sigmaY, (SkTileMode)tileMode, sk_ref_sp(AsImageFilter(input)), AsRect(cropRect)).release());
 }

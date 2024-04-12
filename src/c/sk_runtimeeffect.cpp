@@ -29,6 +29,13 @@ sk_runtimeeffect_t* sk_runtimeeffect_make_for_shader(sk_string_t* sksl, sk_strin
     return ToRuntimeEffect(effect.release());
 }
 
+sk_runtimeeffect_t* sk_runtimeeffect_make_for_blender(sk_string_t* sksl, sk_string_t* error) {
+    auto [effect, errorMessage] = SkRuntimeEffect::MakeForBlender(AsString(*sksl));
+    if (error && errorMessage.size() > 0)
+        AsString(error)->swap(errorMessage);
+    return ToRuntimeEffect(effect.release());
+}
+
 void sk_runtimeeffect_unref(sk_runtimeeffect_t* effect) {
     SkSafeUnref(AsRuntimeEffect(effect));
 }
@@ -62,6 +69,19 @@ sk_colorfilter_t* sk_runtimeeffect_make_color_filter(sk_runtimeeffect_t* effect,
         SkSpan(skChildren.data(), childCount));
 
     return ToColorFilter(shader.release());
+}
+
+sk_blender_t* sk_runtimeeffect_make_blender(sk_runtimeeffect_t* effect, sk_data_t* uniforms, sk_flattenable_t** children, size_t childCount) {
+    std::vector<SkRuntimeEffect::ChildPtr> skChildren(childCount);
+    for (size_t i = 0; i < childCount; i++) {
+        skChildren[i] = sk_ref_sp(AsFlattenable(children[i]));
+    }
+
+    sk_sp<SkBlender> shader = AsRuntimeEffect(effect)->makeBlender(
+        sk_ref_sp(AsData(uniforms)),
+        SkSpan(skChildren.data(), childCount));
+
+    return ToBlender(shader.release());
 }
 
 size_t sk_runtimeeffect_get_uniform_byte_size(const sk_runtimeeffect_t* effect) {
