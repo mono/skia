@@ -43,6 +43,8 @@ SK_C_API void gr_direct_context_get_resource_cache_usage(gr_direct_context_t* co
 SK_C_API void gr_direct_context_flush(gr_direct_context_t* context);
 SK_C_API bool gr_direct_context_submit(gr_direct_context_t* context, bool syncCpu);
 SK_C_API void gr_direct_context_flush_and_submit(gr_direct_context_t* context, bool syncCpu);
+SK_C_API void gr_direct_context_flush_image(gr_direct_context_t* context, const sk_image_t* image);
+SK_C_API void gr_direct_context_flush_surface(gr_direct_context_t* context, sk_surface_t* surface);
 SK_C_API void gr_direct_context_reset_context(gr_direct_context_t* context, uint32_t state);
 SK_C_API void gr_direct_context_dump_memory_statistics(const gr_direct_context_t* context, sk_tracememorydump_t* dump);
 SK_C_API void gr_direct_context_free_gpu_resources(gr_direct_context_t* context);
