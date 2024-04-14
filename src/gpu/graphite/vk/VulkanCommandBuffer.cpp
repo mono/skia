@@ -7,15 +7,24 @@
 
 #include "src/gpu/graphite/vk/VulkanCommandBuffer.h"
 
+#include "include/private/base/SkTArray.h"
+#include "src/gpu/graphite/DescriptorTypes.h"
 #include "src/gpu/graphite/Log.h"
 #include "src/gpu/graphite/vk/VulkanBuffer.h"
+#include "src/gpu/graphite/vk/VulkanDescriptorSet.h"
 #include "src/gpu/graphite/vk/VulkanGraphiteUtilsPriv.h"
+#include "src/gpu/graphite/vk/VulkanResourceProvider.h"
+#include "src/gpu/graphite/vk/VulkanSampler.h"
 #include "src/gpu/graphite/vk/VulkanSharedContext.h"
 #include "src/gpu/graphite/vk/VulkanTexture.h"
+
+#define SK_DISABLE_VULKAN_RENDERING
 
 using namespace skia_private;
 
 namespace skgpu::graphite {
+
+class VulkanDescriptorSet;
 
 std::unique_ptr<VulkanCommandBuffer> VulkanCommandBuffer::Make(
         const VulkanSharedContext* sharedContext,
@@ -74,10 +83,6 @@ VulkanCommandBuffer::VulkanCommandBuffer(VkCommandPool pool,
         , fPrimaryCommandBuffer(primaryCommandBuffer)
         , fSharedContext(sharedContext)
         , fResourceProvider(resourceProvider) {
-
-    // TODO: Remove this line. It is only here to hide compiler warnings/errors about unused
-    // member variables.
-    (void) fResourceProvider;
     // When making a new command buffer, we automatically begin the command buffer
     this->begin();
 }
@@ -105,6 +110,10 @@ void VulkanCommandBuffer::onResetCommandBuffer() {
     VULKAN_CALL_ERRCHECK(fSharedContext->interface(), ResetCommandPool(fSharedContext->device(),
                                                                        fPool,
                                                                        0));
+    fActiveGraphicsPipeline = nullptr;
+    fBindUniformBuffers = true;
+    fTextureSamplerDescSetToBind = VK_NULL_HANDLE;
+    fUniformBuffersToBind.clear();
 }
 
 bool VulkanCommandBuffer::setNewCommandBufferResources() {
@@ -128,6 +137,7 @@ void VulkanCommandBuffer::begin() {
 
 void VulkanCommandBuffer::end() {
     SkASSERT(fActive);
+    SkASSERT(!fActiveRenderPass);
 
     this->submitPipelineBarriers();
 
@@ -266,11 +276,23 @@ bool VulkanCommandBuffer::onAddRenderPass(const RenderPassDesc& renderPassDesc,
         return false;
     }
 
+    VkViewport vkViewport = {
+        viewport.fLeft,
+        viewport.fTop,
+        viewport.width(),
+        viewport.height(),
+        0.0f, // minDepth
+        1.0f, // maxDepth
+    };
+    VULKAN_CALL(fSharedContext->interface(),
+                CmdSetViewport(fPrimaryCommandBuffer,
+                               /*firstViewport=*/0,
+                               /*viewportCount=*/1,
+                               &vkViewport));
+
     for (const auto& drawPass : drawPasses) {
         this->addDrawPass(drawPass.get());
     }
-
-    // TODO: Set viewport
 
     this->endRenderPass();
     return true;
@@ -280,19 +302,129 @@ bool VulkanCommandBuffer::beginRenderPass(const RenderPassDesc& renderPassDesc,
                                           const Texture* colorTexture,
                                           const Texture* resolveTexture,
                                           const Texture* depthStencilTexture) {
-    // TODO: Implement the following:
-    // Get render pass descriptor
-    // Set up color attachment
-    // Set up depth/stencil attachment
-    // If needed, load MSAA from resolve
+    const static VkAttachmentLoadOp vkLoadOp[] {
+        VK_ATTACHMENT_LOAD_OP_LOAD,
+        VK_ATTACHMENT_LOAD_OP_CLEAR,
+        VK_ATTACHMENT_LOAD_OP_DONT_CARE
+    };
+    static_assert((int)LoadOp::kLoad == 0);
+    static_assert((int)LoadOp::kClear == 1);
+    static_assert((int)LoadOp::kDiscard == 2);
+    static_assert(std::size(vkLoadOp) == kLoadOpCount);
 
-    // Return true despite not being fully completed to allow dm to run.
+    const static VkAttachmentStoreOp vkStoreOp[] {
+        VK_ATTACHMENT_STORE_OP_STORE,
+        VK_ATTACHMENT_STORE_OP_DONT_CARE
+    };
+    static_assert((int)StoreOp::kStore == 0);
+    static_assert((int)StoreOp::kDiscard == 1);
+    static_assert(std::size(vkStoreOp) == kStoreOpCount);
+
+    // Get render pass descriptor
+    VkRenderingInfoKHR renderingInfo;
+    memset(&renderingInfo, 0, sizeof(VkRenderingInfoKHR));
+    renderingInfo.sType = VK_STRUCTURE_TYPE_RENDERING_INFO_KHR;
+    renderingInfo.renderArea = {{ 0, 0 },
+                                { (unsigned int) colorTexture->dimensions().width(),
+                                  (unsigned int) colorTexture->dimensions().height() }};
+    renderingInfo.layerCount = 1;
+
+    // Set up color attachment
+    VkRenderingAttachmentInfoKHR colorAttachment;
+    auto& colorInfo = renderPassDesc.fColorAttachment;
+    if (colorTexture) {
+        memset(&colorAttachment, 0, sizeof(VkRenderingAttachmentInfoKHR));
+        colorAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO_KHR;
+        VulkanTexture* vulkanTexture =
+            const_cast<VulkanTexture*>(static_cast<const VulkanTexture*>(colorTexture));
+        colorAttachment.imageView =
+                vulkanTexture->getImageView(VulkanImageView::Usage::kAttachment)->imageView();
+        colorAttachment.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+        colorAttachment.loadOp = vkLoadOp[static_cast<int>(colorInfo.fLoadOp)];
+        colorAttachment.storeOp = vkStoreOp[static_cast<int>(colorInfo.fStoreOp)];
+        memcpy(&colorAttachment.clearValue.color.float32,
+               &renderPassDesc.fClearColor,
+               4*sizeof(float));
+        vulkanTexture->setImageLayout(this, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                                      VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+                                      VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, false);
+        // Set up resolve attachment
+        if (resolveTexture) {
+            SkASSERT(renderPassDesc.fColorResolveAttachment.fStoreOp == StoreOp::kStore);
+            // TODO: check Texture matches RenderPassDesc
+            vulkanTexture =
+                const_cast<VulkanTexture*>(static_cast<const VulkanTexture*>(resolveTexture));
+            colorAttachment.resolveImageView =
+                    vulkanTexture->getImageView(VulkanImageView::Usage::kAttachment)->imageView();
+            colorAttachment.resolveImageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+            SkASSERT(colorAttachment.storeOp == VK_ATTACHMENT_STORE_OP_DONT_CARE);
+            vulkanTexture->setImageLayout(this, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                                          VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+                                          VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, false);
+        }
+
+        renderingInfo.colorAttachmentCount = 1;
+        renderingInfo.pColorAttachments = &colorAttachment;
+        this->trackResource(sk_ref_sp(colorTexture));
+    }
+
+    // Set up depth/stencil attachments
+    VkRenderingAttachmentInfoKHR depthAttachment;
+    VkRenderingAttachmentInfoKHR stencilAttachment;
+    auto& depthStencilInfo = renderPassDesc.fDepthStencilAttachment;
+    if (depthStencilTexture) {
+        VulkanTexture* vulkanTexture =
+                const_cast<VulkanTexture*>(static_cast<const VulkanTexture*>(depthStencilTexture));
+        VkImageView imageView =
+                vulkanTexture->getImageView(VulkanImageView::Usage::kAttachment)->imageView();
+        VulkanTextureInfo vkTexInfo;
+        depthStencilTexture->textureInfo().getVulkanTextureInfo(&vkTexInfo);
+
+        if (VkFormatIsDepth(vkTexInfo.fFormat)) {
+            memset(&depthAttachment, 0, sizeof(VkRenderingAttachmentInfoKHR));
+            depthAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO_KHR;
+            depthAttachment.imageView = imageView;
+            depthAttachment.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+            depthAttachment.loadOp = vkLoadOp[static_cast<int>(depthStencilInfo.fLoadOp)];
+            depthAttachment.storeOp = vkStoreOp[static_cast<int>(depthStencilInfo.fStoreOp)];
+            depthAttachment.clearValue.depthStencil.depth = renderPassDesc.fClearDepth;
+
+            renderingInfo.pDepthAttachment = &depthAttachment;
+        }
+
+        if (VkFormatIsStencil(vkTexInfo.fFormat)) {
+            memset(&stencilAttachment, 0, sizeof(VkRenderingAttachmentInfoKHR));
+            stencilAttachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO_KHR;
+            stencilAttachment.imageView = imageView;
+            stencilAttachment.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+            stencilAttachment.loadOp = vkLoadOp[static_cast<int>(depthStencilInfo.fLoadOp)];
+            stencilAttachment.storeOp = vkStoreOp[static_cast<int>(depthStencilInfo.fStoreOp)];
+            stencilAttachment.clearValue.depthStencil.stencil = renderPassDesc.fClearStencil;
+
+            renderingInfo.pStencilAttachment = &stencilAttachment;
+        }
+
+        vulkanTexture->setImageLayout(this, VK_IMAGE_LAYOUT_STENCIL_ATTACHMENT_OPTIMAL,
+                                      VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+                                      VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT |
+                                      VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT, false);
+        this->trackResource(sk_ref_sp(depthStencilTexture));
+    }
+
+    // TODO: If needed, load MSAA from resolve
+    // Only possible with RenderPass interface, not beginRendering()
+
+    VULKAN_CALL(fSharedContext->interface(),
+                CmdBeginRendering(fPrimaryCommandBuffer, &renderingInfo));
+    fActiveRenderPass = true;
+
     return true;
 }
 
 void VulkanCommandBuffer::endRenderPass() {
     SkASSERT(fActive);
-    // TODO: Implement
+    VULKAN_CALL(fSharedContext->interface(), CmdEndRendering(fPrimaryCommandBuffer));
+    fActiveRenderPass = false;
 }
 
 void VulkanCommandBuffer::addDrawPass(const DrawPass* drawPass) {
@@ -310,8 +442,10 @@ void VulkanCommandBuffer::addDrawPass(const DrawPass* drawPass) {
                 break;
             }
             case DrawPassCommands::Type::kBindUniformBuffer: {
+#ifndef SK_DISABLE_VULKAN_RENDERING
                 auto bub = static_cast<DrawPassCommands::BindUniformBuffer*>(cmdPtr);
-                this->bindUniformBuffer(bub->fInfo, bub->fSlot);
+                this->recordBufferBindingInfo(bub->fInfo, bub->fSlot);
+#endif
                 break;
             }
             case DrawPassCommands::Type::kBindDrawBuffers: {
@@ -321,8 +455,10 @@ void VulkanCommandBuffer::addDrawPass(const DrawPass* drawPass) {
                 break;
             }
             case DrawPassCommands::Type::kBindTexturesAndSamplers: {
+#ifndef SK_DISABLE_VULKAN_RENDERING
                 auto bts = static_cast<DrawPassCommands::BindTexturesAndSamplers*>(cmdPtr);
-                this->bindTextureAndSamplers(*drawPass, *bts);
+                this->recordTextureAndSamplerDescSet(*drawPass, *bts);
+#endif
                 break;
             }
             case DrawPassCommands::Type::kSetScissor: {
@@ -332,26 +468,33 @@ void VulkanCommandBuffer::addDrawPass(const DrawPass* drawPass) {
                 break;
             }
             case DrawPassCommands::Type::kDraw: {
+#ifndef SK_DISABLE_VULKAN_RENDERING
                 auto draw = static_cast<DrawPassCommands::Draw*>(cmdPtr);
                 this->draw(draw->fType, draw->fBaseVertex, draw->fVertexCount);
+#endif
                 break;
             }
             case DrawPassCommands::Type::kDrawIndexed: {
+#ifndef SK_DISABLE_VULKAN_RENDERING
                 auto draw = static_cast<DrawPassCommands::DrawIndexed*>(cmdPtr);
                 this->drawIndexed(
                         draw->fType, draw->fBaseIndex, draw->fIndexCount, draw->fBaseVertex);
+#endif
                 break;
             }
             case DrawPassCommands::Type::kDrawInstanced: {
+#ifndef SK_DISABLE_VULKAN_RENDERING
                 auto draw = static_cast<DrawPassCommands::DrawInstanced*>(cmdPtr);
                 this->drawInstanced(draw->fType,
                                     draw->fBaseVertex,
                                     draw->fVertexCount,
                                     draw->fBaseInstance,
                                     draw->fInstanceCount);
+#endif
                 break;
             }
             case DrawPassCommands::Type::kDrawIndexedInstanced: {
+#ifndef SK_DISABLE_VULKAN_RENDERING
                 auto draw = static_cast<DrawPassCommands::DrawIndexedInstanced*>(cmdPtr);
                 this->drawIndexedInstanced(draw->fType,
                                            draw->fBaseIndex,
@@ -359,93 +502,379 @@ void VulkanCommandBuffer::addDrawPass(const DrawPass* drawPass) {
                                            draw->fBaseVertex,
                                            draw->fBaseInstance,
                                            draw->fInstanceCount);
+#endif
                 break;
             }
             case DrawPassCommands::Type::kDrawIndirect: {
+#ifndef SK_DISABLE_VULKAN_RENDERING
                 auto draw = static_cast<DrawPassCommands::DrawIndirect*>(cmdPtr);
                 this->drawIndirect(draw->fType);
+#endif
                 break;
             }
             case DrawPassCommands::Type::kDrawIndexedIndirect: {
+#ifndef SK_DISABLE_VULKAN_RENDERING
                 auto draw = static_cast<DrawPassCommands::DrawIndexedIndirect*>(cmdPtr);
                 this->drawIndexedIndirect(draw->fType);
+#endif
                 break;
             }
         }
     }
 }
 
-void VulkanCommandBuffer::bindGraphicsPipeline(const GraphicsPipeline*) {
-    // TODO: Implement
+void VulkanCommandBuffer::bindGraphicsPipeline(const GraphicsPipeline* graphicsPipeline) {
+    // TODO: Implement.
+    // So long as 2 pipelines have the same pipeline layout, descriptor sets do not need to be
+    // re-bound. If the layouts differ, we should set fBindUniformBuffers to true.
+    fActiveGraphicsPipeline = static_cast<const VulkanGraphicsPipeline*>(graphicsPipeline);
 }
 
 void VulkanCommandBuffer::setBlendConstants(float* blendConstants) {
     // TODO: Implement
 }
 
-void VulkanCommandBuffer::bindUniformBuffer(const BindBufferInfo& info, UniformSlot) {
-    // TODO: Implement
+void VulkanCommandBuffer::recordBufferBindingInfo(const BindBufferInfo& info, UniformSlot slot) {
+    unsigned int bufferIndex = 0;
+    switch (slot) {
+        case UniformSlot::kRenderStep:
+            bufferIndex = VulkanGraphicsPipeline::kRenderStepUniformBufferIndex;
+            break;
+        case UniformSlot::kPaint:
+            bufferIndex = VulkanGraphicsPipeline::kPaintUniformBufferIndex;
+            break;
+        default:
+            SkASSERT(false);
+    }
+
+    fUniformBuffersToBind[bufferIndex] = info;
+    fBindUniformBuffers = true;
+}
+
+void VulkanCommandBuffer::syncDescriptorSets() {
+    if (fBindUniformBuffers) {
+        this->bindUniformBuffers();
+        // Changes to descriptor sets in lower slot numbers disrupt later set bindings. Currently,
+        // the descriptor set which houses uniform buffers is at a lower slot than the texture /
+        // sampler set, so rebinding uniform buffers necessitates re-binding any texture/samplers.
+        fBindTextureSamplers = true;
+    }
+    if (fBindTextureSamplers) {
+        this->bindTextureSamplers();
+    }
+}
+
+void VulkanCommandBuffer::bindUniformBuffers() {
+    fBindUniformBuffers = false;
+
+    STArray<3, DescTypeAndCount> descriptors;
+    // We always bind at least one uniform buffer descriptor for intrinsic uniforms.
+    uint32_t numBuffers = 1;
+    descriptors[0].type = DescriptorType::kUniformBuffer;
+    descriptors[0].count = 1;
+
+    if (fActiveGraphicsPipeline->hasStepUniforms() &&
+            fUniformBuffersToBind[VulkanGraphicsPipeline::kRenderStepUniformBufferIndex]) {
+        descriptors[numBuffers].type = DescriptorType::kUniformBuffer;
+        descriptors[numBuffers].count = 1;
+        ++numBuffers;
+    }
+    if (fActiveGraphicsPipeline->hasFragment() &&
+            fUniformBuffersToBind[VulkanGraphicsPipeline::kPaintUniformBufferIndex]) {
+        descriptors[numBuffers].type = DescriptorType::kUniformBuffer;
+        descriptors[numBuffers].count = 1;
+        ++numBuffers;
+    }
+
+    VulkanDescriptorSet* set = fResourceProvider->findOrCreateDescriptorSet(
+            SkSpan<DescTypeAndCount>{&descriptors.front(), numBuffers});
+
+    if (!set) {
+        SKGPU_LOG_E("Unable to find or create descriptor set");
+    } else {
+        std::vector<VkWriteDescriptorSet> writeDescriptorSets;
+        for (uint32_t i = 0; i < numBuffers; i++) {
+            VkDescriptorBufferInfo bufferInfo;
+            memset(&bufferInfo, 0, sizeof(VkDescriptorBufferInfo));
+            auto vulkanBuffer = static_cast<const VulkanBuffer*>(fUniformBuffersToBind[i].fBuffer);
+            bufferInfo.buffer = vulkanBuffer->vkBuffer();
+            bufferInfo.offset = fUniformBuffersToBind[i].fOffset;
+            bufferInfo.range = vulkanBuffer->size();
+
+            VkWriteDescriptorSet writeInfo;
+            memset(&writeInfo, 0, sizeof(VkWriteDescriptorSet));
+            writeInfo.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            writeInfo.pNext = nullptr;
+            writeInfo.dstSet = *set->descriptorSet();
+            writeInfo.dstBinding = i;
+            writeInfo.dstArrayElement = 0;
+            writeInfo.descriptorCount = 1;
+            writeInfo.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+            writeInfo.pImageInfo = nullptr;
+            writeInfo.pBufferInfo = &bufferInfo;
+            writeInfo.pTexelBufferView = nullptr;
+
+            writeDescriptorSets[i] = writeInfo;
+        }
+
+        VULKAN_CALL(fSharedContext->interface(),
+                    UpdateDescriptorSets(fSharedContext->device(),
+                                         numBuffers,
+                                         &writeDescriptorSets[0],
+                                         /*descriptorCopyCount=*/0,
+                                         /*pDescriptorCopies=*/nullptr));
+    }
 }
 
 void VulkanCommandBuffer::bindDrawBuffers(const BindBufferInfo& vertices,
                                           const BindBufferInfo& instances,
                                           const BindBufferInfo& indices,
                                           const BindBufferInfo& indirect) {
-    // TODO: Implement
+    this->bindVertexBuffers(vertices.fBuffer,
+                            vertices.fOffset,
+                            instances.fBuffer,
+                            instances.fOffset);
+    this->bindIndexBuffer(indices.fBuffer, indices.fOffset);
+    this->bindIndirectBuffer(indirect.fBuffer, indirect.fOffset);
 }
 
 void VulkanCommandBuffer::bindVertexBuffers(const Buffer* vertexBuffer,
                                             size_t vertexOffset,
                                             const Buffer* instanceBuffer,
                                             size_t instanceOffset) {
-    // TODO: Implement
+    this->bindInputBuffer(vertexBuffer, vertexOffset,
+                          VulkanGraphicsPipeline::kVertexBufferIndex);
+    this->bindInputBuffer(instanceBuffer, instanceOffset,
+                          VulkanGraphicsPipeline::kInstanceBufferIndex);
 }
+
+void VulkanCommandBuffer::bindInputBuffer(const Buffer* buffer, VkDeviceSize offset,
+                                          uint32_t binding) {
+    if (buffer) {
+        VkBuffer vkBuffer = static_cast<const VulkanBuffer*>(buffer)->vkBuffer();
+        SkASSERT(vkBuffer != VK_NULL_HANDLE);
+        if (vkBuffer != fBoundInputBuffers[binding] ||
+            offset != fBoundInputBufferOffsets[binding]) {
+            VULKAN_CALL(fSharedContext->interface(),
+                        CmdBindVertexBuffers(fPrimaryCommandBuffer,
+                                             binding,
+                                             /*bindingCount=*/1,
+                                             &vkBuffer,
+                                             &offset));
+            fBoundInputBuffers[binding] = vkBuffer;
+            fBoundInputBufferOffsets[binding] = offset;
+            this->trackResource(sk_ref_sp(buffer));
+        }
+    }
+}
+
 void VulkanCommandBuffer::bindIndexBuffer(const Buffer* indexBuffer, size_t offset) {
-    // TODO: Implement
+    if (indexBuffer) {
+        VkBuffer vkBuffer = static_cast<const VulkanBuffer*>(indexBuffer)->vkBuffer();
+        SkASSERT(vkBuffer != VK_NULL_HANDLE);
+        if (vkBuffer != fBoundIndexBuffer || offset != fBoundIndexBufferOffset) {
+            VULKAN_CALL(fSharedContext->interface(), CmdBindIndexBuffer(fPrimaryCommandBuffer,
+                                                                        vkBuffer,
+                                                                        offset,
+                                                                        VK_INDEX_TYPE_UINT16));
+            fBoundIndexBuffer = vkBuffer;
+            fBoundIndexBufferOffset = offset;
+            this->trackResource(sk_ref_sp(indexBuffer));
+        }
+    } else {
+        fBoundIndexBuffer = VK_NULL_HANDLE;
+        fBoundIndexBufferOffset = 0;
+    }
 }
+
 void VulkanCommandBuffer::bindIndirectBuffer(const Buffer* indirectBuffer, size_t offset) {
-    // TODO: Implement
+    // Indirect buffers are not bound via the command buffer, but specified in the draw cmd.
+    if (indirectBuffer) {
+        fBoundIndirectBuffer = static_cast<const VulkanBuffer*>(indirectBuffer)->vkBuffer();
+        fBoundIndirectBufferOffset = offset;
+        this->trackResource(sk_ref_sp(indirectBuffer));
+    } else {
+        fBoundIndirectBuffer = VK_NULL_HANDLE;
+        fBoundIndirectBufferOffset = 0;
+    }
 }
-void VulkanCommandBuffer::bindTextureAndSamplers(const DrawPass& drawPass,
-        const DrawPassCommands::BindTexturesAndSamplers& command) {
-    // TODO: Implement
+
+void VulkanCommandBuffer::recordTextureAndSamplerDescSet(
+        const DrawPass& drawPass, const DrawPassCommands::BindTexturesAndSamplers& command) {
+    // Query resource provider to obtain a descriptor set for the texture/samplers
+    std::vector<DescTypeAndCount> descriptors;
+    for (int i = 0; i < command.fNumTexSamplers; i++) {
+        descriptors.push_back({DescriptorType::kCombinedTextureSampler, 1});
+    }
+    VulkanDescriptorSet* set = fResourceProvider->findOrCreateDescriptorSet(
+            SkSpan<DescTypeAndCount>{&descriptors.front(), descriptors.size()});
+
+    if (!set) {
+        SKGPU_LOG_E("Unable to find or create descriptor set");
+    } else {
+        // Populate the descriptor set with texture/sampler descriptors
+        std::vector<VkWriteDescriptorSet> writeDescriptorSets;
+        for (int i = 0; i < command.fNumTexSamplers; ++i) {
+            auto texture = static_cast<const VulkanTexture*>(
+                    drawPass.getTexture(command.fTextureIndices[i]));
+            auto sampler = static_cast<const VulkanSampler*>(
+                    drawPass.getSampler(command.fSamplerIndices[i]));
+
+            VkDescriptorImageInfo textureInfo;
+            memset(&textureInfo, 0, sizeof(VkDescriptorImageInfo));
+            textureInfo.sampler = sampler->vkSampler();
+            textureInfo.imageView = VK_NULL_HANDLE; // TODO: Obtain texture view from VulkanImage.
+            textureInfo.imageLayout = texture->currentLayout();
+
+            VkWriteDescriptorSet writeInfo;
+            memset(&writeInfo, 0, sizeof(VkWriteDescriptorSet));
+            writeInfo.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            writeInfo.pNext = nullptr;
+            writeInfo.dstSet = *set->descriptorSet();
+            writeInfo.dstBinding = i;
+            writeInfo.dstArrayElement = 0;
+            writeInfo.descriptorCount = 1;
+            writeInfo.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            writeInfo.pImageInfo = &textureInfo;
+            writeInfo.pBufferInfo = nullptr;
+            writeInfo.pTexelBufferView = nullptr;
+
+            writeDescriptorSets[i] = writeInfo;
+        }
+
+        VULKAN_CALL(fSharedContext->interface(),
+                UpdateDescriptorSets(fSharedContext->device(),
+                                     command.fNumTexSamplers,
+                                     &writeDescriptorSets[0],
+                                     /*descriptorCopyCount=*/0,
+                                     /*pDescriptorCopies=*/nullptr));
+
+        // Store the updated descriptor set to be actually bound later on. This avoids binding and
+        // potentially having to re-bind in cases where earlier descriptor sets change while going
+        // through drawpass commands.
+        fTextureSamplerDescSetToBind = *(set->descriptorSet());
+        fBindTextureSamplers = true;
+    }
 }
+
+void VulkanCommandBuffer::bindTextureSamplers() {
+    fBindTextureSamplers = false;
+    if (fTextureSamplerDescSetToBind != VK_NULL_HANDLE) {
+        VULKAN_CALL(fSharedContext->interface(),
+                    CmdBindDescriptorSets(fPrimaryCommandBuffer,
+                                          VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                          fActiveGraphicsPipeline->layout(),
+                                          VulkanGraphicsPipeline::kTextureBindDescSetIndex,
+                                          /*setCount=*/1,
+                                          &fTextureSamplerDescSetToBind,
+                                          /*dynamicOffsetCount=*/0,
+                                          /*dynamicOffsets=*/nullptr));
+    }
+}
+
 void VulkanCommandBuffer::setScissor(unsigned int left, unsigned int top, unsigned int width,
                                      unsigned int height) {
-    // TODO: Implement
+    VkRect2D scissor = {
+        {(int32_t)left, (int32_t)top},
+        {width, height}
+    };
+    VULKAN_CALL(fSharedContext->interface(),
+                CmdSetScissor(fPrimaryCommandBuffer,
+                              /*firstScissor=*/0,
+                              /*scissorCount=*/1,
+                              &scissor));
 }
 
-void VulkanCommandBuffer::draw(PrimitiveType type,
+void VulkanCommandBuffer::draw(PrimitiveType,
                                unsigned int baseVertex,
                                unsigned int vertexCount) {
-    // TODO: Implement
+    SkASSERT(fActiveRenderPass);
+    this->syncDescriptorSets();
+    // TODO: set primitive type via dynamic state if available
+    VULKAN_CALL(fSharedContext->interface(),
+                CmdDraw(fPrimaryCommandBuffer,
+                        vertexCount,
+                        /*instanceCount=*/0,
+                        baseVertex,
+                        /*firstInstance=*/0));
 }
 
-void VulkanCommandBuffer::drawIndexed(PrimitiveType type,
+void VulkanCommandBuffer::drawIndexed(PrimitiveType,
                                       unsigned int baseIndex,
                                       unsigned int indexCount,
                                       unsigned int baseVertex) {
-    // TODO: Implement
+    SkASSERT(fActiveRenderPass);
+    this->syncDescriptorSets();
+    // TODO: set primitive type via dynamic state if available
+    VULKAN_CALL(fSharedContext->interface(),
+                CmdDrawIndexed(fPrimaryCommandBuffer,
+                               indexCount,
+                               /*instanceCount=*/0,
+                               baseIndex,
+                               baseVertex,
+                               /*firstInstance=*/0));
 }
 
-void VulkanCommandBuffer::drawInstanced(PrimitiveType type,
-                    unsigned int baseVertex, unsigned int vertexCount,
-                    unsigned int baseInstance, unsigned int instanceCount) {
-    // TODO: Implement
+void VulkanCommandBuffer::drawInstanced(PrimitiveType,
+                                        unsigned int baseVertex,
+                                        unsigned int vertexCount,
+                                        unsigned int baseInstance,
+                                        unsigned int instanceCount) {
+    SkASSERT(fActiveRenderPass);
+    this->syncDescriptorSets();
+    // TODO: set primitive type via dynamic state if available
+    VULKAN_CALL(fSharedContext->interface(),
+                CmdDraw(fPrimaryCommandBuffer,
+                        vertexCount,
+                        instanceCount,
+                        baseVertex,
+                        baseInstance));
 }
 
-void VulkanCommandBuffer::drawIndexedInstanced(PrimitiveType type, unsigned int baseIndex,
-                            unsigned int indexCount, unsigned int baseVertex,
-                            unsigned int baseInstance, unsigned int instanceCount) {
-    // TODO: Implement
+void VulkanCommandBuffer::drawIndexedInstanced(PrimitiveType,
+                                               unsigned int baseIndex,
+                                               unsigned int indexCount,
+                                               unsigned int baseVertex,
+                                               unsigned int baseInstance,
+                                               unsigned int instanceCount) {
+    SkASSERT(fActiveRenderPass);
+    this->syncDescriptorSets();
+    // TODO: set primitive type via dynamic state if available
+    VULKAN_CALL(fSharedContext->interface(),
+                CmdDrawIndexed(fPrimaryCommandBuffer,
+                               indexCount,
+                               instanceCount,
+                               baseIndex,
+                               baseVertex,
+                               baseInstance));
 }
 
-void VulkanCommandBuffer::drawIndirect(PrimitiveType type) {
-    // TODO: Implement
+void VulkanCommandBuffer::drawIndirect(PrimitiveType) {
+    SkASSERT(fActiveRenderPass);
+    this->syncDescriptorSets();
+    // TODO: set primitive type via dynamic state if available
+    // Currently we can only support doing one indirect draw operation at a time,
+    // so stride is irrelevant.
+    VULKAN_CALL(fSharedContext->interface(),
+                CmdDrawIndirect(fPrimaryCommandBuffer,
+                                fBoundIndirectBuffer,
+                                fBoundIndirectBufferOffset,
+                                /*drawCount=*/1,
+                                /*stride=*/0));
 }
 
-void VulkanCommandBuffer::drawIndexedIndirect(PrimitiveType type) {
-    // TODO: Implement
+void VulkanCommandBuffer::drawIndexedIndirect(PrimitiveType) {
+    SkASSERT(fActiveRenderPass);
+    this->syncDescriptorSets();
+    // TODO: set primitive type via dynamic state if available
+    // Currently we can only support doing one indirect draw operation at a time,
+    // so stride is irrelevant.
+    VULKAN_CALL(fSharedContext->interface(),
+                CmdDrawIndexedIndirect(fPrimaryCommandBuffer,
+                                       fBoundIndirectBuffer,
+                                       fBoundIndirectBufferOffset,
+                                       /*drawCount=*/1,
+                                       /*stride=*/0));
 }
 
 bool VulkanCommandBuffer::onAddComputePass(const DispatchGroupList&) { return false; }
@@ -582,7 +1011,42 @@ bool VulkanCommandBuffer::onCopyTextureToTexture(const Texture* src,
                                                  SkIRect srcRect,
                                                  const Texture* dst,
                                                  SkIPoint dstPoint) {
-    return false;
+    const VulkanTexture* srcTexture = static_cast<const VulkanTexture*>(src);
+    const VulkanTexture* dstTexture = static_cast<const VulkanTexture*>(dst);
+
+    VkImageCopy copyRegion;
+    memset(&copyRegion, 0, sizeof(VkImageCopy));
+    copyRegion.srcSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 };
+    copyRegion.srcOffset = { srcRect.fLeft, srcRect.fTop, 0 };
+    copyRegion.dstSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 };
+    copyRegion.dstOffset = { dstPoint.fX, dstPoint.fY, 0 };
+    copyRegion.extent = { (uint32_t)srcRect.width(), (uint32_t)srcRect.height(), 1 };
+
+    // Enable editing of the src texture so we can change its layout so it can be copied from.
+    const_cast<VulkanTexture*>(srcTexture)->setImageLayout(this,
+                                                           VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                                                           VK_ACCESS_TRANSFER_READ_BIT,
+                                                           VK_PIPELINE_STAGE_TRANSFER_BIT,
+                                                           false);
+    // Enable editing of the destination texture so we can change its layout so it can be copied to.
+    const_cast<VulkanTexture*>(dstTexture)->setImageLayout(this,
+                                                           VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                                                           VK_ACCESS_TRANSFER_WRITE_BIT,
+                                                           VK_PIPELINE_STAGE_TRANSFER_BIT,
+                                                           false);
+
+    this->submitPipelineBarriers();
+
+    VULKAN_CALL(fSharedContext->interface(),
+                CmdCopyImage(fPrimaryCommandBuffer,
+                             srcTexture->vkImage(),
+                             VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                             dstTexture->vkImage(),
+                             VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                             /*regionCount=*/1,
+                             &copyRegion));
+
+    return true;
 }
 
 bool VulkanCommandBuffer::onSynchronizeBufferToCpu(const Buffer* buffer, bool* outDidResultInWork) {

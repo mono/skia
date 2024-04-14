@@ -50,12 +50,17 @@
 #include "src/core/SkPaintPriv.h"
 #include "src/core/SkRRectPriv.h"
 #include "src/core/SkSpecialImage.h"
+#include "src/core/SkStrikeCache.h"
 #include "src/core/SkTraceEvent.h"
 #include "src/core/SkVerticesPriv.h"
 #include "src/shaders/SkImageShader.h"
+#include "src/text/GlyphRun.h"
+#include "src/text/gpu/GlyphVector.h"
+#include "src/text/gpu/SlugImpl.h"
 #include "src/text/gpu/SubRunContainer.h"
 #include "src/text/gpu/TextBlobRedrawCoordinator.h"
 
+#include <functional>
 #include <unordered_map>
 #include <vector>
 
@@ -814,6 +819,15 @@ void Device::drawImageRect(const SkImage* image, const SkRect* src, const SkRect
     this->drawEdgeAAImageSet(&single, 1, nullptr, nullptr, sampling, paint, constraint);
 }
 
+sktext::gpu::AtlasDrawDelegate Device::atlasDelegate() {
+    return [&](const sktext::gpu::AtlasSubRun* subRun,
+               SkPoint drawOrigin,
+               const SkPaint& paint,
+               sk_sp<SkRefCnt> subRunStorage) {
+        this->drawAtlasSubRun(subRun, drawOrigin, paint, subRunStorage);
+    };
+}
+
 void Device::onDrawGlyphRunList(SkCanvas* canvas,
                                 const sktext::GlyphRunList& glyphRunList,
                                 const SkPaint& initialPaint,
@@ -823,7 +837,7 @@ void Device::onDrawGlyphRunList(SkCanvas* canvas,
                                                         glyphRunList,
                                                         drawingPaint,
                                                         this->strikeDeviceInfo(),
-                                                        this);
+                                                        this->atlasDelegate());
 }
 
 void Device::drawAtlasSubRun(const sktext::gpu::AtlasSubRun* subRun,
@@ -831,9 +845,17 @@ void Device::drawAtlasSubRun(const sktext::gpu::AtlasSubRun* subRun,
                              const SkPaint& paint,
                              sk_sp<SkRefCnt> subRunStorage) {
     const int subRunEnd = subRun->glyphCount();
+    auto regenerateDelegate = [&](sktext::gpu::GlyphVector* glyphs,
+                                  int begin,
+                                  int end,
+                                  skgpu::MaskFormat maskFormat,
+                                  int padding) {
+        return glyphs->regenerateAtlasForGraphite(begin, end, maskFormat, padding, fRecorder);
+    };
     for (int subRunCursor = 0; subRunCursor < subRunEnd;) {
         // For the remainder of the run, add any atlas uploads to the Recorder's AtlasManager
-        auto[ok, glyphsRegenerated] = subRun->regenerateAtlas(subRunCursor, subRunEnd, fRecorder);
+        auto[ok, glyphsRegenerated] = subRun->regenerateAtlas(subRunCursor, subRunEnd,
+                                                              regenerateDelegate);
         // There was a problem allocating the glyph in the atlas. Bail.
         if (!ok) {
             return;
@@ -1307,6 +1329,24 @@ TextureProxyView Device::readSurfaceView() const {
         return {};
     }
     return fDC->readSurfaceView(fRecorder->priv().caps());
+}
+
+sk_sp<sktext::gpu::Slug> Device::convertGlyphRunListToSlug(const sktext::GlyphRunList& glyphRunList,
+                                                           const SkPaint& initialPaint,
+                                                           const SkPaint& drawingPaint) {
+    return sktext::gpu::SlugImpl::Make(this->asMatrixProvider(),
+                                       glyphRunList,
+                                       initialPaint,
+                                       drawingPaint,
+                                       this->strikeDeviceInfo(),
+                                       SkStrikeCache::GlobalStrikeCache());
+}
+
+void Device::drawSlug(SkCanvas* canvas, const sktext::gpu::Slug* slug,
+                      const SkPaint& drawingPaint) {
+    auto slugImpl = static_cast<const sktext::gpu::SlugImpl*>(slug);
+    slugImpl->subRuns()->draw(canvas, slugImpl->origin(), drawingPaint, slugImpl,
+                              this->atlasDelegate());
 }
 
 } // namespace skgpu::graphite

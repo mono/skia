@@ -5,6 +5,7 @@
  * found in the LICENSE file.
  */
 
+#include "include/core/SkColorSpace.h"
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkSurface.h"
 #include "include/gpu/GrBackendSurface.h"
@@ -170,29 +171,3 @@ sk_sp<SkSurface> WrapMTKView(GrRecordingContext* rContext,
 }
 
 }  // namespace SkSurfaces
-
-#if !defined(SK_DISABLE_LEGACY_SKSURFACE_FACTORIES)
-sk_sp<SkSurface> SkSurface::MakeFromCAMetalLayer(GrRecordingContext* context,
-                                                 GrMTLHandle layer,
-                                                 GrSurfaceOrigin origin,
-                                                 int sampleCnt,
-                                                 SkColorType colorType,
-                                                 sk_sp<SkColorSpace> colorSpace,
-                                                 const SkSurfaceProps* surfaceProps,
-                                                 GrMTLHandle* drawable) {
-    return SkSurfaces::WrapCAMetalLayer(
-            context, layer, origin, sampleCnt, colorType, colorSpace, surfaceProps, drawable);
-}
-
-sk_sp<SkSurface> SkSurface::MakeFromMTKView(GrRecordingContext* context,
-                                            GrMTLHandle mtkView,
-                                            GrSurfaceOrigin origin,
-                                            int sampleCnt,
-                                            SkColorType colorType,
-                                            sk_sp<SkColorSpace> colorSpace,
-                                            const SkSurfaceProps* surfaceProps) {
-    return SkSurfaces::WrapMTKView(
-            context, mtkView, origin, sampleCnt, colorType, colorSpace, surfaceProps);
-}
-
-#endif

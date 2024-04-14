@@ -40,6 +40,7 @@
 #include "src/gpu/SkBackingFit.h"
 #include "src/gpu/ganesh/GrPaint.h"
 #include "src/gpu/ganesh/GrPixmap.h"
+#include "src/gpu/ganesh/GrXferProcessor.h"
 #include "src/gpu/ganesh/SurfaceDrawContext.h"
 #include "tests/CtsEnforcement.h"
 #include "tests/Test.h"
@@ -64,7 +65,7 @@ static void draw_paint_with_aa(skgpu::ganesh::SurfaceDrawContext* sdc,
                                SkBlendMode blendMode) {
     GrPaint paint;
     paint.setColor4f(color);
-    paint.setXPFactory(SkBlendMode_AsXPFactory(blendMode));
+    paint.setXPFactory(GrXPFactory::FromBlendMode(blendMode));
     sdc->drawRect(nullptr, std::move(paint), GrAA::kYes, SkMatrix::I(),
                   SkRect::MakeIWH(kWidth, kHeight), nullptr);
 }
@@ -81,7 +82,7 @@ static void draw_paint_with_dmsaa(skgpu::ganesh::SurfaceDrawContext* sdc,
 
     GrPaint paint;
     paint.setColor4f(color);
-    paint.setXPFactory(SkBlendMode_AsXPFactory(blendMode));
+    paint.setXPFactory(GrXPFactory::FromBlendMode(blendMode));
     sdc->drawVertices(nullptr, std::move(paint), SkMatrixProvider(SkMatrix::I()), vertices);
 }
 
@@ -324,7 +325,7 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(DMSAA_dual_source_blend_disable,
                                             &paint,
                                             SkCanvas::kStrict_SrcRectConstraint);
         // Make sure there isn't any batching
-        surface->flushAndSubmit();
+        context->flushAndSubmit(surface);
     }
 
     // Next we do an image draw to a different surface that doesn't have the dmsaa flag. This will
@@ -345,7 +346,7 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(DMSAA_dual_source_blend_disable,
                                             SkSamplingOptions(),
                                             &paint,
                                             SkCanvas::kStrict_SrcRectConstraint);
-        surface->flushAndSubmit();
+        context->flushAndSubmit(surface);
     }
 
     {

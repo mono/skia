@@ -6,6 +6,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+ - `EmbindObject` has been updated to allow TypeScript to differentiate between opaque
+   types such as Shader, ColorFilter, et cetera.
+
+### Changed
+- `MakeSWCanvasSurface` now allows passing an `OffscreenCanvas` element.
+
+## [0.38.2] - 2023-06-09
+
+### Added
+ - `Paragraph.unresolvedCodepoints` which allows clients to identify gaps in font coverage
+    more easily.
+
+### Fixed
+ - `.wasm` files are now exported in the npm package.json
+
 ## [0.38.1] - 2023-05-02
 
 ### Removed

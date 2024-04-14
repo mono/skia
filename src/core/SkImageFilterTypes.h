@@ -16,7 +16,10 @@
 #include "include/core/SkSamplingOptions.h"
 #include "include/core/SkTypes.h"
 #include "include/private/base/SkTArray.h"
+#include "src/core/SkEnumBitMask.h"
 #include "src/core/SkSpecialImage.h"
+
+#include <optional>
 
 class GrRecordingContext;
 enum GrSurfaceOrigin : int;
@@ -26,6 +29,8 @@ class SkImageFilterCache;
 class SkPicture;
 class SkSpecialSurface;
 class SkSurfaceProps;
+
+class FilterResultImageResolver; // for testing
 
 namespace skgpu::graphite { class Recorder; }
 
@@ -344,9 +349,9 @@ public:
     bool isEmpty() const { return fData.isEmpty(); }
     bool isZero() const { return fData.isZero(); }
 
-    LayerSpace<SkISize> round() const { return LayerSpace<SkISize>(fData.toRound()); }
-    LayerSpace<SkISize> ceil() const { return LayerSpace<SkISize>(fData.toCeil()); }
-    LayerSpace<SkISize> floor() const { return LayerSpace<SkISize>(fData.toFloor()); }
+    LayerSpace<SkISize> round() const;
+    LayerSpace<SkISize> ceil() const;
+    LayerSpace<SkISize> floor() const;
 
 private:
     SkSize fData;
@@ -383,6 +388,7 @@ public:
     void join(const LayerSpace<SkIRect>& r) { fData.join(r.fData); }
     void offset(const LayerSpace<IVector>& v) { fData.offset(SkIVector(v)); }
     void outset(const LayerSpace<SkISize>& delta) { fData.outset(delta.width(), delta.height()); }
+    void inset(const LayerSpace<SkISize>& delta) { fData.inset(delta.width(), delta.height()); }
 
 private:
     SkIRect fData;
@@ -430,6 +436,7 @@ public:
     void join(const LayerSpace<SkRect>& r) { fData.join(r.fData); }
     void offset(const LayerSpace<Vector>& v) { fData.offset(SkVector(v)); }
     void outset(const LayerSpace<SkSize>& delta) { fData.outset(delta.width(), delta.height()); }
+    void inset(const LayerSpace<SkSize>& delta) { fData.inset(delta.width(), delta.height()); }
 
     LayerSpace<SkPoint> clamp(LayerSpace<SkPoint> pt) const {
         return LayerSpace<SkPoint>(SkPoint::Make(SkTPin(pt.x(), fData.fLeft, fData.fRight),
@@ -465,13 +472,11 @@ public:
     // SkIRect has large floating point values.
     LayerSpace<SkIRect> mapRect(const LayerSpace<SkIRect>& r) const;
 
-    LayerSpace<SkPoint> mapPoint(const LayerSpace<SkPoint>& p) const {
-        return LayerSpace<SkPoint>(fData.mapPoint(SkPoint(p)));
-    }
+    LayerSpace<SkPoint> mapPoint(const LayerSpace<SkPoint>& p) const;
 
-    LayerSpace<Vector> mapVector(const LayerSpace<Vector>& v) const {
-        return LayerSpace<Vector>(Vector(fData.mapVector(v.x(), v.y())));
-    }
+    LayerSpace<Vector> mapVector(const LayerSpace<Vector>& v) const;
+
+    LayerSpace<SkSize> mapSize(const LayerSpace<SkSize>& s) const;
 
     LayerSpace<SkMatrix>& preConcat(const LayerSpace<SkMatrix>& m) {
         fData = SkMatrix::Concat(fData, m.fData);
@@ -572,6 +577,8 @@ public:
     }
 
 private:
+    friend class LayerSpace<SkMatrix>; // for map()
+
     // The image filter process decomposes the total CTM into layerToDev * paramToLayer and uses the
     // param-to-layer matrix to define the layer-space coordinate system. Depending on how it's
     // decomposed, either the layer matrix or the device matrix could be the identity matrix (but
@@ -736,7 +743,22 @@ public:
 
     class Builder;
 
+    enum class ShaderFlags : int {
+        kNone = 0,
+        kSampleInParameterSpace = 1 << 0,
+        kForceResolveInputs     = 1 << 1,
+        kNonLinearSampling      = 1 << 2,
+        kOutputFillsInputUnion  = 1 << 3,
+        kExplicitOutputBounds   = 1 << 4
+        // TODO: Add options for input intersection, first input only, if needed. If it turns out
+        // union is only used for merge() and all other cases are fills-desired-output vs. explicit
+        // then maybe that flag goes away and eval() relies on optional.has_value().
+    };
+    SK_DECL_BITMASK_OPS_FRIENDS(ShaderFlags)
+
 private:
+    friend class ::FilterResultImageResolver; // For testing draw() and asShader()
+
     // Renders this FilterResult into a new, but visually equivalent, image that fills 'dstBounds',
     // has default sampling, no color filter, and a transform that translates by only 'dstBounds's
     // top-left corner. 'dstBounds' is always intersected with 'fLayerBounds'.
@@ -751,6 +773,14 @@ private:
     // Draw directly to the canvas, which draws the same image as produced by resolve() but can be
     // useful if multiple operations need to be performed on the canvas.
     void draw(SkCanvas* canvas) const;
+
+    // Returns the FilterResult as a shader, ideally without resolving to an axis-aligned image.
+    // 'xtraSampling' is the sampling that any parent shader applies to the FilterResult.
+    // 'sampleBounds' is the bounding box of coords the shader will be evaluated at by any parent.
+    sk_sp<SkShader> asShader(const Context& ctx,
+                             const SkSamplingOptions& xtraSampling,
+                             SkEnumBitMask<ShaderFlags> flags,
+                             const LayerSpace<SkIRect>& sampleBounds) const;
 
     // The effective image of a FilterResult is 'fImage' sampled by 'fSamplingOptions' and
     // respecting 'fTileMode' (on the SkSpecialImage's subset), transformed by 'fTransform',
@@ -771,28 +801,90 @@ private:
     // implicit desired output at each node.
     LayerSpace<SkIRect>   fLayerBounds;
 };
-
+SK_MAKE_BITMASK_OPS(FilterResult::ShaderFlags)
 
 // A FilterResult::Builder is used to render one or more FilterResults or other sources into
 // a new FilterResult. It automatically aggregates the incoming bounds to minimize the output's
 // layer bounds.
 class FilterResult::Builder {
 public:
-    Builder(const Context& context) : fContext(context) {}
+    Builder(const Context& context);
+    ~Builder();
 
-    Builder& add(const FilterResult& input) {
-        fInputs.push_back(input);
+    // If 'sampleBounds' is not provided, it defaults to the output bounds calculated for eval()
+    // (generally the Context's desired output but could be restricted based on the ShaderFlags).
+    //
+    // If it is provided, it represents the bounding box of possible coords 'input' will be sampled
+    // at by the shader created from eval(). This can be useful to provide when the shader does non
+    // trivial sampling since it may avoid having to resolve a FilterResult to an image.
+    //
+    // The 'inputFlags' are per-input flags that are OR'ed with the ShaderFlag mask passed to
+    // eval() to control how 'input' is converted to an SkShader. 'inputSampling' specifies the
+    // sampling options to use on the input's image when sampled by the final shader created in eval
+    //
+    // 'sampleBounds', 'inputFlags' and 'inputSampling' must not be used with merge().
+    Builder& add(const FilterResult& input,
+                 std::optional<LayerSpace<SkIRect>> sampleBounds = {},
+                 SkEnumBitMask<ShaderFlags> inputFlags = ShaderFlags::kNone,
+                 const SkSamplingOptions& inputSampling = kDefaultSampling) {
+        fInputs.push_back({input, sampleBounds, inputFlags, inputSampling});
         return *this;
     }
 
     // Combine all added inputs by merging them with src-over blending into a single output.
     FilterResult merge();
 
+    // Combine all added inputs by transforming them into equivalent SkShaders and invoking the
+    // shader factory that binds them together into a single shader that fills the output surface.
+    // 'flags' and 'xtraSampling' control how the input FilterResults are converted to shaders, as
+    // well as defining the final output bounds.
+    //
+    // 'ShaderFn' should be an invokable type with the signature
+    //     (SkSpan<sk_sp<SkShader>>)->sk_sp<SkShader>
+    // The length of the span will equal the number of FilterResults added to the builder. If an
+    // input FilterResult was fully transparent, its corresponding shader will be null. 'ShaderFn'
+    // should return a null shader its output would be fully transparent.
+    //
+    // By default, the returned FilterResult will fill the Context's desired image. The 'flags' can
+    // optionally restrict this to other common bounds (e.g. union of inputs), or specify that
+    // explicit bounds are provided. If ShaderFlags::kExplicitOutputBounds is present, then the
+    // bounds must be set in 'explicitOutput'. In all cases, the layer bounds of the FilterResult
+    // are restricted by the builder's context's desired output.
+    template <typename ShaderFn>
+    FilterResult eval(ShaderFn shaderFn,
+                      SkEnumBitMask<ShaderFlags> flags,
+                      std::optional<LayerSpace<SkIRect>> explicitOutput = {}) {
+        auto outputBounds = this->outputBounds(flags, explicitOutput);
+        if (outputBounds.isEmpty()) {
+            return {};
+        }
+
+        auto inputShaders = this->createInputShaders(flags, outputBounds);
+        return this->drawShader(shaderFn(inputShaders), flags, outputBounds);
+    }
+
 private:
-    LayerSpace<SkIRect> outputBounds() const;
+    struct SampledFilterResult {
+        FilterResult fImage;
+        std::optional<LayerSpace<SkIRect>> fSampleBounds;
+        SkEnumBitMask<ShaderFlags> fFlags;
+        SkSamplingOptions fSampling;
+    };
+
+    SkSpan<sk_sp<SkShader>> createInputShaders(SkEnumBitMask<ShaderFlags> flags,
+                                               const LayerSpace<SkIRect>& outputBounds);
+
+    LayerSpace<SkIRect> outputBounds(SkEnumBitMask<ShaderFlags> flags,
+                                     std::optional<LayerSpace<SkIRect>> explicitOutput) const;
+
+    FilterResult drawShader(sk_sp<SkShader> shader,
+                            SkEnumBitMask<ShaderFlags> flags,
+                            const LayerSpace<SkIRect>& outputBounds) const;
 
     const Context& fContext; // Must outlive the builder
-    skia_private::STArray<1, FilterResult> fInputs;
+    skia_private::STArray<1, SampledFilterResult> fInputs;
+    // Lazily created once all inputs are collected, but parallels fInputs.
+    skia_private::STArray<1, sk_sp<SkShader>> fInputShaders;
 };
 
 // The context contains all necessary information to describe how the image filter should be

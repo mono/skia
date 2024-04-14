@@ -87,19 +87,22 @@ static sk_sp<SkImageFilter> erode_factory(sk_sp<SkImage> auxImage, const SkIRect
 }
 
 static sk_sp<SkImageFilter> displacement_factory(sk_sp<SkImage> auxImage, const SkIRect* cropRect) {
-    sk_sp<SkImageFilter> displacement = SkImageFilters::Image(std::move(auxImage));
+    sk_sp<SkImageFilter> displacement = SkImageFilters::Image(std::move(auxImage),
+                                                              SkFilterMode::kLinear);
     return SkImageFilters::DisplacementMap(SkColorChannel::kR, SkColorChannel::kG, 40.f,
                                            std::move(displacement), nullptr, cropRect);
 }
 
 static sk_sp<SkImageFilter> arithmetic_factory(sk_sp<SkImage> auxImage, const SkIRect* cropRect) {
-    sk_sp<SkImageFilter> background = SkImageFilters::Image(std::move(auxImage));
+    sk_sp<SkImageFilter> background = SkImageFilters::Image(std::move(auxImage),
+                                                            SkFilterMode::kLinear);
     return SkImageFilters::Arithmetic(0.0f, .6f, 1.f, 0.f, false, std::move(background),
                                       nullptr, cropRect);
 }
 
 static sk_sp<SkImageFilter> blend_factory(sk_sp<SkImage> auxImage, const SkIRect* cropRect) {
-    sk_sp<SkImageFilter> background = SkImageFilters::Image(std::move(auxImage));
+    sk_sp<SkImageFilter> background = SkImageFilters::Image(std::move(auxImage),
+                                                            SkFilterMode::kLinear);
     return SkImageFilters::Blend(
             SkBlendMode::kModulate, std::move(background), nullptr, cropRect);
 }
@@ -121,15 +124,6 @@ static sk_sp<SkImageFilter> matrix_factory(sk_sp<SkImage> auxImage, const SkIRec
 
     // This doesn't support a cropRect
     return SkImageFilters::MatrixTransform(matrix, SkSamplingOptions(SkFilterMode::kLinear), nullptr);
-}
-
-static sk_sp<SkImageFilter> alpha_threshold_factory(sk_sp<SkImage> auxImage,
-                                                    const SkIRect* cropRect) {
-    // Centered cross with higher opacity
-    SkRegion region(SkIRect::MakeLTRB(30, 45, 70, 55));
-    region.op(SkIRect::MakeLTRB(45, 30, 55, 70), SkRegion::kUnion_Op);
-
-    return SkImageFilters::AlphaThreshold(region, 1.f, .2f, nullptr, cropRect);
 }
 
 static sk_sp<SkImageFilter> lighting_factory(sk_sp<SkImage> auxImage, const SkIRect* cropRect) {
@@ -206,7 +200,7 @@ protected:
         return name;
     }
 
-    SkISize onISize() override { return SkISize::Make(1980, 860); }
+    SkISize onISize() override { return SkISize::Make(1840, 860); }
 
     void onOnceBeforeDraw() override {
         SkImageInfo info = SkImageInfo::MakeN32(100, 100, kUnpremul_SkAlphaType);
@@ -237,7 +231,6 @@ protected:
             blend_factory,
             convolution_factory,
             matrix_factory,
-            alpha_threshold_factory,
             lighting_factory,
             tile_factory
         };
@@ -250,10 +243,9 @@ protected:
             "Erode",
             "Displacement",
             "Arithmetic",
-            "Xfer Mode", // "blend"
+            "Blend",
             "Convolution",
             "Matrix Xform",
-            "Alpha Threshold",
             "Lighting",
             "Tile"
         };

@@ -11,11 +11,11 @@
 #include "include/gpu/ShaderErrorHandler.h"
 #include "include/gpu/graphite/BackendTexture.h"
 #include "src/core/SkSLTypeShared.h"
+#include "src/gpu/PipelineUtils.h"
 #include "src/gpu/graphite/Buffer.h"
 #include "src/gpu/graphite/ComputePipeline.h"
 #include "src/gpu/graphite/ContextUtils.h"
 #include "src/gpu/graphite/GraphicsPipeline.h"
-#include "src/gpu/graphite/PipelineUtils.h"
 #include "src/gpu/graphite/RendererProvider.h"
 #include "src/gpu/graphite/Sampler.h"
 #include "src/gpu/graphite/Texture.h"
@@ -34,9 +34,7 @@
 
 namespace skgpu::graphite {
 
-namespace { // Anonymous namespace
-
-VkDescriptorSetLayout desc_type_count_to_desc_set_layout(
+VkDescriptorSetLayout VulkanResourceProvider::DescTypeAndCountToVkDescSetLayout(
         const VulkanSharedContext* ctxt,
         SkSpan<DescTypeAndCount> requestedDescriptors) {
 
@@ -79,8 +77,6 @@ VkDescriptorSetLayout desc_type_count_to_desc_set_layout(
     }
     return layout;
 }
-
-} // Anonymous namespace
 
 VulkanResourceProvider::VulkanResourceProvider(SharedContext* sharedContext,
                                                SingleOwner* singleOwner,
@@ -170,7 +166,15 @@ sk_sp<GraphicsPipeline> VulkanResourceProvider::createGraphicsPipeline(
     }
 
     // TODO: Generate depth-stencil state, blend info
-    return VulkanGraphicsPipeline::Make(this->vulkanSharedContext());
+    return VulkanGraphicsPipeline::Make(this->vulkanSharedContext(),
+                                        vsModule,
+                                        step->vertexAttributes(),
+                                        step->instanceAttributes(),
+                                        fsModule,
+                                        step->depthStencilSettings(),
+                                        step->primitiveType(),
+                                        fsSkSLInfo.fBlendInfo,
+                                        renderPassDesc);
 }
 
 sk_sp<ComputePipeline> VulkanResourceProvider::createComputePipeline(const ComputePipelineDesc&) {
@@ -235,7 +239,7 @@ VulkanDescriptorSet* VulkanResourceProvider::findOrCreateDescriptorSet(
     // If we did not find an existing avilable desc set, allocate sets with the appropriate layout
     // and add them to the cache.
     auto pool = VulkanDescriptorPool::Make(this->vulkanSharedContext(), requestedDescriptors);
-    VkDescriptorSetLayout layout = desc_type_count_to_desc_set_layout(
+    VkDescriptorSetLayout layout = DescTypeAndCountToVkDescSetLayout(
             this->vulkanSharedContext(),
             requestedDescriptors);
 

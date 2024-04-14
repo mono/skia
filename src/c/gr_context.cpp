@@ -7,6 +7,9 @@
  * found in the LICENSE file.
  */
 
+#include "include/core/SkImage.h"
+#include "include/core/SkSurface.h"
+
 #include "include/c/gr_context.h"
 
 #include "src/c/sk_types_priv.h"
@@ -113,6 +116,14 @@ bool gr_direct_context_submit(gr_direct_context_t* context, bool syncCpu) {
 
 void gr_direct_context_flush_and_submit(gr_direct_context_t* context, bool syncCpu) {
     SK_ONLY_GPU(AsGrDirectContext(context)->flushAndSubmit(syncCpu));
+}
+
+void gr_direct_context_flush_image(gr_direct_context_t* context, const sk_image_t* image) {
+    SK_ONLY_GPU(AsGrDirectContext(context)->flush(sk_ref_sp(AsImage(image))));
+}
+
+void gr_direct_context_flush_surface(gr_direct_context_t* context, sk_surface_t* surface) {
+    SK_ONLY_GPU(AsGrDirectContext(context)->flush(sk_ref_sp(AsSurface(surface))));
 }
 
 void gr_direct_context_reset_context(gr_direct_context_t* context, uint32_t state) {

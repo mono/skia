@@ -846,7 +846,6 @@ func (b *taskBuilder) defaultSwarmDimensions() {
 			"Win":        DEFAULT_OS_WIN,
 			"Win10":      "Windows-10-19045",
 			"Win2019":    DEFAULT_OS_WIN,
-			"Win8":       "Windows-8.1-SP0",
 			"iOS":        "iOS-13.3.1",
 		}[os]
 		if !ok {
@@ -966,7 +965,7 @@ func (b *taskBuilder) defaultSwarmDimensions() {
 					"RadeonHD7770":  "1002:683d-26.20.13031.18002",
 					"RadeonR9M470X": "1002:6646-26.20.13031.18002",
 					"QuadroP400":    "10de:1cb3-30.0.15.1179",
-					"RadeonVega6":   "1002:1636-31.0.12027.7000",
+					"RadeonVega6":   "1002:1636-31.0.14057.5006",
 					"RTX3060":       "10de:2489-31.0.15.1694",
 				}[b.parts["cpu_or_gpu_value"]]
 				if !ok {
@@ -1261,7 +1260,7 @@ func (b *jobBuilder) compile() string {
 		b.addTask(name, func(b *taskBuilder) {
 			recipe := "compile"
 			casSpec := CAS_COMPILE
-			if b.extraConfig("NoDEPS", "CMake", "Flutter", "NoPatch") {
+			if b.extraConfig("NoDEPS", "CMake", "Flutter", "NoPatch", "Vello") {
 				recipe = "sync_and_compile"
 				casSpec = CAS_RUN_RECIPE
 				b.recipeProps(EXTRA_PROPS)
@@ -1332,6 +1331,11 @@ func (b *jobBuilder) compile() string {
 				b.usesCCache()
 				if b.extraConfig("iOS") {
 					b.asset("provisioning_profile_ios")
+				}
+				if b.extraConfig("Vello") {
+					// All of our current Mac compile machines are x64 Mac only.
+					b.usesBazel("mac_x64")
+					b.attempts(1)
 				}
 			}
 		})
@@ -2153,7 +2157,7 @@ var shorthandToLabel = map[string]labelAndSavedOutputDir{
 	"modules_canvaskit_js_tests":     {"//modules/canvaskit:canvaskit_js_tests", ""},
 	"skia_public":                    {"//:skia_public", ""},
 	"skottie_tool_gpu":               {"//modules/skottie:skottie_tool_gpu", ""},
-	"tests":                          {"//tests/...", ""},
+	"tests":                          {"//tests:linux_rbe_build", ""},
 	"experimental_bazel_test_client": {"//experimental/bazel_test/client:client_lib", ""},
 
 	// Android tests that run on a device. We store the //bazel-bin/tests directory into CAS for use

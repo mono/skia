@@ -33,14 +33,15 @@ skia_filegroup(
         "SkColorFilter.h",
         "SkColorPriv.h",
         "SkColorSpace.h",
+        "SkColorTable.h",
         "SkColorType.h",
         "SkContourMeasure.h",
         "SkCoverageMode.h",
         "SkCubicMap.h",
         "SkData.h",
         "SkDataTable.h",
-        "SkDeferredDisplayList.h",
-        "SkDeferredDisplayListRecorder.h",
+        "SkDeferredDisplayList.h",  # TODO(kjlubick) remove this shim
+        "SkDeferredDisplayListRecorder.h",  # TODO(kjlubick) remove this shim
         "SkDocument.h",
         "SkDrawable.h",
         "SkEncodedImageFormat.h",  # TODO(kjlubick) remove this shim
@@ -78,7 +79,7 @@ skia_filegroup(
         "SkPixmap.h",
         "SkPoint.h",
         "SkPoint3.h",
-        "SkPromiseImageTexture.h",
+        "SkPromiseImageTexture.h",  # TODO(kjlubick) remove this shim
         "SkRRect.h",
         "SkRSXform.h",
         "SkRasterHandleAllocator.h",
@@ -95,11 +96,12 @@ skia_filegroup(
         "SkString.h",
         "SkStrokeRec.h",
         "SkSurface.h",
-        "SkSurfaceCharacterization.h",
+        "SkSurfaceCharacterization.h",  # TODO(kjlubick) remove this shim
         "SkSurfaceProps.h",
         "SkSwizzle.h",
         "SkTextBlob.h",
         "SkTextureCompressionType.h",
+        "SkTiledImageUtils.h",
         "SkTileMode.h",
         "SkTime.h",
         "SkTraceMemoryDump.h",

@@ -115,9 +115,9 @@ sk_shader_t* sk_shader_new_two_point_conical_gradient_color4f(const sk_point_t* 
 // SkPerlinNoiseShader
 
 sk_shader_t* sk_shader_new_perlin_noise_fractal_noise(float baseFrequencyX, float baseFrequencyY, int numOctaves, float seed, const sk_isize_t* tileSize) {
-    return ToShader(SkPerlinNoiseShader::MakeFractalNoise(baseFrequencyX, baseFrequencyY, numOctaves, seed, AsISize(tileSize)).release());
+    return ToShader(SkShaders::MakeFractalNoise(baseFrequencyX, baseFrequencyY, numOctaves, seed, AsISize(tileSize)).release());
 }
 
 sk_shader_t* sk_shader_new_perlin_noise_turbulence(float baseFrequencyX, float baseFrequencyY, int numOctaves, float seed, const sk_isize_t* tileSize) {
-    return ToShader(SkPerlinNoiseShader::MakeTurbulence(baseFrequencyX, baseFrequencyY,  numOctaves,  seed,  AsISize(tileSize)).release());
+    return ToShader(SkShaders::MakeTurbulence(baseFrequencyX, baseFrequencyY,  numOctaves,  seed,  AsISize(tileSize)).release());
 }

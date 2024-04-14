@@ -25,9 +25,7 @@
 #include "include/private/SkIDChangeListener.h"
 #include "include/private/base/SkTPin.h"
 #include "include/private/gpu/ganesh/GrTypesPriv.h"
-#include "src/core/SkBlendModePriv.h"
 #include "src/core/SkBlenderBase.h"
-#include "src/core/SkColorFilterBase.h"
 #include "src/core/SkMessageBus.h"
 #include "src/core/SkPaintPriv.h"
 #include "src/core/SkRuntimeEffectPriv.h"
@@ -46,6 +44,7 @@
 #include "src/gpu/ganesh/GrSurfaceProxy.h"
 #include "src/gpu/ganesh/GrSurfaceProxyView.h"
 #include "src/gpu/ganesh/GrTextureProxy.h"
+#include "src/gpu/ganesh/GrXferProcessor.h"
 #include "src/gpu/ganesh/effects/GrSkSLFP.h"
 #include "src/gpu/ganesh/effects/GrTextureEffect.h"
 #include "src/shaders/SkShaderBase.h"
@@ -374,7 +373,7 @@ static inline bool skpaint_to_grpaint_impl(
             paintFP = std::move(*shaderFP);
         } else {
             if (const SkShaderBase* shader = as_SB(skPaint.getShader())) {
-                paintFP = shader->asFragmentProcessor(fpArgs, SkShaderBase::MatrixRec(ctm));
+                paintFP = GrFragmentProcessors::Make(shader, fpArgs, ctm);
                 if (paintFP == nullptr) {
                     return false;
                 }
@@ -397,9 +396,10 @@ static inline bool skpaint_to_grpaint_impl(
 
             SkPMColor4f shaderInput = origColor.makeOpaque().premul();
             paintFP = GrFragmentProcessor::OverrideInput(std::move(paintFP), shaderInput);
-            paintFP = as_BB(primColorBlender)->asFragmentProcessor(std::move(paintFP),
-                                                                   /*dstFP=*/nullptr,
-                                                                   fpArgs);
+            paintFP = GrFragmentProcessors::Make(as_BB(primColorBlender),
+                                                 /*srcFP=*/std::move(paintFP),
+                                                 /*dstFP=*/nullptr,
+                                                 fpArgs);
             if (!paintFP) {
                 return false;
             }
@@ -442,9 +442,10 @@ static inline bool skpaint_to_grpaint_impl(
             grPaint->setColor4f(SK_PMColor4fWHITE);  // won't be used.
             if (blender_requires_shader(primColorBlender)) {
                 paintFP = GrFragmentProcessor::MakeColor(origColor.makeOpaque().premul());
-                paintFP = as_BB(primColorBlender)->asFragmentProcessor(std::move(paintFP),
-                                                                       /*dstFP=*/nullptr,
-                                                                       fpArgs);
+                paintFP = GrFragmentProcessors::Make(as_BB(primColorBlender),
+                                                     /*srcFP=*/std::move(paintFP),
+                                                     /*dstFP=*/nullptr,
+                                                     fpArgs);
                 if (!paintFP) {
                     return false;
                 }
@@ -473,9 +474,8 @@ static inline bool skpaint_to_grpaint_impl(
             SkColorSpace* dstCS = dstColorInfo.colorSpace();
             grPaint->setColor4f(colorFilter->filterColor4f(origColor, dstCS, dstCS).premul());
         } else {
-            auto [success, fp] = as_CFB(colorFilter)->asFragmentProcessor(std::move(paintFP),
-                                                                          context, dstColorInfo,
-                                                                          surfaceProps);
+            auto [success, fp] = GrFragmentProcessors::Make(
+                    context, colorFilter, std::move(paintFP), dstColorInfo, surfaceProps);
             if (!success) {
                 return false;
             }
@@ -507,19 +507,19 @@ static inline bool skpaint_to_grpaint_impl(
         // on the GrPaint to also be null (also kSrcOver).
         SkASSERT(!grPaint->getXPFactory());
         if (bm.value() != SkBlendMode::kSrcOver) {
-            grPaint->setXPFactory(SkBlendMode_AsXPFactory(bm.value()));
+            grPaint->setXPFactory(GrXPFactory::FromBlendMode(bm.value()));
         }
     } else {
         // Apply a custom blend against the surface color, and force the XP to kSrc so that the
         // computed result is applied directly to the canvas while still honoring the alpha.
-        paintFP = as_BB(skPaint.getBlender())->asFragmentProcessor(
-                std::move(paintFP),
-                GrFragmentProcessor::SurfaceColor(),
-                fpArgs);
+        paintFP = GrFragmentProcessors::Make(as_BB(skPaint.getBlender()),
+                                             std::move(paintFP),
+                                             GrFragmentProcessor::SurfaceColor(),
+                                             fpArgs);
         if (!paintFP) {
             return false;
         }
-        grPaint->setXPFactory(SkBlendMode_AsXPFactory(SkBlendMode::kSrc));
+        grPaint->setXPFactory(GrXPFactory::FromBlendMode(SkBlendMode::kSrc));
     }
 
     if (GrColorTypeClampType(dstColorInfo.colorType()) == GrClampType::kManual) {

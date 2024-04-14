@@ -36,7 +36,7 @@
 #include "src/gpu/ganesh/GrGpu.h"
 #include "src/gpu/ganesh/GrShaderCaps.h"
 #include "src/gpu/ganesh/gl/GrGLCaps.h"
-#include "src/gpu/ganesh/gl/GrGLDefines_impl.h"
+#include "src/gpu/ganesh/gl/GrGLDefines.h"
 #include "src/gpu/ganesh/gl/GrGLGpu.h"
 #include "src/gpu/ganesh/gl/GrGLUtil.h"
 #include "tests/CtsEnforcement.h"
@@ -135,7 +135,7 @@ DEF_GANESH_TEST_FOR_GL_RENDERING_CONTEXTS(TextureBindingsResetTest,
     surf->getCanvas()->scale(0.25, 0.25);
     surf->getCanvas()->drawImage(img.get(), 0, 0, SkSamplingOptions({1.0f/3, 1.0f/3}), nullptr);
     surf->getCanvas()->restore();
-    surf->flushAndSubmit();
+    dContext->flushAndSubmit(surf);
     dContext->resetGLTextureBindings();
     checkBindings();
     resetBindings();
@@ -172,7 +172,7 @@ DEF_GANESH_TEST_FOR_GL_RENDERING_CONTEXTS(TextureBindingsResetTest,
         REPORTER_ASSERT(reporter, img);
         surf->getCanvas()->drawImage(img, 0, 0);
         img.reset();
-        surf->flushAndSubmit();
+        dContext->flushAndSubmit(surf);
         dContext->resetGLTextureBindings();
         checkBindings();
         resetBindings();
@@ -196,7 +196,7 @@ DEF_GANESH_TEST_FOR_GL_RENDERING_CONTEXTS(TextureBindingsResetTest,
             REPORTER_ASSERT(reporter, img);
             surf->getCanvas()->drawImage(img, 0, 0);
             img.reset();
-            surf->flushAndSubmit();
+            dContext->flushAndSubmit(surf);
             dContext->resetGLTextureBindings();
             checkBindings();
             resetBindings();
