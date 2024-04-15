@@ -11,6 +11,7 @@
 // Skia
 #include "include/c/gr_context.h"
 #include "include/c/sk_bitmap.h"
+#include "include/c/sk_blender.h"
 #include "include/c/sk_canvas.h"
 #include "include/c/sk_codec.h"
 #include "include/c/sk_colorfilter.h"
@@ -65,6 +66,7 @@ void** KeepSkiaCSymbols (void)
         (void*)gr_recording_context_unref,
         (void*)gr_glinterface_create_native_interface,
         (void*)sk_bitmap_new,
+        (void*)sk_blender_unref,
         (void*)sk_canvas_destroy,
         (void*)sk_codec_min_buffered_bytes_needed,
         (void*)sk_colorfilter_unref,

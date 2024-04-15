@@ -7,6 +7,7 @@
  * found in the LICENSE file.
  */
 
+#include "include/core/SkBlender.h"
 #include "include/core/SkColorFilter.h"
 #include "include/core/SkMaskFilter.h"
 #include "include/core/SkPaint.h"
@@ -108,6 +109,10 @@ void sk_paint_set_blendmode(sk_paint_t* paint, sk_blendmode_t mode) {
     AsPaint(paint)->setBlendMode((SkBlendMode)mode);
 }
 
+void sk_paint_set_blender(sk_paint_t* paint, sk_blender_t* blender) {
+    AsPaint(paint)->setBlender(sk_ref_sp(AsBlender(blender)));
+}
+
 bool sk_paint_is_dither(const sk_paint_t* cpaint) {
     return AsPaint(cpaint)->isDither();
 }
@@ -142,6 +147,10 @@ sk_imagefilter_t* sk_paint_get_imagefilter(sk_paint_t* cpaint) {
 
 sk_blendmode_t sk_paint_get_blendmode(sk_paint_t* paint) {
     return (sk_blendmode_t)AsPaint(paint)->getBlendMode_or(SkBlendMode::kSrcOver);
+}
+
+sk_blender_t* sk_paint_get_blender(sk_paint_t* cpaint) {
+    return ToBlender(AsPaint(cpaint)->refBlender().release());
 }
 
 sk_path_effect_t* sk_paint_get_path_effect(sk_paint_t* cpaint) {

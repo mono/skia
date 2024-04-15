@@ -351,6 +351,8 @@ typedef struct sk_pixmap_t sk_pixmap_t;
 typedef struct sk_colorfilter_t sk_colorfilter_t;
 typedef struct sk_imagefilter_t sk_imagefilter_t;
 
+typedef struct sk_blender_t sk_blender_t;
+
 /**
    A sk_typeface_t pecifies the typeface and intrinsic style of a font.
     This is used in the paint, along with optionally algorithmic settings like
