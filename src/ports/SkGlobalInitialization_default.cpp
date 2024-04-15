@@ -21,11 +21,13 @@
     #include "include/effects/Sk2DPathEffect.h"
     #include "include/effects/SkCornerPathEffect.h"
     #include "include/effects/SkDiscretePathEffect.h"
+    #include "include/effects/SkImageFilters.h"
     #include "include/effects/SkOverdrawColorFilter.h"
     #include "include/effects/SkPerlinNoiseShader.h"
     #include "include/effects/SkShaderMaskFilter.h"
     #include "src/core/SkBlendModeBlender.h"
     #include "src/core/SkImageFilter_Base.h"
+    #include "src/core/SkLocalMatrixImageFilter.h"
     #include "src/core/SkRecordedDrawable.h"
     #include "src/effects/SkDashImpl.h"
     #include "src/effects/SkEmbossMaskFilter.h"
@@ -37,10 +39,7 @@
     #include "src/shaders/SkLocalMatrixShader.h"
     #include "src/shaders/SkPictureShader.h"
     #include "src/shaders/SkShaderBase.h"
-    #include "src/shaders/gradients/SkGradientShaderBase.h"
-
-    #include "include/effects/SkImageFilters.h"
-    #include "src/core/SkLocalMatrixImageFilter.h"
+    #include "src/shaders/gradients/SkGradientBaseShader.h"
 
 #ifdef SK_ENABLE_SKSL
     #include "include/effects/SkRuntimeEffect.h"
@@ -59,26 +58,26 @@
      */
     void SkFlattenable::PrivateInitializer::InitEffects() {
         // Shaders.
+        SkRegisterBlendShaderFlattenable();
         SkRegisterColor4ShaderFlattenable();
         SK_REGISTER_FLATTENABLE(SkColorFilterShader);
         SkRegisterColorShaderFlattenable();
-        SkRegisterComposeShaderFlattenable();
         SkRegisterCoordClampShaderFlattenable();
         SkRegisterEmptyShaderFlattenable();
         SK_REGISTER_FLATTENABLE(SkLocalMatrixShader);
         SK_REGISTER_FLATTENABLE(SkPictureShader);
+        SkRegisterConicalGradientShaderFlattenable();
         SkRegisterLinearGradientShaderFlattenable();
         SkRegisterRadialGradientShaderFlattenable();
         SkRegisterSweepGradientShaderFlattenable();
-        SkRegisterTwoPointConicalGradientShaderFlattenable();
-        SkPerlinNoiseShader::RegisterFlattenables();
+        SkRegisterPerlinNoiseShaderFlattenable();
         SkShaderBase::RegisterFlattenables();
 
         // Color filters.
         SkRegisterMatrixColorFilterFlattenable();
         SkRegisterComposeColorFilterFlattenable();
         SkRegisterModeColorFilterFlattenable();
-        SkRegisterColorSpaceXformColorFilterFlattenable();
+        SkRegisterSkColorSpaceXformColorFilterFlattenable();
         SkRegisterWorkingFormatColorFilterFlattenable();
         SkRegisterTableColorFilterFlattenable();
 
@@ -124,8 +123,6 @@
      *  SK_DISABLE_EFFECT_SERIALIZATION, or modify/replace this file as needed.
      */
     void SkFlattenable::PrivateInitializer::InitImageFilters() {
-        SkRegisterAlphaThresholdImageFilterFlattenable();
-        SkRegisterArithmeticImageFilterFlattenable();
         SkRegisterBlendImageFilterFlattenable();
         SkRegisterBlurImageFilterFlattenable();
         SkRegisterColorFilterImageFilterFlattenable();

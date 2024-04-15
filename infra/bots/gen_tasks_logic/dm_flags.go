@@ -287,6 +287,8 @@ func (b *taskBuilder) dmFlags(internalHardwareLabel string) {
 			// Fail on Iris Xe (skbug:13921)
 			skip("gltestthreading", "gm", ALL, "circular_arcs_stroke_and_fill_round")
 			skip("gltestthreading", "gm", ALL, "degeneratesegments")
+			skip("gltestthreading", "gm", ALL, "imagemakewithfilter")
+			skip("gltestthreading", "gm", ALL, "imagemakewithfilter_crop_ref")
 			skip("gltestthreading", "gm", ALL, "ovals")
 			skip("gltestthreading", "gm", ALL, "persp_images")
 			skip("gltestthreading", "gm", ALL, "rtif_distort")
@@ -376,6 +378,12 @@ func (b *taskBuilder) dmFlags(internalHardwareLabel string) {
 				if b.matchGpu("Intel") {
 					// anglebug.com/5588
 					skip(ALL, "test", ALL, "SkSLIntrinsicFloor_GPU")
+					// Debug-ANGLE-All on Intel frequently timeout, and the FilterResult test suite
+					// produces many test cases, that are multiplied by the number of configs (of
+					// which ANGLE has many variations). There is not a lot of value gained by
+					// running these if they are the source of long 'dm' time on Xe hardware given
+					// many other bots are executing them.
+					skip(ALL, "test", ALL, "FilterResult")
 				}
 			} else if b.matchOs("Mac") {
 				configs = []string{"angle_mtl_es2", "angle_mtl_es3"}
@@ -746,8 +754,8 @@ func (b *taskBuilder) dmFlags(internalHardwareLabel string) {
 		//   Test-Debian11-Clang-NUC11TZi5-GPU-IntelIrisXe-x86_64-Release-All-TSAN_Vulkan
 		//   Test-Debian11-Clang-NUC11TZi5-GPU-IntelIrisXe-x86_64-Release-All-DDL3_TSAN_Vulkan
 		if b.Name == "Test-Ubuntu18-Clang-Golo-GPU-QuadroP400-x86_64-Release-All-TSAN_Vulkan" ||
-		   b.Name == "Test-Debian11-Clang-NUC11TZi5-GPU-IntelIrisXe-x86_64-Release-All-TSAN_Vulkan" ||
-		   b.Name == "Test-Debian11-Clang-NUC11TZi5-GPU-IntelIrisXe-x86_64-Release-All-DDL3_TSAN_Vulkan" {
+			b.Name == "Test-Debian11-Clang-NUC11TZi5-GPU-IntelIrisXe-x86_64-Release-All-TSAN_Vulkan" ||
+			b.Name == "Test-Debian11-Clang-NUC11TZi5-GPU-IntelIrisXe-x86_64-Release-All-DDL3_TSAN_Vulkan" {
 			skip("_", "test", "_", "_")
 		}
 	}
@@ -847,6 +855,13 @@ func (b *taskBuilder) dmFlags(internalHardwareLabel string) {
 			// This GM triggers a SkSmallAllocator assert.
 			skip(ALL, "gm", ALL, "composeshader_bitmap")
 		}
+	}
+
+	if !b.matchOs("Win", "Debian11", "Ubuntu18") || b.gpu("IntelIris655", "IntelIris540") {
+		// This test requires a decent max texture size so just run it on the desktops.
+		// The OS list should include Mac but Mac10.13 doesn't work correctly.
+		// The IntelIris655 and IntelIris540 GPUs don't work correctly in the Vk backend
+		skip(ALL, "test", ALL, "BigImageTest_Ganesh")
 	}
 
 	if b.matchOs("Win", "Mac") {
@@ -1012,18 +1027,6 @@ func (b *taskBuilder) dmFlags(internalHardwareLabel string) {
 		}
 	}
 
-	// Skip memory intensive tests on 32-bit bots.
-	if b.os("Win8") && b.arch("x86") {
-		skip(ALL, "image", "f16", ALL)
-		skip(ALL, "image", ALL, "abnormal.wbmp")
-		skip(ALL, "image", ALL, "interlaced1.png")
-		skip(ALL, "image", ALL, "interlaced2.png")
-		skip(ALL, "image", ALL, "interlaced3.png")
-		for _, rawExt := range r {
-			skip(ALL, "image", ALL, "."+rawExt)
-		}
-	}
-
 	if b.model("Nexus5", "Nexus5x", "JioNext") && b.gpu() {
 		// skia:5876
 		skip(ALL, "gm", ALL, "encode-platform")
@@ -1061,6 +1064,7 @@ func (b *taskBuilder) dmFlags(internalHardwareLabel string) {
 		skip(ALL, "tests", ALL, "SkSLCommaSideEffects_GPU")
 		skip(ALL, "tests", ALL, "SkSLIntrinsicMixFloatES2_GPU")
 		skip(ALL, "tests", ALL, "SkSLIntrinsicClampFloat_GPU")
+		skip(ALL, "tests", ALL, "SkSLSwitchWithFallthrough_GPU")
 		skip(ALL, "tests", ALL, "SkSLSwizzleIndexLookup_GPU") // skia:14177
 		skip(ALL, "tests", ALL, "SkSLSwizzleIndexStore_GPU")  // skia:14177
 	}
@@ -1083,11 +1087,11 @@ func (b *taskBuilder) dmFlags(internalHardwareLabel string) {
 		skip(ALL, "tests", ALL, "SkSLStructFieldFolding_GPU") // skia:13393
 	}
 
-	if b.matchGpu("Adreno[56]") && b.extraConfig("Vulkan") { // disable broken tests on Adreno 5/6xx Vulkan
-		skip(ALL, "tests", ALL, "SkSLInoutParameters_GPU")   // skia:12869
-		skip(ALL, "tests", ALL, "SkSLOutParams_GPU")         // skia:11919
-		skip(ALL, "tests", ALL, "SkSLOutParamsTricky_GPU")   // skia:11919
-		skip(ALL, "tests", ALL, "SkSLOutParamsNoInline_GPU") // skia:11919
+	if b.matchGpu("Adreno[56]") && b.extraConfig("Vulkan") {        // disable broken tests on Adreno 5/6xx Vulkan
+		skip(ALL, "tests", ALL, "SkSLInoutParameters_GPU")          // skia:12869
+		skip(ALL, "tests", ALL, "SkSLOutParams_GPU")                // skia:11919
+		skip(ALL, "tests", ALL, "SkSLOutParamsDoubleSwizzle_GPU")   // skia:11919
+		skip(ALL, "tests", ALL, "SkSLOutParamsNoInline_GPU")        // skia:11919
 		skip(ALL, "tests", ALL, "SkSLOutParamsFunctionCallInArgument")
 	}
 
@@ -1105,6 +1109,7 @@ func (b *taskBuilder) dmFlags(internalHardwareLabel string) {
 	}
 
 	if b.matchGpu("Mali400") {
+		skip(ALL, "tests", ALL, "BlendRequiringDstReadWithLargeCoordinates")
 		skip(ALL, "tests", ALL, "SkSLCross")
 		skip(ALL, "tests", ALL, "SkSLMatrixSwizzleStore_GPU")
 	}
@@ -1115,8 +1120,12 @@ func (b *taskBuilder) dmFlags(internalHardwareLabel string) {
 		skip(ALL, "tests", ALL, "SkSLLogicalOrShortCircuit_GPU")
 	}
 
+	if b.matchOs("iOS") && !b.extraConfig("Metal") {
+		skip(ALL, "tests", ALL, "SkSLSwitchWithFallthrough_GPU")
+	}
+
 	if b.matchOs("Mac") && b.extraConfig("Metal") && (b.gpu("IntelIrisPlus") ||
-                                                      b.gpu("IntelHD6000")) {
+		b.gpu("IntelHD6000")) {
 		skip(ALL, "tests", ALL, "SkSLIntrinsicNot_GPU")         // skia:14025
 		skip(ALL, "tests", ALL, "SkSLIntrinsicMixFloatES3_GPU") // skia:14025
 	}
@@ -1128,10 +1137,10 @@ func (b *taskBuilder) dmFlags(internalHardwareLabel string) {
 	}
 
 	if b.gpu("IntelIris6100", "IntelHD4400") && b.matchOs("Win") && !b.extraConfig("Vulkan") {
-		skip(ALL, "tests", ALL, "SkSLMatrixFoldingES2_GPU")               // skia:11919
-		skip(ALL, "tests", ALL, "SkSLMatrixEquality_GPU")                 // skia:11919
-		skip(ALL, "tests", ALL, "SkSLTemporaryIndexLookup_GPU")           // skia:14151
-		skip(ALL, "tests", ALL, "SkSLSwizzleIndexLookup_GPU")             // skia:14177
+		skip(ALL, "tests", ALL, "SkSLMatrixFoldingES2_GPU")     // skia:11919
+		skip(ALL, "tests", ALL, "SkSLMatrixEquality_GPU")       // skia:11919
+		skip(ALL, "tests", ALL, "SkSLTemporaryIndexLookup_GPU") // skia:14151
+		skip(ALL, "tests", ALL, "SkSLSwizzleIndexLookup_GPU")   // skia:14177
 	}
 
 	if b.matchGpu("Intel") && b.matchOs("Win") && !b.extraConfig("Vulkan") {
@@ -1152,6 +1161,7 @@ func (b *taskBuilder) dmFlags(internalHardwareLabel string) {
 	if b.extraConfig("Dawn") {
 		// skia:13922: WGSL does not support case fallthrough in switch statements.
 		skip(ALL, "tests", ALL, "SkSLSwitchWithFallthrough_GPU")
+		skip(ALL, "tests", ALL, "SkSLSwitchWithFallthroughAndVarDecls_GPU")
 		skip(ALL, "tests", ALL, "SkSLSwitchWithLoops_GPU")
 	}
 
@@ -1160,6 +1170,7 @@ func (b *taskBuilder) dmFlags(internalHardwareLabel string) {
 		skip(ALL, "tests", ALL, "SkSLSwitch_GPU")
 		skip(ALL, "tests", ALL, "SkSLSwitchDefaultOnly_GPU")
 		skip(ALL, "tests", ALL, "SkSLSwitchWithFallthrough_GPU")
+		skip(ALL, "tests", ALL, "SkSLSwitchWithFallthroughAndVarDecls_GPU")
 		skip(ALL, "tests", ALL, "SkSLSwitchWithLoops_GPU")
 		skip(ALL, "tests", ALL, "SkSLSwitchCaseFolding_GPU")
 		skip(ALL, "tests", ALL, "SkSLLoopFloat_GPU")
@@ -1180,25 +1191,25 @@ func (b *taskBuilder) dmFlags(internalHardwareLabel string) {
 	}
 
 	if !b.extraConfig("Vulkan") && (b.gpu("RTX3060") ||
-									b.gpu("QuadroP400") ||
-									b.matchGpu("GTX[6-9]60") ||
-									b.matchGpu("Mali400") ||
-									b.matchGpu("Tegra3") ||
-									b.matchGpu("Radeon(R9|HD)")) {
-		skip(ALL, "tests", ALL, "SkSLMatrixScalarNoOpFolding_GPU")  // skia:13556
+		b.gpu("QuadroP400") ||
+		b.matchGpu("GTX[6-9]60") ||
+		b.matchGpu("Mali400") ||
+		b.matchGpu("Tegra3") ||
+		b.matchGpu("Radeon(R9|HD)")) {
+		skip(ALL, "tests", ALL, "SkSLMatrixScalarNoOpFolding_GPU") // skia:13556
 	}
 
 	if b.matchOs("Mac") && b.extraConfig("ANGLE") {
-		skip(ALL, "tests", ALL, "SkSLMatrixScalarNoOpFolding_GPU")  // https://anglebug.com/7525
-		skip(ALL, "tests", ALL, "SkSLSwizzleIndexStore_GPU")        // Apple bug FB12055941
+		skip(ALL, "tests", ALL, "SkSLMatrixScalarNoOpFolding_GPU") // https://anglebug.com/7525
+		skip(ALL, "tests", ALL, "SkSLSwizzleIndexStore_GPU")       // Apple bug FB12055941
 	}
 
 	if b.matchOs("Mac") && b.matchGpu("Intel") && !b.extraConfig("Metal") {
-		skip(ALL, "tests", ALL, "SkSLSwizzleIndexStore_GPU")        // skia:14177
+		skip(ALL, "tests", ALL, "SkSLSwizzleIndexStore_GPU") // skia:14177
 	}
 
 	if b.matchOs("Win10") && b.gpu("IntelIris655") {
-		skip(ALL, "tests", ALL, "SkSLSwizzleIndexStore_GPU")        // skia:14177
+		skip(ALL, "tests", ALL, "SkSLSwizzleIndexStore_GPU") // skia:14177
 	}
 
 	if b.gpu("RTX3060") && b.extraConfig("Vulkan") && b.matchOs("Win") {
@@ -1210,6 +1221,7 @@ func (b *taskBuilder) dmFlags(internalHardwareLabel string) {
 		skip(ALL, "tests", ALL, "SkSLMatrixFoldingES2_GPU") // skia:11919
 		skip(ALL, "tests", ALL, "SkSLMatrixEquality_GPU")   // skia:11919
 		skip(ALL, "tests", ALL, "SkSLIntrinsicFract_GPU")
+		skip(ALL, "tests", ALL, "SkSLModifiedStructParametersCannotBeInlined_GPU")
 	}
 
 	if b.gpu("QuadroP400") && b.matchOs("Ubuntu") && b.matchModel("Golo") {

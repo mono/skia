@@ -32,9 +32,11 @@ class GrVkSecondaryCommandBuffer;
 class GrVkTexture;
 enum class SkTextureCompressionType;
 
-namespace skgpu { struct VulkanInterface; }
-
-namespace skgpu { class VulkanMemoryAllocator; }
+namespace skgpu {
+class VulkanMemoryAllocator;
+class VulkanMutableTextureState;
+struct VulkanInterface;
+}
 
 class GrVkGpu : public GrGpu {
 public:
@@ -335,7 +337,7 @@ private:
 
     void prepareSurfacesForBackendAccessAndStateUpdates(
             SkSpan<GrSurfaceProxy*> proxies,
-            SkSurface::BackendSurfaceAccess access,
+            SkSurfaces::BackendSurfaceAccess access,
             const skgpu::MutableTextureState* newState) override;
 
     bool onSubmitToGpu(bool syncCpu) override;

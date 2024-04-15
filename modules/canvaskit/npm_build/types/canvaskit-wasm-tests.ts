@@ -440,6 +440,8 @@ function paintTests(CK: CanvasKit, colorFilter?: ColorFilter, imageFilter?: Imag
     paint.setImageFilter(imageFilter);
     paint.setMaskFilter(maskFilter);
     paint.setPathEffect(pathEffect);
+    // @ts-expect-error
+    paint.setShader(colorFilter);
     paint.setShader(shader);
     paint.setStrokeCap(CK.StrokeCap.Round);
     paint.setStrokeJoin(CK.StrokeJoin.Miter);
@@ -557,6 +559,7 @@ function paragraphTests(CK: CanvasKit, p?: Paragraph) {
     p.layout(300);
     const m = p.getLineMetrics(); // $ExpectType LineMetrics[]
     const n = CK.GlyphRunFlags.IsWhiteSpace === 1;
+    const o = p.unresolvedCodepoints(); // $ExpectType number[]
 }
 
 function paragraphBuilderTests(CK: CanvasKit, fontMgr?: FontMgr, paint?: Paint) {

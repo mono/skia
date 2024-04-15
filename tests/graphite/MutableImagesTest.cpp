@@ -7,6 +7,7 @@
 
 #include "tests/Test.h"
 
+#include "include/core/SkColorSpace.h"
 #include "include/core/SkImage.h"
 #include "include/gpu/GpuTypes.h"
 #include "include/gpu/graphite/BackendTexture.h"
@@ -427,7 +428,7 @@ public:
 
         fMutatingSurface->getCanvas()->clear(kInitialColor);
 
-        fMutatingImg = fMutatingSurface->asImage();
+        fMutatingImg = SkSurfaces::AsImage(fMutatingSurface);
         REPORTER_ASSERT(fReporter, fMutatingImg);
 
         return fRecorder->snap();

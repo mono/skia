@@ -26,6 +26,7 @@
 #include "include/gpu/GrYUVABackendTextures.h"
 #include "include/gpu/ganesh/SkImageGanesh.h"
 #include "include/private/base/SkAssert.h"
+#include "include/private/chromium/SkImageChromium.h"
 #include "include/private/gpu/ganesh/GrImageContext.h"
 #include "include/private/gpu/ganesh/GrTypesPriv.h"
 #include "src/core/SkImageInfoPriv.h"
@@ -145,7 +146,7 @@ GrSemaphoresSubmitted SkImage_GaneshYUVA::flush(GrDirectContext* dContext,
         proxies[i] = fYUVAProxies.proxy(i);
     }
     return dContext->priv().flushSurfaces(
-            {proxies, numProxies}, SkSurface::BackendSurfaceAccess::kNoAccess, info);
+            {proxies, numProxies}, SkSurfaces::BackendSurfaceAccess::kNoAccess, info);
 }
 
 bool SkImage_GaneshYUVA::onHasMipmaps() const {
@@ -408,7 +409,7 @@ sk_sp<SkImage> PromiseTextureFromYUVA(sk_sp<GrContextThreadSafeProxy> threadSafe
         return nullptr;
     }
 
-    // Make a lazy proxy for each plane and wrap in a view.
+    // Make a lazy proxy for each plane
     sk_sp<GrSurfaceProxy> proxies[4];
     for (int i = 0; i < n; ++i) {
         proxies[i] =

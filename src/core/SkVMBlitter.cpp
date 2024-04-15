@@ -5,22 +5,26 @@
  * found in the LICENSE file.
  */
 
+#include "src/core/SkVMBlitter.h"
+
+#include "include/core/SkBlender.h"
 #include "include/private/base/SkMacros.h"
 #include "src/base/SkArenaAlloc.h"
 #include "src/core/SkBlendModePriv.h"
 #include "src/core/SkBlenderBase.h"
 #include "src/core/SkChecksum.h"
-#include "src/core/SkColorFilterBase.h"
 #include "src/core/SkColorSpacePriv.h"
 #include "src/core/SkColorSpaceXformSteps.h"
 #include "src/core/SkCoreBlitters.h"
 #include "src/core/SkImageInfoPriv.h"
 #include "src/core/SkLRUCache.h"
+#include "src/core/SkMask.h"
 #include "src/core/SkMatrixProvider.h"
 #include "src/core/SkPaintPriv.h"
 #include "src/core/SkVM.h"
-#include "src/core/SkVMBlitter.h"
+#include "src/effects/colorfilters/SkColorFilterBase.h"
 #include "src/shaders/SkColorFilterShader.h"
+#include "src/shaders/SkEmptyShader.h"
 
 #include <cinttypes>
 
@@ -53,6 +57,8 @@ namespace {
             return c;
         }
 
+        SkColorFilterBase::Type type() const override { return SkColorFilterBase::Type::kNoop; }
+
         bool appendStages(const SkStageRec&, bool) const override { return true; }
 
         // Only created here, should never be flattened / unflattened.
@@ -60,7 +66,7 @@ namespace {
         const char* getTypeName() const override { return "NoopColorFilter"; }
     };
 
-    struct SpriteShader : public SkShaderBase {
+    struct SpriteShader : public SkEmptyShader {
         explicit SpriteShader(SkPixmap sprite) : fSprite(sprite) {}
 
         SkPixmap fSprite;
@@ -75,7 +81,7 @@ namespace {
                             skvm::Coord /*device*/,
                             skvm::Coord /*local*/,
                             skvm::Color /*paint*/,
-                            const MatrixRec&,
+                            const SkShaders::MatrixRec&,
                             const SkColorInfo& dst,
                             skvm::Uniforms* uniforms,
                             SkArenaAlloc*) const override {
@@ -89,7 +95,7 @@ namespace {
         }
     };
 
-    struct DitherShader : public SkShaderBase {
+    struct DitherShader : public SkEmptyShader {
         explicit DitherShader(sk_sp<SkShader> shader) : fShader(std::move(shader)) {}
 
         sk_sp<SkShader> fShader;
@@ -104,7 +110,7 @@ namespace {
                             skvm::Coord device,
                             skvm::Coord local,
                             skvm::Color paint,
-                            const MatrixRec& mRec,
+                            const SkShaders::MatrixRec& mRec,
                             const SkColorInfo& dst,
                             skvm::Uniforms* uniforms,
                             SkArenaAlloc* alloc) const override {

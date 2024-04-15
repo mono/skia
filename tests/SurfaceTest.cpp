@@ -48,7 +48,8 @@
 #include "include/private/gpu/ganesh/GrTypesPriv.h"
 #include "src/core/SkAutoPixmapStorage.h"
 #include "src/core/SkCanvasPriv.h"
-#include "src/gpu/ganesh/Device_v1.h"
+#include "src/gpu/ganesh/Device.h"
+#include "src/gpu/ganesh/GrCanvas.h"
 #include "src/gpu/ganesh/GrCaps.h"
 #include "src/gpu/ganesh/GrColorInfo.h"
 #include "src/gpu/ganesh/GrDirectContextPriv.h"
@@ -181,7 +182,7 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(GrContext_colorTypeSupportedAsSurface,
                             colorType);
             // Ensure that the sample count stored on the resulting SkSurface is a valid value.
             if (surf) {
-                auto rtp = SkCanvasPriv::TopDeviceTargetProxy(surf->getCanvas());
+                auto rtp = skgpu::ganesh::TopDeviceTargetProxy(surf->getCanvas());
                 int storedCnt = rtp->numSamples();
                 const GrBackendFormat& format = rtp->backendFormat();
                 int allowedCnt =
@@ -214,7 +215,7 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(GrContext_colorTypeSupportedAsSurface,
             REPORTER_ASSERT(reporter, can == SkToBool(surf), "ct: %d, sc: %d, can: %d, surf: %d",
                             colorType, sampleCnt, can, SkToBool(surf));
             if (surf) {
-                auto rtp = SkCanvasPriv::TopDeviceTargetProxy(surf->getCanvas());
+                auto rtp = skgpu::ganesh::TopDeviceTargetProxy(surf->getCanvas());
                 int storedCnt = rtp->numSamples();
                 const GrBackendFormat& backendFormat = rtp->backendFormat();
                 int allowedCnt = context->priv().caps()->getRenderTargetSampleCount(storedCnt,
@@ -439,7 +440,7 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(SurfaceAbandonPostFlush_Gpu,
         return;
     }
     // This flush can put command buffer refs on the GrGpuResource for the surface.
-    surface->flush();
+    direct->flush(surface);
     direct->abandonContext();
     // We pass the test if we don't hit any asserts or crashes when the ref on the surface goes away
     // after we abanonded the context. One thing specifically this checks is to make sure we're
@@ -464,7 +465,7 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(SurfaceBackendAccessAbandoned_Gpu,
             surface.get(), SkSurfaces::BackendHandleAccess::kFlushRead);
     REPORTER_ASSERT(reporter, beTex.isValid());
 
-    surface->flush();
+    dContext->flush(surface);
     dContext->abandonContext();
 
     // After abandoning the context none of the backend surfaces should be valid.
@@ -890,7 +891,7 @@ DEF_GANESH_TEST_FOR_GL_RENDERING_CONTEXTS(SurfaceClear_Gpu,
             ERRORF(reporter, "Could not create GPU SkSurface.");
             return;
         }
-        auto sfc = SkCanvasPriv::TopDeviceSurfaceFillContext(surface->getCanvas());
+        auto sfc = skgpu::ganesh::TopDeviceSurfaceFillContext(surface->getCanvas());
         if (!sfc) {
             ERRORF(reporter, "Could access surface context of GPU SkSurface.");
             return;
@@ -909,7 +910,7 @@ DEF_GANESH_TEST_FOR_GL_RENDERING_CONTEXTS(SurfaceClear_Gpu,
             ERRORF(reporter, "Could not create GPU SkSurface.");
             return;
         }
-        auto sfc = SkCanvasPriv::TopDeviceSurfaceFillContext(surface->getCanvas());
+        auto sfc = skgpu::ganesh::TopDeviceSurfaceFillContext(surface->getCanvas());
         if (!sfc) {
             ERRORF(reporter, "Could access surface context of GPU SkSurface.");
             return;
@@ -1059,7 +1060,7 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(SurfaceWrappedWithRelease_Gpu,
         }
 
         surface->getCanvas()->clear(SK_ColorRED);
-        surface->flush();
+        ctx->flush(surface);
         ctx->submit(true);
 
         // Now exercise the release proc
@@ -1100,7 +1101,7 @@ DEF_GANESH_TEST_FOR_GL_RENDERING_CONTEXTS(SurfaceAttachStencil_Gpu,
 
             // Validate that we can attach a stencil buffer to an SkSurface created by either of
             // our surface functions.
-            auto rtp = SkCanvasPriv::TopDeviceTargetProxy(surface->getCanvas());
+            auto rtp = skgpu::ganesh::TopDeviceTargetProxy(surface->getCanvas());
             GrRenderTarget* rt = rtp->peekRenderTarget();
             REPORTER_ASSERT(reporter,
                             resourceProvider->attachStencilAttachment(rt, rt->numSamples() > 1));

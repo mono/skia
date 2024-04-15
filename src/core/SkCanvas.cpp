@@ -39,10 +39,11 @@
 #include "include/private/base/SkTPin.h"
 #include "include/private/base/SkTemplates.h"
 #include "include/private/base/SkTo.h"
+#include "include/private/chromium/SkChromeRemoteGlyphCache.h"
+#include "include/private/chromium/Slug.h"
 #include "include/utils/SkNoDrawCanvas.h"
 #include "src/base/SkMSAN.h"
 #include "src/core/SkCanvasPriv.h"
-#include "src/core/SkColorFilterBase.h"
 #include "src/core/SkDevice.h"
 #include "src/core/SkImageFilterTypes.h"
 #include "src/core/SkImageFilter_Base.h"
@@ -55,6 +56,7 @@
 #include "src/core/SkTextBlobPriv.h"
 #include "src/core/SkTraceEvent.h"
 #include "src/core/SkVerticesPriv.h"
+#include "src/effects/colorfilters/SkColorFilterBase.h"
 #include "src/image/SkSurface_Base.h"
 #include "src/text/GlyphRun.h"
 #include "src/utils/SkPatchUtils.h"
@@ -72,21 +74,12 @@
 #if defined(SK_GANESH)
 #include "include/gpu/GrDirectContext.h"
 #include "include/gpu/GrRecordingContext.h"
-#include "src/gpu/ganesh/Device_v1.h"
+#include "src/gpu/ganesh/Device.h"
 #include "src/utils/SkTestCanvas.h"
-#if defined(SK_BUILD_FOR_ANDROID_FRAMEWORK)
-#   include "src/gpu/ganesh/GrRenderTarget.h"
-#   include "src/gpu/ganesh/GrRenderTargetProxy.h"
-#endif
 #endif
 
 #if defined(SK_GRAPHITE)
 #include "src/gpu/graphite/Device.h"
-#endif
-
-#if (defined(SK_GANESH) || defined(SK_GRAPHITE))
-#include "include/private/chromium/SkChromeRemoteGlyphCache.h"
-#include "include/private/chromium/Slug.h"
 #endif
 
 #define RETURN_ON_NULL(ptr)     do { if (nullptr == (ptr)) return; } while (0)
@@ -940,7 +933,7 @@ void SkCanvas::internalDrawDeviceWithFilter(SkBaseDevice* src,
             // infect blurs and other filters with large kernels.
             SkPaint imageFill;
             imageFill.setShader(srcImage->asShader(SkTileMode::kClamp,
-                                                   SkSamplingOptions{SkFilterMode::kLinear},
+                                                   SkFilterMode::kLinear,
                                                    SkMatrix::Translate(srcSubset.topLeft())));
             intermediateDevice->drawPaint(imageFill);
             filterInput = intermediateDevice->snapSpecial();
@@ -1723,22 +1716,6 @@ SkM44 SkCanvas::getLocalToDevice() const {
     return fMCRec->fMatrix;
 }
 
-#if defined(SK_BUILD_FOR_ANDROID_FRAMEWORK) && defined(SK_GANESH)
-
-SkIRect SkCanvas::topLayerBounds() const {
-    return this->topDevice()->getGlobalBounds();
-}
-
-GrBackendRenderTarget SkCanvas::topLayerBackendRenderTarget() const {
-    auto proxy = SkCanvasPriv::TopDeviceTargetProxy(const_cast<SkCanvas*>(this));
-    if (!proxy) {
-        return {};
-    }
-    const GrRenderTarget* renderTarget = proxy->peekRenderTarget();
-    return renderTarget ? renderTarget->getBackendRenderTarget() : GrBackendRenderTarget();
-}
-#endif
-
 GrRecordingContext* SkCanvas::recordingContext() {
 #if defined(SK_GANESH)
     if (auto gpuDevice = this->topDevice()->asGaneshDevice()) {
@@ -2378,7 +2355,6 @@ void SkCanvas::onDrawGlyphRunList(const sktext::GlyphRunList& glyphRunList, cons
     }
 }
 
-#if (defined(SK_GANESH) || defined(SK_GRAPHITE))
 sk_sp<Slug> SkCanvas::convertBlobToSlug(
         const SkTextBlob& blob, SkPoint origin, const SkPaint& paint) {
     TRACE_EVENT0("skia", TRACE_FUNC);
@@ -2418,7 +2394,6 @@ void SkCanvas::onDrawSlug(const Slug* slug) {
         this->topDevice()->drawSlug(this, slug, layer->paint());
     }
 }
-#endif
 
 // These call the (virtual) onDraw... method
 void SkCanvas::drawSimpleText(const void* text, size_t byteLength, SkTextEncoding encoding,

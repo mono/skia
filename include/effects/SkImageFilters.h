@@ -57,23 +57,6 @@ public:
     };
 
     /**
-     *  Create a filter that updates the alpha of the image based on 'region'. Pixels inside the
-     *  region are made more opaque and pixels outside are made more transparent.
-     *
-     *  Specifically, if a pixel is inside the region, its alpha will be set to
-     *  max(innerMin, pixel's alpha). If a pixel is outside the region, its alpha will be updated to
-     *  min(outerMax, pixel's alpha).
-     *  @param region   The geometric region controlling the inner and outer alpha thresholds.
-     *  @param innerMin The minimum alpha value for pixels inside 'region'.
-     *  @param outerMax The maximum alpha value for pixels outside of 'region'.
-     *  @param input    The input filter, or uses the source bitmap if this is null.
-     *  @param cropRect Optional rectangle that crops the input and output.
-     */
-    static sk_sp<SkImageFilter> AlphaThreshold(const SkRegion& region, SkScalar innerMin,
-                                               SkScalar outerMax, sk_sp<SkImageFilter> input,
-                                               const CropRect& cropRect = {});
-
-    /**
      *  Create a filter that implements a custom blend mode. Each output pixel is the result of
      *  combining the corresponding background and foreground pixels using the 4 coefficients:
      *     k1 * foreground * background + k2 * foreground + k3 * background + k4
@@ -227,30 +210,6 @@ public:
     }
 
     /**
-     *  Create a filter that draws the image using Mitchel cubic resampling. The returned image
-     *  filter evaluates to transparent black if 'image' is null.
-     *
-     *  @param image    The image that is output by the filter.
-     */
-    static sk_sp<SkImageFilter> Image(sk_sp<SkImage> image) {
-        return Image(std::move(image), SkSamplingOptions({1/3.0f, 1/3.0f}));
-    }
-
-    /**
-     *  Create a filter that mimics a zoom/magnifying lens effect.
-     *  DEPRECATED: This factory does not accept enough parameters to fully specify the zoom effect,
-                    and derives the zoom based on the internal allocation size of a saveLayer. This
-                    makes its behavior brittle and respond poorly to SkCanvas transforms.
-     *  @param srcRect
-     *  @param inset
-     *  @param input    The input filter that is magnified, if null the source bitmap is used.
-     *  @param cropRect Optional rectangle that crops the input and output.
-     */
-    static sk_sp<SkImageFilter> Magnifier(const SkRect& srcRect, SkScalar inset,
-                                          sk_sp<SkImageFilter> input,
-                                          const CropRect& cropRect = {});
-
-    /**
      *  Create a filter that fills 'lensBounds' with a magnification of the input.
      *
      *  @param lensBounds The outer bounds of the magnifier effect
@@ -358,6 +317,9 @@ public:
      *  by the SkRuntimeShaderBuilder. The shader is defined in the image filter's local coordinate
      *  system, so it will automatically be affected by SkCanvas' transform.
      *
+     *  This variant assumes that the runtime shader samples 'childShaderName' with the same input
+     *  coordinate passed to to shader.
+     *
      *  @param builder         The builder used to produce the runtime shader, that will in turn
      *                         fill the result image
      *  @param childShaderName The name of the child shader defined in the builder that will be
@@ -368,6 +330,22 @@ public:
      *                         shader. If null the implicit source image is used instead
      */
     static sk_sp<SkImageFilter> RuntimeShader(const SkRuntimeShaderBuilder& builder,
+                                              std::string_view childShaderName,
+                                              sk_sp<SkImageFilter> input) {
+        return RuntimeShader(builder, /*sampleRadius=*/0.f, childShaderName, std::move(input));
+    }
+
+    /**
+     * As above, but 'sampleRadius' defines the sampling radius of 'childShaderName' relative to
+     * the runtime shader produced by 'builder'. If greater than 0, the coordinate passed to
+     * childShader.eval() will be up to 'sampleRadius' away (maximum absolute offset in 'x' or 'y')
+     * from the coordinate passed into the runtime shader.
+     *
+     * This allows Skia to provide sampleable values for the image filter without worrying about
+     * boundary conditions.
+    */
+    static sk_sp<SkImageFilter> RuntimeShader(const SkRuntimeShaderBuilder& builder,
+                                              SkScalar sampleRadius,
                                               std::string_view childShaderName,
                                               sk_sp<SkImageFilter> input);
 
@@ -387,6 +365,22 @@ public:
      *  @param inputCount       How many entries are present in 'childShaderNames' and 'inputs'.
      */
     static sk_sp<SkImageFilter> RuntimeShader(const SkRuntimeShaderBuilder& builder,
+                                              std::string_view childShaderNames[],
+                                              const sk_sp<SkImageFilter> inputs[],
+                                              int inputCount) {
+        return RuntimeShader(builder, /*maxSampleRadius=*/0.f, childShaderNames,
+                             inputs, inputCount);
+    }
+
+    /**
+     * As above, but 'maxSampleRadius' defines the sampling limit on coordinates provided to all
+     * child shaders. Like the single-child variant with a sample radius, this can be used to
+     * inform Skia that the runtime shader guarantees that all dynamic children (defined in
+     * childShaderNames) will be evaluated with coordinates at most 'maxSampleRadius' away from the
+     * coordinate provided to the runtime shader itself.
+     */
+    static sk_sp<SkImageFilter> RuntimeShader(const SkRuntimeShaderBuilder& builder,
+                                              SkScalar maxSampleRadius,
                                               std::string_view childShaderNames[],
                                               const sk_sp<SkImageFilter> inputs[],
                                               int inputCount);

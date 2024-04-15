@@ -119,6 +119,34 @@ inline void draw_checkerboard(SkCanvas* canvas) {
     ToolUtils::draw_checkerboard(canvas, 0xFF999999, 0xFF666666, 8);
 }
 
+class HilbertGenerator {
+public:
+    HilbertGenerator(float desiredSize, float desiredLineWidth, int desiredDepth);
+
+    // Draw a Hilbert curve into the canvas w/ a gradient along its length
+    void draw(SkCanvas* canvas);
+
+private:
+    void turn90(bool turnLeft);
+    void line(SkCanvas* canvas);
+    void recursiveDraw(SkCanvas* canvas, int curDepth, bool turnLeft);
+    SkColor4f getColor(float curLen);
+
+    const float fDesiredSize;
+    const int fDesiredDepth;
+    const float fSegmentLength;            // length of a line segment
+    const float fDesiredLineWidth;
+
+    SkRect fActualBounds;
+
+    // The "turtle" state
+    SkPoint fCurPos;
+    int fCurDir;
+
+    const float fExpectedLen;
+    float fCurLen;
+};
+
 /** Create pixmaps to initialize a 32x32 image w/ or w/o mipmaps.
  *  Returns the number of levels (either 1 or 6). The mipmap levels will be colored as
  *  specified in 'colors'
@@ -225,7 +253,7 @@ public:
 
     // Helper functions for TopoSortBench & TopoSortTest
     static void AllocNodes(skia_private::TArray<sk_sp<ToolUtils::TopoTestNode>>* graph, int num) {
-        graph->reserve_back(num);
+        graph->reserve_exact(graph->size() + num);
 
         for (int i = 0; i < num; ++i) {
             graph->push_back(sk_sp<TopoTestNode>(new TopoTestNode(i)));

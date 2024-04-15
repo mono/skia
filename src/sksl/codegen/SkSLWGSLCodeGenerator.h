@@ -10,13 +10,13 @@
 
 #include "include/core/SkSpan.h"
 #include "include/private/SkSLDefines.h"
-#include "include/private/base/SkTArray.h"
 #include "src/core/SkTHash.h"
-#include "src/sksl/SkSLStringStream.h"
+#include "src/sksl/SkSLOperator.h"
 #include "src/sksl/codegen/SkSLCodeGenerator.h"
 
 #include <cstdint>
 #include <initializer_list>
+#include <memory>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -34,34 +34,37 @@ class Context;
 class ConstructorCompound;
 class ConstructorDiagonalMatrix;
 class ConstructorMatrixResize;
+class DoStatement;
 class Expression;
-class ExpressionStatement;
 struct Field;
 class FieldAccess;
+class ForStatement;
 class FunctionCall;
 class FunctionDeclaration;
 class FunctionDefinition;
 class GlobalVarDeclaration;
 class IfStatement;
 class IndexExpression;
+enum IntrinsicKind : int8_t;
 class Literal;
 class MemoryLayout;
+struct Modifiers;
 class OutputStream;
 class Position;
+class PostfixExpression;
 class PrefixExpression;
+struct Program;
 class ProgramElement;
 class ReturnStatement;
 class Statement;
 class StructDefinition;
+class SwitchCase;
+class SwitchStatement;
 class Swizzle;
 class TernaryExpression;
 class Type;
 class VarDeclaration;
-class Variable;
 class VariableReference;
-enum class OperatorPrecedence : uint8_t;
-struct Modifiers;
-struct Program;
 
 /**
  * Convert a Program into WGSL code.
@@ -180,24 +183,61 @@ private:
     void writeStatement(const Statement& s);
     void writeStatements(const StatementArray& statements);
     void writeBlock(const Block& b);
-    void writeExpressionStatement(const ExpressionStatement& s);
+    void writeDoStatement(const DoStatement& expr);
+    void writeExpressionStatement(const Expression& expr);
+    void writeForStatement(const ForStatement& s);
     void writeIfStatement(const IfStatement& s);
     void writeReturnStatement(const ReturnStatement& s);
+    void writeSwitchStatement(const SwitchStatement& s);
+    void writeSwitchCases(SkSpan<const SwitchCase* const> cases);
+    void writeEmulatedSwitchFallthroughCases(SkSpan<const SwitchCase* const> cases,
+                                             std::string_view switchValue);
+    void writeSwitchCaseList(SkSpan<const SwitchCase* const> cases);
     void writeVarDeclaration(const VarDeclaration& varDecl);
 
+    // Synthesizes an LValue for an expression.
+    class LValue;
+    class PointerLValue;
+    class SwizzleLValue;
+    class VectorComponentLValue;
+    std::unique_ptr<LValue> makeLValue(const Expression& e);
+
+    std::string variableReferenceNameForLValue(const VariableReference& r);
+
     // Writers for expressions. These return the final expression text as a string, and emit any
-    // necessary setup code directly into the program as necessary.
+    // necessary setup code directly into the program as necessary. The returned expression may be
+    // a `let`-alias that cannot be assigned-into; use `makeLValue` for an assignable expression.
     std::string assembleExpression(const Expression& e, Precedence parentPrecedence);
     std::string assembleBinaryExpression(const BinaryExpression& b, Precedence parentPrecedence);
+    std::string assembleBinaryExpression(const Expression& left,
+                                         Operator op,
+                                         const Expression& right,
+                                         const Type& resultType,
+                                         Precedence parentPrecedence);
     std::string assembleFieldAccess(const FieldAccess& f);
-    std::string assembleFunctionCall(const FunctionCall&);
+    std::string assembleFunctionCall(const FunctionCall& call, Precedence parentPrecedence);
     std::string assembleIndexExpression(const IndexExpression& i);
     std::string assembleLiteral(const Literal& l);
+    std::string assemblePostfixExpression(const PostfixExpression& p, Precedence parentPrecedence);
     std::string assemblePrefixExpression(const PrefixExpression& p, Precedence parentPrecedence);
     std::string assembleSwizzle(const Swizzle& swizzle);
     std::string assembleTernaryExpression(const TernaryExpression& t, Precedence parentPrecedence);
     std::string assembleVariableReference(const VariableReference& r);
     std::string assembleName(std::string_view name);
+
+    // Intrinsic helper functions.
+    std::string assembleIntrinsicCall(const FunctionCall& call,
+                                      IntrinsicKind kind,
+                                      Precedence parentPrecedence);
+    std::string assembleSimpleIntrinsic(std::string_view intrinsicName, const FunctionCall& call);
+    std::string assembleUnaryOpIntrinsic(Operator op,
+                                         const FunctionCall& call,
+                                         Precedence parentPrecedence);
+    std::string assembleBinaryOpIntrinsic(Operator op,
+                                          const FunctionCall& call,
+                                          Precedence parentPrecedence);
+    std::string assembleVectorizedIntrinsic(std::string_view intrinsicName,
+                                            const FunctionCall& call);
 
     // Constructor expressions
     std::string assembleAnyConstructor(const AnyConstructor& c, Precedence parentPrecedence);
@@ -209,20 +249,32 @@ private:
                                                   Precedence parentPrecedence);
     std::string assembleConstructorDiagonalMatrix(const ConstructorDiagonalMatrix& c,
                                                   Precedence parentPrecedence);
-    std::string assembleConstructorMatrixResize(const ConstructorMatrixResize& c,
+    std::string assembleConstructorMatrixResize(const ConstructorMatrixResize& ctor,
                                                 Precedence parentPrecedence);
 
-    // Matrix constructor helpers.
-    bool isMatrixConstructorHelperNeeded(const ConstructorCompound& c);
-    std::string getMatrixConstructorHelper(const AnyConstructor& c);
-    void writeMatrixFromMatrixArgs(const Type& sourceMatrix, int columns, int rows);
-    void writeMatrixFromScalarAndVectorArgs(const AnyConstructor& ctor, int columns, int rows);
-
     // Synthesized helper functions for comparison operators that are not supported by WGSL.
-    std::string assembleMatrixEqualityExpression(const Expression& left, const Expression& right);
+    std::string assembleEqualityExpression(const Type& left,
+                                           const std::string& leftName,
+                                           const Type& right,
+                                           const std::string& rightName,
+                                           Operator op,
+                                           Precedence parentPrecedence);
+    std::string assembleEqualityExpression(const Expression& left,
+                                           const Expression& right,
+                                           Operator op,
+                                           Precedence parentPrecedence);
 
     // Writes a scratch variable into the program and returns its name (e.g. `_skTemp123`).
-    std::string writeScratchVar(const Type& type);
+    std::string writeScratchVar(const Type& type, const std::string& value = "");
+
+    // Writes a scratch let-variable into the program, gives it the value of `expr`, and returns its
+    // name (e.g. `_skTemp123`).
+    std::string writeScratchLet(const std::string& expr);
+
+    // Converts `expr` into a string and returns a scratch let-variable associated with the
+    // expression. Compile-time constants and plain variable references will return the expression
+    // directly and omit the let-variable.
+    std::string writeNontrivialScratchLet(const Expression& expr, Precedence parentPrecedence);
 
     // Generic recursive ProgramElement visitor.
     void writeProgramElement(const ProgramElement& e);
@@ -261,32 +313,20 @@ private:
     std::string functionDependencyArgs(const FunctionDeclaration&);
     bool writeFunctionDependencyParams(const FunctionDeclaration&);
 
-    // Generate an out-parameter helper function for the given call and return its name.
-    std::string writeOutParamHelper(const FunctionCall&,
-                                    const ExpressionArray& args,
-                                    const skia_private::TArray<VariableReference*>& outVars);
-
     // Stores the disallowed identifier names.
     skia_private::THashSet<std::string_view> fReservedWords;
     ProgramRequirements fRequirements;
     int fPipelineInputCount = 0;
     bool fDeclaredUniformsStruct = false;
 
-    // Out-parameters to functions are declared as pointers. While we process the arguments to a
-    // out-parameter helper function, we need to temporarily track that they are re-declared as
-    // pointer-parameters in the helper, so that expression-tree processing can know to correctly
-    // dereference them when the variable is referenced. The contents of this set are expected to
-    // be uniquely scoped for each out-param helper and will be cleared every time a new out-param
-    // helper function has been emitted.
-    skia_private::THashSet<const Variable*> fOutParamArgVars;
-
     // Output processing state.
     int fIndentation = 0;
     bool fAtLineStart = false;
+    bool fHasUnconditionalReturn = false;
+    bool fAtFunctionScope = false;
+    int fConditionalScopeDepth = 0;
 
     int fScratchCount = 0;
-    StringStream fExtraFunctions;      // all internally synthesized helpers are written here
-    skia_private::THashSet<std::string> fHelpers;  // all synthesized helper functions, by name
 };
 
 }  // namespace SkSL

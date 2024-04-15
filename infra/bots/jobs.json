@@ -33,6 +33,7 @@
   {"name": "BazelBuild-tests-gl_ganesh-linux_x64"},
   {"name": "BazelBuild-tests-vulkan_ganesh-linux_x64"},
   {"name": "BazelBuild-android_codec_test-pixel_5-linux_x64"},
+  {"name": "BazelBuild-android_cpu_only_test-pixel_5-linux_x64"},
   {
     "name": "BazelTest-canvaskit_gold-modules_canvaskit_js_tests-ck_full_cpu_release_chrome-linux_x64",
     "cq_config": {
@@ -63,6 +64,7 @@
   },
   {"name": "BazelTest-toolchain_layering_check-experimental_bazel_test_client-release-linux_x64"},
   {"name": "BazelTest-precompiled-android_codec_test-pixel_5-linux_arm64"},
+  {"name": "BazelTest-precompiled-android_cpu_only_test-pixel_5-linux_arm64"},
   {"name": "Build-Debian10-GCC-x86-Debug-Docker"},
   {"name": "Build-Debian10-GCC-x86-Release-Docker"},
   {"name": "Build-Debian10-GCC-x86_64-Debug-Docker"},
@@ -271,6 +273,7 @@
       ]
     }
   },
+  {"name": "Build-Mac-Clang-x86_64-Release-Graphite_Metal_Vello"},
   {"name": "Build-Mac-Clang-x86_64-Release-Metal"},
   {"name": "Build-Mac-Clang-x86_64-Release-TSAN"},
   {"name": "Build-Mac-Clang-x86_64-Release-TSAN_Metal"},
@@ -1023,10 +1026,6 @@
   {"name": "Test-Win2019-MSVC-GCE-CPU-AVX2-x86-Release-All"},
   {"name": "Test-Win2019-MSVC-GCE-CPU-AVX2-x86_64-Debug-All"},
   {"name": "Test-Win2019-MSVC-GCE-CPU-AVX2-x86_64-Release-All"},
-  {"name": "Test-Win8-Clang-Golo-CPU-AVX512-x86-Debug-All"},
-  {"name": "Test-Win8-Clang-Golo-CPU-AVX512-x86-Release-All"},
-  {"name": "Test-Win8-Clang-Golo-CPU-AVX512-x86_64-Debug-All"},
-  {"name": "Test-Win8-Clang-Golo-CPU-AVX512-x86_64-Release-All"},
   {"name": "Test-iOS-Clang-iPadPro-GPU-PowerVRGT7800-arm64-Debug-All"},
   {"name": "Test-iOS-Clang-iPadPro-GPU-PowerVRGT7800-arm64-Debug-All-Metal"},
   {"name": "Test-iOS-Clang-iPadPro-GPU-PowerVRGT7800-arm64-Release-All"},

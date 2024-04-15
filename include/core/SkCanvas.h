@@ -74,15 +74,6 @@ namespace skgpu::graphite { class Recorder; }
 namespace sktext::gpu { class Slug; }
 namespace SkRecords { class Draw; }
 
-#if defined(SK_BUILD_FOR_ANDROID_FRAMEWORK) && defined(SK_GANESH)
-class GrBackendRenderTarget;
-#endif
-
-// TODO:
-// This is not ideal but Chrome is depending on a forward decl of GrSlug here.
-// It should be removed once Chrome has migrated to sktext::gpu::Slug.
-using GrSlug = sktext::gpu::Slug;
-
 /** \class SkCanvas
     SkCanvas provides an interface for drawing, and how the drawing is clipped and transformed.
     SkCanvas contains a stack of SkMatrix and clip values.
@@ -2183,12 +2174,6 @@ public:
 
     ///////////////////////////////////////////////////////////////////////////
 
-#if defined(SK_BUILD_FOR_ANDROID_FRAMEWORK) && defined(SK_GANESH)
-    // These methods exist to support WebView in Android Framework.
-    SkIRect topLayerBounds() const;
-    GrBackendRenderTarget topLayerBackendRenderTarget() const;
-#endif
-
     /**
      *  Returns the global clip as a region. If the clip contains AA, then only the bounds
      *  of the clip may be returned.
@@ -2300,16 +2285,14 @@ protected:
 
     virtual void onDiscard();
 
-#if (defined(SK_GANESH) || defined(SK_GRAPHITE))
-    /** Experimental
+    /**
      */
     virtual sk_sp<sktext::gpu::Slug> onConvertGlyphRunListToSlug(
             const sktext::GlyphRunList& glyphRunList, const SkPaint& paint);
 
-    /** Experimental
+    /**
      */
     virtual void onDrawSlug(const sktext::gpu::Slug* slug);
-#endif
 
 private:
 
@@ -2457,19 +2440,17 @@ private:
     SkCanvas& operator=(SkCanvas&&) = delete;
     SkCanvas& operator=(const SkCanvas&) = delete;
 
-#if (defined(SK_GANESH) || defined(SK_GRAPHITE))
     friend class sktext::gpu::Slug;
-    /** Experimental
+    /**
      * Convert a SkTextBlob to a sktext::gpu::Slug using the current canvas state.
      */
     sk_sp<sktext::gpu::Slug> convertBlobToSlug(const SkTextBlob& blob, SkPoint origin,
                                                const SkPaint& paint);
 
-    /** Experimental
+    /**
      * Draw an sktext::gpu::Slug given the current canvas state.
      */
     void drawSlug(const sktext::gpu::Slug* slug);
-#endif
 
     /** Experimental
      *  Saves the specified subset of the current pixels in the current layer,
