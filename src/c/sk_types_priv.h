@@ -291,30 +291,30 @@ static inline sk_textblob_builder_runbuffer_t ToTextBlobBuilderRunBuffer(const S
 }
 
 #include "include/docs/SkPDFDocument.h"
-static inline SkTime::DateTime AsDocumentOptionalTimestamp(const sk_time_datetime_t* datetime) {
+static inline SkTime::DateTime AsOptionalTimestamp(const sk_time_datetime_t* datetime) {
     if (datetime) {
         return *AsTimeDateTime(datetime);
     } else {
         return SkTime::DateTime();
     }
 }
-static inline SkString AsDocumentOptionalString(const sk_string_t* skstring) {
+static inline SkString AsOptionalString(const sk_string_t* skstring) {
     if (skstring) {
         return *AsString(skstring);
     } else {
         return SkString();
     }
 }
-static inline SkPDF::Metadata AsDocumentPDFMetadata(const sk_document_pdf_metadata_t* metadata) {
+static inline SkPDF::Metadata AsPDFMetadata(const sk_pdf_metadata_t* metadata) {
     SkPDF::Metadata md;
-    md.fTitle = AsDocumentOptionalString(metadata->fTitle);
-    md.fAuthor = AsDocumentOptionalString(metadata->fAuthor);
-    md.fSubject = AsDocumentOptionalString(metadata->fSubject);
-    md.fKeywords = AsDocumentOptionalString(metadata->fKeywords);
-    md.fCreator = AsDocumentOptionalString(metadata->fCreator);
-    md.fProducer = AsDocumentOptionalString(metadata->fProducer);
-    md.fCreation = AsDocumentOptionalTimestamp(metadata->fCreation);
-    md.fModified = AsDocumentOptionalTimestamp(metadata->fModified);
+    md.fTitle = AsOptionalString(metadata->fTitle);
+    md.fAuthor = AsOptionalString(metadata->fAuthor);
+    md.fSubject = AsOptionalString(metadata->fSubject);
+    md.fKeywords = AsOptionalString(metadata->fKeywords);
+    md.fCreator = AsOptionalString(metadata->fCreator);
+    md.fProducer = AsOptionalString(metadata->fProducer);
+    md.fCreation = AsOptionalTimestamp(metadata->fCreation);
+    md.fModified = AsOptionalTimestamp(metadata->fModified);
     md.fRasterDPI = metadata->fRasterDPI;
     md.fPDFA = metadata->fPDFA;
     md.fEncodingQuality = metadata->fEncodingQuality;

@@ -23,8 +23,8 @@ sk_document_t* sk_document_create_pdf_from_stream(sk_wstream_t* stream) {
     return ToDocument(SkPDF::MakeDocument(AsWStream(stream)).release());
 }
 
-sk_document_t* sk_document_create_pdf_from_stream_with_metadata(sk_wstream_t* stream, const sk_document_pdf_metadata_t* cmetadata) {
-    return ToDocument(SkPDF::MakeDocument(AsWStream(stream), AsDocumentPDFMetadata(cmetadata)).release());
+sk_document_t* sk_document_create_pdf_from_stream_with_metadata(sk_wstream_t* stream, const sk_pdf_metadata_t* cmetadata) {
+    return ToDocument(SkPDF::MakeDocument(AsWStream(stream), AsPDFMetadata(cmetadata)).release());
 }
 
 sk_document_t* sk_document_create_xps_from_stream(sk_wstream_t* stream, float dpi) {
