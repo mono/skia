@@ -305,21 +305,8 @@ static inline SkString AsOptionalString(const sk_string_t* skstring) {
         return SkString();
     }
 }
-static inline SkPDF::Metadata AsPDFMetadata(const sk_pdf_metadata_t* metadata) {
-    SkPDF::Metadata md;
-    md.fTitle = AsOptionalString(metadata->fTitle);
-    md.fAuthor = AsOptionalString(metadata->fAuthor);
-    md.fSubject = AsOptionalString(metadata->fSubject);
-    md.fKeywords = AsOptionalString(metadata->fKeywords);
-    md.fCreator = AsOptionalString(metadata->fCreator);
-    md.fProducer = AsOptionalString(metadata->fProducer);
-    md.fCreation = AsOptionalTimestamp(metadata->fCreation);
-    md.fModified = AsOptionalTimestamp(metadata->fModified);
-    md.fRasterDPI = metadata->fRasterDPI;
-    md.fPDFA = metadata->fPDFA;
-    md.fEncodingQuality = metadata->fEncodingQuality;
-    return md;
-}
+DEF_MAP_WITH_NS(SkPDF, StructureElementNode, sk_pdf_structure_element_t, PDFStructureElementNode)
+DEF_MAP_WITH_NS(SkPDF, Metadata, sk_pdf_metadata_t, PDFMetadata)
 
 #include "modules/skottie/include/Skottie.h"
 DEF_CLASS_MAP_WITH_NS(skottie, Animation, skottie_animation_t, SkottieAnimation)

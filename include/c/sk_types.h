@@ -809,50 +809,8 @@ typedef enum {
     HIGH_SK_PDF_COMPRESSION      = 9,
 } sk_pdf_compression_t;
 
-typedef enum {
-    INT_SK_PDF_ATTRIBUTE_ITEM_TYPE             = 0,
-    FLOAT_SK_PDF_ATTRIBUTE_ITEM_TYPE           = 1,
-    NAME_SK_PDF_ATTRIBUTE_ITEM_TYPE            = 2,
-    FLOAT_ARRAY_SK_PDF_ATTRIBUTE_ITEM_TYPE     = 3,
-    NODE_ID_ARRAY_SK_PDF_ATTRIBUTE_ITEM_TYPE   = 4,
-} sk_pdf_attribute_item_type_t;
-
-typedef struct {
-    sk_string_t*   fOwner;
-    sk_string_t*   fName;
-    void*          fValue;
-    int            fValueSize;
-    int            fValueType;
-} sk_pdf_attribute_item_t;
-
-typedef struct sk_pdf_structure_element_t {
-    sk_string_t*                  fTypeString;
-    sk_pdf_structure_element_t*   fChildren;
-    int                           fChildrenSize;
-    int                           fNodeId;
-    int*                          fAdditionalNodeIds;
-    int                           fAdditionalNodeIdsSize;
-    sk_pdf_attribute_item_t*      fAttributes;
-    int                           fAttributesSize;
-    sk_string_t*                  fAlt;
-    sk_string_t*                  fLang;
-} sk_pdf_structure_element_t;
-
-typedef struct {
-    sk_string_t*                  fTitle;
-    sk_string_t*                  fAuthor;
-    sk_string_t*                  fSubject;
-    sk_string_t*                  fKeywords;
-    sk_string_t*                  fCreator;
-    sk_string_t*                  fProducer;
-    sk_time_datetime_t*           fCreation;
-    sk_time_datetime_t*           fModified;
-    float                         fRasterDPI;
-    bool                          fPDFA;
-    int                           fEncodingQuality;
-    sk_pdf_compression_t          fCompression;
-    sk_pdf_structure_element_t*   fStructureElementTreeRoot;
-} sk_pdf_metadata_t;
+typedef struct sk_pdf_structure_element_t sk_pdf_structure_element_t;
+typedef struct sk_pdf_metadata_t sk_pdf_metadata_t;
 
 typedef struct {
     sk_colorspace_t* colorspace;
