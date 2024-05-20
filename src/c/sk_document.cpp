@@ -189,3 +189,10 @@ void sk_pdf_structure_element_set_alt(sk_pdf_structure_element_t* element, sk_st
 void sk_pdf_structure_element_set_lang(sk_pdf_structure_element_t* element, sk_string_t* value) {
     AsPDFStructureElementNode(element)->fLang = AsOptionalString(value);
 }
+
+
+// SkPDF
+
+void sk_canvas_draw_pdf_node_id_annotation(sk_canvas_t* t, int nodeId) {
+    SkPDF::SetNodeId(AsCanvas(t), nodeId);
+}
