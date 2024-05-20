@@ -51,6 +51,21 @@ void sk_document_abort(sk_document_t* document) {
 
 // SkPDF::Metadata
 
+static inline SkTime::DateTime AsOptionalTimestamp(const sk_time_datetime_t* datetime) {
+    if (datetime) {
+        return *AsTimeDateTime(datetime);
+    } else {
+        return SkTime::DateTime();
+    }
+}
+static inline SkString AsOptionalString(const sk_string_t* skstring) {
+    if (skstring) {
+        return *AsString(skstring);
+    } else {
+        return SkString();
+    }
+}
+
 sk_pdf_metadata_t* sk_pdf_metadata_new(void) {
     return ToPDFMetadata(new SkPDF::Metadata());
 }

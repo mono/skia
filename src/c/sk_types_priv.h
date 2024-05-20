@@ -291,20 +291,6 @@ static inline sk_textblob_builder_runbuffer_t ToTextBlobBuilderRunBuffer(const S
 }
 
 #include "include/docs/SkPDFDocument.h"
-static inline SkTime::DateTime AsOptionalTimestamp(const sk_time_datetime_t* datetime) {
-    if (datetime) {
-        return *AsTimeDateTime(datetime);
-    } else {
-        return SkTime::DateTime();
-    }
-}
-static inline SkString AsOptionalString(const sk_string_t* skstring) {
-    if (skstring) {
-        return *AsString(skstring);
-    } else {
-        return SkString();
-    }
-}
 DEF_MAP_WITH_NS(SkPDF, StructureElementNode, sk_pdf_structure_element_t, PDFStructureElementNode)
 DEF_MAP_WITH_NS(SkPDF, Metadata, sk_pdf_metadata_t, PDFMetadata)
 
