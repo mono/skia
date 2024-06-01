@@ -83,3 +83,15 @@ sk_picture_t* sk_picture_deserialize_from_data(sk_data_t* data) {
 sk_picture_t* sk_picture_deserialize_from_memory(void* buffer, size_t length) {
     return ToPicture(SkPicture::MakeFromData(buffer, length).release());
 }
+
+void sk_picture_playback(const sk_picture_t* picture, sk_canvas_t* canvas) {
+    AsPicture(picture)->playback(AsCanvas(canvas));
+}
+
+int sk_picture_approximate_op_count(const sk_picture_t* picture, bool nested) {
+    return AsPicture(picture)->approximateOpCount(nested);
+}
+
+size_t sk_picture_approximate_bytes_used(const sk_picture_t* picture) {
+    return AsPicture(picture)->approximateBytesUsed();
+}
