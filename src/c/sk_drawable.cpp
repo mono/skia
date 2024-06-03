@@ -47,3 +47,7 @@ void sk_drawable_notify_drawing_changed(sk_drawable_t* d)
 {
     AsDrawable(d)->notifyDrawingChanged();
 }
+
+size_t sk_drawable_approximate_bytes_used(sk_drawable_t* d) {
+    return AsDrawable(d)->approximateBytesUsed();
+}
