@@ -31,6 +31,9 @@ SK_C_API void sk_picture_serialize_to_stream(const sk_picture_t* picture, sk_wst
 SK_C_API sk_picture_t* sk_picture_deserialize_from_stream(sk_stream_t* stream);
 SK_C_API sk_picture_t* sk_picture_deserialize_from_data(sk_data_t* data);
 SK_C_API sk_picture_t* sk_picture_deserialize_from_memory(void* buffer, size_t length);
+SK_C_API void sk_picture_playback(const sk_picture_t* picture, sk_canvas_t* canvas);
+SK_C_API int sk_picture_approximate_op_count(const sk_picture_t* picture, bool nested);
+SK_C_API size_t sk_picture_approximate_bytes_used(const sk_picture_t* picture);
 
 SK_C_PLUS_PLUS_END_GUARD
 
