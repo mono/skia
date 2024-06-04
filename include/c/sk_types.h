@@ -250,7 +250,7 @@ typedef struct sk_bbh_factory_t sk_bbh_factory_t;
     for culling invisible calls recorded by a sk_picture_recorder_t. Inherits
     from sk_bbh_factory_t.
 */
-typedef struct sk_rtree_factory_t sk_retree_factory_t;
+typedef struct sk_rtree_factory_t sk_rtree_factory_t;
 /**
     A sk_shader_t specifies the source color(s) for what is being drawn. If a
     paint has no shader, then the paint's color is used. If the paint
