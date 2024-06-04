@@ -241,7 +241,7 @@ typedef struct sk_picture_recorder_t sk_picture_recorder_t;
 /**
     A sk_bbh_factory_t generates an sk_bbox_hierarchy as a display optimization
     for culling invisible calls recorded by a sk_picture_recorder. It may
-    be passed in to sk_picture_recorder_begin_recording_with_bbox_hierarchy,
+    be passed in to sk_picture_recorder_begin_recording_with_bbh_factory,
     typically as an instance of the subclass sk_rtree_factory_t.
 */
 typedef struct sk_bbh_factory_t sk_bbh_factory_t;
