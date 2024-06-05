@@ -16,6 +16,8 @@
 
 #include "src/c/sk_types_priv.h"
 
+// SkPictureRecorder
+
 sk_picture_recorder_t* sk_picture_recorder_new(void) {
     return ToPictureRecorder(new SkPictureRecorder);
 }
@@ -26,6 +28,10 @@ void sk_picture_recorder_delete(sk_picture_recorder_t* crec) {
 
 sk_canvas_t* sk_picture_recorder_begin_recording(sk_picture_recorder_t* crec, const sk_rect_t* cbounds) {
     return ToCanvas(AsPictureRecorder(crec)->beginRecording(*AsRect(cbounds)));
+}
+
+sk_canvas_t* sk_picture_recorder_begin_recording_with_bbh_factory(sk_picture_recorder_t* crec, const sk_rect_t* cbounds, sk_bbh_factory_t* factory) {
+    return ToCanvas(AsPictureRecorder(crec)->beginRecording(*AsRect(cbounds), AsBBHFactory(factory)));
 }
 
 sk_picture_t* sk_picture_recorder_end_recording(sk_picture_recorder_t* crec) {
@@ -39,6 +45,8 @@ sk_drawable_t* sk_picture_recorder_end_recording_as_drawable(sk_picture_recorder
 sk_canvas_t* sk_picture_get_recording_canvas(sk_picture_recorder_t* crec) {
     return ToCanvas(AsPictureRecorder(crec)->getRecordingCanvas());
 }
+
+// SkPicture
 
 void sk_picture_ref(sk_picture_t* cpic) {
     SkSafeRef(AsPicture(cpic));
@@ -94,4 +102,14 @@ int sk_picture_approximate_op_count(const sk_picture_t* picture, bool nested) {
 
 size_t sk_picture_approximate_bytes_used(const sk_picture_t* picture) {
     return AsPicture(picture)->approximateBytesUsed();
+}
+
+// SkRTreeFactory
+
+sk_rtree_factory_t* sk_rtree_factory_new(void) {
+    return ToRTreeFactory(new SkRTreeFactory);
+}
+
+void sk_rtree_factory_delete(sk_rtree_factory_t* factory) {
+    delete AsRTreeFactory(factory);
 }
