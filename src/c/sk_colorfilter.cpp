@@ -48,8 +48,8 @@ sk_colorfilter_t* sk_colorfilter_new_srgb_to_linear_gamma(void) {
     return ToColorFilter(SkColorFilters::SRGBToLinearGamma().release());
 }
 
-sk_colorfilter_t* sk_colorfilter_new_lerp(float t, sk_colorfilter_t* dst, sk_colorfilter_t* src) {
-    return ToColorFilter(SkColorFilters::Lerp(t, sk_ref_sp(AsColorFilter(dst)), sk_ref_sp(AsColorFilter(src))).release());
+sk_colorfilter_t* sk_colorfilter_new_lerp(float weight, sk_colorfilter_t* filter0, sk_colorfilter_t* filter1) {
+    return ToColorFilter(SkColorFilters::Lerp(weight, sk_ref_sp(AsColorFilter(filter0)), sk_ref_sp(AsColorFilter(filter1))).release());
 }
 
 sk_colorfilter_t* sk_colorfilter_new_luma_color(void) {

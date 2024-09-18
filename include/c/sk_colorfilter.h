@@ -22,7 +22,7 @@ SK_C_API sk_colorfilter_t* sk_colorfilter_new_color_matrix(const float array[20]
 SK_C_API sk_colorfilter_t* sk_colorfilter_new_hsla_matrix(const float array[20]);
 SK_C_API sk_colorfilter_t* sk_colorfilter_new_linear_to_srgb_gamma(void);
 SK_C_API sk_colorfilter_t* sk_colorfilter_new_srgb_to_linear_gamma(void);
-SK_C_API sk_colorfilter_t* sk_colorfilter_new_lerp(float t, sk_colorfilter_t* dst, sk_colorfilter_t* src);
+SK_C_API sk_colorfilter_t* sk_colorfilter_new_lerp(float weight, sk_colorfilter_t* filter0, sk_colorfilter_t* filter1);
 SK_C_API sk_colorfilter_t* sk_colorfilter_new_luma_color(void);
 SK_C_API sk_colorfilter_t* sk_colorfilter_new_high_contrast(const sk_highcontrastconfig_t* config);
 SK_C_API sk_colorfilter_t* sk_colorfilter_new_table(const uint8_t table[256]);
