@@ -41,10 +41,18 @@
 #    else
 #        define SK_ONLY_METAL(...) SK_SKIP_ARG(__VA_ARGS__)
 #    endif
+#    if SK_DIRECT3D
+#        include "include/gpu/d3d/GrD3DBackendContext.h"
+#        include "include/gpu/d3d/GrD3DTypes.h"
+#        define SK_ONLY_DIRECT3D(...) SK_FIRST_ARG(__VA_ARGS__)
+#    else
+#        define SK_ONLY_DIRECT3D(...) SK_SKIP_ARG(__VA_ARGS__)
+#    endif
 #else // !SK_GANESH
 #    define SK_ONLY_GPU(...) SK_SKIP_ARG(__VA_ARGS__)
 #    define SK_ONLY_VULKAN(...) SK_SKIP_ARG(__VA_ARGS__)
 #    define SK_ONLY_METAL(...) SK_SKIP_ARG(__VA_ARGS__)
+#    define SK_ONLY_DIRECT3D(...) SK_SKIP_ARG(__VA_ARGS__)
 #endif // SK_GANESH
 
 
@@ -176,6 +184,9 @@ DEF_STRUCT_MAP(GrGLInterface, gr_glinterface_t, GrGLInterface)
 
 DEF_STRUCT_MAP(GrVkYcbcrConversionInfo, gr_vk_ycbcrconversioninfo_t, GrVkYcbcrConversionInfo)
 DEF_STRUCT_MAP(GrVkImageInfo, gr_vk_imageinfo_t, GrVkImageInfo)
+
+DEF_STRUCT_MAP(GrD3DBackendContext, gr_d3d_backendcontext_t, GrD3DBackendContext)
+DEF_STRUCT_MAP(GrD3DTextureResourceInfo, gr_d3d_textureresourceinfo_t, GrD3DTextureResourceInfo)
 
 #include "include/effects/SkRuntimeEffect.h"
 DEF_MAP(SkRuntimeEffect::Uniform, sk_runtimeeffect_uniform_t, RuntimeEffectUniform)
@@ -411,6 +422,15 @@ static inline GrMtlTextureInfo AsGrMtlTextureInfo(const gr_mtl_textureinfo_t* mt
 }
 
 #endif // SK_METAL
+
+#if defined(SK_DIRECT3D)
+
+DEF_MAP(IDXGIAdapter1, d3d_dxgi_adapter_t, IDXGIAdapter1);
+DEF_MAP(ID3D12Device, d3d_d12_device_t, ID3D12Device);
+DEF_MAP(ID3D12CommandQueue, d3d_d12_command_queue_t, ID3D12CommandQueue);
+DEF_MAP(GrD3DMemoryAllocator, gr_d3d_memory_allocator_t, GrD3DMemoryAllocator);
+
+#endif  //SK_DIRECT3D
 
 #endif // SK_GANESH
 
