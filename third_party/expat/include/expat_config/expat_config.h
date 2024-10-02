@@ -1,3 +1,6 @@
+/* define if the compiler supports basic C++11 syntax */
+#define HAVE_CXX11 1
+
 #define BYTEORDER 1234
 #define HAVE_INTTYPES_H 1
 #define HAVE_MEMORY_H 1

@@ -19,7 +19,7 @@ deps = {
   "third_party/externals/shaderc"         : "https://chromium.googlesource.com/external/github.com/google/shaderc@011139094ec790ff7f32ea2d80286255fc9ed18b",
   "third_party/externals/dng_sdk"         : "https://android.googlesource.com/platform/external/dng_sdk.git@c8d0c9b1d16bfda56f15165d39e0ffa360a11123",
   "third_party/externals/egl-registry"    : "https://skia.googlesource.com/external/github.com/KhronosGroup/EGL-Registry@a0bca08de07c7d7651047bedc0b653cfaaa4f2ae",
-  "third_party/externals/expat"           : "https://chromium.googlesource.com/external/github.com/libexpat/libexpat.git@441f98d02deafd9b090aea568282b28f66a50e36",
+  "third_party/externals/expat"           : "https://chromium.googlesource.com/external/github.com/libexpat/libexpat.git@624da0f593bb8d7e146b9f42b06d8e6c80d032a3",
   "third_party/externals/freetype"        : "https://skia.googlesource.com/third_party/freetype2.git@40c5681ab92e7db1298273ccf3c816e6a1498260",
   "third_party/externals/harfbuzz"        : "https://github.com/harfbuzz/harfbuzz.git@4584bcdc326564829d3cee3572386c90e4fd1974",
   "third_party/externals/icu"             : "https://chromium.googlesource.com/chromium/deps/icu.git@dbd3825b31041d782c5b504c59dcfb5ac7dda08c",
