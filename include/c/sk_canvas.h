@@ -38,6 +38,7 @@ SK_C_API bool sk_canvas_get_local_clip_bounds(sk_canvas_t* ccanvas, sk_rect_t* c
 SK_C_API bool sk_canvas_get_device_clip_bounds(sk_canvas_t* ccanvas, sk_irect_t* cbounds);
 SK_C_API int sk_canvas_save(sk_canvas_t* ccanvas);
 SK_C_API int sk_canvas_save_layer(sk_canvas_t* ccanvas, const sk_rect_t* crect, const sk_paint_t* cpaint);
+SK_C_API int sk_canvas_save_layer_rec(sk_canvas_t* ccanvas, const sk_rect_t* cbounds, const sk_paint_t* cpaint, const sk_imagefilter_t* cfilter, uint32_t flags);
 SK_C_API void sk_canvas_restore(sk_canvas_t* ccanvas);
 SK_C_API void sk_canvas_translate(sk_canvas_t* ccanvas, float dx, float dy);
 SK_C_API void sk_canvas_scale(sk_canvas_t* ccanvas, float sx, float sy);

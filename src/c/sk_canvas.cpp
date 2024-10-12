@@ -113,6 +113,10 @@ int sk_canvas_save_layer(sk_canvas_t* ccanvas, const sk_rect_t* crect, const sk_
     return AsCanvas(ccanvas)->saveLayer(AsRect(crect), AsPaint(cpaint));
 }
 
+int sk_canvas_save_layer_rec(sk_canvas_t* ccanvas, const sk_rect_t* cbounds, const sk_paint_t* cpaint, const sk_imagefilter_t* cfilter, uint32_t flags) {
+    return AsCanvas(ccanvas)->saveLayer(SkCanvas::SaveLayerRec(AsRect(cbounds), AsPaint(cpaint), AsImageFilter(cfilter), flags));
+}
+
 void sk_canvas_restore(sk_canvas_t* ccanvas) {
     AsCanvas(ccanvas)->restore();
 }
