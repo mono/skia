@@ -128,6 +128,9 @@
 /* Define to make parameter entity parsing functionality available. */
 #define XML_DTD 1
 
+/* Define to make general entity parsing functionality available. */
+#define XML_GE 1
+
 /* Define to make XML Namespaces functionality available. */
 #define XML_NS 1
 
