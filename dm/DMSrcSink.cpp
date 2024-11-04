@@ -38,15 +38,14 @@
 #include "src/base/SkRandom.h"
 #include "src/base/SkTLazy.h"
 #include "src/codec/SkCodecImageGenerator.h"
-#include "src/codec/SkSwizzler.h"
 #include "src/core/SkAutoPixmapStorage.h"
 #include "src/core/SkImageInfoPriv.h"
 #include "src/core/SkOSFile.h"
-#include "src/core/SkOpts.h"
 #include "src/core/SkPictureData.h"
 #include "src/core/SkPicturePriv.h"
 #include "src/core/SkRecordDraw.h"
 #include "src/core/SkRecorder.h"
+#include "src/core/SkSwizzlePriv.h"
 #include "src/core/SkTaskGroup.h"
 #include "src/gpu/ganesh/GrDirectContextPriv.h"
 #include "src/gpu/ganesh/GrGpu.h"
@@ -2084,13 +2083,14 @@ GraphiteSink::GraphiteSink(const SkCommandLineConfigGraphite* config)
         : fContextType(config->getContextType())
         , fColorType(config->getColorType())
         , fAlphaType(config->getAlphaType()) {
+    fBaseContextOptions.fEnableWGSL = config->getWGSL();
 }
 
 Result GraphiteSink::draw(const Src& src,
                           SkBitmap* dst,
                           SkWStream* dstStream,
                           SkString* log) const {
-    skgpu::graphite::ContextOptions options;
+    skgpu::graphite::ContextOptions options = fBaseContextOptions;
 
     src.modifyGraphiteContextOptions(&options);
 
@@ -2111,7 +2111,9 @@ Result GraphiteSink::draw(const Src& src,
     dst->allocPixels(ii);
 
     {
-        sk_sp<SkSurface> surface = SkSurfaces::RenderTarget(recorder.get(), ii);
+        SkSurfaceProps props(0, kRGB_H_SkPixelGeometry);
+        sk_sp<SkSurface> surface =
+                SkSurfaces::RenderTarget(recorder.get(), ii, skgpu::Mipmapped::kNo, &props);
         if (!surface) {
             return Result::Fatal("Could not create a surface.");
         }

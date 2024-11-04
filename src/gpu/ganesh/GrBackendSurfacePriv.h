@@ -8,20 +8,24 @@
 #ifndef GrBackendSurfacePriv_DEFINED
 #define GrBackendSurfacePriv_DEFINED
 
+#include "include/core/SkRefCnt.h"
 #include "include/gpu/GrBackendSurface.h"
 #include "include/private/base/SkAssert.h"
 #include "include/private/gpu/ganesh/GrTypesPriv.h"
+#include "src/gpu/MutableTextureStateRef.h"  // IWYU pragma: keep
 
 #include <cstddef>
 #include <cstdint>
-#include <memory>
 #include <string>
 #include <string_view>
-#include <utility>
 
 enum class GrBackendApi : unsigned int;
 enum class SkTextureCompressionType;
-namespace skgpu { enum class Mipmapped : bool; }
+
+namespace skgpu {
+enum class Mipmapped : bool;
+class MutableTextureState;
+}
 
 class GrBackendFormatData {
 public:
@@ -35,13 +39,19 @@ public:
 #endif
 protected:
     GrBackendFormatData() = default;
+    GrBackendFormatData(const GrBackendFormatData&) = default;
+
+    using AnyFormatData = GrBackendFormat::AnyFormatData;
 
 private:
     friend class GrBackendFormat;
     virtual uint32_t channelMask() const = 0;
     virtual GrColorFormatDesc desc() const = 0;
     virtual std::string toString() const = 0;
-    virtual GrBackendFormatData* copy() const = 0;
+    virtual void copyTo(AnyFormatData&) const = 0;
+
+    // Vulkan-only API:
+    virtual void makeTexture2D() {}
 };
 
 class GrBackendTextureData {
@@ -52,6 +62,9 @@ public:
 #endif
 protected:
     GrBackendTextureData() = default;
+    GrBackendTextureData(const GrBackendTextureData&) = default;
+
+    using AnyTextureData = GrBackendTexture::AnyTextureData;
 
 private:
     friend class GrBackendTexture;
@@ -59,7 +72,11 @@ private:
     virtual bool equal(const GrBackendTextureData* that) const = 0;
     virtual bool isSameTexture(const GrBackendTextureData*) const = 0;
     virtual GrBackendFormat getBackendFormat() const = 0;
-    virtual GrBackendTextureData* copy() const = 0;
+    virtual void copyTo(AnyTextureData&) const = 0;
+
+    // Vulkan-only API:
+    virtual sk_sp<skgpu::MutableTextureStateRef> getMutableState() const { return nullptr; }
+    virtual void setMutableState(const skgpu::MutableTextureState&) {}
 };
 
 class GrBackendRenderTargetData {
@@ -70,39 +87,47 @@ public:
 #endif
 protected:
     GrBackendRenderTargetData() = default;
+    GrBackendRenderTargetData(const GrBackendRenderTargetData&) = default;
+
+    using AnyRenderTargetData = GrBackendRenderTarget::AnyRenderTargetData;
 
 private:
     friend class GrBackendRenderTarget;
-    virtual bool isValid() const = 0;
     virtual GrBackendFormat getBackendFormat() const = 0;
     virtual bool isProtected() const = 0;
     virtual bool equal(const GrBackendRenderTargetData* that) const = 0;
-    virtual GrBackendRenderTargetData* copy() const = 0;
+    virtual void copyTo(AnyRenderTargetData&) const = 0;
+
+    // Vulkan-only API:
+    virtual sk_sp<skgpu::MutableTextureStateRef> getMutableState() const { return nullptr; }
+    virtual void setMutableState(const skgpu::MutableTextureState&) {}
 };
 
 class GrBackendSurfacePriv final {
 public:
+    template <typename FormatData>
     static GrBackendFormat MakeGrBackendFormat(GrTextureType textureType,
                                                GrBackendApi api,
-                                               std::unique_ptr<const GrBackendFormatData> data) {
-        return GrBackendFormat(textureType, api, std::move(data));
+                                               const FormatData& data) {
+        return GrBackendFormat(textureType, api, data);
     }
 
     static const GrBackendFormatData* GetBackendData(const GrBackendFormat& format) {
         return format.fFormatData.get();
     }
 
+    template <typename TextureData>
     static GrBackendTexture MakeGrBackendTexture(int width,
                                                  int height,
                                                  std::string_view label,
                                                  skgpu::Mipmapped mipped,
                                                  GrBackendApi backend,
                                                  GrTextureType texture,
-                                                 std::unique_ptr<GrBackendTextureData> data) {
-        return GrBackendTexture(width, height, label, mipped, backend, texture, std::move(data));
+                                                 const TextureData& data) {
+        return GrBackendTexture(width, height, label, mipped, backend, texture, data);
     }
 
-    static GrBackendTextureData* GetBackendData(const GrBackendTexture& tex) {
+    static const GrBackendTextureData* GetBackendData(const GrBackendTexture& tex) {
         return tex.fTextureData.get();
     }
 
@@ -111,20 +136,24 @@ public:
         return tex->fTextureData.get();
     }
 
-    static GrBackendRenderTarget MakeGrBackendRenderTarget(
-            int width,
-            int height,
-            int sampleCnt,
-            int stencilBits,
-            GrBackendApi backend,
-            bool framebufferOnly,
-            std::unique_ptr<GrBackendRenderTargetData> data) {
+    template <typename RenderTargetData>
+    static GrBackendRenderTarget MakeGrBackendRenderTarget(int width,
+                                                           int height,
+                                                           int sampleCnt,
+                                                           int stencilBits,
+                                                           GrBackendApi backend,
+                                                           bool framebufferOnly,
+                                                           const RenderTargetData& data) {
         return GrBackendRenderTarget(
-                width, height, sampleCnt, stencilBits, backend, framebufferOnly, std::move(data));
+                width, height, sampleCnt, stencilBits, backend, framebufferOnly, data);
     }
 
     static const GrBackendRenderTargetData* GetBackendData(const GrBackendRenderTarget& rt) {
         return rt.fRTData.get();
+    }
+
+    static GrBackendRenderTargetData* GetBackendData(GrBackendRenderTarget* rt) {
+        return rt->fRTData.get();
     }
 };
 

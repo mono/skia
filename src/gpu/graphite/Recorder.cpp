@@ -102,7 +102,9 @@ Recorder::Recorder(sk_sp<SharedContext> sharedContext, const RecorderOptions& op
         fClientImageProvider = DefaultImageProvider::Make();
     }
 
-    fResourceProvider = fSharedContext->makeResourceProvider(this->singleOwner(), fRecorderID);
+    fResourceProvider = fSharedContext->makeResourceProvider(this->singleOwner(),
+                                                             fRecorderID,
+                                                             options.fGpuBudgetInBytes);
     fDrawBufferManager.reset( new DrawBufferManager(fResourceProvider.get(),
                                                     fSharedContext->caps()));
     fUploadBufferManager.reset(new UploadBufferManager(fResourceProvider.get(),
@@ -119,7 +121,7 @@ Recorder::~Recorder() {
     for (auto& device : fTrackedDevices) {
         device->abandonRecorder();
     }
-#if GRAPHITE_TEST_UTILS
+#if defined(GRAPHITE_TEST_UTILS)
     if (fContext) {
         fContext->priv().deregisterRecorder(this);
     }
@@ -233,7 +235,7 @@ void Recorder::deregisterDevice(const Device* device) {
     }
 }
 
-#if GRAPHITE_TEST_UTILS
+#if defined(GRAPHITE_TEST_UTILS)
 bool Recorder::deviceIsRegistered(Device* device) {
     ASSERT_SINGLE_OWNER
     for (auto& currentDevice : fTrackedDevices) {
@@ -341,6 +343,29 @@ void Recorder::addFinishInfo(const InsertFinishInfo& info) {
     }
 }
 
+void Recorder::freeGpuResources() {
+    ASSERT_SINGLE_OWNER
+
+    // We don't want to free the Uniform/TextureDataCaches or the Draw/UploadBufferManagers since
+    // all their resources need to be held on to until a Recording is snapped. And once snapped, all
+    // their held resources are released. The StrikeCache and TextBlobCache don't hold onto any Gpu
+    // resources.
+
+    // The AtlasProvider gives out refs to TextureProxies so it should be safe to clear its pool
+    // in the middle of Recording since those using the previous TextureProxies will have refs on
+    // them.
+    fAtlasProvider->clearTexturePool();
+
+    fResourceProvider->freeGpuResources();
+}
+
+void Recorder::performDeferredCleanup(std::chrono::milliseconds msNotUsed) {
+    ASSERT_SINGLE_OWNER
+
+    auto purgeTime = skgpu::StdSteadyClock::now() - msNotUsed;
+    fResourceProvider->purgeResourcesNotUsedSince(purgeTime);
+}
+
 void RecorderPriv::add(sk_sp<Task> task) {
     ASSERT_SINGLE_OWNER_PRIV
     fRecorder->fGraph->add(std::move(task));
@@ -364,7 +389,7 @@ size_t RecorderPriv::getResourceCacheLimit() const {
     return fRecorder->fResourceProvider->getResourceCacheLimit();
 }
 
-#if GRAPHITE_TEST_UTILS
+#if defined(GRAPHITE_TEST_UTILS)
 // used by the Context that created this Recorder to set a back pointer
 void RecorderPriv::setContext(Context* context) {
     fRecorder->fContext = context;

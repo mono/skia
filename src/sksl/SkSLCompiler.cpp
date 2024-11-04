@@ -280,7 +280,7 @@ std::unique_ptr<Expression> Compiler::convertIdentifier(Position pos, std::strin
     }
 }
 
-bool Compiler::optimizeModuleBeforeMinifying(ProgramKind kind, Module& module) {
+bool Compiler::optimizeModuleBeforeMinifying(ProgramKind kind, Module& module, bool shrinkSymbols) {
     SkASSERT(this->errorCount() == 0);
 
     auto m = SkSL::ModuleLoader::Get();
@@ -293,11 +293,14 @@ bool Compiler::optimizeModuleBeforeMinifying(ProgramKind kind, Module& module) {
 
     std::unique_ptr<ProgramUsage> usage = Analysis::GetUsage(module);
 
-    // Assign shorter names to symbols as long as it won't change the external meaning of the code.
-    Transform::RenamePrivateSymbols(this->context(), module, usage.get(), kind);
+    if (shrinkSymbols) {
+        // Assign shorter names to symbols as long as it won't change the external meaning of the
+        // code.
+        Transform::RenamePrivateSymbols(this->context(), module, usage.get(), kind);
 
-    // Replace constant variables with their literal values to save space.
-    Transform::ReplaceConstVarsWithLiterals(module, usage.get());
+        // Replace constant variables with their literal values to save space.
+        Transform::ReplaceConstVarsWithLiterals(module, usage.get());
+    }
 
     // Remove any unreachable code.
     Transform::EliminateUnreachableCode(module, usage.get());
@@ -593,7 +596,7 @@ bool Compiler::toMetal(Program& program, std::string* out) {
 static bool validate_wgsl(ErrorReporter& reporter, const std::string& wgsl, std::string* warnings) {
     // Verify that the WGSL we produced is valid.
     tint::Source::File srcFile("", wgsl);
-    tint::Program program(tint::reader::wgsl::Parse(&srcFile));
+    tint::Program program(tint::wgsl::reader::Parse(&srcFile));
 
     if (program.Diagnostics().contains_errors()) {
         // The program isn't valid WGSL. In debug, report the error via SkDEBUGFAIL. We also append

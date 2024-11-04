@@ -31,7 +31,6 @@
 #include "src/gpu/Blend.h"
 #include "src/gpu/DitherUtils.h"
 #include "src/gpu/graphite/Caps.h"
-#include "src/gpu/graphite/ImageUtils.h"
 #include "src/gpu/graphite/Image_Graphite.h"
 #include "src/gpu/graphite/Image_YUVA_Graphite.h"
 #include "src/gpu/graphite/KeyContext.h"
@@ -47,6 +46,7 @@
 #include "src/gpu/graphite/Texture.h"
 #include "src/gpu/graphite/TextureProxy.h"
 #include "src/gpu/graphite/TextureProxyView.h"
+#include "src/gpu/graphite/TextureUtils.h"
 #include "src/gpu/graphite/Uniform.h"
 #include "src/gpu/graphite/UniformManager.h"
 #include "src/gpu/graphite/YUVATextureProxies.h"
@@ -422,17 +422,20 @@ void LocalMatrixShaderBlock::BeginBlock(const KeyContext& keyContext,
 namespace {
 
 void add_color_space_uniforms(const SkColorSpaceXformSteps& steps, PipelineDataGatherer* gatherer) {
-    static constexpr int kNumXferFnCoeffs = 7;
-    static constexpr float kEmptyXferFn[kNumXferFnCoeffs] = {};
+    // We have 7 source coefficients and 7 destination coefficients. We pass them via a 4x4 matrix;
+    // the first two columns hold the source values, and the second two hold the destination.
+    // (The final value of each 8-element group is ignored.)
+    // In std140, this arrangement is much more efficient than a simple array of scalars.
+    SkM44 coeffs;
 
     gatherer->write(SkTo<int>(steps.flags.mask()));
 
     if (steps.flags.linearize) {
         gatherer->write(SkTo<int>(skcms_TransferFunction_getType(&steps.srcTF)));
-        gatherer->writeHalfArray({&steps.srcTF.g, kNumXferFnCoeffs});
+        coeffs.setCol(0, {steps.srcTF.g, steps.srcTF.a, steps.srcTF.b, steps.srcTF.c});
+        coeffs.setCol(1, {steps.srcTF.d, steps.srcTF.e, steps.srcTF.f, 0.0f});
     } else {
         gatherer->write(SkTo<int>(skcms_TFType::skcms_TFType_Invalid));
-        gatherer->writeHalfArray({kEmptyXferFn, kNumXferFnCoeffs});
     }
 
     SkMatrix gamutTransform;
@@ -444,11 +447,13 @@ void add_color_space_uniforms(const SkColorSpaceXformSteps& steps, PipelineDataG
 
     if (steps.flags.encode) {
         gatherer->write(SkTo<int>(skcms_TransferFunction_getType(&steps.dstTFInv)));
-        gatherer->writeHalfArray({&steps.dstTFInv.g, kNumXferFnCoeffs});
+        coeffs.setCol(2, {steps.dstTFInv.g, steps.dstTFInv.a, steps.dstTFInv.b, steps.dstTFInv.c});
+        coeffs.setCol(3, {steps.dstTFInv.d, steps.dstTFInv.e, steps.dstTFInv.f, 0.0f});
     } else {
         gatherer->write(SkTo<int>(skcms_TFType::skcms_TFType_Invalid));
-        gatherer->writeHalfArray({kEmptyXferFn, kNumXferFnCoeffs});
     }
+
+    gatherer->writeHalf(coeffs);
 }
 
 void add_image_uniform_data(const ShaderCodeDictionary* dict,
@@ -1563,16 +1568,43 @@ static void add_to_key(const KeyContext& keyContext,
                        PipelineDataGatherer* gatherer,
                        const SkLocalMatrixShader* shader) {
     SkASSERT(shader);
+    auto wrappedShader = shader->wrappedShader().get();
 
-    LocalMatrixShaderBlock::LMShaderData lmShaderData(shader->localMatrix());
+    // Fold the texture's origin flip into the local matrix so that the image shader doesn't need
+    // additional state
+    SkMatrix matrix;
+    if (as_SB(wrappedShader)->type() == SkShaderBase::ShaderType::kImage) {
+        auto imgShader = static_cast<const SkImageShader*>(wrappedShader);
+        // If the image is not graphite backed then we can assume the origin will be TopLeft as we
+        // require that in the ImageProvider utility. Also Graphite YUV images are assumed to be
+        // TopLeft origin.
+        auto imgBase = as_IB(imgShader->image());
+        if (imgBase->isGraphiteBacked() && !imgBase->isYUVA()) {
+            auto imgGraphite = static_cast<Image*>(imgBase);
+            SkASSERT(imgGraphite);
+            const auto& view = imgGraphite->textureProxyView();
+            if (view.origin() == Origin::kBottomLeft) {
+                matrix.setScaleY(-1);
+                matrix.setTranslateY(view.height());
+            }
+        }
+    }
 
-    KeyContextWithLocalMatrix newContext(keyContext, shader->localMatrix());
+    matrix.postConcat(shader->localMatrix());
+    if (!matrix.isIdentity()) {
 
-    LocalMatrixShaderBlock::BeginBlock(newContext, builder, gatherer, &lmShaderData);
+        LocalMatrixShaderBlock::LMShaderData lmShaderData(matrix);
 
-    AddToKey(newContext, builder, gatherer, shader->wrappedShader().get());
+        KeyContextWithLocalMatrix newContext(keyContext, matrix);
 
-    builder->endBlock();
+        LocalMatrixShaderBlock::BeginBlock(newContext, builder, gatherer, &lmShaderData);
+
+        AddToKey(newContext, builder, gatherer, wrappedShader);
+
+        builder->endBlock();
+    } else  {
+        AddToKey(keyContext, builder, gatherer, wrappedShader);
+    }
 }
 
 // If either of these change then the corresponding change must also be made in the SkSL

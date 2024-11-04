@@ -501,7 +501,8 @@ static void test_write_pixels(skiatest::Reporter* reporter,
 
 DEF_GRAPHITE_TEST_FOR_RENDERING_CONTEXTS(WritePixels_Graphite,
                                          reporter,
-                                         context) {
+                                         context,
+                                         CtsEnforcement::kNextRelease) {
     std::unique_ptr<skgpu::graphite::Recorder> recorder = context->makeRecorder();
     test_write_pixels(reporter, recorder.get(), 1);
 }
@@ -510,12 +511,7 @@ DEF_GRAPHITE_TEST_FOR_RENDERING_CONTEXTS(WritePixels_Graphite,
 static void test_write_pixels_non_texture(skiatest::Reporter* reporter,
                                           GrDirectContext* dContext,
                                           int sampleCnt) {
-    // Dawn currently doesn't support writePixels to a texture-as-render-target.
-    // See http://skbug.com/10336.
-    if (GrBackendApi::kDawn == dContext->backend()) {
-        return;
-    }
-    for (auto& origin : { kTopLeft_GrSurfaceOrigin, kBottomLeft_GrSurfaceOrigin }) {
+    for (auto& origin : {kTopLeft_GrSurfaceOrigin, kBottomLeft_GrSurfaceOrigin}) {
         SkColorType colorType = kN32_SkColorType;
         auto surface = sk_gpu_test::MakeBackendRenderTargetSurface(dContext,
                                                                    {DEV_W, DEV_H},

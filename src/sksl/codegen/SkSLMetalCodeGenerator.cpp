@@ -2673,9 +2673,12 @@ void MetalCodeGenerator::writeReturnStatement(const ReturnStatement& r) {
 }
 
 void MetalCodeGenerator::writeHeader() {
-    this->write("#include <metal_stdlib>\n");
-    this->write("#include <simd/simd.h>\n");
-    this->write("using namespace metal;\n");
+    this->writeLine("#include <metal_stdlib>");
+    this->writeLine("#include <simd/simd.h>");
+    this->writeLine("#ifdef __clang__");
+    this->writeLine("#pragma clang diagnostic ignored \"-Wall\"");
+    this->writeLine("#endif");
+    this->writeLine("using namespace metal;");
 }
 
 void MetalCodeGenerator::writeSampler2DPolyfill() {
@@ -2724,9 +2727,9 @@ void MetalCodeGenerator::writeUniformStruct() {
         if (e->is<GlobalVarDeclaration>()) {
             const GlobalVarDeclaration& decls = e->as<GlobalVarDeclaration>();
             const Variable& var = *decls.varDeclaration().var();
-            if (var.modifierFlags().isUniform() &&
-                var.type().typeKind() != Type::TypeKind::kSampler &&
-                var.type().typeKind() != Type::TypeKind::kTexture) {
+            if (var.modifierFlags().isUniform()) {
+                SkASSERT(var.type().typeKind() != Type::TypeKind::kSampler &&
+                         var.type().typeKind() != Type::TypeKind::kTexture);
                 int uniformSet = this->getUniformSet(var.layout());
                 // Make sure that the program's uniform-set value is consistent throughout.
                 if (-1 == fUniformBuffer) {
@@ -2897,11 +2900,11 @@ void MetalCodeGenerator::visitGlobalStruct(GlobalStructVisitor* visitor) {
         const GlobalVarDeclaration& global = element->as<GlobalVarDeclaration>();
         const VarDeclaration& decl = global.varDeclaration();
         const Variable& var = *decl.var();
-        if (var.type().typeKind() == Type::TypeKind::kSampler) {
+        if (decl.baseType().typeKind() == Type::TypeKind::kSampler) {
             visitor->visitSampler(var.type(), var.mangledName());
             continue;
         }
-        if (var.type().typeKind() == Type::TypeKind::kTexture) {
+        if (decl.baseType().typeKind() == Type::TypeKind::kTexture) {
             visitor->visitTexture(var.type(), var.mangledName());
             continue;
         }

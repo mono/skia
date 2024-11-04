@@ -40,6 +40,7 @@ TEST_BUILDERS = [
   'Build-Debian10-Clang-x86_64-Debug-AVIF',
   'Build-Debian10-Clang-x86_64-Debug-Chromebook_GLES',
   'Build-Debian10-Clang-x86_64-Debug-Coverage',
+  'Build-Debian10-Clang-x86_64-Debug-Fontations',
   'Build-Debian10-Clang-x86_64-Debug-MSAN',
   'Build-Debian10-Clang-x86_64-Debug-SK_CPU_LIMIT_SSE41',
   'Build-Debian10-Clang-x86_64-Debug-SafeStack',
@@ -89,7 +90,6 @@ TEST_BUILDERS = [
   'Build-Win-Clang-x86_64-Release-Graphite_Vulkan',
   'Build-Win-Clang-x86_64-Release-Direct3D',
   'Build-Win-Clang-x86_64-Release-Shared',
-  'Build-Win-Clang-x86_64-Release-Dawn',
   'Build-Win-Clang-x86_64-Release-Vulkan',
 ]
 

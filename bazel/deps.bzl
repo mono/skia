@@ -6,8 +6,11 @@ Instead, do:
 """
 
 load("@bazel_tools//tools/build_defs/repo:git.bzl", "git_repository", "new_git_repository")
+load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+load("@bazel_tools//tools/build_defs/repo:utils.bzl", "maybe")
+load("//bazel:gcs_mirror.bzl", "gcs_mirror_url")
 
-def git_repos_from_deps(ws = "@"):
+def c_plus_plus_deps(ws = "@"):
     """A list of native Bazel git rules to download third party git repositories
 
        These are in the order they appear in //DEPS.
@@ -26,7 +29,7 @@ def git_repos_from_deps(ws = "@"):
     new_git_repository(
         name = "dawn",
         build_file = ws + "//bazel/external/dawn:BUILD.bazel",
-        commit = "beaf20f90f1bf21d235c99d5b49b8bb507b722b2",
+        commit = "b9afa50913de862e388195589917e7fbf30d2810",
         remote = "https://dawn.googlesource.com/dawn.git",
     )
 
@@ -53,14 +56,14 @@ def git_repos_from_deps(ws = "@"):
     new_git_repository(
         name = "freetype",
         build_file = ws + "//bazel/external/freetype:BUILD.bazel",
-        commit = "5769f13a6b9fafa3840726f06dde07e755501a16",
+        commit = "2d9fce53d4ce89f36075168282fcdd7289e082f9",
         remote = "https://chromium.googlesource.com/chromium/src/third_party/freetype2.git",
     )
 
     new_git_repository(
         name = "harfbuzz",
         build_file = ws + "//bazel/external/harfbuzz:BUILD.bazel",
-        commit = "f94508edd60e26a015586c37c29104d6bdc26462",
+        commit = "4cfc6d8e173e800df086d7be078da2e8c5cfca19",
         remote = "https://chromium.googlesource.com/external/github.com/harfbuzz/harfbuzz.git",
     )
 
@@ -157,19 +160,19 @@ def git_repos_from_deps(ws = "@"):
     new_git_repository(
         name = "spirv_cross",
         build_file = ws + "//bazel/external/spirv_cross:BUILD.bazel",
-        commit = "bccaa94db814af33d8ef05c153e7c34d8bd4d685",
+        commit = "54997fb4bc3adeb47b9b9f7bb67f1c25eaca2204",
         remote = "https://chromium.googlesource.com/external/github.com/KhronosGroup/SPIRV-Cross",
     )
 
     git_repository(
         name = "spirv_headers",
-        commit = "124a9665e464ef98b8b718d572d5f329311061eb",
+        commit = "d790ced752b5bfc06b6988baadef6eb2d16bdf96",
         remote = "https://skia.googlesource.com/external/github.com/KhronosGroup/SPIRV-Headers.git",
     )
 
     git_repository(
         name = "spirv_tools",
-        commit = "4a9881fe9b32086d4ceac89a498b0dd34084b574",
+        commit = "3cc7e1c4c318aa4c4a7a8972b6066ab2d9d217cc",
         remote = "https://skia.googlesource.com/external/github.com/KhronosGroup/SPIRV-Tools.git",
     )
 
@@ -183,14 +186,14 @@ def git_repos_from_deps(ws = "@"):
     new_git_repository(
         name = "vulkan_headers",
         build_file = ws + "//bazel/external/vulkan_headers:BUILD.bazel",
-        commit = "450ead13e1064584da027d91192bd7bfb724640f",
+        commit = "2634c969d7dc0e983f005f7f2e665cce8449efe6",
         remote = "https://chromium.googlesource.com/external/github.com/KhronosGroup/Vulkan-Headers",
     )
 
     new_git_repository(
         name = "vulkan_tools",
         build_file = ws + "//bazel/external/vulkan_tools:BUILD.bazel",
-        commit = "1d8188a974ccd08caffb5bd7fec58751e0c7d786",
+        commit = "389110e4600669d82bca042859fddf898387c0d2",
         remote = "https://chromium.googlesource.com/external/github.com/KhronosGroup/Vulkan-Tools",
     )
 
@@ -206,4 +209,15 @@ def git_repos_from_deps(ws = "@"):
         build_file = ws + "//bazel/external/zlib_skia:BUILD.bazel",
         commit = "c876c8f87101c5a75f6014b0f832499afeb65b73",
         remote = "https://chromium.googlesource.com/chromium/src/third_party/zlib",
+    )
+
+def bazel_deps():
+    maybe(
+        http_archive,
+        name = "bazel_skylib",
+        sha256 = "c6966ec828da198c5d9adbaa94c05e3a1c7f21bd012a0b29ba8ddbccb2c93b0d",
+        urls = gcs_mirror_url(
+            sha256 = "c6966ec828da198c5d9adbaa94c05e3a1c7f21bd012a0b29ba8ddbccb2c93b0d",
+            url = "https://github.com/bazelbuild/bazel-skylib/releases/download/1.1.1/bazel-skylib-1.1.1.tar.gz",
+        ),
     )

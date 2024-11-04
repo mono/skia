@@ -254,8 +254,8 @@ namespace skiagm {
  * target origins. We draw clockwise triangles green and counter-clockwise red.
  */
 class ClockwiseGM : public GpuGM {
-    SkString onShortName() override { return SkString("clockwise"); }
-    SkISize onISize() override { return {300, 200}; }
+    SkString getName() const override { return SkString("clockwise"); }
+    SkISize getISize() override { return {300, 200}; }
     DrawResult onDraw(GrRecordingContext*, SkCanvas*, SkString* errorMsg) override;
 };
 

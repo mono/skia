@@ -494,8 +494,6 @@ public:
      */
     bool skipErrorChecks() const { return fSkipErrorChecks; }
 
-    bool supportsProtected() const { return fSupportsProtected; }
-
     bool clientCanDisableMultisample() const { return fClientCanDisableMultisample; }
 
     GrBackendFormat getBackendFormatFromCompressionType(SkTextureCompressionType) const override;
@@ -508,7 +506,7 @@ public:
                            const GrProgramInfo&,
                            ProgramDescOverrideFlags) const override;
 
-#if GR_TEST_UTILS
+#if defined(GR_TEST_UTILS)
     GrGLStandard standard() const { return fStandard; }
 
     std::vector<GrTest::TestFormatColorTypeCombination> getTestingCombinations() const override;
@@ -612,7 +610,6 @@ private:
     bool fSRGBWriteControl : 1;
     bool fSkipErrorChecks : 1;
     bool fClientCanDisableMultisample : 1;
-    bool fSupportsProtected : 1;
 
     // Driver workarounds
     bool fDoManualMipmapping : 1;
@@ -625,6 +622,7 @@ private:
     bool fNeverDisableColorWrites : 1;
     bool fMustSetAnyTexParameterToEnableMipmapping : 1;
     bool fAllowBGRA8CopyTexSubImage : 1;
+    bool fAllowSRGBCopyTexSubImage : 1;
     bool fDisallowDynamicMSAA : 1;
     bool fMustResetBlendFuncBetweenDualSourceAndDisable : 1;
     bool fBindTexture0WhenChangingTextureFBOMultisampleCount : 1;

@@ -23,7 +23,7 @@
 #include "include/effects/SkGradientShader.h"
 #include "include/effects/SkImageFilters.h"
 #include "src/effects/imagefilters/SkCropImageFilter.h"
-#include "src/gpu/ganesh/effects/GrMatrixConvolutionEffect.h"
+#include "src/gpu/BlurUtils.h"
 #include "tools/ToolUtils.h"
 
 #include <vector>
@@ -46,10 +46,7 @@ public:
     }
 
 protected:
-
-    SkString onShortName() override {
-        return SkStringPrintf("matrixconvolution%s", fNameSuffix);
-    }
+    SkString getName() const override { return SkStringPrintf("matrixconvolution%s", fNameSuffix); }
 
     void makeBitmap() {
         // Draw our bitmap in N32, so legacy devices get "premul" values they understand
@@ -66,9 +63,7 @@ protected:
         fImage = surf->makeImageSnapshot();
     }
 
-    SkISize onISize() override {
-        return SkISize::Make(500, 300);
-    }
+    SkISize getISize() override { return SkISize::Make(500, 300); }
 
     sk_sp<SkImageFilter> makeFilter(const SkIPoint &kernelOffset,
                                     SkTileMode tileMode,
@@ -85,7 +80,8 @@ protected:
                         kernelOffset, tileMode, convolveAlpha, nullptr, tileBoundary);
             }
             case kLarge_KernelFixture: {
-                static_assert(49 > GrMatrixConvolutionEffect::kMaxUniformSize);
+                // This ensures the texture fallback path will be taken
+                static_assert(49 > skgpu::kMaxBlurSamples);
                 // All 1s except center value, which is -47 (sum of 1).
                 std::vector<SkScalar> kernel(49, SkIntToScalar(1));
                 kernel[24] = SkIntToScalar(-47);

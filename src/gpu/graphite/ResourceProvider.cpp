@@ -29,9 +29,10 @@ namespace skgpu::graphite {
 
 ResourceProvider::ResourceProvider(SharedContext* sharedContext,
                                    SingleOwner* singleOwner,
-                                   uint32_t recorderID)
+                                   uint32_t recorderID,
+                                   size_t resourceBudget)
         : fSharedContext(sharedContext)
-        , fResourceCache(ResourceCache::Make(singleOwner, recorderID)) {}
+        , fResourceCache(ResourceCache::Make(singleOwner, recorderID, resourceBudget)) {}
 
 ResourceProvider::~ResourceProvider() {
     fResourceCache->shutdown();
@@ -270,6 +271,18 @@ void ResourceProvider::deleteBackendTexture(BackendTexture& texture) {
     this->onDeleteBackendTexture(texture);
     // Invalidate the texture;
     texture = BackendTexture();
+}
+
+void ResourceProvider::freeGpuResources() {
+    // TODO: Are there Resources that are ref'd by the ResourceProvider or its subclasses that need
+    // be released? If we ever find that we're holding things directly on the ResourceProviders we
+    // call down into the subclasses to allow them to release things.
+
+    fResourceCache->purgeResources();
+}
+
+void ResourceProvider::purgeResourcesNotUsedSince(StdSteadyClock::time_point purgeTime) {
+    fResourceCache->purgeResourcesNotUsedSince(purgeTime);
 }
 
 }  // namespace skgpu::graphite

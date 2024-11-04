@@ -401,11 +401,11 @@ static_assert ((int)GrSurfaceOrigin::kTopLeft_GrSurfaceOrigin      == (int)TOP_L
 static_assert ((int)GrSurfaceOrigin::kBottomLeft_GrSurfaceOrigin   == (int)BOTTOM_LEFT_GR_SURFACE_ORIGIN,   ASSERT_MSG(GrSurfaceOrigin, gr_surfaceorigin_t));
 
 // gr_backend_t
-static_assert ((int)GrBackendApi::kMetal      == (int)METAL_GR_BACKEND,      ASSERT_MSG(GrBackendApi, gr_backend_t));
-static_assert ((int)GrBackendApi::kDawn       == (int)DAWN_GR_BACKEND,       ASSERT_MSG(GrBackendApi, gr_backend_t));
-static_assert ((int)GrBackendApi::kOpenGL     == (int)OPENGL_GR_BACKEND,     ASSERT_MSG(GrBackendApi, gr_backend_t));
-static_assert ((int)GrBackendApi::kVulkan     == (int)VULKAN_GR_BACKEND,     ASSERT_MSG(GrBackendApi, gr_backend_t));
-static_assert ((int)GrBackendApi::kDirect3D   == (int)DIRECT3D_GR_BACKEND,   ASSERT_MSG(GrBackendApi, gr_backend_t));
+static_assert ((int)GrBackendApi::kMetal         == (int)METAL_GR_BACKEND,         ASSERT_MSG(GrBackendApi, gr_backend_t));
+static_assert ((int)GrBackendApi::kOpenGL        == (int)OPENGL_GR_BACKEND,        ASSERT_MSG(GrBackendApi, gr_backend_t));
+static_assert ((int)GrBackendApi::kVulkan        == (int)VULKAN_GR_BACKEND,        ASSERT_MSG(GrBackendApi, gr_backend_t));
+static_assert ((int)GrBackendApi::kDirect3D      == (int)DIRECT3D_GR_BACKEND,      ASSERT_MSG(GrBackendApi, gr_backend_t));
+static_assert ((int)GrBackendApi::kUnsupported   == (int)UNSUPPORTED_GR_BACKEND,   ASSERT_MSG(GrBackendApi, gr_backend_t));
 
 #endif
 

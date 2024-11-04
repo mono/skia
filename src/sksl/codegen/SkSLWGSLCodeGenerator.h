@@ -18,7 +18,6 @@
 #include "src/sksl/codegen/SkSLCodeGenerator.h"
 
 #include <cstdint>
-#include <initializer_list>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -44,6 +43,7 @@ class FunctionDefinition;
 class GlobalVarDeclaration;
 class IfStatement;
 class IndexExpression;
+class InterfaceBlock;
 enum IntrinsicKind : int8_t;
 struct Layout;
 class Literal;
@@ -139,17 +139,7 @@ public:
     };
 
     WGSLCodeGenerator(const Context* context, const Program* program, OutputStream* out)
-            : INHERITED(context, program, out)
-            , fReservedWords({"array",
-                              "FSIn",
-                              "FSOut",
-                              "_globalUniforms",
-                              "_GlobalUniforms",
-                              "_return",
-                              "_stageIn",
-                              "_stageOut",
-                              "VSIn",
-                              "VSOut"}) {}
+            : INHERITED(context, program, out) {}
 
     bool generateCode() override;
 
@@ -182,7 +172,8 @@ private:
 
     // Write a function definition.
     void writeFunction(const FunctionDefinition& f);
-    void writeFunctionDeclaration(const FunctionDeclaration& f);
+    void writeFunctionDeclaration(const FunctionDeclaration& f,
+                                  SkSpan<const bool> paramNeedsDedicatedStorage);
 
     // Write the program entry point.
     void writeEntryPoint(const FunctionDefinition& f);
@@ -213,6 +204,8 @@ private:
     std::string variableReferenceNameForLValue(const VariableReference& r);
     std::string variablePrefix(const Variable& v);
 
+    bool binaryOpNeedsComponentwiseMatrixPolyfill(const Type& left, const Type& right, Operator op);
+
     // Writers for expressions. These return the final expression text as a string, and emit any
     // necessary setup code directly into the program as necessary. The returned expression may be
     // a `let`-alias that cannot be assigned-into; use `makeLValue` for an assignable expression.
@@ -223,10 +216,6 @@ private:
                                          const Expression& right,
                                          const Type& resultType,
                                          Precedence parentPrecedence);
-    std::string assembleBinaryExpressionElement(const Expression& expr,
-                                                Operator op,
-                                                const Expression& other,
-                                                Precedence parentPrecedence);
     std::string assembleFieldAccess(const FieldAccess& f);
     std::string assembleFunctionCall(const FunctionCall& call, Precedence parentPrecedence);
     std::string assembleIndexExpression(const IndexExpression& i);
@@ -255,19 +244,19 @@ private:
                                           const Expression& sampler,
                                           const Expression& coords);
     std::string assembleInversePolyfill(const FunctionCall& call);
+    std::string assembleComponentwiseMatrixBinary(const Type& leftType,
+                                                  const Type& rightType,
+                                                  const std::string& left,
+                                                  const std::string& right,
+                                                  Operator op);
 
     // Constructor expressions
-    std::string assembleAnyConstructor(const AnyConstructor& c, Precedence parentPrecedence);
-    std::string assembleConstructorCompound(const ConstructorCompound& c,
-                                            Precedence parentPrecedence);
-    std::string assembleConstructorCompoundVector(const ConstructorCompound& c,
-                                                  Precedence parentPrecedence);
-    std::string assembleConstructorCompoundMatrix(const ConstructorCompound& c,
-                                                  Precedence parentPrecedence);
-    std::string assembleConstructorDiagonalMatrix(const ConstructorDiagonalMatrix& c,
-                                                  Precedence parentPrecedence);
-    std::string assembleConstructorMatrixResize(const ConstructorMatrixResize& ctor,
-                                                Precedence parentPrecedence);
+    std::string assembleAnyConstructor(const AnyConstructor& c);
+    std::string assembleConstructorCompound(const ConstructorCompound& c);
+    std::string assembleConstructorCompoundVector(const ConstructorCompound& c);
+    std::string assembleConstructorCompoundMatrix(const ConstructorCompound& c);
+    std::string assembleConstructorDiagonalMatrix(const ConstructorDiagonalMatrix& c);
+    std::string assembleConstructorMatrixResize(const ConstructorMatrixResize& ctor);
 
     // Synthesized helper functions for comparison operators that are not supported by WGSL.
     std::string assembleEqualityExpression(const Type& left,
@@ -309,7 +298,10 @@ private:
     void writeStageInputStruct();
     void writeStageOutputStruct();
     void writeUniformsAndBuffers();
-    void writeUniformPolyfills(const Type& structType, MemoryLayout::Standard nativeLayout);
+    void prepareUniformPolyfillsForInterfaceBlock(const InterfaceBlock* interfaceBlock,
+                                                  std::string_view instanceName,
+                                                  MemoryLayout::Standard nativeLayout);
+    void writeUniformPolyfills();
 
     void writeTextureOrSampler(const Variable& var,
                                int bindingLocation,
@@ -343,7 +335,6 @@ private:
     skia_private::THashMap<const Type*, std::string> fInterfaceBlockNameMap;
 
     // Stores the disallowed identifier names.
-    skia_private::THashSet<std::string_view> fReservedWords;
     ProgramRequirements fRequirements;
     int fPipelineInputCount = 0;
 
@@ -353,12 +344,20 @@ private:
     bool fWrittenInverse3 = false;
     bool fWrittenInverse4 = false;
 
-    // These fields control uniform-matrix polyfill support. Because our uniform data is provided in
-    // std140 layout, matrices need to be represented as arrays of @size(16)-aligned vectors, and
-    // are unpacked as they are referenced.
-    skia_private::THashSet<const Field*> fMatrixPolyfillFields;
-    bool fWrittenUniformMatrixPolyfill[5][5] = {};  // m[column][row] for each matrix type
-    bool fWrittenUniformRowPolyfill[5] = {};        // for each matrix row-size
+    // These fields control uniform polyfill support in cases where WGSL and std140 disagree.
+    // In std140 layout, matrices need to be represented as arrays of @size(16)-aligned vectors, and
+    // array elements are wrapped in a struct containing a single @size(16)-aligned element. Arrays
+    // of matrices combine both wrappers. These wrapper structs are unpacked into natively-typed
+    // globals at the shader entrypoint.
+    struct FieldPolyfillInfo {
+        const InterfaceBlock* fInterfaceBlock;
+        std::string fReplacementName;
+        bool fIsArray = false;
+        bool fIsMatrix = false;
+        bool fWasAccessed = false;
+    };
+    using FieldPolyfillMap = skia_private::THashMap<const Field*, FieldPolyfillInfo>;
+    FieldPolyfillMap fFieldPolyfillMap;
 
     // Output processing state.
     int fIndentation = 0;

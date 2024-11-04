@@ -9,16 +9,16 @@
 
 #include "include/core/SkAlphaType.h"
 #include "include/core/SkBitmap.h"
-#include "include/core/SkCanvas.h"
-#include "include/core/SkColor.h"
 #include "include/core/SkColorSpace.h"
 #include "include/core/SkImage.h"
 #include "include/core/SkImageInfo.h"
 #include "include/core/SkPixmap.h"
+#include "include/core/SkPoint.h"
 #include "include/core/SkRect.h"
 #include "include/core/SkSamplingOptions.h"
 #include "include/core/SkSize.h"
 #include "include/core/SkSurface.h"
+#include "include/core/SkTileMode.h"
 #include "include/core/SkTypes.h"
 #include "include/core/SkYUVAInfo.h"
 #include "include/core/SkYUVAPixmaps.h"
@@ -41,6 +41,7 @@
 #include "src/gpu/ResourceKey.h"
 #include "src/gpu/SkBackingFit.h"
 #include "src/gpu/Swizzle.h"
+#include "src/gpu/ganesh/GrBlurUtils.h"
 #include "src/gpu/ganesh/GrCaps.h"
 #include "src/gpu/ganesh/GrColorSpaceXform.h"
 #include "src/gpu/ganesh/GrFragmentProcessor.h"
@@ -54,6 +55,7 @@
 #include "src/gpu/ganesh/GrThreadSafeCache.h"
 #include "src/gpu/ganesh/GrYUVATextureProxies.h"
 #include "src/gpu/ganesh/SkGr.h"
+#include "src/gpu/ganesh/SurfaceDrawContext.h"
 #include "src/gpu/ganesh/SurfaceFillContext.h"
 #include "src/gpu/ganesh/effects/GrBicubicEffect.h"
 #include "src/gpu/ganesh/effects/GrTextureEffect.h"
@@ -73,7 +75,6 @@
 
 class SkMatrix;
 class SkSurfaceProps;
-enum class SkTileMode;
 enum SkColorType : int;
 
 namespace skgpu::ganesh {
@@ -240,9 +241,6 @@ static GrSurfaceProxyView generate_picture_texture(GrRecordingContext* ctx,
     SkASSERT(ctx);
     SkASSERT(img);
 
-    auto sharedGenerator = img->generator();
-    SkAutoMutexExclusive mutex(sharedGenerator->fMutex);
-
     skgpu::Budgeted budgeted = texGenPolicy == GrImageTexGenPolicy::kNew_Uncached_Unbudgeted
                                        ? skgpu::Budgeted::kNo
                                        : skgpu::Budgeted::kYes;
@@ -257,8 +255,8 @@ static GrSurfaceProxyView generate_picture_texture(GrRecordingContext* ctx,
         return {};
     }
 
-    surface->getCanvas()->clear(SkColors::kTransparent);
-    surface->getCanvas()->drawPicture(img->picture(), img->matrix(), img->paint());
+    img->replay(surface->getCanvas());
+
     sk_sp<SkImage> image(surface->makeImageSnapshot());
     if (!image) {
         return {};
@@ -727,11 +725,8 @@ SkYUVAPixmapInfo::SupportedDataTypes SupportedTextureFormats(const GrImageContex
 }  // namespace skgpu::ganesh
 
 namespace skif {
-Context MakeGaneshContext(GrRecordingContext* context,
-                          GrSurfaceOrigin origin,
-                          const ContextInfo& info) {
+Functors MakeGaneshFunctors(GrRecordingContext* context, GrSurfaceOrigin origin) {
     SkASSERT(context);
-    SkASSERT(!info.fSource.image() || info.fSource.image()->isGaneshBacked());
 
     auto makeSurfaceFunctor = [context, origin](const SkImageInfo& imageInfo,
                                                 const SkSurfaceProps* props) {
@@ -771,7 +766,56 @@ Context MakeGaneshContext(GrRecordingContext* context,
                                           data.info().colorInfo());
     };
 
-    return Context(info, context, makeSurfaceFunctor, makeImageFunctor, makeCachedBitmapFunctor);
+    auto blurImageFunctor = [context](SkSize sigma,
+                                      sk_sp<SkSpecialImage> input,
+                                      SkIRect srcRect,
+                                      SkIRect dstRect,
+                                      sk_sp<SkColorSpace> outCS,
+                                      const SkSurfaceProps& outProps) -> sk_sp<SkSpecialImage> {
+        GrSurfaceProxyView inputView = SkSpecialImages::AsView(context, input);
+        if (!inputView.proxy()) {
+            return nullptr;
+        }
+        SkASSERT(inputView.asTextureProxy());
+
+        // Update srcRect and dstRect to be relative to the underlying texture proxy of 'input'.
+        auto proxyOffset = input->subset().topLeft() - srcRect.topLeft();
+        srcRect.offset(proxyOffset);
+        dstRect.offset(proxyOffset);
+        auto sdc = GrBlurUtils::GaussianBlur(
+                context,
+                std::move(inputView),
+                SkColorTypeToGrColorType(input->colorType()),
+                input->alphaType(),
+                std::move(outCS),
+                dstRect,
+                srcRect,
+                sigma.width(),
+                sigma.height(),
+                SkTileMode::kDecal); // TODO: Have the blur image functor take a tile mode
+        if (!sdc) {
+            return nullptr;
+        }
+
+        return SkSpecialImages::MakeDeferredFromGpu(context,
+                                                    SkIRect::MakeSize(dstRect.size()),
+                                                    kNeedNewImageUniqueID_SpecialImage,
+                                                    sdc->readSurfaceView(),
+                                                    sdc->colorInfo(),
+                                                    outProps);
+    };
+
+    return Functors(makeSurfaceFunctor, makeImageFunctor, makeCachedBitmapFunctor,
+                    blurImageFunctor, context);
+}
+
+Context MakeGaneshContext(GrRecordingContext* context,
+                          GrSurfaceOrigin origin,
+                          const ContextInfo& info) {
+    SkASSERT(context);
+    SkASSERT(!info.fSource.image() || info.fSource.image()->isGaneshBacked());
+
+    return Context(info, MakeGaneshFunctors(context, origin));
 }
 
 }  // namespace skif

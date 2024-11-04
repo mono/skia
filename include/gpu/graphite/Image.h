@@ -11,6 +11,7 @@
 #include "include/core/SkImage.h"
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkSpan.h"
+#include "include/gpu/GpuTypes.h"
 
 class SkYUVAInfo;
 class SkYUVAPixmaps;
@@ -58,8 +59,19 @@ using GraphitePromiseTextureReleaseProc = void (*)(GraphitePromiseTextureRelease
                                backend texture is linear, then the colorSpace should include
                                a description of the transfer function as
                                well (e.g., SkColorSpace::MakeSRGB()).
+    @param origin              Whether the Texture logically treats the origin as TopLeft or
+                               BottomLeft
     @return                    created SkImage, or nullptr
 */
+SK_API sk_sp<SkImage> AdoptTextureFrom(skgpu::graphite::Recorder*,
+                                       const skgpu::graphite::BackendTexture&,
+                                       SkColorType colorType,
+                                       SkAlphaType alphaType,
+                                       sk_sp<SkColorSpace> colorSpace,
+                                       skgpu::Origin origin,
+                                       TextureReleaseProc = nullptr,
+                                       ReleaseContext = nullptr);
+
 SK_API sk_sp<SkImage> AdoptTextureFrom(skgpu::graphite::Recorder*,
                                        const skgpu::graphite::BackendTexture&,
                                        SkColorType colorType,
@@ -107,6 +119,7 @@ SK_API sk_sp<SkImage> AdoptTextureFrom(skgpu::graphite::Recorder*,
     @param dimensions     width & height of promised gpu texture
     @param textureInfo    structural information for the promised gpu texture
     @param colorInfo      color type, alpha type and colorSpace information for the image
+    @param origin         Whether the Texture logically treats the origin as TopLeft or BottomLeft
     @param isVolatile     volatility of the promise image
     @param fulfill        function called to get the actual backend texture,
                           and the instance for the GraphitePromiseTextureReleaseProc
@@ -115,6 +128,17 @@ SK_API sk_sp<SkImage> AdoptTextureFrom(skgpu::graphite::Recorder*,
     @param imageContext   state passed to fulfill and imageRelease
     @return               created SkImage, or nullptr
 */
+SK_API sk_sp<SkImage> PromiseTextureFrom(skgpu::graphite::Recorder*,
+                                         SkISize dimensions,
+                                         const skgpu::graphite::TextureInfo&,
+                                         const SkColorInfo&,
+                                         skgpu::Origin origin,
+                                         skgpu::graphite::Volatile,
+                                         GraphitePromiseImageFulfillProc,
+                                         GraphitePromiseImageReleaseProc,
+                                         GraphitePromiseTextureReleaseProc,
+                                         GraphitePromiseImageContext);
+
 SK_API sk_sp<SkImage> PromiseTextureFrom(skgpu::graphite::Recorder*,
                                          SkISize dimensions,
                                          const skgpu::graphite::TextureInfo&,
@@ -271,6 +295,38 @@ SK_API sk_sp<SkImage> SubsetTextureFrom(skgpu::graphite::Recorder* recorder,
                                         const SkImage* img,
                                         const SkIRect& subset,
                                         SkImage::RequiredProperties props = {});
+
+/** Creates a filtered SkImage on the GPU. filter processes the src image, potentially changing
+    color, position, and size. subset is the bounds of src that are processed
+    by filter. clipBounds is the expected bounds of the filtered SkImage. outSubset
+    is required storage for the actual bounds of the filtered SkImage. offset is
+    required storage for translation of returned SkImage.
+
+    Returns nullptr if SkImage could not be created. If nullptr is returned, outSubset
+    and offset are undefined.
+
+    Useful for animation of SkImageFilter that varies size from frame to frame.
+    Returned SkImage is created larger than required by filter so that GPU texture
+    can be reused with different sized effects. outSubset describes the valid bounds
+    of GPU texture returned. offset translates the returned SkImage to keep subsequent
+    animation frames aligned with respect to each other.
+
+    @param recorder    the recorder in which the filtering operation is to be performed
+    @param filter      how SkImage is sampled when transformed
+    @param subset      bounds of SkImage processed by filter
+    @param clipBounds  expected bounds of filtered SkImage
+    @param outSubset   storage for returned SkImage bounds
+    @param offset      storage for returned SkImage translation
+    @return            filtered SkImage, or nullptr
+*/
+SK_API sk_sp<SkImage> MakeWithFilter(skgpu::graphite::Recorder* recorder,
+                                     sk_sp<SkImage> src,
+                                     const SkImageFilter* filter,
+                                     const SkIRect& subset,
+                                     const SkIRect& clipBounds,
+                                     SkIRect* outSubset,
+                                     SkIPoint* offset);
+
 } // namespace SkImages
 
 

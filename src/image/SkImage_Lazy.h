@@ -59,6 +59,8 @@ public:
         // a way to provide content for levels other than via SkImageGenerator::generateTexture().
         return false;
     }
+    bool onIsProtected() const override;
+
     bool onReadPixels(GrDirectContext*, const SkImageInfo&, void*, size_t, int srcX, int srcY,
                       CachingHint) const override;
     sk_sp<SkData> onRefEncoded() const override;
@@ -108,7 +110,7 @@ public:
     static sk_sp<SharedGenerator> Make(std::unique_ptr<SkImageGenerator> gen);
 
     // This is thread safe.  It is a const field set in the constructor.
-    const SkImageInfo& getInfo();
+    const SkImageInfo& getInfo() const;
 
     bool isTextureGenerator();
 

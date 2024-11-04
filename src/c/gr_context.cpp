@@ -9,6 +9,8 @@
 
 #include "include/core/SkImage.h"
 #include "include/core/SkSurface.h"
+#include "include/gpu/ganesh/gl/GrGLBackendSurface.h"
+#include "include/gpu/ganesh/vk/GrVkBackendSurface.h"
 
 #include "include/c/gr_context.h"
 
@@ -216,11 +218,11 @@ bool gr_vk_extensions_has_extension(gr_vk_extensions_t* extensions, const char* 
 // GrBackendTexture
 
 gr_backendtexture_t* gr_backendtexture_new_gl(int width, int height, bool mipmapped, const gr_gl_textureinfo_t* glInfo) {
-    return SK_ONLY_GPU(ToGrBackendTexture(new GrBackendTexture(width, height, (GrMipMapped)mipmapped, *AsGrGLTextureInfo(glInfo))), nullptr);
+    return SK_ONLY_GPU(ToGrBackendTexture(new GrBackendTexture(GrBackendTextures::MakeGL(width, height, (GrMipMapped)mipmapped, *AsGrGLTextureInfo(glInfo)))), nullptr);
 }
 
 gr_backendtexture_t* gr_backendtexture_new_vulkan(int width, int height, const gr_vk_imageinfo_t* vkInfo) {
-    return SK_ONLY_VULKAN(ToGrBackendTexture(new GrBackendTexture(width, height, *AsGrVkImageInfo(vkInfo))), nullptr);
+    return SK_ONLY_VULKAN(ToGrBackendTexture(new GrBackendTexture(GrBackendTextures::MakeVk(width, height, *AsGrVkImageInfo(vkInfo)))), nullptr);
 }
 
 gr_backendtexture_t* gr_backendtexture_new_metal(int width, int height, bool mipmapped, const gr_mtl_textureinfo_t* mtlInfo) {
@@ -252,22 +254,22 @@ gr_backend_t gr_backendtexture_get_backend(const gr_backendtexture_t* texture) {
 }
 
 bool gr_backendtexture_get_gl_textureinfo(const gr_backendtexture_t* texture, gr_gl_textureinfo_t* glInfo) {
-    return SK_ONLY_GPU(AsGrBackendTexture(texture)->getGLTextureInfo(AsGrGLTextureInfo(glInfo)), false);
+    return SK_ONLY_GPU(GrBackendTextures::GetGLTextureInfo(*AsGrBackendTexture(texture), AsGrGLTextureInfo(glInfo)), false);
 }
 
 
 // GrBackendRenderTarget
 
 gr_backendrendertarget_t* gr_backendrendertarget_new_gl(int width, int height, int samples, int stencils, const gr_gl_framebufferinfo_t* glInfo) {
-    return SK_ONLY_GPU(ToGrBackendRenderTarget(new GrBackendRenderTarget(width, height, samples, stencils, *AsGrGLFramebufferInfo(glInfo))), nullptr);
+    return SK_ONLY_GPU(ToGrBackendRenderTarget(new GrBackendRenderTarget(GrBackendRenderTargets::MakeGL(width, height, samples, stencils, *AsGrGLFramebufferInfo(glInfo)))), nullptr);
 }
 
-gr_backendrendertarget_t* gr_backendrendertarget_new_vulkan(int width, int height, int samples, const gr_vk_imageinfo_t* vkImageInfo) {
-    return SK_ONLY_VULKAN(ToGrBackendRenderTarget(new GrBackendRenderTarget(width, height, samples, *AsGrVkImageInfo(vkImageInfo))), nullptr);
+gr_backendrendertarget_t* gr_backendrendertarget_new_vulkan(int width, int height, const gr_vk_imageinfo_t* vkImageInfo) {
+    return SK_ONLY_VULKAN(ToGrBackendRenderTarget(new GrBackendRenderTarget(GrBackendRenderTargets::MakeVk(width, height, *AsGrVkImageInfo(vkImageInfo)))), nullptr);
 }
 
-gr_backendrendertarget_t* gr_backendrendertarget_new_metal(int width, int height, int samples, const gr_mtl_textureinfo_t* mtlInfo) {
-    return SK_ONLY_METAL(ToGrBackendRenderTarget(new GrBackendRenderTarget(width, height, samples, AsGrMtlTextureInfo(mtlInfo))), nullptr);
+gr_backendrendertarget_t* gr_backendrendertarget_new_metal(int width, int height, const gr_mtl_textureinfo_t* mtlInfo) {
+    return SK_ONLY_METAL(ToGrBackendRenderTarget(new GrBackendRenderTarget(width, height, AsGrMtlTextureInfo(mtlInfo))), nullptr);
 }
 
 void gr_backendrendertarget_delete(gr_backendrendertarget_t* rendertarget) {
@@ -299,5 +301,5 @@ gr_backend_t gr_backendrendertarget_get_backend(const gr_backendrendertarget_t* 
 }
 
 bool gr_backendrendertarget_get_gl_framebufferinfo(const gr_backendrendertarget_t* rendertarget, gr_gl_framebufferinfo_t* glInfo) {
-    return SK_ONLY_GPU(AsGrBackendRenderTarget(rendertarget)->getGLFramebufferInfo(AsGrGLFramebufferInfo(glInfo)), false);
+    return SK_ONLY_GPU(GrBackendRenderTargets::GetGLFramebufferInfo(*AsGrBackendRenderTarget(rendertarget), AsGrGLFramebufferInfo(glInfo)), false);
 }

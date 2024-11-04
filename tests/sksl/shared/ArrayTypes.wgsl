@@ -9,15 +9,13 @@ struct FSOut {
 struct S {
   v: vec2<f32>,
 };
-fn initialize_vS(_skParam0: ptr<function, array<S, 2>>) {
-  let z = _skParam0;
+fn initialize_vS(z: ptr<function, array<S, 2>>) {
   {
     (*z)[0].v = vec2<f32>(0.0, 1.0);
     (*z)[1].v = vec2<f32>(2.0, 1.0);
   }
 }
-fn main(_skParam0: vec2<f32>) -> vec4<f32> {
-  let coords = _skParam0;
+fn _skslMain(coords: vec2<f32>) -> vec4<f32> {
   {
     var x: array<vec2<f32>, 2>;
     x[0] = vec2<f32>(0.0);
@@ -32,8 +30,8 @@ fn main(_skParam0: vec2<f32>) -> vec4<f32> {
     return vec4<f32>(f32(x[0].x * x[0].y + z[0].v.x), f32(x[1].x - x[1].y * z[0].v.y), f32((y[0].x / y[0].y) / z[1].v.x), f32(y[1].x + y[1].y * z[1].v.y));
   }
 }
-@fragment fn fragmentMain(_stageIn: FSIn) -> FSOut {
+@fragment fn main(_stageIn: FSIn) -> FSOut {
   var _stageOut: FSOut;
-  _stageOut.sk_FragColor = main(_stageIn.sk_FragCoord.xy);
+  _stageOut.sk_FragColor = _skslMain(_stageIn.sk_FragCoord.xy);
   return _stageOut;
 }

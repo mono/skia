@@ -298,17 +298,41 @@ std::string ShaderInfo::toSkSL(const Caps* caps,
     }
 
     const char* outColor = args.fPriorStageOutput.c_str();
-    if (step->emitsCoverage()) {
+    const Coverage coverage = step->coverage();
+    if (coverage != Coverage::kNone) {
         mainBody += "half4 outputCoverage;";
         mainBody += step->fragmentCoverageSkSL();
 
+        // TODO: Determine whether draw is opaque and pass that to GetBlendFormula.
         BlendFormula coverageBlendFormula =
-                skgpu::GetBlendFormula(false, step->emitsCoverage(), fBlendMode);
+                coverage == Coverage::kLCD
+                        ? skgpu::GetLCDBlendFormula(fBlendMode)
+                        : skgpu::GetBlendFormula(
+                                  /*isOpaque=*/false, /*hasCoverage=*/true, fBlendMode);
 
         const bool needsSurfaceColorForCoverage =
                 this->needsSurfaceColor() || (coverageBlendFormula.hasSecondaryOutput() &&
                                               !caps->shaderCaps()->fDualSourceBlendingSupport);
         if (needsSurfaceColorForCoverage) {
+            // If this draw uses a non-coherent dst read, we want to keep the existing dst color (or
+            // whatever has been previously drawn) when there's no coverage. This helps for batching
+            // text draws that need to read from a dst copy for blends. However, this only helps the
+            // case where the outer bounding boxes of each letter overlap and not two actual parts
+            // of the text.
+            DstReadRequirement dstReadReq = caps->getDstReadRequirement();
+            if (dstReadReq == DstReadRequirement::kTextureCopy ||
+                dstReadReq == DstReadRequirement::kTextureSample) {
+                // We don't think any shaders actually output negative coverage, but just as a
+                // safety check for floating point precision errors, we compare with <= here. We
+                // just check the RGB values of the coverage, since the alpha may not have been set
+                // when using LCD. If we are using single-channel coverage, alpha will be equal to
+                // RGB anyway.
+                mainBody +=
+                    "if (all(lessThanEqual(outputCoverage.rgb, half3(0)))) {"
+                        "discard;"
+                    "}";
+            }
+
             // Use originally-specified BlendInfo and blend with dst manually.
             SkSL::String::appendf(
                     &mainBody,
@@ -781,8 +805,6 @@ std::string GenerateLocalMatrixPreamble(const ShaderInfo& shaderInfo,
 }
 
 //--------------------------------------------------------------------------------------------------
-static constexpr int kNumXferFnCoeffs = 7;
-
 static constexpr Uniform kImageShaderUniforms[] = {
         { "imgSize",               SkSLType::kFloat2 },
         { "subset",                SkSLType::kFloat4 },
@@ -790,13 +812,12 @@ static constexpr Uniform kImageShaderUniforms[] = {
         { "tilemodeY",             SkSLType::kInt },
         { "filterMode",            SkSLType::kInt },
         { "readSwizzle",           SkSLType::kInt },
-        // The next 6 uniforms are for the color space transformation
+        // The next 5 uniforms are for the color space transformation
         { "csXformFlags",          SkSLType::kInt },
         { "csXformSrcKind",        SkSLType::kInt },
-        { "csXformSrcCoeffs",      SkSLType::kHalf, kNumXferFnCoeffs },
         { "csXformGamutTransform", SkSLType::kHalf3x3 },
         { "csXformDstKind",        SkSLType::kInt },
-        { "csXformDstCoeffs",      SkSLType::kHalf, kNumXferFnCoeffs },
+        { "csXformCoeffs",         SkSLType::kHalf4x4 },
 };
 
 static constexpr Uniform kCubicImageShaderUniforms[] = {
@@ -806,13 +827,12 @@ static constexpr Uniform kCubicImageShaderUniforms[] = {
         { "tilemodeY",             SkSLType::kInt },
         { "cubicCoeffs",           SkSLType::kHalf4x4 },
         { "readSwizzle",           SkSLType::kInt },
-        // The next 6 uniforms are for the color space transformation
+        // The next 5 uniforms are for the color space transformation
         { "csXformFlags",          SkSLType::kInt },
         { "csXformSrcKind",        SkSLType::kInt },
-        { "csXformSrcCoeffs",      SkSLType::kHalf, kNumXferFnCoeffs },
         { "csXformGamutTransform", SkSLType::kHalf3x3 },
         { "csXformDstKind",        SkSLType::kInt },
-        { "csXformDstCoeffs",      SkSLType::kHalf, kNumXferFnCoeffs },
+        { "csXformCoeffs",         SkSLType::kHalf4x4 },
 };
 
 static constexpr TextureAndSampler kISTexturesAndSamplers[] = {
@@ -862,10 +882,9 @@ static constexpr Uniform kYUVImageShaderUniforms[] = {
         // The next 6 uniforms are for the color space transformation
         { "csXformFlags",          SkSLType::kInt },
         { "csXformSrcKind",        SkSLType::kInt },
-        { "csXformSrcCoeffs",      SkSLType::kHalf, kNumXferFnCoeffs },
         { "csXformGamutTransform", SkSLType::kHalf3x3 },
         { "csXformDstKind",        SkSLType::kInt },
-        { "csXformDstCoeffs",      SkSLType::kHalf, kNumXferFnCoeffs },
+        { "csXformCoeffs",         SkSLType::kHalf4x4 },
 };
 
 static constexpr TextureAndSampler kYUVISTexturesAndSamplers[] = {
@@ -1155,10 +1174,9 @@ static constexpr char kGaussianColorFilterName[] = "sk_gaussian_colorfilter";
 static constexpr Uniform kColorSpaceTransformUniforms[] = {
         { "flags",          SkSLType::kInt },
         { "srcKind",        SkSLType::kInt },
-        { "srcCoeffs",      SkSLType::kHalf, kNumXferFnCoeffs },
         { "gamutTransform", SkSLType::kHalf3x3 },
         { "dstKind",        SkSLType::kInt },
-        { "dstCoeffs",      SkSLType::kHalf, kNumXferFnCoeffs },
+        { "csXformCoeffs",  SkSLType::kHalf4x4 },
 };
 
 static_assert(0 == static_cast<int>(skcms_TFType_Invalid),

@@ -116,6 +116,15 @@ public:
         return sCaps;
     }
 
+    static const SkSL::ShaderCaps* CannotUseVoidInSequenceExpressions() {
+        static const SkSL::ShaderCaps* sCaps = [] {
+            std::unique_ptr<SkSL::ShaderCaps> caps = MakeShaderCaps();
+            caps->fCanUseVoidInSequenceExpressions = false;
+            return caps.release();
+        }();
+        return sCaps;
+    }
+
     static const SkSL::ShaderCaps* EmulateAbsIntFunction() {
         static const SkSL::ShaderCaps* sCaps = [] {
             std::unique_ptr<SkSL::ShaderCaps> caps = MakeShaderCaps();
@@ -191,6 +200,16 @@ public:
             std::unique_ptr<SkSL::ShaderCaps> caps = MakeShaderCaps();
             caps->fVersionDeclString = "#version 400";
             caps->fBuiltinFMASupport = false;
+            return caps.release();
+        }();
+        return sCaps;
+    }
+
+    static const SkSL::ShaderCaps* NoExternalTextureSupport() {
+        static const SkSL::ShaderCaps* sCaps = [] {
+            std::unique_ptr<SkSL::ShaderCaps> caps = MakeShaderCaps();
+            caps->fVersionDeclString = "#version 400";
+            caps->fExternalTextureSupport = false;
             return caps.release();
         }();
         return sCaps;
@@ -347,6 +366,9 @@ static bool detect_shader_settings(const std::string& text,
                 if (consume_suffix(&settingsText, " CannotUseMinAndAbsTogether")) {
                     *caps = Factory::CannotUseMinAndAbsTogether();
                 }
+                if (consume_suffix(&settingsText, " CannotUseVoidInSequenceExpressions")) {
+                    *caps = Factory::CannotUseVoidInSequenceExpressions();
+                }
                 if (consume_suffix(&settingsText, " Default")) {
                     *caps = Factory::Default();
                 }
@@ -373,6 +395,9 @@ static bool detect_shader_settings(const std::string& text,
                 }
                 if (consume_suffix(&settingsText, " NoBuiltinFMASupport")) {
                     *caps = Factory::NoBuiltinFMASupport();
+                }
+                if (consume_suffix(&settingsText, " NoExternalTextureSupport")) {
+                    *caps = Factory::NoExternalTextureSupport();
                 }
                 if (consume_suffix(&settingsText, " RemovePowWithConstantExponent")) {
                     *caps = Factory::RemovePowWithConstantExponent();
@@ -420,9 +445,6 @@ static bool detect_shader_settings(const std::string& text,
                 if (consume_suffix(&settingsText, " NoRTFlip")) {
                     settings->fForceNoRTFlip = true;
                 }
-                if (consume_suffix(&settingsText, " NoTraceVarInDebugTrace")) {
-                    settings->fAllowTraceVarInDebugTrace = false;
-                }
                 if (consume_suffix(&settingsText, " InlineThresholdMax")) {
                     settings->fInlineThreshold = INT_MAX;
                 }
@@ -432,9 +454,6 @@ static bool detect_shader_settings(const std::string& text,
                 if (consume_suffix(&settingsText, " DebugTrace")) {
                     settings->fOptimize = false;
                     *debugTrace = std::make_unique<SkSL::DebugTracePriv>();
-                }
-                if (consume_suffix(&settingsText, " SPIRVDawnCompatMode")) {
-                    settings->fSPIRVDawnCompatMode = true;
                 }
 
                 if (settingsText.empty()) {

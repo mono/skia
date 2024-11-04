@@ -18,20 +18,14 @@
 // This file houses utilities to be shared across pipelines of different backend types.
 namespace skgpu {
 
-// Print the source code for all shaders generated.
-#ifdef SK_PRINT_SKSL_SHADERS
-static constexpr bool gPrintSKSL  = true;
-#else
-static constexpr bool gPrintSKSL  = false;
-#endif
-#ifdef SK_PRINT_NATIVE_SHADERS
-static const bool gPrintBackendSL = true;
-#else
-static const bool gPrintBackendSL = false;
-#endif
+bool SkSLToGLSL(SkSL::Compiler*,
+                const std::string& sksl,
+                SkSL::ProgramKind programKind,
+                const SkSL::ProgramSettings& settings,
+                std::string* glsl,
+                SkSL::Program::Interface*,
+                ShaderErrorHandler* errorHandler);
 
-// SkSL->SPIR-V is only needed by Dawn + Vulkan backends, but seeing as this is a small wrapper
-// function, it's fine to be here even if not all backends end up using it.
 bool SkSLToSPIRV(SkSL::Compiler*,
                  const std::string& sksl,
                  SkSL::ProgramKind,
@@ -39,6 +33,30 @@ bool SkSLToSPIRV(SkSL::Compiler*,
                  std::string* spirv,
                  SkSL::Program::Interface*,
                  ShaderErrorHandler*);
+
+bool SkSLToWGSL(SkSL::Compiler*,
+                const std::string& sksl,
+                SkSL::ProgramKind,
+                const SkSL::ProgramSettings&,
+                std::string* wgsl,
+                SkSL::Program::Interface*,
+                ShaderErrorHandler*);
+
+bool SkSLToMSL(SkSL::Compiler*,
+               const std::string& sksl,
+               SkSL::ProgramKind kind,
+               const SkSL::ProgramSettings& settings,
+               std::string* msl,
+               SkSL::Program::Interface* outInterface,
+               ShaderErrorHandler* errorHandler);
+
+bool SkSLToHLSL(SkSL::Compiler*,
+               const std::string& sksl,
+               SkSL::ProgramKind kind,
+               const SkSL::ProgramSettings& settings,
+               std::string* hlsl,
+               SkSL::Program::Interface* outInterface,
+               ShaderErrorHandler* errorHandler);
 
 } // namespace skgpu
 

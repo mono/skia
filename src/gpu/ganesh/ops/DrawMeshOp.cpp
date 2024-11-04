@@ -508,7 +508,7 @@ private:
 
     void onPrepareDraws(GrMeshDrawTarget*) override;
     void onExecute(GrOpFlushState*, const SkRect& chainBounds) override;
-#if GR_TEST_UTILS
+#if defined(GR_TEST_UTILS)
     SkString onDumpInfo() const override;
 #endif
 
@@ -866,7 +866,7 @@ MeshOp::MeshOp(GrProcessorSet*          processorSet,
     fIndexCount  = fMeshes.back().indexCount();
 }
 
-#if GR_TEST_UTILS
+#if defined(GR_TEST_UTILS)
 SkString MeshOp::onDumpInfo() const { return {}; }
 #endif
 
@@ -1031,10 +1031,13 @@ GrOp::CombineResult MeshOp::onCombineIfPossible(GrOp* t, SkArenaAlloc*, const Gr
         return CombineResult::kCannotCombine;
     }
 
+    if (fVertexCount > INT32_MAX - that->fVertexCount) {
+        return CombineResult::kCannotCombine;
+    }
     if (SkToBool(fIndexCount) != SkToBool(that->fIndexCount)) {
         return CombineResult::kCannotCombine;
     }
-    if (SkToBool(fIndexCount) && fVertexCount + that->fVertexCount > SkToInt(UINT16_MAX)) {
+    if (SkToBool(fIndexCount) && fVertexCount > SkToInt(UINT16_MAX) - that->fVertexCount) {
         return CombineResult::kCannotCombine;
     }
 

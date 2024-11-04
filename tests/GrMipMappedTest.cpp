@@ -77,12 +77,8 @@ class GrRenderTask;
 #endif
 
 #if defined(SK_VULKAN)
+#include "include/gpu/ganesh/vk/GrVkBackendSurface.h"
 #include "include/gpu/vk/GrVkTypes.h"
-#endif
-
-#if defined(SK_DAWN)
-#include "include/gpu/dawn/GrDawnTypes.h"
-#include "dawn/webgpu_cpp.h"
 #endif
 
 static constexpr int kSize = 8;
@@ -263,8 +259,8 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(GrBackendTextureImageMipMappedTest,
             } else if (GrBackendApi::kVulkan == genBackendTex.backend()) {
                 GrVkImageInfo genImageInfo;
                 GrVkImageInfo origImageInfo;
-                if (genBackendTex.getVkImageInfo(&genImageInfo) &&
-                    backendTex.getVkImageInfo(&origImageInfo)) {
+                if (GrBackendTextures::GetVkImageInfo(genBackendTex, &genImageInfo) &&
+                    GrBackendTextures::GetVkImageInfo(backendTex, &origImageInfo)) {
                     if (requestMipmapped == GrMipmapped::kYes && betMipmapped == GrMipmapped::kNo) {
                         // We did a copy so the texture IDs should be different
                         REPORTER_ASSERT(reporter, origImageInfo.fImage != genImageInfo.fImage);
@@ -307,24 +303,6 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(GrBackendTextureImageMipMappedTest,
                     }
                 } else {
                     ERRORF(reporter, "Failed to get GrMtlTextureInfo");
-                }
-#endif
-#ifdef SK_DAWN
-            } else if (GrBackendApi::kDawn == genBackendTex.backend()) {
-                GrDawnTextureInfo genImageInfo;
-                GrDawnTextureInfo origImageInfo;
-                if (genBackendTex.getDawnTextureInfo(&genImageInfo) &&
-                    backendTex.getDawnTextureInfo(&origImageInfo)) {
-                    if (requestMipmapped == GrMipmapped::kYes && betMipmapped == GrMipmapped::kNo) {
-                        // We did a copy so the texture IDs should be different
-                        REPORTER_ASSERT(reporter,
-                            origImageInfo.fTexture.Get() != genImageInfo.fTexture.Get());
-                    } else {
-                        REPORTER_ASSERT(reporter,
-                            origImageInfo.fTexture.Get() == genImageInfo.fTexture.Get());
-                    }
-                } else {
-                    ERRORF(reporter, "Failed to get GrDawnTextureInfo");
                 }
 #endif
             } else {

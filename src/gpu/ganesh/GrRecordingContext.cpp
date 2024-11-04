@@ -65,7 +65,7 @@ bool GrRecordingContext::init() {
 
     skgpu::ganesh::PathRendererChain::Options prcOptions;
     prcOptions.fAllowPathMaskCaching = this->options().fAllowPathMaskCaching;
-#if GR_TEST_UTILS
+#if defined(GR_TEST_UTILS)
     prcOptions.fGpuPathRenderers = this->options().fGpuPathRenderers;
 #endif
     // FIXME: Once this is removed from Chrome and Android, rename to fEnable"".
@@ -175,6 +175,10 @@ bool GrRecordingContext::colorTypeSupportedAsImage(SkColorType colorType) const 
     return format.isValid();
 }
 
+bool GrRecordingContext::supportsProtectedContent() const {
+    return this->caps()->supportsProtectedContent();
+}
+
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
 #ifdef SK_ENABLE_DUMP_GPU
@@ -194,7 +198,7 @@ void GrRecordingContext::dumpJSON(SkJSONWriter* writer) const {
 void GrRecordingContext::dumpJSON(SkJSONWriter*) const { }
 #endif
 
-#if GR_TEST_UTILS
+#if defined(GR_TEST_UTILS)
 
 #if GR_GPU_STATS
 
@@ -246,4 +250,4 @@ void GrRecordingContext::DMSAAStats::merge(const DMSAAStats& stats) {
 }
 
 #endif // GR_GPU_STATS
-#endif // GR_TEST_UTILS
+#endif // defined(GR_TEST_UTILS)

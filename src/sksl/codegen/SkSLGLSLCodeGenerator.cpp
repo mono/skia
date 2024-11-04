@@ -1113,10 +1113,23 @@ void GLSLCodeGenerator::writeLiteral(const Literal& l) {
     this->write(l.description(OperatorPrecedence::kExpression));
 }
 
+bool GLSLCodeGenerator::shouldRewriteVoidTypedFunctions(const FunctionDeclaration* func) const {
+    // We can change void-typed user functions to return a (meaningless) float so that sequence
+    // expressions will work normally in WebGL2. (skbug.com/294893925)
+    return  func &&
+           !func->isMain() &&
+            func->returnType().isVoid() &&
+           !this->caps().fCanUseVoidInSequenceExpressions;
+}
+
 void GLSLCodeGenerator::writeFunctionDeclaration(const FunctionDeclaration& f) {
-    this->writeTypePrecision(f.returnType());
-    this->writeType(f.returnType());
-    this->write(" ");
+    if (this->shouldRewriteVoidTypedFunctions(&f)) {
+        this->write("float ");
+    } else {
+        this->writeTypePrecision(f.returnType());
+        this->writeType(f.returnType());
+        this->write(" ");
+    }
     this->writeIdentifier(f.mangledName());
     this->write("(");
     auto separator = SkSL::String::Separator();
@@ -1165,6 +1178,7 @@ void GLSLCodeGenerator::writeFunction(const FunctionDefinition& f) {
     fSetupFragPosition = false;
     fSetupFragCoordWorkaround = false;
     fSetupClockwise = false;
+    fCurrentFunction = &f.declaration();
 
     this->writeFunctionDeclaration(f.declaration());
     this->writeLine(" {");
@@ -1181,12 +1195,20 @@ void GLSLCodeGenerator::writeFunction(const FunctionDefinition& f) {
         }
     }
 
+    if (this->shouldRewriteVoidTypedFunctions(&f.declaration())) {
+        // If we can't use void in sequence expressions, we rewrite void-typed user functions to
+        // return a (never-used) float in case they are used in a sequence expression.
+        this->writeLine("return 0.0;");
+    }
+
     fIndentation--;
     this->writeLine("}");
 
     fOut = oldOut;
     this->write(fFunctionHeader);
     this->write(buffer.str());
+
+    fCurrentFunction = nullptr;
 }
 
 void GLSLCodeGenerator::writeFunctionPrototype(const FunctionPrototype& f) {
@@ -1311,32 +1333,75 @@ void GLSLCodeGenerator::writeTypePrecision(const Type& type) {
     this->write(this->getTypePrecision(type));
 }
 
-void GLSLCodeGenerator::writeVarDeclaration(const VarDeclaration& var, bool global) {
-    this->writeModifiers(var.var()->layout(), var.var()->modifierFlags(), global);
-    this->writeTypePrecision(var.baseType());
-    this->writeType(var.baseType());
+void GLSLCodeGenerator::writeGlobalVarDeclaration(const GlobalVarDeclaration& e) {
+    const VarDeclaration& decl = e.as<GlobalVarDeclaration>().varDeclaration();
+    switch (decl.var()->layout().fBuiltin) {
+        case -1:
+            // normal var
+            this->writeVarDeclaration(decl, /*global=*/true);
+            this->finishLine();
+            break;
+
+        case SK_FRAGCOLOR_BUILTIN:
+            if (this->caps().mustDeclareFragmentShaderOutput()) {
+                if (fProgram.fConfig->fSettings.fFragColorIsInOut) {
+                    this->write("inout ");
+                } else {
+                    this->write("out ");
+                }
+                if (this->usesPrecisionModifiers()) {
+                    this->write("mediump ");
+                }
+                this->writeLine("vec4 sk_FragColor;");
+            }
+            break;
+
+        default:
+            break;
+    }
+}
+
+void GLSLCodeGenerator::writeVarDeclaration(const VarDeclaration& decl, bool global) {
+    const Variable* var = decl.var();
+    this->writeModifiers(var->layout(), var->modifierFlags(), global);
+
+    if (global && !var->modifierFlags().isUniform()) {
+        if (decl.baseType().typeKind() == Type::TypeKind::kSampler ||
+            decl.baseType().typeKind() == Type::TypeKind::kSeparateSampler ||
+            decl.baseType().typeKind() == Type::TypeKind::kTexture) {
+            // We don't require the `uniform` modifier on textures/samplers, but GLSL does.
+            this->write("uniform ");
+        }
+    }
+
+    this->writeTypePrecision(decl.baseType());
+    this->writeType(decl.baseType());
     this->write(" ");
-    this->writeIdentifier(var.var()->mangledName());
-    if (var.arraySize() > 0) {
+    this->writeIdentifier(var->mangledName());
+    if (decl.arraySize() > 0) {
         this->write("[");
-        this->write(std::to_string(var.arraySize()));
+        this->write(std::to_string(decl.arraySize()));
         this->write("]");
     }
-    if (var.value()) {
+    if (decl.value()) {
         this->write(" = ");
-        this->writeVarInitializer(*var.var(), *var.value());
+        this->writeVarInitializer(*var, *decl.value());
     }
     if (!fFoundExternalSamplerDecl &&
-        var.var()->type().matches(*fContext.fTypes.fSamplerExternalOES)) {
-        if (this->caps().externalTextureExtensionString()) {
-            this->writeExtension(this->caps().externalTextureExtensionString());
+        var->type().matches(*fContext.fTypes.fSamplerExternalOES)) {
+        if (!this->caps().fExternalTextureSupport) {
+            fContext.fErrors->error(decl.position(), "external texture support is not enabled");
+        } else {
+            if (this->caps().externalTextureExtensionString()) {
+                this->writeExtension(this->caps().externalTextureExtensionString());
+            }
+            if (this->caps().secondExternalTextureExtensionString()) {
+                this->writeExtension(this->caps().secondExternalTextureExtensionString());
+            }
+            fFoundExternalSamplerDecl = true;
         }
-        if (this->caps().secondExternalTextureExtensionString()) {
-            this->writeExtension(this->caps().secondExternalTextureExtensionString());
-        }
-        fFoundExternalSamplerDecl = true;
     }
-    if (!fFoundRectSamplerDecl && var.var()->type().matches(*fContext.fTypes.fSampler2DRect)) {
+    if (!fFoundRectSamplerDecl && var->type().matches(*fContext.fTypes.fSampler2DRect)) {
         fFoundRectSamplerDecl = true;
     }
     this->write(";");
@@ -1354,7 +1419,7 @@ void GLSLCodeGenerator::writeStatement(const Statement& s) {
             this->writeReturnStatement(s.as<ReturnStatement>());
             break;
         case Statement::Kind::kVarDeclaration:
-            this->writeVarDeclaration(s.as<VarDeclaration>(), false);
+            this->writeVarDeclaration(s.as<VarDeclaration>(), /*global=*/false);
             break;
         case Statement::Kind::kIf:
             this->writeIfStatement(s.as<IfStatement>());
@@ -1626,10 +1691,16 @@ void GLSLCodeGenerator::writeSwitchStatement(const SwitchStatement& s) {
 }
 
 void GLSLCodeGenerator::writeReturnStatement(const ReturnStatement& r) {
+    SkASSERT(fCurrentFunction);
+
     this->write("return");
     if (r.expression()) {
         this->write(" ");
         this->writeExpression(*r.expression(), Precedence::kExpression);
+    } else if (this->shouldRewriteVoidTypedFunctions(fCurrentFunction)) {
+        // We need to rewrite `return` statements to say `return 0.0` since we are converting
+        // void-typed functions to return floats instead.
+        this->write(" 0.0");
     }
     this->write(";");
 }
@@ -1646,36 +1717,23 @@ void GLSLCodeGenerator::writeProgramElement(const ProgramElement& e) {
         case ProgramElement::Kind::kExtension:
             this->writeExtension(e.as<Extension>().name());
             break;
-        case ProgramElement::Kind::kGlobalVar: {
-            const VarDeclaration& decl = e.as<GlobalVarDeclaration>().varDeclaration();
-            int builtin = decl.var()->layout().fBuiltin;
-            if (builtin == -1) {
-                // normal var
-                this->writeVarDeclaration(decl, true);
-                this->finishLine();
-            } else if (builtin == SK_FRAGCOLOR_BUILTIN &&
-                       this->caps().mustDeclareFragmentShaderOutput()) {
-                if (fProgram.fConfig->fSettings.fFragColorIsInOut) {
-                    this->write("inout ");
-                } else {
-                    this->write("out ");
-                }
-                if (this->usesPrecisionModifiers()) {
-                    this->write("mediump ");
-                }
-                this->writeLine("vec4 sk_FragColor;");
-            }
+
+        case ProgramElement::Kind::kGlobalVar:
+            this->writeGlobalVarDeclaration(e.as<GlobalVarDeclaration>());
             break;
-        }
+
         case ProgramElement::Kind::kInterfaceBlock:
             this->writeInterfaceBlock(e.as<InterfaceBlock>());
             break;
+
         case ProgramElement::Kind::kFunction:
             this->writeFunction(e.as<FunctionDefinition>());
             break;
+
         case ProgramElement::Kind::kFunctionPrototype:
             this->writeFunctionPrototype(e.as<FunctionPrototype>());
             break;
+
         case ProgramElement::Kind::kModifiers: {
             const ModifiersDeclaration& d = e.as<ModifiersDeclaration>();
             this->writeModifiers(d.layout(), d.modifierFlags(), /*globalContext=*/true);
@@ -1685,6 +1743,7 @@ void GLSLCodeGenerator::writeProgramElement(const ProgramElement& e) {
         case ProgramElement::Kind::kStructDefinition:
             this->writeStructDefinition(e.as<StructDefinition>());
             break;
+
         default:
             SkDEBUGFAILF("unsupported program element %s\n", e.description().c_str());
             break;

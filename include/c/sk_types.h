@@ -637,11 +637,11 @@ typedef struct gr_direct_context_t gr_direct_context_t;
 typedef struct gr_recording_context_t gr_recording_context_t;
 
 typedef enum {
-    OPENGL_GR_BACKEND,
-    VULKAN_GR_BACKEND,
-    METAL_GR_BACKEND,
-    DIRECT3D_GR_BACKEND,
-    DAWN_GR_BACKEND,
+    OPENGL_GR_BACKEND      = 0,
+    VULKAN_GR_BACKEND      = 1,
+    METAL_GR_BACKEND       = 2,
+    DIRECT3D_GR_BACKEND    = 3,
+    UNSUPPORTED_GR_BACKEND = 5,
 } gr_backend_t;
 
 typedef intptr_t gr_backendcontext_t;

@@ -12,6 +12,7 @@
 #include "include/gpu/GrBackendSurface.h"
 #include "include/gpu/GrDirectContext.h"
 #include "include/gpu/ganesh/SkSurfaceGanesh.h"
+#include "include/gpu/ganesh/vk/GrVkBackendSurface.h"
 #include "include/gpu/vk/GrVkTypes.h"
 #include "include/gpu/vk/VulkanExtensions.h"
 #include "src/base/SkAutoMalloc.h"
@@ -361,7 +362,7 @@ bool VulkanWindowContext::createBuffers(VkFormat format,
         info.fSharingMode = sharingMode;
 
         if (usageFlags & VK_IMAGE_USAGE_SAMPLED_BIT) {
-            GrBackendTexture backendTexture(fWidth, fHeight, info);
+            GrBackendTexture backendTexture = GrBackendTextures::MakeVk(fWidth, fHeight, info);
             fSurfaces[i] = SkSurfaces::WrapBackendTexture(fContext.get(),
                                                           backendTexture,
                                                           kTopLeft_GrSurfaceOrigin,
@@ -373,7 +374,8 @@ bool VulkanWindowContext::createBuffers(VkFormat format,
             if (fDisplayParams.fMSAASampleCount > 1) {
                 return false;
             }
-            GrBackendRenderTarget backendRT(fWidth, fHeight, fSampleCount, info);
+            info.fSampleCount = fSampleCount;
+            GrBackendRenderTarget backendRT = GrBackendRenderTargets::MakeVk(fWidth, fHeight, info);
             fSurfaces[i] = SkSurfaces::WrapBackendRenderTarget(fContext.get(),
                                                                backendRT,
                                                                kTopLeft_GrSurfaceOrigin,

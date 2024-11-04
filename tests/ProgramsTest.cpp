@@ -102,7 +102,7 @@ private:
 
 GR_DEFINE_FRAGMENT_PROCESSOR_TEST(BigKeyProcessor)
 
-#if GR_TEST_UTILS
+#if defined(GR_TEST_UTILS)
 std::unique_ptr<GrFragmentProcessor> BigKeyProcessor::TestCreate(GrProcessorTestData*) {
     return BigKeyProcessor::Make();
 }
@@ -183,7 +183,7 @@ static std::unique_ptr<skgpu::ganesh::SurfaceDrawContext> random_surface_draw_co
                                                    origin);
 }
 
-#if GR_TEST_UTILS
+#if defined(GR_TEST_UTILS)
 static void set_random_xpf(GrPaint* paint, GrProcessorTestData* d) {
     paint->setXPFactory(GrXPFactoryTestFactory::Get(d));
 }
@@ -264,7 +264,7 @@ static void set_random_color_coverage_stages(GrPaint* paint,
 
 #endif
 
-#if !GR_TEST_UTILS
+#if !defined(GR_TEST_UTILS)
 bool GrDrawingManager::ProgramUnitTest(GrDirectContext*, int) { return true; }
 #else
 bool GrDrawingManager::ProgramUnitTest(GrDirectContext* direct, int maxStages, int maxLevels) {
@@ -396,9 +396,9 @@ static int get_programs_max_stages(const sk_gpu_test::ContextInfo& ctxInfo) {
         // On Angle D3D we will hit a limit of out variables if we use too many stages. This is
         // particularly true on D3D9 with a low limit on varyings and the fact that every varying is
         // packed as though it has 4 components.
-        if (ctxInfo.type() == sk_gpu_test::GrContextFactory::kANGLE_D3D9_ES2_ContextType) {
+        if (ctxInfo.type() == skgpu::ContextType::kANGLE_D3D9_ES2) {
             maxStages = 2;
-        } else if (ctxInfo.type() == sk_gpu_test::GrContextFactory::kANGLE_D3D11_ES2_ContextType) {
+        } else if (ctxInfo.type() == skgpu::ContextType::kANGLE_D3D11_ES2) {
             maxStages = 3;
         }
     }
@@ -423,8 +423,8 @@ static int get_programs_max_levels(const sk_gpu_test::ContextInfo& ctxInfo) {
             maxTreeLevels = 3;
         }
 #endif
-        if (ctxInfo.type() == sk_gpu_test::GrContextFactory::kANGLE_D3D9_ES2_ContextType ||
-            ctxInfo.type() == sk_gpu_test::GrContextFactory::kANGLE_D3D11_ES2_ContextType) {
+        if (ctxInfo.type() == skgpu::ContextType::kANGLE_D3D9_ES2 ||
+            ctxInfo.type() == skgpu::ContextType::kANGLE_D3D11_ES2) {
             // On Angle D3D we will hit a limit of out variables if we use too many stages.
             maxTreeLevels = 2;
         }
@@ -459,6 +459,5 @@ DEF_GANESH_TEST(Programs, reporter, options, CtsEnforcement::kNever) {
     GrContextOptions opts = options;
     opts.fSuppressPrints = true;
     sk_gpu_test::GrContextFactory debugFactory(opts);
-    skiatest::RunWithGaneshTestContexts(
-            test_programs, &sk_gpu_test::GrContextFactory::IsRenderingContext, reporter, opts);
+    skiatest::RunWithGaneshTestContexts(test_programs, &skgpu::IsRenderingContext, reporter, opts);
 }

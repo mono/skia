@@ -26,6 +26,8 @@ public:
                                              Mipmapped mipmapped,
                                              Protected,
                                              Renderable) const override;
+    TextureInfo getTextureInfoForSampledCopy(const TextureInfo& textureInfo,
+                                             Mipmapped mipmapped) const override;
     TextureInfo getDefaultMSAATextureInfo(const TextureInfo& singleSampledInfo,
                                           Discardable discardable) const override;
     TextureInfo getDefaultDepthStencilTextureInfo(SkEnumBitMask<DepthStencilFlags>,
@@ -44,6 +46,9 @@ public:
                             Shareable,
                             GraphiteResourceKey*) const override;
     uint64_t getRenderPassDescKey(const RenderPassDesc& renderPassDesc) const;
+    bool enableWGSL() const {
+        return fEnableWGSL;
+    }
 
 private:
     const ColorTypeInfo* getColorTypeInfo(SkColorType, const TextureInfo&) const override;
@@ -57,7 +62,7 @@ private:
                                              const TextureInfo& srcTextureInfo,
                                              SkColorType dstColorType) const override;
 
-    void initCaps(const wgpu::Device& device);
+    void initCaps(const wgpu::Device& device, const ContextOptions& options);
     void initShaderCaps();
     void initFormatTable(const wgpu::Device& device);
 
@@ -108,6 +113,7 @@ private:
     void setColorType(SkColorType, std::initializer_list<wgpu::TextureFormat> formats);
 
     bool fTransientAttachmentSupport = false;
+    bool fEnableWGSL = false;
 };
 
 } // namespace skgpu::graphite

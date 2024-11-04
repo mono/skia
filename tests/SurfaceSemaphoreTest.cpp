@@ -31,6 +31,7 @@
 #include "src/gpu/ganesh/GrDirectContextPriv.h"
 #include "tests/CtsEnforcement.h"
 #include "tests/Test.h"
+#include "tools/gpu/ContextType.h"
 #include "tools/gpu/TestContext.h"
 
 #include <string>
@@ -46,6 +47,7 @@
 #endif
 
 #ifdef SK_VULKAN
+#include "include/gpu/ganesh/vk/GrVkBackendSurface.h"
 #include "src/gpu/ganesh/vk/GrVkCommandPool.h"
 #include "src/gpu/ganesh/vk/GrVkGpu.h"
 #include "src/gpu/ganesh/vk/GrVkUtil.h"
@@ -205,7 +207,8 @@ void surface_semaphore_test(skiatest::Reporter* reporter,
         // In Vulkan we need to make sure we are sending the correct VkImageLayout in with the
         // backendImage. After the first child draw the layout gets changed to SHADER_READ, so
         // we just manually set that here.
-        backendTexture.setVkImageLayout(VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+        GrBackendTextures::SetVkImageLayout(&backendTexture,
+                                            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
     }
 #endif
 
@@ -215,30 +218,28 @@ void surface_semaphore_test(skiatest::Reporter* reporter,
 #ifdef SK_GL
 DEF_GANESH_TEST(SurfaceSemaphores, reporter, options, CtsEnforcement::kApiLevel_T) {
 #if defined(SK_BUILD_FOR_UNIX) || defined(SK_BUILD_FOR_WIN) || defined(SK_BUILD_FOR_MAC)
-    static constexpr auto kNativeGLType = sk_gpu_test::GrContextFactory::kGL_ContextType;
+    static constexpr auto kNativeGLType = skgpu::ContextType::kGL;
 #else
-    static constexpr auto kNativeGLType = sk_gpu_test::GrContextFactory::kGLES_ContextType;
+    static constexpr auto kNativeGLType = skgpu::ContextType::kGLES;
 #endif
 
-    for (int typeInt = 0; typeInt < sk_gpu_test::GrContextFactory::kContextTypeCnt; ++typeInt) {
+    for (int typeInt = 0; typeInt < skgpu::kContextTypeCount; ++typeInt) {
         for (auto flushType : {FlushType::kSurface, FlushType::kImage, FlushType::kContext}) {
-            sk_gpu_test::GrContextFactory::ContextType contextType =
-                    (sk_gpu_test::GrContextFactory::ContextType) typeInt;
+            skgpu::ContextType contextType = static_cast<skgpu::ContextType>(typeInt);
             // Use "native" instead of explicitly trying OpenGL and OpenGL ES. Do not use GLES on
             // desktop since tests do not account for not fixing http://skbug.com/2809
-            if (contextType == sk_gpu_test::GrContextFactory::kGL_ContextType ||
-                contextType == sk_gpu_test::GrContextFactory::kGLES_ContextType) {
+            if (contextType == skgpu::ContextType::kGL ||
+                contextType == skgpu::ContextType::kGLES) {
                 if (contextType != kNativeGLType) {
                     continue;
                 }
             }
             sk_gpu_test::GrContextFactory factory(options);
             sk_gpu_test::ContextInfo ctxInfo = factory.getContextInfo(contextType);
-            if (!sk_gpu_test::GrContextFactory::IsRenderingContext(contextType)) {
+            if (!skgpu::IsRenderingContext(contextType)) {
                 continue;
             }
-            skiatest::ReporterContext ctx(
-                   reporter, SkString(sk_gpu_test::GrContextFactory::ContextTypeName(contextType)));
+            skiatest::ReporterContext ctx(reporter, SkString(skgpu::ContextTypeName(contextType)));
             if (ctxInfo.directContext()) {
                 sk_gpu_test::ContextInfo child1 =
                         factory.getSharedContextInfo(ctxInfo.directContext(), 0);

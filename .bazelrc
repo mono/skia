@@ -63,8 +63,6 @@ build --flag_alias=disable_native_interface=no//src/gpu/ganesh/gl:enable_native_
 build --flag_alias=enable_native_interface=//src/gpu/ganesh/gl:enable_native_interface
 build --flag_alias=disable_pdf_backend=no//src/pdf:enable_pdf_backend
 build --flag_alias=enable_pdf_backend=//src/pdf:enable_pdf_backend
-build --flag_alias=disable_sksl=no//src/sksl:enable_sksl
-build --flag_alias=enable_sksl=//src/sksl:enable_sksl
 build --flag_alias=disable_skslc=no//src/sksl:enable_skslc
 build --flag_alias=enable_skslc=//src/sksl:enable_skslc
 build --flag_alias=disable_sksl_tracing=no//src/sksl:enable_sksl_tracing
@@ -133,9 +131,9 @@ build:remote --spawn_strategy=remote,sandboxed
 # Enable remote execution so actions are performed on the remote systems.
 build:remote --remote_executor=grpcs://remotebuildexecution.googleapis.com
 
-# No compile task should take more than 180 seconds. Really long running tasks
-# are probably a result of spinning up new workers.
-build:remote --remote_timeout=180
+# Some long running tasks are linking because the workers have relatively little RAM
+# (at least as of now).
+build:remote --remote_timeout=300
 
 # Enable authentication. This will pick up application default credentials by
 # default. You can use --google_credentials=some_file.json to use a service

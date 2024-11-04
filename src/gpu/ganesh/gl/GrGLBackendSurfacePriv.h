@@ -36,7 +36,7 @@ public:
     const GrGLBackendTextureInfo& info() const { return fGLInfo; }
 
 private:
-    GrBackendTextureData* copy() const override;
+    void copyTo(AnyTextureData&) const override;
     bool isProtected() const override;
     bool equal(const GrBackendTextureData* that) const override;
     bool isSameTexture(const GrBackendTextureData* that) const override;

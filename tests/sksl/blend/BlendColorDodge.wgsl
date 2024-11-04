@@ -1,6 +1,6 @@
 /*
 
-:39:3 warning: code is unreachable
+:37:3 warning: code is unreachable
   return f32();
   ^^^^^^
 
@@ -19,9 +19,7 @@ struct _GlobalUniforms {
 };
 @binding(0) @group(0) var<uniform> _globalUniforms: _GlobalUniforms;
 const sk_PrivkGuardedDivideEpsilon: f32 = f32(select(0.0, 1e-08, false));
-fn color_dodge_component_Qhh2h2(_skParam0: vec2<f32>, _skParam1: vec2<f32>) -> f32 {
-  let s = _skParam0;
-  let d = _skParam1;
+fn color_dodge_component_Qhh2h2(s: vec2<f32>, d: vec2<f32>) -> f32 {
   {
     if d.x == 0.0 {
       {
@@ -46,7 +44,7 @@ fn color_dodge_component_Qhh2h2(_skParam0: vec2<f32>, _skParam1: vec2<f32>) -> f
   }
   return f32();
 }
-fn main(_stageOut: ptr<function, FSOut>) {
+fn _skslMain(_stageOut: ptr<function, FSOut>) {
   {
     let _skTemp1 = color_dodge_component_Qhh2h2(_globalUniforms.src.xw, _globalUniforms.dst.xw);
     let _skTemp2 = color_dodge_component_Qhh2h2(_globalUniforms.src.yw, _globalUniforms.dst.yw);
@@ -54,8 +52,8 @@ fn main(_stageOut: ptr<function, FSOut>) {
     (*_stageOut).sk_FragColor = vec4<f32>(_skTemp1, _skTemp2, _skTemp3, _globalUniforms.src.w + (1.0 - _globalUniforms.src.w) * _globalUniforms.dst.w);
   }
 }
-@fragment fn fragmentMain(_stageIn: FSIn) -> FSOut {
+@fragment fn main(_stageIn: FSIn) -> FSOut {
   var _stageOut: FSOut;
-  main(&_stageOut);
+  _skslMain(&_stageOut);
   return _stageOut;
 }

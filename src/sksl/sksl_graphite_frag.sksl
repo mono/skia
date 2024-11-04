@@ -38,28 +38,23 @@ $pure half4 sk_solid_shader(float4 colorParam) {
 }
 
 $pure half4 $apply_swizzle(int swizzleType, half4 color) {
-    half4 resultantColor = color;
     switch (swizzleType) {
-        case $kReadSwizzleNormalRGBA:
-            break;
         case $kReadSwizzleRGB1:
-            resultantColor = color.rgb1;
-            break;
+            return color.rgb1;
         case $kReadSwizzleRRRR:
-            resultantColor = color.rrrr;
-            break;
+            return color.rrrr;
         case $kReadSwizzleRRR1:
-            resultantColor = color.rrr1;
-            break;
+            return color.rrr1;
         case $kReadSwizzleBGRA:
-            resultantColor = color.bgra;
-            break;
+            return color.bgra;
+        default:
+            return color;
     }
-    return resultantColor;
 }
 
-$pure float $apply_xfer_fn(int kind, float x, half cs[7]) {
-    float G = cs[0], A = cs[1], B = cs[2], C = cs[3], D = cs[4], E = cs[5], F = cs[6];
+$pure float $apply_xfer_fn(int kind, float x, half4 cs[2]) {
+    float G = cs[0][0], A = cs[0][1], B = cs[0][2], C = cs[0][3],
+          D = cs[1][0], E = cs[1][1], F = cs[1][2];
     float s = sign(x);
     x = abs(x);
     switch (kind) {
@@ -87,10 +82,9 @@ $pure float $apply_xfer_fn(int kind, float x, half cs[7]) {
 $pure half4 sk_color_space_transform(half4 halfColor,
                                      int flags,
                                      int srcKind,
-                                     half srcCoeffs[7],
                                      half3x3 gamutTransform,
                                      int dstKind,
-                                     half dstCoeffs[7]) {
+                                     half4x4 coeffs) {
     float4 color = float4(halfColor);
 
     if (bool(flags & $kColorSpaceXformFlagUnpremul)) {
@@ -98,6 +92,9 @@ $pure half4 sk_color_space_transform(half4 halfColor,
     }
 
     if (bool(flags & $kColorSpaceXformFlagLinearize)) {
+        half4 srcCoeffs[2];
+        srcCoeffs[0] = coeffs[0];
+        srcCoeffs[1] = coeffs[1];
         color.r = $apply_xfer_fn(srcKind, color.r, srcCoeffs);
         color.g = $apply_xfer_fn(srcKind, color.g, srcCoeffs);
         color.b = $apply_xfer_fn(srcKind, color.b, srcCoeffs);
@@ -106,6 +103,9 @@ $pure half4 sk_color_space_transform(half4 halfColor,
         color.rgb = gamutTransform * color.rgb;
     }
     if (bool(flags & $kColorSpaceXformFlagEncode)) {
+        half4 dstCoeffs[2];
+        dstCoeffs[0] = coeffs[2];
+        dstCoeffs[1] = coeffs[3];
         color.r = $apply_xfer_fn(dstKind, color.r, dstCoeffs);
         color.g = $apply_xfer_fn(dstKind, color.g, dstCoeffs);
         color.b = $apply_xfer_fn(dstKind, color.b, dstCoeffs);
@@ -271,15 +271,14 @@ $pure half4 sk_image_shader(float2 coords,
                             int readSwizzle,
                             int csXformFlags,
                             int csXformSrcKind,
-                            half csXformSrcCoeffs[7],
                             half3x3 csXformGamutTransform,
                             int csXformDstKind,
-                            half csXformDstCoeffs[7],
+                            half4x4 csXformCoeffs,
                             sampler2D s) {
     half4 sampleColor =
         $sample_image(coords, imgSize, subset, tileModeX, tileModeY, filterMode, readSwizzle, s);
-    return sk_color_space_transform(sampleColor, csXformFlags, csXformSrcKind, csXformSrcCoeffs,
-                                    csXformGamutTransform, csXformDstKind, csXformDstCoeffs);
+    return sk_color_space_transform(sampleColor, csXformFlags, csXformSrcKind,
+                                    csXformGamutTransform, csXformDstKind, csXformCoeffs);
 }
 
 $pure half4 sk_cubic_image_shader(float2 coords,
@@ -291,15 +290,14 @@ $pure half4 sk_cubic_image_shader(float2 coords,
                                   int readSwizzle,
                                   int csXformFlags,
                                   int csXformSrcKind,
-                                  half csXformSrcCoeffs[7],
                                   half3x3 csXformGamutTransform,
                                   int csXformDstKind,
-                                  half csXformDstCoeffs[7],
+                                  half4x4 csXformCoeffs,
                                   sampler2D s) {
     half4 sampleColor = $cubic_filter_image(coords, imgSize, subset, tileModeX, tileModeY,
                                             cubicCoeffs, readSwizzle, s);
-    return sk_color_space_transform(sampleColor, csXformFlags, csXformSrcKind, csXformSrcCoeffs,
-                                    csXformGamutTransform, csXformDstKind, csXformDstCoeffs);
+    return sk_color_space_transform(sampleColor, csXformFlags, csXformSrcKind,
+                                    csXformGamutTransform, csXformDstKind, csXformCoeffs);
 }
 
 $pure half4 sk_yuv_image_shader(float2 coords,
@@ -318,10 +316,9 @@ $pure half4 sk_yuv_image_shader(float2 coords,
                                 float3 yuvToRGBTranslate,
                                 int csXformFlags,
                                 int csXformSrcKind,
-                                half csXformSrcCoeffs[7],
                                 half3x3 csXformGamutTransform,
                                 int csXformDstKind,
-                                half csXformDstCoeffs[7],
+                                half4x4 csXformCoeffs,
                                 sampler2D sY,
                                 sampler2D sU,
                                 sampler2D sV,
@@ -360,8 +357,8 @@ $pure half4 sk_yuv_image_shader(float2 coords,
         sampleColor.rgb *= sampleColor.a;
     }
 
-    return sk_color_space_transform(sampleColor, csXformFlags, csXformSrcKind, csXformSrcCoeffs,
-                                    csXformGamutTransform, csXformDstKind, csXformDstCoeffs);
+    return sk_color_space_transform(sampleColor, csXformFlags, csXformSrcKind,
+                                    csXformGamutTransform, csXformDstKind, csXformCoeffs);
 }
 
 $pure half4 sk_dither_shader(half4 colorIn,
@@ -1110,6 +1107,77 @@ $pure half4 sk_gaussian_colorfilter(half4 inColor) {
     return half4(factor);
 }
 
+$pure half4 sample_indexed_atlas(float2 textureCoords,
+                                 int atlasIndex,
+                                 sampler2D atlas0,
+                                 sampler2D atlas1,
+                                 sampler2D atlas2,
+                                 sampler2D atlas3) {
+    switch (atlasIndex) {
+        case 1:
+            return sample(atlas1, textureCoords);
+        case 2:
+            return sample(atlas2, textureCoords);
+        case 3:
+            return sample(atlas3, textureCoords);
+        default:
+            return sample(atlas0, textureCoords);
+    }
+}
+
+$pure half4 bitmap_text_coverage_fn(half4 texColor, int maskFormat) {
+    switch (maskFormat) {
+        case 0:  // A8
+            return texColor.rrrr;
+        case 1:  // LCD
+            return half4(texColor.rgb, max(max(texColor.r, texColor.g), texColor.b));
+        default:
+            return texColor;
+    }
+}
+
+$pure half4 sdf_text_coverage_fn(half texColor,
+                                 half distAdjust,
+                                 float2 unormTexCoords) {
+    // TODO: To minimize the number of shaders generated this is the full affine shader.
+    // For best performance it may be worth creating the uniform scale shader as well,
+    // as that's the most common case.
+    // TODO: Need to add 565 support.
+
+    // The distance field is constructed as uchar8_t values, so that the zero value is at 128,
+    // and the supported range of distances is [-4 * 127/128, 4].
+    // Hence to convert to floats our multiplier (width of the range) is 4 * 255/128 = 7.96875
+    // and zero threshold is 128/255 = 0.50196078431.
+    half dist = 7.96875 * (texColor - 0.50196078431);
+
+    // We may further adjust the distance for gamma correction.
+    dist -= half(distAdjust);
+
+    // After the distance is unpacked, we need to correct it by a factor dependent on the
+    // current transformation. For general transforms, to determine the amount of correction
+    // we multiply a unit vector pointing along the SDF gradient direction by the Jacobian of
+    // unormTexCoords (which is the inverse transform for this fragment) and take the length of
+    // the result.
+    half2 dist_grad = half2(dFdx(dist), dFdy(dist));
+       half dg_len2 = dot(dist_grad, dist_grad);
+
+    // The length of the gradient may be near 0, so we need to check for that. This also
+    // compensates for the Adreno, which likes to drop tiles on division by 0.
+    dist_grad = (dg_len2 >= 0.0001) ? dist_grad * inversesqrt(dg_len2)
+                                    : half2(0.7071);
+
+    // Computing the Jacobian and multiplying by the gradient.
+    half2 Jdx = half2(dFdx(unormTexCoords));
+    half2 Jdy = half2(dFdy(unormTexCoords));
+    half2 grad = half2(dist_grad.x * Jdx.x + dist_grad.y * Jdy.x,
+                       dist_grad.x * Jdx.y + dist_grad.y * Jdy.y);
+
+    // This gives us a smooth step across approximately one fragment.
+    half afwidth = 0.65 * length(grad);
+
+    // TODO: handle aliased and sRGB rendering
+    return half4(smoothstep(-afwidth, afwidth, dist));
+}
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 // Support functions for analytic round rectangles

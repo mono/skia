@@ -84,6 +84,11 @@ public:
     SK_API bool colorTypeSupportedAsImage(SkColorType) const;
 
     /**
+     * Does this context support protected content?
+     */
+    SK_API bool supportsProtectedContent() const;
+
+    /**
      * Gets the maximum supported sample count for a color type. 1 is returned if only non-MSAA
      * rendering is supported for the color type. 0 is returned if rendering to this color type
      * is not supported at all.
@@ -215,7 +220,7 @@ protected:
         int numPathMaskCacheHits() const { return fNumPathMaskCacheHits; }
         void incNumPathMasksCacheHits() { fNumPathMaskCacheHits++; }
 
-#if GR_TEST_UTILS
+#if defined(GR_TEST_UTILS)
         void dump(SkString* out) const;
         void dumpKeyValuePairs(skia_private::TArray<SkString>* keys,
                                skia_private::TArray<double>* values) const;
@@ -229,7 +234,7 @@ protected:
         void incNumPathMasksGenerated() {}
         void incNumPathMasksCacheHits() {}
 
-#if GR_TEST_UTILS
+#if defined(GR_TEST_UTILS)
         void dump(SkString*) const {}
         void dumpKeyValuePairs(skia_private::TArray<SkString>* keys,
                                skia_private::TArray<double>* values) const {}
@@ -237,7 +242,7 @@ protected:
 #endif // GR_GPU_STATS
     } fStats;
 
-#if GR_GPU_STATS && GR_TEST_UTILS
+#if GR_GPU_STATS && defined(GR_TEST_UTILS)
     struct DMSAAStats {
         void dumpKeyValuePairs(skia_private::TArray<SkString>* keys,
                                skia_private::TArray<double>* values) const;
@@ -265,7 +270,7 @@ private:
     std::unique_ptr<GrDrawingManager> fDrawingManager;
     std::unique_ptr<GrProxyProvider>  fProxyProvider;
 
-#if GR_TEST_UTILS
+#if defined(GR_TEST_UTILS)
     int fSuppressWarningMessages = 0;
 #endif
 };

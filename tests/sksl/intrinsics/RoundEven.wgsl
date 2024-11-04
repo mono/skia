@@ -1,6 +1,6 @@
 ### Compilation failed:
 
-error: :19:20 error: unresolved call target 'roundEven'
+error: :18:20 error: unresolved call target 'roundEven'
     let _skTemp0 = roundEven(_globalUniforms.testInputs.x);
                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
@@ -19,8 +19,7 @@ struct _GlobalUniforms {
   colorRed: vec4<f32>,
 };
 @binding(0) @group(0) var<uniform> _globalUniforms: _GlobalUniforms;
-fn main(_skParam0: vec2<f32>) -> vec4<f32> {
-  let coords = _skParam0;
+fn _skslMain(coords: vec2<f32>) -> vec4<f32> {
   {
     const expectedA: vec4<f32> = vec4<f32>(-1.0, 0.0, 1.0, 2.0);
     let _skTemp0 = roundEven(_globalUniforms.testInputs.x);
@@ -30,9 +29,9 @@ fn main(_skParam0: vec2<f32>) -> vec4<f32> {
     return select(_globalUniforms.colorRed, _globalUniforms.colorGreen, vec4<bool>((((f32(_skTemp0) == -1.0) && all(vec2<f32>(_skTemp1) == vec2<f32>(-1.0, 0.0))) && all(vec3<f32>(_skTemp2) == vec3<f32>(-1.0, 0.0, 1.0))) && all(vec4<f32>(_skTemp3) == expectedA)));
   }
 }
-@fragment fn fragmentMain(_stageIn: FSIn) -> FSOut {
+@fragment fn main(_stageIn: FSIn) -> FSOut {
   var _stageOut: FSOut;
-  _stageOut.sk_FragColor = main(_stageIn.sk_FragCoord.xy);
+  _stageOut.sk_FragColor = _skslMain(_stageIn.sk_FragCoord.xy);
   return _stageOut;
 }
 
