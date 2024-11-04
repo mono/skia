@@ -8,6 +8,7 @@
 #include "include/core/SkImage.h"
 #include "modules/skottie/include/SlotManager.h"
 #include "modules/skottie/src/SkottiePriv.h"
+#include "modules/skottie/src/text/TextAdapter.h"
 #include "modules/skresources/include/SkResources.h"
 
 class skottie::SlotManager::ImageAssetProxy final : public skresources::ImageAsset {
@@ -42,79 +43,144 @@ fRevalidator(revalidator) {}
 
 skottie::SlotManager::~SlotManager() = default;
 
-void skottie::SlotManager::setColorSlot(SlotID slotID, SkColor c) {
+bool skottie::SlotManager::setColorSlot(SlotID slotID, SkColor c) {
+    auto c4f = SkColor4f::FromColor(c);
+    ColorValue v{c4f.fR, c4f.fG, c4f.fB, c4f.fA};
     const auto valueGroup = fColorMap.find(slotID);
     if (valueGroup) {
         for (auto& cPair : *valueGroup) {
-            *(cPair.value) = c;
-            cPair.node->invalidate();
+            *(cPair.value) = v;
+            cPair.adapter->onSync();
         }
         fRevalidator->revalidate();
+        return true;
     }
+    return false;
 }
 
-void skottie::SlotManager::setImageSlot(SlotID slotID, sk_sp<skresources::ImageAsset> i) {
-    const auto valueGroup = fImageMap.find(slotID);
-    if (valueGroup) {
-        for (auto& iPair : *valueGroup) {
-            iPair.value->setImageAsset(i);
-            iPair.node->invalidate();
+bool skottie::SlotManager::setImageSlot(SlotID slotID, sk_sp<skresources::ImageAsset> i) {
+    const auto imageGroup = fImageMap.find(slotID);
+    if (imageGroup) {
+        for (auto& imageAsset : *imageGroup) {
+            imageAsset->setImageAsset(i);
         }
         fRevalidator->revalidate();
+        return true;
     }
+    return false;
 }
 
-void skottie::SlotManager::setScalarSlot(SlotID slotID, SkScalar s) {
+bool skottie::SlotManager::setScalarSlot(SlotID slotID, float s) {
     const auto valueGroup = fScalarMap.find(slotID);
     if (valueGroup) {
         for (auto& sPair : *valueGroup) {
             *(sPair.value) = s;
-            if (sPair.node) {
-                sPair.node->invalidate();
-            } else if (sPair.adapter) {
-                sPair.adapter->onSync();
-            }
+            sPair.adapter->onSync();
         }
         fRevalidator->revalidate();
+        return true;
     }
+    return false;
 }
 
-SkColor skottie::SlotManager::getColorSlot (SlotID slotID) const {
+bool skottie::SlotManager::setVec2Slot(SlotID slotID, SkV2 v) {
+    const auto valueGroup = fVec2Map.find(slotID);
+    if (valueGroup) {
+        for (auto& vPair : *valueGroup) {
+            *(vPair.value) = v;
+            vPair.adapter->onSync();
+        }
+        fRevalidator->revalidate();
+        return true;
+    }
+    return false;
+}
+
+bool skottie::SlotManager::setTextSlot(SlotID slotID, TextPropertyValue& t) {
+    const auto adapterGroup = fTextMap.find(slotID);
+    if (adapterGroup) {
+        for (auto& textAdapter : *adapterGroup) {
+            textAdapter->setText(t);
+        }
+        fRevalidator->revalidate();
+        return true;
+    }
+    return false;
+}
+
+std::optional<SkColor> skottie::SlotManager::getColorSlot(SlotID slotID) const {
     const auto valueGroup = fColorMap.find(slotID);
-    return valueGroup && !valueGroup->empty() ? *(valueGroup->at(0).value) : SK_ColorBLACK;
+    return valueGroup && !valueGroup->empty() ? std::optional<SkColor>(*(valueGroup->at(0).value))
+                                              : std::nullopt;
 }
 
-sk_sp<const skresources::ImageAsset> skottie::SlotManager::getImageSlot (SlotID slotID) const {
-    const auto valueGroup = fImageMap.find(slotID);
-    return valueGroup && !valueGroup->empty() ? valueGroup->at(0).value->getImageAsset() : nullptr;
+sk_sp<const skresources::ImageAsset> skottie::SlotManager::getImageSlot(SlotID slotID) const {
+    const auto imageGroup = fImageMap.find(slotID);
+    return imageGroup && !imageGroup->empty() ? imageGroup->at(0)->getImageAsset() : nullptr;
 }
 
-SkScalar skottie::SlotManager::getScalarSlot (SlotID slotID) const {
+std::optional<float> skottie::SlotManager::getScalarSlot(SlotID slotID) const {
     const auto valueGroup = fScalarMap.find(slotID);
-    return valueGroup && !valueGroup->empty() ? *(valueGroup->at(0).value) : -1;
-
+    return valueGroup && !valueGroup->empty() ? std::optional<float>(*(valueGroup->at(0).value))
+                                              : std::nullopt;
 }
 
-void skottie::SlotManager::trackColorValue(SlotID slotID, SkColor* colorValue,
-                                           sk_sp<sksg::Node> node) {
-    fColorMap[slotID].push_back({colorValue, std::move(node), nullptr});
+std::optional<SkV2> skottie::SlotManager::getVec2Slot(SlotID slotID) const {
+    const auto valueGroup = fVec2Map.find(slotID);
+    return valueGroup && !valueGroup->empty() ? std::optional<SkV2>(*(valueGroup->at(0).value))
+                                              : std::nullopt;
+}
+
+std::optional<skottie::TextPropertyValue> skottie::SlotManager::getTextSlot(SlotID slotID) const {
+    const auto adapterGroup = fTextMap.find(slotID);
+    return adapterGroup && !adapterGroup->empty() ?
+           std::optional<TextPropertyValue>(adapterGroup->at(0)->getText()) :
+           std::nullopt;
+}
+
+void skottie::SlotManager::trackColorValue(SlotID slotID, ColorValue* colorValue,
+                                           sk_sp<internal::AnimatablePropertyContainer> adapter) {
+    fColorMap[slotID].push_back({colorValue, std::move(adapter)});
 }
 
 sk_sp<skresources::ImageAsset> skottie::SlotManager::trackImageValue(SlotID slotID,
                                                                      sk_sp<skresources::ImageAsset>
-                                                                        imageAsset,
-                                                                     sk_sp<sksg::Node> node) {
+                                                                        imageAsset) {
     auto proxy = sk_make_sp<ImageAssetProxy>(std::move(imageAsset));
-    fImageMap[slotID].push_back({proxy, std::move(node), nullptr});
-    return std::move(proxy);
+    fImageMap[slotID].push_back(proxy);
+    return proxy;
 }
 
-void skottie::SlotManager::trackScalarValue(SlotID slotID, SkScalar* scalarValue,
-                                            sk_sp<sksg::Node> node) {
-    fScalarMap[slotID].push_back({scalarValue, std::move(node), nullptr});
-}
-
-void skottie::SlotManager::trackScalarValue(SlotID slotID, SkScalar* scalarValue,
+void skottie::SlotManager::trackScalarValue(SlotID slotID, ScalarValue* scalarValue,
                                             sk_sp<internal::AnimatablePropertyContainer> adapter) {
-    fScalarMap[slotID].push_back({scalarValue, nullptr, adapter});
+    fScalarMap[slotID].push_back({scalarValue, adapter});
+}
+
+void skottie::SlotManager::trackVec2Value(SlotID slotID, Vec2Value* vec2Value,
+                                          sk_sp<internal::AnimatablePropertyContainer> adapter) {
+    fVec2Map[slotID].push_back({vec2Value, adapter});
+}
+
+void skottie::SlotManager::trackTextValue(SlotID slotID, sk_sp<internal::TextAdapter> adapter) {
+    fTextMap[slotID].push_back(std::move(adapter));
+}
+
+skottie::SlotManager::SlotInfo skottie::SlotManager::getSlotInfo() const {
+    SlotInfo sInfo;
+    for (const auto& c : fColorMap) {
+        sInfo.fColorSlotIDs.push_back(c.first);
+    }
+    for (const auto& s : fScalarMap) {
+        sInfo.fScalarSlotIDs.push_back(s.first);
+    }
+    for (const auto& v : fVec2Map) {
+        sInfo.fVec2SlotIDs.push_back(v.first);
+    }
+    for (const auto& i : fImageMap) {
+        sInfo.fImageSlotIDs.push_back(i.first);
+    }
+    for (const auto& t : fTextMap) {
+        sInfo.fTextSlotIDs.push_back(t.first);
+    }
+    return sInfo;
 }

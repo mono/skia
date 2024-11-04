@@ -13,9 +13,10 @@
 #include "include/core/SkTypes.h"
 #include "include/private/SkSLDefines.h"
 #include "include/private/base/SkTArray.h"
+#include "src/base/SkEnumBitMask.h"
 #include "src/core/SkTHash.h"
 #include "src/sksl/SkSLBuiltinTypes.h"
-#include "src/sksl/SkSLCompiler.h"
+#include "src/sksl/SkSLContext.h"  // IWYU pragma: keep
 #include "src/sksl/SkSLIntrinsicList.h"
 #include "src/sksl/SkSLOperator.h"
 #include "src/sksl/SkSLProgramKind.h"
@@ -37,8 +38,7 @@
 #include "src/sksl/ir/SkSLIRNode.h"
 #include "src/sksl/ir/SkSLIfStatement.h"
 #include "src/sksl/ir/SkSLIndexExpression.h"
-#include "src/sksl/ir/SkSLLayout.h"
-#include "src/sksl/ir/SkSLModifiers.h"
+#include "src/sksl/ir/SkSLModifierFlags.h"
 #include "src/sksl/ir/SkSLPostfixExpression.h"
 #include "src/sksl/ir/SkSLPrefixExpression.h"
 #include "src/sksl/ir/SkSLProgram.h"
@@ -92,7 +92,7 @@ private:
     void writeFunction(const FunctionDefinition& f);
     void writeFunctionDeclaration(const FunctionDeclaration& decl);
 
-    std::string modifierString(const Modifiers& modifiers);
+    std::string modifierString(ModifierFlags modifiers);
     std::string functionDeclaration(const FunctionDeclaration& decl);
 
     // Handles arrays correctly, eg: `float x[2]`
@@ -151,8 +151,9 @@ private:
     THashMap<const FunctionDeclaration*, std::string> fFunctionNames;
     THashMap<const Type*, std::string>                fStructNames;
 
-    StringStream* fBuffer = nullptr;
-    bool          fCastReturnsToHalf = false;
+    StringStream*              fBuffer = nullptr;
+    bool                       fCastReturnsToHalf = false;
+    const FunctionDeclaration* fCurrentFunction = nullptr;
 };
 
 
@@ -275,15 +276,16 @@ void PipelineStageCodeGenerator::writeFunctionCall(const FunctionCall& c) {
 
 void PipelineStageCodeGenerator::writeVariableReference(const VariableReference& ref) {
     const Variable* var = ref.variable();
-    const Modifiers& modifiers = var->modifiers();
 
-    if (modifiers.fLayout.fBuiltin == SK_MAIN_COORDS_BUILTIN) {
+    if (fCurrentFunction && var == fCurrentFunction->getMainCoordsParameter()) {
         this->write(fSampleCoords);
         return;
-    } else if (modifiers.fLayout.fBuiltin == SK_INPUT_COLOR_BUILTIN) {
+    }
+    if (fCurrentFunction && var == fCurrentFunction->getMainInputColorParameter()) {
         this->write(fInputColor);
         return;
-    } else if (modifiers.fLayout.fBuiltin == SK_DEST_COLOR_BUILTIN) {
+    }
+    if (fCurrentFunction && var == fCurrentFunction->getMainDestColorParameter()) {
         this->write(fDestColor);
         return;
     }
@@ -361,6 +363,9 @@ void PipelineStageCodeGenerator::writeFunction(const FunctionDefinition& f) {
         return;
     }
 
+    SkASSERT(!fCurrentFunction);
+    fCurrentFunction = &f.declaration();
+
     AutoOutputBuffer body(this);
 
     // We allow public SkSL's main() to return half4 -or- float4 (ie vec4). When we emit
@@ -387,6 +392,8 @@ void PipelineStageCodeGenerator::writeFunction(const FunctionDefinition& f) {
     fCallbacks->defineFunction(this->functionDeclaration(decl).c_str(),
                                body.fBuffer.str().c_str(),
                                decl.isMain());
+
+    fCurrentFunction = nullptr;
 }
 
 std::string PipelineStageCodeGenerator::functionDeclaration(const FunctionDeclaration& decl) {
@@ -394,14 +401,14 @@ std::string PipelineStageCodeGenerator::functionDeclaration(const FunctionDeclar
     // on the function (e.g. `inline`) and its parameters (e.g. `inout`).
     std::string declString =
             String::printf("%s%s%s %s(",
-                           (decl.modifiers().fFlags & Modifiers::kInline_Flag) ? "inline " : "",
-                           (decl.modifiers().fFlags & Modifiers::kNoInline_Flag) ? "noinline " : "",
+                           decl.modifierFlags().isInline() ? "inline " : "",
+                           decl.modifierFlags().isNoInline() ? "noinline " : "",
                            this->typeName(decl.returnType()).c_str(),
                            this->functionName(decl).c_str());
     auto separator = SkSL::String::Separator();
     for (const Variable* p : decl.parameters()) {
         declString.append(separator());
-        declString.append(this->modifierString(p->modifiers()));
+        declString.append(this->modifierString(p->modifierFlags()));
         declString.append(this->typedVariable(p->type(), p->name()).c_str());
     }
 
@@ -410,7 +417,8 @@ std::string PipelineStageCodeGenerator::functionDeclaration(const FunctionDeclar
 
 void PipelineStageCodeGenerator::writeFunctionDeclaration(const FunctionDeclaration& decl) {
     if (!decl.isMain() && !decl.isBuiltin()) {
-        fCallbacks->declareFunction(this->functionDeclaration(decl).c_str());
+        std::string prototype = this->functionDeclaration(decl) + ';';
+        fCallbacks->declareFunction(prototype.c_str());
     }
 }
 
@@ -420,14 +428,13 @@ void PipelineStageCodeGenerator::writeGlobalVarDeclaration(const GlobalVarDeclar
 
     if (var.isBuiltin() || var.type().isOpaque()) {
         // Don't re-declare these. (eg, sk_FragCoord, or fragmentProcessor children)
-    } else if (var.modifiers().fFlags & Modifiers::kUniform_Flag) {
+    } else if (var.modifierFlags().isUniform()) {
         std::string uniformName = fCallbacks->declareUniform(&decl);
         fVariableNames.set(&var, std::move(uniformName));
     } else {
         std::string mangledName = fCallbacks->getMangledName(std::string(var.name()).c_str());
-        std::string declaration = this->modifierString(var.modifiers()) +
-                             this->typedVariable(var.type(),
-                                                 std::string_view(mangledName.c_str()));
+        std::string declaration = this->modifierString(var.modifierFlags()) +
+                                  this->typedVariable(var.type(), mangledName);
         if (decl.value()) {
             AutoOutputBuffer outputToBuffer(this);
             this->writeExpression(*decl.value(), Precedence::kExpression);
@@ -524,6 +531,9 @@ void PipelineStageCodeGenerator::writeExpression(const Expression& expr,
         case Expression::Kind::kConstructorSplat:
         case Expression::Kind::kConstructorStruct:
             this->writeAnyConstructor(expr.asAnyConstructor(), parentPrecedence);
+            break;
+        case Expression::Kind::kEmpty:
+            this->write("false");
             break;
         case Expression::Kind::kFieldAccess:
             this->writeFieldAccess(expr.as<FieldAccess>());
@@ -647,17 +657,16 @@ void PipelineStageCodeGenerator::writePostfixExpression(const PostfixExpression&
     }
 }
 
-std::string PipelineStageCodeGenerator::modifierString(const Modifiers& modifiers) {
+std::string PipelineStageCodeGenerator::modifierString(ModifierFlags flags) {
     std::string result;
-    if (modifiers.fFlags & Modifiers::kConst_Flag) {
+    if (flags.isConst()) {
         result.append("const ");
     }
-
-    if ((modifiers.fFlags & Modifiers::kIn_Flag) && (modifiers.fFlags & Modifiers::kOut_Flag)) {
+    if ((flags & ModifierFlag::kIn) && (flags & ModifierFlag::kOut)) {
         result.append("inout ");
-    } else if (modifiers.fFlags & Modifiers::kIn_Flag) {
+    } else if (flags & ModifierFlag::kIn) {
         result.append("in ");
-    } else if (modifiers.fFlags & Modifiers::kOut_Flag) {
+    } else if (flags & ModifierFlag::kOut) {
         result.append("out ");
     }
 
@@ -675,7 +684,7 @@ std::string PipelineStageCodeGenerator::typedVariable(const Type& type, std::str
 }
 
 void PipelineStageCodeGenerator::writeVarDeclaration(const VarDeclaration& var) {
-    this->write(this->modifierString(var.var()->modifiers()));
+    this->write(this->modifierString(var.var()->modifierFlags()));
     this->write(this->typedVariable(var.var()->type(), var.var()->name()));
     if (var.value()) {
         this->write(" = ");

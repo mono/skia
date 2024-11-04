@@ -17,13 +17,6 @@
 #include "include/core/SkTypes.h"
 #include "src/shaders/SkShaderBase.h"
 
-#if defined(SK_GRAPHITE)
-namespace skgpu::graphite {
-class KeyContext;
-enum class ReadSwizzle;
-}
-#endif
-
 class SkArenaAlloc;
 class SkMatrix;
 class SkReadBuffer;
@@ -68,11 +61,6 @@ public:
 
     ShaderType type() const override { return ShaderType::kImage; }
 
-#if defined(SK_GRAPHITE)
-    void addToKey(const skgpu::graphite::KeyContext&,
-                  skgpu::graphite::PaintParamsKeyBuilder*,
-                  skgpu::graphite::PipelineDataGatherer*) const override;
-#endif
     static SkM44 CubicResamplerMatrix(float B, float C);
 
     SkTileMode tileModeX() const { return fTileModeX; }
@@ -92,25 +80,6 @@ private:
     SkImage* onIsAImage(SkMatrix*, SkTileMode*) const override;
 
     bool appendStages(const SkStageRec&, const SkShaders::MatrixRec&) const override;
-
-#if defined(SK_ENABLE_SKVM)
-    skvm::Color program(skvm::Builder*,
-                        skvm::Coord device,
-                        skvm::Coord local,
-                        skvm::Color paint,
-                        const SkShaders::MatrixRec&,
-                        const SkColorInfo& dst,
-                        skvm::Uniforms* uniforms,
-                        SkArenaAlloc*) const override;
-#endif  // defined(SK_ENABLE_SKVM)
-
-#if defined(SK_GRAPHITE)
-    void addYUVImageToKey(const skgpu::graphite::KeyContext&,
-                          skgpu::graphite::PaintParamsKeyBuilder*,
-                          skgpu::graphite::PipelineDataGatherer*,
-                          sk_sp<SkImage>,
-                          SkSamplingOptions) const;
-#endif
 
     sk_sp<SkImage>          fImage;
     const SkSamplingOptions fSampling;

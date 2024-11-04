@@ -10,8 +10,11 @@
 
 #include "include/core/SkSpan.h"
 #include "include/private/SkSLDefines.h"
+#include "src/base/SkEnumBitMask.h"
 #include "src/core/SkTHash.h"
+#include "src/sksl/SkSLMemoryLayout.h"
 #include "src/sksl/SkSLOperator.h"
+#include "src/sksl/SkSLStringStream.h"
 #include "src/sksl/codegen/SkSLCodeGenerator.h"
 
 #include <cstdint>
@@ -20,10 +23,6 @@
 #include <string>
 #include <string_view>
 #include <utility>
-
-namespace sknonstd {
-template <typename T> struct is_bitmask_enum;
-}  // namespace sknonstd
 
 namespace SkSL {
 
@@ -46,11 +45,9 @@ class GlobalVarDeclaration;
 class IfStatement;
 class IndexExpression;
 enum IntrinsicKind : int8_t;
+struct Layout;
 class Literal;
-class MemoryLayout;
-struct Modifiers;
 class OutputStream;
-class Position;
 class PostfixExpression;
 class PrefixExpression;
 struct Program;
@@ -64,7 +61,26 @@ class Swizzle;
 class TernaryExpression;
 class Type;
 class VarDeclaration;
+class Variable;
 class VariableReference;
+
+// Represents a function's dependencies that are not accessible in global scope. For instance,
+// pipeline stage input and output parameters must be passed in as an argument.
+//
+// This is a bitmask enum. (It would be inside `class WGSLCodeGenerator`, but this leads to build
+// errors in MSVC.)
+enum class WGSLFunctionDependency : uint8_t {
+    kNone = 0,
+    kPipelineInputs  = 1 << 0,
+    kPipelineOutputs = 1 << 1,
+};
+using WGSLFunctionDependencies = SkEnumBitMask<WGSLFunctionDependency>;
+
+}  // namespace SkSL
+
+SK_MAKE_BITMASK_OPS(SkSL::WGSLFunctionDependency)
+
+namespace SkSL {
 
 /**
  * Convert a Program into WGSL code.
@@ -92,15 +108,6 @@ public:
         kNumWorkgroups,         // input
     };
 
-    // Represents a function's dependencies that are not accessible in global scope. For instance,
-    // pipeline stage input and output parameters must be passed in as an argument.
-    //
-    // This is a bitmask enum.
-    enum class FunctionDependencies : uint8_t {
-        kNone = 0,
-        kPipelineInputs = 1,
-        kPipelineOutputs = 2,
-    };
 
     // Variable declarations can be terminated by:
     //   - comma (","), e.g. in struct member declarations or function parameters
@@ -114,7 +121,8 @@ public:
     };
 
     struct ProgramRequirements {
-        using DepsMap = skia_private::THashMap<const FunctionDeclaration*, FunctionDependencies>;
+        using DepsMap = skia_private::THashMap<const FunctionDeclaration*,
+                                               WGSLFunctionDependencies>;
 
         ProgramRequirements() = default;
         ProgramRequirements(DepsMap dependencies, bool mainNeedsCoordsArgument)
@@ -159,7 +167,7 @@ private:
     void writeVariableDecl(const Type& type, std::string_view name, Delimiter delimiter);
 
     // Helpers to declare a pipeline stage IO parameter declaration.
-    void writePipelineIODeclaration(Modifiers modifiers,
+    void writePipelineIODeclaration(const Layout& layout,
                                     const Type& type,
                                     std::string_view name,
                                     Delimiter delimiter);
@@ -203,6 +211,7 @@ private:
     std::unique_ptr<LValue> makeLValue(const Expression& e);
 
     std::string variableReferenceNameForLValue(const VariableReference& r);
+    std::string variablePrefix(const Variable& v);
 
     // Writers for expressions. These return the final expression text as a string, and emit any
     // necessary setup code directly into the program as necessary. The returned expression may be
@@ -214,6 +223,10 @@ private:
                                          const Expression& right,
                                          const Type& resultType,
                                          Precedence parentPrecedence);
+    std::string assembleBinaryExpressionElement(const Expression& expr,
+                                                Operator op,
+                                                const Expression& other,
+                                                Precedence parentPrecedence);
     std::string assembleFieldAccess(const FieldAccess& f);
     std::string assembleFunctionCall(const FunctionCall& call, Precedence parentPrecedence);
     std::string assembleIndexExpression(const IndexExpression& i);
@@ -238,6 +251,10 @@ private:
                                           Precedence parentPrecedence);
     std::string assembleVectorizedIntrinsic(std::string_view intrinsicName,
                                             const FunctionCall& call);
+    std::string assemblePartialSampleCall(std::string_view functionName,
+                                          const Expression& sampler,
+                                          const Expression& coords);
+    std::string assembleInversePolyfill(const FunctionCall& call);
 
     // Constructor expressions
     std::string assembleAnyConstructor(const AnyConstructor& c, Precedence parentPrecedence);
@@ -270,6 +287,7 @@ private:
     // Writes a scratch let-variable into the program, gives it the value of `expr`, and returns its
     // name (e.g. `_skTemp123`).
     std::string writeScratchLet(const std::string& expr);
+    std::string writeScratchLet(const Expression& expr, Precedence parentPrecedence);
 
     // Converts `expr` into a string and returns a scratch let-variable associated with the
     // expression. Compile-time constants and plain variable references will return the expression
@@ -285,13 +303,18 @@ private:
     // space layout constraints
     // (https://www.w3.org/TR/WGSL/#address-space-layout-constraints) if a `layout` is
     // provided. A struct that does not need to be host-shareable does not require a `layout`.
-    void writeFields(SkSpan<const Field> fields,
-                     Position parentPos,
-                     const MemoryLayout* layout = nullptr);
+    void writeFields(SkSpan<const Field> fields, const MemoryLayout* memoryLayout = nullptr);
 
-    // We bundle all varying pipeline stage inputs and outputs in a struct.
+    // We bundle uniforms, and all varying pipeline stage inputs and outputs, into separate structs.
     void writeStageInputStruct();
     void writeStageOutputStruct();
+    void writeUniformsAndBuffers();
+    void writeUniformPolyfills(const Type& structType, MemoryLayout::Standard nativeLayout);
+
+    void writeTextureOrSampler(const Variable& var,
+                               int bindingLocation,
+                               std::string_view suffix,
+                               std::string_view wgslType);
 
     // Writes all top-level non-opaque global uniform declarations (i.e. not part of an interface
     // block) into a single uniform block binding.
@@ -313,11 +336,29 @@ private:
     std::string functionDependencyArgs(const FunctionDeclaration&);
     bool writeFunctionDependencyParams(const FunctionDeclaration&);
 
+    // Code in the header appears before the main body of code.
+    StringStream fHeader;
+
+    // We assign unique names to anonymous interface blocks based on the type.
+    skia_private::THashMap<const Type*, std::string> fInterfaceBlockNameMap;
+
     // Stores the disallowed identifier names.
     skia_private::THashSet<std::string_view> fReservedWords;
     ProgramRequirements fRequirements;
     int fPipelineInputCount = 0;
-    bool fDeclaredUniformsStruct = false;
+
+    // These fields track whether we have written the polyfill for `inverse()` for a given matrix
+    // type.
+    bool fWrittenInverse2 = false;
+    bool fWrittenInverse3 = false;
+    bool fWrittenInverse4 = false;
+
+    // These fields control uniform-matrix polyfill support. Because our uniform data is provided in
+    // std140 layout, matrices need to be represented as arrays of @size(16)-aligned vectors, and
+    // are unpacked as they are referenced.
+    skia_private::THashSet<const Field*> fMatrixPolyfillFields;
+    bool fWrittenUniformMatrixPolyfill[5][5] = {};  // m[column][row] for each matrix type
+    bool fWrittenUniformRowPolyfill[5] = {};        // for each matrix row-size
 
     // Output processing state.
     int fIndentation = 0;
@@ -330,10 +371,5 @@ private:
 };
 
 }  // namespace SkSL
-
-namespace sknonstd {
-template <>
-struct is_bitmask_enum<SkSL::WGSLCodeGenerator::FunctionDependencies> : std::true_type {};
-}  // namespace sknonstd
 
 #endif  // SKSL_WGSLCODEGENERATOR

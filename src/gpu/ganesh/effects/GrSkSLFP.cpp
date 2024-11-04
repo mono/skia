@@ -43,10 +43,6 @@
 #include "src/sksl/ir/SkSLVarDeclarations.h"
 #include "src/sksl/ir/SkSLVariable.h"
 
-#if defined(SK_ENABLE_SKVM)
-#include "src/core/SkFilterColorProgram.h"
-#endif
-
 #include <algorithm>
 
 namespace SkSL { class Context; }
@@ -458,7 +454,6 @@ SkPMColor4f GrSkSLFP::constantOutputForConstantInput(const SkPMColor4f& inputCol
             ? ConstantOutputForConstantInput(this->childProcessor(fInputChildIndex), inputColor)
             : inputColor;
 
-#if defined(SK_ENABLE_SKSL_IN_RASTER_PIPELINE)
     class ConstantOutputForConstantInput_SkRPCallbacks : public SkSL::RP::Callbacks {
     public:
         bool appendShader(int index) override {
@@ -496,19 +491,6 @@ SkPMColor4f GrSkSLFP::constantOutputForConstantInput(const SkPMColor4f& inputCol
 
     // We weren't able to run the Raster Pipeline program.
     return color;
-#elif defined(SK_ENABLE_SKVM)
-    const SkFilterColorProgram* program = fEffect->getFilterColorProgram();
-    SkASSERT(program);
-
-    auto evalChild = [&](int index, SkPMColor4f color) {
-        SkDEBUGFAIL("constant-output-for-constant-input unsupported when child shaders present");
-        return inputColor;
-    };
-
-    return program->eval(color, this->uniformData(), evalChild);
-#else
-    return color;
-#endif
 }
 
 /**************************************************************************************************/

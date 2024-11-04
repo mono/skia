@@ -16,6 +16,7 @@
 #include "include/private/base/SkMacros.h"
 #include "tools/Registry.h"
 
+#include <functional>
 #include <memory>
 
 class GrRecordingContext;
@@ -23,7 +24,13 @@ class SkCanvas;
 class SkMetaData;
 struct GrContextOptions;
 
-namespace skiagm { namespace verifiers { class VerifierList; } }
+namespace skiagm::verifiers {
+class VerifierList;
+}
+
+namespace skgpu::graphite {
+struct ContextOptions;
+}
 
 #define DEF_GM(CODE)                                         \
     static skiagm::GMRegistry SK_MACRO_APPEND_COUNTER(REG_)( \
@@ -56,6 +63,10 @@ namespace skiagm { namespace verifiers { class VerifierList; } }
     DEF_GM(return new skiagm::SimpleGM(BGCOLOR, NAME_STR, {W,H}, SK_MACRO_CONCAT(NAME,_GM));) \
     skiagm::DrawResult SK_MACRO_CONCAT(NAME,_GM)(SkCanvas* CANVAS, SkString* ERR_MSG)
 
+// Declares a function that dynamically registers GMs (e.g. based on some command-line flag). See
+// the GMRegistererFnRegistry definition below for additional context.
+#define DEF_GM_REGISTERER_FN(FN) \
+    static skiagm::GMRegistererFnRegistry SK_MACRO_APPEND_COUNTER(REG_)(FN)
 
 #if defined(SK_GANESH)
 // A Simple GpuGM makes direct GPU calls. Its onDraw hook that includes GPU objects as params, and
@@ -161,9 +172,33 @@ namespace skiagm {
         bool getControls(SkMetaData* controls) { return this->onGetControls(controls); }
         void setControls(const SkMetaData& controls) { this->onSetControls(controls); }
 
-        virtual void modifyGrContextOptions(GrContextOptions*);
+        virtual void modifyGrContextOptions(GrContextOptions*) {}
+        virtual void modifyGraphiteContextOptions(skgpu::graphite::ContextOptions*) const {}
 
         virtual std::unique_ptr<verifiers::VerifierList> getVerifiers() const;
+
+        // Convenience method to skip Bazel-only GMs from DM.
+        //
+        // As of Q3 2023, lovisolo@ is experimenting with reimplementing some DM behaviors as
+        // smaller, independent Bazel targets. For example, file //gm/BazelGMRunner.cpp provides a
+        // main function that can run GMs. With this file, one can define multiple small Bazel
+        // tests to run groups of related GMs with Bazel. However, GMs are only one kind of
+        // "source" supported by DM (see class GMSrc). DM supports other kinds of sources as well,
+        // such as codecs (CodecSrc class) and image generators (ImageGenSrc class). One possible
+        // strategy to support these sources in our Bazel build is to turn them into GMs. For
+        // example, instead of using the CodecSrc class from Bazel, we could have a GM subclass
+        // that takes an image as an input, decodes it using a codec, and draws in on a canvas.
+        // Given that this overlaps with existing DM functionality, we would mark such GMs as
+        // Bazel-only.
+        //
+        // Another possibility is to slowly replace all existing DM source types with just GMs.
+        // This would lead to a simpler DM architecture where there is only one source type and
+        // multiple sinks, as opposed to the current design with multiple sources and sinks.
+        // Furthermore, it would simplify the migration to Bazel because it would allow us to
+        // leverage existing work to run GMs with Bazel.
+        //
+        // TODO(lovisolo): Delete once it's no longer needed.
+        virtual bool isBazelOnly() const { return false; }
 
     protected:
         // onGpuSetup is called once before any other processing with a direct context.
@@ -189,8 +224,22 @@ namespace skiagm {
         DrawResult fGpuSetupResult = DrawResult::kOk;
     };
 
-    using GMFactory = std::unique_ptr<skiagm::GM> (*)();
+    using GMFactory = std::function<std::unique_ptr<skiagm::GM>()>;
     using GMRegistry = sk_tools::Registry<GMFactory>;
+
+    // Adds a GM to the GMRegistry.
+    void Register(skiagm::GM* gm);
+
+    // Registry of functions that dynamically register GMs. Useful for GMs that are unknown at
+    // compile time, such as those that are created from images in a directory.
+    //
+    // A GMRegistererFn may call skiagm::Register() zero or more times to register GMs as needed.
+    // It should return the empty string on success, or a human-friendly message in the case of
+    // errors.
+    //
+    // Only used by //gm/BazelGMRunner.cpp for now.
+    using GMRegistererFn = std::function<std::string()>;
+    using GMRegistererFnRegistry = sk_tools::Registry<GMRegistererFn>;
 
 #if defined(SK_GANESH)
     // A GpuGM replaces the onDraw method with one that also accepts GPU objects alongside the

@@ -152,7 +152,7 @@ if [[ $@ == *enable_debugger* ]]; then
   DEBUGGER_ENABLED="true"
 fi
 
-GN_SHAPER="skia_use_icu=true skia_use_client_icu=false skia_use_system_icu=false skia_use_harfbuzz=true skia_use_system_harfbuzz=false"
+GN_SHAPER="skia_use_icu=true skia_use_client_icu=false skia_use_libgrapheme=false skia_use_system_icu=false skia_use_harfbuzz=true skia_use_system_harfbuzz=false"
 if [[ $@ == *primitive_shaper* ]] || [[ $@ == *no_font* ]]; then
   echo "Using the primitive shaper instead of the harfbuzz/icu one"
   GN_SHAPER="skia_use_icu=false skia_use_harfbuzz=false"
@@ -241,6 +241,7 @@ echo "Compiling"
   skia_use_wuffs=true \
   skia_use_zlib=true \
   skia_enable_ganesh=${ENABLE_GANESH} \
+  skia_enable_sksl=${ENABLE_RT_SHADER} \
   skia_build_for_debugger=${DEBUGGER_ENABLED} \
   skia_enable_sksl_tracing=${ENABLE_SKSL_TRACE} \
   \

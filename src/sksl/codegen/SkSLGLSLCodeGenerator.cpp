@@ -11,6 +11,7 @@
 #include "include/core/SkTypes.h"
 #include "include/private/SkSLDefines.h"
 #include "include/private/base/SkTArray.h"
+#include "src/base/SkEnumBitMask.h"
 #include "src/base/SkStringView.h"
 #include "src/sksl/SkSLAnalysis.h"
 #include "src/sksl/SkSLBuiltinTypes.h"
@@ -46,7 +47,7 @@
 #include "src/sksl/ir/SkSLInterfaceBlock.h"
 #include "src/sksl/ir/SkSLLayout.h"
 #include "src/sksl/ir/SkSLLiteral.h"
-#include "src/sksl/ir/SkSLModifiers.h"
+#include "src/sksl/ir/SkSLModifierFlags.h"
 #include "src/sksl/ir/SkSLModifiersDeclaration.h"
 #include "src/sksl/ir/SkSLPostfixExpression.h"
 #include "src/sksl/ir/SkSLPrefixExpression.h"
@@ -198,7 +199,7 @@ void GLSLCodeGenerator::writeStructDefinition(const StructDefinition& s) {
     this->writeLine(" {");
     fIndentation++;
     for (const auto& f : type.fields()) {
-        this->writeModifiers(f.fModifiers, false);
+        this->writeModifiers(f.fLayout, f.fModifierFlags, /*globalContext=*/false);
         this->writeTypePrecision(*f.fType);
         const Type& baseType = f.fType->isArray() ? f.fType->componentType() : *f.fType;
         this->writeType(baseType);
@@ -241,6 +242,9 @@ void GLSLCodeGenerator::writeExpression(const Expression& expr, Precedence paren
         case Expression::Kind::kConstructorScalarCast:
         case Expression::Kind::kConstructorCompoundCast:
             this->writeCastConstructor(expr.asAnyConstructor(), parentPrecedence);
+            break;
+        case Expression::Kind::kEmpty:
+            this->write("false");
             break;
         case Expression::Kind::kFieldAccess:
             this->writeFieldAccess(expr.as<FieldAccess>());
@@ -880,7 +884,7 @@ void GLSLCodeGenerator::writeFragCoord() {
 }
 
 void GLSLCodeGenerator::writeVariableReference(const VariableReference& ref) {
-    switch (ref.variable()->modifiers().fLayout.fBuiltin) {
+    switch (ref.variable()->layout().fBuiltin) {
         case SK_FRAGCOLOR_BUILTIN:
             if (this->caps().mustDeclareFragmentShaderOutput()) {
                 this->writeIdentifier("sk_FragColor");
@@ -934,8 +938,7 @@ void GLSLCodeGenerator::writeIndexExpression(const IndexExpression& expr) {
 }
 
 bool is_sk_position(const FieldAccess& f) {
-    return f.base()->type().fields()[f.fieldIndex()].fModifiers.fLayout.fBuiltin ==
-           SK_POSITION_BUILTIN;
+    return f.base()->type().fields()[f.fieldIndex()].fLayout.fBuiltin == SK_POSITION_BUILTIN;
 }
 
 void GLSLCodeGenerator::writeFieldAccess(const FieldAccess& f) {
@@ -944,7 +947,7 @@ void GLSLCodeGenerator::writeFieldAccess(const FieldAccess& f) {
         this->write(".");
     }
     const Type& baseType = f.base()->type();
-    int builtin = baseType.fields()[f.fieldIndex()].fModifiers.fLayout.fBuiltin;
+    int builtin = baseType.fields()[f.fieldIndex()].fLayout.fBuiltin;
     if (builtin == SK_POSITION_BUILTIN) {
         this->writeIdentifier("gl_Position");
     } else if (builtin == SK_POINTSIZE_BUILTIN) {
@@ -1121,17 +1124,18 @@ void GLSLCodeGenerator::writeFunctionDeclaration(const FunctionDeclaration& f) {
         const Variable* param = f.parameters()[index];
 
         // This is a workaround for our test files. They use the runtime effect signature, so main
-        // takes a coords parameter. The IR generator tags those with a builtin ID (sk_FragCoord),
-        // and we omit them from the declaration here, so the function is valid GLSL.
-        if (f.isMain() && param->modifiers().fLayout.fBuiltin != -1) {
+        // takes a coords parameter. We detect these at IR generation time, and we omit them from
+        // the declaration here, so the function is valid GLSL. (Well, valid as long as the
+        // coordinates aren't actually referenced.)
+        if (f.isMain() && param == f.getMainCoordsParameter()) {
             continue;
         }
         this->write(separator());
-        Modifiers modifiers = param->modifiers();
+        ModifierFlags flags = param->modifierFlags();
         if (this->caps().fRemoveConstFromFunctionParameters) {
-            modifiers.fFlags &= ~Modifiers::kConst_Flag;
+            flags &= ~ModifierFlag::kConst;
         }
-        this->writeModifiers(modifiers, false);
+        this->writeModifiers(param->layout(), flags, /*globalContext=*/false);
         std::vector<int> sizes;
         const Type* type = &param->type();
         if (type->isArray()) {
@@ -1190,53 +1194,49 @@ void GLSLCodeGenerator::writeFunctionPrototype(const FunctionPrototype& f) {
     this->writeLine(";");
 }
 
-void GLSLCodeGenerator::writeModifiers(const Modifiers& modifiers,
+void GLSLCodeGenerator::writeModifiers(const Layout& layout,
+                                       ModifierFlags flags,
                                        bool globalContext) {
-    std::string layout = modifiers.fLayout.description();
-    if (layout.size()) {
-        this->write(layout + " ");
-    }
+    this->write(layout.paddedDescription());
 
     // For GLSL 4.1 and below, qualifier-order matters! These are written out in Modifier-bit order.
-    if (modifiers.fFlags & Modifiers::kFlat_Flag) {
+    if (flags & ModifierFlag::kFlat) {
         this->write("flat ");
     }
-    if (modifiers.fFlags & Modifiers::kNoPerspective_Flag) {
+    if (flags & ModifierFlag::kNoPerspective) {
         this->write("noperspective ");
     }
 
-    if (modifiers.fFlags & Modifiers::kConst_Flag) {
+    if (flags.isConst()) {
         this->write("const ");
     }
-    if (modifiers.fFlags & Modifiers::kUniform_Flag) {
+    if (flags.isUniform()) {
         this->write("uniform ");
     }
-    if ((modifiers.fFlags & Modifiers::kIn_Flag) &&
-        (modifiers.fFlags & Modifiers::kOut_Flag)) {
+    if ((flags & ModifierFlag::kIn) && (flags & ModifierFlag::kOut)) {
         this->write("inout ");
-    } else if (modifiers.fFlags & Modifiers::kIn_Flag) {
+    } else if (flags & ModifierFlag::kIn) {
         if (globalContext && this->caps().fGLSLGeneration < SkSL::GLSLGeneration::k130) {
             this->write(ProgramConfig::IsVertex(fProgram.fConfig->fKind) ? "attribute "
                                                                          : "varying ");
         } else {
             this->write("in ");
         }
-    } else if (modifiers.fFlags & Modifiers::kOut_Flag) {
-        if (globalContext &&
-            this->caps().fGLSLGeneration < SkSL::GLSLGeneration::k130) {
+    } else if (flags & ModifierFlag::kOut) {
+        if (globalContext && this->caps().fGLSLGeneration < SkSL::GLSLGeneration::k130) {
             this->write("varying ");
         } else {
             this->write("out ");
         }
     }
 
-    if (modifiers.fFlags & Modifiers::kReadOnly_Flag) {
+    if (flags.isReadOnly()) {
         this->write("readonly ");
     }
-    if (modifiers.fFlags & Modifiers::kWriteOnly_Flag) {
+    if (flags.isWriteOnly()) {
         this->write("writeonly ");
     }
-    if (modifiers.fFlags & Modifiers::kBuffer_Flag) {
+    if (flags.isBuffer()) {
         this->write("buffer ");
     }
 }
@@ -1246,12 +1246,12 @@ void GLSLCodeGenerator::writeInterfaceBlock(const InterfaceBlock& intf) {
         return;
     }
     const Type* structType = &intf.var()->type().componentType();
-    this->writeModifiers(intf.var()->modifiers(), true);
+    this->writeModifiers(intf.var()->layout(), intf.var()->modifierFlags(), /*globalContext=*/true);
     this->writeType(*structType);
     this->writeLine(" {");
     fIndentation++;
     for (const auto& f : structType->fields()) {
-        this->writeModifiers(f.fModifiers, false);
+        this->writeModifiers(f.fLayout, f.fModifierFlags, /*globalContext=*/false);
         this->writeTypePrecision(*f.fType);
         this->writeType(*f.fType);
         this->write(" ");
@@ -1312,7 +1312,7 @@ void GLSLCodeGenerator::writeTypePrecision(const Type& type) {
 }
 
 void GLSLCodeGenerator::writeVarDeclaration(const VarDeclaration& var, bool global) {
-    this->writeModifiers(var.var()->modifiers(), global);
+    this->writeModifiers(var.var()->layout(), var.var()->modifierFlags(), global);
     this->writeTypePrecision(var.baseType());
     this->writeType(var.baseType());
     this->write(" ");
@@ -1648,7 +1648,7 @@ void GLSLCodeGenerator::writeProgramElement(const ProgramElement& e) {
             break;
         case ProgramElement::Kind::kGlobalVar: {
             const VarDeclaration& decl = e.as<GlobalVarDeclaration>().varDeclaration();
-            int builtin = decl.var()->modifiers().fLayout.fBuiltin;
+            int builtin = decl.var()->layout().fBuiltin;
             if (builtin == -1) {
                 // normal var
                 this->writeVarDeclaration(decl, true);
@@ -1677,8 +1677,8 @@ void GLSLCodeGenerator::writeProgramElement(const ProgramElement& e) {
             this->writeFunctionPrototype(e.as<FunctionPrototype>());
             break;
         case ProgramElement::Kind::kModifiers: {
-            const Modifiers& modifiers = e.as<ModifiersDeclaration>().modifiers();
-            this->writeModifiers(modifiers, true);
+            const ModifiersDeclaration& d = e.as<ModifiersDeclaration>();
+            this->writeModifiers(d.layout(), d.modifierFlags(), /*globalContext=*/true);
             this->writeLine(";");
             break;
         }
@@ -1736,15 +1736,13 @@ bool GLSLCodeGenerator::generateCode() {
     if (!this->caps().fCanUseFragCoord) {
         Layout layout;
         if (ProgramConfig::IsVertex(fProgram.fConfig->fKind)) {
-            Modifiers modifiers(layout, Modifiers::kOut_Flag);
-            this->writeModifiers(modifiers, true);
+            this->writeModifiers(layout, ModifierFlag::kOut, /*globalContext=*/true);
             if (this->usesPrecisionModifiers()) {
                 this->write("highp ");
             }
             this->write("vec4 sk_FragCoord_Workaround;\n");
         } else if (ProgramConfig::IsFragment(fProgram.fConfig->fKind)) {
-            Modifiers modifiers(layout, Modifiers::kIn_Flag);
-            this->writeModifiers(modifiers, true);
+            this->writeModifiers(layout, ModifierFlag::kIn, /*globalContext=*/true);
             if (this->usesPrecisionModifiers()) {
                 this->write("highp ");
             }

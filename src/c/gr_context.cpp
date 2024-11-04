@@ -40,6 +40,9 @@ int gr_recording_context_max_render_target_size(gr_recording_context_t* context)
     return SK_ONLY_GPU(AsGrRecordingContext(context)->maxRenderTargetSize(), 0);
 }
 
+gr_direct_context_t* gr_recording_context_get_direct_context(gr_recording_context_t* context) {
+    return SK_ONLY_GPU(ToGrDirectContext(GrAsDirectContext(AsGrRecordingContext(context))));
+}
 
 // GrDirectContext
 

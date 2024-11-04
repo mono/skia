@@ -37,6 +37,11 @@ public:
 
     bool setNewCommandBufferResources() override;
 
+    void addWaitSemaphores(size_t numWaitSemaphores,
+                           const BackendSemaphore* waitSemaphores) override;
+    void addSignalSemaphores(size_t numSignalSemaphores,
+                             const BackendSemaphore* signalSemaphores) override;
+
     bool isFinished() {
         return (*fCommandBuffer).status == MTLCommandBufferStatusCompleted ||
                (*fCommandBuffer).status == MTLCommandBufferStatusError;
@@ -119,6 +124,7 @@ private:
     void bindComputePipeline(const ComputePipeline*);
     void bindBuffer(const Buffer* buffer, unsigned int offset, unsigned int index);
     void bindTexture(const Texture* texture, unsigned int index);
+    void bindSampler(const Sampler* sampler, unsigned int index);
     void dispatchThreadgroups(const WorkgroupSize& globalSize, const WorkgroupSize& localSize);
     void endComputePass();
 

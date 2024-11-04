@@ -32,7 +32,7 @@ public:
     MakeWrapped(const SkMatrix* localMatrix, Args&&... args) {
         auto t = sk_make_sp<T>(std::forward<Args>(args)...);
         if (!localMatrix || localMatrix->isIdentity()) {
-            return std::move(t);
+            return t;
         }
         return sk_make_sp<SkLocalMatrixShader>(sk_sp<SkShader>(std::move(t)), *localMatrix);
     }
@@ -42,12 +42,6 @@ public:
 
     GradientType asGradient(GradientInfo* info, SkMatrix* localMatrix) const override;
     ShaderType type() const override { return ShaderType::kLocalMatrix; }
-
-#if defined(SK_GRAPHITE)
-    void addToKey(const skgpu::graphite::KeyContext&,
-                  skgpu::graphite::PaintParamsKeyBuilder*,
-                  skgpu::graphite::PipelineDataGatherer*) const override;
-#endif
 
     sk_sp<SkShader> makeAsALocalMatrixShader(SkMatrix* localMatrix) const override {
         if (localMatrix) {
@@ -69,17 +63,6 @@ protected:
     SkImage* onIsAImage(SkMatrix* matrix, SkTileMode* mode) const override;
 
     bool appendStages(const SkStageRec&, const SkShaders::MatrixRec&) const override;
-
-#if defined(SK_ENABLE_SKVM)
-    skvm::Color program(skvm::Builder*,
-                        skvm::Coord device,
-                        skvm::Coord local,
-                        skvm::Color paint,
-                        const SkShaders::MatrixRec&,
-                        const SkColorInfo& dst,
-                        skvm::Uniforms* uniforms,
-                        SkArenaAlloc*) const override;
-#endif
 
 private:
     SK_FLATTENABLE_HOOKS(SkLocalMatrixShader)
@@ -108,17 +91,6 @@ protected:
     void flatten(SkWriteBuffer&) const override { SkASSERT(false); }
 
     bool appendStages(const SkStageRec& rec, const SkShaders::MatrixRec&) const override;
-
-#if defined(SK_ENABLE_SKVM)
-    skvm::Color program(skvm::Builder* p,
-                        skvm::Coord device,
-                        skvm::Coord local,
-                        skvm::Color paint,
-                        const SkShaders::MatrixRec& mRec,
-                        const SkColorInfo& dst,
-                        skvm::Uniforms* uniforms,
-                        SkArenaAlloc* alloc) const override;
-#endif
 
 private:
     SK_FLATTENABLE_HOOKS(SkCTMShader)

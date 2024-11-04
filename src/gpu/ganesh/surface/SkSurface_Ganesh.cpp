@@ -194,6 +194,7 @@ void SkSurface_Ganesh::onAsyncRescaleAndReadPixels(const SkImageInfo& info,
 }
 
 void SkSurface_Ganesh::onAsyncRescaleAndReadPixelsYUV420(SkYUVColorSpace yuvColorSpace,
+                                                         bool readAlpha,
                                                          sk_sp<SkColorSpace> dstColorSpace,
                                                          SkIRect srcRect,
                                                          SkISize dstSize,
@@ -202,6 +203,7 @@ void SkSurface_Ganesh::onAsyncRescaleAndReadPixelsYUV420(SkYUVColorSpace yuvColo
                                                          ReadPixelsCallback callback,
                                                          ReadPixelsContext context) {
     fDevice->asyncRescaleAndReadPixelsYUV420(yuvColorSpace,
+                                             readAlpha,
                                              std::move(dstColorSpace),
                                              srcRect,
                                              dstSize,
@@ -775,7 +777,7 @@ GrSemaphoresSubmitted Flush(sk_sp<SkSurface> surface) {
         return GrSemaphoresSubmitted::kNo;
     }
     if (auto rContext = surface->recordingContext(); rContext != nullptr) {
-        return rContext->asDirectContext()->flush(surface, {});
+        return rContext->asDirectContext()->flush(surface.get(), {});
     }
     return GrSemaphoresSubmitted::kNo;
 }
@@ -785,7 +787,7 @@ void FlushAndSubmit(SkSurface* surface) {
         return;
     }
     if (auto rContext = surface->recordingContext(); rContext != nullptr) {
-        rContext->asDirectContext()->flushAndSubmit(surface);
+        rContext->asDirectContext()->flushAndSubmit(surface, false);
     }
 }
 
@@ -794,7 +796,7 @@ void FlushAndSubmit(sk_sp<SkSurface> surface) {
         return;
     }
     if (auto rContext = surface->recordingContext(); rContext != nullptr) {
-        rContext->asDirectContext()->flushAndSubmit(surface);
+        rContext->asDirectContext()->flushAndSubmit(surface.get(), false);
     }
 }
 

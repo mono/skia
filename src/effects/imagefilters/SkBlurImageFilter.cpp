@@ -23,6 +23,7 @@
 #include "include/private/base/SkMalloc.h"
 #include "src/base/SkArenaAlloc.h"
 #include "src/base/SkVx.h"
+#include "src/core/SkImageFilterTypes.h"
 #include "src/core/SkImageFilter_Base.h"
 #include "src/core/SkReadBuffer.h"
 #include "src/core/SkSpecialImage.h"
@@ -37,9 +38,10 @@
 
 #if defined(SK_GANESH)
 #include "include/private/gpu/ganesh/GrTypesPriv.h"
-#include "src/core/SkGpuBlurUtils.h"
+#include "src/gpu/ganesh/GrBlurUtils.h"
 #include "src/gpu/ganesh/GrSurfaceProxyView.h"
 #include "src/gpu/ganesh/SurfaceDrawContext.h"
+#include "src/gpu/ganesh/image/SkSpecialImage_Ganesh.h"
 #endif // defined(SK_GANESH)
 
 #if SK_CPU_SSE_LEVEL >= SK_CPU_SSE_LEVEL_SSE1
@@ -65,7 +67,7 @@ public:
 
 protected:
     void flatten(SkWriteBuffer&) const override;
-    sk_sp<SkSpecialImage> onFilterImage(const Context&, SkIPoint* offset) const override;
+    sk_sp<SkSpecialImage> onFilterImage(const skif::Context&, SkIPoint* offset) const override;
     SkIRect onFilterNodeBounds(const SkIRect& src, const SkMatrix& ctm,
                                MapDirection, const SkIRect* inputRect) const override;
 
@@ -74,10 +76,13 @@ private:
     SK_FLATTENABLE_HOOKS(SkBlurImageFilter)
 
 #if defined(SK_GANESH)
-    sk_sp<SkSpecialImage> gpuFilter(
-            const Context& ctx, SkVector sigma,
-            const sk_sp<SkSpecialImage> &input,
-            SkIRect inputBounds, SkIRect dstBounds, SkIPoint inputOffset, SkIPoint* offset) const;
+    sk_sp<SkSpecialImage> gpuFilter(const skif::Context& ctx,
+                                    SkVector sigma,
+                                    const sk_sp<SkSpecialImage>& input,
+                                    SkIRect inputBounds,
+                                    SkIRect dstBounds,
+                                    SkIPoint inputOffset,
+                                    SkIPoint* offset) const;
 #endif
 
     SkSize     fSigma;
@@ -730,9 +735,10 @@ private:
     skvx::Vec<4, uint32_t>* fBuffer1Cursor;
 };
 
-sk_sp<SkSpecialImage> copy_image_with_bounds(
-        const SkImageFilter_Base::Context& ctx, const sk_sp<SkSpecialImage> &input,
-        SkIRect srcBounds, SkIRect dstBounds) {
+sk_sp<SkSpecialImage> copy_image_with_bounds(const skif::Context& ctx,
+                                             const sk_sp<SkSpecialImage>& input,
+                                             SkIRect srcBounds,
+                                             SkIRect dstBounds) {
     SkBitmap inputBM;
     if (!input->getROPixels(&inputBM)) {
         return nullptr;
@@ -790,16 +796,16 @@ sk_sp<SkSpecialImage> copy_image_with_bounds(
         sk_bzero(dst.getAddr32(0, y), dstWBytes);
     }
 
-    return SkSpecialImage::MakeFromRaster(SkIRect::MakeWH(dstBounds.width(),
-                                                          dstBounds.height()),
-                                          dst, ctx.surfaceProps());
+    return SkSpecialImages::MakeFromRaster(
+            SkIRect::MakeWH(dstBounds.width(), dstBounds.height()), dst, ctx.surfaceProps());
 }
 
 // TODO: Implement CPU backend for different fTileMode.
-sk_sp<SkSpecialImage> cpu_blur(
-        const SkImageFilter_Base::Context& ctx,
-        SkVector sigma, const sk_sp<SkSpecialImage> &input,
-        SkIRect srcBounds, SkIRect dstBounds) {
+sk_sp<SkSpecialImage> cpu_blur(const skif::Context& ctx,
+                               SkVector sigma,
+                               const sk_sp<SkSpecialImage>& input,
+                               SkIRect srcBounds,
+                               SkIRect dstBounds) {
     // map_sigma limits sigma to 532 to match 1000px box filter limit of WebKit and Firefox.
     // Since this does not exceed the limits of the TentPass (2183), there won't be overflow when
     // computing a kernel over a pixel window filled with 255.
@@ -920,13 +926,12 @@ sk_sp<SkSpecialImage> cpu_blur(
         }
     }
 
-    return SkSpecialImage::MakeFromRaster(SkIRect::MakeWH(dstBounds.width(),
-                                                          dstBounds.height()),
-                                          dst, ctx.surfaceProps());
+    return SkSpecialImages::MakeFromRaster(
+            SkIRect::MakeWH(dstBounds.width(), dstBounds.height()), dst, ctx.surfaceProps());
 }
 }  // namespace
 
-sk_sp<SkSpecialImage> SkBlurImageFilter::onFilterImage(const Context& ctx,
+sk_sp<SkSpecialImage> SkBlurImageFilter::onFilterImage(const skif::Context& ctx,
                                                        SkIPoint* offset) const {
     SkIPoint inputOffset = SkIPoint::Make(0, 0);
 
@@ -963,7 +968,7 @@ sk_sp<SkSpecialImage> SkBlurImageFilter::onFilterImage(const Context& ctx,
     if (ctx.gpuBacked()) {
         // Ensure the input is in the destination's gamut. This saves us from having to do the
         // xform during the filter itself.
-        input = ImageToColorSpace(ctx, input.get());
+        input = SkSpecialImages::ImageToColorSpace(ctx, input.get());
         result = this->gpuFilter(ctx, sigma, input, inputBounds, dstBounds, inputOffset,
                                  &resultOffset);
     } else
@@ -980,11 +985,15 @@ sk_sp<SkSpecialImage> SkBlurImageFilter::onFilterImage(const Context& ctx,
 }
 
 #if defined(SK_GANESH)
-sk_sp<SkSpecialImage> SkBlurImageFilter::gpuFilter(
-        const Context& ctx, SkVector sigma, const sk_sp<SkSpecialImage> &input, SkIRect inputBounds,
-        SkIRect dstBounds, SkIPoint inputOffset, SkIPoint* offset) const {
-    if (SkGpuBlurUtils::IsEffectivelyZeroSigma(sigma.x()) &&
-        SkGpuBlurUtils::IsEffectivelyZeroSigma(sigma.y())) {
+sk_sp<SkSpecialImage> SkBlurImageFilter::gpuFilter(const skif::Context& ctx,
+                                                   SkVector sigma,
+                                                   const sk_sp<SkSpecialImage>& input,
+                                                   SkIRect inputBounds,
+                                                   SkIRect dstBounds,
+                                                   SkIPoint inputOffset,
+                                                   SkIPoint* offset) const {
+    if (GrBlurUtils::IsEffectivelyZeroSigma(sigma.x()) &&
+        GrBlurUtils::IsEffectivelyZeroSigma(sigma.y())) {
         offset->fX = inputBounds.x() + inputOffset.fX;
         offset->fY = inputBounds.y() + inputOffset.fY;
         return input->makeSubset(inputBounds);
@@ -992,7 +1001,7 @@ sk_sp<SkSpecialImage> SkBlurImageFilter::gpuFilter(
 
     auto context = ctx.getContext();
 
-    GrSurfaceProxyView inputView = input->view(context);
+    GrSurfaceProxyView inputView = SkSpecialImages::AsView(context, input);
     if (!inputView.proxy()) {
         return nullptr;
     }
@@ -1000,7 +1009,7 @@ sk_sp<SkSpecialImage> SkBlurImageFilter::gpuFilter(
 
     dstBounds.offset(input->subset().topLeft());
     inputBounds.offset(input->subset().topLeft());
-    auto sdc = SkGpuBlurUtils::GaussianBlur(
+    auto sdc = GrBlurUtils::GaussianBlur(
             context,
             std::move(inputView),
             SkColorTypeToGrColorType(input->colorType()),
@@ -1015,12 +1024,12 @@ sk_sp<SkSpecialImage> SkBlurImageFilter::gpuFilter(
         return nullptr;
     }
 
-    return SkSpecialImage::MakeDeferredFromGpu(context,
-                                               SkIRect::MakeSize(dstBounds.size()),
-                                               kNeedNewImageUniqueID_SpecialImage,
-                                               sdc->readSurfaceView(),
-                                               sdc->colorInfo(),
-                                               ctx.surfaceProps());
+    return SkSpecialImages::MakeDeferredFromGpu(context,
+                                                SkIRect::MakeSize(dstBounds.size()),
+                                                kNeedNewImageUniqueID_SpecialImage,
+                                                sdc->readSurfaceView(),
+                                                sdc->colorInfo(),
+                                                ctx.surfaceProps());
 }
 #endif
 

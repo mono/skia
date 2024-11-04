@@ -9,7 +9,9 @@
 
 #include "include/core/SkCanvas.h"
 #include "include/core/SkM44.h"
+#include "include/core/SkPicture.h"
 #include "include/core/SkPictureRecorder.h"
+#include "include/core/SkTileMode.h"
 #include "include/effects/SkRuntimeEffect.h"
 #include "modules/skottie/src/Adapter.h"
 #include "modules/skottie/src/SkottieJson.h"
@@ -402,7 +404,7 @@ private:
                 fRotOrder = 1,
                 fRender   = 1;
 
-    VectorValue fLightColor;
+    ColorValue  fLightColor;
     ScalarValue fLightIntensity =   0,
                 fLightHeight    =   0,
                 fLightDirection =   0,

@@ -31,6 +31,10 @@
 #include "src/core/SkBlurMask.h"
 #include "tools/ToolUtils.h"
 
+#if defined(SK_GRAPHITE)
+#include "include/gpu/graphite/ContextOptions.h"
+#endif
+
 /** Creates an image with two one-pixel wide borders around a checkerboard. The checkerboard is 2x2
     checks where each check has as many pixels as is necessary to fill the interior. It returns
     the image and a src rect that bounds the checkerboard portion. */
@@ -102,8 +106,7 @@ std::tuple<sk_sp<SkImage>, SkRect> make_ringed_image(SkCanvas* canvas, int width
         scanline[x] = kOuterRingColor;
     }
     bitmap.setImmutable();
-    return { ToolUtils::MakeTextureImage(canvas, bitmap.asImage()),
-             SkRect::Make({2, 2, width - 2, height - 2})};
+    return { bitmap.asImage(), SkRect::Make({2, 2, width - 2, height - 2})};
 }
 
 /**
@@ -113,11 +116,9 @@ std::tuple<sk_sp<SkImage>, SkRect> make_ringed_image(SkCanvas* canvas, int width
  */
 class SrcRectConstraintGM : public skiagm::GM {
 public:
-    SrcRectConstraintGM(const char* shortName, SkCanvas::SrcRectConstraint constraint,
-                        bool batch, bool manual)
+    SrcRectConstraintGM(const char* shortName, SkCanvas::SrcRectConstraint constraint, bool manual)
         : fShortName(shortName)
         , fConstraint(constraint)
-        , fBatch(batch)
         , fManual(manual) {
         // Make sure GPU SkSurfaces can be created for this GM.
         SkASSERT(this->onISize().width() <= kMaxTextureSize &&
@@ -130,28 +131,11 @@ protected:
 
     void drawImage(SkCanvas* canvas, sk_sp<SkImage> image, SkRect srcRect, SkRect dstRect,
                    const SkSamplingOptions& sampling, SkPaint* paint) {
-        if (fBatch) {
-            if (!image) {
-                return;
-            }
-
-            SkCanvas::ImageSetEntry imageSetEntry[1];
-            imageSetEntry[0].fImage = image;
-            imageSetEntry[0].fSrcRect = srcRect;
-            imageSetEntry[0].fDstRect = dstRect;
-            imageSetEntry[0].fAAFlags = paint->isAntiAlias() ? SkCanvas::kAll_QuadAAFlags
-                                                             : SkCanvas::kNone_QuadAAFlags;
-            canvas->experimental_DrawEdgeAAImageSet(imageSetEntry, std::size(imageSetEntry),
-                                                    /*dstClips=*/nullptr,
-                                                    /*preViewMatrices=*/nullptr,
-                                                    sampling, paint, fConstraint);
+        if (fManual) {
+            SkTiledImageUtils::DrawImageRect(canvas, image.get(), srcRect, dstRect,
+                                             sampling, paint, fConstraint);
         } else {
-            if (fManual) {
-                SkTiledImageUtils::DrawImageRect(canvas, image.get(), srcRect, dstRect,
-                                                 sampling, paint, fConstraint);
-            } else {
-                canvas->drawImageRect(image.get(), srcRect, dstRect, sampling, paint, fConstraint);
-            }
+            canvas->drawImageRect(image.get(), srcRect, dstRect, sampling, paint, fConstraint);
         }
     }
 
@@ -312,6 +296,12 @@ protected:
         options->fMaxTextureSizeOverride = kMaxTextureSize;
     }
 
+#if defined(SK_GRAPHITE)
+    void modifyGraphiteContextOptions(skgpu::graphite::ContextOptions* options) const override {
+        options->fMaxTextureSizeOverride = kMaxTextureSize;
+    }
+#endif
+
 private:
     inline static constexpr int kBlockSize = 70;
     inline static constexpr int kBlockSpacing = 12;
@@ -337,36 +327,29 @@ private:
     SkRect fBigSrcRect;
     SkRect fSmallSrcRect;
     SkCanvas::SrcRectConstraint fConstraint;
-    bool fBatch = false;
     bool fManual;
     using INHERITED = GM;
 };
 
 DEF_GM(return new SrcRectConstraintGM("strict_constraint_no_red_allowed",
                                       SkCanvas::kStrict_SrcRectConstraint,
-                                      /* batch= */ false,
                                       /* manual= */ false););
 DEF_GM(return new SrcRectConstraintGM("strict_constraint_no_red_allowed_manual",
                                       SkCanvas::kStrict_SrcRectConstraint,
-                                      /* batch= */ false,
                                       /* manual= */ true););
 
 DEF_GM(return new SrcRectConstraintGM("strict_constraint_batch_no_red_allowed",
                                       SkCanvas::kStrict_SrcRectConstraint,
-                                      /* batch= */ true,
                                       /* manual= */ false););
 DEF_GM(return new SrcRectConstraintGM("strict_constraint_batch_no_red_allowed_manual",
                                       SkCanvas::kStrict_SrcRectConstraint,
-                                      /* batch= */ true,
                                       /* manual= */ true););
 
 DEF_GM(return new SrcRectConstraintGM("fast_constraint_red_is_allowed",
                                       SkCanvas::kFast_SrcRectConstraint,
-                                      /* batch= */ false,
                                       /* manual= */ false););
 DEF_GM(return new SrcRectConstraintGM("fast_constraint_red_is_allowed_manual",
                                       SkCanvas::kFast_SrcRectConstraint,
-                                      /* batch= */ false,
                                       /* manual= */ true););
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////

@@ -57,7 +57,7 @@ GM_LIB="$BUILD_DIR/libgm_wasm.a"
 GN_FONT="skia_enable_fontmgr_custom_directory=false "
 BUILTIN_FONT="$BASE_DIR/fonts/NotoMono-Regular.ttf.cpp"
 # Generate the font's binary file (which is covered by .gitignore)
-python tools/embed_resources.py \
+python3 tools/embed_resources.py \
       --name SK_EMBEDDED_FONTS \
       --input $BASE_DIR/fonts/NotoMono-Regular.ttf \
       --output $BASE_DIR/fonts/NotoMono-Regular.ttf.cpp \
@@ -175,8 +175,7 @@ GLOBIGNORE+="tests/CodecTest.cpp:"\
 "tests/FontationsTest.cpp:"\
 "tests/FCITest.cpp:"\
 "tests/JpegGainmapTest.cpp:"\
-"tests/TypefaceMacTest.cpp:"\
-"tests/SkVMTest.cpp:"
+"tests/TypefaceMacTest.cpp:"
 
 # These tests do complex things with TestContexts, which is not easily supported for the WASM
 # test harness. Thus we omit them.
@@ -192,7 +191,9 @@ GLOBIGNORE+="tests/GrThreadSafeCacheTest.cpp"
 
 # These are not tests
 GLOBIGNORE+="tests/BazelNoopRunner.cpp:"\
-"tests/BazelTestRunner.cpp"
+"tests/BazelTestRunner.cpp:"\
+"gm/BazelGMRunner.cpp:"\
+"gm/BazelNoopRunner.cpp"
 
 # Emscripten prefers that the .a files go last in order, otherwise, it
 # may drop symbols that it incorrectly thinks aren't used. One day,

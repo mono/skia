@@ -9,6 +9,7 @@
 #define GrGLGpu_DEFINED
 
 #include "include/core/SkTypes.h"
+#include "include/gpu/ganesh/gl/GrGLBackendSurface.h"
 #include "include/private/base/SkTArray.h"
 #include "src/core/SkChecksum.h"
 #include "src/core/SkLRUCache.h"
@@ -188,11 +189,11 @@ public:
 
     void submit(GrOpsRenderPass* renderPass) override;
 
-    GrFence SK_WARN_UNUSED_RESULT insertFence() override;
+    [[nodiscard]] GrFence insertFence() override;
     bool waitFence(GrFence) override;
     void deleteFence(GrFence) override;
 
-    std::unique_ptr<GrSemaphore> SK_WARN_UNUSED_RESULT makeSemaphore(bool isOwned) override;
+    [[nodiscard]] std::unique_ptr<GrSemaphore> makeSemaphore(bool isOwned) override;
     std::unique_ptr<GrSemaphore> wrapBackendSemaphore(const GrBackendSemaphore&,
                                                       GrSemaphoreWrapType,
                                                       GrWrapOwnership) override;
@@ -291,12 +292,12 @@ private:
     int getCompatibleStencilIndex(GrGLFormat format);
 
     GrBackendFormat getPreferredStencilFormat(const GrBackendFormat& format) override {
-        int idx = this->getCompatibleStencilIndex(format.asGLFormat());
+        int idx = this->getCompatibleStencilIndex(GrBackendFormats::AsGLFormat(format));
         if (idx < 0) {
             return {};
         }
-        return GrBackendFormat::MakeGL(GrGLFormatToEnum(this->glCaps().stencilFormats()[idx]),
-                                       GR_GL_TEXTURE_NONE);
+        return GrBackendFormats::MakeGL(GrGLFormatToEnum(this->glCaps().stencilFormats()[idx]),
+                                        GR_GL_TEXTURE_NONE);
     }
 
     void onFBOChanged();

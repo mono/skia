@@ -133,7 +133,7 @@ void big_test(const KeyContext& keyContext, skiatest::Reporter* reporter) {
     // now, blend modes
     paintOptions.setBlendModes(evenMoreBlendModes);                             // c array
 
-    REPORTER_ASSERT(reporter, paintOptions.priv().numCombinations() == 17);
+    REPORTER_ASSERT(reporter, paintOptions.priv().numCombinations() == 26);
 
     std::vector<UniquePaintParamsID> precompileIDs;
     paintOptions.priv().buildCombinations(keyContext,
@@ -143,7 +143,7 @@ void big_test(const KeyContext& keyContext, skiatest::Reporter* reporter) {
                                               precompileIDs.push_back(id);
                                           });
 
-    SkASSERT(precompileIDs.size() == 17);
+    SkASSERT(precompileIDs.size() == 26);
 }
 
 template <typename T>
@@ -290,8 +290,12 @@ DEF_GRAPHITE_TEST_FOR_ALL_CONTEXTS(CombinationBuilderTest, reporter, context) {
     auto rtEffectDict = std::make_unique<RuntimeEffectDictionary>();
 
     SkColorInfo ci(kRGBA_8888_SkColorType, kPremul_SkAlphaType, nullptr);
-    KeyContext keyContext(
-            context->priv().caps(), dict, rtEffectDict.get(), ci, /* dstTexture= */ nullptr);
+    KeyContext keyContext(context->priv().caps(),
+                          dict,
+                          rtEffectDict.get(),
+                          ci,
+                          /* dstTexture= */ nullptr,
+                          /* dstOffset= */ {0, 0});
 
     empty_test(keyContext, reporter);
     no_shader_option_test(keyContext, reporter);

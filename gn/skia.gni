@@ -12,6 +12,7 @@ declare_args() {
   skia_android_serial = ""
   skia_compile_modules = false
   skia_compile_sksl_tests = false
+  skia_dwritecore_sdk = ""
   skia_enable_api_available_macro = true
   skia_enable_android_utils = is_skia_dev_build
   skia_enable_discrete_gpu = true
@@ -25,7 +26,6 @@ declare_args() {
                         (is_wasm && skia_canvaskit_enable_skottie)
   skia_enable_precompile = true
   skia_enable_sksl = true
-  skia_enable_skvm = false
   skia_enable_svg = !is_component_build
   skia_enable_tools = is_skia_dev_build
   skia_enable_gpu_debug_layers = is_skia_dev_build && is_debug
@@ -55,6 +55,7 @@ declare_args() {
   skia_use_gl = !is_fuchsia
   skia_use_icu = !is_fuchsia
   skia_use_libavif = false
+  skia_use_libgrapheme = false
   skia_use_libheif = is_skia_dev_build
   skia_use_jpeg_gainmaps = is_skia_dev_build
   skia_use_libjpeg_turbo_decode = true
@@ -82,6 +83,10 @@ declare_args() {
   skia_use_x11 = is_linux
   skia_use_xps = true
 
+  # Use the safe mode for libcxx
+  # See: https://libcxx.llvm.org/UsingLibcxx.html#enabling-the-safe-libc-mode
+  skia_use_safe_libcxx = false
+
   # deprecated, we will eventually use just skia_enable_ganesh
   skia_enable_gpu = true
   skia_enable_graphite = false
@@ -100,8 +105,6 @@ declare_args() {
 }
 
 declare_args() {
-  skia_enable_sksl_in_raster_pipeline = !skia_enable_skvm
-  skia_enable_skvm_jit_when_possible = is_skia_dev_build && skia_enable_skvm
   skia_enable_sksl_tracing = is_skia_dev_build && !skia_enable_optimize_size
 }
 
@@ -129,7 +132,8 @@ declare_args() {
 }
 
 declare_args() {
-  skia_enable_skunicode = skia_use_icu || skia_use_client_icu
+  skia_enable_skunicode =
+      skia_use_icu || skia_use_client_icu || skia_use_libgrapheme
 }
 
 if (skia_use_angle && skia_gl_standard != "gles") {
@@ -164,6 +168,9 @@ declare_args() {
 
   # icu_bidi sources
   skia_icu_bidi_third_party_dir = "//third_party/icu_bidi"
+
+  # libgrapheme sources
+  skia_libgrapheme_third_party_dir = "//third_party/libgrapheme"
 }
 
 declare_args() {

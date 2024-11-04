@@ -53,9 +53,6 @@
     M(swizzle)
 
 // `SK_RASTER_PIPELINE_OPS_SKSL` defines ops used by SkSL.
-// This set can be empty if software SkSL (SK_ENABLE_SKSL_IN_RASTER_PIPELINE) is not enabled.
-#ifdef SK_ENABLE_SKSL_IN_RASTER_PIPELINE
-
 #define SK_RASTER_PIPELINE_OPS_SKSL(M)                                                          \
     M(init_lane_masks) M(store_device_xy01) M(exchange_src)                                     \
     M(load_condition_mask)  M(store_condition_mask)                                             \
@@ -98,6 +95,8 @@
     M(copy_to_indirect_masked)     M(swizzle_copy_to_indirect_masked)                           \
     M(copy_slot_unmasked)          M(copy_2_slots_unmasked)                                     \
     M(copy_3_slots_unmasked)       M(copy_4_slots_unmasked)                                     \
+    M(copy_immutable_unmasked)     M(copy_2_immutables_unmasked)                                \
+    M(copy_3_immutables_unmasked)  M(copy_4_immutables_unmasked)                                \
     M(swizzle_copy_slot_masked)    M(swizzle_copy_2_slots_masked)                               \
     M(swizzle_copy_3_slots_masked) M(swizzle_copy_4_slots_masked)                               \
     M(swizzle_1) M(swizzle_2) M(swizzle_3) M(swizzle_4) M(shuffle)                              \
@@ -148,10 +147,6 @@
     M(cmpne_imm_int)                                                                            \
         M(cmpne_n_ints)   M(cmpne_int)    M(cmpne_2_ints)   M(cmpne_3_ints)   M(cmpne_4_ints)   \
     M(trace_line)         M(trace_var)    M(trace_enter)    M(trace_exit)     M(trace_scope)
-
-#else
-#define SK_RASTER_PIPELINE_OPS_SKSL(M)
-#endif
 
 // `SK_RASTER_PIPELINE_OPS_HIGHP_ONLY` defines ops that are only available in highp; this subset
 // includes all of SkSL.

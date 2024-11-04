@@ -20,11 +20,6 @@
 #include "src/core/SkRasterPipelineOpList.h"
 #include "src/shaders/SkLocalMatrixShader.h"
 
-#if defined(SK_GRAPHITE)
-#include "src/gpu/graphite/KeyHelpers.h"
-#include "src/gpu/graphite/PaintParamsKey.h"
-#endif
-
 #include <cstring>
 
 class SkWriteBuffer;
@@ -52,29 +47,6 @@ std::optional<MatrixRec> MatrixRec::apply(const SkStageRec& rec, const SkMatrix&
                      fTotalMatrixIsValid,
                      /*ctmApplied=*/true};
 }
-
-#if defined(SK_ENABLE_SKVM)
-std::optional<MatrixRec> MatrixRec::apply(skvm::Builder* p,
-                                          skvm::Coord* local,
-                                          skvm::Uniforms* uniforms,
-                                          const SkMatrix& postInv) const {
-    SkMatrix total = fPendingLocalMatrix;
-    if (!fCTMApplied) {
-        total = SkMatrix::Concat(fCTM, total);
-    }
-    if (!total.invert(&total)) {
-        return {};
-    }
-    total = SkMatrix::Concat(postInv, total);
-    // ApplyMatrix is a no-op if total worked out to identity.
-    *local = SkShaderBase::ApplyMatrix(p, total, *local, uniforms);
-    return MatrixRec{fCTM,
-                     fTotalLocalMatrix,
-                     /*pendingLocalMatrix=*/SkMatrix::I(),
-                     fTotalMatrixIsValid,
-                     /*ctmApplied=*/true};
-}
-#endif
 
 std::tuple<SkMatrix, bool> MatrixRec::applyForFragmentProcessor(const SkMatrix& postInv) const {
     SkASSERT(!fCTMApplied);
@@ -113,12 +85,6 @@ SkShaderBase::~SkShaderBase() = default;
 
 void SkShaderBase::flatten(SkWriteBuffer& buffer) const { this->INHERITED::flatten(buffer); }
 
-bool SkShaderBase::computeTotalInverse(const SkMatrix& ctm,
-                                       const SkMatrix* localMatrix,
-                                       SkMatrix* totalInverse) const {
-    return (localMatrix ? SkMatrix::Concat(ctm, *localMatrix) : ctm).invert(totalInverse);
-}
-
 bool SkShaderBase::asLuminanceColor(SkColor* colorPtr) const {
     SkColor storage;
     if (nullptr == colorPtr) {
@@ -134,8 +100,8 @@ bool SkShaderBase::asLuminanceColor(SkColor* colorPtr) const {
 SkShaderBase::Context* SkShaderBase::makeContext(const ContextRec& rec, SkArenaAlloc* alloc) const {
 #ifdef SK_ENABLE_LEGACY_SHADERCONTEXT
     // We always fall back to raster pipeline when perspective is present.
-    if (rec.fMatrix->hasPerspective() || (rec.fLocalMatrix && rec.fLocalMatrix->hasPerspective()) ||
-        !this->computeTotalInverse(*rec.fMatrix, rec.fLocalMatrix, nullptr)) {
+    auto totalMatrix = rec.fMatrixRec.totalMatrix();
+    if (totalMatrix.hasPerspective() || !totalMatrix.invert(nullptr)) {
         return nullptr;
     }
 
@@ -146,14 +112,13 @@ SkShaderBase::Context* SkShaderBase::makeContext(const ContextRec& rec, SkArenaA
 }
 
 SkShaderBase::Context::Context(const SkShaderBase& shader, const ContextRec& rec)
-        : fShader(shader), fCTM(*rec.fMatrix) {
+        : fShader(shader) {
     // We should never use a context with perspective.
-    SkASSERT(!rec.fMatrix->hasPerspective());
-    SkASSERT(!rec.fLocalMatrix || !rec.fLocalMatrix->hasPerspective());
+    SkASSERT(!rec.fMatrixRec.totalMatrix().hasPerspective());
 
     // Because the context parameters must be valid at this point, we know that the matrix is
     // invertible.
-    SkAssertResult(fShader.computeTotalInverse(*rec.fMatrix, rec.fLocalMatrix, &fTotalInverse));
+    SkAssertResult(rec.fMatrixRec.totalInverse(&fTotalInverse));
 
     fPaintAlpha = rec.fPaintAlpha;
 }
@@ -170,18 +135,6 @@ bool SkShaderBase::ContextRec::isLegacyCompatible(SkColorSpace* shaderColorSpace
 
 sk_sp<SkShader> SkShaderBase::makeAsALocalMatrixShader(SkMatrix*) const { return nullptr; }
 
-#if defined(SK_GRAPHITE)
-// TODO: add implementations for derived classes
-void SkShaderBase::addToKey(const skgpu::graphite::KeyContext& keyContext,
-                            skgpu::graphite::PaintParamsKeyBuilder* builder,
-                            skgpu::graphite::PipelineDataGatherer* gatherer) const {
-    using namespace skgpu::graphite;
-
-    SolidColorShaderBlock::BeginBlock(keyContext, builder, gatherer, {1, 0, 0, 1});
-    builder->endBlock();
-}
-#endif
-
 bool SkShaderBase::appendRootStages(const SkStageRec& rec, const SkMatrix& ctm) const {
     return this->appendStages(rec, SkShaders::MatrixRec(ctm));
 }
@@ -189,18 +142,8 @@ bool SkShaderBase::appendRootStages(const SkStageRec& rec, const SkMatrix& ctm) 
 bool SkShaderBase::appendStages(const SkStageRec& rec, const SkShaders::MatrixRec& mRec) const {
     // SkShader::Context::shadeSpan() handles the paint opacity internally,
     // but SkRasterPipelineBlitter applies it as a separate stage.
-    // We skip the internal shadeSpan() step by forcing the paint opaque.
-    SkColor4f opaquePaintColor = rec.fPaintColor.makeOpaque();
-
-    // We don't have a separate ctm and local matrix at this point. Just pass the combined matrix
-    // as the CTM. TODO: thread the MatrixRec through the legacy context system.
-    auto tm = mRec.totalMatrix();
-    ContextRec cr(opaquePaintColor,
-                  tm,
-                  nullptr,
-                  rec.fDstColorType,
-                  sk_srgb_singleton(),
-                  rec.fSurfaceProps);
+    // We skip the internal shadeSpan() step by forcing the alpha to be opaque.
+    ContextRec cr(SK_AlphaOPAQUE, mRec, rec.fDstColorType, sk_srgb_singleton(), rec.fSurfaceProps);
 
     struct CallbackCtx : SkRasterPipeline_CallbackCtx {
         sk_sp<const SkShader> shader;
@@ -237,82 +180,7 @@ sk_sp<SkShader> SkShaderBase::makeWithCTM(const SkMatrix& postM) const {
     return sk_sp<SkShader>(new SkCTMShader(sk_ref_sp(this), postM));
 }
 
-#if defined(SK_ENABLE_SKVM)
-skvm::Color SkShaderBase::rootProgram(skvm::Builder* p,
-                                      skvm::Coord device,
-                                      skvm::Color paint,
-                                      const SkMatrix& ctm,
-                                      const SkColorInfo& dst,
-                                      skvm::Uniforms* uniforms,
-                                      SkArenaAlloc* alloc) const {
-    // Shader subclasses should always act as if the destination were premul or opaque.
-    // SkVMBlitter handles all the coordination of unpremul itself, via premul.
-    SkColorInfo tweaked =
-            dst.alphaType() == kUnpremul_SkAlphaType ? dst.makeAlphaType(kPremul_SkAlphaType) : dst;
-
-    // Force opaque alpha for all opaque shaders.
-    //
-    // This is primarily nice in that we usually have a 1.0f constant splat
-    // somewhere in the program anyway, and this will let us drop the work the
-    // shader notionally does to produce alpha, p->extract(...), etc. in favor
-    // of that simple hoistable splat.
-    //
-    // More subtly, it makes isOpaque() a parameter to all shader program
-    // generation, guaranteeing that is-opaque bit is mixed into the overall
-    // shader program hash and blitter Key.  This makes it safe for us to use
-    // that bit to make decisions when constructing an SkVMBlitter, like doing
-    // SrcOver -> Src strength reduction.
-    if (auto color = this->program(p,
-                                   device,
-                                   /*local=*/device,
-                                   paint,
-                                   SkShaders::MatrixRec(ctm),
-                                   tweaked,
-                                   uniforms,
-                                   alloc)) {
-        if (this->isOpaque()) {
-            color.a = p->splat(1.0f);
-        }
-        return color;
-    }
-    return {};
-}
-#endif  // defined(SK_ENABLE_SKVM)
-
 // need a cheap way to invert the alpha channel of a shader (i.e. 1 - a)
 sk_sp<SkShader> SkShaderBase::makeInvertAlpha() const {
     return this->makeWithColorFilter(SkColorFilters::Blend(0xFFFFFFFF, SkBlendMode::kSrcOut));
 }
-
-#if defined(SK_ENABLE_SKVM)
-skvm::Coord SkShaderBase::ApplyMatrix(skvm::Builder* p,
-                                      const SkMatrix& m,
-                                      skvm::Coord coord,
-                                      skvm::Uniforms* uniforms) {
-    skvm::F32 x = coord.x, y = coord.y;
-    if (m.isIdentity()) {
-        // That was easy.
-    } else if (m.isTranslate()) {
-        x = p->add(x, p->uniformF(uniforms->pushF(m[2])));
-        y = p->add(y, p->uniformF(uniforms->pushF(m[5])));
-    } else if (m.isScaleTranslate()) {
-        x = p->mad(x, p->uniformF(uniforms->pushF(m[0])), p->uniformF(uniforms->pushF(m[2])));
-        y = p->mad(y, p->uniformF(uniforms->pushF(m[4])), p->uniformF(uniforms->pushF(m[5])));
-    } else {  // Affine or perspective.
-        auto dot = [&, x, y](int row) {
-            return p->mad(x,
-                          p->uniformF(uniforms->pushF(m[3 * row + 0])),
-                          p->mad(y,
-                                 p->uniformF(uniforms->pushF(m[3 * row + 1])),
-                                 p->uniformF(uniforms->pushF(m[3 * row + 2]))));
-        };
-        x = dot(0);
-        y = dot(1);
-        if (m.hasPerspective()) {
-            x = x * (1.0f / dot(2));
-            y = y * (1.0f / dot(2));
-        }
-    }
-    return {x, y};
-}
-#endif  // defined(SK_ENABLE_SKVM)

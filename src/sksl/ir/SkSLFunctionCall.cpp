@@ -12,6 +12,7 @@
 #include "include/private/base/SkFloatingPoint.h"
 #include "include/private/base/SkTArray.h"
 #include "include/private/base/SkTo.h"
+#include "src/base/SkEnumBitMask.h"
 #include "src/base/SkHalf.h"
 #include "src/core/SkMatrixInvert.h"
 #include "src/sksl/SkSLAnalysis.h"
@@ -30,7 +31,7 @@
 #include "src/sksl/ir/SkSLFunctionReference.h"
 #include "src/sksl/ir/SkSLLiteral.h"
 #include "src/sksl/ir/SkSLMethodReference.h"
-#include "src/sksl/ir/SkSLModifiers.h"
+#include "src/sksl/ir/SkSLModifierFlags.h"
 #include "src/sksl/ir/SkSLType.h"
 #include "src/sksl/ir/SkSLTypeReference.h"
 #include "src/sksl/ir/SkSLVariable.h"
@@ -1024,8 +1025,7 @@ std::string FunctionCall::description(OperatorPrecedence) const {
 static CoercionCost call_cost(const Context& context,
                               const FunctionDeclaration& function,
                               const ExpressionArray& arguments) {
-    if (context.fConfig->strictES2Mode() &&
-        (function.modifiers().fFlags & Modifiers::kES3_Flag)) {
+    if (context.fConfig->strictES2Mode() && function.modifierFlags().isES3()) {
         return CoercionCost::Impossible();
     }
     if (function.parameters().size() != SkToSizeT(arguments.size())) {
@@ -1124,7 +1124,7 @@ std::unique_ptr<Expression> FunctionCall::Convert(const Context& context,
                                                   const FunctionDeclaration& function,
                                                   ExpressionArray arguments) {
     // Reject ES3 function calls in strict ES2 mode.
-    if (context.fConfig->strictES2Mode() && (function.modifiers().fFlags & Modifiers::kES3_Flag)) {
+    if (context.fConfig->strictES2Mode() && function.modifierFlags().isES3()) {
         context.fErrors->error(pos, "call to '" + function.description() + "' is not supported");
         return nullptr;
     }
@@ -1158,9 +1158,9 @@ std::unique_ptr<Expression> FunctionCall::Convert(const Context& context,
             return nullptr;
         }
         // Update the refKind on out-parameters, and ensure that they are actually assignable.
-        const Modifiers& paramModifiers = function.parameters()[i]->modifiers();
-        if (paramModifiers.fFlags & Modifiers::kOut_Flag) {
-            const VariableRefKind refKind = paramModifiers.fFlags & Modifiers::kIn_Flag
+        ModifierFlags paramFlags = function.parameters()[i]->modifierFlags();
+        if (paramFlags & ModifierFlag::kOut) {
+            const VariableRefKind refKind = (paramFlags & ModifierFlag::kIn)
                                                     ? VariableReference::RefKind::kReadWrite
                                                     : VariableReference::RefKind::kPointer;
             if (!Analysis::UpdateVariableRefKind(arguments[i].get(), refKind, context.fErrors)) {

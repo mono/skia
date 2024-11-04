@@ -17,11 +17,6 @@
 #include "src/core/SkReadBuffer.h"
 #include "src/core/SkWriteBuffer.h"
 
-#if defined(SK_GRAPHITE)
-#include "src/gpu/graphite/KeyHelpers.h"
-#include "src/gpu/graphite/PaintParamsKey.h"
-#endif
-
 sk_sp<SkBlender> SkBlender::Mode(SkBlendMode mode) {
 #define RETURN_SINGLETON_BLENDER(m)                            \
     case m: {                                                  \
@@ -67,25 +62,6 @@ sk_sp<SkBlender> SkBlender::Mode(SkBlendMode mode) {
 #undef RETURN_SINGLETON_BLENDER
 }
 
-#if defined(SK_GRAPHITE)
-#include "src/gpu/Blend.h"
-
-void SkBlendModeBlender::addToKey(const skgpu::graphite::KeyContext& keyContext,
-                                  skgpu::graphite::PaintParamsKeyBuilder* builder,
-                                  skgpu::graphite::PipelineDataGatherer* gatherer) const {
-    using namespace skgpu::graphite;
-
-    SkSpan<const float> coeffs = skgpu::GetPorterDuffBlendConstants(fMode);
-    if (!coeffs.empty()) {
-        CoeffBlenderBlock::BeginBlock(keyContext, builder, gatherer, coeffs);
-        builder->endBlock();
-    } else {
-        BlendModeBlenderBlock::BeginBlock(keyContext, builder, gatherer, fMode);
-        builder->endBlock();
-    }
-}
-#endif
-
 sk_sp<SkFlattenable> SkBlendModeBlender::CreateProc(SkReadBuffer& buffer) {
     SkBlendMode mode = buffer.read32LE(SkBlendMode::kLastMode);
     return SkBlender::Mode(mode);
@@ -99,11 +75,3 @@ bool SkBlendModeBlender::onAppendStages(const SkStageRec& rec) const {
     SkBlendMode_AppendStages(fMode, rec.fPipeline);
     return true;
 }
-
-#if defined(SK_ENABLE_SKVM)
-skvm::Color SkBlendModeBlender::onProgram(skvm::Builder* p, skvm::Color src, skvm::Color dst,
-                                          const SkColorInfo& colorInfo, skvm::Uniforms* uniforms,
-                                          SkArenaAlloc* alloc) const {
-    return p->blend(fMode, src, dst);
-}
-#endif

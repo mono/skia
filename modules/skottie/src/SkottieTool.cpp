@@ -7,6 +7,7 @@
 
 #include "include/core/SkCanvas.h"
 #include "include/core/SkGraphics.h"
+#include "include/core/SkPicture.h"
 #include "include/core/SkPictureRecorder.h"
 #include "include/core/SkStream.h"
 #include "include/core/SkSurface.h"
@@ -424,7 +425,7 @@ extern bool gSkUseThreadLocalStrikeCaches_IAcknowledgeThisIsIncrediblyExperiment
 int main(int argc, char** argv) {
     gSkUseThreadLocalStrikeCaches_IAcknowledgeThisIsIncrediblyExperimental = true;
     CommandLineFlags::Parse(argc, argv);
-    SkAutoGraphics ag;
+    SkGraphics::Init();
 
     if (FLAGS_input.isEmpty() || FLAGS_writePath.isEmpty()) {
         SkDebugf("Missing required 'input' and 'writePath' args.\n");

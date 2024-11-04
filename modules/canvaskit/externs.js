@@ -110,6 +110,10 @@ var CanvasKit = {
     _size: function() {},
   },
 
+  Blender: {
+    Mode: function() {},
+  },
+
   GrDirectContext: {
     // public API (from webgl.js)
     prototype: {
@@ -211,6 +215,7 @@ var CanvasKit = {
   RuntimeEffect: {
     // public API (from JS bindings)
     Make: function() {},
+    MakeForBlender: function() {},
     getUniform: function() {},
     getUniformCount: function() {},
     getUniformFloatCount: function() {},
@@ -218,11 +223,14 @@ var CanvasKit = {
     prototype: {
       makeShader: function() {},
       makeShaderWithChildren: function() {},
+      makeBlender: function() {},
     },
     // private API (from C++ bindings)
     _Make: function() {},
+    _MakeForBlender: function() {},
     _makeShader: function() {},
     _makeShaderWithChildren: function() {},
+    _makeBlender: function() {},
   },
 
   ParagraphStyle: function() {},
@@ -420,6 +428,7 @@ var CanvasKit = {
     FromData: function() {},
     countFamilies: function() {},
     getFamilyName: function() {},
+    matchFamilyStyle: function() {},
 
     // private API
     _makeTypefaceFromData: function() {},
@@ -476,7 +485,12 @@ var CanvasKit = {
     MakeMatrixTransform: function() {},
     MakeOffset: function() {},
 
+    prototype: {
+      getOutputBounds: function() {},
+    },
+
     // private API
+    _getOutputBounds: function() {},
     _MakeDropShadow: function() {},
     _MakeDropShadowOnly: function() {},
     _MakeImageCubic: function() {},
@@ -533,6 +547,7 @@ var CanvasKit = {
     getStrokeWidth: function() {},
     setAntiAlias: function() {},
     setBlendMode: function() {},
+    setBlender: function() {},
     setColorInt: function() {},
     setDither: function() {},
     setImageFilter: function() {},
@@ -676,10 +691,13 @@ var CanvasKit = {
 
   Picture: {
     serialize: function() {},
+    approximateByteSize: function() {},
     prototype: {
       makeShader: function() {},
+      cullRect: function () {},
     },
     _makeShader: function() {},
+    _cullRect: function () {},
   },
 
   PictureRecorder: {

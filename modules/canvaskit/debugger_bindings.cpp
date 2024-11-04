@@ -97,7 +97,11 @@ class SkpDebugPlayer {
       } else {
         SkDebugf("Try reading as single-frame skp\n");
         // TODO(nifong): Rely on SkPicture's return errors once it provides some.
-        frames.push_back(loadSingleFrame(&stream));
+        std::unique_ptr<DebugCanvas> canvas = loadSingleFrame(&stream);
+        if (!canvas) {
+          return "Error loading single frame";
+        }
+        frames.push_back(std::move(canvas));
       }
       return "";
     }
@@ -132,7 +136,9 @@ class SkpDebugPlayer {
       auto* canvas = surface->getCanvas();
       canvas->clear(SK_ColorTRANSPARENT);
       frames[fp]->draw(surface->getCanvas());
-      surface->getCanvas()->flush();
+#ifdef CK_ENABLE_WEBGL
+      skgpu::ganesh::Flush(surface);
+#endif
     }
 
     // Gets the bounds for the given frame
@@ -165,31 +171,31 @@ class SkpDebugPlayer {
     // However, there's not a simple way to make the debugcanvases pull settings from a central
     // location so we set it on all of them at once.
     void setOverdrawVis(bool on) {
-      for (int i=0; i < frames.size(); i++) {
+      for (size_t i=0; i < frames.size(); i++) {
         frames[i]->setOverdrawViz(on);
       }
       fLayerManager->setOverdrawViz(on);
     }
     void setGpuOpBounds(bool on) {
-      for (int i=0; i < frames.size(); i++) {
+      for (size_t i=0; i < frames.size(); i++) {
         frames[i]->setDrawGpuOpBounds(on);
       }
       fLayerManager->setDrawGpuOpBounds(on);
     }
     void setClipVizColor(JSColor color) {
-      for (int i=0; i < frames.size(); i++) {
+      for (size_t i=0; i < frames.size(); i++) {
         frames[i]->setClipVizColor(SkColor(color));
       }
       fLayerManager->setClipVizColor(SkColor(color));
     }
     void setAndroidClipViz(bool on) {
-      for (int i=0; i < frames.size(); i++) {
+      for (size_t i=0; i < frames.size(); i++) {
         frames[i]->setAndroidClipViz(on);
       }
       // doesn't matter in layers
     }
     void setOriginVisible(bool on) {
-      for (int i=0; i < frames.size(); i++) {
+      for (size_t i=0; i < frames.size(); i++) {
         frames[i]->setOriginVisible(on);
       }
     }

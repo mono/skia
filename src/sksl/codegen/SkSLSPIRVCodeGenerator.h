@@ -18,8 +18,6 @@
 #include "src/sksl/ir/SkSLFunctionDeclaration.h"
 #include "src/sksl/ir/SkSLFunctionDefinition.h"
 #include "src/sksl/ir/SkSLInterfaceBlock.h"
-#include "src/sksl/ir/SkSLLayout.h"
-#include "src/sksl/ir/SkSLModifiers.h"
 #include "src/sksl/ir/SkSLSymbolTable.h"
 #include "src/sksl/ir/SkSLType.h"
 #include "src/sksl/ir/SkSLVariable.h"
@@ -51,6 +49,7 @@ class ForStatement;
 class FunctionCall;
 class IfStatement;
 class IndexExpression;
+struct Layout;
 class Literal;
 class Operator;
 class OutputStream;
@@ -96,6 +95,9 @@ public:
             return false;
         }
 
+        // Returns the storage class of the lvalue.
+        virtual SpvStorageClass storageClass() const = 0;
+
         virtual SpvId load(OutputStream& out) = 0;
 
         virtual void store(SpvId value, OutputStream& out) = 0;
@@ -136,6 +138,15 @@ private:
         kTexture_SpecialIntrinsic,
         kTextureGrad_SpecialIntrinsic,
         kTextureLod_SpecialIntrinsic,
+        kTextureRead_SpecialIntrinsic,
+        kTextureWrite_SpecialIntrinsic,
+        kTextureWidth_SpecialIntrinsic,
+        kTextureHeight_SpecialIntrinsic,
+        kAtomicAdd_SpecialIntrinsic,
+        kAtomicLoad_SpecialIntrinsic,
+        kAtomicStore_SpecialIntrinsic,
+        kStorageBarrier_SpecialIntrinsic,
+        kWorkgroupBarrier_SpecialIntrinsic,
     };
 
     enum class Precision {
@@ -236,6 +247,10 @@ private:
     skia_private::TArray<SpvId> vectorize(const ExpressionArray& args, OutputStream& out);
 
     SpvId writeSpecialIntrinsic(const FunctionCall& c, SpecialIntrinsic kind, OutputStream& out);
+    SpvId writeAtomicIntrinsic(const FunctionCall& c,
+                               SpecialIntrinsic kind,
+                               SpvId resultId,
+                               OutputStream& out);
 
     SpvId writeScalarToMatrixSplat(const Type& matrixType, SpvId scalarId, OutputStream& out);
 
@@ -504,8 +519,6 @@ private:
     struct EntrypointAdapter {
         std::unique_ptr<FunctionDefinition> entrypointDef;
         std::unique_ptr<FunctionDeclaration> entrypointDecl;
-        Layout fLayout;
-        Modifiers fModifiers;
     };
 
     EntrypointAdapter writeEntrypointAdapter(const FunctionDeclaration& main);

@@ -21,5 +21,4 @@ skia_opts = {
   ssse3_sources = ssse3
   avx_sources = avx
   hsw_sources = hsw
-  skx_sources = skx
 }

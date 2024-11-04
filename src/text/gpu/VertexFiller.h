@@ -10,8 +10,9 @@
 #include "include/core/SkMatrix.h"
 #include "include/core/SkPoint.h"
 #include "include/core/SkRect.h"
+#include "include/core/SkScalar.h"
+#include "include/core/SkSpan.h"
 #include "include/core/SkTypes.h"
-#include "include/private/base/SkSpan_impl.h"
 #include "include/private/base/SkTLogic.h"
 
 #include <cstddef>
@@ -26,14 +27,15 @@ class SkWriteBuffer;
 #include "src/gpu/ganesh/ops/AtlasTextOp.h"
 #endif  // defined(SK_GANESH)
 
-#if defined(SK_GRAPHITE)
-#include "src/gpu/graphite/Device.h"
-#include "src/gpu/graphite/DrawWriter.h"
-#include "src/gpu/graphite/Renderer.h"
-#include "src/gpu/graphite/RendererProvider.h"
-#endif
+namespace skgpu {
+enum class MaskFormat : int;
 
-namespace skgpu { enum class MaskFormat : int; }
+namespace graphite {
+class DrawWriter;
+class Rect;
+class Transform;
+}
+}
 
 namespace sktext::gpu {
 class Glyph;
@@ -89,7 +91,7 @@ public:
     skgpu::ganesh::AtlasTextOp::MaskType opMaskType() const;
 #endif  // defined(SK_GANESH)
 
-#if defined(SK_GRAPHITE)
+    // This is only available if the graphite backend is compiled in (see GraphiteVertexFiller.cpp)
     void fillInstanceData(skgpu::graphite::DrawWriter* dw,
                           int offset, int count,
                           unsigned short flags,
@@ -99,7 +101,6 @@ public:
 
     std::tuple<skgpu::graphite::Rect, skgpu::graphite::Transform> boundsAndDeviceMatrix(
             const skgpu::graphite::Transform& localToDevice, SkPoint drawOrigin) const;
-#endif  // defined(SK_GRAPHITE)
 
     // Return true if the positionMatrix represents an integer translation. Return the device
     // bounding box of all the glyphs. If the bounding box is empty, then something went singular

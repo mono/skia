@@ -44,19 +44,6 @@ struct SkSamplingOptions;
 
 namespace skgpu::graphite { class Recorder; }
 
-#if !defined(SK_DISABLE_LEGACY_GRAPHITE_IMAGE_FACTORIES) && defined(SK_GRAPHITE)
-#include "include/gpu/graphite/GraphiteTypes.h"
-
-namespace skgpu { enum class Mipmapped : bool; }
-namespace skgpu::graphite {
-class BackendTexture;
-class Recorder;
-class TextureInfo;
-enum class Volatile : bool;
-class YUVABackendTextures;
-}
-#endif
-
 namespace SkImages {
 
 /** Caller data passed to RasterReleaseProc; may be nullptr. */
@@ -642,6 +629,20 @@ public:
                                          ReadPixelsCallback callback,
                                          ReadPixelsContext context) const;
 
+    /**
+     * Identical to asyncRescaleAndReadPixelsYUV420 but a fourth plane is returned in the
+     * AsyncReadResult passed to 'callback'. The fourth plane contains the alpha chanel at the
+     * same full resolution as the Y plane.
+     */
+    void asyncRescaleAndReadPixelsYUVA420(SkYUVColorSpace yuvColorSpace,
+                                          sk_sp<SkColorSpace> dstColorSpace,
+                                          const SkIRect& srcRect,
+                                          const SkISize& dstSize,
+                                          RescaleGamma rescaleGamma,
+                                          RescaleMode rescaleMode,
+                                          ReadPixelsCallback callback,
+                                          ReadPixelsContext context) const;
+
     /** Copies SkImage to dst, scaling pixels to fit dst.width() and dst.height(), and
         converting pixels to match dst.colorType() and dst.alphaType(). Returns true if
         pixels are copied. Returns false if dst.addr() is nullptr, or dst.rowBytes() is
@@ -695,12 +696,6 @@ public:
         example: https://fiddle.skia.org/c/@Image_makeSubset
     */
     virtual sk_sp<SkImage> makeSubset(GrDirectContext* direct, const SkIRect& subset) const = 0;
-
-#if !defined(SK_DISABLE_LEGACY_IMAGE_SUBSET_METHODS)
-    sk_sp<SkImage> makeSubset(const SkIRect& subset, GrDirectContext* direct = nullptr) const {
-        return this->makeSubset(direct, subset);
-    }
-#endif
 
     struct RequiredProperties {
         bool fMipmapped;
@@ -797,12 +792,12 @@ public:
         @param offset      storage for returned SkImage translation
         @return            filtered SkImage, or nullptr
     */
-    virtual sk_sp<SkImage> makeWithFilter(GrRecordingContext* context,
-                                          const SkImageFilter* filter,
-                                          const SkIRect& subset,
-                                          const SkIRect& clipBounds,
-                                          SkIRect* outSubset,
-                                          SkIPoint* offset) const = 0;
+    sk_sp<SkImage> makeWithFilter(GrRecordingContext* context,
+                                  const SkImageFilter* filter,
+                                  const SkIRect& subset,
+                                  const SkIRect& clipBounds,
+                                  SkIRect* outSubset,
+                                  SkIPoint* offset) const;
 
     /** Deprecated.
      */
@@ -852,11 +847,6 @@ public:
     virtual sk_sp<SkImage> makeColorSpace(GrDirectContext* direct,
                                           sk_sp<SkColorSpace> target) const = 0;
 
-#if !defined(SK_DISABLE_LEGACY_IMAGE_COLORSPACE_METHODS)
-    sk_sp<SkImage> makeColorSpace(sk_sp<SkColorSpace> target,
-                                  GrDirectContext* direct = nullptr) const;
-#endif
-
     /** Creates SkImage in target SkColorSpace.
         Returns nullptr if SkImage could not be created.
 
@@ -892,12 +882,6 @@ public:
     virtual sk_sp<SkImage> makeColorTypeAndColorSpace(GrDirectContext* direct,
                                                       SkColorType targetColorType,
                                                       sk_sp<SkColorSpace> targetCS) const = 0;
-
-#if !defined(SK_DISABLE_LEGACY_IMAGE_COLORSPACE_METHODS)
-    sk_sp<SkImage> makeColorTypeAndColorSpace(SkColorType targetColorType,
-                                              sk_sp<SkColorSpace> targetColorSpace,
-                                              GrDirectContext* direct = nullptr) const;
-#endif
 
     /** Experimental.
         Creates SkImage in target SkColorType and SkColorSpace.
@@ -938,56 +922,6 @@ private:
     sk_sp<SkImage> withMipmaps(sk_sp<SkMipmap>) const;
 
     using INHERITED = SkRefCnt;
-
-public:
-#if !defined(SK_DISABLE_LEGACY_IMAGE_RELEASE_PROCS)
-    using ReleaseContext = SkImages::ReleaseContext;
-    using TextureReleaseProc = void (*)(ReleaseContext);
-#endif
-#if !defined(SK_DISABLE_LEGACY_GRAPHITE_IMAGE_METHODS) && defined(SK_GRAPHITE)
-    struct RequiredImageProperties {
-        skgpu::Mipmapped fMipmapped;
-    };
-
-    sk_sp<SkImage> makeTextureImage(skgpu::graphite::Recorder*, RequiredImageProperties) const;
-#endif
-#if !defined(SK_DISABLE_LEGACY_GRAPHITE_IMAGE_FACTORIES) && defined(SK_GRAPHITE)
-    // Passed to both fulfill and imageRelease
-    using GraphitePromiseImageContext = void*;
-    // Returned from fulfill and passed into textureRelease
-    using GraphitePromiseTextureReleaseContext = void*;
-
-    using GraphitePromiseImageFulfillProc =
-            std::tuple<skgpu::graphite::BackendTexture, GraphitePromiseTextureReleaseContext>
-            (*)(GraphitePromiseImageContext);
-    using GraphitePromiseImageReleaseProc = void (*)(GraphitePromiseImageContext);
-    using GraphitePromiseTextureReleaseProc = void (*)(GraphitePromiseTextureReleaseContext);
-
-    static sk_sp<SkImage> MakeGraphitePromiseTexture(skgpu::graphite::Recorder*,
-                                                     SkISize,
-                                                     const skgpu::graphite::TextureInfo&,
-                                                     const SkColorInfo&,
-                                                     skgpu::graphite::Volatile,
-                                                     GraphitePromiseImageFulfillProc,
-                                                     GraphitePromiseImageReleaseProc,
-                                                     GraphitePromiseTextureReleaseProc,
-                                                     GraphitePromiseImageContext);
-
-    static sk_sp<SkImage> MakeGraphiteFromBackendTexture(skgpu::graphite::Recorder*,
-                                                         const skgpu::graphite::BackendTexture&,
-                                                         SkColorType,
-                                                         SkAlphaType,
-                                                         sk_sp<SkColorSpace>,
-                                                         TextureReleaseProc = nullptr,
-                                                         ReleaseContext = nullptr);
-
-    static sk_sp<SkImage> MakeGraphiteFromYUVABackendTextures(
-            skgpu::graphite::Recorder*,
-            const skgpu::graphite::YUVABackendTextures&,
-            sk_sp<SkColorSpace>,
-            TextureReleaseProc = nullptr,
-            ReleaseContext = nullptr);
-#endif
 };
 
 #endif

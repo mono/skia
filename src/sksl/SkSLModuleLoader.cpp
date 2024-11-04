@@ -11,11 +11,11 @@
 #include "src/base/SkNoDestructor.h"
 #include "src/sksl/SkSLBuiltinTypes.h"
 #include "src/sksl/SkSLCompiler.h"
-#include "src/sksl/SkSLModifiersPool.h"
 #include "src/sksl/SkSLPosition.h"
 #include "src/sksl/SkSLProgramKind.h"
 #include "src/sksl/ir/SkSLIRNode.h"
-#include "src/sksl/ir/SkSLModifiers.h"
+#include "src/sksl/ir/SkSLLayout.h"
+#include "src/sksl/ir/SkSLModifierFlags.h"
 #include "src/sksl/ir/SkSLProgramElement.h"
 #include "src/sksl/ir/SkSLSymbolTable.h"
 #include "src/sksl/ir/SkSLType.h"
@@ -151,7 +151,6 @@ struct ModuleLoader::Impl {
     // ModuleLoader object falls out of scope.
     SkMutex fMutex;
     const BuiltinTypes fBuiltinTypes;
-    ModifiersPool fCoreModifiers;
 
     std::unique_ptr<const Module> fRootModule;
 
@@ -208,13 +207,11 @@ static std::unique_ptr<Module> compile_and_shrink(SkSL::Compiler* compiler,
                                                   ProgramKind kind,
                                                   const char* moduleName,
                                                   std::string moduleSource,
-                                                  const Module* parent,
-                                                  ModifiersPool& modifiersPool) {
+                                                  const Module* parent) {
     std::unique_ptr<Module> m = compiler->compileModule(kind,
                                                         moduleName,
                                                         std::move(moduleSource),
                                                         parent,
-                                                        modifiersPool,
                                                         /*shouldInline=*/true);
     if (!m) {
         SK_ABORT("Unable to load module %s", moduleName);
@@ -251,10 +248,6 @@ static std::unique_ptr<Module> compile_and_shrink(SkSL::Compiler* compiler,
 
 const BuiltinTypes& ModuleLoader::builtinTypes() {
     return fModuleLoader.fBuiltinTypes;
-}
-
-ModifiersPool& ModuleLoader::coreModifiers() {
-    return fModuleLoader.fCoreModifiers;
 }
 
 const Module* ModuleLoader::rootModule() {
@@ -305,8 +298,7 @@ const Module* ModuleLoader::loadPublicModule(SkSL::Compiler* compiler) {
         fModuleLoader.fPublicModule = compile_and_shrink(compiler,
                                                          ProgramKind::kFragment,
                                                          MODULE_DATA(sksl_public),
-                                                         sharedModule,
-                                                         this->coreModifiers());
+                                                         sharedModule);
         this->addPublicTypeAliases(fModuleLoader.fPublicModule.get());
     }
     return fModuleLoader.fPublicModule.get();
@@ -318,8 +310,7 @@ const Module* ModuleLoader::loadPrivateRTShaderModule(SkSL::Compiler* compiler) 
         fModuleLoader.fRuntimeShaderModule = compile_and_shrink(compiler,
                                                                 ProgramKind::kFragment,
                                                                 MODULE_DATA(sksl_rt_shader),
-                                                                publicModule,
-                                                                this->coreModifiers());
+                                                                publicModule);
     }
     return fModuleLoader.fRuntimeShaderModule.get();
 }
@@ -330,8 +321,7 @@ const Module* ModuleLoader::loadSharedModule(SkSL::Compiler* compiler) {
         fModuleLoader.fSharedModule = compile_and_shrink(compiler,
                                                          ProgramKind::kFragment,
                                                          MODULE_DATA(sksl_shared),
-                                                         rootModule,
-                                                         this->coreModifiers());
+                                                         rootModule);
     }
     return fModuleLoader.fSharedModule.get();
 }
@@ -342,8 +332,7 @@ const Module* ModuleLoader::loadGPUModule(SkSL::Compiler* compiler) {
         fModuleLoader.fGPUModule = compile_and_shrink(compiler,
                                                       ProgramKind::kFragment,
                                                       MODULE_DATA(sksl_gpu),
-                                                      sharedModule,
-                                                      this->coreModifiers());
+                                                      sharedModule);
     }
     return fModuleLoader.fGPUModule.get();
 }
@@ -354,8 +343,7 @@ const Module* ModuleLoader::loadFragmentModule(SkSL::Compiler* compiler) {
         fModuleLoader.fFragmentModule = compile_and_shrink(compiler,
                                                            ProgramKind::kFragment,
                                                            MODULE_DATA(sksl_frag),
-                                                           gpuModule,
-                                                           this->coreModifiers());
+                                                           gpuModule);
     }
     return fModuleLoader.fFragmentModule.get();
 }
@@ -366,8 +354,7 @@ const Module* ModuleLoader::loadVertexModule(SkSL::Compiler* compiler) {
         fModuleLoader.fVertexModule = compile_and_shrink(compiler,
                                                          ProgramKind::kVertex,
                                                          MODULE_DATA(sksl_vert),
-                                                         gpuModule,
-                                                         this->coreModifiers());
+                                                         gpuModule);
     }
     return fModuleLoader.fVertexModule.get();
 }
@@ -378,8 +365,7 @@ const Module* ModuleLoader::loadComputeModule(SkSL::Compiler* compiler) {
         fModuleLoader.fComputeModule = compile_and_shrink(compiler,
                                                           ProgramKind::kCompute,
                                                           MODULE_DATA(sksl_compute),
-                                                          gpuModule,
-                                                          this->coreModifiers());
+                                                          gpuModule);
         add_compute_type_aliases(fModuleLoader.fComputeModule->fSymbols.get(),
                                  this->builtinTypes());
     }
@@ -393,8 +379,7 @@ const Module* ModuleLoader::loadGraphiteFragmentModule(SkSL::Compiler* compiler)
         fModuleLoader.fGraphiteFragmentModule = compile_and_shrink(compiler,
                                                                    ProgramKind::kGraphiteFragment,
                                                                    MODULE_DATA(sksl_graphite_frag),
-                                                                   fragmentModule,
-                                                                   this->coreModifiers());
+                                                                   fragmentModule);
     }
     return fModuleLoader.fGraphiteFragmentModule.get();
 #else
@@ -409,8 +394,7 @@ const Module* ModuleLoader::loadGraphiteVertexModule(SkSL::Compiler* compiler) {
         fModuleLoader.fGraphiteVertexModule = compile_and_shrink(compiler,
                                                                  ProgramKind::kGraphiteVertex,
                                                                  MODULE_DATA(sksl_graphite_vert),
-                                                                 vertexModule,
-                                                                 this->coreModifiers());
+                                                                 vertexModule);
     }
     return fModuleLoader.fGraphiteVertexModule.get();
 #else
@@ -432,13 +416,15 @@ void ModuleLoader::Impl::makeRootSymbolTable() {
 
     // sk_Caps is "builtin", but all references to it are resolved to Settings, so we don't need to
     // treat it as builtin (ie, no need to clone it into the Program).
-    rootModule->fSymbols->add(std::make_unique<Variable>(/*pos=*/Position(),
-                                                         /*modifiersPosition=*/Position(),
-                                                         fCoreModifiers.add(Modifiers{}),
-                                                         "sk_Caps",
-                                                         fBuiltinTypes.fSkCaps.get(),
-                                                         /*builtin=*/false,
-                                                         Variable::Storage::kGlobal));
+    rootModule->fSymbols->add(Variable::Make(/*pos=*/Position(),
+                                             /*modifiersPosition=*/Position(),
+                                             Layout{},
+                                             ModifierFlag::kNone,
+                                             fBuiltinTypes.fSkCaps.get(),
+                                             "sk_Caps",
+                                             /*mangledName=*/"",
+                                             /*builtin=*/false,
+                                             Variable::Storage::kGlobal));
     fRootModule = std::move(rootModule);
 }
 

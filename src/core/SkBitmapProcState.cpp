@@ -255,7 +255,7 @@ bool SkBitmapProcState::chooseProcs() {
     fMatrixProc = this->chooseMatrixProc(translate_only);
     SkASSERT(fMatrixProc);
 
-    fSampleProc32 = fBilerp ? SkOpts::S32_alpha_D32_filter_DX   : S32_alpha_D32_nofilter_DX  ;
+    fSampleProc32 = fBilerp ? SkOpts::S32_alpha_D32_filter_DX : S32_alpha_D32_nofilter_DX;
     SkASSERT(fSampleProc32);
 
     // our special-case shaderprocs

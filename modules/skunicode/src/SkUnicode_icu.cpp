@@ -7,7 +7,6 @@
 
 #include "include/core/SkString.h"
 #include "include/core/SkTypes.h"
-#include "include/private/SkBitmaskEnum.h"
 #include "include/private/base/SkDebug.h"
 #include "include/private/base/SkMutex.h"
 #include "include/private/base/SkOnce.h"
@@ -17,6 +16,7 @@
 #include "modules/skunicode/include/SkUnicode.h"
 #include "modules/skunicode/src/SkUnicode_icu.h"
 #include "modules/skunicode/src/SkUnicode_icu_bidi.h"
+#include "src/base/SkBitmaskEnum.h"
 #include "src/base/SkUTF.h"
 #include "src/core/SkTHash.h"
 #include <unicode/umachine.h>
@@ -281,7 +281,7 @@ class SkUnicode_icu : public SkUnicode {
             const char* ch = utf8;
             while (ch < end) {
                 auto unichar = utf8_next(&ch, end);
-                if (isHardLineBreak(unichar)) {
+                if (SkUnicode_icu::isHardLineBreak(unichar)) {
                     setBreak(ch - utf8, UBRK_LINE_HARD);
                 }
             }
@@ -289,23 +289,36 @@ class SkUnicode_icu : public SkUnicode {
         return true;
     }
 
-    static bool isControl(SkUnichar utf8) {
+    bool isControl(SkUnichar utf8) override {
         return sk_u_iscntrl(utf8);
     }
 
-    static bool isWhitespace(SkUnichar utf8) {
+    bool isWhitespace(SkUnichar utf8) override {
         return sk_u_isWhitespace(utf8);
     }
 
-    static bool isSpace(SkUnichar utf8) {
+    bool isSpace(SkUnichar utf8) override {
         return sk_u_isspace(utf8);
     }
 
-    static bool isTabulation(SkUnichar utf8) {
+    bool isHardBreak(SkUnichar utf8) override {
+        return SkUnicode_icu::isHardLineBreak(utf8);
+    }
+
+    bool isEmoji(SkUnichar unichar) override {
+        return sk_u_hasBinaryProperty(unichar, UCHAR_EMOJI) ||
+               sk_u_hasBinaryProperty(unichar, UCHAR_EMOJI_COMPONENT);
+    }
+
+    bool isIdeographic(SkUnichar unichar) override {
+        return sk_u_hasBinaryProperty(unichar, UCHAR_IDEOGRAPHIC);
+    }
+
+    bool isTabulation(SkUnichar utf8) override {
         return utf8 == '\t';
     }
 
-    static bool isHardBreak(SkUnichar utf8) {
+    static bool isHardLineBreak(SkUnichar utf8) {
         auto property = sk_u_getIntPropertyValue(utf8, UCHAR_LINE_BREAK);
         return property == U_LB_LINE_FEED || property == U_LB_MANDATORY_BREAK;
     }
@@ -334,11 +347,6 @@ public:
     }
     std::unique_ptr<SkBreakIterator> makeBreakIterator(BreakType breakType) override {
         return makeBreakIterator(sk_uloc_getDefault(), breakType);
-    }
-
-    static bool isHardLineBreak(SkUnichar utf8) {
-        auto property = sk_u_getIntPropertyValue(utf8, UCHAR_LINE_BREAK);
-        return property == U_LB_LINE_FEED || property == U_LB_MANDATORY_BREAK;
     }
 
     SkString toUpper(const SkString& str) override {
@@ -401,7 +409,7 @@ public:
             SkUnichar unichar = SkUTF::NextUTF8(&current, end);
             if (unichar < 0) unichar = 0xFFFD;
             auto after = current - utf8;
-            if (replaceTabs && SkUnicode_icu::isTabulation(unichar)) {
+            if (replaceTabs && this->isTabulation(unichar)) {
                 results->at(before) |= SkUnicode::kTabulation;
                 if (replaceTabs) {
                     unichar = ' ';
@@ -409,14 +417,17 @@ public:
                 }
             }
             for (auto i = before; i < after; ++i) {
-                if (SkUnicode_icu::isSpace(unichar)) {
+                if (this->isSpace(unichar)) {
                     results->at(i) |= SkUnicode::kPartOfIntraWordBreak;
                 }
-                if (SkUnicode_icu::isWhitespace(unichar)) {
+                if (this->isWhitespace(unichar)) {
                     results->at(i) |= SkUnicode::kPartOfWhiteSpaceBreak;
                 }
-                if (SkUnicode_icu::isControl(unichar)) {
+                if (this->isControl(unichar)) {
                     results->at(i) |= SkUnicode::kControl;
+                }
+                if (this->isIdeographic(unichar)) {
+                    results->at(i) |= SkUnicode::kIdeographic;
                 }
             }
         }
@@ -431,22 +442,22 @@ public:
 
         // Get white spaces
         this->forEachCodepoint((char16_t*)&utf16[0], utf16Units,
-           [results, replaceTabs, &utf16](SkUnichar unichar, int32_t start, int32_t end) {
+           [this, results, replaceTabs, &utf16](SkUnichar unichar, int32_t start, int32_t end) {
                 for (auto i = start; i < end; ++i) {
-                    if (replaceTabs && SkUnicode_icu::isTabulation(unichar)) {
+                    if (replaceTabs && this->isTabulation(unichar)) {
                         results->at(i) |= SkUnicode::kTabulation;
                     if (replaceTabs) {
                             unichar = ' ';
                             utf16[start] = ' ';
                         }
                     }
-                    if (SkUnicode_icu::isSpace(unichar)) {
+                    if (this->isSpace(unichar)) {
                         results->at(i) |= SkUnicode::kPartOfIntraWordBreak;
                     }
-                    if (SkUnicode_icu::isWhitespace(unichar)) {
+                    if (this->isWhitespace(unichar)) {
                         results->at(i) |= SkUnicode::kPartOfWhiteSpaceBreak;
                     }
-                    if (SkUnicode_icu::isControl(unichar)) {
+                    if (this->isControl(unichar)) {
                         results->at(i) |= SkUnicode::kControl;
                     }
                 }

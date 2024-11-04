@@ -11,6 +11,9 @@
 #include "include/core/SkRefCnt.h"
 #include "include/gpu/GpuTypes.h"
 
+#include <tuple>
+#include <utility>
+
 enum SkColorType : int;
 class SkImage;
 struct SkSamplingOptions;
@@ -29,5 +32,12 @@ std::pair<sk_sp<SkImage>, SkSamplingOptions> GetGraphiteBacked(Recorder*,
                                                                SkSamplingOptions);
 
 } // namespace skgpu::graphite
+
+namespace skif {
+class Context;
+struct ContextInfo;
+Context MakeGraphiteContext(skgpu::graphite::Recorder* recorder,
+                            const ContextInfo& info);
+}  // namespace skif
 
 #endif // skgpu_graphite_ImageUtils_DEFINED

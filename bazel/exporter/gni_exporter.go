@@ -80,8 +80,6 @@ skia_core_sources += skia_skpicture_sources
 
 skia_core_public += skia_pathops_public
 skia_core_public += skia_skpicture_public
-# TODO(kjlubick) Move this into Chromium's BUILD.gn file.
-skia_core_public += skia_discardable_memory_chromium
 `
 
 // The footer written to gn/sksl_tests.gni.
@@ -92,14 +90,14 @@ const skslTestsFooter = `sksl_glsl_tests_sources =
 sksl_glsl_settings_tests_sources = sksl_blend_tests + sksl_settings_tests
 
 sksl_metal_tests_sources =
-    sksl_metal_tests + sksl_blend_tests + sksl_shared_tests
+    sksl_blend_tests + sksl_compute_tests + sksl_metal_tests + sksl_shared_tests
 
 sksl_hlsl_tests_sources = sksl_blend_tests + sksl_shared_tests
 
-sksl_wgsl_tests_sources = sksl_blend_tests + sksl_wgsl_tests
+sksl_wgsl_tests_sources = sksl_blend_tests + sksl_shared_tests + sksl_wgsl_tests
 
 sksl_spirv_tests_sources =
-    sksl_blend_tests + sksl_shared_tests + sksl_spirv_tests
+    sksl_blend_tests + sksl_compute_tests + sksl_shared_tests + sksl_spirv_tests
 
 sksl_skrp_tests_sources = sksl_folding_tests + sksl_rte_tests + sksl_shared_tests
 

@@ -11,7 +11,7 @@
 #include "include/core/SkSpan.h"
 #include "include/core/SkString.h"
 #include "include/core/SkTypes.h"
-#include "src/core/SkEnumBitMask.h"
+#include "src/base/SkEnumBitMask.h"
 #include "src/gpu/graphite/Attribute.h"
 #include "src/gpu/graphite/DrawTypes.h"
 #include "src/gpu/graphite/ResourceTypes.h"
@@ -32,8 +32,10 @@ namespace skgpu::graphite {
 class DrawWriter;
 class DrawParams;
 class PipelineDataGatherer;
+class Rect;
 class ResourceProvider;
 class TextureDataBlock;
+class Transform;
 
 struct ResourceBindingRequirements;
 
@@ -104,17 +106,23 @@ public:
     // 'half4 primitiveColor' variable (defined in the calling code).
     virtual const char* fragmentColorSkSL() const { return R"()"; }
 
+    // Returns the effective local-space outset the RenderStep applies to geometry transformed by
+    // `localToDevice` contained in the local `bounds`.
+    virtual float boundsOutset(const Transform& localToDevice, const Rect& bounds) const {
+        return 0.0f;
+    }
+
     uint32_t uniqueID() const { return fUniqueID; }
 
     // Returns a name formatted as "Subclass[variant]", where "Subclass" matches the C++ class name
     // and variant is a unique term describing instance's specific configuration.
     const char* name() const { return fName.c_str(); }
 
-    bool requiresMSAA()        const { return fFlags & Flags::kRequiresMSAA;        }
-    bool performsShading()     const { return fFlags & Flags::kPerformsShading;     }
-    bool hasTextures()         const { return fFlags & Flags::kHasTextures;         }
-    bool emitsCoverage()       const { return fFlags & Flags::kEmitsCoverage;       }
-    bool emitsPrimitiveColor() const { return fFlags & Flags::kEmitsPrimitiveColor; }
+    bool requiresMSAA()        const { return SkToBool(fFlags & Flags::kRequiresMSAA);        }
+    bool performsShading()     const { return SkToBool(fFlags & Flags::kPerformsShading);     }
+    bool hasTextures()         const { return SkToBool(fFlags & Flags::kHasTextures);         }
+    bool emitsCoverage()       const { return SkToBool(fFlags & Flags::kEmitsCoverage);       }
+    bool emitsPrimitiveColor() const { return SkToBool(fFlags & Flags::kEmitsPrimitiveColor); }
 
     PrimitiveType primitiveType()  const { return fPrimitiveType;  }
     size_t        vertexStride()   const { return fVertexStride;   }
@@ -202,7 +210,7 @@ private:
 
     std::string fName;
 };
-SK_MAKE_BITMASK_OPS(RenderStep::Flags);
+SK_MAKE_BITMASK_OPS(RenderStep::Flags)
 
 class Renderer {
     using StepFlags = RenderStep::Flags;
@@ -223,11 +231,21 @@ public:
     DrawTypeFlags drawTypes()      const { return fDrawTypes; }
     int           numRenderSteps() const { return fStepCount;    }
 
-    bool requiresMSAA()        const { return fStepFlags & StepFlags::kRequiresMSAA;        }
-    bool emitsCoverage()       const { return fStepFlags & StepFlags::kEmitsCoverage;       }
-    bool emitsPrimitiveColor() const { return fStepFlags & StepFlags::kEmitsPrimitiveColor; }
+    bool requiresMSAA() const {
+        return SkToBool(fStepFlags & StepFlags::kRequiresMSAA);
+    }
+    bool emitsCoverage() const {
+        return SkToBool(fStepFlags & StepFlags::kEmitsCoverage);
+    }
+    bool emitsPrimitiveColor() const {
+        return SkToBool(fStepFlags & StepFlags::kEmitsPrimitiveColor);
+    }
 
     SkEnumBitMask<DepthStencilFlags> depthStencilFlags() const { return fDepthStencilFlags; }
+
+    // Returns the effective local-space outset the Renderer applies to geometry transformed by
+    // `localToDevice` contained in the local `bounds`.
+    float boundsOutset(const Transform& localToDevice, const Rect& bounds) const;
 
 private:
     friend class RendererProvider; // for ctors

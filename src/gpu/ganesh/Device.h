@@ -65,7 +65,10 @@ struct SkDrawShadowRec;
 struct SkISize;
 struct SkPoint;
 struct SkRSXform;
-namespace skgpu { enum class Budgeted : bool; }
+namespace skgpu {
+enum class Budgeted : bool;
+class TiledTextureUtils;
+}
 namespace sktext {
 class GlyphRunList;
 namespace gpu {
@@ -92,7 +95,7 @@ public:
     GrSurfaceProxyView readSurfaceView();
     GrRenderTargetProxy* targetProxy();
 
-    GrRecordingContext* recordingContext() const { return fContext.get(); }
+    GrRecordingContext* recordingContext() const override { return fContext.get(); }
 
     bool wait(int numSemaphores,
               const GrBackendSemaphore* waitSemaphores,
@@ -122,6 +125,7 @@ public:
                                    ReadPixelsContext context);
 
     void asyncRescaleAndReadPixelsYUV420(SkYUVColorSpace yuvColorSpace,
+                                         bool readAlpha,
                                          sk_sp<SkColorSpace> dstColorSpace,
                                          const SkIRect& srcRect,
                                          SkISize dstSize,
@@ -193,6 +197,13 @@ public:
     void drawImageRect(const SkImage*, const SkRect* src, const SkRect& dst,
                        const SkSamplingOptions&, const SkPaint&,
                        SkCanvas::SrcRectConstraint) override;
+    bool drawAsTiledImageRect(SkCanvas*,
+                              const SkImage*,
+                              const SkRect* src,
+                              const SkRect& dst,
+                              const SkSamplingOptions&,
+                              const SkPaint&,
+                              SkCanvas::SrcRectConstraint) override;
     void drawImageLattice(const SkImage*, const SkCanvas::Lattice&,
                           const SkRect& dst, SkFilterMode, const SkPaint&) override;
 
@@ -207,6 +218,25 @@ public:
     void drawEdgeAAImageSet(const SkCanvas::ImageSetEntry[], int count, const SkPoint dstClips[],
                             const SkMatrix preViewMatrices[], const SkSamplingOptions&,
                             const SkPaint&, SkCanvas::SrcRectConstraint) override;
+
+    // Assumes the src and dst rects have already been optimized to fit the proxy.
+    // Only implemented by the gpu devices.
+    // This method is the lowest level draw used for tiled bitmap draws. It doesn't attempt to
+    // modify its parameters (e.g., adjust src & dst) but just draws the image however it can. It
+    // could, almost, be replaced with a drawEdgeAAImageSet call for the tiled bitmap draw use
+    // case but the extra tilemode requirement and the intermediate parameter processing (e.g.,
+    // trying to alter the SrcRectConstraint) currently block that.
+    void drawEdgeAAImage(const SkImage*,
+                         const SkRect& src,
+                         const SkRect& dst,
+                         const SkPoint dstClip[4],
+                         SkCanvas::QuadAAFlags,
+                         const SkMatrix& localToDevice,
+                         const SkSamplingOptions&,
+                         const SkPaint&,
+                         SkCanvas::SrcRectConstraint,
+                         const SkMatrix& srcToDst,
+                         SkTileMode);
 
     sk_sp<SkSpecialImage> makeSpecial(const SkBitmap&) override;
     sk_sp<SkSpecialImage> makeSpecial(const SkImage*) override;
@@ -305,27 +335,15 @@ private:
 
     // If not null, dstClip must be contained inside dst and will also respect the edge AA flags.
     // If 'preViewMatrix' is not null, final CTM will be this->ctm() * preViewMatrix.
-    void drawImageQuad(const SkImage*,
-                       const SkRect& src,
-                       const SkRect& dst,
-                       const SkPoint dstClip[4],
-                       SkCanvas::QuadAAFlags,
-                       const SkMatrix* preViewMatrix,
-                       const SkSamplingOptions&,
-                       const SkPaint&,
-                       SkCanvas::SrcRectConstraint);
-
-    void drawEdgeAAImage(const SkImage*,
-                         const SkRect& src,
-                         const SkRect& dst,
-                         const SkPoint dstClip[4],
-                         SkCanvas::QuadAAFlags,
-                         const SkMatrix& localToDevice,
-                         const SkSamplingOptions&,
-                         const SkPaint&,
-                         SkCanvas::SrcRectConstraint,
-                         const SkMatrix& srcToDst,
-                         SkTileMode tm) override;
+    void drawImageQuadDirect(const SkImage*,
+                             const SkRect& src,
+                             const SkRect& dst,
+                             const SkPoint dstClip[4],
+                             SkCanvas::QuadAAFlags,
+                             const SkMatrix* preViewMatrix,
+                             const SkSamplingOptions&,
+                             const SkPaint&,
+                             SkCanvas::SrcRectConstraint);
 
     // FIXME(michaelludwig) - Should be removed in favor of using drawImageQuad with edge flags to
     // for every element in the SkLatticeIter.
@@ -337,6 +355,7 @@ private:
                          const SkPaint&);
 
     friend class ::SkSurface_Ganesh;  // for access to surfaceProps
+    friend class skgpu::TiledTextureUtils;   // for access to clip()
 };
 
 GR_MAKE_BITFIELD_CLASS_OPS(Device::DeviceFlags)

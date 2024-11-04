@@ -9,10 +9,6 @@
 
 #include "include/core/SkFlattenable.h"
 
-#if defined(SK_ENABLE_SKVM)
-#include "src/core/SkVM.h"
-#endif
-
 class SkReadBuffer;
 class SkWriteBuffer;
 struct SkStageRec;
@@ -37,17 +33,6 @@ protected:
     }
 
     ShaderType type() const override { return ShaderType::kEmpty; }
-
-#if defined(SK_ENABLE_SKVM)
-    skvm::Color program(skvm::Builder*,
-                        skvm::Coord,
-                        skvm::Coord,
-                        skvm::Color,
-                        const SkShaders::MatrixRec&,
-                        const SkColorInfo&,
-                        skvm::Uniforms*,
-                        SkArenaAlloc*) const override;
-#endif
 
 private:
     friend void ::SkRegisterEmptyShaderFlattenable();

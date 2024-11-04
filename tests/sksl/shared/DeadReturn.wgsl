@@ -1,11 +1,12 @@
 /*
 
-:46:3 warning: code is unreachable
+:47:3 warning: code is unreachable
   return bool();
   ^^^^^^
 
 */
 
+diagnostic(off, derivative_uniformity);
 struct FSIn {
   @builtin(front_facing) sk_Clockwise: bool,
   @builtin(position) sk_FragCoord: vec4<f32>,
@@ -26,7 +27,7 @@ fn test_flat_b() -> bool {
 }
 fn test_if_b() -> bool {
   {
-    if (_globalUniforms.colorGreen.y > 0.0) {
+    if _globalUniforms.colorGreen.y > 0.0 {
       {
         return true;
       }
@@ -41,7 +42,7 @@ fn test_if_b() -> bool {
 }
 fn test_else_b() -> bool {
   {
-    if (_globalUniforms.colorGreen.y == 0.0) {
+    if _globalUniforms.colorGreen.y == 0.0 {
       {
         return false;
       }
@@ -59,7 +60,7 @@ fn test_loop_if_b() -> bool {
       var x: i32 = 0;
       loop {
         {
-          if (_globalUniforms.colorGreen.y == 0.0) {
+          if _globalUniforms.colorGreen.y == 0.0 {
             {
               return false;
             }

@@ -19,6 +19,7 @@
 
 namespace skgpu {
 class RefCntedCallback;
+class MutableTextureState;
 }
 
 namespace skgpu::graphite {
@@ -53,6 +54,13 @@ public:
 
     void addFinishedProc(sk_sp<RefCntedCallback> finishedProc);
     void callFinishedProcs(bool success);
+
+    virtual void addWaitSemaphores(size_t numWaitSemaphores,
+                                   const BackendSemaphore* waitSemaphores) {}
+    virtual void addSignalSemaphores(size_t numWaitSemaphores,
+                                     const BackendSemaphore* signalSemaphores) {}
+    virtual void prepareSurfaceForStateUpdate(SkSurface* targetSurface,
+                                              const MutableTextureState* newState) {}
 
     bool addRenderPass(const RenderPassDesc&,
                        sk_sp<Texture> colorTexture,

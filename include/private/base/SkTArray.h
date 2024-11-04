@@ -12,6 +12,7 @@
 #include "include/private/base/SkAssert.h"
 #include "include/private/base/SkAttributes.h"
 #include "include/private/base/SkContainers.h"
+#include "include/private/base/SkDebug.h"
 #include "include/private/base/SkMalloc.h"
 #include "include/private/base/SkMath.h"
 #include "include/private/base/SkSpan_impl.h"
@@ -277,7 +278,7 @@ public:
      * Removes the last element. Not safe to call when size() == 0.
      */
     void pop_back() {
-        SkASSERT(fSize > 0);
+        sk_collection_not_empty(this->empty());
         --fSize;
         fData[fSize].~T();
     }
@@ -386,15 +387,11 @@ public:
      * Get the i^th element.
      */
     T& operator[] (int i) {
-        SkASSERT(i < this->size());
-        SkASSERT(i >= 0);
-        return fData[i];
+        return fData[sk_collection_check_bounds(i, this->size())];
     }
 
     const T& operator[] (int i) const {
-        SkASSERT(i < this->size());
-        SkASSERT(i >= 0);
-        return fData[i];
+        return fData[sk_collection_check_bounds(i, this->size())];
     }
 
     T& at(int i) { return (*this)[i]; }
@@ -403,30 +400,38 @@ public:
     /**
      * equivalent to operator[](0)
      */
-    T& front() { SkASSERT(fSize > 0); return fData[0];}
+    T& front() {
+        sk_collection_not_empty(this->empty());
+        return fData[0];
+    }
 
-    const T& front() const { SkASSERT(fSize > 0); return fData[0];}
+    const T& front() const {
+        sk_collection_not_empty(this->empty());
+        return fData[0];
+    }
 
     /**
      * equivalent to operator[](size() - 1)
      */
-    T& back() { SkASSERT(fSize); return fData[fSize - 1];}
+    T& back() {
+        sk_collection_not_empty(this->empty());
+        return fData[fSize - 1];
+    }
 
-    const T& back() const { SkASSERT(fSize > 0); return fData[fSize - 1];}
+    const T& back() const {
+        sk_collection_not_empty(this->empty());
+        return fData[fSize - 1];
+    }
 
     /**
      * equivalent to operator[](size()-1-i)
      */
     T& fromBack(int i) {
-        SkASSERT(i >= 0);
-        SkASSERT(i < this->size());
-        return fData[fSize - i - 1];
+        return (*this)[fSize - i - 1];
     }
 
     const T& fromBack(int i) const {
-        SkASSERT(i >= 0);
-        SkASSERT(i < this->size());
-        return fData[fSize - i - 1];
+        return (*this)[fSize - i - 1];
     }
 
     bool operator==(const TArray<T, MEM_MOVE>& right) const {

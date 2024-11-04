@@ -55,6 +55,10 @@ using namespace skia_private;
 class SkPicture;
 class SkReadBuffer;
 
+namespace skif {
+class Context;
+}
+
 #ifdef SK_BUILD_FOR_ANDROID_FRAMEWORK
 #include "include/core/SkColorSpace.h"
 #include "include/private/SkColorData.h"
@@ -364,42 +368,26 @@ static CanvasTest kCanvasTests[] = {
         c->restoreToCount(baseSaveCount + 1);
         REPORTER_ASSERT(r, baseSaveCount + 1 == c->getSaveCount());
 
-       // should this pin to 1, or be a no-op, or crash?
-       c->restoreToCount(0);
-       REPORTER_ASSERT(r, 1 == c->getSaveCount());
+        // should this pin to 1, or be a no-op, or crash?
+        c->restoreToCount(0);
+        REPORTER_ASSERT(r, 1 == c->getSaveCount());
     },
     [](SkCanvas* c, skiatest::Reporter* r) {
-       // This test step challenges the TestDeferredCanvasStateConsistency
-       // test cases because the opaque paint can trigger an optimization
-       // that discards previously recorded commands. The challenge is to maintain
-       // correct clip and matrix stack state.
-       c->resetMatrix();
-       c->rotate(SkIntToScalar(30));
-       c->save();
-       c->translate(SkIntToScalar(2), SkIntToScalar(1));
-       c->save();
-       c->scale(SkIntToScalar(3), SkIntToScalar(3));
-       SkPaint paint;
-       paint.setColor(0xFFFFFFFF);
-       c->drawPaint(paint);
-       c->restore();
-       c->restore();
-    },
-    [](SkCanvas* c, skiatest::Reporter* r) {
-       // This test step challenges the TestDeferredCanvasStateConsistency
-       // test case because the canvas flush on a deferred canvas will
-       // reset the recording session. The challenge is to maintain correct
-       // clip and matrix stack state on the playback canvas.
-       c->resetMatrix();
-       c->rotate(SkIntToScalar(30));
-       c->save();
-       c->translate(SkIntToScalar(2), SkIntToScalar(1));
-       c->save();
-       c->scale(SkIntToScalar(3), SkIntToScalar(3));
-       c->drawRect(kRect, SkPaint());
-       c->flush();
-       c->restore();
-       c->restore();
+        // This test step challenges the TestDeferredCanvasStateConsistency
+        // test cases because the opaque paint can trigger an optimization
+        // that discards previously recorded commands. The challenge is to maintain
+        // correct clip and matrix stack state.
+        c->resetMatrix();
+        c->rotate(SkIntToScalar(30));
+        c->save();
+        c->translate(SkIntToScalar(2), SkIntToScalar(1));
+        c->save();
+        c->scale(SkIntToScalar(3), SkIntToScalar(3));
+        SkPaint paint;
+        paint.setColor(0xFFFFFFFF);
+        c->drawPaint(paint);
+        c->restore();
+        c->restore();
     },
     [](SkCanvas* c, skiatest::Reporter* r) {
         SkPoint pts[4];
@@ -639,7 +627,7 @@ public:
     static sk_sp<SkImageFilter> Make() { return sk_sp<SkImageFilter>(new ZeroBoundsImageFilter); }
 
 protected:
-    sk_sp<SkSpecialImage> onFilterImage(const Context&, SkIPoint*) const override {
+    sk_sp<SkSpecialImage> onFilterImage(const skif::Context&, SkIPoint*) const override {
         return nullptr;
     }
     SkIRect onFilterNodeBounds(const SkIRect&, const SkMatrix&,

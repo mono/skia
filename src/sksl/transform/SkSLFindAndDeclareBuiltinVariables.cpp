@@ -19,7 +19,6 @@
 #include "src/sksl/ir/SkSLIRNode.h"
 #include "src/sksl/ir/SkSLInterfaceBlock.h"
 #include "src/sksl/ir/SkSLLayout.h"
-#include "src/sksl/ir/SkSLModifiers.h"
 #include "src/sksl/ir/SkSLProgram.h"
 #include "src/sksl/ir/SkSLProgramElement.h"
 #include "src/sksl/ir/SkSLSymbol.h"
@@ -105,11 +104,12 @@ public:
                       }
                       switch (a->kind()) {
                           case ProgramElement::Kind::kGlobalVar:
-                              SkASSERT(GlobalVarBuiltinName(*a) != GlobalVarBuiltinName(*b));
+                              SkASSERT(a == b ||
+                                       GlobalVarBuiltinName(*a) != GlobalVarBuiltinName(*b));
                               return GlobalVarBuiltinName(*a) < GlobalVarBuiltinName(*b);
 
                           case ProgramElement::Kind::kInterfaceBlock:
-                              SkASSERT(InterfaceBlockName(*a) != InterfaceBlockName(*b));
+                              SkASSERT(a == b || InterfaceBlockName(*a) != InterfaceBlockName(*b));
                               return InterfaceBlockName(*a) < InterfaceBlockName(*b);
 
                           default:
@@ -146,7 +146,7 @@ void FindAndDeclareBuiltinVariables(Program& program) {
         if (var->isBuiltin()) {
             scanner.addDeclaringElement(var);
 
-            switch (var->modifiers().fLayout.fBuiltin) {
+            switch (var->layout().fBuiltin) {
                 // Set the FlipRT program input if we find sk_FragCoord or sk_Clockwise.
                 case SK_FRAGCOORD_BUILTIN:
                     if (context.fCaps->fCanUseFragCoord) {

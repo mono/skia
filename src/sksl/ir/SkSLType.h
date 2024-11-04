@@ -14,7 +14,8 @@
 #include "include/private/base/SkTArray.h"
 #include "src/sksl/SkSLPosition.h"
 #include "src/sksl/ir/SkSLIRNode.h"
-#include "src/sksl/ir/SkSLModifiers.h"
+#include "src/sksl/ir/SkSLLayout.h"
+#include "src/sksl/ir/SkSLModifierFlags.h"
 #include "src/sksl/ir/SkSLSymbol.h"
 #include "src/sksl/spirv.h"
 
@@ -70,16 +71,18 @@ struct CoercionCost {
  * Represents a single field in a struct type.
  */
 struct Field {
-    Field(Position pos, Modifiers modifiers, std::string_view name, const Type* type)
+    Field(Position pos, Layout layout, ModifierFlags flags, std::string_view name, const Type* type)
             : fPosition(pos)
-            , fModifiers(modifiers)
+            , fLayout(layout)
+            , fModifierFlags(flags)
             , fName(name)
             , fType(type) {}
 
     std::string description() const;
 
     Position fPosition;
-    Modifiers fModifiers;
+    Layout fLayout;
+    ModifierFlags fModifierFlags;
     std::string_view fName;
     const Type* fType;
 };
@@ -470,6 +473,10 @@ public:
         return fTypeKind == TypeKind::kGeneric;
     }
 
+    bool isSampler() const {
+        return fTypeKind == TypeKind::kSampler;
+    }
+
     bool isAtomic() const { return this->typeKind() == TypeKind::kAtomic; }
 
     virtual bool isScalar() const {
@@ -527,7 +534,7 @@ public:
     }
 
     bool hasPrecision() const {
-        return this->componentType().isNumber() || fTypeKind == TypeKind::kSampler;
+        return this->componentType().isNumber() || this->isSampler();
     }
 
     bool highPrecision() const {
@@ -549,12 +556,15 @@ public:
     const Type& toCompound(const Context& context, int columns, int rows) const;
 
     /**
-     * Returns a type which honors the precision and access-level qualifiers set in Modifiers. e.g.:
+     * Returns a type which honors the precision and access-level qualifiers set in ModifierFlags.
+     * For example:
      *  - Modifier `mediump` + Type `float2`:     Type `half2`
      *  - Modifier `readonly` + Type `texture2D`: Type `readonlyTexture2D`
      * Generates an error if the qualifiers don't make sense (`highp bool`, `writeonly MyStruct`)
      */
-    const Type* applyQualifiers(const Context& context, Modifiers* modifiers, Position pos) const;
+    const Type* applyQualifiers(const Context& context,
+                                ModifierFlags* modifierFlags,
+                                Position pos) const;
 
     /**
      * Coerces the passed-in expression to this type. If the types are incompatible, reports an
@@ -596,11 +606,11 @@ protected:
     }
 
     const Type* applyPrecisionQualifiers(const Context& context,
-                                         Modifiers* modifiers,
+                                         ModifierFlags* modifierFlags,
                                          Position pos) const;
 
     const Type* applyAccessQualifiers(const Context& context,
-                                      Modifiers* modifiers,
+                                      ModifierFlags* modifierFlags,
                                       Position pos) const;
 
 private:

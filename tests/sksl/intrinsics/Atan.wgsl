@@ -1,3 +1,4 @@
+diagnostic(off, derivative_uniformity);
 struct FSIn {
   @builtin(front_facing) sk_Clockwise: bool,
   @builtin(position) sk_FragCoord: vec4<f32>,
@@ -24,7 +25,7 @@ fn main(_skParam0: vec2<f32>) -> vec4<f32> {
     let _skTemp5 = atan2(_globalUniforms.inputVal.xy, vec2<f32>(1.0));
     let _skTemp6 = atan2(_globalUniforms.inputVal.xyz, vec3<f32>(1.0));
     let _skTemp7 = atan2(_globalUniforms.inputVal, constVal2);
-    return select(_globalUniforms.colorRed, _globalUniforms.colorGreen, vec4<bool>(((((((((((((((_skTemp0 == _globalUniforms.expected.x && all(_skTemp1 == _globalUniforms.expected.xy)) && all(_skTemp2 == _globalUniforms.expected.xyz)) && all(_skTemp3 == _globalUniforms.expected)) && 0.0 == _globalUniforms.expected.x) && all(vec2<f32>(0.0) == _globalUniforms.expected.xy)) && all(vec3<f32>(0.0) == _globalUniforms.expected.xyz)) && all(vec4<f32>(0.0) == _globalUniforms.expected)) && _skTemp4 == _globalUniforms.expected.x) && all(_skTemp5 == _globalUniforms.expected.xy)) && all(_skTemp6 == _globalUniforms.expected.xyz)) && all(_skTemp7 == _globalUniforms.expected)) && 0.0 == _globalUniforms.expected.x) && all(vec2<f32>(0.0) == _globalUniforms.expected.xy)) && all(vec3<f32>(0.0) == _globalUniforms.expected.xyz)) && all(vec4<f32>(0.0) == _globalUniforms.expected)));
+    return select(_globalUniforms.colorRed, _globalUniforms.colorGreen, vec4<bool>((((((((((((((((_skTemp0 == _globalUniforms.expected.x) && all(_skTemp1 == _globalUniforms.expected.xy)) && all(_skTemp2 == _globalUniforms.expected.xyz)) && all(_skTemp3 == _globalUniforms.expected)) && (0.0 == _globalUniforms.expected.x)) && all(vec2<f32>(0.0) == _globalUniforms.expected.xy)) && all(vec3<f32>(0.0) == _globalUniforms.expected.xyz)) && all(vec4<f32>(0.0) == _globalUniforms.expected)) && (_skTemp4 == _globalUniforms.expected.x)) && all(_skTemp5 == _globalUniforms.expected.xy)) && all(_skTemp6 == _globalUniforms.expected.xyz)) && all(_skTemp7 == _globalUniforms.expected)) && (0.0 == _globalUniforms.expected.x)) && all(vec2<f32>(0.0) == _globalUniforms.expected.xy)) && all(vec3<f32>(0.0) == _globalUniforms.expected.xyz)) && all(vec4<f32>(0.0) == _globalUniforms.expected)));
   }
 }
 @fragment fn fragmentMain(_stageIn: FSIn) -> FSOut {

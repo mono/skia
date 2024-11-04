@@ -7,11 +7,17 @@
 
 #include "src/gpu/graphite/ImageUtils.h"
 
+#include "include/core/SkBitmap.h"
 #include "include/gpu/graphite/ImageProvider.h"
 #include "include/gpu/graphite/Recorder.h"
+#include "src/core/SkImageFilterTypes.h"
 #include "src/core/SkSamplingPriv.h"
+#include "src/core/SkSpecialSurface.h"
+#include "src/gpu/graphite/Caps.h"
 #include "src/gpu/graphite/Image_Graphite.h"
 #include "src/gpu/graphite/Log.h"
+#include "src/gpu/graphite/RecorderPriv.h"
+#include "src/gpu/graphite/SpecialImage_Graphite.h"
 #include "src/image/SkImage_Base.h"
 
 namespace {
@@ -111,3 +117,39 @@ std::tuple<skgpu::graphite::TextureProxyView, SkColorType> AsView(Recorder* reco
 }
 
 } // namespace skgpu::graphite
+
+namespace skif {
+
+Context MakeGraphiteContext(skgpu::graphite::Recorder* recorder,
+                            const ContextInfo& info) {
+    SkASSERT(recorder);
+    SkASSERT(!info.fSource.image() || info.fSource.image()->isGraphiteBacked());
+
+    auto makeSurfaceFunctor = [recorder](const SkImageInfo& imageInfo,
+                                         const SkSurfaceProps* props) {
+        return SkSpecialSurfaces::MakeGraphite(recorder, imageInfo, *props);
+    };
+    auto makeImageCallback = [recorder](const SkIRect& subset,
+                                sk_sp<SkImage> image,
+                                const SkSurfaceProps& props) {
+        // This just makes a raster image, but it could maybe call MakeFromGraphite
+        return SkSpecialImages::MakeGraphite(recorder, subset, image, props);
+    };
+    auto makeCachedBitmapCallback = [recorder](const SkBitmap& data) -> sk_sp<SkImage> {
+        auto proxy = skgpu::graphite::RecorderPriv::CreateCachedProxy(recorder, data);
+        if (!proxy) {
+            return nullptr;
+        }
+
+        const SkColorInfo& colorInfo = data.info().colorInfo();
+        skgpu::Swizzle swizzle = recorder->priv().caps()->getReadSwizzle(colorInfo.colorType(),
+                                                                         proxy->textureInfo());
+        return sk_make_sp<skgpu::graphite::Image>(
+                data.getGenerationID(),
+                skgpu::graphite::TextureProxyView(std::move(proxy), swizzle),
+                colorInfo);
+    };
+
+    return Context(info, nullptr, makeSurfaceFunctor, makeImageCallback, makeCachedBitmapCallback);
+}
+}  // namespace skif

@@ -13,6 +13,7 @@
 #include "include/private/base/SkTArray.h"
 #include "src/sksl/SkSLIntrinsicList.h"
 #include "src/sksl/ir/SkSLIRNode.h"
+#include "src/sksl/ir/SkSLModifierFlags.h"
 #include "src/sksl/ir/SkSLSymbol.h"
 
 #include <memory>
@@ -24,11 +25,10 @@ namespace SkSL {
 class Context;
 class ExpressionArray;
 class FunctionDefinition;
+struct Modifiers;
 class Position;
 class Type;
 class Variable;
-
-struct Modifiers;
 
 /**
  * A function declaration (not a definition -- does not contain a body).
@@ -37,8 +37,9 @@ class FunctionDeclaration final : public Symbol {
 public:
     inline static constexpr Kind kIRNodeKind = Kind::kFunctionDeclaration;
 
-    FunctionDeclaration(Position pos,
-                        const Modifiers* modifiers,
+    FunctionDeclaration(const Context& context,
+                        Position pos,
+                        ModifierFlags modifierFlags,
                         std::string_view name,
                         skia_private::TArray<Variable*> parameters,
                         const Type* returnType,
@@ -46,8 +47,7 @@ public:
 
     static FunctionDeclaration* Convert(const Context& context,
                                         Position pos,
-                                        Position modifiersPos,
-                                        const Modifiers* modifiers,
+                                        const Modifiers& modifiers,
                                         std::string_view name,
                                         skia_private::TArray<std::unique_ptr<Variable>> parameters,
                                         Position returnTypePos,
@@ -55,12 +55,12 @@ public:
 
     void addParametersToSymbolTable(const Context& context);
 
-    const Modifiers& modifiers() const {
-        return *fModifiers;
+    ModifierFlags modifierFlags() const {
+        return fModifierFlags;
     }
 
-    void setModifiers(const Modifiers* m) {
-        fModifiers = m;
+    void setModifierFlags(ModifierFlags m) {
+        fModifierFlags = m;
     }
 
     const FunctionDefinition* definition() const {
@@ -116,6 +116,22 @@ public:
     bool matches(const FunctionDeclaration& f) const;
 
     /**
+     * If this function is main(), and it has the requested parameter, returns that parameter.
+     * For instance, only a runtime-blend program will have a dest-color parameter, in parameter 1;
+     * `getMainDestColorParameter` will return that parameter if this is a runtime-blend main()
+     * function. Otherwise, null is returned.
+     */
+    const Variable* getMainCoordsParameter() const {
+        return fHasMainCoordsParameter ? fParameters[0] : nullptr;
+    }
+    const Variable* getMainInputColorParameter() const {
+        return fHasMainInputColorParameter ? fParameters[0] : nullptr;
+    }
+    const Variable* getMainDestColorParameter() const {
+        return fHasMainDestColorParameter ? fParameters[1] : nullptr;
+    }
+
+    /**
      * Determine the effective types of this function's parameters and return value when called with
      * the given arguments. This is relevant for functions with generic parameter types, where this
      * will collapse the generic types down into specific concrete types.
@@ -138,12 +154,15 @@ public:
 private:
     const FunctionDefinition* fDefinition;
     FunctionDeclaration* fNextOverload = nullptr;
-    const Modifiers* fModifiers;
     skia_private::TArray<Variable*> fParameters;
-    const Type* fReturnType;
-    bool fBuiltin;
-    bool fIsMain;
+    const Type* fReturnType = nullptr;
+    ModifierFlags fModifierFlags;
     mutable IntrinsicKind fIntrinsicKind = kNotIntrinsic;
+    bool fBuiltin = false;
+    bool fIsMain = false;
+    bool fHasMainCoordsParameter = false;
+    bool fHasMainInputColorParameter = false;
+    bool fHasMainDestColorParameter = false;
 
     using INHERITED = Symbol;
 };

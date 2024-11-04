@@ -54,16 +54,16 @@ WorkgroupSize to_wg_size(const vello_cpp::WorkgroupSize& src) {
 }
 
 vello_cpp::Fill to_fill_type(SkPathFillType fillType) {
+    // Vello does not provide an encoding for inverse fill types. When Skia uses vello to render
+    // a coverage mask for an inverse fill, it encodes a regular fill and inverts the coverage value
+    // after sampling the mask.
     switch (fillType) {
         case SkPathFillType::kWinding:
+        case SkPathFillType::kInverseWinding:
             return vello_cpp::Fill::NonZero;
         case SkPathFillType::kEvenOdd:
+        case SkPathFillType::kInverseEvenOdd:
             return vello_cpp::Fill::EvenOdd;
-        default:
-            // TODO(b/238756757): vello doesn't define fill types for kInverseWinding and
-            // kInverseEvenOdd. This should be updated to support those cases.
-            SkDebugf("fill type not supported by vello\n");
-            break;
     }
     return vello_cpp::Fill::NonZero;
 }
@@ -174,14 +174,26 @@ void VelloScene::solidFill(const SkPath& shape,
 
 void VelloScene::solidStroke(const SkPath& shape,
                              const SkColor4f& fillColor,
-                             float width,
+                             const SkStrokeRec& style,
                              const Transform& t) {
-    // Vello currently only supports round stroke styles
-    PathIter iter(shape, t);
-    fEncoding->stroke({width},
-                      to_vello_affine(t),
-                      {vello_cpp::BrushKind::Solid, {to_vello_color(fillColor)}},
-                      iter);
+    // TODO(b/285423263): Vello currently only supports round stroke styles. Draw unsupported
+    // stroke styles by expanding the stroke and encoding it as a fill, until the GPU pipelines
+    // support them.
+    if (style.getCap() == SkPaint::kRound_Cap && style.getJoin() == SkPaint::kRound_Join) {
+        PathIter iter(shape, t);
+        fEncoding->stroke({style.getWidth()},
+                          to_vello_affine(t),
+                          {vello_cpp::BrushKind::Solid, {to_vello_color(fillColor)}},
+                          iter);
+    } else {
+        SkPath p;
+        style.applyToPath(&p, shape);
+        PathIter iter(p, t);
+        fEncoding->fill(vello_cpp::Fill::NonZero,
+                        to_vello_affine(t),
+                        {vello_cpp::BrushKind::Solid, {to_vello_color(fillColor)}},
+                        iter);
+    }
 }
 
 void VelloScene::pushClipLayer(const SkPath& shape, const Transform& t) {
@@ -274,16 +286,20 @@ std::unique_ptr<DispatchGroup> VelloRenderer::renderScene(const RenderParams& pa
     }
 
     // TODO(b/285189802): The default sizes for the bump buffers (~97MB) exceed Graphite's resource
-    // budget if multiple passes are necessary per frame (250MB, see ResouceCache.h). We shrink
-    // them by half here as a crude reduction which seems to be enough for a 4k x 4k atlas render
-    // even in dense situations (e.g. paris-30k). We need to come up with a better approach
-    // to accurately predict the sizes for these buffers based on the scene encoding and our
-    // resource budget.
+    // budget if multiple passes are necessary per frame (250MB, see ResouceCache.h). We apply a
+    // crude size reduction here which seems to be enough for a 4k x 4k atlas render for the GMs
+    // that we have tested. The numbers below are able to render GM_longpathdash with CPU-side
+    // stroke expansion.
+    //
+    // We need to come up with a better approach to accurately predict the sizes for these buffers
+    // based on the scene encoding and our resource budget. It should be possible to build a
+    // conservative estimate using the total number of path verbs, some heuristic based on the verb
+    // and the path's transform, and the total number of tiles.
     //
     // The following numbers amount to ~48MB
     const size_t bin_data_size = bufferSizes.bin_data / 2;
     const size_t tiles_size = bufferSizes.tiles / 2;
-    const size_t segments_size = bufferSizes.segments / 2;
+    const size_t segments_size = bufferSizes.segments * 2 / 3;
     const size_t ptcl_size = bufferSizes.ptcl / 2;
 
     // See the comments in VelloComputeSteps.h for an explanation of the logic here.

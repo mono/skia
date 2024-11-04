@@ -22,6 +22,8 @@ skia_graphite_public = [
 ]
 
 skia_graphite_sources = [
+  "$_src/AtlasProvider.cpp",
+  "$_src/AtlasProvider.h",
   "$_src/AttachmentTypes.h",
   "$_src/Attribute.h",
   "$_src/BackendSemaphore.cpp",
@@ -97,6 +99,8 @@ skia_graphite_sources = [
   "$_src/PaintParams.h",
   "$_src/PaintParamsKey.cpp",
   "$_src/PaintParamsKey.h",
+  "$_src/PathAtlas.cpp",
+  "$_src/PathAtlas.h",
   "$_src/PipelineData.cpp",
   "$_src/PipelineData.h",
   "$_src/PipelineDataCache.h",
@@ -162,6 +166,7 @@ skia_graphite_sources = [
   "$_src/compute/ComputeStep.h",
   "$_src/compute/DispatchGroup.cpp",
   "$_src/compute/DispatchGroup.h",
+  "$_src/geom/AtlasShape.h",
   "$_src/geom/BoundsManager.h",
   "$_src/geom/EdgeAAQuad.h",
   "$_src/geom/Geometry.h",
@@ -175,12 +180,15 @@ skia_graphite_sources = [
   "$_src/geom/Transform_graphite.h",
   "$_src/render/AnalyticRRectRenderStep.cpp",
   "$_src/render/AnalyticRRectRenderStep.h",
+  "$_src/render/AtlasShapeRenderStep.cpp",
+  "$_src/render/AtlasShapeRenderStep.h",
   "$_src/render/BitmapTextRenderStep.cpp",
   "$_src/render/BitmapTextRenderStep.h",
   "$_src/render/CommonDepthStencilSettings.h",
   "$_src/render/CoverBoundsRenderStep.cpp",
   "$_src/render/CoverBoundsRenderStep.h",
   "$_src/render/DynamicInstancesPatchAllocator.h",
+  "$_src/render/GraphiteVertexFiller.cpp",
   "$_src/render/MiddleOutFanRenderStep.cpp",
   "$_src/render/MiddleOutFanRenderStep.h",
   "$_src/render/SDFTextRenderStep.cpp",
@@ -193,8 +201,8 @@ skia_graphite_sources = [
   "$_src/render/TessellateWedgesRenderStep.h",
   "$_src/render/VerticesRenderStep.cpp",
   "$_src/render/VerticesRenderStep.h",
-  "$_src/text/AtlasManager.cpp",
-  "$_src/text/AtlasManager.h",
+  "$_src/text/TextAtlasManager.cpp",
+  "$_src/text/TextAtlasManager.h",
 ]
 
 skia_graphite_dawn_public = [

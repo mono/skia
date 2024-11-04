@@ -13,7 +13,7 @@
 #include "include/core/SkImageInfo.h"
 #include "include/core/SkRefCnt.h"
 #include "include/private/base/SkAlign.h"
-#include "src/core/SkEnumBitMask.h"
+#include "src/base/SkEnumBitMask.h"
 #include "src/gpu/ResourceKey.h"
 #include "src/gpu/Swizzle.h"
 #include "src/gpu/graphite/ResourceTypes.h"
@@ -101,9 +101,6 @@ public:
                                     Shareable,
                                     GraphiteResourceKey*) const = 0;
 
-    // Returns the number of bytes for the backend format in the TextureInfo
-    virtual size_t bytesPerPixel(const TextureInfo&) const = 0;
-
     const ResourceBindingRequirements& resourceBindingRequirements() const {
         return fResourceBindingReqs;
     }
@@ -159,6 +156,13 @@ public:
                                                      const TextureInfo& srcTextureInfo,
                                                      SkColorType dstColorType) const = 0;
 
+    /**
+     * Checks whether the passed color type is renderable. If so, the same color type is passed
+     * back. If not, provides an alternative (perhaps lower bit depth and/or unorm instead of float)
+     * color type that is supported or kUnknown if there no renderable fallback format.
+     */
+    SkColorType getRenderableColorType(SkColorType) const;
+
     bool clampToBorderSupport() const { return fClampToBorderSupport; }
 
     bool protectedSupport() const { return fProtectedSupport; }
@@ -175,6 +179,9 @@ public:
 
     // Returns whether a draw buffer can be mapped.
     bool drawBufferCanBeMapped() const { return fDrawBufferCanBeMapped; }
+
+    // Returns whether compute shaders are supported.
+    bool computeSupport() const { return fComputeSupport; }
 
     // Returns the skgpu::Swizzle to use when sampling or reading back from a texture with the
     // passed in SkColorType and TextureInfo.
@@ -205,9 +212,6 @@ protected:
     // Subclasses must call this at the end of their init method in order to do final processing on
     // the caps.
     void finishInitialization(const ContextOptions&);
-
-    // TODO: This value should be set by some context option. For now just making it 4.
-    uint32_t defaultMSAASamples() const { return 4; }
 
     // There are only a few possible valid sample counts (1, 2, 4, 8, 16). So we can key on those 5
     // options instead of the actual sample value.
@@ -246,6 +250,7 @@ protected:
     };
 
     int fMaxTextureSize = 0;
+    int fDefaultMSAASamples = 4;
     size_t fRequiredUniformBufferAlignment = 0;
     size_t fRequiredStorageBufferAlignment = 0;
     size_t fRequiredTransferBufferAlignment = 0;
@@ -259,6 +264,8 @@ protected:
     bool fStorageBufferSupport = false;
     bool fStorageBufferPreferred = false;
     bool fDrawBufferCanBeMapped = true;
+
+    bool fComputeSupport = false;
 
     ResourceBindingRequirements fResourceBindingReqs;
 

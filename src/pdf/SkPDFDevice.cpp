@@ -104,7 +104,7 @@ private:
 // Utility functions
 
 // This function destroys the mask and either frees or takes the pixels.
-sk_sp<SkImage> mask_to_greyscale_image(SkMask* mask) {
+sk_sp<SkImage> mask_to_greyscale_image(SkMaskBuilder* mask) {
     sk_sp<SkImage> img;
     SkPixmap pm(SkImageInfo::Make(mask->fBounds.width(), mask->fBounds.height(),
                                   kGray_8_SkColorType, kOpaque_SkAlphaType),
@@ -118,15 +118,15 @@ sk_sp<SkImage> mask_to_greyscale_image(SkMask* mask) {
             img = SkImages::DeferredFromEncodedData(buffer.detachAsData());
             SkASSERT(img);
             if (img) {
-                SkMask::FreeImage(mask->fImage);
+                SkMaskBuilder::FreeImage(mask->image());
             }
         }
     }
     if (!img) {
         img = SkImages::RasterFromPixmap(
-                pm, [](const void* p, void*) { SkMask::FreeImage((void*)p); }, nullptr);
+                pm, [](const void* p, void*) { SkMaskBuilder::FreeImage((void*)p); }, nullptr);
     }
-    *mask = SkMask();  // destructive;
+    *mask = SkMaskBuilder();  // destructive;
     return img;
 }
 
@@ -157,7 +157,7 @@ static void draw_points(SkCanvas::PointMode mode,
     SkRasterClip rc(bounds);
     SkDraw draw;
     draw.fDst = SkPixmap(SkImageInfo::MakeUnknown(bounds.right(), bounds.bottom()), nullptr, 0);
-    draw.fMatrixProvider = device;
+    draw.fCTM = &device->localToDevice();
     draw.fRC = &rc;
     draw.drawPoints(mode, count, points, paint, device);
 }
@@ -512,14 +512,14 @@ void SkPDFDevice::internalDrawPathWithFilter(const SkClipStack& clipStack,
     path.transform(ctm, &path);
 
     SkIRect bounds = clipStack.bounds(this->bounds()).roundOut();
-    SkMask sourceMask;
+    SkMaskBuilder sourceMask;
     if (!SkDraw::DrawToMask(path, bounds, paint->getMaskFilter(), &SkMatrix::I(),
-                            &sourceMask, SkMask::kComputeBoundsAndRenderImage_CreateMode,
+                            &sourceMask, SkMaskBuilder::kComputeBoundsAndRenderImage_CreateMode,
                             initStyle)) {
         return;
     }
-    SkAutoMaskFreeImage srcAutoMaskFreeImage(sourceMask.fImage);
-    SkMask dstMask;
+    SkAutoMaskFreeImage srcAutoMaskFreeImage(sourceMask.image());
+    SkMaskBuilder dstMask;
     SkIPoint margin;
     if (!as_MFB(paint->getMaskFilter())->filterMask(&dstMask, sourceMask, ctm, &margin)) {
         return;
@@ -973,14 +973,12 @@ void SkPDFDevice::drawVertices(const SkVertices*, sk_sp<SkBlender>, const SkPain
     // TODO: implement drawVertices
 }
 
-#ifdef SK_ENABLE_SKSL
 void SkPDFDevice::drawMesh(const SkMesh&, sk_sp<SkBlender>, const SkPaint&) {
     if (this->hasEmptyClip()) {
         return;
     }
     // TODO: implement drawMesh
 }
-#endif
 
 void SkPDFDevice::drawFormXObject(SkPDFIndirectReference xObject, SkDynamicMemoryWStream* content) {
     ScopedOutputMarkedContentTags mark(fNodeId, fDocument, content);
@@ -1727,7 +1725,7 @@ void SkPDFDevice::drawSpecial(SkSpecialImage* srcImg, const SkMatrix& localToDev
     if (this->hasEmptyClip()) {
         return;
     }
-    SkASSERT(!srcImg->isTextureBacked());
+    SkASSERT(!srcImg->isGaneshBacked() && !srcImg->isGraphiteBacked());
     SkASSERT(!paint.getMaskFilter() && !paint.getImageFilter());
 
     SkBitmap resultBM;
@@ -1739,12 +1737,12 @@ void SkPDFDevice::drawSpecial(SkSpecialImage* srcImg, const SkMatrix& localToDev
 }
 
 sk_sp<SkSpecialImage> SkPDFDevice::makeSpecial(const SkBitmap& bitmap) {
-    return SkSpecialImage::MakeFromRaster(bitmap.bounds(), bitmap, this->surfaceProps());
+    return SkSpecialImages::MakeFromRaster(bitmap.bounds(), bitmap, this->surfaceProps());
 }
 
 sk_sp<SkSpecialImage> SkPDFDevice::makeSpecial(const SkImage* image) {
-    return SkSpecialImage::MakeFromImage(nullptr, image->bounds(), image->makeNonTextureImage(),
-                                         this->surfaceProps());
+    return SkSpecialImages::MakeFromRaster(
+            image->bounds(), image->makeNonTextureImage(), this->surfaceProps());
 }
 
 SkImageFilterCache* SkPDFDevice::getImageFilterCache() {

@@ -205,10 +205,6 @@ void sk_canvas_draw_drawable(sk_canvas_t* ccanvas, sk_drawable_t* cdrawable, con
     AsCanvas(ccanvas)->drawDrawable(AsDrawable(cdrawable), cmatrix ? &m : nullptr);
 }
 
-void sk_canvas_flush(sk_canvas_t* ccanvas) {
-    AsCanvas(ccanvas)->flush();
-}
-
 sk_canvas_t* sk_canvas_new_from_bitmap(const sk_bitmap_t* bitmap) {
     return ToCanvas(new SkCanvas(*AsBitmap(bitmap)));
 }
@@ -303,4 +299,12 @@ sk_overdraw_canvas_t* sk_overdraw_canvas_new(sk_canvas_t* canvas) {
 
 void sk_overdraw_canvas_destroy(sk_overdraw_canvas_t* canvas) {
     delete AsOverdrawCanvas(canvas);
+}
+
+gr_recording_context_t* sk_get_recording_context(sk_canvas_t* canvas) {
+    return ToGrRecordingContext(AsCanvas(canvas)->recordingContext());
+}
+
+sk_surface_t* sk_get_surface(sk_canvas_t* canvas) {
+    return ToSurface(AsCanvas(canvas)->getSurface());
 }

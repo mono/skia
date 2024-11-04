@@ -423,6 +423,7 @@ func GenTasks(cfg *Config) {
 			"skia/third_party",
 			"skia/tools",
 			// needed for tests
+			"skia/gm", // Needed to run GMs with Bazel.
 			"skia/gn", // some Python scripts still live here
 			"skia/resources",
 			"skia/package.json",
@@ -702,7 +703,7 @@ var codesizeTaskNameRegexp = regexp.MustCompile("^CodeSize-[a-zA-Z0-9_]+-")
 // deriveCompileTaskName returns the name of a compile task based on the given
 // job name.
 func (b *jobBuilder) deriveCompileTaskName() string {
-	if b.role("Test", "Perf", "FM") {
+	if b.role("Test", "Perf") {
 		task_os := b.parts["os"]
 		ec := []string{}
 		if val := b.parts["extra_config"]; val != "" {
@@ -710,7 +711,7 @@ func (b *jobBuilder) deriveCompileTaskName() string {
 			ignore := []string{
 				"Skpbench", "AbandonGpuContext", "PreAbandonGpuContext", "Valgrind",
 				"FailFlushTimeCallbacks", "ReleaseAndAbandonGpuContext", "FSAA", "FAAA", "FDAA",
-				"NativeFonts", "GDI", "NoGPUThreads", "DDL1", "DDL3", "T8888",
+				"NativeFonts", "GDI", "NoGPUThreads", "DDL1", "DDL3",
 				"DDLTotal", "DDLRecord", "9x9", "BonusConfigs", "ColorSpaces", "GL",
 				"SkottieTracing", "SkottieWASM", "GpuTess", "DMSAAStats", "Mskp", "Docker", "PDF",
 				"Puppeteer", "SkottieFrames", "RenderSKP", "CanvasPerf", "AllPathsVolatile",
@@ -851,6 +852,9 @@ func (b *taskBuilder) defaultSwarmDimensions() {
 		if !ok {
 			log.Fatalf("Entry %q not found in OS mapping.", os)
 		}
+		if os == "Debian11" && b.extraConfig("Docker") {
+			d["os"] = DEFAULT_OS_LINUX_GCE
+		}
 		if os == "Win10" && b.parts["model"] == "Golo" {
 			// ChOps-owned machines have Windows 10 21h1.
 			d["os"] = "Windows-10-19043"
@@ -924,10 +928,11 @@ func (b *taskBuilder) defaultSwarmDimensions() {
 					"MacMini7.1":     "x86-64-i5-4278U",
 					"NUC5i7RYH":      "x86-64-i7-5557U",
 					"NUC9i7QN":       "x86-64-i7-9750H",
+					"NUC11TZi5":      "x86-64-avx2",
 				},
 				"AVX512": {
-					"GCE":  "x86-64-Skylake_GCE",
-					"Golo": "Intel64_Family_6_Model_85_Stepping_7__GenuineIntel",
+					"GCE":            "x86-64-Skylake_GCE",
+					"Golo":           "Intel64_Family_6_Model_85_Stepping_7__GenuineIntel",
 				},
 				"Rome": {
 					"GCE": "x86-64-AMD_Rome_GCE",
@@ -956,17 +961,17 @@ func (b *taskBuilder) defaultSwarmDimensions() {
 				gpu, ok := map[string]string{
 					// At some point this might use the device ID, but for now it's like Chromebooks.
 					"GTX660":        "10de:11c0-26.21.14.4120",
-					"GTX960":        "10de:1401-31.0.15.1694",
+					"GTX960":        "10de:1401-31.0.15.3667",
 					"IntelHD4400":   "8086:0a16-20.19.15.4963",
 					"IntelIris540":  "8086:1926-31.0.101.2115",
 					"IntelIris6100": "8086:162b-20.19.15.4963",
 					"IntelIris655":  "8086:3ea5-26.20.100.7463",
-					"IntelIrisXe":   "8086:9a49-31.0.101.3959",
+					"IntelIrisXe":   "8086:9a49-31.0.101.4338",
 					"RadeonHD7770":  "1002:683d-26.20.13031.18002",
 					"RadeonR9M470X": "1002:6646-26.20.13031.18002",
 					"QuadroP400":    "10de:1cb3-30.0.15.1179",
 					"RadeonVega6":   "1002:1636-31.0.14057.5006",
-					"RTX3060":       "10de:2489-31.0.15.1694",
+					"RTX3060":       "10de:2489-31.0.15.3667",
 				}[b.parts["cpu_or_gpu_value"]]
 				if !ok {
 					log.Fatalf("Entry %q not found in Win GPU mapping.", b.parts["cpu_or_gpu_value"])
@@ -1321,6 +1326,9 @@ func (b *jobBuilder) compile() string {
 				if b.compiler("Clang") {
 					b.asset("clang_win")
 				}
+				if b.extraConfig("DWriteCore") {
+					b.asset("dwritecore")
+				}
 			} else if b.matchOs("Mac") {
 				b.cipd(CIPD_PKGS_XCODE...)
 				b.Spec.Caches = append(b.Spec.Caches, &specs.Cache{
@@ -1638,6 +1646,10 @@ func (b *taskBuilder) commonTestPerfAssets() {
 			}
 		}
 	}
+
+	if b.matchOs("Win") && b.extraConfig("DWriteCore") {
+		b.asset("dwritecore")
+	}
 }
 
 // directUpload adds prerequisites for uploading to GCS.
@@ -1716,6 +1728,9 @@ func (b *jobBuilder) dm() {
 		if b.matchOs("Android") && b.extraConfig("ASAN") {
 			b.asset("android_ndk_linux")
 		}
+		if b.extraConfig("NativeFonts") && !b.matchOs("Android") {
+			b.needsFontsForParagraphTests()
+		}
 		b.commonTestPerfAssets()
 		if b.matchExtraConfig("Lottie") {
 			b.asset("lottie-samples")
@@ -1754,55 +1769,6 @@ func (b *jobBuilder) dm() {
 			b.dep(depName)
 		})
 	}
-}
-
-func (b *jobBuilder) fm() {
-	goos := "linux"
-	if strings.Contains(b.parts["os"], "Win") {
-		goos = "windows"
-	}
-	if strings.Contains(b.parts["os"], "Mac") {
-		goos = "darwin"
-	}
-
-	b.addTask(b.Name, func(b *taskBuilder) {
-		b.asset("skimage", "skp", "svg")
-		b.cas(CAS_TEST)
-		b.dep(b.buildTaskDrivers(goos, "amd64"), b.compile())
-		b.cmd("./fm_driver${EXECUTABLE_SUFFIX}",
-			"--local=false",
-			"--resources=skia/resources",
-			"--imgs=skimage",
-			"--skps=skp",
-			"--svgs=svg",
-			"--project_id", "skia-swarming-bots",
-			"--task_id", specs.PLACEHOLDER_TASK_ID,
-			"--bot", b.Name,
-			"--gold="+strconv.FormatBool(!b.matchExtraConfig("SAN")),
-			"--gold_hashes_url", b.cfg.GoldHashesURL,
-			"build/fm${EXECUTABLE_SUFFIX}")
-		b.serviceAccount(b.cfg.ServiceAccountUploadGM)
-		b.swarmDimensions()
-		b.attempts(1)
-
-		if b.isLinux() && b.matchExtraConfig("SAN") {
-			b.asset("clang_linux")
-			// Sanitizers may want to run llvm-symbolizer for readable stack traces.
-			b.addToPATH("clang_linux/bin")
-
-			// Point sanitizer builds at our prebuilt libc++ for this sanitizer.
-			if b.extraConfig("MSAN") {
-				// We'd see false positives in std::basic_string<char> if this weren't set.
-				b.envPrefixes("LD_LIBRARY_PATH", "clang_linux/msan")
-			} else if b.extraConfig("TSAN") {
-				// Occasional false positives may crop up in the standard library without this.
-				b.envPrefixes("LD_LIBRARY_PATH", "clang_linux/tsan")
-			} else {
-				// The machines we run on may not have libstdc++ installed.
-				b.envPrefixes("LD_LIBRARY_PATH", "clang_linux/lib/x86_64-unknown-linux-gnu")
-			}
-		}
-	})
 }
 
 // canary generates a task that uses TaskDrivers to trigger canary manual rolls on autorollers.

@@ -27,10 +27,6 @@ def RunSteps(api):
 
 
 TEST_BUILDERS = [
-  'Build-Debian10-GCC-x86-Debug-Docker',
-  'Build-Debian10-GCC-x86_64-Debug-Docker',
-  'Build-Debian10-GCC-x86_64-Release-NoGPU_Docker',
-  'Build-Debian10-GCC-x86_64-Release-Shared_Docker',
   'Build-Debian10-Clang-arm-Release-Android_API26',
   'Build-Debian10-Clang-arm-Release-Android_ASAN',
   'Build-Debian10-Clang-arm-OptimizeForSize-Android_NoPatch',
@@ -69,6 +65,10 @@ TEST_BUILDERS = [
   'Build-Debian10-EMCC-wasm-Debug-PathKit',
   'Build-Debian10-EMCC-wasm-Release-CanvasKit_CPU',
   'Build-Debian10-EMCC-wasm-Release-PathKit',
+  'Build-Debian11-GCC-x86-Debug-Docker',
+  'Build-Debian11-GCC-x86_64-Debug-Docker',
+  'Build-Debian11-GCC-x86_64-Release-NoGPU_Docker',
+  'Build-Debian11-GCC-x86_64-Release-Shared_Docker',
   'Build-Mac-Clang-arm64-Debug-Android_Vulkan',
   'Build-Mac-Clang-arm64-Debug-iOS',
   'Build-Mac-Clang-arm64-Debug-Graphite_Dawn',

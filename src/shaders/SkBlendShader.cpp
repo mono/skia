@@ -11,7 +11,6 @@
 #include "include/core/SkBlender.h"
 #include "include/core/SkData.h"
 #include "include/core/SkFlattenable.h"
-#include "include/effects/SkRuntimeEffect.h"
 #include "src/base/SkArenaAlloc.h"
 #include "src/core/SkBlendModePriv.h"
 #include "src/core/SkBlenderBase.h"
@@ -20,14 +19,12 @@
 #include "src/core/SkRasterPipelineOpContexts.h"
 #include "src/core/SkRasterPipelineOpList.h"
 #include "src/core/SkReadBuffer.h"
-#include "src/core/SkRuntimeEffectPriv.h"
 #include "src/core/SkWriteBuffer.h"
 #include "src/shaders/SkShaderBase.h"
 
-#if defined(SK_GRAPHITE)
-#include "src/gpu/Blend.h"
-#include "src/gpu/graphite/KeyHelpers.h"
-#include "src/gpu/graphite/PaintParamsKey.h"
+#if defined(SK_ENABLE_SKSL)
+#include "include/effects/SkRuntimeEffect.h"
+#include "src/core/SkRuntimeEffectPriv.h"
 #endif
 
 #include <optional>
@@ -102,48 +99,6 @@ bool SkBlendShader::appendStages(const SkStageRec& rec, const SkShaders::MatrixR
     SkBlendMode_AppendStages(fMode, rec.fPipeline);
     return true;
 }
-
-#if defined(SK_ENABLE_SKVM)
-skvm::Color SkBlendShader::program(skvm::Builder* p,
-                                   skvm::Coord device,
-                                   skvm::Coord local,
-                                   skvm::Color paint,
-                                   const SkShaders::MatrixRec& mRec,
-                                   const SkColorInfo& cinfo,
-                                   skvm::Uniforms* uniforms,
-                                   SkArenaAlloc* alloc) const {
-    skvm::Color d, s;
-    if ((d = as_SB(fDst)->program(p, device, local, paint, mRec, cinfo, uniforms, alloc)) &&
-        (s = as_SB(fSrc)->program(p, device, local, paint, mRec, cinfo, uniforms, alloc))) {
-        return p->blend(fMode, s, d);
-    }
-    return {};
-}
-#endif
-
-#if defined(SK_GRAPHITE)
-void SkBlendShader::addToKey(const skgpu::graphite::KeyContext& keyContext,
-                             skgpu::graphite::PaintParamsKeyBuilder* builder,
-                             skgpu::graphite::PipelineDataGatherer* gatherer) const {
-    using namespace skgpu::graphite;
-
-    BlendShaderBlock::BeginBlock(keyContext, builder, gatherer);
-
-    as_SB(fSrc)->addToKey(keyContext, builder, gatherer);
-    as_SB(fDst)->addToKey(keyContext, builder, gatherer);
-
-    SkSpan<const float> porterDuffConstants = skgpu::GetPorterDuffBlendConstants(fMode);
-    if (!porterDuffConstants.empty()) {
-        CoeffBlenderBlock::BeginBlock(keyContext, builder, gatherer, porterDuffConstants);
-        builder->endBlock();
-    } else {
-        BlendModeBlenderBlock::BeginBlock(keyContext, builder, gatherer, fMode);
-        builder->endBlock();
-    }
-
-    builder->endBlock();  // BlendShaderBlock
-}
-#endif
 
 sk_sp<SkShader> SkShaders::Blend(SkBlendMode mode, sk_sp<SkShader> dst, sk_sp<SkShader> src) {
     if (!src || !dst) {

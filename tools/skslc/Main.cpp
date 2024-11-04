@@ -11,7 +11,6 @@
 #include "src/base/SkStringView.h"
 #include "src/core/SkCpu.h"
 #include "src/core/SkOpts.h"
-#include "src/opts/SkVM_opts.h"
 #include "src/sksl/SkSLCompiler.h"
 #include "src/sksl/SkSLFileOutputStream.h"
 #include "src/sksl/SkSLProgramSettings.h"
@@ -20,7 +19,6 @@
 #include "src/sksl/codegen/SkSLPipelineStageCodeGenerator.h"
 #include "src/sksl/codegen/SkSLRasterPipelineBuilder.h"
 #include "src/sksl/codegen/SkSLRasterPipelineCodeGenerator.h"
-#include "src/sksl/codegen/SkSLVMCodeGenerator.h"
 #include "src/sksl/ir/SkSLFunctionDeclaration.h"
 #include "src/sksl/ir/SkSLProgram.h"
 #include "src/sksl/ir/SkSLVarDeclarations.h"
@@ -45,9 +43,6 @@ void SkDebugf(const char format[], ...) {
 
 namespace SkOpts {
     size_t raster_pipeline_highp_stride = 1;
-#if defined(SK_ENABLE_SKVM)
-    decltype(interpret_skvm) interpret_skvm = SK_OPTS_NS::interpret_skvm;
-#endif
 }
 
 static std::unique_ptr<SkWStream> as_SkWStream(SkSL::OutputStream& s) {
@@ -525,7 +520,7 @@ static ResultCode process_command(SkSpan<std::string> args) {
     } else if (skstd::ends_with(inputPath, ".rts")) {
         kind = SkSL::ProgramKind::kRuntimeShader;
     } else {
-        printf("input filename must end in '.vert', '.frag', '.rtb', '.rtcf', "
+        printf("input filename must end in '.vert', '.frag', '.compute', '.rtb', '.rtcf', "
                "'.rts' or '.sksl'\n");
         return ResultCode::kInputError;
     }
@@ -584,7 +579,6 @@ static ResultCode process_command(SkSpan<std::string> args) {
         return ResultCode::kSuccess;
     };
 
-#if defined(SK_ENABLE_SKVM) || defined(SK_ENABLE_SKSL_IN_RASTER_PIPELINE)
     auto compileProgramAsRuntimeShader = [&](const auto& writeFn) -> ResultCode {
         if (kind == SkSL::ProgramKind::kVertex) {
             emitCompileError("Runtime shaders do not support vertex programs\n");
@@ -596,7 +590,6 @@ static ResultCode process_command(SkSpan<std::string> args) {
         }
         return compileProgram(writeFn);
     };
-#endif
 
     if (skstd::ends_with(outputPath, ".spirv")) {
         return compileProgram(
@@ -604,7 +597,8 @@ static ResultCode process_command(SkSpan<std::string> args) {
                     return compiler.toSPIRV(program, out);
                 });
     } else if (skstd::ends_with(outputPath, ".asm.frag") ||
-               skstd::ends_with(outputPath, ".asm.vert")) {
+               skstd::ends_with(outputPath, ".asm.vert") ||
+               skstd::ends_with(outputPath, ".asm.comp")) {
         return compileProgram(
                 [](SkSL::Compiler& compiler, SkSL::Program& program, SkSL::OutputStream& out) {
                     // Compile program to SPIR-V assembly in a string-stream.
@@ -616,8 +610,12 @@ static ResultCode process_command(SkSpan<std::string> args) {
                     spvtools::SpirvTools tools(SPV_ENV_VULKAN_1_0);
                     const std::string& spirv(assembly.str());
                     std::string disassembly;
+                    uint32_t options = spvtools::SpirvTools::kDefaultDisassembleOption;
+                    options |= SPV_BINARY_TO_TEXT_OPTION_INDENT;
                     if (!tools.Disassemble((const uint32_t*)spirv.data(),
-                                           spirv.size() / 4, &disassembly)) {
+                                           spirv.size() / 4,
+                                           &disassembly,
+                                           options)) {
                         return false;
                     }
                     // Finally, write the disassembly to our output stream.
@@ -644,7 +642,6 @@ static ResultCode process_command(SkSpan<std::string> args) {
                 [](SkSL::Compiler& compiler, SkSL::Program& program, SkSL::OutputStream& out) {
                     return compiler.toWGSL(program, out);
                 });
-#if defined(SK_ENABLE_SKSL_IN_RASTER_PIPELINE)
     } else if (skstd::ends_with(outputPath, ".skrp")) {
         settings.fMaxVersionAllowed = SkSL::Version::k300;
         return compileProgramAsRuntimeShader(
@@ -662,10 +659,9 @@ static ResultCode process_command(SkSpan<std::string> args) {
                         compiler.errorReporter().error({}, "code is not supported");
                         return false;
                     }
-                    rasterProg->dump(as_SkWStream(out).get());
+                    rasterProg->dump(as_SkWStream(out).get(), /*writeInstructionCount=*/true);
                     return true;
                 });
-#endif
     } else if (skstd::ends_with(outputPath, ".stage")) {
         return compileProgram(
                 [](SkSL::Compiler&, SkSL::Program& program, SkSL::OutputStream& out) {
@@ -683,11 +679,11 @@ static ResultCode process_command(SkSpan<std::string> args) {
                         void defineFunction(const char* decl,
                                             const char* body,
                                             bool /*isMain*/) override {
-                            fOutput += std::string(decl) + "{" + body + "}";
+                            fOutput += std::string(decl) + '{' + body + '}';
                         }
 
                         void declareFunction(const char* decl) override {
-                            fOutput += std::string(decl) + ";";
+                            fOutput += decl;
                         }
 
                         void defineStruct(const char* definition) override {
@@ -699,25 +695,25 @@ static ResultCode process_command(SkSpan<std::string> args) {
                         }
 
                         std::string sampleShader(int index, std::string coords) override {
-                            return "child_" + std::to_string(index) + ".eval(" + coords + ")";
+                            return "child_" + std::to_string(index) + ".eval(" + coords + ')';
                         }
 
                         std::string sampleColorFilter(int index, std::string color) override {
-                            return "child_" + std::to_string(index) + ".eval(" + color + ")";
+                            return "child_" + std::to_string(index) + ".eval(" + color + ')';
                         }
 
                         std::string sampleBlender(int index,
                                                   std::string src,
                                                   std::string dst) override {
-                            return "child_" + std::to_string(index) + ".eval(" + src + ", " +
-                                   dst + ")";
+                            return "child_" + std::to_string(index) +
+                                   ".eval(" + src + ", " + dst + ')';
                         }
 
                         std::string toLinearSrgb(std::string color) override {
-                            return "toLinearSrgb(" + color + ")";
+                            return "toLinearSrgb(" + color + ')';
                         }
                         std::string fromLinearSrgb(std::string color) override {
-                            return "fromLinearSrgb(" + color + ")";
+                            return "fromLinearSrgb(" + color + ')';
                         }
 
                         std::string fOutput;
@@ -741,7 +737,7 @@ static ResultCode process_command(SkSpan<std::string> args) {
                 });
     } else {
         printf("expected output path to end with one of: .glsl, .html, .metal, .hlsl, .wgsl, "
-               ".spirv, .asm.vert, .asm.frag, .skrp, .stage (got '%s')\n",
+               ".spirv, .asm.vert, .asm.frag, .asm.comp, .skrp, .stage (got '%s')\n",
                outputPath.c_str());
         return ResultCode::kConfigurationError;
     }

@@ -43,7 +43,6 @@ public:
                             ResourceType,
                             Shareable,
                             GraphiteResourceKey*) const override;
-    size_t bytesPerPixel(const TextureInfo&) const override;
     uint64_t getRenderPassDescKey(const RenderPassDesc& renderPassDesc) const;
 
 private:
@@ -107,6 +106,8 @@ private:
 
     wgpu::TextureFormat fColorTypeToFormatTable[kSkColorTypeCnt];
     void setColorType(SkColorType, std::initializer_list<wgpu::TextureFormat> formats);
+
+    bool fTransientAttachmentSupport = false;
 };
 
 } // namespace skgpu::graphite

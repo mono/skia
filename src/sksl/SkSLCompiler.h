@@ -25,9 +25,6 @@
 
 #define SK_FRAGCOLOR_BUILTIN           10001
 #define SK_LASTFRAGCOLOR_BUILTIN       10008
-#define SK_MAIN_COORDS_BUILTIN         10009
-#define SK_INPUT_COLOR_BUILTIN         10010
-#define SK_DEST_COLOR_BUILTIN          10011
 #define SK_SECONDARYFRAGCOLOR_BUILTIN  10012
 #define SK_FRAGCOORD_BUILTIN              15
 #define SK_CLOCKWISE_BUILTIN              17
@@ -47,7 +44,6 @@ namespace SkSL {
 
 class Expression;
 class Inliner;
-class ModifiersPool;
 class OutputStream;
 class ProgramUsage;
 class SymbolTable;
@@ -149,6 +145,8 @@ public:
 
     bool toWGSL(Program& program, OutputStream& out);
 
+    bool toWGSL(Program& program, std::string* out);
+
     void handleError(std::string_view msg, Position pos);
 
     std::string errorText(bool showCount = true);
@@ -176,13 +174,15 @@ public:
                                           const char* moduleName,
                                           std::string moduleSource,
                                           const Module* parent,
-                                          ModifiersPool& modifiersPool,
                                           bool shouldInline);
 
     /** Optimize a module at minification time, before writing it out. */
     bool optimizeModuleBeforeMinifying(ProgramKind kind, Module& module);
 
     const Module* moduleForProgramKind(ProgramKind kind);
+
+    /** Run the inliner on a program which was compiled earlier (with inlining turned off). */
+    void runInliner(Program& program);
 
 private:
     class CompilerErrorReporter : public ErrorReporter {

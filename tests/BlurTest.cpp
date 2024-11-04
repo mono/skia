@@ -34,10 +34,10 @@
 #include "include/private/base/SkTPin.h"
 #include "src/base/SkMathPriv.h"
 #include "src/core/SkBlurMask.h"
-#include "src/core/SkGpuBlurUtils.h"
 #include "src/core/SkMask.h"
 #include "src/core/SkMaskFilterBase.h"
 #include "src/effects/SkEmbossMaskFilter.h"
+#include "src/gpu/ganesh/GrBlurUtils.h"
 #include "tests/CtsEnforcement.h"
 #include "tests/Test.h"
 #include "tools/ToolUtils.h"
@@ -181,14 +181,14 @@ DEF_TEST(BlurDrawing, reporter) {
 static void ground_truth_2d(int width, int height,
                             SkScalar sigma,
                             int* result, int resultCount) {
-    SkMask src, dst;
+    SkMaskBuilder src, dst;
 
-    src.fBounds.setWH(width, height);
-    src.fFormat = SkMask::kA8_Format;
-    src.fRowBytes = src.fBounds.width();
-    src.fImage = SkMask::AllocImage(src.computeTotalImageSize());
+    src.bounds().setWH(width, height);
+    src.format() = SkMask::kA8_Format;
+    src.rowBytes() = src.fBounds.width();
+    src.image() = SkMaskBuilder::AllocImage(src.computeTotalImageSize());
 
-    memset(src.fImage, 0xff, src.computeTotalImageSize());
+    memset(src.image(), 0xff, src.computeTotalImageSize());
 
     if (!SkBlurMask::BlurGroundTruth(sigma, &dst, src, kNormal_SkBlurStyle)) {
         return;
@@ -207,8 +207,8 @@ static void ground_truth_2d(int width, int height,
         result[i] = 0;
     }
 
-    SkMask::FreeImage(src.fImage);
-    SkMask::FreeImage(dst.fImage);
+    SkMaskBuilder::FreeImage(src.image());
+    SkMaskBuilder::FreeImage(dst.image());
 }
 
 // Implement a step function that is 255 between min and max; 0 elsewhere.
@@ -443,10 +443,10 @@ DEF_TEST(BlurredRRectNinePatchComputation, reporter) {
     bool ninePatchable;
     SkRRect rrectToDraw;
     SkISize size;
-    SkScalar rectXs[SkGpuBlurUtils::kBlurRRectMaxDivisions],
-             rectYs[SkGpuBlurUtils::kBlurRRectMaxDivisions];
-    SkScalar texXs[SkGpuBlurUtils::kBlurRRectMaxDivisions],
-             texYs[SkGpuBlurUtils::kBlurRRectMaxDivisions];
+    SkScalar rectXs[GrBlurUtils::kBlurRRectMaxDivisions],
+             rectYs[GrBlurUtils::kBlurRRectMaxDivisions];
+    SkScalar texXs[GrBlurUtils::kBlurRRectMaxDivisions],
+             texYs[GrBlurUtils::kBlurRRectMaxDivisions];
 
     // not nine-patchable
     {
@@ -455,7 +455,7 @@ DEF_TEST(BlurredRRectNinePatchComputation, reporter) {
         SkRRect rr;
         rr.setRectRadii(r, radii);
 
-        ninePatchable = SkGpuBlurUtils::ComputeBlurredRRectParams(rr, rr, kBlurRad, kBlurRad,
+        ninePatchable = GrBlurUtils::ComputeBlurredRRectParams(rr, rr, kBlurRad, kBlurRad,
                                                                   &rrectToDraw, &size,
                                                                   rectXs, rectYs, texXs, texYs);
         REPORTER_ASSERT(reporter, !ninePatchable);
@@ -467,7 +467,7 @@ DEF_TEST(BlurredRRectNinePatchComputation, reporter) {
         SkRRect rr;
         rr.setRectXY(r, kCornerRad, kCornerRad);
 
-        ninePatchable = SkGpuBlurUtils::ComputeBlurredRRectParams(rr, rr, kBlurRad, kBlurRad,
+        ninePatchable = GrBlurUtils::ComputeBlurredRRectParams(rr, rr, kBlurRad, kBlurRad,
                                                                   &rrectToDraw, &size,
                                                                   rectXs, rectYs, texXs, texYs);
 
@@ -484,7 +484,7 @@ DEF_TEST(BlurredRRectNinePatchComputation, reporter) {
         SkRRect rr;
         rr.setRectXY(r, kXCornerRad, kYCornerRad);
 
-        ninePatchable = SkGpuBlurUtils::ComputeBlurredRRectParams(rr, rr, kBlurRad, kBlurRad,
+        ninePatchable = GrBlurUtils::ComputeBlurredRRectParams(rr, rr, kBlurRad, kBlurRad,
                                                                   &rrectToDraw, &size,
                                                                   rectXs, rectYs, texXs, texYs);
 

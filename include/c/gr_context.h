@@ -22,6 +22,7 @@ SK_C_API gr_backend_t gr_recording_context_get_backend(gr_recording_context_t* c
 SK_C_API bool gr_recording_context_is_abandoned(gr_recording_context_t* context);
 SK_C_API int gr_recording_context_max_texture_size(gr_recording_context_t* context);
 SK_C_API int gr_recording_context_max_render_target_size(gr_recording_context_t* context);
+SK_C_API gr_direct_context_t* gr_recording_context_get_direct_context(gr_recording_context_t* context);
 
 // GrDirectContext
 

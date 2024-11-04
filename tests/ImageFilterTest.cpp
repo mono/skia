@@ -54,6 +54,7 @@
 #include "src/gpu/ganesh/GrCaps.h"
 #include "src/gpu/ganesh/GrRecordingContextPriv.h"
 #include "src/gpu/ganesh/image/GrImageUtils.h"
+#include "src/gpu/ganesh/image/SkSpecialImage_Ganesh.h"
 #include "tests/CtsEnforcement.h"
 #include "tests/Test.h"
 #include "tools/Resources.h"
@@ -85,7 +86,7 @@ public:
     }
 
 protected:
-    sk_sp<SkSpecialImage> onFilterImage(const Context& ctx, SkIPoint* offset) const override {
+    sk_sp<SkSpecialImage> onFilterImage(const skif::Context& ctx, SkIPoint* offset) const override {
         REPORTER_ASSERT(fReporter, ctx.ctm() == fExpectedMatrix);
         offset->fX = offset->fY = 0;
         return sk_ref_sp<SkSpecialImage>(ctx.sourceImage());
@@ -114,7 +115,7 @@ class FailImageFilter : public SkImageFilter_Base {
 public:
     FailImageFilter() : INHERITED(nullptr, 0, nullptr) { }
 
-    sk_sp<SkSpecialImage> onFilterImage(const Context& ctx, SkIPoint* offset) const override {
+    sk_sp<SkSpecialImage> onFilterImage(const skif::Context& ctx, SkIPoint* offset) const override {
         return nullptr;
     }
 
@@ -296,7 +297,7 @@ private:
     Factory getFactory() const override { return nullptr; }
     const char* getTypeName() const override { return nullptr; }
 
-    sk_sp<SkSpecialImage> onFilterImage(const Context&, SkIPoint* offset) const override {
+    sk_sp<SkSpecialImage> onFilterImage(const skif::Context&, SkIPoint* offset) const override {
         return nullptr;
     }
 
@@ -327,8 +328,8 @@ static skif::Context make_context(const SkIRect& out, const SkSpecialImage* src)
                                  src->getColorSpace(),
                                  src->props(),
                                  /*cache=*/nullptr};
-    if (src->isTextureBacked()) {
-        return skif::Context::MakeGanesh(src->getContext(), kTestSurfaceOrigin, ctxInfo);
+    if (src->isGaneshBacked()) {
+        return skif::MakeGaneshContext(src->getContext(), kTestSurfaceOrigin, ctxInfo);
     } else {
         return skif::Context::MakeRaster(ctxInfo);
     }
@@ -402,10 +403,10 @@ static sk_sp<SkSpecialSurface> create_empty_special_surface(GrRecordingContext* 
                                              kPremul_SkAlphaType);
 
     if (rContext) {
-        return SkSpecialSurface::MakeRenderTarget(rContext, ii, SkSurfaceProps(),
+        return SkSpecialSurfaces::MakeRenderTarget(rContext, ii, SkSurfaceProps(),
                                                   kTestSurfaceOrigin);
     } else {
-        return SkSpecialSurface::MakeRaster(ii, SkSurfaceProps());
+        return SkSpecialSurfaces::MakeRaster(ii, SkSurfaceProps());
     }
 }
 
@@ -587,9 +588,13 @@ static void test_negative_blur_sigma(skiatest::Reporter* reporter,
     sk_sp<SkImageFilter> negativeFilter(SkImageFilters::Blur(-kBlurSigma, kBlurSigma, nullptr));
 
     sk_sp<SkImage> gradient = make_gradient_circle(kWidth, kHeight).asImage();
-    sk_sp<SkSpecialImage> imgSrc(
-            SkSpecialImage::MakeFromImage(dContext, SkIRect::MakeWH(kWidth, kHeight), gradient,
-                                          SkSurfaceProps()));
+    sk_sp<SkSpecialImage> imgSrc;
+    if (dContext) {
+        imgSrc = SkSpecialImages::MakeFromTextureImage(
+                dContext, SkIRect::MakeWH(kWidth, kHeight), gradient, SkSurfaceProps());
+    } else {
+        imgSrc = SkSpecialImages::MakeFromRaster(SkIRect::MakeWH(kWidth, kHeight), gradient, {});
+    }
 
     SkIPoint offset;
     skif::Context ctx = make_context(32, 32, imgSrc.get());
@@ -681,9 +686,13 @@ static void test_morphology_radius_with_mirror_ctm(skiatest::Reporter* reporter,
     canvas.drawRect(SkRect::MakeXYWH(kWidth / 4, kHeight / 4, kWidth / 2, kHeight / 2),
                     paint);
     sk_sp<SkImage> image = bitmap.asImage();
-    sk_sp<SkSpecialImage> imgSrc(
-            SkSpecialImage::MakeFromImage(dContext, SkIRect::MakeWH(kWidth, kHeight), image,
-                                          SkSurfaceProps()));
+    sk_sp<SkSpecialImage> imgSrc;
+    if (dContext) {
+        imgSrc = SkSpecialImages::MakeFromTextureImage(
+                dContext, SkIRect::MakeWH(kWidth, kHeight), image, SkSurfaceProps());
+    } else {
+        imgSrc = SkSpecialImages::MakeFromRaster(SkIRect::MakeWH(kWidth, kHeight), image, {});
+    }
 
     SkIPoint offset;
     skif::Context ctx = make_context(32, 32, imgSrc.get());
@@ -956,7 +965,8 @@ DEF_TEST(ImageFilterBlurThenShadowBounds, reporter) {
     sk_sp<SkImageFilter> filter2(make_drop_shadow(std::move(filter1)));
 
     SkIRect bounds = SkIRect::MakeXYWH(0, 0, 100, 100);
-    SkIRect expectedBounds = SkIRect::MakeXYWH(-133, -133, 236, 236);
+    // Drop shadow offset pads 1px on top-left for linear filtering
+    SkIRect expectedBounds = SkIRect::MakeXYWH(-134, -134, 237, 237);
     bounds = filter2->filterBounds(bounds, SkMatrix::I(),
                                    SkImageFilter::kReverse_MapDirection, &bounds);
 
@@ -968,7 +978,8 @@ DEF_TEST(ImageFilterShadowThenBlurBounds, reporter) {
     sk_sp<SkImageFilter> filter2(make_blur(std::move(filter1)));
 
     SkIRect bounds = SkIRect::MakeXYWH(0, 0, 100, 100);
-    SkIRect expectedBounds = SkIRect::MakeXYWH(-133, -133, 236, 236);
+    // Drop shadow offset pads 1px on top-left for linear filtering
+    SkIRect expectedBounds = SkIRect::MakeXYWH(-134, -134, 237, 237);
     bounds = filter2->filterBounds(bounds, SkMatrix::I(),
                                    SkImageFilter::kReverse_MapDirection, &bounds);
 
@@ -980,7 +991,8 @@ DEF_TEST(ImageFilterDilateThenBlurBounds, reporter) {
     sk_sp<SkImageFilter> filter2(make_drop_shadow(std::move(filter1)));
 
     SkIRect bounds = SkIRect::MakeXYWH(0, 0, 100, 100);
-    SkIRect expectedBounds = SkIRect::MakeXYWH(-132, -132, 234, 234);
+    // Drop shadow offset pads 1px on top-left for linear filtering
+    SkIRect expectedBounds = SkIRect::MakeXYWH(-133, -133, 235, 235);
     bounds = filter2->filterBounds(bounds, SkMatrix::I(),
                                    SkImageFilter::kReverse_MapDirection, &bounds);
 
@@ -1011,8 +1023,11 @@ DEF_TEST(ImageFilterScaledBlurRadius, reporter) {
         SkIRect shadowBounds = dropShadow->filterBounds(
                 bounds, scaleMatrix, SkImageFilter::kForward_MapDirection, nullptr);
         REPORTER_ASSERT(reporter, shadowBounds == expectedShadowBounds);
+
+        // An outset by 1px for linear filtering is applied to the input bounds, but only
+        // the L and T values are visible after the original bounds are joined with it.
         SkIRect expectedReverseShadowBounds =
-                SkIRect::MakeLTRB(-260, -260, 200, 200);
+                SkIRect::MakeLTRB(-261, -261, 200, 200);
         SkIRect reverseShadowBounds = dropShadow->filterBounds(
                 bounds, scaleMatrix, SkImageFilter::kReverse_MapDirection, &bounds);
         REPORTER_ASSERT(reporter, reverseShadowBounds == expectedReverseShadowBounds);
@@ -1035,8 +1050,10 @@ DEF_TEST(ImageFilterScaledBlurRadius, reporter) {
         SkIRect shadowBounds = dropShadow->filterBounds(
                 bounds, scaleMatrix, SkImageFilter::kForward_MapDirection, nullptr);
         REPORTER_ASSERT(reporter, shadowBounds == expectedShadowBounds);
+        // Like above, the linear outset of 1px only remains visible on the L and B edges
+        // after joining the original bounds with what's required for the offset.
         SkIRect expectedReverseShadowBounds =
-                SkIRect::MakeLTRB(-130, -100, 100, 130);
+                SkIRect::MakeLTRB(-131, -100, 100, 131);
         SkIRect reverseShadowBounds = dropShadow->filterBounds(
                 bounds, scaleMatrix, SkImageFilter::kReverse_MapDirection, &bounds);
         REPORTER_ASSERT(reporter, reverseShadowBounds == expectedReverseShadowBounds);
@@ -1252,7 +1269,7 @@ static void test_big_kernel(skiatest::Reporter* reporter, GrRecordingContext* rC
     skif::Context ctx = make_context(100, 100, srcImg.get());
     sk_sp<SkSpecialImage> resultImg(as_IFB(filter)->filterImage(ctx).imageAndOffset(ctx, &offset));
     REPORTER_ASSERT(reporter, resultImg);
-    REPORTER_ASSERT(reporter, SkToBool(rContext) == resultImg->isTextureBacked());
+    REPORTER_ASSERT(reporter, SkToBool(rContext) == resultImg->isGaneshBacked());
     REPORTER_ASSERT(reporter, resultImg->width() == 100 && resultImg->height() == 100);
     REPORTER_ASSERT(reporter, offset.fX == 0 && offset.fY == 0);
 }

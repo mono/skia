@@ -9,27 +9,20 @@ skia_filegroup(
     name = "srcs",
     testonly = True,
     srcs = [
-        "RasterWindowContext_unix.cpp",
-        "WindowContextFactory_unix.h",
         "Window_unix.cpp",
         "Window_unix.h",
         "keysym2ucs.c",
         "keysym2ucs.h",
         "main_unix.cpp",
-    ] + select({
-        "//src/gpu:dawn_backend": ["DawnVulkanWindowContext_unix.cpp"],
-        "//src/gpu:gl_backend": ["GLWindowContext_unix.cpp"],
-        "//src/gpu:vulkan_backend": ["VulkanWindowContext_unix.cpp"],
-        "//conditions:default": [],
-    }),
+    ],
     visibility = ["//tools/sk_app:__pkg__"],
 )
 
 selects.config_setting_group(
     name = "dawn_or_vulkan",
     match_any = [
-        "//src/gpu:dawn_backend",
-        "//src/gpu:vulkan_backend",
+        "//src/gpu:dawn_ganesh",
+        "//src/gpu:vulkan_ganesh",
     ],
 )
 

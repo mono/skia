@@ -239,6 +239,19 @@ typedef struct sk_picture_t sk_picture_t;
 */
 typedef struct sk_picture_recorder_t sk_picture_recorder_t;
 /**
+    A sk_bbh_factory_t generates an sk_bbox_hierarchy as a display optimization
+    for culling invisible calls recorded by a sk_picture_recorder. It may
+    be passed in to sk_picture_recorder_begin_recording_with_bbh_factory,
+    typically as an instance of the subclass sk_rtree_factory_t.
+*/
+typedef struct sk_bbh_factory_t sk_bbh_factory_t;
+/**
+    A sk_rtree_factory_t generates a sk_rtree as a display optimization
+    for culling invisible calls recorded by a sk_picture_recorder_t. Inherits
+    from sk_bbh_factory_t.
+*/
+typedef struct sk_rtree_factory_t sk_rtree_factory_t;
+/**
     A sk_shader_t specifies the source color(s) for what is being drawn. If a
     paint has no shader, then the paint's color is used. If the paint
     has a shader, then the shader's color(s) are use instead, but they

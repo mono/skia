@@ -15,6 +15,7 @@ namespace skgpu::graphite {
 */
 enum class DescriptorType : uint8_t {
     kUniformBuffer = 0,
+    kInlineUniform,
     kTextureSampler,
     kTexture,
     kCombinedTextureSampler,
@@ -25,12 +26,13 @@ enum class DescriptorType : uint8_t {
 };
 static constexpr int kDescriptorTypeCount = (int)(DescriptorType::kLast) + 1;
 
-struct DescTypeAndCount {
-    DescTypeAndCount(DescriptorType descType, uint32_t descCount)
-            : type (descType), count (descCount) {}
+struct DescriptorData {
+    DescriptorData(DescriptorType descType, uint32_t descCount, int bindingIdx)
+            : type (descType), count (descCount), bindingIndex (bindingIdx) {}
 
     DescriptorType type;
     uint32_t count;
+    int bindingIndex;
 };
 
 };  // namespace skgpu::graphite

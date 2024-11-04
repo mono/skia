@@ -12,7 +12,8 @@
 #include "include/core/SkSize.h"
 #include "include/core/SkSpan.h"
 #include "include/private/base/SkTArray.h"
-#include "src/core/SkEnumBitMask.h"
+#include "include/private/base/SkTo.h"
+#include "src/base/SkEnumBitMask.h"
 #include "src/gpu/graphite/ComputeTypes.h"
 
 #include <optional>
@@ -91,6 +92,7 @@ public:
 
         kStorageTexture,
         kTexture,
+        kSampler,
     };
 
     enum class ResourcePolicy {
@@ -185,6 +187,12 @@ public:
                                                                         int resourceIndex,
                                                                         const ResourceDesc&) const;
 
+    // This method will be called for sampler entries in the ComputeStep's resource list to
+    // determine the sampling and tile mode options.
+    virtual SamplerDesc calculateSamplerParameters(const DrawParams&,
+                                                   int resourceIndex,
+                                                   const ResourceDesc&) const;
+
     // Return the global dispatch size (aka "workgroup count") for this step based on the draw
     // parameters. The default value is a workgroup count of (1, 1, 1)
     //
@@ -241,13 +249,13 @@ public:
     // other backends, this value will be baked into the pipeline.
     WorkgroupSize localDispatchSize() const { return fLocalDispatchSize; }
 
-    bool supportsNativeShader() const { return fFlags & Flags::kSupportsNativeShader; }
+    bool supportsNativeShader() const { return SkToBool(fFlags & Flags::kSupportsNativeShader); }
 
     // Data flow behavior queries:
-    bool outputsVertices() const { return fFlags & Flags::kOutputsVertexBuffer; }
-    bool outputsIndices() const { return fFlags & Flags::kOutputsIndexBuffer; }
-    bool outputsInstances() const { return fFlags & Flags::kOutputsInstanceBuffer; }
-    bool writesIndirectDraw() const { return fFlags & Flags::kOutputsIndirectDrawBuffer; }
+    bool outputsVertices() const { return SkToBool(fFlags & Flags::kOutputsVertexBuffer); }
+    bool outputsIndices() const { return SkToBool(fFlags & Flags::kOutputsIndexBuffer); }
+    bool outputsInstances() const { return SkToBool(fFlags & Flags::kOutputsInstanceBuffer); }
+    bool writesIndirectDraw() const { return SkToBool(fFlags & Flags::kOutputsIndirectDrawBuffer); }
 
 protected:
     enum class Flags : uint8_t {
@@ -284,7 +292,7 @@ private:
     // workgroup size declaration to avoid any validation failures.
     WorkgroupSize fLocalDispatchSize;
 };
-SK_MAKE_BITMASK_OPS(ComputeStep::Flags);
+SK_MAKE_BITMASK_OPS(ComputeStep::Flags)
 
 }  // namespace skgpu::graphite
 

@@ -7,6 +7,7 @@
  * found in the LICENSE file.
  */
 
+#include "include/core/SkBBHFactory.h"
 #include "include/core/SkDrawable.h"
 #include "include/core/SkPicture.h"
 #include "include/core/SkPictureRecorder.h"
@@ -15,6 +16,8 @@
 #include "include/c/sk_picture.h"
 
 #include "src/c/sk_types_priv.h"
+
+// SkPictureRecorder
 
 sk_picture_recorder_t* sk_picture_recorder_new(void) {
     return ToPictureRecorder(new SkPictureRecorder);
@@ -28,6 +31,10 @@ sk_canvas_t* sk_picture_recorder_begin_recording(sk_picture_recorder_t* crec, co
     return ToCanvas(AsPictureRecorder(crec)->beginRecording(*AsRect(cbounds)));
 }
 
+sk_canvas_t* sk_picture_recorder_begin_recording_with_bbh_factory(sk_picture_recorder_t* crec, const sk_rect_t* cbounds, sk_bbh_factory_t* factory) {
+    return ToCanvas(AsPictureRecorder(crec)->beginRecording(*AsRect(cbounds), AsBBHFactory(factory)));
+}
+
 sk_picture_t* sk_picture_recorder_end_recording(sk_picture_recorder_t* crec) {
     return ToPicture(AsPictureRecorder(crec)->finishRecordingAsPicture().release());
 }
@@ -39,6 +46,8 @@ sk_drawable_t* sk_picture_recorder_end_recording_as_drawable(sk_picture_recorder
 sk_canvas_t* sk_picture_get_recording_canvas(sk_picture_recorder_t* crec) {
     return ToCanvas(AsPictureRecorder(crec)->getRecordingCanvas());
 }
+
+// SkPicture
 
 void sk_picture_ref(sk_picture_t* cpic) {
     SkSafeRef(AsPicture(cpic));
@@ -82,4 +91,26 @@ sk_picture_t* sk_picture_deserialize_from_data(sk_data_t* data) {
 
 sk_picture_t* sk_picture_deserialize_from_memory(void* buffer, size_t length) {
     return ToPicture(SkPicture::MakeFromData(buffer, length).release());
+}
+
+void sk_picture_playback(const sk_picture_t* picture, sk_canvas_t* canvas) {
+    AsPicture(picture)->playback(AsCanvas(canvas));
+}
+
+int sk_picture_approximate_op_count(const sk_picture_t* picture, bool nested) {
+    return AsPicture(picture)->approximateOpCount(nested);
+}
+
+size_t sk_picture_approximate_bytes_used(const sk_picture_t* picture) {
+    return AsPicture(picture)->approximateBytesUsed();
+}
+
+// SkRTreeFactory
+
+sk_rtree_factory_t* sk_rtree_factory_new(void) {
+    return ToRTreeFactory(new SkRTreeFactory);
+}
+
+void sk_rtree_factory_delete(sk_rtree_factory_t* factory) {
+    delete AsRTreeFactory(factory);
 }

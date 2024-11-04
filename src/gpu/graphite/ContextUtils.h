@@ -13,6 +13,7 @@
 #include "src/gpu/graphite/PipelineDataCache.h"
 
 #include <optional>
+#include <tuple>
 
 class SkColorInfo;
 class SkM44;
@@ -24,6 +25,7 @@ class Swizzle;
 
 namespace skgpu::graphite {
 
+class ComputeStep;
 class DrawParams;
 enum class DstReadRequirement;
 class GraphicsPipelineDesc;
@@ -52,6 +54,7 @@ ExtractPaintData(Recorder*,
                  const SkM44& local2Dev,
                  const PaintParams&,
                  sk_sp<TextureProxy> dstTexture,
+                 SkIPoint dstOffset,
                  const SkColorInfo& targetColorInfo);
 
 std::tuple<const UniformDataBlock*, const TextureDataBlock*> ExtractRenderStepData(
@@ -64,18 +67,20 @@ std::tuple<const UniformDataBlock*, const TextureDataBlock*> ExtractRenderStepDa
 
 DstReadRequirement GetDstReadRequirement(const Caps*, std::optional<SkBlendMode>, bool hasCoverage);
 
-std::string GetSkSLVS(const ResourceBindingRequirements&,
-                      const RenderStep* step,
-                      bool defineShadingSsboIndexVarying,
-                      bool defineLocalCoordsVarying);
+std::string BuildVertexSkSL(const ResourceBindingRequirements&,
+                            const RenderStep* step,
+                            bool defineShadingSsboIndexVarying,
+                            bool defineLocalCoordsVarying);
 
-FragSkSLInfo GetSkSLFS(const Caps* caps,
-                       const ShaderCodeDictionary*,
-                       const RuntimeEffectDictionary*,
-                       const RenderStep* renderStep,
-                       UniquePaintParamsID paintID,
-                       bool useStorageBuffers,
-                       skgpu::Swizzle writeSwizzle);
+FragSkSLInfo BuildFragmentSkSL(const Caps* caps,
+                               const ShaderCodeDictionary*,
+                               const RuntimeEffectDictionary*,
+                               const RenderStep* renderStep,
+                               UniquePaintParamsID paintID,
+                               bool useStorageBuffers,
+                               skgpu::Swizzle writeSwizzle);
+
+std::string BuildComputeSkSL(const Caps*, const ComputeStep*);
 
 std::string EmitPaintParamsUniforms(int bufferID,
                                     const char* name,

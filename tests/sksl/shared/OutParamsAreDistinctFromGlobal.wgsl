@@ -1,3 +1,4 @@
+diagnostic(off, derivative_uniformity);
 struct FSIn {
   @builtin(front_facing) sk_Clockwise: bool,
   @builtin(position) sk_FragCoord: vec4<f32>,
@@ -15,7 +16,7 @@ fn out_params_are_distinct_from_global_bh(_skParam0: ptr<function, f32>) -> bool
   let y = _skParam0;
   {
     (*y) = 2.0;
-    return x == 1.0 && (*y) == 2.0;
+    return (x == 1.0) && ((*y) == 2.0);
   }
 }
 fn main(_skParam0: vec2<f32>) -> vec4<f32> {

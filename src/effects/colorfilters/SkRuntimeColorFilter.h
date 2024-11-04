@@ -13,13 +13,11 @@
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkSpan.h"
 #include "include/effects/SkRuntimeEffect.h"
-#include "include/private/SkColorData.h"
 #include "include/private/base/SkDebug.h"
 #include "src/effects/colorfilters/SkColorFilterBase.h"
 
 #include <vector>
 
-class SkColorSpace;
 class SkReadBuffer;
 class SkWriteBuffer;
 struct SkStageRec;
@@ -28,25 +26,9 @@ class SkRuntimeColorFilter : public SkColorFilterBase {
 public:
     SkRuntimeColorFilter(sk_sp<SkRuntimeEffect> effect,
                          sk_sp<const SkData> uniforms,
-                         SkSpan<SkRuntimeEffect::ChildPtr> children);
-
-#if defined(SK_GRAPHITE)
-    void addToKey(const skgpu::graphite::KeyContext& keyContext,
-                  skgpu::graphite::PaintParamsKeyBuilder* builder,
-                  skgpu::graphite::PipelineDataGatherer* gatherer) const override;
-#endif
+                         SkSpan<const SkRuntimeEffect::ChildPtr> children);
 
     bool appendStages(const SkStageRec& rec, bool) const override;
-
-#if defined(SK_ENABLE_SKVM)
-    skvm::Color onProgram(skvm::Builder* p,
-                          skvm::Color c,
-                          const SkColorInfo& colorInfo,
-                          skvm::Uniforms* uniforms,
-                          SkArenaAlloc* alloc) const override;
-#endif
-
-    SkPMColor4f onFilterColor4f(const SkPMColor4f& color, SkColorSpace* dstCS) const override;
 
     bool onIsAlphaUnchanged() const override;
 
@@ -60,7 +42,7 @@ public:
 
     sk_sp<SkRuntimeEffect> effect() const { return fEffect; }
     sk_sp<const SkData> uniforms() const { return fUniforms; }
-    std::vector<SkRuntimeEffect::ChildPtr> children() const { return fChildren; }
+    SkSpan<const SkRuntimeEffect::ChildPtr> children() const { return fChildren; }
 
 private:
     sk_sp<SkRuntimeEffect> fEffect;

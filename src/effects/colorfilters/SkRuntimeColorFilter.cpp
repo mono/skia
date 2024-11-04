@@ -27,7 +27,6 @@
 #include "src/core/SkReadBuffer.h"
 #include "src/core/SkRuntimeEffectPriv.h"
 #include "src/core/SkWriteBuffer.h"
-#include "src/effects/colorfilters/SkColorFilterBase.h"
 #include "src/shaders/SkShaderBase.h"
 #include "src/sksl/codegen/SkSLRasterPipelineBuilder.h"
 
@@ -38,46 +37,14 @@
 #error This only be compiled if SKSL is enabled. See _none.cpp for the non-SKSL version.
 #endif
 
-#if defined(SK_ENABLE_SKVM)
-#include "src/core/SkFilterColorProgram.h"
-#endif
-
-#if defined(SK_GRAPHITE)
-#include "src/gpu/graphite/KeyContext.h"
-#include "src/gpu/graphite/KeyHelpers.h"
-#include "src/gpu/graphite/PaintParamsKey.h"
-#endif
-
-class SkColorSpace;
-
 SkRuntimeColorFilter::SkRuntimeColorFilter(sk_sp<SkRuntimeEffect> effect,
                                            sk_sp<const SkData> uniforms,
-                                           SkSpan<SkRuntimeEffect::ChildPtr> children)
+                                           SkSpan<const SkRuntimeEffect::ChildPtr> children)
         : fEffect(std::move(effect))
         , fUniforms(std::move(uniforms))
         , fChildren(children.begin(), children.end()) {}
 
-#if defined(SK_GRAPHITE)
-void SkRuntimeColorFilter::addToKey(const skgpu::graphite::KeyContext& keyContext,
-                                    skgpu::graphite::PaintParamsKeyBuilder* builder,
-                                    skgpu::graphite::PipelineDataGatherer* gatherer) const {
-    using namespace skgpu::graphite;
-
-    sk_sp<const SkData> uniforms = SkRuntimeEffectPriv::TransformUniforms(
-            fEffect->uniforms(), fUniforms, keyContext.dstColorInfo().colorSpace());
-    SkASSERT(uniforms);
-
-    RuntimeEffectBlock::BeginBlock(keyContext, builder, gatherer, {fEffect, std::move(uniforms)});
-
-    SkRuntimeEffectPriv::AddChildrenToKey(
-            fChildren, fEffect->children(), keyContext, builder, gatherer);
-
-    builder->endBlock();
-}
-#endif
-
 bool SkRuntimeColorFilter::appendStages(const SkStageRec& rec, bool) const {
-#ifdef SK_ENABLE_SKSL_IN_RASTER_PIPELINE
     if (!SkRuntimeEffectPriv::CanDraw(SkCapabilities::RasterBackend().get(), fEffect.get())) {
         // SkRP has support for many parts of #version 300 already, but for now, we restrict its
         // usage in runtime effects to just #version 100.
@@ -96,80 +63,11 @@ bool SkRuntimeColorFilter::appendStages(const SkStageRec& rec, bool) const {
         bool success = program->appendStages(rec.fPipeline, rec.fAlloc, &callbacks, uniforms);
         return success;
     }
-#endif
     return false;
 }
 
-#if defined(SK_ENABLE_SKVM)
-skvm::Color SkRuntimeColorFilter::onProgram(skvm::Builder* p,
-                                            skvm::Color c,
-                                            const SkColorInfo& colorInfo,
-                                            skvm::Uniforms* uniforms,
-                                            SkArenaAlloc* alloc) const {
-    SkASSERT(SkRuntimeEffectPriv::CanDraw(SkCapabilities::RasterBackend().get(), fEffect.get()));
-
-    sk_sp<const SkData> inputs = SkRuntimeEffectPriv::TransformUniforms(
-            fEffect->uniforms(), fUniforms, colorInfo.colorSpace());
-    SkASSERT(inputs);
-
-    SkShaders::MatrixRec mRec(SkMatrix::I());
-    mRec.markTotalMatrixInvalid();
-    RuntimeEffectVMCallbacks callbacks(p, uniforms, alloc, fChildren, mRec, c, colorInfo);
-    std::vector<skvm::Val> uniform =
-            SkRuntimeEffectPriv::MakeSkVMUniforms(p, uniforms, fEffect->uniformSize(), *inputs);
-
-    // There should be no way for the color filter to use device coords, but we need to supply
-    // something. (Uninitialized values can trigger asserts in skvm::Builder).
-    skvm::Coord zeroCoord = {p->splat(0.0f), p->splat(0.0f)};
-    return SkSL::ProgramToSkVM(*fEffect->fBaseProgram,
-                               fEffect->fMain,
-                               p,
-                               /*debugTrace=*/nullptr,
-                               SkSpan(uniform),
-                               /*device=*/zeroCoord,
-                               /*local=*/zeroCoord,
-                               c,
-                               c,
-                               &callbacks);
-}
-#endif
-
-SkPMColor4f SkRuntimeColorFilter::onFilterColor4f(const SkPMColor4f& color,
-                                                  SkColorSpace* dstCS) const {
-#if defined(SK_ENABLE_SKVM)
-    // Get the generic program for filtering a single color
-    if (const SkFilterColorProgram* program = fEffect->getFilterColorProgram()) {
-        // Get our specific uniform values
-        sk_sp<const SkData> inputs =
-                SkRuntimeEffectPriv::TransformUniforms(fEffect->uniforms(), fUniforms, dstCS);
-        SkASSERT(inputs);
-
-        auto evalChild = [&](int index, SkPMColor4f inColor) {
-            const auto& child = fChildren[index];
-
-            // SkFilterColorProgram::Make has guaranteed that any children will be color filters.
-            SkASSERT(!child.shader());
-            SkASSERT(!child.blender());
-            if (SkColorFilter* colorFilter = child.colorFilter()) {
-                return as_CFB(colorFilter)->onFilterColor4f(inColor, dstCS);
-            }
-            return inColor;
-        };
-
-        return program->eval(color, inputs->data(), evalChild);
-    }
-#endif
-    // We were unable to build a cached (per-effect) program. Use the base-class fallback,
-    // which builds a program for the specific filter instance.
-    return SkColorFilterBase::onFilterColor4f(color, dstCS);
-}
-
 bool SkRuntimeColorFilter::onIsAlphaUnchanged() const {
-#ifdef SK_ENABLE_SKSL_IN_RASTER_PIPELINE
     return fEffect->isAlphaUnchanged();
-#else
-    return fEffect->getFilterColorProgram() && fEffect->isAlphaUnchanged();
-#endif
 }
 
 void SkRuntimeColorFilter::flatten(SkWriteBuffer& buffer) const {

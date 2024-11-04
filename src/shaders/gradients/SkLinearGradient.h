@@ -23,22 +23,15 @@ public:
     SkLinearGradient(const SkPoint pts[2], const Descriptor&);
 
     GradientType asGradient(GradientInfo* info, SkMatrix* localMatrix) const override;
-#if defined(SK_GRAPHITE)
-    void addToKey(const skgpu::graphite::KeyContext&,
-                  skgpu::graphite::PaintParamsKeyBuilder*,
-                  skgpu::graphite::PipelineDataGatherer*) const override;
-#endif
 
+    const SkPoint& start() const { return fStart; }
+    const SkPoint& end() const { return fEnd; }
 protected:
     SkLinearGradient(SkReadBuffer& buffer);
     void flatten(SkWriteBuffer& buffer) const override;
 
     void appendGradientStages(SkArenaAlloc* alloc, SkRasterPipeline* tPipeline,
                               SkRasterPipeline* postPipeline) const final;
-#if defined(SK_ENABLE_SKVM)
-    skvm::F32 transformT(skvm::Builder*, skvm::Uniforms*,
-                         skvm::Coord coord, skvm::I32* mask) const final;
-#endif
 
 private:
     friend void ::SkRegisterLinearGradientShaderFlattenable();

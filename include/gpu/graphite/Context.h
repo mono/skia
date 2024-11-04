@@ -19,6 +19,7 @@
 #include <functional>
 #include <memory>
 
+class SkColorSpace;
 class SkRuntimeEffect;
 
 namespace skgpu::graphite {
@@ -53,17 +54,61 @@ public:
     bool insertRecording(const InsertRecordingInfo&);
     bool submit(SyncToCpu = SyncToCpu::kNo);
 
-    void asyncReadPixels(const SkImage* image,
-                         const SkColorInfo& dstColorInfo,
-                         const SkIRect& srcRect,
-                         SkImage::ReadPixelsCallback callback,
-                         SkImage::ReadPixelsContext context);
+    void asyncRescaleAndReadPixels(const SkImage* image,
+                                   const SkImageInfo& dstImageInfo,
+                                   const SkIRect& srcRect,
+                                   SkImage::RescaleGamma rescaleGamma,
+                                   SkImage::RescaleMode rescaleMode,
+                                   SkImage::ReadPixelsCallback callback,
+                                   SkImage::ReadPixelsContext context);
 
-    void asyncReadPixels(const SkSurface* surface,
-                         const SkColorInfo& dstColorInfo,
-                         const SkIRect& srcRect,
-                         SkImage::ReadPixelsCallback callback,
-                         SkImage::ReadPixelsContext context);
+    void asyncRescaleAndReadPixels(const SkSurface* surface,
+                                   const SkImageInfo& dstImageInfo,
+                                   const SkIRect& srcRect,
+                                   SkImage::RescaleGamma rescaleGamma,
+                                   SkImage::RescaleMode rescaleMode,
+                                   SkImage::ReadPixelsCallback callback,
+                                   SkImage::ReadPixelsContext context);
+
+    void asyncRescaleAndReadPixelsYUV420(const SkImage*,
+                                         SkYUVColorSpace yuvColorSpace,
+                                         sk_sp<SkColorSpace> dstColorSpace,
+                                         const SkIRect& srcRect,
+                                         const SkISize& dstSize,
+                                         SkImage::RescaleGamma rescaleGamma,
+                                         SkImage::RescaleMode rescaleMode,
+                                         SkImage::ReadPixelsCallback callback,
+                                         SkImage::ReadPixelsContext context);
+
+    void asyncRescaleAndReadPixelsYUV420(const SkSurface*,
+                                         SkYUVColorSpace yuvColorSpace,
+                                         sk_sp<SkColorSpace> dstColorSpace,
+                                         const SkIRect& srcRect,
+                                         const SkISize& dstSize,
+                                         SkImage::RescaleGamma rescaleGamma,
+                                         SkImage::RescaleMode rescaleMode,
+                                         SkImage::ReadPixelsCallback callback,
+                                         SkImage::ReadPixelsContext context);
+
+    void asyncRescaleAndReadPixelsYUVA420(const SkImage*,
+                                          SkYUVColorSpace yuvColorSpace,
+                                          sk_sp<SkColorSpace> dstColorSpace,
+                                          const SkIRect& srcRect,
+                                          const SkISize& dstSize,
+                                          SkImage::RescaleGamma rescaleGamma,
+                                          SkImage::RescaleMode rescaleMode,
+                                          SkImage::ReadPixelsCallback callback,
+                                          SkImage::ReadPixelsContext context);
+
+    void asyncRescaleAndReadPixelsYUVA420(const SkSurface*,
+                                          SkYUVColorSpace yuvColorSpace,
+                                          sk_sp<SkColorSpace> dstColorSpace,
+                                          const SkIRect& srcRect,
+                                          const SkISize& dstSize,
+                                          SkImage::RescaleGamma rescaleGamma,
+                                          SkImage::RescaleMode rescaleMode,
+                                          SkImage::ReadPixelsCallback callback,
+                                          SkImage::ReadPixelsContext context);
 
     /**
      * Checks whether any asynchronous work is complete and if so calls related callbacks.
@@ -117,12 +162,31 @@ private:
     // require Context::Make() to return a nullptr.
     bool finishInitialization();
 
+    void asyncRescaleAndReadPixelsYUV420Impl(const SkImage*,
+                                             SkYUVColorSpace yuvColorSpace,
+                                             bool readAlpha,
+                                             sk_sp<SkColorSpace> dstColorSpace,
+                                             const SkIRect& srcRect,
+                                             const SkISize& dstSize,
+                                             SkImage::RescaleGamma rescaleGamma,
+                                             SkImage::RescaleMode rescaleMode,
+                                             SkImage::ReadPixelsCallback callback,
+                                             SkImage::ReadPixelsContext context);
+
     void asyncReadPixels(const TextureProxy* textureProxy,
                          const SkImageInfo& srcImageInfo,
                          const SkColorInfo& dstColorInfo,
                          const SkIRect& srcRect,
                          SkImage::ReadPixelsCallback callback,
                          SkImage::ReadPixelsContext context);
+
+    void asyncReadPixelsYUV420(Recorder*,
+                               const SkImage*,
+                               SkYUVColorSpace yuvColorSpace,
+                               bool readAlpha,
+                               const SkIRect& srcRect,
+                               SkImage::ReadPixelsCallback callback,
+                               SkImage::ReadPixelsContext context);
 
     // Inserts a texture to buffer transfer task, used by asyncReadPixels methods
     struct PixelTransferResult {

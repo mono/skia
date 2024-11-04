@@ -10,9 +10,9 @@
 
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkSamplingOptions.h"
-#include "include/gpu/GrBackendSurface.h"
 #include "include/private/base/SkThreadAnnotations.h"
 #include "src/base/SkSpinlock.h"
+#include "src/core/SkImageFilterTypes.h"
 #include "src/gpu/Swizzle.h"
 #include "src/gpu/ganesh/GrSurfaceProxyView.h"
 #include "src/gpu/ganesh/image/SkImage_GaneshBase.h"
@@ -23,6 +23,8 @@
 #include <memory>
 #include <tuple>
 
+class GrBackendFormat;
+class GrBackendTexture;
 class GrDirectContext;
 class GrFragmentProcessor;
 class GrImageContext;
@@ -86,6 +88,7 @@ public:
                                      ReadPixelsContext) const override;
 
     void onAsyncRescaleAndReadPixelsYUV420(SkYUVColorSpace,
+                                           bool readAlpha,
                                            sk_sp<SkColorSpace>,
                                            SkIRect srcRect,
                                            SkISize dstSize,
@@ -95,6 +98,9 @@ public:
                                            ReadPixelsContext) const override;
 
     void generatingSurfaceIsDeleted() override;
+
+    skif::Context onCreateFilterContext(GrRecordingContext* rContext,
+                                        const skif::ContextInfo& ctxInfo) const override;
 
     // From SkImage_GaneshBase.h
     GrSemaphoresSubmitted flush(GrDirectContext*, const GrFlushInfo&) const override;
@@ -159,7 +165,7 @@ private:
         size_t gpuMemorySize() const SK_EXCLUDES(fLock);
         skgpu::Mipmapped mipmapped() const SK_EXCLUDES(fLock);
 #ifdef SK_DEBUG
-        GrBackendFormat backendFormat() SK_EXCLUDES(fLock);
+        const GrBackendFormat& backendFormat() SK_EXCLUDES(fLock);
 #endif
 
     private:

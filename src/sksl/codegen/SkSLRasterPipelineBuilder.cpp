@@ -7,8 +7,6 @@
 
 #include "src/sksl/codegen/SkSLRasterPipelineBuilder.h"
 
-#ifdef SK_ENABLE_SKSL_IN_RASTER_PIPELINE
-
 #include "include/core/SkStream.h"
 #include "include/private/base/SkMalloc.h"
 #include "include/private/base/SkTo.h"
@@ -182,11 +180,35 @@ static BuilderOp convert_n_way_op_to_immediate(BuilderOp op, int slots, int32_t*
     return op;
 }
 
+void Builder::appendInstruction(BuilderOp op, SlotList slots,
+                                int immA, int immB, int immC, int immD) {
+    fInstructions.push_back({op, slots.fSlotA, slots.fSlotB,
+                             immA, immB, immC, immD, fCurrentStackID});
+}
+
+Instruction* Builder::lastInstruction(int fromBack) {
+    if (fInstructions.size() <= fromBack) {
+        return nullptr;
+    }
+    Instruction* inst = &fInstructions.fromBack(fromBack);
+    if (inst->fStackID != fCurrentStackID) {
+        return nullptr;
+    }
+    return inst;
+}
+
+Instruction* Builder::lastInstructionOnAnyStack(int fromBack) {
+    if (fInstructions.size() <= fromBack) {
+        return nullptr;
+    }
+    return &fInstructions.fromBack(fromBack);
+}
+
 void Builder::unary_op(BuilderOp op, int32_t slots) {
     switch (op) {
         case ALL_SINGLE_SLOT_UNARY_OP_CASES:
         case ALL_MULTI_SLOT_UNARY_OP_CASES:
-            fInstructions.push_back({op, {}, slots});
+            this->appendInstruction(op, {}, slots);
             break;
 
         default:
@@ -196,17 +218,17 @@ void Builder::unary_op(BuilderOp op, int32_t slots) {
 }
 
 void Builder::binary_op(BuilderOp op, int32_t slots) {
-    if (!fInstructions.empty()) {
+    if (Instruction* lastInstruction = this->lastInstruction()) {
         // If we just pushed or splatted a constant onto the stack...
-        Instruction& lastInstruction = fInstructions.back();
-        if (lastInstruction.fOp == BuilderOp::push_constant && lastInstruction.fImmA >= slots) {
+        if (lastInstruction->fOp == BuilderOp::push_constant &&
+            lastInstruction->fImmA >= slots) {
             // ... and this op has an immediate-mode equivalent...
-            int32_t constantValue = lastInstruction.fImmB;
+            int32_t constantValue = lastInstruction->fImmB;
             BuilderOp immOp = convert_n_way_op_to_immediate(op, slots, &constantValue);
             if (immOp != op) {
                 // ... discard the constants from the stack, and use an immediate-mode op.
                 this->discard_stack(slots);
-                fInstructions.push_back({immOp, {}, slots, constantValue});
+                this->appendInstruction(immOp, {}, slots, constantValue);
                 return;
             }
         }
@@ -215,7 +237,7 @@ void Builder::binary_op(BuilderOp op, int32_t slots) {
     switch (op) {
         case ALL_N_WAY_BINARY_OP_CASES:
         case ALL_MULTI_SLOT_BINARY_OP_CASES:
-            fInstructions.push_back({op, {}, slots});
+            this->appendInstruction(op, {}, slots);
             break;
 
         default:
@@ -228,7 +250,7 @@ void Builder::ternary_op(BuilderOp op, int32_t slots) {
     switch (op) {
         case ALL_N_WAY_TERNARY_OP_CASES:
         case ALL_MULTI_SLOT_TERNARY_OP_CASES:
-            fInstructions.push_back({op, {}, slots});
+            this->appendInstruction(op, {}, slots);
             break;
 
         default:
@@ -239,10 +261,10 @@ void Builder::ternary_op(BuilderOp op, int32_t slots) {
 
 void Builder::dot_floats(int32_t slots) {
     switch (slots) {
-        case 1: fInstructions.push_back({BuilderOp::mul_n_floats, {}, slots}); break;
-        case 2: fInstructions.push_back({BuilderOp::dot_2_floats, {}, slots}); break;
-        case 3: fInstructions.push_back({BuilderOp::dot_3_floats, {}, slots}); break;
-        case 4: fInstructions.push_back({BuilderOp::dot_4_floats, {}, slots}); break;
+        case 1: this->appendInstruction(BuilderOp::mul_n_floats, {}, slots); break;
+        case 2: this->appendInstruction(BuilderOp::dot_2_floats, {}, slots); break;
+        case 3: this->appendInstruction(BuilderOp::dot_3_floats, {}, slots); break;
+        case 4: this->appendInstruction(BuilderOp::dot_4_floats, {}, slots); break;
 
         default:
             SkDEBUGFAIL("invalid number of slots");
@@ -251,21 +273,21 @@ void Builder::dot_floats(int32_t slots) {
 }
 
 void Builder::refract_floats() {
-    fInstructions.push_back({BuilderOp::refract_4_floats, {}});
+    this->appendInstruction(BuilderOp::refract_4_floats, {});
 }
 
 void Builder::inverse_matrix(int32_t n) {
     switch (n) {
-        case 2:  fInstructions.push_back({BuilderOp::inverse_mat2, {}, 4});  break;
-        case 3:  fInstructions.push_back({BuilderOp::inverse_mat3, {}, 9});  break;
-        case 4:  fInstructions.push_back({BuilderOp::inverse_mat4, {}, 16}); break;
+        case 2:  this->appendInstruction(BuilderOp::inverse_mat2, {}, 4);  break;
+        case 3:  this->appendInstruction(BuilderOp::inverse_mat3, {}, 9);  break;
+        case 4:  this->appendInstruction(BuilderOp::inverse_mat4, {}, 16); break;
         default: SkUNREACHABLE;
     }
 }
 
 void Builder::pad_stack(int32_t count) {
     if (count > 0) {
-        fInstructions.push_back({BuilderOp::pad_stack, {}, count});
+        this->appendInstruction(BuilderOp::pad_stack, {}, count);
     }
 }
 
@@ -277,27 +299,31 @@ bool Builder::simplifyImmediateUnmaskedOp() {
     // If we detect a pattern of 'push, immediate-op, unmasked pop', then we can
     // convert it into an immediate-op directly onto the value slots and take the
     // stack entirely out of the equation.
-    Instruction& popInstruction  = fInstructions.back();
-    Instruction& immInstruction  = fInstructions.fromBack(1);
-    Instruction& pushInstruction = fInstructions.fromBack(2);
+    Instruction* popInstruction  = this->lastInstruction(/*fromBack=*/0);
+    Instruction* immInstruction  = this->lastInstruction(/*fromBack=*/1);
+    Instruction* pushInstruction = this->lastInstruction(/*fromBack=*/2);
 
     // If the last instruction is an unmasked pop...
-    if (popInstruction.fOp == BuilderOp::copy_stack_to_slots_unmasked) {
+    if (popInstruction && immInstruction && pushInstruction &&
+        popInstruction->fOp == BuilderOp::copy_stack_to_slots_unmasked) {
         // ... and the prior instruction was an immediate-mode op, with the same number of slots...
-        if (is_immediate_op(immInstruction.fOp) && immInstruction.fImmA == popInstruction.fImmA) {
+        if (is_immediate_op(immInstruction->fOp) &&
+            immInstruction->fImmA == popInstruction->fImmA) {
             // ... and we support multiple-slot immediates (if this op calls for it)...
-            if (immInstruction.fImmA == 1 || is_multi_slot_immediate_op(immInstruction.fOp)) {
-                // ... and the prior instruction was `push_slots` of at least that many slots...
-                if (pushInstruction.fOp == BuilderOp::push_slots &&
-                    pushInstruction.fImmA >= popInstruction.fImmA) {
+            if (immInstruction->fImmA == 1 || is_multi_slot_immediate_op(immInstruction->fOp)) {
+                // ... and the prior instruction was `push_slots` or `push_immutable` of at least
+                // that many slots...
+                if ((pushInstruction->fOp == BuilderOp::push_slots ||
+                     pushInstruction->fOp == BuilderOp::push_immutable) &&
+                    pushInstruction->fImmA >= popInstruction->fImmA) {
                     // ... onto the same slot range...
-                    Slot immSlot = popInstruction.fSlotA + popInstruction.fImmA;
-                    Slot pushSlot = pushInstruction.fSlotA + pushInstruction.fImmA;
+                    Slot immSlot = popInstruction->fSlotA + popInstruction->fImmA;
+                    Slot pushSlot = pushInstruction->fSlotA + pushInstruction->fImmA;
                     if (immSlot == pushSlot) {
                         // ... we can shrink the push, eliminate the pop, and perform the immediate
                         // op in-place instead.
-                        pushInstruction.fImmA -= immInstruction.fImmA;
-                        immInstruction.fSlotA = immSlot - immInstruction.fImmA;
+                        pushInstruction->fImmA -= immInstruction->fImmA;
+                        immInstruction->fSlotA = immSlot - immInstruction->fImmA;
                         fInstructions.pop_back();
                         return true;
                     }
@@ -309,22 +335,27 @@ bool Builder::simplifyImmediateUnmaskedOp() {
     return false;
 }
 
-void Builder::discard_stack(int32_t count) {
+void Builder::discard_stack(int32_t count, int stackID) {
     // If we pushed something onto the stack and then immediately discarded part of it, we can
     // shrink or eliminate the push.
-    while (count > 0 && !fInstructions.empty()) {
-        Instruction& lastInstruction = fInstructions.back();
+    while (count > 0) {
+        Instruction* lastInstruction = this->lastInstructionOnAnyStack();
+        if (!lastInstruction || lastInstruction->fStackID != stackID) {
+            break;
+        }
 
-        switch (lastInstruction.fOp) {
+        switch (lastInstruction->fOp) {
             case BuilderOp::discard_stack:
                 // Our last op was actually a separate discard_stack; combine the discards.
-                lastInstruction.fImmA += count;
+                lastInstruction->fImmA += count;
                 return;
 
-            case BuilderOp::push_constant:
             case BuilderOp::push_clone:
             case BuilderOp::push_clone_from_stack:
             case BuilderOp::push_clone_indirect_from_stack:
+            case BuilderOp::push_constant:
+            case BuilderOp::push_immutable:
+            case BuilderOp::push_immutable_indirect:
             case BuilderOp::push_slots:
             case BuilderOp::push_slots_indirect:
             case BuilderOp::push_uniform:
@@ -332,10 +363,10 @@ void Builder::discard_stack(int32_t count) {
             case BuilderOp::pad_stack: {
                 // Our last op was a multi-slot push; these cancel out. Eliminate the op if its
                 // count reached zero.
-                int cancelOut = std::min(count, lastInstruction.fImmA);
-                count                 -= cancelOut;
-                lastInstruction.fImmA -= cancelOut;
-                if (lastInstruction.fImmA == 0) {
+                int cancelOut = std::min(count, lastInstruction->fImmA);
+                count                  -= cancelOut;
+                lastInstruction->fImmA -= cancelOut;
+                if (lastInstruction->fImmA == 0) {
                     fInstructions.pop_back();
                 }
                 continue;
@@ -361,8 +392,8 @@ void Builder::discard_stack(int32_t count) {
                 // op with an equal number of slots, is interpreted as an unmasked stack pop.
                 // We can simplify pops in a variety of ways. First, temporarily get rid of
                 // `copy_stack_to_slots_unmasked`.
-                if (count == lastInstruction.fImmA) {
-                    SlotRange dst{lastInstruction.fSlotA, lastInstruction.fImmA};
+                if (count == lastInstruction->fImmA) {
+                    SlotRange dst{lastInstruction->fSlotA, lastInstruction->fImmA};
                     fInstructions.pop_back();
 
                     // See if we can write this pop in a simpler way.
@@ -389,7 +420,7 @@ void Builder::discard_stack(int32_t count) {
     }
 
     if (count > 0) {
-        fInstructions.push_back({BuilderOp::discard_stack, {}, count});
+        this->appendInstruction(BuilderOp::discard_stack, {}, count);
     }
 }
 
@@ -398,15 +429,14 @@ void Builder::label(int labelID) {
 
     // If the previous instruction was a branch to this label, it's a no-op; jumping to the very
     // next instruction is effectively meaningless.
-    while (!fInstructions.empty()) {
-        Instruction& lastInstruction = fInstructions.back();
-        switch (lastInstruction.fOp) {
+    while (const Instruction* lastInstruction = this->lastInstructionOnAnyStack()) {
+        switch (lastInstruction->fOp) {
             case BuilderOp::jump:
             case BuilderOp::branch_if_all_lanes_active:
             case BuilderOp::branch_if_any_lanes_active:
             case BuilderOp::branch_if_no_lanes_active:
             case BuilderOp::branch_if_no_active_lanes_on_stack_top_equal:
-                if (lastInstruction.fImmA == labelID) {
+                if (lastInstruction->fImmA == labelID) {
                     fInstructions.pop_back();
                     continue;
                 }
@@ -417,16 +447,18 @@ void Builder::label(int labelID) {
         }
         break;
     }
-    fInstructions.push_back({BuilderOp::label, {}, labelID});
+    this->appendInstruction(BuilderOp::label, {}, labelID);
 }
 
 void Builder::jump(int labelID) {
     SkASSERT(labelID >= 0 && labelID < fNumLabels);
-    if (!fInstructions.empty() && fInstructions.back().fOp == BuilderOp::jump) {
-        // The previous instruction was also `jump`, so this branch could never possibly occur.
-        return;
+    if (const Instruction* lastInstruction = this->lastInstructionOnAnyStack()) {
+        if (lastInstruction->fOp == BuilderOp::jump) {
+            // The previous instruction was also `jump`, so this branch could never possibly occur.
+            return;
+        }
     }
-    fInstructions.push_back({BuilderOp::jump, {}, labelID});
+    this->appendInstruction(BuilderOp::jump, {}, labelID);
 }
 
 void Builder::branch_if_any_lanes_active(int labelID) {
@@ -436,14 +468,15 @@ void Builder::branch_if_any_lanes_active(int labelID) {
     }
 
     SkASSERT(labelID >= 0 && labelID < fNumLabels);
-    if (!fInstructions.empty() &&
-        (fInstructions.back().fOp == BuilderOp::branch_if_any_lanes_active ||
-         fInstructions.back().fOp == BuilderOp::jump)) {
-        // The previous instruction was `jump` or `branch_if_any_lanes_active`, so this branch
-        // could never possibly occur.
-        return;
+    if (const Instruction* lastInstruction = this->lastInstructionOnAnyStack()) {
+        if (lastInstruction->fOp == BuilderOp::branch_if_any_lanes_active ||
+            lastInstruction->fOp == BuilderOp::jump) {
+            // The previous instruction was `jump` or `branch_if_any_lanes_active`, so this branch
+            // could never possibly occur.
+            return;
+        }
     }
-    fInstructions.push_back({BuilderOp::branch_if_any_lanes_active, {}, labelID});
+    this->appendInstruction(BuilderOp::branch_if_any_lanes_active, {}, labelID);
 }
 
 void Builder::branch_if_all_lanes_active(int labelID) {
@@ -453,14 +486,15 @@ void Builder::branch_if_all_lanes_active(int labelID) {
     }
 
     SkASSERT(labelID >= 0 && labelID < fNumLabels);
-    if (!fInstructions.empty() &&
-        (fInstructions.back().fOp == BuilderOp::branch_if_all_lanes_active ||
-         fInstructions.back().fOp == BuilderOp::jump)) {
-        // The previous instruction was `jump` or `branch_if_all_lanes_active`, so this branch
-        // could never possibly occur.
-        return;
+    if (const Instruction* lastInstruction = this->lastInstructionOnAnyStack()) {
+        if (lastInstruction->fOp == BuilderOp::branch_if_all_lanes_active ||
+            lastInstruction->fOp == BuilderOp::jump) {
+            // The previous instruction was `jump` or `branch_if_all_lanes_active`, so this branch
+            // could never possibly occur.
+            return;
+        }
     }
-    fInstructions.push_back({BuilderOp::branch_if_all_lanes_active, {}, labelID});
+    this->appendInstruction(BuilderOp::branch_if_all_lanes_active, {}, labelID);
 }
 
 void Builder::branch_if_no_lanes_active(int labelID) {
@@ -469,101 +503,104 @@ void Builder::branch_if_no_lanes_active(int labelID) {
     }
 
     SkASSERT(labelID >= 0 && labelID < fNumLabels);
-    if (!fInstructions.empty() &&
-        (fInstructions.back().fOp == BuilderOp::branch_if_no_lanes_active ||
-         fInstructions.back().fOp == BuilderOp::jump)) {
-        // The previous instruction was `jump` or `branch_if_no_lanes_active`, so this branch
-        // could never possibly occur.
-        return;
+    if (const Instruction* lastInstruction = this->lastInstructionOnAnyStack()) {
+        if (lastInstruction->fOp == BuilderOp::branch_if_no_lanes_active ||
+            lastInstruction->fOp == BuilderOp::jump) {
+            // The previous instruction was `jump` or `branch_if_no_lanes_active`, so this branch
+            // could never possibly occur.
+            return;
+        }
     }
-    fInstructions.push_back({BuilderOp::branch_if_no_lanes_active, {}, labelID});
+    this->appendInstruction(BuilderOp::branch_if_no_lanes_active, {}, labelID);
 }
 
 void Builder::branch_if_no_active_lanes_on_stack_top_equal(int value, int labelID) {
     SkASSERT(labelID >= 0 && labelID < fNumLabels);
-    if (!fInstructions.empty() &&
-        (fInstructions.back().fOp == BuilderOp::jump ||
-         (fInstructions.back().fOp == BuilderOp::branch_if_no_active_lanes_on_stack_top_equal &&
-          fInstructions.back().fImmB == value))) {
-        // The previous instruction was `jump` or `branch_if_no_active_lanes_on_stack_top_equal`
-        // (checking against the same value), so this branch could never possibly occur.
-        return;
+    if (const Instruction* lastInstruction = this->lastInstructionOnAnyStack()) {
+        if (lastInstruction->fOp == BuilderOp::jump ||
+            (lastInstruction->fOp == BuilderOp::branch_if_no_active_lanes_on_stack_top_equal &&
+             lastInstruction->fImmB == value)) {
+            // The previous instruction was `jump` or `branch_if_no_active_lanes_on_stack_top_equal`
+            // (checking against the same value), so this branch could never possibly occur.
+            return;
+        }
     }
-    fInstructions.push_back({BuilderOp::branch_if_no_active_lanes_on_stack_top_equal,
-                             {}, labelID, value});
+    this->appendInstruction(BuilderOp::branch_if_no_active_lanes_on_stack_top_equal,
+                            {}, labelID, value);
 }
 
-void Builder::push_slots(SlotRange src) {
+void Builder::push_slots_or_immutable(SlotRange src, BuilderOp op) {
     SkASSERT(src.count >= 0);
-    if (!fInstructions.empty()) {
-        Instruction& lastInstruction = fInstructions.back();
-
+    if (Instruction* lastInstruction = this->lastInstruction()) {
         // If the previous instruction was pushing slots contiguous to this range, we can collapse
         // the two pushes into one larger push.
-        if (lastInstruction.fOp == BuilderOp::push_slots &&
-            lastInstruction.fSlotA + lastInstruction.fImmA == src.index) {
-            lastInstruction.fImmA += src.count;
+        if (lastInstruction->fOp == op &&
+            lastInstruction->fSlotA + lastInstruction->fImmA == src.index) {
+            lastInstruction->fImmA += src.count;
             src.count = 0;
         }
     }
 
     if (src.count > 0) {
-        fInstructions.push_back({BuilderOp::push_slots, {src.index}, src.count});
+        this->appendInstruction(op, {src.index}, src.count);
     }
 
     // Look for a sequence of "copy stack to X, discard stack, copy X to stack". This is a common
     // pattern when multiple operations in a row affect the same variable. When we see this, we can
     // eliminate both the discard and the push.
-    if (fInstructions.size() >= 3 && fInstructions.back().fOp == BuilderOp::push_slots) {
-        int pushIndex = fInstructions.back().fSlotA;
-        int pushCount = fInstructions.back().fImmA;
+    if (fInstructions.size() >= 3) {
+        const Instruction* pushInst        = this->lastInstruction(/*fromBack=*/0);
+        const Instruction* discardInst     = this->lastInstruction(/*fromBack=*/1);
+        const Instruction* copyToSlotsInst = this->lastInstruction(/*fromBack=*/2);
 
-        const Instruction& discardInst     = fInstructions.fromBack(1);
-        const Instruction& copyToSlotsInst = fInstructions.fromBack(2);
+        if (pushInst && discardInst && copyToSlotsInst && pushInst->fOp == BuilderOp::push_slots) {
+            int pushIndex = pushInst->fSlotA;
+            int pushCount = pushInst->fImmA;
 
-        // Look for a `discard_stack` matching our push count.
-        if (discardInst.fOp == BuilderOp::discard_stack && discardInst.fImmA == pushCount) {
-            // Look for a `copy_stack_to_slots` matching our push.
-            if ((copyToSlotsInst.fOp == BuilderOp::copy_stack_to_slots ||
-                 copyToSlotsInst.fOp == BuilderOp::copy_stack_to_slots_unmasked) &&
-                copyToSlotsInst.fSlotA == pushIndex &&
-                copyToSlotsInst.fImmA  == pushCount) {
-                // We found a matching sequence. Remove the discard and push.
-                fInstructions.pop_back();
-                fInstructions.pop_back();
-                return;
+            // Look for a `discard_stack` matching our push count.
+            if (discardInst->fOp == BuilderOp::discard_stack && discardInst->fImmA == pushCount) {
+                // Look for a `copy_stack_to_slots` matching our push.
+                if ((copyToSlotsInst->fOp == BuilderOp::copy_stack_to_slots ||
+                     copyToSlotsInst->fOp == BuilderOp::copy_stack_to_slots_unmasked) &&
+                    copyToSlotsInst->fSlotA == pushIndex && copyToSlotsInst->fImmA == pushCount) {
+                    // We found a matching sequence. Remove the discard and push.
+                    fInstructions.pop_back();
+                    fInstructions.pop_back();
+                    return;
+                }
             }
         }
     }
 }
 
-void Builder::push_slots_indirect(SlotRange fixedRange, int dynamicStackID, SlotRange limitRange) {
+void Builder::push_slots_or_immutable_indirect(SlotRange fixedRange,
+                                               int dynamicStackID,
+                                               SlotRange limitRange,
+                                               BuilderOp op) {
     // SlotA: fixed-range start
     // SlotB: limit-range end
     // immA: number of slots
     // immB: dynamic stack ID
-    fInstructions.push_back({BuilderOp::push_slots_indirect,
-                             {fixedRange.index, limitRange.index + limitRange.count},
-                             fixedRange.count,
-                             dynamicStackID});
+    this->appendInstruction(op,
+                            {fixedRange.index, limitRange.index + limitRange.count},
+                            fixedRange.count,
+                            dynamicStackID);
 }
 
 void Builder::push_uniform(SlotRange src) {
     SkASSERT(src.count >= 0);
-    if (!fInstructions.empty()) {
-        Instruction& lastInstruction = fInstructions.back();
-
+    if (Instruction* lastInstruction = this->lastInstruction()) {
         // If the previous instruction was pushing uniforms contiguous to this range, we can
         // collapse the two pushes into one larger push.
-        if (lastInstruction.fOp == BuilderOp::push_uniform &&
-            lastInstruction.fSlotA + lastInstruction.fImmA == src.index) {
-            lastInstruction.fImmA += src.count;
+        if (lastInstruction->fOp == BuilderOp::push_uniform &&
+            lastInstruction->fSlotA + lastInstruction->fImmA == src.index) {
+            lastInstruction->fImmA += src.count;
             return;
         }
     }
 
     if (src.count > 0) {
-        fInstructions.push_back({BuilderOp::push_uniform, {src.index}, src.count});
+        this->appendInstruction(BuilderOp::push_uniform, {src.index}, src.count);
     }
 }
 
@@ -574,10 +611,10 @@ void Builder::push_uniform_indirect(SlotRange fixedRange,
     // SlotB: limit-range end
     // immA: number of slots
     // immB: dynamic stack ID
-    fInstructions.push_back({BuilderOp::push_uniform_indirect,
-                             {fixedRange.index, limitRange.index + limitRange.count},
-                             fixedRange.count,
-                             dynamicStackID});
+    this->appendInstruction(BuilderOp::push_uniform_indirect,
+                            {fixedRange.index, limitRange.index + limitRange.count},
+                            fixedRange.count,
+                            dynamicStackID);
 }
 
 void Builder::trace_var_indirect(int traceMaskStackID,
@@ -589,36 +626,32 @@ void Builder::trace_var_indirect(int traceMaskStackID,
     // immA: trace-mask stack ID
     // immB: number of slots
     // immC: dynamic stack ID
-    fInstructions.push_back({BuilderOp::trace_var_indirect,
-                             {fixedRange.index, limitRange.index + limitRange.count},
-                             traceMaskStackID,
-                             fixedRange.count,
-                             dynamicStackID});
+    this->appendInstruction(BuilderOp::trace_var_indirect,
+                            {fixedRange.index, limitRange.index + limitRange.count},
+                            traceMaskStackID,
+                            fixedRange.count,
+                            dynamicStackID);
 }
 
 void Builder::push_constant_i(int32_t val, int count) {
     SkASSERT(count >= 0);
     if (count > 0) {
-        if (!fInstructions.empty()) {
-            Instruction& lastInstruction = fInstructions.back();
-
+        if (Instruction* lastInstruction = this->lastInstruction()) {
             // If the previous op is pushing the same value, we can just push more of them.
-            if (lastInstruction.fOp == BuilderOp::push_constant && lastInstruction.fImmB == val) {
-                lastInstruction.fImmA += count;
+            if (lastInstruction->fOp == BuilderOp::push_constant && lastInstruction->fImmB == val) {
+                lastInstruction->fImmA += count;
                 return;
             }
         }
-        fInstructions.push_back({BuilderOp::push_constant, {}, count, val});
+        this->appendInstruction(BuilderOp::push_constant, {}, count, val);
     }
 }
 
 void Builder::push_duplicates(int count) {
-    if (!fInstructions.empty()) {
-        Instruction& lastInstruction = fInstructions.back();
-
+    if (Instruction* lastInstruction = this->lastInstruction()) {
         // If the previous op is pushing a constant, we can just push more of them.
-        if (lastInstruction.fOp == BuilderOp::push_constant) {
-            lastInstruction.fImmA += count;
+        if (lastInstruction->fOp == BuilderOp::push_constant) {
+            lastInstruction->fImmA += count;
             return;
         }
     }
@@ -644,17 +677,16 @@ void Builder::push_duplicates(int count) {
 void Builder::push_clone(int numSlots, int offsetFromStackTop) {
     // If we are cloning the stack top...
     if (numSlots == 1 && offsetFromStackTop == 0) {
-        if (!fInstructions.empty()) {
-            // ... and the previous op is pushing a constant...
-            Instruction& lastInstruction = fInstructions.back();
-            if (lastInstruction.fOp == BuilderOp::push_constant) {
+        // ... and the previous op is pushing a constant...
+        if (Instruction* lastInstruction = this->lastInstruction()) {
+            if (lastInstruction->fOp == BuilderOp::push_constant) {
                 // ... we can just push more of them.
-                lastInstruction.fImmA += 1;
+                lastInstruction->fImmA += 1;
                 return;
             }
         }
     }
-    fInstructions.push_back({BuilderOp::push_clone, {}, numSlots, numSlots + offsetFromStackTop});
+    this->appendInstruction(BuilderOp::push_clone, {}, numSlots, numSlots + offsetFromStackTop);
 }
 
 void Builder::push_clone_from_stack(SlotRange range, int otherStackID, int offsetFromStackTop) {
@@ -663,23 +695,21 @@ void Builder::push_clone_from_stack(SlotRange range, int otherStackID, int offse
     // immC: offset from stack top
     offsetFromStackTop -= range.index;
 
-    if (!fInstructions.empty()) {
-        Instruction& lastInstruction = fInstructions.back();
-
+    if (Instruction* lastInstruction = this->lastInstruction()) {
         // If the previous op is also pushing a clone...
-        if (lastInstruction.fOp == BuilderOp::push_clone_from_stack &&
+        if (lastInstruction->fOp == BuilderOp::push_clone_from_stack &&
             // ... from the same stack...
-            lastInstruction.fImmB == otherStackID &&
+            lastInstruction->fImmB == otherStackID &&
             // ... and this clone starts at the same place that the last clone ends...
-            lastInstruction.fImmC - lastInstruction.fImmA == offsetFromStackTop) {
+            lastInstruction->fImmC - lastInstruction->fImmA == offsetFromStackTop) {
             // ... just extend the existing clone-op.
-            lastInstruction.fImmA += range.count;
+            lastInstruction->fImmA += range.count;
             return;
         }
     }
 
-    fInstructions.push_back({BuilderOp::push_clone_from_stack, {},
-                             range.count, otherStackID, offsetFromStackTop});
+    this->appendInstruction(BuilderOp::push_clone_from_stack, {},
+                            range.count, otherStackID, offsetFromStackTop);
 }
 
 void Builder::push_clone_indirect_from_stack(SlotRange fixedOffset,
@@ -692,8 +722,8 @@ void Builder::push_clone_indirect_from_stack(SlotRange fixedOffset,
     // immD: dynamic stack ID
     offsetFromStackTop -= fixedOffset.index;
 
-    fInstructions.push_back({BuilderOp::push_clone_indirect_from_stack, {},
-                             fixedOffset.count, otherStackID, offsetFromStackTop, dynamicStackID});
+    this->appendInstruction(BuilderOp::push_clone_indirect_from_stack, {},
+                            fixedOffset.count, otherStackID, offsetFromStackTop, dynamicStackID);
 }
 
 void Builder::pop_slots(SlotRange dst) {
@@ -707,20 +737,24 @@ void Builder::pop_slots(SlotRange dst) {
 }
 
 void Builder::simplifyPopSlotsUnmasked(SlotRange* dst) {
-    if (!dst->count || fInstructions.empty()) {
+    if (!dst->count) {
         // There's nothing left to simplify.
         return;
     }
-
-    Instruction& lastInstruction = fInstructions.back();
+    Instruction* lastInstruction = this->lastInstruction();
+    if (!lastInstruction) {
+        // There's nothing left to simplify.
+        return;
+    }
+    BuilderOp lastOp = lastInstruction->fOp;
 
     // If the last instruction is pushing a constant, we can simplify it by copying the constant
     // directly into the destination slot.
-    if (lastInstruction.fOp == BuilderOp::push_constant) {
+    if (lastOp == BuilderOp::push_constant) {
         // Get the last slot.
-        int32_t value = lastInstruction.fImmB;
-        lastInstruction.fImmA--;
-        if (lastInstruction.fImmA == 0) {
+        int32_t value = lastInstruction->fImmB;
+        lastInstruction->fImmA--;
+        if (lastInstruction->fImmA == 0) {
             fInstructions.pop_back();
         }
 
@@ -738,11 +772,11 @@ void Builder::simplifyPopSlotsUnmasked(SlotRange* dst) {
 
     // If the last instruction is pushing a uniform, we can simplify it by copying the uniform
     // directly into the destination slot.
-    if (lastInstruction.fOp == BuilderOp::push_uniform) {
+    if (lastOp == BuilderOp::push_uniform) {
         // Get the last slot.
-        Slot sourceSlot = lastInstruction.fSlotA + lastInstruction.fImmA - 1;
-        lastInstruction.fImmA--;
-        if (lastInstruction.fImmA == 0) {
+        Slot sourceSlot = lastInstruction->fSlotA + lastInstruction->fImmA - 1;
+        lastInstruction->fImmA--;
+        if (lastInstruction->fImmA == 0) {
             fInstructions.pop_back();
         }
 
@@ -758,12 +792,12 @@ void Builder::simplifyPopSlotsUnmasked(SlotRange* dst) {
         return;
     }
 
-    // If the last instruction is pushing a slot, we can just copy that slot.
-    if (lastInstruction.fOp == BuilderOp::push_slots) {
+    // If the last instruction is pushing a slot or immutable, we can just copy that slot.
+    if (lastOp == BuilderOp::push_slots || lastOp == BuilderOp::push_immutable) {
         // Get the last slot.
-        Slot sourceSlot = lastInstruction.fSlotA + lastInstruction.fImmA - 1;
-        lastInstruction.fImmA--;
-        if (lastInstruction.fImmA == 0) {
+        Slot sourceSlot = lastInstruction->fSlotA + lastInstruction->fImmA - 1;
+        lastInstruction->fImmA--;
+        if (lastInstruction->fImmA == 0) {
             fInstructions.pop_back();
         }
 
@@ -775,8 +809,15 @@ void Builder::simplifyPopSlotsUnmasked(SlotRange* dst) {
         this->simplifyPopSlotsUnmasked(dst);
 
         // Copy the slot directly.
-        if (destinationSlot != sourceSlot) {
-            this->copy_slots_unmasked({destinationSlot, 1}, {sourceSlot, 1});
+        if (lastOp == BuilderOp::push_slots) {
+            if (destinationSlot != sourceSlot) {
+                this->copy_slots_unmasked({destinationSlot, 1}, {sourceSlot, 1});
+            } else {
+                // Copying from a value-slot into the same value-slot is a no-op.
+            }
+        } else {
+            // Copy from immutable data directly to the destination slot.
+            this->copy_immutable_unmasked({destinationSlot, 1}, {sourceSlot, 1});
         }
         return;
     }
@@ -789,26 +830,22 @@ void Builder::pop_slots_unmasked(SlotRange dst) {
 }
 
 void Builder::exchange_src() {
-    if (!fInstructions.empty()) {
-        Instruction& lastInstruction = fInstructions.back();
-
+    if (Instruction* lastInstruction = this->lastInstruction()) {
         // If the previous op is also an exchange-src...
-        if (lastInstruction.fOp == BuilderOp::exchange_src) {
+        if (lastInstruction->fOp == BuilderOp::exchange_src) {
             // ... both ops can be eliminated. A double-swap is a no-op.
             fInstructions.pop_back();
             return;
         }
     }
 
-    fInstructions.push_back({BuilderOp::exchange_src, {}});
+    this->appendInstruction(BuilderOp::exchange_src, {});
 }
 
 void Builder::pop_src_rgba() {
-    if (!fInstructions.empty()) {
-        Instruction& lastInstruction = fInstructions.back();
-
+    if (Instruction* lastInstruction = this->lastInstruction()) {
         // If the previous op is exchanging src.rgba with the stack...
-        if (lastInstruction.fOp == BuilderOp::exchange_src) {
+        if (lastInstruction->fOp == BuilderOp::exchange_src) {
             // ... both ops can be eliminated. It's just sliding the color back and forth.
             fInstructions.pop_back();
             this->discard_stack(4);
@@ -816,7 +853,7 @@ void Builder::pop_src_rgba() {
         }
     }
 
-    fInstructions.push_back({BuilderOp::pop_src_rgba, {}});
+    this->appendInstruction(BuilderOp::pop_src_rgba, {});
 }
 
 void Builder::copy_stack_to_slots(SlotRange dst, int offsetFromStackTop) {
@@ -827,23 +864,21 @@ void Builder::copy_stack_to_slots(SlotRange dst, int offsetFromStackTop) {
     }
 
     // If the last instruction copied the previous stack slots, just extend it.
-    if (!fInstructions.empty()) {
-        Instruction& lastInstruction = fInstructions.back();
-
+    if (Instruction* lastInstruction = this->lastInstruction()) {
         // If the last op is copy-stack-to-slots...
-        if (lastInstruction.fOp == BuilderOp::copy_stack_to_slots &&
+        if (lastInstruction->fOp == BuilderOp::copy_stack_to_slots &&
             // and this op's destination is immediately after the last copy-slots-op's destination
-            lastInstruction.fSlotA + lastInstruction.fImmA == dst.index &&
+            lastInstruction->fSlotA + lastInstruction->fImmA == dst.index &&
             // and this op's source is immediately after the last copy-slots-op's source
-            lastInstruction.fImmB - lastInstruction.fImmA == offsetFromStackTop) {
+            lastInstruction->fImmB - lastInstruction->fImmA == offsetFromStackTop) {
             // then we can just extend the copy!
-            lastInstruction.fImmA += dst.count;
+            lastInstruction->fImmA += dst.count;
             return;
         }
     }
 
-    fInstructions.push_back({BuilderOp::copy_stack_to_slots, {dst.index},
-                             dst.count, offsetFromStackTop});
+    this->appendInstruction(BuilderOp::copy_stack_to_slots, {dst.index},
+                            dst.count, offsetFromStackTop);
 }
 
 void Builder::copy_stack_to_slots_indirect(SlotRange fixedRange,
@@ -853,10 +888,10 @@ void Builder::copy_stack_to_slots_indirect(SlotRange fixedRange,
     // SlotB: limit-range end
     // immA: number of slots
     // immB: dynamic stack ID
-    fInstructions.push_back({BuilderOp::copy_stack_to_slots_indirect,
-                             {fixedRange.index, limitRange.index + limitRange.count},
-                             fixedRange.count,
-                             dynamicStackID});
+    this->appendInstruction(BuilderOp::copy_stack_to_slots_indirect,
+                            {fixedRange.index, limitRange.index + limitRange.count},
+                            fixedRange.count,
+                            dynamicStackID);
 }
 
 static bool slot_ranges_overlap(SlotRange x, SlotRange y) {
@@ -866,89 +901,100 @@ static bool slot_ranges_overlap(SlotRange x, SlotRange y) {
 
 void Builder::copy_constant(Slot slot, int constantValue) {
     // If the last instruction copied the same constant, just extend it.
-    if (!fInstructions.empty()) {
-        Instruction& lastInstr = fInstructions.back();
-
+    if (Instruction* lastInstr = this->lastInstruction()) {
         // If the last op is copy-constant...
-        if (lastInstr.fOp == BuilderOp::copy_constant &&
+        if (lastInstr->fOp == BuilderOp::copy_constant &&
             // ... and has the same value...
-            lastInstr.fImmB == constantValue &&
+            lastInstr->fImmB == constantValue &&
             // ... and the slot is immediately after the last copy-constant's destination...
-            lastInstr.fSlotA + lastInstr.fImmA == slot) {
+            lastInstr->fSlotA + lastInstr->fImmA == slot) {
             // ... then we can extend the copy!
-            lastInstr.fImmA += 1;
+            lastInstr->fImmA += 1;
             return;
         }
     }
 
-    fInstructions.push_back({BuilderOp::copy_constant, {slot}, 1, constantValue});
+    this->appendInstruction(BuilderOp::copy_constant, {slot}, 1, constantValue);
 }
 
 void Builder::copy_slots_unmasked(SlotRange dst, SlotRange src) {
     // If the last instruction copied adjacent slots, just extend it.
-    if (!fInstructions.empty()) {
-        Instruction& lastInstr = fInstructions.back();
-
-        // If the last op is copy-slots-unmasked...
-        if (lastInstr.fOp == BuilderOp::copy_slot_unmasked &&
+    if (Instruction* lastInstr = this->lastInstruction()) {
+        // If the last op is a match...
+        if (lastInstr->fOp == BuilderOp::copy_slot_unmasked &&
             // and this op's destination is immediately after the last copy-slots-op's destination
-            lastInstr.fSlotA + lastInstr.fImmA == dst.index &&
+            lastInstr->fSlotA + lastInstr->fImmA == dst.index &&
             // and this op's source is immediately after the last copy-slots-op's source
-            lastInstr.fSlotB + lastInstr.fImmA == src.index &&
+            lastInstr->fSlotB + lastInstr->fImmA == src.index &&
             // and the source/dest ranges will not overlap
-            !slot_ranges_overlap({lastInstr.fSlotB, lastInstr.fImmA + dst.count},
-                                 {lastInstr.fSlotA, lastInstr.fImmA + dst.count})) {
+            !slot_ranges_overlap({lastInstr->fSlotB, lastInstr->fImmA + dst.count},
+                                 {lastInstr->fSlotA, lastInstr->fImmA + dst.count})) {
             // then we can just extend the copy!
-            lastInstr.fImmA += dst.count;
+            lastInstr->fImmA += dst.count;
             return;
         }
     }
 
     SkASSERT(dst.count == src.count);
-    fInstructions.push_back({BuilderOp::copy_slot_unmasked, {dst.index, src.index}, dst.count});
+    this->appendInstruction(BuilderOp::copy_slot_unmasked, {dst.index, src.index}, dst.count);
+}
+
+void Builder::copy_immutable_unmasked(SlotRange dst, SlotRange src) {
+    // If the last instruction copied adjacent immutable data, just extend it.
+    if (Instruction* lastInstr = this->lastInstruction()) {
+        // If the last op is a match...
+        if (lastInstr->fOp == BuilderOp::copy_immutable_unmasked &&
+            // and this op's destination is immediately after the last copy-slots-op's destination
+            lastInstr->fSlotA + lastInstr->fImmA == dst.index &&
+            // and this op's source is immediately after the last copy-slots-op's source
+            lastInstr->fSlotB + lastInstr->fImmA == src.index) {
+            // then we can just extend the copy!
+            lastInstr->fImmA += dst.count;
+            return;
+        }
+    }
+
+    SkASSERT(dst.count == src.count);
+    this->appendInstruction(BuilderOp::copy_immutable_unmasked, {dst.index, src.index}, dst.count);
 }
 
 void Builder::copy_uniform_to_slots_unmasked(SlotRange dst, SlotRange src) {
-    // If the last instruction copied adjacent slots, just extend it.
-    if (!fInstructions.empty()) {
-        Instruction& lastInstr = fInstructions.back();
-
+    // If the last instruction copied adjacent uniforms, just extend it.
+    if (Instruction* lastInstr = this->lastInstruction()) {
         // If the last op is copy-constant...
-        if (lastInstr.fOp == BuilderOp::copy_uniform_to_slots_unmasked &&
+        if (lastInstr->fOp == BuilderOp::copy_uniform_to_slots_unmasked &&
             // and this op's destination is immediately after the last copy-constant's destination
-            lastInstr.fSlotB + lastInstr.fImmA == dst.index &&
+            lastInstr->fSlotB + lastInstr->fImmA == dst.index &&
             // and this op's source is immediately after the last copy-constant's source
-            lastInstr.fSlotA + lastInstr.fImmA == src.index) {
+            lastInstr->fSlotA + lastInstr->fImmA == src.index) {
             // then we can just extend the copy!
-            lastInstr.fImmA += dst.count;
+            lastInstr->fImmA += dst.count;
             return;
         }
     }
 
     SkASSERT(dst.count == src.count);
-    fInstructions.push_back({BuilderOp::copy_uniform_to_slots_unmasked, {src.index, dst.index},
-                             dst.count});
+    this->appendInstruction(BuilderOp::copy_uniform_to_slots_unmasked, {src.index, dst.index},
+                            dst.count);
 }
 
 void Builder::copy_stack_to_slots_unmasked(SlotRange dst, int offsetFromStackTop) {
     // If the last instruction copied the previous stack slots, just extend it.
-    if (!fInstructions.empty()) {
-        Instruction& lastInstr = fInstructions.back();
-
+    if (Instruction* lastInstr = this->lastInstruction()) {
         // If the last op is copy-stack-to-slots-unmasked...
-        if (lastInstr.fOp == BuilderOp::copy_stack_to_slots_unmasked &&
+        if (lastInstr->fOp == BuilderOp::copy_stack_to_slots_unmasked &&
             // and this op's destination is immediately after the last copy-slots-op's destination
-            lastInstr.fSlotA + lastInstr.fImmA == dst.index &&
+            lastInstr->fSlotA + lastInstr->fImmA == dst.index &&
             // and this op's source is immediately after the last copy-slots-op's source
-            lastInstr.fImmB - lastInstr.fImmA == offsetFromStackTop) {
+            lastInstr->fImmB - lastInstr->fImmA == offsetFromStackTop) {
             // then we can just extend the copy!
-            lastInstr.fImmA += dst.count;
+            lastInstr->fImmA += dst.count;
             return;
         }
     }
 
-    fInstructions.push_back({BuilderOp::copy_stack_to_slots_unmasked, {dst.index},
-                             dst.count, offsetFromStackTop});
+    this->appendInstruction(BuilderOp::copy_stack_to_slots_unmasked, {dst.index},
+                            dst.count, offsetFromStackTop);
 }
 
 void Builder::pop_return_mask() {
@@ -956,40 +1002,52 @@ void Builder::pop_return_mask() {
 
     // This instruction is going to overwrite the return mask. If the previous instruction was
     // masking off the return mask, that's wasted work and it can be eliminated.
-    if (!fInstructions.empty()) {
-        Instruction& lastInstruction = fInstructions.back();
-
-        if (lastInstruction.fOp == BuilderOp::mask_off_return_mask) {
+    if (Instruction* lastInstruction = this->lastInstructionOnAnyStack()) {
+        if (lastInstruction->fOp == BuilderOp::mask_off_return_mask) {
             fInstructions.pop_back();
         }
     }
 
-    fInstructions.push_back({BuilderOp::pop_return_mask, {}});
+    this->appendInstruction(BuilderOp::pop_return_mask, {});
+}
+
+void Builder::merge_condition_mask() {
+    SkASSERT(this->executionMaskWritesAreEnabled());
+
+    // This instruction is going to overwrite the condition mask. If the previous instruction was
+    // loading the condition mask, that's wasted work and it can be eliminated.
+    if (Instruction* lastInstruction = this->lastInstructionOnAnyStack()) {
+        if (lastInstruction->fOp == BuilderOp::pop_condition_mask) {
+            int stackID = lastInstruction->fStackID;
+            fInstructions.pop_back();
+            this->discard_stack(/*count=*/1, stackID);
+        }
+    }
+
+    this->appendInstruction(BuilderOp::merge_condition_mask, {});
 }
 
 void Builder::zero_slots_unmasked(SlotRange dst) {
-    if (!fInstructions.empty()) {
-        Instruction& lastInstruction = fInstructions.back();
-
-        if (lastInstruction.fOp == BuilderOp::copy_constant && lastInstruction.fImmB == 0) {
-            if (lastInstruction.fSlotA + lastInstruction.fImmA == dst.index) {
+    if (Instruction* lastInstruction = this->lastInstruction()) {
+        if (lastInstruction->fOp == BuilderOp::copy_constant && lastInstruction->fImmB == 0) {
+            if (lastInstruction->fSlotA + lastInstruction->fImmA == dst.index) {
                 // The previous instruction was zeroing the range immediately before this range.
                 // Combine the ranges.
-                lastInstruction.fImmA += dst.count;
+                lastInstruction->fImmA += dst.count;
                 return;
             }
 
-            if (lastInstruction.fSlotA == dst.index + dst.count) {
+            if (lastInstruction->fSlotA == dst.index + dst.count) {
                 // The previous instruction was zeroing the range immediately after this range.
                 // Combine the ranges.
-                lastInstruction.fSlotA = dst.index;
-                lastInstruction.fImmA += dst.count;
+                lastInstruction->fSlotA = dst.index;
+                lastInstruction->fImmA += dst.count;
                 return;
             }
         }
     }
 
-    fInstructions.push_back({BuilderOp::copy_constant, {dst.index}, dst.count, 0});
+    this->appendInstruction(BuilderOp::copy_constant, {dst.index}, dst.count, 0);
 }
 
 static int pack_nybbles(SkSpan<const int8_t> components) {
@@ -1031,10 +1089,10 @@ void Builder::swizzle_copy_stack_to_slots(SlotRange dst,
     // immA: number of swizzle components
     // immB: swizzle components
     // immC: offset from stack top
-    fInstructions.push_back({BuilderOp::swizzle_copy_stack_to_slots, {dst.index},
-                             (int)components.size(),
-                             pack_nybbles(components),
-                             offsetFromStackTop});
+    this->appendInstruction(BuilderOp::swizzle_copy_stack_to_slots, {dst.index},
+                            (int)components.size(),
+                            pack_nybbles(components),
+                            offsetFromStackTop);
 }
 
 void Builder::swizzle_copy_stack_to_slots_indirect(SlotRange fixedRange,
@@ -1051,12 +1109,12 @@ void Builder::swizzle_copy_stack_to_slots_indirect(SlotRange fixedRange,
     // immB: swizzle components
     // immC: offset from stack top
     // immD: dynamic stack ID
-    fInstructions.push_back({BuilderOp::swizzle_copy_stack_to_slots_indirect,
-                             {fixedRange.index, limitRange.index + limitRange.count},
-                             (int)components.size(),
-                             pack_nybbles(components),
-                             offsetFromStackTop,
-                             dynamicStackID});
+    this->appendInstruction(BuilderOp::swizzle_copy_stack_to_slots_indirect,
+                            {fixedRange.index, limitRange.index + limitRange.count},
+                            (int)components.size(),
+                            pack_nybbles(components),
+                            offsetFromStackTop,
+                            dynamicStackID);
 }
 
 void Builder::swizzle(int consumedSlots, SkSpan<const int8_t> components) {
@@ -1101,17 +1159,17 @@ void Builder::swizzle(int consumedSlots, SkSpan<const int8_t> components) {
     if (consumedSlots <= 4 && numElements <= 4) {
         // We can fit everything into a little swizzle.
         int op = (int)BuilderOp::swizzle_1 + numElements - 1;
-        fInstructions.push_back({(BuilderOp)op, {}, consumedSlots,
-                                 pack_nybbles(SkSpan(elements, numElements))});
+        this->appendInstruction((BuilderOp)op, {}, consumedSlots,
+                                pack_nybbles(SkSpan(elements, numElements)));
         return;
     }
 
     // This is a big swizzle. We use the `shuffle` op to handle these. immA counts the consumed
     // slots. immB counts the generated slots. immC and immD hold packed-nybble shuffle values.
-    fInstructions.push_back({BuilderOp::shuffle, {},
-                             consumedSlots, numElements,
-                             pack_nybbles(SkSpan(&elements[0], 8)),
-                             pack_nybbles(SkSpan(&elements[8], 8))});
+    this->appendInstruction(BuilderOp::shuffle, {},
+                            consumedSlots, numElements,
+                            pack_nybbles(SkSpan(&elements[0], 8)),
+                            pack_nybbles(SkSpan(&elements[8], 8)));
 }
 
 void Builder::transpose(int columns, int rows) {
@@ -1183,17 +1241,18 @@ void Builder::matrix_multiply(int leftColumns, int leftRows, int rightColumns, i
         default: SkDEBUGFAIL("unsupported matrix dimensions"); return;
     }
 
-    fInstructions.push_back({op, {}, leftColumns, leftRows, rightColumns, rightRows});
+    this->appendInstruction(op, {}, leftColumns, leftRows, rightColumns, rightRows);
 }
 
 std::unique_ptr<Program> Builder::finish(int numValueSlots,
                                          int numUniformSlots,
+                                         int numImmutableSlots,
                                          DebugTracePriv* debugTrace) {
     // Verify that calls to enableExecutionMaskWrites and disableExecutionMaskWrites are balanced.
     SkASSERT(fExecutionMaskWritesEnabled == 0);
 
     return std::make_unique<Program>(std::move(fInstructions), numValueSlots, numUniformSlots,
-                                     fNumLabels, debugTrace);
+                                     numImmutableSlots, fNumLabels, debugTrace);
 }
 
 void Program::optimize() {
@@ -1212,6 +1271,8 @@ static int stack_usage(const Instruction& inst) {
         case BuilderOp::push_device_xy01:
             return 4;
 
+        case BuilderOp::push_immutable:
+        case BuilderOp::push_immutable_indirect:
         case BuilderOp::push_constant:
         case BuilderOp::push_slots:
         case BuilderOp::push_slots_indirect:
@@ -1285,9 +1346,7 @@ Program::StackDepths Program::tempStackMaxDepths() const {
     // Count the number of separate temp stacks that the program uses.
     int numStacks = 1;
     for (const Instruction& inst : fInstructions) {
-        if (inst.fOp == BuilderOp::set_current_stack) {
-            numStacks = std::max(numStacks, inst.fImmA + 1);
-        }
+        numStacks = std::max(numStacks, inst.fStackID + 1);
     }
 
     // Walk the program and calculate how deep each stack can potentially get.
@@ -1295,23 +1354,18 @@ Program::StackDepths Program::tempStackMaxDepths() const {
     largest.push_back_n(numStacks, 0);
     current.push_back_n(numStacks, 0);
 
-    int curIdx = 0;
     for (const Instruction& inst : fInstructions) {
-        if (inst.fOp == BuilderOp::set_current_stack) {
-            curIdx = inst.fImmA;
-            SkASSERTF(curIdx >= 0 && curIdx < numStacks,
-                      "instruction references nonexistent stack %d", curIdx);
-        }
-        current[curIdx] += stack_usage(inst);
-        largest[curIdx] = std::max(current[curIdx], largest[curIdx]);
+        int stackID = inst.fStackID;
+        current[stackID] += stack_usage(inst);
+        largest[stackID] = std::max(current[stackID], largest[stackID]);
         // If we assert here, the generated program has popped off the top of the stack.
-        SkASSERTF(current[curIdx] >= 0, "unbalanced temp stack push/pop on stack %d", curIdx);
+        SkASSERTF(current[stackID] >= 0, "unbalanced temp stack push/pop on stack %d", stackID);
     }
 
     // Ensure that when the program is complete, our stacks are fully balanced.
-    for (int stackIdx = 0; stackIdx < numStacks; ++stackIdx) {
+    for (int stackID = 0; stackID < numStacks; ++stackID) {
         // If we assert here, the generated program has pushed more data than it has popped.
-        SkASSERTF(current[stackIdx] == 0, "unbalanced temp stack push/pop on stack %d", stackIdx);
+        SkASSERTF(current[stackID] == 0, "unbalanced temp stack push/pop on stack %d", stackID);
     }
 
     return largest;
@@ -1320,11 +1374,13 @@ Program::StackDepths Program::tempStackMaxDepths() const {
 Program::Program(TArray<Instruction> instrs,
                  int numValueSlots,
                  int numUniformSlots,
+                 int numImmutableSlots,
                  int numLabels,
                  DebugTracePriv* debugTrace)
         : fInstructions(std::move(instrs))
         , fNumValueSlots(numValueSlots)
         , fNumUniformSlots(numUniformSlots)
+        , fNumImmutableSlots(numImmutableSlots)
         , fNumLabels(numLabels)
         , fDebugTrace(debugTrace) {
     this->optimize();
@@ -1346,14 +1402,17 @@ Program::~Program() = default;
 void Program::appendCopy(TArray<Stage>* pipeline,
                          SkArenaAlloc* alloc,
                          ProgramOp baseStage,
-                         SkRPOffset dst,
-                         SkRPOffset src,
+                         SkRPOffset dst, int dstStride,
+                         SkRPOffset src, int srcStride,
                          int numSlots) const {
     SkASSERT(numSlots >= 0);
     while (numSlots > 4) {
-        this->appendCopy(pipeline, alloc, baseStage, dst, src, /*numSlots=*/4);
-        dst += 4 * SkOpts::raster_pipeline_highp_stride * sizeof(float);
-        src += 4 * SkOpts::raster_pipeline_highp_stride * sizeof(float);
+        this->appendCopy(pipeline, alloc, baseStage,
+                         dst, dstStride,
+                         src, srcStride,
+                         /*numSlots=*/4);
+        dst += 4 * dstStride * sizeof(float);
+        src += 4 * srcStride * sizeof(float);
         numSlots -= 4;
     }
 
@@ -1374,7 +1433,21 @@ void Program::appendCopySlotsUnmasked(TArray<Stage>* pipeline,
                                       int numSlots) const {
     this->appendCopy(pipeline, alloc,
                      ProgramOp::copy_slot_unmasked,
-                     dst,  src, numSlots);
+                     dst, SkOpts::raster_pipeline_highp_stride,
+                     src, SkOpts::raster_pipeline_highp_stride,
+                     numSlots);
+}
+
+void Program::appendCopyImmutableUnmasked(TArray<Stage>* pipeline,
+                                          SkArenaAlloc* alloc,
+                                          SkRPOffset dst,
+                                          SkRPOffset src,
+                                          int numSlots) const {
+    this->appendCopy(pipeline, alloc,
+                     ProgramOp::copy_immutable_unmasked,
+                     dst, SkOpts::raster_pipeline_highp_stride,
+                     src, 1,
+                     numSlots);
 }
 
 void Program::appendCopySlotsMasked(TArray<Stage>* pipeline,
@@ -1384,7 +1457,9 @@ void Program::appendCopySlotsMasked(TArray<Stage>* pipeline,
                                     int numSlots) const {
     this->appendCopy(pipeline, alloc,
                      ProgramOp::copy_slot_masked,
-                     dst, src, numSlots);
+                     dst, SkOpts::raster_pipeline_highp_stride,
+                     src, SkOpts::raster_pipeline_highp_stride,
+                     numSlots);
 }
 
 void Program::appendSingleSlotUnaryOp(TArray<Stage>* pipeline, ProgramOp stage,
@@ -1509,17 +1584,20 @@ static void* context_bit_pun(intptr_t val) {
 }
 
 Program::SlotData Program::allocateSlotData(SkArenaAlloc* alloc) const {
-    // Allocate a contiguous slab of slot data for values and stack entries.
+    // Allocate a contiguous slab of slot data for immutables, values, and stack entries.
     const int N = SkOpts::raster_pipeline_highp_stride;
+    const int scalarWidth = 1 * sizeof(float);
     const int vectorWidth = N * sizeof(float);
-    const int allocSize = vectorWidth * (fNumValueSlots + fNumTempStackSlots);
+    const int allocSize = vectorWidth * (fNumValueSlots + fNumTempStackSlots) +
+                          scalarWidth * fNumImmutableSlots;
     float* slotPtr = static_cast<float*>(alloc->makeBytesAlignedTo(allocSize, vectorWidth));
     sk_bzero(slotPtr, allocSize);
 
-    // Store the temp stack immediately after the values.
+    // Store the temp stack immediately after the values, and immutable data after the stack.
     SlotData s;
-    s.values = SkSpan{slotPtr,        N * fNumValueSlots};
-    s.stack  = SkSpan{s.values.end(), N * fNumTempStackSlots};
+    s.values    = SkSpan{slotPtr,        N * fNumValueSlots};
+    s.stack     = SkSpan{s.values.end(), N * fNumTempStackSlots};
+    s.immutable = SkSpan{s.stack.end(),  1 * fNumImmutableSlots};
     return s;
 }
 
@@ -1651,7 +1729,6 @@ void Program::makeStages(TArray<Stage>* pipeline,
     SkASSERT(fNumUniformSlots == SkToInt(uniforms.size()));
 
     const int N = SkOpts::raster_pipeline_highp_stride;
-    int currentStack = 0;
     int mostRecentRewind = 0;
 
     // Assemble a map holding the current stack-top for each temporary stack. Position each temp
@@ -1685,9 +1762,11 @@ void Program::makeStages(TArray<Stage>* pipeline,
     // Write each BuilderOp to the pipeline array.
     pipeline->reserve_exact(pipeline->size() + fInstructions.size());
     for (const Instruction& inst : fInstructions) {
-        auto SlotA    = [&]() { return &slots.values[N * inst.fSlotA]; };
-        auto SlotB    = [&]() { return &slots.values[N * inst.fSlotB]; };
-        auto UniformA = [&]() { return &uniforms[inst.fSlotA]; };
+        auto ImmutableA = [&]() { return &slots.immutable[1 * inst.fSlotA]; };
+        auto ImmutableB = [&]() { return &slots.immutable[1 * inst.fSlotB]; };
+        auto SlotA      = [&]() { return &slots.values[N * inst.fSlotA]; };
+        auto SlotB      = [&]() { return &slots.values[N * inst.fSlotB]; };
+        auto UniformA   = [&]() { return &uniforms[inst.fSlotA]; };
         auto AllocTraceContext = [&](auto* ctx) {
             // We pass `ctx` solely for its type; the value is unused.
             using ContextType = typename std::remove_reference<decltype(*ctx)>::type;
@@ -1696,7 +1775,7 @@ void Program::makeStages(TArray<Stage>* pipeline,
             ctx->traceHook = fTraceHook.get();
             return ctx;
         };
-        float*& tempStackPtr = tempStackMap[currentStack];
+        float*& tempStackPtr = tempStackMap[inst.fStackID];
 
         switch (inst.fOp) {
             case BuilderOp::label:
@@ -1749,10 +1828,8 @@ void Program::makeStages(TArray<Stage>* pipeline,
                 break;
 
             case BuilderOp::store_immutable_value: {
-                float* dst = SlotA();
-                for (int index = 0; index < N; ++index) {
-                    dst[index] = sk_bit_cast<float>(inst.fImmA);
-                }
+                float* dst = ImmutableA();
+                *dst = sk_bit_cast<float>(inst.fImmA);
                 break;
             }
             case BuilderOp::load_src:
@@ -1843,6 +1920,14 @@ void Program::makeStages(TArray<Stage>* pipeline,
                                               OffsetFromBase(SlotA()),
                                               OffsetFromBase(SlotB()),
                                               inst.fImmA);
+                break;
+
+            case BuilderOp::copy_immutable_unmasked:
+                this->appendCopyImmutableUnmasked(pipeline,
+                                                  alloc,
+                                                  OffsetFromBase(SlotA()),
+                                                  OffsetFromBase(ImmutableB()),
+                                                  inst.fImmA);
                 break;
 
             case BuilderOp::refract_4_floats: {
@@ -1942,7 +2027,16 @@ void Program::makeStages(TArray<Stage>* pipeline,
                                               inst.fImmA);
                 break;
             }
+            case BuilderOp::push_immutable: {
+                float* dst = tempStackPtr;
+                this->appendCopyImmutableUnmasked(pipeline, alloc,
+                                                  OffsetFromBase(dst),
+                                                  OffsetFromBase(ImmutableA()),
+                                                  inst.fImmA);
+                break;
+            }
             case BuilderOp::copy_stack_to_slots_indirect:
+            case BuilderOp::push_immutable_indirect:
             case BuilderOp::push_slots_indirect:
             case BuilderOp::push_uniform_indirect: {
                 // SlotA: fixed-range start
@@ -1958,6 +2052,11 @@ void Program::makeStages(TArray<Stage>* pipeline,
                 if (inst.fOp == BuilderOp::push_slots_indirect) {
                     op = ProgramOp::copy_from_indirect_unmasked;
                     ctx->src = SlotA();
+                    ctx->dst = tempStackPtr;
+                } else if (inst.fOp == BuilderOp::push_immutable_indirect) {
+                    // We reuse the indirect-uniform op for indirect copies of immutable data.
+                    op = ProgramOp::copy_from_indirect_uniform_unmasked;
+                    ctx->src = ImmutableA();
                     ctx->dst = tempStackPtr;
                 } else if (inst.fOp == BuilderOp::push_uniform_indirect) {
                     op = ProgramOp::copy_from_indirect_uniform_unmasked;
@@ -2170,10 +2269,6 @@ void Program::makeStages(TArray<Stage>* pipeline,
             case BuilderOp::discard_stack:
                 break;
 
-            case BuilderOp::set_current_stack:
-                currentStack = inst.fImmA;
-                break;
-
             case BuilderOp::invoke_shader:
             case BuilderOp::invoke_color_filter:
             case BuilderOp::invoke_blender:
@@ -2254,7 +2349,7 @@ class Program::Dumper {
 public:
     Dumper(const Program& p) : fProgram(p) {}
 
-    void dump(SkWStream* out);
+    void dump(SkWStream* out, bool writeInstructionCount);
 
     // Finds the labels in the program, and keeps track of their offsets.
     void buildLabelToStageMap() {
@@ -2430,15 +2525,26 @@ public:
         return {};
     }
 
+    // Attempts to interpret the passed-in pointer as a immutable slot range.
+    std::string immutablePtrCtx(const float* ptr, int numSlots) const {
+        const float* end = ptr + numSlots;
+        if (ptr >= fSlots.immutable.begin() && end <= fSlots.immutable.end()) {
+            int index = ptr - fSlots.immutable.begin();
+            return 'i' + this->asRange(index, numSlots) + ' ' +
+                   this->multiImmCtx(ptr, numSlots);
+        }
+        return {};
+    }
+
     // Interprets the context value as a pointer to `count` immediate values.
     std::string multiImmCtx(const float* ptr, int count) const {
         // If this is a uniform, print it by name.
         if (std::string text = this->uniformPtrCtx(ptr, count); !text.empty()) {
             return text;
         }
-        // Emit a single unbracketed immediate.
+        // Emit a single bracketed immediate.
         if (count == 1) {
-            return this->imm(*ptr);
+            return '[' + this->imm(*ptr) + ']';
         }
         // Emit a list like `[0x00000000 (0.0), 0x3F80000 (1.0)]`.
         std::string text = "[";
@@ -2453,11 +2559,14 @@ public:
     // Interprets the context value as a generic pointer.
     std::string ptrCtx(const void* ctx, int numSlots) const {
         const float *ctxAsSlot = static_cast<const float*>(ctx);
-        // Check for uniform and value pointers.
+        // Check for uniform, value, and immutable pointers.
         if (std::string uniform = this->uniformPtrCtx(ctxAsSlot, numSlots); !uniform.empty()) {
             return uniform;
         }
         if (std::string value = this->valuePtrCtx(ctxAsSlot, numSlots); !value.empty()) {
+            return value;
+        }
+        if (std::string value = this->immutablePtrCtx(ctxAsSlot, numSlots); !value.empty()) {
             return value;
         }
         // Handle pointers to temporary stack slots.
@@ -2653,7 +2762,9 @@ private:
     SkSpan<float> fUniforms;
 };
 
-void Program::Dumper::dump(SkWStream* out) {
+void Program::Dumper::dump(SkWStream* out, bool writeInstructionCount) {
+    using POp = ProgramOp;
+
     // Allocate memory for the slot and uniform data, even though the program won't ever be
     // executed. The program requires pointer ranges for managing its data, and ASAN will report
     // errors if those pointers are pointing at unallocated memory.
@@ -2669,13 +2780,47 @@ void Program::Dumper::dump(SkWStream* out) {
     this->buildLabelToStageMap();
     this->buildUniqueSlotNameList();
 
+    // Emit the program's instruction count.
+    if (writeInstructionCount) {
+        int invocationCount = 0, instructionCount = 0;
+        for (const Stage& stage : fStages) {
+            switch (stage.op) {
+                case POp::label:
+                    // consumes zero instructions
+                    break;
+
+                case POp::invoke_shader:
+                case POp::invoke_color_filter:
+                case POp::invoke_blender:
+                case POp::invoke_to_linear_srgb:
+                case POp::invoke_from_linear_srgb:
+                    ++invocationCount;
+                    break;
+
+                default:
+                    ++instructionCount;
+                    break;
+            }
+        }
+
+        out->writeText(std::to_string(instructionCount).c_str());
+        out->writeText(" instructions");
+        if (invocationCount > 0) {
+            out->writeText(", ");
+            out->writeText(std::to_string(invocationCount).c_str());
+            out->writeText(" invocations");
+        }
+        out->writeText("\n\n");
+    }
+
     // Emit all of the program's immutable data.
     const char* header = "[immutable slots]\n";
     const char* footer = "";
     for (const Instruction& inst : fProgram.fInstructions) {
         if (inst.fOp == BuilderOp::store_immutable_value) {
             out->writeText(header);
-            out->writeText(this->slotName({inst.fSlotA, 1}).c_str());
+            out->writeText("i");
+            out->writeText(std::to_string(inst.fSlotA).c_str());
             out->writeText(" = ");
             out->writeText(this->imm(sk_bit_cast<float>(inst.fImmA)).c_str());
             out->writeText("\n");
@@ -2691,7 +2836,6 @@ void Program::Dumper::dump(SkWStream* out) {
         const Stage& stage = fStages[index];
 
         std::string opArg1, opArg2, opArg3, opSwizzle;
-        using POp = ProgramOp;
         switch (stage.op) {
             case POp::label:
             case POp::invoke_shader:
@@ -2883,37 +3027,35 @@ void Program::Dumper::dump(SkWStream* out) {
 
             case POp::copy_slot_masked:
             case POp::copy_slot_unmasked:
+            case POp::copy_immutable_unmasked:
                 std::tie(opArg1, opArg2) = this->binaryOpCtx(stage.ctx, 1);
                 break;
 
             case POp::copy_2_slots_masked:
             case POp::copy_2_slots_unmasked:
+            case POp::copy_2_immutables_unmasked:
                 std::tie(opArg1, opArg2) = this->binaryOpCtx(stage.ctx, 2);
                 break;
 
             case POp::copy_3_slots_masked:
             case POp::copy_3_slots_unmasked:
+            case POp::copy_3_immutables_unmasked:
                 std::tie(opArg1, opArg2) = this->binaryOpCtx(stage.ctx, 3);
                 break;
 
             case POp::copy_4_slots_masked:
             case POp::copy_4_slots_unmasked:
+            case POp::copy_4_immutables_unmasked:
                 std::tie(opArg1, opArg2) = this->binaryOpCtx(stage.ctx, 4);
                 break;
 
+            case POp::copy_from_indirect_uniform_unmasked:
             case POp::copy_from_indirect_unmasked:
             case POp::copy_to_indirect_masked: {
                 const auto* ctx = static_cast<SkRasterPipeline_CopyIndirectCtx*>(stage.ctx);
                 // We don't incorporate the indirect-limit in the output
                 opArg1 = this->ptrCtx(ctx->dst, ctx->slots);
                 opArg2 = this->ptrCtx(ctx->src, ctx->slots);
-                opArg3 = this->ptrCtx(ctx->indirectOffset, 1);
-                break;
-            }
-            case POp::copy_from_indirect_uniform_unmasked: {
-                const auto* ctx = static_cast<SkRasterPipeline_CopyIndirectCtx*>(stage.ctx);
-                opArg1 = this->ptrCtx(ctx->dst, ctx->slots);
-                opArg2 = this->uniformPtrCtx(ctx->src, ctx->slots);
                 opArg3 = this->ptrCtx(ctx->indirectOffset, 1);
                 break;
             }
@@ -3265,6 +3407,8 @@ void Program::Dumper::dump(SkWStream* out) {
             case POp::copy_3_uniforms:             case POp::copy_4_uniforms:
             case POp::copy_slot_unmasked:          case POp::copy_2_slots_unmasked:
             case POp::copy_3_slots_unmasked:       case POp::copy_4_slots_unmasked:
+            case POp::copy_immutable_unmasked:     case POp::copy_2_immutables_unmasked:
+            case POp::copy_3_immutables_unmasked:  case POp::copy_4_immutables_unmasked:
             case POp::copy_constant:               case POp::splat_2_constants:
             case POp::splat_3_constants:           case POp::splat_4_constants:
             case POp::swizzle_1:                   case POp::swizzle_2:
@@ -3549,10 +3693,8 @@ void Program::Dumper::dump(SkWStream* out) {
     }
 }
 
-void Program::dump(SkWStream* out) const {
-    Dumper(*this).dump(out);
+void Program::dump(SkWStream* out, bool writeInstructionCount) const {
+    Dumper(*this).dump(out, writeInstructionCount);
 }
 
 }  // namespace SkSL::RP
-
-#endif  // SK_ENABLE_SKSL_IN_RASTER_PIPELINE

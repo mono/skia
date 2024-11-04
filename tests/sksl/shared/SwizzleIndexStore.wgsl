@@ -1,3 +1,4 @@
+diagnostic(off, derivative_uniformity);
 struct FSIn {
   @builtin(front_facing) sk_Clockwise: bool,
   @builtin(position) sk_FragCoord: vec4<f32>,
@@ -33,7 +34,7 @@ fn test3x3_b() -> bool {
               }
             }
           }
-          if (any(vec != expected)) {
+          if any(vec != expected) {
             {
               return false;
             }
@@ -70,7 +71,7 @@ fn test4x4_b() -> bool {
               }
             }
           }
-          if (any(vec != expected)) {
+          if any(vec != expected) {
             {
               return false;
             }

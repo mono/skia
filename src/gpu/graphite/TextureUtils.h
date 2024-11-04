@@ -12,6 +12,7 @@
 #include "src/gpu/graphite/TextureProxyView.h"
 
 #include <functional>
+#include <tuple>
 
 class SkBitmap;
 enum SkColorType : int;
@@ -32,6 +33,16 @@ sk_sp<SkImage> MakeFromBitmap(Recorder*,
                               sk_sp<SkMipmap>,
                               skgpu::Budgeted,
                               SkImage::RequiredProperties);
+
+size_t ComputeSize(SkISize dimensions, const TextureInfo&);
+
+sk_sp<SkImage> RescaleImage(Recorder*,
+                            const SkImage* srcImage,
+                            SkIRect srcIRect,
+                            const SkImageInfo& dstInfo,
+                            SkImage::RescaleGamma rescaleGamma,
+                            SkImage::RescaleMode rescaleMode);
+
 } // namespace skgpu::graphite
 
 #endif // skgpu_graphite_TextureUtils_DEFINED

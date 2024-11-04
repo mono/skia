@@ -28,6 +28,7 @@ build --host_platform=//bazel/platform:host_with_hermetic_toolchain
 build --extra_toolchains=//toolchain:clang_linux_x64_toolchain
 build --extra_toolchains=//toolchain:clang_mac_x64_toolchain
 build --extra_toolchains=//toolchain:clang_mac_arm64_toolchain
+build --extra_toolchains=//toolchain:clang_host_mac_x64_target_mac_arm64_toolchain
 build --extra_toolchains=//toolchain:linux_amd64_ndk_arm64_toolchain
 build --extra_toolchains=//toolchain:linux_amd64_ndk_arm32_toolchain
 
@@ -81,13 +82,15 @@ build --flag_alias=with_fontations=//bazel/common_config_settings:use_fontations
 build --flag_alias=with_no_harfbuzz=no//bazel/common_config_settings:use_harfbuzz
 build --flag_alias=with_icu=//bazel/common_config_settings:use_icu
 build --flag_alias=with_no_icu=no//bazel/common_config_settings:use_icu
+build --flag_alias=enable_build_for_debugger=//bazel/common_config_settings:build_for_debugger
+build --flag_alias=disable_build_for_debugger=no//bazel/common_config_settings:build_for_debugger
 
 # Flags used by Skia tools, not to be used by clients
 build --flag_alias=force_cpu_tests=//tests:force_cpu_tests
 build --flag_alias=disable_gpu_test_utils=no//src/gpu:enable_gpu_test_utils
 build --flag_alias=enable_gpu_test_utils=//src/gpu:enable_gpu_test_utils
 build --flag_alias=compile_generated_cpp_files_for_headers=//bazel/common_config_settings:compile_generated_cpp_files_for_headers
-build --flag_alias=adb_platform=//tests/adb_test_runner:adb_platform
+build --flag_alias=adb_platform=//bazel/adb_test_runner:adb_platform
 
 # Public CanvasKit flags
 build --flag_alias=ck_enable_fonts=//modules/canvaskit:enable_fonts

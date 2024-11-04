@@ -89,7 +89,6 @@ using namespace skia_private;
 
 extern bool gSkForceRasterPipelineBlitter;
 extern bool gForceHighPrecisionRasterPipeline;
-extern bool gSkBlobAsSlugTesting;
 extern bool gCreateProtectedContext;
 
 static DEFINE_string(src, "tests gm skp mskp lottie rive svg image colorImage",
@@ -125,7 +124,6 @@ static DEFINE_int(shard,  0, "Which shard do I run?");
 static DEFINE_string(mskps, "", "Directory to read mskps from, or a single mskp file.");
 static DEFINE_bool(forceRasterPipeline, false, "sets gSkForceRasterPipelineBlitter");
 static DEFINE_bool(forceRasterPipelineHP, false, "sets gSkForceRasterPipelineBlitter and gForceHighPrecisionRasterPipeline");
-static DEFINE_bool(blobAsSlugTesting, false, "sets gSkBlobAsSlugTesting");
 static DEFINE_bool(createProtected, false, "attempts to create a protected backend context");
 
 static DEFINE_string(bisect, "",
@@ -934,7 +932,7 @@ void gather_file_srcs(const CommandLineFlags::StringArray& flags,
 }
 
 static bool gather_srcs() {
-    for (skiagm::GMFactory f : skiagm::GMRegistry::Range()) {
+    for (const skiagm::GMFactory& f : skiagm::GMRegistry::Range()) {
         push_src("gm", "", new GMSrc(f));
     }
 
@@ -1010,10 +1008,7 @@ static Sink* create_sink(const GrContextOptions& grCtxOptions, const SkCommandLi
                      "GM tests will be skipped.\n", gpuConfig->getTag().c_str());
                 return nullptr;
             }
-            if (gpuConfig->getTestThreading()) {
-                SkASSERT(!gpuConfig->getTestPersistentCache());
-                return new GPUThreadTestingSink(gpuConfig, grCtxOptions);
-            } else if (gpuConfig->getTestPersistentCache()) {
+            if (gpuConfig->getTestPersistentCache()) {
                 return new GPUPersistentCacheTestingSink(gpuConfig, grCtxOptions);
             } else if (gpuConfig->getTestPrecompile()) {
                 return new GPUPrecompileTestingSink(gpuConfig, grCtxOptions);
@@ -1232,10 +1227,7 @@ struct Task {
                         hashAndEncode = std::make_unique<HashAndEncode>(bitmap);
                         hashAndEncode->feedHash(&hash);
                     }
-                    SkMD5::Digest digest = hash.finish();
-                    for (int i = 0; i < 16; i++) {
-                        md5.appendf("%02x", digest.data[i]);
-                    }
+                    md5 = hash.finish().toLowercaseHexString();
                 }
 
                 if (!FLAGS_readPath.isEmpty() &&
@@ -1607,7 +1599,6 @@ int main(int argc, char** argv) {
 
     gSkForceRasterPipelineBlitter     = FLAGS_forceRasterPipelineHP || FLAGS_forceRasterPipeline;
     gForceHighPrecisionRasterPipeline = FLAGS_forceRasterPipelineHP;
-    gSkBlobAsSlugTesting              = FLAGS_blobAsSlugTesting;
     gCreateProtectedContext           = FLAGS_createProtected;
 
     // The bots like having a verbose.log to upload, so always touch the file even if --verbose.
@@ -1624,7 +1615,7 @@ int main(int argc, char** argv) {
 
     dump_json();  // It's handy for the bots to assume this is ~never missing.
 
-    SkAutoGraphics ag;
+    SkGraphics::Init();
 #if defined(SK_ENABLE_SVG)
     SkGraphics::SetOpenTypeSVGDecoderFactory(SkSVGOpenTypeSVGDecoder::Make);
 #endif

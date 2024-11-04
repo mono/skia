@@ -9,6 +9,7 @@
 #define skgpu_graphite_ContextOptions_DEFINED
 
 #include "include/private/base/SkAPI.h"
+#include "include/private/base/SkMath.h"
 
 namespace skgpu { class ShaderErrorHandler; }
 
@@ -29,6 +30,14 @@ struct SK_API ContextOptions {
      * via SkDebugf and assert.
      */
     skgpu::ShaderErrorHandler* fShaderErrorHandler = nullptr;
+
+    /**
+     * Specifies the number of samples Graphite should use when performing internal draws with MSAA
+     * (hardware capabilities permitting).
+     *
+     * If <= 1, Graphite will disable internal code paths that use multisampling.
+     */
+    int fInternalMultisampleCount = 4;
 
     /**
      * Will the client make sure to only ever be executing one thread that uses the Context and all
@@ -70,6 +79,8 @@ struct SK_API ContextOptions {
     /**
      * Private options that are only meant for testing within Skia's tools.
      */
+
+    int  fMaxTextureSizeOverride = SK_MaxS32;
 
     /**
      * Maximum width and height of internal texture atlases.

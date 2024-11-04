@@ -7,6 +7,7 @@
 
 #include "src/gpu/graphite/mtl/MtlCommandBuffer.h"
 
+#include "include/gpu/graphite/BackendSemaphore.h"
 #include "src/gpu/graphite/Log.h"
 #include "src/gpu/graphite/TextureProxy.h"
 #include "src/gpu/graphite/compute/DispatchGroup.h"
@@ -103,6 +104,53 @@ void MtlCommandBuffer::onResetCommandBuffer() {
     fCurrentIndexBufferOffset = 0;
 }
 
+void MtlCommandBuffer::addWaitSemaphores(size_t numWaitSemaphores,
+                                         const BackendSemaphore* waitSemaphores) {
+    if (!waitSemaphores) {
+        SkASSERT(numWaitSemaphores == 0);
+        return;
+    }
+
+    // Can only insert events with no active encoder
+    SkASSERT(!fActiveRenderCommandEncoder);
+    SkASSERT(!fActiveComputeCommandEncoder);
+    this->endBlitCommandEncoder();
+    if (@available(macOS 10.14, iOS 12.0, *)) {
+        for (size_t i = 0; i < numWaitSemaphores; ++i) {
+            auto semaphore = waitSemaphores[i];
+            if (semaphore.isValid() && semaphore.backend() == BackendApi::kMetal) {
+                id<MTLEvent> mtlEvent = (__bridge id<MTLEvent>)semaphore.getMtlEvent();
+                [(*fCommandBuffer) encodeWaitForEvent: mtlEvent
+                                                value: semaphore.getMtlValue()];
+            }
+        }
+    }
+}
+
+void MtlCommandBuffer::addSignalSemaphores(size_t numSignalSemaphores,
+                                           const BackendSemaphore* signalSemaphores) {
+    if (!signalSemaphores) {
+        SkASSERT(numSignalSemaphores == 0);
+        return;
+    }
+
+    // Can only insert events with no active encoder
+    SkASSERT(!fActiveRenderCommandEncoder);
+    SkASSERT(!fActiveComputeCommandEncoder);
+    this->endBlitCommandEncoder();
+
+    if (@available(macOS 10.14, iOS 12.0, *)) {
+        for (size_t i = 0; i < numSignalSemaphores; ++i) {
+            auto semaphore = signalSemaphores[i];
+            if (semaphore.isValid() && semaphore.backend() == BackendApi::kMetal) {
+                id<MTLEvent> mtlEvent = (__bridge id<MTLEvent>)semaphore.getMtlEvent();
+                [(*fCommandBuffer) encodeSignalEvent: mtlEvent
+                                               value: semaphore.getMtlValue()];
+            }
+        }
+    }
+}
+
 bool MtlCommandBuffer::onAddRenderPass(const RenderPassDesc& renderPassDesc,
                                        const Texture* colorTexture,
                                        const Texture* resolveTexture,
@@ -133,10 +181,14 @@ bool MtlCommandBuffer::onAddComputePass(const DispatchGroupList& groups) {
                 if (const BindBufferInfo* buffer =
                             std::get_if<BindBufferInfo>(&binding.fResource)) {
                     this->bindBuffer(buffer->fBuffer, buffer->fOffset, binding.fIndex);
-                } else {
-                    const TextureIndex* texIdx = std::get_if<TextureIndex>(&binding.fResource);
+                } else if (const TextureIndex* texIdx =
+                                   std::get_if<TextureIndex>(&binding.fResource)) {
                     SkASSERT(texIdx);
-                    this->bindTexture(group->getTexture(*texIdx), binding.fIndex);
+                    this->bindTexture(group->getTexture(texIdx->fValue), binding.fIndex);
+                } else {
+                    const SamplerIndex* samplerIdx = std::get_if<SamplerIndex>(&binding.fResource);
+                    SkASSERT(samplerIdx);
+                    this->bindSampler(group->getSampler(samplerIdx->fValue), binding.fIndex);
                 }
             }
             SkASSERT(fActiveComputeCommandEncoder);
@@ -692,6 +744,14 @@ void MtlCommandBuffer::bindTexture(const Texture* texture, unsigned int index) {
     id<MTLTexture> mtlTexture =
             texture ? static_cast<const MtlTexture*>(texture)->mtlTexture() : nil;
     fActiveComputeCommandEncoder->setTexture(mtlTexture, index);
+}
+
+void MtlCommandBuffer::bindSampler(const Sampler* sampler, unsigned int index) {
+    SkASSERT(fActiveComputeCommandEncoder);
+
+    id<MTLSamplerState> mtlSamplerState =
+            sampler ? static_cast<const MtlSampler*>(sampler)->mtlSamplerState() : nil;
+    fActiveComputeCommandEncoder->setSamplerState(mtlSamplerState, index);
 }
 
 void MtlCommandBuffer::dispatchThreadgroups(const WorkgroupSize& globalSize,

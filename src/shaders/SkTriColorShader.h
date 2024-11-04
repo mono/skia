@@ -32,17 +32,6 @@ public:
 protected:
     bool appendStages(const SkStageRec& rec, const SkShaders::MatrixRec&) const override;
 
-#if defined(SK_ENABLE_SKVM)
-    skvm::Color program(skvm::Builder*,
-                        skvm::Coord,
-                        skvm::Coord,
-                        skvm::Color,
-                        const SkShaders::MatrixRec&,
-                        const SkColorInfo&,
-                        skvm::Uniforms*,
-                        SkArenaAlloc*) const override;
-#endif
-
 private:
     bool isOpaque() const override { return fIsOpaque; }
     // For serialization.  This will never be called.
@@ -85,10 +74,6 @@ private:
     SkMatrix fM33;
     const bool fIsOpaque;
     const bool fUsePersp;  // controls our stages, and what we do in update()
-#if defined(SK_ENABLE_SKVM)
-    mutable skvm::Uniform fColorMatrix;
-    mutable skvm::Uniform fCoordMatrix;
-#endif
 };
 
 #endif

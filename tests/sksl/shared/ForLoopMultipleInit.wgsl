@@ -1,3 +1,4 @@
+diagnostic(off, derivative_uniformity);
 struct FSIn {
   @builtin(front_facing) sk_Clockwise: bool,
   @builtin(position) sk_FragCoord: vec4<f32>,
@@ -13,7 +14,7 @@ fn main(_skParam0: vec2<f32>) -> vec4<f32> {
       var a: f32 = 0.0;
       var b: f32 = 0.0;
       loop {
-        if a < 10.0 && b < 10.0 {
+        if (a < 10.0) && (b < 10.0) {
           {
             result.x = result.x + a;
             result.y = result.y + b;

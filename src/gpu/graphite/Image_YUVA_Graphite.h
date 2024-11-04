@@ -31,6 +31,8 @@ public:
 
     SkImage_Base::Type type() const override { return SkImage_Base::Type::kGraphiteYUVA; }
 
+    size_t textureSize() const override;
+
     bool onHasMipmaps() const override {
         // TODO: Add mipmap support
         return false;
@@ -45,6 +47,7 @@ public:
     }
 
     static sk_sp<TextureProxy> MakePromiseImageLazyProxy(
+            const Caps*,
             SkISize dimensions,
             TextureInfo,
             Volatile,

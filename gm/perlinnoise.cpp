@@ -8,6 +8,7 @@
 #include "gm/gm.h"
 #include "include/core/SkCanvas.h"
 #include "include/core/SkColor.h"
+#include "include/core/SkColorFilter.h"
 #include "include/core/SkMatrix.h"
 #include "include/core/SkPaint.h"
 #include "include/core/SkRect.h"
@@ -16,6 +17,8 @@
 #include "include/core/SkShader.h"
 #include "include/core/SkSize.h"
 #include "include/core/SkString.h"
+#include "include/effects/SkColorMatrix.h"
+#include "include/effects/SkImageFilters.h"
 #include "include/effects/SkPerlinNoiseShader.h"
 
 #include <utility>
@@ -126,7 +129,7 @@ private:
     using INHERITED = GM;
 };
 
-class PerlinNoiseGM2 : public skiagm::GM {
+class PerlinNoiseLocalMatrixGM : public skiagm::GM {
     SkISize fSize = {80, 80};
 
     SkString onShortName() override { return SkString("perlinnoise_localmatrix"); }
@@ -186,7 +189,7 @@ class PerlinNoiseGM2 : public skiagm::GM {
 };
 
 // Demonstrate skbug.com/14166 (Perlin noise shader doesn't rotate correctly)
-class PerlinNoiseGM3 : public skiagm::GM {
+class PerlinNoiseRotatedGM : public skiagm::GM {
     static constexpr SkISize kCellSize = { 100, 100 };
     static constexpr SkISize kRectSize = { 60, 60 };
     static constexpr int kPad = 10;
@@ -242,8 +245,39 @@ class PerlinNoiseGM3 : public skiagm::GM {
     }
 };
 
+// Demonstrate skbug.com/14411 (Intel GPUs show artifacts when applying perlin noise to layers)
+class PerlinNoiseLayeredGM : public skiagm::GM {
+    SkString onShortName() override { return SkString("perlinnoise_layered"); }
+
+    SkISize onISize() override { return {500, 500}; }
+
+    void onDraw(SkCanvas* canvas) override {
+        const sk_sp<SkImageFilter> perlin = SkImageFilters::ColorFilter(
+                SkColorFilters::Matrix(SkColorMatrix()),
+                SkImageFilters::Shader(SkShaders::MakeFractalNoise(0.3f, 0.3f, 1, 4)));
+
+        const SkPaint paint;
+        canvas->saveLayer(nullptr, &paint);
+        {
+            SkPaint p;
+            p.setImageFilter(perlin);
+            canvas->drawPaint(p);
+        }
+        canvas->restore();
+
+        canvas->saveLayer(nullptr, nullptr);
+        {
+            SkPaint p;
+            p.setImageFilter(perlin);
+            canvas->drawPaint(p);
+        }
+        canvas->restore();
+    }
+};
+
 } // anonymous namespace
 
-DEF_GM( return new PerlinNoiseGM; )
-DEF_GM( return new PerlinNoiseGM2; )
-DEF_GM( return new PerlinNoiseGM3; )
+DEF_GM(return new PerlinNoiseGM;)
+DEF_GM(return new PerlinNoiseLocalMatrixGM;)
+DEF_GM(return new PerlinNoiseRotatedGM;)
+DEF_GM(return new PerlinNoiseLayeredGM;)

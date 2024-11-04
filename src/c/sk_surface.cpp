@@ -97,14 +97,6 @@ const sk_surfaceprops_t* sk_surface_get_props(sk_surface_t* surface) {
     return ToSurfaceProps(&AsSurface(surface)->props());
 }
 
-void sk_surface_flush(sk_surface_t* surface) {
-    AsSurface(surface)->flush();
-}
-
-void sk_surface_flush_and_submit(sk_surface_t* surface, bool syncCpu) {
-    AsSurface(surface)->flushAndSubmit(syncCpu);
-}
-
 gr_recording_context_t* sk_surface_get_recording_context(sk_surface_t* surface) {
     return ToGrRecordingContext(AsSurface(surface)->recordingContext());
 }

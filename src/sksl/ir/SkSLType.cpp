@@ -8,6 +8,7 @@
 #include "src/sksl/ir/SkSLType.h"
 
 #include "include/private/base/SkTo.h"
+#include "src/base/SkEnumBitMask.h"
 #include "src/base/SkMathPriv.h"
 #include "src/base/SkSafeMath.h"
 #include "src/core/SkTHash.h"
@@ -22,6 +23,7 @@
 #include "src/sksl/ir/SkSLConstructorScalarCast.h"
 #include "src/sksl/ir/SkSLExpression.h"
 #include "src/sksl/ir/SkSLLayout.h"
+#include "src/sksl/ir/SkSLModifierFlags.h"
 #include "src/sksl/ir/SkSLSymbolTable.h"
 
 #include <algorithm>
@@ -753,17 +755,16 @@ std::unique_ptr<Type> Type::MakeStructType(const Context& context,
                                                     std::string(structOrIB) + " ('" +
                                                     std::string(name) + "')");
         }
-        if (field.fModifiers.fFlags != Modifiers::kNo_Flag) {
-            std::string desc = field.fModifiers.description();
-            desc.pop_back();  // remove trailing space
+        if (field.fModifierFlags != ModifierFlag::kNone) {
+            std::string desc = field.fModifierFlags.description();
             context.fErrors->error(field.fPosition, "modifier '" + desc + "' is not permitted on " +
                                                     std::string(aStructOrIB) + " field");
         }
-        if (field.fModifiers.fLayout.fFlags & Layout::kBinding_Flag) {
+        if (field.fLayout.fFlags & LayoutFlag::kBinding) {
             context.fErrors->error(field.fPosition, "layout qualifier 'binding' is not permitted "
                                                     "on " + std::string(aStructOrIB) + " field");
         }
-        if (field.fModifiers.fLayout.fFlags & Layout::kSet_Flag) {
+        if (field.fLayout.fFlags & LayoutFlag::kSet) {
             context.fErrors->error(field.fPosition, "layout qualifier 'set' is not permitted on " +
                                                     std::string(aStructOrIB) + " field");
         }
@@ -853,21 +854,21 @@ CoercionCost Type::coercionCost(const Type& other) const {
 }
 
 const Type* Type::applyQualifiers(const Context& context,
-                                  Modifiers* modifiers,
+                                  ModifierFlags* modifierFlags,
                                   Position pos) const {
     const Type* type;
-    type = this->applyPrecisionQualifiers(context, modifiers, pos);
-    type = type->applyAccessQualifiers(context, modifiers, pos);
+    type = this->applyPrecisionQualifiers(context, modifierFlags, pos);
+    type = type->applyAccessQualifiers(context, modifierFlags, pos);
     return type;
 }
 
 const Type* Type::applyPrecisionQualifiers(const Context& context,
-                                           Modifiers* modifiers,
+                                           ModifierFlags* modifierFlags,
                                            Position pos) const {
-    int precisionQualifiers = modifiers->fFlags & (Modifiers::kHighp_Flag |
-                                                   Modifiers::kMediump_Flag |
-                                                   Modifiers::kLowp_Flag);
-    if (!precisionQualifiers) {
+    ModifierFlags precisionQualifiers = *modifierFlags & (ModifierFlag::kHighp |
+                                                          ModifierFlag::kMediump |
+                                                          ModifierFlag::kLowp);
+    if (precisionQualifiers == ModifierFlag::kNone) {
         // No precision qualifiers here. Return the type as-is.
         return this;
     }
@@ -879,19 +880,19 @@ const Type* Type::applyPrecisionQualifiers(const Context& context,
         return context.fTypes.fPoison.get();
     }
 
-    if (SkPopCount(precisionQualifiers) > 1) {
+    if (SkPopCount(precisionQualifiers.value()) > 1) {
         context.fErrors->error(pos, "only one precision qualifier can be used");
         return context.fTypes.fPoison.get();
     }
 
     // We're going to return a whole new type, so the modifier bits can be cleared out.
-    modifiers->fFlags &= ~(Modifiers::kHighp_Flag |
-                           Modifiers::kMediump_Flag |
-                           Modifiers::kLowp_Flag);
+    *modifierFlags &= ~(ModifierFlag::kHighp |
+                        ModifierFlag::kMediump |
+                        ModifierFlag::kLowp);
 
     const Type& component = this->componentType();
     if (component.highPrecision()) {
-        if (precisionQualifiers & Modifiers::kHighp_Flag) {
+        if (precisionQualifiers & ModifierFlag::kHighp) {
             // Type is already high precision, and we are requesting high precision. Return as-is.
             return this;
         }
@@ -931,36 +932,32 @@ const Type* Type::applyPrecisionQualifiers(const Context& context,
 }
 
 const Type* Type::applyAccessQualifiers(const Context& context,
-                                        Modifiers* modifiers,
+                                        ModifierFlags* modifierFlags,
                                         Position pos) const {
-    int accessQualifiers = modifiers->fFlags & (Modifiers::kReadOnly_Flag |
-                                                Modifiers::kWriteOnly_Flag);
+    ModifierFlags accessQualifiers = *modifierFlags & (ModifierFlag::kReadOnly |
+                                                       ModifierFlag::kWriteOnly);
     if (!accessQualifiers) {
         // No access qualifiers here. Return the type as-is.
         return this;
     }
 
     // We're going to return a whole new type, so the modifier bits can be cleared out.
-    modifiers->fFlags &= ~(Modifiers::kReadOnly_Flag |
-                           Modifiers::kWriteOnly_Flag);
+    *modifierFlags &= ~(ModifierFlag::kReadOnly |
+                        ModifierFlag::kWriteOnly);
 
     if (this->matches(*context.fTypes.fReadWriteTexture2D)) {
-        switch (accessQualifiers) {
-            case Modifiers::kReadOnly_Flag:
-                return context.fTypes.fReadOnlyTexture2D.get();
-
-            case Modifiers::kWriteOnly_Flag:
-                return context.fTypes.fWriteOnlyTexture2D.get();
-
-            default:
-                context.fErrors->error(pos, "'readonly' and 'writeonly' qualifiers "
-                                            "cannot be combined");
-                return this;
+        if (accessQualifiers == ModifierFlag::kReadOnly) {
+            return context.fTypes.fReadOnlyTexture2D.get();
         }
+        if (accessQualifiers == ModifierFlag::kWriteOnly) {
+            return context.fTypes.fWriteOnlyTexture2D.get();
+        }
+        context.fErrors->error(pos, "'readonly' and 'writeonly' qualifiers cannot be combined");
+        return this;
     }
 
     context.fErrors->error(pos, "type '" + this->displayName() + "' does not support qualifier '" +
-                                Modifiers::DescribeFlags(accessQualifiers) + "'");
+                                accessQualifiers.description() + "'");
     return this;
 }
 
@@ -1311,7 +1308,8 @@ SKSL_INT Type::convertArraySize(const Context& context,
 }
 
 std::string Field::description() const {
-    return fModifiers.description() + fType->displayName() + " " + std::string(fName) + ";";
+    return fLayout.paddedDescription() + fModifierFlags.paddedDescription() + fType->displayName() +
+           ' ' + std::string(fName) + ';';
 }
 
 }  // namespace SkSL

@@ -17,6 +17,9 @@
 #include "src/gpu/GpuTypesPriv.h"
 #include "src/gpu/graphite/ResourceTypes.h"
 
+#if GRAPHITE_TEST_UTILS
+#include <functional>
+#endif
 #include <vector>
 
 namespace skgpu {
@@ -28,6 +31,10 @@ namespace skgpu::graphite {
 class GraphiteResourceKey;
 class ProxyCache;
 class Resource;
+
+#if GRAPHITE_TEST_UTILS
+class Texture;
+#endif
 
 class ResourceCache : public SkRefCnt {
 public:
@@ -65,6 +72,8 @@ public:
     // the return queue). Also no new Resources can be retrieved from the ResourceCache.
     void shutdown();
 
+    size_t getMaxBudget() const { return fMaxBytes; }
+
 #if GRAPHITE_TEST_UTILS
     void forceProcessReturnedResources() { this->processReturnedResources(); }
 
@@ -83,6 +92,8 @@ public:
     Resource* topOfPurgeableQueue();
 
     bool testingInPurgeableQueue(Resource* resource) { return this->inPurgeableQueue(resource); }
+
+    void visitTextures(const std::function<void(const Texture*, bool purgeable)>&) const;
 #endif
 
     ProxyCache* proxyCache() { return fProxyCache.get(); }

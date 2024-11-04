@@ -156,11 +156,11 @@ sk_sp<Texture> VulkanTexture::Make(const VulkanSharedContext* sharedContext,
 }
 
 sk_sp<Texture> VulkanTexture::MakeWrapped(const VulkanSharedContext* sharedContext,
-                                   SkISize dimensions,
-                                   const TextureInfo& info,
-                                   sk_sp<MutableTextureStateRef> mutableState,
-                                   VkImage image,
-                                   const VulkanAlloc& alloc) {
+                                          SkISize dimensions,
+                                          const TextureInfo& info,
+                                          sk_sp<MutableTextureStateRef> mutableState,
+                                          VkImage image,
+                                          const VulkanAlloc& alloc) {
     return sk_sp<Texture>(new VulkanTexture(sharedContext,
                                             dimensions,
                                             info,
@@ -189,7 +189,7 @@ void VulkanTexture::setImageLayoutAndQueueIndex(VulkanCommandBuffer* cmdBuffer,
                                                 VkAccessFlags dstAccessMask,
                                                 VkPipelineStageFlags dstStageMask,
                                                 bool byRegion,
-                                                uint32_t newQueueFamilyIndex) {
+                                                uint32_t newQueueFamilyIndex) const {
 
     SkASSERT(newLayout == this->currentLayout() ||
              (VK_IMAGE_LAYOUT_UNDEFINED != newLayout &&
@@ -302,9 +302,13 @@ void VulkanTexture::freeGpuData() {
     // Need to delete any ImageViews first
     fImageViews.clear();
 
-    auto sharedContext = static_cast<const VulkanSharedContext*>(this->sharedContext());
-    VULKAN_CALL(sharedContext->interface(), DestroyImage(sharedContext->device(), fImage, nullptr));
-    skgpu::VulkanMemory::FreeImageMemory(sharedContext->memoryAllocator(), fMemoryAlloc);
+    // If the texture is wrapped we don't own this data
+    if (this->ownership() != Ownership::kWrapped) {
+        auto sharedContext = static_cast<const VulkanSharedContext*>(this->sharedContext());
+        VULKAN_CALL(sharedContext->interface(),
+                    DestroyImage(sharedContext->device(), fImage, nullptr));
+        skgpu::VulkanMemory::FreeImageMemory(sharedContext->memoryAllocator(), fMemoryAlloc);
+    }
 }
 
 VkImageLayout VulkanTexture::currentLayout() const {
@@ -370,7 +374,7 @@ VkAccessFlags VulkanTexture::LayoutToSrcAccessMask(const VkImageLayout layout) {
     return flags;
 }
 
-const VulkanImageView* VulkanTexture::getImageView(VulkanImageView::Usage usage) {
+const VulkanImageView* VulkanTexture::getImageView(VulkanImageView::Usage usage) const {
     for (int i = 0; i < fImageViews.size(); ++i) {
         if (fImageViews[i]->usage() == usage) {
             return fImageViews[i].get();

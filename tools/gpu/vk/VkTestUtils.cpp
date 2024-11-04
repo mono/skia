@@ -447,6 +447,18 @@ static bool setup_features(skgpu::VulkanGetProc getProc, VkInstance inst, VkPhys
         tailPNext = &dynamicRenderingFeature->pNext;
     }
 
+    VkPhysicalDeviceInlineUniformBlockFeaturesEXT* inlineUniformFeature = nullptr;
+    if (extensions->hasExtension(VK_EXT_INLINE_UNIFORM_BLOCK_EXTENSION_NAME, 1)) {
+        inlineUniformFeature = (VkPhysicalDeviceInlineUniformBlockFeaturesEXT*)sk_malloc_throw(
+            sizeof(VkPhysicalDeviceInlineUniformBlockFeaturesEXT));
+        inlineUniformFeature->sType =
+                VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_INLINE_UNIFORM_BLOCK_FEATURES_EXT;
+        inlineUniformFeature->pNext = nullptr;
+        inlineUniformFeature->inlineUniformBlock = VK_TRUE;
+        *tailPNext = inlineUniformFeature;
+        tailPNext = &inlineUniformFeature->pNext;
+    }
+
     if (physDeviceVersion >= VK_MAKE_VERSION(1, 1, 0)) {
         ACQUIRE_VK_PROC_LOCAL(GetPhysicalDeviceFeatures2, inst, VK_NULL_HANDLE);
         grVkGetPhysicalDeviceFeatures2(physDev, features);
@@ -485,6 +497,8 @@ bool CreateVkBackendContext(PFN_vkGetInstanceProcAddr getInstProc,
                                 isProtected)) {
         return false;
     }
+
+    SkASSERT(skgpuCtx.fProtectedContext == skgpu::Protected(isProtected));
     ctx->fInstance = skgpuCtx.fInstance;
     ctx->fPhysicalDevice = skgpuCtx.fPhysicalDevice;
     ctx->fDevice = skgpuCtx.fDevice;
@@ -495,9 +509,7 @@ bool CreateVkBackendContext(PFN_vkGetInstanceProcAddr getInstProc,
     ctx->fDeviceFeatures2 = skgpuCtx.fDeviceFeatures2;
     ctx->fGetProc = skgpuCtx.fGetProc;
     ctx->fOwnsInstanceAndDevice = false;
-    ctx->fProtectedContext =
-            skgpuCtx.fProtectedContext == skgpu::Protected::kYes ? skgpu::Protected::kYes
-                                                                 : skgpu::Protected::kNo;
+    ctx->fProtectedContext = skgpuCtx.fProtectedContext;
     return true;
 }
 
@@ -880,7 +892,7 @@ bool CreateVkBackendContext(PFN_vkGetInstanceProcAddr getInstProc,
     ctx->fVkExtensions = extensions;
     ctx->fDeviceFeatures2 = features;
     ctx->fGetProc = getProc;
-    ctx->fProtectedContext = isProtected ? skgpu::Protected::kYes : skgpu::Protected::kNo;
+    ctx->fProtectedContext = skgpu::Protected(isProtected);
 
     return true;
 }

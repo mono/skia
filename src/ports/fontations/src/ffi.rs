@@ -14,7 +14,8 @@ use skrifa::{
 };
 use std::pin::Pin;
 
-use crate::ffi::SkPathWrapper;
+use crate::ffi::AxisWrapper;
+use crate::ffi::PathWrapper;
 
 fn lookup_glyph_or_zero(font_ref: &BridgeFontRef, codepoint: u32) -> u16 {
     font_ref
@@ -29,10 +30,10 @@ fn num_glyphs(font_ref: &BridgeFontRef) -> u16 {
 }
 
 struct PathWrapperPen<'a> {
-    path_wrapper: Pin<&'a mut ffi::SkPathWrapper>,
+    path_wrapper: Pin<&'a mut ffi::PathWrapper>,
 }
 
-// We need to wrap ffi::SkPathWrapper in PathWrapperPen and forward the path
+// We need to wrap ffi::PathWrapper in PathWrapperPen and forward the path
 // recording calls to the path wrapper as we can't define trait implementations
 // inside the cxx::bridge section.
 impl<'a> Pen for PathWrapperPen<'a> {
@@ -64,7 +65,7 @@ fn get_path(
     glyph_id: u16,
     size: f32,
     coords: &BridgeNormalizedCoords,
-    path_wrapper: Pin<&mut SkPathWrapper>,
+    path_wrapper: Pin<&mut PathWrapper>,
 ) -> bool {
     font_ref
         .with_font(|f| {
@@ -252,6 +253,31 @@ fn variation_position(
     coords.filtered_user_coords.len().try_into().unwrap()
 }
 
+fn populate_axes(font_ref: &BridgeFontRef, mut axis_wrapper: Pin<&mut AxisWrapper>) -> isize {
+    font_ref
+        .with_font(|f| {
+            let axes = f.axes();
+            // Populate incoming allocated SkFontParameters::Variation::Axis[] only when a
+            // buffer is passed.
+            if axis_wrapper.as_ref().size() > 0 {
+                for (i, axis) in axes.iter().enumerate() {
+                    if !axis_wrapper.as_mut().populate_axis(
+                        i,
+                        u32::from_be_bytes(axis.tag().into_bytes()),
+                        axis.min_value(),
+                        axis.default_value(),
+                        axis.max_value(),
+                        axis.is_hidden(),
+                    ) {
+                        return None;
+                    }
+                }
+            }
+            isize::try_from(axes.len()).ok()
+        })
+        .unwrap_or(-1)
+}
+
 fn make_font_ref_internal<'a>(font_data: &'a [u8], index: u32) -> Result<FontRef<'a>, ReadError> {
     match FileRef::new(font_data) {
         Ok(file_ref) => match file_ref {
@@ -356,7 +382,7 @@ mod ffi {
             glyph_id: u16,
             size: f32,
             coords: &BridgeNormalizedCoords,
-            path_wrapper: Pin<&mut SkPathWrapper>,
+            path_wrapper: Pin<&mut PathWrapper>,
         ) -> bool;
         fn advance_width_or_zero(
             font_ref: &BridgeFontRef,
@@ -381,6 +407,8 @@ mod ffi {
             coordinates: &mut [SkiaDesignCoordinate],
         ) -> isize;
 
+        fn populate_axes(font_ref: &BridgeFontRef, axis_wrapper: Pin<&mut AxisWrapper>) -> isize;
+
         type BridgeLocalizedStrings<'a>;
         unsafe fn get_localized_strings<'a>(
             font_ref: &'a BridgeFontRef<'a>,
@@ -401,17 +429,18 @@ mod ffi {
     unsafe extern "C++" {
 
         include!("src/ports/fontations/src/skpath_bridge.h");
-        type SkPathWrapper;
+
+        type PathWrapper;
 
         #[allow(dead_code)]
-        fn move_to(self: Pin<&mut SkPathWrapper>, x: f32, y: f32);
+        fn move_to(self: Pin<&mut PathWrapper>, x: f32, y: f32);
         #[allow(dead_code)]
-        fn line_to(self: Pin<&mut SkPathWrapper>, x: f32, y: f32);
+        fn line_to(self: Pin<&mut PathWrapper>, x: f32, y: f32);
         #[allow(dead_code)]
-        fn quad_to(self: Pin<&mut SkPathWrapper>, cx0: f32, cy0: f32, x: f32, y: f32);
+        fn quad_to(self: Pin<&mut PathWrapper>, cx0: f32, cy0: f32, x: f32, y: f32);
         #[allow(dead_code)]
         fn curve_to(
-            self: Pin<&mut SkPathWrapper>,
+            self: Pin<&mut PathWrapper>,
             cx0: f32,
             cy0: f32,
             cx1: f32,
@@ -420,8 +449,20 @@ mod ffi {
             y: f32,
         );
         #[allow(dead_code)]
-        fn close(self: Pin<&mut SkPathWrapper>);
-        #[allow(dead_code)]
-        fn dump(self: Pin<&mut SkPathWrapper>);
+        fn close(self: Pin<&mut PathWrapper>);
+
+        type AxisWrapper;
+
+        fn populate_axis(
+            self: Pin<&mut AxisWrapper>,
+            i: usize,
+            axis: u32,
+            min: f32,
+            def: f32,
+            max: f32,
+            hidden: bool,
+        ) -> bool;
+        fn size(self: Pin<&AxisWrapper>) -> usize;
+
     }
 }

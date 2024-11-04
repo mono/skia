@@ -7,6 +7,21 @@
 
 #include "include/gpu/graphite/TextureInfo.h"
 
+#ifdef SK_DAWN
+#include "src/gpu/dawn/DawnUtilsPriv.h"
+#endif
+
+#ifdef SK_METAL
+namespace skgpu::graphite {
+    // Including Metal types/headers here is tricky. This is defined in MtlGraphiteUtils.mm
+    size_t MtlFormatBytesPerBlock(MtlPixelFormat);
+}
+#endif
+
+#ifdef SK_VULKAN
+#include "src/gpu/vk/VulkanUtilsPriv.h"
+#endif
+
 namespace skgpu::graphite {
 
 TextureInfo& TextureInfo::operator=(const TextureInfo& that) {
@@ -79,6 +94,39 @@ bool TextureInfo::operator==(const TextureInfo& that) const {
     }
 }
 
+bool TextureInfo::isCompatible(const TextureInfo& that) const {
+    if (!this->isValid() || !that.isValid()) {
+        return false;
+    }
+
+    if (fSampleCount != that.fSampleCount ||
+        fMipmapped != that.fMipmapped ||
+        fProtected != that.fProtected) {
+        return false;
+    }
+
+    if (fBackend != that.fBackend) {
+        return false;
+    }
+
+    switch (fBackend) {
+#ifdef SK_DAWN
+        case BackendApi::kDawn:
+            return fDawnSpec.isCompatible(that.fDawnSpec);
+#endif
+#ifdef SK_METAL
+        case BackendApi::kMetal:
+            return fMtlSpec.isCompatible(that.fMtlSpec);
+#endif
+#ifdef SK_VULKAN
+        case BackendApi::kVulkan:
+            return fVkSpec.isCompatible(that.fVkSpec);
+#endif
+        default:
+            return false;
+    }
+}
+
 #ifdef SK_DAWN
 bool TextureInfo::getDawnTextureInfo(DawnTextureInfo* info) const {
     if (!this->isValid() || fBackend != BackendApi::kDawn) {
@@ -121,5 +169,27 @@ SkString TextureInfo::toString() const {
     return ret;
 }
 
-} // namespace skgpu::graphite
+size_t TextureInfo::bytesPerPixel() const {
+    if (!this->isValid()) {
+        return 0;
+    }
 
+    switch (fBackend) {
+#ifdef SK_DAWN
+        case BackendApi::kDawn:
+            return DawnFormatBytesPerBlock(this->dawnTextureSpec().fFormat);
+#endif
+#ifdef SK_METAL
+        case BackendApi::kMetal:
+            return MtlFormatBytesPerBlock(this->mtlTextureSpec().fFormat);
+#endif
+#ifdef SK_VULKAN
+        case BackendApi::kVulkan:
+            return VkFormatBytesPerBlock(this->vulkanTextureSpec().fFormat);
+#endif
+        default:
+            return 0;
+    }
+}
+
+} // namespace skgpu::graphite

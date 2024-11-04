@@ -15,7 +15,6 @@
 #include "include/private/base/SkFloatBits.h"
 #include "include/private/base/SkFloatingPoint.h"
 #include "include/private/base/SkMalloc.h"
-#include "include/private/base/SkPathEnums.h"
 #include "include/private/base/SkTArray.h"
 #include "include/private/base/SkTDArray.h"
 #include "include/private/base/SkTo.h"
@@ -25,6 +24,7 @@
 #include "src/core/SkEdgeClipper.h"
 #include "src/core/SkGeometry.h"
 #include "src/core/SkMatrixPriv.h"
+#include "src/core/SkPathEnums.h"
 #include "src/core/SkPathMakers.h"
 #include "src/core/SkPathPriv.h"
 #include "src/core/SkPointPriv.h"
@@ -1442,17 +1442,16 @@ SkPath& SkPath::addPath(const SkPath& srcPath, const SkMatrix& matrix, AddPathMo
     }
 
     if (kAppend_AddPathMode == mode && !matrix.hasPerspective()) {
-        fLastMoveToIndex = this->countPoints() + src->fLastMoveToIndex;
-
+        if (src->fLastMoveToIndex >= 0) {
+            fLastMoveToIndex = src->fLastMoveToIndex + this->countPoints();
+        } else {
+            fLastMoveToIndex = src->fLastMoveToIndex - this->countPoints();
+        }
         SkPathRef::Editor ed(&fPathRef);
         auto [newPts, newWeights] = ed.growForVerbsInPath(*src->fPathRef);
         matrix.mapPoints(newPts, src->fPathRef->points(), src->countPoints());
         if (int numWeights = src->fPathRef->countWeights()) {
             memcpy(newWeights, src->fPathRef->conicWeights(), numWeights * sizeof(newWeights[0]));
-        }
-        // fiddle with fLastMoveToIndex, as we do in SkPath::close()
-        if ((SkPathVerb)fPathRef->verbsEnd()[-1] == SkPathVerb::kClose) {
-            fLastMoveToIndex ^= ~fLastMoveToIndex >> (8 * sizeof(fLastMoveToIndex) - 1);
         }
         return this->dirtyAfterEdit();
     }
@@ -1468,8 +1467,7 @@ SkPath& SkPath::addPath(const SkPath& srcPath, const SkMatrix& matrix, AddPathMo
                     injectMoveToIfNeeded(); // In case last contour is closed
                     SkPoint lastPt;
                     // don't add lineTo if it is degenerate
-                    if (fLastMoveToIndex < 0 || !this->getLastPt(&lastPt) ||
-                        lastPt != mappedPts[0]) {
+                    if (!this->getLastPt(&lastPt) || lastPt != mappedPts[0]) {
                         this->lineTo(mappedPts[0]);
                     }
                 } else {

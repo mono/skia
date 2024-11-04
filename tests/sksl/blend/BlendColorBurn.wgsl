@@ -1,11 +1,12 @@
 /*
 
-:35:3 warning: code is unreachable
+:36:3 warning: code is unreachable
   return f32();
   ^^^^^^
 
 */
 
+diagnostic(off, derivative_uniformity);
 struct FSIn {
   @builtin(front_facing) sk_Clockwise: bool,
 };
@@ -22,12 +23,12 @@ fn color_burn_component_Qhh2h2(_skParam0: vec2<f32>, _skParam1: vec2<f32>) -> f3
   let s = _skParam0;
   let d = _skParam1;
   {
-    if (d.y == d.x) {
+    if d.y == d.x {
       {
         return (s.y * d.y + s.x * (1.0 - d.y)) + d.x * (1.0 - s.y);
       }
     } else {
-      if (s.x == 0.0) {
+      if s.x == 0.0 {
         {
           return d.x * (1.0 - s.y);
         }

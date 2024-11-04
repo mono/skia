@@ -16,6 +16,7 @@
 
 #include "third_party/icu/SkLoadICU.h"
 
+#include <cfloat>
 #include <fstream>
 #include <memory>
 
@@ -169,7 +170,7 @@ struct EditorLayer : public sk_app::Window::Layer {
 
     void inval() { if (fParent) { fParent->inval(); } }
 
-    bool onMouseWheel(float delta, skui::ModifierKey) override {
+    bool onMouseWheel(float delta, int, int, skui::ModifierKey) override {
         this->scroll(-(int)(delta * fEditor.font().getSpacing()));
         return true;
     }

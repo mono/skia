@@ -33,15 +33,18 @@
 #include "include/private/base/SkTArray.h"
 #include "include/private/base/SkTo.h"
 #include "src/core/SkImageFilterTypes.h"
+#include "src/core/SkMatrixPriv.h"
 #include "src/core/SkRectPriv.h"
 #include "src/core/SkSpecialImage.h"
 #include "src/core/SkSpecialSurface.h"
 #include "src/effects/colorfilters/SkColorFilterBase.h"
+#include "src/gpu/ganesh/image/GrImageUtils.h"
 #include "tests/CtsEnforcement.h"
 #include "tests/Test.h"
 #include "tests/TestUtils.h"
 
 #include <cmath>
+#include <initializer_list>
 #include <optional>
 #include <string>
 #include <utility>
@@ -53,7 +56,9 @@ using namespace skia_private;
 #if defined(SK_GRAPHITE)
 #include "include/gpu/graphite/Context.h"
 #include "src/gpu/graphite/ContextPriv.h"
+#include "src/gpu/graphite/ImageUtils.h"
 #include "src/gpu/graphite/RecorderPriv.h"
+#include "src/gpu/graphite/SpecialImage_Graphite.h"
 #include "src/gpu/graphite/TextureProxyView.h"
 #endif
 
@@ -61,6 +66,7 @@ using namespace skia_private;
 #if defined(SK_GANESH)
 #include "include/gpu/GrDirectContext.h"
 #include "include/gpu/GrTypes.h"
+#include "src/gpu/ganesh/image/SkSpecialImage_Ganesh.h"
 struct GrContextOptions;
 #endif
 
@@ -126,7 +132,7 @@ public:
                 canvas->drawPaint(paint);
             } else {
                 SkASSERT(fMethod == Method::kDrawToCanvas);
-                image.draw(canvas);
+                image.draw(canvas, ctx.desiredOutput());
             }
 
             return {surface->makeImageSnapshot(), SkIPoint(ctx.desiredOutput().topLeft())};
@@ -164,6 +170,11 @@ bool colorfilter_equals(const SkColorFilter* actual, const SkColorFilter* expect
     return actualData && actualData->equals(expectedData.get());
 }
 
+static constexpr SkTileMode kTileModes[4] = {SkTileMode::kClamp,
+                                             SkTileMode::kRepeat,
+                                             SkTileMode::kMirror,
+                                             SkTileMode::kDecal};
+
 enum class Expect {
     kDeferredImage, // i.e. modified properties of FilterResult instead of rendering
     kNewImage,      // i.e. rendered a new image before modifying other properties
@@ -177,7 +188,10 @@ class ApplyAction {
     };
     struct CropParams {
         LayerSpace<SkIRect> fRect;
-        // SkTileMode fTileMode;
+        SkTileMode fTileMode;
+        // Sometimes the expected bounds due to cropping and tiling are too hard to automate with
+        // simple test code.
+        std::optional<LayerSpace<SkIRect>> fExpectedBounds;
     };
 
 public:
@@ -185,28 +199,36 @@ public:
                 const SkSamplingOptions& sampling,
                 Expect expectation,
                 const SkSamplingOptions& expectedSampling,
+                SkTileMode expectedTileMode,
                 sk_sp<SkColorFilter> expectedColorFilter)
             : fAction{TransformParams{LayerSpace<SkMatrix>(transform), sampling}}
             , fExpectation(expectation)
             , fExpectedSampling(expectedSampling)
+            , fExpectedTileMode(expectedTileMode)
             , fExpectedColorFilter(std::move(expectedColorFilter)) {}
 
     ApplyAction(const SkIRect& cropRect,
+                SkTileMode tileMode,
+                std::optional<LayerSpace<SkIRect>> expectedBounds,
                 Expect expectation,
                 const SkSamplingOptions& expectedSampling,
+                SkTileMode expectedTileMode,
                 sk_sp<SkColorFilter> expectedColorFilter)
-            : fAction{CropParams{LayerSpace<SkIRect>(cropRect)}}
+            : fAction{CropParams{LayerSpace<SkIRect>(cropRect), tileMode, expectedBounds}}
             , fExpectation(expectation)
             , fExpectedSampling(expectedSampling)
+            , fExpectedTileMode(expectedTileMode)
             , fExpectedColorFilter(std::move(expectedColorFilter)) {}
 
     ApplyAction(sk_sp<SkColorFilter> colorFilter,
                 Expect expectation,
                 const SkSamplingOptions& expectedSampling,
+                SkTileMode expectedTileMode,
                 sk_sp<SkColorFilter> expectedColorFilter)
             : fAction(std::move(colorFilter))
             , fExpectation(expectation)
             , fExpectedSampling(expectedSampling)
+            , fExpectedTileMode(expectedTileMode)
             , fExpectedColorFilter(std::move(expectedColorFilter)) {}
 
     // Test-simplified logic for bounds propagation similar to how image filters calculate bounds
@@ -218,7 +240,7 @@ public:
                     ? out : LayerSpace<SkIRect>::Empty();
         } else if (auto* c = std::get_if<CropParams>(&fAction)) {
             LayerSpace<SkIRect> intersection = c->fRect;
-            if (!intersection.intersect(desiredOutput)) {
+            if (c->fTileMode == SkTileMode::kDecal && !intersection.intersect(desiredOutput)) {
                 intersection = LayerSpace<SkIRect>::Empty();
             }
             return intersection;
@@ -233,7 +255,7 @@ public:
         if (auto* t = std::get_if<TransformParams>(&fAction)) {
             return in.applyTransform(ctx, t->fMatrix, t->fSampling);
         } else if (auto* c = std::get_if<CropParams>(&fAction)) {
-            return in.applyCrop(ctx, c->fRect);
+            return in.applyCrop(ctx, c->fRect, c->fTileMode);
         } else if (auto* cf = std::get_if<sk_sp<SkColorFilter>>(&fAction)) {
             return in.applyColorFilter(ctx, *cf);
         }
@@ -242,6 +264,7 @@ public:
 
     Expect expectation() const { return fExpectation; }
     const SkSamplingOptions& expectedSampling() const { return fExpectedSampling; }
+    SkTileMode expectedTileMode() const { return fExpectedTileMode; }
     const SkColorFilter* expectedColorFilter() const { return fExpectedColorFilter.get(); }
 
     LayerSpace<SkIRect> expectedBounds(const LayerSpace<SkIRect>& inputBounds) const {
@@ -252,11 +275,16 @@ public:
             }
             return t->fMatrix.mapRect(inputBounds);
         } else if (auto* c = std::get_if<CropParams>(&fAction)) {
+            if (c->fExpectedBounds) {
+                return *c->fExpectedBounds;
+            }
+
             LayerSpace<SkIRect> intersection = c->fRect;
             if (!intersection.intersect(inputBounds)) {
-                intersection = LayerSpace<SkIRect>::Empty();
+                return LayerSpace<SkIRect>::Empty();
             }
-            return intersection;
+            return c->fTileMode == SkTileMode::kDecal
+                    ? intersection : LayerSpace<SkIRect>(SkRectPriv::MakeILarge());
         } else if (auto* cf = std::get_if<sk_sp<SkColorFilter>>(&fAction)) {
             if (as_CFB(*cf)->affectsTransparentBlack()) {
                 // Fills out infinitely
@@ -270,13 +298,15 @@ public:
 
     sk_sp<SkSpecialImage> renderExpectedImage(const Context& ctx,
                                               sk_sp<SkSpecialImage> source,
-                                              const LayerSpace<SkIPoint>& origin,
+                                              LayerSpace<SkIPoint> origin,
                                               const LayerSpace<SkIRect>& desiredOutput) const {
         SkASSERT(source);
 
+        Expect effectiveExpectation = fExpectation;
         SkISize size(desiredOutput.size());
         if (desiredOutput.isEmpty()) {
             size = {1, 1};
+            effectiveExpectation = Expect::kEmptyImage;
         }
 
         auto surface = ctx.makeSurface(size);
@@ -290,12 +320,13 @@ public:
 
         canvas->clipIRect(SkIRect(expectedBounds), SkClipOp::kIntersect);
 
-        if (fExpectation != Expect::kEmptyImage) {
+        if (effectiveExpectation != Expect::kEmptyImage) {
             SkPaint paint;
             paint.setAntiAlias(true);
             paint.setBlendMode(SkBlendMode::kSrc);
             // Start with NN to match exact subsetting FilterResult does for deferred images
             SkSamplingOptions sampling = {};
+            SkTileMode tileMode = SkTileMode::kDecal;
             if (auto* t = std::get_if<TransformParams>(&fAction)) {
                 SkMatrix m{t->fMatrix};
                 // FilterResult treats default/bilerp filtering as NN when it has an integer
@@ -307,11 +338,32 @@ public:
                 }
                 canvas->concat(m);
             } else if (auto* c = std::get_if<CropParams>(&fAction)) {
-                canvas->clipIRect(SkIRect(c->fRect));
+                LayerSpace<SkIRect> imageBounds(
+                        SkIRect::MakeXYWH(origin.x(), origin.y(),
+                                          source->width(), source->height()));
+                if (c->fTileMode == SkTileMode::kDecal || imageBounds.contains(c->fRect)) {
+                    // Extract a subset of the image
+                    SkAssertResult(imageBounds.intersect(c->fRect));
+                    source = source->makeSubset({imageBounds.left() - origin.x(),
+                                                 imageBounds.top() - origin.y(),
+                                                 imageBounds.right() - origin.x(),
+                                                 imageBounds.bottom() - origin.y()});
+                    origin = imageBounds.topLeft();
+                } else {
+                    // A non-decal tile mode where the image doesn't cover the crop requires the
+                    // image to be padded out with transparency so the tiling matches 'fRect'.
+                    auto paddedSurface = ctx.makeSurface(SkISize(c->fRect.size()));
+                    paddedSurface->getCanvas()->clear(SK_ColorTRANSPARENT);
+                    paddedSurface->getCanvas()->translate(-c->fRect.left(), -c->fRect.top());
+                    source->draw(paddedSurface->getCanvas(), origin.x(), origin.y());
+                    source = paddedSurface->makeImageSnapshot();
+                    origin = c->fRect.topLeft();
+                }
+                tileMode = c->fTileMode;
             } else if (auto* cf = std::get_if<sk_sp<SkColorFilter>>(&fAction)) {
                 paint.setColorFilter(*cf);
             }
-            paint.setShader(source->asShader(SkTileMode::kDecal,
+            paint.setShader(source->asShader(tileMode,
                                              sampling,
                                              SkMatrix::Translate(origin.x(), origin.y())));
             canvas->drawPaint(paint);
@@ -329,6 +381,7 @@ private:
     // Expectation
     Expect fExpectation;
     SkSamplingOptions fExpectedSampling;
+    SkTileMode fExpectedTileMode;
     sk_sp<SkColorFilter> fExpectedColorFilter;
     // The expected desired outputs and layer bounds are calculated automatically based on the
     // action type and parameters to simplify test case specification.
@@ -364,17 +417,17 @@ public:
                                              kPremul_SkAlphaType);
 #if defined(SK_GANESH)
         if (fDirectContext) {
-            return SkSpecialSurface::MakeRenderTarget(fDirectContext, info, {},
+            return SkSpecialSurfaces::MakeRenderTarget(fDirectContext, info, {},
                                                       kTopLeft_GrSurfaceOrigin);
         } else
 #endif
 #if defined(SK_GRAPHITE)
         if (fRecorder) {
-            return SkSpecialSurface::MakeGraphite(fRecorder, info, {});
+            return SkSpecialSurfaces::MakeGraphite(fRecorder, info, {});
         } else
 #endif
         {
-            return SkSpecialSurface::MakeRaster(info, {});
+            return SkSpecialSurfaces::MakeRaster(info, {});
         }
     }
 
@@ -388,12 +441,12 @@ public:
                                      /*cache=*/nullptr};
 #if defined(SK_GANESH)
         if (fDirectContext) {
-            return skif::Context::MakeGanesh(fDirectContext, kTopLeft_GrSurfaceOrigin, ctxInfo);
+            return skif::MakeGaneshContext(fDirectContext, kTopLeft_GrSurfaceOrigin, ctxInfo);
         } else
 #endif
 #if defined(SK_GRAPHITE)
         if (fRecorder) {
-            return skif::Context::MakeGraphite(fRecorder, ctxInfo);
+            return skif::MakeGraphiteContext(fRecorder, ctxInfo);
         } else
 #endif
         {
@@ -582,7 +635,7 @@ private:
 #if defined(SK_GANESH)
         if (fDirectContext) {
             // Ganesh backed, just use the SkImage::readPixels API
-            SkASSERT(specialImage->isTextureBacked());
+            SkASSERT(specialImage->isGaneshBacked());
             sk_sp<SkImage> image = specialImage->asImage();
             SkAssertResult(image->readPixels(fDirectContext, bm.pixmap(), srcX, srcY));
         } else
@@ -591,7 +644,7 @@ private:
         if (fRecorder) {
             // Graphite backed, so use the private testing-only synchronous API
             SkASSERT(specialImage->isGraphiteBacked());
-            auto view = specialImage->textureProxyView();
+            auto view = SkSpecialImages::AsTextureProxyView(specialImage);
             auto proxyII = ii.makeWH(view.width(), view.height());
             SkAssertResult(fRecorder->priv().context()->priv().readPixels(
                     bm.pixmap(), view.proxy(), proxyII, srcX, srcY));
@@ -653,19 +706,34 @@ public:
             : fRunner(runner)
             , fName(name)
             , fSourceBounds(LayerSpace<SkIRect>::Empty())
-            , fSourceColor(SkColors::kTransparent)
             , fDesiredOutput(LayerSpace<SkIRect>::Empty()) {}
 
-    TestCase& source(const SkIRect& bounds, const SkColor4f& color) {
+    TestCase& source(const SkIRect& bounds) {
         fSourceBounds = LayerSpace<SkIRect>(bounds);
-        fSourceColor = color;
         return *this;
     }
 
+
+    TestCase& applyCrop(const SkIRect& crop, Expect expectation) {
+        return this->applyCrop(crop, SkTileMode::kDecal, expectation);
+    }
+
     TestCase& applyCrop(const SkIRect& crop,
-                        Expect expectation) {
-        fActions.emplace_back(crop, expectation,
+                        SkTileMode tileMode,
+                        Expect expectation,
+                        std::optional<SkTileMode> expectedTileMode = {},
+                        std::optional<SkIRect> expectedBounds = {}) {
+        // Fill-in automated expectations, which is to equal 'tileMode' when not overridden.
+        if (!expectedTileMode) {
+            expectedTileMode = tileMode;
+        }
+        std::optional<LayerSpace<SkIRect>> expectedLayerBounds;
+        if (expectedBounds) {
+            expectedLayerBounds = LayerSpace<SkIRect>(*expectedBounds);
+        }
+        fActions.emplace_back(crop, tileMode, expectedLayerBounds, expectation,
                               this->getDefaultExpectedSampling(expectation),
+                              *expectedTileMode,
                               this->getDefaultExpectedColorFilter(expectation));
         return *this;
     }
@@ -684,6 +752,8 @@ public:
             expectedSampling = sampling;
         }
         fActions.emplace_back(matrix, sampling, expectation, *expectedSampling,
+                              this->getDefaultExpectedTileMode(expectation,
+                                                               /*cfAffectsTransparency=*/false),
                               this->getDefaultExpectedColorFilter(expectation));
         return *this;
     }
@@ -698,8 +768,10 @@ public:
             expectedColorFilter = SkColorFilters::Compose(
                     colorFilter, this->getDefaultExpectedColorFilter(expectation));
         }
+        const bool affectsTransparent = as_CFB(colorFilter)->affectsTransparentBlack();
         fActions.emplace_back(std::move(colorFilter), expectation,
                               this->getDefaultExpectedSampling(expectation),
+                              this->getDefaultExpectedTileMode(expectation, affectsTransparent),
                               std::move(*expectedColorFilter));
         return *this;
     }
@@ -749,7 +821,34 @@ public:
         if (!fSourceBounds.isEmpty()) {
             sk_sp<SkSpecialSurface> sourceSurface = fRunner.newSurface(fSourceBounds.width(),
                                                                        fSourceBounds.height());
-            sourceSurface->getCanvas()->clear(fSourceColor);
+
+            const SkColor colors[] = { SK_ColorMAGENTA,
+                                       SK_ColorRED,
+                                       SK_ColorYELLOW,
+                                       SK_ColorGREEN,
+                                       SK_ColorCYAN,
+                                       SK_ColorBLUE };
+            SkMatrix rotation = SkMatrix::RotateDeg(15.f, {fSourceBounds.width() / 2.f,
+                                                           fSourceBounds.height() / 2.f});
+
+            SkCanvas* canvas = sourceSurface->getCanvas();
+            canvas->clear(SK_ColorBLACK);
+            canvas->concat(rotation);
+
+            int color = 0;
+            SkRect coverBounds;
+            SkRect dstBounds = SkRect::Make(canvas->imageInfo().bounds());
+            SkAssertResult(SkMatrixPriv::InverseMapRect(rotation, &coverBounds, dstBounds));
+
+            float sz = fSourceBounds.width() <= 16.f || fSourceBounds.height() <= 16.f ? 2.f : 8.f;
+            for (float y = coverBounds.fTop; y < coverBounds.fBottom; y += sz) {
+                for (float x = coverBounds.fLeft; x < coverBounds.fRight; x += sz) {
+                    SkPaint p;
+                    p.setColor(colors[(color++) % std::size(colors)]);
+                    canvas->drawRect(SkRect::MakeXYWH(x, y, sz, sz), p);
+                }
+            }
+
             source = FilterResult(sourceSurface->makeImageSnapshot(), fSourceBounds.topLeft());
         }
         Context baseContext = fRunner.newContext(source);
@@ -779,7 +878,14 @@ public:
 
             LayerSpace<SkIRect> expectedBounds = fActions[i].expectedBounds(source.layerBounds());
             Expect correctedExpectation = fActions[i].expectation();
-            if (!expectedBounds.intersect(desiredOutputs[i])) {
+            if (SkIRect(expectedBounds) == SkRectPriv::MakeILarge()) {
+                // An expected image filling out to infinity should have an actual image that
+                // fills the desired output.
+                expectedBounds = desiredOutputs[i];
+                if (desiredOutputs[i].isEmpty()) {
+                    correctedExpectation = Expect::kEmptyImage;
+                }
+            } else if (!expectedBounds.intersect(desiredOutputs[i])) {
                 // Test cases should provide image expectations for the case where desired output
                 // is not back-propagated. When desired output is back-propagated, it can lead to
                 // earlier actions becoming empty actions.
@@ -787,10 +893,6 @@ public:
                                          backPropagateDesiredOutput);
                 expectedBounds = LayerSpace<SkIRect>::Empty();
                 correctedExpectation = Expect::kEmptyImage;
-            } else if (SkIRect(expectedBounds) == SkRectPriv::MakeILarge()) {
-                // An expected image filling out to infinity should have an actual image that
-                // fills the desired output.
-                expectedBounds = desiredOutputs[i];
             }
 
             bool actualNewImage = output.image() &&
@@ -812,6 +914,7 @@ public:
                 REPORTER_ASSERT(fRunner, !expectedBounds.isEmpty());
                 REPORTER_ASSERT(fRunner, SkIRect(output.layerBounds()) == SkIRect(expectedBounds));
                 REPORTER_ASSERT(fRunner, output.sampling() == fActions[i].expectedSampling());
+                REPORTER_ASSERT(fRunner, output.tileMode() == fActions[i].expectedTileMode());
                 REPORTER_ASSERT(fRunner, colorfilter_equals(output.colorFilter(),
                                                             fActions[i].expectedColorFilter()));
             }
@@ -843,6 +946,17 @@ private:
             return fActions[fActions.size() - 1].expectedSampling();
         }
     }
+    // By default an action that doesn't define its own tiling will not change the tiling, unless it
+    // produces a new image, at which point it becomes kDecal again.
+    SkTileMode getDefaultExpectedTileMode(Expect expectation, bool cfAffectsTransparency) const {
+        if (expectation == Expect::kNewImage && cfAffectsTransparency) {
+            return SkTileMode::kClamp;
+        } else if (expectation != Expect::kDeferredImage || fActions.empty()) {
+            return SkTileMode::kDecal;
+        } else {
+            return fActions[fActions.size() - 1].expectedTileMode();
+        }
+    }
     // By default an action that doesn't define its own color filter will not change filtering,
     // unless it produces a new image. Otherwise it inherits the prior action's expectations.
     sk_sp<SkColorFilter> getDefaultExpectedColorFilter(Expect expectation) const {
@@ -856,9 +970,8 @@ private:
     TestRunner& fRunner;
     std::string fName;
 
-    // Used to construct an SkSpecialImage of the given size/location filled with the known color.
+    // Used to construct an SkSpecialImage of the given size/location filled with the known pattern.
     LayerSpace<SkIRect> fSourceBounds;
-    SkColor4f           fSourceColor;
 
     // The intended area to fill with the result, controlled by outside factors (e.g. clip bounds)
     LayerSpace<SkIRect> fDesiredOutput;
@@ -884,11 +997,14 @@ sk_sp<SkColorFilter> affect_transparent(SkColor4f color) {
 
 // ----------------------------------------------------------------------------
 
+// TODO(skbug.com/14607) - Run FilterResultTests on Dawn and ANGLE backends, too
+
 #if defined(SK_GANESH)
 #define DEF_GANESH_TEST_SUITE(name) \
-    DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS( \
-            FilterResult_##name##_ganesh, \
-            r, ctxInfo, CtsEnforcement::kApiLevel_T) { \
+    DEF_GANESH_TEST_FOR_CONTEXTS( \
+            FilterResult_ganesh_##name, \
+            sk_gpu_test::GrContextFactory::IsNativeBackend, \
+            r, ctxInfo, nullptr, CtsEnforcement::kApiLevel_T) { \
         TestRunner runner(r, ctxInfo.directContext()); \
         test_suite_##name(runner); \
     }
@@ -898,7 +1014,10 @@ sk_sp<SkColorFilter> affect_transparent(SkColor4f color) {
 
 #if defined(SK_GRAPHITE)
 #define DEF_GRAPHITE_TEST_SUITE(name) \
-    DEF_GRAPHITE_TEST_FOR_RENDERING_CONTEXTS(FilterResult_##name##_graphite, r, context) { \
+    DEF_GRAPHITE_TEST_FOR_CONTEXTS( \
+            FilterResult_graphite_##name, \
+            sk_gpu_test::GrContextFactory::IsNativeBackend, \
+            r, context) { \
         using namespace skgpu::graphite; \
         auto recorder = context->makeRecorder(); \
         TestRunner runner(r, recorder.get()); \
@@ -917,13 +1036,12 @@ sk_sp<SkColorFilter> affect_transparent(SkColor4f color) {
 #define DEF_GRAPHITE_TEST_SUITE(name) // do nothing
 #endif
 
-// Assumes 'name' refers to a static function of type TestSuite.
 #define DEF_TEST_SUITE(name, runner) \
     static void test_suite_##name(TestRunner&); \
     /* TODO(b/274901800): Uncomment to enable Graphite test execution. */ \
     /* DEF_GRAPHITE_TEST_SUITE(name) */ \
     DEF_GANESH_TEST_SUITE(name) \
-    DEF_TEST(FilterResult_##name##_raster, reporter) { \
+    DEF_TEST(FilterResult_raster_##name, reporter) { \
         TestRunner runner(reporter); \
         test_suite_##name(runner); \
     } \
@@ -936,23 +1054,25 @@ DEF_TEST_SUITE(EmptySource, r) {
     // This is testing that an empty input image is handled by the applied actions without having
     // to generate new images, or that it can produce a new image from nothing when it affects
     // transparent black.
-    TestCase(r, "applyCrop() to empty source")
-            .source(SkIRect::MakeEmpty(), SkColors::kRed)
-            .applyCrop({0, 0, 10, 10}, Expect::kEmptyImage)
-            .run(/*requestedOutput=*/{0, 0, 20, 20});
+    for (SkTileMode tm : kTileModes) {
+        TestCase(r, "applyCrop() to empty source")
+                .source(SkIRect::MakeEmpty())
+                .applyCrop({0, 0, 10, 10}, tm, Expect::kEmptyImage)
+                .run(/*requestedOutput=*/{0, 0, 20, 20});
+    }
 
     TestCase(r, "applyTransform() to empty source")
-            .source(SkIRect::MakeEmpty(), SkColors::kRed)
+            .source(SkIRect::MakeEmpty())
             .applyTransform(SkMatrix::Translate(10.f, 10.f), Expect::kEmptyImage)
             .run(/*requestedOutput=*/{10, 10, 20, 20});
 
     TestCase(r, "applyColorFilter() to empty source")
-            .source(SkIRect::MakeEmpty(), SkColors::kRed)
+            .source(SkIRect::MakeEmpty())
             .applyColorFilter(alpha_modulate(0.5f), Expect::kEmptyImage)
             .run(/*requestedOutput=*/{0, 0, 10, 10});
 
     TestCase(r, "Transparency-affecting color filter overrules empty source")
-            .source(SkIRect::MakeEmpty(), SkColors::kRed)
+            .source(SkIRect::MakeEmpty())
             .applyColorFilter(affect_transparent(SkColors::kBlue), Expect::kNewImage,
                               /*expectedColorFilter=*/nullptr) // CF applied ASAP to make a new img
             .run(/*requestedOutput=*/{0, 0, 10, 10});
@@ -961,23 +1081,25 @@ DEF_TEST_SUITE(EmptySource, r) {
 DEF_TEST_SUITE(EmptyDesiredOutput, r) {
     // This is testing that an empty requested output is propagated through the applied actions so
     // that no actual images are generated.
-    TestCase(r, "applyCrop() + empty output becomes empty")
-            .source({0, 0, 10, 10}, SkColors::kRed)
-            .applyCrop({2, 2, 8, 8}, Expect::kEmptyImage)
-            .run(/*requestedOutput=*/SkIRect::MakeEmpty());
+    for (SkTileMode tm : kTileModes) {
+        TestCase(r, "applyCrop() + empty output becomes empty")
+                .source({0, 0, 10, 10})
+                .applyCrop({2, 2, 8, 8}, tm, Expect::kEmptyImage)
+                .run(/*requestedOutput=*/SkIRect::MakeEmpty());
+    }
 
     TestCase(r, "applyTransform() + empty output becomes empty")
-            .source({0, 0, 10, 10}, SkColors::kRed)
+            .source({0, 0, 10, 10})
             .applyTransform(SkMatrix::RotateDeg(10.f), Expect::kEmptyImage)
             .run(/*requestedOutput=*/SkIRect::MakeEmpty());
 
     TestCase(r, "applyColorFilter() + empty output becomes empty")
-            .source({0, 0, 10, 10}, SkColors::kRed)
+            .source({0, 0, 10, 10})
             .applyColorFilter(alpha_modulate(0.5f), Expect::kEmptyImage)
             .run(/*requestedOutput=*/SkIRect::MakeEmpty());
 
     TestCase(r, "Transpency-affecting color filter + empty output is empty")
-            .source({0, 0, 10, 10}, SkColors::kRed)
+            .source({0, 0, 10, 10})
             .applyColorFilter(affect_transparent(SkColors::kBlue), Expect::kEmptyImage)
             .run(/*requestedOutput=*/SkIRect::MakeEmpty());
 }
@@ -987,103 +1109,221 @@ DEF_TEST_SUITE(EmptyDesiredOutput, r) {
 
 DEF_TEST_SUITE(Crop, r) {
     // This is testing all the combinations of how the src, crop, and requested output rectangles
-    // can interact while still resulting in a deferred image.
-    TestCase(r, "applyCrop() contained in source and output")
-            .source({0, 0, 20, 20}, SkColors::kGreen)
-            .applyCrop({8, 8, 12, 12}, Expect::kDeferredImage)
-            .run(/*requestedOutput=*/{4, 4, 16, 16});
+    // can interact while still resulting in a deferred image. The exception is non-decal tile
+    // modes where the crop rect includes transparent pixels not filled by the source, which
+    // requires a new image to ensure tiling matches the crop geometry.
+    for (SkTileMode tm : kTileModes) {
+        const Expect nonDecalExpectsNewImage = tm == SkTileMode::kDecal ? Expect::kDeferredImage
+                                                                        : Expect::kNewImage;
+        TestCase(r, "applyCrop() contained in source and output")
+                .source({0, 0, 20, 20})
+                .applyCrop({8, 8, 12, 12}, tm, Expect::kDeferredImage)
+                .run(/*requestedOutput=*/{4, 4, 16, 16});
 
-    TestCase(r, "applyCrop() contained in source, intersects output")
-            .source({0, 0, 20, 20}, SkColors::kGreen)
-            .applyCrop({4, 4, 12, 12}, Expect::kDeferredImage)
-            .run(/*requestedOutput=*/{8, 8, 16, 16});
+        TestCase(r, "applyCrop() contained in source, intersects output")
+                .source({0, 0, 20, 20})
+                .applyCrop({4, 4, 12, 12}, tm, Expect::kDeferredImage)
+                .run(/*requestedOutput=*/{8, 8, 16, 16});
 
-    TestCase(r, "applyCrop() intersects source, contained in output")
-            .source({10, 10, 20, 20}, SkColors::kGreen)
-            .applyCrop({4, 4, 16, 16}, Expect::kDeferredImage)
-            .run(/*requestedOutput=*/{0, 0, 20, 20});
+        TestCase(r, "applyCrop() intersects source, contained in output")
+                .source({10, 10, 20, 20})
+                .applyCrop({4, 4, 16, 16}, tm, nonDecalExpectsNewImage)
+                .run(/*requestedOutput=*/{0, 0, 20, 20});
 
-    TestCase(r, "applyCrop() intersects source and output")
-            .source({0, 0, 10, 10}, SkColors::kGreen)
-            .applyCrop({5, -5, 15, 5}, Expect::kDeferredImage)
-            .run(/*requestedOutput=*/{7, -2, 12, 8});
+        TestCase(r, "applyCrop() intersects source and output")
+                .source({0, 0, 10, 10})
+                .applyCrop({5, -5, 15, 5}, tm, nonDecalExpectsNewImage)
+                .run(/*requestedOutput=*/{7, -2, 12, 8});
 
-    TestCase(r, "applyCrop() contains source and output")
-            .source({0, 0, 10, 10}, SkColors::kGreen)
-            .applyCrop({-5, -5, 15, 15}, Expect::kDeferredImage)
-            .run(/*requestedOutput=*/{1, 1, 9, 9});
+        TestCase(r, "applyCrop() contains source, intersects output")
+                .source({4, 4, 16, 16})
+                .applyCrop({0, 0, 20, 20}, tm, nonDecalExpectsNewImage)
+                .run(/*requestedOutput=*/{-5, -5, 18, 18});
 
-    TestCase(r, "applyCrop() contains source, intersects output")
-            .source({4, 4, 16, 16}, SkColors::kGreen)
-            .applyCrop({0, 0, 20, 20}, Expect::kDeferredImage)
-            .run(/*requestedOutput=*/{-5, -5, 18, 18});
+        // In these cases, cropping with a non-decal tile mode can be discarded because the output
+        // bounds are entirely within the crop so no tiled edges would be visible.
+        TestCase(r, "applyCrop() intersects source, contains output")
+                .source({0, 0, 20, 20})
+                .applyCrop({-5, 5, 25, 15}, tm, Expect::kDeferredImage, SkTileMode::kDecal)
+                .run(/*requestedOutput=*/{0, 5, 20, 15});
 
-    TestCase(r, "applyCrop() intersects source, contains output")
-            .source({0, 0, 20, 20}, SkColors::kGreen)
-            .applyCrop({-5, 5, 25, 15}, Expect::kDeferredImage)
-            .run(/*requestedOutput=*/{0, 5, 20, 15});
+        TestCase(r, "applyCrop() contains source and output")
+                .source({0, 0, 10, 10})
+                .applyCrop({-5, -5, 15, 15}, tm, Expect::kDeferredImage, SkTileMode::kDecal)
+                .run(/*requestedOutput=*/{1, 1, 9, 9});
+    }
 }
 
 DEF_TEST_SUITE(CropDisjointFromSourceAndOutput, r) {
     // This tests all the combinations of src, crop, and requested output rectangles that result in
-    // an empty image without any of the rectangles being empty themselves.
-    TestCase(r, "applyCrop() disjoint from source, intersects output")
-            .source({0, 0, 10, 10}, SkColors::kBlue)
-            .applyCrop({11, 11, 20, 20}, Expect::kEmptyImage)
-            .run(/*requestedOutput=*/{0, 0, 15, 15});
+    // an empty image without any of the rectangles being empty themselves. The exception is for
+    // non-decal tile modes when the source and crop still intersect. In that case the non-empty
+    // content is tiled into the disjoint output rect, producing a non-empty image.
+    for (SkTileMode tm : kTileModes) {
+        TestCase(r, "applyCrop() disjoint from source, intersects output")
+                .source({0, 0, 10, 10})
+                .applyCrop({11, 11, 20, 20}, tm, Expect::kEmptyImage)
+                .run(/*requestedOutput=*/{0, 0, 15, 15});
 
-    TestCase(r, "applyCrop() disjoint from source, intersects output disjoint from source")
-            .source({0, 0, 10, 10}, SkColors::kBlue)
-            .applyCrop({11, 11, 20, 20}, Expect::kEmptyImage)
-            .run(/*requestedOutput=*/{12, 12, 18, 18});
+        TestCase(r, "applyCrop() disjoint from source, intersects output disjoint from source")
+                .source({0, 0, 10, 10})
+                .applyCrop({11, 11, 20, 20}, tm, Expect::kEmptyImage)
+                .run(/*requestedOutput=*/{12, 12, 18, 18});
 
-    TestCase(r, "applyCrop() intersects source, disjoint from output")
-            .source({0, 0, 10, 10}, SkColors::kBlue)
-            .applyCrop({-5, -5, 5, 5}, Expect::kEmptyImage)
-            .run(/*requestedOutput=*/{6, 6, 12, 12});
+        TestCase(r, "applyCrop() disjoint from source and output")
+                .source({0, 0, 10, 10})
+                .applyCrop({12, 12, 18, 18}, tm, Expect::kEmptyImage)
+                .run(/*requestedOutput=*/{-1, -1, 11, 11});
 
-    TestCase(r, "applyCrop() intersects source, disjoint from output disjoint from source")
-            .source({0, 0, 10, 10}, SkColors::kBlue)
-            .applyCrop({-5, -5, 5, 5}, Expect::kEmptyImage)
-            .run(/*requestedOutput=*/{12, 12, 18, 18});
+        TestCase(r, "applyCrop() disjoint from source and output disjoint from source")
+                .source({0, 0, 10, 10})
+                .applyCrop({-10, 10, -1, -1}, tm, Expect::kEmptyImage)
+                .run(/*requestedOutput=*/{11, 11, 20, 20});
 
-    TestCase(r, "applyCrop() disjoint from source and output")
-            .source({0, 0, 10, 10}, SkColors::kBlue)
-            .applyCrop({12, 12, 18, 18}, Expect::kEmptyImage)
-            .run(/*requestedOutput=*/{-1, -1, 11, 11});
+        // When the source and crop intersect but are disjoint from the output, the behavior depends
+        // on the tile mode. For periodic tile modes, certain geometries can still be deferred by
+        // conversion to a transform, but to keep expectations simple we pick bounds such that the
+        // tiling can't be dropped. See PeriodicTileCrops for other scenarios.
+        Expect nonDecalExpectsImage = tm == SkTileMode::kDecal ? Expect::kEmptyImage :
+                                      tm == SkTileMode::kClamp ? Expect::kDeferredImage
+                                                               : Expect::kNewImage;
+        TestCase(r, "applyCrop() intersects source, disjoint from output disjoint from source")
+                .source({0, 0, 10, 10})
+                .applyCrop({-5, -5, 5, 5}, tm, nonDecalExpectsImage)
+                .run(/*requestedOutput=*/{12, 12, 18, 18});
 
-    TestCase(r, "applyCrop() disjoint from source and output disjoint from source")
-            .source({0, 0, 10, 10}, SkColors::kBlue)
-            .applyCrop({-10, 10, -1, -1}, Expect::kEmptyImage)
-            .run(/*requestedOutput=*/{11, 11, 20, 20});
+        TestCase(r, "applyCrop() intersects source, disjoint from output")
+                    .source({0, 0, 10, 10})
+                    .applyCrop({-5, -5, 5, 5}, tm, nonDecalExpectsImage)
+                    .run(/*requestedOutput=*/{6, 6, 18, 18});
+    }
 }
 
 DEF_TEST_SUITE(EmptyCrop, r) {
-    TestCase(r, "applyCrop() is empty")
-            .source({0, 0, 10, 10}, SkColors::kYellow)
-            .applyCrop(SkIRect::MakeEmpty(), Expect::kEmptyImage)
-            .run(/*requestedOutput=*/{0, 0, 10, 10});
+    for (SkTileMode tm : kTileModes) {
+        TestCase(r, "applyCrop() is empty")
+                .source({0, 0, 10, 10})
+                .applyCrop(SkIRect::MakeEmpty(), tm, Expect::kEmptyImage)
+                .run(/*requestedOutput=*/{0, 0, 10, 10});
 
-    TestCase(r, "applyCrop() emptiness propagates")
-            .source({0, 0, 10, 10}, SkColors::kYellow)
-            .applyCrop({1, 1, 9, 9}, Expect::kDeferredImage)
-            .applyCrop(SkIRect::MakeEmpty(), Expect::kEmptyImage)
-            .run(/*requestedOutput=*/{0, 0, 10, 10});
+        TestCase(r, "applyCrop() emptiness propagates")
+                .source({0, 0, 10, 10})
+                .applyCrop({1, 1, 9, 9}, tm, Expect::kDeferredImage)
+                .applyCrop(SkIRect::MakeEmpty(), tm, Expect::kEmptyImage)
+                .run(/*requestedOutput=*/{0, 0, 10, 10});
+    }
 }
 
 DEF_TEST_SUITE(DisjointCrops, r) {
-    TestCase(r, "Disjoint applyCrops() become empty")
-            .source({0, 0, 10, 10}, SkColors::kCyan)
-            .applyCrop({0, 0, 4, 4}, Expect::kDeferredImage)
-            .applyCrop({6, 6, 10, 10}, Expect::kEmptyImage)
-            .run(/*requestedOutput=*/{0, 0, 10, 10});
+    for (SkTileMode tm : kTileModes) {
+        TestCase(r, "Disjoint applyCrop() after kDecal become empty")
+                .source({0, 0, 10, 10})
+                .applyCrop({0, 0, 4, 4}, SkTileMode::kDecal, Expect::kDeferredImage)
+                .applyCrop({6, 6, 10, 10}, tm, Expect::kEmptyImage)
+                .run(/*requestedOutput=*/{0, 0, 10, 10});
+
+        if (tm != SkTileMode::kDecal) {
+            TestCase(r, "Disjoint tiling applyCrop() before kDecal is not empty and combines")
+                    .source({0, 0, 10, 10})
+                    .applyCrop({0, 0, 4, 4}, tm, Expect::kDeferredImage)
+                    .applyCrop({6, 6, 10, 10}, SkTileMode::kDecal, Expect::kDeferredImage, tm)
+                    .run(/*requestedOutput=*/{0, 0, 10, 10});
+
+            TestCase(r, "Disjoint non-decal applyCrops() are not empty")
+                .source({0, 0, 10, 10})
+                .applyCrop({0, 0, 4, 4}, tm, Expect::kDeferredImage)
+                .applyCrop({6, 6, 10, 10}, tm, tm == SkTileMode::kClamp ? Expect::kDeferredImage
+                                                                        : Expect::kNewImage)
+                .run(/*requestedOutput=*/{0, 0, 10, 10});
+        }
+    }
 }
 
 DEF_TEST_SUITE(IntersectingCrops, r) {
-    TestCase(r, "Consecutive applyCrops() combine")
-            .source({0, 0, 20, 20}, SkColors::kMagenta)
-            .applyCrop({5, 5, 15, 15}, Expect::kDeferredImage)
-            .applyCrop({10, 10, 20, 20}, Expect::kDeferredImage)
+    for (SkTileMode tm : kTileModes) {
+        TestCase(r, "Decal applyCrop() always combines with any other crop")
+                .source({0, 0, 20, 20})
+                .applyCrop({5, 5, 15, 15}, tm, Expect::kDeferredImage)
+                .applyCrop({10, 10, 20, 20}, SkTileMode::kDecal, Expect::kDeferredImage, tm)
+                .run(/*requestedOutput=*/{0, 0, 20, 20});
+
+        if (tm != SkTileMode::kDecal) {
+            TestCase(r, "Decal applyCrop() before non-decal crop requires new image")
+                    .source({0, 0, 20, 20})
+                    .applyCrop({5, 5, 15, 15}, SkTileMode::kDecal, Expect::kDeferredImage)
+                    .applyCrop({10, 10, 20, 20}, tm, Expect::kNewImage)
+                    .run(/*requestedOutput=*/{0, 0, 20, 20});
+
+            TestCase(r, "Consecutive non-decal crops combine if both are clamp")
+                    .source({0, 0, 20, 20})
+                    .applyCrop({5, 5, 15, 15}, tm, Expect::kDeferredImage)
+                    .applyCrop({10, 10, 20, 20}, tm,
+                               tm == SkTileMode::kClamp ? Expect::kDeferredImage
+                                                        : Expect::kNewImage)
+                    .run(/*requestedOutput=*/{0, 0, 20, 20});
+        }
+    }
+}
+
+DEF_TEST_SUITE(PeriodicTileCrops, r) {
+    for (SkTileMode tm : {SkTileMode::kRepeat, SkTileMode::kMirror}) {
+        // In these tests, the crop periodically tiles such that it covers the desired output so
+        // the prior image can be simply transformed.
+        TestCase(r, "Periodic applyCrop() becomes a transform")
+                .source({0, 0, 20, 20})
+                .applyCrop({5, 5, 15, 15}, tm, Expect::kDeferredImage,
+                           /*expectedTileMode=*/SkTileMode::kDecal)
+                .run(/*requestedOutput=*/{25, 25, 35, 35});
+
+        TestCase(r, "Periodic applyCrop() with partial transparency still becomes a transform")
+                .source({0, 0, 20, 20})
+                .applyCrop({-5, -5, 15, 15}, tm, Expect::kDeferredImage,
+                           /*expectedTileMode=*/SkTileMode::kDecal,
+                           /*expectedBounds=*/tm == SkTileMode::kRepeat ? SkIRect{20,20,35,35}
+                                                                        : SkIRect{15,15,30,30})
+                .run(/*requestedOutput*/{15, 15, 35, 35});
+
+        TestCase(r, "Periodic applyCrop() after complex transform can still simplify")
+                .source({0, 0, 20, 20})
+                .applyTransform(SkMatrix::RotateDeg(15.f, {10.f, 10.f}), Expect::kDeferredImage)
+                .applyCrop({-5, -5, 25, 25}, tm, Expect::kDeferredImage,
+                           /*expectedTileMode=*/SkTileMode::kDecal,
+                           /*expectedBounds*/SkIRect{57,57,83,83}) // source+15 degree rotation
+                .run(/*requestedOutput=*/{55,55,85,85});
+
+        // In these tests, the crop's periodic boundary intersects with the output so it should not
+        // simplify to just a transform.
+        TestCase(r, "Periodic applyCrop() with visible edge does not become a transform")
+                .source({0, 0, 20, 20})
+                .applyCrop({5, 5, 15, 15}, tm, Expect::kDeferredImage)
+                .run(/*requestedOutput=*/{10, 10, 20, 20});
+
+        TestCase(r, "Periodic applyCrop() with visible edge and transparency creates new image")
+                .source({0, 0, 20, 20})
+                .applyCrop({-5, -5, 15, 15}, tm, Expect::kNewImage)
+                .run(/*requestedOutput=*/{10, 10, 20, 20});
+
+        TestCase(r, "Periodic applyCropp() with visible edge and complex transform creates image")
+                .source({0, 0, 20, 20})
+                .applyTransform(SkMatrix::RotateDeg(15.f, {10.f, 10.f}), Expect::kDeferredImage)
+                .applyCrop({-5, -5, 25, 25}, tm, Expect::kNewImage)
+                .run(/*requestedOutput=*/{20, 20, 50, 50});
+    }
+}
+
+DEF_TEST_SUITE(DecalThenClamp, r) {
+    TestCase(r, "Decal then clamp crop uses 1px buffer around intersection")
+            .source({0, 0, 20, 20})
+            .applyCrop({3, 3, 17, 17}, SkTileMode::kDecal, Expect::kDeferredImage)
+            .applyColorFilter(alpha_modulate(0.5f), Expect::kDeferredImage)
+            .applyCrop({3, 3, 20, 20}, SkTileMode::kClamp, Expect::kNewImage, SkTileMode::kClamp)
+            .run(/*requestedOutput=*/{0, 0, 20, 20});
+
+    TestCase(r, "Decal then clamp crop uses 1px buffer around intersection, w/ alpha color filter")
+            .source({0, 0, 20, 20})
+            .applyCrop({3, 3, 17, 17}, SkTileMode::kDecal, Expect::kDeferredImage)
+            .applyColorFilter(affect_transparent(SkColors::kCyan), Expect::kDeferredImage)
+            .applyCrop({0, 0, 17, 17}, SkTileMode::kClamp, Expect::kNewImage, SkTileMode::kClamp)
             .run(/*requestedOutput=*/{0, 0, 20, 20});
 }
 
@@ -1092,30 +1332,30 @@ DEF_TEST_SUITE(IntersectingCrops, r) {
 
 DEF_TEST_SUITE(Transform, r) {
     TestCase(r, "applyTransform() integer translate")
-            .source({0, 0, 10, 10}, SkColors::kRed)
+            .source({0, 0, 10, 10})
             .applyTransform(SkMatrix::Translate(5, 5), Expect::kDeferredImage)
             .run(/*requestedOutput=*/{0, 0, 10, 10});
 
     TestCase(r, "applyTransform() fractional translate")
-            .source({0, 0, 10, 10}, SkColors::kRed)
+            .source({0, 0, 10, 10})
             .applyTransform(SkMatrix::Translate(1.5f, 3.24f), Expect::kDeferredImage)
             .run(/*requestedOutput=*/{0, 0, 10, 10});
 
     TestCase(r, "applyTransform() scale")
-            .source({0, 0, 4, 4}, SkColors::kRed)
-            .applyTransform(SkMatrix::Scale(2.2f, 3.5f), Expect::kDeferredImage)
-            .run(/*requestedOutput=*/{-16, -16, 16, 16});
+            .source({0, 0, 24, 24})
+            .applyTransform(SkMatrix::Scale(2.2f, 3.1f), Expect::kDeferredImage)
+            .run(/*requestedOutput=*/{-16, -16, 96, 96});
 
     // NOTE: complex is anything beyond a scale+translate. See SkImageFilter_Base::MatrixCapability.
     TestCase(r, "applyTransform() with complex transform")
-            .source({0, 0, 8, 8}, SkColors::kRed)
+            .source({0, 0, 8, 8})
             .applyTransform(SkMatrix::RotateDeg(10.f, {4.f, 4.f}), Expect::kDeferredImage)
             .run(/*requestedOutput=*/{0, 0, 16, 16});
 }
 
 DEF_TEST_SUITE(CompatibleSamplingConcatsTransforms, r) {
     TestCase(r, "linear + linear combine")
-            .source({0, 0, 8, 8}, SkColors::kGreen)
+            .source({0, 0, 8, 8})
             .applyTransform(SkMatrix::RotateDeg(2.f, {4.f, 4.f}),
                             SkFilterMode::kLinear, Expect::kDeferredImage)
             .applyTransform(SkMatrix::RotateDeg(2.f, {4.f, 4.f}),
@@ -1123,7 +1363,7 @@ DEF_TEST_SUITE(CompatibleSamplingConcatsTransforms, r) {
             .run(/*requestedOutput=*/{0, 0, 16, 16});
 
     TestCase(r, "equiv. bicubics combine")
-            .source({0, 0, 8, 8}, SkColors::kGreen)
+            .source({0, 0, 8, 8})
             .applyTransform(SkMatrix::RotateDeg(2.f, {4.f, 4.f}),
                             SkCubicResampler::Mitchell(), Expect::kDeferredImage)
             .applyTransform(SkMatrix::RotateDeg(2.f, {4.f, 4.f}),
@@ -1131,7 +1371,7 @@ DEF_TEST_SUITE(CompatibleSamplingConcatsTransforms, r) {
             .run(/*requestedOutput=*/{0, 0, 16, 16});
 
     TestCase(r, "linear + bicubic becomes bicubic")
-            .source({0, 0, 8, 8}, SkColors::kGreen)
+            .source({0, 0, 8, 8})
             .applyTransform(SkMatrix::RotateDeg(2.f, {4.f, 4.f}),
                             SkFilterMode::kLinear, Expect::kDeferredImage)
             .applyTransform(SkMatrix::RotateDeg(2.f, {4.f, 4.f}),
@@ -1139,7 +1379,7 @@ DEF_TEST_SUITE(CompatibleSamplingConcatsTransforms, r) {
             .run(/*requestedOutput=*/{0, 0, 16, 16});
 
     TestCase(r, "bicubic + linear becomes bicubic")
-            .source({0, 0, 8, 8}, SkColors::kGreen)
+            .source({0, 0, 8, 8})
             .applyTransform(SkMatrix::RotateDeg(2.f, {4.f, 4.f}),
                             SkCubicResampler::Mitchell(), Expect::kDeferredImage)
             .applyTransform(SkMatrix::RotateDeg(2.f, {4.f, 4.f}),
@@ -1148,7 +1388,7 @@ DEF_TEST_SUITE(CompatibleSamplingConcatsTransforms, r) {
             .run(/*requestedOutput=*/{0, 0, 16, 16});
 
     TestCase(r, "aniso picks max level to combine")
-            .source({0, 0, 8, 8}, SkColors::kGreen)
+            .source({0, 0, 8, 8})
             .applyTransform(SkMatrix::RotateDeg(2.f, {4.f, 4.f}),
                             SkSamplingOptions::Aniso(4.f), Expect::kDeferredImage)
             .applyTransform(SkMatrix::RotateDeg(2.f, {4.f, 4.f}),
@@ -1157,7 +1397,7 @@ DEF_TEST_SUITE(CompatibleSamplingConcatsTransforms, r) {
             .run(/*requestedOutput=*/{0, 0, 16, 16});
 
     TestCase(r, "aniso picks max level to combine (other direction)")
-            .source({0, 0, 8, 8}, SkColors::kGreen)
+            .source({0, 0, 8, 8})
             .applyTransform(SkMatrix::RotateDeg(2.f, {4.f, 4.f}),
                             SkSamplingOptions::Aniso(2.f), Expect::kDeferredImage)
             .applyTransform(SkMatrix::RotateDeg(2.f, {4.f, 4.f}),
@@ -1165,7 +1405,7 @@ DEF_TEST_SUITE(CompatibleSamplingConcatsTransforms, r) {
             .run(/*requestedOutput=*/{0, 0, 16, 16});
 
     TestCase(r, "linear + aniso becomes aniso")
-            .source({0, 0, 8, 8}, SkColors::kGreen)
+            .source({0, 0, 8, 8})
             .applyTransform(SkMatrix::RotateDeg(2.f, {4.f, 4.f}),
                             SkFilterMode::kLinear, Expect::kDeferredImage)
             .applyTransform(SkMatrix::RotateDeg(2.f, {4.f, 4.f}),
@@ -1173,7 +1413,7 @@ DEF_TEST_SUITE(CompatibleSamplingConcatsTransforms, r) {
             .run(/*requestedOutput=*/{0, 0, 16, 16});
 
     TestCase(r, "aniso + linear stays aniso")
-            .source({0, 0, 8, 8}, SkColors::kGreen)
+            .source({0, 0, 8, 8})
             .applyTransform(SkMatrix::RotateDeg(2.f, {4.f, 4.f}),
                             SkSamplingOptions::Aniso(4.f), Expect::kDeferredImage)
             .applyTransform(SkMatrix::RotateDeg(2.f, {4.f, 4.f}),
@@ -1187,7 +1427,7 @@ DEF_TEST_SUITE(CompatibleSamplingConcatsTransforms, r) {
 
 DEF_TEST_SUITE(IncompatibleSamplingResolvesImages, r) {
     TestCase(r, "different bicubics do not combine")
-            .source({0, 0, 8, 8}, SkColors::kBlue)
+            .source({0, 0, 8, 8})
             .applyTransform(SkMatrix::RotateDeg(2.f, {4.f, 4.f}),
                             SkCubicResampler::Mitchell(), Expect::kDeferredImage)
             .applyTransform(SkMatrix::RotateDeg(2.f, {4.f, 4.f}),
@@ -1195,7 +1435,7 @@ DEF_TEST_SUITE(IncompatibleSamplingResolvesImages, r) {
             .run(/*requestedOutput=*/{0, 0, 16, 16});
 
     TestCase(r, "nearest + linear do not combine")
-            .source({0, 0, 8, 8}, SkColors::kBlue)
+            .source({0, 0, 8, 8})
             .applyTransform(SkMatrix::RotateDeg(2.f, {4.f, 4.f}),
                             SkFilterMode::kNearest, Expect::kDeferredImage)
             .applyTransform(SkMatrix::RotateDeg(2.f, {4.f, 4.f}),
@@ -1203,7 +1443,7 @@ DEF_TEST_SUITE(IncompatibleSamplingResolvesImages, r) {
             .run(/*requestedOutput=*/{0, 0, 16, 16});
 
     TestCase(r, "linear + nearest do not combine")
-            .source({0, 0, 8, 8}, SkColors::kBlue)
+            .source({0, 0, 8, 8})
             .applyTransform(SkMatrix::RotateDeg(2.f, {4.f, 4.f}),
                             SkFilterMode::kLinear, Expect::kDeferredImage)
             .applyTransform(SkMatrix::RotateDeg(2.f, {4.f, 4.f}),
@@ -1211,7 +1451,7 @@ DEF_TEST_SUITE(IncompatibleSamplingResolvesImages, r) {
             .run(/*requestedOutput=*/{0, 0, 16, 16});
 
     TestCase(r, "bicubic + aniso do not combine")
-            .source({0, 0, 8, 8}, SkColors::kBlue)
+            .source({0, 0, 8, 8})
             .applyTransform(SkMatrix::RotateDeg(2.f, {4.f, 4.f}),
                             SkCubicResampler::Mitchell(), Expect::kDeferredImage)
             .applyTransform(SkMatrix::RotateDeg(2.f, {4.f, 4.f}),
@@ -1219,7 +1459,7 @@ DEF_TEST_SUITE(IncompatibleSamplingResolvesImages, r) {
             .run(/*requestedOutput=*/{0, 0, 16, 16});
 
     TestCase(r, "aniso + bicubic do not combine")
-            .source({0, 0, 8, 8}, SkColors::kBlue)
+            .source({0, 0, 8, 8})
             .applyTransform(SkMatrix::RotateDeg(2.f, {4.f, 4.f}),
                             SkSamplingOptions::Aniso(4.f), Expect::kDeferredImage)
             .applyTransform(SkMatrix::RotateDeg(2.f, {4.f, 4.f}),
@@ -1227,7 +1467,7 @@ DEF_TEST_SUITE(IncompatibleSamplingResolvesImages, r) {
             .run(/*requestedOutput=*/{0, 0, 16, 16});
 
     TestCase(r, "nearest + nearest do not combine")
-            .source({0, 0, 8, 8}, SkColors::kBlue)
+            .source({0, 0, 8, 8})
             .applyTransform(SkMatrix::RotateDeg(2.f, {4.f, 4.f}),
                             SkFilterMode::kNearest, Expect::kDeferredImage)
             .applyTransform(SkMatrix::RotateDeg(2.f, {4.f, 4.f}),
@@ -1239,7 +1479,7 @@ DEF_TEST_SUITE(IntegerOffsetIgnoresNearestSampling, r) {
     // Bicubic is used here to reflect that it should use the non-NN sampling and just needs to be
     // something other than the default to detect that it got carried through.
     TestCase(r, "integer translate+NN then bicubic combines")
-            .source({0, 0, 8, 8}, SkColors::kCyan)
+            .source({0, 0, 8, 8})
             .applyTransform(SkMatrix::Translate(2, 2),
                             SkFilterMode::kNearest, Expect::kDeferredImage,
                             FilterResult::kDefaultSampling)
@@ -1248,7 +1488,7 @@ DEF_TEST_SUITE(IntegerOffsetIgnoresNearestSampling, r) {
             .run(/*requestedOutput=*/{0, 0, 16, 16});
 
     TestCase(r, "bicubic then integer translate+NN combines")
-            .source({0, 0, 8, 8}, SkColors::kCyan)
+            .source({0, 0, 8, 8})
             .applyTransform(SkMatrix::RotateDeg(2.f, {4.f, 4.f}),
                             SkCubicResampler::Mitchell(), Expect::kDeferredImage)
             .applyTransform(SkMatrix::Translate(2, 2),
@@ -1262,18 +1502,18 @@ DEF_TEST_SUITE(IntegerOffsetIgnoresNearestSampling, r) {
 
 DEF_TEST_SUITE(TransformBecomesEmpty, r) {
     TestCase(r, "Transform moves src image outside of requested output")
-            .source({0, 0, 8, 8}, SkColors::kMagenta)
+            .source({0, 0, 8, 8})
             .applyTransform(SkMatrix::Translate(10.f, 10.f), Expect::kEmptyImage)
             .run(/*requestedOutput=*/{0, 0, 8, 8});
 
     TestCase(r, "Transform moves src image outside of crop")
-            .source({0, 0, 8, 8}, SkColors::kMagenta)
+            .source({0, 0, 8, 8})
             .applyTransform(SkMatrix::Translate(10.f, 10.f), Expect::kDeferredImage)
             .applyCrop({2, 2, 6, 6}, Expect::kEmptyImage)
             .run(/*requestedOutput=*/{0, 0, 20, 20});
 
     TestCase(r, "Transform moves cropped image outside of requested output")
-            .source({0, 0, 8, 8}, SkColors::kMagenta)
+            .source({0, 0, 8, 8})
             .applyCrop({1, 1, 4, 4}, Expect::kDeferredImage)
             .applyTransform(SkMatrix::Translate(-5.f, -5.f), Expect::kEmptyImage)
             .run(/*requestedOutput=*/{0, 0, 8, 8});
@@ -1281,7 +1521,7 @@ DEF_TEST_SUITE(TransformBecomesEmpty, r) {
 
 DEF_TEST_SUITE(TransformAndCrop, r) {
     TestCase(r, "Crop after transform can always apply")
-            .source({0, 0, 16, 16}, SkColors::kGreen)
+            .source({0, 0, 16, 16})
             .applyTransform(SkMatrix::RotateDeg(45.f, {3.f, 4.f}), Expect::kDeferredImage)
             .applyCrop({2, 2, 15, 15}, Expect::kDeferredImage)
             .run(/*requestedOutput=*/{0, 0, 16, 16});
@@ -1289,39 +1529,73 @@ DEF_TEST_SUITE(TransformAndCrop, r) {
     // TODO: Expand this test case to be arbitrary float S+T transforms when FilterResult tracks
     // both a srcRect and dstRect.
     TestCase(r, "Crop after translate is lifted to image subset")
-            .source({0, 0, 32, 32}, SkColors::kGreen)
+            .source({0, 0, 32, 32})
             .applyTransform(SkMatrix::Translate(12.f, 8.f), Expect::kDeferredImage)
             .applyCrop({16, 16, 24, 24}, Expect::kDeferredImage)
             .applyTransform(SkMatrix::RotateDeg(45.f, {16.f, 16.f}), Expect::kDeferredImage)
             .run(/*requestedOutput=*/{0, 0, 32, 32});
 
     TestCase(r, "Transform after unlifted crop triggers new image")
-            .source({0, 0, 16, 16}, SkColors::kGreen)
+            .source({0, 0, 16, 16})
             .applyTransform(SkMatrix::RotateDeg(45.f, {8.f, 8.f}), Expect::kDeferredImage)
             .applyCrop({1, 1, 15, 15}, Expect::kDeferredImage)
             .applyTransform(SkMatrix::RotateDeg(-10.f, {8.f, 4.f}), Expect::kNewImage)
             .run(/*requestedOutput=*/{0, 0, 16, 16});
 
     TestCase(r, "Transform after unlifted crop with interior output does not trigger new image")
-            .source({0, 0, 16, 16}, SkColors::kGreen)
+            .source({0, 0, 16, 16})
             .applyTransform(SkMatrix::RotateDeg(45.f, {8.f, 8.f}), Expect::kDeferredImage)
             .applyCrop({1, 1, 15, 15}, Expect::kDeferredImage)
             .applyTransform(SkMatrix::RotateDeg(-10.f, {8.f, 4.f}), Expect::kDeferredImage)
             .run(/*requestedOutput=*/{4, 4, 12, 12});
 
     TestCase(r, "Translate after unlifted crop does not trigger new image")
-            .source({0, 0, 16, 16}, SkColors::kGreen)
+            .source({0, 0, 16, 16})
             .applyTransform(SkMatrix::RotateDeg(5.f, {8.f, 8.f}), Expect::kDeferredImage)
             .applyCrop({2, 2, 14, 14}, Expect::kDeferredImage)
             .applyTransform(SkMatrix::Translate(4.f, 6.f), Expect::kDeferredImage)
             .run(/*requestedOutput=*/{0, 0, 16, 16});
 
     TestCase(r, "Transform after large no-op crop does not trigger new image")
-            .source({0, 0, 64, 64}, SkColors::kGreen)
+            .source({0, 0, 64, 64})
             .applyTransform(SkMatrix::RotateDeg(45.f, {32.f, 32.f}), Expect::kDeferredImage)
             .applyCrop({-64, -64, 128, 128}, Expect::kDeferredImage)
             .applyTransform(SkMatrix::RotateDeg(-30.f, {32.f, 32.f}), Expect::kDeferredImage)
             .run(/*requestedOutput=*/{0, 0, 64, 64});
+}
+
+DEF_TEST_SUITE(TransformAndTile, r) {
+    // Test interactions of non-decal tile modes and transforms
+    for (SkTileMode tm : kTileModes) {
+        if (tm == SkTileMode::kDecal) {
+            continue;
+        }
+
+        TestCase(r, "Transform after tile mode does not trigger new image")
+                .source({0, 0, 64, 64})
+                .applyCrop({2, 2, 32, 32}, tm, Expect::kDeferredImage)
+                .applyTransform(SkMatrix::RotateDeg(20.f, {16.f, 8.f}), Expect::kDeferredImage)
+                .run(/*requestedOutput=*/{0, 0, 64, 64});
+
+        TestCase(r, "Integer transform before tile mode does not trigger new image")
+                .source({0, 0, 32, 32})
+                .applyTransform(SkMatrix::Translate(16.f, 16.f), Expect::kDeferredImage)
+                .applyCrop({20, 20, 40, 40}, tm, Expect::kDeferredImage)
+                .run(/*requestedOutput=*/{0, 0, 64, 64});
+
+        TestCase(r, "Non-integer transform before tile mode triggers new image")
+                .source({0, 0, 50, 40})
+                .applyTransform(SkMatrix::RotateDeg(-30.f, {20.f, 10.f}), Expect::kDeferredImage)
+                .applyCrop({10, 10, 30, 30}, tm, Expect::kNewImage)
+                .run(/*requestedOutput=*/{0, 0, 50, 50});
+
+        TestCase(r, "Non-integer transform before tiling defers image if edges are hidden")
+                .source({0, 0, 64, 64})
+                .applyTransform(SkMatrix::RotateDeg(45.f, {32.f, 32.f}), Expect::kDeferredImage)
+                .applyCrop({10, 10, 50, 50}, tm, Expect::kDeferredImage,
+                           /*expectedTileMode=*/SkTileMode::kDecal)
+                .run(/*requestedOutput=*/{11, 11, 49, 49});
+    }
 }
 
 // ----------------------------------------------------------------------------
@@ -1329,37 +1603,37 @@ DEF_TEST_SUITE(TransformAndCrop, r) {
 
 DEF_TEST_SUITE(ColorFilter, r) {
     TestCase(r, "applyColorFilter() defers image")
-            .source({0, 0, 24, 24}, SkColors::kGreen)
+            .source({0, 0, 24, 24})
             .applyColorFilter(alpha_modulate(0.5f), Expect::kDeferredImage)
             .run(/*requestedOutput=*/{0, 0, 32, 32});
 
     TestCase(r, "applyColorFilter() composes with other color filters")
-            .source({0, 0, 24, 24}, SkColors::kGreen)
+            .source({0, 0, 24, 24})
             .applyColorFilter(alpha_modulate(0.5f), Expect::kDeferredImage)
             .applyColorFilter(alpha_modulate(0.5f), Expect::kDeferredImage)
             .run(/*requestedOutput=*/{0, 0, 32, 32});
 
     TestCase(r, "Transparency-affecting color filter fills output")
-            .source({0, 0, 24, 24}, SkColors::kGreen)
+            .source({0, 0, 24, 24})
             .applyColorFilter(affect_transparent(SkColors::kBlue), Expect::kDeferredImage)
             .run(/*requestedOutput=*/{-8, -8, 32, 32});
 
     // Since there is no cropping between the composed color filters, transparency-affecting CFs
     // can still compose together.
     TestCase(r, "Transparency-affecting composition fills output (ATBx2)")
-            .source({0, 0, 24, 24}, SkColors::kGreen)
+            .source({0, 0, 24, 24})
             .applyColorFilter(affect_transparent(SkColors::kBlue), Expect::kDeferredImage)
             .applyColorFilter(affect_transparent(SkColors::kRed), Expect::kDeferredImage)
             .run(/*requestedOutput=*/{-8, -8, 32, 32});
 
     TestCase(r, "Transparency-affecting composition fills output (ATB,reg)")
-            .source({0, 0, 24, 24}, SkColors::kGreen)
+            .source({0, 0, 24, 24})
             .applyColorFilter(affect_transparent(SkColors::kBlue), Expect::kDeferredImage)
             .applyColorFilter(alpha_modulate(0.5f), Expect::kDeferredImage)
             .run(/*requestedOutput=*/{-8, -8, 32, 32});
 
     TestCase(r, "Transparency-affecting composition fills output (reg,ATB)")
-            .source({0, 0, 24, 24}, SkColors::kGreen)
+            .source({0, 0, 24, 24})
             .applyColorFilter(alpha_modulate(0.5f), Expect::kDeferredImage)
             .applyColorFilter(affect_transparent(SkColors::kBlue), Expect::kDeferredImage)
             .run(/*requestedOutput=*/{-8, -8, 32, 32});
@@ -1367,19 +1641,19 @@ DEF_TEST_SUITE(ColorFilter, r) {
 
 DEF_TEST_SUITE(TransformedColorFilter, r) {
     TestCase(r, "Transform composes with regular CF")
-            .source({0, 0, 24, 24}, SkColors::kRed)
+            .source({0, 0, 24, 24})
             .applyTransform(SkMatrix::RotateDeg(45.f, {12, 12}), Expect::kDeferredImage)
             .applyColorFilter(alpha_modulate(0.5f), Expect::kDeferredImage)
             .run(/*requestedOutput=*/{0, 0, 24, 24});
 
     TestCase(r, "Regular CF composes with transform")
-            .source({0, 0, 24, 24}, SkColors::kRed)
+            .source({0, 0, 24, 24})
             .applyColorFilter(alpha_modulate(0.5f), Expect::kDeferredImage)
             .applyTransform(SkMatrix::RotateDeg(45.f, {12, 12}), Expect::kDeferredImage)
             .run(/*requestedOutput=*/{0, 0, 24, 24});
 
     TestCase(r, "Transform composes with transparency-affecting CF")
-            .source({0, 0, 24, 24}, SkColors::kRed)
+            .source({0, 0, 24, 24})
             .applyTransform(SkMatrix::RotateDeg(45.f, {12, 12}), Expect::kDeferredImage)
             .applyColorFilter(affect_transparent(SkColors::kBlue), Expect::kDeferredImage)
             .run(/*requestedOutput=*/{0, 0, 24, 24});
@@ -1389,7 +1663,7 @@ DEF_TEST_SUITE(TransformedColorFilter, r) {
     // visible post transform. This is detected and allows the transform to be composed without
     // producing an intermediate image. See later tests for when a crop prevents this optimization.
     TestCase(r, "Transparency-affecting CF composes with transform")
-            .source({0, 0, 24, 24}, SkColors::kRed)
+            .source({0, 0, 24, 24})
             .applyColorFilter(affect_transparent(SkColors::kBlue), Expect::kDeferredImage)
             .applyTransform(SkMatrix::RotateDeg(45.f, {12, 12}), Expect::kDeferredImage)
             .run(/*requestedOutput=*/{-50, -50, 50, 50});
@@ -1398,28 +1672,28 @@ DEF_TEST_SUITE(TransformedColorFilter, r) {
 DEF_TEST_SUITE(TransformBetweenColorFilters, r) {
     // NOTE: The lack of explicit crops allows all of these operations to be optimized as well.
     TestCase(r, "Transform between regular color filters")
-            .source({0, 0, 24, 24}, SkColors::kRed)
+            .source({0, 0, 24, 24})
             .applyColorFilter(alpha_modulate(0.5f), Expect::kDeferredImage)
             .applyTransform(SkMatrix::RotateDeg(45.f, {12, 12}), Expect::kDeferredImage)
             .applyColorFilter(alpha_modulate(0.75f), Expect::kDeferredImage)
             .run(/*requestedOutput=*/{0, 0, 24, 24});
 
     TestCase(r, "Transform between transparency-affecting color filters")
-            .source({0, 0, 24, 24}, SkColors::kRed)
+            .source({0, 0, 24, 24})
             .applyColorFilter(affect_transparent(SkColors::kBlue), Expect::kDeferredImage)
             .applyTransform(SkMatrix::RotateDeg(45.f, {12, 12}), Expect::kDeferredImage)
             .applyColorFilter(affect_transparent(SkColors::kGreen), Expect::kDeferredImage)
             .run(/*requestedOutput=*/{0, 0, 24, 24});
 
     TestCase(r, "Transform between ATB and regular color filters")
-            .source({0, 0, 24, 24}, SkColors::kRed)
+            .source({0, 0, 24, 24})
             .applyColorFilter(affect_transparent(SkColors::kBlue), Expect::kDeferredImage)
             .applyTransform(SkMatrix::RotateDeg(45.f, {12, 12}), Expect::kDeferredImage)
             .applyColorFilter(alpha_modulate(0.75f), Expect::kDeferredImage)
             .run(/*requestedOutput=*/{0, 0, 24, 24});
 
     TestCase(r, "Transform between regular and ATB color filters")
-            .source({0, 0, 24, 24}, SkColors::kRed)
+            .source({0, 0, 24, 24})
             .applyColorFilter(alpha_modulate(0.5f), Expect::kDeferredImage)
             .applyTransform(SkMatrix::RotateDeg(45.f, {12, 12}), Expect::kDeferredImage)
             .applyColorFilter(affect_transparent(SkColors::kGreen), Expect::kDeferredImage)
@@ -1428,14 +1702,14 @@ DEF_TEST_SUITE(TransformBetweenColorFilters, r) {
 
 DEF_TEST_SUITE(ColorFilterBetweenTransforms, r) {
     TestCase(r, "Regular color filter between transforms")
-            .source({0, 0, 24, 24}, SkColors::kGreen)
+            .source({0, 0, 24, 24})
             .applyTransform(SkMatrix::RotateDeg(20.f, {12, 12}), Expect::kDeferredImage)
             .applyColorFilter(alpha_modulate(0.8f), Expect::kDeferredImage)
             .applyTransform(SkMatrix::RotateDeg(10.f, {5.f, 8.f}), Expect::kDeferredImage)
             .run(/*requestedOutput=*/{0, 0, 24, 24});
 
     TestCase(r, "Transparency-affecting color filter between transforms")
-            .source({0, 0, 24, 24}, SkColors::kGreen)
+            .source({0, 0, 24, 24})
             .applyTransform(SkMatrix::RotateDeg(20.f, {12, 12}), Expect::kDeferredImage)
             .applyColorFilter(affect_transparent(SkColors::kRed), Expect::kDeferredImage)
             .applyTransform(SkMatrix::RotateDeg(10.f, {5.f, 8.f}), Expect::kDeferredImage)
@@ -1443,135 +1717,159 @@ DEF_TEST_SUITE(ColorFilterBetweenTransforms, r) {
 }
 
 DEF_TEST_SUITE(CroppedColorFilter, r) {
-    TestCase(r, "Regular color filter after empty crop stays empty")
-            .source({0, 0, 16, 16}, SkColors::kBlue)
-            .applyCrop(SkIRect::MakeEmpty(), Expect::kEmptyImage)
-            .applyColorFilter(alpha_modulate(0.2f), Expect::kEmptyImage)
-            .run(/*requestedOutput=*/{0, 0, 16, 16});
+    for (SkTileMode tm : kTileModes) {
+        TestCase(r, "Regular color filter after empty crop stays empty")
+                .source({0, 0, 16, 16})
+                .applyCrop(SkIRect::MakeEmpty(), tm, Expect::kEmptyImage)
+                .applyColorFilter(alpha_modulate(0.2f), Expect::kEmptyImage)
+                .run(/*requestedOutput=*/{0, 0, 16, 16});
 
-    TestCase(r, "Transparency-affecting color filter after empty crop creates new image")
-            .source({0, 0, 16, 16}, SkColors::kBlue)
-            .applyCrop(SkIRect::MakeEmpty(), Expect::kEmptyImage)
-            .applyColorFilter(affect_transparent(SkColors::kRed), Expect::kNewImage,
-                              /*expectedColorFilter=*/nullptr) // CF applied ASAP to make a new img
-            .run(/*requestedOutput=*/{0, 0, 16, 16});
+        TestCase(r, "Transparency-affecting color filter after empty crop creates new image")
+                .source({0, 0, 16, 16})
+                .applyCrop(SkIRect::MakeEmpty(), tm, Expect::kEmptyImage)
+                .applyColorFilter(affect_transparent(SkColors::kRed), Expect::kNewImage,
+                                  /*expectedColorFilter=*/nullptr) // CF applied ASAP to new img
+                .run(/*requestedOutput=*/{0, 0, 16, 16});
 
-    TestCase(r, "Regular color filter composes with crop")
-            .source({0, 0, 32, 32}, SkColors::kBlue)
-            .applyColorFilter(alpha_modulate(0.7f), Expect::kDeferredImage)
-            .applyCrop({8, 8, 24, 24}, Expect::kDeferredImage)
-            .run(/*requestedOutput=*/{0, 0, 32, 32});
+        TestCase(r, "Regular color filter composes with crop")
+                .source({0, 0, 32, 32})
+                .applyColorFilter(alpha_modulate(0.7f), Expect::kDeferredImage)
+                .applyCrop({8, 8, 24, 24}, tm, Expect::kDeferredImage)
+                .run(/*requestedOutput=*/{0, 0, 32, 32});
 
-    TestCase(r, "Crop composes with regular color filter")
-            .source({0, 0, 32, 32}, SkColors::kBlue)
-            .applyCrop({8, 8, 24, 24}, Expect::kDeferredImage)
-            .applyColorFilter(alpha_modulate(0.5f), Expect::kDeferredImage)
-            .run(/*requestedOutput=*/{0, 0, 32, 32});
+        TestCase(r, "Crop composes with regular color filter")
+                .source({0, 0, 32, 32})
+                .applyCrop({8, 8, 24, 24}, tm, Expect::kDeferredImage)
+                .applyColorFilter(alpha_modulate(0.5f), Expect::kDeferredImage)
+                .run(/*requestedOutput=*/{0, 0, 32, 32});
 
-    TestCase(r, "Transparency-affecting color filter restricted by crop")
-            .source({0, 0, 32, 32}, SkColors::kBlue)
-            .applyColorFilter(affect_transparent(SkColors::kRed), Expect::kDeferredImage)
-            .applyCrop({8, 8, 24, 24}, Expect::kDeferredImage)
-            .run(/*requestedOutput=*/{0, 0, 32, 32});
+        TestCase(r, "Transparency-affecting color filter restricted by crop")
+                .source({0, 0, 32, 32})
+                .applyColorFilter(affect_transparent(SkColors::kRed), Expect::kDeferredImage)
+                .applyCrop({8, 8, 24, 24}, tm, Expect::kDeferredImage)
+                .run(/*requestedOutput=*/{0, 0, 32, 32});
 
-    TestCase(r, "Crop composes with transparency-affecting color filter")
-            .source({0, 0, 32, 32}, SkColors::kBlue)
-            .applyCrop({8, 8, 24, 24}, Expect::kDeferredImage)
-            .applyColorFilter(affect_transparent(SkColors::kRed), Expect::kDeferredImage)
-            .run(/*requestedOutput=*/{0, 0, 32, 32});
+        TestCase(r, "Crop composes with transparency-affecting color filter")
+                .source({0, 0, 32, 32})
+                .applyCrop({8, 8, 24, 24}, tm, Expect::kDeferredImage)
+                .applyColorFilter(affect_transparent(SkColors::kRed), Expect::kDeferredImage)
+                .run(/*requestedOutput=*/{0, 0, 32, 32});
+    }
 }
 
 DEF_TEST_SUITE(CropBetweenColorFilters, r) {
-    TestCase(r, "Crop between regular color filters")
-            .source({0, 0, 32, 32}, SkColors::kBlue)
-            .applyColorFilter(alpha_modulate(0.8f), Expect::kDeferredImage)
-            .applyCrop({8, 8, 24, 24}, Expect::kDeferredImage)
-            .applyColorFilter(alpha_modulate(0.4f), Expect::kDeferredImage)
-            .run(/*requestedOutput=*/{0, 0, 32, 32});
+    for (SkTileMode tm : kTileModes) {
+        TestCase(r, "Crop between regular color filters")
+                .source({0, 0, 32, 32})
+                .applyColorFilter(alpha_modulate(0.8f), Expect::kDeferredImage)
+                .applyCrop({8, 8, 24, 24}, tm, Expect::kDeferredImage)
+                .applyColorFilter(alpha_modulate(0.4f), Expect::kDeferredImage)
+                .run(/*requestedOutput=*/{0, 0, 32, 32});
 
-    TestCase(r, "Crop between transparency-affecting color filters requires new image")
-            .source({0, 0, 32, 32}, SkColors::kBlue)
-            .applyColorFilter(affect_transparent(SkColors::kGreen), Expect::kDeferredImage)
-            .applyCrop({8, 8, 24, 24}, Expect::kDeferredImage)
-            .applyColorFilter(affect_transparent(SkColors::kRed), Expect::kNewImage)
-            .run(/*requestedOutput=*/{0, 0, 32, 32});
+        if (tm == SkTileMode::kDecal) {
+            TestCase(r, "Crop between transparency-affecting color filters requires new image")
+                    .source({0, 0, 32, 32})
+                    .applyColorFilter(affect_transparent(SkColors::kGreen), Expect::kDeferredImage)
+                    .applyCrop({8, 8, 24, 24}, SkTileMode::kDecal, Expect::kDeferredImage)
+                    .applyColorFilter(affect_transparent(SkColors::kRed), Expect::kNewImage)
+                    .run(/*requestedOutput=*/{0, 0, 32, 32});
 
-    TestCase(r, "Output-constrained crop between transparency-affecting color filters does not")
-            .source({0, 0, 32, 32}, SkColors::kBlue)
-            .applyColorFilter(affect_transparent(SkColors::kGreen), Expect::kDeferredImage)
-            .applyCrop({8, 8, 24, 24}, Expect::kDeferredImage)
-            .applyColorFilter(affect_transparent(SkColors::kRed), Expect::kDeferredImage)
-            .run(/*requestedOutput=*/{8, 8, 24, 24});
+            TestCase(r, "Output-constrained crop between transparency-affecting filters does not")
+                    .source({0, 0, 32, 32})
+                    .applyColorFilter(affect_transparent(SkColors::kGreen), Expect::kDeferredImage)
+                    .applyCrop({8, 8, 24, 24}, SkTileMode::kDecal, Expect::kDeferredImage)
+                    .applyColorFilter(affect_transparent(SkColors::kRed), Expect::kDeferredImage)
+                    .run(/*requestedOutput=*/{8, 8, 24, 24});
+        } else {
+            TestCase(r, "Tiling between transparency-affecting color filters defers image")
+                    .source({0, 0, 32, 32})
+                    .applyColorFilter(affect_transparent(SkColors::kGreen), Expect::kDeferredImage)
+                    .applyCrop({8, 8, 24, 24}, tm, Expect::kDeferredImage)
+                    .applyColorFilter(affect_transparent(SkColors::kRed), Expect::kDeferredImage)
+                    .run(/*requestedOutput=*/{0, 0, 32, 32});
+        }
 
-    TestCase(r, "Crop between regular and ATB color filters")
-            .source({0, 0, 32, 32}, SkColors::kBlue)
-            .applyColorFilter(alpha_modulate(0.5f), Expect::kDeferredImage)
-            .applyCrop({8, 8, 24, 24}, Expect::kDeferredImage)
-            .applyColorFilter(affect_transparent(SkColors::kRed), Expect::kDeferredImage)
-            .run(/*requestedOutput=*/{0, 0, 32, 32});
+        TestCase(r, "Crop between regular and ATB color filters")
+                .source({0, 0, 32, 32})
+                .applyColorFilter(alpha_modulate(0.5f), Expect::kDeferredImage)
+                .applyCrop({8, 8, 24, 24}, tm, Expect::kDeferredImage)
+                .applyColorFilter(affect_transparent(SkColors::kRed), Expect::kDeferredImage)
+                .run(/*requestedOutput=*/{0, 0, 32, 32});
 
-    TestCase(r, "Crop between ATB and regular color filters")
-            .source({0, 0, 32, 32}, SkColors::kBlue)
-            .applyColorFilter(affect_transparent(SkColors::kRed), Expect::kDeferredImage)
-            .applyCrop({8, 8, 24, 24}, Expect::kDeferredImage)
-            .applyColorFilter(alpha_modulate(0.5f), Expect::kDeferredImage)
-            .run(/*requestedOutput=*/{0, 0, 32, 32});
+        TestCase(r, "Crop between ATB and regular color filters")
+                .source({0, 0, 32, 32})
+                .applyColorFilter(affect_transparent(SkColors::kRed), Expect::kDeferredImage)
+                .applyCrop({8, 8, 24, 24}, tm, Expect::kDeferredImage)
+                .applyColorFilter(alpha_modulate(0.5f), Expect::kDeferredImage)
+                .run(/*requestedOutput=*/{0, 0, 32, 32});
+    }
 }
 
 DEF_TEST_SUITE(ColorFilterBetweenCrops, r) {
-    TestCase(r, "Regular color filter between crops")
-            .source({0, 0, 32, 32}, SkColors::kBlue)
-            .applyCrop({4, 4, 24, 24}, Expect::kDeferredImage)
-            .applyColorFilter(alpha_modulate(0.5f), Expect::kDeferredImage)
-            .applyCrop({15, 15, 32, 32}, Expect::kDeferredImage)
-            .run(/*requestedOutput=*/{0, 0, 32, 32});
+    for (SkTileMode firstTM : kTileModes) {
+        for (SkTileMode secondTM : kTileModes) {
+            Expect newImageIfNotDecalOrDoubleClamp =
+                    secondTM != SkTileMode::kDecal &&
+                    !(secondTM == SkTileMode::kClamp && firstTM == SkTileMode::kClamp) ?
+                            Expect::kNewImage : Expect::kDeferredImage;
 
-    TestCase(r, "Transparency-affecting color filter between crops")
-            .source({0, 0, 32, 32}, SkColors::kBlue)
-            .applyCrop({4, 4, 24, 24}, Expect::kDeferredImage)
-            .applyColorFilter(affect_transparent(SkColors::kGreen), Expect::kDeferredImage)
-            .applyCrop({15, 15, 32, 32}, Expect::kDeferredImage)
-            .run(/*requestedOutput=*/{0, 0, 32, 32});
+            TestCase(r, "Regular color filter between crops")
+                    .source({0, 0, 32, 32})
+                    .applyCrop({4, 4, 24, 24}, firstTM, Expect::kDeferredImage)
+                    .applyColorFilter(alpha_modulate(0.5f), Expect::kDeferredImage)
+                    .applyCrop({15, 15, 32, 32}, secondTM, newImageIfNotDecalOrDoubleClamp,
+                               secondTM == SkTileMode::kDecal ? firstTM : secondTM)
+                    .run(/*requestedOutput=*/{0, 0, 32, 32});
+
+            TestCase(r, "Transparency-affecting color filter between crops")
+                    .source({0, 0, 32, 32})
+                    .applyCrop({4, 4, 24, 24}, firstTM, Expect::kDeferredImage)
+                    .applyColorFilter(affect_transparent(SkColors::kGreen), Expect::kDeferredImage)
+                    .applyCrop({15, 15, 32, 32}, secondTM, newImageIfNotDecalOrDoubleClamp,
+                               secondTM == SkTileMode::kDecal ? firstTM : secondTM)
+                    .run(/*requestedOutput=*/{0, 0, 32, 32});
+        }
+    }
 }
 
 DEF_TEST_SUITE(CroppedTransformedColorFilter, r) {
     TestCase(r, "Transform -> crop -> regular color filter")
-            .source({0, 0, 32, 32}, SkColors::kRed)
+            .source({0, 0, 32, 32})
             .applyTransform(SkMatrix::RotateDeg(30.f, {16, 16}), Expect::kDeferredImage)
             .applyCrop({2, 2, 30, 30}, Expect::kDeferredImage)
             .applyColorFilter(alpha_modulate(0.5f), Expect::kDeferredImage)
             .run(/*requestedOutput=*/{0, 0, 32, 32});
 
     TestCase(r, "Transform -> regular color filter -> crop")
-            .source({0, 0, 32, 32}, SkColors::kRed)
+            .source({0, 0, 32, 32})
             .applyTransform(SkMatrix::RotateDeg(30.f, {16, 16}), Expect::kDeferredImage)
             .applyColorFilter(alpha_modulate(0.5f), Expect::kDeferredImage)
             .applyCrop({2, 2, 30, 30}, Expect::kDeferredImage)
             .run(/*requestedOutput=*/{0, 0, 32, 32});
 
     TestCase(r, "Crop -> transform -> regular color filter")
-            .source({0, 0, 32, 32}, SkColors::kRed)
+            .source({0, 0, 32, 32})
             .applyCrop({2, 2, 30, 30}, Expect::kDeferredImage)
             .applyTransform(SkMatrix::RotateDeg(30.f, {16, 16}), Expect::kDeferredImage)
             .applyColorFilter(alpha_modulate(0.5f), Expect::kDeferredImage)
             .run(/*requestedOutput=*/{0, 0, 32, 32});
 
     TestCase(r, "Crop -> regular color filter -> transform")
-            .source({0, 0, 32, 32}, SkColors::kRed)
+            .source({0, 0, 32, 32})
             .applyCrop({2, 2, 30, 30}, Expect::kDeferredImage)
             .applyColorFilter(alpha_modulate(0.5f), Expect::kDeferredImage)
             .applyTransform(SkMatrix::RotateDeg(30.f, {16, 16}), Expect::kDeferredImage)
             .run(/*requestedOutput=*/{0, 0, 32, 32});
 
     TestCase(r, "Regular color filter -> transform -> crop")
-            .source({0, 0, 32, 32}, SkColors::kRed)
+            .source({0, 0, 32, 32})
             .applyColorFilter(alpha_modulate(0.5f), Expect::kDeferredImage)
             .applyTransform(SkMatrix::RotateDeg(30.f, {16, 16}), Expect::kDeferredImage)
             .applyCrop({2, 2, 30, 30}, Expect::kDeferredImage)
             .run(/*requestedOutput=*/{0, 0, 32, 32});
 
     TestCase(r, "Regular color filter -> crop -> transform")
-            .source({0, 0, 32, 32}, SkColors::kRed)
+            .source({0, 0, 32, 32})
             .applyColorFilter(alpha_modulate(0.5f), Expect::kDeferredImage)
             .applyCrop({2, 2, 30, 30}, Expect::kDeferredImage)
             .applyTransform(SkMatrix::RotateDeg(30.f, {16, 16}), Expect::kDeferredImage)
@@ -1583,28 +1881,28 @@ DEF_TEST_SUITE(CroppedTransformedTransparencyAffectingColorFilter, r) {
     // either the order of operations or the bounds propagation means that every action can be
     // deferred. Below, when the crop is between the two actions, new images are triggered.
     TestCase(r, "Transform -> transparency-affecting color filter -> crop")
-            .source({0, 0, 32, 32}, SkColors::kRed)
+            .source({0, 0, 32, 32})
             .applyTransform(SkMatrix::RotateDeg(30.f, {16, 16}), Expect::kDeferredImage)
             .applyColorFilter(affect_transparent(SkColors::kGreen), Expect::kDeferredImage)
             .applyCrop({2, 2, 30, 30}, Expect::kDeferredImage)
             .run(/*requestedOutput=*/{0, 0, 32, 32});
 
     TestCase(r, "Crop -> transform -> transparency-affecting color filter")
-            .source({0, 0, 32, 32}, SkColors::kRed)
+            .source({0, 0, 32, 32})
             .applyCrop({2, 2, 30, 30}, Expect::kDeferredImage)
             .applyTransform(SkMatrix::RotateDeg(30.f, {16, 16}), Expect::kDeferredImage)
             .applyColorFilter(affect_transparent(SkColors::kGreen), Expect::kDeferredImage)
             .run(/*requestedOutput=*/{0, 0, 32, 32});
 
     TestCase(r, "Crop -> transparency-affecting color filter -> transform")
-            .source({0, 0, 32, 32}, SkColors::kRed)
+            .source({0, 0, 32, 32})
             .applyCrop({2, 2, 30, 30}, Expect::kDeferredImage)
             .applyColorFilter(affect_transparent(SkColors::kGreen), Expect::kDeferredImage)
             .applyTransform(SkMatrix::RotateDeg(30.f, {16, 16}), Expect::kDeferredImage)
             .run(/*requestedOutput=*/{0, 0, 32, 32});
 
     TestCase(r, "Transparency-affecting color filter -> transform -> crop")
-            .source({0, 0, 32, 32}, SkColors::kRed)
+            .source({0, 0, 32, 32})
             .applyColorFilter(affect_transparent(SkColors::kGreen), Expect::kDeferredImage)
             .applyTransform(SkMatrix::RotateDeg(30.f, {16, 16}), Expect::kDeferredImage)
             .applyCrop({2, 2, 30, 30}, Expect::kDeferredImage)
@@ -1614,14 +1912,14 @@ DEF_TEST_SUITE(CroppedTransformedTransparencyAffectingColorFilter, r) {
     // outside the crop is introduced that should not be affected by the color filter were no
     // new image to be created.
     TestCase(r, "Transform -> crop -> transparency-affecting color filter")
-            .source({0, 0, 32, 32}, SkColors::kRed)
+            .source({0, 0, 32, 32})
             .applyTransform(SkMatrix::RotateDeg(30.f, {16, 16}), Expect::kDeferredImage)
             .applyCrop({2, 2, 30, 30}, Expect::kDeferredImage)
             .applyColorFilter(affect_transparent(SkColors::kGreen), Expect::kNewImage)
             .run(/*requestedOutput=*/{0, 0, 32, 32});
 
     TestCase(r, "Transparency-affecting color filter -> crop -> transform")
-            .source({0, 0, 32, 32}, SkColors::kRed)
+            .source({0, 0, 32, 32})
             .applyColorFilter(affect_transparent(SkColors::kGreen), Expect::kDeferredImage)
             .applyCrop({2, 2, 30, 30}, Expect::kDeferredImage)
             .applyTransform(SkMatrix::RotateDeg(30.f, {16, 16}), Expect::kNewImage)
@@ -1630,14 +1928,14 @@ DEF_TEST_SUITE(CroppedTransformedTransparencyAffectingColorFilter, r) {
     // However if the output is small enough to fit within the transformed interior, the
     // transparency is not visible.
     TestCase(r, "Transform -> crop -> transparency-affecting color filter")
-            .source({0, 0, 32, 32}, SkColors::kRed)
+            .source({0, 0, 32, 32})
             .applyTransform(SkMatrix::RotateDeg(30.f, {16, 16}), Expect::kDeferredImage)
             .applyCrop({2, 2, 30, 30}, Expect::kDeferredImage)
             .applyColorFilter(affect_transparent(SkColors::kGreen), Expect::kDeferredImage)
             .run(/*requestedOutput=*/{15, 15, 21, 21});
 
     TestCase(r, "Transparency-affecting color filter -> crop -> transform")
-            .source({0, 0, 32, 32}, SkColors::kRed)
+            .source({0, 0, 32, 32})
             .applyColorFilter(affect_transparent(SkColors::kGreen), Expect::kDeferredImage)
             .applyCrop({2, 2, 30, 30}, Expect::kDeferredImage)
             .applyTransform(SkMatrix::RotateDeg(30.f, {16, 16}), Expect::kDeferredImage)

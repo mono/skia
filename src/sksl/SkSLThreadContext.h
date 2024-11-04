@@ -23,7 +23,6 @@
 namespace SkSL {
 
 class Compiler;
-class ModifiersPool;
 class Pool;
 class ProgramElement;
 class Variable;
@@ -59,17 +58,17 @@ public:
     static void End();
 
     /**
-     * Returns the Compiler used by DSL operations in the current thread.
+     * Returns the Compiler used by SkSL in the current thread.
      */
     static SkSL::Compiler& Compiler() { return *Instance().fCompiler; }
 
     /**
-     * Returns the Context used by DSL operations in the current thread.
+     * Returns the Context used by SkSL in the current thread.
      */
     static SkSL::Context& Context();
 
     /**
-     * Returns the collection to which DSL program elements in this thread should be appended.
+     * Returns the collection to which SkSL program elements in this thread should be appended.
      */
     static std::vector<std::unique_ptr<SkSL::ProgramElement>>& ProgramElements() {
         return Instance().fProgramElements;
@@ -132,11 +131,9 @@ private:
     void setupSymbolTable();
 
     std::unique_ptr<SkSL::ProgramConfig> fConfig;
-    std::unique_ptr<SkSL::ModifiersPool> fModifiersPool;
     SkSL::Compiler* fCompiler;
     std::unique_ptr<Pool> fPool;
     SkSL::ProgramConfig* fOldConfig;
-    SkSL::ModifiersPool* fOldModifiersPool;
     std::vector<std::unique_ptr<SkSL::ProgramElement>> fProgramElements;
     std::vector<const SkSL::ProgramElement*> fSharedElements;
     DefaultErrorReporter fDefaultErrorReporter;

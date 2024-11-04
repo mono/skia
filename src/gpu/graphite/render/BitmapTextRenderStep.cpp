@@ -9,15 +9,17 @@
 
 #include "include/core/SkM44.h"
 #include "include/gpu/graphite/Recorder.h"
+#include "src/gpu/graphite/AtlasProvider.h"
 #include "src/gpu/graphite/ContextUtils.h"
 #include "src/gpu/graphite/DrawParams.h"
 #include "src/gpu/graphite/DrawWriter.h"
 #include "src/gpu/graphite/PipelineData.h"
 #include "src/gpu/graphite/RecorderPriv.h"
 #include "src/gpu/graphite/render/CommonDepthStencilSettings.h"
-#include "src/gpu/graphite/text/AtlasManager.h"
+#include "src/gpu/graphite/text/TextAtlasManager.h"
 #include "src/sksl/SkSLString.h"
 #include "src/text/gpu/SubRunContainer.h"
+#include "src/text/gpu/VertexFiller.h"
 
 using AtlasSubRun = sktext::gpu::AtlasSubRun;
 
@@ -34,8 +36,9 @@ BitmapTextRenderStep::BitmapTextRenderStep()
         : RenderStep("BitmapTextRenderStep",
                      "",
                      Flags::kPerformsShading | Flags::kHasTextures | Flags::kEmitsCoverage,
-                     /*uniforms=*/{{"deviceMatrix", SkSLType::kFloat4x4},
-                                   {"atlasSizeInv", SkSLType::kFloat2}},
+                     /*uniforms=*/{{"subRunDeviceMatrix", SkSLType::kFloat4x4},
+                                   {"deviceToLocal"     , SkSLType::kFloat4x4},
+                                   {"atlasSizeInv"      , SkSLType::kFloat2}},
                      PrimitiveType::kTriangleStrip,
                      kDirectDepthGEqualPass,
                      /*vertexAttrs=*/ {},
@@ -59,8 +62,16 @@ std::string BitmapTextRenderStep::vertexSkSL() const {
         "float2 baseCoords = float2(float(sk_VertexID >> 1), float(sk_VertexID & 1));"
         "baseCoords.xy *= float2(size);"
 
-        "stepLocalCoords = strikeToSourceScale*baseCoords + float2(xyPos);"
-        "float4 position = deviceMatrix*float4(stepLocalCoords, 0, 1);"
+        // Sub runs have a decomposed transform and are sometimes already transformed into device
+        // space, in which `subRunCoords` represents the bounds projected to device space without
+        // the local-to-device translation and `subRunDeviceMatrix` contains the translation.
+        "float2 subRunCoords = strikeToSourceScale * baseCoords + float2(xyPos);"
+        "float4 position = subRunDeviceMatrix * float4(subRunCoords, 0, 1);"
+
+        // Calculate the local coords used for shading.
+        // TODO(b/246963258): This is incorrect if the transform has perspective, which would
+        // require a division + a valid z coordinate (which is currently set to 0).
+        "stepLocalCoords = (deviceToLocal * position).xy;"
 
         "float2 unormTexCoords = baseCoords + float2(uvPos);"
         "textureCoords = unormTexCoords * atlasSizeInv;"
@@ -113,8 +124,13 @@ void BitmapTextRenderStep::writeVertices(DrawWriter* dw,
                                          int ssboIndex) const {
     const SubRunData& subRunData = params.geometry().subRunData();
 
-    subRunData.subRun()->fillInstanceData(dw, subRunData.startGlyphIndex(), subRunData.glyphCount(),
-                                          ssboIndex, params.order().depthAsFloat());
+    subRunData.subRun()->vertexFiller().fillInstanceData(dw,
+                                                         subRunData.startGlyphIndex(),
+                                                         subRunData.glyphCount(),
+                                                         subRunData.subRun()->instanceFlags(),
+                                                         ssboIndex,
+                                                         subRunData.subRun()->glyphs(),
+                                                         params.order().depthAsFloat());
 }
 
 void BitmapTextRenderStep::writeUniformsAndTextures(const DrawParams& params,
@@ -125,12 +141,13 @@ void BitmapTextRenderStep::writeUniformsAndTextures(const DrawParams& params,
     unsigned int numProxies;
     Recorder* recorder = subRunData.recorder();
     const sk_sp<TextureProxy>* proxies =
-            recorder->priv().atlasManager()->getProxies(subRunData.subRun()->maskFormat(),
-                                                        &numProxies);
+            recorder->priv().atlasProvider()->textAtlasManager()->getProxies(
+                    subRunData.subRun()->maskFormat(), &numProxies);
     SkASSERT(proxies && numProxies > 0);
 
     // write uniforms
-    gatherer->write(params.transform());
+    gatherer->write(params.transform());  // subRunDeviceMatrix
+    gatherer->write(subRunData.deviceToLocal());
     SkV2 atlasDimensionsInverse = {1.f/proxies[0]->dimensions().width(),
                                    1.f/proxies[0]->dimensions().height()};
     gatherer->write(atlasDimensionsInverse);

@@ -48,12 +48,6 @@ config("skia_public") {
   if (skia_enable_sksl) {
     defines += [ "SK_ENABLE_SKSL" ]
   }
-  if (skia_enable_sksl_in_raster_pipeline) {
-    defines += [ "SK_ENABLE_SKSL_IN_RASTER_PIPELINE" ]
-  }
-  if (skia_enable_skvm) {
-    defines += [ "SK_ENABLE_SKVM" ]
-  }
   if (skia_enable_precompile) {
     defines += [ "SK_ENABLE_PRECOMPILE" ]
   }
@@ -81,6 +75,9 @@ config("skia_public") {
   }
   if (skia_use_perfetto) {
     defines += [ "SK_USE_PERFETTO" ]
+  }
+  if (skia_use_safe_libcxx) {
+    defines += [ "_LIBCPP_ENABLE_ASSERTIONS=1" ]
   }
 
   # Some older versions of the Clang toolchain change the visibility of
@@ -202,16 +199,6 @@ opts("hsw") {
     cflags = [ "/arch:AVX2" ]
   } else {
     cflags = [ "-march=haswell" ]
-  }
-}
-
-opts("skx") {
-  enabled = is_x86
-  sources = skia_opts.skx_sources
-  if (is_win) {
-    cflags = [ "/arch:AVX512" ]
-  } else {
-    cflags = [ "-march=skylake-avx512" ]
   }
 }
 
@@ -526,6 +513,22 @@ optional("fontmgr_win") {
     "src/ports/SkTypeface_win_dw.cpp",
     "src/ports/SkTypeface_win_dw.h",
   ]
+  if (skia_dwritecore_sdk != "") {
+    defines = [ "DWRITE_CORE" ]
+    if (is_win && is_clang) {
+      # Clang complains about these headers, so mark them as system. These
+      # headers are hiding SDK headers of the same name, which are also
+      # included as system headers, so these need to go first in the cflags
+      # "includes" before the SDK. gn appends configs in the order listed,
+      # so these flags will be first.
+      cflags = [
+        "-imsvc",
+        "${skia_dwritecore_sdk}/include",
+      ]
+    } else {
+      include_dirs = [ "${skia_dwritecore_sdk}/include" ]
+    }
+  }
 }
 optional("fontmgr_win_factory") {
   enabled = skia_enable_fontmgr_win
@@ -744,8 +747,6 @@ if (skia_compile_sksl_tests) {
       "SKSL_ENABLE_TRACING",
       "SKSL_STANDALONE",
       "SK_DISABLE_TRACING",
-      "SK_ENABLE_SKVM",
-      "SK_ENABLE_SKSL_IN_RASTER_PIPELINE",
       "SK_ENABLE_SPIRV_CROSS",
       "SK_ENABLE_SPIRV_VALIDATION",
       "SK_ENABLE_WGSL_VALIDATION",
@@ -776,7 +777,6 @@ if (skia_compile_sksl_tests) {
     include_dirs = [ "." ]
     deps = [
       ":run_sksllex",
-      ":skvm_jit",
       "//third_party/externals/dawn/src/tint:libtint",
       "//third_party/externals/spirv-tools:spvtools",
       "//third_party/externals/spirv-tools:spvtools_val",
@@ -830,9 +830,11 @@ if (skia_compile_sksl_tests) {
         sources += [ src ]
 
         foreach(outExtension, invoker.outExtensions) {
-          # SPIR-V uses separate extensions for .vert shaders.
+          # SPIR-V uses separate extensions for .vert and .compute shaders.
           if (ext == "vert" && outExtension == ".asm.frag") {
             outExtension = ".asm.vert"
+          } else if (ext == "compute" && outExtension == ".asm.frag") {
+            outExtension = ".asm.comp"
           }
           outputs +=
               [ target_out_dir + "/" +
@@ -1153,7 +1155,7 @@ optional("jpeg_decode") {
       ":jpeg_mpf",
       ":xml",
     ]
-    sources += [ "src/codec/SkJpegXmp.cpp" ]
+    sources += skia_codec_jpeg_xmp
   }
 }
 
@@ -1321,9 +1323,73 @@ optional("typeface_freetype") {
   ]
 }
 
+if (skia_use_fontations) {
+  action("fontations_rust_side") {
+    bazel_args = [ "--with_fontations" ]
+    if (is_mac && target_cpu == "arm64") {
+      # TODO: Normally the target toolchain would be specified with `--platforms` but that doesn't
+      # work. When building and running on an arm64 mac, setting `--host_platform` seems to do the
+      # right thing but may not be the right build configuration in the long run.
+      bazel_args += [ "--host_platform=//bazel/platform:mac_arm64_hermetic" ]
+    }
+    if (!is_debug) {
+      bazel_args += [ "--compilation_mode=opt" ]
+    }
+    script = "gn/bazel_build.py"
+    sources = [
+      "src/ports/fontations/BUILD.bazel",
+      "src/ports/fontations/src/ffi.rs",
+    ]
+    outputs = [ "$root_out_dir/libbridge_rust_side.a" ]
+    args =
+        [
+          "//src/ports/fontations:bridge_rust_side",
+          rebase_path("//bazel-bin/src/ports/fontations/libbridge_rust_side.a",
+                      root_build_dir),
+        ] + bazel_args
+  }
+
+  action("fontations_ffi") {
+    bazel_args = [ "--with_fontations" ]
+    if (is_mac && target_cpu == "arm64") {
+      # TODO: Normally the target toolchain would be specified with `--platforms` but that doesn't
+      # work. When building and running on an arm64 mac, setting `--host_platform` seems to do the
+      # right thing but may not be the right build configuration in the long run.
+      bazel_args += [ "--host_platform=//bazel/platform:mac_arm64_hermetic" ]
+    }
+    if (!is_debug) {
+      bazel_args += [ "--compilation_mode=opt" ]
+    }
+    script = "gn/bazel_build.py"
+    sources = [
+      "src/ports/fontations/BUILD.bazel",
+      "src/ports/fontations/src/ffi.rs",
+    ]
+    outputs = [ "$root_out_dir/libfontations_ffi.a" ]
+    args = [
+             "//src/ports/fontations:fontations_ffi",
+             rebase_path("//bazel-bin/src/ports/fontations/libfontations_ffi.a",
+                         root_build_dir),
+           ] + bazel_args
+  }
+}
+
 optional("typeface_fontations") {
   public_defines = [ "SK_TYPEFACE_FACTORY_FONTATIONS" ]
   enabled = skia_use_fontations
+  if (enabled) {
+    public_include_dirs = [ "bazel-bin/" ]
+  }
+
+  deps = [
+    ":fontations_ffi",
+    ":fontations_rust_side",
+  ]
+
+  libs = [
+    "$root_out_dir/libfontations_ffi.a",
+    "$root_out_dir/libbridge_rust_side.a",
+  ]
   sources = [
     "src/ports/SkTypeface_fontations.cpp",
     "src/ports/SkTypeface_fontations_priv.h",
@@ -1359,15 +1425,10 @@ optional("xml") {
   public_defines = [ "SK_XML" ]
 
   deps = [ "//third_party/expat" ]
-  sources = skia_xml_sources + [
+  sources = skia_xml_sources + skia_codec_xmp + [
               "src/svg/SkSVGCanvas.cpp",
               "src/svg/SkSVGDevice.cpp",
             ]
-}
-
-optional("skvm_jit") {
-  enabled = skia_enable_skvm_jit_when_possible
-  public_defines = [ "SKVM_JIT_WHEN_POSSIBLE" ]
 }
 
 if (skia_enable_ganesh && skia_generate_workarounds) {
@@ -1431,9 +1492,8 @@ skia_component("skia") {
     ":ndk_images",
     ":png_decode",
     ":raw",
-    ":skvm_jit",
-    ":skx",
     ":ssse3",
+    ":typeface_fontations",
     ":vello",
     ":webp_decode",
     ":wuffs",
@@ -1479,6 +1539,7 @@ skia_component("skia") {
   if (skia_enable_sksl) {
     deps += [ ":minify_sksl" ]
     sources += skia_sksl_sources
+    sources += skia_needs_sksl_sources
     sources += skia_colorfilters_sksl_sources
 
     if (skia_enable_sksl_tracing) {
@@ -1584,10 +1645,6 @@ skia_component("skia") {
     defines += [ "SK_ENABLE_SPIRV_VALIDATION" ]
   }
 
-  if (skia_use_fontations) {
-    deps += [ ":typeface_fontations" ]
-  }
-
   if (skia_include_multiframe_procs) {
     sources += [ "tools/SkSharingProc.cpp" ]
   }
@@ -1597,6 +1654,10 @@ skia_component("skia") {
   if (skia_android_framework_use_perfetto) {
     defines += [ "SK_ANDROID_FRAMEWORK_USE_PERFETTO" ]
     sources += [ "src/android/SkAndroidFrameworkPerfettoStaticStorage.cpp" ]
+  }
+
+  if (!skia_enable_ganesh && !skia_enable_graphite) {
+    sources += skia_no_slug_srcs
   }
 }
 
@@ -1925,7 +1986,10 @@ if (skia_enable_tools) {
       "tools/gpu/ManagedBackendTexture.h",
       "tools/gpu/MemoryCache.cpp",
       "tools/gpu/MemoryCache.h",
+      "tools/gpu/ProtectedUtils.cpp",
+      "tools/gpu/ProtectedUtils.h",
       "tools/gpu/ProxyUtils.cpp",
+      "tools/gpu/ProxyUtils.h",
       "tools/gpu/TestContext.cpp",
       "tools/gpu/TestOps.cpp",
       "tools/gpu/TestOps.h",
@@ -1935,6 +1999,7 @@ if (skia_enable_tools) {
                                          # GrContextFactory workaround.
       "tools/gpu/mock/MockTestContext.cpp",
     ]
+    sources += skia_utils_gpu
 
     libs = []
     frameworks = []
@@ -2007,16 +2072,16 @@ if (skia_enable_tools) {
       sources += [ "tools/graphite/GraphiteTestContext.h" ]
       sources += [ "tools/graphite/GraphiteTestContext.cpp" ]
       if (skia_use_dawn) {
-        sources += [ "tools/graphite/dawn/DawnTestContext.cpp" ]
+        sources += [ "tools/graphite/dawn/GraphiteDawnTestContext.cpp" ]
         sources += [ "tools/graphite/dawn/GraphiteDawnTestContext.h" ]
       }
       if (skia_use_metal) {
         sources += [ "tools/graphite/mtl/GraphiteMtlTestContext.h" ]
-        sources += [ "tools/graphite/mtl/MtlTestContext.mm" ]
+        sources += [ "tools/graphite/mtl/GraphiteMtlTestContext.mm" ]
       }
       if (skia_use_vulkan) {
-        sources += [ "tools/graphite/vk/VulkanTestContext.cpp" ]
-        sources += [ "tools/graphite/vk/VulkanTestContext.h" ]
+        sources += [ "tools/graphite/vk/GraphiteVulkanTestContext.cpp" ]
+        sources += [ "tools/graphite/vk/GraphiteVulkanTestContext.h" ]
       }
     }
 
@@ -2296,8 +2361,10 @@ if (skia_enable_tools) {
         deps = [ "modules/skottie:tool_gpu" ]
       }
     }
-    test_app("svg_tool") {
-      deps = [ "modules/svg:tool" ]
+    if (skia_enable_svg && skia_use_expat && defined(is_skia_standalone)) {
+      test_app("svg_tool") {
+        deps = [ "modules/svg:tool" ]
+      }
     }
   }
 
@@ -2323,28 +2390,6 @@ if (skia_enable_tools) {
       deps = [
         ":skia",
         "modules/skcms",
-      ]
-    }
-    test_app("fm") {
-      sources = [
-        "dm/DMGpuTestProcs.cpp",  # blech
-        "tools/fm/fm.cpp",
-      ]
-      deps = [
-        ":common_flags_aa",
-        ":common_flags_fontmgr",
-        ":common_flags_gpu",
-        ":flags",
-        ":gm",
-        ":gpu_tool_utils",
-        ":hash_and_encode",
-        ":skia",
-        ":tests",
-        ":tool_utils",
-        ":trace",
-        "modules/skottie",
-        "modules/skottie:utils",
-        "modules/svg",
       ]
     }
     test_app("dm") {
@@ -2582,6 +2627,9 @@ if (skia_enable_tools) {
       "tools/debugger/DrawCommand.cpp",
       "tools/debugger/JsonWriteBuffer.cpp",
     ]
+    if (skia_enable_graphite && skia_enable_precompile) {
+      sources += [ "fuzz/FuzzPrecompile.cpp" ]
+    }
     deps = [
       ":flags",
       ":gpu_tool_utils",
@@ -2723,12 +2771,8 @@ if (skia_enable_tools) {
       "tools/sk_app/Application.h",
       "tools/sk_app/CommandSet.cpp",
       "tools/sk_app/CommandSet.h",
-      "tools/sk_app/DisplayParams.h",
-      "tools/sk_app/RasterWindowContext.h",
       "tools/sk_app/Window.cpp",
       "tools/sk_app/Window.h",
-      "tools/sk_app/WindowContext.cpp",
-      "tools/sk_app/WindowContext.h",
     ]
     libs = []
     frameworks = []
@@ -2736,8 +2780,6 @@ if (skia_enable_tools) {
     if (is_android) {
       sources += [
         "tools/SkGetExecutablePath_linux.cpp",
-        "tools/sk_app/android/RasterWindowContext_android.cpp",
-        "tools/sk_app/android/WindowContextFactory_android.h",
         "tools/sk_app/android/Window_android.cpp",
         "tools/sk_app/android/Window_android.h",
         "tools/sk_app/android/main_android.cpp",
@@ -2748,8 +2790,6 @@ if (skia_enable_tools) {
     } else if (is_linux) {
       sources += [
         "tools/SkGetExecutablePath_linux.cpp",
-        "tools/sk_app/unix/RasterWindowContext_unix.cpp",
-        "tools/sk_app/unix/WindowContextFactory_unix.h",
         "tools/sk_app/unix/Window_unix.cpp",
         "tools/sk_app/unix/Window_unix.h",
         "tools/sk_app/unix/keysym2ucs.c",
@@ -2763,8 +2803,6 @@ if (skia_enable_tools) {
     } else if (is_win) {
       sources += [
         "tools/SkGetExecutablePath_win.cpp",
-        "tools/sk_app/win/RasterWindowContext_win.cpp",
-        "tools/sk_app/win/WindowContextFactory_win.h",
         "tools/sk_app/win/Window_win.cpp",
         "tools/sk_app/win/Window_win.h",
         "tools/sk_app/win/main_win.cpp",
@@ -2772,7 +2810,6 @@ if (skia_enable_tools) {
     } else if (is_mac) {
       sources += [
         "tools/SkGetExecutablePath_mac.cpp",
-        "tools/sk_app/mac/WindowContextFactory_mac.h",
         "tools/sk_app/mac/Window_mac.h",
         "tools/sk_app/mac/Window_mac.mm",
         "tools/sk_app/mac/main_mac.mm",
@@ -2785,7 +2822,6 @@ if (skia_enable_tools) {
     } else if (is_ios) {
       sources += [
         "tools/SkGetExecutablePath_mac.cpp",
-        "tools/sk_app/ios/WindowContextFactory_ios.h",
         "tools/sk_app/ios/Window_ios.h",
         "tools/sk_app/ios/Window_ios.mm",
         "tools/sk_app/ios/main_ios.mm",
@@ -2793,104 +2829,10 @@ if (skia_enable_tools) {
       frameworks += [ "QuartzCore.framework" ]
     }
 
-    if (skia_use_gl) {
-      sources += [ "tools/sk_app/GLWindowContext.cpp" ]
-      sources += [ "tools/sk_app/GLWindowContext.h" ]
-      if (is_android) {
-        sources += [ "tools/sk_app/android/GLWindowContext_android.cpp" ]
-      } else if (is_linux) {
-        sources += [ "tools/sk_app/unix/GLWindowContext_unix.cpp" ]
-      } else if (is_win) {
-        sources += [ "tools/sk_app/win/GLWindowContext_win.cpp" ]
-        if (skia_use_angle) {
-          sources += [ "tools/sk_app/win/ANGLEWindowContext_win.cpp" ]
-        }
-      } else if (is_mac) {
-        sources += [
-          "tools/sk_app/mac/GLWindowContext_mac.mm",
-          "tools/sk_app/mac/RasterWindowContext_mac.mm",
-        ]
-      } else if (is_ios) {
-        sources += [
-          "tools/sk_app/ios/GLWindowContext_ios.mm",
-          "tools/sk_app/ios/RasterWindowContext_ios.mm",
-        ]
-      }
-    }
-
-    if (skia_use_vulkan) {
-      sources += [ "tools/sk_app/VulkanWindowContext.cpp" ]
-      sources += [ "tools/sk_app/VulkanWindowContext.h" ]
-      if (is_android) {
-        sources += [ "tools/sk_app/android/VulkanWindowContext_android.cpp" ]
-      } else if (is_linux) {
-        sources += [ "tools/sk_app/unix/VulkanWindowContext_unix.cpp" ]
-        libs += [ "X11-xcb" ]
-      } else if (is_win) {
-        sources += [ "tools/sk_app/win/VulkanWindowContext_win.cpp" ]
-      }
-    }
-
-    if (skia_use_metal) {
-      sources += [ "tools/sk_app/MetalWindowContext.mm" ]
-      sources += [ "tools/sk_app/MetalWindowContext.h" ]
-      if (skia_enable_graphite) {
-        sources += [ "tools/sk_app/GraphiteMetalWindowContext.mm" ]
-        sources += [ "tools/sk_app/GraphiteMetalWindowContext.h" ]
-      }
-      if (is_mac) {
-        sources += [ "tools/sk_app/mac/MetalWindowContext_mac.mm" ]
-        if (skia_enable_graphite) {
-          sources += [ "tools/sk_app/mac/GraphiteMetalWindowContext_mac.mm" ]
-        }
-      } else if (is_ios) {
-        sources += [ "tools/sk_app/ios/MetalWindowContext_ios.mm" ]
-      }
-    }
-
-    if (skia_use_direct3d) {
-      sources += [ "tools/sk_app/win/D3D12WindowContext_win.cpp" ]
-    }
-
-    if (skia_use_dawn) {
-      sources += [ "tools/sk_app/DawnWindowContext.cpp" ]
-      sources += [ "tools/sk_app/DawnWindowContext.h" ]
-      if (is_linux) {
-        if (dawn_enable_vulkan) {
-          sources += [ "tools/sk_app/unix/DawnVulkanWindowContext_unix.cpp" ]
-          defines = [ "VK_USE_PLATFORM_XCB_KHR" ]
-          libs += [ "X11-xcb" ]
-          if (skia_enable_graphite) {
-            sources +=
-                [ "tools/sk_app/unix/GraphiteDawnVulkanWindowContext_unix.cpp" ]
-            sources += [ "tools/sk_app/GraphiteDawnWindowContext.cpp" ]
-            sources += [ "tools/sk_app/GraphiteDawnWindowContext.h" ]
-          }
-        }
-      } else if (is_win) {
-        if (dawn_enable_d3d12) {
-          sources += [ "tools/sk_app/win/DawnD3D12WindowContext_win.cpp" ]
-          if (skia_enable_graphite) {
-            sources +=
-                [ "tools/sk_app/win/GraphiteDawnD3D12WindowContext_win.cpp" ]
-            sources += [ "tools/sk_app/GraphiteDawnWindowContext.cpp" ]
-            sources += [ "tools/sk_app/GraphiteDawnWindowContext.h" ]
-          }
-        }
-      } else if (is_mac) {
-        if (dawn_enable_metal) {
-          sources += [ "tools/sk_app/mac/DawnMTLWindowContext_mac.mm" ]
-          if (skia_enable_graphite) {
-            sources +=
-                [ "tools/sk_app/mac/GraphiteDawnMetalWindowContext_mac.mm" ]
-            sources += [ "tools/sk_app/GraphiteDawnWindowContext.cpp" ]
-            sources += [ "tools/sk_app/GraphiteDawnWindowContext.h" ]
-          }
-        }
-      }
-    }
-
-    deps = [ ":tool_utils" ]
+    deps = [
+      ":tool_utils",
+      "tools/window",
+    ]
     if (is_android) {
       deps += [ "//third_party/native_app_glue" ]
     }
@@ -2979,6 +2921,7 @@ if (skia_enable_tools) {
         "tools/viewer/PathSlide.cpp",
         "tools/viewer/PathTessellatorsSlide.cpp",
         "tools/viewer/PathTextSlide.cpp",
+        "tools/viewer/ProtectedSlide.cpp",
         "tools/viewer/QuadStrokerSlide.cpp",
         "tools/viewer/RectanizerSlide.cpp",
         "tools/viewer/RepeatTileSlide.cpp",
@@ -3347,6 +3290,19 @@ if (skia_enable_tools) {
           "modules/svg",
           "//third_party/libpng",
         ]
+      }
+    }
+
+    if (skia_enable_graphite && skia_enable_precompile) {
+      libfuzzer_app("api_precompile") {
+        include_dirs = []
+        sources = [
+          "fuzz/FuzzPrecompile.cpp",
+          "fuzz/oss_fuzz/FuzzPrecompile.cpp",
+          "tools/fonts/TestFontMgr.cpp",
+          "tools/fonts/TestTypeface.cpp",
+        ]
+        deps = []
       }
     }
 

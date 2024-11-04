@@ -97,6 +97,7 @@
 #define DEF_MAP_WITH_NS(Ns, SkType, sk_type, Name)             \
     DEF_MAP_DECL(SkType, sk_type, Name, , Ns)
 
+DEF_CLASS_MAP(SkBBHFactory, sk_bbh_factory_t, BBHFactory)
 DEF_CLASS_MAP(SkBitmap, sk_bitmap_t, Bitmap)
 DEF_CLASS_MAP(SkCanvas, sk_canvas_t, Canvas)
 DEF_CLASS_MAP(SkCodec, sk_codec_t, Codec)
@@ -131,6 +132,7 @@ DEF_CLASS_MAP(SkPictureRecorder, sk_picture_recorder_t, PictureRecorder)
 DEF_CLASS_MAP(SkPixmap, sk_pixmap_t, Pixmap)
 DEF_CLASS_MAP(SkRegion, sk_region_t, Region)
 DEF_CLASS_MAP(SkRRect, sk_rrect_t, RRect)
+DEF_CLASS_MAP(SkRTreeFactory, sk_rtree_factory_t, RTreeFactory)
 DEF_CLASS_MAP(SkRuntimeEffect, sk_runtimeeffect_t, RuntimeEffect)
 DEF_CLASS_MAP(SkShader, sk_shader_t, Shader)
 DEF_CLASS_MAP(SkStream, sk_stream_t, Stream)
