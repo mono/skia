@@ -559,7 +559,6 @@ bool SkXmpImpl::getGainmapInfoHDRGainMap(SkGainmapInfo* info) const {
     info->fDisplayRatioSdr = 1.f;
     info->fDisplayRatioHdr = kRatioMax;
     info->fBaseImageType = SkGainmapInfo::BaseImageType::kSDR;
-    info->fType = SkGainmapInfo::Type::kMultiPicture;
     return true;
 }
 
@@ -587,13 +586,13 @@ bool SkXmpImpl::getGainmapInfoHDRGM(SkGainmapInfo* outGainmapInfo) const {
 
     // Initialize the parameters to their defaults.
     bool baseRenditionIsHDR = false;
-    SkColor4f gainMapMin = {1.f, 1.f, 1.f, 1.f};
-    SkColor4f gainMapMax = {2.f, 2.f, 2.f, 1.f};
+    SkColor4f gainMapMin = {0.f, 0.f, 0.f, 1.f};  // log2 value
+    SkColor4f gainMapMax = {1.f, 1.f, 1.f, 1.f};  // log2 value
     SkColor4f gamma = {1.f, 1.f, 1.f, 1.f};
     SkColor4f offsetSdr = {1.f / 64.f, 1.f / 64.f, 1.f / 64.f, 0.f};
     SkColor4f offsetHdr = {1.f / 64.f, 1.f / 64.f, 1.f / 64.f, 0.f};
-    SkScalar hdrCapacityMin = 1.f;
-    SkScalar hdrCapacityMax = 2.f;
+    SkScalar hdrCapacityMin = 0.f;  // log2 value
+    SkScalar hdrCapacityMax = 1.f;  // log2 value
 
     // Read all parameters that are present.
     get_attr_bool(dom, node, hdrgmPrefix, "BaseRenditionIsHDR", &baseRenditionIsHDR);
@@ -625,7 +624,6 @@ bool SkXmpImpl::getGainmapInfoHDRGM(SkGainmapInfo* outGainmapInfo) const {
     } else {
         outGainmapInfo->fBaseImageType = SkGainmapInfo::BaseImageType::kSDR;
     }
-    outGainmapInfo->fType = SkGainmapInfo::Type::kHDRGM;
     return true;
 }
 

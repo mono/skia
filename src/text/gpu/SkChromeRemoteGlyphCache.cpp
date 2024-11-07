@@ -319,7 +319,8 @@ size_t SkStrikeServerImpl::remoteStrikeMapSizeForTesting() const {
 }
 
 void SkStrikeServerImpl::writeStrikeData(std::vector<uint8_t>* memory) {
-    SkBinaryWriteBuffer buffer{nullptr, 0};
+    // We can use the default SkSerialProcs because we do not currently need to encode any SkImages.
+    SkBinaryWriteBuffer buffer{nullptr, 0, {}};
 
     // Gather statistics about what needs to be sent.
     size_t strikesToSend = 0;
@@ -455,10 +456,13 @@ public:
         SkASSERT(fStrikeServerImpl != nullptr);
     }
 
-    SkBaseDevice* onCreateDevice(const CreateInfo& cinfo, const SkPaint*) override {
+    sk_sp<SkDevice> createDevice(const CreateInfo& cinfo, const SkPaint*) override {
         const SkSurfaceProps surfaceProps(this->surfaceProps().flags(), cinfo.fPixelGeometry);
-        return new GlyphTrackingDevice(cinfo.fInfo.dimensions(), surfaceProps, fStrikeServerImpl,
-                                       cinfo.fInfo.refColorSpace(), fSDFTControl);
+        return sk_make_sp<GlyphTrackingDevice>(cinfo.fInfo.dimensions(),
+                                               surfaceProps,
+                                               fStrikeServerImpl,
+                                               cinfo.fInfo.refColorSpace(),
+                                               fSDFTControl);
     }
 
     SkStrikeDeviceInfo strikeDeviceInfo() const override {
@@ -542,11 +546,11 @@ std::unique_ptr<SkCanvas> SkStrikeServer::makeAnalysisCanvas(int width, int heig
     auto control = sktext::gpu::SDFTControl{};
 #endif
 
-    sk_sp<SkBaseDevice> trackingDevice(new GlyphTrackingDevice(
+    sk_sp<SkDevice> trackingDevice = sk_make_sp<GlyphTrackingDevice>(
             SkISize::Make(width, height),
             props, this->impl(),
             std::move(colorSpace),
-            control));
+            control);
     return std::make_unique<SkCanvas>(std::move(trackingDevice));
 }
 
@@ -636,6 +640,8 @@ bool SkStrikeClientImpl::readStrikeData(const volatile void* memory, size_t memo
     SkASSERT(memorySize != 0);
     SkASSERT(memory != nullptr);
 
+    // We do not need to set any SkDeserialProcs here because SkStrikeServerImpl::writeStrikeData
+    // did not encode any SkImages.
     SkReadBuffer buffer{const_cast<const void*>(memory), memorySize};
     // Limit the kinds of effects that appear in a glyph's drawable (crbug.com/1442140):
     buffer.setAllowSkSL(false);
@@ -810,6 +816,8 @@ bool SkStrikeClient::translateTypefaceID(SkAutoDescriptor* descriptor) const {
     return fImpl->translateTypefaceID(descriptor);
 }
 
-sk_sp<sktext::gpu::Slug> SkStrikeClient::deserializeSlugForTest(const void* data, size_t size) const {
-    return sktext::gpu::Slug::Deserialize(data, size, this);
+sk_sp<sktext::gpu::Slug> SkStrikeClient::deserializeSlugForTest(const void* data,
+                                                                size_t size,
+                                                                const SkDeserialProcs& p) const {
+    return sktext::gpu::Slug::Deserialize(data, size, this, p);
 }

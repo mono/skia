@@ -8,50 +8,74 @@
 #ifndef SkDevice_DEFINED
 #define SkDevice_DEFINED
 
-#include "include/core/SkBlender.h"
+#include "include/core/SkBlender.h"  // IWYU pragma: keep
 #include "include/core/SkCanvas.h"
+#include "include/core/SkClipOp.h"
 #include "include/core/SkColor.h"
+#include "include/core/SkImageInfo.h"
+#include "include/core/SkM44.h"
+#include "include/core/SkMatrix.h"
+#include "include/core/SkPoint.h"
+#include "include/core/SkRect.h"
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkRegion.h"
+#include "include/core/SkSamplingOptions.h"
+#include "include/core/SkScalar.h"
 #include "include/core/SkShader.h"
+#include "include/core/SkSize.h"
 #include "include/core/SkSurfaceProps.h"
+#include "include/private/base/SkAssert.h"
 #include "include/private/base/SkNoncopyable.h"
 #include "include/private/base/SkTArray.h"
 #include "src/core/SkMatrixPriv.h"
-#include "src/core/SkRasterClip.h"
-#include "src/core/SkScalerContext.h"
 #include "src/shaders/SkShaderBase.h"
 
-namespace sktext {
-class GlyphRun;
-class GlyphRunList;
-}
+#include <cstddef>
+#include <cstdint>
+#include <utility>
+
 class SkBitmap;
 class SkColorSpace;
 class SkMesh;
 struct SkDrawShadowRec;
 class SkImageFilter;
 class SkImageFilterCache;
-struct SkIRect;
 class SkRasterHandleAllocator;
 class SkSpecialImage;
+class GrRecordingContext;
+class SkData;
+class SkDrawable;
+class SkImage;
+class SkPaint;
+class SkPath;
+class SkPixmap;
+class SkRRect;
+class SkSurface;
+class SkVertices;
+enum SkColorType : int;
+enum class SkBlendMode;
+enum class SkScalerContextFlags : uint32_t;
+struct SkRSXform;
+
+namespace sktext {
+class GlyphRunList;
+}
 
 namespace skif {
 class Context;
 struct ContextInfo;
 class Mapping;
 }
-namespace skgpu {
-class TiledTextureUtils;
-}
 namespace skgpu::ganesh {
 class Device;
 }
 namespace skgpu::graphite {
 class Device;
+class Recorder;
 }
 namespace sktext::gpu {
 class SDFTControl;
+class Slug;
 }
 
 struct SkStrikeDeviceInfo {
@@ -61,15 +85,47 @@ struct SkStrikeDeviceInfo {
     const sktext::gpu::SDFTControl* const fSDFTControl;
 };
 
-class SkBaseDevice : public SkRefCnt {
+/**
+ * SkDevice is the internal API and implementation that SkCanvas will use to perform rendering and
+ * implement the saveLayer abstraction. A device wraps some pixel allocation (for non-document based
+ * devices) or wraps some other container that stores rendering operations. The drawing operations
+ * perform equivalently to their corresponding functions in SkCanvas except that the canvas is
+ * responsible for all SkImageFilters. An image filter is applied by automatically creating a layer,
+ * drawing the filter-less paint into the layer, and then evaluating the filter on the layer's
+ * image.
+ *
+ * Each layer in an SkCanvas stack is represented by an SkDevice instance that was created by the
+ * parent SkDevice (up to the canvas's base device). In most cases these devices will be pixel
+ * aligned with one another but may differ in size based on the known extent of the active clip. In
+ * complex image filtering scenarios, they may not be axis aligned, although the effective pixel
+ * size should remain approximately equal across all devices in a canvas.
+ *
+ * While SkCanvas manages a single stack of layers and canvas transforms, SkDevice does not have a
+ * stack of transforms. Instead, it has a single active transform that is modified as needed by
+ * SkCanvas. However, SkDevices are the means by which SkCanvas manages the clip stack because each
+ * layer's clip stack starts anew (although the layer's results are then clipped by its parent's
+ * stack when it is restored).
+ */
+class SkDevice : public SkRefCnt {
 public:
-    SkBaseDevice(const SkImageInfo&, const SkSurfaceProps&);
+    SkDevice(const SkImageInfo&, const SkSurfaceProps&);
+
+    // -- Surface properties and metadata
 
     /**
      *  Return ImageInfo for this device. If the canvas is not backed by pixels
      *  (cpu or gpu), then the info's ColorType will be kUnknown_SkColorType.
      */
     const SkImageInfo& imageInfo() const { return fInfo; }
+
+    int width() const { return this->imageInfo().width(); }
+    int height() const { return this->imageInfo().height(); }
+
+    bool isOpaque() const { return this->imageInfo().isOpaque(); }
+
+    // NOTE: Image dimensions as a rect, *not* the current restricted clip bounds.
+    SkIRect bounds() const { return SkIRect::MakeWH(this->width(), this->height()); }
+    SkISize size() const { return this->imageInfo().dimensions(); }
 
     /**
      *  Return SurfaceProps for this device.
@@ -84,45 +140,19 @@ public:
         return {fSurfaceProps, this->scalerContextFlags(), nullptr};
     }
 
-    SkIRect bounds() const { return SkIRect::MakeWH(this->width(), this->height()); }
+    // -- Direct pixel manipulation
 
     /**
-     *  Return the bounds of the device in the coordinate space of the root
-     *  canvas. The root device will have its top-left at 0,0, but other devices
-     *  such as those associated with saveLayer may have a non-zero origin.
+     *  Write the pixels in 'src' into this Device at the specified x,y offset. The caller is
+     *  responsible for "pre-clipping" the src.
      */
-    void getGlobalBounds(SkIRect* bounds) const {
-        SkASSERT(bounds);
-        *bounds = SkMatrixPriv::MapRect(fDeviceToGlobal, SkRect::Make(this->bounds())).roundOut();
-    }
-
-    SkIRect getGlobalBounds() const {
-        SkIRect bounds;
-        this->getGlobalBounds(&bounds);
-        return bounds;
-    }
+    bool writePixels(const SkPixmap& src, int x, int y) { return this->onWritePixels(src, x, y); }
 
     /**
-     *  Returns the bounding box of the current clip, in this device's
-     *  coordinate space. No pixels outside of these bounds will be touched by
-     *  draws unless the clip is further modified (at which point this will
-     *  return the updated bounds).
+     *  Read pixels from this Device at the specified x,y offset into dst. The caller is
+     *  responsible for "pre-clipping" the dst
      */
-    SkIRect devClipBounds() const { return this->onDevClipBounds(); }
-
-    int width() const {
-        return this->imageInfo().width();
-    }
-
-    int height() const {
-        return this->imageInfo().height();
-    }
-
-    bool isOpaque() const {
-        return this->imageInfo().isOpaque();
-    }
-
-    bool writePixels(const SkPixmap&, int x, int y);
+    bool readPixels(const SkPixmap& dst, int x, int y) { return this->onReadPixels(dst, x, y); }
 
     /**
      *  Try to get write-access to the pixels behind the device. If successful, this returns true
@@ -140,6 +170,9 @@ public:
      *  On failure, returns false and ignores the pixmap parameter.
      */
     bool peekPixels(SkPixmap*);
+
+
+    // -- Device's transform (both current transform affecting draws, and its fixed global mapping)
 
     /**
      *  Returns the transformation that maps from the local space to the device's coordinate space.
@@ -175,45 +208,7 @@ public:
      * that device is drawn to the root device, the net effect will be that this device's contents
      * have been transformed by the global CTM.
      */
-    SkMatrix getRelativeTransform(const SkBaseDevice&) const;
-
-    virtual void* getRasterHandle() const { return nullptr; }
-
-    void save() { this->onSave(); }
-    void restore(const SkM44& ctm) {
-        this->onRestore();
-        this->setGlobalCTM(ctm);
-    }
-    void restoreLocal(const SkM44& localToDevice) {
-        this->onRestore();
-        this->setLocalToDevice(localToDevice);
-    }
-    void clipRect(const SkRect& rect, SkClipOp op, bool aa) {
-        this->onClipRect(rect, op, aa);
-    }
-    void clipRRect(const SkRRect& rrect, SkClipOp op, bool aa) {
-        this->onClipRRect(rrect, op, aa);
-    }
-    void clipPath(const SkPath& path, SkClipOp op, bool aa) {
-        this->onClipPath(path, op, aa);
-    }
-    void clipShader(sk_sp<SkShader> sh, SkClipOp op) {
-        sh = as_SB(sh)->makeWithCTM(this->localToDevice());
-        if (op == SkClipOp::kDifference) {
-            sh = as_SB(sh)->makeInvertAlpha();
-        }
-        this->onClipShader(std::move(sh));
-    }
-    void clipRegion(const SkRegion& region, SkClipOp op) {
-        this->onClipRegion(region, op);
-    }
-    void replaceClip(const SkIRect& rect) {
-        this->onReplaceClip(rect);
-    }
-
-    bool clipIsWideOpen() const {
-        return this->onClipIsWideOpen();
-    }
+    SkMatrix getRelativeTransform(const SkDevice&) const;
 
     void setLocalToDevice(const SkM44& localToDevice) {
         fLocalToDevice = localToDevice;
@@ -221,9 +216,65 @@ public:
         fLocalToDeviceDirty = true;
     }
     void setGlobalCTM(const SkM44& ctm);
-    virtual void validateDevBounds(const SkIRect&) {}
 
+    // -- Device's clip bounds and stack manipulation
+
+    /**
+     *  Return the bounds of the device in the coordinate space of the root canvas. The root device
+     *  will have its top-left at 0,0, but other devices such as those associated with saveLayer may
+     *  have a non-zero origin.
+     */
+    void getGlobalBounds(SkIRect* bounds) const {
+        SkASSERT(bounds);
+        *bounds = SkMatrixPriv::MapRect(fDeviceToGlobal, SkRect::Make(this->bounds())).roundOut();
+    }
+
+    SkIRect getGlobalBounds() const {
+        SkIRect bounds;
+        this->getGlobalBounds(&bounds);
+        return bounds;
+    }
+
+    /**
+     *  Returns the bounding box of the current clip, in this device's coordinate space. No pixels
+     *  outside of these bounds will be touched by draws unless the clip is further modified (at
+     *  which point this will return the updated bounds).
+     */
+    virtual SkIRect devClipBounds() const = 0;
+
+    virtual void pushClipStack() = 0;
+    virtual void popClipStack() = 0;
+
+    virtual void clipRect(const SkRect& rect, SkClipOp op, bool aa) = 0;
+    virtual void clipRRect(const SkRRect& rrect, SkClipOp op, bool aa) = 0;
+    virtual void clipPath(const SkPath& path, SkClipOp op, bool aa) = 0;
+    virtual void clipRegion(const SkRegion& region, SkClipOp op) = 0;
+
+    void clipShader(sk_sp<SkShader> sh, SkClipOp op) {
+        sh = as_SB(sh)->makeWithCTM(this->localToDevice());
+        if (op == SkClipOp::kDifference) {
+            sh = as_SB(sh)->makeInvertAlpha();
+        }
+        this->onClipShader(std::move(sh));
+    }
+
+    virtual void replaceClip(const SkIRect& rect) = 0;
+
+    virtual bool isClipAntiAliased() const = 0;
+    virtual bool isClipEmpty() const = 0;
+    virtual bool isClipRect() const = 0;
+    virtual bool isClipWideOpen() const = 0;
+
+    virtual void android_utils_clipAsRgn(SkRegion*) const = 0;
     virtual bool android_utils_clipWithStencil() { return false; }
+
+    // -- Device reflection
+
+    // SkCanvas uses NoPixelsDevice when onCreateDevice fails; but then it needs to be able to
+    // inspect a layer's device to know if calling drawDevice() later is allowed.
+    virtual bool isNoPixelsDevice() const { return false; }
+
+    virtual void* getRasterHandle() const { return nullptr; }
 
     virtual GrRecordingContext* recordingContext() const { return nullptr; }
     virtual skgpu::graphite::Recorder* recorder() const { return nullptr; }
@@ -231,59 +282,54 @@ public:
     virtual skgpu::ganesh::Device* asGaneshDevice() { return nullptr; }
     virtual skgpu::graphite::Device* asGraphiteDevice() { return nullptr; }
 
+    // Marking an SkDevice immutable declares the intent that rendering to the device is
+    // complete, allowing it to be sampled as an image without requiring a copy. Drawing
+    // operations may not function and may assert if invoked after setImmutable() is called.
+    virtual void setImmutable() {}
+
+    virtual sk_sp<SkSurface> makeSurface(const SkImageInfo&, const SkSurfaceProps&);
+
+    struct CreateInfo {
+        CreateInfo(const SkImageInfo& info,
+                   SkPixelGeometry geo,
+                   SkRasterHandleAllocator* allocator)
+            : fInfo(info)
+            , fPixelGeometry(geo)
+            , fAllocator(allocator)
+        {}
+
+        const SkImageInfo        fInfo;
+        const SkPixelGeometry    fPixelGeometry;
+        SkRasterHandleAllocator* fAllocator = nullptr;
+    };
+
+    /**
+     *  Create a new device based on CreateInfo. If the paint is not null, then it represents a
+     *  preview of how the new device will be composed with its creator device (this).
+     *
+     *  The subclass may be handed this device in drawDevice(), so it must always return a device
+     *  that it knows how to draw, and that it knows how to identify if it is not of the same
+     *  subclass (since drawDevice is passed a SkDevice*). If the subclass cannot fulfill that
+     *  contract (e.g. PDF cannot support some settings on the paint) it should return NULL, and the
+     *  caller may then decide to explicitly create a bitmapdevice, knowing that later it could not
+     *  call drawDevice with it (but it could call drawSprite or drawBitmap).
+     */
+    virtual sk_sp<SkDevice> createDevice(const CreateInfo&, const SkPaint*) { return nullptr; }
+
+    // -- Drawing routines (called after saveLayers and imagefilter operations are applied)
+
     // Ensure that non-RSXForm runs are passed to onDrawGlyphRunList.
     void drawGlyphRunList(SkCanvas*,
                           const sktext::GlyphRunList& glyphRunList,
                           const SkPaint& initialPaint,
                           const SkPaint& drawingPaint);
+    // Slug handling routines.
+    virtual sk_sp<sktext::gpu::Slug> convertGlyphRunListToSlug(
+            const sktext::GlyphRunList& glyphRunList,
+            const SkPaint& initialPaint,
+            const SkPaint& drawingPaint);
+    virtual void drawSlug(SkCanvas*, const sktext::gpu::Slug* slug, const SkPaint& drawingPaint);
 
-    // Snap the 'subset' contents from this device, possibly as a read-only view. If 'forceCopy'
-    // is true then the returned image's pixels must not be affected by subsequent draws into the
-    // device. When 'forceCopy' is false, the image can be a view into the device's pixels
-    // (avoiding a copy for performance, at the expense of safety). Default returns null.
-    virtual sk_sp<SkSpecialImage> snapSpecial(const SkIRect& subset, bool forceCopy = false);
-    // Can return null if unable to perform scaling as part of the copy, even if snapSpecial() w/o
-    // scaling would succeed.
-    virtual sk_sp<SkSpecialImage> snapSpecialScaled(const SkIRect& subset, const SkISize& dstDims);
-    // Get a view of the entire device's current contents as an image.
-    sk_sp<SkSpecialImage> snapSpecial();
-
-protected:
-    enum TileUsage {
-        kPossible_TileUsage,    //!< the created device may be drawn tiled
-        kNever_TileUsage,       //!< the created device will never be drawn tiled
-    };
-
-    struct TextFlags {
-        uint32_t    fFlags;     // SkPaint::getFlags()
-    };
-
-    virtual void onSave() {}
-    virtual void onRestore() {}
-    virtual void onClipRect(const SkRect& rect, SkClipOp, bool aa) {}
-    virtual void onClipRRect(const SkRRect& rrect, SkClipOp, bool aa) {}
-    virtual void onClipPath(const SkPath& path, SkClipOp, bool aa) {}
-    virtual void onClipShader(sk_sp<SkShader>) {}
-    virtual void onClipRegion(const SkRegion& deviceRgn, SkClipOp) {}
-    virtual void onReplaceClip(const SkIRect& rect) {}
-    virtual bool onClipIsAA() const = 0;
-    virtual bool onClipIsWideOpen() const = 0;
-    virtual void onAsRgnClip(SkRegion*) const = 0;
-    enum class ClipType {
-        kEmpty,
-        kRect,
-        kComplex
-    };
-    virtual ClipType onGetClipType() const = 0;
-
-    // This should strive to be as tight as possible, ideally not just mapping
-    // the global clip bounds by fToGlobal^-1.
-    virtual SkIRect onDevClipBounds() const = 0;
-
-    /** These are called inside the per-device-layer loop for each draw call.
-     When these are called, we have already applied any saveLayer operations,
-     and are handling any looping from the paint.
-     */
     virtual void drawPaint(const SkPaint& paint) = 0;
     virtual void drawPoints(SkCanvas::PointMode mode, size_t count,
                             const SkPoint[], const SkPaint& paint) = 0;
@@ -363,18 +409,18 @@ protected:
 
     virtual void drawDrawable(SkCanvas*, SkDrawable*, const SkMatrix*);
 
-    // Only called with glyphRunLists that do not contain RSXForm.
-    virtual void onDrawGlyphRunList(SkCanvas*,
-                                    const sktext::GlyphRunList&,
-                                    const SkPaint& initialPaint,
-                                    const SkPaint& drawingPaint) = 0;
+    // -- "Special" drawing and image routines
 
-    // Slug handling routines.
-    virtual sk_sp<sktext::gpu::Slug> convertGlyphRunListToSlug(
-            const sktext::GlyphRunList& glyphRunList,
-            const SkPaint& initialPaint,
-            const SkPaint& drawingPaint);
-    virtual void drawSlug(SkCanvas*, const sktext::gpu::Slug* slug, const SkPaint& drawingPaint);
+    // Snap the 'subset' contents from this device, possibly as a read-only view. If 'forceCopy'
+    // is true then the returned image's pixels must not be affected by subsequent draws into the
+    // device. When 'forceCopy' is false, the image can be a view into the device's pixels
+    // (avoiding a copy for performance, at the expense of safety). Default returns null.
+    virtual sk_sp<SkSpecialImage> snapSpecial(const SkIRect& subset, bool forceCopy = false);
+    // Can return null if unable to perform scaling as part of the copy, even if snapSpecial() w/o
+    // scaling would succeed.
+    virtual sk_sp<SkSpecialImage> snapSpecialScaled(const SkIRect& subset, const SkISize& dstDims);
+    // Get a view of the entire device's current contents as an image.
+    sk_sp<SkSpecialImage> snapSpecial();
 
     /**
      * The SkDevice passed will be an SkDevice which was returned by a call to
@@ -384,7 +430,7 @@ protected:
      * from the input device to this device. The provided SkPaint cannot have a mask filter or
      * image filter, and any shader is ignored.
      */
-    virtual void drawDevice(SkBaseDevice*, const SkSamplingOptions&, const SkPaint&);
+    virtual void drawDevice(SkDevice*, const SkSamplingOptions&, const SkPaint&);
 
     /**
      * Draw the special image's subset to this device, subject to the given matrix transform instead
@@ -407,101 +453,11 @@ protected:
     void drawFilteredImage(const skif::Mapping& mapping, SkSpecialImage* src, SkColorType ct,
                            const SkImageFilter*, const SkSamplingOptions&, const SkPaint&);
 
+protected:
+    // DEPRECATED: Can be deleted once SkCanvas::onDrawImage() uses skif::FilterResult so don't
+    // bother re-arranging.
     virtual sk_sp<SkSpecialImage> makeSpecial(const SkBitmap&);
     virtual sk_sp<SkSpecialImage> makeSpecial(const SkImage*);
-
-    virtual void setImmutable() {}
-
-    bool readPixels(const SkPixmap&, int x, int y);
-
-    virtual sk_sp<SkSurface> makeSurface(const SkImageInfo&, const SkSurfaceProps&);
-    virtual bool onPeekPixels(SkPixmap*) { return false; }
-
-    /**
-     *  The caller is responsible for "pre-clipping" the dst. The impl can assume that the dst
-     *  image at the specified x,y offset will fit within the device's bounds.
-     *
-     *  This is explicitly asserted in readPixels(), the public way to call this.
-     */
-    virtual bool onReadPixels(const SkPixmap&, int x, int y);
-
-    /**
-     *  The caller is responsible for "pre-clipping" the src. The impl can assume that the src
-     *  image at the specified x,y offset will fit within the device's bounds.
-     *
-     *  This is explicitly asserted in writePixelsDirect(), the public way to call this.
-     */
-    virtual bool onWritePixels(const SkPixmap&, int x, int y);
-
-    virtual bool onAccessPixels(SkPixmap*) { return false; }
-
-    struct CreateInfo {
-        CreateInfo(const SkImageInfo& info,
-                   SkPixelGeometry geo,
-                   TileUsage tileUsage,
-                   SkRasterHandleAllocator* allocator)
-            : fInfo(info)
-            , fTileUsage(tileUsage)
-            , fPixelGeometry(geo)
-            , fAllocator(allocator)
-        {}
-
-        const SkImageInfo        fInfo;
-        const TileUsage          fTileUsage;
-        const SkPixelGeometry    fPixelGeometry;
-        SkRasterHandleAllocator* fAllocator = nullptr;
-    };
-
-    /**
-     *  Create a new device based on CreateInfo. If the paint is not null, then it represents a
-     *  preview of how the new device will be composed with its creator device (this).
-     *
-     *  The subclass may be handed this device in drawDevice(), so it must always return
-     *  a device that it knows how to draw, and that it knows how to identify if it is not of the
-     *  same subclass (since drawDevice is passed a SkBaseDevice*). If the subclass cannot fulfill
-     *  that contract (e.g. PDF cannot support some settings on the paint) it should return NULL,
-     *  and the caller may then decide to explicitly create a bitmapdevice, knowing that later
-     *  it could not call drawDevice with it (but it could call drawSprite or drawBitmap).
-     */
-    virtual SkBaseDevice* onCreateDevice(const CreateInfo&, const SkPaint*) {
-        return nullptr;
-    }
-
-    // SkCanvas uses NoPixelsDevice when onCreateDevice fails; but then it needs to be able to
-    // inspect a layer's device to know if calling drawDevice() later is allowed.
-    virtual bool isNoPixelsDevice() const { return false; }
-
-    // Defaults to a CPU image filtering context.
-    virtual skif::Context createContext(const skif::ContextInfo&) const;
-
-    // Returns whether or not localToDevice() has changed since the last call to this function.
-    bool checkLocalToDeviceDirty() {
-        bool wasDirty = fLocalToDeviceDirty;
-        fLocalToDeviceDirty = false;
-        return wasDirty;
-    }
-
-private:
-    friend class SkAndroidFrameworkUtils;
-    friend class SkCanvas;
-    friend class SkCanvasPriv; // for onGetClipType
-    friend class SkDraw;
-    friend class SkDrawBase;
-    friend class SkSurface_Raster;
-    friend class DeviceTestingAccess;
-
-    void simplifyGlyphRunRSXFormAndRedraw(SkCanvas*,
-                                          const sktext::GlyphRunList&,
-                                          const SkPaint& initialPaint,
-                                          const SkPaint& drawingPaint);
-
-    // used to change the backend's pixels (and possibly config/rowbytes)
-    // but cannot change the width/height, so there should be no change to
-    // any clip information.
-    // TODO: move to SkBitmapDevice
-    virtual void replaceBitmapBackendForRasterSurface(const SkBitmap&) {}
-
-    virtual bool forceConservativeRasterClip() const { return false; }
 
     // Configure the device's coordinate spaces, specifying both how its device image maps back to
     // the global space (via 'deviceToGlobal') and the initial CTM of the device (via
@@ -522,13 +478,44 @@ private:
         this->setDeviceCoordinateSystem(SkM44(), SkM44(), globalCTM, x, y);
     }
 
+    // Returns whether or not localToDevice() has changed since the last call to this function.
+    bool checkLocalToDeviceDirty() {
+        bool wasDirty = fLocalToDeviceDirty;
+        fLocalToDeviceDirty = false;
+        return wasDirty;
+    }
+
+private:
+    friend class SkCanvas; // for setOrigin/setDeviceCoordinateSystem
+    friend class DeviceTestingAccess;
+
+    // Defaults to a CPU image filtering context.
+    virtual skif::Context createContext(const skif::ContextInfo&) const;
+
     virtual SkImageFilterCache* getImageFilterCache() { return nullptr; }
 
-    friend class SkNoPixelsDevice;
-    friend class SkBitmapDevice;
-    void privateResize(int w, int h) {
-        *const_cast<SkImageInfo*>(&fInfo) = fInfo.makeWH(w, h);
-    }
+    // Implementations can assume that the device from (x,y) to (w,h) will fit within dst.
+    virtual bool onReadPixels(const SkPixmap&, int x, int y) { return false; }
+
+    // Implementations can assume that the src image placed at 'x,y' will fit within the device.
+    virtual bool onWritePixels(const SkPixmap&, int x, int y) { return false; }
+
+    virtual bool onAccessPixels(SkPixmap*) { return false; }
+
+    virtual bool onPeekPixels(SkPixmap*) { return false; }
+
+    virtual void onClipShader(sk_sp<SkShader>) = 0;
+
+    // Only called with glyphRunLists that do not contain RSXForm.
+    virtual void onDrawGlyphRunList(SkCanvas*,
+                                    const sktext::GlyphRunList&,
+                                    const SkPaint& initialPaint,
+                                    const SkPaint& drawingPaint) = 0;
+
+    void simplifyGlyphRunRSXFormAndRedraw(SkCanvas*,
+                                          const sktext::GlyphRunList&,
+                                          const SkPaint& initialPaint,
+                                          const SkPaint& drawingPaint);
 
     const SkImageInfo    fInfo;
     const SkSurfaceProps fSurfaceProps;
@@ -549,44 +536,39 @@ private:
     // However, track a dirty bit for subclasses that want to defer local-to-device dependent
     // calculations until needed for a clip or draw.
     bool fLocalToDeviceDirty = true;
-
-    using INHERITED = SkRefCnt;
 };
 
-class SkNoPixelsDevice : public SkBaseDevice {
+class SkNoPixelsDevice : public SkDevice {
 public:
     SkNoPixelsDevice(const SkIRect& bounds, const SkSurfaceProps& props);
     SkNoPixelsDevice(const SkIRect& bounds, const SkSurfaceProps& props,
                      sk_sp<SkColorSpace> colorSpace);
 
-    void resetForNextPicture(const SkIRect& bounds) {
-        //SkASSERT(bounds.width() >= 0 && bounds.height() >= 0);
-        this->privateResize(bounds.width(), bounds.height());
-        this->setOrigin(SkM44(), bounds.left(), bounds.top());
-        this->resetClipStack();
-    }
+    // Returns false if the device could not be reset; this should only be called on a root device.
+    bool resetForNextPicture(const SkIRect& bounds);
 
-protected:
     // SkNoPixelsDevice tracks the clip conservatively in order to respond to some queries as
     // accurately as possible while emphasizing performance
-    void onSave() override;
-    void onRestore() override;
-    void onClipRect(const SkRect& rect, SkClipOp op, bool aa) override;
-    void onClipRRect(const SkRRect& rrect, SkClipOp op, bool aa) override;
-    void onClipPath(const SkPath& path, SkClipOp op, bool aa) override;
-    void onClipRegion(const SkRegion& globalRgn, SkClipOp op) override;
-    void onClipShader(sk_sp<SkShader> shader) override;
-    void onReplaceClip(const SkIRect& rect) override;
-    bool onClipIsAA() const override { return this->clip().fIsAA; }
-    bool onClipIsWideOpen() const override {
+    void pushClipStack() override;
+    void popClipStack() override;
+    void clipRect(const SkRect& rect, SkClipOp op, bool aa) override;
+    void clipRRect(const SkRRect& rrect, SkClipOp op, bool aa) override;
+    void clipPath(const SkPath& path, SkClipOp op, bool aa) override;
+    void clipRegion(const SkRegion& globalRgn, SkClipOp op) override;
+    void replaceClip(const SkIRect& rect) override;
+    bool isClipAntiAliased() const override { return this->clip().fIsAA; }
+    bool isClipEmpty() const override { return this->devClipBounds().isEmpty(); }
+    bool isClipRect() const override { return this->clip().fIsRect && !this->isClipEmpty(); }
+    bool isClipWideOpen() const override {
         return this->clip().fIsRect &&
-               this->onDevClipBounds() == this->bounds();
+               this->devClipBounds() == this->bounds();
     }
-    void onAsRgnClip(SkRegion* rgn) const override {
-        rgn->setRect(this->onDevClipBounds());
+    void android_utils_clipAsRgn(SkRegion* rgn) const override {
+        rgn->setRect(this->devClipBounds());
     }
-    ClipType onGetClipType() const override;
-    SkIRect onDevClipBounds() const override { return this->clip().fClipBounds; }
+    SkIRect devClipBounds() const override { return this->clip().fClipBounds; }
+
+protected:
 
     void drawPaint(const SkPaint& paint) override {}
     void drawPoints(SkCanvas::PointMode, size_t, const SkPoint[], const SkPaint&) override {}
@@ -597,7 +579,7 @@ protected:
     void drawOval(const SkRect&, const SkPaint&) override {}
     void drawRRect(const SkRRect&, const SkPaint&) override {}
     void drawPath(const SkPath&, const SkPaint&, bool) override {}
-    void drawDevice(SkBaseDevice*, const SkSamplingOptions&, const SkPaint&) override {}
+    void drawDevice(SkDevice*, const SkSamplingOptions&, const SkPaint&) override {}
     void drawVertices(const SkVertices*, sk_sp<SkBlender>, const SkPaint&, bool) override {}
     void drawMesh(const SkMesh&, sk_sp<SkBlender>, const SkPaint&) override {}
 
@@ -624,22 +606,17 @@ private:
                 bool isAA, bool fillsBounds);
     };
 
+    void onClipShader(sk_sp<SkShader> shader) override;
+
     const ClipState& clip() const { return fClipStack.back(); }
     ClipState& writableClip();
 
-    void resetClipStack() {
-        fClipStack.clear();
-        fClipStack.emplace_back(this->bounds(), /*isAA=*/false, /*isRect=*/true);
-    }
-
     skia_private::STArray<4, ClipState> fClipStack;
-
-    using INHERITED = SkBaseDevice;
 };
 
 class SkAutoDeviceTransformRestore : SkNoncopyable {
 public:
-    SkAutoDeviceTransformRestore(SkBaseDevice* device, const SkMatrix& localToDevice)
+    SkAutoDeviceTransformRestore(SkDevice* device, const SkMatrix& localToDevice)
         : fDevice(device)
         , fPrevLocalToDevice(device->localToDevice())
     {
@@ -650,7 +627,7 @@ public:
     }
 
 private:
-    SkBaseDevice* fDevice;
+    SkDevice* fDevice;
     const SkM44   fPrevLocalToDevice;
 };
 

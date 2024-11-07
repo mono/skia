@@ -9,9 +9,9 @@
 #define SKSL_SPIRVCODEGENERATOR
 
 #include "include/core/SkSpan.h"
-#include "include/private/SkSLDefines.h"
 #include "include/private/base/SkTArray.h"
 #include "src/core/SkTHash.h"
+#include "src/sksl/SkSLDefines.h"
 #include "src/sksl/SkSLMemoryLayout.h"
 #include "src/sksl/SkSLStringStream.h"
 #include "src/sksl/codegen/SkSLCodeGenerator.h"
@@ -104,12 +104,7 @@ public:
     };
 
     SPIRVCodeGenerator(const Context* context, const Program* program, OutputStream* out)
-            : INHERITED(context, program, out)
-            , fDefaultLayout(MemoryLayout::Standard::k140)
-            , fCapabilities(0)
-            , fIdCount(1)
-            , fCurrentBlock(0)
-            , fSynthetics(/*builtin=*/true) {}
+            : INHERITED(context, program, out) {}
 
     bool generateCode() override;
 
@@ -170,15 +165,17 @@ private:
 
     SpvId getType(const Type& type);
 
-    SpvId getType(const Type& type, const MemoryLayout& layout);
+    SpvId getType(const Type& type, const Layout& typeLayout, const MemoryLayout& memoryLayout);
 
     SpvId getFunctionType(const FunctionDeclaration& function);
 
-    SpvId getFunctionParameterType(const Type& parameterType);
+    SpvId getFunctionParameterType(const Type& parameterType, const Layout& parameterLayout);
 
     SpvId getPointerType(const Type& type, SpvStorageClass_ storageClass);
 
-    SpvId getPointerType(const Type& type, const MemoryLayout& layout,
+    SpvId getPointerType(const Type& type,
+                         const Layout& typeLayout,
+                         const MemoryLayout& memoryLayout,
                          SpvStorageClass_ storageClass);
 
     skia_private::TArray<SpvId> getAccessChain(const Expression& expr, OutputStream& out);
@@ -254,22 +251,14 @@ private:
 
     SpvId writeScalarToMatrixSplat(const Type& matrixType, SpvId scalarId, OutputStream& out);
 
-    SpvId writeFloatConstructor(const AnyConstructor& c, OutputStream& out);
-
     SpvId castScalarToFloat(SpvId inputId, const Type& inputType, const Type& outputType,
                             OutputStream& out);
-
-    SpvId writeIntConstructor(const AnyConstructor& c, OutputStream& out);
 
     SpvId castScalarToSignedInt(SpvId inputId, const Type& inputType, const Type& outputType,
                                 OutputStream& out);
 
-    SpvId writeUIntConstructor(const AnyConstructor& c, OutputStream& out);
-
     SpvId castScalarToUnsignedInt(SpvId inputId, const Type& inputType, const Type& outputType,
                                   OutputStream& out);
-
-    SpvId writeBooleanConstructor(const AnyConstructor& c, OutputStream& out);
 
     SpvId castScalarToBoolean(SpvId inputId, const Type& inputType, const Type& outputType,
                               OutputStream& out);
@@ -449,8 +438,8 @@ private:
         struct Hash;
     };
 
-    static Instruction BuildInstructionKey(
-            SpvOp_ opCode, const skia_private::TArray<Word, true>& words);
+    static Instruction BuildInstructionKey(SpvOp_ opCode,
+                                           const skia_private::TArray<Word, true>& words);
 
     // The writeOpXxxxx calls will simplify and deduplicate ops where possible.
     SpvId writeOpConstantTrue(const Type& type);
@@ -511,8 +500,6 @@ private:
     void writeLabel(SpvId label, BranchingLabelType type, ConditionalOpCounts ops,
                     OutputStream& out);
 
-    bool isDead(const Variable& var) const;
-
     MemoryLayout memoryLayoutForStorageClass(SpvStorageClass_ storageClass);
     MemoryLayout memoryLayoutForVariable(const Variable&) const;
 
@@ -538,10 +525,10 @@ private:
     std::tuple<const Variable*, const Variable*> synthesizeTextureAndSampler(
             const Variable& combinedSampler);
 
-    const MemoryLayout fDefaultLayout;
+    const MemoryLayout fDefaultMemoryLayout{MemoryLayout::Standard::k140};
 
-    uint64_t fCapabilities;
-    SpvId fIdCount;
+    uint64_t fCapabilities = 0;
+    SpvId fIdCount = 1;
     SpvId fGLSLExtendedInstructions;
     struct Intrinsic {
         IntrinsicOpcodeKind opKind;
@@ -604,19 +591,18 @@ private:
     skia_private::TArray<SpvId> fStoreOps;
 
     // label of the current block, or 0 if we are not in a block
-    SpvId fCurrentBlock;
+    SpvId fCurrentBlock = 0;
     skia_private::TArray<SpvId> fBreakTarget;
     skia_private::TArray<SpvId> fContinueTarget;
     bool fWroteRTFlip = false;
     // holds variables synthesized during output, for lifetime purposes
-    SymbolTable fSynthetics;
+    SymbolTable fSynthetics{/*builtin=*/true};
     // Holds a list of uniforms that were declared as globals at the top-level instead of in an
     // interface block.
     UniformBuffer fUniformBuffer;
     std::vector<const VarDeclaration*> fTopLevelUniforms;
     skia_private::THashMap<const Variable*, int>
             fTopLevelUniformMap;  // <var, UniformBuffer field index>
-    skia_private::THashSet<const Variable*> fSPIRVBonusVariables;
     SpvId fUniformBufferId = NA;
 
     friend class PointerLValue;

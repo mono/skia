@@ -21,7 +21,9 @@ class GrPipeline;
 
 class GrMockGpu : public GrGpu {
 public:
-    static sk_sp<GrGpu> Make(const GrMockOptions*, const GrContextOptions&, GrDirectContext*);
+    static std::unique_ptr<GrGpu> Make(const GrMockOptions*,
+                                       const GrContextOptions&,
+                                       GrDirectContext*);
 
     ~GrMockGpu() override;
 
@@ -69,7 +71,7 @@ private:
     sk_sp<GrTexture> onCreateCompressedTexture(SkISize dimensions,
                                                const GrBackendFormat&,
                                                skgpu::Budgeted,
-                                               GrMipmapped,
+                                               skgpu::Mipmapped,
                                                GrProtected,
                                                const void* data,
                                                size_t dataSize) override;
@@ -166,9 +168,7 @@ private:
             const skia_private::TArray<GrSurfaceProxy*, true>& sampledProxies,
             GrXferBarrierFlags renderPassXferBarriers) override;
 
-    bool onSubmitToGpu(bool syncCpu) override {
-        return true;
-    }
+    bool onSubmitToGpu(GrSyncCpu) override { return true; }
 
     sk_sp<GrAttachment> makeStencilAttachment(const GrBackendFormat& /*colorFormat*/,
                                               SkISize dimensions, int numStencilSamples) override;
@@ -189,7 +189,7 @@ private:
     GrBackendTexture onCreateBackendTexture(SkISize dimensions,
                                             const GrBackendFormat&,
                                             GrRenderable,
-                                            GrMipmapped,
+                                            skgpu::Mipmapped,
                                             GrProtected,
                                             std::string_view label) override;
 
@@ -201,7 +201,7 @@ private:
 
     GrBackendTexture onCreateCompressedBackendTexture(SkISize dimensions,
                                                       const GrBackendFormat&,
-                                                      GrMipmapped,
+                                                      skgpu::Mipmapped,
                                                       GrProtected) override;
 
     bool onUpdateCompressedBackendTexture(const GrBackendTexture&,

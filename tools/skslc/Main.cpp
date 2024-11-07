@@ -145,17 +145,6 @@ public:
         return sCaps;
     }
 
-    static const SkSL::ShaderCaps* IncompleteShortIntPrecision() {
-        static const SkSL::ShaderCaps* sCaps = [] {
-            std::unique_ptr<SkSL::ShaderCaps> caps = MakeShaderCaps();
-            caps->fVersionDeclString = "#version 310es";
-            caps->fUsesPrecisionModifiers = true;
-            caps->fIncompleteShortIntPrecision = true;
-            return caps.release();
-        }();
-        return sCaps;
-    }
-
     static const SkSL::ShaderCaps* MustForceNegatedAtanParamToFloat() {
         static const SkSL::ShaderCaps* sCaps = [] {
             std::unique_ptr<SkSL::ShaderCaps> caps = MakeShaderCaps();
@@ -378,9 +367,6 @@ static bool detect_shader_settings(const std::string& text,
                 if (consume_suffix(&settingsText, " FramebufferFetchSupport")) {
                     *caps = Factory::FramebufferFetchSupport();
                 }
-                if (consume_suffix(&settingsText, " IncompleteShortIntPrecision")) {
-                    *caps = Factory::IncompleteShortIntPrecision();
-                }
                 if (consume_suffix(&settingsText, " MustGuardDivisionEvenAfterExplicitZeroCheck")) {
                     *caps = Factory::MustGuardDivisionEvenAfterExplicitZeroCheck();
                 }
@@ -530,6 +516,10 @@ static ResultCode process_command(SkSpan<std::string> args) {
         kind = SkSL::ProgramKind::kVertex;
     } else if (skstd::ends_with(inputPath, ".frag") || skstd::ends_with(inputPath, ".sksl")) {
         kind = SkSL::ProgramKind::kFragment;
+    } else if (skstd::ends_with(inputPath, ".mvert")) {
+        kind = SkSL::ProgramKind::kMeshVertex;
+    } else if (skstd::ends_with(inputPath, ".mfrag")) {
+        kind = SkSL::ProgramKind::kMeshFragment;
     } else if (skstd::ends_with(inputPath, ".compute")) {
         kind = SkSL::ProgramKind::kCompute;
     } else if (skstd::ends_with(inputPath, ".rtb")) {
@@ -539,14 +529,13 @@ static ResultCode process_command(SkSpan<std::string> args) {
     } else if (skstd::ends_with(inputPath, ".rts")) {
         kind = SkSL::ProgramKind::kRuntimeShader;
     } else {
-        printf("input filename must end in '.vert', '.frag', '.compute', '.rtb', '.rtcf', "
-               "'.rts' or '.sksl'\n");
+        printf("input filename must end in '.vert', '.frag', '.mvert', '.mfrag', '.compute', "
+               "'.rtb', '.rtcf', '.rts' or '.sksl'\n");
         return ResultCode::kInputError;
     }
 
     std::ifstream in(inputPath);
-    std::string text((std::istreambuf_iterator<char>(in)),
-                       std::istreambuf_iterator<char>());
+    std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
     if (in.rdstate()) {
         printf("error reading '%s'\n", inputPath.c_str());
         return ResultCode::kInputError;

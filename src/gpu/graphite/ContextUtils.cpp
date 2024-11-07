@@ -95,7 +95,8 @@ DstReadRequirement GetDstReadRequirement(const Caps* caps,
     const bool hasCoverage = coverage != Coverage::kNone;
     BlendFormula blendFormula = isLCD ? skgpu::GetLCDBlendFormula(*blendMode)
                                       : skgpu::GetBlendFormula(false, hasCoverage, *blendMode);
-    if (blendFormula.hasSecondaryOutput() && !caps->shaderCaps()->fDualSourceBlendingSupport) {
+    if ((blendFormula.hasSecondaryOutput() && !caps->shaderCaps()->fDualSourceBlendingSupport) ||
+        (coverage == Coverage::kLCD && blendMode != SkBlendMode::kSrcOver)) {
         return caps->getDstReadRequirement();
     }
 
@@ -475,12 +476,12 @@ std::string BuildComputeSkSL(const Caps* caps, const ComputeStep* step) {
                 sksl += r.fSkSL;
                 break;
             case Type::kWriteOnlyStorageTexture:
-                SkSL::String::appendf(&sksl, "layout(binding=%d) writeonly texture2D ",
+                SkSL::String::appendf(&sksl, "layout(binding=%d, rgba8) writeonly texture2D ",
                                       distinctRanges ? texIdx++ : index++);
                 sksl += r.fSkSL;
                 break;
             case Type::kReadOnlyTexture:
-                SkSL::String::appendf(&sksl, "layout(binding=%d) readonly texture2D ",
+                SkSL::String::appendf(&sksl, "layout(binding=%d, rgba8) readonly texture2D ",
                                       distinctRanges ? texIdx++ : index++);
                 sksl += r.fSkSL;
                 break;

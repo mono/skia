@@ -106,7 +106,7 @@ sk_sp<TextureProxy> ProxyCache::findOrCreateCachedProxy(Recorder* recorder,
     auto [ view, ct ] = MakeBitmapProxyView(recorder, bitmap, nullptr,
                                             mipmapped, skgpu::Budgeted::kYes);
     if (view) {
-        auto listener = make_unique_key_invalidation_listener(key, recorder->priv().recorderID());
+        auto listener = make_unique_key_invalidation_listener(key, recorder->priv().uniqueID());
         bitmap.pixelRef()->addGenIDChangeListener(std::move(listener));
 
         fCache.set(key, view.refProxy());
@@ -124,7 +124,12 @@ void ProxyCache::processInvalidKeyMsgs() {
 
     if (!invalidKeyMsgs.empty()) {
         for (int i = 0; i < invalidKeyMsgs.size(); ++i) {
-            fCache.remove(invalidKeyMsgs[i].key());
+            // TODO: this should stop crbug.com/1480570 for now but more investigation needs to be
+            // done into how we're getting into the situation where an invalid key has been
+            // purged from the cache prior to processing of the invalid key messages.
+            if (fCache.find(invalidKeyMsgs[i].key())) {
+                fCache.remove(invalidKeyMsgs[i].key());
+            }
         }
     }
 }

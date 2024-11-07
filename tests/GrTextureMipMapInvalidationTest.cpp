@@ -53,7 +53,7 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(GrTextureMipMapInvalidationTest,
         sk_sp<SkImage> image = surf->makeImageSnapshot();
         GrTextureProxy* proxy = sk_gpu_test::GetTextureImageProxy(image.get(),
                                                                   surf->recordingContext());
-        bool proxyIsMipmapped = proxy->mipmapped() == GrMipmapped::kYes;
+        bool proxyIsMipmapped = proxy->mipmapped() == skgpu::Mipmapped::kYes;
         REPORTER_ASSERT(reporter, proxyIsMipmapped == image->hasMipmaps());
         return image->hasMipmaps();
     };
@@ -77,7 +77,7 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(GrTextureMipMapInvalidationTest,
         auto surf2 = SkSurfaces::RenderTarget(context, skgpu::Budgeted::kYes, info);
         // Draw something just in case we ever had a solid color optimization
         surf1->getCanvas()->drawCircle(128, 128, 50, SkPaint());
-        context->flushAndSubmit(surf1);
+        context->flushAndSubmit(surf1.get(), GrSyncCpu::kNo);
 
         // No mipmaps initially
         REPORTER_ASSERT(reporter, isMipped(surf1.get()) == allocateMips);

@@ -5,7 +5,6 @@
  * found in the LICENSE file.
  */
 
-#include "include/core/SkAlphaType.h"
 #include "include/core/SkBitmap.h"
 #include "include/core/SkBlendMode.h"
 #include "include/core/SkCanvas.h"
@@ -32,11 +31,11 @@
 #include "include/private/base/SkDebug.h"
 #include "include/private/base/SkTArray.h"
 #include "include/private/base/SkTo.h"
+#include "src/core/SkDevice.h"
 #include "src/core/SkImageFilterTypes.h"
 #include "src/core/SkMatrixPriv.h"
 #include "src/core/SkRectPriv.h"
 #include "src/core/SkSpecialImage.h"
-#include "src/core/SkSpecialSurface.h"
 #include "src/effects/colorfilters/SkColorFilterBase.h"
 #include "src/gpu/ganesh/image/GrImageUtils.h"
 #include "tests/CtsEnforcement.h"
@@ -52,7 +51,6 @@
 #include <variant>
 #include <vector>
 
-using namespace skia_private;
 
 #if defined(SK_GRAPHITE)
 #include "include/gpu/graphite/Context.h"
@@ -67,81 +65,35 @@ using namespace skia_private;
 #if defined(SK_GANESH)
 #include "include/gpu/GrDirectContext.h"
 #include "include/gpu/GrTypes.h"
-#include "src/gpu/ganesh/image/SkSpecialImage_Ganesh.h"
 struct GrContextOptions;
 #endif
 
+class SkShader;
+
+using namespace skia_private;
 using namespace skif;
 
-// NOTE: Not in anonymous so that FilterResult can friend it for access to draw() and asShader()
-class FilterResultImageResolver {
+// NOTE: Not in anonymous so that FilterResult can friend it
+class FilterResultTestAccess {
 public:
-    enum class Method {
-        kImageAndOffset,
-        kShader,
-        kClippedShader,
-        kDrawToCanvas
-    };
-
-    FilterResultImageResolver(Method method) : fMethod(method) {}
-
-    const char* methodName() const {
-        switch (fMethod) {
-            case Method::kImageAndOffset: return "imageAndOffset";
-            case Method::kShader:         return "asShader";
-            case Method::kClippedShader:  return "asShaderClipped";
-            case Method::kDrawToCanvas:   return "drawToCanvas";
-        }
-        SkUNREACHABLE;
+    static skif::Context MakeContext(const skif::Functors& functors,
+                                     const skif::ContextInfo& ctxInfo) {
+        return skif::Context(ctxInfo, functors);
     }
 
-    std::pair<sk_sp<SkSpecialImage>, SkIPoint> resolve(const Context& ctx,
-                                                       const FilterResult& image) const {
-        if (fMethod == Method::kImageAndOffset) {
-            SkIPoint origin;
-            sk_sp<SkSpecialImage> resolved = image.imageAndOffset(ctx, &origin);
-            return {resolved, origin};
-        } else {
-            if (ctx.desiredOutput().isEmpty()) {
-                return {nullptr, {}};
-            }
-
-            auto surface = ctx.makeSurface(SkISize(ctx.desiredOutput().size()));
-            SkASSERT(surface);
-
-            SkCanvas* canvas = surface->getCanvas();
-            canvas->clear(SK_ColorTRANSPARENT);
-            canvas->translate(-ctx.desiredOutput().left(), -ctx.desiredOutput().top());
-
-            if (fMethod == Method::kShader || fMethod == Method::kClippedShader) {
-                skif::LayerSpace<SkIRect> sampleBounds;
-                if (fMethod == Method::kShader) {
-                    // asShader() applies layer bounds by resolving automatically
-                    // (e.g. kDrawToCanvas), if sampleBounds is larger than the layer bounds. Since
-                    // we want to test the unclipped shader version, pass in layerBounds() for
-                    // sampleBounds and add a clip to the canvas instead.
-                    canvas->clipIRect(SkIRect(image.layerBounds()));
-                    sampleBounds = image.layerBounds();
-                } else {
-                    sampleBounds = ctx.desiredOutput();
-                }
-
-                SkPaint paint;
-                paint.setShader(image.asShader(ctx, FilterResult::kDefaultSampling,
-                                               FilterResult::ShaderFlags::kNone,
-                                               sampleBounds));
-                canvas->drawPaint(paint);
-            } else {
-                SkASSERT(fMethod == Method::kDrawToCanvas);
-                image.draw(canvas, ctx.desiredOutput());
-            }
-
-            return {surface->makeImageSnapshot(), SkIPoint(ctx.desiredOutput().topLeft())};
-        }
+    static void Draw(const skif::Context& ctx,
+                     SkDevice* device,
+                     const skif::FilterResult& image,
+                     bool preserveDeviceState) {
+        image.draw(ctx, device, preserveDeviceState, /*blender=*/nullptr);
     }
 
-private:
-    Method fMethod;
+    static sk_sp<SkShader> AsShader(const skif::Context& ctx,
+                                    const skif::FilterResult& image,
+                                    const skif::LayerSpace<SkIRect>& sampleBounds) {
+        return image.asShader(ctx, FilterResult::kDefaultSampling,
+                              FilterResult::ShaderFlags::kNone, sampleBounds);
+    }
 };
 
 namespace {
@@ -169,6 +121,13 @@ bool colorfilter_equals(const SkColorFilter* actual, const SkColorFilter* expect
     sk_sp<SkData> actualData = actual->serialize();
     sk_sp<SkData> expectedData = expected->serialize();
     return actualData && actualData->equals(expectedData.get());
+}
+
+void clear_device(SkDevice* device) {
+    SkPaint p;
+    p.setColor4f(SkColors::kTransparent, /*colorSpace=*/nullptr);
+    p.setBlendMode(SkBlendMode::kSrc);
+    device->drawPaint(p);
 }
 
 static constexpr SkTileMode kTileModes[4] = {SkTileMode::kClamp,
@@ -310,16 +269,16 @@ public:
             effectiveExpectation = Expect::kEmptyImage;
         }
 
-        auto surface = ctx.makeSurface(size);
-        SkCanvas* canvas = surface->getCanvas();
-        canvas->clear(SK_ColorTRANSPARENT);
-        canvas->translate(-desiredOutput.left(), -desiredOutput.top());
+        auto device = ctx.makeDevice(size);
+        SkCanvas canvas{device};
+        canvas.clear(SK_ColorTRANSPARENT);
+        canvas.translate(-desiredOutput.left(), -desiredOutput.top());
 
         LayerSpace<SkIRect> sourceBounds{
                 SkIRect::MakeXYWH(origin.x(), origin.y(), source->width(), source->height())};
         LayerSpace<SkIRect> expectedBounds = this->expectedBounds(sourceBounds);
 
-        canvas->clipIRect(SkIRect(expectedBounds), SkClipOp::kIntersect);
+        canvas.clipIRect(SkIRect(expectedBounds), SkClipOp::kIntersect);
 
         if (effectiveExpectation != Expect::kEmptyImage) {
             SkPaint paint;
@@ -337,7 +296,7 @@ public:
                     !SkScalarIsInt(m.getTranslateY())) {
                     sampling = t->fSampling;
                 }
-                canvas->concat(m);
+                canvas.concat(m);
             } else if (auto* c = std::get_if<CropParams>(&fAction)) {
                 LayerSpace<SkIRect> imageBounds(
                         SkIRect::MakeXYWH(origin.x(), origin.y(),
@@ -353,11 +312,15 @@ public:
                 } else {
                     // A non-decal tile mode where the image doesn't cover the crop requires the
                     // image to be padded out with transparency so the tiling matches 'fRect'.
-                    auto paddedSurface = ctx.makeSurface(SkISize(c->fRect.size()));
-                    paddedSurface->getCanvas()->clear(SK_ColorTRANSPARENT);
-                    paddedSurface->getCanvas()->translate(-c->fRect.left(), -c->fRect.top());
-                    source->draw(paddedSurface->getCanvas(), origin.x(), origin.y());
-                    source = paddedSurface->makeImageSnapshot();
+                    SkISize paddedSize = SkISize(c->fRect.size());
+                    auto paddedDevice = ctx.makeDevice(paddedSize);
+                    clear_device(paddedDevice.get());
+                    paddedDevice->drawSpecial(source.get(),
+                                              SkMatrix::Translate(origin.x() - c->fRect.left(),
+                                                                  origin.y() - c->fRect.top()),
+                                              /*sampling=*/{},
+                                              /*paint=*/{});
+                    source = paddedDevice->snapSpecial(SkIRect::MakeSize(paddedSize));
                     origin = c->fRect.topLeft();
                 }
                 tileMode = c->fTileMode;
@@ -367,9 +330,9 @@ public:
             paint.setShader(source->asShader(tileMode,
                                              sampling,
                                              SkMatrix::Translate(origin.x(), origin.y())));
-            canvas->drawPaint(paint);
+            canvas.drawPaint(paint);
         }
-        return surface->makeImageSnapshot();
+        return device->snapSpecial(SkIRect::MakeSize(size));
     }
 
 private:
@@ -388,71 +351,114 @@ private:
     // action type and parameters to simplify test case specification.
 };
 
+
+class FilterResultImageResolver {
+public:
+    enum class Method {
+        kImageAndOffset,
+        kShader,
+        kClippedShader,
+        kDrawToCanvas
+    };
+
+    FilterResultImageResolver(Method method) : fMethod(method) {}
+
+    const char* methodName() const {
+        switch (fMethod) {
+            case Method::kImageAndOffset: return "imageAndOffset";
+            case Method::kShader:         return "asShader";
+            case Method::kClippedShader:  return "asShaderClipped";
+            case Method::kDrawToCanvas:   return "drawToCanvas";
+        }
+        SkUNREACHABLE;
+    }
+
+    std::pair<sk_sp<SkSpecialImage>, SkIPoint> resolve(const Context& ctx,
+                                                       const FilterResult& image) const {
+        if (fMethod == Method::kImageAndOffset) {
+            SkIPoint origin;
+            sk_sp<SkSpecialImage> resolved = image.imageAndOffset(ctx, &origin);
+            return {resolved, origin};
+        } else {
+            if (ctx.desiredOutput().isEmpty()) {
+                return {nullptr, {}};
+            }
+
+            auto device = ctx.makeDevice(SkISize(ctx.desiredOutput().size()));
+            SkASSERT(device);
+
+            SkCanvas canvas{device};
+            canvas.clear(SK_ColorTRANSPARENT);
+            canvas.translate(-ctx.desiredOutput().left(), -ctx.desiredOutput().top());
+
+            if (fMethod == Method::kShader || fMethod == Method::kClippedShader) {
+                skif::LayerSpace<SkIRect> sampleBounds;
+                if (fMethod == Method::kShader) {
+                    // asShader() applies layer bounds by resolving automatically
+                    // (e.g. kDrawToCanvas), if sampleBounds is larger than the layer bounds. Since
+                    // we want to test the unclipped shader version, pass in layerBounds() for
+                    // sampleBounds and add a clip to the canvas instead.
+                    canvas.clipIRect(SkIRect(image.layerBounds()));
+                    sampleBounds = image.layerBounds();
+                } else {
+                    sampleBounds = ctx.desiredOutput();
+                }
+
+                SkPaint paint;
+                paint.setShader(FilterResultTestAccess::AsShader(ctx, image, sampleBounds));
+                canvas.drawPaint(paint);
+            } else {
+                SkASSERT(fMethod == Method::kDrawToCanvas);
+                FilterResultTestAccess::Draw(ctx, device.get(), image,
+                                             /*preserveDeviceState=*/false);
+            }
+
+            return {device->snapSpecial(SkIRect::MakeWH(ctx.desiredOutput().width(),
+                                                        ctx.desiredOutput().height())),
+                    SkIPoint(ctx.desiredOutput().topLeft())};
+        }
+    }
+
+private:
+    Method fMethod;
+};
+
 class TestRunner {
 public:
     // Raster-backed TestRunner
     TestRunner(skiatest::Reporter* reporter)
-            : fReporter(reporter) {}
+            : fReporter(reporter)
+            , fFunctors(skif::MakeRasterFunctors()) {}
 
     // Ganesh-backed TestRunner
 #if defined(SK_GANESH)
     TestRunner(skiatest::Reporter* reporter, GrDirectContext* context)
             : fReporter(reporter)
-            , fDirectContext(context) {}
+            , fDirectContext(context)
+            , fFunctors(skif::MakeGaneshFunctors(context, kTopLeft_GrSurfaceOrigin)) {}
 #endif
 
     // Graphite-backed TestRunner
 #if defined(SK_GRAPHITE)
     TestRunner(skiatest::Reporter* reporter, skgpu::graphite::Recorder* recorder)
             : fReporter(reporter)
-            , fRecorder(recorder) {}
+            , fRecorder(recorder)
+            , fFunctors(skif::MakeGraphiteFunctors(recorder)) {}
 #endif
 
     // Let TestRunner be passed in to places that take a Reporter* or to REPORTER_ASSERT etc.
     operator skiatest::Reporter*() const { return fReporter; }
     skiatest::Reporter* operator->() const { return fReporter; }
 
-    sk_sp<SkSpecialSurface> newSurface(int width, int height) const {
-        SkImageInfo info = SkImageInfo::Make(width, height,
-                                             kRGBA_8888_SkColorType,
-                                             kPremul_SkAlphaType);
-#if defined(SK_GANESH)
-        if (fDirectContext) {
-            return SkSpecialSurfaces::MakeRenderTarget(fDirectContext, info, {},
-                                                      kTopLeft_GrSurfaceOrigin);
-        } else
-#endif
-#if defined(SK_GRAPHITE)
-        if (fRecorder) {
-            return SkSpecialSurfaces::MakeGraphite(fRecorder, info, {});
-        } else
-#endif
-        {
-            return SkSpecialSurfaces::MakeRaster(info, {});
-        }
-    }
-
-    skif::Context newContext(const FilterResult& source) const {
+    skif::Context newContext() const {
         skif::ContextInfo ctxInfo = {skif::Mapping(SkMatrix::I()),
                                      skif::LayerSpace<SkIRect>::Empty(),
-                                     source,
+                                     skif::FilterResult{},
                                      kRGBA_8888_SkColorType,
                                      /*colorSpace=*/nullptr,
                                      /*surfaceProps=*/{},
                                      /*cache=*/nullptr};
-#if defined(SK_GANESH)
-        if (fDirectContext) {
-            return skif::MakeGaneshContext(fDirectContext, kTopLeft_GrSurfaceOrigin, ctxInfo);
-        } else
-#endif
-#if defined(SK_GRAPHITE)
-        if (fRecorder) {
-            return skif::MakeGraphiteContext(fRecorder, ctxInfo);
-        } else
-#endif
-        {
-            return skif::Context::MakeRaster(ctxInfo);
-        }
+        return FilterResultTestAccess::MakeContext(fFunctors, ctxInfo);
     }
 
     bool compareImages(const skif::Context& ctx,
@@ -467,12 +473,12 @@ public:
         // (which is used as a proxy for being approximately equal to each other).
         return this->compareImages(ctx, expectedBM, expectedOrigin, actual,
                                    FilterResultImageResolver::Method::kImageAndOffset) &&
-               this->compareImages(ctx, expectedBM, expectedOrigin, actual,
-                                   FilterResultImageResolver::Method::kShader) &&
-               this->compareImages(ctx, expectedBM, expectedOrigin, actual,
-                                   FilterResultImageResolver::Method::kClippedShader) &&
-               this->compareImages(ctx, expectedBM, expectedOrigin, actual,
-                                   FilterResultImageResolver::Method::kDrawToCanvas);
+            this->compareImages(ctx, expectedBM, expectedOrigin, actual,
+            FilterResultImageResolver::Method::kShader) &&
+            this->compareImages(ctx, expectedBM, expectedOrigin, actual,
+            FilterResultImageResolver::Method::kClippedShader) &&
+            this->compareImages(ctx, expectedBM, expectedOrigin, actual,
+            FilterResultImageResolver::Method::kDrawToCanvas);
     }
 
 private:
@@ -488,7 +494,7 @@ private:
             SkDebugf("FilterResult comparison failed for method %s\n", resolver.methodName());
             this->logBitmaps(expected, actualBM, badPixels);
             return false;
-        }
+                }
         return true;
     }
 
@@ -698,6 +704,8 @@ private:
     skgpu::graphite::Recorder* fRecorder = nullptr;
 #endif
 
+    skif::Functors fFunctors;
+
     bool fLoggedErrorImage = false; // only do this once per test runner
 };
 
@@ -817,11 +825,12 @@ public:
             }
         }
 
+        Context baseContext = fRunner.newContext();
+
         // Create the source image
         FilterResult source;
         if (!fSourceBounds.isEmpty()) {
-            sk_sp<SkSpecialSurface> sourceSurface = fRunner.newSurface(fSourceBounds.width(),
-                                                                       fSourceBounds.height());
+            sk_sp<SkDevice> sourceSurface = baseContext.makeDevice(SkISize(fSourceBounds.size()));
 
             const SkColor colors[] = { SK_ColorMAGENTA,
                                        SK_ColorRED,
@@ -832,13 +841,13 @@ public:
             SkMatrix rotation = SkMatrix::RotateDeg(15.f, {fSourceBounds.width() / 2.f,
                                                            fSourceBounds.height() / 2.f});
 
-            SkCanvas* canvas = sourceSurface->getCanvas();
-            canvas->clear(SK_ColorBLACK);
-            canvas->concat(rotation);
+            SkCanvas canvas{sourceSurface};
+            canvas.clear(SK_ColorBLACK);
+            canvas.concat(rotation);
 
             int color = 0;
             SkRect coverBounds;
-            SkRect dstBounds = SkRect::Make(canvas->imageInfo().bounds());
+            SkRect dstBounds = SkRect::Make(canvas.imageInfo().bounds());
             SkAssertResult(SkMatrixPriv::InverseMapRect(rotation, &coverBounds, dstBounds));
 
             float sz = fSourceBounds.width() <= 16.f || fSourceBounds.height() <= 16.f ? 2.f : 8.f;
@@ -846,13 +855,14 @@ public:
                 for (float x = coverBounds.fLeft; x < coverBounds.fRight; x += sz) {
                     SkPaint p;
                     p.setColor(colors[(color++) % std::size(colors)]);
-                    canvas->drawRect(SkRect::MakeXYWH(x, y, sz, sz), p);
+                    canvas.drawRect(SkRect::MakeXYWH(x, y, sz, sz), p);
                 }
             }
 
-            source = FilterResult(sourceSurface->makeImageSnapshot(), fSourceBounds.topLeft());
+            SkIRect subset = SkIRect::MakeWH(fSourceBounds.width(), fSourceBounds.height());
+            source = FilterResult(sourceSurface->snapSpecial(subset), fSourceBounds.topLeft());
+            baseContext = baseContext.withNewSource(source);
         }
-        Context baseContext = fRunner.newContext(source);
 
         // Applying modifiers to FilterResult might produce a new image, but hopefully it's
         // able to merge properties and even re-order operations to minimize the number of offscreen
@@ -862,9 +872,9 @@ public:
         LayerSpace<SkIPoint> expectedOrigin = source.layerBounds().topLeft();
         // The expected image can't ever be null, so we produce a transparent black image instead.
         if (!expectedImage) {
-            sk_sp<SkSpecialSurface> expectedSurface = fRunner.newSurface(1, 1);
-            expectedSurface->getCanvas()->clear(SK_ColorTRANSPARENT);
-            expectedImage = expectedSurface->makeImageSnapshot();
+            sk_sp<SkDevice> expectedSurface = baseContext.makeDevice({1, 1});
+            clear_device(expectedSurface.get());
+            expectedImage = expectedSurface->snapSpecial(SkIRect::MakeWH(1, 1));
             expectedOrigin = LayerSpace<SkIPoint>({0, 0});
         }
         SkASSERT(expectedImage);

@@ -8,11 +8,11 @@
 #include "tests/Test.h"
 
 #include "include/core/SkString.h"
-#include "include/core/SkTime.h"
+#include "src/base/SkTime.h"
 #include "tools/flags/CommandLineFlags.h"
 
 #include <cstdlib>
-#include <string>
+#include <cstring>
 
 static DEFINE_string2(tmpDir, t, nullptr, "Temp directory to use.");
 

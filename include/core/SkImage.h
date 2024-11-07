@@ -727,6 +727,16 @@ public:
 
     struct RequiredProperties {
         bool fMipmapped;
+
+        bool operator==(const RequiredProperties& other) const {
+            return fMipmapped == other.fMipmapped;
+        }
+
+        bool operator!=(const RequiredProperties& other) const { return !(*this == other); }
+
+        bool operator<(const RequiredProperties& other) const {
+            return fMipmapped < other.fMipmapped;
+        }
     };
 
     /** Returns subset of this image.
@@ -799,18 +809,6 @@ public:
     sk_sp<SkImage> makeRasterImage(CachingHint cachingHint = kDisallow_CachingHint) const {
         return this->makeRasterImage(nullptr, cachingHint);
     }
-#endif
-
-#if !defined(SK_DISABLE_LEGACY_MAKEWITHFILTER)
-    /** DEPRECATED
-     * Please use the SkImages::MakeWithFilter factory functions
-     */
-    sk_sp<SkImage> makeWithFilter(GrRecordingContext* context,
-                                  const SkImageFilter* filter,
-                                  const SkIRect& subset,
-                                  const SkIRect& clipBounds,
-                                  SkIRect* outSubset,
-                                  SkIPoint* offset) const;
 #endif
 
     /** Deprecated.

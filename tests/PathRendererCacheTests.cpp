@@ -115,7 +115,7 @@ static void test_path(
                                                        SkSurfaceProps(),
                                                        /*label=*/{},
                                                        /* sampleCnt= */ 1,
-                                                       GrMipmapped::kNo,
+                                                       skgpu::Mipmapped::kNo,
                                                        GrProtected::kNo,
                                                        kTopLeft_GrSurfaceOrigin);
     if (!sdc) {
@@ -156,7 +156,7 @@ static void test_path(
     }
     dContext->flushAndSubmit();
     REPORTER_ASSERT(reporter, SkPathPriv::GenIDChangeListenersCount(path) == 20);
-    cache->purgeUnlockedResources();
+    cache->purgeUnlockedResources(GrPurgeResourceOptions::kAllResources);
     // The listeners don't actually purge until we try to add another one.
     draw_path(dContext.get(), sdc.get(), path, pathRenderer.get(), aaType, style);
     REPORTER_ASSERT(reporter, SkPathPriv::GenIDChangeListenersCount(path) == 1);

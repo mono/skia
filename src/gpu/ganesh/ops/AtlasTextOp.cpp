@@ -7,29 +7,61 @@
 
 #include "src/gpu/ganesh/ops/AtlasTextOp.h"
 
-#include "include/core/SkPoint3.h"
-#include "include/core/SkSpan.h"
+#include "include/core/SkFont.h"
+#include "include/core/SkPaint.h"
+#include "include/core/SkSamplingOptions.h"
+#include "include/core/SkSurfaceProps.h"
+#include "include/core/SkTypes.h"
 #include "include/gpu/GrRecordingContext.h"
-#include "src/base/SkMathPriv.h"
+#include "include/private/base/SkCPUTypes.h"
+#include "include/private/base/SkDebug.h"
+#include "include/private/base/SkTArray.h"
+#include "src/base/SkArenaAlloc.h"
+#include "src/base/SkRandom.h"
+#include "src/core/SkDevice.h"
+#include "src/core/SkMaskGamma.h"
 #include "src/core/SkMatrixPriv.h"
+#include "src/core/SkScalerContext.h"
 #include "src/core/SkStrikeCache.h"
+#include "src/core/SkTraceEvent.h"
+#include "src/gpu/ganesh/GrBufferAllocPool.h"
 #include "src/gpu/ganesh/GrCaps.h"
-#include "src/gpu/ganesh/GrMemoryPool.h"
+#include "src/gpu/ganesh/GrColorSpaceXform.h"
+#include "src/gpu/ganesh/GrGeometryProcessor.h"
+#include "src/gpu/ganesh/GrMeshDrawTarget.h"
 #include "src/gpu/ganesh/GrOpFlushState.h"
+#include "src/gpu/ganesh/GrPaint.h"
+#include "src/gpu/ganesh/GrPipeline.h"
+#include "src/gpu/ganesh/GrProcessorAnalysis.h"
 #include "src/gpu/ganesh/GrRecordingContextPriv.h"
 #include "src/gpu/ganesh/GrResourceProvider.h"
-#include "src/gpu/ganesh/SkGr.h"
+#include "src/gpu/ganesh/GrSamplerState.h"
+#include "src/gpu/ganesh/GrSimpleMesh.h"
+#include "src/gpu/ganesh/GrSurfaceProxy.h"
+#include "src/gpu/ganesh/GrSurfaceProxyView.h"
+#include "src/gpu/ganesh/GrTestUtils.h"
+#include "src/gpu/ganesh/GrUserStencilSettings.h"
 #include "src/gpu/ganesh/SurfaceDrawContext.h"
 #include "src/gpu/ganesh/effects/GrBitmapTextGeoProc.h"
 #include "src/gpu/ganesh/effects/GrDistanceFieldGeoProc.h"
+#include "src/gpu/ganesh/ops/GrDrawOp.h"
 #include "src/gpu/ganesh/ops/GrSimpleMeshDrawOpHelper.h"
 #include "src/gpu/ganesh/text/GrAtlasManager.h"
 #include "src/text/GlyphRun.h"
 #include "src/text/gpu/DistanceFieldAdjustTable.h"
 #include "src/text/gpu/GlyphVector.h"
+#include "src/text/gpu/SDFTControl.h"
+#include "src/text/gpu/SubRunContainer.h"
+#include "src/text/gpu/TextBlob.h"
 
+#include <algorithm>
+#include <cstring>
+#include <functional>
 #include <new>
+#include <tuple>
 #include <utility>
+
+struct GrShaderCaps;
 
 #if defined(GR_TEST_UTILS)
 #include "src/gpu/ganesh/GrDrawOpTest.h"
@@ -70,6 +102,7 @@ AtlasTextOp::AtlasTextOp(MaskType maskType,
                          int glyphCount,
                          SkRect deviceRect,
                          Geometry* geo,
+                         const GrColorInfo& dstColorInfo,
                          GrPaint&& paint)
         : INHERITED{ClassID()}
         , fProcessors(std::move(paint))
@@ -85,6 +118,10 @@ AtlasTextOp::AtlasTextOp(MaskType maskType,
     // We don't have tight bounds on the glyph paths in device space. For the purposes of bounds
     // we treat this as a set of non-AA rects rendered with a texture.
     this->setBounds(deviceRect, HasAABloat::kNo, IsHairline::kNo);
+    if (maskType == MaskType::kColorBitmap) {
+        // We assume that color emoji use the sRGB colorspace
+        fColorSpaceXform = dstColorInfo.refColorSpaceXformFromSRGB();
+    }
 }
 
 AtlasTextOp::AtlasTextOp(MaskType maskType,
@@ -259,7 +296,8 @@ void AtlasTextOp::onPrepareDraws(GrMeshDrawTarget* target) {
         // color, so we can use the first's without worry.
         flushInfo.fGeometryProcessor = GrBitmapTextGeoProc::Make(
                 target->allocator(), *target->caps().shaderCaps(), fHead->fColor,
-                false, views, numActiveViews, filter, maskFormat, localMatrix, fHasPerspective);
+                /*wideColor=*/false, fColorSpaceXform, views, numActiveViews, filter,
+                maskFormat, localMatrix, fHasPerspective);
     }
 
     const int vertexStride = (int)flushInfo.fGeometryProcessor->vertexStride();

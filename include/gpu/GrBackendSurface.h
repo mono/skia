@@ -18,13 +18,6 @@
 
 #include "include/gpu/mock/GrMockTypes.h"
 
-#if !defined(SK_DISABLE_LEGACY_VK_BACKEND_SURFACE) && defined(SK_VULKAN)
-#include "include/private/gpu/vk/SkiaVulkan.h"
-
-struct GrVkImageInfo;
-struct GrVkYcbcrConversionInfo;
-#endif
-
 enum class SkTextureCompressionType;
 class GrBackendFormatData;
 class GrBackendTextureData;
@@ -178,18 +171,6 @@ private:
         } fMock;
     };
     GrTextureType fTextureType = GrTextureType::kNone;
-
-#if !defined(SK_DISABLE_LEGACY_VK_BACKEND_SURFACE) && defined(SK_VULKAN)
-public:
-    GrBackendFormat(VkFormat vkFormat,
-                    const GrVkYcbcrConversionInfo& ycbcrInfo,
-                    bool willUseDRMFormatModifiers = false);
-    static GrBackendFormat MakeVk(VkFormat format, bool willUseDRMFormatModifiers = false);
-    static GrBackendFormat MakeVk(const GrVkYcbcrConversionInfo& ycbcrInfo,
-                                  bool willUseDRMFormatModifiers = false);
-    bool asVkFormat(VkFormat*) const;
-    const GrVkYcbcrConversionInfo* getVkYcbcrConversionInfo() const;
-#endif
 };
 
 class SK_API GrBackendTexture {
@@ -200,7 +181,7 @@ public:
 #ifdef SK_METAL
     GrBackendTexture(int width,
                      int height,
-                     GrMipmapped,
+                     skgpu::Mipmapped,
                      const GrMtlTextureInfo& mtlInfo,
                      std::string_view label = {});
 #endif
@@ -214,7 +195,7 @@ public:
 
     GrBackendTexture(int width,
                      int height,
-                     GrMipmapped,
+                     skgpu::Mipmapped,
                      const GrMockTextureInfo& mockInfo,
                      std::string_view label = {});
 
@@ -228,8 +209,8 @@ public:
     int width() const { return fWidth; }
     int height() const { return fHeight; }
     std::string_view getLabel() const { return fLabel; }
-    GrMipmapped mipmapped() const { return fMipmapped; }
-    bool hasMipmaps() const { return fMipmapped == GrMipmapped::kYes; }
+    skgpu::Mipmapped mipmapped() const { return fMipmapped; }
+    bool hasMipmaps() const { return fMipmapped == skgpu::Mipmapped::kYes; }
     /** deprecated alias of hasMipmaps(). */
     bool hasMipMaps() const { return this->hasMipmaps(); }
     GrBackendApi backend() const {return fBackend; }
@@ -329,7 +310,7 @@ private:
     int fWidth;         //<! width in pixels
     int fHeight;        //<! height in pixels
     const std::string fLabel;
-    GrMipmapped fMipmapped;
+    skgpu::Mipmapped fMipmapped;
     GrBackendApi fBackend;
     GrTextureType fTextureType;
     AnyTextureData fTextureData;
@@ -342,16 +323,6 @@ private:
     };
 #ifdef SK_METAL
     GrMtlTextureInfo fMtlInfo;
-#endif
-
-#if !defined(SK_DISABLE_LEGACY_VK_BACKEND_SURFACE) && defined(SK_VULKAN)
-public:
-    GrBackendTexture(int width,
-                     int height,
-                     const GrVkImageInfo& vkInfo,
-                     std::string_view label = {});
-    bool getVkImageInfo(GrVkImageInfo*) const;
-    void setVkImageLayout(VkImageLayout);
 #endif
 };
 
@@ -496,13 +467,6 @@ private:
     };
 #ifdef SK_METAL
     GrMtlTextureInfo fMtlInfo;
-#endif
-
-#if !defined(SK_DISABLE_LEGACY_VK_BACKEND_SURFACE) && defined(SK_VULKAN)
-public:
-    GrBackendRenderTarget(int width, int height, const GrVkImageInfo& vkInfo);
-    bool getVkImageInfo(GrVkImageInfo*) const;
-    void setVkImageLayout(VkImageLayout);
 #endif
 };
 

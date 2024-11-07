@@ -64,7 +64,7 @@ DEF_GANESH_TEST(GrDDLImage_MakeSubset, reporter, options, CtsEnforcement::kApiLe
         GrBackendTexture tex = dContext->createBackendTexture(ii.width(),
                                                               ii.height(),
                                                               ii.colorType(),
-                                                              GrMipmapped(sc.isMipMapped()),
+                                                              skgpu::Mipmapped(sc.isMipMapped()),
                                                               GrRenderable::kYes);
         auto gpuImage = SkImages::BorrowTextureFrom(dContext,
                                                     tex,
@@ -82,7 +82,7 @@ DEF_GANESH_TEST(GrDDLImage_MakeSubset, reporter, options, CtsEnforcement::kApiLe
         REPORTER_ASSERT(reporter, !gpuImage->makeSubset(nullptr, subsetBounds));
 
         dContext->flush();
-        dContext->submit(true);
+        dContext->submit(GrSyncCpu::kYes);
         dContext->deleteBackendTexture(tex);
     }
 }

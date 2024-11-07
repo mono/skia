@@ -27,9 +27,9 @@
 #include "src/core/SkReadBuffer.h"
 #include "src/core/SkRuntimeEffectPriv.h"
 #include "src/core/SkWriteBuffer.h"
-#include "src/effects/imagefilters/SkCropImageFilter.h"
 
 #include <algorithm>
+#include <optional>
 #include <utility>
 
 namespace {
@@ -41,7 +41,7 @@ public:
                            float inset,
                            const SkSamplingOptions& sampling,
                            sk_sp<SkImageFilter> input)
-        : SkImageFilter_Base(&input, 1, nullptr)
+        : SkImageFilter_Base(&input, 1)
         , fLensBounds(lensBounds)
         , fZoomAmount(zoomAmount)
         , fInset(inset)
@@ -61,11 +61,11 @@ private:
     skif::LayerSpace<SkIRect> onGetInputLayerBounds(
             const skif::Mapping& mapping,
             const skif::LayerSpace<SkIRect>& desiredOutput,
-            const skif::LayerSpace<SkIRect>& contentBounds) const override;
+            std::optional<skif::LayerSpace<SkIRect>> contentBounds) const override;
 
-    skif::LayerSpace<SkIRect> onGetOutputLayerBounds(
+    std::optional<skif::LayerSpace<SkIRect>> onGetOutputLayerBounds(
             const skif::Mapping& mapping,
-            const skif::LayerSpace<SkIRect>& contentBounds) const override;
+            std::optional<skif::LayerSpace<SkIRect>> contentBounds) const override;
 
     skif::ParameterSpace<SkRect> fLensBounds;
     // Zoom is relative so does not belong to a coordinate space, see note in onFilterImage().
@@ -92,7 +92,7 @@ sk_sp<SkImageFilter> SkImageFilters::Magnifier(const SkRect& lensBounds,
     // The magnifier automatically restricts its output based on the size of the image it receives
     // as input, so 'cropRect' only applies to its input.
     if (cropRect) {
-        input = SkMakeCropImageFilter(*cropRect, std::move(input));
+        input = SkImageFilters::Crop(*cropRect, std::move(input));
     }
 
     if (zoomAmount > 1.f) {
@@ -204,8 +204,11 @@ skif::FilterResult SkMagnifierImageFilter::onFilterImage(const skif::Context& co
     // We pre-emptively fit the zoomed-in src rect to what we expect the child input filter to
     // produce. This should be correct in all cases except for failure to create an offscreen image,
     // at which point there's nothing to be done anyway.
-    skif::LayerSpace<SkRect> expectedChildOutput{
-            this->getChildOutputLayerBounds(0, context.mapping(), context.source().layerBounds())};
+    skif::LayerSpace<SkRect> expectedChildOutput = lensBounds;
+    if (std::optional<skif::LayerSpace<SkIRect>> output =
+            this->getChildOutputLayerBounds(0, context.mapping(), context.source().layerBounds())) {
+        expectedChildOutput = skif::LayerSpace<SkRect>(*output);
+    }
 
     // Clamp the zoom center to be within the childOutput image
     zoomCenter = expectedChildOutput.clamp(zoomCenter);
@@ -287,7 +290,7 @@ skif::FilterResult SkMagnifierImageFilter::onFilterImage(const skif::Context& co
 skif::LayerSpace<SkIRect> SkMagnifierImageFilter::onGetInputLayerBounds(
         const skif::Mapping& mapping,
         const skif::LayerSpace<SkIRect>& desiredOutput,
-        const skif::LayerSpace<SkIRect>& contentBounds) const {
+        std::optional<skif::LayerSpace<SkIRect>> contentBounds) const {
     // The required input is always the lens bounds. The filter distorts the pixels contained within
     // these bounds to zoom in on a portion of it, depending on the inset and zoom amount. However,
     // it adjusts the region based on cropping that occurs between what's requested and what's
@@ -299,13 +302,14 @@ skif::LayerSpace<SkIRect> SkMagnifierImageFilter::onGetInputLayerBounds(
     return this->getChildInputLayerBounds(0, mapping, requiredInput, contentBounds);
 }
 
-skif::LayerSpace<SkIRect> SkMagnifierImageFilter::onGetOutputLayerBounds(
+std::optional<skif::LayerSpace<SkIRect>> SkMagnifierImageFilter::onGetOutputLayerBounds(
         const skif::Mapping& mapping,
-        const skif::LayerSpace<SkIRect>& contentBounds) const {
+        std::optional<skif::LayerSpace<SkIRect>> contentBounds) const {
     // The output of this filter is fLensBounds intersected with its child's output.
-    skif::LayerSpace<SkIRect> output = this->getChildOutputLayerBounds(0, mapping, contentBounds);
-    if (output.intersect(mapping.paramToLayer(fLensBounds).roundOut())) {
-        return output;
+    auto output = this->getChildOutputLayerBounds(0, mapping, contentBounds);
+    skif::LayerSpace<SkIRect> lensBounds = mapping.paramToLayer(fLensBounds).roundOut();
+    if (!output || lensBounds.intersect(*output)) {
+        return lensBounds;
     } else {
         // Nothing to magnify
         return skif::LayerSpace<SkIRect>::Empty();

@@ -9,7 +9,7 @@ TEXT_FILES = [
     "GlyphRun.h",
     "StrikeForGPU.cpp",
     "StrikeForGPU.h",
-    "TextBlobMailbox.h",
+    "SlugFromBuffer.cpp",
 ]
 
 split_srcs_and_hdrs(
@@ -20,20 +20,31 @@ split_srcs_and_hdrs(
 skia_filegroup(
     name = "srcs",
     srcs = [":text_srcs"],
-    visibility = ["//src:__pkg__"],
+    visibility = [
+        "//src:__pkg__",
+    ],
 )
 
 skia_filegroup(
     name = "private_hdrs",
     srcs = [":text_hdrs"],
-    visibility = ["//src:__pkg__"],
+    visibility = [
+        "//src:__pkg__",
+    ],
 )
 
-skia_filegroup(
-    name = "no_slug_srcs",
-    srcs = [
-        "EmptyMailboxImpl.cpp",
-        "EmptySlugImpl.cpp",
+alias(
+    name = "core_priv_hdrs",
+    actual = ":private_hdrs",
+    visibility = [
+        "//src/core:__pkg__",
     ],
-    visibility = ["//src:__pkg__"],
+)
+
+alias(
+    name = "core_srcs",
+    actual = ":srcs",
+    visibility = [
+        "//src/core:__pkg__",
+    ],
 )

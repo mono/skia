@@ -9,17 +9,21 @@
 #define SkImageChromium_DEFINED
 
 #include "include/core/SkRefCnt.h"
-#include "include/gpu/GrTypes.h"
 #include "include/private/base/SkAPI.h"
 
 class GrBackendFormat;
 class GrContextThreadSafeProxy;
 class GrPromiseImageTexture;
+class GrDirectContext;
 class GrYUVABackendTextureInfo;
 class SkColorSpace;
 class SkImage;
 enum SkAlphaType : int;
 enum SkColorType : int;
+enum GrSurfaceOrigin : int;
+namespace skgpu {
+enum class Mipmapped : bool;
+}
 struct SkISize;
 
 /**
@@ -37,7 +41,7 @@ using PromiseImageTextureReleaseProc = void (*)(PromiseImageTextureContext);
     image pixel data. Moreover, the SkImage may be created on a thread as the creation of the
     image does not require access to the backend API or GrDirectContext. Instead of passing a
     GrBackendTexture the client supplies a description of the texture consisting of
-    GrBackendFormat, width, height, and GrMipmapped state. The resulting SkImage can be drawn
+    GrBackendFormat, width, height, and skgpu::Mipmapped state. The resulting SkImage can be drawn
     to a GrDeferredDisplayListRecorder or directly to a GPU-backed SkSurface.
     When the actual texture is required to perform a backend API draw, textureFulfillProc will
     be called to receive a GrBackendTexture. The properties of the GrBackendTexture must match
@@ -63,7 +67,7 @@ using PromiseImageTextureReleaseProc = void (*)(PromiseImageTextureContext);
 SK_API sk_sp<SkImage> PromiseTextureFrom(sk_sp<GrContextThreadSafeProxy> gpuContextProxy,
                                          const GrBackendFormat& backendFormat,
                                          SkISize dimensions,
-                                         GrMipmapped mipmapped,
+                                         skgpu::Mipmapped mipmapped,
                                          GrSurfaceOrigin origin,
                                          SkColorType colorType,
                                          SkAlphaType alphaType,
@@ -98,6 +102,15 @@ SK_API sk_sp<SkImage> PromiseTextureFromYUVA(sk_sp<GrContextThreadSafeProxy> gpu
                                              PromiseImageTextureFulfillProc textureFulfillProc,
                                              PromiseImageTextureReleaseProc textureReleaseProc,
                                              PromiseImageTextureContext textureContexts[]);
+
+/** Returns the GPU context associated with this image or nullptr if the image is not Ganesh-backed.
+    We expose this only to help transition certain API calls and do not intend for this to stick
+    around forever.
+*/
+SK_API GrDirectContext* GetContext(const SkImage* src);
+inline GrDirectContext* GetContext(sk_sp<const SkImage> src) {
+    return GetContext(src.get());
+}
 
 }  // namespace SkImages
 

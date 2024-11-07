@@ -19,6 +19,7 @@
 #include "src/gpu/graphite/PipelineData.h"
 #include "src/gpu/graphite/RecorderPriv.h"
 #include "src/gpu/graphite/TextureProxy.h"
+#include "src/gpu/graphite/TextureUtils.h"
 #include "src/gpu/graphite/UniformManager.h"
 #include "src/gpu/graphite/compute/DispatchGroup.h"
 
@@ -215,7 +216,13 @@ void VelloScene::popClipLayer() {
     SkDEBUGCODE(fLayers--;)
 }
 
-VelloRenderer::VelloRenderer(const Caps* caps) {
+VelloRenderer::VelloRenderer(const Caps* caps)
+        // We currently use the fine stage to rasterize a coverage mask. For full compositing, we
+        // should instantiate a second variant of fine with a different color format.
+        //
+        // Currently fine has only one variant: on Metal this variant can operate on any floating
+        // point format (so we set it to R8) but on Dawn it must use RGBA8unorm.
+        : fFine(ComputeShaderCoverageMaskTargetFormat(caps)) {
     fGradientImage = TextureProxy::Make(caps,
                                         {1, 1},
                                         kRGBA_8888_SkColorType,
@@ -347,21 +354,21 @@ std::unique_ptr<DispatchGroup> VelloRenderer::renderScene(const RenderParams& pa
                                kVelloSlot_DrawMonoid);
     builder.assignSharedBuffer(new_storage_slice(bufMgr, bin_data_size), kVelloSlot_InfoBinData);
     // A clip input buffer must still get bound even if the encoding doesn't contain any clips
-    builder.assignSharedBuffer(new_storage_slice(bufMgr, std::max(1u, bufferSizes.clip_inps)),
+    builder.assignSharedBuffer(new_storage_slice(bufMgr, bufferSizes.clip_inps),
                                kVelloSlot_ClipInput);
     builder.appendStep(&fDrawLeaf, to_wg_size(dispatchInfo.draw_leaf));
 
     // clip_reduce, clip_leaf
     // The clip bbox buffer is always an input to the binning stage, even when the encoding doesn't
     // contain any clips
-    builder.assignSharedBuffer(new_storage_slice(bufMgr, std::max(1u, bufferSizes.clip_bboxes)),
+    builder.assignSharedBuffer(new_storage_slice(bufMgr, bufferSizes.clip_bboxes),
                                kVelloSlot_ClipBBoxes);
     WorkgroupSize clipReduceWgCount = to_wg_size(dispatchInfo.clip_reduce);
     WorkgroupSize clipLeafWgCount = to_wg_size(dispatchInfo.clip_leaf);
     bool doClipReduce = clipReduceWgCount.scalarSize() > 0u;
     bool doClipLeaf = clipLeafWgCount.scalarSize() > 0u;
     if (doClipReduce || doClipLeaf) {
-        builder.assignSharedBuffer(new_storage_slice(bufMgr, std::max(1u, bufferSizes.clip_bics)),
+        builder.assignSharedBuffer(new_storage_slice(bufMgr, bufferSizes.clip_bics),
                                    kVelloSlot_ClipBicyclic);
         builder.assignSharedBuffer(new_storage_slice(bufMgr, bufferSizes.clip_els),
                                    kVelloSlot_ClipElement);

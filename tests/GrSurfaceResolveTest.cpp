@@ -104,10 +104,8 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(SurfaceResolveTest,
 
     SkImageInfo info = SkImageInfo::Make(8, 8, kRGBA_8888_SkColorType, kPremul_SkAlphaType);
 
-    auto managedTex = ManagedBackendTexture::MakeFromInfo(dContext,
-                                                          info,
-                                                          GrMipmapped::kNo,
-                                                          GrRenderable::kYes);
+    auto managedTex = ManagedBackendTexture::MakeFromInfo(
+            dContext, info, skgpu::Mipmapped::kNo, GrRenderable::kYes);
     if (!managedTex) {
         return;
     }
@@ -136,7 +134,7 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(SurfaceResolveTest,
     // First do a simple test where we clear the surface than flush with SkSurface::flush. This
     // should trigger the resolve and the texture should have the correct data.
     surface->getCanvas()->clear(SK_ColorRED);
-    dContext->flush(surface);
+    dContext->flush(surface.get());
     dContext->submit();
     REPORTER_ASSERT(reporter, check_pixels(reporter, dContext, tex, info, SK_ColorRED));
 
@@ -153,7 +151,7 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(SurfaceResolveTest,
 
     // Now doing a surface flush (even without any queued up normal work) should still resolve the
     // surface.
-    dContext->flush(surface);
+    dContext->flush(surface.get());
     dContext->submit();
     REPORTER_ASSERT(reporter, check_pixels(reporter, dContext, tex, info, SK_ColorBLUE));
 
@@ -187,7 +185,7 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(SurfaceResolveTest,
     // Test that a resolve between draws to a different surface doesn't cause the OpsTasks for that
     // surface to be split. Fails if we hit validation asserts in GrDrawingManager.
     // First clear out dirty msaa from previous test
-    dContext->flush(surface);
+    dContext->flush(surface.get());
 
     auto otherSurface = SkSurfaces::RenderTarget(dContext, skgpu::Budgeted::kYes, info);
     REPORTER_ASSERT(reporter, otherSurface);
@@ -245,7 +243,7 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(NonmippedDrawBeforeMippedDraw,
                                                                {64, 64},
                                                                renderable,
                                                                sampleCount,
-                                                               GrMipmapped::kYes,
+                                                               skgpu::Mipmapped::kYes,
                                                                SkBackingFit::kExact,
                                                                skgpu::Budgeted::kYes,
                                                                GrProtected::kNo,
@@ -271,7 +269,7 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(NonmippedDrawBeforeMippedDraw,
                                                                {64, 64},
                                                                GrRenderable::kNo,
                                                                1,
-                                                               GrMipmapped::kNo,
+                                                               skgpu::Mipmapped::kNo,
                                                                SkBackingFit::kExact,
                                                                skgpu::Budgeted::kYes,
                                                                GrProtected::kNo,

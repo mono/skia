@@ -182,7 +182,7 @@ sk_sp<GrPromiseImageTexture> DDLFuzzer::fulfillPromiseImage(PromiseImageInfo& pr
                                            kPromiseImageSize.height(),
                                            kRGBA_8888_SkColorType,
                                            SkColors::kRed,
-                                           GrMipmapped::kNo,
+                                           skgpu::Mipmapped::kNo,
                                            GrRenderable::kYes,
                                            GrProtected::kNo,
                                            markFinished,
@@ -242,7 +242,7 @@ void DDLFuzzer::initPromiseImage(int index) {
     promiseImage.fImage = SkImages::PromiseTextureFrom(fContext->threadSafeProxy(),
                                                        backendFmt,
                                                        kPromiseImageSize,
-                                                       GrMipmapped::kNo,
+                                                       skgpu::Mipmapped::kNo,
                                                        kTopLeft_GrSurfaceOrigin,
                                                        kRGBA_8888_SkColorType,
                                                        kUnpremul_SkAlphaType,
@@ -283,7 +283,7 @@ void DDLFuzzer::run() {
     });
     fRecordingTaskGroup.wait();
 
-    fGpuTaskGroup.add([=] { fContext->flushAndSubmit(fSurface, /* syncCpu= */ true); });
+    fGpuTaskGroup.add([=] { fContext->flushAndSubmit(fSurface.get(), GrSyncCpu::kYes); });
 
     fGpuTaskGroup.wait();
 

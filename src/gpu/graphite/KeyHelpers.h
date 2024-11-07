@@ -295,15 +295,11 @@ struct CoeffBlenderBlock {
                            SkSpan<const float> coeffs);
 };
 
-struct DstColorBlock {
-    static void BeginBlock(const KeyContext&, PaintParamsKeyBuilder*, PipelineDataGatherer*);
-};
-
 struct PrimitiveColorBlock {
     static void BeginBlock(const KeyContext&, PaintParamsKeyBuilder*, PipelineDataGatherer*);
 };
 
-struct ColorFilterShaderBlock {
+struct ComposeBlock {
     static void BeginBlock(const KeyContext&,
                            PaintParamsKeyBuilder*,
                            PipelineDataGatherer*);
@@ -331,12 +327,6 @@ struct MatrixColorFilterBlock {
                            PaintParamsKeyBuilder*,
                            PipelineDataGatherer*,
                            const MatrixColorFilterData*);
-};
-
-struct ComposeColorFilterBlock {
-    static void BeginBlock(const KeyContext&,
-                           PaintParamsKeyBuilder*,
-                           PipelineDataGatherer*);
 };
 
 struct TableColorFilterBlock {
@@ -374,31 +364,14 @@ struct ColorSpaceTransformBlock {
 };
 
 /**
- * Dst blend blocks are used to blend the output of a shader with a color attachment.
+ * Blend mode color filters blend their input (as the dst color) with some given color (supplied
+ * via a uniform) as the src color.
  */
-void AddDstBlendBlock(const KeyContext&,
-                      PaintParamsKeyBuilder*,
-                      PipelineDataGatherer*,
-                      const SkBlender*);
-
-/**
- * Primitive blend blocks are used to blend either the paint color or the output of another shader
- * with a primitive color emitted by certain draw geometry calls (drawVertices, drawAtlas, etc.).
- * Dst: primitiveColor Src: Paint color/shader output
- */
-void AddPrimitiveBlendBlock(const KeyContext&,
-                            PaintParamsKeyBuilder*,
-                            PipelineDataGatherer*,
-                            const SkBlender*);
-
-/**
- * Color filter blend blocks are used to blend a color uniform with the output of a shader.
- */
-void AddColorBlendBlock(const KeyContext&,
-                        PaintParamsKeyBuilder*,
-                        PipelineDataGatherer*,
-                        SkBlendMode,
-                        const SkPMColor4f& srcColor);
+void AddBlendModeColorFilter(const KeyContext&,
+                             PaintParamsKeyBuilder*,
+                             PipelineDataGatherer*,
+                             SkBlendMode,
+                             const SkPMColor4f& srcColor);
 
 struct RuntimeEffectBlock {
     struct ShaderData {

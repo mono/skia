@@ -18,8 +18,8 @@
 #include "src/core/SkRectPriv.h"
 #include "src/core/SkWriteBuffer.h"
 #include "src/effects/colorfilters/SkColorFilterBase.h"
-#include "src/effects/imagefilters/SkCropImageFilter.h"
 
+#include <optional>
 #include <utility>
 
 namespace {
@@ -27,7 +27,7 @@ namespace {
 class SkColorFilterImageFilter final : public SkImageFilter_Base {
 public:
     SkColorFilterImageFilter(sk_sp<SkColorFilter> cf, sk_sp<SkImageFilter> input)
-            : SkImageFilter_Base(&input, 1, nullptr)
+            : SkImageFilter_Base(&input, 1)
             , fColorFilter(std::move(cf)) {}
 
     SkRect computeFastBounds(const SkRect& bounds) const override;
@@ -44,11 +44,11 @@ private:
     skif::LayerSpace<SkIRect> onGetInputLayerBounds(
             const skif::Mapping& mapping,
             const skif::LayerSpace<SkIRect>& desiredOutput,
-            const skif::LayerSpace<SkIRect>& contentBounds) const override;
+            std::optional<skif::LayerSpace<SkIRect>> contentBounds) const override;
 
-    skif::LayerSpace<SkIRect> onGetOutputLayerBounds(
+    std::optional<skif::LayerSpace<SkIRect>> onGetOutputLayerBounds(
             const skif::Mapping& mapping,
-            const skif::LayerSpace<SkIRect>& contentBounds) const override;
+            std::optional<skif::LayerSpace<SkIRect>> contentBounds) const override;
 
     MatrixCapability onGetCTMCapability() const override { return MatrixCapability::kComplex; }
 
@@ -90,7 +90,7 @@ sk_sp<SkImageFilter> SkImageFilters::ColorFilter(sk_sp<SkColorFilter> cf,
                 new SkColorFilterImageFilter(std::move(cf), std::move(filter)));
     }
     if (cropRect) {
-        filter = SkMakeCropImageFilter(*cropRect, std::move(filter));
+        filter = SkImageFilters::Crop(*cropRect, std::move(filter));
     }
     return filter;
 }
@@ -121,18 +121,18 @@ skif::FilterResult SkColorFilterImageFilter::onFilterImage(const skif::Context& 
 skif::LayerSpace<SkIRect> SkColorFilterImageFilter::onGetInputLayerBounds(
         const skif::Mapping& mapping,
         const skif::LayerSpace<SkIRect>& desiredOutput,
-        const skif::LayerSpace<SkIRect>& contentBounds) const {
+        std::optional<skif::LayerSpace<SkIRect>> contentBounds) const {
     return this->getChildInputLayerBounds(0, mapping, desiredOutput, contentBounds);
 }
 
-skif::LayerSpace<SkIRect> SkColorFilterImageFilter::onGetOutputLayerBounds(
+std::optional<skif::LayerSpace<SkIRect>> SkColorFilterImageFilter::onGetOutputLayerBounds(
         const skif::Mapping& mapping,
-        const skif::LayerSpace<SkIRect>& contentBounds) const {
+        std::optional<skif::LayerSpace<SkIRect>> contentBounds) const {
     // For bounds calculations, we only need to consider the current node's transparency
     // effect, since any child's transparency-affecting behavior should be accounted for in
     // the child's bounds call.
     if (as_CFB(fColorFilter)->affectsTransparentBlack()) {
-        return skif::LayerSpace<SkIRect>(SkRectPriv::MakeILarge());
+        return skif::LayerSpace<SkIRect>::Unbounded();
     } else {
         return this->getChildOutputLayerBounds(0, mapping, contentBounds);
     }

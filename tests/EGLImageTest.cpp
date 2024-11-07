@@ -20,6 +20,7 @@
 #include "include/gpu/GrDirectContext.h"
 #include "include/gpu/GrTypes.h"
 #include "include/gpu/ganesh/gl/GrGLBackendSurface.h"
+#include "include/gpu/ganesh/gl/GrGLDirectContext.h"
 #include "include/gpu/gl/GrGLFunctions.h"
 #include "include/gpu/gl/GrGLInterface.h"
 #include "include/gpu/gl/GrGLTypes.h"
@@ -95,7 +96,7 @@ DEF_GANESH_TEST_FOR_GL_CONTEXT(EGLImageTest, reporter, ctxInfo, CtsEnforcement::
     if (!glCtx1) {
         return;
     }
-    sk_sp<GrDirectContext> context1 = GrDirectContext::MakeGL(sk_ref_sp(glCtx1->gl()));
+    sk_sp<GrDirectContext> context1 = GrDirectContexts::MakeGL(sk_ref_sp(glCtx1->gl()));
     GrEGLImage image = GR_EGL_NO_IMAGE;
     GrGLTextureInfo externalTexture;
     externalTexture.fID = 0;
@@ -121,7 +122,7 @@ DEF_GANESH_TEST_FOR_GL_CONTEXT(EGLImageTest, reporter, ctxInfo, CtsEnforcement::
                                                                     kSize,
                                                                     kSize,
                                                                     kRGBA_8888_SkColorType,
-                                                                    GrMipmapped::kNo,
+                                                                    skgpu::Mipmapped::kNo,
                                                                     GrRenderable::kNo,
                                                                     GrProtected::kNo);
 
@@ -188,7 +189,7 @@ DEF_GANESH_TEST_FOR_GL_CONTEXT(EGLImageTest, reporter, ctxInfo, CtsEnforcement::
 
     // Wrap this texture ID in a GrTexture
     GrBackendTexture backendTex =
-            GrBackendTextures::MakeGL(kSize, kSize, GrMipmapped::kNo, externalTexture);
+            GrBackendTextures::MakeGL(kSize, kSize, skgpu::Mipmapped::kNo, externalTexture);
 
     GrColorInfo colorInfo(GrColorType::kRGBA_8888, kPremul_SkAlphaType, nullptr);
     // TODO: If I make this TopLeft origin to match resolve_origin calls for kDefault, this test
@@ -213,8 +214,8 @@ DEF_GANESH_TEST_FOR_GL_CONTEXT(EGLImageTest, reporter, ctxInfo, CtsEnforcement::
     }
 
     GrTextureProxy* proxy = surfaceContext->asTextureProxy();
-    REPORTER_ASSERT(reporter, proxy->mipmapped() == GrMipmapped::kNo);
-    REPORTER_ASSERT(reporter, proxy->peekTexture()->mipmapped() == GrMipmapped::kNo);
+    REPORTER_ASSERT(reporter, proxy->mipmapped() == skgpu::Mipmapped::kNo);
+    REPORTER_ASSERT(reporter, proxy->peekTexture()->mipmapped() == skgpu::Mipmapped::kNo);
 
     REPORTER_ASSERT(reporter, proxy->textureType() == GrTextureType::kExternal);
     REPORTER_ASSERT(reporter, proxy->peekTexture()->textureType() == GrTextureType::kExternal);

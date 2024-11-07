@@ -11,6 +11,7 @@
 #include "include/gpu/GrBackendSurface.h"
 #include "include/gpu/ganesh/mtl/SkSurfaceMetal.h"
 #include "include/gpu/mtl/GrMtlTypes.h"
+#include "src/core/SkSurfacePriv.h"
 #include "src/gpu/ganesh/GrProxyProvider.h"
 #include "src/gpu/ganesh/GrRecordingContextPriv.h"
 #include "src/gpu/ganesh/GrResourceProvider.h"
@@ -44,7 +45,7 @@ sk_sp<SkSurface> WrapCAMetalLayer(GrRecordingContext* rContext,
     SkISize dims = {(int)metalLayer.drawableSize.width, (int)metalLayer.drawableSize.height};
 
     GrProxyProvider::TextureInfo texInfo;
-    texInfo.fMipmapped = GrMipmapped::kNo;
+    texInfo.fMipmapped = skgpu::Mipmapped::kNo;
     texInfo.fTextureType = GrTextureType::k2D;
 
     sk_sp<GrRenderTargetProxy> proxy = proxyProvider->createLazyRenderTargetProxy(
@@ -116,7 +117,7 @@ sk_sp<SkSurface> WrapMTKView(GrRecordingContext* rContext,
     SkISize dims = {(int)mtkView.drawableSize.width, (int)mtkView.drawableSize.height};
 
     GrProxyProvider::TextureInfo texInfo;
-    texInfo.fMipmapped = GrMipmapped::kNo;
+    texInfo.fMipmapped = skgpu::Mipmapped::kNo;
     texInfo.fTextureType = GrTextureType::k2D;
 
     sk_sp<GrRenderTargetProxy> proxy = proxyProvider->createLazyRenderTargetProxy(

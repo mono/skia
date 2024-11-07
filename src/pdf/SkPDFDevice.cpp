@@ -153,7 +153,7 @@ static void draw_points(SkCanvas::PointMode mode,
                         const SkPoint* points,
                         const SkPaint& paint,
                         const SkIRect& bounds,
-                        SkBaseDevice* device) {
+                        SkDevice* device) {
     SkRasterClip rc(bounds);
     SkDraw draw;
     draw.fDst = SkPixmap(SkImageInfo::MakeUnknown(bounds.right(), bounds.bottom()), nullptr, 0);
@@ -218,7 +218,7 @@ static bool calculate_inverse_path(const SkRect& bounds, const SkPath& invPath,
     return Op(SkPath::Rect(bounds), invPath, kIntersect_SkPathOp, outPath);
 }
 
-SkBaseDevice* SkPDFDevice::onCreateDevice(const CreateInfo& cinfo, const SkPaint* layerPaint) {
+sk_sp<SkDevice> SkPDFDevice::createDevice(const CreateInfo& cinfo, const SkPaint* layerPaint) {
     // PDF does not support image filters, so render them on CPU.
     // Note that this rendering is done at "screen" resolution (100dpi), not
     // printer resolution.
@@ -229,7 +229,7 @@ SkBaseDevice* SkPDFDevice::onCreateDevice(const CreateInfo& cinfo, const SkPaint
         // need to return a raster device, which we will detect in drawDevice()
         return SkBitmapDevice::Create(cinfo.fInfo, SkSurfaceProps(0, kUnknown_SkPixelGeometry));
     }
-    return new SkPDFDevice(cinfo.fInfo.dimensions(), fDocument);
+    return sk_make_sp<SkPDFDevice>(cinfo.fInfo.dimensions(), fDocument);
 }
 
 // A helper class to automatically finish a ContentEntry at the end of a
@@ -315,8 +315,8 @@ private:
 ////////////////////////////////////////////////////////////////////////////////
 
 SkPDFDevice::SkPDFDevice(SkISize pageSize, SkPDFDocument* doc, const SkMatrix& transform)
-    : INHERITED(SkImageInfo::MakeUnknown(pageSize.width(), pageSize.height()),
-                SkSurfaceProps(0, kUnknown_SkPixelGeometry))
+    : SkClipStackDevice(SkImageInfo::MakeUnknown(pageSize.width(), pageSize.height()),
+                        SkSurfaceProps(0, kUnknown_SkPixelGeometry))
     , fInitialTransform(transform)
     , fNodeId(0)
     , fDocument(doc)
@@ -1683,7 +1683,7 @@ void SkPDFDevice::internalDrawImageRect(SkKeyedImage imageSubset,
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
 
-void SkPDFDevice::drawDevice(SkBaseDevice* device, const SkSamplingOptions& sampling,
+void SkPDFDevice::drawDevice(SkDevice* device, const SkSamplingOptions& sampling,
                              const SkPaint& paint) {
     SkASSERT(!paint.getImageFilter());
     SkASSERT(!paint.getMaskFilter());
@@ -1693,7 +1693,7 @@ void SkPDFDevice::drawDevice(SkBaseDevice* device, const SkSamplingOptions& samp
     // a raster device to apply color filters, too).
     SkPixmap pmap;
     if (device->peekPixels(&pmap)) {
-        this->INHERITED::drawDevice(device, sampling, paint);
+        this->SkClipStackDevice::drawDevice(device, sampling, paint);
         return;
     }
 

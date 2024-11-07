@@ -23,7 +23,6 @@
 #include "src/core/SkImageFilter_Base.h"
 #include "src/core/SkPicturePriv.h"
 #include "src/core/SkReadBuffer.h"
-#include "src/effects/imagefilters/SkCropImageFilter.h"
 
 #include <optional>
 #include <utility>
@@ -37,7 +36,7 @@ static sk_sp<SkImageFilter> make_drop_shadow_graph(SkVector offset,
                                                    SkColor color,
                                                    bool shadowOnly,
                                                    sk_sp<SkImageFilter> input,
-                                                   const SkRect* crop) {
+                                                   const std::optional<SkRect>& crop) {
     // A drop shadow blurs the input, filters it to be the solid color + blurred
     // alpha, and then offsets it. If it's not shadow-only, the input is then
     // src-over blended on top. Finally it's cropped to the optional 'crop'.
@@ -56,7 +55,7 @@ static sk_sp<SkImageFilter> make_drop_shadow_graph(SkVector offset,
                 SkBlendMode::kSrcOver, std::move(filter), std::move(input));
     }
     if (crop) {
-        filter = SkMakeCropImageFilter(*crop, std::move(filter));
+        filter = SkImageFilters::Crop(*crop, std::move(filter));
     }
     return filter;
 }
@@ -81,7 +80,7 @@ sk_sp<SkFlattenable> legacy_drop_shadow_create_proc(SkReadBuffer& buffer) {
     // is equivalent to the bool that SkDropShadowImageFilter now uses.
     bool shadowOnly = SkToBool(buffer.read32LE(1));
     return make_drop_shadow_graph({dx, dy}, {sigmaX, sigmaY}, color, shadowOnly,
-                                  std::move(child), cropRect ? &*cropRect : nullptr);
+                                  std::move(child), cropRect);
 }
 
 } // anonymous namespace

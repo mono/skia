@@ -28,11 +28,12 @@
 #include "tests/Test.h"
 
 #include <algorithm>
+#include <array>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <initializer_list>
 #include <optional>
-#include <string>
 
 #undef ASSERT
 
@@ -127,7 +128,7 @@ DEF_TEST(Paint_flattening, reporter) {
     FOR_SETUP(m, joins, setStrokeJoin)
     FOR_SETUP(p, styles, setStyle)
 
-    SkBinaryWriteBuffer writer;
+    SkBinaryWriteBuffer writer({});
     SkPaintPriv::Flatten(paint, writer);
 
     SkAutoMalloc buf(writer.bytesWritten());
@@ -163,7 +164,7 @@ DEF_TEST(Paint_MoreFlattening, r) {
     paint.setColor(0x00AABBCC);
     paint.setBlendMode(SkBlendMode::kModulate);
 
-    SkBinaryWriteBuffer writer;
+    SkBinaryWriteBuffer writer({});
     SkPaintPriv::Flatten(paint, writer);
 
     SkAutoMalloc buf(writer.bytesWritten());

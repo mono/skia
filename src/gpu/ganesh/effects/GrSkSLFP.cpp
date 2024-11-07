@@ -73,7 +73,7 @@ public:
                 const SkSL::Variable* var = decl->var();
                 if (var->type().isOpaque()) {
                     // Nothing to do. The only opaque types we should see are children, and those
-                    // are handled specially, above.
+                    // are handled specially.
                     SkASSERT(var->type().isEffectChild());
                     return std::string(var->name());
                 }
@@ -162,14 +162,16 @@ public:
                 if (child && child->sampleUsage().isPassThrough()) {
                     coords.clear();
                 }
-                return std::string(fSelf->invokeChild(index, fInputColor, fArgs, coords).c_str());
+                return child ? std::string(fSelf->invokeChild(index, fInputColor, fArgs, coords)
+                                                   .c_str())
+                             : std::string("half4(0)");
             }
 
             std::string sampleColorFilter(int index, std::string color) override {
                 return std::string(fSelf->invokeChild(index,
-                                                 color.empty() ? fInputColor : color.c_str(),
-                                                 fArgs)
-                                      .c_str());
+                                                      color.empty() ? fInputColor : color.c_str(),
+                                                      fArgs)
+                                           .c_str());
             }
 
             std::string sampleBlender(int index, std::string src, std::string dst) override {

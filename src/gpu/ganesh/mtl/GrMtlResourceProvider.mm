@@ -135,7 +135,7 @@ const GrMtlRenderPipeline* GrMtlResourceProvider::findOrCreateMSAALoadPipeline(
     mtlColorAttachment.writeMask = MTLColorWriteMaskAll;
 
     pipelineDescriptor.colorAttachments[0] = mtlColorAttachment;
-    pipelineDescriptor.sampleCount = sampleCount;
+    pipelineDescriptor.rasterSampleCount = sampleCount;
 
     pipelineDescriptor.stencilAttachmentPixelFormat = stencilFormat;
 

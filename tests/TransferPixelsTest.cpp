@@ -151,7 +151,7 @@ void basic_transfer_to_test(skiatest::Reporter* reporter,
                                                            GrTextureType::k2D,
                                                            renderable,
                                                            1,
-                                                           GrMipmapped::kNo,
+                                                           skgpu::Mipmapped::kNo,
                                                            skgpu::Budgeted::kNo,
                                                            GrProtected::kNo,
                                                            /*label=*/{});
@@ -348,7 +348,7 @@ void basic_transfer_from_test(skiatest::Reporter* reporter, const sk_gpu_test::C
                                                            renderable,
                                                            1,
                                                            skgpu::Budgeted::kNo,
-                                                           GrMipmapped::kNo,
+                                                           skgpu::Mipmapped::kNo,
                                                            GrProtected::kNo,
                                                            &data,
                                                            /*label=*/{});
@@ -418,7 +418,7 @@ void basic_transfer_from_test(skiatest::Reporter* reporter, const sk_gpu_test::C
     ++expectedTransferCnt;
 
     if (context->priv().caps()->mapBufferFlags() & GrCaps::kAsyncRead_MapFlag) {
-        gpu->submitToGpu(true);
+        gpu->submitToGpu(GrSyncCpu::kYes);
     }
 
     // Copy the transfer buffer contents to a temporary so we can manipulate it.
@@ -465,7 +465,7 @@ void basic_transfer_from_test(skiatest::Reporter* reporter, const sk_gpu_test::C
     ++expectedTransferCnt;
 
     if (context->priv().caps()->mapBufferFlags() & GrCaps::kAsyncRead_MapFlag) {
-        gpu->submitToGpu(true);
+        gpu->submitToGpu(GrSyncCpu::kYes);
     }
 
     map = reinterpret_cast<const char*>(buffer->map());
@@ -512,6 +512,7 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(TransferPixelsToTextureTest,
                      GrColorType::kBGRA_8888,
                      GrColorType::kRGBA_1010102,
                      GrColorType::kBGRA_1010102,
+                     GrColorType::kRGBA_10x6,
                      GrColorType::kGray_8,
                      GrColorType::kAlpha_F16,
                      GrColorType::kRGBA_F16,
@@ -548,6 +549,7 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(TransferPixelsFromTextureTest,
                      GrColorType::kBGRA_8888,
                      GrColorType::kRGBA_1010102,
                      GrColorType::kBGRA_1010102,
+                     GrColorType::kRGBA_10x6,
                      GrColorType::kGray_8,
                      GrColorType::kAlpha_F16,
                      GrColorType::kRGBA_F16,

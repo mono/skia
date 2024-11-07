@@ -50,7 +50,6 @@ void GrShaderCaps::dumpJSON(SkJSONWriter* writer) const {
     writer->appendBool("Must guard division even after explicit zero check",
                        fMustGuardDivisionEvenAfterExplicitZeroCheck);
     writer->appendBool("Can use gl_FragCoord", fCanUseFragCoord);
-    writer->appendBool("Incomplete short int precision", fIncompleteShortIntPrecision);
     writer->appendBool("Add and true to loops workaround", fAddAndTrueToLoopCondition);
     writer->appendBool("Unfold short circuit as ternary", fUnfoldShortCircuitAsTernary);
     writer->appendBool("Emulate abs(int) function", fEmulateAbsIntFunction);
@@ -63,6 +62,7 @@ void GrShaderCaps::dumpJSON(SkJSONWriter* writer) const {
     writer->appendBool("Rewrite matrix-vector multiply", fRewriteMatrixVectorMultiply);
     writer->appendBool("Rewrite matrix equality comparisons", fRewriteMatrixComparisons);
     writer->appendBool("Rounding fix required for Perlin noise", fPerlinNoiseRoundingFix);
+    writer->appendBool("Must declare fragment front-facing", fMustDeclareFragmentFrontFacing);
     writer->appendBool("Flat interpolation support", fFlatInterpolationSupport);
     writer->appendBool("Prefer flat interpolation", fPreferFlatInterpolation);
     writer->appendBool("No perspective interpolation support", fNoPerspectiveInterpolationSupport);
@@ -101,7 +101,6 @@ void GrShaderCaps::applyOptionsOverrides(const GrContextOptions& options) {
         SkASSERT(!fMustObfuscateUniformColor);
         SkASSERT(!fMustGuardDivisionEvenAfterExplicitZeroCheck);
         SkASSERT(fCanUseFragCoord);
-        SkASSERT(!fIncompleteShortIntPrecision);
         SkASSERT(!fAddAndTrueToLoopCondition);
         SkASSERT(!fUnfoldShortCircuitAsTernary);
         SkASSERT(!fEmulateAbsIntFunction);
@@ -113,6 +112,7 @@ void GrShaderCaps::applyOptionsOverrides(const GrContextOptions& options) {
         SkASSERT(!fRewriteMatrixVectorMultiply);
         SkASSERT(!fRewriteMatrixComparisons);
         SkASSERT(!fPerlinNoiseRoundingFix);
+        SkASSERT(!fMustDeclareFragmentFrontFacing);
     }
     if (options.fReducedShaderVariations) {
         fReducedShaderMode = true;

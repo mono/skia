@@ -48,8 +48,9 @@ GR_NORETAIN_BEGIN
 #define GR_METAL_CAPTURE_COMMANDBUFFER 0
 #endif
 
-sk_sp<GrGpu> GrMtlGpu::Make(const GrMtlBackendContext& context, const GrContextOptions& options,
-                            GrDirectContext* direct) {
+std::unique_ptr<GrGpu> GrMtlGpu::Make(const GrMtlBackendContext& context,
+                                      const GrContextOptions& options,
+                                      GrDirectContext* direct) {
     if (!context.fDevice || !context.fQueue) {
         return nullptr;
     }
@@ -68,7 +69,11 @@ sk_sp<GrGpu> GrMtlGpu::Make(const GrMtlBackendContext& context, const GrContextO
     id<MTLDevice> GR_NORETAIN device = (__bridge id<MTLDevice>)(context.fDevice.get());
     id<MTLCommandQueue> GR_NORETAIN queue = (__bridge id<MTLCommandQueue>)(context.fQueue.get());
 
-    return sk_sp<GrGpu>(new GrMtlGpu(direct, options, device, queue, context.fBinaryArchive.get()));
+    return std::unique_ptr<GrGpu>(new GrMtlGpu(direct,
+                                               options,
+                                               device,
+                                               queue,
+                                               context.fBinaryArchive.get()));
 }
 
 // This constant determines how many OutstandingCommandBuffers are allocated together as a block in
@@ -285,8 +290,8 @@ void GrMtlGpu::addFinishedCallback(sk_sp<skgpu::RefCntedCallback> finishedCallba
     commandBuffer()->addFinishedCallback(std::move(finishedCallback));
 }
 
-bool GrMtlGpu::onSubmitToGpu(bool syncCpu) {
-    if (syncCpu) {
+bool GrMtlGpu::onSubmitToGpu(GrSyncCpu sync) {
+    if (sync == GrSyncCpu::kYes) {
         return this->submitCommandBuffer(kForce_SyncQueue);
     } else {
         return this->submitCommandBuffer(kSkip_SyncQueue);
@@ -294,7 +299,7 @@ bool GrMtlGpu::onSubmitToGpu(bool syncCpu) {
 }
 
 std::unique_ptr<GrSemaphore> GrMtlGpu::prepareTextureForCrossContextUsage(GrTexture*) {
-    this->submitToGpu(false);
+    this->submitToGpu(GrSyncCpu::kNo);
     return nullptr;
 }
 
@@ -595,9 +600,10 @@ sk_sp<GrTexture> GrMtlGpu::onCreateTexture(SkISize dimensions,
 sk_sp<GrTexture> GrMtlGpu::onCreateCompressedTexture(SkISize dimensions,
                                                      const GrBackendFormat& format,
                                                      skgpu::Budgeted budgeted,
-                                                     GrMipmapped mipmapped,
+                                                     skgpu::Mipmapped mipmapped,
                                                      GrProtected isProtected,
-                                                     const void* data, size_t dataSize) {
+                                                     const void* data,
+                                                     size_t dataSize) {
     // We don't support protected textures in Metal.
     if (isProtected == GrProtected::kYes) {
         return nullptr;
@@ -614,13 +620,13 @@ sk_sp<GrTexture> GrMtlGpu::onCreateCompressedTexture(SkISize dimensions,
     SkASSERT(this->caps()->isFormatCompressed(format));
 
     int numMipLevels = 1;
-    if (mipmapped == GrMipmapped::kYes) {
+    if (mipmapped == skgpu::Mipmapped::kYes) {
         numMipLevels = SkMipmap::ComputeLevelCount(dimensions.width(), dimensions.height()) + 1;
     }
 
-    GrMipmapStatus mipmapStatus = (mipmapped == GrMipmapped::kYes)
-                                                                ? GrMipmapStatus::kValid
-                                                                : GrMipmapStatus::kNotAllocated;
+    GrMipmapStatus mipmapStatus = (mipmapped == skgpu::Mipmapped::kYes)
+                                          ? GrMipmapStatus::kValid
+                                          : GrMipmapStatus::kNotAllocated;
 
     auto tex = GrMtlTexture::MakeNewTexture(this, budgeted, dimensions, mtlPixelFormat,
                                             numMipLevels, mipmapStatus,
@@ -637,9 +643,11 @@ sk_sp<GrTexture> GrMtlGpu::onCreateCompressedTexture(SkISize dimensions,
     SkASSERT(compressionType != SkTextureCompressionType::kNone);
 
     TArray<size_t> individualMipOffsets(numMipLevels);
-    SkDEBUGCODE(size_t combinedBufferSize =) SkCompressedDataSize(compressionType, dimensions,
-                                                                  &individualMipOffsets,
-                                                                  mipmapped == GrMipmapped::kYes);
+    SkDEBUGCODE(size_t combinedBufferSize =)
+            SkCompressedDataSize(compressionType,
+                                 dimensions,
+                                 &individualMipOffsets,
+                                 mipmapped == skgpu::Mipmapped::kYes);
     SkASSERT(individualMipOffsets.size() == numMipLevels);
     SkASSERT(dataSize == combinedBufferSize);
 
@@ -871,7 +879,7 @@ bool GrMtlGpu::createMtlTextureForBackendSurface(MTLPixelFormat mtlFormat,
                                                  int sampleCnt,
                                                  GrTexturable texturable,
                                                  GrRenderable renderable,
-                                                 GrMipmapped mipmapped,
+                                                 skgpu::Mipmapped mipmapped,
                                                  GrMtlTextureInfo* info) {
     SkASSERT(texturable == GrTexturable::kYes || renderable == GrRenderable::kYes);
 
@@ -890,7 +898,7 @@ bool GrMtlGpu::createMtlTextureForBackendSurface(MTLPixelFormat mtlFormat,
     desc.pixelFormat = mtlFormat;
     desc.width = dimensions.width();
     desc.height = dimensions.height();
-    if (mipmapped == GrMipmapped::kYes) {
+    if (mipmapped == skgpu::Mipmapped::kYes) {
         desc.mipmapLevelCount = 1 + SkPrevLog2(std::max(dimensions.width(), dimensions.height()));
     }
     if (@available(macOS 10.11, iOS 9.0, tvOS 9.0, *)) {
@@ -914,7 +922,7 @@ bool GrMtlGpu::createMtlTextureForBackendSurface(MTLPixelFormat mtlFormat,
 GrBackendTexture GrMtlGpu::onCreateBackendTexture(SkISize dimensions,
                                                   const GrBackendFormat& format,
                                                   GrRenderable renderable,
-                                                  GrMipmapped mipmapped,
+                                                  skgpu::Mipmapped mipmapped,
                                                   GrProtected isProtected,
                                                   std::string_view label) {
     const MTLPixelFormat mtlFormat = GrBackendFormatAsMTLPixelFormat(format);
@@ -1017,9 +1025,10 @@ bool GrMtlGpu::onClearBackendTexture(const GrBackendTexture& backendTexture,
     return true;
 }
 
-GrBackendTexture GrMtlGpu::onCreateCompressedBackendTexture(
-        SkISize dimensions, const GrBackendFormat& format, GrMipmapped mipmapped,
-        GrProtected isProtected) {
+GrBackendTexture GrMtlGpu::onCreateCompressedBackendTexture(SkISize dimensions,
+                                                            const GrBackendFormat& format,
+                                                            skgpu::Mipmapped mipmapped,
+                                                            GrProtected isProtected) {
     const MTLPixelFormat mtlFormat = GrBackendFormatAsMTLPixelFormat(format);
 
     GrMtlTextureInfo info;
@@ -1041,7 +1050,7 @@ bool GrMtlGpu::onUpdateCompressedBackendTexture(const GrBackendTexture& backendT
     id<MTLTexture> mtlTexture = GrGetMTLTexture(info.fTexture.get());
 
     int numMipLevels = mtlTexture.mipmapLevelCount;
-    GrMipmapped mipmapped = numMipLevels > 1 ? GrMipmapped::kYes : GrMipmapped::kNo;
+    skgpu::Mipmapped mipmapped = numMipLevels > 1 ? skgpu::Mipmapped::kYes : skgpu::Mipmapped::kNo;
 
     SkTextureCompressionType compression =
             GrBackendFormatToCompressionType(backendTexture.getBackendFormat());
@@ -1053,7 +1062,7 @@ bool GrMtlGpu::onUpdateCompressedBackendTexture(const GrBackendTexture& backendT
     combinedBufferSize = SkCompressedDataSize(compression,
                                               backendTexture.dimensions(),
                                               &individualMipOffsets,
-                                              mipmapped == GrMipmapped::kYes);
+                                              mipmapped == skgpu::Mipmapped::kYes);
     SkASSERT(individualMipOffsets.size() == numMipLevels);
 
     size_t alignment = std::max(SkCompressedBlockSize(compression),
@@ -1178,8 +1187,13 @@ GrBackendRenderTarget GrMtlGpu::createTestingOnlyBackendRenderTarget(SkISize dim
     }
 
     GrMtlTextureInfo info;
-    if (!this->createMtlTextureForBackendSurface(format, dimensions, sampleCnt, GrTexturable::kNo,
-                                                 GrRenderable::kYes, GrMipmapped::kNo, &info)) {
+    if (!this->createMtlTextureForBackendSurface(format,
+                                                 dimensions,
+                                                 sampleCnt,
+                                                 GrTexturable::kNo,
+                                                 GrRenderable::kYes,
+                                                 skgpu::Mipmapped::kNo,
+                                                 &info)) {
         return {};
     }
 
@@ -1191,7 +1205,7 @@ void GrMtlGpu::deleteTestingOnlyBackendRenderTarget(const GrBackendRenderTarget&
 
     GrMtlTextureInfo info;
     if (rt.getMtlTextureInfo(&info)) {
-        this->submitToGpu(true);
+        this->submitToGpu(GrSyncCpu::kYes);
         // Nothing else to do here, will get cleaned up when the GrBackendRenderTarget
         // is deleted.
     }

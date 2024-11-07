@@ -7,33 +7,22 @@
 
 #include "src/gpu/ganesh/image/SkSpecialImage_Ganesh.h"
 
-#include "include/core/SkAlphaType.h"
 #include "include/core/SkBitmap.h"
-#include "include/core/SkBlendMode.h"
 #include "include/core/SkCanvas.h"
 #include "include/core/SkColorSpace.h"  // IWYU pragma: keep
 #include "include/core/SkImage.h"
 #include "include/core/SkImageInfo.h"
 #include "include/core/SkMatrix.h"
-#include "include/core/SkPaint.h"
 #include "include/core/SkRect.h"
-#include "include/core/SkSamplingOptions.h"
 #include "include/core/SkScalar.h"
-#include "include/core/SkSurfaceProps.h"
 #include "include/gpu/GpuTypes.h"
 #include "include/gpu/GrRecordingContext.h"
-#include "include/gpu/GrTypes.h"
 #include "include/private/base/SkAssert.h"
 #include "include/private/base/SkPoint_impl.h"
 #include "include/private/gpu/ganesh/GrImageContext.h"
 #include "include/private/gpu/ganesh/GrTypesPriv.h"
-#include "src/core/SkImageFilterTypes.h"
 #include "src/core/SkSpecialImage.h"
-#include "src/core/SkSpecialSurface.h"
 #include "src/gpu/SkBackingFit.h"
-#include "src/gpu/ganesh/GrRecordingContextPriv.h"
-#include "src/gpu/ganesh/Device.h"
-#include "src/gpu/ganesh/GrColorSpaceXform.h"
 #include "src/gpu/ganesh/GrSurfaceProxy.h"
 #include "src/gpu/ganesh/GrSurfaceProxyPriv.h"
 #include "src/gpu/ganesh/GrSurfaceProxyView.h"
@@ -47,7 +36,9 @@
 #include <tuple>
 #include <utility>
 
+class SkPaint;
 class SkShader;
+struct SkSamplingOptions;
 enum SkColorType : int;
 enum class SkTileMode;
 
@@ -125,7 +116,7 @@ public:
 
             auto subsetView = GrSurfaceProxyView::Copy(fContext,
                                                        fView,
-                                                       GrMipmapped::kNo,
+                                                       skgpu::Mipmapped::kNo,
                                                        *subset,
                                                        SkBackingFit::kExact,
                                                        skgpu::Budgeted::kYes,
@@ -181,7 +172,7 @@ sk_sp<SkSpecialImage> MakeFromTextureImage(GrRecordingContext* rContext,
     SkASSERT(image->bounds().contains(subset));
 
     // This will work even if the image is a raster-backed image.
-    auto [view, ct] = skgpu::ganesh::AsView(rContext, image, GrMipmapped::kNo);
+    auto [view, ct] = skgpu::ganesh::AsView(rContext, image, skgpu::Mipmapped::kNo);
     return MakeDeferredFromGpu(rContext,
                                subset,
                                image->uniqueID(),
@@ -224,63 +215,7 @@ GrSurfaceProxyView AsView(GrRecordingContext* context, const SkSpecialImage* img
     SkBitmap bm;
     SkAssertResult(img->getROPixels(&bm));  // this should always succeed for raster images
     return std::get<0>(GrMakeCachedBitmapProxyView(
-            context, bm, /*label=*/"SpecialImageRaster_AsView", GrMipmapped::kNo));
-}
-
-sk_sp<SkSpecialImage> ImageToColorSpace(const skif::Context& ctx,
-                                        SkSpecialImage* src) {
-    // There are several conditions that determine if we actually need to convert the source to the
-    // destination's color space. Rather than duplicate that logic here, just try to make an xform
-    // object. If that produces something, then both are tagged, and the source is in a different
-    // gamut than the dest. There is some overhead to making the xform, but those are cached, and
-    // if we get one back, that means we're about to use it during the conversion anyway.
-    auto colorSpaceXform = GrColorSpaceXform::Make(src->getColorSpace(),  src->alphaType(),
-                                                   ctx.colorSpace(), kPremul_SkAlphaType);
-
-    if (!colorSpaceXform) {
-        // No xform needed, just return the original image
-        return sk_ref_sp(src);
-    }
-
-    sk_sp<SkSpecialSurface> surf = ctx.makeSurface(src->dimensions());
-    if (!surf) {
-        return sk_ref_sp(src);
-    }
-
-    SkCanvas* canvas = surf->getCanvas();
-    SkASSERT(canvas);
-    SkPaint p;
-    p.setBlendMode(SkBlendMode::kSrc);
-    src->draw(canvas, 0, 0, SkSamplingOptions(), &p);
-    return surf->makeImageSnapshot();
+            context, bm, /*label=*/"SpecialImageRaster_AsView", skgpu::Mipmapped::kNo));
 }
 
 }  // namespace SkSpecialImages
-
-namespace SkSpecialSurfaces {
-sk_sp<SkSpecialSurface> MakeRenderTarget(GrRecordingContext* rContext,
-                                         const SkImageInfo& ii,
-                                         const SkSurfaceProps& props,
-                                         GrSurfaceOrigin surfaceOrigin) {
-    if (!rContext) {
-        return nullptr;
-    }
-
-    auto device = rContext->priv().createDevice(skgpu::Budgeted::kYes,
-                                                ii,
-                                                SkBackingFit::kApprox,
-                                                1,
-                                                GrMipmapped::kNo,
-                                                GrProtected::kNo,
-                                                surfaceOrigin,
-                                                {props.flags(), kUnknown_SkPixelGeometry},
-                                                skgpu::ganesh::Device::InitContents::kUninit);
-    if (!device) {
-        return nullptr;
-    }
-
-    const SkIRect subset = SkIRect::MakeSize(ii.dimensions());
-
-    return sk_make_sp<SkSpecialSurface>(std::move(device), subset);
-}
-}  // namespace SkSpecialSurfaces

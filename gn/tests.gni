@@ -283,7 +283,6 @@ tests_sources = [
   "$_tests/SlugTest.cpp",
   "$_tests/SortTest.cpp",
   "$_tests/SpecialImageTest.cpp",
-  "$_tests/SpecialSurfaceTest.cpp",
   "$_tests/SrcOverTest.cpp",
   "$_tests/SrcSrcOverBatchTest.cpp",
   "$_tests/StreamTest.cpp",
@@ -385,6 +384,8 @@ precompile_tests_sources = [
 
 graphite_dawn_tests_sources = [ "$_tests/graphite/DawnBackendTextureTest.cpp" ]
 graphite_metal_tests_sources = [ "$_tests/graphite/MtlBackendTextureTest.mm" ]
+graphite_vulkan_tests_sources =
+    [ "$_tests/graphite/VulkanBackendTextureTest.cpp" ]
 
 pathops_tests_sources = [
   "$_tests/PathOpsAngleIdeas.cpp",

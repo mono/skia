@@ -19,7 +19,9 @@
 #include "include/core/SkSerialProcs.h"
 #include "include/core/SkStream.h"
 #include "include/core/SkSurface.h"
+#include "include/core/SkSurfaceProps.h"
 #include "include/docs/SkPDFDocument.h"
+#include "include/encode/SkPngEncoder.h"
 #include "include/gpu/GrBackendSurface.h"
 #include "include/gpu/GrDirectContext.h"
 #include "include/gpu/ganesh/SkImageGanesh.h"
@@ -50,6 +52,7 @@
 #include "src/gpu/ganesh/GrDirectContextPriv.h"
 #include "src/gpu/ganesh/GrGpu.h"
 #include "src/gpu/ganesh/image/GrImageUtils.h"
+#include "src/image/SkImage_Base.h"
 #include "src/utils/SkJSONWriter.h"
 #include "src/utils/SkMultiPictureDocumentPriv.h"
 #include "src/utils/SkOSPath.h"
@@ -90,6 +93,7 @@
 #include "include/gpu/graphite/Recorder.h"
 #include "include/gpu/graphite/Recording.h"
 #include "include/gpu/graphite/Surface.h"
+#include "include/private/gpu/graphite/ContextOptionsPriv.h"
 // TODO: Remove this src include once we figure out public readPixels call for Graphite.
 #include "src/gpu/graphite/Surface_Graphite.h"
 #include "tools/graphite/ContextFactory.h"
@@ -1513,7 +1517,7 @@ sk_sp<SkSurface> GPUSink::createDstSurface(GrDirectContext* context, SkISize siz
                                                              info,
                                                              kTopLeft_GrSurfaceOrigin,
                                                              fSampleCount,
-                                                             GrMipmapped::kNo,
+                                                             skgpu::Mipmapped::kNo,
                                                              GrProtected::kNo,
                                                              &props);
             break;
@@ -1580,7 +1584,7 @@ Result GPUSink::onDraw(const Src& src, SkBitmap* dst, SkWStream*, SkString* log,
     if (!result.isOk()) {
         return result;
     }
-    direct->flushAndSubmit(surface);
+    direct->flushAndSubmit(surface.get(), GrSyncCpu::kNo);
     if (FLAGS_gpuStats) {
         direct->priv().dumpCacheStats(log);
         direct->priv().dumpGpuStats(log);
@@ -1835,7 +1839,7 @@ Result GPUDDLSink::ddlDraw(const Src& src,
                                            // to free the backendTextures. This is complicated a
                                            // bit by which thread possesses the direct context.
                                            dContext->flush();
-                                           dContext->submit(true);
+                                           dContext->submit(GrSyncCpu::kYes);
                                        });
 
     // The backend textures are created on the gpuThread by the 'uploadAllToGPU' call.
@@ -2003,6 +2007,14 @@ Result XPSSink::draw(const Src& src, SkBitmap*, SkWStream* dst, SkString*) const
 }
 #endif
 
+static SkSerialProcs serial_procs_using_png() {
+    static SkSerialProcs procs;
+    procs.fImageProc = [](SkImage* img, void*) -> sk_sp<SkData> {
+        return SkPngEncoder::Encode(as_IB(img)->directContext(), img, SkPngEncoder::Options{});
+    };
+    return procs;
+}
+
 /*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
 
 SKPSink::SKPSink() {}
@@ -2014,7 +2026,8 @@ Result SKPSink::draw(const Src& src, SkBitmap*, SkWStream* dst, SkString*) const
     if (!result.isOk()) {
         return result;
     }
-    recorder.finishRecordingAsPicture()->serialize(dst);
+    SkSerialProcs procs = serial_procs_using_png();
+    recorder.finishRecordingAsPicture()->serialize(dst, &procs);
     return Result::Ok();
 }
 
@@ -2071,8 +2084,9 @@ Result RasterSink::draw(const Src& src, SkBitmap* dst, SkWStream*, SkString*) co
     dst->allocPixelsFlags(SkImageInfo::Make(size, this->colorInfo()),
                           SkBitmap::kZeroPixels_AllocFlag);
 
-    SkCanvas canvas(*dst, SkSurfaceProps(0, kRGB_H_SkPixelGeometry));
-    return src.draw(&canvas);
+    SkSurfaceProps props(/*flags=*/0, kRGB_H_SkPixelGeometry);
+    auto surface = SkSurfaces::WrapPixels(dst->pixmap(), &props);
+    return src.draw(surface->getCanvas());
 }
 
 /*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
@@ -2082,22 +2096,26 @@ Result RasterSink::draw(const Src& src, SkBitmap* dst, SkWStream*, SkString*) co
 GraphiteSink::GraphiteSink(const SkCommandLineConfigGraphite* config)
         : fContextType(config->getContextType())
         , fColorType(config->getColorType())
-        , fAlphaType(config->getAlphaType()) {
-    fBaseContextOptions.fEnableWGSL = config->getWGSL();
-}
+        , fAlphaType(config->getAlphaType()) {}
 
 Result GraphiteSink::draw(const Src& src,
                           SkBitmap* dst,
                           SkWStream* dstStream,
                           SkString* log) const {
     skgpu::graphite::ContextOptions options = fBaseContextOptions;
+    // If we've copied context options from an external source we can't trust that the
+    // priv pointer is still in scope, so assume it should be NULL and set our own up.
+    SkASSERT(!options.fOptionsPriv);
+    skgpu::graphite::ContextOptionsPriv optionsPriv;
+    options.fOptionsPriv = &optionsPriv;
 
     src.modifyGraphiteContextOptions(&options);
 
     SkImageInfo ii = SkImageInfo::Make(src.size(), this->colorInfo());
 
     skiatest::graphite::ContextFactory factory(options);
-    auto [_, context] = factory.getContextInfo(fContextType);
+    skiatest::graphite::ContextInfo ctxInfo = factory.getContextInfo(fContextType);
+    skgpu::graphite::Context* context = ctxInfo.fContext;
     if (!context) {
         return Result::Fatal("Could not create a context.");
     }
@@ -2262,8 +2280,9 @@ Result ViaSerialization::draw(
     }
     sk_sp<SkPicture> pic(recorder.finishRecordingAsPicture());
 
+    SkSerialProcs procs = serial_procs_using_png();
     // Serialize it and then deserialize it.
-    sk_sp<SkPicture> deserialized(SkPicture::MakeFromData(pic->serialize().get()));
+    sk_sp<SkPicture> deserialized(SkPicture::MakeFromData(pic->serialize(&procs).get()));
 
     result = draw_to_canvas(fSink.get(), bitmap, stream, log, size,
                             [&](SkCanvas* canvas) {
