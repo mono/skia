@@ -812,20 +812,20 @@ typedef struct {
     uint8_t  fHour;
     uint8_t  fMinute;
     uint8_t  fSecond;
-} sk_time_datetime_t;
+} sk_document_pdf_datetime_t;
 
 typedef struct {
-    sk_string_t*        fTitle;
-    sk_string_t*        fAuthor;
-    sk_string_t*        fSubject;
-    sk_string_t*        fKeywords;
-    sk_string_t*        fCreator;
-    sk_string_t*        fProducer;
-    sk_time_datetime_t* fCreation;
-    sk_time_datetime_t* fModified;
-    float               fRasterDPI;
-    bool                fPDFA;
-    int                 fEncodingQuality;
+    sk_string_t*                fTitle;
+    sk_string_t*                fAuthor;
+    sk_string_t*                fSubject;
+    sk_string_t*                fKeywords;
+    sk_string_t*                fCreator;
+    sk_string_t*                fProducer;
+    sk_document_pdf_datetime_t* fCreation;
+    sk_document_pdf_datetime_t* fModified;
+    float                       fRasterDPI;
+    bool                        fPDFA;
+    int                         fEncodingQuality;
 } sk_document_pdf_metadata_t;
 
 typedef struct {

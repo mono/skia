@@ -21,7 +21,7 @@
 #include "include/core/SkSize.h"
 #include "include/core/SkSurfaceProps.h"
 #include "include/core/SkTextBlob.h"
-#include "include/core/SkTime.h"
+#include "include/docs/SkPDFDocument.h"
 #include "include/effects/SkHighContrastFilter.h"
 #include "include/effects/SkRuntimeEffect.h"
 #include "src/core/SkMask.h"
@@ -58,7 +58,7 @@ static_assert (sizeof (sk_imageinfo_t) == sizeof (SkImageInfo), ASSERT_MSG(SkIma
 static_assert (sizeof (sk_fontmetrics_t) == sizeof (SkFontMetrics), ASSERT_MSG(SkFontMetrics, sk_fontmetrics_t));
 static_assert (sizeof (sk_codec_options_t) == sizeof (SkCodec::Options), ASSERT_MSG(SkCodec::Options, sk_codec_options_t));
 static_assert (sizeof (sk_lattice_t) == sizeof (SkCanvas::Lattice), ASSERT_MSG(SkCanvas::Lattice, sk_lattice_t));
-static_assert (sizeof (sk_time_datetime_t) == sizeof (SkTime::DateTime), ASSERT_MSG(SkTime::DateTime, sk_time_datetime_t));
+static_assert (sizeof (sk_document_pdf_datetime_t) == sizeof (SkPDF::DateTime), ASSERT_MSG(SkPDF::DateTime, sk_document_pdf_datetime_t));
 static_assert (sizeof (sk_codec_frameinfo_t) == sizeof (SkCodec::FrameInfo), ASSERT_MSG(SkCodec::FrameInfo, sk_codec_frameinfo_t));
 static_assert (sizeof (sk_colorspace_transfer_fn_t) == sizeof (skcms_TransferFunction), ASSERT_MSG(skcms_TransferFunction, sk_colorspace_transfer_fn_t));
 static_assert (sizeof (sk_colorspace_primaries_t) == sizeof (SkColorSpacePrimaries), ASSERT_MSG(SkColorSpacePrimaries, sk_colorspace_primaries_t));
