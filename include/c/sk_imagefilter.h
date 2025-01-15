@@ -47,7 +47,7 @@ SK_C_API sk_imagefilter_t* sk_imagefilter_new_spot_lit_diffuse(const sk_point3_t
 SK_C_API sk_imagefilter_t* sk_imagefilter_new_distant_lit_specular(const sk_point3_t* direction, sk_color_t lightColor, float surfaceScale, float ks, float shininess, const sk_imagefilter_t* input, const sk_rect_t* cropRect);
 SK_C_API sk_imagefilter_t* sk_imagefilter_new_point_lit_specular(const sk_point3_t* location, sk_color_t lightColor, float surfaceScale, float ks, float shininess, const sk_imagefilter_t* input, const sk_rect_t* cropRect);
 SK_C_API sk_imagefilter_t* sk_imagefilter_new_spot_lit_specular(const sk_point3_t* location, const sk_point3_t* target, float specularExponent, float cutoffAngle, sk_color_t lightColor, float surfaceScale, float ks, float shininess, const sk_imagefilter_t* input, const sk_rect_t* cropRect);
-
+SK_C_API sk_imagefilter_t* sk_imagefilter_new_runtime_shader(const sk_runtimeshaderbuilder_t* builder, float maxSampleRadius, const char* childShaderNames[], const sk_imagefilter_t* inputs[], int inputCount);
 
 SK_C_PLUS_PLUS_END_GUARD
 

@@ -143,3 +143,15 @@ sk_imagefilter_t* sk_imagefilter_new_point_lit_specular(const sk_point3_t* locat
 sk_imagefilter_t* sk_imagefilter_new_spot_lit_specular(const sk_point3_t* location, const sk_point3_t* target, float specularExponent, float cutoffAngle, sk_color_t lightColor, float surfaceScale, float ks, float shininess, const sk_imagefilter_t* input, const sk_rect_t* cropRect) {
     return ToImageFilter(SkImageFilters::SpotLitSpecular(*AsPoint3(location), *AsPoint3(target), specularExponent, cutoffAngle, lightColor, surfaceScale, ks, shininess, sk_ref_sp(AsImageFilter(input)), AsRect(cropRect)).release());
 }
+
+sk_imagefilter_t* sk_imagefilter_new_runtime_shader(const sk_runtimeshaderbuilder_t* builder, float maxSampleRadius, const char* childShaderNames[], const sk_imagefilter_t* inputs[], int inputCount){
+    std::vector<std::string_view> childShaderNameVector(inputCount);
+    std::vector<sk_sp<SkImageFilter>> inputsVector(inputCount);
+    for (size_t i = 0; i < inputCount; i++) {
+        childShaderNameVector[i] = childShaderNames[i];
+        inputsVector[i] = sk_ref_sp(AsImageFilter(inputs[i]));
+    }
+     
+    sk_sp<SkImageFilter> imageFilter = SkImageFilters::RuntimeShader(*AsRuntimeShaderBuilder(builder), childShaderNameVector.data(), inputsVector.data(), inputCount);
+    return ToImageFilter(imageFilter.release());
+}

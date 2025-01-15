@@ -1053,6 +1053,8 @@ typedef struct {
     int fIndex;
 } sk_runtimeeffect_child_t;
 
+typedef struct sk_runtimeshaderbuilder_t sk_runtimeshaderbuilder_t;
+
 typedef enum {
     NEAREST_SK_FILTER_MODE,
     LINEAR_SK_FILTER_MODE,
