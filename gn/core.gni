@@ -49,8 +49,6 @@ skia_core_public = [
   "$_include/core/SkCubicMap.h",
   "$_include/core/SkData.h",
   "$_include/core/SkDataTable.h",
-  "$_include/core/SkDeferredDisplayList.h",
-  "$_include/core/SkDeferredDisplayListRecorder.h",
   "$_include/core/SkDocument.h",
   "$_include/core/SkDrawable.h",
   "$_include/core/SkEncodedImageFormat.h",
@@ -88,7 +86,6 @@ skia_core_public = [
   "$_include/core/SkPixmap.h",
   "$_include/core/SkPoint.h",
   "$_include/core/SkPoint3.h",
-  "$_include/core/SkPromiseImageTexture.h",
   "$_include/core/SkRRect.h",
   "$_include/core/SkRSXform.h",
   "$_include/core/SkRasterHandleAllocator.h",
@@ -105,7 +102,6 @@ skia_core_public = [
   "$_include/core/SkString.h",
   "$_include/core/SkStrokeRec.h",
   "$_include/core/SkSurface.h",
-  "$_include/core/SkSurfaceCharacterization.h",
   "$_include/core/SkSurfaceProps.h",
   "$_include/core/SkSwizzle.h",
   "$_include/core/SkTextBlob.h",
@@ -136,8 +132,6 @@ skia_core_public = [
 #  //src/core:core_skslc_srcs
 #  //src/core:core_srcs
 #  //src/core:legacy_draw_looper
-#  //src/core:sksl_hdrs
-#  //src/core:sksl_srcs
 #  //src/image:core_hdrs
 #  //src/image:core_srcs
 #  //src/lazy:lazy_hdrs
@@ -145,8 +139,6 @@ skia_core_public = [
 #  //src/opts:private_hdrs
 #  //src/shaders:shader_hdrs
 #  //src/shaders:shader_srcs
-#  //src/shaders:sksl_hdrs
-#  //src/shaders:sksl_srcs
 #  //src/text:text_hdrs
 #  //src/text:text_srcs
 skia_core_sources = [
@@ -240,6 +232,7 @@ skia_core_sources = [
   "$_include/private/base/SkAPI.h",
   "$_include/private/base/SkAlign.h",
   "$_include/private/base/SkAlignedStorage.h",
+  "$_include/private/base/SkAnySubclass.h",
   "$_include/private/base/SkAssert.h",
   "$_include/private/base/SkAttributes.h",
   "$_include/private/base/SkCPUTypes.h",
@@ -257,7 +250,6 @@ skia_core_sources = [
   "$_include/private/base/SkMutex.h",
   "$_include/private/base/SkNoncopyable.h",
   "$_include/private/base/SkOnce.h",
-  "$_include/private/base/SkPathEnums.h",
   "$_include/private/base/SkPoint_impl.h",
   "$_include/private/base/SkSafe32.h",
   "$_include/private/base/SkSemaphore.h",
@@ -281,6 +273,7 @@ skia_core_sources = [
   "$_src/base/SkAutoMalloc.h",
   "$_src/base/SkBezierCurves.cpp",
   "$_src/base/SkBezierCurves.h",
+  "$_src/base/SkBitmaskEnum.h",
   "$_src/base/SkBlockAllocator.cpp",
   "$_src/base/SkBlockAllocator.h",
   "$_src/base/SkBuffer.cpp",
@@ -290,6 +283,7 @@ skia_core_sources = [
   "$_src/base/SkCubics.h",
   "$_src/base/SkDeque.cpp",
   "$_src/base/SkEndian.h",
+  "$_src/base/SkEnumBitMask.h",
   "$_src/base/SkFloatingPoint.cpp",
   "$_src/base/SkHalf.cpp",
   "$_src/base/SkHalf.h",
@@ -351,14 +345,22 @@ skia_core_sources = [
   "$_src/core/SkBitmapProcState.cpp",
   "$_src/core/SkBitmapProcState.h",
   "$_src/core/SkBitmapProcState_matrixProcs.cpp",
+  "$_src/core/SkBitmapProcState_opts.cpp",
+  "$_src/core/SkBitmapProcState_opts_hsw.cpp",
+  "$_src/core/SkBitmapProcState_opts_ssse3.cpp",
   "$_src/core/SkBlendMode.cpp",
   "$_src/core/SkBlendModeBlender.cpp",
   "$_src/core/SkBlendModeBlender.h",
   "$_src/core/SkBlendModePriv.h",
   "$_src/core/SkBlenderBase.h",
   "$_src/core/SkBlitBWMaskTemplate.h",
+  "$_src/core/SkBlitMask.h",
+  "$_src/core/SkBlitMask_opts.cpp",
+  "$_src/core/SkBlitMask_opts_ssse3.cpp",
   "$_src/core/SkBlitRow.h",
   "$_src/core/SkBlitRow_D32.cpp",
+  "$_src/core/SkBlitRow_opts.cpp",
+  "$_src/core/SkBlitRow_opts_hsw.cpp",
   "$_src/core/SkBlitter.cpp",
   "$_src/core/SkBlitter.h",
   "$_src/core/SkBlitter_A8.cpp",
@@ -378,7 +380,6 @@ skia_core_sources = [
   "$_src/core/SkCapabilities.cpp",
   "$_src/core/SkChecksum.cpp",
   "$_src/core/SkChecksum.h",
-  "$_src/core/SkChromeRemoteGlyphCache.cpp",
   "$_src/core/SkClipStack.cpp",
   "$_src/core/SkClipStack.h",
   "$_src/core/SkClipStackDevice.cpp",
@@ -432,12 +433,9 @@ skia_core_sources = [
   "$_src/core/SkEdgeClipper.cpp",
   "$_src/core/SkEdgeClipper.h",
   "$_src/core/SkEffectPriv.h",
-  "$_src/core/SkEnumBitMask.h",
   "$_src/core/SkEnumerate.h",
   "$_src/core/SkExecutor.cpp",
   "$_src/core/SkFDot6.h",
-  "$_src/core/SkFilterColorProgram.cpp",
-  "$_src/core/SkFilterColorProgram.h",
   "$_src/core/SkFlattenable.cpp",
   "$_src/core/SkFont.cpp",
   "$_src/core/SkFontDescriptor.cpp",
@@ -450,7 +448,6 @@ skia_core_sources = [
   "$_src/core/SkFontStream.cpp",
   "$_src/core/SkFontStream.h",
   "$_src/core/SkFont_serial.cpp",
-  "$_src/core/SkFuzzLogging.h",
   "$_src/core/SkGaussFilter.cpp",
   "$_src/core/SkGaussFilter.h",
   "$_src/core/SkGeometry.cpp",
@@ -460,8 +457,6 @@ skia_core_sources = [
   "$_src/core/SkGlyph.h",
   "$_src/core/SkGlyphRunPainter.cpp",
   "$_src/core/SkGlyphRunPainter.h",
-  "$_src/core/SkGpuBlurUtils.cpp",
-  "$_src/core/SkGpuBlurUtils.h",
   "$_src/core/SkGraphics.cpp",
   "$_src/core/SkIDChangeListener.cpp",
   "$_src/core/SkIPoint16.h",
@@ -500,8 +495,11 @@ skia_core_sources = [
   "$_src/core/SkMatrixInvert.cpp",
   "$_src/core/SkMatrixInvert.h",
   "$_src/core/SkMatrixPriv.h",
-  "$_src/core/SkMatrixProvider.h",
   "$_src/core/SkMatrixUtils.h",
+  "$_src/core/SkMemset.h",
+  "$_src/core/SkMemset_opts.cpp",
+  "$_src/core/SkMemset_opts_avx.cpp",
+  "$_src/core/SkMemset_opts_erms.cpp",
   "$_src/core/SkMesh.cpp",
   "$_src/core/SkMeshPriv.h",
   "$_src/core/SkMessageBus.h",
@@ -515,7 +513,7 @@ skia_core_sources = [
   "$_src/core/SkOSFile.h",
   "$_src/core/SkOpts.cpp",
   "$_src/core/SkOpts.h",
-  "$_src/core/SkOpts_erms.cpp",
+  "$_src/core/SkOptsTargets.h",
   "$_src/core/SkOverdrawCanvas.cpp",
   "$_src/core/SkPaint.cpp",
   "$_src/core/SkPaintDefaults.h",
@@ -525,6 +523,7 @@ skia_core_sources = [
   "$_src/core/SkPathBuilder.cpp",
   "$_src/core/SkPathEffect.cpp",
   "$_src/core/SkPathEffectBase.h",
+  "$_src/core/SkPathEnums.h",
   "$_src/core/SkPathMakers.h",
   "$_src/core/SkPathMeasure.cpp",
   "$_src/core/SkPathMeasurePriv.h",
@@ -624,6 +623,9 @@ skia_core_sources = [
   "$_src/core/SkSurfacePriv.h",
   "$_src/core/SkSwizzle.cpp",
   "$_src/core/SkSwizzlePriv.h",
+  "$_src/core/SkSwizzler_opts.cpp",
+  "$_src/core/SkSwizzler_opts_hsw.cpp",
+  "$_src/core/SkSwizzler_opts_ssse3.cpp",
   "$_src/core/SkTDynamicHash.h",
   "$_src/core/SkTHash.h",
   "$_src/core/SkTMultiMap.h",
@@ -643,11 +645,6 @@ skia_core_sources = [
   "$_src/core/SkTypeface_remote.cpp",
   "$_src/core/SkTypeface_remote.h",
   "$_src/core/SkUnPreMultiply.cpp",
-  "$_src/core/SkVM.cpp",
-  "$_src/core/SkVM.h",
-  "$_src/core/SkVMBlitter.cpp",
-  "$_src/core/SkVMBlitter.h",
-  "$_src/core/SkVM_fwd.h",
   "$_src/core/SkValidationUtils.h",
   "$_src/core/SkVertState.cpp",
   "$_src/core/SkVertState.h",
@@ -694,10 +691,11 @@ skia_core_sources = [
   "$_src/opts/SkBitmapProcState_opts.h",
   "$_src/opts/SkBlitMask_opts.h",
   "$_src/opts/SkBlitRow_opts.h",
+  "$_src/opts/SkMemset_opts.h",
+  "$_src/opts/SkOpts_RestoreTarget.h",
+  "$_src/opts/SkOpts_SetTarget.h",
   "$_src/opts/SkRasterPipeline_opts.h",
   "$_src/opts/SkSwizzler_opts.h",
-  "$_src/opts/SkUtils_opts.h",
-  "$_src/opts/SkVM_opts.h",
   "$_src/shaders/SkBitmapProcShader.cpp",
   "$_src/shaders/SkBitmapProcShader.h",
   "$_src/shaders/SkBlendShader.cpp",
@@ -730,6 +728,7 @@ skia_core_sources = [
   "$_src/text/GlyphRun.h",
   "$_src/text/StrikeForGPU.cpp",
   "$_src/text/StrikeForGPU.h",
+  "$_src/text/TextBlobMailbox.h",
 ]
 
 # Generated by Bazel rule //include/pathops:public_hdrs
@@ -888,11 +887,14 @@ skia_no_encode_webp_srcs = [ "$_src/encode/SkWebpEncoder_none.cpp" ]
 skia_discardable_memory_chromium =
     [ "$_include/private/chromium/SkDiscardableMemory.h" ]
 
+# Generated by Bazel rule //src/text:no_slug_srcs
+skia_no_slug_srcs = [
+  "$_src/text/EmptyMailboxImpl.cpp",
+  "$_src/text/EmptySlugImpl.cpp",
+]
+
 skia_core_sources += skia_pathops_sources
 skia_core_sources += skia_skpicture_sources
 
 skia_core_public += skia_pathops_public
 skia_core_public += skia_skpicture_public
-
-# TODO(kjlubick) Move this into Chromium's BUILD.gn file.
-skia_core_public += skia_discardable_memory_chromium

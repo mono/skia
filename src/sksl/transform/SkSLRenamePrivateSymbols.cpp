@@ -7,17 +7,16 @@
 
 #include "include/core/SkSpan.h"
 #include "include/core/SkTypes.h"
+#include "src/base/SkEnumBitMask.h"
 #include "src/base/SkStringView.h"
 #include "src/sksl/SkSLAnalysis.h"
 #include "src/sksl/SkSLCompiler.h"
-#include "src/sksl/SkSLContext.h"
-#include "src/sksl/SkSLModifiersPool.h"
 #include "src/sksl/SkSLProgramSettings.h"
 #include "src/sksl/ir/SkSLFunctionDeclaration.h"
 #include "src/sksl/ir/SkSLFunctionDefinition.h"
 #include "src/sksl/ir/SkSLFunctionPrototype.h"
 #include "src/sksl/ir/SkSLIRNode.h"
-#include "src/sksl/ir/SkSLModifiers.h"
+#include "src/sksl/ir/SkSLModifierFlags.h"
 #include "src/sksl/ir/SkSLProgramElement.h"
 #include "src/sksl/ir/SkSLStatement.h"
 #include "src/sksl/ir/SkSLSymbol.h"
@@ -36,6 +35,7 @@
 
 namespace SkSL {
 
+class Context;
 class ProgramUsage;
 enum class ProgramKind : int8_t;
 
@@ -47,9 +47,9 @@ static void strip_export_flag(Context& context,
     while (mutableSym) {
         FunctionDeclaration* mutableDecl = &mutableSym->as<FunctionDeclaration>();
 
-        Modifiers modifiers = mutableDecl->modifiers();
-        modifiers.fFlags &= ~Modifiers::kExport_Flag;
-        mutableDecl->setModifiers(context.fModifiersPool->add(modifiers));
+        ModifierFlags flags = mutableDecl->modifierFlags();
+        flags &= ~ModifierFlag::kExport;
+        mutableDecl->setModifierFlags(flags);
 
         mutableSym = mutableDecl->mutableNextOverload();
     }
@@ -155,7 +155,7 @@ void Transform::RenamePrivateSymbols(Context& context,
             } else {
                 // We will only minify $private_functions, and only ones not marked as $export.
                 return skstd::starts_with(funcDecl.name(), '$') &&
-                       !(funcDecl.modifiers().fFlags & Modifiers::kExport_Flag);
+                       !funcDecl.modifierFlags().isExport();
             }
         }
 
@@ -234,7 +234,7 @@ void Transform::RenamePrivateSymbols(Context& context,
     for (std::unique_ptr<ProgramElement>& pe : module.fElements) {
         if (pe->is<FunctionDefinition>()) {
             const FunctionDeclaration* funcDecl = &pe->as<FunctionDefinition>().declaration();
-            if (funcDecl->modifiers().fFlags & Modifiers::kExport_Flag) {
+            if (funcDecl->modifierFlags().isExport()) {
                 strip_export_flag(context, funcDecl, module.fSymbols.get());
             }
         }

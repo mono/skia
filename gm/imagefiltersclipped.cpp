@@ -78,13 +78,9 @@ public:
     }
 
 protected:
-    SkString onShortName() override {
-        return SkString("imagefiltersclipped");
-    }
+    SkString getName() const override { return SkString("imagefiltersclipped"); }
 
-    SkISize onISize() override {
-        return SkISize::Make(860, 500);
-    }
+    SkISize getISize() override { return SkISize::Make(860, 500); }
 
     void onOnceBeforeDraw() override {
         fCheckerboard =
@@ -103,6 +99,7 @@ protected:
         resizeMatrix.setScale(RESIZE_FACTOR_X, RESIZE_FACTOR_Y);
         SkPoint3 pointLocation = SkPoint3::Make(32, 32, SkIntToScalar(10));
 
+        SkRect r = SkRect::MakeWH(SkIntToScalar(64), SkIntToScalar(64));
         sk_sp<SkImageFilter> filters[] = {
             SkImageFilters::Blur(SkIntToScalar(12), SkIntToScalar(12), nullptr),
             SkImageFilters::DropShadow(SkIntToScalar(10), SkIntToScalar(10),
@@ -113,12 +110,11 @@ protected:
             SkImageFilters::Erode(2, 2, checkerboard),
             SkImageFilters::Offset(SkIntToScalar(-16), SkIntToScalar(32), nullptr),
             SkImageFilters::MatrixTransform(resizeMatrix, SkSamplingOptions(), nullptr),
+            // Crop output of lighting to the checkerboard
             SkImageFilters::PointLitDiffuse(pointLocation, SK_ColorWHITE, SK_Scalar1,
-                                            SkIntToScalar(2), checkerboard),
-
+                                            SkIntToScalar(2), checkerboard, r),
         };
 
-        SkRect r = SkRect::MakeWH(SkIntToScalar(64), SkIntToScalar(64));
         SkScalar margin = SkIntToScalar(16);
         SkRect bounds = r;
         bounds.outset(margin, margin);

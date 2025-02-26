@@ -47,8 +47,11 @@ public:
     const Renderer* convexTessellatedWedges() const { return &fConvexTessellatedWedges; }
     const Renderer* tessellatedStrokes() const { return &fTessellatedStrokes; }
 
+    // Atlas'ed path rendering
+    const Renderer* atlasShape() const { return &fAtlasShape; }
+
     // Atlas'ed text rendering
-    const Renderer* bitmapText() const { return &fBitmapText; }
+    const Renderer* bitmapText(bool useLCDText) const { return &fBitmapText[useLCDText]; }
     const Renderer* sdfText(bool useLCDText) const { return &fSDFText[useLCDText]; }
 
     // Mesh rendering
@@ -73,6 +76,7 @@ public:
     const RenderStep* lookup(uint32_t uniqueID) const;
 
 #ifdef SK_ENABLE_VELLO_SHADERS
+    // Compute shader-based path renderer and compositor.
     const VelloRenderer* velloRenderer() const { return fVelloRenderer.get(); }
 #endif
 
@@ -99,7 +103,9 @@ private:
     Renderer fConvexTessellatedWedges;
     Renderer fTessellatedStrokes;
 
-    Renderer fBitmapText;
+    Renderer fAtlasShape;
+
+    Renderer fBitmapText[2];  // bool isLCD
     Renderer fSDFText[2]; // bool isLCD
 
     Renderer fAnalyticRRect;

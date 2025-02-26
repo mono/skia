@@ -13,7 +13,6 @@
 #include "include/core/SkFlattenable.h"
 #include "include/core/SkRefCnt.h"
 #include "include/private/SkColorData.h"
-#include "include/private/base/SkAttributes.h"
 
 #include <cstddef>
 
@@ -22,20 +21,6 @@ class SkRuntimeEffect;
 enum class SkBlendMode;
 struct SkDeserialProcs;
 struct SkStageRec;
-
-#if defined(SK_GRAPHITE)
-namespace skgpu::graphite {
-class KeyContext;
-class PaintParamsKeyBuilder;
-class PipelineDataGatherer;
-}
-#endif
-
-#if defined(SK_ENABLE_SKVM)
-#include "include/core/SkImageInfo.h"
-#include "src/base/SkArenaAlloc.h"
-#include "src/core/SkVM_fwd.h"
-#endif
 
 #define SK_ALL_COLOR_FILTERS(M) \
     M(BlendMode)                \
@@ -49,14 +34,7 @@ class PipelineDataGatherer;
 
 class SkColorFilterBase : public SkColorFilter {
 public:
-    SK_WARN_UNUSED_RESULT
-    virtual bool appendStages(const SkStageRec& rec, bool shaderIsOpaque) const = 0;
-
-#if defined(SK_ENABLE_SKVM)
-    SK_WARN_UNUSED_RESULT
-    skvm::Color program(skvm::Builder*, skvm::Color,
-                        const SkColorInfo& dst, skvm::Uniforms*, SkArenaAlloc*) const;
-#endif
+    [[nodiscard]] virtual bool appendStages(const SkStageRec& rec, bool shaderIsOpaque) const = 0;
 
     /** Returns the flags for this filter. Override in subclasses to return custom flags.
     */
@@ -96,20 +74,6 @@ public:
 
     virtual SkPMColor4f onFilterColor4f(const SkPMColor4f& color, SkColorSpace* dstCS) const;
 
-#if defined(SK_GRAPHITE)
-    /**
-        Add implementation details, for the specified backend, of this SkColorFilter to the
-        provided key.
-
-        @param keyContext backend context for key creation
-        @param builder    builder for creating the key for this SkShader
-        @param gatherer   if non-null, storage for this colorFilter's data
-    */
-    virtual void addToKey(const skgpu::graphite::KeyContext& keyContext,
-                          skgpu::graphite::PaintParamsKeyBuilder* builder,
-                          skgpu::graphite::PipelineDataGatherer* gatherer) const;
-#endif
-
 protected:
     SkColorFilterBase() {}
 
@@ -117,11 +81,6 @@ protected:
     virtual bool onAsAColorMode(SkColor* color, SkBlendMode* bmode) const;
 
 private:
-#if defined(SK_ENABLE_SKVM)
-    virtual skvm::Color onProgram(skvm::Builder*, skvm::Color,
-                                  const SkColorInfo& dst, skvm::Uniforms*, SkArenaAlloc*) const = 0;
-#endif
-
     friend class SkColorFilter;
 
     using INHERITED = SkFlattenable;

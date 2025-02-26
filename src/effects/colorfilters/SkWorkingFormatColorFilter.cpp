@@ -25,12 +25,6 @@
 
 #include <utility>
 
-#if defined(SK_GRAPHITE)
-#include "src/gpu/graphite/KeyContext.h"
-#include "src/gpu/graphite/KeyHelpers.h"
-#include "src/gpu/graphite/PaintParamsKey.h"
-#endif
-
 SkWorkingFormatColorFilter::SkWorkingFormatColorFilter(sk_sp<SkColorFilter> child,
                                                        const skcms_TransferFunction* tf,
                                                        const skcms_Matrix3x3* gamut,
@@ -65,35 +59,6 @@ sk_sp<SkColorSpace> SkWorkingFormatColorFilter::workingFormat(const sk_sp<SkColo
     *at = fUseDstAT ? kPremul_SkAlphaType : fAT;
     return SkColorSpace::MakeRGB(tf, gamut);
 }
-
-#if defined(SK_GRAPHITE)
-void SkWorkingFormatColorFilter::addToKey(const skgpu::graphite::KeyContext& keyContext,
-                                          skgpu::graphite::PaintParamsKeyBuilder* builder,
-                                          skgpu::graphite::PipelineDataGatherer* gatherer) const {
-    using namespace skgpu::graphite;
-
-    const SkAlphaType dstAT = keyContext.dstColorInfo().alphaType();
-    sk_sp<SkColorSpace> dstCS = keyContext.dstColorInfo().refColorSpace();
-    if (!dstCS) {
-        dstCS = SkColorSpace::MakeSRGB();
-    }
-
-    SkAlphaType workingAT;
-    sk_sp<SkColorSpace> workingCS = this->workingFormat(dstCS, &workingAT);
-
-    ColorSpaceTransformBlock::ColorSpaceTransformData data1(
-            dstCS.get(), dstAT, workingCS.get(), workingAT);
-    ColorSpaceTransformBlock::BeginBlock(keyContext, builder, gatherer, &data1);
-    builder->endBlock();
-
-    as_CFB(fChild)->addToKey(keyContext, builder, gatherer);
-
-    ColorSpaceTransformBlock::ColorSpaceTransformData data2(
-            workingCS.get(), workingAT, dstCS.get(), dstAT);
-    ColorSpaceTransformBlock::BeginBlock(keyContext, builder, gatherer, &data2);
-    builder->endBlock();
-}
-#endif
 
 bool SkWorkingFormatColorFilter::appendStages(const SkStageRec& rec, bool shaderIsOpaque) const {
     sk_sp<SkColorSpace> dstCS = sk_ref_sp(rec.fDstCS);
@@ -130,29 +95,6 @@ bool SkWorkingFormatColorFilter::appendStages(const SkStageRec& rec, bool shader
     workingToDst->apply(rec.fPipeline);
     return true;
 }
-
-#if defined(SK_ENABLE_SKVM)
-skvm::Color SkWorkingFormatColorFilter::onProgram(skvm::Builder* p,
-                                                  skvm::Color c,
-                                                  const SkColorInfo& rawDst,
-                                                  skvm::Uniforms* uniforms,
-                                                  SkArenaAlloc* alloc) const {
-    sk_sp<SkColorSpace> dstCS = rawDst.refColorSpace();
-    if (!dstCS) {
-        dstCS = SkColorSpace::MakeSRGB();
-    }
-
-    SkAlphaType workingAT;
-    sk_sp<SkColorSpace> workingCS = this->workingFormat(dstCS, &workingAT);
-
-    SkColorInfo dst = {rawDst.colorType(), kPremul_SkAlphaType, dstCS},
-                working = {rawDst.colorType(), workingAT, workingCS};
-
-    c = SkColorSpaceXformSteps{dst, working}.program(p, uniforms, c);
-    c = as_CFB(fChild)->program(p, c, working, uniforms, alloc);
-    return c ? SkColorSpaceXformSteps{working, dst}.program(p, uniforms, c) : c;
-}
-#endif
 
 SkPMColor4f SkWorkingFormatColorFilter::onFilterColor4f(const SkPMColor4f& origColor,
                                                         SkColorSpace* rawDstCS) const {

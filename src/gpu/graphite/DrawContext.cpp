@@ -13,6 +13,7 @@
 
 #include "include/gpu/graphite/Context.h"
 #include "include/gpu/graphite/Recorder.h"
+#include "src/gpu/graphite/AtlasProvider.h"
 #include "src/gpu/graphite/Buffer.h"
 #include "src/gpu/graphite/Caps.h"
 #include "src/gpu/graphite/CommandBuffer.h"
@@ -20,6 +21,7 @@
 #include "src/gpu/graphite/ContextPriv.h"
 #include "src/gpu/graphite/DrawList.h"
 #include "src/gpu/graphite/DrawPass.h"
+#include "src/gpu/graphite/PathAtlas.h"
 #include "src/gpu/graphite/RecorderPriv.h"
 #include "src/gpu/graphite/RenderPassTask.h"
 #include "src/gpu/graphite/ResourceTypes.h"
@@ -30,7 +32,7 @@
 #include "src/gpu/graphite/compute/DispatchGroup.h"
 #include "src/gpu/graphite/geom/BoundsManager.h"
 #include "src/gpu/graphite/geom/Geometry.h"
-#include "src/gpu/graphite/text/AtlasManager.h"
+#include "src/gpu/graphite/text/TextAtlasManager.h"
 
 namespace skgpu::graphite {
 
@@ -87,6 +89,10 @@ void DrawContext::clear(const SkColor4f& clearColor) {
     // a fullscreen clear will overwrite anything that came before, so start a new DrawList
     // and clear any drawpasses that haven't been snapped yet
     fPendingDraws = std::make_unique<DrawList>();
+    if (fComputePathAtlas) {
+        fComputePathAtlas->reset();
+    }
+    fDispatchGroups.clear();
     fDrawPasses.clear();
 }
 
@@ -101,7 +107,7 @@ void DrawContext::recordDraw(const Renderer* renderer,
     fPendingDraws->recordDraw(renderer, localToDevice, geometry, clip, ordering, paint, stroke);
 }
 
-bool DrawContext::recordTextUploads(AtlasManager* am) {
+bool DrawContext::recordTextUploads(TextAtlasManager* am) {
     return am->recordUploads(fPendingUploads.get(), /*useCachedUploads=*/false);
 }
 
@@ -124,10 +130,20 @@ bool DrawContext::recordUpload(Recorder* recorder,
                                          std::move(condContext));
 }
 
+PathAtlas* DrawContext::getOrCreatePathAtlas(Recorder* recorder) {
+    if (!fComputePathAtlas) {
+        fComputePathAtlas = recorder->priv().atlasProvider()->createComputePathAtlas(recorder);
+    }
+    return fComputePathAtlas.get();
+}
+
 void DrawContext::snapDrawPass(Recorder* recorder) {
     if (fPendingDraws->drawCount() == 0 && fPendingLoadOp != LoadOp::kClear) {
         return;
     }
+
+    // Instantiate the compute pass that may render an atlas texture used by this draw pass.
+    this->snapPathAtlasDispatches(recorder);
 
     auto pass = DrawPass::Make(recorder,
                                std::move(fPendingDraws),
@@ -151,28 +167,45 @@ RenderPassDesc RenderPassDesc::Make(const Caps* caps,
                                     Swizzle writeSwizzle) {
     RenderPassDesc desc;
     desc.fWriteSwizzle = writeSwizzle;
+    desc.fSampleCount = 1;
     // It doesn't make sense to have a storeOp for our main target not be store. Why are we doing
     // this DrawPass then
     SkASSERT(storeOp == StoreOp::kStore);
     if (requiresMSAA) {
-        // TODO: If the resolve texture isn't readable, the MSAA color attachment will need to be
-        // persistently associated with the framebuffer, in which case it's not discardable.
-        desc.fColorAttachment.fTextureInfo = caps->getDefaultMSAATextureInfo(targetInfo,
-                                                                             Discardable::kYes);
-        if (loadOp != LoadOp::kClear) {
-            desc.fColorAttachment.fLoadOp = LoadOp::kDiscard;
+        if (caps->msaaRenderToSingleSampledSupport()) {
+            desc.fColorAttachment.fTextureInfo = targetInfo;
+            desc.fColorAttachment.fLoadOp = loadOp;
+            desc.fColorAttachment.fStoreOp = storeOp;
+            desc.fSampleCount = caps->defaultMSAASamplesCount();
         } else {
-            desc.fColorAttachment.fLoadOp = LoadOp::kClear;
-        }
-        desc.fColorAttachment.fStoreOp = StoreOp::kDiscard;
+            // TODO: If the resolve texture isn't readable, the MSAA color attachment will need to
+            // be persistently associated with the framebuffer, in which case it's not discardable.
+            auto msaaTextureInfo = caps->getDefaultMSAATextureInfo(targetInfo, Discardable::kYes);
+            if (msaaTextureInfo.isValid()) {
+                desc.fColorAttachment.fTextureInfo = msaaTextureInfo;
+                if (loadOp != LoadOp::kClear) {
+                    desc.fColorAttachment.fLoadOp = LoadOp::kDiscard;
+                } else {
+                    desc.fColorAttachment.fLoadOp = LoadOp::kClear;
+                }
+                desc.fColorAttachment.fStoreOp = StoreOp::kDiscard;
 
-        desc.fColorResolveAttachment.fTextureInfo = targetInfo;
-        if (loadOp != LoadOp::kLoad) {
-            desc.fColorResolveAttachment.fLoadOp = LoadOp::kDiscard;
-        } else {
-            desc.fColorResolveAttachment.fLoadOp = LoadOp::kLoad;
+                desc.fColorResolveAttachment.fTextureInfo = targetInfo;
+                if (loadOp != LoadOp::kLoad) {
+                    desc.fColorResolveAttachment.fLoadOp = LoadOp::kDiscard;
+                } else {
+                    desc.fColorResolveAttachment.fLoadOp = LoadOp::kLoad;
+                }
+                desc.fColorResolveAttachment.fStoreOp = storeOp;
+
+                desc.fSampleCount = msaaTextureInfo.numSamples();
+            } else {
+                // fall back to single sampled
+                desc.fColorAttachment.fTextureInfo = targetInfo;
+                desc.fColorAttachment.fLoadOp = loadOp;
+                desc.fColorAttachment.fStoreOp = storeOp;
+            }
         }
-        desc.fColorResolveAttachment.fStoreOp = storeOp;
     } else {
         desc.fColorAttachment.fTextureInfo = targetInfo;
         desc.fColorAttachment.fLoadOp = loadOp;
@@ -182,9 +215,7 @@ RenderPassDesc RenderPassDesc::Make(const Caps* caps,
 
     if (depthStencilFlags != DepthStencilFlags::kNone) {
         desc.fDepthStencilAttachment.fTextureInfo = caps->getDefaultDepthStencilTextureInfo(
-                depthStencilFlags,
-                desc.fColorAttachment.fTextureInfo.numSamples(),
-                Protected::kNo);
+                depthStencilFlags, desc.fSampleCount, Protected::kNo);
         // Always clear the depth and stencil to 0 at the start of a DrawPass, but discard at the
         // end since their contents do not affect the next frame.
         desc.fDepthStencilAttachment.fLoadOp = LoadOp::kClear;
@@ -238,7 +269,21 @@ sk_sp<Task> DrawContext::snapComputeTask(Recorder* recorder) {
     if (fDispatchGroups.empty()) {
         return nullptr;
     }
+    SkASSERT(fDispatchGroups.size() == 1);
     return ComputeTask::Make(std::move(fDispatchGroups));
+}
+
+void DrawContext::snapPathAtlasDispatches(Recorder* recorder) {
+    if (!fComputePathAtlas) {
+        // Platform doesn't support compute or atlas was never initialized.
+        return;
+    }
+    auto dispatchGroup = fComputePathAtlas->recordDispatches(recorder);
+    if (dispatchGroup) {
+        SkASSERT(fPendingDraws->hasAtlasDraws());
+        fDispatchGroups.push_back(std::move(dispatchGroup));
+    }
+    fComputePathAtlas->reset();
 }
 
 } // namespace skgpu::graphite

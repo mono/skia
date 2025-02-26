@@ -871,10 +871,7 @@ static void test_surface_context_clear(skiatest::Reporter* reporter,
     }
 }
 
-DEF_GANESH_TEST_FOR_GL_RENDERING_CONTEXTS(SurfaceClear_Gpu,
-                                          reporter,
-                                          ctxInfo,
-                                          CtsEnforcement::kApiLevel_T) {
+DEF_GANESH_TEST_FOR_GL_CONTEXT(SurfaceClear_Gpu, reporter, ctxInfo, CtsEnforcement::kApiLevel_T) {
     auto dContext = ctxInfo.directContext();
     // Snaps an image from a surface and then makes a SurfaceContext from the image's texture.
     auto makeImageSurfaceContext = [dContext](SkSurface* surface) {
@@ -1074,10 +1071,10 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(SurfaceWrappedWithRelease_Gpu,
     }
 }
 
-DEF_GANESH_TEST_FOR_GL_RENDERING_CONTEXTS(SurfaceAttachStencil_Gpu,
-                                          reporter,
-                                          ctxInfo,
-                                          CtsEnforcement::kApiLevel_T) {
+DEF_GANESH_TEST_FOR_GL_CONTEXT(SurfaceAttachStencil_Gpu,
+                               reporter,
+                               ctxInfo,
+                               CtsEnforcement::kApiLevel_T) {
     auto context = ctxInfo.directContext();
     const GrCaps* caps = context->priv().caps();
 
@@ -1298,40 +1295,4 @@ DEF_TEST(surface_image_unity, reporter) {
             }
         }
     }
-}
-
-DEF_TEST(VMBlitterInfiniteColorShader, r) {
-    // This replicates the underlying problem of oss-fuzz:49391.
-    // Steps:
-    //   - Force the blitter chooser to use SkVM (done here with a runtime blender)
-    //   - Have a paint with no shader (so the blitter tries to construct a color shader from the
-    //     paint color)
-    //   - Have a color filter that, when applied to the paint color, produces a color with a tiny
-    //     (but nonzero) alpha value. This triggers overflow when the filtered color is unpremuled,
-    //     resulting in infinite RGB values.
-    //   - With infinite color, the color-shader factory rejects the color, and returns nullptr,
-    //     breaking the assumptions in the blitter that a shader will - always - be constructed.
-    SkPaint paint;
-
-    // This ensures that we will use SkVMBlitter
-    paint.setBlender(GetRuntimeBlendForBlendMode(SkBlendMode::kSrc));
-
-    // Start with a simple color
-    paint.setColor4f({ 1, 1, 1, 1 });
-
-    // Color filter that will set alpha to a tiny value. 1/X is not representable in float.
-    SkColorMatrix cm;
-    cm.setScale(1.0f, 1.0f, 1.0f, 7.4E-40f);
-    paint.setColorFilter(SkColorFilters::Matrix(cm));
-
-    // Confirm that our color filter produces infinite RGB when applied to the paint color
-    SkColor4f filtered =
-            paint.getColorFilter()->filterColor4f(paint.getColor4f(), nullptr, nullptr);
-    REPORTER_ASSERT(r, !sk_float_isfinite(filtered.fR));
-    // ... and that we therefore can't construct a color shader from the result
-    REPORTER_ASSERT(r, !SkShaders::Color(filtered, nullptr));
-
-    // Now try to draw this paint. Before the fixing the bug, this would crash (null dereference)
-    auto surface = SkSurfaces::Raster(SkImageInfo::MakeN32Premul(8, 8));
-    surface->getCanvas()->drawPaint(paint);
 }

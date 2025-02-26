@@ -1,5 +1,7 @@
+8 instructions
+
 [immutable slots]
-_4_ok = 0xFFFFFFFF
+i0 = 0xFFFFFFFF
 
 store_src_rg                   coords = src.rg
 init_lane_masks                CondMask = LoopMask = RetMask = true

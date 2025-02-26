@@ -16,8 +16,8 @@
 #include "include/private/base/SkThreadAnnotations.h"
 #include "include/private/base/SkTo.h"
 #include "src/base/SkArenaAlloc.h"
+#include "src/base/SkEnumBitMask.h"
 #include "src/base/SkSpinlock.h"
-#include "src/core/SkEnumBitMask.h"
 #include "src/core/SkTHash.h"
 #include "src/gpu/Blend.h"
 #include "src/gpu/graphite/BuiltInCodeSnippetID.h"
@@ -62,7 +62,7 @@ enum class SnippetRequirementFlags : uint32_t {
     kBlenderDstColor = 0x4,  // The "dst" argument for a blender
     kSurfaceColor = 0x8,
 };
-SK_MAKE_BITMASK_OPS(SnippetRequirementFlags);
+SK_MAKE_BITMASK_OPS(SnippetRequirementFlags)
 
 class ShaderInfo;
 class ShaderNode;
@@ -102,13 +102,13 @@ struct ShaderSnippet {
         , fNumChildren(numChildren) {}
 
     bool needsLocalCoords() const {
-        return fSnippetRequirementFlags & SnippetRequirementFlags::kLocalCoords;
+        return SkToBool(fSnippetRequirementFlags & SnippetRequirementFlags::kLocalCoords);
     }
     bool needsPriorStageOutput() const {
-        return fSnippetRequirementFlags & SnippetRequirementFlags::kPriorStageOutput;
+        return SkToBool(fSnippetRequirementFlags & SnippetRequirementFlags::kPriorStageOutput);
     }
     bool needsBlenderDstColor() const {
-        return fSnippetRequirementFlags & SnippetRequirementFlags::kBlenderDstColor;
+        return SkToBool(fSnippetRequirementFlags & SnippetRequirementFlags::kBlenderDstColor);
     }
 
     const char* fName = nullptr;
@@ -177,10 +177,10 @@ public:
                const char* ssboIndex);
 
     bool needsLocalCoords() const {
-        return fSnippetRequirementFlags & SnippetRequirementFlags::kLocalCoords;
+        return SkToBool(fSnippetRequirementFlags & SnippetRequirementFlags::kLocalCoords);
     }
     bool needsSurfaceColor() const {
-        return fSnippetRequirementFlags & SnippetRequirementFlags::kSurfaceColor;
+        return SkToBool(fSnippetRequirementFlags & SnippetRequirementFlags::kSurfaceColor);
     }
     const RuntimeEffectDictionary* runtimeEffectDictionary() const {
         return fRuntimeEffectDictionary;

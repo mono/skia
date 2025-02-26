@@ -9,6 +9,7 @@
 
 #include "include/core/SkColorSpace.h"
 #include "include/core/SkShader.h"
+#include "src/core/SkBlendModeBlender.h"
 #include "src/core/SkBlenderBase.h"
 #include "src/core/SkColorSpacePriv.h"
 #include "src/effects/colorfilters/SkColorFilterBase.h"
@@ -114,7 +115,8 @@ void PaintParams::toKey(const KeyContext& keyContext,
                           fDstReadReq == DstReadRequirement::kTextureSample;
     SkASSERT(needsDstSample == SkToBool(keyContext.dstTexture()));
     if (needsDstSample) {
-        DstReadSampleBlock::BeginBlock(keyContext, builder, gatherer, keyContext.dstTexture());
+        DstReadSampleBlock::BeginBlock(
+                keyContext, builder, gatherer, keyContext.dstTexture(), keyContext.dstOffset());
         builder->endBlock();
 
     } else if (fDstReadReq == DstReadRequirement::kFramebufferFetch) {
@@ -122,9 +124,7 @@ void PaintParams::toKey(const KeyContext& keyContext,
         builder->endBlock();
     }
 
-    if (fShader) {
-        as_SB(fShader)->addToKey(keyContext, builder, gatherer);
-    }
+    AddToKey(keyContext, builder, gatherer, fShader.get());
 
     if (fPrimitiveBlender) {
         AddPrimitiveBlendBlock(keyContext, builder, gatherer, fPrimitiveBlender.get());
@@ -136,9 +136,7 @@ void PaintParams::toKey(const KeyContext& keyContext,
                 keyContext, builder, gatherer, SkBlendMode::kDstIn, {0, 0, 0, fColor.fA});
     }
 
-    if (fColorFilter) {
-        as_CFB(fColorFilter)->addToKey(keyContext, builder, gatherer);
-    }
+    AddToKey(keyContext, builder, gatherer, fColorFilter.get());
 
 #ifndef SK_IGNORE_GPU_DITHER
     SkColorType ct = keyContext.dstColorInfo().colorType();
@@ -151,15 +149,24 @@ void PaintParams::toKey(const KeyContext& keyContext,
 #endif
 
     std::optional<SkBlendMode> finalBlendMode = this->asFinalBlendMode();
-    if (finalBlendMode && *finalBlendMode <= SkBlendMode::kLastCoeffMode) {
-        BuiltInCodeSnippetID fixedFuncBlendModeID = static_cast<BuiltInCodeSnippetID>(
-                kFixedFunctionBlendModeIDOffset + (int) *finalBlendMode);
-        builder->beginBlock(fixedFuncBlendModeID);
-        builder->endBlock();
-
-    } else {
-        AddDstBlendBlock(keyContext, builder, gatherer, fFinalBlender.get());
+    // If this draw needs a dst read, we are either doing custom blending or we cannot handle the
+    // combination of blend mode and coverage using fixed function blend hardware.
+    if (fDstReadReq != DstReadRequirement::kNone) {
+        // Add a block to implement the blending in the shader.
+        static const SkBlendModeBlender kDefaultBlender(SkBlendMode::kSrcOver);
+        AddDstBlendBlock(keyContext,
+                         builder,
+                         gatherer,
+                         fFinalBlender ? fFinalBlender.get() : &kDefaultBlender);
+        finalBlendMode = SkBlendMode::kSrc;
     }
+
+    // Set the hardware blend mode.
+    SkASSERT(finalBlendMode);
+    BuiltInCodeSnippetID fixedFuncBlendModeID = static_cast<BuiltInCodeSnippetID>(
+            kFixedFunctionBlendModeIDOffset + static_cast<int>(*finalBlendMode));
+    builder->beginBlock(fixedFuncBlendModeID);
+    builder->endBlock();
 }
 
 } // namespace skgpu::graphite

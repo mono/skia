@@ -54,7 +54,7 @@
 #include "src/core/SkBitmapCache.h"
 #include "src/core/SkColorSpacePriv.h"
 #include "src/core/SkImagePriv.h"
-#include "src/core/SkOpts.h"
+#include "src/core/SkMemset.h"
 #include "src/gpu/ResourceKey.h"
 #include "src/gpu/ganesh/GrCaps.h"
 #include "src/gpu/ganesh/GrDirectContextPriv.h"
@@ -658,7 +658,7 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(UnpremulTextureImage,
 
 DEF_GANESH_TEST(AbandonedContextImage, reporter, options, CtsEnforcement::kApiLevel_T) {
     using Factory = sk_gpu_test::GrContextFactory;
-    for (int ct = 0; ct < Factory::kContextTypeCnt; ++ct) {
+    for (int ct = 0; ct < skgpu::kContextTypeCount; ++ct) {
         auto type = static_cast<Factory::ContextType>(ct);
         std::unique_ptr<Factory> factory(new Factory);
         if (!factory->get(type)) {
@@ -922,10 +922,10 @@ struct TextureReleaseChecker {
     }
 };
 
-DEF_GANESH_TEST_FOR_GL_RENDERING_CONTEXTS(SkImage_NewFromTextureRelease,
-                                          reporter,
-                                          ctxInfo,
-                                          CtsEnforcement::kApiLevel_T) {
+DEF_GANESH_TEST_FOR_GL_CONTEXT(SkImage_NewFromTextureRelease,
+                               reporter,
+                               ctxInfo,
+                               CtsEnforcement::kApiLevel_T) {
     const int kWidth = 10;
     const int kHeight = 10;
 
@@ -980,9 +980,9 @@ DEF_GANESH_TEST_FOR_GL_RENDERING_CONTEXTS(SkImage_NewFromTextureRelease,
 static void test_cross_context_image(skiatest::Reporter* reporter, const GrContextOptions& options,
                                      const char* testName,
                                      std::function<sk_sp<SkImage>(GrDirectContext*)> imageMaker) {
-    for (int i = 0; i < GrContextFactory::kContextTypeCnt; ++i) {
+    for (int i = 0; i < skgpu::kContextTypeCount; ++i) {
         GrContextFactory testFactory(options);
-        GrContextFactory::ContextType ctxType = static_cast<GrContextFactory::ContextType>(i);
+        skgpu::ContextType ctxType = static_cast<skgpu::ContextType>(i);
         ContextInfo ctxInfo = testFactory.getContextInfo(ctxType);
         auto dContext = ctxInfo.directContext();
         if (!dContext) {
@@ -1164,9 +1164,9 @@ DEF_GANESH_TEST(SkImage_CrossContextGrayAlphaConfigs,
         SkAutoPixmapStorage pixmap;
         pixmap.alloc(SkImageInfo::Make(4, 4, ct, kPremul_SkAlphaType));
 
-        for (int i = 0; i < GrContextFactory::kContextTypeCnt; ++i) {
+        for (int i = 0; i < skgpu::kContextTypeCount; ++i) {
             GrContextFactory testFactory(options);
-            GrContextFactory::ContextType ctxType = static_cast<GrContextFactory::ContextType>(i);
+            skgpu::ContextType ctxType = static_cast<skgpu::ContextType>(i);
             ContextInfo ctxInfo = testFactory.getContextInfo(ctxType);
             auto dContext = ctxInfo.directContext();
             if (!dContext || !dContext->priv().caps()->crossContextTextureSupport()) {
@@ -1187,10 +1187,7 @@ DEF_GANESH_TEST(SkImage_CrossContextGrayAlphaConfigs,
     }
 }
 
-DEF_GANESH_TEST_FOR_GL_RENDERING_CONTEXTS(makeBackendTexture,
-                                          reporter,
-                                          ctxInfo,
-                                          CtsEnforcement::kApiLevel_T) {
+DEF_GANESH_TEST_FOR_GL_CONTEXT(makeBackendTexture, reporter, ctxInfo, CtsEnforcement::kApiLevel_T) {
     auto context = ctxInfo.directContext();
     sk_gpu_test::TestContext* testContext = ctxInfo.testContext();
     sk_sp<GrContextThreadSafeProxy> proxy = context->threadSafeProxy();
@@ -1342,7 +1339,7 @@ DEF_TEST(Image_makeColorSpace, r) {
     *srgbBitmap.getAddr32(0, 0) = SkSwizzle_RGBA_to_PMColor(0xFF604020);
     srgbBitmap.setImmutable();
     sk_sp<SkImage> srgbImage = srgbBitmap.asImage();
-    sk_sp<SkImage> p3Image = srgbImage->makeColorSpace(p3);
+    sk_sp<SkImage> p3Image = srgbImage->makeColorSpace(nullptr, p3);
     SkBitmap p3Bitmap;
     bool success = p3Image->asLegacyBitmap(&p3Bitmap);
 
@@ -1353,7 +1350,7 @@ DEF_TEST(Image_makeColorSpace, r) {
     REPORTER_ASSERT(r, almost_equal(0x40, SkGetPackedG32(*p3Bitmap.getAddr32(0, 0))));
     REPORTER_ASSERT(r, almost_equal(0x5E, SkGetPackedB32(*p3Bitmap.getAddr32(0, 0))));
 
-    sk_sp<SkImage> adobeImage = srgbImage->makeColorSpace(adobeGamut);
+    sk_sp<SkImage> adobeImage = srgbImage->makeColorSpace(nullptr, adobeGamut);
     SkBitmap adobeBitmap;
     success = adobeImage->asLegacyBitmap(&adobeBitmap);
     REPORTER_ASSERT(r, success);
@@ -1362,7 +1359,7 @@ DEF_TEST(Image_makeColorSpace, r) {
     REPORTER_ASSERT(r, almost_equal(0x4C, SkGetPackedB32(*adobeBitmap.getAddr32(0, 0))));
 
     srgbImage = GetResourceAsImage("images/1x1.png");
-    p3Image = srgbImage->makeColorSpace(p3);
+    p3Image = srgbImage->makeColorSpace(nullptr, p3);
     success = p3Image->asLegacyBitmap(&p3Bitmap);
     REPORTER_ASSERT(r, success);
     REPORTER_ASSERT(r, almost_equal(0x8B, SkGetPackedR32(*p3Bitmap.getAddr32(0, 0))));
@@ -1666,5 +1663,5 @@ DEF_TEST(image_subset_encode_skbug_7752, reporter) {
     check_roundtrip(image); // should trivially pass
     check_roundtrip(image->makeSubset(nullptr, {0, 0, W/2, H/2}));
     check_roundtrip(image->makeSubset(nullptr, {W/2, H/2, W, H}));
-    check_roundtrip(image->makeColorSpace(SkColorSpace::MakeSRGBLinear()));
+    check_roundtrip(image->makeColorSpace(nullptr, SkColorSpace::MakeSRGBLinear()));
 }

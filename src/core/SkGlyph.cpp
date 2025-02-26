@@ -13,18 +13,15 @@
 #include "include/core/SkPicture.h"
 #include "include/core/SkScalar.h"
 #include "include/core/SkSerialProcs.h"
+#include "include/core/SkSpan.h"
 #include "include/private/base/SkFloatingPoint.h"
-#include "include/private/base/SkSpan_impl.h"
 #include "include/private/base/SkTFitsIn.h"
-#include "include/private/base/SkTemplates.h"
 #include "include/private/base/SkTo.h"
 #include "src/base/SkArenaAlloc.h"
 #include "src/base/SkBezierCurves.h"
 #include "src/core/SkReadBuffer.h"
 #include "src/core/SkScalerContext.h"
 #include "src/core/SkWriteBuffer.h"
-#include "src/pathops/SkPathOpsCubic.h"
-#include "src/pathops/SkPathOpsPoint.h"
 #include "src/text/StrikeForGPU.h"
 
 #include <cstring>
@@ -32,7 +29,6 @@
 #include <tuple>
 #include <utility>
 
-using namespace skia_private;
 using namespace skglyph;
 using namespace sktext;
 
@@ -115,7 +111,7 @@ std::optional<SkGlyph> SkGlyph::MakeFromBuffer(SkReadBuffer& buffer) {
     glyph.fTop = leftTop & 0xffffu;
     glyph.fMaskFormat = format;
     SkDEBUGCODE(glyph.fAdvancesBoundsFormatAndInitialPathDone = true;)
-    return std::move(glyph);
+    return glyph;
 }
 
 SkGlyph::SkGlyph(const SkGlyph&) = default;
@@ -125,19 +121,15 @@ SkGlyph& SkGlyph::operator=(SkGlyph&&) = default;
 SkGlyph::~SkGlyph() = default;
 
 SkMask SkGlyph::mask() const {
-    SkMask mask;
-    mask.fImage = (uint8_t*)fImage;
-    mask.fBounds.setXYWH(fLeft, fTop, fWidth, fHeight);
-    mask.fRowBytes = this->rowBytes();
-    mask.fFormat = fMaskFormat;
-    return mask;
+    SkIRect bounds = SkIRect::MakeXYWH(fLeft, fTop, fWidth, fHeight);
+    return SkMask(static_cast<const uint8_t*>(fImage), bounds, this->rowBytes(), fMaskFormat);
 }
 
 SkMask SkGlyph::mask(SkPoint position) const {
     SkASSERT(SkScalarIsInt(position.x()) && SkScalarIsInt(position.y()));
-    SkMask answer = this->mask();
-    answer.fBounds.offset(SkScalarFloorToInt(position.x()), SkScalarFloorToInt(position.y()));
-    return answer;
+    SkIRect bounds = SkIRect::MakeXYWH(fLeft, fTop, fWidth, fHeight);
+    bounds.offset(SkScalarFloorToInt(position.x()), SkScalarFloorToInt(position.y()));
+    return SkMask(static_cast<const uint8_t*>(fImage), bounds, this->rowBytes(), fMaskFormat);
 }
 
 void SkGlyph::zeroMetrics() {
@@ -474,12 +466,12 @@ static std::tuple<SkScalar, SkScalar> calculate_path_gap(
     };
 
     auto addCubic = [&](SkScalar offset) {
-        SkDCubic cubic;
-        cubic.set(pts);
-        double roots[3];
-        int count = cubic.horizontalIntersect(offset, roots);
-        while (--count >= 0) {
-            expandGap(cubic.ptAtT(roots[count]).asSkPoint().fX);
+        float intersectionStorage[3];
+        auto intersections = SkBezierCubic::IntersectWithHorizontalLine(
+                SkSpan{pts, 4}, offset, intersectionStorage);
+
+        for(double intersection : intersections) {
+            expandGap(intersection);
         }
     };
 

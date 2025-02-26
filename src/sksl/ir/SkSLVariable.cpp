@@ -7,15 +7,14 @@
 
 #include "src/sksl/ir/SkSLVariable.h"
 
+#include "src/base/SkEnumBitMask.h"
 #include "src/base/SkStringView.h"
 #include "src/sksl/SkSLCompiler.h"
 #include "src/sksl/SkSLContext.h"
 #include "src/sksl/SkSLErrorReporter.h"
 #include "src/sksl/SkSLIntrinsicList.h"
 #include "src/sksl/SkSLMangler.h"
-#include "src/sksl/SkSLModifiersPool.h"
 #include "src/sksl/SkSLProgramSettings.h"
-#include "src/sksl/SkSLThreadContext.h"
 #include "src/sksl/ir/SkSLExpression.h"
 #include "src/sksl/ir/SkSLIRNode.h"
 #include "src/sksl/ir/SkSLInterfaceBlock.h"
@@ -26,6 +25,8 @@
 #include <utility>
 
 namespace SkSL {
+
+static constexpr Layout kDefaultLayout;
 
 Variable::~Variable() {
     // Unhook this Variable from its associated VarDeclaration, since we're being deleted.
@@ -80,6 +81,10 @@ void Variable::setGlobalVarDeclaration(GlobalVarDeclaration* global) {
     fDeclaringElement = global;
 }
 
+const Layout& Variable::layout() const {
+    return kDefaultLayout;
+}
+
 std::string_view ExtendedVariable::mangledName() const {
     return fMangledName.empty() ? this->name() : fMangledName;
 }
@@ -87,41 +92,40 @@ std::string_view ExtendedVariable::mangledName() const {
 std::unique_ptr<Variable> Variable::Convert(const Context& context,
                                             Position pos,
                                             Position modifiersPos,
-                                            const Modifiers& modifiers,
+                                            const Layout& layout,
+                                            ModifierFlags flags,
                                             const Type* type,
                                             Position namePos,
                                             std::string_view name,
-                                            Variable::Storage storage) {
-    if (modifiers.fLayout.fLocation == 0 && modifiers.fLayout.fIndex == 0 &&
-        (modifiers.fFlags & Modifiers::kOut_Flag) &&
-        ProgramConfig::IsFragment(context.fConfig->fKind) && name != Compiler::FRAGCOLOR_NAME) {
+                                            Storage storage) {
+    if (layout.fLocation == 0 &&
+        layout.fIndex == 0 &&
+        (flags & ModifierFlag::kOut) &&
+        ProgramConfig::IsFragment(context.fConfig->fKind) &&
+        name != Compiler::FRAGCOLOR_NAME) {
         context.fErrors->error(modifiersPos,
                                "out location=0, index=0 is reserved for sk_FragColor");
     }
     if (type->isUnsizedArray() && storage != Variable::Storage::kInterfaceBlock) {
         context.fErrors->error(pos, "unsized arrays are not permitted here");
     }
-    if (ProgramConfig::IsCompute(ThreadContext::Context().fConfig->fKind) &&
-            modifiers.fLayout.fBuiltin == -1) {
+    if (ProgramConfig::IsCompute(context.fConfig->fKind) && layout.fBuiltin == -1) {
         if (storage == Variable::Storage::kGlobal) {
-            if (modifiers.fFlags & Modifiers::kIn_Flag) {
+            if (flags & ModifierFlag::kIn) {
                 context.fErrors->error(pos, "pipeline inputs not permitted in compute shaders");
-            } else if (modifiers.fFlags & Modifiers::kOut_Flag) {
+            } else if (flags & ModifierFlag::kOut) {
                 context.fErrors->error(pos, "pipeline outputs not permitted in compute shaders");
             }
         }
     }
+    if (storage == Variable::Storage::kParameter) {
+        // The `in` modifier on function parameters is implicit, so we can replace `in float x` with
+        // `float x`. This prevents any ambiguity when matching a function by its param types.
+        if ((flags & (ModifierFlag::kOut | ModifierFlag::kIn)) == ModifierFlag::kIn) {
+            flags &= ~(ModifierFlag::kOut | ModifierFlag::kIn);
+        }
+    }
 
-    return Make(context, pos, modifiersPos, modifiers, type, name, storage);
-}
-
-std::unique_ptr<Variable> Variable::Make(const Context& context,
-                                         Position pos,
-                                         Position modifiersPos,
-                                         const Modifiers& modifiers,
-                                         const Type* type,
-                                         std::string_view name,
-                                         Variable::Storage storage) {
     // Invent a mangled name for the variable, if it needs one.
     std::string mangledName;
     if (skstd::starts_with(name, '$')) {
@@ -134,22 +138,41 @@ std::unique_ptr<Variable> Variable::Make(const Context& context,
         mangledName = Mangler{}.uniqueName(name, context.fSymbolTable.get());
     }
 
-    if (type->componentType().isInterfaceBlock() || !mangledName.empty()) {
+    return Make(pos, modifiersPos, layout, flags, type, name, std::move(mangledName),
+                context.fConfig->fIsBuiltinCode, storage);
+}
+
+std::unique_ptr<Variable> Variable::Make(Position pos,
+                                         Position modifiersPosition,
+                                         const Layout& layout,
+                                         ModifierFlags flags,
+                                         const Type* type,
+                                         std::string_view name,
+                                         std::string mangledName,
+                                         bool builtin,
+                                         Variable::Storage storage) {
+    // the `in` modifier on function parameters is implicit and should have been removed
+    SkASSERT(!(storage == Variable::Storage::kParameter &&
+               (flags & (ModifierFlag::kOut | ModifierFlag::kIn)) == ModifierFlag::kIn));
+
+    if (type->componentType().isInterfaceBlock() || !mangledName.empty() ||
+        layout != kDefaultLayout) {
         return std::make_unique<ExtendedVariable>(pos,
-                                                  modifiersPos,
-                                                  context.fModifiersPool->add(modifiers),
+                                                  modifiersPosition,
+                                                  layout,
+                                                  flags,
                                                   name,
                                                   type,
-                                                  context.fConfig->fIsBuiltinCode,
+                                                  builtin,
                                                   storage,
                                                   std::move(mangledName));
     } else {
         return std::make_unique<Variable>(pos,
-                                          modifiersPos,
-                                          context.fModifiersPool->add(modifiers),
+                                          modifiersPosition,
+                                          flags,
                                           name,
                                           type,
-                                          context.fConfig->fIsBuiltinCode,
+                                          builtin,
                                           storage);
     }
 }
@@ -158,7 +181,7 @@ Variable::ScratchVariable Variable::MakeScratchVariable(const Context& context,
                                                         Mangler& mangler,
                                                         std::string_view baseName,
                                                         const Type* type,
-                                                        const Modifiers& modifiers,
+                                                        ModifierFlags modifierFlags,
                                                         SymbolTable* symbolTable,
                                                         std::unique_ptr<Expression> initialValue) {
     // $floatLiteral or $intLiteral aren't real types that we can use for scratch variables, so
@@ -170,7 +193,7 @@ Variable::ScratchVariable Variable::MakeScratchVariable(const Context& context,
     }
 
     // Out-parameters aren't supported.
-    SkASSERT(!(modifiers.fFlags & Modifiers::kOut_Flag));
+    SkASSERT(!(modifierFlags & ModifierFlag::kOut));
 
     // Provide our new variable with a unique name, and add it to our symbol table.
     const std::string* name =
@@ -180,7 +203,7 @@ Variable::ScratchVariable Variable::MakeScratchVariable(const Context& context,
     ScratchVariable result;
     auto var = std::make_unique<Variable>(initialValue ? initialValue->fPosition : Position(),
                                           /*modifiersPosition=*/Position(),
-                                          context.fModifiersPool->add(Modifiers{}),
+                                          ModifierFlag::kNone,
                                           name->c_str(),
                                           type,
                                           symbolTable->isBuiltin(),

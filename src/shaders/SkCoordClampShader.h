@@ -14,11 +14,6 @@
 #include "include/core/SkShader.h"
 #include "src/shaders/SkShaderBase.h"
 
-#if defined(SK_GRAPHITE)
-#include "src/gpu/graphite/KeyHelpers.h"
-#include "src/gpu/graphite/PaintParamsKey.h"
-#endif  // SK_GRAPHITE
-
 #include <utility>
 
 class SkReadBuffer;
@@ -32,12 +27,6 @@ public:
 
     ShaderType type() const override { return ShaderType::kCoordClamp; }
 
-#if defined(SK_GRAPHITE)
-    void addToKey(const skgpu::graphite::KeyContext&,
-                  skgpu::graphite::PaintParamsKeyBuilder*,
-                  skgpu::graphite::PipelineDataGatherer*) const override;
-#endif
-
     sk_sp<SkShader> shader() const { return fShader; }
     SkRect subset() const { return fSubset; }
 
@@ -45,16 +34,6 @@ protected:
     SkCoordClampShader(SkReadBuffer&);
     void flatten(SkWriteBuffer&) const override;
     bool appendStages(const SkStageRec&, const SkShaders::MatrixRec&) const override;
-#if defined(SK_ENABLE_SKVM)
-    skvm::Color program(skvm::Builder*,
-                        skvm::Coord device,
-                        skvm::Coord local,
-                        skvm::Color paint,
-                        const SkShaders::MatrixRec&,
-                        const SkColorInfo& dst,
-                        skvm::Uniforms*,
-                        SkArenaAlloc*) const override;
-#endif
 
 private:
     friend void ::SkRegisterCoordClampShaderFlattenable();

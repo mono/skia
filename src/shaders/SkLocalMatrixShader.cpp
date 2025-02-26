@@ -6,15 +6,8 @@
  */
 #include "src/shaders/SkLocalMatrixShader.h"
 
-#include "src/base/SkTLazy.h"
 #include "src/core/SkReadBuffer.h"
 #include "src/core/SkWriteBuffer.h"
-
-#if defined(SK_GRAPHITE)
-#include "src/gpu/graphite/KeyContext.h"
-#include "src/gpu/graphite/KeyHelpers.h"
-#include "src/gpu/graphite/PaintParamsKey.h"
-#endif
 
 class SkImage;
 enum class SkTileMode;
@@ -28,24 +21,6 @@ SkShaderBase::GradientType SkLocalMatrixShader::asGradient(GradientInfo* info,
     }
     return type;
 }
-
-#if defined(SK_GRAPHITE)
-void SkLocalMatrixShader::addToKey(const skgpu::graphite::KeyContext& keyContext,
-                                   skgpu::graphite::PaintParamsKeyBuilder* builder,
-                                   skgpu::graphite::PipelineDataGatherer* gatherer) const {
-    using namespace skgpu::graphite;
-
-    LocalMatrixShaderBlock::LMShaderData lmShaderData(fLocalMatrix);
-
-    KeyContextWithLocalMatrix newContext(keyContext, fLocalMatrix);
-
-    LocalMatrixShaderBlock::BeginBlock(newContext, builder, gatherer, &lmShaderData);
-
-    as_SB(fWrappedShader)->addToKey(newContext, builder, gatherer);
-
-    builder->endBlock();
-}
-#endif
 
 sk_sp<SkFlattenable> SkLocalMatrixShader::CreateProc(SkReadBuffer& buffer) {
     SkMatrix lm;
@@ -63,18 +38,9 @@ void SkLocalMatrixShader::flatten(SkWriteBuffer& buffer) const {
 }
 
 #ifdef SK_ENABLE_LEGACY_SHADERCONTEXT
-SkShaderBase::Context* SkLocalMatrixShader::onMakeContext(
-    const ContextRec& rec, SkArenaAlloc* alloc) const
-{
-    SkTCopyOnFirstWrite<SkMatrix> lm(fLocalMatrix);
-    if (rec.fLocalMatrix) {
-        *lm.writable() = ConcatLocalMatrices(*rec.fLocalMatrix, *lm);
-    }
-
-    ContextRec newRec(rec);
-    newRec.fLocalMatrix = lm;
-
-    return as_SB(fWrappedShader)->makeContext(newRec, alloc);
+SkShaderBase::Context* SkLocalMatrixShader::onMakeContext(const ContextRec& rec,
+                                                          SkArenaAlloc* alloc) const {
+    return as_SB(fWrappedShader)->makeContext(ContextRec::Concat(rec, fLocalMatrix), alloc);
 }
 #endif
 
@@ -93,26 +59,6 @@ bool SkLocalMatrixShader::appendStages(const SkStageRec& rec,
     return as_SB(fWrappedShader)->appendStages(rec, mRec.concat(fLocalMatrix));
 }
 
-#if defined(SK_ENABLE_SKVM)
-skvm::Color SkLocalMatrixShader::program(skvm::Builder* p,
-                                         skvm::Coord device,
-                                         skvm::Coord local,
-                                         skvm::Color paint,
-                                         const SkShaders::MatrixRec& mRec,
-                                         const SkColorInfo& dst,
-                                         skvm::Uniforms* uniforms,
-                                         SkArenaAlloc* alloc) const {
-    return as_SB(fWrappedShader)->program(p,
-                                          device,
-                                          local,
-                                          paint,
-                                          mRec.concat(fLocalMatrix),
-                                          dst,
-                                          uniforms,
-                                          alloc);
-}
-#endif
-
 ////////////////////////////////////////////////////////////////////
 
 SkCTMShader::SkCTMShader(sk_sp<SkShader> proxy, const SkMatrix& ctm)
@@ -126,19 +72,6 @@ SkShaderBase::GradientType SkCTMShader::asGradient(GradientInfo* info,
 bool SkCTMShader::appendStages(const SkStageRec& rec, const SkShaders::MatrixRec&) const {
     return as_SB(fProxyShader)->appendRootStages(rec, fCTM);
 }
-
-#if defined(SK_ENABLE_SKVM)
-skvm::Color SkCTMShader::program(skvm::Builder* p,
-                                 skvm::Coord device,
-                                 skvm::Coord local,
-                                 skvm::Color paint,
-                                 const SkShaders::MatrixRec& mRec,
-                                 const SkColorInfo& dst,
-                                 skvm::Uniforms* uniforms,
-                                 SkArenaAlloc* alloc) const {
-    return as_SB(fProxyShader)->rootProgram(p, device, paint, fCTM, dst, uniforms, alloc);
-}
-#endif
 
 sk_sp<SkFlattenable> SkCTMShader::CreateProc(SkReadBuffer& buffer) {
     SkASSERT(false);

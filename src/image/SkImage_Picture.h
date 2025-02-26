@@ -8,15 +8,18 @@
 #define SkImage_Picture_DEFINED
 
 #include "include/core/SkRefCnt.h"
+#include "include/core/SkTiledImageUtils.h"
 #include "src/image/SkImage_Base.h"
 #include "src/image/SkImage_Lazy.h"
 
+#include <cstdint>
+
+class SkCanvas;
 class SkColorSpace;
 class SkImage;
 class SkMatrix;
 class SkPaint;
 class SkPicture;
-class SkPictureImageGenerator;
 class SkSurfaceProps;
 struct SkISize;
 
@@ -31,17 +34,17 @@ public:
 
     SkImage_Picture(Validator* validator) : SkImage_Lazy(validator) {}
 
-     SkImage_Base::Type type() const override { return SkImage_Base::Type::kLazyPicture; }
+    SkImage_Base::Type type() const override { return SkImage_Base::Type::kLazyPicture; }
 
-     // These are not necessarily thread-safe. Be sure to grab the mutex from the shared
-     // generator before accessing them.
-     SkPicture* picture() const;
-     SkMatrix* matrix() const;
-     SkPaint* paint() const;
-     SkSurfaceProps* props() const;
+    // This is thread safe. It is a const field set in the constructor.
+    const SkSurfaceProps* props() const;
 
-private:
-    SkPictureImageGenerator* gen() const;
+    // Call drawPicture on the provided canvas taking care of any required mutex locking.
+    void replay(SkCanvas*) const;
+
+    // If possible, extract key data based on the underlying drawPicture-call's parameters.
+    // Takes care of any required mutex locking.
+    bool getImageKeyValues(uint32_t keyValues[SkTiledImageUtils::kNumImageKeyValues]) const;
 };
 
 #endif

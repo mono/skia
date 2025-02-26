@@ -15,22 +15,6 @@ class SkReadBuffer;
 class SkWriteBuffer;
 struct SkStageRec;
 
-#if defined(SK_GRAPHITE)
-#include "src/gpu/graphite/KeyContext.h"
-#include "src/gpu/graphite/KeyHelpers.h"
-#include "src/gpu/graphite/PaintParamsKey.h"
-
-namespace skgpu::graphite {
-class PipelineDataGatherer;
-}
-#endif
-
-#if defined(SK_ENABLE_SKVM)
-#include "src/core/SkVM.h"
-class SkArenaAlloc;
-class SkColorInfo;
-#endif
-
 /**
  * Remaps the input color's alpha to a Gaussian ramp and then outputs premul white using the
  * remapped alpha.
@@ -43,22 +27,8 @@ public:
 
     SkColorFilterBase::Type type() const override { return SkColorFilterBase::Type::kGaussian; }
 
-#if defined(SK_GRAPHITE)
-    void addToKey(const skgpu::graphite::KeyContext&,
-                  skgpu::graphite::PaintParamsKeyBuilder*,
-                  skgpu::graphite::PipelineDataGatherer*) const override;
-#endif
-
 protected:
     void flatten(SkWriteBuffer&) const override {}
-
-#if defined(SK_ENABLE_SKVM)
-    skvm::Color onProgram(skvm::Builder* p,
-                          skvm::Color c,
-                          const SkColorInfo& dst,
-                          skvm::Uniforms*,
-                          SkArenaAlloc*) const override;
-#endif
 
 private:
     SK_FLATTENABLE_HOOKS(SkGaussianColorFilter)

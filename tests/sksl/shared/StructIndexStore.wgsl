@@ -1,3 +1,4 @@
+diagnostic(off, derivative_uniformity);
 struct FSIn {
   @builtin(front_facing) sk_Clockwise: bool,
   @builtin(position) sk_FragCoord: vec4<f32>,
@@ -20,8 +21,7 @@ struct Root {
   valueAtRoot: i32,
   outer: array<OuterLUT, 3>,
 };
-fn main(_skParam0: vec2<f32>) -> vec4<f32> {
-  let coords = _skParam0;
+fn _skslMain(coords: vec2<f32>) -> vec4<f32> {
   {
     var data: Root;
     data.valueAtRoot = 1234;
@@ -61,12 +61,12 @@ fn main(_skParam0: vec2<f32>) -> vec4<f32> {
         }
       }
     }
-    var ok: bool = ((((((((data.valueAtRoot == 1234 && all(data.outer[0].inner[0].values == vec3<f32>(1.0, 10.0, 100.0))) && all(data.outer[0].inner[1].values == vec3<f32>(2.0, 20.0, 200.0))) && all(data.outer[0].inner[2].values == vec3<f32>(3.0, 30.0, 300.0))) && all(data.outer[1].inner[0].values == vec3<f32>(4.0, 40.0, 400.0))) && all(data.outer[1].inner[1].values == vec3<f32>(5.0, 50.0, 500.0))) && all(data.outer[1].inner[2].values == vec3<f32>(6.0, 60.0, 600.0))) && all(data.outer[2].inner[0].values == vec3<f32>(7.0, 70.0, 700.0))) && all(data.outer[2].inner[1].values == vec3<f32>(8.0, 80.0, 800.0))) && all(data.outer[2].inner[2].values == vec3<f32>(9.0, 90.0, 900.0));
+    var ok: bool = (((((((((data.valueAtRoot == 1234) && all(data.outer[0].inner[0].values == vec3<f32>(1.0, 10.0, 100.0))) && all(data.outer[0].inner[1].values == vec3<f32>(2.0, 20.0, 200.0))) && all(data.outer[0].inner[2].values == vec3<f32>(3.0, 30.0, 300.0))) && all(data.outer[1].inner[0].values == vec3<f32>(4.0, 40.0, 400.0))) && all(data.outer[1].inner[1].values == vec3<f32>(5.0, 50.0, 500.0))) && all(data.outer[1].inner[2].values == vec3<f32>(6.0, 60.0, 600.0))) && all(data.outer[2].inner[0].values == vec3<f32>(7.0, 70.0, 700.0))) && all(data.outer[2].inner[1].values == vec3<f32>(8.0, 80.0, 800.0))) && all(data.outer[2].inner[2].values == vec3<f32>(9.0, 90.0, 900.0));
     return select(_globalUniforms.colorRed, _globalUniforms.colorGreen, vec4<bool>(ok));
   }
 }
-@fragment fn fragmentMain(_stageIn: FSIn) -> FSOut {
+@fragment fn main(_stageIn: FSIn) -> FSOut {
   var _stageOut: FSOut;
-  _stageOut.sk_FragColor = main(_stageIn.sk_FragCoord.xy);
+  _stageOut.sk_FragColor = _skslMain(_stageIn.sk_FragCoord.xy);
   return _stageOut;
 }

@@ -176,17 +176,14 @@ enum class Result {
 template <typename T>
 using GraphiteReadSrcFn = Result(const T&, const SkIPoint& offset, const SkPixmap&);
 
-SkPixmap make_pixmap_have_valid_alpha_type(SkPixmap pm) {
-    if (pm.alphaType() == kUnknown_SkAlphaType) {
-        return {pm.info().makeAlphaType(kUnpremul_SkAlphaType), pm.addr(), pm.rowBytes()};
-    }
-    return pm;
-}
-
 static SkAutoPixmapStorage make_ref_data(const SkImageInfo& info, bool forceOpaque) {
     SkAutoPixmapStorage result;
-    result.alloc(info);
-    auto surface = SkSurfaces::WrapPixels(make_pixmap_have_valid_alpha_type(result));
+    if (info.alphaType() == kUnknown_SkAlphaType) {
+        result.alloc(info.makeAlphaType(kUnpremul_SkAlphaType));
+    } else {
+        result.alloc(info);
+    }
+    auto surface = SkSurfaces::WrapPixels(result);
     if (!surface) {
         return result;
     }
@@ -516,7 +513,8 @@ static void async_callback(void* c, std::unique_ptr<const SkImage::AsyncReadResu
 
 DEF_GRAPHITE_TEST_FOR_RENDERING_CONTEXTS(ImageAsyncReadPixelsGraphite,
                                          reporter,
-                                         context) {
+                                         context,
+                                         CtsEnforcement::kNextRelease) {
     using Image = sk_sp<SkImage>;
     using Renderable = skgpu::Renderable;
     using TextureInfo = skgpu::graphite::TextureInfo;
@@ -537,8 +535,13 @@ DEF_GRAPHITE_TEST_FOR_RENDERING_CONTEXTS(ImageAsyncReadPixelsGraphite,
             return Result::kExcusedFailure;
         }
 
-        context->asyncReadPixels(image.get(), pixels.info().colorInfo(), rect,
-                                 async_callback, &asyncContext);
+        context->asyncRescaleAndReadPixels(image.get(),
+                                           pixels.info(),
+                                           rect,
+                                           SkImage::RescaleGamma::kSrc,
+                                           SkImage::RescaleMode::kRepeatedLinear,
+                                           async_callback,
+                                           &asyncContext);
         if (!asyncContext.fCalled) {
             context->submit();
         }
@@ -597,7 +600,8 @@ DEF_GRAPHITE_TEST_FOR_RENDERING_CONTEXTS(ImageAsyncReadPixelsGraphite,
 
 DEF_GRAPHITE_TEST_FOR_RENDERING_CONTEXTS(SurfaceAsyncReadPixelsGraphite,
                                          reporter,
-                                         context) {
+                                         context,
+                                         CtsEnforcement::kNextRelease) {
     using Surface = sk_sp<SkSurface>;
 
     auto reader = std::function<GraphiteReadSrcFn<Surface>>([context](const Surface& surface,
@@ -606,8 +610,13 @@ DEF_GRAPHITE_TEST_FOR_RENDERING_CONTEXTS(SurfaceAsyncReadPixelsGraphite,
         AsyncContext asyncContext;
         auto rect = SkIRect::MakeSize(pixels.dimensions()).makeOffset(offset);
 
-        context->asyncReadPixels(surface.get(), pixels.info().colorInfo(), rect,
-                                 async_callback, &asyncContext);
+        context->asyncRescaleAndReadPixels(surface.get(),
+                                           pixels.info(),
+                                           rect,
+                                           SkImage::RescaleGamma::kSrc,
+                                           SkImage::RescaleMode::kRepeatedLinear,
+                                           async_callback,
+                                           &asyncContext);
         if (!asyncContext.fCalled) {
             context->submit();
         }

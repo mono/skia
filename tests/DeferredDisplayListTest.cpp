@@ -52,6 +52,7 @@ class SkImage;
 struct GrContextOptions;
 
 #ifdef SK_GL
+#include "include/gpu/ganesh/gl/GrGLBackendSurface.h"
 #include "include/gpu/gl/GrGLTypes.h"
 #include "src/gpu/ganesh/gl/GrGLDefines.h"
 #endif
@@ -89,7 +90,7 @@ public:
 #ifdef SK_VULKAN
         if (rContext->backend() == GrBackendApi::kVulkan) {
             auto vkCaps = static_cast<const GrVkCaps*>(rContext->priv().caps());
-            fCanBeProtected = vkCaps->supportsProtectedMemory();
+            fCanBeProtected = vkCaps->supportsProtectedContent();
             if (fCanBeProtected) {
                 fIsProtected = GrProtected::kYes;
             }
@@ -246,7 +247,8 @@ public:
             fboInfo.fFormat = GR_GL_RGBA8;
             fboInfo.fProtected = skgpu::Protected::kNo;
             static constexpr int kStencilBits = 8;
-            GrBackendRenderTarget backendRT(fWidth, fHeight, 1, kStencilBits, fboInfo);
+            GrBackendRenderTarget backendRT =
+                    GrBackendRenderTargets::MakeGL(fWidth, fHeight, 1, kStencilBits, fboInfo);
 
             if (!backendRT.isValid()) {
                 return nullptr;
@@ -634,16 +636,16 @@ void DDLSurfaceCharacterizationTestImpl(GrDirectContext* dContext, skiatest::Rep
 //    FBO0 w/ MSAA, FBO0 w/o MSAA, not-FBO0 w/ MSAA, not-FBO0 w/o MSAA
 // and then tries all sixteen combinations to check the expected compatibility.
 // Note: this is a GL-only test
-DEF_GANESH_TEST_FOR_GL_RENDERING_CONTEXTS(CharacterizationFBO0nessTest,
-                                          reporter,
-                                          ctxInfo,
-                                          CtsEnforcement::kApiLevel_T) {
+DEF_GANESH_TEST_FOR_GL_CONTEXT(CharacterizationFBO0nessTest,
+                               reporter,
+                               ctxInfo,
+                               CtsEnforcement::kApiLevel_T) {
     auto context = ctxInfo.directContext();
     const GrCaps* caps = context->priv().caps();
     sk_sp<GrContextThreadSafeProxy> proxy = context->threadSafeProxy();
     const size_t resourceCacheLimit = context->getResourceCacheLimit();
 
-    GrBackendFormat format = GrBackendFormat::MakeGL(GR_GL_RGBA8, GR_GL_TEXTURE_2D);
+    GrBackendFormat format = GrBackendFormats::MakeGL(GR_GL_RGBA8, GR_GL_TEXTURE_2D);
 
     int availableSamples = caps->getRenderTargetSampleCount(4, format);
     if (availableSamples <= 1) {
@@ -682,7 +684,8 @@ DEF_GANESH_TEST_FOR_GL_RENDERING_CONTEXTS(CharacterizationFBO0nessTest,
             SkASSERT(characterizations[index].usesGLFBO0() == isFBO0);
 
             GrGLFramebufferInfo fboInfo{ isFBO0 ? 0 : (GrGLuint) 1, GR_GL_RGBA8 };
-            GrBackendRenderTarget backendRT(128, 128, numSamples, kStencilBits, fboInfo);
+            GrBackendRenderTarget backendRT =
+                    GrBackendRenderTargets::MakeGL(128, 128, numSamples, kStencilBits, fboInfo);
             SkAssertResult(backendRT.isValid());
 
             surfaces[index] = SkSurfaces::WrapBackendRenderTarget(context,
@@ -1247,10 +1250,7 @@ static sk_sp<GrPromiseImageTexture> noop_fulfill_proc(void*) {
 ////////////////////////////////////////////////////////////////////////////////
 // Check that the texture-specific flags (i.e., for external & rectangle textures) work
 // for promise images. As such, this is a GL-only test.
-DEF_GANESH_TEST_FOR_GL_RENDERING_CONTEXTS(DDLTextureFlagsTest,
-                                          reporter,
-                                          ctxInfo,
-                                          CtsEnforcement::kNever) {
+DEF_GANESH_TEST_FOR_GL_CONTEXT(DDLTextureFlagsTest, reporter, ctxInfo, CtsEnforcement::kNever) {
     auto context = ctxInfo.directContext();
 
     SkImageInfo ii = SkImageInfo::MakeN32Premul(32, 32);
@@ -1263,7 +1263,7 @@ DEF_GANESH_TEST_FOR_GL_RENDERING_CONTEXTS(DDLTextureFlagsTest,
 
     for (GrGLenum target : { GR_GL_TEXTURE_EXTERNAL, GR_GL_TEXTURE_RECTANGLE, GR_GL_TEXTURE_2D } ) {
         for (auto mipmapped : { GrMipmapped::kNo, GrMipmapped::kYes }) {
-            GrBackendFormat format = GrBackendFormat::MakeGL(GR_GL_RGBA8, target);
+            GrBackendFormat format = GrBackendFormats::MakeGL(GR_GL_RGBA8, target);
 
             sk_sp<SkImage> image = SkImages::PromiseTextureFrom(
                     recorder.getCanvas()->recordingContext()->threadSafeProxy(),
@@ -1302,10 +1302,7 @@ DEF_GANESH_TEST_FOR_GL_RENDERING_CONTEXTS(DDLTextureFlagsTest,
 
 ////////////////////////////////////////////////////////////////////////////////
 // Test colorType and pixelConfig compatibility.
-DEF_GANESH_TEST_FOR_GL_RENDERING_CONTEXTS(DDLCompatibilityTest,
-                                          reporter,
-                                          ctxInfo,
-                                          CtsEnforcement::kNever) {
+DEF_GANESH_TEST_FOR_GL_CONTEXT(DDLCompatibilityTest, reporter, ctxInfo, CtsEnforcement::kNever) {
     auto context = ctxInfo.directContext();
 
     for (int ct = 0; ct <= kLastEnum_SkColorType; ++ct) {

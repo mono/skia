@@ -22,11 +22,6 @@
 #include "src/core/SkWriteBuffer.h"
 #include "src/shaders/SkShaderBase.h"
 
-#if defined(SK_GRAPHITE)
-#include "src/gpu/graphite/KeyHelpers.h"
-#include "src/gpu/graphite/PaintParamsKey.h"
-#endif
-
 #include <utility>
 
 SkColorShader::SkColorShader(SkColor c) : fColor(c) {}
@@ -84,89 +79,6 @@ bool SkColor4Shader::appendStages(const SkStageRec& rec, const SkShaders::Matrix
                            rec.fDstCS,        kUnpremul_SkAlphaType).apply(color.vec());
     rec.fPipeline->append_constant_color(rec.fAlloc, color.premul().vec());
     return true;
-}
-
-#if defined(SK_ENABLE_SKVM)
-skvm::Color SkColorShader::program(skvm::Builder* p,
-                                   skvm::Coord /*device*/,
-                                   skvm::Coord /*local*/,
-                                   skvm::Color /*paint*/,
-                                   const SkShaders::MatrixRec&,
-                                   const SkColorInfo& dst,
-                                   skvm::Uniforms* uniforms,
-                                   SkArenaAlloc*) const {
-    SkColor4f color = SkColor4f::FromColor(fColor);
-    SkColorSpaceXformSteps(sk_srgb_singleton(), kUnpremul_SkAlphaType,
-                              dst.colorSpace(),   kPremul_SkAlphaType).apply(color.vec());
-    return p->uniformColor(color, uniforms);
-}
-
-skvm::Color SkColor4Shader::program(skvm::Builder* p,
-                                    skvm::Coord /*device*/,
-                                    skvm::Coord /*local*/,
-                                    skvm::Color /*paint*/,
-                                    const SkShaders::MatrixRec&,
-                                    const SkColorInfo& dst,
-                                    skvm::Uniforms* uniforms,
-                                    SkArenaAlloc*) const {
-    SkColor4f color = fColor;
-    SkColorSpaceXformSteps(fColorSpace.get(), kUnpremul_SkAlphaType,
-                            dst.colorSpace(),   kPremul_SkAlphaType).apply(color.vec());
-    return p->uniformColor(color, uniforms);
-}
-#endif  // defined(SK_ENABLE_SKVM)
-
-#if defined(SK_GRAPHITE)
-void SkColorShader::addToKey(const skgpu::graphite::KeyContext& keyContext,
-                             skgpu::graphite::PaintParamsKeyBuilder* builder,
-                             skgpu::graphite::PipelineDataGatherer* gatherer) const {
-    using namespace skgpu::graphite;
-
-    SolidColorShaderBlock::BeginBlock(keyContext, builder, gatherer,
-                                      SkColor4f::FromColor(fColor).premul());
-    builder->endBlock();
-}
-
-void SkColor4Shader::addToKey(const skgpu::graphite::KeyContext& keyContext,
-                              skgpu::graphite::PaintParamsKeyBuilder* builder,
-                              skgpu::graphite::PipelineDataGatherer* gatherer) const {
-    using namespace skgpu::graphite;
-
-    SolidColorShaderBlock::BeginBlock(keyContext, builder, gatherer, fColor.premul());
-    builder->endBlock();
-}
-#endif
-
-SkUpdatableColorShader::SkUpdatableColorShader(SkColorSpace* cs)
-        : fSteps{sk_srgb_singleton(), kUnpremul_SkAlphaType, cs, kUnpremul_SkAlphaType} {}
-
-#if defined(SK_ENABLE_SKVM)
-skvm::Color SkUpdatableColorShader::program(skvm::Builder* builder,
-                                            skvm::Coord device,
-                                            skvm::Coord local,
-                                            skvm::Color paint,
-                                            const SkShaders::MatrixRec&,
-                                            const SkColorInfo& dst,
-                                            skvm::Uniforms* uniforms,
-                                            SkArenaAlloc* alloc) const {
-    skvm::Uniform color = uniforms->pushPtr(fValues);
-    skvm::F32 r = builder->arrayF(color, 0);
-    skvm::F32 g = builder->arrayF(color, 1);
-    skvm::F32 b = builder->arrayF(color, 2);
-    skvm::F32 a = builder->arrayF(color, 3);
-
-    return {r, g, b, a};
-}
-#endif
-
-void SkUpdatableColorShader::updateColor(SkColor c) const {
-    SkColor4f c4 = SkColor4f::FromColor(c);
-    fSteps.apply(c4.vec());
-    auto cp4 = c4.premul();
-    fValues[0] = cp4.fR;
-    fValues[1] = cp4.fG;
-    fValues[2] = cp4.fB;
-    fValues[3] = cp4.fA;
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////////////

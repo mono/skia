@@ -112,6 +112,7 @@ bool QueueManager::addRecording(const InsertRecordingInfo& info, Context* contex
         }
     }
 
+    fCurrentCommandBuffer->addWaitSemaphores(info.fNumWaitSemaphores, info.fWaitSemaphores);
     if (!info.fRecording->priv().addCommands(context,
                                              fCurrentCommandBuffer.get(),
                                              static_cast<Surface*>(info.fTargetSurface),
@@ -123,6 +124,11 @@ bool QueueManager::addRecording(const InsertRecordingInfo& info, Context* contex
         info.fRecording->priv().deinstantiateVolatileLazyProxies();
         SKGPU_LOG_E("Adding Recording commands to the CommandBuffer has failed");
         return false;
+    }
+    fCurrentCommandBuffer->addSignalSemaphores(info.fNumSignalSemaphores, info.fSignalSemaphores);
+    if (info.fTargetTextureState) {
+        fCurrentCommandBuffer->prepareSurfaceForStateUpdate(info.fTargetSurface,
+                                                            info.fTargetTextureState);
     }
 
     if (callback) {

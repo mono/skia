@@ -209,11 +209,6 @@ bool_flag(
 )
 
 bool_flag(
-    name = "enable_sksl_in_raster_pipeline",
-    default = True,
-)
-
-bool_flag(
     name = "use_harfbuzz",
     default = False,
 )
@@ -225,6 +220,11 @@ bool_flag(
 
 bool_flag(
     name = "use_icu",
+    default = False,
+)
+
+bool_flag(
+    name = "build_for_debugger",
     default = False,
 )
 

@@ -33,7 +33,7 @@ SharedGenerator::SharedGenerator(std::unique_ptr<SkImageGenerator> gen)
     SkASSERT(fGenerator);
 }
 
-const SkImageInfo& SharedGenerator::getInfo() { return fGenerator->getInfo(); }
+const SkImageInfo& SharedGenerator::getInfo() const { return fGenerator->getInfo(); }
 
 bool SharedGenerator::isTextureGenerator() { return fGenerator->isTextureGenerator(); }
 
@@ -152,6 +152,11 @@ bool SkImage_Lazy::getROPixels(GrDirectContext* ctx, SkBitmap* bitmap,
 
 sk_sp<SharedGenerator> SkImage_Lazy::generator() const {
     return fSharedGenerator;
+}
+
+bool SkImage_Lazy::onIsProtected() const {
+    ScopedGenerator generator(fSharedGenerator);
+    return generator->isProtected();
 }
 
 bool SkImage_Lazy::onReadPixels(GrDirectContext* dContext,

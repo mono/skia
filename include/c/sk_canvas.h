@@ -58,7 +58,6 @@ SK_C_API void sk_canvas_draw_image(sk_canvas_t* ccanvas, const sk_image_t* cimag
 SK_C_API void sk_canvas_draw_image_rect(sk_canvas_t* ccanvas, const sk_image_t* cimage, const sk_rect_t* csrcR, const sk_rect_t* cdstR, const sk_sampling_options_t* sampling, const sk_paint_t* cpaint);
 SK_C_API void sk_canvas_draw_picture(sk_canvas_t* ccanvas, const sk_picture_t* cpicture, const sk_matrix_t* cmatrix, const sk_paint_t* cpaint);
 SK_C_API void sk_canvas_draw_drawable(sk_canvas_t* ccanvas, sk_drawable_t* cdrawable, const sk_matrix_t* cmatrix);
-SK_C_API void sk_canvas_flush(sk_canvas_t* ccanvas);
 SK_C_API sk_canvas_t* sk_canvas_new_from_bitmap(const sk_bitmap_t* bitmap);
 SK_C_API sk_canvas_t* sk_canvas_new_from_raster(const sk_imageinfo_t* cinfo, void* pixels, size_t rowBytes, const sk_surfaceprops_t* props);
 SK_C_API void sk_canvas_draw_annotation(sk_canvas_t* t, const sk_rect_t* rect, const char* key, sk_data_t* value);
@@ -83,6 +82,8 @@ SK_C_API void sk_nway_canvas_remove_canvas(sk_nway_canvas_t* t, sk_canvas_t* can
 SK_C_API void sk_nway_canvas_remove_all(sk_nway_canvas_t* t);
 SK_C_API sk_overdraw_canvas_t* sk_overdraw_canvas_new(sk_canvas_t* canvas);
 SK_C_API void sk_overdraw_canvas_destroy(sk_overdraw_canvas_t* canvas);
+SK_C_API gr_recording_context_t* sk_get_recording_context(sk_canvas_t* canvas);
+SK_C_API sk_surface_t* sk_get_surface(sk_canvas_t* canvas);
 
 SK_C_PLUS_PLUS_END_GUARD
 

@@ -407,12 +407,11 @@ public:
 
     virtual void submit(GrOpsRenderPass*) = 0;
 
-    virtual GrFence SK_WARN_UNUSED_RESULT insertFence() = 0;
+    [[nodiscard]] virtual GrFence insertFence() = 0;
     virtual bool waitFence(GrFence) = 0;
     virtual void deleteFence(GrFence) = 0;
 
-    virtual std::unique_ptr<GrSemaphore> SK_WARN_UNUSED_RESULT makeSemaphore(
-            bool isOwned = true) = 0;
+    [[nodiscard]] virtual std::unique_ptr<GrSemaphore> makeSemaphore(bool isOwned = true) = 0;
     virtual std::unique_ptr<GrSemaphore> wrapBackendSemaphore(const GrBackendSemaphore&,
                                                               GrSemaphoreWrapType,
                                                               GrWrapOwnership) = 0;
@@ -499,7 +498,7 @@ public:
         int numReorderedDAGsOverBudget() const { return fNumReorderedDAGsOverBudget; }
         void incNumReorderedDAGsOverBudget() { fNumReorderedDAGsOverBudget++; }
 
-#if GR_TEST_UTILS
+#if defined(GR_TEST_UTILS)
         void dump(SkString*);
         void dumpKeyValuePairs(
                 skia_private::TArray<SkString>* keys, skia_private::TArray<double>* values);
@@ -522,7 +521,7 @@ public:
 
 #else  // !GR_GPU_STATS
 
-#if GR_TEST_UTILS
+#if defined(GR_TEST_UTILS)
         void dump(SkString*) {}
         void dumpKeyValuePairs(skia_private::TArray<SkString>*, skia_private::TArray<double>*) {}
 #endif
@@ -613,7 +612,7 @@ public:
 
     virtual bool precompileShader(const SkData& key, const SkData& data) { return false; }
 
-#if GR_TEST_UTILS
+#if defined(GR_TEST_UTILS)
     /** Check a handle represents an actual texture in the backend API that has not been freed. */
     virtual bool isTestingOnlyBackendTexture(const GrBackendTexture&) const = 0;
 

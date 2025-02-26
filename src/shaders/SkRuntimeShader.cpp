@@ -27,12 +27,6 @@
 #include "src/sksl/codegen/SkSLRasterPipelineBuilder.h"
 #include "src/sksl/tracing/SkSLDebugTracePriv.h"
 
-#if defined(SK_GRAPHITE)
-#include "src/gpu/graphite/KeyContext.h"
-#include "src/gpu/graphite/KeyHelpers.h"
-#include "src/gpu/graphite/PaintParamsKey.h"
-#endif
-
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -44,7 +38,7 @@ struct SkIPoint;
 SkRuntimeShader::SkRuntimeShader(sk_sp<SkRuntimeEffect> effect,
                                  sk_sp<SkSL::DebugTracePriv> debugTrace,
                                  sk_sp<const SkData> uniforms,
-                                 SkSpan<SkRuntimeEffect::ChildPtr> children)
+                                 SkSpan<const SkRuntimeEffect::ChildPtr> children)
         : fEffect(std::move(effect))
         , fDebugTrace(std::move(debugTrace))
         , fUniformData(std::move(uniforms))
@@ -53,7 +47,7 @@ SkRuntimeShader::SkRuntimeShader(sk_sp<SkRuntimeEffect> effect,
 SkRuntimeShader::SkRuntimeShader(sk_sp<SkRuntimeEffect> effect,
                                  sk_sp<SkSL::DebugTracePriv> debugTrace,
                                  UniformsCallback uniformsCallback,
-                                 SkSpan<SkRuntimeEffect::ChildPtr> children)
+                                 SkSpan<const SkRuntimeEffect::ChildPtr> children)
         : fEffect(std::move(effect))
         , fDebugTrace(std::move(debugTrace))
         , fUniformsCallback(std::move(uniformsCallback))
@@ -76,29 +70,7 @@ SkRuntimeEffect::TracedShader SkRuntimeShader::makeTracedClone(const SkIPoint& c
     return SkRuntimeEffect::TracedShader{std::move(debugShader), std::move(debugTrace)};
 }
 
-#if defined(SK_GRAPHITE)
-void SkRuntimeShader::addToKey(const skgpu::graphite::KeyContext& keyContext,
-                               skgpu::graphite::PaintParamsKeyBuilder* builder,
-                               skgpu::graphite::PipelineDataGatherer* gatherer) const {
-    using namespace skgpu::graphite;
-
-    sk_sp<const SkData> uniforms = SkRuntimeEffectPriv::TransformUniforms(
-            fEffect->uniforms(),
-            this->uniformData(keyContext.dstColorInfo().colorSpace()),
-            keyContext.dstColorInfo().colorSpace());
-    SkASSERT(uniforms);
-
-    RuntimeEffectBlock::BeginBlock(keyContext, builder, gatherer, {fEffect, std::move(uniforms)});
-
-    SkRuntimeEffectPriv::AddChildrenToKey(
-            fChildren, fEffect->children(), keyContext, builder, gatherer);
-
-    builder->endBlock();
-}
-#endif
-
 bool SkRuntimeShader::appendStages(const SkStageRec& rec, const SkShaders::MatrixRec& mRec) const {
-#ifdef SK_ENABLE_SKSL_IN_RASTER_PIPELINE
     if (!SkRuntimeEffectPriv::CanDraw(SkCapabilities::RasterBackend().get(), fEffect.get())) {
         // SkRP has support for many parts of #version 300 already, but for now, we restrict its
         // usage in runtime effects to just #version 100.
@@ -119,52 +91,8 @@ bool SkRuntimeShader::appendStages(const SkStageRec& rec, const SkShaders::Matri
         bool success = program->appendStages(rec.fPipeline, rec.fAlloc, &callbacks, uniforms);
         return success;
     }
-#endif
     return false;
 }
-
-#if defined(SK_ENABLE_SKVM)
-skvm::Color SkRuntimeShader::program(skvm::Builder* p,
-                                     skvm::Coord device,
-                                     skvm::Coord local,
-                                     skvm::Color paint,
-                                     const SkShaders::MatrixRec& mRec,
-                                     const SkColorInfo& colorInfo,
-                                     skvm::Uniforms* uniforms,
-                                     SkArenaAlloc* alloc) const {
-    if (!SkRuntimeEffectPriv::CanDraw(SkCapabilities::RasterBackend().get(), fEffect.get())) {
-        return {};
-    }
-
-    sk_sp<const SkData> inputs = SkRuntimeEffectPriv::TransformUniforms(
-            fEffect->uniforms(), this->uniformData(colorInfo.colorSpace()), colorInfo.colorSpace());
-    SkASSERT(inputs);
-
-    // Ensure any pending transform is applied before running the runtime shader's code, which
-    // gets to use and manipulate the coordinates.
-    std::optional<SkShaders::MatrixRec> newMRec = mRec.apply(p, &local, uniforms);
-    if (!newMRec.has_value()) {
-        return {};
-    }
-    // We could omit this for children that are only sampled with passthrough coords.
-    newMRec->markTotalMatrixInvalid();
-
-    RuntimeEffectVMCallbacks callbacks(p, uniforms, alloc, fChildren, *newMRec, paint, colorInfo);
-    std::vector<skvm::Val> uniform =
-            SkRuntimeEffectPriv::MakeSkVMUniforms(p, uniforms, fEffect->uniformSize(), *inputs);
-
-    return SkSL::ProgramToSkVM(*fEffect->fBaseProgram,
-                               fEffect->fMain,
-                               p,
-                               fDebugTrace.get(),
-                               SkSpan(uniform),
-                               device,
-                               local,
-                               paint,
-                               paint,
-                               &callbacks);
-}
-#endif
 
 void SkRuntimeShader::flatten(SkWriteBuffer& buffer) const {
     buffer.writeString(fEffect->source().c_str());

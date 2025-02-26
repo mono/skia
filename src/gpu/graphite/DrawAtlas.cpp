@@ -15,7 +15,6 @@
 #include "include/private/base/SkTPin.h"
 
 #include "src/base/SkMathPriv.h"
-#include "src/core/SkOpts.h"
 #include "src/core/SkTraceEvent.h"
 #include "src/gpu/AtlasTypes.h"
 #include "src/gpu/graphite/Caps.h"
@@ -473,13 +472,13 @@ bool DrawAtlas::activateNewPage(Recorder* recorder) {
     SkASSERT(fNumActivePages < this->maxPages());
     SkASSERT(!fProxies[fNumActivePages]);
 
-    auto textureInfo = recorder->priv().caps()->getDefaultSampledTextureInfo(
-            fColorType,
-            /*mipmapped=*/Mipmapped::kNo,
-            Protected::kNo,
-            Renderable::kNo);
-    fProxies[fNumActivePages].reset(
-            new TextureProxy({fTextureWidth, fTextureHeight}, textureInfo, skgpu::Budgeted::kYes));
+    const Caps* caps = recorder->priv().caps();
+    auto textureInfo = caps->getDefaultSampledTextureInfo(fColorType,
+                                                          /*mipmapped=*/Mipmapped::kNo,
+                                                          Protected::kNo,
+                                                          Renderable::kNo);
+    fProxies[fNumActivePages] = TextureProxy::Make(
+            caps, {fTextureWidth, fTextureHeight}, textureInfo, skgpu::Budgeted::kYes);
     if (!fProxies[fNumActivePages]) {
         return false;
     }

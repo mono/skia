@@ -20,12 +20,12 @@
 #include "tools/gpu/MemoryCache.h"
 #include "tools/sk_app/Application.h"
 #include "tools/sk_app/CommandSet.h"
-#include "tools/sk_app/DisplayParams.h"
 #include "tools/sk_app/Window.h"
 #include "tools/viewer/AnimTimer.h"
 #include "tools/viewer/ImGuiLayer.h"
 #include "tools/viewer/StatsLayer.h"
 #include "tools/viewer/TouchGesture.h"
+#include "tools/window/DisplayParams.h"
 
 #include <cstdint>
 #include <atomic>
@@ -53,6 +53,7 @@ public:
     void onResize(int width, int height) override;
     bool onTouch(intptr_t owner, skui::InputState state, float x, float y) override;
     bool onMouse(int x, int y, skui::InputState state, skui::ModifierKey modifiers) override;
+    bool onMouseWheel(float delta, int x, int y, skui::ModifierKey) override;
     void onUIStateChanged(const SkString& stateName, const SkString& stateValue) override;
     bool onKey(skui::Key key, skui::InputState state, skui::ModifierKey modifiers) override;
     bool onChar(SkUnichar c, skui::ModifierKey modifiers) override;
@@ -261,7 +262,7 @@ private:
 
     // fDisplay contains default values (fWindow.fRequestedDisplayParams contains the overrides),
     // fDisplayOverrides controls if overrides are applied.
-    sk_app::DisplayParams fDisplay;
+    skwindow::DisplayParams fDisplay;
     DisplayFields fDisplayOverrides;
 
     struct CachedShader {

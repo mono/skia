@@ -1006,7 +1006,11 @@ static void fuzz_canvas(Fuzz* fuzz, SkCanvas* canvas, int depth = 9) {
         fuzz->nextRange(&drawCommand, 0, 62);
         switch (drawCommand) {
             case 0:
-                canvas->flush();
+#if defined(SK_GANESH)
+                if (auto dContext = GrAsDirectContext(canvas->recordingContext())) {
+                    dContext->flushAndSubmit();
+                }
+#endif
                 break;
             case 1:
                 canvas->save();
@@ -1618,7 +1622,7 @@ static void fuzz_ganesh(Fuzz* fuzz, GrDirectContext* context) {
 
 DEF_FUZZ(MockGPUCanvas, fuzz) {
     sk_gpu_test::GrContextFactory f;
-    fuzz_ganesh(fuzz, f.get(sk_gpu_test::GrContextFactory::kMock_ContextType));
+    fuzz_ganesh(fuzz, f.get(skgpu::ContextType::kMock));
 }
 #endif
 
@@ -1639,9 +1643,9 @@ static void dump_GPU_info(GrDirectContext* context) {
 
 DEF_FUZZ(NativeGLCanvas, fuzz) {
     sk_gpu_test::GrContextFactory f;
-    auto context = f.get(sk_gpu_test::GrContextFactory::kGL_ContextType);
+    auto context = f.get(skgpu::ContextType::kGL);
     if (!context) {
-        context = f.get(sk_gpu_test::GrContextFactory::kGLES_ContextType);
+        context = f.get(skgpu::ContextType::kGLES);
     }
     if (FLAGS_gpuInfo) {
         dump_GPU_info(context);

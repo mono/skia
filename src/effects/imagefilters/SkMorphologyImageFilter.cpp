@@ -8,8 +8,6 @@
 #include "include/effects/SkImageFilters.h"
 #include "src/effects/imagefilters/SkCropImageFilter.h"
 
-#ifdef SK_ENABLE_SKSL
-
 #include "include/core/SkFlattenable.h"
 #include "include/core/SkImageFilter.h"
 #include "include/core/SkM44.h"
@@ -228,7 +226,7 @@ skif::FilterResult morphology_pass(const skif::Context& ctx, const skif::FilterR
         } // else the last iteration should output what was originally requested
 
         skif::FilterResult::Builder builder{stepCtx};
-        builder.add(childOutput, sampleBounds);
+        builder.add(childOutput, sampleBounds, ShaderFlags::kSampledRepeatedly);
         childOutput = builder.eval(
                 [&](SkSpan<sk_sp<SkShader>> inputs) {
                     if (appliedRadius == 0) {
@@ -236,7 +234,7 @@ skif::FilterResult morphology_pass(const skif::Context& ctx, const skif::FilterR
                     } else {
                         return make_sparse_morphology(inputs[0], type, dir, stepRadius);
                     }
-                }, ShaderFlags::kForceResolveInputs);
+                });
 
         sampleBounds = stepCtx.desiredOutput();
         appliedRadius += stepRadius;
@@ -343,22 +341,3 @@ SkRect SkMorphologyImageFilter::computeFastBounds(const SkRect& src) const {
     }
     return bounds;
 }
-
-#else
-
-// The morphology effects requires SkSL, just return the input, possibly cropped
-sk_sp<SkImageFilter> SkImageFilters::Dilate(SkScalar radiusX, SkScalar radiusY,
-                                            sk_sp<SkImageFilter> input,
-                                            const CropRect& cropRect) {
-    return cropRect ? SkMakeCropImageFilter(*cropRect, std::move(input)) : input;
-}
-
-sk_sp<SkImageFilter> SkImageFilters::Erode(SkScalar radiusX, SkScalar radiusY,
-                                           sk_sp<SkImageFilter> input,
-                                           const CropRect& cropRect) {
-    return cropRect ? SkMakeCropImageFilter(*cropRect, std::move(input)) : input;
-}
-
-void SkRegisterMorphologyImageFilterFlattenables() {}
-
-#endif

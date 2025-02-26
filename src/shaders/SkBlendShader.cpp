@@ -24,12 +24,6 @@
 #include "src/core/SkWriteBuffer.h"
 #include "src/shaders/SkShaderBase.h"
 
-#if defined(SK_GRAPHITE)
-#include "src/gpu/Blend.h"
-#include "src/gpu/graphite/KeyHelpers.h"
-#include "src/gpu/graphite/PaintParamsKey.h"
-#endif
-
 #include <optional>
 
 sk_sp<SkFlattenable> SkBlendShader::CreateProc(SkReadBuffer& buffer) {
@@ -103,48 +97,6 @@ bool SkBlendShader::appendStages(const SkStageRec& rec, const SkShaders::MatrixR
     return true;
 }
 
-#if defined(SK_ENABLE_SKVM)
-skvm::Color SkBlendShader::program(skvm::Builder* p,
-                                   skvm::Coord device,
-                                   skvm::Coord local,
-                                   skvm::Color paint,
-                                   const SkShaders::MatrixRec& mRec,
-                                   const SkColorInfo& cinfo,
-                                   skvm::Uniforms* uniforms,
-                                   SkArenaAlloc* alloc) const {
-    skvm::Color d, s;
-    if ((d = as_SB(fDst)->program(p, device, local, paint, mRec, cinfo, uniforms, alloc)) &&
-        (s = as_SB(fSrc)->program(p, device, local, paint, mRec, cinfo, uniforms, alloc))) {
-        return p->blend(fMode, s, d);
-    }
-    return {};
-}
-#endif
-
-#if defined(SK_GRAPHITE)
-void SkBlendShader::addToKey(const skgpu::graphite::KeyContext& keyContext,
-                             skgpu::graphite::PaintParamsKeyBuilder* builder,
-                             skgpu::graphite::PipelineDataGatherer* gatherer) const {
-    using namespace skgpu::graphite;
-
-    BlendShaderBlock::BeginBlock(keyContext, builder, gatherer);
-
-    as_SB(fSrc)->addToKey(keyContext, builder, gatherer);
-    as_SB(fDst)->addToKey(keyContext, builder, gatherer);
-
-    SkSpan<const float> porterDuffConstants = skgpu::GetPorterDuffBlendConstants(fMode);
-    if (!porterDuffConstants.empty()) {
-        CoeffBlenderBlock::BeginBlock(keyContext, builder, gatherer, porterDuffConstants);
-        builder->endBlock();
-    } else {
-        BlendModeBlenderBlock::BeginBlock(keyContext, builder, gatherer, fMode);
-        builder->endBlock();
-    }
-
-    builder->endBlock();  // BlendShaderBlock
-}
-#endif
-
 sk_sp<SkShader> SkShaders::Blend(SkBlendMode mode, sk_sp<SkShader> dst, sk_sp<SkShader> src) {
     if (!src || !dst) {
         return nullptr;
@@ -175,7 +127,6 @@ sk_sp<SkShader> SkShaders::Blend(sk_sp<SkBlender> blender,
         return sk_make_sp<SkBlendShader>(mode.value(), std::move(dst), std::move(src));
     }
 
-#ifdef SK_ENABLE_SKSL
     // This isn't a built-in blend mode; we might as well use a runtime effect to evaluate it.
     static SkRuntimeEffect* sBlendEffect = SkMakeRuntimeEffect(SkRuntimeEffect::MakeForShader,
         "uniform shader s, d;"
@@ -186,10 +137,6 @@ sk_sp<SkShader> SkShaders::Blend(sk_sp<SkBlender> blender,
     );
     SkRuntimeEffect::ChildPtr children[] = {std::move(src), std::move(dst), std::move(blender)};
     return sBlendEffect->makeShader(/*uniforms=*/{}, children);
-#else
-    // We need SkSL to render this blend.
-    return nullptr;
-#endif
 }
 
 void SkRegisterBlendShaderFlattenable() {

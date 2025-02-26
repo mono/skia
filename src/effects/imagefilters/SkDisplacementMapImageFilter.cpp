@@ -6,9 +6,6 @@
  */
 
 #include "include/effects/SkImageFilters.h"
-#include "src/effects/imagefilters/SkCropImageFilter.h"
-
-#ifdef SK_ENABLE_SKSL
 
 #include "include/core/SkColor.h"
 #include "include/core/SkFlattenable.h"
@@ -29,6 +26,7 @@
 #include "src/core/SkReadBuffer.h"
 #include "src/core/SkRuntimeEffectPriv.h"
 #include "src/core/SkWriteBuffer.h"
+#include "src/effects/imagefilters/SkCropImageFilter.h"
 
 #include <utility>
 
@@ -263,13 +261,13 @@ skif::FilterResult SkDisplacementMapImageFilter::onFilterImage(const skif::Conte
     builder.add(displacementOutput, /*sampleBounds=*/outputBounds);
     builder.add(colorOutput,
                 /*sampleBounds=*/requiredColorInput,
-                ShaderFlags::kNonLinearSampling,
+                ShaderFlags::kNonTrivialSampling,
                 kDisplacementSampling);
     return builder.eval(
             [&](SkSpan<sk_sp<SkShader>> inputs) {
                 return make_displacement_shader(inputs[kDisplacement], inputs[kColor],
                                                 scale, fXChannel, fYChannel);
-            }, ShaderFlags::kExplicitOutputBounds, outputBounds);
+            }, outputBounds);
 }
 
 skif::LayerSpace<SkIRect> SkDisplacementMapImageFilter::onGetInputLayerBounds(
@@ -302,16 +300,3 @@ SkRect SkDisplacementMapImageFilter::computeFastBounds(const SkRect& src) const 
     float maxDisplacement = 0.5f * SkScalarAbs(fScale);
     return colorBounds.makeOutset(maxDisplacement, maxDisplacement);
 }
-
-#else
-
-// The displacement map effect requires SkSL, just return the color input, possibly cropped
-sk_sp<SkImageFilter> SkImageFilters::DisplacementMap(
-        SkColorChannel xChannelSelector, SkColorChannel yChannelSelector, SkScalar scale,
-        sk_sp<SkImageFilter> displacement, sk_sp<SkImageFilter> color, const CropRect& cropRect) {
-    return cropRect ? SkMakeCropImageFilter(*cropRect, std::move(color)) : color;
-}
-
-void SkRegisterDisplacementMapImageFilterFlattenable() {}
-
-#endif

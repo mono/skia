@@ -25,12 +25,6 @@ public:
 
     ShaderType type() const override { return ShaderType::kColorFilter; }
 
-#if defined(SK_GRAPHITE)
-    void addToKey(const skgpu::graphite::KeyContext&,
-                  skgpu::graphite::PaintParamsKeyBuilder*,
-                  skgpu::graphite::PipelineDataGatherer*) const override;
-#endif
-
     sk_sp<SkShader> shader() const { return fShader; }
     sk_sp<SkColorFilterBase> filter() const { return fFilter; }
     float alpha() const { return fAlpha; }
@@ -39,17 +33,6 @@ private:
     bool isOpaque() const override;
     void flatten(SkWriteBuffer&) const override;
     bool appendStages(const SkStageRec&, const SkShaders::MatrixRec&) const override;
-
-#if defined(SK_ENABLE_SKVM)
-    skvm::Color program(skvm::Builder*,
-                        skvm::Coord device,
-                        skvm::Coord local,
-                        skvm::Color paint,
-                        const SkShaders::MatrixRec&,
-                        const SkColorInfo& dst,
-                        skvm::Uniforms* uniforms,
-                        SkArenaAlloc*) const override;
-#endif
 
     SK_FLATTENABLE_HOOKS(SkColorFilterShader)
 

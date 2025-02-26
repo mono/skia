@@ -36,7 +36,6 @@
 #include "include/private/SkColorData.h"
 #include "include/private/gpu/ganesh/GrTypesPriv.h"
 #include "src/core/SkBlendModePriv.h"
-#include "src/core/SkMatrixProvider.h"
 #include "src/gpu/SkBackingFit.h"
 #include "src/gpu/ganesh/GrPaint.h"
 #include "src/gpu/ganesh/GrPixmap.h"
@@ -44,6 +43,7 @@
 #include "src/gpu/ganesh/SurfaceDrawContext.h"
 #include "tests/CtsEnforcement.h"
 #include "tests/Test.h"
+#include "tools/gpu/ContextType.h"
 
 #include <cstdint>
 #include <cstring>
@@ -83,7 +83,7 @@ static void draw_paint_with_dmsaa(skgpu::ganesh::SurfaceDrawContext* sdc,
     GrPaint paint;
     paint.setColor4f(color);
     paint.setXPFactory(GrXPFactory::FromBlendMode(blendMode));
-    sdc->drawVertices(nullptr, std::move(paint), SkMatrixProvider(SkMatrix::I()), vertices);
+    sdc->drawVertices(nullptr, std::move(paint), SkMatrix::I(), vertices);
 }
 
 static bool fuzzy_equals(const float a[4], const SkPMColor4f& b) {
@@ -119,7 +119,7 @@ static void check_sdc_color(skiatest::Reporter* reporter,
 }
 
 DEF_GANESH_TEST_FOR_CONTEXTS(DMSAA_preserve_contents,
-                             &sk_gpu_test::GrContextFactory::IsRenderingContext,
+                             &skgpu::IsRenderingContext,
                              reporter,
                              ctxInfo,
                              nullptr,
@@ -158,7 +158,7 @@ static void require_dst_reads(GrContextOptions* options) {
 }
 
 DEF_GANESH_TEST_FOR_CONTEXTS(DMSAA_dst_read,
-                             &sk_gpu_test::GrContextFactory::IsRenderingContext,
+                             &skgpu::IsRenderingContext,
                              reporter,
                              ctxInfo,
                              require_dst_reads,
@@ -189,7 +189,7 @@ DEF_GANESH_TEST_FOR_CONTEXTS(DMSAA_dst_read,
 }
 
 DEF_GANESH_TEST_FOR_CONTEXTS(DMSAA_aa_dst_read_after_dmsaa,
-                             &sk_gpu_test::GrContextFactory::IsRenderingContext,
+                             &skgpu::IsRenderingContext,
                              reporter,
                              ctxInfo,
                              require_dst_reads,
@@ -221,7 +221,7 @@ DEF_GANESH_TEST_FOR_CONTEXTS(DMSAA_aa_dst_read_after_dmsaa,
 }
 
 DEF_GANESH_TEST_FOR_CONTEXTS(DMSAA_dst_read_with_existing_barrier,
-                             &sk_gpu_test::GrContextFactory::IsRenderingContext,
+                             &skgpu::IsRenderingContext,
                              reporter,
                              ctxInfo,
                              require_dst_reads,

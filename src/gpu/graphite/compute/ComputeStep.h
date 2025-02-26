@@ -12,7 +12,8 @@
 #include "include/core/SkSize.h"
 #include "include/core/SkSpan.h"
 #include "include/private/base/SkTArray.h"
-#include "src/core/SkEnumBitMask.h"
+#include "include/private/base/SkTo.h"
+#include "src/base/SkEnumBitMask.h"
 #include "src/gpu/graphite/ComputeTypes.h"
 
 #include <optional>
@@ -23,9 +24,7 @@
 
 namespace skgpu::graphite {
 
-class DrawParams;
 class UniformManager;
-struct ResourceBindingRequirements;
 
 /**
  * A `ComputeStep` represents a compute pass within a wider draw operation. A `ComputeStep`
@@ -68,14 +67,6 @@ struct ResourceBindingRequirements;
 class ComputeStep {
 public:
     enum class DataFlow {
-        // A set of writable Buffer bindings that the `ComputeStep` will write vertex and instance
-        // attributes to. If present, these buffers can be used to encode the draw command for a
-        // subsequent `RenderStep`.
-        kVertexOutput,
-        kIndexOutput,
-        kInstanceOutput,
-        kIndirectDrawOutput,
-
         // A private binding is a resource that is only visible to a single ComputeStep invocation.
         kPrivate,
 
@@ -89,8 +80,9 @@ public:
         kUniformBuffer,
         kStorageBuffer,
 
-        kStorageTexture,
-        kTexture,
+        kWriteOnlyStorageTexture,
+        kReadOnlyTexture,
+        kSampledTexture,
     };
 
     enum class ResourcePolicy {
@@ -120,13 +112,30 @@ public:
 
         // This field only has meaning (and must have a non-negative value) if `fFlow` is
         // `DataFlow::kShared`.
-        int fSlot = -1;
+        int fSlot;
+
+        // The SkSL variable declaration code excluding the layout and type definitions. This field
+        // is ignored for a ComputeStep that supports native shader source.
+        const char* fSkSL = "";
 
         constexpr ResourceDesc(ResourceType type,
                                DataFlow flow,
                                ResourcePolicy policy,
                                int slot = -1)
                 : fType(type), fFlow(flow), fPolicy(policy), fSlot(slot) {}
+
+        constexpr ResourceDesc(ResourceType type,
+                               DataFlow flow,
+                               ResourcePolicy policy,
+                               int slot,
+                               const char* sksl)
+                : fType(type), fFlow(flow), fPolicy(policy), fSlot(slot), fSkSL(sksl) {}
+
+        constexpr ResourceDesc(ResourceType type,
+                               DataFlow flow,
+                               ResourcePolicy policy,
+                               const char* sksl)
+                : fType(type), fFlow(flow), fPolicy(policy), fSlot(-1), fSkSL(sksl) {}
     };
 
     // On platforms that support late bound workgroup shared resources (e.g. Metal) a ComputeStep
@@ -145,7 +154,7 @@ public:
     //
     // If this ComputeStep supports native shader source then it must override
     // `nativeShaderSource()` instead.
-    virtual std::string computeSkSL(const ResourceBindingRequirements&, int nextBindingIndex) const;
+    virtual std::string computeSkSL() const;
 
     // A ComputeStep that supports native shader source then then it must implement
     // `nativeShaderSource()` and return the shader source in the requested format. This is intended
@@ -165,34 +174,26 @@ public:
     // This method will be called for buffer entries in the ComputeStep's resource list to
     // determine the required allocation size. The ComputeStep must return a non-zero value.
     //
-    // TODO(armansito): The only piece of information that the ComputeStep currently uses to make
-    // this determination is the draw parameters. This approach particularly doesn't address (and
-    // likely needs to be reworked) for intermediate ComputeSteps in a chain of invocations, where
-    // the effective data sizes may not be known on the CPU.
-    //
-    // For now, we assume that there will be a strict data contract between chained ComputeSteps.
-    // The buffer sizes are an estimate based on the DrawParams. This is generic enough to allow
-    // different schemes (such as dynamic allocations and buffer pools) but may not be easily
-    // validated on the CPU.
-    virtual size_t calculateBufferSize(const DrawParams&,
-                                       int resourceIndex,
-                                       const ResourceDesc&) const;
+    // TODO(b/279955342): Provide a context object, e.g. a type a associated with
+    // DispatchGroup::Builder, to aid the ComputeStep in its buffer size calculations.
+    virtual size_t calculateBufferSize(int resourceIndex, const ResourceDesc&) const;
 
     // This method will be called for storage texture entries in the ComputeStep's resource list to
     // determine the required dimensions and color type. The ComputeStep must return a non-zero
     // value for the size and a valid color type.
-    virtual std::tuple<SkISize, SkColorType> calculateTextureParameters(const DrawParams&,
-                                                                        int resourceIndex,
+    virtual std::tuple<SkISize, SkColorType> calculateTextureParameters(int resourceIndex,
                                                                         const ResourceDesc&) const;
+
+    // This method will be called for sampler entries in the ComputeStep's resource list to
+    // determine the sampling and tile mode options.
+    virtual SamplerDesc calculateSamplerParameters(int resourceIndex, const ResourceDesc&) const;
 
     // Return the global dispatch size (aka "workgroup count") for this step based on the draw
     // parameters. The default value is a workgroup count of (1, 1, 1)
     //
-    // TODO(armansito): The only piece of information that the ComputeStep currently gets to make
-    // this determination is the draw parameters. There might be other inputs to this calculation
-    // for intermediate compute stages that may not be known on the CPU. One way to address this is
-    // to drive the workgroup dimensions via an indirect dispatch.
-    virtual WorkgroupSize calculateGlobalDispatchSize(const DrawParams&) const;
+    // TODO(b/279955342): Provide a context object, e.g. a type a associated with
+    // DispatchGroup::Builder, to aid the ComputeStep in its buffer size calculations.
+    virtual WorkgroupSize calculateGlobalDispatchSize() const;
 
     // Populates a storage buffer resource which was specified as "mapped". This method will only be
     // called once for a resource right after its allocation and before pipeline execution. For
@@ -201,9 +202,7 @@ public:
     //
     // `resourceIndex` matches the order in which `resource` was enumerated by
     // `ComputeStep::resources()`.
-    virtual void prepareStorageBuffer(const DrawParams&,
-                                      int ssboIndex,
-                                      int resourceIndex,
+    virtual void prepareStorageBuffer(int resourceIndex,
                                       const ResourceDesc& resource,
                                       void* buffer,
                                       size_t bufferSize) const;
@@ -221,8 +220,9 @@ public:
     //
     //     SkDEBUGCODE(mgr->setExpectedUniforms({{"foo", SkSLType::kFloat}}));
     //
-    virtual void prepareUniformBuffer(const DrawParams&,
-                                      int resourceIndex,
+    // TODO(b/279955342): Provide a context object, e.g. a type a associated with
+    // DispatchGroup::Builder, to aid the ComputeStep in its buffer size calculations.
+    virtual void prepareUniformBuffer(int resourceIndex,
                                       const ResourceDesc&,
                                       UniformManager*) const;
 
@@ -241,22 +241,12 @@ public:
     // other backends, this value will be baked into the pipeline.
     WorkgroupSize localDispatchSize() const { return fLocalDispatchSize; }
 
-    bool supportsNativeShader() const { return fFlags & Flags::kSupportsNativeShader; }
-
-    // Data flow behavior queries:
-    bool outputsVertices() const { return fFlags & Flags::kOutputsVertexBuffer; }
-    bool outputsIndices() const { return fFlags & Flags::kOutputsIndexBuffer; }
-    bool outputsInstances() const { return fFlags & Flags::kOutputsInstanceBuffer; }
-    bool writesIndirectDraw() const { return fFlags & Flags::kOutputsIndirectDrawBuffer; }
+    bool supportsNativeShader() const { return SkToBool(fFlags & Flags::kSupportsNativeShader); }
 
 protected:
     enum class Flags : uint8_t {
-        kNone                      = 0b00000,
-        kOutputsVertexBuffer       = 0b00001,
-        kOutputsIndexBuffer        = 0b00010,
-        kOutputsInstanceBuffer     = 0b00100,
-        kOutputsIndirectDrawBuffer = 0b01000,
-        kSupportsNativeShader      = 0b10000,
+        kNone                 = 0b00000,
+        kSupportsNativeShader = 0b00010,
     };
     SK_DECL_BITMASK_OPS_FRIENDS(Flags);
 
@@ -284,7 +274,7 @@ private:
     // workgroup size declaration to avoid any validation failures.
     WorkgroupSize fLocalDispatchSize;
 };
-SK_MAKE_BITMASK_OPS(ComputeStep::Flags);
+SK_MAKE_BITMASK_OPS(ComputeStep::Flags)
 
 }  // namespace skgpu::graphite
 

@@ -7,6 +7,7 @@
 
 #include "include/core/SkCanvas.h"
 #include "include/core/SkGraphics.h"
+#include "include/core/SkPicture.h"
 #include "include/core/SkPictureRecorder.h"
 #include "include/core/SkStream.h"
 #include "include/core/SkSurface.h"
@@ -323,8 +324,7 @@ private:
     GPUGenerator(FrameSink* sink, const SkMatrix& matrix)
         : FrameGenerator(sink)
     {
-        fCtx = fFactory.getContextInfo(sk_gpu_test::GrContextFactory::kGL_ContextType)
-                           .directContext();
+        fCtx = fFactory.getContextInfo(skgpu::ContextType::kGL).directContext();
         fSurface = SkSurfaces::RenderTarget(fCtx,
                                             skgpu::Budgeted::kNo,
                                             SkImageInfo::MakeN32Premul(FLAGS_width, FLAGS_height),
@@ -424,7 +424,7 @@ extern bool gSkUseThreadLocalStrikeCaches_IAcknowledgeThisIsIncrediblyExperiment
 int main(int argc, char** argv) {
     gSkUseThreadLocalStrikeCaches_IAcknowledgeThisIsIncrediblyExperimental = true;
     CommandLineFlags::Parse(argc, argv);
-    SkAutoGraphics ag;
+    SkGraphics::Init();
 
     if (FLAGS_input.isEmpty() || FLAGS_writePath.isEmpty()) {
         SkDebugf("Missing required 'input' and 'writePath' args.\n");

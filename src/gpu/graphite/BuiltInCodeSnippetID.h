@@ -38,6 +38,7 @@ enum class BuiltInCodeSnippetID : int32_t {
 
     kLocalMatrixShader,
     kImageShader,
+    kCubicImageShader,
     kYUVImageShader,
     kCoordClampShader,
     kDitherShader,
@@ -98,6 +99,6 @@ static constexpr int kFixedFunctionBlendModeIDOffset =
 
 static_assert(BuiltInCodeSnippetID::kLast == BuiltInCodeSnippetID::kFixedFunctionScreenBlendMode);
 
-} // skgpu::graphite
+}  // namespace skgpu::graphite
 
 #endif // skgpu_graphite_BuiltInCodeSnippetID_DEFINED

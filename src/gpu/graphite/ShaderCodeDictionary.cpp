@@ -298,17 +298,41 @@ std::string ShaderInfo::toSkSL(const Caps* caps,
     }
 
     const char* outColor = args.fPriorStageOutput.c_str();
-    if (step->emitsCoverage()) {
+    const Coverage coverage = step->coverage();
+    if (coverage != Coverage::kNone) {
         mainBody += "half4 outputCoverage;";
         mainBody += step->fragmentCoverageSkSL();
 
+        // TODO: Determine whether draw is opaque and pass that to GetBlendFormula.
         BlendFormula coverageBlendFormula =
-                skgpu::GetBlendFormula(false, step->emitsCoverage(), fBlendMode);
+                coverage == Coverage::kLCD
+                        ? skgpu::GetLCDBlendFormula(fBlendMode)
+                        : skgpu::GetBlendFormula(
+                                  /*isOpaque=*/false, /*hasCoverage=*/true, fBlendMode);
 
         const bool needsSurfaceColorForCoverage =
                 this->needsSurfaceColor() || (coverageBlendFormula.hasSecondaryOutput() &&
                                               !caps->shaderCaps()->fDualSourceBlendingSupport);
         if (needsSurfaceColorForCoverage) {
+            // If this draw uses a non-coherent dst read, we want to keep the existing dst color (or
+            // whatever has been previously drawn) when there's no coverage. This helps for batching
+            // text draws that need to read from a dst copy for blends. However, this only helps the
+            // case where the outer bounding boxes of each letter overlap and not two actual parts
+            // of the text.
+            DstReadRequirement dstReadReq = caps->getDstReadRequirement();
+            if (dstReadReq == DstReadRequirement::kTextureCopy ||
+                dstReadReq == DstReadRequirement::kTextureSample) {
+                // We don't think any shaders actually output negative coverage, but just as a
+                // safety check for floating point precision errors, we compare with <= here. We
+                // just check the RGB values of the coverage, since the alpha may not have been set
+                // when using LCD. If we are using single-channel coverage, alpha will be equal to
+                // RGB anyway.
+                mainBody +=
+                    "if (all(lessThanEqual(outputCoverage.rgb, half3(0)))) {"
+                        "discard;"
+                    "}";
+            }
+
             // Use originally-specified BlendInfo and blend with dst manually.
             SkSL::String::appendf(
                     &mainBody,
@@ -602,7 +626,7 @@ static constexpr int kEightStopGradient = 8;
 
 static constexpr Uniform kLinearGradientUniforms4[] = {
         { "colors",      SkSLType::kFloat4, kFourStopGradient },
-        { "offsets",     SkSLType::kFloat,  kFourStopGradient },
+        { "offsets",     SkSLType::kFloat4 },
         { "point0",      SkSLType::kFloat2 },
         { "point1",      SkSLType::kFloat2 },
         { "tilemode",    SkSLType::kInt },
@@ -611,7 +635,7 @@ static constexpr Uniform kLinearGradientUniforms4[] = {
 };
 static constexpr Uniform kLinearGradientUniforms8[] = {
         { "colors",      SkSLType::kFloat4, kEightStopGradient },
-        { "offsets",     SkSLType::kFloat,  kEightStopGradient },
+        { "offsets",     SkSLType::kFloat4, 2 },
         { "point0",      SkSLType::kFloat2 },
         { "point1",      SkSLType::kFloat2 },
         { "tilemode",    SkSLType::kInt },
@@ -633,7 +657,7 @@ static constexpr TextureAndSampler kTextureGradientTexturesAndSamplers[] = {
 
 static constexpr Uniform kRadialGradientUniforms4[] = {
         { "colors",      SkSLType::kFloat4, kFourStopGradient },
-        { "offsets",     SkSLType::kFloat,  kFourStopGradient },
+        { "offsets",     SkSLType::kFloat4 },
         { "center",      SkSLType::kFloat2 },
         { "radius",      SkSLType::kFloat },
         { "tilemode",    SkSLType::kInt },
@@ -642,7 +666,7 @@ static constexpr Uniform kRadialGradientUniforms4[] = {
 };
 static constexpr Uniform kRadialGradientUniforms8[] = {
         { "colors",      SkSLType::kFloat4, kEightStopGradient },
-        { "offsets",     SkSLType::kFloat,  kEightStopGradient },
+        { "offsets",     SkSLType::kFloat4, 2 },
         { "center",      SkSLType::kFloat2 },
         { "radius",      SkSLType::kFloat },
         { "tilemode",    SkSLType::kInt },
@@ -660,7 +684,7 @@ static constexpr Uniform kRadialGradientUniformsTexture[] = {
 
 static constexpr Uniform kSweepGradientUniforms4[] = {
         { "colors",      SkSLType::kFloat4, kFourStopGradient },
-        { "offsets",     SkSLType::kFloat,  kFourStopGradient },
+        { "offsets",     SkSLType::kFloat4 },
         { "center",      SkSLType::kFloat2 },
         { "bias",        SkSLType::kFloat },
         { "scale",       SkSLType::kFloat },
@@ -670,7 +694,7 @@ static constexpr Uniform kSweepGradientUniforms4[] = {
 };
 static constexpr Uniform kSweepGradientUniforms8[] = {
         { "colors",      SkSLType::kFloat4, kEightStopGradient },
-        { "offsets",     SkSLType::kFloat,  kEightStopGradient },
+        { "offsets",     SkSLType::kFloat4, 2 },
         { "center",      SkSLType::kFloat2 },
         { "bias",        SkSLType::kFloat },
         { "scale",       SkSLType::kFloat },
@@ -690,7 +714,7 @@ static constexpr Uniform kSweepGradientUniformsTexture[] = {
 
 static constexpr Uniform kConicalGradientUniforms4[] = {
         { "colors",      SkSLType::kFloat4, kFourStopGradient },
-        { "offsets",     SkSLType::kFloat,  kFourStopGradient },
+        { "offsets",     SkSLType::kFloat4 },
         { "point0",      SkSLType::kFloat2 },
         { "point1",      SkSLType::kFloat2 },
         { "radius0",     SkSLType::kFloat },
@@ -701,7 +725,7 @@ static constexpr Uniform kConicalGradientUniforms4[] = {
 };
 static constexpr Uniform kConicalGradientUniforms8[] = {
         { "colors",      SkSLType::kFloat4, kEightStopGradient },
-        { "offsets",     SkSLType::kFloat,  kEightStopGradient },
+        { "offsets",     SkSLType::kFloat4, 2 },
         { "point0",      SkSLType::kFloat2 },
         { "point1",      SkSLType::kFloat2 },
         { "radius0",     SkSLType::kFloat },
@@ -781,24 +805,34 @@ std::string GenerateLocalMatrixPreamble(const ShaderInfo& shaderInfo,
 }
 
 //--------------------------------------------------------------------------------------------------
-static constexpr int kNumXferFnCoeffs = 7;
-
 static constexpr Uniform kImageShaderUniforms[] = {
         { "imgSize",               SkSLType::kFloat2 },
         { "subset",                SkSLType::kFloat4 },
         { "tilemodeX",             SkSLType::kInt },
         { "tilemodeY",             SkSLType::kInt },
         { "filterMode",            SkSLType::kInt },
-        { "useCubic",              SkSLType::kInt },
-        { "cubicCoeffs",           SkSLType::kHalf4x4 },
         { "readSwizzle",           SkSLType::kInt },
-        // The next 6 uniforms are for the color space transformation
+        // The next 5 uniforms are for the color space transformation
         { "csXformFlags",          SkSLType::kInt },
         { "csXformSrcKind",        SkSLType::kInt },
-        { "csXformSrcCoeffs",      SkSLType::kHalf, kNumXferFnCoeffs },
         { "csXformGamutTransform", SkSLType::kHalf3x3 },
         { "csXformDstKind",        SkSLType::kInt },
-        { "csXformDstCoeffs",      SkSLType::kHalf, kNumXferFnCoeffs },
+        { "csXformCoeffs",         SkSLType::kHalf4x4 },
+};
+
+static constexpr Uniform kCubicImageShaderUniforms[] = {
+        { "imgSize",               SkSLType::kFloat2 },
+        { "subset",                SkSLType::kFloat4 },
+        { "tilemodeX",             SkSLType::kInt },
+        { "tilemodeY",             SkSLType::kInt },
+        { "cubicCoeffs",           SkSLType::kHalf4x4 },
+        { "readSwizzle",           SkSLType::kInt },
+        // The next 5 uniforms are for the color space transformation
+        { "csXformFlags",          SkSLType::kInt },
+        { "csXformSrcKind",        SkSLType::kInt },
+        { "csXformGamutTransform", SkSLType::kHalf3x3 },
+        { "csXformDstKind",        SkSLType::kInt },
+        { "csXformCoeffs",         SkSLType::kHalf4x4 },
 };
 
 static constexpr TextureAndSampler kISTexturesAndSamplers[] = {
@@ -827,6 +861,7 @@ static_assert(4 == static_cast<int>(ReadSwizzle::kBGRA),
               "ImageShader code depends on ReadSwizzle");
 
 static constexpr char kImageShaderName[] = "sk_image_shader";
+static constexpr char kCubicImageShaderName[] = "sk_cubic_image_shader";
 
 //--------------------------------------------------------------------------------------------------
 
@@ -847,10 +882,9 @@ static constexpr Uniform kYUVImageShaderUniforms[] = {
         // The next 6 uniforms are for the color space transformation
         { "csXformFlags",          SkSLType::kInt },
         { "csXformSrcKind",        SkSLType::kInt },
-        { "csXformSrcCoeffs",      SkSLType::kHalf, kNumXferFnCoeffs },
         { "csXformGamutTransform", SkSLType::kHalf3x3 },
         { "csXformDstKind",        SkSLType::kInt },
-        { "csXformDstCoeffs",      SkSLType::kHalf, kNumXferFnCoeffs },
+        { "csXformCoeffs",         SkSLType::kHalf4x4 },
 };
 
 static constexpr TextureAndSampler kYUVISTexturesAndSamplers[] = {
@@ -1015,8 +1049,7 @@ public:
     }
 
     void declareFunction(const char* decl) override {
-        // TODO(skbug.com/14387) - The pipeline generator does not include semicolons for functions
-        *fPreamble += std::string(decl) + ";";
+        *fPreamble += std::string(decl);
     }
 
     void defineStruct(const char* definition) override {
@@ -1141,10 +1174,9 @@ static constexpr char kGaussianColorFilterName[] = "sk_gaussian_colorfilter";
 static constexpr Uniform kColorSpaceTransformUniforms[] = {
         { "flags",          SkSLType::kInt },
         { "srcKind",        SkSLType::kInt },
-        { "srcCoeffs",      SkSLType::kHalf, kNumXferFnCoeffs },
         { "gamutTransform", SkSLType::kHalf3x3 },
         { "dstKind",        SkSLType::kInt },
-        { "dstCoeffs",      SkSLType::kHalf, kNumXferFnCoeffs },
+        { "csXformCoeffs",  SkSLType::kHalf4x4 },
 };
 
 static_assert(0 == static_cast<int>(skcms_TFType_Invalid),
@@ -1533,6 +1565,16 @@ ShaderCodeDictionary::ShaderCodeDictionary() {
             SnippetRequirementFlags::kLocalCoords,
             SkSpan(kISTexturesAndSamplers),
             kImageShaderName,
+            GenerateDefaultExpression,
+            GenerateDefaultPreamble,
+            kNoChildren
+    };
+    fBuiltInCodeSnippets[(int) BuiltInCodeSnippetID::kCubicImageShader] = {
+            "CubicImageShader",
+            SkSpan(kCubicImageShaderUniforms),
+            SnippetRequirementFlags::kLocalCoords,
+            SkSpan(kISTexturesAndSamplers),
+            kCubicImageShaderName,
             GenerateDefaultExpression,
             GenerateDefaultPreamble,
             kNoChildren

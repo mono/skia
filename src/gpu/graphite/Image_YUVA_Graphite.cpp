@@ -50,6 +50,20 @@ Image_YUVA::Image_YUVA(uint32_t uniqueID,
     SkASSERT(fYUVAProxies.isValid());
 }
 
+size_t Image_YUVA::textureSize() const {
+    size_t size = 0;
+    for (int i = 0; i < fYUVAProxies.numPlanes(); ++i) {
+        if (fYUVAProxies.proxy(i)->texture()) {
+            size += fYUVAProxies.proxy(i)->texture()->gpuMemorySize();
+        }
+    }
+    return size;
+}
+
+sk_sp<SkImage> Image_YUVA::onReinterpretColorSpace(sk_sp<SkColorSpace> newCS) const {
+    return sk_make_sp<Image_YUVA>(kNeedNewImageUniqueID, fYUVAProxies, std::move(newCS));
+}
+
 }  // namespace skgpu::graphite
 
 using namespace skgpu::graphite;
@@ -58,6 +72,7 @@ using SkImages::GraphitePromiseTextureContext;
 using SkImages::GraphitePromiseTextureReleaseProc;
 
 sk_sp<TextureProxy> Image_YUVA::MakePromiseImageLazyProxy(
+        const Caps* caps,
         SkISize dimensions,
         TextureInfo textureInfo,
         Volatile isVolatile,
@@ -128,11 +143,10 @@ sk_sp<TextureProxy> Image_YUVA::MakePromiseImageLazyProxy(
 
     } callback(fulfillProc, std::move(releaseHelper), textureContext, textureReleaseProc);
 
-    return TextureProxy::MakeLazy(dimensions,
+    return TextureProxy::MakeLazy(caps,
+                                  dimensions,
                                   textureInfo,
                                   skgpu::Budgeted::kNo,  // This is destined for a user's SkImage
                                   isVolatile,
                                   std::move(callback));
 }
-
-

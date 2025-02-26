@@ -11,7 +11,8 @@
 #include "include/core/SkTypes.h"
 #include "src/sksl/SkSLPosition.h"
 #include "src/sksl/ir/SkSLIRNode.h"
-#include "src/sksl/ir/SkSLModifiers.h"
+#include "src/sksl/ir/SkSLLayout.h"
+#include "src/sksl/ir/SkSLModifierFlags.h"
 #include "src/sksl/ir/SkSLStatement.h"
 #include "src/sksl/ir/SkSLSymbol.h"
 #include "src/sksl/ir/SkSLType.h"
@@ -50,10 +51,10 @@ public:
 
     inline static constexpr Kind kIRNodeKind = Kind::kVariable;
 
-    Variable(Position pos, Position modifiersPosition, const Modifiers* modifiers,
+    Variable(Position pos, Position modifiersPosition, ModifierFlags modifierFlags,
              std::string_view name, const Type* type, bool builtin, Storage storage)
             : INHERITED(pos, kIRNodeKind, name, type)
-            , fModifiers(modifiers)
+            , fModifierFlags(modifierFlags)
             , fModifiersPosition(modifiersPosition)
             , fStorage(storage)
             , fBuiltin(builtin) {}
@@ -61,14 +62,15 @@ public:
     ~Variable() override;
 
     static std::unique_ptr<Variable> Convert(const Context& context, Position pos,
-                                             Position modifiersPos, const Modifiers& modifiers,
-                                             const Type* type, Position namePos,
-                                             std::string_view name, Variable::Storage storage);
+                                             Position modifiersPos, const Layout& layout,
+                                             ModifierFlags flags, const Type* type,
+                                             Position namePos, std::string_view name,
+                                             Storage storage);
 
-    static std::unique_ptr<Variable> Make(const Context& context, Position pos,
-                                          Position modifiersPos, const Modifiers& modifiers,
+    static std::unique_ptr<Variable> Make(Position pos, Position modifiersPosition,
+                                          const Layout& layout, ModifierFlags flags,
                                           const Type* type, std::string_view name,
-                                          Variable::Storage storage);
+                                          std::string mangledName, bool builtin, Storage storage);
 
     /**
      * Creates a local scratch variable and the associated VarDeclaration statement.
@@ -82,16 +84,14 @@ public:
                                                Mangler& mangler,
                                                std::string_view baseName,
                                                const Type* type,
-                                               const Modifiers& modifiers,
+                                               ModifierFlags modifierFlags,
                                                SymbolTable* symbolTable,
                                                std::unique_ptr<Expression> initialValue);
-    const Modifiers& modifiers() const {
-        return *fModifiers;
+    ModifierFlags modifierFlags() const {
+        return fModifierFlags;
     }
 
-    void setModifiers(const Modifiers* modifiers) {
-        fModifiers = modifiers;
-    }
+    virtual const Layout& layout() const;
 
     Position modifiersPosition() const {
         return fModifiersPosition;
@@ -133,15 +133,13 @@ public:
     virtual std::string_view mangledName() const { return this->name(); }
 
     std::string description() const override {
-        return this->modifiers().description() + this->type().displayName() + " " +
-               std::string(this->name());
+        return this->layout().paddedDescription() + this->modifierFlags().paddedDescription() +
+               this->type().displayName() + " " + std::string(this->name());
     }
 
 private:
-    // When non-null, `fMangledName` is owned by the SymbolTable.
     IRNode* fDeclaringElement = nullptr;
-    // We don't store the position in the Modifiers object itself because they are pooled.
-    const Modifiers* fModifiers = nullptr;
+    ModifierFlags fModifierFlags;
     Position fModifiersPosition;
     VariableStorage fStorage;
     bool fBuiltin;
@@ -153,22 +151,28 @@ private:
  * ExtendedVariable is functionally equivalent to a regular Variable, but it also contains extra
  * fields that most variables don't need:
  * - The variable's associated InterfaceBlock
+ * - The variable's layout
  * - The variable's mangled name
  *
- * These fields can be null/empty.
+ * Some of these fields can be null/empty.
  */
 class ExtendedVariable final : public Variable {
 public:
-    ExtendedVariable(Position pos, Position modifiersPosition, const Modifiers* modifiers,
-                     std::string_view name, const Type* type, bool builtin, Storage storage,
-                     std::string mangledName)
-            : INHERITED(pos, modifiersPosition, modifiers, name, type, builtin, storage)
+    ExtendedVariable(Position pos, Position modifiersPosition, const Layout& layout,
+                     ModifierFlags flags, std::string_view name, const Type* type, bool builtin,
+                     Storage storage, std::string mangledName)
+            : INHERITED(pos, modifiersPosition, flags, name, type, builtin, storage)
+            , fLayout(layout)
             , fMangledName(std::move(mangledName)) {}
 
     ~ExtendedVariable() override;
 
     InterfaceBlock* interfaceBlock() const override {
         return fInterfaceBlockElement;
+    }
+
+    const Layout& layout() const override {
+        return fLayout;
     }
 
     void setInterfaceBlock(InterfaceBlock* elem) override {
@@ -185,6 +189,7 @@ public:
 
 private:
     InterfaceBlock* fInterfaceBlockElement = nullptr;
+    Layout fLayout;
     std::string fMangledName;
 
     using INHERITED = Variable;

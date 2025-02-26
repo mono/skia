@@ -31,20 +31,26 @@ public:
 
     SkImage_Base::Type type() const override { return SkImage_Base::Type::kGraphiteYUVA; }
 
+    size_t textureSize() const override;
+
     bool onHasMipmaps() const override {
         // TODO: Add mipmap support
         return false;
     }
 
-    sk_sp<SkImage> onReinterpretColorSpace(sk_sp<SkColorSpace>) const override {
-        return nullptr;
+    bool onIsProtected() const override {
+        // TODO: add protected content support
+        return false;
     }
+
+    sk_sp<SkImage> onReinterpretColorSpace(sk_sp<SkColorSpace>) const override;
 
     const YUVATextureProxies& yuvaProxies() const {
         return fYUVAProxies;
     }
 
     static sk_sp<TextureProxy> MakePromiseImageLazyProxy(
+            const Caps*,
             SkISize dimensions,
             TextureInfo,
             Volatile,

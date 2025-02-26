@@ -31,8 +31,8 @@ class GrTextureProxy;
 class SkBitmap;
 class SkColorSpace;
 class SkImage;
-class SkImageFilter;
 class SkMatrix;
+enum GrSurfaceOrigin : int;
 enum SkAlphaType : int;
 enum SkColorType : int;
 enum class GrColorType;
@@ -40,7 +40,6 @@ enum class GrImageTexGenPolicy : int;
 enum class GrSemaphoresSubmitted : bool;
 enum class SkTileMode;
 struct GrFlushInfo;
-struct SkIPoint;
 struct SkIRect;
 struct SkISize;
 struct SkImageInfo;
@@ -60,12 +59,6 @@ public:
                                               SkColorType targetColorType,
                                               sk_sp<SkColorSpace> targetCS) const final;
     sk_sp<SkImage> makeSubset(GrDirectContext* direct, const SkIRect& subset) const final;
-    sk_sp<SkImage> makeWithFilter(GrRecordingContext* context,
-                                  const SkImageFilter* filter,
-                                  const SkIRect& subset,
-                                  const SkIRect& clipBounds,
-                                  SkIRect* outSubset,
-                                  SkIPoint* offset) const final;
 
     // From SkImage_Base.h
     GrImageContext* context() const final { return fContext.get(); }
@@ -101,7 +94,7 @@ public:
     static sk_sp<GrTextureProxy> MakePromiseImageLazyProxy(
             GrContextThreadSafeProxy*,
             SkISize dimensions,
-            GrBackendFormat,
+            const GrBackendFormat&,
             skgpu::Mipmapped,
             SkImages::PromiseImageTextureFulfillProc,
             sk_sp<skgpu::RefCntedCallback> releaseHelper);
@@ -117,10 +110,10 @@ public:
                                                                      const SkRect*,
                                                                      const SkRect*) const = 0;
 
+    virtual GrSurfaceOrigin origin() const = 0;
+
 protected:
     SkImage_GaneshBase(sk_sp<GrImageContext>, SkImageInfo, uint32_t uniqueID);
-
-    sk_sp<GrImageContext> fContext;
 
     sk_sp<SkImage> onMakeSubset(skgpu::graphite::Recorder*,
                                 const SkIRect& subset,
@@ -130,6 +123,8 @@ protected:
                                               SkColorType,
                                               sk_sp<SkColorSpace>,
                                               RequiredProperties) const final;
+
+    sk_sp<GrImageContext> fContext;
 };
 
 #endif

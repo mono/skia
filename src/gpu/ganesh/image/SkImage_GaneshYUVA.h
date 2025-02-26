@@ -31,6 +31,7 @@ enum SkColorType : int;
 enum class GrColorType;
 enum class GrImageTexGenPolicy : int;
 enum class GrSemaphoresSubmitted : bool;
+enum GrSurfaceOrigin : int;
 enum class SkTileMode;
 struct GrFlushInfo;
 struct SkRect;
@@ -56,6 +57,7 @@ public:
     // From SkImage_Base.h
     SkImage_Base::Type type() const override { return SkImage_Base::Type::kGaneshYUVA; }
     bool onHasMipmaps() const override;
+    bool onIsProtected() const override;
 
     using SkImage_GaneshBase::onMakeColorTypeAndColorSpace;
     sk_sp<SkImage> onMakeColorTypeAndColorSpace(SkColorType,
@@ -80,6 +82,7 @@ public:
 
     bool setupMipmapsForPlanes(GrRecordingContext*) const;
 
+    GrSurfaceOrigin origin() const override { return fYUVAProxies.textureOrigin(); }
 
 private:
     enum class ColorSpaceMode {

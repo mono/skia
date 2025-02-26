@@ -89,12 +89,10 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(FlushFinishedProcTest,
     dContext->submit();
 
     bool fenceSupport = dContext->priv().caps()->fenceSyncSupport();
-    bool expectAsyncCallback =
-            dContext->backend() == GrBackendApi::kVulkan ||
-            ((dContext->backend() == GrBackendApi::kOpenGL) && fenceSupport) ||
-            ((dContext->backend() == GrBackendApi::kMetal) && fenceSupport) ||
-            dContext->backend() == GrBackendApi::kDawn ||
-            dContext->backend() == GrBackendApi::kDirect3D;
+    bool expectAsyncCallback = dContext->backend() == GrBackendApi::kVulkan ||
+                               ((dContext->backend() == GrBackendApi::kOpenGL) && fenceSupport) ||
+                               ((dContext->backend() == GrBackendApi::kMetal) && fenceSupport) ||
+                               dContext->backend() == GrBackendApi::kDirect3D;
     if (expectAsyncCallback) {
         // On Vulkan the command buffer we just submitted may or may not have finished immediately
         // so the finish proc may not have been called.
@@ -178,7 +176,7 @@ static void async_callback(void* c, std::unique_ptr<const SkImage::AsyncReadResu
 DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(FinishedAsyncProcWhenAbandonedTest,
                                        reporter,
                                        ctxInfo,
-                                       CtsEnforcement::kApiLevel_T) {
+                                       CtsEnforcement::kApiLevel_U) {
     auto dContext = ctxInfo.directContext();
 
     SkImageInfo info =

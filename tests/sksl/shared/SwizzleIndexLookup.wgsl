@@ -1,3 +1,4 @@
+diagnostic(off, derivative_uniformity);
 struct FSIn {
   @builtin(front_facing) sk_Clockwise: bool,
   @builtin(position) sk_FragCoord: vec4<f32>,
@@ -24,7 +25,7 @@ fn test3x3_b() -> bool {
             var r: i32 = 0;
             loop {
               {
-                if (vec.zyx[r] != expected[r]) {
+                if vec.zyx[r] != expected[r] {
                   {
                     return false;
                   }
@@ -59,7 +60,7 @@ fn test4x4_b() -> bool {
             var r: i32 = 0;
             loop {
               {
-                if (vec.wzyx[r] != expected[r]) {
+                if vec.wzyx[r] != expected[r] {
                   {
                     return false;
                   }
@@ -82,8 +83,7 @@ fn test4x4_b() -> bool {
     return true;
   }
 }
-fn main(_skParam0: vec2<f32>) -> vec4<f32> {
-  let coords = _skParam0;
+fn _skslMain(coords: vec2<f32>) -> vec4<f32> {
   {
     var _skTemp0: vec4<f32>;
     var _skTemp1: bool;
@@ -102,8 +102,8 @@ fn main(_skParam0: vec2<f32>) -> vec4<f32> {
     return _skTemp0;
   }
 }
-@fragment fn fragmentMain(_stageIn: FSIn) -> FSOut {
+@fragment fn main(_stageIn: FSIn) -> FSOut {
   var _stageOut: FSOut;
-  _stageOut.sk_FragColor = main(_stageIn.sk_FragCoord.xy);
+  _stageOut.sk_FragColor = _skslMain(_stageIn.sk_FragCoord.xy);
   return _stageOut;
 }

@@ -8,6 +8,7 @@
 #include "include/core/SkData.h"
 #include "include/core/SkFontMetrics.h"
 #include "include/core/SkStream.h"
+#include "include/pathops/SkPathOps.h"
 #include "include/ports/SkTypeface_fontations.h"
 #include "src/core/SkFontDescriptor.h"
 #include "src/core/SkFontPriv.h"
@@ -78,6 +79,76 @@ sk_sp<SkTypeface> SkTypeface_Fontations::MakeFromData(sk_sp<SkData> data,
     sk_sp<SkTypeface_Fontations> probeTypeface(new SkTypeface_Fontations(data, args));
     return probeTypeface->hasValidBridgeFontRef() ? probeTypeface : nullptr;
 }
+
+namespace sk_fontations {
+// Path sanitization ported from SkFTGeometrySink.
+void PathGeometrySink::going_to(SkPoint point) {
+    if (!fStarted) {
+        fStarted = true;
+        fPath.moveTo(fCurrent);
+    }
+    fCurrent = point;
+}
+
+bool PathGeometrySink::current_is_not(SkPoint point) { return fCurrent != point; }
+
+void PathGeometrySink::move_to(float x, float y) {
+    if (fStarted) {
+        fPath.close();
+        fStarted = false;
+    }
+    fCurrent = SkPoint::Make(SkFloatToScalar(x), SkFloatToScalar(y));
+}
+
+void PathGeometrySink::line_to(float x, float y) {
+    SkPoint pt0 = SkPoint::Make(SkFloatToScalar(x), SkFloatToScalar(y));
+    if (current_is_not(pt0)) {
+        going_to(pt0);
+        fPath.lineTo(pt0);
+    }
+}
+
+void PathGeometrySink::quad_to(float cx0, float cy0, float x, float y) {
+    SkPoint pt0 = SkPoint::Make(SkFloatToScalar(cx0), SkFloatToScalar(cy0));
+    SkPoint pt1 = SkPoint::Make(SkFloatToScalar(x), SkFloatToScalar(y));
+    if (current_is_not(pt0) || current_is_not(pt1)) {
+        going_to(pt1);
+        fPath.quadTo(pt0, pt1);
+    }
+}
+void PathGeometrySink::curve_to(float cx0, float cy0, float cx1, float cy1, float x, float y) {
+    SkPoint pt0 = SkPoint::Make(SkFloatToScalar(cx0), SkFloatToScalar(cy0));
+    SkPoint pt1 = SkPoint::Make(SkFloatToScalar(cx1), SkFloatToScalar(cy1));
+    SkPoint pt2 = SkPoint::Make(SkFloatToScalar(x), SkFloatToScalar(y));
+    if (current_is_not(pt0) || current_is_not(pt1) || current_is_not(pt2)) {
+        going_to(pt2);
+        fPath.cubicTo(pt0, pt1, pt2);
+    }
+}
+
+void PathGeometrySink::close() { fPath.close(); }
+
+SkPath PathGeometrySink::into_inner() && { return std::move(fPath); }
+
+AxisWrapper::AxisWrapper(SkFontParameters::Variation::Axis axisArray[], size_t axisCount)
+        : fAxisArray(axisArray), fAxisCount(axisCount) {}
+
+bool AxisWrapper::populate_axis(
+        size_t i, uint32_t axisTag, float min, float def, float max, bool hidden) {
+    if (i >= fAxisCount) {
+        return false;
+    }
+    SkFontParameters::Variation::Axis& axis = fAxisArray[i];
+    axis.tag = axisTag;
+    axis.min = min;
+    axis.def = def;
+    axis.max = max;
+    axis.setHidden(hidden);
+    return true;
+}
+
+size_t AxisWrapper::size() const { return fAxisCount; }
+}  // namespace sk_fontations
 
 int SkTypeface_Fontations::onGetUPEM() const {
     return fontations_ffi::units_per_em_or_zero(*fBridgeFontRef);
@@ -159,32 +230,27 @@ public:
     }
 
 protected:
-    bool generateAdvance(SkGlyph* glyph) override {
+    GlyphMetrics generateMetrics(const SkGlyph& glyph, SkArenaAlloc*) override {
+        GlyphMetrics mx(fRec.fMaskFormat);
+
         SkVector scale;
         SkMatrix remainingMatrix;
-        if (!glyph ||
-            !fRec.computeMatrices(
+        if (!fRec.computeMatrices(
                     SkScalerContextRec::PreMatrixScale::kVertical, &scale, &remainingMatrix)) {
-            return false;
+            return mx;
         }
         float x_advance = 0.0f;
         x_advance = fontations_ffi::advance_width_or_zero(
-                fBridgeFontRef, scale.y(), fBridgeNormalizedCoords, glyph->getGlyphID());
+                fBridgeFontRef, scale.y(), fBridgeNormalizedCoords, glyph.getGlyphID());
         // TODO(drott): y-advance?
-        const SkVector advance = remainingMatrix.mapXY(x_advance, SkFloatToScalar(0.f));
-        glyph->fAdvanceX = SkScalarToFloat(advance.fX);
-        glyph->fAdvanceY = SkScalarToFloat(advance.fY);
-        return true;
+        mx.advance = remainingMatrix.mapXY(x_advance, SkFloatToScalar(0.f));
+        mx.computeFromPath = true;
+        return mx;
     }
 
-    void generateMetrics(SkGlyph* glyph, SkArenaAlloc*) override {
-        glyph->fMaskFormat = fRec.fMaskFormat;
-        glyph->zeroMetrics();
-        this->generateAdvance(glyph);
-        // Always generates from paths, so SkScalerContext::makeGlyph will figure the bounds.
+    void generateImage(const SkGlyph&, void*) override {
+        SK_ABORT("Should have generated from path.");
     }
-
-    void generateImage(const SkGlyph&) override { SK_ABORT("Should have generated from path."); }
 
     bool generatePath(const SkGlyph& glyph, SkPath* path) override {
         SkVector scale;
@@ -193,17 +259,23 @@ protected:
                     SkScalerContextRec::PreMatrixScale::kVertical, &scale, &remainingMatrix)) {
             return false;
         }
-        fontations_ffi::SkPathWrapper pathWrapper;
+        sk_fontations::PathGeometrySink pathWrapper;
+        fontations_ffi::BridgeScalerMetrics scalerMetrics;
 
         if (!fontations_ffi::get_path(fBridgeFontRef,
                                       glyph.getGlyphID(),
                                       scale.y(),
                                       fBridgeNormalizedCoords,
-                                      pathWrapper)) {
+                                      pathWrapper,
+                                      scalerMetrics)) {
             return false;
         }
-
         *path = std::move(pathWrapper).into_inner();
+        if (scalerMetrics.has_overlaps) {
+            // See SkScalerContext_FreeType_Base::generateGlyphPath.
+            Simplify(*path, path);
+            AsWinding(*path, path);
+        }
         *path = path->makeTransform(remainingMatrix);
         return true;
     }
@@ -248,11 +320,6 @@ std::unique_ptr<SkScalerContext> SkTypeface_Fontations::onCreateScalerContext(
             sk_ref_sp(const_cast<SkTypeface_Fontations*>(this)), effects, desc);
 }
 
-SkTypeface_Fontations::Register::Register() {
-    SkTypeface::Register(SkTypeface_Fontations::FactoryId, &SkTypeface_Fontations::MakeFromStream);
-}
-static SkTypeface_Fontations::Register registerer;
-
 void SkTypeface_Fontations::onGetFontDescriptor(SkFontDescriptor* desc, bool* serialize) const {
     SkString familyName;
     onGetFamilyName(&familyName);
@@ -293,4 +360,10 @@ int SkTypeface_Fontations::onGetVariationDesignPosition(
               coordinateCount);
     }
     return fontations_ffi::variation_position(*fBridgeNormalizedCoords, copyToCoordinates);
+}
+
+int SkTypeface_Fontations::onGetVariationDesignParameters(
+        SkFontParameters::Variation::Axis parameters[], int parameterCount) const {
+    sk_fontations::AxisWrapper axisWrapper(parameters, parameterCount);
+    return fontations_ffi::populate_axes(*fBridgeFontRef, axisWrapper);
 }

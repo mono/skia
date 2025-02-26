@@ -20,16 +20,11 @@
 
 class GrDirectContext;
 class GrImageContext;
-class GrRecordingContext;
 class SkBitmap;
 class SkColorSpace;
-class SkImageFilter;
-class SkImageFilter_Base;
 class SkPixmap;
-class SkSpecialImage;
 enum SkColorType : int;
 enum SkYUVColorSpace : int;
-struct SkIPoint;
 struct SkIRect;
 struct SkISize;
 struct SkImageInfo;
@@ -37,10 +32,6 @@ struct SkImageInfo;
 enum {
     kNeedNewImageUniqueID = 0
 };
-
-namespace skif {
-class Context;
-}
 
 namespace skgpu { namespace graphite { class Recorder; } }
 
@@ -64,12 +55,7 @@ public:
     sk_sp<SkImage> makeSubset(skgpu::graphite::Recorder*,
                               const SkIRect&,
                               RequiredProperties) const override;
-    sk_sp<SkImage> makeWithFilter(GrRecordingContext* context,
-                                  const SkImageFilter* filter,
-                                  const SkIRect& subset,
-                                  const SkIRect& clipBounds,
-                                  SkIRect* outSubset,
-                                  SkIPoint* offset) const override;
+
     size_t textureSize() const override { return 0; }
 
     // Methods that we want to use elsewhere in Skia, but not be a part of the public API.
@@ -86,6 +72,7 @@ public:
                               CachingHint) const = 0;
 
     virtual bool onHasMipmaps() const = 0;
+    virtual bool onIsProtected() const = 0;
 
     virtual SkMipmap* onPeekMips() const { return nullptr; }
 
@@ -106,6 +93,7 @@ public:
      * Default implementation does a rescale/read/yuv conversion and then calls the callback.
      */
     virtual void onAsyncRescaleAndReadPixelsYUV420(SkYUVColorSpace,
+                                                   bool readAlpha,
                                                    sk_sp<SkColorSpace> dstColorSpace,
                                                    SkIRect srcRect,
                                                    SkISize dstSize,
@@ -196,14 +184,6 @@ public:
 
 protected:
     SkImage_Base(const SkImageInfo& info, uint32_t uniqueID);
-
-    sk_sp<SkImage> filterSpecialImage(skif::Context context,
-                                      const SkImageFilter_Base* filter,
-                                      const SkSpecialImage* specialImage,
-                                      const SkIRect& subset,
-                                      const SkIRect& clipBounds,
-                                      SkIRect* outSubset,
-                                      SkIPoint* offset) const;
 
 private:
     // Set true by caches when they cache content that's derived from the current pixels.

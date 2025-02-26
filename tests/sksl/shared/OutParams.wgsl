@@ -1,3 +1,4 @@
+diagnostic(off, derivative_uniformity);
 struct FSIn {
   @builtin(front_facing) sk_Clockwise: bool,
   @builtin(position) sk_FragCoord: vec4<f32>,
@@ -11,146 +12,123 @@ struct _GlobalUniforms {
   colorWhite: vec4<f32>,
 };
 @binding(0) @group(0) var<uniform> _globalUniforms: _GlobalUniforms;
-fn out_half_vh(_skParam0: ptr<function, f32>) {
-  let v = _skParam0;
+fn out_half_vh(v: ptr<function, f32>) {
   {
     (*v) = _globalUniforms.colorWhite.x;
   }
 }
-fn out_half2_vh2(_skParam0: ptr<function, vec2<f32>>) {
-  let v = _skParam0;
+fn out_half2_vh2(v: ptr<function, vec2<f32>>) {
   {
     (*v) = vec2<f32>(_globalUniforms.colorWhite.y);
   }
 }
-fn out_half3_vh3(_skParam0: ptr<function, vec3<f32>>) {
-  let v = _skParam0;
+fn out_half3_vh3(v: ptr<function, vec3<f32>>) {
   {
     (*v) = vec3<f32>(_globalUniforms.colorWhite.z);
   }
 }
-fn out_half4_vh4(_skParam0: ptr<function, vec4<f32>>) {
-  let v = _skParam0;
+fn out_half4_vh4(v: ptr<function, vec4<f32>>) {
   {
     (*v) = vec4<f32>(_globalUniforms.colorWhite.w);
   }
 }
-fn out_half2x2_vh22(_skParam0: ptr<function, mat2x2<f32>>) {
-  let v = _skParam0;
+fn out_half2x2_vh22(v: ptr<function, mat2x2<f32>>) {
   {
     let _skTemp0 = _globalUniforms.colorWhite.x;
     (*v) = mat2x2<f32>(_skTemp0, 0.0, 0.0, _skTemp0);
   }
 }
-fn out_half3x3_vh33(_skParam0: ptr<function, mat3x3<f32>>) {
-  let v = _skParam0;
+fn out_half3x3_vh33(v: ptr<function, mat3x3<f32>>) {
   {
     let _skTemp1 = _globalUniforms.colorWhite.y;
     (*v) = mat3x3<f32>(_skTemp1, 0.0, 0.0, 0.0, _skTemp1, 0.0, 0.0, 0.0, _skTemp1);
   }
 }
-fn out_half4x4_vh44(_skParam0: ptr<function, mat4x4<f32>>) {
-  let v = _skParam0;
+fn out_half4x4_vh44(v: ptr<function, mat4x4<f32>>) {
   {
     let _skTemp2 = _globalUniforms.colorWhite.z;
     (*v) = mat4x4<f32>(_skTemp2, 0.0, 0.0, 0.0, 0.0, _skTemp2, 0.0, 0.0, 0.0, 0.0, _skTemp2, 0.0, 0.0, 0.0, 0.0, _skTemp2);
   }
 }
-fn out_int_vi(_skParam0: ptr<function, i32>) {
-  let v = _skParam0;
+fn out_int_vi(v: ptr<function, i32>) {
   {
     (*v) = i32(_globalUniforms.colorWhite.x);
   }
 }
-fn out_int2_vi2(_skParam0: ptr<function, vec2<i32>>) {
-  let v = _skParam0;
+fn out_int2_vi2(v: ptr<function, vec2<i32>>) {
   {
     (*v) = vec2<i32>(i32(_globalUniforms.colorWhite.y));
   }
 }
-fn out_int3_vi3(_skParam0: ptr<function, vec3<i32>>) {
-  let v = _skParam0;
+fn out_int3_vi3(v: ptr<function, vec3<i32>>) {
   {
     (*v) = vec3<i32>(i32(_globalUniforms.colorWhite.z));
   }
 }
-fn out_int4_vi4(_skParam0: ptr<function, vec4<i32>>) {
-  let v = _skParam0;
+fn out_int4_vi4(v: ptr<function, vec4<i32>>) {
   {
     (*v) = vec4<i32>(i32(_globalUniforms.colorWhite.w));
   }
 }
-fn out_float_vf(_skParam0: ptr<function, f32>) {
-  let v = _skParam0;
+fn out_float_vf(v: ptr<function, f32>) {
   {
     (*v) = f32(_globalUniforms.colorWhite.x);
   }
 }
-fn out_float2_vf2(_skParam0: ptr<function, vec2<f32>>) {
-  let v = _skParam0;
+fn out_float2_vf2(v: ptr<function, vec2<f32>>) {
   {
     (*v) = vec2<f32>(f32(_globalUniforms.colorWhite.y));
   }
 }
-fn out_float3_vf3(_skParam0: ptr<function, vec3<f32>>) {
-  let v = _skParam0;
+fn out_float3_vf3(v: ptr<function, vec3<f32>>) {
   {
     (*v) = vec3<f32>(f32(_globalUniforms.colorWhite.z));
   }
 }
-fn out_float4_vf4(_skParam0: ptr<function, vec4<f32>>) {
-  let v = _skParam0;
+fn out_float4_vf4(v: ptr<function, vec4<f32>>) {
   {
     (*v) = vec4<f32>(f32(_globalUniforms.colorWhite.w));
   }
 }
-fn out_float2x2_vf22(_skParam0: ptr<function, mat2x2<f32>>) {
-  let v = _skParam0;
+fn out_float2x2_vf22(v: ptr<function, mat2x2<f32>>) {
   {
     let _skTemp3 = f32(_globalUniforms.colorWhite.x);
     (*v) = mat2x2<f32>(_skTemp3, 0.0, 0.0, _skTemp3);
   }
 }
-fn out_float3x3_vf33(_skParam0: ptr<function, mat3x3<f32>>) {
-  let v = _skParam0;
+fn out_float3x3_vf33(v: ptr<function, mat3x3<f32>>) {
   {
     let _skTemp4 = f32(_globalUniforms.colorWhite.y);
     (*v) = mat3x3<f32>(_skTemp4, 0.0, 0.0, 0.0, _skTemp4, 0.0, 0.0, 0.0, _skTemp4);
   }
 }
-fn out_float4x4_vf44(_skParam0: ptr<function, mat4x4<f32>>) {
-  let v = _skParam0;
+fn out_float4x4_vf44(v: ptr<function, mat4x4<f32>>) {
   {
     let _skTemp5 = f32(_globalUniforms.colorWhite.z);
     (*v) = mat4x4<f32>(_skTemp5, 0.0, 0.0, 0.0, 0.0, _skTemp5, 0.0, 0.0, 0.0, 0.0, _skTemp5, 0.0, 0.0, 0.0, 0.0, _skTemp5);
   }
 }
-fn out_bool_vb(_skParam0: ptr<function, bool>) {
-  let v = _skParam0;
+fn out_bool_vb(v: ptr<function, bool>) {
   {
     (*v) = bool(_globalUniforms.colorWhite.x);
   }
 }
-fn out_bool2_vb2(_skParam0: ptr<function, vec2<bool>>) {
-  let v = _skParam0;
+fn out_bool2_vb2(v: ptr<function, vec2<bool>>) {
   {
     (*v) = vec2<bool>(bool(_globalUniforms.colorWhite.y));
   }
 }
-fn out_bool3_vb3(_skParam0: ptr<function, vec3<bool>>) {
-  let v = _skParam0;
+fn out_bool3_vb3(v: ptr<function, vec3<bool>>) {
   {
     (*v) = vec3<bool>(bool(_globalUniforms.colorWhite.z));
   }
 }
-fn out_bool4_vb4(_skParam0: ptr<function, vec4<bool>>) {
-  let v = _skParam0;
+fn out_bool4_vb4(v: ptr<function, vec4<bool>>) {
   {
     (*v) = vec4<bool>(bool(_globalUniforms.colorWhite.w));
   }
 }
-fn main(_skParam0: vec2<f32>) -> vec4<f32> {
-  let coords = _skParam0;
+fn _skslMain(coords: vec2<f32>) -> vec4<f32> {
   {
     var h: f32;
     var _skTemp6: f32;
@@ -280,15 +258,15 @@ fn main(_skParam0: vec2<f32>) -> vec4<f32> {
     out_bool_vb(&_skTemp40);
     b3.z = _skTemp40;
     var ok: bool = true;
-    ok = ok && 1.0 == (((((h * h2.x) * h3.x) * h4.x) * h2x2[0].x) * h3x3[0].x) * h4x4[0].x;
-    ok = ok && 1.0 == (((((f * f2.x) * f3.x) * f4.x) * f2x2[0].x) * f3x3[0].x) * f4x4[0].x;
-    ok = ok && 1 == ((i * i2.x) * i3.x) * i4.x;
+    ok = ok && (1.0 == ((((((h * h2.x) * h3.x) * h4.x) * h2x2[0].x) * h3x3[0].x) * h4x4[0].x));
+    ok = ok && (1.0 == ((((((f * f2.x) * f3.x) * f4.x) * f2x2[0].x) * f3x3[0].x) * f4x4[0].x));
+    ok = ok && (1 == (((i * i2.x) * i3.x) * i4.x));
     ok = ok && (((b && b2.x) && b3.x) && b4.x);
     return select(_globalUniforms.colorRed, _globalUniforms.colorGreen, vec4<bool>(ok));
   }
 }
-@fragment fn fragmentMain(_stageIn: FSIn) -> FSOut {
+@fragment fn main(_stageIn: FSIn) -> FSOut {
   var _stageOut: FSOut;
-  _stageOut.sk_FragColor = main(_stageIn.sk_FragCoord.xy);
+  _stageOut.sk_FragColor = _skslMain(_stageIn.sk_FragCoord.xy);
   return _stageOut;
 }

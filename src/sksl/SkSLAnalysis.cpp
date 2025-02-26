@@ -12,6 +12,7 @@
 #include "include/private/SkSLDefines.h"
 #include "include/private/SkSLSampleUsage.h"
 #include "include/private/base/SkTArray.h"
+#include "src/base/SkEnumBitMask.h"
 #include "src/core/SkTHash.h"
 #include "src/sksl/SkSLBuiltinTypes.h"
 #include "src/sksl/SkSLCompiler.h"
@@ -39,7 +40,7 @@
 #include "src/sksl/ir/SkSLIfStatement.h"
 #include "src/sksl/ir/SkSLIndexExpression.h"
 #include "src/sksl/ir/SkSLLayout.h"
-#include "src/sksl/ir/SkSLModifiers.h"
+#include "src/sksl/ir/SkSLModifierFlags.h"
 #include "src/sksl/ir/SkSLPostfixExpression.h"
 #include "src/sksl/ir/SkSLPrefixExpression.h"
 #include "src/sksl/ir/SkSLProgram.h"
@@ -83,9 +84,17 @@ public:
 protected:
     const Context& fContext;
     const Variable& fChild;
+    const Variable* fMainCoordsParam = nullptr;
     const bool fWritesToSampleCoords;
     SampleUsage fUsage;
     int fElidedSampleCoordCount = 0;
+
+    bool visitProgramElement(const ProgramElement& pe) override {
+        fMainCoordsParam = pe.is<FunctionDefinition>()
+                               ? pe.as<FunctionDefinition>().declaration().getMainCoordsParameter()
+                               : nullptr;
+        return INHERITED::visitProgramElement(pe);
+    }
 
     bool visitExpression(const Expression& e) override {
         // Looking for child(...)
@@ -100,8 +109,7 @@ protected:
                 // coords are never modified, we can conservatively turn this into PassThrough
                 // sampling. In all other cases, we consider it Explicit.
                 if (!fWritesToSampleCoords && maybeCoords->is<VariableReference>() &&
-                    maybeCoords->as<VariableReference>().variable()->modifiers().fLayout.fBuiltin ==
-                            SK_MAIN_COORDS_BUILTIN) {
+                    maybeCoords->as<VariableReference>().variable() == fMainCoordsParam) {
                     fUsage.merge(SampleUsage::PassThrough());
                     ++fElidedSampleCoordCount;
                 } else {
@@ -250,11 +258,11 @@ public:
                     return fieldAccess ? fieldAccess->description(OperatorPrecedence::kExpression)
                                        : std::string(var->name());
                 };
-                if (var->modifiers().fFlags & (Modifiers::kConst_Flag | Modifiers::kUniform_Flag)) {
+                if (var->modifierFlags().isConst() || var->modifierFlags().isUniform()) {
                     fErrors->error(expr.fPosition,
                                    "cannot modify immutable variable '" + fieldName() + "'");
                 } else if (var->storage() == Variable::Storage::kGlobal &&
-                           (var->modifiers().fFlags & Modifiers::kIn_Flag)) {
+                           (var->modifierFlags() & ModifierFlag::kIn)) {
                     fErrors->error(expr.fPosition,
                                    "cannot modify pipeline input variable '" + fieldName() + "'");
                 } else {
@@ -328,7 +336,7 @@ SampleUsage Analysis::GetSampleUsage(const Program& program,
 bool Analysis::ReferencesBuiltin(const Program& program, int builtin) {
     SkASSERT(program.fUsage);
     for (const auto& [variable, counts] : program.fUsage->fVariableCounts) {
-        if (counts.fRead > 0 && variable->modifiers().fLayout.fBuiltin == builtin) {
+        if (counts.fRead > 0 && variable->layout().fBuiltin == builtin) {
             return true;
         }
     }
@@ -336,7 +344,21 @@ bool Analysis::ReferencesBuiltin(const Program& program, int builtin) {
 }
 
 bool Analysis::ReferencesSampleCoords(const Program& program) {
-    return Analysis::ReferencesBuiltin(program, SK_MAIN_COORDS_BUILTIN);
+    // Look for main().
+    for (const std::unique_ptr<ProgramElement>& pe : program.fOwnedElements) {
+        if (pe->is<FunctionDefinition>()) {
+            const FunctionDeclaration& func = pe->as<FunctionDefinition>().declaration();
+            if (func.isMain()) {
+                // See if main() has a coords parameter that is read from anywhere.
+                if (const Variable* coords = func.getMainCoordsParameter()) {
+                    ProgramUsage::VariableCounts counts = program.fUsage->get(*coords);
+                    return counts.fRead > 0;
+                }
+            }
+        }
+    }
+    // The program is missing a main().
+    return false;
 }
 
 bool Analysis::ReferencesFragCoords(const Program& program) {
@@ -517,6 +539,7 @@ bool ProgramVisitor::visit(const Program& program) {
 
 template <typename T> bool TProgramVisitor<T>::visitExpression(typename T::Expression& e) {
     switch (e.kind()) {
+        case Expression::Kind::kEmpty:
         case Expression::Kind::kFunctionReference:
         case Expression::Kind::kLiteral:
         case Expression::Kind::kMethodReference:

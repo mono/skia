@@ -408,6 +408,8 @@ public:
         return fDynamicStateArrayGeometryProcessorTextureSupport;
     }
 
+    bool supportsProtectedContent() const { return fSupportsProtectedContent; }
+
     // Not all backends support clearing with a scissor test (e.g. Metal), this will always
     // return true if performColorClearsAsDraws() returns true.
     bool performPartialClearsAsDraws() const {
@@ -546,7 +548,7 @@ public:
     std::tuple<GrColorType, GrBackendFormat> getFallbackColorTypeAndFormat(GrColorType,
                                                                            int sampleCount) const;
 
-#if GR_TEST_UTILS
+#if defined(GR_TEST_UTILS)
     virtual std::vector<GrTest::TestFormatColorTypeCombination> getTestingCombinations() const = 0;
 #endif
 
@@ -620,6 +622,8 @@ protected:
 
     // Not (yet) implemented in VK backend.
     bool fDynamicStateArrayGeometryProcessorTextureSupport : 1;
+
+    bool fSupportsProtectedContent                   : 1;
 
     BlendEquationSupport fBlendEquationSupport;
     uint32_t fAdvBlendEqDisableFlags;

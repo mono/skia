@@ -28,9 +28,10 @@ public:
      * sets possible (kMaxNumSets). Counts must be > 0.
     */
     static sk_sp<VulkanDescriptorPool> Make(const VulkanSharedContext*,
-                                            SkSpan<DescTypeAndCount>);
+                                            SkSpan<DescriptorData>,
+                                            VkDescriptorSetLayout);
 
-    VkDescriptorPool* descPool() { return &fDescPool; }
+    VkDescriptorPool descPool() { return fDescPool; }
 
 private:
     // Conservative overestimation of a maximum number of descriptors of any given type that can be
@@ -38,11 +39,15 @@ private:
     static constexpr int kMaxNumDescriptors = 1024;
 
     VulkanDescriptorPool(const VulkanSharedContext*,
-                         VkDescriptorPool);
+                         VkDescriptorPool,
+                         VkDescriptorSetLayout);
     ~VulkanDescriptorPool() override;
 
     const VulkanSharedContext*       fSharedContext;
     VkDescriptorPool                 fDescPool;
+    // Hang on to the VkDescSetLayout handle used to allocate sets from this pool. Pools are only
+    // deleted once sets no longer need them, so we can safely destoy the layout alongside the pool.
+    VkDescriptorSetLayout            fDescSetLayout;
 };
 } // namespace skgpu::graphite
 

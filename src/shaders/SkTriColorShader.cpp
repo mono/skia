@@ -16,10 +16,6 @@
 #include "src/core/SkRasterPipeline.h"
 #include "src/core/SkRasterPipelineOpList.h"
 
-#if defined(SK_ENABLE_SKVM)
-#include "src/core/SkVM.h"
-#endif
-
 bool SkTriColorShader::appendStages(const SkStageRec& rec, const SkShaders::MatrixRec&) const {
     rec.fPipeline->append(SkRasterPipelineOp::seed_shader);
     if (fUsePersp) {
@@ -28,48 +24,6 @@ bool SkTriColorShader::appendStages(const SkStageRec& rec, const SkShaders::Matr
     rec.fPipeline->append(SkRasterPipelineOp::matrix_4x3, &fM43);
     return true;
 }
-
-#if defined(SK_ENABLE_SKVM)
-skvm::Color SkTriColorShader::program(skvm::Builder* b,
-                                      skvm::Coord device,
-                                      skvm::Coord local,
-                                      skvm::Color,
-                                      const SkShaders::MatrixRec&,
-                                      const SkColorInfo&,
-                                      skvm::Uniforms* uniforms,
-                                      SkArenaAlloc* alloc) const {
-    fColorMatrix = uniforms->pushPtr(&fM43);
-
-    skvm::F32 x = local.x, y = local.y;
-
-    if (fUsePersp) {
-        fCoordMatrix = uniforms->pushPtr(&fM33);
-        auto dot = [&, x, y](int row) {
-            return b->mad(x, b->arrayF(fCoordMatrix, row),
-                             b->mad(y, b->arrayF(fCoordMatrix, row + 3),
-                                       b->arrayF(fCoordMatrix, row + 6)));
-        };
-
-        x = dot(0);
-        y = dot(1);
-        x = x * (1.0f / dot(2));
-        y = y * (1.0f / dot(2));
-    }
-
-    auto colorDot = [&, x, y](int row) {
-        return b->mad(x, b->arrayF(fColorMatrix, row),
-                         b->mad(y, b->arrayF(fColorMatrix, row + 4),
-                                   b->arrayF(fColorMatrix, row + 8)));
-    };
-
-    skvm::Color color;
-    color.r = colorDot(0);
-    color.g = colorDot(1);
-    color.b = colorDot(2);
-    color.a = colorDot(3);
-    return color;
-}
-#endif
 
 bool SkTriColorShader::update(const SkMatrix& ctmInv,
                               const SkPoint pts[],

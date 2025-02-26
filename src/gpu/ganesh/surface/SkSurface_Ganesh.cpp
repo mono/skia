@@ -48,6 +48,11 @@
 #include "src/gpu/ganesh/image/SkImage_Ganesh.h"
 #include "src/image/SkImage_Base.h"
 
+#ifdef SK_IN_RENDERENGINE
+#include "include/gpu/ganesh/gl/GrGLBackendSurface.h"
+#include "include/gpu/gl/GrGLTypes.h"
+#endif
+
 #include <algorithm>
 #include <cstddef>
 #include <utility>
@@ -132,8 +137,11 @@ sk_sp<SkSurface> SkSurface_Ganesh::onNewSurface(const SkImageInfo& info) {
     GrSurfaceOrigin origin = targetView.origin();
     // TODO: Make caller specify this (change virtual signature of onNewSurface).
     static const skgpu::Budgeted kBudgeted = skgpu::Budgeted::kNo;
+
+    bool isProtected = targetView.asRenderTargetProxy()->isProtected() == GrProtected::kYes;
     return SkSurfaces::RenderTarget(
-            fDevice->recordingContext(), kBudgeted, info, sampleCount, origin, &this->props());
+            fDevice->recordingContext(), kBudgeted, info, sampleCount, origin, &this->props(),
+            /* shouldCreateWithMips= */ false, isProtected);
 }
 
 sk_sp<SkImage> SkSurface_Ganesh::onNewImageSnapshot(const SkIRect* subset) {
@@ -194,6 +202,7 @@ void SkSurface_Ganesh::onAsyncRescaleAndReadPixels(const SkImageInfo& info,
 }
 
 void SkSurface_Ganesh::onAsyncRescaleAndReadPixelsYUV420(SkYUVColorSpace yuvColorSpace,
+                                                         bool readAlpha,
                                                          sk_sp<SkColorSpace> dstColorSpace,
                                                          SkIRect srcRect,
                                                          SkISize dstSize,
@@ -202,6 +211,7 @@ void SkSurface_Ganesh::onAsyncRescaleAndReadPixelsYUV420(SkYUVColorSpace yuvColo
                                                          ReadPixelsCallback callback,
                                                          ReadPixelsContext context) {
     fDevice->asyncRescaleAndReadPixelsYUV420(yuvColorSpace,
+                                             readAlpha,
                                              std::move(dstColorSpace),
                                              srcRect,
                                              dstSize,
@@ -585,7 +595,8 @@ sk_sp<SkSurface> RenderTarget(GrRecordingContext* rContext,
                               int sampleCount,
                               GrSurfaceOrigin origin,
                               const SkSurfaceProps* props,
-                              bool shouldCreateWithMips) {
+                              bool shouldCreateWithMips,
+                              bool isProtected) {
     if (!rContext) {
         return nullptr;
     }
@@ -601,7 +612,7 @@ sk_sp<SkSurface> RenderTarget(GrRecordingContext* rContext,
                                                 SkBackingFit::kExact,
                                                 sampleCount,
                                                 mipmapped,
-                                                GrProtected::kNo,
+                                                GrProtected(isProtected),
                                                 origin,
                                                 SkSurfacePropsCopyOrDefault(props),
                                                 skgpu::ganesh::Device::InitContents::kClear);
@@ -645,9 +656,11 @@ sk_sp<SkSurface> WrapBackendTexture(GrRecordingContext* rContext,
             GrWrapCacheable::kNo,
             std::move(releaseHelper)));
     if (!proxy) {
+        // TODO(scroggo,kjlubick) inline this into Android's AutoBackendTexture.cpp so we
+        // don't have a sometimes-dependency on the GL backend.
 #ifdef SK_IN_RENDERENGINE
         GrGLTextureInfo textureInfo;
-        bool retrievedTextureInfo = tex.getGLTextureInfo(&textureInfo);
+        bool retrievedTextureInfo = GrBackendTextures::GetGLTextureInfo(tex, &textureInfo);
         RENDERENGINE_ABORTF(
                 "%s failed to wrap the texture into a renderable target "
                 "\n\tGrBackendTexture: (%i x %i) hasMipmaps: %i isProtected: %i texType: %i"
@@ -775,7 +788,7 @@ GrSemaphoresSubmitted Flush(sk_sp<SkSurface> surface) {
         return GrSemaphoresSubmitted::kNo;
     }
     if (auto rContext = surface->recordingContext(); rContext != nullptr) {
-        return rContext->asDirectContext()->flush(surface, {});
+        return rContext->asDirectContext()->flush(surface.get(), {});
     }
     return GrSemaphoresSubmitted::kNo;
 }
@@ -785,7 +798,7 @@ void FlushAndSubmit(SkSurface* surface) {
         return;
     }
     if (auto rContext = surface->recordingContext(); rContext != nullptr) {
-        rContext->asDirectContext()->flushAndSubmit(surface);
+        rContext->asDirectContext()->flushAndSubmit(surface, false);
     }
 }
 
@@ -794,7 +807,7 @@ void FlushAndSubmit(sk_sp<SkSurface> surface) {
         return;
     }
     if (auto rContext = surface->recordingContext(); rContext != nullptr) {
-        rContext->asDirectContext()->flushAndSubmit(surface);
+        rContext->asDirectContext()->flushAndSubmit(surface.get(), false);
     }
 }
 

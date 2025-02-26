@@ -44,19 +44,6 @@ struct SkSamplingOptions;
 
 namespace skgpu::graphite { class Recorder; }
 
-#if !defined(SK_DISABLE_LEGACY_GRAPHITE_IMAGE_FACTORIES) && defined(SK_GRAPHITE)
-#include "include/gpu/graphite/GraphiteTypes.h"
-
-namespace skgpu { enum class Mipmapped : bool; }
-namespace skgpu::graphite {
-class BackendTexture;
-class Recorder;
-class TextureInfo;
-enum class Volatile : bool;
-class YUVABackendTextures;
-}
-#endif
-
 namespace SkImages {
 
 /** Caller data passed to RasterReleaseProc; may be nullptr. */
@@ -228,6 +215,34 @@ SK_API sk_sp<SkImage> RasterFromPixmap(const SkPixmap& pixmap,
 SK_API sk_sp<SkImage> RasterFromData(const SkImageInfo& info,
                                      sk_sp<SkData> pixels,
                                      size_t rowBytes);
+
+/** Creates a filtered SkImage on the CPU. filter processes the src image, potentially changing
+    the color, position, and size. subset is the bounds of src that are processed
+    by filter. clipBounds is the expected bounds of the filtered SkImage. outSubset
+    is required storage for the actual bounds of the filtered SkImage. offset is
+    required storage for translation of returned SkImage.
+
+    Returns nullptr a filtered result could not be created. If nullptr is returned, outSubset
+    and offset are undefined.
+
+    Useful for animation of SkImageFilter that varies size from frame to frame.
+    outSubset describes the valid bounds of returned image. offset translates the returned SkImage
+    to keep subsequent animation frames aligned with respect to each other.
+
+    @param src         the image to be filtered
+    @param filter      the image filter to be applied
+    @param subset      bounds of SkImage processed by filter
+    @param clipBounds  expected bounds of filtered SkImage
+    @param outSubset   storage for returned SkImage bounds
+    @param offset      storage for returned SkImage translation
+    @return            filtered SkImage, or nullptr
+*/
+SK_API sk_sp<SkImage> MakeWithFilter(sk_sp<SkImage> src,
+                                     const SkImageFilter* filter,
+                                     const SkIRect& subset,
+                                     const SkIRect& clipBounds,
+                                     SkIRect* outSubset,
+                                     SkIPoint* offset);
 
 }  // namespace SkImages
 
@@ -642,6 +657,20 @@ public:
                                          ReadPixelsCallback callback,
                                          ReadPixelsContext context) const;
 
+    /**
+     * Identical to asyncRescaleAndReadPixelsYUV420 but a fourth plane is returned in the
+     * AsyncReadResult passed to 'callback'. The fourth plane contains the alpha chanel at the
+     * same full resolution as the Y plane.
+     */
+    void asyncRescaleAndReadPixelsYUVA420(SkYUVColorSpace yuvColorSpace,
+                                          sk_sp<SkColorSpace> dstColorSpace,
+                                          const SkIRect& srcRect,
+                                          const SkISize& dstSize,
+                                          RescaleGamma rescaleGamma,
+                                          RescaleMode rescaleMode,
+                                          ReadPixelsCallback callback,
+                                          ReadPixelsContext context) const;
+
     /** Copies SkImage to dst, scaling pixels to fit dst.width() and dst.height(), and
         converting pixels to match dst.colorType() and dst.alphaType(). Returns true if
         pixels are copied. Returns false if dst.addr() is nullptr, or dst.rowBytes() is
@@ -696,12 +725,6 @@ public:
     */
     virtual sk_sp<SkImage> makeSubset(GrDirectContext* direct, const SkIRect& subset) const = 0;
 
-#if !defined(SK_DISABLE_LEGACY_IMAGE_SUBSET_METHODS)
-    sk_sp<SkImage> makeSubset(const SkIRect& subset, GrDirectContext* direct = nullptr) const {
-        return this->makeSubset(direct, subset);
-    }
-#endif
-
     struct RequiredProperties {
         bool fMipmapped;
     };
@@ -732,6 +755,11 @@ public:
      *  Returns true if the image has mipmap levels.
      */
     bool hasMipmaps() const;
+
+    /**
+     *  Returns true if the image holds protected content.
+     */
+    bool isProtected() const;
 
     /**
      *  Returns an image with the same "base" pixels as the this image, but with mipmap levels
@@ -773,36 +801,17 @@ public:
     }
 #endif
 
-    /** Creates filtered SkImage. filter processes original SkImage, potentially changing
-        color, position, and size. subset is the bounds of original SkImage processed
-        by filter. clipBounds is the expected bounds of the filtered SkImage. outSubset
-        is required storage for the actual bounds of the filtered SkImage. offset is
-        required storage for translation of returned SkImage.
-
-        Returns nullptr if SkImage could not be created or if the recording context provided doesn't
-        match the GPU context in which the image was created. If nullptr is returned, outSubset
-        and offset are undefined.
-
-        Useful for animation of SkImageFilter that varies size from frame to frame.
-        Returned SkImage is created larger than required by filter so that GPU texture
-        can be reused with different sized effects. outSubset describes the valid bounds
-        of GPU texture returned. offset translates the returned SkImage to keep subsequent
-        animation frames aligned with respect to each other.
-
-        @param context     the GrRecordingContext in play - if it exists
-        @param filter      how SkImage is sampled when transformed
-        @param subset      bounds of SkImage processed by filter
-        @param clipBounds  expected bounds of filtered SkImage
-        @param outSubset   storage for returned SkImage bounds
-        @param offset      storage for returned SkImage translation
-        @return            filtered SkImage, or nullptr
-    */
-    virtual sk_sp<SkImage> makeWithFilter(GrRecordingContext* context,
-                                          const SkImageFilter* filter,
-                                          const SkIRect& subset,
-                                          const SkIRect& clipBounds,
-                                          SkIRect* outSubset,
-                                          SkIPoint* offset) const = 0;
+#if !defined(SK_DISABLE_LEGACY_MAKEWITHFILTER)
+    /** DEPRECATED
+     * Please use the SkImages::MakeWithFilter factory functions
+     */
+    sk_sp<SkImage> makeWithFilter(GrRecordingContext* context,
+                                  const SkImageFilter* filter,
+                                  const SkIRect& subset,
+                                  const SkIRect& clipBounds,
+                                  SkIRect* outSubset,
+                                  SkIPoint* offset) const;
+#endif
 
     /** Deprecated.
      */
@@ -852,11 +861,6 @@ public:
     virtual sk_sp<SkImage> makeColorSpace(GrDirectContext* direct,
                                           sk_sp<SkColorSpace> target) const = 0;
 
-#if !defined(SK_DISABLE_LEGACY_IMAGE_COLORSPACE_METHODS)
-    sk_sp<SkImage> makeColorSpace(sk_sp<SkColorSpace> target,
-                                  GrDirectContext* direct = nullptr) const;
-#endif
-
     /** Creates SkImage in target SkColorSpace.
         Returns nullptr if SkImage could not be created.
 
@@ -892,12 +896,6 @@ public:
     virtual sk_sp<SkImage> makeColorTypeAndColorSpace(GrDirectContext* direct,
                                                       SkColorType targetColorType,
                                                       sk_sp<SkColorSpace> targetCS) const = 0;
-
-#if !defined(SK_DISABLE_LEGACY_IMAGE_COLORSPACE_METHODS)
-    sk_sp<SkImage> makeColorTypeAndColorSpace(SkColorType targetColorType,
-                                              sk_sp<SkColorSpace> targetColorSpace,
-                                              GrDirectContext* direct = nullptr) const;
-#endif
 
     /** Experimental.
         Creates SkImage in target SkColorType and SkColorSpace.
@@ -938,56 +936,6 @@ private:
     sk_sp<SkImage> withMipmaps(sk_sp<SkMipmap>) const;
 
     using INHERITED = SkRefCnt;
-
-public:
-#if !defined(SK_DISABLE_LEGACY_IMAGE_RELEASE_PROCS)
-    using ReleaseContext = SkImages::ReleaseContext;
-    using TextureReleaseProc = void (*)(ReleaseContext);
-#endif
-#if !defined(SK_DISABLE_LEGACY_GRAPHITE_IMAGE_METHODS) && defined(SK_GRAPHITE)
-    struct RequiredImageProperties {
-        skgpu::Mipmapped fMipmapped;
-    };
-
-    sk_sp<SkImage> makeTextureImage(skgpu::graphite::Recorder*, RequiredImageProperties) const;
-#endif
-#if !defined(SK_DISABLE_LEGACY_GRAPHITE_IMAGE_FACTORIES) && defined(SK_GRAPHITE)
-    // Passed to both fulfill and imageRelease
-    using GraphitePromiseImageContext = void*;
-    // Returned from fulfill and passed into textureRelease
-    using GraphitePromiseTextureReleaseContext = void*;
-
-    using GraphitePromiseImageFulfillProc =
-            std::tuple<skgpu::graphite::BackendTexture, GraphitePromiseTextureReleaseContext>
-            (*)(GraphitePromiseImageContext);
-    using GraphitePromiseImageReleaseProc = void (*)(GraphitePromiseImageContext);
-    using GraphitePromiseTextureReleaseProc = void (*)(GraphitePromiseTextureReleaseContext);
-
-    static sk_sp<SkImage> MakeGraphitePromiseTexture(skgpu::graphite::Recorder*,
-                                                     SkISize,
-                                                     const skgpu::graphite::TextureInfo&,
-                                                     const SkColorInfo&,
-                                                     skgpu::graphite::Volatile,
-                                                     GraphitePromiseImageFulfillProc,
-                                                     GraphitePromiseImageReleaseProc,
-                                                     GraphitePromiseTextureReleaseProc,
-                                                     GraphitePromiseImageContext);
-
-    static sk_sp<SkImage> MakeGraphiteFromBackendTexture(skgpu::graphite::Recorder*,
-                                                         const skgpu::graphite::BackendTexture&,
-                                                         SkColorType,
-                                                         SkAlphaType,
-                                                         sk_sp<SkColorSpace>,
-                                                         TextureReleaseProc = nullptr,
-                                                         ReleaseContext = nullptr);
-
-    static sk_sp<SkImage> MakeGraphiteFromYUVABackendTextures(
-            skgpu::graphite::Recorder*,
-            const skgpu::graphite::YUVABackendTextures&,
-            sk_sp<SkColorSpace>,
-            TextureReleaseProc = nullptr,
-            ReleaseContext = nullptr);
-#endif
 };
 
 #endif

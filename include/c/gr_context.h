@@ -22,6 +22,7 @@ SK_C_API gr_backend_t gr_recording_context_get_backend(gr_recording_context_t* c
 SK_C_API bool gr_recording_context_is_abandoned(gr_recording_context_t* context);
 SK_C_API int gr_recording_context_max_texture_size(gr_recording_context_t* context);
 SK_C_API int gr_recording_context_max_render_target_size(gr_recording_context_t* context);
+SK_C_API gr_direct_context_t* gr_recording_context_get_direct_context(gr_recording_context_t* context);
 
 // GrDirectContext
 
@@ -90,8 +91,8 @@ SK_C_API bool gr_backendtexture_get_gl_textureinfo(const gr_backendtexture_t* te
 // GrBackendRenderTarget
 
 SK_C_API gr_backendrendertarget_t* gr_backendrendertarget_new_gl(int width, int height, int samples, int stencils, const gr_gl_framebufferinfo_t* glInfo);
-SK_C_API gr_backendrendertarget_t* gr_backendrendertarget_new_vulkan(int width, int height, int samples, const gr_vk_imageinfo_t* vkImageInfo);
-SK_C_API gr_backendrendertarget_t* gr_backendrendertarget_new_metal(int width, int height, int samples, const gr_mtl_textureinfo_t* mtlInfo);
+SK_C_API gr_backendrendertarget_t* gr_backendrendertarget_new_vulkan(int width, int height, const gr_vk_imageinfo_t* vkImageInfo);
+SK_C_API gr_backendrendertarget_t* gr_backendrendertarget_new_metal(int width, int height, const gr_mtl_textureinfo_t* mtlInfo);
 
 SK_C_API void gr_backendrendertarget_delete(gr_backendrendertarget_t* rendertarget);
 

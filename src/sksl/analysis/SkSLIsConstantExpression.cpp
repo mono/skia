@@ -16,7 +16,7 @@
 #include "src/sksl/ir/SkSLForStatement.h"
 #include "src/sksl/ir/SkSLIRNode.h"
 #include "src/sksl/ir/SkSLIndexExpression.h"
-#include "src/sksl/ir/SkSLModifiers.h"
+#include "src/sksl/ir/SkSLModifierFlags.h"
 #include "src/sksl/ir/SkSLStatement.h"
 #include "src/sksl/ir/SkSLVarDeclarations.h"
 #include "src/sksl/ir/SkSLVariable.h"
@@ -54,9 +54,8 @@ public:
             // ... loop indices as defined in section 4. [constant-index-expression]
             case Expression::Kind::kVariableReference: {
                 const Variable* v = e.as<VariableReference>().variable();
-                if ((v->storage() == Variable::Storage::kGlobal ||
-                     v->storage() == Variable::Storage::kLocal) &&
-                    (v->modifiers().fFlags & Modifiers::kConst_Flag)) {
+                if (v->modifierFlags().isConst() && (v->storage() == Variable::Storage::kGlobal ||
+                                                     v->storage() == Variable::Storage::kLocal)) {
                     return false;
                 }
                 return !fLoopIndices || !fLoopIndices->contains(v);
@@ -100,6 +99,7 @@ public:
             case Expression::Kind::kFunctionReference:
             case Expression::Kind::kMethodReference:
             case Expression::Kind::kTypeReference:
+            case Expression::Kind::kEmpty:
                 return true;
 
             default:

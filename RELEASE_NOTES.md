@@ -2,6 +2,73 @@ Skia Graphics Release Notes
 
 This file includes a list of high level updates for each milestone release.
 
+Milestone 118
+-------------
+  * `GrDirectContext::flush` variants now expect a SkSurface pointer only, not
+    an sk_sp<SkSurface>.
+  * `SkImage::makeWithFilter` has been deprecated. It has been replaced with three factory functions:
+
+    Ganesh:   `SkImages::MakeWithFilter(GrRecordingContext*, ...);`         -- declared in SkImageGanesh.h
+
+    Graphite: `SkImages::MakeWithFilter(skgpu::graphite::Recorder*, ...);`  -- declared in Image.h
+
+    Raster:   `SkImages::MakeWithFilter(...);`                              -- declared in SkImage.h
+
+    The new factories require the associated backend context object be valid. For example, the Graphite version will return nullptr if it isn't supplied with a `Recorder` object.
+  * - SkSL and Runtime Effects are no longer optional features of Skia; they are always available.
+      The GN flag `skia_enable_sksl` has been removed.
+  * - SkSL will now properly reject sequence-expressions containing arrays, or sequence-expressions
+      containing structures of arrays. Previously, the left-side expression of a sequence was checked,
+      but the right-side was not. In GLSL ES 1.0, and therefore in SkSL, the only operator which is
+      allowed to operate on arrays is the array subscript operator (`[]`).
+  * - The Dawn backend for Ganesh has been removed. Dawn will continue to be supported in the
+      Graphite backend.
+  * We plan to remove SkTime.h from the public API. As of now, SkAutoTime has been
+    deleted as it was unused.
+  * Vulkan-specific calls are being removed from GrBackendSurface.h. Clients should use the
+    equivalents found in `include/gpu/ganesh/vk/GrVkBackendSurface.h"`
+
+* * *
+
+Milestone 117
+-------------
+  * `SkGraphics::AllowJIT()` has been removed. It was previously deprecated (and did nothing).
+  * New methods are added to `SkImage`, `SkSurface`, and `skgpu::graphite::context` named
+    `asyncRescaleAndReadPixeksYUVA420`. These function identically to the existing
+    `asyncRescaleAndReadPixelsYUV420` methods but return a fourth plane containing alpha at full
+    resolution.
+  * `SkAutoGraphics` was removed. This was a helper struct that simply called `SkGraphics::Init`.
+    Any instance of `SkAutoGraphics` can be replaced with a call to `SkGraphics::Init`.
+  * `SkCanvas::flush()` has been removed. It can be replaced with:
+    ```
+        if (auto dContext = GrAsDirectContext(canvas->recordingContext())) {
+            dContext->flushAndSubmit();
+        }
+    ```
+
+    `SkCanvas::recordingContext()` and `SkCanvas::recorder()` are now const. They were implicitly const
+    but are now declared to be such.
+  * `SkCanvas::recordingContext()` and `SkCanvas::recorder()` are now const.
+    They were implicitly const but are now declared to be such.
+  * `SkMesh::MakeIndexBuffer`, `SkMesh::CopyIndexBuffer`, `SkMesh::MakeVertexBuffer`, and
+    `SkMesh::CopyVertexBuffer` have been moved to the `SkMeshes` namespace. Ganesh-specific versions
+    have been created in `include/gpu/ganesh/SkMeshGanesh.h`.
+  * SkPath now enforces an upper limit of 715 million path verbs.
+  * `SkRuntimeEffectBuilder::uniforms()`, `SkRuntimeEffectBuilder::children()`,
+    `SkRuntimeShaderBuilder::makeShader()`, `SkRuntimeColorFilterBuilder::makeColorFilter()`, and
+    `SkRuntimeBlendBuilder::makeBlender()` are now marked as const. No functional changes internally,
+    just making explicit what had been implicit.
+  * `SkRuntimeEffect::makeImage` and `SkRuntimeShaderBuilder::makeImage` have been removed.
+  * GL-specific calls have been removed from GrBackendSurface.h. Clients should use the
+    equivalents found in `include/gpu/ganesh/gl/GrGLBackendSurface.h`
+  * A new `SkTiledImageUtils` namespace (in `SkTiledImageUtils.h`) provides `DrawImage` and `DrawImageRect` methods that directly mirror `SkCanvas'` `drawImage` and `drawImageRect` calls.
+
+    The new entry points will breakup large `SkBitmap`-backed `SkImages` into tiles and draw them if they would be too large to upload to the gpu as one texture.
+
+    They will fall through to their `SkCanvas` correlates if tiling isn't needed or possible.
+
+* * *
+
 Milestone 116
 -------------
   * `SkPromiseImageTexture` has been removed from the public API, as well as

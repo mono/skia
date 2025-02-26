@@ -9,13 +9,15 @@
 #define SkGraphics_DEFINED
 
 #include "include/core/SkRefCnt.h"
+#include "include/private/base/SkAPI.h"
 
+#include <cstddef>
+#include <cstdint>
 #include <memory>
 
 class SkData;
 class SkImageGenerator;
 class SkOpenTypeSVGDecoder;
-class SkPath;
 class SkTraceMemoryDump;
 
 class SK_API SkGraphics {
@@ -149,18 +151,6 @@ public:
             std::unique_ptr<SkOpenTypeSVGDecoder> (*)(const uint8_t* svg, size_t length);
     static OpenTypeSVGDecoderFactory SetOpenTypeSVGDecoderFactory(OpenTypeSVGDecoderFactory);
     static OpenTypeSVGDecoderFactory GetOpenTypeSVGDecoderFactory();
-
-    /**
-     *  Call early in main() to allow Skia to use a JIT to accelerate CPU-bound operations.
-     */
-    static void AllowJIT();
-};
-
-class SkAutoGraphics {
-public:
-    SkAutoGraphics() {
-        SkGraphics::Init();
-    }
 };
 
 #endif

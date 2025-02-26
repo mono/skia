@@ -14,7 +14,6 @@
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkSamplingOptions.h"
 #include "include/core/SkStrokeRec.h"
-#include "include/private/base/SkAttributes.h"
 #include "src/base/SkZip.h"
 #include "src/core/SkGlyphRunPainter.h"
 #include "src/core/SkMask.h"
@@ -27,7 +26,6 @@ class SkBlitter;
 class SkGlyph;
 class SkMaskFilter;
 class SkMatrix;
-class SkMatrixProvider;
 class SkPath;
 class SkRRect;
 class SkRasterClip;
@@ -89,7 +87,7 @@ public:
     */
     static bool DrawToMask(const SkPath& devPath, const SkIRect& clipBounds,
                            const SkMaskFilter*, const SkMatrix* filterMatrix,
-                           SkMask* mask, SkMask::CreateMode mode,
+                           SkMaskBuilder* dst, SkMaskBuilder::CreateMode mode,
                            SkStrokeRec::InitStyle style);
 
     enum RectType {
@@ -147,12 +145,12 @@ private:
      *  If the matrix cannot be inverted, or the current clip is empty, return
      *  false and ignore bounds parameter.
      */
-    bool SK_WARN_UNUSED_RESULT computeConservativeLocalClipBounds(SkRect* bounds) const;
+    [[nodiscard]] bool computeConservativeLocalClipBounds(SkRect* bounds) const;
 
 public:
     SkPixmap                fDst;
     BlitterChooser*         fBlitterChooser{nullptr};  // required
-    const SkMatrixProvider* fMatrixProvider{nullptr};  // required
+    const SkMatrix*         fCTM{nullptr};             // required
     const SkRasterClip*     fRC{nullptr};              // required
     const SkSurfaceProps*   fProps{nullptr};           // optional
 

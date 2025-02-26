@@ -116,12 +116,6 @@ public:
     static sk_sp<GrDirectContext> MakeDirect3D(const GrD3DBackendContext&);
 #endif
 
-#ifdef SK_DAWN
-    static sk_sp<GrDirectContext> MakeDawn(const wgpu::Device&,
-                                           const GrContextOptions&);
-    static sk_sp<GrDirectContext> MakeDawn(const wgpu::Device&);
-#endif
-
     static sk_sp<GrDirectContext> MakeMock(const GrMockOptions*, const GrContextOptions&);
     static sk_sp<GrDirectContext> MakeMock(const GrMockOptions*);
 
@@ -333,6 +327,11 @@ public:
     using GrRecordingContext::colorTypeSupportedAsImage;
 
     /**
+     * Does this context support protected content?
+     */
+    using GrRecordingContext::supportsProtectedContent;
+
+    /**
      * Can a SkSurface be created with the given color type. To check whether MSAA is supported
      * use maxSurfaceSampleCountForColorType().
      */
@@ -462,12 +461,14 @@ public:
      *  @param access  type of access the call will do on the backend object after flush
      *  @param info    flush options
      */
-    GrSemaphoresSubmitted flush(sk_sp<SkSurface> surface,
-                                SkSurfaces::BackendSurfaceAccess access,
-                                const GrFlushInfo& info);
     GrSemaphoresSubmitted flush(SkSurface* surface,
                                 SkSurfaces::BackendSurfaceAccess access,
                                 const GrFlushInfo& info);
+#if !defined(SK_DISABLE_LEGACY_GRDIRECTCONTEXT_FLUSH)
+    GrSemaphoresSubmitted flush(sk_sp<SkSurface> surface,
+                                SkSurfaces::BackendSurfaceAccess access,
+                                const GrFlushInfo& info);
+#endif
 
     /**
      *  Same as above except:
@@ -488,12 +489,15 @@ public:
      *  @param info     flush options
      *  @param newState optional state change request after flush
      */
-    GrSemaphoresSubmitted flush(sk_sp<SkSurface> surface,
-                                const GrFlushInfo& info,
-                                const skgpu::MutableTextureState* newState = nullptr);
     GrSemaphoresSubmitted flush(SkSurface* surface,
                                 const GrFlushInfo& info,
                                 const skgpu::MutableTextureState* newState = nullptr);
+#if !defined(SK_DISABLE_LEGACY_GRDIRECTCONTEXT_FLUSH)
+    // TODO(kjlubick) Remove this variant to be consistent with flushAndSubmit
+    GrSemaphoresSubmitted flush(sk_sp<SkSurface> surface,
+                                const GrFlushInfo& info,
+                                const skgpu::MutableTextureState* newState = nullptr);
+#endif
 
     /** Call to ensure all reads/writes of the surface have been issued to the underlying 3D API.
      *  Skia will correctly order its own draws and pixel operations. This must to be used to ensure
@@ -503,14 +507,22 @@ public:
      *
      *  Has no effect on a CPU-backed surface.
      */
+    void flushAndSubmit(SkSurface* surface, bool syncCpu = false);
+#if !defined(SK_DISABLE_LEGACY_GRDIRECTCONTEXT_FLUSH)
+    // TODO(kjlubick) remove this as it is error prone https://crbug.com/1475906
     void flushAndSubmit(sk_sp<SkSurface> surface, bool syncCpu = false);
+#endif
 
     /**
      * Flushes the given surface with the default GrFlushInfo.
      *
      *  Has no effect on a CPU-backed surface.
      */
+    void flush(SkSurface* surface);
+#if !defined(SK_DISABLE_LEGACY_GRDIRECTCONTEXT_FLUSH)
+    // TODO(kjlubick) Remove this variant to be consistent with flushAndSubmit
     void flush(sk_sp<SkSurface> surface);
+#endif
 
     /**
      * Submit outstanding work to the gpu from all previously un-submitted flushes. The return
@@ -892,7 +904,7 @@ public:
                                      GrGpuFinishedProc finishedProc = nullptr,
                                      GrGpuFinishedContext finishedContext = nullptr);
 
-    void deleteBackendTexture(GrBackendTexture);
+    void deleteBackendTexture(const GrBackendTexture&);
 
     // This interface allows clients to pre-compile shaders and populate the runtime program cache.
     // The key and data blobs should be the ones passed to the PersistentCache, in SkSL format.

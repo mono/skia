@@ -54,7 +54,7 @@ public:
     DrawBufferManager* drawBufferManager() { return fRecorder->fDrawBufferManager.get(); }
     UploadBufferManager* uploadBufferManager() { return fRecorder->fUploadBufferManager.get(); }
 
-    AtlasManager* atlasManager() { return fRecorder->fAtlasManager.get(); }
+    AtlasProvider* atlasProvider() { return fRecorder->fAtlasProvider.get(); }
     TokenTracker* tokenTracker() { return fRecorder->fTokenTracker.get(); }
     sktext::gpu::StrikeCache* strikeCache() { return fRecorder->fStrikeCache.get(); }
     sktext::gpu::TextBlobRedrawCoordinator* textBlobCache() {
@@ -68,7 +68,9 @@ public:
 
     uint32_t recorderID() const { return fRecorder->fRecorderID; }
 
-#if GRAPHITE_TEST_UTILS
+    size_t getResourceCacheLimit() const;
+
+#if defined(GRAPHITE_TEST_UTILS)
     ResourceCache* resourceCache() { return fRecorder->fResourceProvider->resourceCache(); }
     // used by the Context that created this Recorder to set a back pointer
     void setContext(Context*);

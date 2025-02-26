@@ -25,7 +25,7 @@
 #include "include/private/base/SkTArray.h"
 #include "include/sksl/SkSLVersion.h"
 #include "src/base/SkArenaAlloc.h"
-#include "src/core/SkEnumBitMask.h"
+#include "src/base/SkEnumBitMask.h"
 #include "src/core/SkRasterPipeline.h"
 #include "src/core/SkRasterPipelineOpContexts.h"
 #include "src/core/SkRasterPipelineOpList.h"
@@ -41,7 +41,7 @@
 #include "src/sksl/codegen/SkSLRasterPipelineBuilder.h"
 #include "src/sksl/codegen/SkSLRasterPipelineCodeGenerator.h"
 #include "src/sksl/ir/SkSLFunctionDeclaration.h"
-#include "src/sksl/ir/SkSLModifiers.h"
+#include "src/sksl/ir/SkSLModifierFlags.h"
 #include "src/sksl/ir/SkSLProgram.h"
 #include "src/sksl/ir/SkSLProgramElement.h"
 #include "src/sksl/ir/SkSLStatement.h"
@@ -60,6 +60,18 @@
 #include <string_view>
 #include <vector>
 
+#if defined(SK_GRAPHITE)
+#include "include/gpu/graphite/Context.h"
+#include "include/gpu/graphite/ContextOptions.h"
+#include "include/gpu/graphite/Recorder.h"
+#include "include/gpu/graphite/Surface.h"
+#include "src/gpu/graphite/Caps.h"
+#include "src/gpu/graphite/ContextPriv.h"
+#if defined(SK_DAWN)
+#include "src/gpu/graphite/dawn/DawnCaps.h"
+#endif
+#endif
+
 using namespace skia_private;
 
 namespace SkSL { class Context; }
@@ -68,7 +80,7 @@ struct GrContextOptions;
 static constexpr int kWidth = 2;
 static constexpr int kHeight = 2;
 
-enum class SkSLTestFlags : int {
+enum class SkSLTestFlag : int {
     /** `CPU` tests must pass when painted to a CPU-backed surface via SkRuntimeEffect. */
     CPU     = 1 << 0,
 
@@ -91,16 +103,18 @@ enum class SkSLTestFlags : int {
     UsesNaN = 1 << 4,
 };
 
-static constexpr bool is_cpu(SkEnumBitMask<SkSLTestFlags> flags) {
-    return flags & SkSLTestFlags::CPU;
+using SkSLTestFlags = SkEnumBitMask<SkSLTestFlag>;
+
+static constexpr bool is_cpu(SkSLTestFlags flags) {
+    return SkToBool(flags & SkSLTestFlag::CPU);
 }
 
-static constexpr bool is_gpu(SkEnumBitMask<SkSLTestFlags> flags) {
-    return (flags & SkSLTestFlags::GPU) || (flags & SkSLTestFlags::GPU_ES3);
+static constexpr bool is_gpu(SkSLTestFlags flags) {
+    return (flags & SkSLTestFlag::GPU) || (flags & SkSLTestFlag::GPU_ES3);
 }
 
-static constexpr bool is_strict_es2(SkEnumBitMask<SkSLTestFlags> flags) {
-    return !(flags & SkSLTestFlags::GPU_ES3) && !(flags & SkSLTestFlags::ES3);
+static constexpr bool is_strict_es2(SkSLTestFlags flags) {
+    return !(flags & SkSLTestFlag::GPU_ES3) && !(flags & SkSLTestFlag::ES3);
 }
 
 struct UniformData {
@@ -275,8 +289,8 @@ static void test_permutations(skiatest::Reporter* r,
                               SkSurface* surface,
                               const char* testFile,
                               bool strictES2) {
-    SkRuntimeEffect::Options options =
-            strictES2 ? SkRuntimeEffect::Options{} : SkRuntimeEffectPriv::ES3Options();
+    SkRuntimeEffect::Options options = strictES2 ? SkRuntimeEffect::Options{}
+                                                 : SkRuntimeEffectPriv::ES3Options();
     options.forceUnoptimized = false;
     test_one_permutation(r, surface, testFile, "", options);
 
@@ -284,10 +298,8 @@ static void test_permutations(skiatest::Reporter* r,
     test_one_permutation(r, surface, testFile, " (Unoptimized)", options);
 }
 
-static void test_cpu(skiatest::Reporter* r,
-                     const char* testFile,
-                     SkEnumBitMask<SkSLTestFlags> flags) {
-    SkASSERT(flags & SkSLTestFlags::CPU);
+static void test_cpu(skiatest::Reporter* r, const char* testFile, SkSLTestFlags flags) {
+    SkASSERT(flags & SkSLTestFlag::CPU);
 
     // Create a raster-backed surface.
     const SkImageInfo info = SkImageInfo::MakeN32Premul(kWidth, kHeight);
@@ -296,27 +308,28 @@ static void test_cpu(skiatest::Reporter* r,
     test_permutations(r, surface.get(), testFile, /*strictES2=*/true);
 }
 
-static void test_gpu(skiatest::Reporter* r,
-                     GrDirectContext* ctx,
-                     const char* testFile,
-                     SkEnumBitMask<SkSLTestFlags> flags) {
+#if defined(SK_GANESH)
+static void test_ganesh(skiatest::Reporter* r,
+                        GrDirectContext* ctx,
+                        const char* testFile,
+                        SkSLTestFlags flags) {
     // If this is an ES3-only test on a GPU which doesn't support SkSL ES3, return immediately.
-    bool shouldRunGPU = (flags & SkSLTestFlags::GPU);
+    bool shouldRunGPU = SkToBool(flags & SkSLTestFlag::GPU);
     bool shouldRunGPU_ES3 =
-            (flags & SkSLTestFlags::GPU_ES3) &&
+            (flags & SkSLTestFlag::GPU_ES3) &&
             (ctx->priv().caps()->shaderCaps()->supportedSkSLVerion() >= SkSL::Version::k300);
     if (!shouldRunGPU && !shouldRunGPU_ES3) {
         return;
     }
 
     // If this is a test that requires the GPU to generate NaN values, check for that first.
-    if (flags & SkSLTestFlags::UsesNaN) {
+    if (flags & SkSLTestFlag::UsesNaN) {
         if (!gpu_generates_nan(r, ctx)) {
             return;
         }
     }
 
-    // Create a GPU-backed surface.
+    // Create a GPU-backed Ganesh surface.
     const SkImageInfo info = SkImageInfo::MakeN32Premul(kWidth, kHeight);
     sk_sp<SkSurface> surface(SkSurfaces::RenderTarget(ctx, skgpu::Budgeted::kNo, info));
 
@@ -327,10 +340,60 @@ static void test_gpu(skiatest::Reporter* r,
         test_permutations(r, surface.get(), testFile, /*strictES2=*/false);
     }
 }
+#endif
 
-static void test_clone(skiatest::Reporter* r,
-                       const char* testFile,
-                       SkEnumBitMask<SkSLTestFlags> flags) {
+#if defined(SK_GRAPHITE)
+static void test_graphite(skiatest::Reporter* r,
+                          skgpu::graphite::Context* ctx,
+                          const char* testFile,
+                          SkSLTestFlags flags) {
+    // If this is an ES3-only test on a GPU which doesn't support SkSL ES3, return immediately.
+    bool shouldRunGPU = SkToBool(flags & SkSLTestFlag::GPU);
+    bool shouldRunGPU_ES3 =
+            (flags & SkSLTestFlag::GPU_ES3) &&
+            (ctx->priv().caps()->shaderCaps()->supportedSkSLVerion() >= SkSL::Version::k300);
+    if (!shouldRunGPU && !shouldRunGPU_ES3) {
+        return;
+    }
+
+#if defined(SK_DAWN)
+    if (ctx->backend() == skgpu::BackendApi::kDawn) {
+        // We always force-enable WGSL via `force_wgsl_in_dawn` below. Dawn's SPIR-V Reader has
+        // known limitations that we will bump into otherwise (some of our tests cause it to emit
+        // malformed WGSL).
+        SkASSERT(static_cast<const skgpu::graphite::DawnCaps*>(ctx->priv().caps())->enableWGSL());
+
+        // If this is a test that requires the GPU to generate NaN values, we don't run it in Dawn.
+        // (WGSL/Dawn does not support infinity or NaN even if the GPU natively does.)
+        if (flags & SkSLTestFlag::UsesNaN) {
+            return;
+        }
+    }
+#endif
+
+#if defined(SK_BUILD_FOR_UNIX) && !defined(SK_DEBUG)
+    // TODO(b/297239696): re-enable these tests once Graphite works properly here
+    return;
+#else
+    // Create a GPU-backed Graphite surface.
+    std::unique_ptr<skgpu::graphite::Recorder> recorder = ctx->makeRecorder();
+
+    const SkImageInfo info = SkImageInfo::Make({kWidth, kHeight},
+                                                kRGBA_8888_SkColorType,
+                                                kPremul_SkAlphaType);
+    sk_sp<SkSurface> surface = SkSurfaces::RenderTarget(recorder.get(), info);
+
+    if (shouldRunGPU) {
+        test_permutations(r, surface.get(), testFile, /*strictES2=*/true);
+    }
+    if (shouldRunGPU_ES3) {
+        test_permutations(r, surface.get(), testFile, /*strictES2=*/false);
+    }
+#endif
+}
+#endif
+
+static void test_clone(skiatest::Reporter* r, const char* testFile, SkSLTestFlags flags) {
     SkString shaderString = load_source(r, testFile, "");
     if (shaderString.isEmpty()) {
         return;
@@ -358,29 +421,24 @@ static void test_clone(skiatest::Reporter* r,
     SkSL::ThreadContext::End();
 }
 
-#ifdef SK_ENABLE_SKSL_IN_RASTER_PIPELINE
-static void report_rp_pass(skiatest::Reporter* r,
-                           const char* testFile,
-                           SkEnumBitMask<SkSLTestFlags> flags) {
-    if (!(flags & SkSLTestFlags::CPU) && !(flags & SkSLTestFlags::ES3)) {
+static void report_rp_pass(skiatest::Reporter* r, const char* testFile, SkSLTestFlags flags) {
+    if (!(flags & SkSLTestFlag::CPU) && !(flags & SkSLTestFlag::ES3)) {
         ERRORF(r, "NEW: %s", testFile);
     }
 }
 
 static void report_rp_fail(skiatest::Reporter* r,
                            const char* testFile,
-                           SkEnumBitMask<SkSLTestFlags> flags,
+                           SkSLTestFlags flags,
                            const char* reason) {
-    if ((flags & SkSLTestFlags::CPU) || (flags & SkSLTestFlags::ES3)) {
+    if ((flags & SkSLTestFlag::CPU) || (flags & SkSLTestFlag::ES3)) {
         ERRORF(r, "%s: %s", testFile, reason);
     }
 }
-#endif  // SK_ENABLE_SKSL_IN_RASTER_PIPELINE
 
 static void test_raster_pipeline(skiatest::Reporter* r,
                                  const char* testFile,
-                                 SkEnumBitMask<SkSLTestFlags> flags) {
-#ifdef SK_ENABLE_SKSL_IN_RASTER_PIPELINE
+                                 SkSLTestFlags flags) {
     SkString shaderString = load_source(r, testFile, "");
     if (shaderString.isEmpty()) {
         return;
@@ -421,7 +479,7 @@ static void test_raster_pipeline(skiatest::Reporter* r,
                 return;
             }
             // 'uniform' variables
-            if (var.modifiers().fFlags & SkSL::Modifiers::kUniform_Flag) {
+            if (var.modifierFlags().isUniform()) {
                 uniforms.push_back(SkRuntimeEffectPriv::VarAsUniform(var, ctx, &offset));
             }
         }
@@ -482,17 +540,53 @@ static void test_raster_pipeline(skiatest::Reporter* r,
 
     // Success!
     report_rp_pass(r, testFile, flags);
-#endif  // SK_ENABLE_SKSL_IN_RASTER_PIPELINE
 }
+
+
+#if defined(SK_GANESH)
+#define DEF_GANESH_SKSL_TEST(flags, ctsEnforcement, name, path) \
+    DEF_CONDITIONAL_GANESH_TEST_FOR_RENDERING_CONTEXTS(SkSL##name##_Ganesh, \
+                                                       r,                   \
+                                                       ctxInfo,             \
+                                                       is_gpu(flags),       \
+                                                       ctsEnforcement) {    \
+        test_ganesh(r, ctxInfo.directContext(), path, flags);               \
+    }
+#else
+#define DEF_GANESH_SKSL_TEST(flags, ctsEnforcement, name, path) /* Ganesh is disabled */
+#endif
+
+#if defined(SK_GRAPHITE)
+static bool is_native_context_or_dawn(skgpu::ContextType type) {
+    // This avoids re-testing Dawn over and over again against every possible API.
+    return skgpu::IsNativeBackend(type) ||
+           type == skgpu::ContextType::kDawn;
+}
+
+static void force_wgsl_in_dawn(skgpu::graphite::ContextOptions* options) {
+    options->fEnableWGSL = true;
+}
+
+#define DEF_GRAPHITE_SKSL_TEST(flags, ctsEnforcement, name, path)         \
+    DEF_CONDITIONAL_GRAPHITE_TEST_FOR_CONTEXTS(SkSL##name##_Graphite,     \
+                                               is_native_context_or_dawn, \
+                                               r,                         \
+                                               context,                   \
+                                               force_wgsl_in_dawn,        \
+                                               is_gpu(flags),             \
+                                               ctsEnforcement) {          \
+        test_graphite(r, context, path, flags);                           \
+    }
+#else
+#define DEF_GRAPHITE_SKSL_TEST(flags, ctsEnforcement, name, path) /* Graphite is disabled */
+#endif
 
 #define SKSL_TEST(flags, ctsEnforcement, name, path)                                       \
     DEF_CONDITIONAL_TEST(SkSL##name##_CPU, r, is_cpu(flags)) { test_cpu(r, path, flags); } \
     DEF_TEST(SkSL##name##_RP, r) { test_raster_pipeline(r, path, flags); }                 \
-    DEF_CONDITIONAL_GANESH_TEST_FOR_RENDERING_CONTEXTS(                                    \
-            SkSL##name##_GPU, r, ctxInfo, is_gpu(flags), ctsEnforcement) {                 \
-        test_gpu(r, ctxInfo.directContext(), path, flags);                                 \
-    }                                                                                      \
-    DEF_TEST(SkSL##name##_Clone, r) { test_clone(r, path, flags); }
+    DEF_TEST(SkSL##name##_Clone, r) { test_clone(r, path, flags); }                        \
+    DEF_GANESH_SKSL_TEST(flags, ctsEnforcement, name, path)                                \
+    DEF_GRAPHITE_SKSL_TEST(flags, ctsEnforcement, name, path)
 
 /**
  * Test flags:
@@ -508,11 +602,11 @@ static void test_raster_pipeline(skiatest::Reporter* r,
 
 // clang-format off
 
-constexpr SkEnumBitMask<SkSLTestFlags> CPU = SkSLTestFlags::CPU;
-constexpr SkEnumBitMask<SkSLTestFlags> ES3 = SkSLTestFlags::ES3;
-constexpr SkEnumBitMask<SkSLTestFlags> GPU = SkSLTestFlags::GPU;
-constexpr SkEnumBitMask<SkSLTestFlags> GPU_ES3 = SkSLTestFlags::GPU_ES3;
-constexpr SkEnumBitMask<SkSLTestFlags> UsesNaN = SkSLTestFlags::UsesNaN;
+constexpr SkSLTestFlags CPU = SkSLTestFlag::CPU;
+constexpr SkSLTestFlags ES3 = SkSLTestFlag::ES3;
+constexpr SkSLTestFlags GPU = SkSLTestFlag::GPU;
+constexpr SkSLTestFlags GPU_ES3 = SkSLTestFlag::GPU_ES3;
+constexpr SkSLTestFlags UsesNaN = SkSLTestFlag::UsesNaN;
 constexpr auto kApiLevel_T = CtsEnforcement::kApiLevel_T;
 constexpr auto kApiLevel_U = CtsEnforcement::kApiLevel_U;
 constexpr auto kNever = CtsEnforcement::kNever;
@@ -529,23 +623,24 @@ SKSL_TEST(CPU | GPU,     kApiLevel_T, FloatFolding,                    "folding/
 SKSL_TEST(CPU | GPU,     kNextRelease,LogicalNot,                      "folding/LogicalNot.rts")
 SKSL_TEST(CPU | GPU,     kApiLevel_T, MatrixFoldingES2,                "folding/MatrixFoldingES2.rts")
 SKSL_TEST(ES3 | GPU_ES3, kNever,      MatrixFoldingES3,                "folding/MatrixFoldingES3.sksl")
-SKSL_TEST(CPU | GPU,     kApiLevel_T, MatrixNoOpFolding,               "folding/MatrixNoOpFolding.rts")
-SKSL_TEST(CPU | GPU,     kApiLevel_T, MatrixScalarNoOpFolding,         "folding/MatrixScalarNoOpFolding.rts")
-SKSL_TEST(CPU | GPU,     kApiLevel_T, MatrixVectorNoOpFolding,         "folding/MatrixVectorNoOpFolding.rts")
+SKSL_TEST(CPU | GPU,     kApiLevel_U, MatrixNoOpFolding,               "folding/MatrixNoOpFolding.rts")
+SKSL_TEST(CPU | GPU,     kApiLevel_U, MatrixScalarNoOpFolding,         "folding/MatrixScalarNoOpFolding.rts")
+SKSL_TEST(CPU | GPU,     kApiLevel_U, MatrixVectorNoOpFolding,         "folding/MatrixVectorNoOpFolding.rts")
 SKSL_TEST(CPU | GPU,     kApiLevel_T, Negation,                        "folding/Negation.rts")
 // TODO(skia:13035): This test fails on Nvidia GPUs on OpenGL but passes Vulkan. Re-enable the test
 // on Vulkan when granular GPU backend selection is supported.
 SKSL_TEST(CPU,           kApiLevel_T, PreserveSideEffects,             "folding/PreserveSideEffects.rts")
 SKSL_TEST(CPU | GPU,     kApiLevel_T, SelfAssignment,                  "folding/SelfAssignment.rts")
 SKSL_TEST(CPU | GPU,     kApiLevel_T, ShortCircuitBoolFolding,         "folding/ShortCircuitBoolFolding.rts")
-SKSL_TEST(CPU | GPU,     kApiLevel_T, StructFieldFolding,              "folding/StructFieldFolding.rts")
-SKSL_TEST(CPU | GPU,     kApiLevel_T, StructFieldNoFolding,            "folding/StructFieldNoFolding.rts")
+SKSL_TEST(CPU | GPU,     kApiLevel_U, StructFieldFolding,              "folding/StructFieldFolding.rts")
+SKSL_TEST(CPU | GPU,     kApiLevel_U, StructFieldNoFolding,            "folding/StructFieldNoFolding.rts")
 SKSL_TEST(CPU | GPU,     kApiLevel_T, SwitchCaseFolding,               "folding/SwitchCaseFolding.rts")
 SKSL_TEST(CPU | GPU,     kApiLevel_T, SwizzleFolding,                  "folding/SwizzleFolding.rts")
-SKSL_TEST(CPU | GPU,     kApiLevel_T, TernaryFolding,                  "folding/TernaryFolding.rts")
+SKSL_TEST(CPU | GPU,     kApiLevel_U, TernaryFolding,                  "folding/TernaryFolding.rts")
 SKSL_TEST(CPU | GPU,     kApiLevel_T, VectorScalarFolding,             "folding/VectorScalarFolding.rts")
 SKSL_TEST(CPU | GPU,     kApiLevel_T, VectorVectorFolding,             "folding/VectorVectorFolding.rts")
 
+SKSL_TEST(CPU | GPU,     kNextRelease,CommaExpressionsAllowInlining,                    "inliner/CommaExpressionsAllowInlining.sksl")
 SKSL_TEST(ES3 | GPU_ES3, kNever,      DoWhileBodyMustBeInlinedIntoAScope,               "inliner/DoWhileBodyMustBeInlinedIntoAScope.sksl")
 SKSL_TEST(ES3 | GPU_ES3, kNever,      DoWhileTestCannotBeInlined,                       "inliner/DoWhileTestCannotBeInlined.sksl")
 SKSL_TEST(CPU | GPU,     kApiLevel_T, ForBodyMustBeInlinedIntoAScope,                   "inliner/ForBodyMustBeInlinedIntoAScope.sksl")
@@ -563,7 +658,7 @@ SKSL_TEST(CPU | GPU,     kApiLevel_T, InlinerElidesTempVarForReturnsInsideBlock,
 SKSL_TEST(CPU | GPU,     kApiLevel_T, InlinerUsesTempVarForMultipleReturns,             "inliner/InlinerUsesTempVarForMultipleReturns.sksl")
 SKSL_TEST(CPU | GPU,     kApiLevel_T, InlinerUsesTempVarForReturnsInsideBlockWithVar,   "inliner/InlinerUsesTempVarForReturnsInsideBlockWithVar.sksl")
 SKSL_TEST(CPU | GPU,     kApiLevel_T, InlineThreshold,                                  "inliner/InlineThreshold.sksl")
-SKSL_TEST(ES3 | GPU_ES3, kApiLevel_T, InlineUnscopedVariable,                           "inliner/InlineUnscopedVariable.sksl")
+SKSL_TEST(ES3 | GPU_ES3, kApiLevel_U, InlineUnscopedVariable,                           "inliner/InlineUnscopedVariable.sksl")
 SKSL_TEST(CPU | GPU,     kApiLevel_T, InlineWithModifiedArgument,                       "inliner/InlineWithModifiedArgument.sksl")
 SKSL_TEST(CPU | GPU,     kApiLevel_T, InlineWithNestedBigCalls,                         "inliner/InlineWithNestedBigCalls.sksl")
 SKSL_TEST(CPU | GPU,     kApiLevel_T, InlineWithUnmodifiedArgument,                     "inliner/InlineWithUnmodifiedArgument.sksl")
@@ -638,7 +733,7 @@ SKSL_TEST(ES3 | GPU_ES3, kNever,      Commutative,                     "runtime/
 SKSL_TEST(CPU,           kNever,      DivideByZero,                    "runtime/DivideByZero.rts")
 SKSL_TEST(CPU | GPU,     kApiLevel_T, LoopFloat,                       "runtime/LoopFloat.rts")
 SKSL_TEST(CPU | GPU,     kApiLevel_T, LoopInt,                         "runtime/LoopInt.rts")
-SKSL_TEST(CPU | GPU,     kApiLevel_T, Ossfuzz52603,                    "runtime/Ossfuzz52603.rts")
+SKSL_TEST(CPU | GPU,     kApiLevel_U, Ossfuzz52603,                    "runtime/Ossfuzz52603.rts")
 SKSL_TEST(CPU | GPU,     kApiLevel_T, QualifierOrder,                  "runtime/QualifierOrder.rts")
 SKSL_TEST(CPU | GPU,     kApiLevel_T, PrecisionQualifiers,             "runtime/PrecisionQualifiers.rts")
 
@@ -656,7 +751,7 @@ SKSL_TEST(CPU | GPU,     kApiLevel_T, Assignment,                      "shared/A
 SKSL_TEST(CPU | GPU,     kApiLevel_T, CastsRoundTowardZero,            "shared/CastsRoundTowardZero.sksl")
 SKSL_TEST(CPU | GPU,     kApiLevel_T, CommaMixedTypes,                 "shared/CommaMixedTypes.sksl")
 SKSL_TEST(CPU | GPU,     kApiLevel_T, CommaSideEffects,                "shared/CommaSideEffects.sksl")
-SKSL_TEST(CPU | GPU,     kApiLevel_T, CompileTimeConstantVariables,    "shared/CompileTimeConstantVariables.sksl")
+SKSL_TEST(CPU | GPU,     kApiLevel_U, CompileTimeConstantVariables,    "shared/CompileTimeConstantVariables.sksl")
 SKSL_TEST(ES3 | GPU_ES3, kNever,      ConstantCompositeAccessViaConstantIndex, "shared/ConstantCompositeAccessViaConstantIndex.sksl")
 SKSL_TEST(ES3 | GPU_ES3, kNever,      ConstantCompositeAccessViaDynamicIndex,  "shared/ConstantCompositeAccessViaDynamicIndex.sksl")
 SKSL_TEST(CPU | GPU,     kApiLevel_T, ConstantIf,                      "shared/ConstantIf.sksl")
@@ -670,7 +765,7 @@ SKSL_TEST(CPU | GPU,     kApiLevel_T, DeadReturn,                      "shared/D
 SKSL_TEST(ES3/* | GPU_ES3*/,kNever,   DeadReturnES3,                   "shared/DeadReturnES3.sksl")
 SKSL_TEST(CPU | GPU,     kApiLevel_T, DeadStripFunctions,              "shared/DeadStripFunctions.sksl")
 SKSL_TEST(CPU | GPU,     kApiLevel_T, DependentInitializers,           "shared/DependentInitializers.sksl")
-SKSL_TEST(CPU | GPU,     kApiLevel_T, DoubleNegation,                  "shared/DoubleNegation.sksl")
+SKSL_TEST(CPU | GPU,     kApiLevel_U, DoubleNegation,                  "shared/DoubleNegation.sksl")
 SKSL_TEST(ES3 | GPU_ES3, kNever,      DoWhileControlFlow,              "shared/DoWhileControlFlow.sksl")
 SKSL_TEST(CPU | GPU,     kApiLevel_T, EmptyBlocksES2,                  "shared/EmptyBlocksES2.sksl")
 SKSL_TEST(ES3 | GPU_ES3, kNever,      EmptyBlocksES3,                  "shared/EmptyBlocksES3.sksl")
@@ -685,8 +780,8 @@ SKSL_TEST(CPU | GPU,     kApiLevel_T, HelloWorld,                      "shared/H
 SKSL_TEST(CPU | GPU,     kApiLevel_T, Hex,                             "shared/Hex.sksl")
 SKSL_TEST(ES3 | GPU_ES3, kNever,      HexUnsigned,                     "shared/HexUnsigned.sksl")
 SKSL_TEST(CPU | GPU,     kApiLevel_T, InoutParameters,                 "shared/InoutParameters.sksl")
-SKSL_TEST(CPU | GPU,     kApiLevel_T, InoutParamsAreDistinct,          "shared/InoutParamsAreDistinct.sksl")
-SKSL_TEST(ES3 | GPU_ES3, kApiLevel_T, IntegerDivisionES3,              "shared/IntegerDivisionES3.sksl")
+SKSL_TEST(CPU | GPU,     kApiLevel_U, InoutParamsAreDistinct,          "shared/InoutParamsAreDistinct.sksl")
+SKSL_TEST(ES3 | GPU_ES3, kApiLevel_U, IntegerDivisionES3,              "shared/IntegerDivisionES3.sksl")
 SKSL_TEST(CPU | GPU,     kApiLevel_U, LogicalAndShortCircuit,          "shared/LogicalAndShortCircuit.sksl")
 SKSL_TEST(CPU | GPU,     kApiLevel_U, LogicalOrShortCircuit,           "shared/LogicalOrShortCircuit.sksl")
 SKSL_TEST(CPU | GPU,     kApiLevel_T, Matrices,                        "shared/Matrices.sksl")
@@ -705,12 +800,13 @@ SKSL_TEST(CPU | GPU,     kNextRelease,MatrixSwizzleStore,              "shared/M
 SKSL_TEST(CPU | GPU,     kApiLevel_T, MatrixToVectorCast,              "shared/MatrixToVectorCast.sksl")
 SKSL_TEST(CPU | GPU,     kApiLevel_T, MultipleAssignments,             "shared/MultipleAssignments.sksl")
 SKSL_TEST(CPU | GPU,     kApiLevel_T, NumberCasts,                     "shared/NumberCasts.sksl")
+SKSL_TEST(CPU | GPU,     kNextRelease,NestedComparisonIntrinsics,      "shared/NestedComparisonIntrinsics.sksl")
 SKSL_TEST(CPU | GPU,     kApiLevel_T, OperatorsES2,                    "shared/OperatorsES2.sksl")
 SKSL_TEST(GPU_ES3,       kNever,      OperatorsES3,                    "shared/OperatorsES3.sksl")
 SKSL_TEST(CPU | GPU,     kApiLevel_T, Ossfuzz36852,                    "shared/Ossfuzz36852.sksl")
 SKSL_TEST(CPU | GPU,     kApiLevel_T, OutParams,                       "shared/OutParams.sksl")
 SKSL_TEST(CPU | GPU,     kApiLevel_T, OutParamsAreDistinct,            "shared/OutParamsAreDistinct.sksl")
-SKSL_TEST(CPU | GPU,     kApiLevel_T, OutParamsAreDistinctFromGlobal,  "shared/OutParamsAreDistinctFromGlobal.sksl")
+SKSL_TEST(CPU | GPU,     kApiLevel_U, OutParamsAreDistinctFromGlobal,  "shared/OutParamsAreDistinctFromGlobal.sksl")
 SKSL_TEST(ES3 | GPU_ES3, kNever,      OutParamsFunctionCallInArgument, "shared/OutParamsFunctionCallInArgument.sksl")
 SKSL_TEST(CPU | GPU,     kApiLevel_T, OutParamsDoubleSwizzle,          "shared/OutParamsDoubleSwizzle.sksl")
 SKSL_TEST(CPU | GPU,     kNextRelease,PostfixExpressions,              "shared/PostfixExpressions.sksl")
@@ -738,6 +834,7 @@ SKSL_TEST(CPU | GPU,     kApiLevel_T, SwitchWithFallthroughAndVarDecls,"shared/S
 SKSL_TEST(CPU | GPU,     kApiLevel_T, SwitchWithLoops,                 "shared/SwitchWithLoops.sksl")
 SKSL_TEST(ES3 | GPU_ES3, kNever,      SwitchWithLoopsES3,              "shared/SwitchWithLoopsES3.sksl")
 SKSL_TEST(CPU | GPU,     kNever,      SwizzleAsLValue,                 "shared/SwizzleAsLValue.sksl")
+SKSL_TEST(ES3 | GPU_ES3, kNever,      SwizzleAsLValueES3,              "shared/SwizzleAsLValueES3.sksl")
 SKSL_TEST(CPU | GPU,     kApiLevel_T, SwizzleBoolConstants,            "shared/SwizzleBoolConstants.sksl")
 SKSL_TEST(CPU | GPU,     kApiLevel_T, SwizzleByConstantIndex,          "shared/SwizzleByConstantIndex.sksl")
 SKSL_TEST(ES3 | GPU_ES3, kNever,      SwizzleByIndex,                  "shared/SwizzleByIndex.sksl")
@@ -758,9 +855,11 @@ SKSL_TEST(CPU | GPU,     kNextRelease,TernaryNesting,                  "shared/T
 SKSL_TEST(CPU | GPU,     kApiLevel_U, TernarySideEffects,              "shared/TernarySideEffects.sksl")
 SKSL_TEST(CPU | GPU,     kApiLevel_T, UnaryPositiveNegative,           "shared/UnaryPositiveNegative.sksl")
 SKSL_TEST(CPU | GPU,     kApiLevel_T, UniformArray,                    "shared/UniformArray.sksl")
-SKSL_TEST(CPU | GPU,     kApiLevel_T, UniformMatrixResize,             "shared/UniformMatrixResize.sksl")
+SKSL_TEST(CPU | GPU,     kApiLevel_U, UniformMatrixResize,             "shared/UniformMatrixResize.sksl")
 SKSL_TEST(CPU | GPU,     kApiLevel_T, UnusedVariables,                 "shared/UnusedVariables.sksl")
 SKSL_TEST(CPU | GPU,     kApiLevel_T, VectorConstructors,              "shared/VectorConstructors.sksl")
 SKSL_TEST(CPU | GPU,     kApiLevel_T, VectorToMatrixCast,              "shared/VectorToMatrixCast.sksl")
 SKSL_TEST(CPU | GPU,     kApiLevel_T, VectorScalarMath,                "shared/VectorScalarMath.sksl")
 SKSL_TEST(ES3 | GPU_ES3, kNever,      WhileLoopControlFlow,            "shared/WhileLoopControlFlow.sksl")
+
+SKSL_TEST(CPU | GPU,     kNextRelease,VoidInSequenceExpressions,       "workarounds/VoidInSequenceExpressions.sksl")

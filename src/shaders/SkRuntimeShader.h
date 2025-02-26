@@ -17,12 +17,6 @@
 #include "src/shaders/SkShaderBase.h"
 #include "src/sksl/tracing/SkSLDebugTracePriv.h"
 
-#if defined(SK_GRAPHITE)
-#include "src/gpu/graphite/KeyContext.h"
-#include "src/gpu/graphite/KeyHelpers.h"
-#include "src/gpu/graphite/PaintParamsKey.h"
-#endif
-
 #include <vector>
 
 class SkColorSpace;
@@ -38,12 +32,12 @@ public:
     SkRuntimeShader(sk_sp<SkRuntimeEffect> effect,
                     sk_sp<SkSL::DebugTracePriv> debugTrace,
                     sk_sp<const SkData> uniforms,
-                    SkSpan<SkRuntimeEffect::ChildPtr> children);
+                    SkSpan<const SkRuntimeEffect::ChildPtr> children);
 
     SkRuntimeShader(sk_sp<SkRuntimeEffect> effect,
                     sk_sp<SkSL::DebugTracePriv> debugTrace,
                     UniformsCallback uniformsCallback,
-                    SkSpan<SkRuntimeEffect::ChildPtr> children);
+                    SkSpan<const SkRuntimeEffect::ChildPtr> children);
 
     SkRuntimeEffect::TracedShader makeTracedClone(const SkIPoint& coord);
 
@@ -51,31 +45,14 @@ public:
 
     ShaderType type() const override { return ShaderType::kRuntime; }
 
-#if defined(SK_GRAPHITE)
-    void addToKey(const skgpu::graphite::KeyContext& keyContext,
-                  skgpu::graphite::PaintParamsKeyBuilder* builder,
-                  skgpu::graphite::PipelineDataGatherer* gatherer) const override;
-#endif
-
     bool appendStages(const SkStageRec& rec, const SkShaders::MatrixRec& mRec) const override;
-
-#if defined(SK_ENABLE_SKVM)
-    skvm::Color program(skvm::Builder* p,
-                        skvm::Coord device,
-                        skvm::Coord local,
-                        skvm::Color paint,
-                        const SkShaders::MatrixRec& mRec,
-                        const SkColorInfo& colorInfo,
-                        skvm::Uniforms* uniforms,
-                        SkArenaAlloc* alloc) const override;
-#endif
 
     void flatten(SkWriteBuffer& buffer) const override;
 
     SkRuntimeEffect* asRuntimeEffect() const override { return fEffect.get(); }
 
     sk_sp<SkRuntimeEffect> effect() const { return fEffect; }
-    std::vector<SkRuntimeEffect::ChildPtr> children() const { return fChildren; }
+    SkSpan<const SkRuntimeEffect::ChildPtr> children() const { return fChildren; }
 
     sk_sp<const SkData> uniformData(const SkColorSpace* dstCS) const;
 

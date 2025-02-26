@@ -295,7 +295,7 @@ def _CheckBazelBUILDFiles(input_api, output_api):
                       "modules/canvaskit/go/", "experimental/", "bazel/platform", "third_party/",
                       "tests/", "resources/", "bazel/deps_parser/", "bazel/exporter_tool/",
                       "tools/gpu/gl/interface/", "bazel/utils/", "include/config/",
-                      "bench/"]
+                      "bench/", "example/external_client/"]
     is_excluded = any(affected_file_path.startswith(n) for n in excluded_paths)
     if is_bazel and not is_excluded:
       with open(affected_file_path, 'r') as file:
@@ -417,7 +417,9 @@ def _CheckBuildifier(input_api, output_api):
   for affected_file in input_api.AffectedFiles(include_deletes=False):
     affected_file_path = affected_file.LocalPath()
     if affected_file_path.endswith('BUILD.bazel') or affected_file_path.endswith('.bzl'):
-      if not affected_file_path.endswith('public.bzl') and not affected_file_path.endswith('go_repositories.bzl'):
+      if not affected_file_path.endswith('public.bzl') and \
+        not affected_file_path.endswith('go_repositories.bzl') and \
+        not "bazel/rbe/gce_linux/" in affected_file_path:  # Skip generated files.
         files.append(affected_file_path)
   if not files:
     return []
@@ -451,8 +453,8 @@ def _CheckBannedAPIs(input_api, output_api):
 
   # These defines are either there or not, and using them with just an #if is a
   # subtle, frustrating bug.
-  existence_defines = ['SK_GANESH', 'SK_GRAPHITE', 'SK_GL', 'SK_VULKAN', 'SK_DAWN',
-                       'SK_METAL', 'SK_DIRECT3D', 'SK_DEBUG']
+  existence_defines = ['SK_GANESH', 'SK_GRAPHITE', 'SK_GL', 'SK_VULKAN', 'SK_DAWN', 'SK_METAL',
+                       'SK_DIRECT3D', 'SK_DEBUG', 'GR_TEST_UTILS', 'GRAPHITE_TEST_UTILS']
   for d in existence_defines:
     banned_replacements.append(('#if {}'.format(d),
                                 '#if defined({})'.format(d)))

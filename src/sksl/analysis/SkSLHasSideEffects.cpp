@@ -14,7 +14,7 @@
 #include "src/sksl/ir/SkSLFunctionCall.h"
 #include "src/sksl/ir/SkSLFunctionDeclaration.h"
 #include "src/sksl/ir/SkSLIRNode.h"
-#include "src/sksl/ir/SkSLModifiers.h"
+#include "src/sksl/ir/SkSLModifierFlags.h"
 #include "src/sksl/ir/SkSLPrefixExpression.h"
 
 namespace SkSL {
@@ -26,7 +26,7 @@ bool Analysis::HasSideEffects(const Expression& expr) {
             switch (expr.kind()) {
                 case Expression::Kind::kFunctionCall: {
                     const FunctionCall& call = expr.as<FunctionCall>();
-                    if (!(call.function().modifiers().fFlags & Modifiers::kPure_Flag)) {
+                    if (!call.function().modifierFlags().isPure()) {
                         return true;
                     }
                     break;

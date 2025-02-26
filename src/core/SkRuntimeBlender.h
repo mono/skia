@@ -25,7 +25,7 @@ class SkRuntimeBlender : public SkBlenderBase {
 public:
     SkRuntimeBlender(sk_sp<SkRuntimeEffect> effect,
                      sk_sp<const SkData> uniforms,
-                     SkSpan<SkRuntimeEffect::ChildPtr> children)
+                     SkSpan<const SkRuntimeEffect::ChildPtr> children)
             : fEffect(std::move(effect))
             , fUniforms(std::move(uniforms))
             , fChildren(children.begin(), children.end()) {}
@@ -36,25 +36,14 @@ public:
 
     bool onAppendStages(const SkStageRec& rec) const override;
 
-#ifdef SK_ENABLE_SKVM
-    skvm::Color onProgram(skvm::Builder* p, skvm::Color src, skvm::Color dst,
-                          const SkColorInfo& colorInfo, skvm::Uniforms* uniforms,
-                          SkArenaAlloc* alloc) const override;
-#endif
-
-#if defined(SK_GRAPHITE)
-    void addToKey(const skgpu::graphite::KeyContext& keyContext,
-                  skgpu::graphite::PaintParamsKeyBuilder* builder,
-                  skgpu::graphite::PipelineDataGatherer* gatherer) const override;
-#endif
-
     void flatten(SkWriteBuffer& buffer) const override;
 
     SK_FLATTENABLE_HOOKS(SkRuntimeBlender)
 
     sk_sp<SkRuntimeEffect> effect() const { return fEffect; }
     sk_sp<const SkData> uniforms() const { return fUniforms; }
-    std::vector<SkRuntimeEffect::ChildPtr> children() const { return fChildren; }
+    SkSpan<const SkRuntimeEffect::ChildPtr> children() const { return fChildren; }
+
 private:
     sk_sp<SkRuntimeEffect> fEffect;
     sk_sp<const SkData> fUniforms;

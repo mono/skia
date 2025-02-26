@@ -34,10 +34,10 @@
 #include <cstring>
 
 #if defined(SK_GRAPHITE)
+#include "include/core/SkTiledImageUtils.h"
 #include "include/gpu/graphite/Image.h"
 #include "include/gpu/graphite/ImageProvider.h"
-
-#include <unordered_map>
+#include "src/core/SkLRUCache.h"
 #endif
 
 #if defined(SK_ENABLE_SVG)
@@ -691,6 +691,7 @@ SkSpan<const SkFontArguments::VariationPosition::Coordinate> VariationSliders::g
 // TODO: add testing of a single ImageProvider passed to multiple recorders
 class TestingImageProvider : public skgpu::graphite::ImageProvider {
 public:
+    TestingImageProvider() : fCache(kDefaultNumCachedImages) {}
     ~TestingImageProvider() override {}
 
     sk_sp<SkImage> findOrCreate(skgpu::graphite::Recorder* recorder,
@@ -701,18 +702,18 @@ public:
             // since it can be used in that case.
             // TODO: we could get fancy and, if ever a mipmapped key eclipsed a non-mipmapped
             // key, we could remove the hidden non-mipmapped key/image from the cache.
-            uint64_t mipMappedKey = ((uint64_t)image->uniqueID() << 32) | 0x1;
+            ImageKey mipMappedKey(image, /* mipmapped= */ true);
             auto result = fCache.find(mipMappedKey);
-            if (result != fCache.end()) {
-                return result->second;
+            if (result) {
+                return *result;
             }
         }
 
-        uint64_t key = ((uint64_t)image->uniqueID() << 32) | (requiredProps.fMipmapped ? 0x1 : 0x0);
+        ImageKey key(image, requiredProps.fMipmapped);
 
         auto result = fCache.find(key);
-        if (result != fCache.end()) {
-            return result->second;
+        if (result) {
+            return *result;
         }
 
         sk_sp<SkImage> newImage = SkImages::TextureFromImage(recorder, image, requiredProps);
@@ -720,14 +721,48 @@ public:
             return nullptr;
         }
 
-        auto [iter, success] = fCache.insert({ key, newImage });
-        SkASSERT(success);
+        result = fCache.insert(key, std::move(newImage));
+        SkASSERT(result);
 
-        return iter->second;
+        return *result;
     }
 
 private:
-    std::unordered_map<uint64_t, sk_sp<SkImage>> fCache;
+    static constexpr int kDefaultNumCachedImages = 256;
+
+    class ImageKey {
+    public:
+        ImageKey(const SkImage* image, bool mipmapped) {
+            uint32_t flags = mipmapped ? 0x1 : 0x0;
+            SkTiledImageUtils::GetImageKeyValues(image, &fValues[1]);
+            fValues[kNumValues-1] = flags;
+            fValues[0] = SkChecksum::Hash32(&fValues[1], (kNumValues-1) * sizeof(uint32_t));
+        }
+
+        uint32_t hash() const { return fValues[0]; }
+
+        bool operator==(const ImageKey& other) const {
+            for (int i = 0; i < kNumValues; ++i) {
+                if (fValues[i] != other.fValues[i]) {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+        bool operator!=(const ImageKey& other) const { return !(*this == other); }
+
+    private:
+        static const int kNumValues = SkTiledImageUtils::kNumImageKeyValues + 2;
+
+        uint32_t fValues[kNumValues];
+    };
+
+    struct ImageHash {
+        size_t operator()(const ImageKey& key) const { return key.hash(); }
+    };
+
+    SkLRUCache<ImageKey, sk_sp<SkImage>, ImageHash> fCache;
 };
 
 skgpu::graphite::RecorderOptions CreateTestingRecorderOptions() {

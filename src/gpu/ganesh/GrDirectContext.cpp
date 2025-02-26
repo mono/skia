@@ -88,11 +88,8 @@ class GrSemaphore;
 #ifdef SK_DIRECT3D
 #include "src/gpu/ganesh/d3d/GrD3DGpu.h"
 #endif
-#ifdef SK_DAWN
-#include "src/gpu/ganesh/dawn/GrDawnGpu.h"
-#endif
 
-#if GR_TEST_UTILS
+#if defined(GR_TEST_UTILS)
 #   include "src/base/SkRandom.h"
 #   if defined(SK_ENABLE_SCOPED_LSAN_SUPPRESSIONS)
 #       include <sanitizer/lsan_interface.h>
@@ -279,7 +276,7 @@ bool GrDirectContext::init() {
                                                        this->contextID());
     fResourceCache->setProxyProvider(this->proxyProvider());
     fResourceCache->setThreadSafeCache(this->threadSafeCache());
-#if GR_TEST_UTILS
+#if defined(GR_TEST_UTILS)
     if (this->options().fResourceCacheLimitOverride != -1) {
         this->setResourceCacheLimit(this->options().fResourceCacheLimitOverride);
     }
@@ -496,11 +493,13 @@ void GrDirectContext::flushAndSubmit(sk_sp<const SkImage> image) {
     this->submit();
 }
 
+#if !defined(SK_DISABLE_LEGACY_GRDIRECTCONTEXT_FLUSH)
 GrSemaphoresSubmitted GrDirectContext::flush(sk_sp<SkSurface> surface,
                                              SkSurfaces::BackendSurfaceAccess access,
                                              const GrFlushInfo& info) {
     return this->flush(surface.get(), access, info);
 }
+#endif
 
 GrSemaphoresSubmitted GrDirectContext::flush(SkSurface* surface,
                                              SkSurfaces::BackendSurfaceAccess access,
@@ -512,6 +511,7 @@ GrSemaphoresSubmitted GrDirectContext::flush(SkSurface* surface,
     if (!sb->isGaneshBacked()) {
         return GrSemaphoresSubmitted::kNo;
     }
+
     auto gs = static_cast<SkSurface_Ganesh*>(surface);
     SkASSERT(this->priv().matches(gs->getDevice()->recordingContext()->asDirectContext()));
     GrRenderTargetProxy* rtp = gs->getDevice()->targetProxy();
@@ -519,11 +519,13 @@ GrSemaphoresSubmitted GrDirectContext::flush(SkSurface* surface,
     return this->priv().flushSurface(rtp, access, info, nullptr);
 }
 
+#if !defined(SK_DISABLE_LEGACY_GRDIRECTCONTEXT_FLUSH)
 GrSemaphoresSubmitted GrDirectContext::flush(sk_sp<SkSurface> surface,
                                              const GrFlushInfo& info,
                                              const skgpu::MutableTextureState* newState) {
     return this->flush(surface.get(), info, newState);
 }
+#endif
 
 GrSemaphoresSubmitted GrDirectContext::flush(SkSurface* surface,
                                              const GrFlushInfo& info,
@@ -535,6 +537,7 @@ GrSemaphoresSubmitted GrDirectContext::flush(SkSurface* surface,
     if (!sb->isGaneshBacked()) {
         return GrSemaphoresSubmitted::kNo;
     }
+
     auto gs = static_cast<SkSurface_Ganesh*>(surface);
     SkASSERT(this->priv().matches(gs->getDevice()->recordingContext()->asDirectContext()));
     GrRenderTargetProxy* rtp = gs->getDevice()->targetProxy();
@@ -543,14 +546,27 @@ GrSemaphoresSubmitted GrDirectContext::flush(SkSurface* surface,
             rtp, SkSurfaces::BackendSurfaceAccess::kNoAccess, info, newState);
 }
 
+void GrDirectContext::flushAndSubmit(SkSurface* surface, bool syncCpu) {
+    this->flush(surface, SkSurfaces::BackendSurfaceAccess::kNoAccess, GrFlushInfo());
+    this->submit(syncCpu);
+}
+
+#if !defined(SK_DISABLE_LEGACY_GRDIRECTCONTEXT_FLUSH)
 void GrDirectContext::flushAndSubmit(sk_sp<SkSurface> surface, bool syncCpu) {
     this->flush(surface.get(), SkSurfaces::BackendSurfaceAccess::kNoAccess, GrFlushInfo());
     this->submit(syncCpu);
 }
+#endif
 
-void GrDirectContext::flush(sk_sp<SkSurface> surface) {
-    this->flush(surface.get(), GrFlushInfo(), nullptr);
+void GrDirectContext::flush(SkSurface* surface) {
+    this->flush(surface, GrFlushInfo(), nullptr);
 }
+
+#if !defined(SK_DISABLE_LEGACY_GRDIRECTCONTEXT_FLUSH)
+void GrDirectContext::flush(sk_sp<SkSurface> surface) {
+    this->flush(surface, GrFlushInfo(), nullptr);
+}
+#endif
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -1129,7 +1145,7 @@ bool GrDirectContext::setBackendRenderTargetState(const GrBackendRenderTarget& b
                                              std::move(callback));
 }
 
-void GrDirectContext::deleteBackendTexture(GrBackendTexture backendTex) {
+void GrDirectContext::deleteBackendTexture(const GrBackendTexture& backendTex) {
     TRACE_EVENT0("skia.gpu", TRACE_FUNC);
     // For the Vulkan backend we still must destroy the backend texture when the context is
     // abandoned.
@@ -1196,7 +1212,7 @@ sk_sp<GrDirectContext> GrDirectContext::MakeGL() {
     return MakeGL(nullptr, defaultOptions);
 }
 
-#if GR_TEST_UTILS
+#if defined(GR_TEST_UTILS)
 GrGLFunction<GrGLGetErrorFn> make_get_error_with_random_oom(GrGLFunction<GrGLGetErrorFn> original) {
     // A SkRandom and a GrGLFunction<GrGLGetErrorFn> are too big to be captured by a
     // GrGLFunction<GrGLGetError> (surprise, surprise). So we make a context object and
@@ -1228,7 +1244,7 @@ GrGLFunction<GrGLGetErrorFn> make_get_error_with_random_oom(GrGLFunction<GrGLGet
 sk_sp<GrDirectContext> GrDirectContext::MakeGL(sk_sp<const GrGLInterface> glInterface,
                                                const GrContextOptions& options) {
     sk_sp<GrDirectContext> direct(new GrDirectContext(GrBackendApi::kOpenGL, options));
-#if GR_TEST_UTILS
+#if defined(GR_TEST_UTILS)
     if (options.fRandomGLOOM) {
         auto copy = sk_make_sp<GrGLInterface>(*glInterface);
         copy->fFunctions.fGetError =
@@ -1342,25 +1358,4 @@ sk_sp<GrDirectContext> GrDirectContext::MakeDirect3D(const GrD3DBackendContext& 
 
     return direct;
 }
-#endif
-
-#ifdef SK_DAWN
-/*************************************************************************************************/
-sk_sp<GrDirectContext> GrDirectContext::MakeDawn(const wgpu::Device& device) {
-    GrContextOptions defaultOptions;
-    return MakeDawn(device, defaultOptions);
-}
-
-sk_sp<GrDirectContext> GrDirectContext::MakeDawn(const wgpu::Device& device,
-                                                 const GrContextOptions& options) {
-    sk_sp<GrDirectContext> direct(new GrDirectContext(GrBackendApi::kDawn, options));
-
-    direct->fGpu = GrDawnGpu::Make(device, options, direct.get());
-    if (!direct->init()) {
-        return nullptr;
-    }
-
-    return direct;
-}
-
 #endif

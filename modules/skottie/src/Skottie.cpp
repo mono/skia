@@ -92,7 +92,6 @@ public:
     }
 
 private:
-    friend class skottie::internal::AnimationBuilder;
     void onSync() override {
         this->node()->setOpacity(fOpacity * 0.01f);
     }
@@ -112,7 +111,7 @@ sk_sp<sksg::RenderNode> AnimationBuilder::attachOpacity(const skjson::ObjectValu
     if (adapter->isStatic()) {
         adapter->seek(0);
     }
-    auto dispatched = this->dispatchOpacityProperty(adapter->node(), jobject["o"], adapter);
+    auto dispatched = this->dispatchOpacityProperty(adapter->node());
     if (adapter->isStatic()) {
         if (!dispatched && adapter->node()->getOpacity() >= 1) {
             // No obeservable effects - we can discard.
@@ -167,7 +166,7 @@ AnimationBuilder::AnimationInfo AnimationBuilder::parse(const skjson::ObjectValu
     fRevalidator->setRoot(root);
     fRevalidator->revalidate();
 
-    return { std::move(root), std::move(animators) };
+    return { std::move(root), std::move(animators), std::move(fSlotManager)};
 }
 
 void AnimationBuilder::parseAssets(const skjson::ArrayValue* jassets) {
@@ -211,17 +210,8 @@ void AnimationBuilder::dispatchMarkers(const skjson::ArrayValue* jmarkers) const
     }
 }
 
-bool AnimationBuilder::dispatchColorProperty(const sk_sp<sksg::Color>& c,
-                                             const skjson::ObjectValue* jcolor) const {
+bool AnimationBuilder::dispatchColorProperty(const sk_sp<sksg::Color>& c) const {
     bool dispatched = false;
-
-    if (jcolor) {
-        if (const skjson::StringValue* slotID = (*jcolor)["sid"]) {
-            fSlotManager->trackColorValue(SkString(slotID->begin()), &(c->fColor), c);
-            dispatched = true;
-        }
-    }
-
     if (fPropertyObserver) {
         const char * node_name = fPropertyObserverContext;
         fPropertyObserver->onColorProperty(node_name,
@@ -234,18 +224,8 @@ bool AnimationBuilder::dispatchColorProperty(const sk_sp<sksg::Color>& c,
     return dispatched;
 }
 
-bool AnimationBuilder::dispatchOpacityProperty(const sk_sp<sksg::OpacityEffect>& o,
-                                               const skjson::ObjectValue* jopacity,
-                                               const sk_sp<OpacityAdapter> adapter) const {
+bool AnimationBuilder::dispatchOpacityProperty(const sk_sp<sksg::OpacityEffect>& o) const {
     bool dispatched = false;
-
-    if (jopacity) {
-        if (const skjson::StringValue* slotID = (*jopacity)["sid"]) {
-            fSlotManager->trackScalarValue(SkString(slotID->begin()), &(adapter->fOpacity),
-                                            adapter);
-            dispatched = true;
-        }
-    }
 
     if (fPropertyObserver) {
         fPropertyObserver->onOpacityProperty(fPropertyObserverContext,
@@ -262,14 +242,15 @@ bool AnimationBuilder::dispatchTextProperty(const sk_sp<TextAdapter>& t,
                                             const skjson::ObjectValue* jtext) const {
     bool dispatched = false;
 
-    if (fPropertyObserver) {
-        const char * node_name = fPropertyObserverContext;
-        if (jtext) {
-            if (const skjson::StringValue* slotID = (*jtext)["sid"]) {
-                node_name = slotID->begin();
-            }
+    if (jtext) {
+        if (const skjson::StringValue* slotID = (*jtext)["sid"]) {
+            fSlotManager->trackTextValue(SkString(slotID->begin()), t);
+            dispatched = true;
         }
-        fPropertyObserver->onTextProperty(node_name,
+    }
+
+    if (fPropertyObserver) {
+        fPropertyObserver->onTextProperty(fPropertyObserverContext,
             [&]() {
                 dispatched = true;
                 return std::make_unique<TextPropertyHandle>(t, fRevalidator);
@@ -422,6 +403,8 @@ sk_sp<Animation> Animation::Builder::make(const char* data, size_t data_len) {
                                        std::move(fExpressionManager),
                                        &fStats, size, duration, fps, fFlags);
     auto ainfo = builder.parse(json);
+
+    fSlotManager = ainfo.fSlotManager;
 
     const auto t2 = std::chrono::steady_clock::now();
     fStats.fSceneParseTimeMS = std::chrono::duration<float, std::milli>{t2-t1}.count();

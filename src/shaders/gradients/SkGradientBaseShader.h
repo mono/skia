@@ -8,6 +8,7 @@
 #ifndef SkGradientShaderPriv_DEFINED
 #define SkGradientShaderPriv_DEFINED
 
+#include "include/core/SkBitmap.h"
 #include "include/core/SkColor.h"
 #include "include/core/SkColorSpace.h"
 #include "include/core/SkMatrix.h"
@@ -19,10 +20,6 @@
 #include "include/private/base/SkTArray.h"
 #include "include/private/base/SkTemplates.h"
 #include "src/shaders/SkShaderBase.h"
-
-#if defined(SK_GRAPHITE)
-#include "src/gpu/graphite/KeyHelpers.h"
-#endif
 
 #include <cstddef>
 #include <cstdint>
@@ -81,6 +78,9 @@ public:
     }
 
     const SkMatrix& getGradientMatrix() const { return fPtsToUnit; }
+    int getColorCount() const { return fColorCount; }
+    const float* getPositions() const { return fPositions; }
+    const Interpolation& getInterpolation() const { return fInterpolation; }
 
     static bool ValidGradient(const SkColor4f colors[],
                               int count,
@@ -117,48 +117,12 @@ protected:
 
     bool appendStages(const SkStageRec&, const SkShaders::MatrixRec&) const override;
 
-#if defined(SK_ENABLE_SKVM)
-    skvm::Color program(skvm::Builder*,
-                        skvm::Coord device,
-                        skvm::Coord local,
-                        skvm::Color paint,
-                        const SkShaders::MatrixRec&,
-                        const SkColorInfo& dstCS,
-                        skvm::Uniforms* uniforms,
-                        SkArenaAlloc* alloc) const override;
-#endif
-
     virtual void appendGradientStages(SkArenaAlloc* alloc,
                                       SkRasterPipeline* tPipeline,
                                       SkRasterPipeline* postPipeline) const = 0;
-#if defined(SK_ENABLE_SKVM)
-    // Produce t from (x,y), modifying mask if it should be anything other than ~0.
-    virtual skvm::F32 transformT(skvm::Builder*,
-                                 skvm::Uniforms*,
-                                 skvm::Coord coord,
-                                 skvm::I32* mask) const = 0;
-#endif
 
     const SkMatrix fPtsToUnit;
     SkTileMode fTileMode;
-
-#if defined(SK_GRAPHITE)
-    // When the number of stops exceeds Graphite's uniform-based limit the colors and offsets
-    // are stored in this bitmap. It is stored in the shader so it can be cached with a stable
-    // id and easily regenerated if purged.
-    mutable SkBitmap fColorsAndOffsetsBitmap;
-
-    void addToKeyCommon(const skgpu::graphite::KeyContext&,
-                        skgpu::graphite::PaintParamsKeyBuilder*,
-                        skgpu::graphite::PipelineDataGatherer*,
-                        GradientType,
-                        SkPoint point0,
-                        SkPoint point1,
-                        float radius0,
-                        float radius1,
-                        float bias,
-                        float scale) const;
-#endif
 
 public:
     static void AppendGradientFillStages(SkRasterPipeline* p,
@@ -196,7 +160,16 @@ public:
 
     SkTileMode getTileMode() const { return fTileMode; }
 
+    const SkBitmap& cachedBitmap() const { return fColorsAndOffsetsBitmap; }
+    void setCachedBitmap(SkBitmap b) const { fColorsAndOffsetsBitmap = b; }
+
 private:
+    // When the number of stops exceeds Graphite's uniform-based limit the colors and offsets
+    // are stored in this bitmap. It is stored in the shader so it can be cached with a stable
+    // id and easily regenerated if purged.
+    // TODO(b/293160919) remove this field when we can store bitmaps in the cache by id.
+    mutable SkBitmap fColorsAndOffsetsBitmap;
+
     // Reserve inline space for up to 4 stops.
     inline static constexpr size_t kInlineStopCount = 4;
     inline static constexpr size_t kInlineStorageSize =

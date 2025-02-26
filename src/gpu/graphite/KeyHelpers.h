@@ -23,6 +23,7 @@
 #include "src/gpu/graphite/TextureProxy.h"
 #include "src/shaders/SkShaderBase.h"
 
+class SkColorFilter;
 class SkData;
 class SkRuntimeEffect;
 
@@ -62,7 +63,8 @@ struct DstReadSampleBlock {
     static void BeginBlock(const KeyContext&,
                            PaintParamsKeyBuilder*,
                            PipelineDataGatherer*,
-                           sk_sp<TextureProxy> dst);
+                           sk_sp<TextureProxy> dst,
+                           SkIPoint dstOffset);
 };
 
 struct DstReadFetchBlock {
@@ -98,7 +100,7 @@ struct GradientShaderBlocks {
                      SkTileMode,
                      int numStops,
                      const SkPMColor4f* colors,
-                     float* offsets,
+                     const float* offsets,
                      sk_sp<TextureProxy> colorsAndOffsetsProxy,
                      const SkGradientShader::Interpolation&);
 
@@ -169,10 +171,17 @@ struct ImageShaderBlock {
     };
 
     // The gatherer and imageData should be null or non-null together
+    // If imageData is not null, it's sampling options must have useCubic == false
     static void BeginBlock(const KeyContext&,
                            PaintParamsKeyBuilder*,
                            PipelineDataGatherer*,
                            const ImageData*);
+
+    // If imageData is not null, it's sampling options must have useCubic == true
+    static void BeginCubicBlock(const KeyContext&,
+                                PaintParamsKeyBuilder*,
+                                PipelineDataGatherer*,
+                                const ImageData*);
 };
 
 struct YUVImageShaderBlock {
@@ -414,6 +423,39 @@ struct RuntimeEffectBlock {
                            PipelineDataGatherer*,
                            const ShaderData&);
 };
+
+void AddToKey(const KeyContext&,
+              PaintParamsKeyBuilder*,
+              PipelineDataGatherer*,
+              const SkBlender*);
+
+/**
+ *  Add implementation details, for the specified backend, of this SkColorFilter to the
+ *  provided key.
+ *
+ *  @param keyContext backend context for key creation
+ *  @param builder    builder for creating the key for this SkShader
+ *  @param gatherer   if non-null, storage for this colorFilter's data
+ *  @param filter     This function is a no-op if filter is null.
+ */
+void AddToKey(const KeyContext& keyContext,
+              PaintParamsKeyBuilder* builder,
+              PipelineDataGatherer* gatherer,
+              const SkColorFilter* filter);
+
+/**
+ *  Add implementation details, for the specified backend, of this SkShader to the
+ *  provided key.
+ *
+ *  @param keyContext backend context for key creation
+ *  @param builder    builder for creating the key for this SkShader
+ *  @param gatherer   if non-null, storage for this colorFilter's data
+ *  @param shader     This function is a no-op if shader is null.
+ */
+void AddToKey(const KeyContext& keyContext,
+              PaintParamsKeyBuilder* builder,
+              PipelineDataGatherer* gatherer,
+              const SkShader* shader);
 
 } // namespace skgpu::graphite
 

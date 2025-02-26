@@ -72,14 +72,17 @@ public:
                                                  SkTileMode xTileMode,
                                                  SkTileMode yTileMode);
 
-    SkSL::Compiler* skslCompiler() { return fCompiler.get(); }
-
     BackendTexture createBackendTexture(SkISize dimensions, const TextureInfo&);
     void deleteBackendTexture(BackendTexture&);
 
     ProxyCache* proxyCache() { return fResourceCache->proxyCache(); }
 
-#if GRAPHITE_TEST_UTILS
+    size_t getResourceCacheLimit() const { return fResourceCache->getMaxBudget(); }
+
+    void freeGpuResources();
+    void purgeResourcesNotUsedSince(StdSteadyClock::time_point purgeTime);
+
+#if defined(GRAPHITE_TEST_UTILS)
     ResourceCache* resourceCache() { return fResourceCache.get(); }
     const SharedContext* sharedContext() { return fSharedContext; }
 #endif
@@ -87,7 +90,8 @@ public:
 protected:
     ResourceProvider(SharedContext* sharedContext,
                      SingleOwner* singleOwner,
-                     uint32_t recorderID);
+                     uint32_t recorderID,
+                     size_t resourceBudget);
 
     SharedContext* fSharedContext;
     // Each ResourceProvider owns one local cache; for some resources it also refers out to the
@@ -113,10 +117,6 @@ private:
 
     virtual BackendTexture onCreateBackendTexture(SkISize dimensions, const TextureInfo&) = 0;
     virtual void onDeleteBackendTexture(BackendTexture&) = 0;
-
-    // Compiler used for compiling SkSL into backend shader code. We only want to create the
-    // compiler once, as there is significant overhead to the first compile.
-    std::unique_ptr<SkSL::Compiler> fCompiler;
 };
 
 } // namespace skgpu::graphite

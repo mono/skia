@@ -1,3 +1,4 @@
+diagnostic(off, derivative_uniformity);
 struct FSIn {
   @builtin(front_facing) sk_Clockwise: bool,
   @location(1) input1: f32,
@@ -13,12 +14,12 @@ struct FSOut {
   @location(4) @interpolate(flat) output4: i32,
   @location(5) @interpolate(flat) output5: vec2<i32>,
 };
-fn main() {
+fn _skslMain() {
   {
   }
 }
-@fragment fn fragmentMain(_stageIn: FSIn) -> FSOut {
+@fragment fn main(_stageIn: FSIn) -> FSOut {
   var _stageOut: FSOut;
-  main();
+  _skslMain();
   return _stageOut;
 }

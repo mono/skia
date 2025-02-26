@@ -20,12 +20,6 @@
 #include "src/shaders/SkShaderBase.h"
 #include "src/sksl/codegen/SkSLRasterPipelineBuilder.h"
 
-#if defined(SK_GRAPHITE)
-#include "src/gpu/graphite/KeyContext.h"
-#include "src/gpu/graphite/KeyHelpers.h"
-#include "src/gpu/graphite/PaintParamsKey.h"
-#endif
-
 #include <string>
 
 using namespace skia_private;
@@ -68,7 +62,6 @@ sk_sp<SkFlattenable> SkRuntimeBlender::CreateProc(SkReadBuffer& buffer) {
 }
 
 bool SkRuntimeBlender::onAppendStages(const SkStageRec& rec) const {
-#ifdef SK_ENABLE_SKSL_IN_RASTER_PIPELINE
     if (!SkRuntimeEffectPriv::CanDraw(SkCapabilities::RasterBackend().get(), fEffect.get())) {
         // SkRP has support for many parts of #version 300 already, but for now, we restrict its
         // usage in runtime effects to just #version 100.
@@ -87,7 +80,6 @@ bool SkRuntimeBlender::onAppendStages(const SkStageRec& rec) const {
         bool success = program->appendStages(rec.fPipeline, rec.fAlloc, &callbacks, uniforms);
         return success;
     }
-#endif
     return false;
 }
 
@@ -97,53 +89,3 @@ void SkRuntimeBlender::flatten(SkWriteBuffer& buffer) const {
     SkRuntimeEffectPriv::WriteChildEffects(buffer, fChildren);
 }
 
-#ifdef SK_ENABLE_SKVM
-skvm::Color SkRuntimeBlender::onProgram(skvm::Builder* p, skvm::Color src, skvm::Color dst,
-                                        const SkColorInfo& colorInfo, skvm::Uniforms* uniforms,
-                                        SkArenaAlloc* alloc) const {
-    if (!SkRuntimeEffectPriv::CanDraw(SkCapabilities::RasterBackend().get(), fEffect.get())) {
-        return {};
-    }
-
-    sk_sp<const SkData> inputs = SkRuntimeEffectPriv::TransformUniforms(fEffect->uniforms(),
-                                                                        fUniforms,
-                                                                        colorInfo.colorSpace());
-    SkASSERT(inputs);
-
-    SkShaders::MatrixRec mRec(SkMatrix::I());
-    mRec.markTotalMatrixInvalid();
-    RuntimeEffectVMCallbacks callbacks(p, uniforms, alloc, fChildren, mRec, src, colorInfo);
-    std::vector<skvm::Val> uniform = SkRuntimeEffectPriv::MakeSkVMUniforms(p,
-                                                                           uniforms,
-                                                                           fEffect->uniformSize(),
-                                                                           *inputs);
-
-    // Emit the blend function as an SkVM program.
-    skvm::Coord zeroCoord = {p->splat(0.0f), p->splat(0.0f)};
-    return SkSL::ProgramToSkVM(*fEffect->fBaseProgram, fEffect->fMain, p,/*debugTrace=*/nullptr,
-                               SkSpan(uniform), /*device=*/zeroCoord, /*local=*/zeroCoord,
-                               src, dst, &callbacks);
-}
-#endif
-
-#if defined(SK_GRAPHITE)
-void SkRuntimeBlender::addToKey(const skgpu::graphite::KeyContext& keyContext,
-                                skgpu::graphite::PaintParamsKeyBuilder* builder,
-                                skgpu::graphite::PipelineDataGatherer* gatherer) const {
-    using namespace skgpu::graphite;
-
-    sk_sp<const SkData> uniforms = SkRuntimeEffectPriv::TransformUniforms(
-            fEffect->uniforms(),
-            fUniforms,
-            keyContext.dstColorInfo().colorSpace());
-    SkASSERT(uniforms);
-
-    RuntimeEffectBlock::BeginBlock(keyContext, builder, gatherer,
-                                   { fEffect, std::move(uniforms) });
-
-    SkRuntimeEffectPriv::AddChildrenToKey(fChildren, fEffect->children(), keyContext, builder,
-                                          gatherer);
-
-    builder->endBlock();
-}
-#endif

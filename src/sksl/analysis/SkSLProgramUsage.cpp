@@ -8,6 +8,7 @@
 #include "include/core/SkSpan.h"
 #include "include/core/SkTypes.h"
 #include "include/private/base/SkDebug.h"
+#include "src/base/SkEnumBitMask.h"
 #include "src/core/SkTHash.h"
 #include "src/sksl/SkSLAnalysis.h"
 #include "src/sksl/SkSLCompiler.h"
@@ -18,9 +19,10 @@
 #include "src/sksl/ir/SkSLFunctionDeclaration.h"
 #include "src/sksl/ir/SkSLFunctionDefinition.h"
 #include "src/sksl/ir/SkSLInterfaceBlock.h"
-#include "src/sksl/ir/SkSLModifiers.h"
+#include "src/sksl/ir/SkSLModifierFlags.h"
 #include "src/sksl/ir/SkSLProgramElement.h"
 #include "src/sksl/ir/SkSLStatement.h"
+#include "src/sksl/ir/SkSLType.h"
 #include "src/sksl/ir/SkSLVarDeclarations.h"
 #include "src/sksl/ir/SkSLVariable.h"
 #include "src/sksl/ir/SkSLVariableReference.h"
@@ -132,11 +134,14 @@ ProgramUsage::VariableCounts ProgramUsage::get(const Variable& v) const {
 }
 
 bool ProgramUsage::isDead(const Variable& v) const {
-    const Modifiers& modifiers = v.modifiers();
+    ModifierFlags flags = v.modifierFlags();
     VariableCounts counts = this->get(v);
-    if ((v.storage() != Variable::Storage::kLocal && counts.fRead) ||
-        (modifiers.fFlags &
-         (Modifiers::kIn_Flag | Modifiers::kOut_Flag | Modifiers::kUniform_Flag))) {
+    if (flags & (ModifierFlag::kIn | ModifierFlag::kOut | ModifierFlag::kUniform)) {
+        // Never eliminate ins, outs, or uniforms.
+        return false;
+    }
+    if (v.type().componentType().isOpaque()) {
+        // Never eliminate samplers, runtime-effect children, or atomics.
         return false;
     }
     // Consider the variable dead if it's never read and never written (besides the initial-value).

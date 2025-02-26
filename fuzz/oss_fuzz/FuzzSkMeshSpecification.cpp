@@ -16,8 +16,10 @@ template <typename T>
 T extract(SkSpan<const uint8_t>& data) {
     T result = 0;
     size_t bytesToCopy = std::min(sizeof(T), data.size());
-    memcpy(&result, &data.front(), bytesToCopy);
-    data = data.subspan(bytesToCopy);
+    if (bytesToCopy > 0) {
+        memcpy(&result, &data.front(), bytesToCopy);
+        data = data.subspan(bytesToCopy);
+    }
     return result;
 }
 
@@ -153,6 +155,10 @@ static void FuzzSkMeshSpecification(SkSpan<const uint8_t> data) {
 
     while (!data.empty()) {
         uint8_t control = extract<uint8_t>(data) % 4;
+        // A control code with no payload can be ignored.
+        if (data.empty()) {
+            break;
+        }
         switch (control) {
             case 0: {
                 // Add an attribute.

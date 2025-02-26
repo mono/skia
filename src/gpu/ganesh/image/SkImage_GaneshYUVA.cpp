@@ -153,6 +153,19 @@ bool SkImage_GaneshYUVA::onHasMipmaps() const {
     return fYUVAProxies.mipmapped() == GrMipmapped::kYes;
 }
 
+bool SkImage_GaneshYUVA::onIsProtected() const {
+    skgpu::Protected isProtected = fYUVAProxies.proxy(0)->isProtected();
+
+#if defined(SK_DEBUG)
+    for (int i = 1; i < fYUVAProxies.numPlanes(); ++i) {
+        SkASSERT(isProtected == fYUVAProxies.proxy(i)->isProtected());
+    }
+#endif
+
+    return isProtected == skgpu::Protected::kYes;
+}
+
+
 size_t SkImage_GaneshYUVA::textureSize() const {
     size_t size = 0;
     for (int i = 0; i < fYUVAProxies.numPlanes(); ++i) {
@@ -196,7 +209,7 @@ std::tuple<GrSurfaceProxyView, GrColorType> SkImage_GaneshYUVA::asView(
                                         /*sample count*/ 1,
                                         mipmapped,
                                         GrProtected::kNo,
-                                        kTopLeft_GrSurfaceOrigin,
+                                        fYUVAProxies.textureOrigin(),
                                         skgpu::Budgeted::kYes);
     if (!sfc) {
         return {};
@@ -312,7 +325,7 @@ sk_sp<SkImage> TextureFromYUVAPixmaps(GrRecordingContext* context,
                                       bool limitToMaxTextureSize,
                                       sk_sp<SkColorSpace> imageColorSpace) {
     if (!context) {
-        return nullptr;  // until we impl this for raster backend
+        return nullptr;
     }
 
     if (!pixmaps.isValid()) {

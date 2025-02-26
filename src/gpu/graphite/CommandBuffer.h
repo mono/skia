@@ -19,6 +19,7 @@
 
 namespace skgpu {
 class RefCntedCallback;
+class MutableTextureState;
 }
 
 namespace skgpu::graphite {
@@ -54,6 +55,13 @@ public:
     void addFinishedProc(sk_sp<RefCntedCallback> finishedProc);
     void callFinishedProcs(bool success);
 
+    virtual void addWaitSemaphores(size_t numWaitSemaphores,
+                                   const BackendSemaphore* waitSemaphores) {}
+    virtual void addSignalSemaphores(size_t numWaitSemaphores,
+                                     const BackendSemaphore* signalSemaphores) {}
+    virtual void prepareSurfaceForStateUpdate(SkSurface* targetSurface,
+                                              const MutableTextureState* newState) {}
+
     bool addRenderPass(const RenderPassDesc&,
                        sk_sp<Texture> colorTexture,
                        sk_sp<Texture> resolveTexture,
@@ -83,7 +91,8 @@ public:
     bool copyTextureToTexture(sk_sp<Texture> src,
                               SkIRect srcRect,
                               sk_sp<Texture> dst,
-                              SkIPoint dstPoint);
+                              SkIPoint dstPoint,
+                              int mipLevel);
     bool synchronizeBufferToCpu(sk_sp<Buffer>);
     bool clearBuffer(const Buffer* buffer, size_t offset, size_t size);
 
@@ -130,7 +139,8 @@ private:
     virtual bool onCopyTextureToTexture(const Texture* src,
                                         SkIRect srcRect,
                                         const Texture* dst,
-                                        SkIPoint dstPoint) = 0;
+                                        SkIPoint dstPoint,
+                                        int mipLevel) = 0;
     virtual bool onSynchronizeBufferToCpu(const Buffer*, bool* outDidResultInWork) = 0;
     virtual bool onClearBuffer(const Buffer*, size_t offset, size_t size) = 0;
 

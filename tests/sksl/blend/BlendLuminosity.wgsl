@@ -1,3 +1,4 @@
+diagnostic(off, derivative_uniformity);
 struct FSIn {
   @builtin(front_facing) sk_Clockwise: bool,
 };
@@ -10,8 +11,7 @@ struct _GlobalUniforms {
 };
 @binding(0) @group(0) var<uniform> _globalUniforms: _GlobalUniforms;
 const sk_PrivkGuardedDivideEpsilon: f32 = f32(select(0.0, 1e-08, false));
-fn blend_color_saturation_Qhh3(_skParam0: vec3<f32>) -> f32 {
-  let color = _skParam0;
+fn blend_color_saturation_Qhh3(color: vec3<f32>) -> f32 {
   {
     let _skTemp0 = max(color.x, color.y);
     let _skTemp1 = max(_skTemp0, color.z);
@@ -20,17 +20,14 @@ fn blend_color_saturation_Qhh3(_skParam0: vec3<f32>) -> f32 {
     return _skTemp1 - _skTemp3;
   }
 }
-fn blend_hslc_h4h2h4h4(_skParam0: vec2<f32>, _skParam1: vec4<f32>, _skParam2: vec4<f32>) -> vec4<f32> {
-  let flipSat = _skParam0;
-  let src = _skParam1;
-  let dst = _skParam2;
+fn blend_hslc_h4h2h4h4(flipSat: vec2<f32>, src: vec4<f32>, dst: vec4<f32>) -> vec4<f32> {
   {
     var alpha: f32 = dst.w * src.w;
     var sda: vec3<f32> = src.xyz * dst.w;
     var dsa: vec3<f32> = dst.xyz * src.w;
     var l: vec3<f32> = select(sda, dsa, vec3<bool>(bool(flipSat.x)));
     var r: vec3<f32> = select(dsa, sda, vec3<bool>(bool(flipSat.x)));
-    if (bool(flipSat.y)) {
+    if bool(flipSat.y) {
       {
         let _skTemp4 = min(l.x, l.y);
         let _skTemp5 = min(_skTemp4, l.z);
@@ -53,12 +50,12 @@ fn blend_hslc_h4h2h4h4(_skParam0: vec2<f32>, _skParam1: vec4<f32>, _skParam2: ve
     let _skTemp13 = max(_5_result.x, _5_result.y);
     let _skTemp14 = max(_skTemp13, _5_result.z);
     var _7_maxComp: f32 = _skTemp14;
-    if (_6_minComp < 0.0 && _4_lum != _6_minComp) {
+    if (_6_minComp < 0.0) && (_4_lum != _6_minComp) {
       {
         _5_result = _4_lum + (_5_result - _4_lum) * (_4_lum / ((_4_lum - _6_minComp) + sk_PrivkGuardedDivideEpsilon));
       }
     }
-    if (_7_maxComp > alpha && _7_maxComp != _4_lum) {
+    if (_7_maxComp > alpha) && (_7_maxComp != _4_lum) {
       {
         _5_result = _4_lum + ((_5_result - _4_lum) * (alpha - _4_lum)) / ((_7_maxComp - _4_lum) + sk_PrivkGuardedDivideEpsilon);
       }
@@ -66,14 +63,14 @@ fn blend_hslc_h4h2h4h4(_skParam0: vec2<f32>, _skParam1: vec4<f32>, _skParam2: ve
     return vec4<f32>((((_5_result + dst.xyz) - dsa) + src.xyz) - sda, (src.w + dst.w) - alpha);
   }
 }
-fn main(_stageOut: ptr<function, FSOut>) {
+fn _skslMain(_stageOut: ptr<function, FSOut>) {
   {
     let _skTemp15 = blend_hslc_h4h2h4h4(vec2<f32>(1.0, 0.0), _globalUniforms.src, _globalUniforms.dst);
     (*_stageOut).sk_FragColor = _skTemp15;
   }
 }
-@fragment fn fragmentMain(_stageIn: FSIn) -> FSOut {
+@fragment fn main(_stageIn: FSIn) -> FSOut {
   var _stageOut: FSOut;
-  main(&_stageOut);
+  _skslMain(&_stageOut);
   return _stageOut;
 }

@@ -18,6 +18,7 @@ namespace skgpu::graphite {
 
 class VulkanResourceProvider;
 class VulkanSharedContext;
+class Buffer;
 
 class VulkanCommandBuffer final : public CommandBuffer {
 public:
@@ -58,6 +59,13 @@ private:
 
     void begin();
     void end();
+
+    void addWaitSemaphores(size_t numWaitSemaphores,
+                           const BackendSemaphore* waitSemaphores) override;
+    void addSignalSemaphores(size_t numWaitSemaphores,
+                             const BackendSemaphore* signalSemaphores) override;
+    void prepareSurfaceForStateUpdate(SkSurface* targetSurface,
+                                      const MutableTextureState* newState) override;
 
     bool onAddRenderPass(const RenderPassDesc&,
                         const Texture* colorTexture,
@@ -131,7 +139,8 @@ private:
     bool onCopyTextureToTexture(const Texture* src,
                                 SkIRect srcRect,
                                 const Texture* dst,
-                                SkIPoint dstPoint) override;
+                                SkIPoint dstPoint,
+                                int mipLevel) override;
 
     bool onSynchronizeBufferToCpu(const Buffer*, bool* outDidResultInWork) override;
     bool onClearBuffer(const Buffer*, size_t offset, size_t size) override;
@@ -168,6 +177,10 @@ private:
 
     VkFence fSubmitFence = VK_NULL_HANDLE;
 
+    // Current semaphores
+    skia_private::STArray<1, VkSemaphore> fWaitSemaphores;
+    skia_private::STArray<1, VkSemaphore> fSignalSemaphores;
+
     // Tracking of memory barriers so that we can submit them all in a batch together.
     skia_private::STArray<1, VkBufferMemoryBarrier> fBufferBarriers;
     skia_private::STArray<2, VkImageMemoryBarrier> fImageBarriers;
@@ -178,8 +191,16 @@ private:
     // Track whether certain descriptor sets need to be bound
     bool fBindUniformBuffers = false;
     bool fBindTextureSamplers = false;
-    skia_private::TArray<BindBufferInfo> fUniformBuffersToBind;
+
+    sk_sp<Buffer> fIntrinsicUniformBuffer;
+    std::array<BindBufferInfo, VulkanGraphicsPipeline::kNumUniformBuffers> fUniformBuffersToBind
+            = {{{nullptr, 0}}};
     VkDescriptorSet fTextureSamplerDescSetToBind = VK_NULL_HANDLE;
+
+    int fNumTextureSamplers = 0;
+    // Store the current viewport so we can calculate rtAdjust when it is time to populate / bind
+    // the intrinsic uniform buffer.
+    SkRect fCurrentViewport;
 
     VkBuffer fBoundInputBuffers[VulkanGraphicsPipeline::kNumInputBuffers];
     size_t fBoundInputBufferOffsets[VulkanGraphicsPipeline::kNumInputBuffers];
@@ -188,6 +209,8 @@ private:
     VkBuffer fBoundIndirectBuffer = VK_NULL_HANDLE;
     size_t fBoundIndexBufferOffset = 0;
     size_t fBoundIndirectBufferOffset = 0;
+
+    float fCachedBlendConstant[4];
 };
 
 } // namespace skgpu::graphite
