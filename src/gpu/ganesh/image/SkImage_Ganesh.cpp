@@ -133,6 +133,15 @@ inline GrMipmapped SkImage_Ganesh::ProxyChooser::mipmapped() const {
     return mipmapped;
 }
 
+inline skgpu::Protected SkImage_Ganesh::ProxyChooser::isProtected() const {
+    SkAutoSpinlock hold(fLock);
+    skgpu::Protected isProtected = fStableProxy->asTextureProxy()->isProtected();
+    if (fVolatileProxy) {
+        SkASSERT(fVolatileProxy->asTextureProxy()->isProtected() == isProtected);
+    }
+    return isProtected;
+}
+
 #ifdef SK_DEBUG
 inline const GrBackendFormat& SkImage_Ganesh::ProxyChooser::backendFormat() {
     SkAutoSpinlock hold(fLock);
@@ -233,6 +242,10 @@ bool SkImage_Ganesh::surfaceMustCopyOnWrite(GrSurfaceProxy* surfaceProxy) const 
 
 bool SkImage_Ganesh::onHasMipmaps() const { return fChooser.mipmapped() == GrMipmapped::kYes; }
 
+bool SkImage_Ganesh::onIsProtected() const {
+    return fChooser.isProtected() == skgpu::Protected::kYes;
+}
+
 GrSemaphoresSubmitted SkImage_Ganesh::flush(GrDirectContext* dContext,
                                             const GrFlushInfo& info) const {
     if (!fContext->priv().matches(dContext) || dContext->abandoned()) {
@@ -300,11 +313,13 @@ sk_sp<SkImage> SkImage_Ganesh::onMakeColorTypeAndColorSpace(SkColorType targetCT
         return nullptr;
     }
 
+    sk_sp<GrSurfaceProxy> proxy = fChooser.chooseProxy(dContext);
+
     auto sfc = dContext->priv().makeSFCWithFallback(GrImageInfo(info, this->dimensions()),
                                                     SkBackingFit::kExact,
                                                     /* sampleCount= */ 1,
                                                     skgpu::Mipmapped::kNo,
-                                                    skgpu::Protected::kNo);
+                                                    proxy->isProtected());
     if (!sfc) {
         return nullptr;
     }
@@ -411,11 +426,6 @@ std::tuple<GrSurfaceProxyView, GrColorType> SkImage_Ganesh::asView(
                                                             this->uniqueID());
     }
     return {std::move(view), ct};
-}
-
-skif::Context SkImage_Ganesh::onCreateFilterContext(GrRecordingContext* rContext,
-                                                    const skif::ContextInfo& ctxInfo) const {
-    return skif::MakeGaneshContext(rContext, fOrigin, ctxInfo);
 }
 
 std::unique_ptr<GrFragmentProcessor> SkImage_Ganesh::asFragmentProcessor(

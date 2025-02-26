@@ -244,7 +244,6 @@ const char* get_backend_string(sk_app::Window::BackendType type) {
         case sk_app::Window::kANGLE_BackendType: return "ANGLE";
 #endif
 #ifdef SK_DAWN
-        case sk_app::Window::kDawn_BackendType: return "Dawn";
 #if defined(SK_GRAPHITE)
         case sk_app::Window::kGraphiteDawn_BackendType: return "Dawn (Graphite)";
 #endif
@@ -272,9 +271,6 @@ const char* get_backend_string(sk_app::Window::BackendType type) {
 
 static sk_app::Window::BackendType get_backend_type(const char* str) {
 #ifdef SK_DAWN
-    if (0 == strcmp(str, "dawn")) {
-        return sk_app::Window::kDawn_BackendType;
-    } else
 #if defined(SK_GRAPHITE)
     if (0 == strcmp(str, "grdawn")) {
         return sk_app::Window::kGraphiteDawn_BackendType;
@@ -951,7 +947,7 @@ void Viewer::initSlides() {
     int firstGM = fSlides.size();
     for (const skiagm::GMFactory& gmFactory : skiagm::GMRegistry::Range()) {
         std::unique_ptr<skiagm::GM> gm = gmFactory();
-        if (!CommandLineFlags::ShouldSkip(FLAGS_match, gm->getName())) {
+        if (!CommandLineFlags::ShouldSkip(FLAGS_match, gm->getName().c_str())) {
             auto slide = sk_make_sp<GMSlide>(std::move(gm));
             fSlides.push_back(std::move(slide));
         }
@@ -2026,8 +2022,6 @@ void Viewer::drawImGui() {
                 ImGui::RadioButton("ANGLE", &newBackend, sk_app::Window::kANGLE_BackendType);
 #endif
 #if defined(SK_DAWN)
-                ImGui::SameLine();
-                ImGui::RadioButton("Dawn", &newBackend, sk_app::Window::kDawn_BackendType);
 #if defined(SK_GRAPHITE)
                 ImGui::SameLine();
                 ImGui::RadioButton("Dawn (Graphite)", &newBackend,
@@ -2633,27 +2627,37 @@ void Viewer::drawImGui() {
                         });
                     }
 #if defined(SK_GRAPHITE)
-#if GRAPHITE_TEST_UTILS
+#if defined(GRAPHITE_TEST_UTILS)
                     if (skgpu::graphite::Context* gctx = fWindow->graphiteContext()) {
-                        // TODO(skia:14418): populate fCachedShaders with recently-used shaders
+                        int index = 1;
                         auto callback = [&](const skgpu::UniqueKey& key,
                                             const skgpu::graphite::GraphicsPipeline* pipeline) {
                             // Retrieve the shaders from the pipeline.
-                            const skgpu::graphite::GraphicsPipeline::Shaders& shaders =
-                                    pipeline->getPipelineShaders();
+                            const skgpu::graphite::GraphicsPipeline::PipelineInfo& pipelineInfo =
+                                    pipeline->getPipelineInfo();
+                            const skgpu::graphite::ShaderCodeDictionary* dict =
+                                    gctx->priv().shaderCodeDictionary();
+                            skgpu::graphite::PaintParamsKey paintKey =
+                                    dict->lookup(pipelineInfo.fPaintID);
 
                             CachedShader& entry(fCachedShaders.push_back());
                             entry.fKey = nullptr;
-                            entry.fKeyString.printf("Pipeline 0x%08X", key.hash());
+                            entry.fKeyString = SkStringPrintf("#%-3d RenderStep: %u, Paint: ",
+                                                              index++,
+                                                              pipelineInfo.fRenderStepID);
+                            entry.fKeyString.append(paintKey.toString(dict));
 
                             if (sksl) {
-                                entry.fShader[kVertex_GrShaderType] = shaders.fSkSLVertexShader;
-                                entry.fShader[kFragment_GrShaderType] = shaders.fSkSLFragmentShader;
+                                entry.fShader[kVertex_GrShaderType] =
+                                        pipelineInfo.fSkSLVertexShader;
+                                entry.fShader[kFragment_GrShaderType] =
+                                        pipelineInfo.fSkSLFragmentShader;
                                 entry.fShaderType = SkSetFourByteTag('S', 'K', 'S', 'L');
                             } else {
-                                entry.fShader[kVertex_GrShaderType] = shaders.fNativeVertexShader;
+                                entry.fShader[kVertex_GrShaderType] =
+                                        pipelineInfo.fNativeVertexShader;
                                 entry.fShader[kFragment_GrShaderType] =
-                                        shaders.fNativeFragmentShader;
+                                        pipelineInfo.fNativeFragmentShader;
                                 // We could derive the shader type from the GraphicsPipeline's type
                                 // if there is ever a need to.
                                 entry.fShaderType = SkSetFourByteTag('?', '?', '?', '?');

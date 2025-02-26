@@ -20,8 +20,7 @@ struct OuterLUT {
 struct Root {
   outer: array<OuterLUT, 3>,
 };
-fn main(_skParam0: vec2<f32>) -> vec4<f32> {
-  let coords = _skParam0;
+fn _skslMain(coords: vec2<f32>) -> vec4<f32> {
   {
     var data: Root;
     data.outer[0].inner[0].values = vec3<f32>(1.0, 10.0, 100.0);
@@ -81,8 +80,8 @@ fn main(_skParam0: vec2<f32>) -> vec4<f32> {
     return _globalUniforms.colorGreen;
   }
 }
-@fragment fn fragmentMain(_stageIn: FSIn) -> FSOut {
+@fragment fn main(_stageIn: FSIn) -> FSOut {
   var _stageOut: FSOut;
-  _stageOut.sk_FragColor = main(_stageIn.sk_FragCoord.xy);
+  _stageOut.sk_FragColor = _skslMain(_stageIn.sk_FragCoord.xy);
   return _stageOut;
 }

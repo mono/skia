@@ -16,7 +16,7 @@
 
 using namespace skia_private;
 
-#if GR_TEST_UTILS
+#if defined(GR_TEST_UTILS)
 
 class GrGeometryProcessor;
 
@@ -149,7 +149,7 @@ TArray<GrXPFactoryTestFactory*, true>* GrXPFactoryTestFactory::GetFactories() {
  * we verify the count is as expected.  If a new factory is added, then these numbers must be
  * manually adjusted.
  */
-static constexpr int kFPFactoryCount = 12;
+static constexpr int kFPFactoryCount = 10;
 static constexpr int kGPFactoryCount = 14;
 static constexpr int kXPFactoryCount = 4;
 

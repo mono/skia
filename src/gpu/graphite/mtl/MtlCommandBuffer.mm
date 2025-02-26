@@ -115,7 +115,7 @@ void MtlCommandBuffer::addWaitSemaphores(size_t numWaitSemaphores,
     SkASSERT(!fActiveRenderCommandEncoder);
     SkASSERT(!fActiveComputeCommandEncoder);
     this->endBlitCommandEncoder();
-    if (@available(macOS 10.14, iOS 12.0, *)) {
+    if (@available(macOS 10.14, iOS 12.0, tvOS 12.0, *)) {
         for (size_t i = 0; i < numWaitSemaphores; ++i) {
             auto semaphore = waitSemaphores[i];
             if (semaphore.isValid() && semaphore.backend() == BackendApi::kMetal) {
@@ -139,7 +139,7 @@ void MtlCommandBuffer::addSignalSemaphores(size_t numSignalSemaphores,
     SkASSERT(!fActiveComputeCommandEncoder);
     this->endBlitCommandEncoder();
 
-    if (@available(macOS 10.14, iOS 12.0, *)) {
+    if (@available(macOS 10.14, iOS 12.0, tvOS 12.0, *)) {
         for (size_t i = 0; i < numSignalSemaphores; ++i) {
             auto semaphore = signalSemaphores[i];
             if (semaphore.isValid() && semaphore.backend() == BackendApi::kMetal) {
@@ -178,9 +178,8 @@ bool MtlCommandBuffer::onAddComputePass(const DispatchGroupList& groups) {
         for (const auto& dispatch : group->dispatches()) {
             this->bindComputePipeline(group->getPipeline(dispatch.fPipelineIndex));
             for (const ResourceBinding& binding : dispatch.fBindings) {
-                if (const BindBufferInfo* buffer =
-                            std::get_if<BindBufferInfo>(&binding.fResource)) {
-                    this->bindBuffer(buffer->fBuffer, buffer->fOffset, binding.fIndex);
+                if (const BufferView* buffer = std::get_if<BufferView>(&binding.fResource)) {
+                    this->bindBuffer(buffer->fInfo.fBuffer, buffer->fInfo.fOffset, binding.fIndex);
                 } else if (const TextureIndex* texIdx =
                                    std::get_if<TextureIndex>(&binding.fResource)) {
                     SkASSERT(texIdx);
@@ -870,7 +869,8 @@ bool MtlCommandBuffer::onCopyBufferToTexture(const Buffer* buffer,
 bool MtlCommandBuffer::onCopyTextureToTexture(const Texture* src,
                                               SkIRect srcRect,
                                               const Texture* dst,
-                                              SkIPoint dstPoint) {
+                                              SkIPoint dstPoint,
+                                              int mipLevel) {
     SkASSERT(!fActiveRenderCommandEncoder);
     SkASSERT(!fActiveComputeCommandEncoder);
 
@@ -886,7 +886,7 @@ bool MtlCommandBuffer::onCopyTextureToTexture(const Texture* src,
     blitCmdEncoder->pushDebugGroup(@"copyTextureToTexture");
 #endif
 
-    blitCmdEncoder->copyTextureToTexture(srcMtlTexture, srcRect, dstMtlTexture, dstPoint);
+    blitCmdEncoder->copyTextureToTexture(srcMtlTexture, srcRect, dstMtlTexture, dstPoint, mipLevel);
 
 #ifdef SK_ENABLE_MTL_DEBUG_INFO
     blitCmdEncoder->popDebugGroup();

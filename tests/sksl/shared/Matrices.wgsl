@@ -58,8 +58,7 @@ fn test_comma_b() -> bool {
     return (all(x[0] == y[0]) && all(x[1] == y[1]));
   }
 }
-fn main(_skParam0: vec2<f32>) -> vec4<f32> {
-  let coords = _skParam0;
+fn _skslMain(coords: vec2<f32>) -> vec4<f32> {
   {
     var _0_ok: bool = true;
     var _1_m1: mat2x2<f32> = mat2x2<f32>(1.0, 2.0, 3.0, 4.0);
@@ -107,8 +106,8 @@ fn main(_skParam0: vec2<f32>) -> vec4<f32> {
     return _skTemp18;
   }
 }
-@fragment fn fragmentMain(_stageIn: FSIn) -> FSOut {
+@fragment fn main(_stageIn: FSIn) -> FSOut {
   var _stageOut: FSOut;
-  _stageOut.sk_FragColor = main(_stageIn.sk_FragCoord.xy);
+  _stageOut.sk_FragColor = _skslMain(_stageIn.sk_FragCoord.xy);
   return _stageOut;
 }

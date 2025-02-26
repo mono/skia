@@ -9,24 +9,19 @@ struct _GlobalUniforms {
   uFloat: f32,
 };
 @binding(0) @group(0) var<uniform> _globalUniforms: _GlobalUniforms;
-fn various_parameter_types_vhhh(_stageOut: ptr<function, FSOut>, _skParam0: f32, _skParam1: ptr<function, f32>, _skParam2: ptr<function, f32>) {
-  let a = _skParam0;
-  let b = _skParam1;
-  let c = _skParam2;
+fn various_parameter_types_vhhh(_stageOut: ptr<function, FSOut>, a: f32, b: ptr<function, f32>, c: ptr<function, f32>) {
   {
     (*_stageOut).sk_FragColor = vec4<f32>(a, (*b), (*c), _globalUniforms.uFloat);
     (*b) = a;
     (*c) = _globalUniforms.uFloat;
   }
 }
-fn one_out_param_vh(_skParam0: ptr<function, f32>) {
-  let h = _skParam0;
+fn one_out_param_vh(h: ptr<function, f32>) {
   {
     (*h) = 2.0;
   }
 }
-fn one_out_param_indirect_vh(_skParam0: ptr<function, f32>) {
-  let h = _skParam0;
+fn one_out_param_indirect_vh(h: ptr<function, f32>) {
   {
     var _skTemp0: f32;
     one_out_param_vh(&_skTemp0);
@@ -36,7 +31,7 @@ fn one_out_param_indirect_vh(_skParam0: ptr<function, f32>) {
 struct S {
   v: vec4<f32>,
 };
-fn main(_stageOut: ptr<function, FSOut>) {
+fn _skslMain(_stageOut: ptr<function, FSOut>) {
   {
     var x: f32 = 1.0;
     var _skTemp1: f32;
@@ -79,8 +74,8 @@ fn main(_stageOut: ptr<function, FSOut>) {
     x = _skTemp14;
   }
 }
-@fragment fn fragmentMain(_stageIn: FSIn) -> FSOut {
+@fragment fn main(_stageIn: FSIn) -> FSOut {
   var _stageOut: FSOut;
-  main(&_stageOut);
+  _skslMain(&_stageOut);
   return _stageOut;
 }

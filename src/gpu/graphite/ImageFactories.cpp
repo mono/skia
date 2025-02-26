@@ -19,6 +19,8 @@
 #include "include/gpu/graphite/Surface.h"
 #include "include/gpu/graphite/YUVABackendTextures.h"
 #include "include/private/base/SkMutex.h"
+#include "src/core/SkImageFilterTypes.h"
+#include "src/core/SkImageFilter_Base.h"
 #include "src/gpu/RefCntedCallback.h"
 #include "src/gpu/graphite/Caps.h"
 #include "src/gpu/graphite/Image_Base_Graphite.h"
@@ -27,6 +29,7 @@
 #include "src/gpu/graphite/Log.h"
 #include "src/gpu/graphite/RecorderPriv.h"
 #include "src/gpu/graphite/ResourceProvider.h"
+#include "src/gpu/graphite/Surface_Graphite.h"
 #include "src/gpu/graphite/Texture.h"
 #include "src/gpu/graphite/TextureProxy.h"
 #include "src/gpu/graphite/TextureProxyView.h"
@@ -64,6 +67,7 @@ sk_sp<SkImage> AdoptTextureFrom(Recorder* recorder,
                                 SkColorType ct,
                                 SkAlphaType at,
                                 sk_sp<SkColorSpace> cs,
+                                skgpu::Origin origin,
                                 TextureReleaseProc releaseP,
                                 ReleaseContext releaseC) {
     auto releaseHelper = skgpu::RefCntedCallback::Make(releaseP, releaseC);
@@ -91,14 +95,32 @@ sk_sp<SkImage> AdoptTextureFrom(Recorder* recorder,
     SkASSERT(proxy);
 
     skgpu::Swizzle swizzle = caps->getReadSwizzle(ct, backendTex.info());
-    TextureProxyView view(std::move(proxy), swizzle);
+    TextureProxyView view(std::move(proxy), swizzle, origin);
     return sk_make_sp<skgpu::graphite::Image>(kNeedNewImageUniqueID, view, info);
+}
+
+sk_sp<SkImage> AdoptTextureFrom(Recorder* recorder,
+                                const BackendTexture& backendTex,
+                                SkColorType ct,
+                                SkAlphaType at,
+                                sk_sp<SkColorSpace> cs,
+                                TextureReleaseProc releaseP,
+                                ReleaseContext releaseC) {
+    return AdoptTextureFrom(recorder,
+                            backendTex,
+                            ct,
+                            at,
+                            std::move(cs),
+                            skgpu::Origin::kTopLeft,
+                            releaseP,
+                            releaseC);
 }
 
 sk_sp<SkImage> PromiseTextureFrom(Recorder* recorder,
                                   SkISize dimensions,
                                   const TextureInfo& textureInfo,
                                   const SkColorInfo& colorInfo,
+                                  skgpu::Origin origin,
                                   Volatile isVolatile,
                                   GraphitePromiseImageFulfillProc fulfillProc,
                                   GraphitePromiseImageReleaseProc imageReleaseProc,
@@ -139,8 +161,29 @@ sk_sp<SkImage> PromiseTextureFrom(Recorder* recorder,
     }
 
     skgpu::Swizzle swizzle = caps->getReadSwizzle(colorInfo.colorType(), textureInfo);
-    TextureProxyView view(std::move(proxy), swizzle);
+    TextureProxyView view(std::move(proxy), swizzle, origin);
     return sk_make_sp<Image>(kNeedNewImageUniqueID, view, colorInfo);
+}
+
+sk_sp<SkImage> PromiseTextureFrom(Recorder* recorder,
+                                  SkISize dimensions,
+                                  const TextureInfo& textureInfo,
+                                  const SkColorInfo& colorInfo,
+                                  Volatile isVolatile,
+                                  GraphitePromiseImageFulfillProc fulfillProc,
+                                  GraphitePromiseImageReleaseProc imageReleaseProc,
+                                  GraphitePromiseTextureReleaseProc textureReleaseProc,
+                                  GraphitePromiseImageContext imageContext) {
+    return PromiseTextureFrom(recorder,
+                              dimensions,
+                              textureInfo,
+                              colorInfo,
+                              skgpu::Origin::kTopLeft,
+                              isVolatile,
+                              fulfillProc,
+                              imageReleaseProc,
+                              textureReleaseProc,
+                              imageContext);
 }
 
 SK_API sk_sp<SkImage> PromiseTextureFromYUVA(skgpu::graphite::Recorder* recorder,
@@ -215,22 +258,47 @@ sk_sp<SkImage> SubsetTextureFrom(skgpu::graphite::Recorder* recorder,
     return SkImages::TextureFromImage(recorder, subsetImg, props);
 }
 
+sk_sp<SkImage> MakeWithFilter(skgpu::graphite::Recorder* recorder,
+                              sk_sp<SkImage> src,
+                              const SkImageFilter* filter,
+                              const SkIRect& subset,
+                              const SkIRect& clipBounds,
+                              SkIRect* outSubset,
+                              SkIPoint* offset) {
+    if (!recorder || !src || !filter) {
+        return nullptr;
+    }
+
+    return as_IFB(filter)->makeImageWithFilter(skif::MakeGraphiteFunctors(recorder),
+                                               std::move(src),
+                                               subset,
+                                               clipBounds,
+                                               outSubset,
+                                               offset);
+}
+
 static sk_sp<SkImage> generate_picture_texture(skgpu::graphite::Recorder* recorder,
                                                const SkImage_Picture* img,
                                                const SkImageInfo& info,
                                                SkImage::RequiredProperties requiredProps) {
-    auto sharedGenerator = img->generator();
-    SkAutoMutexExclusive mutex(sharedGenerator->fMutex);
-
     auto mm = requiredProps.fMipmapped ? skgpu::Mipmapped::kYes : skgpu::Mipmapped::kNo;
-    sk_sp<SkSurface> surface = SkSurfaces::RenderTarget(recorder, info, mm);
+    sk_sp<SkSurface> surface = SkSurfaces::RenderTarget(recorder, info, mm, img->props());
     if (!surface) {
         SKGPU_LOG_E("Failed to create Surface");
         return nullptr;
     }
 
-    surface->getCanvas()->clear(SkColors::kTransparent);
-    surface->getCanvas()->drawPicture(img->picture(), img->matrix(), img->paint());
+    img->replay(surface->getCanvas());
+
+    if (requiredProps.fMipmapped) {
+        skgpu::graphite::Flush(surface);
+        sk_sp<TextureProxy> texture =
+                static_cast<Surface*>(surface.get())->readSurfaceView().refProxy();
+        if (!GenerateMipmaps(recorder, std::move(texture), info.colorInfo())) {
+            SKGPU_LOG_W("Failed to create mipmaps for texture from SkPicture");
+        }
+    }
+
     return SkSurfaces::AsImage(surface);
 }
 
@@ -245,11 +313,6 @@ static sk_sp<SkImage> make_texture_image_from_lazy(skgpu::graphite::Recorder* re
                                                    SkImage::RequiredProperties requiredProps) {
     // 1. Ask the generator to natively create one.
     {
-        // Disable mipmaps here bc Graphite doesn't currently support mipmap regeneration
-        // In this case, we would allocate the mipmaps and fill in the base layer but the mipmap
-        // levels would never be filled out - yielding incorrect draws. Please see: b/238754357.
-        requiredProps.fMipmapped = false;
-
         if (img->type() == SkImage_Base::Type::kLazyPicture) {
             sk_sp<SkImage> newImage =
                     generate_picture_texture(recorder,

@@ -20,8 +20,7 @@ struct SomeData {
   a: vec4<f32>,
   b: vec2<f32>,
 };
-fn main(_stageIn: FSIn, _skParam0: vec2<f32>) -> vec4<f32> {
-  let coords = _skParam0;
+fn _skslMain(_stageIn: FSIn, coords: vec2<f32>) -> vec4<f32> {
   {
     let _skTemp2 = _storage0.offset;
     let _skTemp3 = _storage0.offset;
@@ -29,8 +28,8 @@ fn main(_stageIn: FSIn, _skParam0: vec2<f32>) -> vec4<f32> {
     return vec4<f32>(_storage0.inputData[_stageIn.bufferIndex].a * _storage0.inputData[_stageIn.bufferIndex].b.x);
   }
 }
-@fragment fn fragmentMain(_stageIn: FSIn) -> FSOut {
+@fragment fn main(_stageIn: FSIn) -> FSOut {
   var _stageOut: FSOut;
-  _stageOut.sk_FragColor = main(_stageIn, _stageIn.sk_FragCoord.xy);
+  _stageOut.sk_FragColor = _skslMain(_stageIn, _stageIn.sk_FragCoord.xy);
   return _stageOut;
 }

@@ -116,12 +116,6 @@ public:
     static sk_sp<GrDirectContext> MakeDirect3D(const GrD3DBackendContext&);
 #endif
 
-#ifdef SK_DAWN
-    static sk_sp<GrDirectContext> MakeDawn(const wgpu::Device&,
-                                           const GrContextOptions&);
-    static sk_sp<GrDirectContext> MakeDawn(const wgpu::Device&);
-#endif
-
     static sk_sp<GrDirectContext> MakeMock(const GrMockOptions*, const GrContextOptions&);
     static sk_sp<GrDirectContext> MakeMock(const GrMockOptions*);
 
@@ -331,6 +325,11 @@ public:
      * Can a SkImage be created with the given color type.
      */
     using GrRecordingContext::colorTypeSupportedAsImage;
+
+    /**
+     * Does this context support protected content?
+     */
+    using GrRecordingContext::supportsProtectedContent;
 
     /**
      * Can a SkSurface be created with the given color type. To check whether MSAA is supported

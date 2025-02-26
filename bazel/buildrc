@@ -85,7 +85,7 @@ build:canvaskit_full --noincompatible_enable_cc_toolchain_resolution \
 build:ck_webgl2 --with_gl_standard=webgl_standard --gpu_backend=gl_ganesh \
                 --disable_legacy_shader_context
 # CPU build needs legacy shader context otherwise SkPerlinNoiseShader does not render
-build:ck_cpu --enable_sksl --enable_legacy_shader_context
+build:ck_cpu --enable_legacy_shader_context
 
 # flags for using the CanvasKit debugger.
 build:ck_debugger --enable_build_for_debugger
@@ -104,6 +104,21 @@ build:ck_full_cpu_release_chrome --config=ck_full_cpu_release
 # This is invoked in a Louhi flow.
 build:debugger_app_container --config=ck_full_webgl2_debug_debugger \
                              --workspace_status_command=bazel/get_workspace_status.sh
+
+# config when building //infra/jsfiddle:jsfiddle_container.
+# This is invoked in a Louhi flow.
+build:jsfiddle_container --config=ck_full_webgl2_release \
+                         --workspace_status_command=bazel/get_workspace_status.sh
+
+# config when building //infra/shaders:shaders_container.
+# This is invoked in a Louhi flow.
+build:shaders_container --config=ck_full_webgl2_release \
+                        --workspace_status_command=bazel/get_workspace_status.sh
+
+# config when building //infra/skottie:skottie_container.
+# This is invoked in a Louhi flow.
+build:skottie_container --config=ck_full_webgl2_release \
+                        --workspace_status_command=bazel/get_workspace_status.sh
 
 # We only want to enforce IWYU on debug builds because we have some things that are only
 # necessary to include in debug mode (e.g. SkDEBUGCODE), but very rarely something that is
@@ -145,9 +160,6 @@ build:gl_ganesh --action_env=DISPLAY=:1
 build:vulkan_ganesh --enable_gpu_test_utils --gpu_backend=vulkan_ganesh \
                     --cc_output_directory_tag=vulkan_ganesh
 
-build:dawn_ganesh --enable_gpu_test_utils --gpu_backend=dawn_ganesh \
-                    --cc_output_directory_tag=dawn_ganesh
-
 build:metal_ganesh --enable_gpu_test_utils --gpu_backend=metal_ganesh\
                     --cc_output_directory_tag=metal_ganesh
 
@@ -155,7 +167,6 @@ build:metal_ganesh --enable_gpu_test_utils --gpu_backend=metal_ganesh\
 build:cpu --config=cpu_only
 build:gl --config=gl_ganesh
 build:vk --config=vulkan_ganesh
-build:dawn --config=dawn_ganesh
 
 # Layering check does not work without sandboxing because the system headers are not in the
 # right spot and so they are not found.

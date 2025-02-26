@@ -53,6 +53,7 @@
 #include "src/gpu/ganesh/TestFormatColorTypeCombination.h"
 #include "tests/CtsEnforcement.h"
 #include "tests/Test.h"
+#include "tools/gpu/ContextType.h"
 #include "tools/gpu/ManagedBackendTexture.h"
 
 #include <cstdint>
@@ -280,10 +281,10 @@ DEF_GANESH_TEST(InitialTextureClear, reporter, baseOptions, CtsEnforcement::kApi
     SkISize desc;
     desc.fWidth = desc.fHeight = kSize;
 
-    for (int ct = 0; ct < sk_gpu_test::GrContextFactory::kContextTypeCnt; ++ct) {
+    for (int ct = 0; ct < skgpu::kContextTypeCount; ++ct) {
         sk_gpu_test::GrContextFactory factory(options);
-        auto contextType = static_cast<sk_gpu_test::GrContextFactory::ContextType>(ct);
-        if (!sk_gpu_test::GrContextFactory::IsRenderingContext(contextType)) {
+        auto contextType = static_cast<skgpu::ContextType>(ct);
+        if (!skgpu::IsRenderingContext(contextType)) {
             continue;
         }
         auto dContext = factory.get(contextType);

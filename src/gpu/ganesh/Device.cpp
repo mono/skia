@@ -345,7 +345,7 @@ void Device::clearAll() {
 ///////////////////////////////////////////////////////////////////////////////
 
 void Device::onClipPath(const SkPath& path, SkClipOp op, bool aa) {
-#if GR_TEST_UTILS
+#if defined(GR_TEST_UTILS)
     if (fContext->priv().options().fAllPathsVolatile && !path.isVolatile()) {
         this->onClipPath(SkPath(path).setIsVolatile(true), op, aa);
         return;
@@ -777,7 +777,7 @@ void Device::drawArc(const SkRect& oval,
 ///////////////////////////////////////////////////////////////////////////////
 
 void Device::drawPath(const SkPath& origSrcPath, const SkPaint& paint, bool pathIsMutable) {
-#if GR_TEST_UTILS
+#if defined(GR_TEST_UTILS)
     if (fContext->priv().options().fAllPathsVolatile && !origSrcPath.isVolatile()) {
         this->drawPath(SkPath(origSrcPath).setIsVolatile(true), paint, true);
         return;
@@ -1110,7 +1110,7 @@ void Device::drawMesh(const SkMesh& mesh, sk_sp<SkBlender> blender, const SkPain
 
 #if !defined(SK_ENABLE_OPTIMIZE_SIZE)
 void Device::drawShadow(const SkPath& path, const SkDrawShadowRec& rec) {
-#if GR_TEST_UTILS
+#if defined(GR_TEST_UTILS)
     if (fContext->priv().options().fAllPathsVolatile && !path.isVolatile()) {
         this->drawShadow(SkPath(path).setIsVolatile(true), rec);
         return;
@@ -1387,12 +1387,15 @@ sk_sp<SkSurface> Device::makeSurface(const SkImageInfo& info, const SkSurfacePro
     ASSERT_SINGLE_OWNER
     // TODO: Change the signature of newSurface to take a budgeted parameter.
     static const skgpu::Budgeted kBudgeted = skgpu::Budgeted::kNo;
+    bool isProtected = this->targetProxy()->isProtected() == GrProtected::kYes;
     return SkSurfaces::RenderTarget(fContext.get(),
                                     kBudgeted,
                                     info,
                                     fSurfaceDrawContext->numSamples(),
                                     fSurfaceDrawContext->origin(),
-                                    &props);
+                                    &props,
+                                    /* shouldCreateWithMips= */ false,
+                                    isProtected);
 }
 
 SkImageFilterCache* Device::getImageFilterCache() {

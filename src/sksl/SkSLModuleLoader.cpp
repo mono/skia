@@ -63,7 +63,7 @@
         #include "src/sksl/generated/sksl_public.minified.sksl"
         #include "src/sksl/generated/sksl_rt_shader.minified.sksl"
         #include "src/sksl/generated/sksl_vert.minified.sksl"
-        #if defined(SK_GRAPHITE)
+        #if defined(SK_GRAPHITE) || GR_TEST_UTILS
         #include "src/sksl/generated/sksl_graphite_frag.minified.sksl"
         #include "src/sksl/generated/sksl_graphite_vert.minified.sksl"
         #endif
@@ -75,7 +75,7 @@
         #include "src/sksl/generated/sksl_public.unoptimized.sksl"
         #include "src/sksl/generated/sksl_rt_shader.unoptimized.sksl"
         #include "src/sksl/generated/sksl_vert.unoptimized.sksl"
-        #if defined(SK_GRAPHITE)
+        #if defined(SK_GRAPHITE) || GR_TEST_UTILS
         #include "src/sksl/generated/sksl_graphite_frag.unoptimized.sksl"
         #include "src/sksl/generated/sksl_graphite_vert.unoptimized.sksl"
         #endif
@@ -133,8 +133,8 @@ static constexpr BuiltinTypePtr kPrivateTypes[] = {
     TYPE(SubpassInput), TYPE(SubpassInputMS),
 
     TYPE(Sampler),
-    TYPE(Texture2D),
-    TYPE(ReadWriteTexture2D), TYPE(ReadOnlyTexture2D), TYPE(WriteOnlyTexture2D),
+    TYPE(Texture2D_sample),
+    TYPE(Texture2D), TYPE(ReadOnlyTexture2D), TYPE(WriteOnlyTexture2D),
     TYPE(GenTexture2D), TYPE(ReadableTexture2D), TYPE(WritableTexture2D),
 
     TYPE(AtomicUInt),
@@ -195,12 +195,6 @@ void ModuleLoader::unloadModules() {
 
 ModuleLoader::Impl::Impl() {
     this->makeRootSymbolTable();
-}
-
-static void add_compute_type_aliases(SkSL::SymbolTable* symbols, const SkSL::BuiltinTypes& types) {
-    // A `texture2D` in a compute shader should generally mean "read-write" texture access, not
-    // "sample" texture access. Remap the name `texture2D` to point to `readWriteTexture2D`.
-    symbols->inject(Type::MakeAliasType("texture2D", *types.fReadWriteTexture2D));
 }
 
 static std::unique_ptr<Module> compile_and_shrink(SkSL::Compiler* compiler,
@@ -366,14 +360,12 @@ const Module* ModuleLoader::loadComputeModule(SkSL::Compiler* compiler) {
                                                           ProgramKind::kCompute,
                                                           MODULE_DATA(sksl_compute),
                                                           gpuModule);
-        add_compute_type_aliases(fModuleLoader.fComputeModule->fSymbols.get(),
-                                 this->builtinTypes());
     }
     return fModuleLoader.fComputeModule.get();
 }
 
 const Module* ModuleLoader::loadGraphiteFragmentModule(SkSL::Compiler* compiler) {
-#if defined(SK_GRAPHITE)
+#if defined(SK_GRAPHITE) || GR_TEST_UTILS
     if (!fModuleLoader.fGraphiteFragmentModule) {
         const Module* fragmentModule = this->loadFragmentModule(compiler);
         fModuleLoader.fGraphiteFragmentModule = compile_and_shrink(compiler,
@@ -388,7 +380,7 @@ const Module* ModuleLoader::loadGraphiteFragmentModule(SkSL::Compiler* compiler)
 }
 
 const Module* ModuleLoader::loadGraphiteVertexModule(SkSL::Compiler* compiler) {
-#if defined(SK_GRAPHITE)
+#if defined(SK_GRAPHITE) || GR_TEST_UTILS
     if (!fModuleLoader.fGraphiteVertexModule) {
         const Module* vertexModule = this->loadVertexModule(compiler);
         fModuleLoader.fGraphiteVertexModule = compile_and_shrink(compiler,

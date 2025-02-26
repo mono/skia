@@ -8,27 +8,17 @@
 #include "include/gpu/GrBackendSurface.h"
 
 #include "include/core/SkTextureCompressionType.h"
+#include "include/gpu/GrTypes.h"
 #include "include/private/base/SkAssert.h"
 #include "include/private/gpu/ganesh/GrTypesPriv.h"
-#include "src/gpu/MutableTextureStateRef.h"
+#include "src/gpu/MutableTextureStateRef.h"  // IWYU pragma: keep
 #include "src/gpu/ganesh/GrBackendSurfacePriv.h"
-
-#ifdef SK_DAWN
-#include "include/gpu/dawn/GrDawnTypes.h"
-#include "src/gpu/dawn/DawnUtilsPriv.h"
-#include "src/gpu/ganesh/dawn/GrDawnUtil.h"
-#endif
-
-#ifdef SK_VULKAN
-#include "include/gpu/vk/GrVkTypes.h"
-#include "src/gpu/ganesh/vk/GrVkUtil.h"
-#include "src/gpu/vk/VulkanUtilsPriv.h"
-#endif
 
 #ifdef SK_METAL
 #include "include/gpu/mtl/GrMtlTypes.h"
 #include "src/gpu/ganesh/mtl/GrMtlCppUtil.h"
 #endif
+
 #ifdef SK_DIRECT3D
 #include "include/gpu/d3d/GrD3DTypes.h"
 #include "src/gpu/ganesh/d3d/GrD3DResourceState.h"
@@ -37,19 +27,11 @@
 
 #include <algorithm>
 #include <new>
-#include <utility>
 
 namespace skgpu { class MutableTextureState; }
-GrBackendFormat::GrBackendFormat(){};
-GrBackendFormat::~GrBackendFormat() = default;
 
-GrBackendFormat::GrBackendFormat(GrTextureType texture,
-                                 GrBackendApi api,
-                                 std::unique_ptr<const GrBackendFormatData> data)
-        : fBackend(api)
-        , fValid(data != nullptr)
-        , fFormatData(std::move(data))
-        , fTextureType(texture) {}
+GrBackendFormat::GrBackendFormat() : fValid(false) {}
+GrBackendFormat::~GrBackendFormat() = default;
 
 GrBackendFormat::GrBackendFormat(const GrBackendFormat& that)
         : fBackend(that.fBackend)
@@ -61,14 +43,10 @@ GrBackendFormat::GrBackendFormat(const GrBackendFormat& that)
 
     switch (fBackend) {
         case GrBackendApi::kOpenGL:
-            SkASSERT(that.fFormatData);
-            fFormatData.reset(that.fFormatData->copy());
-            break;  // fFormatData is sufficient
-#ifdef SK_VULKAN
         case GrBackendApi::kVulkan:
-            fVk = that.fVk;
-            break;
-#endif
+            fFormatData.reset();
+            that.fFormatData->copyTo(fFormatData);
+            break;  // fFormatData is sufficient
 #ifdef SK_METAL
         case GrBackendApi::kMetal:
             fMtlFormat = that.fMtlFormat;
@@ -77,11 +55,6 @@ GrBackendFormat::GrBackendFormat(const GrBackendFormat& that)
 #ifdef SK_DIRECT3D
         case GrBackendApi::kDirect3D:
             fDxgiFormat = that.fDxgiFormat;
-            break;
-#endif
-#ifdef SK_DAWN
-        case GrBackendApi::kDawn:
-            fDawnFormat = that.fDawnFormat;
             break;
 #endif
         case GrBackendApi::kMock:
@@ -99,61 +72,6 @@ GrBackendFormat& GrBackendFormat::operator=(const GrBackendFormat& that) {
     }
     return *this;
 }
-
-#ifdef SK_VULKAN
-GrBackendFormat GrBackendFormat::MakeVk(const GrVkYcbcrConversionInfo& ycbcrInfo,
-                                        bool willUseDRMFormatModifiers) {
-    SkASSERT(ycbcrInfo.isValid());
-    return GrBackendFormat(ycbcrInfo.fFormat, ycbcrInfo, willUseDRMFormatModifiers);
-}
-
-GrBackendFormat::GrBackendFormat(VkFormat vkFormat, const GrVkYcbcrConversionInfo& ycbcrInfo,
-                                 bool willUseDRMFormatModifiers)
-        : fBackend(GrBackendApi::kVulkan)
-        , fValid(true)
-        , fTextureType(GrTextureType::k2D) {
-    fVk.fFormat = vkFormat;
-    fVk.fYcbcrConversionInfo = ycbcrInfo;
-    if ((fVk.fYcbcrConversionInfo.isValid() && fVk.fYcbcrConversionInfo.fExternalFormat) ||
-        willUseDRMFormatModifiers) {
-        fTextureType = GrTextureType::kExternal;
-    }
-}
-
-bool GrBackendFormat::asVkFormat(VkFormat* format) const {
-    SkASSERT(format);
-    if (this->isValid() && GrBackendApi::kVulkan == fBackend) {
-        *format = fVk.fFormat;
-        return true;
-    }
-    return false;
-}
-
-const GrVkYcbcrConversionInfo* GrBackendFormat::getVkYcbcrConversionInfo() const {
-    if (this->isValid() && GrBackendApi::kVulkan == fBackend) {
-        return &fVk.fYcbcrConversionInfo;
-    }
-    return nullptr;
-}
-#endif
-
-#ifdef SK_DAWN
-GrBackendFormat::GrBackendFormat(wgpu::TextureFormat format)
-        : fBackend(GrBackendApi::kDawn)
-        , fValid(true)
-        , fDawnFormat(format)
-        , fTextureType(GrTextureType::k2D) {
-}
-
-bool GrBackendFormat::asDawnFormat(wgpu::TextureFormat* format) const {
-    SkASSERT(format);
-    if (this->isValid() && GrBackendApi::kDawn == fBackend) {
-        *format = fDawnFormat;
-        return true;
-    }
-    return false;
-}
-#endif
 
 #ifdef SK_METAL
 GrBackendFormat::GrBackendFormat(GrMTLPixelFormat mtlFormat)
@@ -206,18 +124,11 @@ uint32_t GrBackendFormat::channelMask() const {
     }
     switch (fBackend) {
         case GrBackendApi::kOpenGL:
-            return fFormatData->channelMask();
-#ifdef SK_VULKAN
         case GrBackendApi::kVulkan:
-            return skgpu::VkFormatChannels(fVk.fFormat);
-#endif
+            return fFormatData->channelMask();
 #ifdef SK_METAL
         case GrBackendApi::kMetal:
             return GrMtlFormatChannels(fMtlFormat);
-#endif
-#ifdef SK_DAWN
-        case GrBackendApi::kDawn:
-            return skgpu::DawnFormatChannels(fDawnFormat);
 #endif
 #ifdef SK_DIRECT3D
         case GrBackendApi::kDirect3D:
@@ -237,18 +148,11 @@ GrColorFormatDesc GrBackendFormat::desc() const {
     }
     switch (fBackend) {
         case GrBackendApi::kOpenGL:
-            return fFormatData->desc();
-#ifdef SK_VULKAN
         case GrBackendApi::kVulkan:
-            return GrVkFormatDesc(fVk.fFormat);
-#endif
+            return fFormatData->desc();
 #ifdef SK_METAL
        case GrBackendApi::kMetal:
             return GrMtlFormatDesc(fMtlFormat);
-#endif
-#ifdef SK_DAWN
-        case GrBackendApi::kDawn:
-            return GrDawnFormatDesc(fDawnFormat);
 #endif
 #ifdef SK_DIRECT3D
         case GrBackendApi::kDirect3D:
@@ -307,17 +211,10 @@ bool GrBackendFormat::isMockStencilFormat() const {
 
 GrBackendFormat GrBackendFormat::makeTexture2D() const {
     GrBackendFormat copy = *this;
-#ifdef SK_VULKAN
-    if (const GrVkYcbcrConversionInfo* ycbcrInfo = this->getVkYcbcrConversionInfo()) {
-        if (ycbcrInfo->isValid()) {
-            // If we have a ycbcr we remove it from the backend format and set the VkFormat to
-            // R8G8B8A8_UNORM
-            SkASSERT(copy.fBackend == GrBackendApi::kVulkan);
-            copy.fVk.fYcbcrConversionInfo = GrVkYcbcrConversionInfo();
-            copy.fVk.fFormat = VK_FORMAT_R8G8B8A8_UNORM;
-        }
+    // TODO(b/293490566): Remove this kVulkan check once all backends are using fFormatData.
+    if (fBackend==GrBackendApi::kVulkan) {
+        copy.fFormatData->makeTexture2D();
     }
-#endif
     copy.fTextureType = GrTextureType::k2D;
     return copy;
 }
@@ -340,19 +237,11 @@ bool GrBackendFormat::operator==(const GrBackendFormat& that) const {
 
     switch (fBackend) {
         case GrBackendApi::kOpenGL:
-            return fFormatData->equal(that.fFormatData.get());
-#ifdef SK_VULKAN
         case GrBackendApi::kVulkan:
-            return fVk.fFormat == that.fVk.fFormat &&
-                   fVk.fYcbcrConversionInfo == that.fVk.fYcbcrConversionInfo;
-#endif
+            return fFormatData->equal(that.fFormatData.get());
 #ifdef SK_METAL
         case GrBackendApi::kMetal:
             return fMtlFormat == that.fMtlFormat;
-#endif
-#ifdef SK_DAWN
-        case GrBackendApi::kDawn:
-            return fDawnFormat == that.fDawnFormat;
 #endif
         case GrBackendApi::kMock:
             return fMock.fColorType == that.fMock.fColorType &&
@@ -367,7 +256,7 @@ bool GrBackendFormat::operator==(const GrBackendFormat& that) const {
     return false;
 }
 
-#if defined(SK_DEBUG) || GR_TEST_UTILS
+#if defined(SK_DEBUG) || defined(GR_TEST_UTILS)
 #include "include/core/SkString.h"
 
 SkString GrBackendFormat::toStr() const {
@@ -382,12 +271,8 @@ SkString GrBackendFormat::toStr() const {
 
     switch (fBackend) {
         case GrBackendApi::kOpenGL:
-            str.append(fFormatData->toString());
-            break;
         case GrBackendApi::kVulkan:
-#ifdef SK_VULKAN
-            str.append(skgpu::VkFormatToStr(fVk.fFormat));
-#endif
+            str.append(fFormatData->toString());
             break;
         case GrBackendApi::kMetal:
 #ifdef SK_METAL
@@ -399,15 +284,12 @@ SkString GrBackendFormat::toStr() const {
             str.append(GrDxgiFormatToStr(fDxgiFormat));
 #endif
             break;
-        case GrBackendApi::kDawn:
-#ifdef SK_DAWN
-            str.append(GrDawnFormatToStr(fDawnFormat));
-#endif
-            break;
         case GrBackendApi::kMock:
             str.append(GrColorTypeToStr(fMock.fColorType));
             str.appendf("-");
             str.append(GrCompressionTypeToStr(fMock.fCompressionType));
+            break;
+        case GrBackendApi::kUnsupported:
             break;
     }
 
@@ -417,92 +299,6 @@ SkString GrBackendFormat::toStr() const {
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 GrBackendTexture::GrBackendTexture() : fIsValid(false) {}
-
-GrBackendTexture::GrBackendTexture(int width,
-                                   int height,
-                                   std::string_view label,
-                                   skgpu::Mipmapped mipped,
-                                   GrBackendApi backend,
-                                   GrTextureType texture,
-                                   std::unique_ptr<GrBackendTextureData> data)
-        : fIsValid(data != nullptr)
-        , fWidth(width)
-        , fHeight(height)
-        , fLabel(label)
-        , fMipmapped(mipped)
-        , fBackend(backend)
-        , fTextureType(texture)
-        , fTextureData(std::move(data)) {}
-
-#ifdef SK_DAWN
-GrBackendTexture::GrBackendTexture(int width,
-                                   int height,
-                                   const GrDawnTextureInfo& dawnInfo,
-                                   std::string_view label)
-        : fIsValid(true)
-        , fWidth(width)
-        , fHeight(height)
-        , fLabel(label)
-        , fMipmapped(GrMipmapped(dawnInfo.fLevelCount > 1))
-        , fBackend(GrBackendApi::kDawn)
-        , fTextureType(GrTextureType::k2D)
-        , fDawnInfo(dawnInfo) {}
-#endif
-
-#ifdef SK_VULKAN
-GrBackendTexture::GrBackendTexture(int width,
-                                   int height,
-                                   const GrVkImageInfo& vkInfo,
-                                   std::string_view label)
-        : GrBackendTexture(
-                  width,
-                  height,
-                  vkInfo,
-                  sk_sp<skgpu::MutableTextureStateRef>(new skgpu::MutableTextureStateRef(
-                          vkInfo.fImageLayout, vkInfo.fCurrentQueueFamily)),
-                  label) {}
-
-static const VkImageUsageFlags kDefaultUsageFlags =
-        VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
-
-// We don't know if the backend texture is made renderable or not, so we default the usage flags
-// to include color attachment as well.
-static const VkImageUsageFlags kDefaultTexRTUsageFlags =
-        kDefaultUsageFlags | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
-
-static GrVkImageInfo apply_default_usage_flags(const GrVkImageInfo& info,
-                                               VkImageUsageFlags defaultFlags) {
-    if (info.fImageUsageFlags == 0) {
-        GrVkImageInfo newInfo = info;
-        newInfo.fImageUsageFlags = defaultFlags;
-        return newInfo;
-    }
-    return info;
-}
-
-static GrTextureType vk_image_info_to_texture_type(const GrVkImageInfo& info) {
-    if ((info.fYcbcrConversionInfo.isValid() && info.fYcbcrConversionInfo.fExternalFormat != 0) ||
-        info.fImageTiling == VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT) {
-        return GrTextureType::kExternal;
-    }
-    return GrTextureType::k2D;
-}
-
-GrBackendTexture::GrBackendTexture(int width,
-                                   int height,
-                                   const GrVkImageInfo& vkInfo,
-                                   sk_sp<skgpu::MutableTextureStateRef> mutableState,
-                                   std::string_view label)
-        : fIsValid(true)
-        , fWidth(width)
-        , fHeight(height)
-        , fLabel(label)
-        , fMipmapped(GrMipmapped(vkInfo.fLevelCount > 1))
-        , fBackend(GrBackendApi::kVulkan)
-        , fTextureType(vk_image_info_to_texture_type(vkInfo))
-        , fVkInfo(apply_default_usage_flags(vkInfo, kDefaultTexRTUsageFlags))
-        , fMutableState(std::move(mutableState)) {}
-#endif
 
 #ifdef SK_METAL
 GrBackendTexture::GrBackendTexture(int width,
@@ -566,11 +362,7 @@ GrBackendTexture::~GrBackendTexture() {
 }
 
 void GrBackendTexture::cleanup() {
-#ifdef SK_VULKAN
-    if (this->isValid() && GrBackendApi::kVulkan == fBackend) {
-        fVkInfo.cleanup();
-    }
-#endif
+    fTextureData.reset();
 #ifdef SK_DIRECT3D
     if (this->isValid() && GrBackendApi::kDirect3D == fBackend) {
         fD3DInfo.cleanup();
@@ -583,6 +375,10 @@ GrBackendTexture::GrBackendTexture(const GrBackendTexture& that) : fIsValid(fals
 }
 
 GrBackendTexture& GrBackendTexture::operator=(const GrBackendTexture& that) {
+    if (this == &that) {
+        return *this;
+    }
+
     if (!that.isValid()) {
         this->cleanup();
         fIsValid = false;
@@ -590,7 +386,6 @@ GrBackendTexture& GrBackendTexture::operator=(const GrBackendTexture& that) {
     } else if (fIsValid && this->fBackend != that.fBackend) {
         this->cleanup();
         fIsValid = false;
-        fTextureData.reset();
     }
     fWidth = that.fWidth;
     fHeight = that.fHeight;
@@ -600,13 +395,10 @@ GrBackendTexture& GrBackendTexture::operator=(const GrBackendTexture& that) {
 
     switch (that.fBackend) {
         case GrBackendApi::kOpenGL:
-            fTextureData.reset(that.fTextureData->copy());
-            break;
-#ifdef SK_VULKAN
         case GrBackendApi::kVulkan:
-            fVkInfo.assign(that.fVkInfo, this->isValid());
+            fTextureData.reset();
+            that.fTextureData->copyTo(fTextureData);
             break;
-#endif
 #ifdef SK_METAL
         case GrBackendApi::kMetal:
             fMtlInfo = that.fMtlInfo;
@@ -617,51 +409,19 @@ GrBackendTexture& GrBackendTexture::operator=(const GrBackendTexture& that) {
             fD3DInfo.assign(that.fD3DInfo, this->isValid());
             break;
 #endif
-#ifdef SK_DAWN
-        case GrBackendApi::kDawn:
-            fDawnInfo = that.fDawnInfo;
-            break;
-#endif
         case GrBackendApi::kMock:
             fMockInfo = that.fMockInfo;
             break;
         default:
             SK_ABORT("Unknown GrBackend");
     }
-    fMutableState = that.fMutableState;
     fIsValid = true;
     return *this;
 }
 
 sk_sp<skgpu::MutableTextureStateRef> GrBackendTexture::getMutableState() const {
-    return fMutableState;
+    return fTextureData->getMutableState();
 }
-
-#ifdef SK_DAWN
-bool GrBackendTexture::getDawnTextureInfo(GrDawnTextureInfo* outInfo) const {
-    if (this->isValid() && GrBackendApi::kDawn == fBackend) {
-        *outInfo = fDawnInfo;
-        return true;
-    }
-    return false;
-}
-#endif
-
-#ifdef SK_VULKAN
-bool GrBackendTexture::getVkImageInfo(GrVkImageInfo* outInfo) const {
-    if (this->isValid() && GrBackendApi::kVulkan == fBackend) {
-        *outInfo = fVkInfo.snapImageInfo(fMutableState.get());
-        return true;
-    }
-    return false;
-}
-
-void GrBackendTexture::setVkImageLayout(VkImageLayout layout) {
-    if (this->isValid() && GrBackendApi::kVulkan == fBackend) {
-        fMutableState->setImageLayout(layout);
-    }
-}
-#endif
 
 #ifdef SK_METAL
 bool GrBackendTexture::getMtlTextureInfo(GrMtlTextureInfo* outInfo) const {
@@ -705,21 +465,16 @@ bool GrBackendTexture::getMockTextureInfo(GrMockTextureInfo* outInfo) const {
 }
 
 void GrBackendTexture::setMutableState(const skgpu::MutableTextureState& state) {
-    fMutableState->set(state);
+    fTextureData->setMutableState(state);
 }
 
 bool GrBackendTexture::isProtected() const {
     if (!this->isValid()) {
         return false;
     }
-    if (this->backend() == GrBackendApi::kOpenGL) {
+    if (this->backend() == GrBackendApi::kOpenGL || this->backend() == GrBackendApi::kVulkan) {
         return fTextureData->isProtected();
     }
-#ifdef SK_VULKAN
-    if (this->backend() == GrBackendApi::kVulkan) {
-        return fVkInfo.isProtected();
-    }
-#endif
     if (this->backend() == GrBackendApi::kMock) {
         return fMockInfo.isProtected();
     }
@@ -736,12 +491,8 @@ bool GrBackendTexture::isSameTexture(const GrBackendTexture& that) {
     }
     switch (fBackend) {
         case GrBackendApi::kOpenGL:
-            return fTextureData->isSameTexture(that.fTextureData.get());
-#ifdef SK_VULKAN
         case GrBackendApi::kVulkan:
-            return fVkInfo.snapImageInfo(fMutableState.get()).fImage ==
-                   that.fVkInfo.snapImageInfo(that.fMutableState.get()).fImage;
-#endif
+            return fTextureData->isSameTexture(that.fTextureData.get());
 #ifdef SK_METAL
         case GrBackendApi::kMetal:
             return this->fMtlInfo.fTexture == that.fMtlInfo.fTexture;
@@ -750,11 +501,6 @@ bool GrBackendTexture::isSameTexture(const GrBackendTexture& that) {
         case GrBackendApi::kDirect3D:
             return fD3DInfo.snapTextureResourceInfo().fResource ==
                     that.fD3DInfo.snapTextureResourceInfo().fResource;
-#endif
-#ifdef SK_DAWN
-        case GrBackendApi::kDawn: {
-            return this->fDawnInfo.fTexture.Get() == that.fDawnInfo.fTexture.Get();
-        }
 #endif
         case GrBackendApi::kMock:
             return fMockInfo.id() == that.fMockInfo.id();
@@ -769,18 +515,8 @@ GrBackendFormat GrBackendTexture::getBackendFormat() const {
     }
     switch (fBackend) {
         case GrBackendApi::kOpenGL:
+        case GrBackendApi::kVulkan:
             return fTextureData->getBackendFormat();
-#ifdef SK_VULKAN
-        case GrBackendApi::kVulkan: {
-            auto info = fVkInfo.snapImageInfo(fMutableState.get());
-            bool usesDRMModifier = info.fImageTiling == VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT;
-            if (info.fYcbcrConversionInfo.isValid()) {
-                SkASSERT(info.fFormat == info.fYcbcrConversionInfo.fFormat);
-                return GrBackendFormat::MakeVk(info.fYcbcrConversionInfo, usesDRMModifier);
-            }
-            return GrBackendFormat::MakeVk(info.fFormat, usesDRMModifier);
-        }
-#endif
 #ifdef SK_METAL
         case GrBackendApi::kMetal: {
             GrMtlTextureInfo mtlInfo;
@@ -794,11 +530,6 @@ GrBackendFormat GrBackendTexture::getBackendFormat() const {
             return GrBackendFormat::MakeDxgi(d3dInfo.fFormat);
         }
 #endif
-#ifdef SK_DAWN
-        case GrBackendApi::kDawn: {
-            return GrBackendFormat::MakeDawn(fDawnInfo.fFormat);
-        }
-#endif
         case GrBackendApi::kMock:
             return fMockInfo.getBackendFormat();
         default:
@@ -806,7 +537,7 @@ GrBackendFormat GrBackendTexture::getBackendFormat() const {
     }
 }
 
-#if GR_TEST_UTILS
+#if defined(GR_TEST_UTILS)
 bool GrBackendTexture::TestingOnly_Equals(const GrBackendTexture& t0, const GrBackendTexture& t1) {
     if (!t0.isValid() || !t1.isValid()) {
         return false; // two invalid backend textures are not considered equal
@@ -819,21 +550,12 @@ bool GrBackendTexture::TestingOnly_Equals(const GrBackendTexture& t0, const GrBa
         return false;
     }
 
-    // For our tests when checking equality we are assuming the both backendTexture objects will
-    // be using the same mutable state object.
-    if (t0.fMutableState != t1.fMutableState) {
-        return false;
-    }
-
     switch (t0.fBackend) {
         case GrBackendApi::kOpenGL:
+        case GrBackendApi::kVulkan:
             return t0.fTextureData->equal(t1.fTextureData.get());
         case GrBackendApi::kMock:
             return t0.fMockInfo == t1.fMockInfo;
-#ifdef SK_VULKAN
-        case GrBackendApi::kVulkan:
-            return t0.fVkInfo == t1.fVkInfo;
-#endif
 #ifdef SK_METAL
         case GrBackendApi::kMetal:
             return t0.fMtlInfo == t1.fMtlInfo;
@@ -841,10 +563,6 @@ bool GrBackendTexture::TestingOnly_Equals(const GrBackendTexture& t0, const GrBa
 #ifdef SK_DIRECT3D
         case GrBackendApi::kDirect3D:
             return t0.fD3DInfo == t1.fD3DInfo;
-#endif
-#ifdef SK_DAWN
-        case GrBackendApi::kDawn:
-            return t0.fDawnInfo == t1.fDawnInfo;
 #endif
         default:
             return false;
@@ -856,78 +574,6 @@ bool GrBackendTexture::TestingOnly_Equals(const GrBackendTexture& t0, const GrBa
 
 GrBackendRenderTarget::GrBackendRenderTarget() : fIsValid(false) {}
 
-GrBackendRenderTarget::GrBackendRenderTarget(int width,
-                                             int height,
-                                             int sampleCnt,
-                                             int stencilBits,
-                                             GrBackendApi backend,
-                                             bool framebufferOnly,
-                                             std::unique_ptr<const GrBackendRenderTargetData> data)
-        : fIsValid(data && data->isValid())
-        , fFramebufferOnly(framebufferOnly)
-        , fWidth(width)
-        , fHeight(height)
-        , fSampleCnt(sampleCnt)
-        , fStencilBits(stencilBits)
-        , fBackend(backend)
-        , fRTData(std::move(data)) {}
-
-#ifdef SK_DAWN
-GrBackendRenderTarget::GrBackendRenderTarget(int width,
-                                             int height,
-                                             int sampleCnt,
-                                             int stencilBits,
-                                             const GrDawnRenderTargetInfo& dawnInfo)
-        : fIsValid(true)
-        , fFramebufferOnly(true)
-        , fWidth(width)
-        , fHeight(height)
-        , fSampleCnt(sampleCnt)
-        , fStencilBits(stencilBits)
-        , fBackend(GrBackendApi::kDawn)
-        , fDawnInfo(dawnInfo) {}
-#endif
-
-#ifdef SK_VULKAN
-static GrVkImageInfo resolve_vkii_sample_count(const GrVkImageInfo& vkII, int sidebandSampleCnt) {
-    auto result = vkII;
-    result.fSampleCount = std::max({vkII.fSampleCount,
-                                    static_cast<uint32_t>(sidebandSampleCnt),
-                                    1U});
-    return result;
-}
-
-GrBackendRenderTarget::GrBackendRenderTarget(int width,
-                                             int height,
-                                             int sampleCnt,
-                                             const GrVkImageInfo& vkInfo)
-        : GrBackendRenderTarget(width, height, resolve_vkii_sample_count(vkInfo, sampleCnt)) {}
-
-GrBackendRenderTarget::GrBackendRenderTarget(int width,
-                                             int height,
-                                             const GrVkImageInfo& vkInfo)
-        : GrBackendRenderTarget(width, height, vkInfo,
-                                sk_sp<skgpu::MutableTextureStateRef>(
-                                        new skgpu::MutableTextureStateRef(
-                                                vkInfo.fImageLayout, vkInfo.fCurrentQueueFamily))) {}
-
-static const VkImageUsageFlags kDefaultRTUsageFlags =
-        kDefaultUsageFlags | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
-
-GrBackendRenderTarget::GrBackendRenderTarget(int width,
-                                             int height,
-                                             const GrVkImageInfo& vkInfo,
-                                             sk_sp<skgpu::MutableTextureStateRef> mutableState)
-        : fIsValid(true)
-        , fWidth(width)
-        , fHeight(height)
-        , fSampleCnt(std::max(1U, vkInfo.fSampleCount))
-        , fStencilBits(0)  // We always create stencil buffers internally for vulkan
-        , fBackend(GrBackendApi::kVulkan)
-        , fVkInfo(apply_default_usage_flags(vkInfo, kDefaultRTUsageFlags))
-        , fMutableState(mutableState) {}
-#endif
-
 #ifdef SK_METAL
 GrBackendRenderTarget::GrBackendRenderTarget(int width, int height, const GrMtlTextureInfo& mtlInfo)
         : fIsValid(true)
@@ -938,13 +584,6 @@ GrBackendRenderTarget::GrBackendRenderTarget(int width, int height, const GrMtlT
         , fStencilBits(0)
         , fBackend(GrBackendApi::kMetal)
         , fMtlInfo(mtlInfo) {}
-
-GrBackendRenderTarget::GrBackendRenderTarget(int width, int height,
-                                             int sampleCount,
-                                             const GrMtlTextureInfo& mtlInfo)
-        : GrBackendRenderTarget(width, height, mtlInfo) {
-    fSampleCnt = sampleCount;
-}
 #endif
 
 #ifdef SK_DIRECT3D
@@ -986,11 +625,7 @@ GrBackendRenderTarget::~GrBackendRenderTarget() {
 }
 
 void GrBackendRenderTarget::cleanup() {
-#ifdef SK_VULKAN
-    if (this->isValid() && GrBackendApi::kVulkan == fBackend) {
-        fVkInfo.cleanup();
-    }
-#endif
+    fRTData.reset();
 #ifdef SK_DIRECT3D
     if (this->isValid() && GrBackendApi::kDirect3D == fBackend) {
         fD3DInfo.cleanup();
@@ -1003,6 +638,10 @@ GrBackendRenderTarget::GrBackendRenderTarget(const GrBackendRenderTarget& that) 
 }
 
 GrBackendRenderTarget& GrBackendRenderTarget::operator=(const GrBackendRenderTarget& that) {
+    if (this == &that) {
+        return *this;
+    }
+
     if (!that.isValid()) {
         this->cleanup();
         fIsValid = false;
@@ -1019,17 +658,10 @@ GrBackendRenderTarget& GrBackendRenderTarget::operator=(const GrBackendRenderTar
 
     switch (that.fBackend) {
         case GrBackendApi::kOpenGL:
-            if (that.fRTData) {
-                fRTData.reset(that.fRTData->copy());
-            } else {
-                fRTData = nullptr;
-            }
-            break;
-#ifdef SK_VULKAN
         case GrBackendApi::kVulkan:
-            fVkInfo.assign(that.fVkInfo, this->isValid());
+            fRTData.reset();
+            that.fRTData->copyTo(fRTData);
             break;
-#endif
 #ifdef SK_METAL
         case GrBackendApi::kMetal:
             fMtlInfo = that.fMtlInfo;
@@ -1040,51 +672,19 @@ GrBackendRenderTarget& GrBackendRenderTarget::operator=(const GrBackendRenderTar
             fD3DInfo.assign(that.fD3DInfo, this->isValid());
             break;
 #endif
-#ifdef SK_DAWN
-        case GrBackendApi::kDawn:
-            fDawnInfo = that.fDawnInfo;
-            break;
-#endif
         case GrBackendApi::kMock:
             fMockInfo = that.fMockInfo;
             break;
         default:
             SK_ABORT("Unknown GrBackend");
     }
-    fMutableState = that.fMutableState;
     fIsValid = that.fIsValid;
     return *this;
 }
 
 sk_sp<skgpu::MutableTextureStateRef> GrBackendRenderTarget::getMutableState() const {
-    return fMutableState;
+    return fRTData->getMutableState();
 }
-
-#ifdef SK_DAWN
-bool GrBackendRenderTarget::getDawnRenderTargetInfo(GrDawnRenderTargetInfo* outInfo) const {
-    if (this->isValid() && GrBackendApi::kDawn == fBackend) {
-        *outInfo = fDawnInfo;
-        return true;
-    }
-    return false;
-}
-#endif
-
-#ifdef SK_VULKAN
-bool GrBackendRenderTarget::getVkImageInfo(GrVkImageInfo* outInfo) const {
-    if (this->isValid() && GrBackendApi::kVulkan == fBackend) {
-        *outInfo = fVkInfo.snapImageInfo(fMutableState.get());
-        return true;
-    }
-    return false;
-}
-
-void GrBackendRenderTarget::setVkImageLayout(VkImageLayout layout) {
-    if (this->isValid() && GrBackendApi::kVulkan == fBackend) {
-        fMutableState->setImageLayout(layout);
-    }
-}
-#endif
 
 #ifdef SK_METAL
 bool GrBackendRenderTarget::getMtlTextureInfo(GrMtlTextureInfo* outInfo) const {
@@ -1125,17 +725,8 @@ GrBackendFormat GrBackendRenderTarget::getBackendFormat() const {
     }
     switch (fBackend) {
         case GrBackendApi::kOpenGL:
+        case GrBackendApi::kVulkan:
             return fRTData->getBackendFormat();
-#ifdef SK_VULKAN
-        case GrBackendApi::kVulkan: {
-            auto info = fVkInfo.snapImageInfo(fMutableState.get());
-            if (info.fYcbcrConversionInfo.isValid()) {
-                SkASSERT(info.fFormat == info.fYcbcrConversionInfo.fFormat);
-                return GrBackendFormat::MakeVk(info.fYcbcrConversionInfo);
-            }
-            return GrBackendFormat::MakeVk(info.fFormat);
-        }
-#endif
 #ifdef SK_METAL
         case GrBackendApi::kMetal: {
             GrMtlTextureInfo mtlInfo;
@@ -1147,13 +738,6 @@ GrBackendFormat GrBackendRenderTarget::getBackendFormat() const {
         case GrBackendApi::kDirect3D: {
             auto info = fD3DInfo.snapTextureResourceInfo();
             return GrBackendFormat::MakeDxgi(info.fFormat);
-        }
-#endif
-#ifdef SK_DAWN
-        case GrBackendApi::kDawn: {
-            GrDawnRenderTargetInfo dawnInfo;
-            SkAssertResult(this->getDawnRenderTargetInfo(&dawnInfo));
-            return GrBackendFormat::MakeDawn(dawnInfo.fFormat);
         }
 #endif
         case GrBackendApi::kMock:
@@ -1172,21 +756,16 @@ bool GrBackendRenderTarget::getMockRenderTargetInfo(GrMockRenderTargetInfo* outI
 }
 
 void GrBackendRenderTarget::setMutableState(const skgpu::MutableTextureState& state) {
-    fMutableState->set(state);
+    fRTData->setMutableState(state);
 }
 
 bool GrBackendRenderTarget::isProtected() const {
     if (!this->isValid()) {
         return false;
     }
-    if (this->backend() == GrBackendApi::kOpenGL) {
+    if (this->backend() == GrBackendApi::kOpenGL || this->backend() == GrBackendApi::kVulkan) {
         return fRTData->isProtected();
     }
-#ifdef SK_VULKAN
-    if (this->backend() == GrBackendApi::kVulkan) {
-        return fVkInfo.isProtected();
-    }
-#endif
     if (this->backend() == GrBackendApi::kMock) {
         return fMockInfo.isProtected();
     }
@@ -1194,7 +773,7 @@ bool GrBackendRenderTarget::isProtected() const {
     return false;
 }
 
-#if GR_TEST_UTILS
+#if defined(GR_TEST_UTILS)
 bool GrBackendRenderTarget::TestingOnly_Equals(const GrBackendRenderTarget& r0,
                                                const GrBackendRenderTarget& r1) {
     if (!r0.isValid() || !r1.isValid()) {
@@ -1211,13 +790,10 @@ bool GrBackendRenderTarget::TestingOnly_Equals(const GrBackendRenderTarget& r0,
 
     switch (r0.fBackend) {
         case GrBackendApi::kOpenGL:
+        case GrBackendApi::kVulkan:
             return r0.fRTData->equal(r1.fRTData.get());
         case GrBackendApi::kMock:
             return r0.fMockInfo == r1.fMockInfo;
-#ifdef SK_VULKAN
-        case GrBackendApi::kVulkan:
-            return r0.fVkInfo == r1.fVkInfo;
-#endif
 #ifdef SK_METAL
         case GrBackendApi::kMetal:
             return r0.fMtlInfo == r1.fMtlInfo;
@@ -1225,10 +801,6 @@ bool GrBackendRenderTarget::TestingOnly_Equals(const GrBackendRenderTarget& r0,
 #ifdef SK_DIRECT3D
         case GrBackendApi::kDirect3D:
             return r0.fD3DInfo == r1.fD3DInfo;
-#endif
-#ifdef SK_DAWN
-        case GrBackendApi::kDawn:
-            return r0.fDawnInfo == r1.fDawnInfo;
 #endif
         default:
             return false;

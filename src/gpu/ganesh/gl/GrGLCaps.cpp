@@ -62,6 +62,7 @@ GrGLCaps::GrGLCaps(const GrContextOptions& contextOptions,
     fNeverDisableColorWrites = false;
     fMustSetAnyTexParameterToEnableMipmapping = false;
     fAllowBGRA8CopyTexSubImage = false;
+    fAllowSRGBCopyTexSubImage = false;
     fDisallowDynamicMSAA = false;
     fMustResetBlendFuncBetweenDualSourceAndDisable = false;
     fBindTexture0WhenChangingTextureFBOMultisampleCount = false;
@@ -77,7 +78,6 @@ GrGLCaps::GrGLCaps(const GrContextOptions& contextOptions,
     fFBFetchRequiresEnablePerSample = false;
     fSRGBWriteControl = false;
     fSkipErrorChecks = false;
-    fSupportsProtected = false;
 
     fShaderCaps = std::make_unique<GrShaderCaps>();
 
@@ -362,7 +362,7 @@ void GrGLCaps::init(const GrContextOptions& contextOptions,
     // When we are abandoning the context we cannot call into GL thus we should skip any sync work.
     fMustSyncGpuDuringAbandon = false;
 
-    fSupportsProtected = [&]() {
+    fSupportsProtectedContent = [&]() {
         if (!ctxInfo.hasExtension("GL_EXT_protected_textures")) {
             return false;
         }
@@ -371,7 +371,6 @@ void GrGLCaps::init(const GrContextOptions& contextOptions,
         GR_GL_GetIntegerv(gli, GR_GL_CONTEXT_FLAGS, &contextFlags);
         return SkToBool(contextFlags & GR_GL_CONTEXT_FLAG_PROTECTED_CONTENT_BIT_EXT);
     }();
-
 
     /**************************************************************************
     * GrShaderCaps fields
@@ -444,6 +443,8 @@ void GrGLCaps::init(const GrContextOptions& contextOptions,
                 ctxInfo.glslGeneration() < SkSL::GLSLGeneration::k300es;  // introduced in GLSL ES3
     } else if (GR_IS_GR_WEBGL(standard)) {
         shaderCaps->fRewriteSwitchStatements = version < GR_GL_VER(2, 0);  // introduced in WebGL 2
+        shaderCaps->fCanUseVoidInSequenceExpressions =
+                false;  // removed in WebGL 2, use workaround in all versions for safety
     }
 
     // Protect ourselves against tracking huge amounts of texture state.
@@ -3472,6 +3473,15 @@ bool GrGLCaps::canCopyTexSubImage(GrGLFormat dstFormat, bool dstHasMSAARenderBuf
             return false;
         }
 
+        // Table 3.9 of the ES2 spec indicates the supported formats with CopyTexSubImage
+        // and SRGB isn't in the spec. There doesn't appear to be any extension that adds it.
+        // ANGLE, for one, does not allow it. However, we've found it works on some drivers and
+        // avoids bugs with using glBlitFramebuffer.
+        if ((GrGLFormatIsSRGB(dstFormat) || GrGLFormatIsSRGB(srcFormat)) &&
+            !fAllowSRGBCopyTexSubImage) {
+            return false;
+        }
+
         // Table 3.9 of the ES2 spec and 3.16 of ES3 spec indicates the supported internal base
         // formats with CopyTexSubImage. Each base format can be copied to itself or formats with
         // less channels.
@@ -3755,6 +3765,12 @@ void GrGLCaps::applyDriverCorrectnessWorkarounds(const GrGLContextInfo& ctxInfo,
         ctxInfo.renderer() == GrGLRenderer::kMali4xx ||
         ctxInfo.renderer() == GrGLRenderer::kTegra_PreK1) {
         fAllowBGRA8CopyTexSubImage = true;
+    }
+    // glCopyTexSubImage2D works for sRGB with GLES 3.0 and on some GPUs with GLES 2.0
+    if (ctxInfo.version() >= GR_GL_VER(3, 0) ||
+        ctxInfo.renderer() == GrGLRenderer::kMali4xx ||
+        ctxInfo.renderer() == GrGLRenderer::kTegra_PreK1) {
+        fAllowSRGBCopyTexSubImage = true;
     }
 
     // http://anglebug.com/6030
@@ -4394,7 +4410,9 @@ void GrGLCaps::applyDriverCorrectnessWorkarounds(const GrGLContextInfo& ctxInfo,
     // We allow the client to pass in a GrContextOption flag to say they prefer having tex storage
     // support regadless of memory usage impacts. This is important for supporting Protected
     // textures as they require tex storage support.
-    if (ctxInfo.vendor() == GrGLVendor::kARM && !contextOptions.fAlwaysUseTexStorageWhenAvailable) {
+    if (ctxInfo.vendor() == GrGLVendor::kARM &&
+        !contextOptions.fAlwaysUseTexStorageWhenAvailable &&
+        !fSupportsProtectedContent) {
         formatWorkarounds->fDisableTexStorage = true;
     }
 #endif
@@ -5035,7 +5053,7 @@ GrProgramDesc GrGLCaps::makeDesc(GrRenderTarget* /* rt */,
     return desc;
 }
 
-#if GR_TEST_UTILS
+#if defined(GR_TEST_UTILS)
 std::vector<GrTest::TestFormatColorTypeCombination> GrGLCaps::getTestingCombinations() const {
     std::vector<GrTest::TestFormatColorTypeCombination> combos = {
         { GrColorType::kAlpha_8,

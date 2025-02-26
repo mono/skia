@@ -20,9 +20,11 @@
 
 class SkStreamAsset;
 
-/** SkPathWrapper implementation of PathWrapper FFI C++ interface which allows Rust to call back
+namespace sk_fontations {
+
+/** Implementation of PathWrapper FFI C++ interface which allows Rust to call back
  * into C++ without exposing Skia types on the interface, see skpath_bridge.h. */
-class SkPathWrapper : public fontations_ffi::PathWrapper {
+class PathGeometrySink : public fontations_ffi::PathWrapper {
 public:
     /* From fontations_ffi::PathWrapper. */
     void move_to(float x, float y) override;
@@ -34,15 +36,20 @@ public:
     SkPath into_inner() &&;
 
 private:
-    SkPath path_;
+    void going_to(SkPoint point);
+    bool current_is_not(SkPoint);
+
+    SkPath fPath;
+    bool fStarted;
+    SkPoint fCurrent;
 };
 
-/** SkAxiswrapper implementation of AxisWrapper FFI C++ interface, allowing Rust to call back into
+/** Implementation of AxisWrapper FFI C++ interface, allowing Rust to call back into
  * C++ for populating variable axis availability information, see skpath_bridge.h. */
-class SkAxisWrapper : public fontations_ffi::AxisWrapper {
+class AxisWrapper : public fontations_ffi::AxisWrapper {
 public:
-    SkAxisWrapper(SkFontParameters::Variation::Axis axisArray[], size_t axisCount);
-    SkAxisWrapper() = delete;
+    AxisWrapper(SkFontParameters::Variation::Axis axisArray[], size_t axisCount);
+    AxisWrapper() = delete;
     /* From fontations_ffi::AxisWrapper. */
     bool populate_axis(
             size_t i, uint32_t axisTag, float min, float def, float max, bool hidden) override;
@@ -53,6 +60,7 @@ private:
     size_t fAxisCount;
 };
 
+}  // namespace sk_fontations
 
 /** SkTypeface implementation based on Google Fonts Fontations Rust libraries. */
 class SkTypeface_Fontations : public SkTypeface {

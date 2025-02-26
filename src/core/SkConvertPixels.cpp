@@ -16,9 +16,9 @@
 #include "src/base/SkRectMemcpy.h"
 #include "src/core/SkColorSpaceXformSteps.h"
 #include "src/core/SkImageInfoPriv.h"
-#include "src/core/SkOpts.h"
 #include "src/core/SkRasterPipeline.h"
 #include "src/core/SkRasterPipelineOpContexts.h"
+#include "src/core/SkSwizzlePriv.h"
 
 #include <cstdint>
 #include <cstring>

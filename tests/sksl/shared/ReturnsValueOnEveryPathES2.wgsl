@@ -110,8 +110,7 @@ fn if_else_chain_b() -> bool {
   }
   return bool();
 }
-fn main(_skParam0: vec2<f32>) -> vec4<f32> {
-  let coords = _skParam0;
+fn _skslMain(coords: vec2<f32>) -> vec4<f32> {
   {
     var _skTemp0: vec4<f32>;
     var _skTemp1: bool;
@@ -157,8 +156,8 @@ fn main(_skParam0: vec2<f32>) -> vec4<f32> {
     return _skTemp0;
   }
 }
-@fragment fn fragmentMain(_stageIn: FSIn) -> FSOut {
+@fragment fn main(_stageIn: FSIn) -> FSOut {
   var _stageOut: FSOut;
-  _stageOut.sk_FragColor = main(_stageIn.sk_FragCoord.xy);
+  _stageOut.sk_FragColor = _skslMain(_stageIn.sk_FragCoord.xy);
   return _stageOut;
 }

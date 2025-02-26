@@ -13,6 +13,7 @@
 
 #include "src/core/SkSLTypeShared.h"
 #include "src/gpu/Blend.h"
+#include "src/gpu/PipelineUtils.h"
 #include "src/gpu/Swizzle.h"
 #include "src/gpu/graphite/ComputePipelineDesc.h"
 #include "src/gpu/graphite/ContextUtils.h"
@@ -39,8 +40,9 @@ namespace skgpu::graphite {
 
 MtlResourceProvider::MtlResourceProvider(SharedContext* sharedContext,
                                          SingleOwner* singleOwner,
-                                         uint32_t recorderID)
-        : ResourceProvider(sharedContext, singleOwner, recorderID) {}
+                                         uint32_t recorderID,
+                                         size_t resourceBudget)
+        : ResourceProvider(sharedContext, singleOwner, recorderID, resourceBudget) {}
 
 const MtlSharedContext* MtlResourceProvider::mtlSharedContext() {
     return static_cast<const MtlSharedContext*>(fSharedContext);
@@ -161,16 +163,16 @@ sk_sp<GraphicsPipeline> MtlResourceProvider::createGraphicsPipeline(
     sk_cfp<id<MTLDepthStencilState>> dss =
             this->findOrCreateCompatibleDepthStencilState(step->depthStencilSettings());
 
-#if GRAPHITE_TEST_UTILS
-    GraphicsPipeline::Shaders pipelineShaders = {
-        std::move(vsSkSL),
-        std::move(fsSkSL),
-        std::move(vsMSL),
-        std::move(fsMSL),
-    };
-    GraphicsPipeline::Shaders* pipelineShadersPtr = &pipelineShaders;
+#if defined(GRAPHITE_TEST_UTILS)
+    GraphicsPipeline::PipelineInfo pipelineInfo = {pipelineDesc.renderStepID(),
+                                                   pipelineDesc.paintParamsID(),
+                                                   std::move(vsSkSL),
+                                                   std::move(fsSkSL),
+                                                   std::move(vsMSL),
+                                                   std::move(fsMSL) };
+    GraphicsPipeline::PipelineInfo* pipelineInfoPtr = &pipelineInfo;
 #else
-    GraphicsPipeline::Shaders* pipelineShadersPtr = nullptr;
+    GraphicsPipeline::PipelineInfo* pipelineInfoPtr = nullptr;
 #endif
     return MtlGraphicsPipeline::Make(this->mtlSharedContext(),
                                      step->name(),
@@ -182,7 +184,7 @@ sk_sp<GraphicsPipeline> MtlResourceProvider::createGraphicsPipeline(
                                      step->depthStencilSettings().fStencilReferenceValue,
                                      blendInfo,
                                      renderPassDesc,
-                                     pipelineShadersPtr);
+                                     pipelineInfoPtr);
 }
 
 sk_sp<ComputePipeline> MtlResourceProvider::createComputePipeline(

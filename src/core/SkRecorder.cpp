@@ -23,7 +23,6 @@
 #include "include/core/SkSurface.h"
 #include "include/core/SkTextBlob.h"
 #include "include/core/SkVertices.h"
-#include "include/private/base/SkAssert.h"
 #include "include/private/base/SkFloatingPoint.h"
 #include "include/private/base/SkTemplates.h"
 #include "include/private/base/SkTo.h"
@@ -276,11 +275,9 @@ void SkRecorder::onDrawVerticesObject(const SkVertices* vertices, SkBlendMode bm
                                           bmode);
 }
 
-#ifdef SK_ENABLE_SKSL
 void SkRecorder::onDrawMesh(const SkMesh& mesh, sk_sp<SkBlender> blender, const SkPaint& paint) {
     this->append<SkRecords::DrawMesh>(paint, mesh, std::move(blender));
 }
-#endif
 
 void SkRecorder::onDrawPatch(const SkPoint cubics[12], const SkColor colors[4],
                              const SkPoint texCoords[4], SkBlendMode bmode,

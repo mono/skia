@@ -80,13 +80,9 @@ class GrGLBackendTextureInfo {
 public:
     GrGLBackendTextureInfo(const GrGLTextureInfo& info, sk_sp<GrGLTextureParameters> params)
             : fInfo(info), fParams(params) {}
-    GrGLBackendTextureInfo(const GrGLBackendTextureInfo&) = delete;
-    GrGLBackendTextureInfo& operator=(const GrGLBackendTextureInfo&) = delete;
     const GrGLTextureInfo& info() const { return fInfo; }
     GrGLTextureParameters* parameters() const { return fParams.get(); }
     sk_sp<GrGLTextureParameters> refParameters() const { return fParams; }
-
-    void assign(const GrGLBackendTextureInfo&, bool thisIsValid);
 
     bool isProtected() const { return fInfo.isProtected(); }
 

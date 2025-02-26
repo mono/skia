@@ -98,12 +98,6 @@ alias(
     visibility = ["//visibility:public"],
 )
 
-alias(
-    name = "default_logging",
-    actual = "//src/ports:default_logging",
-    visibility = ["//visibility:public"],
-)
-
 # Load bearing comment below - gazelle looks here (and not in any other BUILD.bazel files)
 # for a special comment indicating the prefix.
 # gazelle:prefix go.skia.org/skia
@@ -138,4 +132,17 @@ config_setting(
 config_setting(
     name = "always_true_1",
     values = {"stamp": "1"},
+)
+
+test_suite(
+    name = "all_go_tests",
+    tests = [
+        # Go tests in this list will be tested in CI. Please add any new Go tests to this suite.
+        "//bazel/exporter:exporter_test",
+        "//infra/bots/task_drivers/bazel_test_gm:bazel_test_gm_test",
+        "//infra/bots/task_drivers/codesize:codesize_test",
+        "//infra/bots/task_drivers/perf_puppeteer_canvas:perf_puppeteer_canvas_test",
+        "//infra/bots/task_drivers/perf_puppeteer_render_skps:perf_puppeteer_render_skps_test",
+        "//infra/bots/task_drivers/perf_puppeteer_skottie_frames:perf_puppeteer_skottie_frames_test",
+    ],
 )

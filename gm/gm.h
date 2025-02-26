@@ -17,6 +17,7 @@
 #include "tools/Registry.h"
 
 #include <functional>
+#include <map>
 #include <memory>
 
 class GrRecordingContext;
@@ -148,8 +149,9 @@ namespace skiagm {
         }
         DrawResult drawContent(SkCanvas*, SkString* errorMsg);
 
-        SkISize getISize() { return this->onISize(); }
-        const char* getName();
+        virtual SkISize getISize() = 0;
+
+        virtual SkString getName() const = 0;
 
         virtual bool runAsBench() const;
 
@@ -200,6 +202,16 @@ namespace skiagm {
         // TODO(lovisolo): Delete once it's no longer needed.
         virtual bool isBazelOnly() const { return false; }
 
+        // Ignored by DM. Returns the set of Gold key/value pairs specific to this GM, such as the
+        // GM name and corpus. GMs may define additional keys. For example, codec GMs define keys
+        // for the parameters utilized to initialize the codec.
+        virtual std::map<std::string, std::string> getGoldKeys() const {
+            return std::map<std::string, std::string>{
+                    {"name", getName().c_str()},
+                    {"source_type", "gm"},
+            };
+        }
+
     protected:
         // onGpuSetup is called once before any other processing with a direct context.
         virtual DrawResult onGpuSetup(SkCanvas*, SkString*) { return DrawResult::kOk; }
@@ -208,16 +220,12 @@ namespace skiagm {
         virtual DrawResult onDraw(SkCanvas*, SkString* errorMsg);
         virtual void onDraw(SkCanvas*);
 
-        virtual SkISize onISize() = 0;
-        virtual SkString onShortName() = 0;
-
         virtual bool onAnimate(double /*nanos*/);
         virtual bool onGetControls(SkMetaData*);
         virtual void onSetControls(const SkMetaData&);
 
     private:
-        Mode       fMode;
-        SkString   fShortName;
+        Mode fMode;
         SkColor    fBGColor;
         bool       fHaveCalledOnceBeforeDraw = false;
         bool       fGpuSetup = false;
@@ -231,7 +239,8 @@ namespace skiagm {
     void Register(skiagm::GM* gm);
 
     // Registry of functions that dynamically register GMs. Useful for GMs that are unknown at
-    // compile time, such as those that are created from images in a directory.
+    // compile time, such as those that are created from images in a directory (see e.g.
+    // //gm/png_codec.cpp).
     //
     // A GMRegistererFn may call skiagm::Register() zero or more times to register GMs as needed.
     // It should return the empty string on success, or a human-friendly message in the case of
@@ -272,9 +281,10 @@ namespace skiagm {
         SimpleGM(SkColor bgColor, const SkString& name, const SkISize& size, DrawProc drawProc)
                 : GM(bgColor), fName(name), fSize(size), fDrawProc(drawProc) {}
 
+        SkString getName() const override;
+        SkISize getISize() override;
+
     private:
-        SkISize onISize() override;
-        SkString onShortName() override;
         DrawResult onDraw(SkCanvas* canvas, SkString* errorMsg) override;
 
         const SkString fName;
@@ -290,9 +300,10 @@ namespace skiagm {
         SimpleGpuGM(SkColor bgColor, const SkString& name, const SkISize& size, DrawProc drawProc)
                 : GpuGM(bgColor), fName(name), fSize(size), fDrawProc(drawProc) {}
 
+        SkString getName() const override;
+        SkISize getISize() override;
+
     private:
-        SkISize onISize() override;
-        SkString onShortName() override;
         DrawResult onDraw(GrRecordingContext*, SkCanvas*, SkString* errorMsg) override;
 
         const SkString fName;

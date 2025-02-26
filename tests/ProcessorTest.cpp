@@ -268,7 +268,7 @@ static DEFINE_bool(randomProcessorTest, false,
 static DEFINE_int(processorSeed, 0,
                   "Use specific seed for processor tests. Overridden by --randomProcessorTest.");
 
-#if GR_TEST_UTILS
+#if defined(GR_TEST_UTILS)
 
 static GrColor input_texel_color(int x, int y, SkScalar delta) {
     // Delta must be less than 0.5 to prevent over/underflow issues with the input color
@@ -582,10 +582,10 @@ static bool legal_modulation(const GrColor inGr[3], const GrColor outGr[3]) {
     return isLegalColorModulation || isLegalAlphaModulation;
 }
 
-DEF_GANESH_TEST_FOR_GL_RENDERING_CONTEXTS(ProcessorOptimizationValidationTest,
-                                          reporter,
-                                          ctxInfo,
-                                          CtsEnforcement::kNever) {
+DEF_GANESH_TEST_FOR_GL_CONTEXT(ProcessorOptimizationValidationTest,
+                               reporter,
+                               ctxInfo,
+                               CtsEnforcement::kNever) {
     GrDirectContext* context = ctxInfo.directContext();
     GrResourceProvider* resourceProvider = context->priv().resourceProvider();
     using FPFactory = GrFragmentProcessorTestFactory;
@@ -951,10 +951,7 @@ static void log_clone_failure(skiatest::Reporter* reporter, int renderSize,
 
 // Tests that a fragment processor returned by GrFragmentProcessor::clone() is equivalent to its
 // progenitor.
-DEF_GANESH_TEST_FOR_GL_RENDERING_CONTEXTS(ProcessorCloneTest,
-                                          reporter,
-                                          ctxInfo,
-                                          CtsEnforcement::kNever) {
+DEF_GANESH_TEST_FOR_GL_CONTEXT(ProcessorCloneTest, reporter, ctxInfo, CtsEnforcement::kNever) {
     GrDirectContext* context = ctxInfo.directContext();
     GrResourceProvider* resourceProvider = context->priv().resourceProvider();
 
@@ -1044,4 +1041,4 @@ DEF_GANESH_TEST_FOR_GL_RENDERING_CONTEXTS(ProcessorCloneTest,
     }
 }
 
-#endif  // GR_TEST_UTILS
+#endif  // defined(GR_TEST_UTILS)

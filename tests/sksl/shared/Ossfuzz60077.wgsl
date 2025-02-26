@@ -11,34 +11,31 @@ fn d_vi(_skParam0: i32) {
     var b: i32 = 4;
   }
 }
-fn c_vi(_skParam0: i32) {
-  let i = _skParam0;
+fn c_vi(i: i32) {
   {
     d_vi(i);
   }
 }
-fn b_vi(_skParam0: i32) {
-  let i = _skParam0;
+fn b_vi(i: i32) {
   {
     c_vi(i);
   }
 }
-fn a_vi(_skParam0: i32) {
-  let i = _skParam0;
+fn a_vi(i: i32) {
   {
     b_vi(i);
     b_vi(i);
   }
 }
-fn main(_skParam0: vec2<f32>) -> vec4<f32> {
+fn _skslMain(_skParam0: vec2<f32>) -> vec4<f32> {
   {
     var i: i32;
     a_vi(i);
     return vec4<f32>(0.0);
   }
 }
-@fragment fn fragmentMain(_stageIn: FSIn) -> FSOut {
+@fragment fn main(_stageIn: FSIn) -> FSOut {
   var _stageOut: FSOut;
-  _stageOut.sk_FragColor = main(_stageIn.sk_FragCoord.xy);
+  _stageOut.sk_FragColor = _skslMain(_stageIn.sk_FragCoord.xy);
   return _stageOut;
 }

@@ -14,6 +14,7 @@
 #include "include/core/SkCanvas.h"
 #include "include/core/SkData.h"
 #include "include/core/SkPicture.h"
+#include "include/gpu/graphite/ContextOptions.h"
 #include "src/utils/SkMultiPictureDocument.h"
 #include "tools/flags/CommonFlagsConfig.h"
 #include "tools/gpu/MemoryCache.h"
@@ -380,7 +381,7 @@ public:
                   std::function<void(GrDirectContext*)> initContext = nullptr,
                   std::function<SkCanvas*(SkCanvas*)> wrapCanvas = nullptr) const;
 
-    sk_gpu_test::GrContextFactory::ContextType contextType() const { return fContextType; }
+    skgpu::ContextType contextType() const { return fContextType; }
     const sk_gpu_test::GrContextFactory::ContextOverrides& contextOverrides() const {
         return fContextOverrides;
     }
@@ -403,7 +404,7 @@ protected:
     bool readBack(SkSurface*, SkBitmap* dst) const;
 
 private:
-    sk_gpu_test::GrContextFactory::ContextType        fContextType;
+    skgpu::ContextType                                fContextType;
     sk_gpu_test::GrContextFactory::ContextOverrides   fContextOverrides;
     SkCommandLineConfigGpu::SurfType                  fSurfType;
     int                                               fSampleCount;
@@ -572,21 +573,20 @@ private:
 
 class GraphiteSink : public Sink {
 public:
-    using ContextType = sk_gpu_test::GrContextFactory::ContextType;
-
     GraphiteSink(const SkCommandLineConfigGraphite*);
 
     Result draw(const Src&, SkBitmap*, SkWStream*, SkString*) const override;
     bool serial() const override { return true; }
     const char* fileExtension() const override { return "png"; }
-    SinkFlags flags() const override { return SinkFlags{ SinkFlags::kGPU, SinkFlags::kDirect }; }
+    SinkFlags flags() const override { return SinkFlags{SinkFlags::kGPU, SinkFlags::kDirect}; }
     void setColorSpace(sk_sp<SkColorSpace> colorSpace) override { fColorSpace = colorSpace; }
     SkColorInfo colorInfo() const override {
         return SkColorInfo(fColorType, fAlphaType, fColorSpace);
     }
 
 private:
-    ContextType fContextType;
+    skgpu::graphite::ContextOptions fBaseContextOptions;
+    skgpu::ContextType fContextType;
     SkColorType fColorType;
     SkAlphaType fAlphaType;
     sk_sp<SkColorSpace> fColorSpace;
