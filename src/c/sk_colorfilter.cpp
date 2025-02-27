@@ -36,6 +36,22 @@ sk_colorfilter_t* sk_colorfilter_new_color_matrix(const float array[20]) {
     return ToColorFilter(SkColorFilters::Matrix(array).release());
 }
 
+sk_colorfilter_t* sk_colorfilter_new_hsla_matrix(const float array[20]) {
+    return ToColorFilter(SkColorFilters::HSLAMatrix(array).release());
+}
+
+sk_colorfilter_t* sk_colorfilter_new_linear_to_srgb_gamma(void) {
+    return ToColorFilter(SkColorFilters::LinearToSRGBGamma().release());
+}
+
+sk_colorfilter_t* sk_colorfilter_new_srgb_to_linear_gamma(void) {
+    return ToColorFilter(SkColorFilters::SRGBToLinearGamma().release());
+}
+
+sk_colorfilter_t* sk_colorfilter_new_lerp(float weight, sk_colorfilter_t* filter0, sk_colorfilter_t* filter1) {
+    return ToColorFilter(SkColorFilters::Lerp(weight, sk_ref_sp(AsColorFilter(filter0)), sk_ref_sp(AsColorFilter(filter1))).release());
+}
+
 sk_colorfilter_t* sk_colorfilter_new_luma_color(void) {
     return ToColorFilter(SkLumaColorFilter::Make().release());
 }
