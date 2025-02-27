@@ -42,7 +42,7 @@ deps = {
   "third_party/externals/libgrapheme"            : "https://skia.googlesource.com/external/github.com/FRIGN/libgrapheme/@c0cab63c5300fa12284194fbef57aa2ed62a94c0",
   "third_party/externals/libjpeg-turbo"          : "https://chromium.googlesource.com/chromium/deps/libjpeg_turbo.git@927aabfcd26897abb9776ecf2a6c38ea5bb52ab6",
   "third_party/externals/libjxl"                 : "https://chromium.googlesource.com/external/gitlab.com/wg1/jpeg-xl.git@a205468bc5d3a353fb15dae2398a101dff52f2d3",
-  "third_party/externals/libpng"                 : "https://skia.googlesource.com/third_party/libpng.git@f135775ad4e5d4408d2e12ffcc71bb36e6b48551",
+  "third_party/externals/libpng"                 : "https://skia.googlesource.com/third_party/libpng.git@f5e92d76973a7a53f517579bc95d61483bf108c0",
   "third_party/externals/libwebp"                : "https://chromium.googlesource.com/webm/libwebp.git@ca332209cb5567c9b249c86788cb2dbf8847e760",
   "third_party/externals/libyuv"                 : "https://chromium.googlesource.com/libyuv/libyuv.git@d248929c059ff7629a85333699717d7a677d8d96",
   "third_party/externals/microhttpd"             : "https://android.googlesource.com/platform/external/libmicrohttpd@748945ec6f1c67b7efc934ab0808e1d32f2fb98d",
