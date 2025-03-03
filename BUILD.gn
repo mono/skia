@@ -699,7 +699,8 @@ if (skia_compile_modules) {
         dir = get_path_info(dst, "dir")
         name = get_path_info(dst, "name")
         ext = get_path_info(dst, "extension")
-        if (ext == "rts" || ext == "rtcf" || ext == "rtb") {
+        if (ext == "rts" || ext == "rtcf" || ext == "rtb" || ext == "mfrag" ||
+            ext == "mvert") {
           response_file_contents += [ rebase_path(src) ]
           sources += [ src ]
           outputs += [ target_out_dir + "/" +
@@ -1376,7 +1377,10 @@ optional("typeface_fontations") {
     "src/ports/SkTypeface_fontations_priv.h",
   ]
 
-  sources_for_tests = [ "tests/FontationsTest.cpp" ]
+  sources_for_tests = [
+    "tests/FontationsTest.cpp",
+    "tests/FontationsFtCompTest.cpp",
+  ]
 }
 
 optional("webp_decode") {
@@ -1509,7 +1513,6 @@ skia_component("skia") {
     "src/codec/SkSampledCodec.cpp",
     "src/ports/SkDiscardableMemory_none.cpp",
     "src/ports/SkGlobalInitialization_default.cpp",
-    "src/ports/SkImageGenerator_skia.cpp",
     "src/ports/SkMemory_malloc.cpp",
     "src/ports/SkOSFile_stdio.cpp",
     "src/sfnt/SkOTTable_name.cpp",
@@ -1969,8 +1972,6 @@ if (skia_enable_tools) {
       "tools/gpu/TestOps.h",
       "tools/gpu/YUVUtils.cpp",
       "tools/gpu/YUVUtils.h",
-      "tools/gpu/gl/GLTestContext.cpp",  # See comment below about
-                                         # GrContextFactory workaround.
       "tools/gpu/mock/MockTestContext.cpp",
     ]
     sources += skia_utils_gpu
@@ -1979,6 +1980,7 @@ if (skia_enable_tools) {
     frameworks = []
 
     if (skia_use_gl) {
+      sources += [ "tools/gpu/gl/GLTestContext.cpp" ]
       if (is_ios) {
         sources += [ "tools/gpu/gl/iOS/CreatePlatformGLTestContext_iOS.mm" ]
         frameworks += [ "OpenGLES.framework" ]
@@ -2140,6 +2142,8 @@ if (skia_enable_tools) {
       "tools/SkSharingProc.cpp",
       "tools/SkSharingProc.h",
       "tools/Stats.h",
+      "tools/TestFontDataProvider.cpp",
+      "tools/TestFontDataProvider.h",
       "tools/ToolUtils.cpp",
       "tools/ToolUtils.h",
       "tools/UrlDataManager.cpp",
@@ -2279,6 +2283,9 @@ if (skia_enable_tools) {
       }
       if (skia_use_metal) {
         sources += graphite_metal_tests_sources
+      }
+      if (skia_use_vulkan) {
+        sources += graphite_vulkan_tests_sources
       }
     }
     if (!skia_enable_ganesh) {

@@ -2,6 +2,35 @@ Skia Graphics Release Notes
 
 This file includes a list of high level updates for each milestone release.
 
+Milestone 119
+-------------
+  * Added new `SkImageFilters::Crop(SkRect, SkTileMode, sk_sp<SkImageFilter>)` image filter effect that crops the output from the wrapped SkImageFilter and optionally applies the SkTileMode when sampling outside of the crop rect.
+  * `GrDirectContext::MakeGL...` has been moved to `GrDirectContexts::MakeGL...` which are defined
+    in `include/gpu/ganesh/gl/GrGLDirectContext.h`
+  * `GrDirectContext::submit` and `GrDirectContext::flushAndSubmit` calls now take a GrSyncCpu enum
+    instead of a error-prone boolean.
+
+    Similarly, calls to `GrDirectContext::performDeferredCleanup` and
+    `GrDirectContext::purgeUnlockedResources` take a GrPurgeResourceOptions enum.
+  * SkMeshSpecification no longer rejects fragment programs which include `uniform shader`, `uniform
+    colorFilter` or `uniform blender`. However, `SkMesh::Make` will not allow the mesh specification
+    to be used.
+  * `SkMesh::Make` and `SkMesh::MakeIndexed` now require a span of child effects as a new parameter.
+    This functionality is still a work in progress; for now, always pass an empty span.
+  * `sksl-minify` can now minify SkMesh programs. Pass `--meshvert` or `--meshfrag` to indicate
+    that the input program is an SkMesh vertex or fragment program. When minifying a mesh program,
+    you must supply `struct Varyings` and `struct Attributes` which correspond to the
+    SkMeshSpecification; these will be eliminated from the minified output.
+  * `SkMergePathEffect`, `SkMatrixPathEffect`, `SkStrokePathEffect`, and
+    `SkStrokeAndFillPathEffect` have been removed from the public API.
+    These effects can be implemented on the SkPath objects directly using other means and clients
+    will likely find performance boosts by doing so.
+  * `SkShadowFlags` are now visible in `include/utils/SkShadowUtils.h`
+  * `SkPicture`s no longer serialize `SkImage`s to PNG encoded data by default. Clients who wish to
+    preserve this should make use of `SkSerialProcs`, specifically the `fImageProc` field.
+
+* * *
+
 Milestone 118
 -------------
   * `GrDirectContext::flush` variants now expect a SkSurface pointer only, not
@@ -15,14 +44,14 @@ Milestone 118
     Raster:   `SkImages::MakeWithFilter(...);`                              -- declared in SkImage.h
 
     The new factories require the associated backend context object be valid. For example, the Graphite version will return nullptr if it isn't supplied with a `Recorder` object.
-  * - SkSL and Runtime Effects are no longer optional features of Skia; they are always available.
-      The GN flag `skia_enable_sksl` has been removed.
-  * - SkSL will now properly reject sequence-expressions containing arrays, or sequence-expressions
-      containing structures of arrays. Previously, the left-side expression of a sequence was checked,
-      but the right-side was not. In GLSL ES 1.0, and therefore in SkSL, the only operator which is
-      allowed to operate on arrays is the array subscript operator (`[]`).
-  * - The Dawn backend for Ganesh has been removed. Dawn will continue to be supported in the
-      Graphite backend.
+  * SkSL and Runtime Effects are no longer optional features of Skia; they are always available.
+    The GN flag `skia_enable_sksl` has been removed.
+  * SkSL will now properly reject sequence-expressions containing arrays, or sequence-expressions
+    containing structures of arrays. Previously, the left-side expression of a sequence was checked,
+    but the right-side was not. In GLSL ES 1.0, and therefore in SkSL, the only operator which is
+    allowed to operate on arrays is the array subscript operator (`[]`).
+  * The Dawn backend for Ganesh has been removed. Dawn will continue to be supported in the
+    Graphite backend.
   * We plan to remove SkTime.h from the public API. As of now, SkAutoTime has been
     deleted as it was unused.
   * Vulkan-specific calls are being removed from GrBackendSurface.h. Clients should use the

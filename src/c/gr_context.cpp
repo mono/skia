@@ -112,23 +112,23 @@ void gr_direct_context_get_resource_cache_usage(gr_direct_context_t* context, in
 }
 
 void gr_direct_context_flush(gr_direct_context_t* context) {
-    SK_ONLY_GPU(AsGrDirectContext(context)->flush());
+    SK_ONLY_GPU(AsGrDirectContext(context)->flush(GrFlushInfo()));
 }
 
 bool gr_direct_context_submit(gr_direct_context_t* context, bool syncCpu) {
-    return SK_ONLY_GPU(AsGrDirectContext(context)->submit(syncCpu), false);
+    return SK_ONLY_GPU(AsGrDirectContext(context)->submit((GrSyncCpu)syncCpu), false);
 }
 
 void gr_direct_context_flush_and_submit(gr_direct_context_t* context, bool syncCpu) {
-    SK_ONLY_GPU(AsGrDirectContext(context)->flushAndSubmit(syncCpu));
+    SK_ONLY_GPU(AsGrDirectContext(context)->flushAndSubmit((GrSyncCpu)syncCpu));
 }
 
 void gr_direct_context_flush_image(gr_direct_context_t* context, const sk_image_t* image) {
-    SK_ONLY_GPU(AsGrDirectContext(context)->flush(sk_ref_sp(AsImage(image))));
+    SK_ONLY_GPU(AsGrDirectContext(context)->flush(sk_ref_sp(AsImage(image)), GrFlushInfo()));
 }
 
 void gr_direct_context_flush_surface(gr_direct_context_t* context, sk_surface_t* surface) {
-    SK_ONLY_GPU(AsGrDirectContext(context)->flush(sk_ref_sp(AsSurface(surface))));
+    SK_ONLY_GPU(AsGrDirectContext(context)->flush(AsSurface(surface), GrFlushInfo()));
 }
 
 void gr_direct_context_reset_context(gr_direct_context_t* context, uint32_t state) {
@@ -152,7 +152,7 @@ void gr_direct_context_purge_unlocked_resources_bytes(gr_direct_context_t* conte
 }
 
 void gr_direct_context_purge_unlocked_resources(gr_direct_context_t* context, bool scratchResourcesOnly) {
-    SK_ONLY_GPU(AsGrDirectContext(context)->purgeUnlockedResources(scratchResourcesOnly));
+    SK_ONLY_GPU(AsGrDirectContext(context)->purgeUnlockedResources(scratchResourcesOnly ? GrPurgeResourceOptions::kScratchResourcesOnly : GrPurgeResourceOptions::kAllResources));
 }
 
 

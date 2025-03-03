@@ -27,6 +27,7 @@ skia_filegroup(
     name = "sksl_minify_tests_sources",
     srcs = [
         ":sksl_folding_tests",
+        ":sksl_mesh_tests",
         ":sksl_rte_tests",
     ],
     visibility = ["//tools/sksl-minify:__pkg__"],
@@ -87,6 +88,8 @@ skia_filegroup(
 skia_filegroup(
     name = "sksl_stage_tests_sources",
     srcs = [
+        ":sksl_mesh_error_tests",
+        ":sksl_mesh_tests",
         ":sksl_rte_tests",
     ],
     visibility = ["//tools/skslc:__pkg__"],
@@ -122,6 +125,7 @@ skia_filegroup(
     name = "sksl_wgsl_tests_sources",
     srcs = [
         ":sksl_blend_tests",
+        ":sksl_compute_tests",
         ":sksl_folding_tests",
         ":sksl_shared_tests",
         ":sksl_wgsl_tests",
@@ -294,11 +298,11 @@ skia_filegroup(
         "errors/InvalidBackendBindingFlagsMetal.sksl",
         "errors/InvalidBackendBindingFlagsSPIRV.sksl",
         "errors/InvalidBackendBindingFlagsWGSL.sksl",
+        "errors/InvalidComputeMainParameters.compute",
+        "errors/InvalidComputeMainReturn.compute",
         "errors/InvalidExtensionDirective.sksl",
         "errors/InvalidInOutType.compute",
         "errors/InvalidLocalSizeQualifier.compute",
-        "errors/InvalidMainParameters.compute",
-        "errors/InvalidMainReturn.compute",
         "errors/InvalidOutParams.sksl",
         "errors/InvalidToken.rts",
         "errors/InvalidUnary.rts",
@@ -535,7 +539,6 @@ skia_filegroup(
     name = "sksl_glsl_tests",
     srcs = [
         "glsl/ForceHighPrecision.sksl",
-        "glsl/IncompleteShortIntPrecision.sksl",
         "glsl/LastFragColor.sksl",
         "glsl/LastFragColorWithoutCaps.sksl",
         "glsl/LayoutQualifiers.sksl",
@@ -614,6 +617,30 @@ skia_filegroup(
         "metal/OutVarsRequireLocation.sksl",
         "metal/SamplerGlobals.sksl",
         "metal/SwizzleHelper.sksl",
+    ],
+)
+
+skia_filegroup(
+    name = "sksl_mesh_tests",
+    srcs = [
+        "mesh/MeshFragment.mfrag",
+        "mesh/MeshFragmentWithBlender.mfrag",
+        "mesh/MeshFragmentWithColorFilter.mfrag",
+        "mesh/MeshFragmentWithShader.mfrag",
+        "mesh/MeshVertex.mvert",
+    ],
+)
+
+skia_filegroup(
+    name = "sksl_mesh_error_tests",
+    srcs = [
+        "errors/InvalidMeshFragmentMainParameters.mfrag",
+        "errors/InvalidMeshFragmentMainReturn.mfrag",
+        "errors/InvalidMeshVertexMainParameters.mvert",
+        "errors/InvalidMeshVertexMainReturn.mvert",
+        "errors/MeshVertexWithBlender.mvert",
+        "errors/MeshVertexWithColorFilter.mvert",
+        "errors/MeshVertexWithShader.mvert",
     ],
 )
 
@@ -891,6 +918,7 @@ skia_filegroup(
         "shared/EmptyBlocksES3.sksl",
         "shared/ForLoopControlFlow.sksl",
         "shared/ForLoopMultipleInit.sksl",
+        "shared/ForLoopShadowing.sksl",
         "shared/FragCoords.sksl",
         "shared/FragCoordsNoRTFlip.sksl",
         "shared/FunctionAnonymousParameters.sksl",
@@ -969,6 +997,7 @@ skia_filegroup(
         "shared/ReturnsValueOnEveryPathES2.sksl",
         "shared/ReturnsValueOnEveryPathES3.sksl",
         "shared/SampleLocations.vert",
+        "shared/SampleMask.sksl",
         "shared/ScalarConversionConstructorsES2.sksl",
         "shared/ScalarConversionConstructorsES3.sksl",
         "shared/ScopedSymbol.sksl",
@@ -1011,6 +1040,7 @@ skia_filegroup(
         "shared/TernaryComplexNesting.sksl",
         "shared/TernaryExpression.sksl",
         "shared/TernaryNesting.sksl",
+        "shared/TernaryOneZeroOptimization.sksl",
         "shared/TernarySideEffects.sksl",
         "shared/TernaryTrueFalseOptimization.sksl",
         "shared/Texture2D.sksl",
@@ -1092,15 +1122,16 @@ skia_filegroup(
         "wgsl/IndexExpression.sksl",
         "wgsl/InterfaceBlockUniforms.sksl",
         "wgsl/MainDoesNotHaveFragCoordParameter.sksl",
-        "wgsl/MainHasFragCoordParameter.sksl",
         "wgsl/MainHasVoidReturn.sksl",
         "wgsl/MatrixConstructorDiagonal.sksl",
         "wgsl/OutParams.sksl",
+        "wgsl/PixelLocalStorage.sksl",
         "wgsl/Sample.sksl",
-        "wgsl/TernaryThenShortCircuit.sksl",
+        "wgsl/TextureIntrinsics.compute",
         "wgsl/UniformArrays.sksl",
         "wgsl/UniformMatrices.sksl",
         "wgsl/UserDefinedPipelineIO.sksl",
         "wgsl/VertexPositionOutputIsAlwaysDeclared.vert",
+        "wgsl/WorkgroupSize.compute",
     ],
 )

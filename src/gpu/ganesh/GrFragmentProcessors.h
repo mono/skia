@@ -8,8 +8,6 @@
 #ifndef GrFragmentProcessors_DEFINED
 #define GrFragmentProcessors_DEFINED
 
-#include "include/core/SkRefCnt.h"
-#include "include/core/SkSpan.h"
 #include "include/effects/SkRuntimeEffect.h"
 
 #include <tuple>
@@ -20,7 +18,6 @@ class GrFragmentProcessor;
 class GrRecordingContext;
 class SkBlenderBase;
 class SkColorFilter;
-class SkData;
 class SkMaskFilter;
 class SkMatrix;
 class SkSurfaceProps;
@@ -74,14 +71,13 @@ std::unique_ptr<GrFragmentProcessor> Make(const SkShader*,
                                           const GrFPArgs&,
                                           const SkShaders::MatrixRec&);
 
-// TODO(kjlubick, brianosman) remove this after all related effects have been migrated
-GrFPResult make_effect_fp(sk_sp<SkRuntimeEffect> effect,
-                          const char* name,
-                          sk_sp<const SkData> uniforms,
-                          std::unique_ptr<GrFragmentProcessor> inputFP,
-                          std::unique_ptr<GrFragmentProcessor> destColorFP,
-                          SkSpan<const SkRuntimeEffect::ChildPtr> children,
-                          const GrFPArgs& childArgs);
+/**
+ * Returns a GrFragmentProcessor for the passed-in runtime effect child. The processor will be
+ * created with generic/null inputs, since the runtime effect is responsible for filling in the
+ * arguments to the function.
+ */
+GrFPResult MakeChildFP(const SkRuntimeEffect::ChildPtr& child, const GrFPArgs& childArgs);
+
 }  // namespace GrFragmentProcessors
 
 #endif

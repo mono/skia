@@ -8,6 +8,7 @@
 #include "src/core/SkFontMetricsPriv.h"
 
 #include "include/core/SkFont.h"
+#include "include/core/SkFontMetrics.h"
 #include "include/core/SkTypeface.h"
 #include "src/core/SkReadBuffer.h"
 #include "src/core/SkScalerContext.h"
@@ -27,7 +28,7 @@ DEF_TEST(SkFontMetricsPriv_Basic, reporter) {
     // Check that font metrics round-trip.
     context->getFontMetrics(&srcMetrics);
 
-    SkBinaryWriteBuffer writeBuffer;
+    SkBinaryWriteBuffer writeBuffer({});
     SkFontMetricsPriv::Flatten(writeBuffer, srcMetrics);
 
     auto data = writeBuffer.snapshotAsData();

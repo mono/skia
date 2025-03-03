@@ -123,9 +123,6 @@ struct ShaderCaps {
     bool fMustGuardDivisionEvenAfterExplicitZeroCheck = false;
     // If false, SkSL uses a workaround so that sk_FragCoord doesn't actually query gl_FragCoord
     bool fCanUseFragCoord = true;
-    // If true, short ints can't represent every integer in the 16-bit two's complement range as
-    // required by the spec. SKSL will always emit full ints.
-    bool fIncompleteShortIntPrecision = false;
     // If true, then conditions in for loops need "&& true" to work around driver bugs.
     bool fAddAndTrueToLoopCondition = false;
     // If true, then expressions such as "x && y" or "x || y" are rewritten as ternary to work
@@ -148,6 +145,10 @@ struct ShaderCaps {
     // On some Android devices colors aren't accurate enough for the double lookup in the
     // Perlin noise shader. This workaround aggressively snaps colors to multiples of 1/255.
     bool fPerlinNoiseRoundingFix = false;
+    // Vulkan requires certain builtin variables be present, even if they're unused. At one time,
+    // validation errors would result if sk_Clockwise was missing. Now, it's just (Adreno) driver
+    // bugs that drop or corrupt draws if they're missing.
+    bool fMustDeclareFragmentFrontFacing = false;
 
     const char* fVersionDeclString = "";
 

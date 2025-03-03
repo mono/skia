@@ -163,6 +163,7 @@ fi
 GLOBIGNORE="gm/compressed_textures.cpp:"\
 "gm/fiddle.cpp:"\
 "gm/fontations.cpp:"\
+"gm/fontations_ft_compare.cpp:"\
 "gm/video_decoder.cpp:"
 
 # These tests do not compile with the WASM code (require other deps).
@@ -173,6 +174,7 @@ GLOBIGNORE+="tests/CodecTest.cpp:"\
 "tests/FontMgrAndroidParserTest.cpp:"\
 "tests/FontMgrFontConfigTest.cpp:"\
 "tests/FontationsTest.cpp:"\
+"tests/FontationsFtCompTest.cpp:"\
 "tests/FCITest.cpp:"\
 "tests/JpegGainmapTest.cpp:"\
 "tests/TypefaceMacTest.cpp:"

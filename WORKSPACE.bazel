@@ -31,16 +31,6 @@ load("@emsdk//:emscripten_deps.bzl", emsdk_emscripten_deps = "emscripten_deps")
 
 emsdk_emscripten_deps(emscripten_version = "3.1.44")
 
-http_archive(
-    name = "bazel_toolchains",
-    sha256 = "e52789d4e89c3e2dc0e3446a9684626a626b6bec3fde787d70bae37c6ebcc47f",
-    strip_prefix = "bazel-toolchains-5.1.1",
-    urls = gcs_mirror_url(
-        sha256 = "e52789d4e89c3e2dc0e3446a9684626a626b6bec3fde787d70bae37c6ebcc47f",
-        url = "https://github.com/bazelbuild/bazel-toolchains/archive/refs/tags/v5.1.1.tar.gz",
-    ),
-)
-
 load("@bazel_toolchains//repositories:repositories.bzl", bazel_toolchains_repositories = "repositories")
 
 bazel_toolchains_repositories()
@@ -399,6 +389,7 @@ local_repository(
 # @vello - //bazel/external/vello:BUILD.bazel
 # @vulkan_headers - //bazel/external/vulkan_headers:BUILD.bazel
 # @vulkan_tools - //bazel/external/vulkan_tools:BUILD.bazel
+# @vulkan_utility_libraries - //bazel/external/vulkan_utility_libraries:BUILD.bazel
 # @vulkanmemoryallocator - //bazel/external/vulkanmemoryallocator:BUILD.bazel
 # @wuffs - //bazel/external/wuffs:BUILD.bazel
 # @zlib_skia - //bazel/external/zlib_skia:BUILD.bazel
@@ -552,7 +543,7 @@ load(
 # Pulls the gcr.io/skia-public/debugger-app-base container.
 container_pull(
     name = "debugger-app-base",
-    digest = "sha256:24c6e5d875d298c741e8c2917a94e1d548400eb8a9517d2a90f93833cbba5469",
+    digest = "sha256:72a86e8cc35e6d5d5abde1c169876d6e799aa3a07c079b5a1c0510759e02be2f",
     registry = "gcr.io",
     repository = "skia-public/debugger-app-base",
 )
@@ -560,7 +551,7 @@ container_pull(
 # Pulls the gcr.io/skia-public/jsfiddle-base container.
 container_pull(
     name = "jsfiddle-base",
-    digest = "sha256:2e999b8eedf768b6deae7405789ccdac92dcc01c36720f268c9d1b58fcd8ec1b",
+    digest = "sha256:3605928905e47e6fb0ca832e032fb468777eda28bfb56c395f270057915e5d6a",
     registry = "gcr.io",
     repository = "skia-public/jsfiddle-base",
 )
@@ -568,7 +559,7 @@ container_pull(
 # Pulls the gcr.io/skia-public/shaders-base container.
 container_pull(
     name = "shaders-base",
-    digest = "sha256:6246ccdc88e01a5dc92d83e9a0698d76f53529978df070f7c93ecbfb3226d10d",
+    digest = "sha256:84356d9e8452ce2ed1284c270aa51728fe60b1b9159a29b2cc1e02841b33e163",
     registry = "gcr.io",
     repository = "skia-public/shaders-base",
 )
@@ -576,7 +567,7 @@ container_pull(
 # Pulls the gcr.io/skia-public/skottie-base container.
 container_pull(
     name = "skottie-base",
-    digest = "sha256:3e2b0ed75e491b46f1d2628ecb2aebbf587c06674e9ec249a0e77fe77b43f03c",
+    digest = "sha256:bbf6a30f67f486a9513633bb1df0d96b0637a76c55886f62ea9477cbd0717678",
     registry = "gcr.io",
     repository = "skia-public/skottie-base",
 )

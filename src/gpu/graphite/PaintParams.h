@@ -11,6 +11,7 @@
 #include "include/core/SkColor.h"
 #include "include/core/SkPaint.h"
 #include "src/gpu/graphite/Caps.h"
+#include <functional>  // std::function
 
 class SkColorInfo;
 class SkShader;
@@ -73,6 +74,15 @@ public:
     void toKey(const KeyContext&, PaintParamsKeyBuilder*, PipelineDataGatherer*) const;
 
 private:
+    void addPaintColorToKey(const KeyContext&, PaintParamsKeyBuilder*, PipelineDataGatherer*) const;
+    void handlePrimitiveColor(const KeyContext&,
+                              PaintParamsKeyBuilder*,
+                              PipelineDataGatherer*) const;
+    void handlePaintAlpha(const KeyContext&, PaintParamsKeyBuilder*, PipelineDataGatherer*) const;
+    void handleColorFilter(const KeyContext&, PaintParamsKeyBuilder*, PipelineDataGatherer*) const;
+    void handleDithering(const KeyContext&, PaintParamsKeyBuilder*, PipelineDataGatherer*) const;
+    void handleDstRead(const KeyContext&, PaintParamsKeyBuilder*, PipelineDataGatherer*) const;
+
     SkColor4f            fColor;
     sk_sp<SkBlender>     fFinalBlender; // A nullptr here means SrcOver blending
     sk_sp<SkShader>      fShader;
@@ -88,6 +98,24 @@ private:
     // TODO: Will also store ColorFilter, dither, and any extra shader from an
     // active clipShader().
 };
+
+using AddToKeyFn = std::function<void()>;
+
+void Blend(const KeyContext&, PaintParamsKeyBuilder*, PipelineDataGatherer*,
+           AddToKeyFn addBlendToKey, AddToKeyFn addSrcToKey, AddToKeyFn addDstToKey);
+void Compose(const KeyContext&, PaintParamsKeyBuilder*, PipelineDataGatherer*,
+             AddToKeyFn addInnerToKey, AddToKeyFn addOuterToKey);
+// Add a blend mode node for a specific SkBlendMode.
+void AddKnownModeBlend(const KeyContext&,
+                       PaintParamsKeyBuilder*,
+                       PipelineDataGatherer*,
+                       SkBlendMode);
+// Add a blend mode node for an SkBlendMode that can vary
+void AddModeBlend(const KeyContext&, PaintParamsKeyBuilder*, PipelineDataGatherer*, SkBlendMode);
+void AddDstReadBlock(const KeyContext&,
+                     PaintParamsKeyBuilder*,
+                     PipelineDataGatherer*,
+                     DstReadRequirement);
 
 } // namespace skgpu::graphite
 

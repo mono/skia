@@ -8,7 +8,9 @@
 #include "src/gpu/graphite/KeyHelpers.h"
 
 #include "include/core/SkColorFilter.h"
+#include "include/core/SkColorSpace.h"
 #include "include/core/SkData.h"
+#include "include/core/SkImageInfo.h"
 #include "include/effects/SkRuntimeEffect.h"
 #include "include/gpu/graphite/Surface.h"
 #include "src/base/SkHalf.h"
@@ -30,12 +32,14 @@
 #include "src/effects/colorfilters/SkWorkingFormatColorFilter.h"
 #include "src/gpu/Blend.h"
 #include "src/gpu/DitherUtils.h"
+#include "src/gpu/Swizzle.h"
 #include "src/gpu/graphite/Caps.h"
 #include "src/gpu/graphite/Image_Graphite.h"
 #include "src/gpu/graphite/Image_YUVA_Graphite.h"
 #include "src/gpu/graphite/KeyContext.h"
 #include "src/gpu/graphite/KeyHelpers.h"
 #include "src/gpu/graphite/Log.h"
+#include "src/gpu/graphite/PaintParams.h"
 #include "src/gpu/graphite/PaintParamsKey.h"
 #include "src/gpu/graphite/PipelineData.h"
 #include "src/gpu/graphite/ReadSwizzle.h"
@@ -64,6 +68,7 @@
 #include "src/shaders/SkShaderBase.h"
 #include "src/shaders/SkTransformShader.h"
 #include "src/shaders/SkTriColorShader.h"
+#include "src/shaders/SkWorkingColorSpaceShader.h"
 #include "src/shaders/gradients/SkConicalGradient.h"
 #include "src/shaders/gradients/SkGradientBaseShader.h"
 #include "src/shaders/gradients/SkLinearGradient.h"
@@ -678,9 +683,6 @@ void DitherShaderBlock::BeginBlock(const KeyContext& keyContext,
                                    PaintParamsKeyBuilder* builder,
                                    PipelineDataGatherer* gatherer,
                                    const DitherData* ditherData) {
-    SkASSERT(!gatherer == !ditherData);
-
-    auto dict = keyContext.dict();
     if (gatherer) {
         static const SkBitmap gLUT = skgpu::MakeDitherLUT();
 
@@ -692,7 +694,7 @@ void DitherShaderBlock::BeginBlock(const KeyContext& keyContext,
             return;
         }
 
-        add_dither_uniform_data(dict, *ditherData, gatherer);
+        add_dither_uniform_data(keyContext.dict(), *ditherData, gatherer);
 
         static constexpr SkSamplingOptions kNearest(SkFilterMode::kNearest, SkMipmapMode::kNone);
         static constexpr SkTileMode kRepeatTiling[2] = { SkTileMode::kRepeat, SkTileMode::kRepeat };
@@ -784,16 +786,6 @@ void CoeffBlenderBlock::BeginBlock(const KeyContext& keyContext,
 
 //--------------------------------------------------------------------------------------------------
 
-void DstColorBlock::BeginBlock(const KeyContext& keyContext,
-                               PaintParamsKeyBuilder* builder,
-                               PipelineDataGatherer* gatherer) {
-    if (gatherer) {
-        VALIDATE_UNIFORMS(gatherer, keyContext.dict(), BuiltInCodeSnippetID::kDstColor)
-    }
-
-    builder->beginBlock(BuiltInCodeSnippetID::kDstColor);
-}
-
 void PrimitiveColorBlock::BeginBlock(const KeyContext& keyContext,
                                      PaintParamsKeyBuilder* builder,
                                      PipelineDataGatherer* gatherer) {
@@ -806,10 +798,10 @@ void PrimitiveColorBlock::BeginBlock(const KeyContext& keyContext,
 
 //--------------------------------------------------------------------------------------------------
 
-void ColorFilterShaderBlock::BeginBlock(const KeyContext& keyContext,
-                                        PaintParamsKeyBuilder* builder,
-                                        PipelineDataGatherer* gatherer) {
-    builder->beginBlock(BuiltInCodeSnippetID::kColorFilterShader);
+void ComposeBlock::BeginBlock(const KeyContext& keyContext,
+                              PaintParamsKeyBuilder* builder,
+                              PipelineDataGatherer* gatherer) {
+    builder->beginBlock(BuiltInCodeSnippetID::kCompose);
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -840,13 +832,6 @@ void MatrixColorFilterBlock::BeginBlock(const KeyContext& keyContext,
     }
 
     builder->beginBlock(BuiltInCodeSnippetID::kMatrixColorFilter);
-}
-
-//--------------------------------------------------------------------------------------------------
-void ComposeColorFilterBlock::BeginBlock(const KeyContext& keyContext,
-                                         PaintParamsKeyBuilder* builder,
-                                         PipelineDataGatherer* gatherer) {
-    builder->beginBlock(BuiltInCodeSnippetID::kComposeColorFilter);
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -922,60 +907,29 @@ void ColorSpaceTransformBlock::BeginBlock(const KeyContext& keyContext,
 
 //--------------------------------------------------------------------------------------------------
 
-void AddDstBlendBlock(const KeyContext& keyContext,
-                      PaintParamsKeyBuilder* builder,
-                      PipelineDataGatherer* gatherer,
-                      const SkBlender* blender) {
-    BlendShaderBlock::BeginBlock(keyContext, builder, gatherer);
-
-    // src -- prior output
-    PriorOutputBlock::BeginBlock(keyContext, builder, gatherer);
-    builder->endBlock();
-    // dst -- surface color
-    DstColorBlock::BeginBlock(keyContext, builder, gatherer);
-    builder->endBlock();
-    // blender -- shader based blending
-    AddToKey(keyContext, builder, gatherer, blender);
-
-    builder->endBlock();  // BlendShaderBlock
-}
-
-void AddPrimitiveBlendBlock(const KeyContext& keyContext,
-                            PaintParamsKeyBuilder* builder,
-                            PipelineDataGatherer* gatherer,
-                            const SkBlender* blender) {
-    BlendShaderBlock::BeginBlock(keyContext, builder, gatherer);
-
-    // src -- prior output
-    PriorOutputBlock::BeginBlock(keyContext, builder, gatherer);
-    builder->endBlock();
-    // dst -- primitive color
-    PrimitiveColorBlock::BeginBlock(keyContext, builder, gatherer);
-    builder->endBlock();
-    // blender -- shader based blending
-    AddToKey(keyContext, builder, gatherer, blender);
-
-    builder->endBlock();  // BlendShaderBlock
-}
-
-void AddColorBlendBlock(const KeyContext& keyContext,
-                        PaintParamsKeyBuilder* builder,
-                        PipelineDataGatherer* gatherer,
-                        SkBlendMode bm,
-                        const SkPMColor4f& srcColor) {
-    BlendShaderBlock::BeginBlock(keyContext, builder, gatherer);
-
-    // src -- solid color
-    SolidColorShaderBlock::BeginBlock(keyContext, builder, gatherer, srcColor);
-    builder->endBlock();
-    // dst -- prior output
-    PriorOutputBlock::BeginBlock(keyContext, builder, gatherer);
-    builder->endBlock();
-    // blender -- shader based blending
-    BlendModeBlenderBlock::BeginBlock(keyContext, builder, gatherer, bm);
-    builder->endBlock();
-
-    builder->endBlock();  // BlendShaderBlock
+void AddBlendModeColorFilter(const KeyContext& keyContext,
+                             PaintParamsKeyBuilder* builder,
+                             PipelineDataGatherer* gatherer,
+                             SkBlendMode bm,
+                             const SkPMColor4f& srcColor) {
+    Blend(keyContext, builder, gatherer,
+          /* addBlendToKey= */ [&] () -> void {
+              // Note, we're playing a bit of a game here. By explicitly adding a
+              // BlendModeBlenderBlock we're always forcing the SkSL to call 'sk_blend'
+              // rather than allowing it to sometimes call 'blend_porter_duff'. This reduces
+              // the number of shader combinations and allows the pre-compilation system to more
+              // easily match the rendering path.
+              BlendModeBlenderBlock::BeginBlock(keyContext, builder, gatherer, bm);
+              builder->endBlock();
+          },
+          /* addSrcToKey= */ [&]() -> void {
+              SolidColorShaderBlock::BeginBlock(keyContext, builder, gatherer, srcColor);
+              builder->endBlock();
+          },
+          /* addDstToKey= */ [&]() -> void {
+              PriorOutputBlock::BeginBlock(keyContext, builder, gatherer);
+              builder->endBlock();
+          });
 }
 
 RuntimeEffectBlock::ShaderData::ShaderData(sk_sp<const SkRuntimeEffect> effect)
@@ -1042,14 +996,8 @@ static void add_to_key(const KeyContext& keyContext,
                        PipelineDataGatherer* gatherer,
                        const SkBlendModeBlender* blender) {
     SkASSERT(blender);
-    SkSpan<const float> coeffs = skgpu::GetPorterDuffBlendConstants(blender->mode());
-    if (!coeffs.empty()) {
-        CoeffBlenderBlock::BeginBlock(keyContext, builder, gatherer, coeffs);
-        builder->endBlock();
-    } else {
-        BlendModeBlenderBlock::BeginBlock(keyContext, builder, gatherer, blender->mode());
-        builder->endBlock();
-    }
+
+    AddModeBlend(keyContext, builder, gatherer, blender->mode());
 }
 
 static void add_children_to_key(const KeyContext& keyContext,
@@ -1061,29 +1009,37 @@ static void add_children_to_key(const KeyContext& keyContext,
 
     using ChildType = SkRuntimeEffect::ChildType;
 
+    KeyContextWithScope childContext(keyContext, KeyContext::Scope::kRuntimeEffect);
+
     for (size_t index = 0; index < children.size(); ++index) {
         const SkRuntimeEffect::ChildPtr& child = children[index];
         std::optional<ChildType> type = child.type();
         if (type == ChildType::kShader) {
-            AddToKey(keyContext, builder, gatherer, child.shader());
+            AddToKey(childContext, builder, gatherer, child.shader());
         } else if (type == ChildType::kColorFilter) {
-            AddToKey(keyContext, builder, gatherer, child.colorFilter());
+            AddToKey(childContext, builder, gatherer, child.colorFilter());
         } else if (type == ChildType::kBlender) {
-            AddToKey(keyContext, builder, gatherer, child.blender());
+            AddToKey(childContext, builder, gatherer, child.blender());
         } else {
             // We don't have a child effect. Substitute in a no-op effect.
             switch (childInfo[index].type) {
                 case ChildType::kShader:
+                    // A missing shader returns transparent black
+                    SolidColorShaderBlock::BeginBlock(
+                            childContext, builder, gatherer, {0, 0, 0, 0});
+                    builder->endBlock();
+                    break;
+
                 case ChildType::kColorFilter:
-                    // A "passthrough" shader returns the input color as-is.
-                    PriorOutputBlock::BeginBlock(keyContext, builder, gatherer);
+                    // A "passthrough" color filter returns the input color as-is.
+                    PriorOutputBlock::BeginBlock(childContext, builder, gatherer);
                     builder->endBlock();
                     break;
 
                 case ChildType::kBlender:
                     // A "passthrough" blender performs `blend_src_over(src, dest)`.
                     BlendModeBlenderBlock::BeginBlock(
-                            keyContext, builder, gatherer, SkBlendMode::kSrcOver);
+                            childContext, builder, gatherer, SkBlendMode::kSrcOver);
                     builder->endBlock();
                     break;
             }
@@ -1144,9 +1100,10 @@ static void add_to_key(const KeyContext& keyContext,
                        const SkBlendModeColorFilter* filter) {
     SkASSERT(filter);
 
-    SkPMColor4f color =
-            map_color(filter->color(), sk_srgb_singleton(), keyContext.dstColorInfo().colorSpace());
-    AddColorBlendBlock(keyContext, builder, gatherer, filter->mode(), color);
+    SkPMColor4f color = map_color(filter->color(), sk_srgb_singleton(),
+                                  keyContext.dstColorInfo().colorSpace());
+
+    AddBlendModeColorFilter(keyContext, builder, gatherer, filter->mode(), color);
 }
 
 static void add_to_key(const KeyContext& keyContext,
@@ -1155,25 +1112,26 @@ static void add_to_key(const KeyContext& keyContext,
                        const SkColorSpaceXformColorFilter* filter) {
     SkASSERT(filter);
 
-    constexpr SkAlphaType alphaType = kPremul_SkAlphaType;
+    constexpr SkAlphaType kAlphaType = kPremul_SkAlphaType;
     ColorSpaceTransformBlock::ColorSpaceTransformData data(
-            filter->src().get(), alphaType, filter->dst().get(), alphaType);
+            filter->src().get(), kAlphaType, filter->dst().get(), kAlphaType);
     ColorSpaceTransformBlock::BeginBlock(keyContext, builder, gatherer, &data);
     builder->endBlock();
 }
 
 static void add_to_key(const KeyContext& keyContext,
-                       PaintParamsKeyBuilder* builder,
+                       PaintParamsKeyBuilder* keyBuilder,
                        PipelineDataGatherer* gatherer,
                        const SkComposeColorFilter* filter) {
     SkASSERT(filter);
 
-    ComposeColorFilterBlock::BeginBlock(keyContext, builder, gatherer);
-
-    AddToKey(keyContext, builder, gatherer, filter->inner().get());
-    AddToKey(keyContext, builder, gatherer, filter->outer().get());
-
-    builder->endBlock();
+    Compose(keyContext, keyBuilder, gatherer,
+            /* addInnerToKey= */ [&]() -> void {
+                AddToKey(keyContext, keyBuilder, gatherer, filter->inner().get());
+            },
+            /* addOuterToKey= */ [&]() -> void {
+                AddToKey(keyContext, keyBuilder, gatherer, filter->outer().get());
+            });
 }
 
 static void add_to_key(const KeyContext& keyContext,
@@ -1245,36 +1203,44 @@ static void add_to_key(const KeyContext& keyContext,
                        const SkWorkingFormatColorFilter* filter) {
     SkASSERT(filter);
 
-    const SkAlphaType dstAT = keyContext.dstColorInfo().alphaType();
-    sk_sp<SkColorSpace> dstCS = keyContext.dstColorInfo().refColorSpace();
+    const SkColorInfo& dstInfo = keyContext.dstColorInfo();
+    const SkAlphaType dstAT = dstInfo.alphaType();
+    sk_sp<SkColorSpace> dstCS = dstInfo.refColorSpace();
     if (!dstCS) {
         dstCS = SkColorSpace::MakeSRGB();
     }
 
     SkAlphaType workingAT;
     sk_sp<SkColorSpace> workingCS = filter->workingFormat(dstCS, &workingAT);
+    SkColorInfo workingInfo(dstInfo.colorType(), workingAT, workingCS);
+    KeyContextWithColorInfo workingContext(keyContext, workingInfo);
 
     // Use two nested compose blocks to chain (dst->working), child, and (working->dst) together
     // while appearing as one block to the parent node.
-    ComposeColorFilterBlock::BeginBlock(keyContext, builder, gatherer);
-        // Inner compose
-        ComposeColorFilterBlock::BeginBlock(keyContext, builder, gatherer);
-            // Innermost (inner of inner compose)
-            ColorSpaceTransformBlock::ColorSpaceTransformData data1(
-                    dstCS.get(), dstAT, workingCS.get(), workingAT);
-            ColorSpaceTransformBlock::BeginBlock(keyContext, builder, gatherer, &data1);
-            builder->endBlock();
-
-            // Middle (outer of inner compose)
-            AddToKey(keyContext, builder, gatherer, filter->child().get());
-        builder->endBlock();
-
-        // Outermost (outer of outer compose)
-        ColorSpaceTransformBlock::ColorSpaceTransformData data2(
-                workingCS.get(), workingAT, dstCS.get(), dstAT);
-        ColorSpaceTransformBlock::BeginBlock(keyContext, builder, gatherer, &data2);
-        builder->endBlock();
-    builder->endBlock();
+    Compose(keyContext, builder, gatherer,
+            /* addInnerToKey= */ [&]() -> void {
+                // Inner compose
+                Compose(keyContext, builder, gatherer,
+                        /* addInnerToKey= */ [&]() -> void {
+                            // Innermost (inner of inner compose)
+                            ColorSpaceTransformBlock::ColorSpaceTransformData data1(
+                                    dstCS.get(), dstAT, workingCS.get(), workingAT);
+                            ColorSpaceTransformBlock::BeginBlock(keyContext, builder, gatherer,
+                                                                 &data1);
+                            builder->endBlock();
+                        },
+                        /* addOuterToKey= */ [&]() -> void {
+                            // Middle (outer of inner compose)
+                            AddToKey(workingContext, builder, gatherer, filter->child().get());
+                        });
+            },
+            /* addOuterToKey= */ [&]() -> void {
+                // Outermost (outer of outer compose)
+                ColorSpaceTransformBlock::ColorSpaceTransformData data2(
+                        workingCS.get(), workingAT, dstCS.get(), dstAT);
+                ColorSpaceTransformBlock::BeginBlock(keyContext, builder, gatherer, &data2);
+                builder->endBlock();
+            });
 }
 
 void AddToKey(const KeyContext& keyContext,
@@ -1311,21 +1277,16 @@ static void add_to_key(const KeyContext& keyContext,
                        const SkBlendShader* shader) {
     SkASSERT(shader);
 
-    BlendShaderBlock::BeginBlock(keyContext, builder, gatherer);
-
-    AddToKey(keyContext, builder, gatherer, shader->src().get());
-    AddToKey(keyContext, builder, gatherer, shader->dst().get());
-
-    SkSpan<const float> porterDuffConstants = skgpu::GetPorterDuffBlendConstants(shader->mode());
-    if (!porterDuffConstants.empty()) {
-        CoeffBlenderBlock::BeginBlock(keyContext, builder, gatherer, porterDuffConstants);
-        builder->endBlock();
-    } else {
-        BlendModeBlenderBlock::BeginBlock(keyContext, builder, gatherer, shader->mode());
-        builder->endBlock();
-    }
-
-    builder->endBlock();  // BlendShaderBlock
+    Blend(keyContext, builder, gatherer,
+            /* addBlendToKey= */ [&] () -> void {
+                AddModeBlend(keyContext, builder, gatherer, shader->mode());
+            },
+            /* addSrcToKey= */ [&]() -> void {
+                AddToKey(keyContext, builder, gatherer, shader->src().get());
+            },
+            /* addDstToKey= */ [&]() -> void {
+                AddToKey(keyContext, builder, gatherer, shader->dst().get());
+            });
 }
 
 static void add_to_key(const KeyContext& keyContext,
@@ -1364,12 +1325,13 @@ static void add_to_key(const KeyContext& keyContext,
                        const SkColorFilterShader* shader) {
     SkASSERT(shader);
 
-    ColorFilterShaderBlock::BeginBlock(keyContext, builder, gatherer);
-
-    AddToKey(keyContext, builder, gatherer, shader->shader().get());
-    AddToKey(keyContext, builder, gatherer, shader->filter().get());
-
-    builder->endBlock();
+    Compose(keyContext, builder, gatherer,
+            /* emitInnerToKey= */ [&]() -> void {
+                AddToKey(keyContext, builder, gatherer, shader->shader().get());
+            },
+            /* emitOuterToKey= */ [&]() -> void {
+                AddToKey(keyContext, builder, gatherer, shader->filter().get());
+            });
 }
 
 static void add_to_key(const KeyContext& keyContext,
@@ -1476,6 +1438,8 @@ static skgpu::graphite::ReadSwizzle swizzle_class_to_read_enum(const skgpu::Swiz
         return skgpu::graphite::ReadSwizzle::kRRR1;
     } else if (swizzle == skgpu::Swizzle::BGRA()) {
         return skgpu::graphite::ReadSwizzle::kBGRA;
+    } else if (swizzle == skgpu::Swizzle("000r")) {
+        return skgpu::graphite::ReadSwizzle::k000R;
     } else {
         SKGPU_LOG_W("%s is an unsupported read swizzle. Defaulting to RGBA.\n",
                     swizzle.asString().data());
@@ -1520,9 +1484,18 @@ static void add_to_key(const KeyContext& keyContext,
     skgpu::Swizzle readSwizzle = view.swizzle();
     // If the color type is alpha-only, propagate the alpha value to the other channels.
     if (imageToDraw->isAlphaOnly()) {
-        readSwizzle = skgpu::Swizzle::Concat(readSwizzle, skgpu::Swizzle("aaaa"));
+        readSwizzle = skgpu::Swizzle::Concat(readSwizzle, skgpu::Swizzle("000a"));
     }
     imgData.fReadSwizzle = swizzle_class_to_read_enum(readSwizzle);
+
+    auto addImageSampling = [&]() -> void {
+        if (imgData.fSampling.useCubic) {
+            ImageShaderBlock::BeginCubicBlock(keyContext, builder, gatherer, &imgData);
+        } else {
+            ImageShaderBlock::BeginBlock(keyContext, builder, gatherer, &imgData);
+        }
+        builder->endBlock();
+    };
 
     if (!shader->isRaw()) {
         imgData.fSteps = SkColorSpaceXformSteps(imageToDraw->colorSpace(),
@@ -1530,37 +1503,22 @@ static void add_to_key(const KeyContext& keyContext,
                                                 keyContext.dstColorInfo().colorSpace(),
                                                 keyContext.dstColorInfo().alphaType());
 
-        if (imageToDraw->isAlphaOnly()) {
-            SkSpan<const float> constants = skgpu::GetPorterDuffBlendConstants(SkBlendMode::kDstIn);
-            BlendShaderBlock::BeginBlock(keyContext, builder, gatherer);
-
-                // src
-                if (imgData.fSampling.useCubic) {
-                    ImageShaderBlock::BeginCubicBlock(keyContext, builder, gatherer, &imgData);
-                } else {
-                    ImageShaderBlock::BeginBlock(keyContext, builder, gatherer, &imgData);
-                }
-                builder->endBlock();
-
-                // dst
-                SolidColorShaderBlock::BeginBlock(keyContext, builder, gatherer,
-                                                  keyContext.paintColor());
-                builder->endBlock();
-
-                CoeffBlenderBlock::BeginBlock(keyContext, builder, gatherer, constants);
-                builder->endBlock();
-
-            builder->endBlock();
+        if (imageToDraw->isAlphaOnly() && keyContext.scope() != KeyContext::Scope::kRuntimeEffect) {
+            Blend(keyContext, builder, gatherer,
+                  /* addBlendToKey= */ [&] () -> void {
+                      AddKnownModeBlend(keyContext, builder, gatherer, SkBlendMode::kDstIn);
+                  },
+                  /* addSrcToKey= */ addImageSampling,
+                  /* addDstToKey= */ [&]() -> void {
+                      SolidColorShaderBlock::BeginBlock(keyContext, builder, gatherer,
+                                                        keyContext.paintColor());
+                      builder->endBlock();
+                  });
             return;
         }
     }
 
-    if (imgData.fSampling.useCubic) {
-        ImageShaderBlock::BeginCubicBlock(keyContext, builder, gatherer, &imgData);
-    } else {
-        ImageShaderBlock::BeginBlock(keyContext, builder, gatherer, &imgData);
-    }
-    builder->endBlock();
+    addImageSampling();
 }
 
 static void add_to_key(const KeyContext& keyContext,
@@ -1772,6 +1730,36 @@ static void add_to_key(const KeyContext& keyContext,
     builder->endBlock();
 }
 
+static void add_to_key(const KeyContext& keyContext,
+                       PaintParamsKeyBuilder* builder,
+                       PipelineDataGatherer* gatherer,
+                       const SkWorkingColorSpaceShader* shader) {
+    SkASSERT(shader);
+
+    const SkColorInfo& dstInfo = keyContext.dstColorInfo();
+    const SkAlphaType dstAT = dstInfo.alphaType();
+    sk_sp<SkColorSpace> dstCS = dstInfo.refColorSpace();
+    if (!dstCS) {
+        dstCS = SkColorSpace::MakeSRGB();
+    }
+
+    sk_sp<SkColorSpace> workingCS = shader->workingSpace();
+    SkColorInfo workingInfo(dstInfo.colorType(), dstAT, workingCS);
+    KeyContextWithColorInfo workingContext(keyContext, workingInfo);
+
+    // Compose the inner shader (in the working space) with a (working->dst) transform:
+    Compose(keyContext, builder, gatherer,
+        /* addInnerToKey= */ [&]() -> void {
+            AddToKey(workingContext, builder, gatherer, shader->shader().get());
+        },
+        /* addOuterToKey= */ [&]() -> void {
+            ColorSpaceTransformBlock::ColorSpaceTransformData data(
+                    workingCS.get(), dstAT, dstCS.get(), dstAT);
+            ColorSpaceTransformBlock::BeginBlock(keyContext, builder, gatherer, &data);
+            builder->endBlock();
+        });
+}
+
 static SkBitmap create_color_and_offset_bitmap(int numStops,
                                                const SkPMColor4f* colors,
                                                const float* offsets) {
@@ -1850,18 +1838,18 @@ static void make_interpolated_to_dst(const KeyContext& keyContext,
     ColorSpaceTransformBlock::ColorSpaceTransformData data(
             intermediateCS, intermediateAlphaType, dstColorSpace, dstColorInfo.alphaType());
 
-    // The gradient block and colorSpace conversion block need to be combined together
-    // (via the colorFilterShader block) so that the localMatrix block can treat them as
+    // The gradient block and colorSpace conversion block need to be combined
+    // (via the compose block) so that the localMatrix block can treat them as
     // one child.
-    ColorFilterShaderBlock::BeginBlock(keyContext, builder, gatherer);
-
-        GradientShaderBlocks::BeginBlock(keyContext, builder, gatherer, gradData);
-        builder->endBlock();
-
-        ColorSpaceTransformBlock::BeginBlock(keyContext, builder, gatherer, &data);
-        builder->endBlock();
-
-    builder->endBlock();
+    Compose(keyContext, builder, gatherer,
+            /* addInnerToKey= */ [&]() -> void {
+                GradientShaderBlocks::BeginBlock(keyContext, builder, gatherer, gradData);
+                builder->endBlock();
+            },
+            /* addOuterToKey= */ [&]() -> void {
+                ColorSpaceTransformBlock::BeginBlock(keyContext, builder, gatherer, &data);
+                builder->endBlock();
+            });
 }
 
 static void add_gradient_to_key(const KeyContext& keyContext,

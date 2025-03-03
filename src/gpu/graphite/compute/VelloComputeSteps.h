@@ -172,7 +172,8 @@ std::string_view VelloStageName(vello_cpp::ShaderStage);
 WorkgroupSize VelloStageLocalSize(vello_cpp::ShaderStage);
 skia_private::TArray<ComputeStep::WorkgroupBufferDesc> VelloWorkgroupBuffers(
         vello_cpp::ShaderStage);
-std::string_view VelloNativeShaderSource(vello_cpp::ShaderStage, ComputeStep::NativeShaderFormat);
+ComputeStep::NativeShaderSource VelloNativeShaderSource(vello_cpp::ShaderStage,
+                                                        ComputeStep::NativeShaderFormat);
 
 template <vello_cpp::ShaderStage S>
 class VelloStep : public ComputeStep {
@@ -180,7 +181,7 @@ public:
     ~VelloStep() override = default;
 
     NativeShaderSource nativeShaderSource(NativeShaderFormat format) const override {
-        return {VelloNativeShaderSource(S, format), "main_"};
+        return VelloNativeShaderSource(S, format);
     }
 
 protected:
@@ -238,10 +239,13 @@ VELLO_COMPUTE_STEP(TileAlloc);
 
 class VelloFineStep final : public VelloStep<vello_cpp::ShaderStage::Fine> {
 public:
-    VelloFineStep();
+    explicit VelloFineStep(SkColorType targetFormat);
 
     // We need to return a texture format for the bound textures.
     std::tuple<SkISize, SkColorType> calculateTextureParameters(int, const ResourceDesc&) const override;
+
+private:
+    SkColorType fTargetFormat;
 };
 
 }  // namespace skgpu::graphite
