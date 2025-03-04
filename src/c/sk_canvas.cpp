@@ -113,6 +113,10 @@ int sk_canvas_save_layer(sk_canvas_t* ccanvas, const sk_rect_t* crect, const sk_
     return AsCanvas(ccanvas)->saveLayer(AsRect(crect), AsPaint(cpaint));
 }
 
+int sk_canvas_save_layer_rec(sk_canvas_t* ccanvas, const sk_canvas_savelayerrec_t* crec) {
+    return AsCanvas(ccanvas)->saveLayer(AsCanvasSaveLayerRec(crec));
+}
+
 void sk_canvas_restore(sk_canvas_t* ccanvas) {
     AsCanvas(ccanvas)->restore();
 }

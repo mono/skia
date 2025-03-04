@@ -1078,6 +1078,20 @@ typedef struct {
     sk_mipmap_mode_t fMipmap;
 } sk_sampling_options_t;
 
+typedef enum {
+    NONE_SK_CANVAS_SAVELAYERREC_FLAGS                     = 0,
+    PRESERVE_LCD_TEXT_SK_CANVAS_SAVELAYERREC_FLAGS        = 1 << 1,
+    INITIALIZE_WITH_PREVIOUS_SK_CANVAS_SAVELAYERREC_FLAGS = 1 << 2,
+    F16_COLOR_TYPE_SK_CANVAS_SAVELAYERREC_FLAGS           = 1 << 4,
+} sk_canvas_savelayerrec_flags_t;
+
+typedef struct {
+    sk_rect_t* fBounds;
+    sk_paint_t* fPaint;
+    sk_imagefilter_t* fBackdrop;
+    sk_canvas_savelayerrec_flags_t fFlags;
+} sk_canvas_savelayerrec_t;
+
 /*
  * Skottie Animation
  */

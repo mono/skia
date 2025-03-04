@@ -395,6 +395,12 @@ static_assert ((int)SkRuntimeEffect::Uniform::Flags::kVertex_Flag          == (i
 static_assert ((int)SkRuntimeEffect::Uniform::Flags::kFragment_Flag        == (int)FRAGMENT_SK_RUNTIMEEFFECT_UNIFORM_FLAGS,         ASSERT_MSG(SkRuntimeEffect::Uniform::Flags, sk_runtimeeffect_uniform_flags_t));
 static_assert ((int)SkRuntimeEffect::Uniform::Flags::kHalfPrecision_Flag   == (int)HALF_PRECISION_SK_RUNTIMEEFFECT_UNIFORM_FLAGS,   ASSERT_MSG(SkRuntimeEffect::Uniform::Flags, sk_runtimeeffect_uniform_flags_t));
 
+// sk_canvas_savelayerrec_flags_t
+static_assert ((int)0                                                              == (int)NONE_SK_CANVAS_SAVELAYERREC_FLAGS,                       ASSERT_MSG(SkCanvas::SaveLayerFlagsSet, sk_canvas_savelayerrec_flags_t));
+static_assert ((int)SkCanvas::SaveLayerFlagsSet::kPreserveLCDText_SaveLayerFlag    == (int)PRESERVE_LCD_TEXT_SK_CANVAS_SAVELAYERREC_FLAGS,          ASSERT_MSG(SkCanvas::SaveLayerFlagsSet, sk_canvas_savelayerrec_flags_t));
+static_assert ((int)SkCanvas::SaveLayerFlagsSet::kInitWithPrevious_SaveLayerFlag   == (int)INITIALIZE_WITH_PREVIOUS_SK_CANVAS_SAVELAYERREC_FLAGS,   ASSERT_MSG(SkCanvas::SaveLayerFlagsSet, sk_canvas_savelayerrec_flags_t));
+static_assert ((int)SkCanvas::SaveLayerFlagsSet::kF16ColorType                     == (int)F16_COLOR_TYPE_SK_CANVAS_SAVELAYERREC_FLAGS,             ASSERT_MSG(SkCanvas::SaveLayerFlagsSet, sk_canvas_savelayerrec_flags_t));
+
 #if defined(SK_GANESH)
 
 // gr_surfaceorigin_t

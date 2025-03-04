@@ -184,6 +184,14 @@ DEF_MAP(SkRuntimeEffect::Child, sk_runtimeeffect_child_t, RuntimeEffectChild)
 #include "include/core/SkCanvas.h"
 DEF_MAP(SkCanvas::Lattice, sk_lattice_t, Lattice)
 
+static inline SkCanvas::SaveLayerRec AsCanvasSaveLayerRec(const sk_canvas_savelayerrec_t* rec) {
+    return SkCanvas::SaveLayerRec(
+        AsRect(rec->fBounds),
+        AsPaint(rec->fPaint),
+        AsImageFilter(rec->fBackdrop),
+        (SkCanvas::SaveLayerFlags)rec->fFlags);
+}
+
 #include "include/codec/SkCodec.h"
 DEF_MAP(SkCodec::FrameInfo, sk_codec_frameinfo_t, FrameInfo)
 DEF_MAP(SkCodec::Options, sk_codec_options_t, CodecOptions)
