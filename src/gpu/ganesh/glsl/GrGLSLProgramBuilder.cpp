@@ -136,22 +136,14 @@ bool GrGLSLProgramBuilder::emitAndInstallFragProcs(SkString* color, SkString* co
     return true;
 }
 
-SkString GrGLSLProgramBuilder::emitRootFragProc(const GrFragmentProcessor& fp,
-                                                GrFragmentProcessor::ProgramImpl& impl,
-                                                const SkString& input,
-                                                SkString output) {
-    SkASSERT(input.size());
-
-    // Program builders have a bit of state we need to clear with each effect
-    this->advanceStage();
-    this->nameExpression(&output, "output");
-    fFS.codeAppendf("half4 %s;", output.c_str());
+bool GrGLSLProgramBuilder::emitTextureSamplersForFPs(const GrFragmentProcessor& fp,
+                                                     GrFragmentProcessor::ProgramImpl& impl,
+                                                     int* samplerIndex) {
     bool ok = true;
-    fp.visitWithImpls([&, samplerIdx = 0](const GrFragmentProcessor& fp,
-                                          GrFragmentProcessor::ProgramImpl& impl) mutable {
-        if (auto* te = fp.asTextureEffect()) {
-            SkString name;
-            name.printf("TextureSampler_%d", samplerIdx++);
+    fp.visitWithImpls([&](const GrFragmentProcessor& fp, GrFragmentProcessor::ProgramImpl& impl) {
+        if (const GrTextureEffect* te = fp.asTextureEffect()) {
+            SkString name = SkStringPrintf("TextureSampler_%d", *samplerIndex);
+            *samplerIndex += 1;
 
             GrSamplerState samplerState = te->samplerState();
             const GrBackendFormat& format = te->view().proxy()->backendFormat();
@@ -164,36 +156,52 @@ SkString GrGLSLProgramBuilder::emitRootFragProc(const GrFragmentProcessor& fp,
             static_cast<GrTextureEffect::Impl&>(impl).setSamplerHandle(handle);
         }
     }, impl);
-    if (!ok) {
+
+    return ok;
+}
+
+std::string GrGLSLProgramBuilder::invokeFP(const GrFragmentProcessor& fp,
+                                           const GrFragmentProcessor::ProgramImpl& impl,
+                                           const char* inputColor,
+                                           const char* destColor,
+                                           const char* coords) const {
+    if (fp.isBlendFunction()) {
+        if (this->fragmentProcessorHasCoordsParam(&fp)) {
+            return SkSL::String::printf("%s(%s, %s, %s)", impl.functionName(), inputColor,
+                                                          destColor, coords);
+        } else {
+            return SkSL::String::printf("%s(%s, %s)", impl.functionName(), inputColor, destColor);
+        }
+    }
+
+    if (this->fragmentProcessorHasCoordsParam(&fp)) {
+        return SkSL::String::printf("%s(%s, %s)", impl.functionName(), inputColor, coords);
+    } else {
+        return SkSL::String::printf("%s(%s)", impl.functionName(), inputColor);
+    }
+}
+
+SkString GrGLSLProgramBuilder::emitRootFragProc(const GrFragmentProcessor& fp,
+                                                GrFragmentProcessor::ProgramImpl& impl,
+                                                const SkString& input,
+                                                SkString output) {
+    SkASSERT(input.size());
+
+    // Program builders have a bit of state we need to clear with each effect
+    this->advanceStage();
+    this->nameExpression(&output, "output");
+    fFS.codeAppendf("half4 %s;", output.c_str());
+    int samplerIndex = 0;
+    if (!this->emitTextureSamplersForFPs(fp, impl, &samplerIndex)) {
         return {};
     }
 
     this->writeFPFunction(fp, impl);
 
-    if (fp.isBlendFunction()) {
-        if (this->fragmentProcessorHasCoordsParam(&fp)) {
-            fFS.codeAppendf("%s = %s(%s, half4(1), %s);",
-                            output.c_str(),
-                            impl.functionName(),
-                            input.c_str(),
-                            fLocalCoordsVar.c_str());
-        } else {
-            fFS.codeAppendf("%s = %s(%s, half4(1));",
-                            output.c_str(),
-                            impl.functionName(),
-                            input.c_str());
-        }
-    } else {
-        if (this->fragmentProcessorHasCoordsParam(&fp)) {
-            fFS.codeAppendf("%s = %s(%s, %s);",
-                            output.c_str(),
-                            impl.functionName(),
-                            input.c_str(),
-                            fLocalCoordsVar.c_str());
-        } else {
-            fFS.codeAppendf("%s = %s(%s);", output.c_str(), impl.functionName(), input.c_str());
-        }
-    }
+    fFS.codeAppendf(
+            "%s = %s;",
+            output.c_str(),
+            this->invokeFP(fp, impl, input.c_str(), "half4(1)", fLocalCoordsVar.c_str()).c_str());
 
     // We have to check that effects and the code they emit are consistent, ie if an effect asks
     // for dst color, then the emit code needs to follow suit
@@ -496,8 +504,10 @@ void GrGLSLProgramBuilder::addRTFlipUniform(const char* name) {
                                                     nullptr);
 }
 
-bool GrGLSLProgramBuilder::fragmentProcessorHasCoordsParam(const GrFragmentProcessor* fp) {
-    return fFPCoordsMap[fp].hasCoordsParam;
+bool GrGLSLProgramBuilder::fragmentProcessorHasCoordsParam(const GrFragmentProcessor* fp) const {
+    auto iter = fFPCoordsMap.find(fp);
+    return (iter != fFPCoordsMap.end()) ? iter->second.hasCoordsParam
+                                        : fp->usesSampleCoords();
 }
 
 void GrGLSLProgramBuilder::finalizeShaders() {

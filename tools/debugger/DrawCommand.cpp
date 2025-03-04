@@ -32,11 +32,11 @@
 #include "include/core/SkStream.h"
 #include "include/core/SkTypeface.h"
 #include "include/encode/SkPngEncoder.h"
-#include "include/private/SkShadowFlags.h"
 #include "include/private/base/SkDebug.h"
 #include "include/private/base/SkMalloc.h"
 #include "include/private/base/SkTo.h"
 #include "include/private/gpu/ganesh/GrImageContext.h"
+#include "include/utils/SkShadowUtils.h"
 #include "src/base/SkAutoMalloc.h"
 #include "src/core/SkCanvasPriv.h"
 #include "src/core/SkMaskFilterBase.h"
@@ -629,7 +629,7 @@ static SkString encode_data(const void*     bytes,
 void DrawCommand::flatten(const SkFlattenable* flattenable,
                           SkJSONWriter&        writer,
                           UrlDataManager&      urlDataManager) {
-    SkBinaryWriteBuffer buffer;
+    SkBinaryWriteBuffer buffer({});  // TODO(kjlubick, bungeman) feed SkSerialProcs through API
     flattenable->flatten(buffer);
     void* data = sk_malloc_throw(buffer.bytesWritten());
     buffer.writeToMemory(data);

@@ -9,12 +9,12 @@
 
 #include "include/core/SkSpan.h"
 #include "include/core/SkTypes.h"
-#include "include/private/SkSLDefines.h"
 #include "include/private/base/SkTo.h"
 #include "src/base/SkEnumBitMask.h"
 #include "src/base/SkStringView.h"
 #include "src/sksl/SkSLBuiltinTypes.h"
 #include "src/sksl/SkSLContext.h"
+#include "src/sksl/SkSLDefines.h"
 #include "src/sksl/SkSLErrorReporter.h"
 #include "src/sksl/SkSLPosition.h"
 #include "src/sksl/SkSLProgramKind.h"
@@ -80,8 +80,8 @@ static bool check_parameters(const Context& context,
         if (!type.isOpaque()) {
             permittedFlags |= ModifierFlag::kOut;
         }
-        if (type.typeKind() == Type::TypeKind::kTexture) {
-            // We allow `readonly` `writeonly` and `layout(pixel-format)` on storage textures.
+        if (type.isStorageTexture()) {
+            // We allow `readonly`, `writeonly` and `layout(pixel-format)` on storage textures.
             permittedFlags |= ModifierFlag::kReadOnly | ModifierFlag::kWriteOnly;
             permittedLayoutFlags |= LayoutFlag::kAllPixelFormats;
 

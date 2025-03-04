@@ -6,7 +6,6 @@
  */
 
 #include "include/effects/SkImageFilters.h"
-#include "src/effects/imagefilters/SkCropImageFilter.h"
 
 #include "include/core/SkColor.h"
 #include "include/core/SkFlattenable.h"
@@ -29,6 +28,7 @@
 #include "src/core/SkRuntimeEffectPriv.h"
 #include "src/core/SkWriteBuffer.h"
 
+#include <optional>
 #include <utility>
 
 struct SkISize;
@@ -158,7 +158,7 @@ struct Material {
 class SkLightingImageFilter final : public SkImageFilter_Base {
 public:
     SkLightingImageFilter(const Light& light, const Material& material, sk_sp<SkImageFilter> input)
-            : SkImageFilter_Base(&input, 1, nullptr)
+            : SkImageFilter_Base(&input, 1)
             , fLight(light)
             , fMaterial(material) {}
 
@@ -181,11 +181,11 @@ private:
     skif::LayerSpace<SkIRect> onGetInputLayerBounds(
             const skif::Mapping& mapping,
             const skif::LayerSpace<SkIRect>& desiredOutput,
-            const skif::LayerSpace<SkIRect>& contentBounds) const override;
+            std::optional<skif::LayerSpace<SkIRect>> contentBounds) const override;
 
-    skif::LayerSpace<SkIRect> onGetOutputLayerBounds(
+    std::optional<skif::LayerSpace<SkIRect>> onGetOutputLayerBounds(
             const skif::Mapping& mapping,
-            const skif::LayerSpace<SkIRect>& contentBounds) const override;
+            std::optional<skif::LayerSpace<SkIRect>> contentBounds) const override;
 
     skif::LayerSpace<SkIRect> requiredInput(const skif::LayerSpace<SkIRect>& desiredOutput) const {
         // We request 1px of padding so that the visible normal map can do a regular Sobel kernel
@@ -395,12 +395,12 @@ sk_sp<SkImageFilter> make_lighting(const Light& light,
     // boundary condition spec) and the output (because otherwise it has infinite bounds).
     sk_sp<SkImageFilter> filter = std::move(input);
     if (cropRect) {
-        filter = SkMakeCropImageFilter(*cropRect, std::move(filter));
+        filter = SkImageFilters::Crop(*cropRect, std::move(filter));
     }
     filter = sk_sp<SkImageFilter>(
             new SkLightingImageFilter(light, material, std::move(filter)));
     if (cropRect) {
-        filter = SkMakeCropImageFilter(*cropRect, std::move(filter));
+        filter = SkImageFilters::Crop(*cropRect, std::move(filter));
     }
     return filter;
 }
@@ -678,18 +678,18 @@ skif::FilterResult SkLightingImageFilter::onFilterImage(const skif::Context& ctx
 skif::LayerSpace<SkIRect> SkLightingImageFilter::onGetInputLayerBounds(
         const skif::Mapping& mapping,
         const skif::LayerSpace<SkIRect>& desiredOutput,
-        const skif::LayerSpace<SkIRect>& contentBounds) const {
+        std::optional<skif::LayerSpace<SkIRect>> contentBounds) const {
     skif::LayerSpace<SkIRect> requiredInput = this->requiredInput(desiredOutput);
     return this->getChildInputLayerBounds(0, mapping, requiredInput, contentBounds);
 }
 
-skif::LayerSpace<SkIRect> SkLightingImageFilter::onGetOutputLayerBounds(
+std::optional<skif::LayerSpace<SkIRect>> SkLightingImageFilter::onGetOutputLayerBounds(
         const skif::Mapping& mapping,
-        const skif::LayerSpace<SkIRect>& contentBounds) const {
+        std::optional<skif::LayerSpace<SkIRect>> contentBounds) const {
     // The lighting equation is defined on the entire plane, even if the input image that defines
     // the normal map is bounded. It just is evaluated at a constant normal vector, which can still
     // produce non-constant color since the direction to the eye and light change per pixel.
-    return skif::LayerSpace<SkIRect>(SkRectPriv::MakeILarge());
+    return skif::LayerSpace<SkIRect>::Unbounded();
 }
 
 SkRect SkLightingImageFilter::computeFastBounds(const SkRect& src) const {

@@ -195,6 +195,14 @@ DEF_MAP(SkRuntimeEffect::Child, sk_runtimeeffect_child_t, RuntimeEffectChild)
 #include "include/core/SkCanvas.h"
 DEF_MAP(SkCanvas::Lattice, sk_lattice_t, Lattice)
 
+static inline SkCanvas::SaveLayerRec AsCanvasSaveLayerRec(const sk_canvas_savelayerrec_t* rec) {
+    return SkCanvas::SaveLayerRec(
+        AsRect(rec->fBounds),
+        AsPaint(rec->fPaint),
+        AsImageFilter(rec->fBackdrop),
+        (SkCanvas::SaveLayerFlags)rec->fFlags);
+}
+
 #include "include/codec/SkCodec.h"
 DEF_MAP(SkCodec::FrameInfo, sk_codec_frameinfo_t, FrameInfo)
 DEF_MAP(SkCodec::Options, sk_codec_options_t, CodecOptions)
@@ -219,9 +227,6 @@ DEF_MAP(SkPngEncoder::Options, sk_pngencoder_options_t, PngEncoderOptions)
 DEF_MAP(SkRegion::Iterator, sk_region_iterator_t, RegionIterator)
 DEF_MAP(SkRegion::Cliperator, sk_region_cliperator_t, RegionCliperator)
 DEF_MAP(SkRegion::Spanerator, sk_region_spanerator_t, RegionSpanerator)
-
-#include "include/core/SkTime.h"
-DEF_MAP(SkTime::DateTime, sk_time_datetime_t, TimeDateTime)
 
 #include "include/encode/SkWebpEncoder.h"
 DEF_MAP(SkWebpEncoder::Options, sk_webpencoder_options_t, WebpEncoderOptions)
@@ -304,11 +309,12 @@ static inline sk_textblob_builder_runbuffer_t ToTextBlobBuilderRunBuffer(const S
 }
 
 #include "include/docs/SkPDFDocument.h"
-static inline SkTime::DateTime AsDocumentOptionalTimestamp(const sk_time_datetime_t* datetime) {
+DEF_MAP(SkPDF::DateTime, sk_document_pdf_datetime_t, TimeDateTime)
+static inline SkPDF::DateTime AsDocumentOptionalTimestamp(const sk_document_pdf_datetime_t* datetime) {
     if (datetime) {
         return *AsTimeDateTime(datetime);
     } else {
-        return SkTime::DateTime();
+        return SkPDF::DateTime();
     }
 }
 static inline SkString AsDocumentOptionalString(const sk_string_t* skstring) {

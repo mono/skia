@@ -137,7 +137,7 @@ export interface CanvasKit {
      * @param lightPos - The 3D position of the light relative to the canvas plane. This is
      *                   independent of the canvas's current matrix.
      * @param lightRadius - The radius of the disc light.
-     * @param flags - See SkShadowFlags.h; 0 means use default options.
+     * @param flags - See SkShadowUtils.h; 0 means use default options.
      * @param dstRect - if provided, the bounds will be copied into this rect instead of allocating
      *                  a new one.
      * @returns The bounding rectangle or null if it could not be computed.
@@ -457,6 +457,7 @@ export interface CanvasKit {
     readonly Path: PathConstructorAndFactory;
     readonly PictureRecorder: DefaultConstructor<PictureRecorder>;
     readonly TextStyle: TextStyleConstructor;
+    readonly SlottableTextProperty: SlottableTextPropertyConstructor;
 
     // Factories, i.e. things made with CanvasKit.Foo.MakeTurboEncabulator()
     readonly ParagraphBuilder: ParagraphBuilderFactory;
@@ -502,6 +503,8 @@ export interface CanvasKit {
     readonly StrokeJoin: StrokeJoinEnumValues;
     readonly TileMode: TileModeEnumValues;
     readonly VertexMode: VertexModeEnumValues;
+    readonly InputState: InputStateEnumValues;
+    readonly ModifierKey: ModifierKeyEnumValues;
 
     // Core Constants
     readonly TRANSPARENT: Color;
@@ -557,6 +560,10 @@ export interface CanvasKit {
     readonly TextBaseline: TextBaselineEnumValues;
     readonly TextDirection: TextDirectionEnumValues;
     readonly TextHeightBehavior: TextHeightBehaviorEnumValues;
+
+    // other enums
+    readonly VerticalTextAlign: VerticalTextAlignEnumValues;
+    readonly ResizePolicy: ResizePolicyEnumValues;
 
     // Paragraph Constants
     readonly NoDecoration: number;
@@ -692,6 +699,40 @@ export interface WebGPUCanvasContext {
      * draw multiple frames, e.g. of an animation.
      */
     requestAnimationFrame(drawFrame: (_: Canvas) => void): void;
+}
+
+/**
+ * The glyph and grapheme cluster information associated with a code point within
+ * a paragraph.
+ */
+export interface GlyphInfo {
+    /**
+     * The layout bounds of the grapheme cluster the code point belongs to, in
+     * the paragraph's coordinates.
+     *
+     * This width of the rect is horizontal advance of the grapheme cluster,
+     * the height of the rect is the line height when the grapheme cluster
+     * occupies a full line.
+     */
+    graphemeLayoutBounds: Rect;
+    /**
+     * The left-closed-right-open UTF-16 range of the grapheme cluster the code
+     * point belongs to.
+     */
+    graphemeClusterTextRange: URange;
+    /** The writing direction of the grapheme cluster. */
+    dir: TextDirection;
+    /**
+     * Whether the associated glyph points to an ellipsis added by the text
+     * layout library.
+     *
+     * The text layout library truncates the lines that exceed the specified
+     * max line number, and may add an ellipsis to replace the last few code
+     * points near the logical end of the last visible line. If True, this object
+     * marks the logical end of the list of GlyphInfo objects that are
+     * retrievable from the text layout library.
+     */
+    isEllipsis: boolean;
 }
 
 /**
@@ -939,6 +980,45 @@ export interface TransformProperty {
     value: TransformValue;
 }
 
+/**
+ * Collection of slot IDs sorted by value type
+ */
+export interface SlotInfo {
+    colorSlotIDs: string[];
+    scalarSlotIDs: string[];
+    vec2SlotIDs: string[];
+    imageSlotIDs: string[];
+    textSlotIDs: string[];
+}
+
+/**
+ * Text property for ManagedAnimation's slot support
+ */
+export interface SlottableTextProperty {
+    typeface?: Typeface
+    text?: string;
+
+    textSize?: number;
+    minTextSize?: number;
+    maxTextSize?: number;
+    strokeWidth?: number;
+    lineHeight?: number;
+    lineShift?: number;
+    ascent?: number;
+    maxLines?: number;
+
+    horizAlign?: TextAlignEnumValues;
+    vertAlign?: VerticalTextAlignEnumValues;
+    strokeJoin?: StrokeJoinEnumValues;
+    direction?: TextDirectionEnumValues;
+    linebreak?: LineBreakTypeEnumValues;
+    resize?: ResizePolicyEnumValues;
+
+    boundingBox?: InputRect;
+    fillColor?: InputColor;
+    strokeColor?: InputColor;
+}
+
 export interface ManagedSkottieAnimation extends SkottieAnimation {
     setColor(key: string, color: InputColor): boolean;
     setOpacity(key: string, opacity: number): boolean;
@@ -956,14 +1036,33 @@ export interface ManagedSkottieAnimation extends SkottieAnimation {
     // can be observed and editted live like with the other get/set tools. The slot id passed in
     // must match the name of the property in the Essential Graphics window. Property Groups support
     // one-to-many relationships.
+    getSlotInfo() : SlotInfo;
+
     setColorSlot(key: string, color: InputColor): boolean;
     setScalarSlot(key: string, scalar: number): boolean;
     setVec2Slot(key: string, vec2: InputVector2): boolean;
+    setTextSlot(key: string, text: SlottableTextProperty): boolean;
     setImageSlot(key: string, assetName: string): boolean;
 
     getColorSlot(key: string): Color | null;
     getScalarSlot(key: string): number | null;
     getVec2Slot(key: string): Vector2 | null;
+    getTextSlot(key: string): SlottableTextProperty | null;
+
+    // Attach a WYSIWYG editor to the text layer identified by 'id' and 'index' (multiple layers
+    // can be grouped with the same ID).
+    // Other layers with the same ID are attached as dependents, and updated on the fly as the
+    // edited layer changes.
+    attachEditor(id: string, index: number): boolean;
+
+    // Enable/disable the current editor.
+    enableEditor(enable: boolean): void;
+
+    // Send key events to the active editor.
+    dispatchEditorKey(key: string): boolean;
+
+    // Send pointer events to the active editor, in canvas coordinates.
+    dispatchEditorPointer(x: number, y: number, state: InputState, modifier: ModifierKey): boolean;
 }
 
 /**
@@ -979,14 +1078,42 @@ export interface Paragraph extends EmbindObject<"Paragraph"> {
      * with the top left corner as the origin, and +y direction as down.
      */
     getGlyphPositionAtCoordinate(dx: number, dy: number): PositionWithAffinity;
+    /**
+     * Returns the information associated with the closest glyph at the specified
+     * paragraph coordinate, or null if the paragraph is empty.
+     */
+    getClosestGlyphInfoAtCoordinate(dx: number, dy: number): GlyphInfo | null;
+    /**
+     * Returns the information associated with the glyph at the specified UTF-16
+     * offset within the paragraph's visible lines, or null if the index is out
+     * of bounds, or points to a codepoint that is logically after the last
+     * visible codepoint.
+     */
+    getGlyphInfoAt(index: number): GlyphInfo | null;
 
     getHeight(): number;
     getIdeographicBaseline(): number;
+    /**
+     * Returns the line number of the line that contains the specified UTF-16
+     * offset within the paragraph, or -1 if the index is out of bounds, or
+     * points to a codepoint that is logically after the last visible codepoint.
+     */
+    getLineNumberAt(index: number): number;
     getLineMetrics(): LineMetrics[];
+    /**
+     * Returns the LineMetrics of the line at the specified line number, or null
+     * if the line number is out of bounds, or is larger than or equal to the
+     * specified max line number.
+     */
+    getLineMetricsAt(lineNumber: number): LineMetrics | null;
     getLongestLine(): number;
     getMaxIntrinsicWidth(): number;
     getMaxWidth(): number;
     getMinIntrinsicWidth(): number;
+    /**
+     * Returns the total number of visible lines in the paragraph.
+     */
+    getNumberOfLines(): number;
     getRectsForPlaceholders(): RectWithDirection[];
 
     /**
@@ -1548,7 +1675,7 @@ export interface Canvas extends EmbindObject<"Canvas"> {
      * @param lightRadius - The radius of the disc light.
      * @param ambientColor - The color of the ambient shadow.
      * @param spotColor -  The color of the spot shadow.
-     * @param flags - See SkShadowFlags.h; 0 means use default options.
+     * @param flags - See SkShadowUtils.h; 0 means use default options.
      */
     drawShadow(path: Path, zPlaneParams: InputVector3, lightPos: InputVector3, lightRadius: number,
                ambientColor: InputColor, spotColor: InputColor, flags: number): void;
@@ -4071,6 +4198,15 @@ export interface TextStyleConstructor {
     new(ts: TextStyle): TextStyle;
 }
 
+export interface SlottableTextPropertyConstructor {
+   /**
+     * Fills out all optional fields with defaults. The emscripten bindings complain if there
+     * is a field undefined and it was expecting a float (for example).
+     * @param text
+     */
+   new(text: SlottableTextProperty): SlottableTextProperty;
+}
+
 export interface TypefaceFactory {
     /**
      * Create a typeface using Freetype from the specified bytes and return it. CanvasKit supports
@@ -4386,6 +4522,8 @@ export type StrokeCap = EmbindEnumEntity;
 export type StrokeJoin = EmbindEnumEntity;
 export type TileMode = EmbindEnumEntity;
 export type VertexMode = EmbindEnumEntity;
+export type InputState = EmbindEnumEntity;
+export type ModifierKey = EmbindEnumEntity;
 
 export type Affinity = EmbindEnumEntity;
 export type DecorationStyle = EmbindEnumEntity;
@@ -4681,4 +4819,47 @@ export interface VertexModeEnumValues extends EmbindEnum {
     Triangles: VertexMode;
     TrianglesStrip: VertexMode;
     TriangleFan: VertexMode;
+}
+
+export interface InputStateEnumValues extends EmbindEnum {
+    Down: InputState;
+    Up: InputState;
+    Move: InputState;
+    Right: InputState;  // fling only
+    Left: InputState;  // fling only
+}
+
+export interface ModifierKeyEnumValues extends EmbindEnum {
+    None: ModifierKey;
+    Shift: ModifierKey;
+    Control: ModifierKey;
+    Option: ModifierKey;
+    Command: ModifierKey;
+    FirstPress: ModifierKey;
+}
+
+export type VerticalAlign = EmbindEnumEntity;
+
+export interface VerticalTextAlignEnumValues extends EmbindEnum {
+    Top: VerticalAlign;
+    TopBaseline: VerticalAlign;
+
+    // Skottie vertical alignment extensions
+    // Visual alignement modes -- these are using tight visual bounds for the paragraph.
+    VisualTop: VerticalAlign;     // visual top    -> text box top
+    VisualCenter: VerticalAlign;  // visual center -> text box center
+    VisualBottom: VerticalAlign;  // visual bottom -> text box bottom
+}
+
+export type ResizePolicy = EmbindEnumEntity;
+
+export interface ResizePolicyEnumValues extends EmbindEnum {
+    // Use the specified text size.
+    None: ResizePolicy;
+    // Resize the text such that the extent box fits (snuggly) in the text box,
+    // both horizontally and vertically.
+    ScaleToFit: ResizePolicy;
+    // Same kScaleToFit if the text doesn't fit at the specified font size.
+    // Otherwise, same as kNone.
+    DownscaleToFit: ResizePolicy;
 }

@@ -334,7 +334,7 @@ GrSurfaceProxyView render_sw_mask(GrRecordingContext* context,
                                                 bounds.size(),
                                                 GrRenderable::kNo,
                                                 1,
-                                                GrMipmapped::kNo,
+                                                skgpu::Mipmapped::kNo,
                                                 SkBackingFit::kApprox,
                                                 skgpu::Budgeted::kYes,
                                                 GrProtected::kNo,
@@ -1299,7 +1299,8 @@ GrClip::Effect ClipStack::apply(GrRecordingContext* rContext,
     if (cs.shader()) {
         static const GrColorInfo kCoverageColorInfo{GrColorType::kUnknown, kPremul_SkAlphaType,
                                                     nullptr};
-        GrFPArgs args(rContext, &kCoverageColorInfo, sdc->surfaceProps());
+        GrFPArgs args(
+                rContext, &kCoverageColorInfo, sdc->surfaceProps(), GrFPArgs::Scope::kDefault);
         clipFP = GrFragmentProcessors::Make(cs.shader(), args, *fCTM);
         if (clipFP) {
             // The initial input is the coverage from the geometry processor, so this ensures it

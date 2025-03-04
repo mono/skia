@@ -1,15 +1,12 @@
 ### Compilation failed:
 
-error: :5:1 error: structures must have at least one member
-struct FSOut {
+error: :2:1 error: structures must have at least one member
+struct FSIn {
 ^^^^^^
 
 
 diagnostic(off, derivative_uniformity);
 struct FSIn {
-  @builtin(front_facing) sk_Clockwise: bool,
-};
-struct FSOut {
 };
 struct S1 {
   x: i32,

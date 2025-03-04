@@ -19,10 +19,13 @@
 #include "src/gpu/graphite/vk/VulkanCommandBuffer.h"
 #include "src/gpu/graphite/vk/VulkanDescriptorPool.h"
 #include "src/gpu/graphite/vk/VulkanDescriptorSet.h"
+#include "src/gpu/graphite/vk/VulkanFramebuffer.h"
 #include "src/gpu/graphite/vk/VulkanGraphicsPipeline.h"
+#include "src/gpu/graphite/vk/VulkanRenderPass.h"
 #include "src/gpu/graphite/vk/VulkanSampler.h"
 #include "src/gpu/graphite/vk/VulkanSharedContext.h"
 #include "src/gpu/graphite/vk/VulkanTexture.h"
+#include "src/gpu/vk/VulkanMemory.h"
 #include "src/sksl/SkSLCompiler.h"
 
 namespace skgpu::graphite {
@@ -99,11 +102,14 @@ sk_sp<GraphicsPipeline> VulkanResourceProvider::createGraphicsPipeline(
         const GraphicsPipelineDesc& pipelineDesc,
         const RenderPassDesc& renderPassDesc) {
     SkSL::Compiler skslCompiler(fSharedContext->caps()->shaderCaps());
+    auto compatibleRenderPass =
+            this->findOrCreateRenderPass(renderPassDesc, /*compatibleOnly=*/true);
     return VulkanGraphicsPipeline::Make(this->vulkanSharedContext(),
                                         &skslCompiler,
                                         runtimeDict,
                                         pipelineDesc,
                                         renderPassDesc,
+                                        compatibleRenderPass,
                                         this->pipelineCache());
 }
 
@@ -129,8 +135,23 @@ sk_sp<Sampler> VulkanResourceProvider::createSampler(const SkSamplingOptions& sa
 }
 
 BackendTexture VulkanResourceProvider::onCreateBackendTexture(SkISize dimensions,
-                                                              const TextureInfo&) {
-    return {};
+                                                              const TextureInfo& info) {
+    VulkanTextureInfo vkTexInfo;
+    if (!info.getVulkanTextureInfo(&vkTexInfo)) {
+        return {};
+    }
+    VulkanTexture::CreatedImageInfo createdTextureInfo;
+    if (!VulkanTexture::MakeVkImage(this->vulkanSharedContext(), dimensions, info,
+                                    &createdTextureInfo)) {
+        return {};
+    } else {
+        return {dimensions,
+                vkTexInfo,
+                createdTextureInfo.fMutableState->getImageLayout(),
+                createdTextureInfo.fMutableState->getQueueFamilyIndex(),
+                createdTextureInfo.fImage,
+                createdTextureInfo.fMemoryAlloc};
+    }
 }
 
 sk_sp<VulkanDescriptorSet> VulkanResourceProvider::findOrCreateDescriptorSet(
@@ -176,6 +197,27 @@ sk_sp<VulkanDescriptorSet> VulkanResourceProvider::findOrCreateDescriptorSet(
                    : nullptr;
 }
 
+sk_sp<VulkanRenderPass> VulkanResourceProvider::findOrCreateRenderPass(
+        const RenderPassDesc& renderPassDesc, bool compatibleOnly) {
+    auto renderPassKey = VulkanRenderPass::MakeRenderPassKey(renderPassDesc, compatibleOnly);
+    Resource* existingRenderPass =
+            fResourceCache->findAndRefResource(renderPassKey, skgpu::Budgeted::kYes);
+
+    if (existingRenderPass) {
+        return sk_sp<VulkanRenderPass>(static_cast<VulkanRenderPass*>(existingRenderPass));
+    } else {
+        auto newRenderPass = VulkanRenderPass::MakeRenderPass(
+                this->vulkanSharedContext(), renderPassDesc, compatibleOnly);
+        SkASSERT(newRenderPass);
+        newRenderPass->setKey(renderPassKey);
+        fResourceCache->insertResource(newRenderPass.get());
+    }
+
+    auto renderPass = fResourceCache->findAndRefResource(renderPassKey, skgpu::Budgeted::kYes);
+    return renderPass ? sk_sp<VulkanRenderPass>(static_cast<VulkanRenderPass*>(renderPass))
+                      : nullptr;
+}
+
 VkPipelineCache VulkanResourceProvider::pipelineCache() {
     if (fPipelineCache == VK_NULL_HANDLE) {
         VkPipelineCacheCreateInfo createInfo;
@@ -197,5 +239,38 @@ VkPipelineCache VulkanResourceProvider::pipelineCache() {
         }
     }
     return fPipelineCache;
+}
+
+sk_sp<VulkanFramebuffer> VulkanResourceProvider::createFramebuffer(
+        const VulkanSharedContext* context,
+        const skia_private::TArray<VkImageView>& attachmentViews,
+        const VulkanRenderPass& renderPass,
+        const int width,
+        const int height) {
+    // TODO: Consider caching these in the future. If we pursue that, it may make more sense to
+    // use a compatible renderpass rather than a full one to make each frame buffer more versatile.
+    VkFramebufferCreateInfo framebufferInfo;
+    memset(&framebufferInfo, 0, sizeof(VkFramebufferCreateInfo));
+    framebufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+    framebufferInfo.pNext = nullptr;
+    framebufferInfo.flags = 0;
+    framebufferInfo.renderPass = renderPass.renderPass();
+    framebufferInfo.attachmentCount = attachmentViews.size();
+    framebufferInfo.pAttachments = attachmentViews.begin();
+    framebufferInfo.width = width;
+    framebufferInfo.height = height;
+    framebufferInfo.layers = 1;
+    return VulkanFramebuffer::Make(context, framebufferInfo);
+}
+
+void VulkanResourceProvider::onDeleteBackendTexture(const BackendTexture& texture) {
+    SkASSERT(texture.isValid());
+    SkASSERT(texture.backend() == BackendApi::kVulkan);
+
+    skgpu::VulkanMemory::FreeImageMemory(
+            this->vulkanSharedContext()->memoryAllocator(), *(texture.getMemoryAlloc()));
+
+    VULKAN_CALL(this->vulkanSharedContext()->interface(),
+                DestroyImage(this->vulkanSharedContext()->device(), texture.getVkImage(), nullptr));
 }
 } // namespace skgpu::graphite

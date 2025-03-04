@@ -66,11 +66,12 @@ public:
                                                  const SkBitmap&,
                                                  Mipmapped = skgpu::Mipmapped::kNo);
 
-    uint32_t recorderID() const { return fRecorder->fRecorderID; }
+    uint32_t uniqueID() const { return fRecorder->fUniqueID; }
 
     size_t getResourceCacheLimit() const;
 
 #if defined(GRAPHITE_TEST_UTILS)
+    bool deviceIsRegistered(Device*);
     ResourceCache* resourceCache() { return fRecorder->fResourceProvider->resourceCache(); }
     // used by the Context that created this Recorder to set a back pointer
     void setContext(Context*);

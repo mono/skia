@@ -125,7 +125,7 @@ public:
      * Otherwise this will delete/release the backend object that is wrapped in the BackendTexture.
      * The BackendTexture will be reset to an invalid state and should not be used again.
      */
-    void deleteBackendTexture(BackendTexture&);
+    void deleteBackendTexture(const BackendTexture&);
 
     // Adds a proc that will be moved to the Recording upon snap, subsequently attached to the
     // CommandBuffer when the Recording is added, and called when that CommandBuffer is submitted
@@ -154,14 +154,9 @@ public:
      */
     void performDeferredCleanup(std::chrono::milliseconds msNotUsed);
 
-
     // Provides access to functions that aren't part of the public API.
     RecorderPriv priv();
     const RecorderPriv priv() const;  // NOLINT(readability-const-return-type)
-
-#if defined(GRAPHITE_TEST_UTILS)
-    bool deviceIsRegistered(Device*);
-#endif
 
 private:
     friend class Context; // For ctor
@@ -205,7 +200,8 @@ private:
     std::unique_ptr<UploadBufferManager> fUploadBufferManager;
     std::vector<Device*> fTrackedDevices;
 
-    uint32_t fRecorderID;  // Needed for MessageBox handling for text
+    uint32_t fUniqueID;  // Needed for MessageBox handling for text
+    uint32_t fNextRecordingID = 1;
     std::unique_ptr<AtlasProvider> fAtlasProvider;
     std::unique_ptr<TokenTracker> fTokenTracker;
     std::unique_ptr<sktext::gpu::StrikeCache> fStrikeCache;

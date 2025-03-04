@@ -9,13 +9,13 @@
 
 #include "include/core/SkSpan.h"
 #include "include/core/SkTypes.h"
-#include "include/private/SkSLDefines.h"
 #include "include/private/base/SkTArray.h"
 #include "src/base/SkEnumBitMask.h"
 #include "src/base/SkStringView.h"
 #include "src/sksl/SkSLAnalysis.h"
 #include "src/sksl/SkSLBuiltinTypes.h"
 #include "src/sksl/SkSLCompiler.h"
+#include "src/sksl/SkSLDefines.h"
 #include "src/sksl/SkSLErrorReporter.h"
 #include "src/sksl/SkSLGLSL.h"
 #include "src/sksl/SkSLIntrinsicList.h"
@@ -126,7 +126,7 @@ void GLSLCodeGenerator::writeIdentifier(std::string_view identifier) {
 
 // Returns the name of the type with array dimensions, e.g. `float[2]`.
 std::string GLSLCodeGenerator::getTypeName(const Type& raw) {
-    const Type& type = raw.resolve();
+    const Type& type = raw.resolve().scalarTypeForLiteral();
     switch (type.typeKind()) {
         case Type::TypeKind::kVector: {
             const Type& component = type.componentType();
@@ -917,12 +917,15 @@ void GLSLCodeGenerator::writeVariableReference(const VariableReference& ref) {
             this->writeIdentifier("gl_InstanceID");
             break;
         case SK_LASTFRAGCOLOR_BUILTIN:
-            if (this->caps().fFBFetchSupport) {
-                this->write(this->caps().fFBFetchColorName);
-            } else {
-                fContext.fErrors->error(ref.fPosition,
-                                        "sk_LastFragColor requires framebuffer fetch support");
-            }
+            this->write(this->caps().fFBFetchColorName);
+            break;
+        case SK_SAMPLEMASKIN_BUILTIN:
+            // GLSL defines gl_SampleMaskIn as an array of ints. SkSL defines it as a scalar uint.
+            this->writeIdentifier("uint(gl_SampleMaskIn[0])");
+            break;
+        case SK_SAMPLEMASK_BUILTIN:
+            // GLSL defines gl_SampleMask as an array of ints. SkSL defines it as a scalar uint.
+            this->writeIdentifier("gl_SampleMask[0]");
             break;
         default:
             this->writeIdentifier(ref.variable()->mangledName());
@@ -937,8 +940,20 @@ void GLSLCodeGenerator::writeIndexExpression(const IndexExpression& expr) {
     this->write("]");
 }
 
-bool is_sk_position(const FieldAccess& f) {
+bool is_sk_position(const Expression& expr) {
+    if (!expr.is<FieldAccess>()) {
+        return false;
+    }
+    const FieldAccess& f = expr.as<FieldAccess>();
     return f.base()->type().fields()[f.fieldIndex()].fLayout.fBuiltin == SK_POSITION_BUILTIN;
+}
+
+bool is_sk_samplemask(const Expression& expr) {
+    if (!expr.is<VariableReference>()) {
+        return false;
+    }
+    const VariableReference& v = expr.as<VariableReference>();
+    return v.variable()->layout().fBuiltin == SK_SAMPLEMASK_BUILTIN;
 }
 
 void GLSLCodeGenerator::writeFieldAccess(const FieldAccess& f) {
@@ -993,15 +1008,14 @@ void GLSLCodeGenerator::writeBinaryExpression(const BinaryExpression& b,
     const Expression& left = *b.left();
     const Expression& right = *b.right();
     Operator op = b.getOperator();
-    if (this->caps().fUnfoldShortCircuitAsTernary &&
-            (op.kind() == Operator::Kind::LOGICALAND || op.kind() == Operator::Kind::LOGICALOR)) {
+    if (this->caps().fUnfoldShortCircuitAsTernary && (op.kind() == Operator::Kind::LOGICALAND ||
+                                                      op.kind() == Operator::Kind::LOGICALOR)) {
         this->writeShortCircuitWorkaroundExpression(b, parentPrecedence);
         return;
     }
 
-    if (this->caps().fRewriteMatrixComparisons &&
-            left.type().isMatrix() && right.type().isMatrix() &&
-            (op.kind() == Operator::Kind::EQEQ || op.kind() == Operator::Kind::NEQ)) {
+    if (this->caps().fRewriteMatrixComparisons && left.type().isMatrix() &&
+        right.type().isMatrix() && op.isEquality()) {
         this->writeMatrixComparisonWorkaround(b);
         return;
     }
@@ -1010,19 +1024,29 @@ void GLSLCodeGenerator::writeBinaryExpression(const BinaryExpression& b,
     if (precedence >= parentPrecedence) {
         this->write("(");
     }
-    bool positionWorkaround = ProgramConfig::IsVertex(fProgram.fConfig->fKind) &&
-                              op.isAssignment() &&
-                              left.is<FieldAccess>() &&
-                              is_sk_position(left.as<FieldAccess>()) &&
-                              !Analysis::ContainsRTAdjust(right) &&
-                              !this->caps().fCanUseFragCoord;
-    if (positionWorkaround) {
+    const bool needsPositionWorkaround = ProgramConfig::IsVertex(fProgram.fConfig->fKind) &&
+                                         op.isAssignment() &&
+                                         is_sk_position(left) &&
+                                         !Analysis::ContainsRTAdjust(right) &&
+                                         !this->caps().fCanUseFragCoord;
+    if (needsPositionWorkaround) {
         this->write("sk_FragCoord_Workaround = (");
     }
     this->writeExpression(left, precedence);
     this->write(op.operatorName());
+
+    const bool isAssignmentToSampleMask = ProgramConfig::IsFragment(fProgram.fConfig->fKind) &&
+                                          op.isAssignment() &&
+                                          is_sk_samplemask(left);
+    if (isAssignmentToSampleMask) {
+        // GLSL defines the sample masks as signed ints; SkSL (and Metal/WebGPU) use unsigned ints.
+        this->write("int(");
+    }
     this->writeExpression(right, precedence);
-    if (positionWorkaround) {
+    if (isAssignmentToSampleMask) {
+        this->write(")");
+    }
+    if (needsPositionWorkaround) {
         this->write(")");
     }
     if (precedence >= parentPrecedence) {
@@ -1303,18 +1327,13 @@ const char* GLSLCodeGenerator::getTypePrecision(const Type& type) {
         switch (type.typeKind()) {
             case Type::TypeKind::kScalar:
                 if (type.matches(*fContext.fTypes.fShort) ||
-                    type.matches(*fContext.fTypes.fUShort)) {
-                    if (fProgram.fConfig->fSettings.fForceHighPrecision ||
-                            this->caps().fIncompleteShortIntPrecision) {
-                        return "highp ";
-                    }
-                    return "mediump ";
-                }
-                if (type.matches(*fContext.fTypes.fHalf)) {
+                    type.matches(*fContext.fTypes.fUShort) ||
+                    type.matches(*fContext.fTypes.fHalf)) {
                     return fProgram.fConfig->fSettings.fForceHighPrecision ? "highp " : "mediump ";
                 }
-                if (type.matches(*fContext.fTypes.fFloat) || type.matches(*fContext.fTypes.fInt) ||
-                        type.matches(*fContext.fTypes.fUInt)) {
+                if (type.matches(*fContext.fTypes.fFloat) ||
+                    type.matches(*fContext.fTypes.fInt) ||
+                    type.matches(*fContext.fTypes.fUInt)) {
                     return "highp ";
                 }
                 return "";

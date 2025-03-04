@@ -48,10 +48,10 @@ namespace SkSL {
     class Compiler;
 }
 
-class GrGpu : public SkRefCnt {
+class GrGpu {
 public:
     GrGpu(GrDirectContext* direct);
-    ~GrGpu() override;
+    virtual ~GrGpu();
 
     GrDirectContext* getContext() { return fContext; }
     const GrDirectContext* getContext() const { return fContext; }
@@ -150,7 +150,7 @@ public:
                                    GrTextureType textureType,
                                    GrRenderable renderable,
                                    int renderTargetSampleCnt,
-                                   GrMipmapped mipmapped,
+                                   skgpu::Mipmapped mipmapped,
                                    skgpu::Budgeted budgeted,
                                    GrProtected isProtected,
                                    std::string_view label);
@@ -158,7 +158,7 @@ public:
     sk_sp<GrTexture> createCompressedTexture(SkISize dimensions,
                                              const GrBackendFormat& format,
                                              skgpu::Budgeted budgeted,
-                                             GrMipmapped mipmapped,
+                                             skgpu::Mipmapped mipmapped,
                                              GrProtected isProtected,
                                              const void* data,
                                              size_t dataSize);
@@ -403,7 +403,7 @@ public:
     // Called before render tasks are executed during a flush.
     virtual void willExecute() {}
 
-    bool submitToGpu(bool syncCpu);
+    bool submitToGpu(GrSyncCpu sync);
 
     virtual void submit(GrOpsRenderPass*) = 0;
 
@@ -563,7 +563,7 @@ public:
     GrBackendTexture createBackendTexture(SkISize dimensions,
                                           const GrBackendFormat&,
                                           GrRenderable,
-                                          GrMipmapped,
+                                          skgpu::Mipmapped,
                                           GrProtected,
                                           std::string_view label);
 
@@ -577,7 +577,7 @@ public:
      */
     GrBackendTexture createCompressedBackendTexture(SkISize dimensions,
                                                     const GrBackendFormat&,
-                                                    GrMipmapped,
+                                                    skgpu::Mipmapped,
                                                     GrProtected);
 
     bool updateCompressedBackendTexture(const GrBackendTexture&,
@@ -680,7 +680,7 @@ public:
 protected:
     static bool CompressedDataIsCorrect(SkISize dimensions,
                                         SkTextureCompressionType,
-                                        GrMipmapped,
+                                        skgpu::Mipmapped,
                                         const void* data,
                                         size_t length);
 
@@ -701,12 +701,14 @@ private:
     virtual GrBackendTexture onCreateBackendTexture(SkISize dimensions,
                                                     const GrBackendFormat&,
                                                     GrRenderable,
-                                                    GrMipmapped,
+                                                    skgpu::Mipmapped,
                                                     GrProtected,
                                                     std::string_view label) = 0;
 
-    virtual GrBackendTexture onCreateCompressedBackendTexture(
-            SkISize dimensions, const GrBackendFormat&, GrMipmapped, GrProtected) = 0;
+    virtual GrBackendTexture onCreateCompressedBackendTexture(SkISize dimensions,
+                                                              const GrBackendFormat&,
+                                                              skgpu::Mipmapped,
+                                                              GrProtected) = 0;
 
     virtual bool onClearBackendTexture(const GrBackendTexture&,
                                        sk_sp<skgpu::RefCntedCallback> finishedCallback,
@@ -740,7 +742,7 @@ private:
     virtual sk_sp<GrTexture> onCreateCompressedTexture(SkISize dimensions,
                                                        const GrBackendFormat&,
                                                        skgpu::Budgeted,
-                                                       GrMipmapped,
+                                                       skgpu::Mipmapped,
                                                        GrProtected,
                                                        const void* data,
                                                        size_t dataSize) = 0;
@@ -833,7 +835,7 @@ private:
             SkSurfaces::BackendSurfaceAccess access,
             const skgpu::MutableTextureState* newState) {}
 
-    virtual bool onSubmitToGpu(bool syncCpu) = 0;
+    virtual bool onSubmitToGpu(GrSyncCpu sync) = 0;
 
     void reportSubmitHistograms();
     virtual void onReportSubmitHistograms() {}

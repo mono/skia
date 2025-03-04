@@ -46,9 +46,8 @@ public:
                             Shareable,
                             GraphiteResourceKey*) const override;
     uint64_t getRenderPassDescKey(const RenderPassDesc& renderPassDesc) const;
-    bool enableWGSL() const {
-        return fEnableWGSL;
-    }
+
+    static constexpr size_t kFormatCnt = 14;
 
 private:
     const ColorTypeInfo* getColorTypeInfo(SkColorType, const TextureInfo&) const override;
@@ -63,7 +62,7 @@ private:
                                              SkColorType dstColorType) const override;
 
     void initCaps(const wgpu::Device& device, const ContextOptions& options);
-    void initShaderCaps();
+    void initShaderCaps(const wgpu::Device& device);
     void initFormatTable(const wgpu::Device& device);
 
     wgpu::TextureFormat getFormatFromColorType(SkColorType colorType) const {
@@ -101,7 +100,7 @@ private:
         int fColorTypeInfoCount = 0;
     };
     // Size here must match size of kFormats in DawnCaps.cpp
-    std::array<FormatInfo, 12> fFormatTable;
+    std::array<FormatInfo, kFormatCnt> fFormatTable;
 
     static size_t GetFormatIndex(wgpu::TextureFormat format);
     const FormatInfo& getFormatInfo(wgpu::TextureFormat format) const {
@@ -113,7 +112,6 @@ private:
     void setColorType(SkColorType, std::initializer_list<wgpu::TextureFormat> formats);
 
     bool fTransientAttachmentSupport = false;
-    bool fEnableWGSL = false;
 };
 
 } // namespace skgpu::graphite

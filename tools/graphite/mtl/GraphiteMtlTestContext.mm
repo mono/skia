@@ -11,6 +11,8 @@
 #include "include/gpu/graphite/ContextOptions.h"
 #include "include/gpu/graphite/mtl/MtlGraphiteTypes.h"
 #include "include/gpu/graphite/mtl/MtlGraphiteUtils.h"
+#include "include/private/gpu/graphite/ContextOptionsPriv.h"
+#include "tools/gpu/ContextType.h"
 
 #import <Metal/Metal.h>
 
@@ -47,10 +49,19 @@ std::unique_ptr<GraphiteTestContext> MtlTestContext::Make() {
     return std::unique_ptr<GraphiteTestContext>(new MtlTestContext(backendContext));
 }
 
+skgpu::ContextType MtlTestContext::contextType() {
+    return skgpu::ContextType::kMetal;
+}
+
 std::unique_ptr<skgpu::graphite::Context> MtlTestContext::makeContext(
         const skgpu::graphite::ContextOptions& options) {
     skgpu::graphite::ContextOptions revisedOptions(options);
-    revisedOptions.fStoreContextRefInRecorder = true; // Needed to make synchronous readPixels work
+    skgpu::graphite::ContextOptionsPriv optionsPriv;
+    if (!options.fOptionsPriv) {
+        revisedOptions.fOptionsPriv = &optionsPriv;
+    }
+    // Needed to make synchronous readPixels work
+    revisedOptions.fOptionsPriv->fStoreContextRefInRecorder = true;
 
     return skgpu::graphite::ContextFactory::MakeMetal(fMtl, revisedOptions);
 }

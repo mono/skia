@@ -54,6 +54,11 @@ public:
     const PrecompileBasePriv priv() const;  // NOLINT(readability-const-return-type)
 
 protected:
+    // This returns the desired option along with the child options.
+    template<typename T>
+    static std::pair<sk_sp<T>, int> SelectOption(const std::vector<sk_sp<T>>& options,
+                                                 int desiredOption);
+
     // In general, derived classes should use AddToKey to select the desired child option from
     // a vector and then have it added to the key with its reduced/nested child option.
     template<typename T>
@@ -61,9 +66,6 @@ protected:
                          PaintParamsKeyBuilder*,
                          const std::vector<sk_sp<T>>& options,
                          int desiredOption);
-
-    template<typename T>
-    static const sk_sp<T> SelectOption(const std::vector<sk_sp<T>>& options, int desiredOption);
 
 private:
     friend class PaintOptions;
@@ -79,31 +81,28 @@ private:
 };
 
 //--------------------------------------------------------------------------------------------------
+
+template<typename T>
+std::pair<sk_sp<T>, int> PrecompileBase::SelectOption(const std::vector<sk_sp<T>>& options,
+                                                      int desiredOption) {
+    for (const sk_sp<T>& option : options) {
+        if (desiredOption < option->numCombinations()) {
+            return { option, desiredOption };
+        }
+        desiredOption -= option->numCombinations();
+    }
+    return { nullptr, 0 };
+}
+
 template<typename T>
 void PrecompileBase::AddToKey(const KeyContext& keyContext,
                               PaintParamsKeyBuilder* builder,
                               const std::vector<sk_sp<T>>& options,
                               int desiredOption) {
-    for (const sk_sp<T>& option : options) {
-        if (desiredOption < option->numCombinations()) {
-            option->priv().addToKey(keyContext, desiredOption, builder);
-            break;
-        }
-
-        desiredOption -= option->numCombinations();
+    auto [option, childOptions] = SelectOption(options, desiredOption);
+    if (option) {
+        option->priv().addToKey(keyContext, childOptions, builder);
     }
-}
-
-template<typename T>
-const sk_sp<T> PrecompileBase::SelectOption(const std::vector<sk_sp<T>>& options,
-                                            int desiredOption) {
-    for (const sk_sp<T>& option : options) {
-        if (desiredOption < option->numCombinations()) {
-            return option;
-        }
-        desiredOption -= option->numCombinations();
-    }
-    return nullptr;
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -112,6 +111,8 @@ class PrecompileColorFilter;
 class PrecompileShader : public PrecompileBase {
 public:
     PrecompileShader() : PrecompileBase(Type::kShader) {}
+
+    virtual bool isConstant() const { return false; }
 
     sk_sp<PrecompileShader> makeWithLocalMatrix();
 
@@ -173,6 +174,8 @@ public:
         fBlenderOptions.assign(blenders.begin(), blenders.end());
     }
 
+    void setDither(bool dither) { fDither = dither; }
+
     // Provides access to functions that aren't part of the public API.
     PaintOptionsPriv priv();
     const PaintOptionsPriv priv() const;  // NOLINT(readability-const-return-type)
@@ -201,6 +204,7 @@ private:
     std::vector<sk_sp<PrecompileColorFilter>> fColorFilterOptions;
     std::vector<sk_sp<PrecompileImageFilter>> fImageFilterOptions;
     std::vector<sk_sp<PrecompileBlender>> fBlenderOptions;
+    bool fDither = false;
 };
 
 } // namespace skgpu::graphite

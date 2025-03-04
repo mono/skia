@@ -146,6 +146,7 @@ static_assert ((int)SkColorType::kBGRA_1010102_SkColorType         == (int)BGRA_
 static_assert ((int)SkColorType::kRGB_101010x_SkColorType          == (int)RGB_101010X_SK_COLORTYPE,          ASSERT_MSG(SkColorType, sk_colortype_t));
 static_assert ((int)SkColorType::kBGR_101010x_SkColorType          == (int)BGR_101010X_SK_COLORTYPE,          ASSERT_MSG(SkColorType, sk_colortype_t));
 static_assert ((int)SkColorType::kBGR_101010x_XR_SkColorType       == (int)BGR_101010X_XR_SK_COLORTYPE,       ASSERT_MSG(SkColorType, sk_colortype_t));
+static_assert ((int)SkColorType::kRGBA_10x6_SkColorType            == (int)RGBA_10X6_SK_COLORTYPE,            ASSERT_MSG(SkColorType, sk_colortype_t));
 static_assert ((int)SkColorType::kGray_8_SkColorType               == (int)GRAY_8_SK_COLORTYPE,               ASSERT_MSG(SkColorType, sk_colortype_t));
 static_assert ((int)SkColorType::kRGBA_F16Norm_SkColorType         == (int)RGBA_F16_NORM_SK_COLORTYPE,        ASSERT_MSG(SkColorType, sk_colortype_t));
 static_assert ((int)SkColorType::kRGBA_F16_SkColorType             == (int)RGBA_F16_SK_COLORTYPE,             ASSERT_MSG(SkColorType, sk_colortype_t));
@@ -393,6 +394,12 @@ static_assert ((int)SkRuntimeEffect::Uniform::Flags::kColor_Flag           == (i
 static_assert ((int)SkRuntimeEffect::Uniform::Flags::kVertex_Flag          == (int)VERTEX_SK_RUNTIMEEFFECT_UNIFORM_FLAGS,           ASSERT_MSG(SkRuntimeEffect::Uniform::Flags, sk_runtimeeffect_uniform_flags_t));
 static_assert ((int)SkRuntimeEffect::Uniform::Flags::kFragment_Flag        == (int)FRAGMENT_SK_RUNTIMEEFFECT_UNIFORM_FLAGS,         ASSERT_MSG(SkRuntimeEffect::Uniform::Flags, sk_runtimeeffect_uniform_flags_t));
 static_assert ((int)SkRuntimeEffect::Uniform::Flags::kHalfPrecision_Flag   == (int)HALF_PRECISION_SK_RUNTIMEEFFECT_UNIFORM_FLAGS,   ASSERT_MSG(SkRuntimeEffect::Uniform::Flags, sk_runtimeeffect_uniform_flags_t));
+
+// sk_canvas_savelayerrec_flags_t
+static_assert ((int)0                                                              == (int)NONE_SK_CANVAS_SAVELAYERREC_FLAGS,                       ASSERT_MSG(SkCanvas::SaveLayerFlagsSet, sk_canvas_savelayerrec_flags_t));
+static_assert ((int)SkCanvas::SaveLayerFlagsSet::kPreserveLCDText_SaveLayerFlag    == (int)PRESERVE_LCD_TEXT_SK_CANVAS_SAVELAYERREC_FLAGS,          ASSERT_MSG(SkCanvas::SaveLayerFlagsSet, sk_canvas_savelayerrec_flags_t));
+static_assert ((int)SkCanvas::SaveLayerFlagsSet::kInitWithPrevious_SaveLayerFlag   == (int)INITIALIZE_WITH_PREVIOUS_SK_CANVAS_SAVELAYERREC_FLAGS,   ASSERT_MSG(SkCanvas::SaveLayerFlagsSet, sk_canvas_savelayerrec_flags_t));
+static_assert ((int)SkCanvas::SaveLayerFlagsSet::kF16ColorType                     == (int)F16_COLOR_TYPE_SK_CANVAS_SAVELAYERREC_FLAGS,             ASSERT_MSG(SkCanvas::SaveLayerFlagsSet, sk_canvas_savelayerrec_flags_t));
 
 #if defined(SK_GANESH)
 

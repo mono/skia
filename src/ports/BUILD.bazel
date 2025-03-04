@@ -218,7 +218,7 @@ skia_filegroup(
 
 skia_filegroup(
     name = "image_generator",
-    srcs = ["SkImageGenerator_skia.cpp"],  # TODO(kjlubick) add select() if necessary
+    srcs = ["SkImageGenerator_empty.cpp"],
 )
 
 # In own group to prevent exporting to *.gni files.
@@ -269,7 +269,6 @@ skia_filegroup(
         ":fontmgr",
         ":fontmgr_factory",
         ":global_init",
-        ":image_generator",
         ":load_dynamic_library",
         ":malloc",
         ":osfile",
@@ -360,13 +359,30 @@ skia_cc_library(
     srcs = [":malloc"],
     features = ["layering_check"],
     visibility = ["//:__pkg__"],
-    deps = ["//src:base"],
+    deps = ["//src/base"],
 )
 
 skia_filegroup(
-    name = "buffet_base_srcs",
+    name = "base_srcs",
     srcs = [
         ":skdebug",
     ],
-    visibility = ["//src:__pkg__"],
+    visibility = ["//src/base:__pkg__"],
+)
+
+skia_filegroup(
+    name = "core_srcs",
+    srcs = [
+        ":global_init",
+        ":osfile",
+    ],
+    visibility = ["//src/core:__pkg__"],
+)
+
+skia_cc_library(
+    name = "default_font_manager_empty",
+    srcs = [":fontmgr_empty_factory"],
+    features = ["layering_check"],
+    visibility = ["//:__pkg__"],
+    deps = ["//src/core"],
 )

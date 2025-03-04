@@ -5,6 +5,7 @@
 
 #include "include/private/base/SkAssert.h"
 #include "include/private/base/SkTo.h"
+#include "modules/bentleyottmann/include/Int96.h"
 
 #include <algorithm>
 #include <cmath>
@@ -137,4 +138,50 @@ std::optional<Point> intersect(const Segment& s0, const Segment& s1) {
     return Point{x, y};
 }
 
+
+// The comparison is:
+//     x0 + (y - y0)(x1 - x0) / (y1 - y0) <? x2 + (y - y2)(x3 - x2) / (y3 - y2)
+// Factor out numerators:
+//    [x0(y1 - y0) + (y - y0)(x1 - x0)] / (y1 - y0) <? [x2(y3 - y2) + (y - y2)(x3 -x 2)] / (y3 - y2)
+// Removing the divides by cross multiplying.
+//   [x0(y1 - y0) + (y - y0)(x1 - x0)] (y3 - y2) <? [x2(y3 - y2) + (y - y2)(x3 - x2)] (y1 - y0)
+// This is a 64-bit int x0 + (y - y0) (x1 - x0) times a 32-int (y3 - y2) resulting in a 96-bit int,
+// and the same applies to the other side of the <?. Because y0 <= y1 and y2 <= y3, then the
+// differences of (y1 - y0) and (y3 - y2) are positive allowing us to multiply through without
+// worrying about sign changes.
+bool lessThanAt(const Segment& s0, const Segment& s1, int32_t y) {
+    auto [l0, t0, r0, b0] = s0.bounds();
+    auto [l1, t1, r1, b1] = s1.bounds();
+    SkASSERT(t0 <= y && y <= b0);
+    SkASSERT(t1 <= y && y <= b1);
+
+    // Return true if the bounding box of s0 is fully to the left of s1.
+    if (r0 < l1) {
+        return true;
+    }
+
+    // Return false if the bounding box of s0 is fully to the right of s1.
+    if (r1 < l0) {
+        return false;
+    }
+
+    // Check the x intercepts along the horizontal line at y.
+    // Make s0 be (x0, y0) -> (x1, y1) and s1 be (x2, y2) -> (x3, y3).
+    auto [x0, y0] = s0.upper();
+    auto [x1, y1] = s0.lower();
+    auto [x2, y2] = s1.upper();
+    auto [x3, y3] = s1.lower();
+
+    int64_t s0YDiff = y - y0,
+            s1YDiff = y - y2,
+            s0YDelta = y1 - y0,
+            s1YDelta = y3 - y2,
+            x0Offset = x0 * s0YDelta + s0YDiff * (x1 - x0),
+            x2Offset = x2 * s1YDelta + s1YDiff * (x3 - x2);
+
+    Int96 s0Factor = multiply(x0Offset, y3 - y2),
+          s1Factor = multiply(x2Offset, y1 - y0);
+
+    return s0Factor < s1Factor;
+}
 }  // namespace bentleyottmann

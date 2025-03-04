@@ -83,7 +83,7 @@ public:
     // Bounds for a dst copy required by this DrawList.
     const Rect& dstCopyBounds() const { return fDstCopyBounds; }
 
-    SkDEBUGCODE(bool hasAtlasDraws() const { return fAtlasShapeDrawCount > 0; })
+    SkDEBUGCODE(bool hasCoverageMaskDraws() const { return fCoverageMaskShapeDrawCount > 0; })
 
 private:
     friend class DrawPass;
@@ -111,8 +111,8 @@ private:
     int fRenderStepCount;
 
 #if defined(SK_DEBUG)
-    // The number of AtlasShape draws that have been recorded. Used in debugging.
-    int fAtlasShapeDrawCount = 0;
+    // The number of CoverageMask draws that have been recorded. Used in debugging.
+    int fCoverageMaskShapeDrawCount = 0;
 #endif
 
     Rect fDstCopyBounds = Rect::InfiniteInverted();

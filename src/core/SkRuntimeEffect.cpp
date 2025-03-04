@@ -10,9 +10,9 @@
 #include "include/core/SkAlphaType.h"
 #include "include/core/SkBlender.h"
 #include "include/core/SkCapabilities.h"
+#include "include/core/SkColor.h"
 #include "include/core/SkColorFilter.h"
 #include "include/core/SkData.h"
-#include "include/private/SkSLDefines.h"
 #include "include/private/base/SkAlign.h"
 #include "include/private/base/SkDebug.h"
 #include "include/private/base/SkMutex.h"
@@ -43,6 +43,7 @@
 #include "src/sksl/SkSLBuiltinTypes.h"
 #include "src/sksl/SkSLCompiler.h"
 #include "src/sksl/SkSLContext.h"
+#include "src/sksl/SkSLDefines.h"
 #include "src/sksl/SkSLProgramKind.h"
 #include "src/sksl/SkSLProgramSettings.h"
 #include "src/sksl/SkSLUtil.h"
@@ -68,12 +69,6 @@ class SkColorSpace;
 struct SkIPoint;
 
 constexpr bool kRPEnableLiveTrace = false;
-
-#if defined(SK_BUILD_FOR_DEBUGGER)
-    #define SK_LENIENT_SKSL_DESERIALIZATION 1
-#else
-    #define SK_LENIENT_SKSL_DESERIALIZATION 0
-#endif
 
 using ChildType = SkRuntimeEffect::ChildType;
 
@@ -134,6 +129,32 @@ SkRuntimeEffect::Uniform SkRuntimeEffectPriv::VarAsUniform(const SkSL::Variable&
     *offset += uni.sizeInBytes();
     SkASSERT(SkIsAlign4(*offset));
     return uni;
+}
+
+static ChildType child_type(const SkSL::Type& type) {
+    switch (type.typeKind()) {
+        case SkSL::Type::TypeKind::kBlender:     return ChildType::kBlender;
+        case SkSL::Type::TypeKind::kColorFilter: return ChildType::kColorFilter;
+        case SkSL::Type::TypeKind::kShader:      return ChildType::kShader;
+        default: SkUNREACHABLE;
+    }
+}
+
+const char* SkRuntimeEffectPriv::ChildTypeToStr(ChildType type) {
+    switch (type) {
+        case ChildType::kBlender:     return "blender";
+        case ChildType::kColorFilter: return "color filter";
+        case ChildType::kShader:      return "shader";
+        default: SkUNREACHABLE;
+    }
+}
+
+SkRuntimeEffect::Child SkRuntimeEffectPriv::VarAsChild(const SkSL::Variable& var, int index) {
+    SkRuntimeEffect::Child c;
+    c.name  = var.name();
+    c.type  = child_type(var.type());
+    c.index = index;
+    return c;
 }
 
 sk_sp<const SkData> SkRuntimeEffectPriv::TransformUniforms(
@@ -272,8 +293,8 @@ bool RuntimeEffectRPCallbacks::appendShader(int index) {
         nonPassthroughMatrix.markTotalMatrixInvalid();
         return as_SB(shader)->appendStages(fStage, nonPassthroughMatrix);
     }
-    // Return the paint color when a null child shader is evaluated.
-    fStage.fPipeline->append_constant_color(fStage.fAlloc, fStage.fPaintColor);
+    // Return transparent black when a null shader is evaluated.
+    fStage.fPipeline->append_constant_color(fStage.fAlloc, SkColors::kTransparent);
     return true;
 }
 bool RuntimeEffectRPCallbacks::appendColorFilter(int index) {
@@ -356,15 +377,6 @@ static bool flattenable_is_valid_as_child(const SkFlattenable* f) {
 
 SkRuntimeEffect::ChildPtr::ChildPtr(sk_sp<SkFlattenable> f) : fChild(std::move(f)) {
     SkASSERT(flattenable_is_valid_as_child(fChild.get()));
-}
-
-static ChildType child_type(const SkSL::Type& type) {
-    switch (type.typeKind()) {
-        case SkSL::Type::TypeKind::kBlender:     return ChildType::kBlender;
-        case SkSL::Type::TypeKind::kColorFilter: return ChildType::kColorFilter;
-        case SkSL::Type::TypeKind::kShader:      return ChildType::kShader;
-        default: SkUNREACHABLE;
-    }
 }
 
 static bool verify_child_effects(const std::vector<SkRuntimeEffect::Child>& reflected,
@@ -562,17 +574,11 @@ SkRuntimeEffect::Result SkRuntimeEffect::MakeInternal(std::unique_ptr<SkSL::Prog
         if (elem->is<SkSL::GlobalVarDeclaration>()) {
             const SkSL::GlobalVarDeclaration& global = elem->as<SkSL::GlobalVarDeclaration>();
             const SkSL::VarDeclaration& varDecl = global.declaration()->as<SkSL::VarDeclaration>();
-
             const SkSL::Variable& var = *varDecl.var();
-            const SkSL::Type& varType = var.type();
 
             // Child effects that can be sampled ('shader', 'colorFilter', 'blender')
-            if (varType.isEffectChild()) {
-                Child c;
-                c.name  = var.name();
-                c.type  = child_type(varType);
-                c.index = children.size();
-                children.push_back(c);
+            if (var.type().isEffectChild()) {
+                children.push_back(SkRuntimeEffectPriv::VarAsChild(var, children.size()));
                 auto usage = SkSL::Analysis::GetSampleUsage(
                         *program, var, sampleCoordsUsage.fWrite != 0, &elidedSampleCoords);
                 // If the child is never sampled, we pretend that it's actually in PassThrough mode.

@@ -11,6 +11,7 @@
 #include "src/sksl/SkSLBuiltinTypes.h"
 #include "src/sksl/SkSLCompiler.h"
 #include "src/sksl/SkSLContext.h"
+#include "src/sksl/SkSLErrorReporter.h"
 #include "src/sksl/SkSLProgramSettings.h"
 #include "src/sksl/SkSLUtil.h"
 #include "src/sksl/analysis/SkSLProgramUsage.h"
@@ -30,6 +31,7 @@
 
 #include <algorithm>
 #include <memory>
+#include <string>
 #include <string_view>
 #include <vector>
 
@@ -134,10 +136,9 @@ void FindAndDeclareBuiltinVariables(Program& program) {
         // Find main() in the program and check its return type.
         // If it's half4, we treat that as an implicit write to sk_FragColor and add a reference.
         scanner.addImplicitFragColorWrite(program.fOwnedElements);
+    }
 
-        // Vulkan requires certain builtin variables be present, even if they're unused. At one
-        // time, validation errors would result if sk_Clockwise was missing. Now, it's just (Adreno)
-        // driver bugs that drop or corrupt draws if they're missing.
+    if (context.fCaps->fMustDeclareFragmentFrontFacing) {
         scanner.addDeclaringElement(symbols.findBuiltinSymbol("sk_Clockwise"));
     }
 
@@ -163,12 +164,22 @@ void FindAndDeclareBuiltinVariables(Program& program) {
                 // Set the UseLastFragColor program input if we find sk_LastFragColor.
                 // Metal defines this as a program input, rather than a global variable.
                 case SK_LASTFRAGCOLOR_BUILTIN:
-                    program.fInterface.fUseLastFragColor = true;
+                    if (context.fCaps->fFBFetchSupport) {
+                        program.fInterface.fUseLastFragColor = true;
+                    } else {
+                        context.fErrors->error({},
+                                               "'" + std::string(var->name()) + "' not supported");
+                    }
                     break;
 
                 // Set secondary color output if we find sk_SecondaryFragColor.
                 case SK_SECONDARYFRAGCOLOR_BUILTIN:
-                    program.fInterface.fOutputSecondaryColor = true;
+                    if (context.fCaps->fDualSourceBlendingSupport) {
+                        program.fInterface.fOutputSecondaryColor = true;
+                    } else {
+                        context.fErrors->error({},
+                                               "'" + std::string(var->name()) + "' not supported");
+                    }
                     break;
             }
         }
