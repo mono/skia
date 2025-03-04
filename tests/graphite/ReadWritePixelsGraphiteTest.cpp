@@ -30,6 +30,8 @@
 #include "tests/Test.h"
 #include "tests/TestUtils.h"
 #include "tools/ToolUtils.h"
+#include "tools/gpu/BackendTextureImageFactory.h"
+#include "tools/gpu/ManagedBackendTexture.h"
 
 using Mipmapped = skgpu::Mipmapped;
 
@@ -53,6 +55,7 @@ static constexpr int min_rgb_channel_bits(SkColorType ct) {
         case kBGRA_1010102_SkColorType:       return 10;
         case kBGR_101010x_SkColorType:        return 10;
         case kBGR_101010x_XR_SkColorType:     return 10;
+        case kRGBA_10x6_SkColorType:          return 10;
         case kGray_8_SkColorType:             return 8;   // counting gray as "rgb"
         case kRGBA_F16Norm_SkColorType:       return 10;  // just counting the mantissa
         case kRGBA_F16_SkColorType:           return 10;  // just counting the mantissa
@@ -83,6 +86,7 @@ static constexpr int alpha_channel_bits(SkColorType ct) {
         case kBGRA_1010102_SkColorType:       return 2;
         case kBGR_101010x_SkColorType:        return 0;
         case kBGR_101010x_XR_SkColorType:     return 0;
+        case kRGBA_10x6_SkColorType:          return 10;
         case kGray_8_SkColorType:             return 0;
         case kRGBA_F16Norm_SkColorType:       return 10;  // just counting the mantissa
         case kRGBA_F16_SkColorType:           return 10;  // just counting the mantissa
@@ -565,22 +569,12 @@ DEF_GRAPHITE_TEST_FOR_RENDERING_CONTEXTS(ImageAsyncReadPixelsGraphite,
         auto factory = std::function<GraphiteSrcFactory<Image>>([&](
                 skgpu::graphite::Recorder* recorder,
                 const SkPixmap& src) {
-            // TODO: put this in the equivalent of sk_gpu_test::MakeBackendTextureImage
-            TextureInfo info = recorder->priv().caps()->getDefaultSampledTextureInfo(
-                    src.colorType(),
-                    Mipmapped::kNo,
-                    skgpu::Protected::kNo,
-                    renderable);
-            auto texture = recorder->createBackendTexture(src.dimensions(), info);
-            if (!recorder->updateBackendTexture(texture, &src, 1)) {
-                return (Image)(nullptr);
-            }
-
-            Image image = SkImages::AdoptTextureFrom(recorder,
-                                                     texture,
-                                                     src.colorType(),
-                                                     src.alphaType(),
-                                                     /*colorSpace=*/nullptr);
+            Image image = sk_gpu_test::MakeBackendTextureImage(recorder,
+                                                               src,
+                                                               Mipmapped::kNo,
+                                                               renderable,
+                                                               skgpu::Origin::kTopLeft,
+                                                               skgpu::Protected::kNo);
 
             std::unique_ptr<skgpu::graphite::Recording> recording = recorder->snap();
             skgpu::graphite::InsertRecordingInfo recordingInfo;

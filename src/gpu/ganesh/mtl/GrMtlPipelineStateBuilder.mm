@@ -491,7 +491,7 @@ GrMtlPipelineState* GrMtlPipelineStateBuilder::finalize(
         cached = persistentCache->load(*key);
     }
     if (persistentCache && !cached) {
-        writer.reset(new SkBinaryWriteBuffer());
+        writer.reset(new SkBinaryWriteBuffer({}));
     }
 
     // Ordering in how we set these matters. If it changes adjust read_pipeline_data, above.
@@ -517,7 +517,8 @@ GrMtlPipelineState* GrMtlPipelineStateBuilder::finalize(
     pipelineDescriptor.colorAttachments[0] = create_color_attachment(pixelFormat,
                                                                      programInfo.pipeline(),
                                                                      writer.get());
-    pipelineDescriptor.sampleCount = programInfo.numSamples();
+    pipelineDescriptor.rasterSampleCount = programInfo.numSamples();
+
     GrMtlCaps* mtlCaps = (GrMtlCaps*)this->caps();
     pipelineDescriptor.stencilAttachmentPixelFormat = mtlCaps->getStencilPixelFormat(desc);
     if (writer) {

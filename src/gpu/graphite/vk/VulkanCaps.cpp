@@ -46,6 +46,10 @@ void VulkanCaps::init(const skgpu::VulkanInterface* vkInterface,
     VkPhysicalDeviceProperties physDevProperties;
     VULKAN_CALL(vkInterface, GetPhysicalDeviceProperties(physDev, &physDevProperties));
 
+#if defined(GRAPHITE_TEST_UTILS)
+    this->setDeviceName(physDevProperties.deviceName);
+#endif
+
     // Graphite requires Vulkan version 1.1 or later, which has protected support.
     fProtectedSupport = true;
 
@@ -774,11 +778,24 @@ void VulkanCaps::initFormatTable(const skgpu::VulkanInterface* interface,
     this->setColorType(ct::kR16G16_float_SkColorType,       { VK_FORMAT_R16G16_SFLOAT });
 }
 
+namespace {
+void set_ds_flags_to_format(VkFormat& slot, VkFormat format) {
+    if (slot == VK_FORMAT_UNDEFINED) {
+        slot = format;
+    }
+}
+} // namespace
+
 void VulkanCaps::initDepthStencilFormatTable(const skgpu::VulkanInterface* interface,
                                              VkPhysicalDevice physDev,
                                              const VkPhysicalDeviceProperties& properties) {
     static_assert(std::size(kDepthStencilVkFormats) == VulkanCaps::kNumDepthStencilVkFormats,
                   "Size of DepthStencilVkFormats array must match static value in header");
+
+    using DSFlags = SkEnumBitMask<DepthStencilFlags>;
+    constexpr DSFlags stencilFlags = DepthStencilFlags::kStencil;
+    constexpr DSFlags depthFlags = DepthStencilFlags::kDepth;
+    constexpr DSFlags dsFlags = DepthStencilFlags::kDepthStencil;
 
     std::fill_n(fDepthStencilFlagsToFormatTable, kNumDepthStencilFlags, VK_FORMAT_UNDEFINED);
     // Format: VK_FORMAT_S8_UINT
@@ -786,18 +803,34 @@ void VulkanCaps::initDepthStencilFormatTable(const skgpu::VulkanInterface* inter
         constexpr VkFormat format = VK_FORMAT_S8_UINT;
         auto& info = this->getDepthStencilFormatInfo(format);
         info.init(interface, physDev, properties, format);
+        if (info.fFormatProperties.optimalTilingFeatures &
+            VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT) {
+            set_ds_flags_to_format(fDepthStencilFlagsToFormatTable[stencilFlags.value()], format);
+        }
     }
     // Format: VK_FORMAT_D24_UNORM_S8_UINT
     {
         constexpr VkFormat format = VK_FORMAT_D24_UNORM_S8_UINT;
         auto& info = this->getDepthStencilFormatInfo(format);
         info.init(interface, physDev, properties, format);
+        if (info.fFormatProperties.optimalTilingFeatures &
+            VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT) {
+            set_ds_flags_to_format(fDepthStencilFlagsToFormatTable[stencilFlags.value()], format);
+            set_ds_flags_to_format(fDepthStencilFlagsToFormatTable[depthFlags.value()], format);
+            set_ds_flags_to_format(fDepthStencilFlagsToFormatTable[dsFlags.value()], format);
+        }
     }
     // Format: VK_FORMAT_D32_SFLOAT_S8_UINT
     {
         constexpr VkFormat format = VK_FORMAT_D32_SFLOAT_S8_UINT;
         auto& info = this->getDepthStencilFormatInfo(format);
         info.init(interface, physDev, properties, format);
+        if (info.fFormatProperties.optimalTilingFeatures &
+            VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT) {
+            set_ds_flags_to_format(fDepthStencilFlagsToFormatTable[stencilFlags.value()], format);
+            set_ds_flags_to_format(fDepthStencilFlagsToFormatTable[depthFlags.value()], format);
+            set_ds_flags_to_format(fDepthStencilFlagsToFormatTable[dsFlags.value()], format);
+        }
     }
 }
 
@@ -910,9 +943,9 @@ bool VulkanCaps::FormatInfo::isRenderable(VkImageTiling imageTiling,
 bool VulkanCaps::FormatInfo::isStorage(VkImageTiling imageTiling) const {
     switch (imageTiling) {
         case VK_IMAGE_TILING_OPTIMAL:
-            return this->isTexturable(fFormatProperties.optimalTilingFeatures);
+            return this->isStorage(fFormatProperties.optimalTilingFeatures);
         case VK_IMAGE_TILING_LINEAR:
-            return this->isTexturable(fFormatProperties.linearTilingFeatures);
+            return this->isStorage(fFormatProperties.linearTilingFeatures);
         default:
             return false;
     }
@@ -1000,7 +1033,7 @@ void VulkanCaps::DepthStencilFormatInfo::init(const skgpu::VulkanInterface* inte
 }
 
 bool VulkanCaps::DepthStencilFormatInfo::isDepthStencilSupported(VkFormatFeatureFlags flags) const {
-    return SkToBool(VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BLEND_BIT & flags);
+    return SkToBool(VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT & flags);
 }
 
 VkFormat VulkanCaps::getFormatFromDepthStencilFlags(const SkEnumBitMask<DepthStencilFlags>& flags)
@@ -1046,7 +1079,9 @@ const Caps::ColorTypeInfo* VulkanCaps::getColorTypeInfo(SkColorType ct,
 
 bool VulkanCaps::onIsTexturable(const TextureInfo& texInfo) const {
     VulkanTextureInfo vkInfo;
-    texInfo.getVulkanTextureInfo(&vkInfo);
+    if (!texInfo.getVulkanTextureInfo(&vkInfo)) {
+        return false;
+    }
 
     // TODO:
     // Once we support external formats with associated YCbCr conversion info, check for that
@@ -1059,15 +1094,29 @@ bool VulkanCaps::onIsTexturable(const TextureInfo& texInfo) const {
 
 bool VulkanCaps::isRenderable(const TextureInfo& texInfo) const {
     VulkanTextureInfo vkInfo;
-    texInfo.getVulkanTextureInfo(&vkInfo);
+    if (!texInfo.getVulkanTextureInfo(&vkInfo)) {
+        return false;
+    }
 
     const FormatInfo& info = this->getFormatInfo(vkInfo.fFormat);
     return info.isRenderable(vkInfo.fImageTiling, texInfo.numSamples());
 }
 
+bool VulkanCaps::isStorage(const TextureInfo& texInfo) const {
+    VulkanTextureInfo vkInfo;
+    if (!texInfo.getVulkanTextureInfo(&vkInfo)) {
+        return false;
+    }
+
+    const FormatInfo& info = this->getFormatInfo(vkInfo.fFormat);
+    return info.isStorage(vkInfo.fImageTiling);
+}
+
 bool VulkanCaps::supportsWritePixels(const TextureInfo& texInfo) const {
     VulkanTextureInfo vkInfo;
-    texInfo.getVulkanTextureInfo(&vkInfo);
+    if (!texInfo.getVulkanTextureInfo(&vkInfo)) {
+        return false;
+    }
 
     // Can't write if it needs a YCbCr sampler
     if (VkFormatNeedsYcbcrSampler(vkInfo.fFormat)) {
@@ -1091,7 +1140,9 @@ bool VulkanCaps::supportsReadPixels(const TextureInfo& texInfo) const {
     }
 
     VulkanTextureInfo vkInfo;
-    texInfo.getVulkanTextureInfo(&vkInfo);
+    if (!texInfo.getVulkanTextureInfo(&vkInfo)) {
+        return false;
+    }
 
     // Can't read if it needs a YCbCr sampler
     if (VkFormatNeedsYcbcrSampler(vkInfo.fFormat)) {
@@ -1117,7 +1168,9 @@ SkColorType VulkanCaps::supportedWritePixelsColorType(SkColorType dstColorType,
                                                       const TextureInfo& dstTextureInfo,
                                                       SkColorType srcColorType) const {
     VulkanTextureInfo vkInfo;
-    dstTextureInfo.getVulkanTextureInfo(&vkInfo);
+    if (!dstTextureInfo.getVulkanTextureInfo(&vkInfo)) {
+        return kUnknown_SkColorType;
+    }
 
     // Can't write to YCbCr formats
     // TODO: Can't write to external formats, either
@@ -1140,7 +1193,9 @@ SkColorType VulkanCaps::supportedReadPixelsColorType(SkColorType srcColorType,
                                                      const TextureInfo& srcTextureInfo,
                                                      SkColorType dstColorType) const {
     VulkanTextureInfo vkInfo;
-    srcTextureInfo.getVulkanTextureInfo(&vkInfo);
+    if (!srcTextureInfo.getVulkanTextureInfo(&vkInfo)) {
+        return kUnknown_SkColorType;
+    }
 
     // Can't read from YCbCr formats
     // TODO: external formats?

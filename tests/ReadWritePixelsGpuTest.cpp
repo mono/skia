@@ -92,6 +92,7 @@ static constexpr int min_rgb_channel_bits(SkColorType ct) {
         case kBGRA_1010102_SkColorType:       return 10;
         case kBGR_101010x_SkColorType:        return 10;
         case kBGR_101010x_XR_SkColorType:     return 10;
+        case kRGBA_10x6_SkColorType:          return 10;
         case kGray_8_SkColorType:             return 8;   // counting gray as "rgb"
         case kRGBA_F16Norm_SkColorType:       return 10;  // just counting the mantissa
         case kRGBA_F16_SkColorType:           return 10;  // just counting the mantissa
@@ -122,6 +123,7 @@ static constexpr int alpha_channel_bits(SkColorType ct) {
         case kBGRA_1010102_SkColorType:       return 2;
         case kBGR_101010x_SkColorType:        return 0;
         case kBGR_101010x_XR_SkColorType:     return 0;
+        case kRGBA_10x6_SkColorType:          return 10;
         case kGray_8_SkColorType:             return 0;
         case kRGBA_F16Norm_SkColorType:       return 10;  // just counting the mantissa
         case kRGBA_F16_SkColorType:           return 10;  // just counting the mantissa
@@ -1337,7 +1339,7 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(SurfaceContextWritePixelsMipped,
                                                    origin,
                                                    renderable,
                                                    /*sample count*/ 1,
-                                                   GrMipmapped::kYes);
+                                                   skgpu::Mipmapped::kYes);
                     if (!sc) {
                         continue;
                     }
@@ -1460,7 +1462,7 @@ DEF_GANESH_TEST_FOR_GL_CONTEXT(GLReadPixelsUnbindPBO,
                                      &asyncContext);
 
     // This will force the async readback to finish.
-    ctxInfo.directContext()->flushAndSubmit(true);
+    ctxInfo.directContext()->flushAndSubmit(GrSyncCpu::kYes);
     if (!asyncContext.fCalled) {
         ERRORF(reporter, "async_callback not called.");
     }

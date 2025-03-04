@@ -9,7 +9,17 @@
 #define SkLocalMatrixImageFilter_DEFINED
 
 #include "include/core/SkFlattenable.h"
+#include "include/core/SkMatrix.h"
+#include "include/core/SkRect.h"
+#include "include/core/SkRefCnt.h"
+#include "src/core/SkImageFilterTypes.h"
 #include "src/core/SkImageFilter_Base.h"
+
+#include <optional>
+
+class SkImageFilter;
+class SkReadBuffer;
+class SkWriteBuffer;
 
 /**
  *  Wraps another imagefilter + matrix, such that using this filter will give the same result
@@ -30,7 +40,7 @@ private:
     SkLocalMatrixImageFilter(const SkMatrix& localMatrix,
                              const SkMatrix& invLocalMatrix,
                              sk_sp<SkImageFilter> input)
-            : SkImageFilter_Base(&input, 1, nullptr)
+            : SkImageFilter_Base(&input, 1)
             , fLocalMatrix{localMatrix}
             , fInvLocalMatrix{invLocalMatrix} {}
 
@@ -41,11 +51,11 @@ private:
     skif::LayerSpace<SkIRect> onGetInputLayerBounds(
             const skif::Mapping&,
             const skif::LayerSpace<SkIRect>& desiredOutput,
-            const skif::LayerSpace<SkIRect>& contentBounds) const override;
+            std::optional<skif::LayerSpace<SkIRect>> contentBounds) const override;
 
-    skif::LayerSpace<SkIRect> onGetOutputLayerBounds(
+    std::optional<skif::LayerSpace<SkIRect>> onGetOutputLayerBounds(
             const skif::Mapping&,
-            const skif::LayerSpace<SkIRect>& contentBounds) const override;
+            std::optional<skif::LayerSpace<SkIRect>> contentBounds) const override;
 
     skif::Mapping localMapping(const skif::Mapping&) const;
 

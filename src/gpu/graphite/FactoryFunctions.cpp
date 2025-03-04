@@ -11,6 +11,7 @@
 #include "src/gpu/Blend.h"
 #include "src/gpu/graphite/KeyContext.h"
 #include "src/gpu/graphite/KeyHelpers.h"
+#include "src/gpu/graphite/PaintParams.h"
 #include "src/gpu/graphite/PaintParamsKey.h"
 #include "src/gpu/graphite/Precompile.h"
 #include "src/gpu/graphite/PrecompileBasePriv.h"
@@ -31,15 +32,7 @@ private:
                   PaintParamsKeyBuilder* builder) const override {
         SkASSERT(desiredCombination == 0); // The blend mode blender only ever has one combination
 
-        SkSpan<const float> coeffs = skgpu::GetPorterDuffBlendConstants(fBlendMode);
-        if (!coeffs.empty()) {
-            CoeffBlenderBlock::BeginBlock(keyContext, builder, /* gatherer= */ nullptr, coeffs);
-            builder->endBlock();
-        } else {
-            BlendModeBlenderBlock::BeginBlock(
-                    keyContext, builder, /* gatherer= */ nullptr, fBlendMode);
-            builder->endBlock();
-        }
+        AddModeBlend(keyContext, builder, /* gatherer= */ nullptr, fBlendMode);
     }
 
 
@@ -54,6 +47,8 @@ sk_sp<PrecompileBlender> PrecompileBlender::Mode(SkBlendMode blendMode) {
 class PrecompileColorShader : public PrecompileShader {
 public:
     PrecompileColorShader() {}
+
+    bool isConstant() const override { return true; }
 
 private:
     void addToKey(const KeyContext& keyContext,
@@ -323,15 +318,18 @@ private:
         GradientShaderBlocks::GradientData gradData(fType, kStopVariants[intrinsicCombination]);
 
         // TODO: we may need SkLocalMatrixShader-wrapped versions too
-        ColorFilterShaderBlock::BeginBlock(keyContext, builder, /* gatherer= */ nullptr);
-            GradientShaderBlocks::BeginBlock(keyContext, builder,
-                                             /* gatherer= */ nullptr, gradData);
-            builder->endBlock();
-
-            ColorSpaceTransformBlock::BeginBlock(keyContext, builder,
-                                                 /* gatherer= */ nullptr, /* data= */ nullptr);
-            builder->endBlock();
-        builder->endBlock();
+        Compose(keyContext, builder, /* gatherer= */ nullptr,
+                /* addInnerToKey= */ [&]() -> void {
+                    GradientShaderBlocks::BeginBlock(keyContext, builder, /* gatherer= */ nullptr,
+                                                     gradData);
+                    builder->endBlock();
+                },
+                /* addOuterToKey= */  [&]() -> void {
+                    ColorSpaceTransformBlock::BeginBlock(keyContext, builder,
+                                                         /* gatherer= */ nullptr,
+                                                         /* data= */ nullptr);
+                    builder->endBlock();
+                });
     }
 
     SkShaderBase::GradientType fType;
@@ -413,12 +411,14 @@ private:
         int desiredColorFilterCombination = desiredCombination / numShaderCombos;
         SkASSERT(desiredColorFilterCombination < numColorFilterCombos);
 
-        ColorFilterShaderBlock::BeginBlock(keyContext, builder, /* gatherer= */ nullptr);
-
-        fShader->priv().addToKey(keyContext, desiredShaderCombination, builder);
-        fColorFilter->priv().addToKey(keyContext, desiredColorFilterCombination, builder);
-
-        builder->endBlock();
+        Compose(keyContext, builder, /* gatherer= */ nullptr,
+                /* addInnerToKey= */ [&]() -> void {
+                    fShader->priv().addToKey(keyContext, desiredShaderCombination, builder);
+                },
+                /* addOuterToKey= */ [&]() -> void {
+                    fColorFilter->priv().addToKey(keyContext, desiredColorFilterCombination,
+                                                  builder);
+                });
     }
 
     sk_sp<PrecompileShader> fShader;
@@ -451,9 +451,9 @@ sk_sp<PrecompileMaskFilter> PrecompileMaskFilters::Blur() {
 }
 
 //--------------------------------------------------------------------------------------------------
-class PrecompileBlendColorFilter : public PrecompileColorFilter {
+class PrecompileBlendModeColorFilter : public PrecompileColorFilter {
 public:
-    PrecompileBlendColorFilter() {}
+    PrecompileBlendModeColorFilter() {}
 
 private:
     void addToKey(const KeyContext& keyContext,
@@ -461,12 +461,15 @@ private:
                   PaintParamsKeyBuilder* builder) const override {
         SkASSERT(desiredCombination == 0);
 
-        AddColorBlendBlock(keyContext, builder, /* gatherer= */ nullptr, SkBlendMode::kSrcOver, {});
+        // Here, kSrcOver and the white color are just a stand-ins for some later blend mode
+        // and color.
+        AddBlendModeColorFilter(keyContext, builder, /* gatherer= */ nullptr,
+                                SkBlendMode::kSrcOver, SK_PMColor4fWHITE);
     }
 };
 
 sk_sp<PrecompileColorFilter> PrecompileColorFilters::Blend() {
-    return sk_make_sp<PrecompileBlendColorFilter>();
+    return sk_make_sp<PrecompileBlendModeColorFilter>();
 }
 
 //--------------------------------------------------------------------------------------------------

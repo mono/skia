@@ -1,6 +1,5 @@
 load("//:defines.bzl", "DEFAULT_DEFINES", "DEFAULT_LOCAL_DEFINES")
 load("@skia_user_config//:copts.bzl", "DEFAULT_OBJC_COPTS")
-load("//bazel:flags.bzl", "selects")
 load("//bazel:skia_rules.bzl", "exports_files_legacy", "skia_cc_library", "skia_objc_library")
 
 licenses(["notice"])
@@ -82,13 +81,7 @@ skia_cc_library(
 
 alias(
     name = "core",
-    actual = "//src:core",
-    visibility = ["//visibility:public"],
-)
-
-alias(
-    name = "pathops",
-    actual = "//src:pathops",
+    actual = "//src/core:core",
     visibility = ["//visibility:public"],
 )
 
@@ -97,6 +90,37 @@ alias(
     actual = "//src/ports:default_malloc",
     visibility = ["//visibility:public"],
 )
+
+alias(
+    name = "pathops",
+    actual = "//src/pathops:pathops",
+    visibility = ["//visibility:public"],
+)
+
+alias(
+    name = "png_decode_codec",
+    actual = "//src/codec:png_decode",
+    visibility = ["//visibility:public"],
+)
+
+alias(
+    name = "png_encode_codec",
+    actual = "//src/codec:png_encode",
+    visibility = ["//visibility:public"],
+)
+
+# Font Manager Options. Pick at most one target starting with "default_font_manager" and as many
+# other font managers as desired (most clients only need one in practice).
+
+alias(
+    # No fonts will be able to created using the default FontMgr either directly
+    # or indirectly (e.g. via SkTypeface::MakeFromStream)
+    name = "default_font_manager_empty",
+    actual = "//src/ports:default_font_manager_empty",
+    visibility = ["//visibility:public"],
+)
+
+# TODO(kjlubick) make other font manager options
 
 # Load bearing comment below - gazelle looks here (and not in any other BUILD.bazel files)
 # for a special comment indicating the prefix.
@@ -110,37 +134,15 @@ alias(
     visibility = ["//visibility:public"],
 )
 
-# Convenience condition that is always true. This condition is satisfied if an arbitrarily chosen
-# boolean built-in flag (https://bazel.build/docs/user-manual#stamp) is either true or false.
-#
-# Inspired by
-# https://github.com/bazelbuild/bazel-skylib/blob/2f0bb4cec0297bb38f830a72fa8961bee057c3cd/lib/selects.bzl#L227.
-selects.config_setting_group(
-    name = "always_true",
-    match_any = [
-        ":always_true_0",
-        ":always_true_1",
-    ],
-    visibility = ["//visibility:public"],
-)
-
-config_setting(
-    name = "always_true_0",
-    values = {"stamp": "0"},
-)
-
-config_setting(
-    name = "always_true_1",
-    values = {"stamp": "1"},
-)
-
 test_suite(
     name = "all_go_tests",
     tests = [
         # Go tests in this list will be tested in CI. Please add any new Go tests to this suite.
         "//bazel/exporter:exporter_test",
         "//infra/bots/task_drivers/bazel_test_gm:bazel_test_gm_test",
+        "//infra/bots/task_drivers/bazel_test_precompiled:bazel_test_precompiled_test",
         "//infra/bots/task_drivers/codesize:codesize_test",
+        "//infra/bots/task_drivers/common:common_test",
         "//infra/bots/task_drivers/perf_puppeteer_canvas:perf_puppeteer_canvas_test",
         "//infra/bots/task_drivers/perf_puppeteer_render_skps:perf_puppeteer_render_skps_test",
         "//infra/bots/task_drivers/perf_puppeteer_skottie_frames:perf_puppeteer_skottie_frames_test",

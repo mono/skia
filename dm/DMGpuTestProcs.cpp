@@ -109,7 +109,7 @@ void RunWithGaneshTestContexts(GrContextTestFn* testFn, ContextTypeFilterFn* fil
             // calling flush.
             ctxInfo.testContext()->makeCurrent();
             // Sync so any release/finished procs get called.
-            ctxInfo.directContext()->flushAndSubmit(/*sync*/true);
+            ctxInfo.directContext()->flushAndSubmit(GrSyncCpu::kYes);
         }
     }
 }
@@ -129,13 +129,13 @@ void RunWithGraphiteTestContexts(GraphiteTestFn* test,
             continue;
         }
 
-        auto [_, context] = factory.getContextInfo(contextType);
-        if (!context) {
+        skiatest::graphite::ContextInfo ctxInfo = factory.getContextInfo(contextType);
+        if (!ctxInfo.fContext) {
             continue;
         }
 
         ReporterContext ctx(reporter, SkString(skgpu::ContextTypeName(contextType)));
-        (*test)(reporter, context);
+        (*test)(reporter, ctxInfo.fContext, ctxInfo.fTestContext);
     }
 }
 

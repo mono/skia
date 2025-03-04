@@ -36,7 +36,7 @@ std::unique_ptr<ParagraphBuilder> ParagraphBuilderImpl::make(
 
 ParagraphBuilderImpl::ParagraphBuilderImpl(
         const ParagraphStyle& style, sk_sp<FontCollection> fontCollection, std::unique_ptr<SkUnicode> unicode)
-        : ParagraphBuilder(style, fontCollection)
+        : ParagraphBuilder()
         , fUtf8()
         , fFontCollection(std::move(fontCollection))
         , fParagraphStyle(style)
@@ -46,12 +46,13 @@ ParagraphBuilderImpl::ParagraphBuilderImpl(
         , fUsingClientInfo(false)
 #endif
 {
+    SkASSERT(fFontCollection);
     startStyledBlock();
 }
 
 ParagraphBuilderImpl::ParagraphBuilderImpl(
         const ParagraphStyle& style, sk_sp<FontCollection> fontCollection)
-        : ParagraphBuilderImpl(style, fontCollection, SkUnicode::Make())
+        : ParagraphBuilderImpl(style, std::move(fontCollection), SkUnicode::Make())
 { }
 
 ParagraphBuilderImpl::~ParagraphBuilderImpl() = default;
@@ -184,14 +185,15 @@ std::unique_ptr<Paragraph> ParagraphBuilderImpl::Build() {
     this->addPlaceholder(PlaceholderStyle(), true);
 
 #if defined(SK_UNICODE_CLIENT_IMPLEMENTATION)
-    SkASSERT(fUsingClientInfo);
-    fUTF8IndexForUTF16Index.clear();
-    fUTF16IndexForUTF8Index.clear();
-    // This is the place where SkUnicode is paired with SkParagraph
-    fUnicode = SkUnicode::MakeClientBasedUnicode(this->getText(),
-                                                 std::move(fWordsUtf16),
-                                                 std::move(fGraphemeBreaksUtf8),
-                                                 std::move(fLineBreaksUtf8));
+    if (fUsingClientInfo && !fUnicode) {
+        fUTF8IndexForUTF16Index.clear();
+        fUTF16IndexForUTF8Index.clear();
+        // This is the place where SkUnicode is paired with SkParagraph
+        fUnicode = SkUnicode::MakeClientBasedUnicode(this->getText(),
+                                                    std::move(fWordsUtf16),
+                                                    std::move(fGraphemeBreaksUtf8),
+                                                    std::move(fLineBreaksUtf8));
+    }
 #endif
 
     SkASSERT(fUnicode);

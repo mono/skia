@@ -7,23 +7,33 @@
 
 #include "include/core/SkTextBlob.h"
 
+#include "include/core/SkData.h"
+#include "include/core/SkMaskFilter.h"
+#include "include/core/SkMatrix.h"
+#include "include/core/SkPaint.h"
+#include "include/core/SkPathEffect.h"
+#include "include/core/SkPoint.h"
 #include "include/core/SkRSXform.h"
-#include "include/core/SkTypeface.h"
+#include "include/private/base/SkAlign.h"
+#include "include/private/base/SkFloatingPoint.h"
+#include "include/private/base/SkMalloc.h"
+#include "include/private/base/SkSpan_impl.h"
+#include "include/private/base/SkTo.h"
 #include "src/base/SkSafeMath.h"
 #include "src/base/SkTLazy.h"
 #include "src/core/SkFontPriv.h"
-#include "src/core/SkPaintPriv.h"
+#include "src/core/SkGlyph.h"
 #include "src/core/SkReadBuffer.h"
-#include "src/core/SkStrikeCache.h"
 #include "src/core/SkStrikeSpec.h"
 #include "src/core/SkTextBlobPriv.h"
 #include "src/core/SkWriteBuffer.h"
 #include "src/text/GlyphRun.h"
-#include "src/text/TextBlobMailbox.h"
 
+#include <algorithm>
 #include <atomic>
 #include <limits>
 #include <new>
+#include <vector>
 
 using namespace skia_private;
 
@@ -133,9 +143,9 @@ void SkTextBlob::RunRecord::grow(uint32_t count) {
     memmove(posBuffer(), initialPosBuffer, copySize);
 }
 
-static int32_t next_id() {
-    static std::atomic<int32_t> nextID{1};
-    int32_t id;
+static uint32_t next_id() {
+    static std::atomic<uint32_t> nextID{1};
+    uint32_t id;
     do {
         id = nextID.fetch_add(1, std::memory_order_relaxed);
     } while (id == SK_InvalidGenID);
@@ -145,11 +155,14 @@ static int32_t next_id() {
 SkTextBlob::SkTextBlob(const SkRect& bounds)
     : fBounds(bounds)
     , fUniqueID(next_id())
-    , fCacheID(SK_InvalidUniqueID) {}
+    , fCacheID(SK_InvalidUniqueID)
+    , fPurgeDelegate(nullptr) {}
 
 SkTextBlob::~SkTextBlob() {
     if (SK_InvalidUniqueID != fCacheID.load()) {
-        sktext::PostPurgeBlobMessage(fUniqueID, fCacheID);
+        PurgeDelegate f = fPurgeDelegate.load();
+        SkASSERT(f);
+        f(fUniqueID, fCacheID);
     }
 
     const auto* run = RunRecord::First(this);
@@ -830,8 +843,7 @@ sk_sp<SkTextBlob> SkTextBlob::MakeFromRSXform(const void* text, size_t byteLengt
 }
 
 sk_sp<SkData> SkTextBlob::serialize(const SkSerialProcs& procs) const {
-    SkBinaryWriteBuffer buffer;
-    buffer.setSerialProcs(procs);
+    SkBinaryWriteBuffer buffer(procs);
     SkTextBlobPriv::Flatten(*this, buffer);
 
     size_t total = buffer.bytesWritten();
@@ -850,8 +862,7 @@ sk_sp<SkTextBlob> SkTextBlob::Deserialize(const void* data, size_t length,
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
 size_t SkTextBlob::serialize(const SkSerialProcs& procs, void* memory, size_t memory_size) const {
-    SkBinaryWriteBuffer buffer(memory, memory_size);
-    buffer.setSerialProcs(procs);
+    SkBinaryWriteBuffer buffer(memory, memory_size, procs);
     SkTextBlobPriv::Flatten(*this, buffer);
     return buffer.usingInitialStorage() ? buffer.bytesWritten() : 0u;
 }

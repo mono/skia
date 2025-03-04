@@ -473,6 +473,7 @@ CPU_GMS = [
     # "wacky_yuv_formats.cpp",
     # "widebuttcaps.cpp",
     # "windowrectangles.cpp",
+    # "workingspace.cpp",
     # "xfermodeimagefilter.cpp",
     # "xfermodes2.cpp",
     # "xfermodes3.cpp",
@@ -608,6 +609,14 @@ cc_test_with_flags(
         "8888",
     ],
     data = ["//resources"],
+    deps = [":tests_base"],
+)
+
+android_gm_test(
+    name = "hello_bazel_world_android_test",
+    srcs = ["hello_bazel_world.cpp"],
+    config = "8888",
+    requires_resources_dir = True,
     deps = [":tests_base"],
 )
 

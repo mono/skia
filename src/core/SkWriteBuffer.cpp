@@ -8,16 +8,13 @@
 #include "src/core/SkWriteBuffer.h"
 
 #include "include/core/SkAlphaType.h"
-#include "include/core/SkBitmap.h"
 #include "include/core/SkData.h"
 #include "include/core/SkFlattenable.h"
 #include "include/core/SkImage.h"
 #include "include/core/SkPoint.h"
 #include "include/core/SkPoint3.h"
 #include "include/core/SkRect.h"
-#include "include/core/SkStream.h"
 #include "include/core/SkTypeface.h"
-#include "include/encode/SkPngEncoder.h"
 #include "include/private/base/SkAssert.h"
 #include "include/private/base/SkTFitsIn.h"
 #include "include/private/base/SkTo.h"
@@ -26,6 +23,12 @@
 #include "src/core/SkPaintPriv.h"
 #include "src/core/SkPtrRecorder.h"
 #include "src/image/SkImage_Base.h"
+
+#if !defined(SK_DISABLE_LEGACY_PNG_WRITEBUFFER)
+#include "include/core/SkBitmap.h"
+#include "include/core/SkStream.h"
+#include "include/encode/SkPngEncoder.h"
+#endif
 
 #include <cstring>
 #include <utility>
@@ -36,16 +39,11 @@ class SkRegion;
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-SkBinaryWriteBuffer::SkBinaryWriteBuffer()
-    : fFactorySet(nullptr)
-    , fTFSet(nullptr) {
-}
+SkBinaryWriteBuffer::SkBinaryWriteBuffer(const SkSerialProcs& p)
+        : SkWriteBuffer(p), fFactorySet(nullptr), fTFSet(nullptr) {}
 
-SkBinaryWriteBuffer::SkBinaryWriteBuffer(void* storage, size_t storageSize)
-    : fFactorySet(nullptr)
-    , fTFSet(nullptr)
-    , fWriter(storage, storageSize)
-{}
+SkBinaryWriteBuffer::SkBinaryWriteBuffer(void* storage, size_t storageSize, const SkSerialProcs& p)
+        : SkWriteBuffer(p), fFactorySet(nullptr), fTFSet(nullptr), fWriter(storage, storageSize) {}
 
 SkBinaryWriteBuffer::~SkBinaryWriteBuffer() {}
 
@@ -161,10 +159,10 @@ bool SkBinaryWriteBuffer::writeToStream(SkWStream* stream) const {
     return fWriter.writeToStream(stream);
 }
 
-static sk_sp<SkData> serialize_image(const SkImage* image, SkSerialProcs dProcs) {
+static sk_sp<SkData> serialize_image(const SkImage* image, SkSerialProcs procs) {
     sk_sp<SkData> data;
-    if (dProcs.fImageProc) {
-        data = dProcs.fImageProc(const_cast<SkImage*>(image), dProcs.fImageCtx);
+    if (procs.fImageProc) {
+        data = procs.fImageProc(const_cast<SkImage*>(image), procs.fImageCtx);
     }
     if (data) {
         return data;
@@ -175,6 +173,7 @@ static sk_sp<SkData> serialize_image(const SkImage* image, SkSerialProcs dProcs)
     if (data) {
         return data;
     }
+#if !defined(SK_DISABLE_LEGACY_PNG_WRITEBUFFER)
     SkBitmap bm;
     auto ib = as_IB(image);
     if (!ib->getROPixels(ib->directContext(), &bm)) {
@@ -184,10 +183,11 @@ static sk_sp<SkData> serialize_image(const SkImage* image, SkSerialProcs dProcs)
     if (SkPngEncoder::Encode(&stream, bm.pixmap(), SkPngEncoder::Options())) {
         return stream.detachAsData();
     }
+#endif
     return nullptr;
 }
 
-static sk_sp<SkData> serialize_mipmap(const SkMipmap* mipmap, SkSerialProcs dProcs) {
+static sk_sp<SkData> serialize_mipmap(const SkMipmap* mipmap, SkSerialProcs procs) {
     /*  Format
         count_levels:32
         for each level, starting with the biggest (index 0 in our iterator)
@@ -196,13 +196,14 @@ static sk_sp<SkData> serialize_mipmap(const SkMipmap* mipmap, SkSerialProcs dPro
     */
     const int count = mipmap->countLevels();
 
-    SkBinaryWriteBuffer buffer;
+    // This buffer does not need procs because it is just writing SkDatas
+    SkBinaryWriteBuffer buffer({});
     buffer.write32(count);
     for (int i = 0; i < count; ++i) {
         SkMipmap::Level level;
         if (mipmap->getLevel(i, &level)) {
             sk_sp<SkImage> levelImage = SkImages::RasterFromPixmap(level.fPixmap, nullptr, nullptr);
-            sk_sp<SkData> levelData = serialize_image(levelImage.get(), dProcs);
+            sk_sp<SkData> levelData = serialize_image(levelImage.get(), procs);
             buffer.writeDataAsByteArray(levelData.get());
         } else {
             return nullptr;

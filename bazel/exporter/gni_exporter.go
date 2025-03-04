@@ -76,10 +76,8 @@ var deprecatedFiles = []string{
 
 // The footer written to gn/core.gni.
 const coreGNIFooter = `skia_core_sources += skia_pathops_sources
-skia_core_sources += skia_skpicture_sources
 
 skia_core_public += skia_pathops_public
-skia_core_public += skia_skpicture_public
 `
 
 // The footer written to gn/sksl_tests.gni.
@@ -95,16 +93,18 @@ sksl_metal_tests_sources =
 sksl_hlsl_tests_sources = sksl_blend_tests + sksl_shared_tests
 
 sksl_wgsl_tests_sources =
-    sksl_blend_tests + sksl_folding_tests + sksl_shared_tests + sksl_wgsl_tests
+    sksl_blend_tests + sksl_compute_tests + sksl_folding_tests +
+    sksl_shared_tests + sksl_wgsl_tests
 
 sksl_spirv_tests_sources =
     sksl_blend_tests + sksl_compute_tests + sksl_shared_tests + sksl_spirv_tests
 
 sksl_skrp_tests_sources = sksl_folding_tests + sksl_rte_tests + sksl_shared_tests
 
-sksl_stage_tests_sources = sksl_rte_tests
+sksl_stage_tests_sources =
+    sksl_rte_tests + sksl_mesh_tests + sksl_mesh_error_tests
 
-sksl_minify_tests_sources = sksl_rte_tests + sksl_folding_tests`
+sksl_minify_tests_sources = sksl_folding_tests + sksl_mesh_tests + sksl_rte_tests`
 
 // The footer written to modules/skshaper/skshaper.gni.
 const skshaperFooter = `

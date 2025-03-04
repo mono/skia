@@ -88,7 +88,7 @@ DEF_GANESH_TEST_FOR_VULKAN_CONTEXT(VkYCbcrSampler_DrawImageWithYcbcrSampler,
         return;
     }
     surface->getCanvas()->drawImage(srcImage, 0, 0);
-    dContext->flushAndSubmit(surface);
+    dContext->flushAndSubmit(surface.get());
 
     std::vector<uint8_t> readbackData(kImageWidth * kImageHeight * 4);
     if (!surface->readPixels(SkImageInfo::Make(kImageWidth, kImageHeight, kRGBA_8888_SkColorType,
@@ -157,8 +157,12 @@ DEF_GANESH_TEST_FOR_VULKAN_CONTEXT(VkYCbcrSampler_NoYcbcrSurface,
     }
 
     GrBackendTexture texture = testHelper.directContext()->createBackendTexture(
-            kImageWidth, kImageHeight, GrBackendFormats::MakeVk(VK_FORMAT_G8_B8R8_2PLANE_420_UNORM),
-            GrMipmapped::kNo, GrRenderable::kNo, GrProtected::kNo);
+            kImageWidth,
+            kImageHeight,
+            GrBackendFormats::MakeVk(VK_FORMAT_G8_B8R8_2PLANE_420_UNORM),
+            skgpu::Mipmapped::kNo,
+            GrRenderable::kNo,
+            GrProtected::kNo);
     if (texture.isValid()) {
         ERRORF(reporter,
                "GrDirectContext::createBackendTexture() didn't fail as expected for Ycbcr format.");

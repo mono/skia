@@ -300,7 +300,6 @@ GANESH_TESTS = [
     "Skbug6653.cpp",
     "SlugTest.cpp",
     "SpecialImageTest.cpp",
-    "SpecialSurfaceTest.cpp",
     "SrcSrcOverBatchTest.cpp",
     "StrikeForGPUTest.cpp",
     "SurfaceDrawContextTest.cpp",
@@ -396,6 +395,7 @@ PDF_TESTS = [
     "PDFTaggedPruningTest.cpp",
     "PDFTaggedTableTest.cpp",
     "PDFTaggedTest.cpp",
+    "Time.cpp",
     # TODO(kjlubick, bungeman) There are PDF-specific tests in
     # CanvasTest.cpp
 ]

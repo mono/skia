@@ -103,6 +103,7 @@ public:
     };
 
     using Uniform = SkRuntimeEffect::Uniform;
+    using Child = SkRuntimeEffect::Child;
 
     ~SkMeshSpecification();
 
@@ -167,13 +168,22 @@ public:
      */
     SkSpan<const Uniform> uniforms() const { return SkSpan(fUniforms); }
 
-    /** Returns pointer to the named uniform variable's description, or nullptr if not found. */
+    /**
+     * Provides basic info about individual children: names, indices and runtime effect type.
+     * TODO(b/40045302): SkMesh will currently reject mesh specifications that include child effects
+     */
+    SkSpan<const Child> children() const { return SkSpan(fChildren); }
+
+    /** Returns a pointer to the named child's description, or nullptr if not found. */
+    const Child* findChild(std::string_view name) const;
+
+    /** Returns a pointer to the named uniform variable's description, or nullptr if not found. */
     const Uniform* findUniform(std::string_view name) const;
 
-    /** Returns pointer to the named attribute, or nullptr if not found. */
+    /** Returns a pointer to the named attribute, or nullptr if not found. */
     const Attribute* findAttribute(std::string_view name) const;
 
-    /** Returns pointer to the named varying, or nullptr if not found. */
+    /** Returns a pointer to the named varying, or nullptr if not found. */
     const Varying* findVarying(std::string_view name) const;
 
     size_t stride() const { return fStride; }
@@ -201,6 +211,7 @@ private:
                         int passthroughLocalCoordsVaryingIndex,
                         uint32_t deadVaryingMask,
                         std::vector<Uniform> uniforms,
+                        std::vector<Child> children,
                         std::unique_ptr<const SkSL::Program>,
                         std::unique_ptr<const SkSL::Program>,
                         ColorType,
@@ -216,6 +227,7 @@ private:
     const std::vector<Attribute>               fAttributes;
     const std::vector<Varying>                 fVaryings;
     const std::vector<Uniform>                 fUniforms;
+    const std::vector<Child>                   fChildren;
     const std::unique_ptr<const SkSL::Program> fVS;
     const std::unique_ptr<const SkSL::Program> fFS;
     const size_t                               fStride;
@@ -231,18 +243,18 @@ private:
  * A vertex buffer, a topology, optionally an index buffer, and a compatible SkMeshSpecification.
  *
  * The data in the vertex buffer is expected to contain the attributes described by the spec
- * for vertexCount vertices beginning at vertexOffset. vertexOffset must be aligned to the
+ * for vertexCount vertices, beginning at vertexOffset. vertexOffset must be aligned to the
  * SkMeshSpecification's vertex stride. The size of the buffer must be at least vertexOffset +
  * spec->stride()*vertexCount (even if vertex attributes contains pad at the end of the stride). If
- * the specified bounds does not contain all the points output by the spec's vertex program when
- * applied to the vertices in the custom mesh then the result is undefined.
+ * the specified bounds do not contain all the points output by the spec's vertex program when
+ * applied to the vertices in the custom mesh, then the result is undefined.
  *
  * MakeIndexed may be used to create an indexed mesh. indexCount indices are read from the index
- * buffer at the specified offset which must be aligned to 2. The indices are always unsigned 16bit
- * integers. The index count must be at least 3.
+ * buffer at the specified offset, which must be aligned to 2. The indices are always unsigned
+ * 16-bit integers. The index count must be at least 3.
  *
- * If Make() is used the implicit index sequence is 0, 1, 2, 3, ... and vertexCount must be at least
- * 3.
+ * If Make() is used, the implicit index sequence is 0, 1, 2, 3, ... and vertexCount must be at
+ * least 3.
  *
  * Both Make() and MakeIndexed() take a SkData with the uniform values. See
  * SkMeshSpecification::uniformSize() and SkMeshSpecification::uniforms() for sizing and packing
@@ -250,7 +262,7 @@ private:
  */
 class SkMesh {
 public:
-    class IndexBuffer  : public SkRefCnt {
+    class IndexBuffer : public SkRefCnt {
     public:
         virtual size_t size() const = 0;
 
@@ -297,18 +309,23 @@ public:
 
     struct Result;
 
+    using ChildPtr = SkRuntimeEffect::ChildPtr;
+
     /**
      * Creates a non-indexed SkMesh. The returned SkMesh can be tested for validity using
      * SkMesh::isValid(). An invalid mesh simply fails to draws if passed to SkCanvas::drawMesh().
      * If the mesh is invalid the returned string give contain the reason for the failure (e.g. the
      * vertex buffer was null or uniform data too small).
      */
+
+    // TODO(b/40045302): support for `children` is a work-in-progress
     static Result Make(sk_sp<SkMeshSpecification>,
                        Mode,
                        sk_sp<VertexBuffer>,
                        size_t vertexCount,
                        size_t vertexOffset,
                        sk_sp<const SkData> uniforms,
+                       SkSpan<ChildPtr> children,
                        const SkRect& bounds);
 
     /**
@@ -317,6 +334,8 @@ public:
      * If the mesh is invalid the returned string give contain the reason for the failure (e.g. the
      * index buffer was null or uniform data too small).
      */
+
+    // TODO(b/40045302): support for `children` is a work-in-progress
     static Result MakeIndexed(sk_sp<SkMeshSpecification>,
                               Mode,
                               sk_sp<VertexBuffer>,
@@ -326,6 +345,7 @@ public:
                               size_t indexCount,
                               size_t indexOffset,
                               sk_sp<const SkData> uniforms,
+                              SkSpan<ChildPtr> children,
                               const SkRect& bounds);
 
     sk_sp<SkMeshSpecification> refSpec() const { return fSpec; }
@@ -348,6 +368,8 @@ public:
     sk_sp<const SkData> refUniforms() const { return fUniforms; }
     const SkData* uniforms() const { return fUniforms.get(); }
 
+    SkSpan<const ChildPtr> children() const { return SkSpan(fChildren); }
+
     SkRect bounds() const { return fBounds; }
 
     bool isValid() const;
@@ -361,6 +383,7 @@ private:
     sk_sp<IndexBuffer>  fIB;
 
     sk_sp<const SkData> fUniforms;
+    std::vector<ChildPtr> fChildren;
 
     size_t fVOffset = 0;  // Must be a multiple of spec->stride()
     size_t fVCount  = 0;

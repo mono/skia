@@ -25,7 +25,7 @@ namespace sktext {
 class GlyphRunList;
 }
 
-class SkBaseDevice;
+class SkDevice;
 class SkBitmap;
 class SkBlender;
 class SkClipStack;
@@ -44,10 +44,8 @@ struct SkSamplingOptions;
 
 class SkSVGDevice final : public SkClipStackDevice {
 public:
-    static sk_sp<SkBaseDevice> Make(const SkISize& size, std::unique_ptr<SkXMLWriter>,
-                                    uint32_t flags);
+    static sk_sp<SkDevice> Make(const SkISize& size, std::unique_ptr<SkXMLWriter>, uint32_t flags);
 
-protected:
     void drawPaint(const SkPaint& paint) override;
     void drawAnnotation(const SkRect& rect, const char key[], SkData* value) override;
     void drawPoints(SkCanvas::PointMode mode, size_t count,
@@ -62,15 +60,17 @@ protected:
                   const SkPaint& paint,
                   bool pathIsMutable = false) override;
 
+    void drawVertices(const SkVertices*, sk_sp<SkBlender>, const SkPaint&, bool) override;
+    void drawMesh(const SkMesh&, sk_sp<SkBlender>, const SkPaint&) override;
+
+private:
+    SkSVGDevice(const SkISize& size, std::unique_ptr<SkXMLWriter>, uint32_t);
+    ~SkSVGDevice() override;
+
     void onDrawGlyphRunList(SkCanvas*,
                             const sktext::GlyphRunList&,
                             const SkPaint& initialPaint,
                             const SkPaint& drawingPaint) override;
-    void drawVertices(const SkVertices*, sk_sp<SkBlender>, const SkPaint&, bool) override;
-    void drawMesh(const SkMesh&, sk_sp<SkBlender>, const SkPaint&) override;
-private:
-    SkSVGDevice(const SkISize& size, std::unique_ptr<SkXMLWriter>, uint32_t);
-    ~SkSVGDevice() override;
 
     struct MxCp;
     void drawBitmapCommon(const MxCp&, const SkBitmap& bm, const SkPaint& paint);
@@ -97,8 +97,6 @@ private:
 
     std::unique_ptr<AutoElement> fRootElement;
     skia_private::TArray<ClipRec> fClipStack;
-
-    using INHERITED = SkClipStackDevice;
 };
 
 #endif // SkSVGDevice_DEFINED

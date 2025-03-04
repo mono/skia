@@ -52,6 +52,7 @@
 #include "src/sksl/ir/SkSLLayout.h"
 #include "src/sksl/ir/SkSLLiteral.h"
 #include "src/sksl/ir/SkSLModifierFlags.h"
+#include "src/sksl/ir/SkSLModifiersDeclaration.h"
 #include "src/sksl/ir/SkSLPostfixExpression.h"
 #include "src/sksl/ir/SkSLPrefixExpression.h"
 #include "src/sksl/ir/SkSLProgram.h"
@@ -63,8 +64,6 @@
 #include "src/sksl/ir/SkSLSwitchCase.h"
 #include "src/sksl/ir/SkSLSwitchStatement.h"
 #include "src/sksl/ir/SkSLSwizzle.h"
-#include "src/sksl/ir/SkSLSymbol.h"
-#include "src/sksl/ir/SkSLSymbolTable.h"
 #include "src/sksl/ir/SkSLTernaryExpression.h"
 #include "src/sksl/ir/SkSLType.h"
 #include "src/sksl/ir/SkSLVarDeclarations.h"
@@ -80,6 +79,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <utility>
 
 using namespace skia_private;
 
@@ -113,6 +113,7 @@ bool is_reserved_word(std::string_view word) {
             "FSOut",
             "VSIn",
             "VSOut",
+            "CSIn",
             "_globalUniforms",
             "_GlobalUniforms",
             "_return",
@@ -381,6 +382,10 @@ std::string_view pipeline_struct_prefix(ProgramKind kind) {
     if (ProgramConfig::IsFragment(kind)) {
         return "FS";
     }
+    if (ProgramConfig::IsCompute(kind)) {
+        return "CS";
+    }
+    // Compute programs don't have stage-in/stage-out pipeline structs.
     return "";
 }
 
@@ -421,30 +426,59 @@ std::string_view to_scalar_type(const Type& type) {
 
 // Convert a SkSL type to a WGSL type. Handles all plain types except structure types
 // (see https://www.w3.org/TR/WGSL/#plain-types-section).
-std::string to_wgsl_type(const Type& type) {
+std::string to_wgsl_type(const Context& context, const Type& raw, const Layout* layout = nullptr) {
+    const Type& type = raw.resolve().scalarTypeForLiteral();
     switch (type.typeKind()) {
         case Type::TypeKind::kScalar:
             return std::string(to_scalar_type(type));
+
+        case Type::TypeKind::kAtomic:
+            SkASSERT(type.matches(*context.fTypes.fAtomicUInt));
+            return "atomic<u32>";
+
         case Type::TypeKind::kVector: {
             std::string_view ct = to_scalar_type(type.componentType());
             return String::printf("vec%d<%.*s>", type.columns(), (int)ct.length(), ct.data());
         }
         case Type::TypeKind::kMatrix: {
             std::string_view ct = to_scalar_type(type.componentType());
-            return String::printf(
-                    "mat%dx%d<%.*s>", type.columns(), type.rows(), (int)ct.length(), ct.data());
+            return String::printf("mat%dx%d<%.*s>",
+                                  type.columns(), type.rows(), (int)ct.length(), ct.data());
         }
         case Type::TypeKind::kArray: {
-            std::string elementType = to_wgsl_type(type.componentType());
-            if (type.isUnsizedArray()) {
-                return String::printf("array<%s>", elementType.c_str());
+            std::string result = "array<" + to_wgsl_type(context, type.componentType(), layout);
+            if (!type.isUnsizedArray()) {
+                result += ", ";
+                result += std::to_string(type.columns());
             }
-            return String::printf("array<%s, %d>", elementType.c_str(), type.columns());
+            return result + '>';
         }
-        case Type::TypeKind::kTexture:
-            // TODO(b/40044498): we will need to support texture_storage_2d<f32> as well, once the
-            // details are ironed out.
+        case Type::TypeKind::kTexture: {
+            if (type.matches(*context.fTypes.fWriteOnlyTexture2D)) {
+                std::string result = "texture_storage_2d<";
+                // Write-only storage texture types require a pixel format, which is in the layout.
+                SkASSERT(layout);
+                LayoutFlags pixelFormat = layout->fFlags & LayoutFlag::kAllPixelFormats;
+                switch (pixelFormat.value()) {
+                    case (int)LayoutFlag::kRGBA8:
+                        return result + "rgba8unorm, write>";
+
+                    case (int)LayoutFlag::kRGBA32F:
+                        return result + "rgba32float, write>";
+
+                    case (int)LayoutFlag::kR32F:
+                        return result + "r32float, write>";
+
+                    default:
+                        // The front-end should have rejected this.
+                        return result + "write>";
+                }
+            }
+            // WGSL only bakes in the pixel format for read-only textures.
+            SkASSERTF(type.matches(*context.fTypes.fReadOnlyTexture2D),
+                      "unexpected texture type: %s", type.description().c_str());
             return "texture_2d<f32>";
+        }
 
         default:
             break;
@@ -452,10 +486,12 @@ std::string to_wgsl_type(const Type& type) {
     return std::string(type.name());
 }
 
-std::string to_ptr_type(const Type& type,
+std::string to_ptr_type(const Context& context,
+                        const Type& type,
+                        const Layout* layout,
                         PtrAddressSpace addressSpace = PtrAddressSpace::kFunction) {
-    return "ptr<" + std::string(address_space_to_str(addressSpace)) + ", " + to_wgsl_type(type) +
-           ">";
+    return "ptr<" + std::string(address_space_to_str(addressSpace)) + ", " +
+           to_wgsl_type(context, type, layout) + '>';
 }
 
 std::string_view wgsl_builtin_name(WGSLCodeGenerator::Builtin builtin) {
@@ -474,6 +510,7 @@ std::string_view wgsl_builtin_name(WGSLCodeGenerator::Builtin builtin) {
         case Builtin::kFragDepth:
             return "frag_depth";
         case Builtin::kSampleMask:
+        case Builtin::kSampleMaskIn:
             return "sample_mask";
         case Builtin::kLocalInvocationId:
             return "local_invocation_id";
@@ -509,6 +546,8 @@ std::string_view wgsl_builtin_type(WGSLCodeGenerator::Builtin builtin) {
         case Builtin::kFragDepth:
             return "f32";
         case Builtin::kSampleMask:
+            return "u32";
+        case Builtin::kSampleMaskIn:
             return "u32";
         case Builtin::kLocalInvocationId:
             return "vec3<u32>";
@@ -553,25 +592,35 @@ std::optional<WGSLCodeGenerator::Builtin> builtin_from_sksl_name(int builtin) {
         case SK_POSITION_BUILTIN:
             [[fallthrough]];
         case SK_FRAGCOORD_BUILTIN:
-            return {Builtin::kPosition};
+            return Builtin::kPosition;
         case SK_VERTEXID_BUILTIN:
-            return {Builtin::kVertexIndex};
+            return Builtin::kVertexIndex;
         case SK_INSTANCEID_BUILTIN:
-            return {Builtin::kInstanceIndex};
+            return Builtin::kInstanceIndex;
         case SK_CLOCKWISE_BUILTIN:
             // TODO(skia:13092): While `front_facing` is the corresponding built-in, it does not
             // imply a particular winding order. We correctly compute the face orientation based
             // on how Skia configured the render pipeline for all references to this built-in
             // variable (see `SkSL::Program::Interface::fUseFlipRTUniform`).
-            return {Builtin::kFrontFacing};
+            return Builtin::kFrontFacing;
+        case SK_SAMPLEMASKIN_BUILTIN:
+            return Builtin::kSampleMaskIn;
+        case SK_SAMPLEMASK_BUILTIN:
+            return Builtin::kSampleMask;
+        case SK_NUMWORKGROUPS_BUILTIN:
+            return Builtin::kNumWorkgroups;
+        case SK_WORKGROUPID_BUILTIN:
+            return Builtin::kWorkgroupId;
+        case SK_LOCALINVOCATIONID_BUILTIN:
+            return Builtin::kLocalInvocationId;
+        case SK_GLOBALINVOCATIONID_BUILTIN:
+            return Builtin::kGlobalInvocationId;
+        case SK_LOCALINVOCATIONINDEX_BUILTIN:
+            return Builtin::kLocalInvocationIndex;
         default:
             break;
     }
     return std::nullopt;
-}
-
-const SymbolTable* top_level_symbol_table(const FunctionDefinition& f) {
-    return f.body()->as<Block>().symbolTable()->fParent.get();
 }
 
 const char* delimiter_to_str(WGSLCodeGenerator::Delimiter delimiter) {
@@ -670,40 +719,48 @@ private:
 };
 
 WGSLCodeGenerator::ProgramRequirements resolve_program_requirements(const Program* program) {
-    bool mainNeedsCoordsArgument = false;
-    WGSLCodeGenerator::ProgramRequirements::DepsMap dependencies;
+    WGSLCodeGenerator::ProgramRequirements requirements;
 
     for (const ProgramElement* e : program->elements()) {
-        if (!e->is<FunctionDefinition>()) {
-            continue;
+        switch (e->kind()) {
+            case ProgramElement::Kind::kFunction: {
+                const FunctionDeclaration& decl = e->as<FunctionDefinition>().declaration();
+
+                FunctionDependencyResolver resolver(program, &decl, &requirements.fDependencies);
+                requirements.fDependencies.set(&decl, resolver.resolve());
+                break;
+            }
+            case ProgramElement::Kind::kGlobalVar: {
+                const GlobalVarDeclaration& decl = e->as<GlobalVarDeclaration>();
+                if (decl.varDeclaration().var()->modifierFlags().isPixelLocal()) {
+                    requirements.fPixelLocalExtension = true;
+                }
+                break;
+            }
+            default:
+                break;
         }
-
-        const FunctionDeclaration& decl = e->as<FunctionDefinition>().declaration();
-        mainNeedsCoordsArgument |= (decl.getMainCoordsParameter() != nullptr);
-
-        FunctionDependencyResolver resolver(program, &decl, &dependencies);
-        dependencies.set(&decl, resolver.resolve());
     }
 
-    return WGSLCodeGenerator::ProgramRequirements(std::move(dependencies), mainNeedsCoordsArgument);
+    return requirements;
 }
 
-int count_pipeline_inputs(const Program* program) {
-    int inputCount = 0;
+void collect_pipeline_io_vars(const Program* program,
+                              TArray<const Variable*>* ioVars,
+                              ModifierFlag ioType) {
     for (const ProgramElement* e : program->elements()) {
         if (e->is<GlobalVarDeclaration>()) {
             const Variable* v = e->as<GlobalVarDeclaration>().varDeclaration().var();
-            if (v->modifierFlags() & ModifierFlag::kIn) {
-                inputCount++;
+            if (v->modifierFlags() & ioType) {
+                ioVars->push_back(v);
             }
         } else if (e->is<InterfaceBlock>()) {
             const Variable* v = e->as<InterfaceBlock>().var();
-            if (v->modifierFlags() & ModifierFlag::kIn) {
-                inputCount++;
+            if (v->modifierFlags() & ioType) {
+                ioVars->push_back(v);
             }
         }
     }
-    return inputCount;
 }
 
 bool is_in_global_uniforms(const Variable& var) {
@@ -767,8 +824,9 @@ private:
 class WGSLCodeGenerator::SwizzleLValue : public WGSLCodeGenerator::LValue {
 public:
     // `name` must be a WGSL expression with no side-effects that points to a WGSL vector.
-    SwizzleLValue(std::string name, const Type& t, const ComponentArray& c)
-            : fName(std::move(name))
+    SwizzleLValue(const Context& ctx, std::string name, const Type& t, const ComponentArray& c)
+            : fContext(ctx)
+            , fName(std::move(name))
             , fType(t)
             , fComponents(c) {
         // If the component array doesn't cover the entire value, we need to create masks for
@@ -833,7 +891,7 @@ public:
             result += Swizzle::MaskString(fReintegrationSwizzle);
         } else {
             // `vec4<f32>((new_value), `
-            result += to_wgsl_type(fType);
+            result += to_wgsl_type(fContext, fType);
             result += "((";
             result += value;
             result += "), ";
@@ -849,6 +907,7 @@ public:
     }
 
 private:
+    const Context& fContext;
     std::string fName;
     const Type& fType;
     ComponentArray fComponents;
@@ -858,14 +917,14 @@ private:
 
 bool WGSLCodeGenerator::generateCode() {
     // The resources of a WGSL program are structured in the following way:
-    // - Vertex and fragment stage attribute inputs and outputs are bundled
-    //   inside synthetic structs called VSIn/VSOut/FSIn/FSOut.
+    // - Stage attribute inputs and outputs are bundled inside synthetic structs called
+    //   VSIn/VSOut/FSIn/FSOut/CSIn.
     // - All uniform and storage type resources are declared in global scope.
     this->preprocessProgram();
 
     {
         AutoOutputStream outputToHeader(this, &fHeader, &fIndentation);
-        this->writeLine("diagnostic(off, derivative_uniformity);");
+        this->writeEnables();
         this->writeStageInputStruct();
         this->writeStageOutputStruct();
         this->writeUniformsAndBuffers();
@@ -930,25 +989,26 @@ void WGSLCodeGenerator::writeUniformPolyfills() {
     bool anyFieldAccessed = false;
     for (const FieldPolyfillMap::Pair* pair : orderedFields) {
         const auto& [field, info] = *pair;
-        const Type* type = field->fType;
+        const Type* fieldType = field->fType;
+        const Layout* fieldLayout = &field->fLayout;
 
         if (info.fIsArray) {
-            type = &type->componentType();
-            if (!writtenArrayElementPolyfill.contains(type)) {
-                writtenArrayElementPolyfill.add(type);
+            fieldType = &fieldType->componentType();
+            if (!writtenArrayElementPolyfill.contains(fieldType)) {
+                writtenArrayElementPolyfill.add(fieldType);
                 this->write("struct _skArrayElement_");
-                this->write(type->abbreviatedName());
+                this->write(fieldType->abbreviatedName());
                 this->writeLine(" {");
 
                 if (info.fIsMatrix) {
                     // Create a struct representing the array containing std140-padded matrices.
                     this->write("  e : _skMatrix");
-                    this->write(std::to_string(type->columns()));
-                    this->writeLine(std::to_string(type->rows()));
+                    this->write(std::to_string(fieldType->columns()));
+                    this->writeLine(std::to_string(fieldType->rows()));
                 } else {
                     // Create a struct representing the array with extra padding between elements.
                     this->write("  @size(16) e : ");
-                    this->writeLine(to_wgsl_type(*type));
+                    this->writeLine(to_wgsl_type(fContext, *fieldType, fieldLayout));
                 }
                 this->writeLine("};");
             }
@@ -958,8 +1018,8 @@ void WGSLCodeGenerator::writeUniformPolyfills() {
             // Create structs representing the matrix as an array of vectors, whether or not the
             // matrix is ever accessed by the SkSL. (The struct itself is mentioned in the list of
             // uniforms.)
-            int c = type->columns();
-            int r = type->rows();
+            int c = fieldType->columns();
+            int r = fieldType->rows();
             if (!writtenUniformRowPolyfill[r]) {
                 writtenUniformRowPolyfill[r] = true;
 
@@ -969,7 +1029,7 @@ void WGSLCodeGenerator::writeUniformPolyfills() {
                 this->write("  @size(16) r : vec");
                 this->write(std::to_string(r));
                 this->write("<");
-                this->write(to_wgsl_type(type->componentType()));
+                this->write(to_wgsl_type(fContext, fieldType->componentType(), fieldLayout));
                 this->writeLine(">");
                 this->writeLine("};");
             }
@@ -1002,12 +1062,12 @@ void WGSLCodeGenerator::writeUniformPolyfills() {
         const Type& interfaceBlockType = info.fInterfaceBlock->var()->type();
         if (interfaceBlockType.isArray()) {
             this->write("array<");
-            this->write(to_wgsl_type(*field->fType));
+            this->write(to_wgsl_type(fContext, *field->fType, fieldLayout));
             this->write(", ");
             this->write(std::to_string(interfaceBlockType.columns()));
             this->write(">");
         } else {
-            this->write(to_wgsl_type(*field->fType));
+            this->write(to_wgsl_type(fContext, *field->fType, fieldLayout));
         }
         this->writeLine(";");
     }
@@ -1047,14 +1107,16 @@ void WGSLCodeGenerator::writeUniformPolyfills() {
             }
             this->write(" = ");
 
-            const Type* type = field->fType;
+            const Type* fieldType = field->fType;
+            const Layout* fieldLayout = &field->fLayout;
+
             int numArrayElements;
             if (info.fIsArray) {
-                this->write(to_wgsl_type(*type));
+                this->write(to_wgsl_type(fContext, *fieldType, fieldLayout));
                 this->write("(");
-                numArrayElements = type->columns();
-                type = &type->componentType();
-            }  else{
+                numArrayElements = fieldType->columns();
+                fieldType = &fieldType->componentType();
+            } else {
                 numArrayElements = 1;
             }
 
@@ -1078,9 +1140,9 @@ void WGSLCodeGenerator::writeUniformPolyfills() {
                 }
 
                 if (info.fIsMatrix) {
-                    this->write(to_wgsl_type(*type));
+                    this->write(to_wgsl_type(fContext, *fieldType, fieldLayout));
                     this->write("(");
-                    int numColumns = type->columns();
+                    int numColumns = fieldType->columns();
                     auto matrixSeparator = String::Separator();
                     for (int column = 0; column < numColumns; column++) {
                         this->write(matrixSeparator());
@@ -1110,7 +1172,8 @@ void WGSLCodeGenerator::writeUniformPolyfills() {
 
 void WGSLCodeGenerator::preprocessProgram() {
     fRequirements = resolve_program_requirements(&fProgram);
-    fPipelineInputCount = count_pipeline_inputs(&fProgram);
+    collect_pipeline_io_vars(&fProgram, &fPipelineInputs, ModifierFlag::kIn);
+    collect_pipeline_io_vars(&fProgram, &fPipelineOutputs, ModifierFlag::kOut);
 }
 
 void WGSLCodeGenerator::write(std::string_view s) {
@@ -1151,11 +1214,12 @@ std::string WGSLCodeGenerator::assembleName(std::string_view name) {
                    : std::string(name);
 }
 
-void WGSLCodeGenerator::writeVariableDecl(const Type& type,
+void WGSLCodeGenerator::writeVariableDecl(const Layout& layout,
+                                          const Type& type,
                                           std::string_view name,
                                           Delimiter delimiter) {
     this->write(this->assembleName(name));
-    this->write(": " + to_wgsl_type(type));
+    this->write(": " + to_wgsl_type(fContext, type, &layout));
     this->writeLine(delimiter_to_str(delimiter));
 }
 
@@ -1163,21 +1227,20 @@ void WGSLCodeGenerator::writePipelineIODeclaration(const Layout& layout,
                                                    const Type& type,
                                                    std::string_view name,
                                                    Delimiter delimiter) {
-    // In WGSL, an entry-point IO parameter is "one of either a built-in value or
-    // assigned a location". However, some SkSL declarations, specifically sk_FragColor, can
-    // contain both a location and a builtin modifier. In addition, WGSL doesn't have a built-in
-    // equivalent for sk_FragColor as it relies on the user-defined location for a render
-    // target.
+    // In WGSL, an entry-point IO parameter is "one of either a built-in value or assigned a
+    // location". However, some SkSL declarations, specifically sk_FragColor, can contain both a
+    // location and a builtin modifier. In addition, WGSL doesn't have a built-in equivalent for
+    // sk_FragColor as it relies on the user-defined location for a render target.
     //
-    // Instead of special-casing sk_FragColor, we just give higher precedence to a location
-    // modifier if a declaration happens to both have a location and it's a built-in.
+    // Instead of special-casing sk_FragColor, we just give higher precedence to a location modifier
+    // if a declaration happens to both have a location and it's a built-in.
     //
     // Also see:
     // https://www.w3.org/TR/WGSL/#input-output-locations
     // https://www.w3.org/TR/WGSL/#attribute-location
     // https://www.w3.org/TR/WGSL/#builtin-inputs-outputs
     if (layout.fLocation >= 0) {
-        this->writeUserDefinedIODecl(type, name, layout.fLocation, delimiter);
+        this->writeUserDefinedIODecl(layout, type, name, delimiter);
     } else if (layout.fBuiltin >= 0) {
         auto builtin = builtin_from_sksl_name(layout.fBuiltin);
         if (builtin.has_value()) {
@@ -1186,11 +1249,17 @@ void WGSLCodeGenerator::writePipelineIODeclaration(const Layout& layout,
     }
 }
 
-void WGSLCodeGenerator::writeUserDefinedIODecl(const Type& type,
+void WGSLCodeGenerator::writeUserDefinedIODecl(const Layout& layout,
+                                               const Type& type,
                                                std::string_view name,
-                                               int location,
                                                Delimiter delimiter) {
-    this->write("@location(" + std::to_string(location) + ") ");
+    this->write("@location(" + std::to_string(layout.fLocation) + ") ");
+
+    // Indices are only allowed when doing dual-source blending, and only on color attachment 0.
+    if (layout.fLocation == 0 && layout.fIndex >= 0 && fContext.fCaps->fDualSourceBlendingSupport &&
+        fProgram.fInterface.fOutputSecondaryColor) {
+        this->write("@index(" + std::to_string(layout.fIndex) + ") ");
+    }
 
     // "User-defined IO of scalar or vector integer type must always be specified as
     // @interpolate(flat)" (see https://www.w3.org/TR/WGSL/#interpolation)
@@ -1198,7 +1267,7 @@ void WGSLCodeGenerator::writeUserDefinedIODecl(const Type& type,
         this->write("@interpolate(flat) ");
     }
 
-    this->writeVariableDecl(type, name, delimiter);
+    this->writeVariableDecl(layout, type, name, delimiter);
 }
 
 void WGSLCodeGenerator::writeBuiltinIODecl(const Type& type,
@@ -1272,7 +1341,7 @@ void WGSLCodeGenerator::writeFunction(const FunctionDefinition& f) {
     SkASSERT(fConditionalScopeDepth == 0);
     if (!fHasUnconditionalReturn && !f.declaration().returnType().isVoid()) {
         this->write("return ");
-        this->write(to_wgsl_type(f.declaration().returnType()));
+        this->write(to_wgsl_type(fContext, f.declaration().returnType()));
         this->writeLine("();");
     }
 
@@ -1314,7 +1383,7 @@ void WGSLCodeGenerator::writeFunctionDeclaration(const FunctionDeclaration& decl
                 // Create a parameter for the opaque object.
                 this->write(param.name());
                 this->write(": ");
-                this->write(to_wgsl_type(param.type()));
+                this->write(to_wgsl_type(fContext, param.type(), &param.layout()));
             }
         } else {
             if (paramNeedsDedicatedStorage[index] || param.name().empty()) {
@@ -1330,24 +1399,25 @@ void WGSLCodeGenerator::writeFunctionDeclaration(const FunctionDeclaration& decl
             this->write(": ");
             if (param.modifierFlags() & ModifierFlag::kOut) {
                 // Declare an "out" function parameter as a pointer.
-                this->write(to_ptr_type(param.type()));
+                this->write(to_ptr_type(fContext, param.type(), &param.layout()));
             } else {
-                this->write(to_wgsl_type(param.type()));
+                this->write(to_wgsl_type(fContext, param.type(), &param.layout()));
             }
         }
     }
     this->write(")");
     if (!decl.returnType().isVoid()) {
         this->write(" -> ");
-        this->write(to_wgsl_type(decl.returnType()));
+        this->write(to_wgsl_type(fContext, decl.returnType()));
     }
 }
 
 void WGSLCodeGenerator::writeEntryPoint(const FunctionDefinition& main) {
     SkASSERT(main.declaration().isMain());
+    const ProgramKind programKind = fProgram.fConfig->fKind;
 
 #if defined(SKSL_STANDALONE)
-    if (ProgramConfig::IsRuntimeShader(fProgram.fConfig->fKind)) {
+    if (ProgramConfig::IsRuntimeShader(programKind)) {
         // Synthesize a basic entrypoint which just calls straight through to main.
         // This is only used by skslc and just needs to pass the WGSL validator; Skia won't ever
         // emit functions like this.
@@ -1362,29 +1432,41 @@ void WGSLCodeGenerator::writeEntryPoint(const FunctionDefinition& main) {
 #endif
 
     // The input and output parameters for a vertex/fragment stage entry point function have the
-    // FSIn/FSOut/VSIn/VSOut struct types that have been synthesized in generateCode(). An entry
-    // point always has the same signature and acts as a trampoline to the user-defined main
-    // function.
-    std::string outputType;
-    if (ProgramConfig::IsVertex(fProgram.fConfig->fKind)) {
-        this->write("@vertex fn main(");
-        if (fPipelineInputCount > 0) {
-            this->write("_stageIn: VSIn");
-        }
-        this->writeLine(") -> VSOut {");
-        outputType = "VSOut";
-    } else if (ProgramConfig::IsFragment(fProgram.fConfig->fKind)) {
-        this->write("@fragment fn main(");
-        if (fPipelineInputCount > 0) {
-            this->write("_stageIn: FSIn");
-        }
-        this->writeLine(") -> FSOut {");
-        outputType = "FSOut";
+    // FSIn/FSOut/VSIn/VSOut/CSIn struct types that have been synthesized in generateCode(). An
+    // entrypoint always has a predictable signature and acts as a trampoline to the user-defined
+    // main function.
+    if (ProgramConfig::IsVertex(programKind)) {
+        this->write("@vertex");
+    } else if (ProgramConfig::IsFragment(programKind)) {
+        this->write("@fragment");
+    } else if (ProgramConfig::IsCompute(programKind)) {
+        this->write("@compute @workgroup_size(");
+        this->write(std::to_string(fLocalSizeX));
+        this->write(", ");
+        this->write(std::to_string(fLocalSizeY));
+        this->write(", ");
+        this->write(std::to_string(fLocalSizeZ));
+        this->write(")");
     } else {
         fContext.fErrors->error(Position(), "program kind not supported");
         return;
     }
 
+    this->write(" fn main(");
+    // The stage input struct is a parameter passed to main().
+    if (this->needsStageInputStruct()) {
+        this->write("_stageIn: ");
+        this->write(pipeline_struct_prefix(programKind));
+        this->write("In");
+    }
+    // The stage output struct is returned from main().
+    if (this->needsStageOutputStruct()) {
+        this->write(") -> ");
+        this->write(pipeline_struct_prefix(programKind));
+        this->writeLine("Out {");
+    } else {
+        this->writeLine(") {");
+    }
     // Initialize polyfilled matrix uniforms if any were used.
     fIndentation++;
     for (const auto& [field, info] : fFieldPolyfillMap) {
@@ -1393,26 +1475,30 @@ void WGSLCodeGenerator::writeEntryPoint(const FunctionDefinition& main) {
             break;
         }
     }
-
     // Declare the stage output struct.
-    this->write("var _stageOut: ");
-    this->write(outputType);
-    this->writeLine(";");
+    if (this->needsStageOutputStruct()) {
+        this->write("var _stageOut: ");
+        this->write(pipeline_struct_prefix(programKind));
+        this->writeLine("Out;");
+    }
 
-    // Generate assignment to sk_FragColor built-in if the user-defined main returns a color.
-    if (ProgramConfig::IsFragment(fProgram.fConfig->fKind)) {
-        const SymbolTable* symbolTable = top_level_symbol_table(main);
-        const Symbol* symbol = symbolTable->find("sk_FragColor");
-        SkASSERT(symbol);
-        if (main.declaration().returnType().matches(symbol->type())) {
+#if defined(SKSL_STANDALONE)
+    // We are compiling a Runtime Effect as a fragment shader, for testing purposes. We assign the
+    // result from _skslMain into sk_FragColor if the user-defined main returns a color. This
+    // doesn't actually matter, but it is more indicative of what a real program would do.
+    // `addImplicitFragColorWrite` from Transform::FindAndDeclareBuiltinVariables has already
+    // injected sk_FragColor into our stage outputs even if it wasn't explicitly referenced.
+    if (ProgramConfig::IsFragment(programKind)) {
+        if (main.declaration().returnType().matches(*fContext.fTypes.fHalf4)) {
             this->write("_stageOut.sk_FragColor = ");
         }
     }
+#endif
 
-    // Generate the function call to the user-defined main:
+    // Generate a function call to the user-defined main.
     this->write("_skslMain(");
     auto separator = SkSL::String::Separator();
-    WGSLFunctionDependencies* deps = fRequirements.dependencies.find(&main.declaration());
+    WGSLFunctionDependencies* deps = fRequirements.fDependencies.find(&main.declaration());
     if (deps) {
         if (*deps & WGSLFunctionDependency::kPipelineInputs) {
             this->write(separator());
@@ -1423,20 +1509,29 @@ void WGSLCodeGenerator::writeEntryPoint(const FunctionDefinition& main) {
             this->write("&_stageOut");
         }
     }
-    // TODO(armansito): Handle arbitrary parameters.
+
+#if defined(SKSL_STANDALONE)
     if (const Variable* v = main.declaration().getMainCoordsParameter()) {
+        // We are compiling a Runtime Effect as a fragment shader, for testing purposes.
+        // We need to synthesize a coordinates parameter, but the coordinates don't matter.
+        SkASSERT(ProgramConfig::IsFragment(programKind));
         const Type& type = v->type();
         if (!type.matches(*fContext.fTypes.fFloat2)) {
-            fContext.fErrors->error(main.fPosition, "main function has unsupported parameter: "
-                                                    + type.description());
+            fContext.fErrors->error(main.fPosition, "main function has unsupported parameter: " +
+                                                    type.description());
             return;
         }
-
         this->write(separator());
-        this->write("_stageIn.sk_FragCoord.xy");
+        this->write("/*fragcoord*/ vec2<f32>()");
     }
+#endif
+
     this->writeLine(");");
-    this->writeLine("return _stageOut;");
+
+    if (this->needsStageOutputStruct()) {
+        // Return the stage output struct.
+        this->writeLine("return _stageOut;");
+    }
 
     fIndentation--;
     this->writeLine("}");
@@ -1924,7 +2019,7 @@ void WGSLCodeGenerator::writeVarDeclaration(const VarDeclaration& varDecl) {
     }
     this->write(this->assembleName(varDecl.var()->mangledName()));
     this->write(": ");
-    this->write(to_wgsl_type(varDecl.var()->type()));
+    this->write(to_wgsl_type(fContext, varDecl.var()->type(), &varDecl.var()->layout()));
 
     if (varDecl.value()) {
         this->write(" = ");
@@ -1963,6 +2058,7 @@ std::unique_ptr<WGSLCodeGenerator::LValue> WGSLCodeGenerator::makeLValue(const E
             return std::make_unique<VectorComponentLValue>(this->assembleSwizzle(swizzle));
         } else {
             return std::make_unique<SwizzleLValue>(
+                    fContext,
                     this->assembleExpression(*swizzle.base(), Precedence::kAssignment),
                     swizzle.base()->type(),
                     swizzle.components());
@@ -2356,8 +2452,6 @@ static bool all_arguments_constant(const ExpressionArray& arguments) {
 
 std::string WGSLCodeGenerator::assembleSimpleIntrinsic(std::string_view intrinsicName,
                                                        const FunctionCall& call) {
-    SkASSERT(!call.type().isVoid());
-
     // Invoke the function, passing each function argument.
     std::string expr = std::string(intrinsicName);
     expr.push_back('(');
@@ -2367,14 +2461,27 @@ std::string WGSLCodeGenerator::assembleSimpleIntrinsic(std::string_view intrinsi
     for (int index = 0; index < args.size(); ++index) {
         expr += separator();
 
-        // We can use a scratch-let for argument 0 to dodge WGSL overflow errors. (skia:14385)
         std::string argument = this->assembleExpression(*args[index], Precedence::kSequence);
-        expr += (allConstant && index == 0) ? this->writeScratchLet(argument)
-                                            : argument;
+        if (args[index]->type().isAtomic()) {
+            // WGSL passes atomic values to intrinsics as pointers.
+            expr += '&';
+            expr += argument;
+        } else if (allConstant && index == 0) {
+            // We can use a scratch-let for argument 0 to dodge WGSL overflow errors. (skia:14385)
+            expr += this->writeScratchLet(argument);
+        } else {
+            expr += argument;
+        }
     }
     expr.push_back(')');
 
-    return this->writeScratchLet(expr);
+    if (call.type().isVoid()) {
+        this->write(expr);
+        this->writeLine(";");
+        return std::string();
+    } else {
+        return this->writeScratchLet(expr);
+    }
 }
 
 std::string WGSLCodeGenerator::assembleVectorizedIntrinsic(std::string_view intrinsicName,
@@ -2394,7 +2501,7 @@ std::string WGSLCodeGenerator::assembleVectorizedIntrinsic(std::string_view intr
 
         bool vectorize = returnsVector && args[index]->type().isScalar();
         if (vectorize) {
-            expr += to_wgsl_type(call.type());
+            expr += to_wgsl_type(fContext, call.type());
             expr.push_back('(');
         }
 
@@ -2463,8 +2570,9 @@ std::string WGSLCodeGenerator::assembleBinaryOpIntrinsic(Operator op,
 std::string WGSLCodeGenerator::assemblePartialSampleCall(std::string_view functionName,
                                                          const Expression& sampler,
                                                          const Expression& coords) {
-    // This function returns `functionName(samplerᵗ, samplerˢ, coords` without a terminating
-    // comma or close-parenthesis. This allows the caller to add more arguments as needed.
+    // This function returns `functionName(inSampler_texture, inSampler_sampler, coords` without a
+    // terminating comma or close-parenthesis. This allows the caller to add more arguments as
+    // needed.
     SkASSERT(sampler.type().typeKind() == Type::TypeKind::kSampler);
     std::string expr = std::string(functionName) + '(';
     expr += this->assembleExpression(sampler, Precedence::kSequence);
@@ -2498,7 +2606,7 @@ std::string WGSLCodeGenerator::assembleComponentwiseMatrixBinary(const Type& lef
     bool rightIsMatrix = rightType.isMatrix();
     const Type& matrixType = leftIsMatrix ? leftType : rightType;
 
-    std::string expr = to_wgsl_type(matrixType) + '(';
+    std::string expr = to_wgsl_type(fContext, matrixType) + '(';
     auto separator = String::Separator();
     int columns = matrixType.columns();
     for (int c = 0; c < columns; ++c) {
@@ -2624,6 +2732,21 @@ std::string WGSLCodeGenerator::assembleIntrinsicCall(const FunctionCall& call,
         case k_notEqual_IntrinsicKind:
             return this->assembleBinaryOpIntrinsic(OperatorKind::NEQ, call, parentPrecedence);
 
+        case k_packHalf2x16_IntrinsicKind:
+            return this->assembleSimpleIntrinsic("pack2x16float", call);
+
+        case k_packSnorm2x16_IntrinsicKind:
+            return this->assembleSimpleIntrinsic("pack2x16snorm", call);
+
+        case k_packSnorm4x8_IntrinsicKind:
+            return this->assembleSimpleIntrinsic("pack4x8snorm", call);
+
+        case k_packUnorm2x16_IntrinsicKind:
+            return this->assembleSimpleIntrinsic("pack2x16unorm", call);
+
+        case k_packUnorm4x8_IntrinsicKind:
+            return this->assembleSimpleIntrinsic("pack4x8unorm", call);
+
         case k_reflect_IntrinsicKind:
             if (arguments[0]->type().isScalar()) {
                 // I - 2 * N * I * N
@@ -2653,18 +2776,13 @@ std::string WGSLCodeGenerator::assembleIntrinsicCall(const FunctionCall& call,
                       : this->writeNontrivialScratchLet(*arguments[2], Precedence::kSequence);
                 return this->writeScratchLet(
                         String::printf("refract(vec2<%s>(%s, 0), vec2<%s>(%s, 0), %s).x",
-                                       to_wgsl_type(arguments[0]->type()).c_str(), I.c_str(),
-                                       to_wgsl_type(arguments[1]->type()).c_str(), N.c_str(),
+                                       to_wgsl_type(fContext, arguments[0]->type()).c_str(),
+                                       I.c_str(),
+                                       to_wgsl_type(fContext, arguments[1]->type()).c_str(),
+                                       N.c_str(),
                                        Eta.c_str()));
             }
             return this->assembleSimpleIntrinsic("refract", call);
-
-        case k_clamp_IntrinsicKind:
-        case k_max_IntrinsicKind:
-        case k_min_IntrinsicKind:
-        case k_smoothstep_IntrinsicKind:
-        case k_step_IntrinsicKind:
-            return this->assembleVectorizedIntrinsic(call.function().name(), call);
 
         case k_sample_IntrinsicKind: {
             // Determine if a bias argument was passed in.
@@ -2707,11 +2825,52 @@ std::string WGSLCodeGenerator::assembleIntrinsicCall(const FunctionCall& call,
             expr += ", " + this->assembleExpression(*arguments[3], Precedence::kSequence);
             return expr + ')';
         }
+        case k_textureHeight_IntrinsicKind:
+            return this->assembleSimpleIntrinsic("textureDimensions", call) + ".y";
+
+        case k_textureRead_IntrinsicKind: {
+            // We need to inject an extra argument for the mip-level. We don't plan on using mipmaps
+            // in our storage textures, so we can just pass zero.
+            std::string tex = this->assembleExpression(*arguments[0], Precedence::kSequence);
+            std::string pos = this->writeScratchLet(*arguments[1], Precedence::kSequence);
+            return std::string("textureLoad(") + tex + ", " + pos + ", 0)";
+        }
+        case k_textureWidth_IntrinsicKind:
+            return this->assembleSimpleIntrinsic("textureDimensions", call) + ".x";
+
+        case k_textureWrite_IntrinsicKind:
+            return this->assembleSimpleIntrinsic("textureStore", call);
+
+        case k_unpackHalf2x16_IntrinsicKind:
+            return this->assembleSimpleIntrinsic("unpack2x16float", call);
+
+        case k_unpackSnorm2x16_IntrinsicKind:
+            return this->assembleSimpleIntrinsic("unpack2x16snorm", call);
+
+        case k_unpackSnorm4x8_IntrinsicKind:
+            return this->assembleSimpleIntrinsic("unpack4x8snorm", call);
+
+        case k_unpackUnorm2x16_IntrinsicKind:
+            return this->assembleSimpleIntrinsic("unpack2x16unorm", call);
+
+        case k_unpackUnorm4x8_IntrinsicKind:
+            return this->assembleSimpleIntrinsic("unpack4x8unorm", call);
+
+        case k_clamp_IntrinsicKind:
+        case k_max_IntrinsicKind:
+        case k_min_IntrinsicKind:
+        case k_smoothstep_IntrinsicKind:
+        case k_step_IntrinsicKind:
+            return this->assembleVectorizedIntrinsic(call.function().name(), call);
+
         case k_abs_IntrinsicKind:
         case k_acos_IntrinsicKind:
         case k_all_IntrinsicKind:
         case k_any_IntrinsicKind:
         case k_asin_IntrinsicKind:
+        case k_atomicAdd_IntrinsicKind:
+        case k_atomicLoad_IntrinsicKind:
+        case k_atomicStore_IntrinsicKind:
         case k_ceil_IntrinsicKind:
         case k_cos_IntrinsicKind:
         case k_cross_IntrinsicKind:
@@ -2729,7 +2888,9 @@ std::string WGSLCodeGenerator::assembleIntrinsicCall(const FunctionCall& call,
         case k_sign_IntrinsicKind:
         case k_sin_IntrinsicKind:
         case k_sqrt_IntrinsicKind:
+        case k_storageBarrier_IntrinsicKind:
         case k_tan_IntrinsicKind:
+        case k_workgroupBarrier_IntrinsicKind:
         default:
             return this->assembleSimpleIntrinsic(call.function().name(), call);
     }
@@ -2840,10 +3001,7 @@ std::string WGSLCodeGenerator::assembleFunctionCall(const FunctionCall& call,
 
     // Many intrinsics need to be rewritten in WGSL.
     if (func.isIntrinsic()) {
-        result = this->assembleIntrinsicCall(call, func.intrinsicKind(), parentPrecedence);
-        if (!result.empty()) {
-            return result;
-        }
+        return this->assembleIntrinsicCall(call, func.intrinsicKind(), parentPrecedence);
     }
 
     // We implement function out-parameters by declaring them as pointers. SkSL follows GLSL's
@@ -2959,9 +3117,9 @@ std::string WGSLCodeGenerator::assembleLiteral(const Literal& l) {
     }
 }
 
-static std::string make_increment_expr(const Type& type) {
+std::string WGSLCodeGenerator::assembleIncrementExpr(const Type& type) {
     // `type(`
-    std::string expr = to_wgsl_type(type);
+    std::string expr = to_wgsl_type(fContext, type);
     expr.push_back('(');
 
     // `1, 1, 1...)`
@@ -2993,7 +3151,7 @@ std::string WGSLCodeGenerator::assemblePrefixExpression(const PrefixExpression& 
         std::string newValue =
                 lvalue->load() +
                 (p.getOperator().kind() == Operator::Kind::PLUSPLUS ? " + " : " - ") +
-                make_increment_expr(p.operand()->type());
+                this->assembleIncrementExpr(p.operand()->type());
         this->writeLine(lvalue->store(newValue));
         return lvalue->load();
     }
@@ -3050,7 +3208,7 @@ std::string WGSLCodeGenerator::assemblePostfixExpression(const PostfixExpression
     // Generate the new value: `lvalue + type(1, 1, 1...)`.
     std::string newValue = lvalue->load() +
                            (p.getOperator().kind() == Operator::Kind::PLUSPLUS ? " + " : " - ") +
-                           make_increment_expr(p.operand()->type());
+                           this->assembleIncrementExpr(p.operand()->type());
     this->writeLine(lvalue->store(newValue));
 
     return originalValue;
@@ -3066,7 +3224,7 @@ std::string WGSLCodeGenerator::writeScratchVar(const Type& type, const std::stri
     this->write("var ");
     this->write(scratchVarName);
     this->write(": ");
-    this->write(to_wgsl_type(type));
+    this->write(to_wgsl_type(fContext, type));
     if (!value.empty()) {
         this->write(" = ");
         this->write(value);
@@ -3235,7 +3393,7 @@ std::string WGSLCodeGenerator::assembleVariableReference(const VariableReference
 }
 
 std::string WGSLCodeGenerator::assembleAnyConstructor(const AnyConstructor& c) {
-    std::string expr = to_wgsl_type(c.type());
+    std::string expr = to_wgsl_type(fContext, c.type());
     expr.push_back('(');
     auto separator = SkSL::String::Separator();
     for (const auto& e : c.argumentSpan()) {
@@ -3269,8 +3427,9 @@ std::string WGSLCodeGenerator::assembleConstructorCompoundVector(const Construct
             SkASSERT(arg.type().rows() == 2);
 
             std::string matrix = this->writeNontrivialScratchLet(arg, Precedence::kPostfix);
-            return String::printf("%s(%s[0], %s[1])",
-                                  to_wgsl_type(c.type()).c_str(), matrix.c_str(), matrix.c_str());
+            return String::printf("%s(%s[0], %s[1])", to_wgsl_type(fContext, c.type()).c_str(),
+                                                      matrix.c_str(),
+                                                      matrix.c_str());
         }
     }
     return this->assembleAnyConstructor(c);
@@ -3279,7 +3438,7 @@ std::string WGSLCodeGenerator::assembleConstructorCompoundVector(const Construct
 std::string WGSLCodeGenerator::assembleConstructorCompoundMatrix(const ConstructorCompound& ctor) {
     SkASSERT(ctor.type().isMatrix());
 
-    std::string expr = to_wgsl_type(ctor.type()) + '(';
+    std::string expr = to_wgsl_type(fContext, ctor.type()) + '(';
     auto separator = String::Separator();
     for (const std::unique_ptr<Expression>& arg : ctor.arguments()) {
         SkASSERT(arg->type().isScalar() || arg->type().isVector());
@@ -3308,7 +3467,7 @@ std::string WGSLCodeGenerator::assembleConstructorDiagonalMatrix(
     std::string inner = this->writeNontrivialScratchLet(*c.argument(), Precedence::kAssignment);
 
     // Assemble a diagonal-matrix expression.
-    std::string expr = to_wgsl_type(type) + '(';
+    std::string expr = to_wgsl_type(fContext, type) + '(';
     auto separator = String::Separator();
     for (int col = 0; col < type.columns(); ++col) {
         for (int row = 0; row < type.rows(); ++row) {
@@ -3332,7 +3491,7 @@ std::string WGSLCodeGenerator::assembleConstructorMatrixResize(
     int sourceColumns = ctor.argument()->type().columns();
     int sourceRows = ctor.argument()->type().rows();
     auto separator = String::Separator();
-    std::string expr = to_wgsl_type(ctor.type()) + '(';
+    std::string expr = to_wgsl_type(fContext, ctor.type()) + '(';
 
     for (int c = 0; c < columns; ++c) {
         for (int r = 0; r < rows; ++r) {
@@ -3463,10 +3622,9 @@ void WGSLCodeGenerator::writeProgramElement(const ProgramElement& e) {
     switch (e.kind()) {
         case ProgramElement::Kind::kExtension:
             // TODO(skia:13092): WGSL supports extensions via the "enable" directive
-            // (https://www.w3.org/TR/WGSL/#language-extensions). While we could easily emit this
+            // (https://www.w3.org/TR/WGSL/#enable-extensions-sec ). While we could easily emit this
             // directive, we should first ensure that all possible SkSL extension names are
-            // converted to their appropriate WGSL extension. Currently there are no known supported
-            // WGSL extensions aside from the hypotheticals listed in the spec.
+            // converted to their appropriate WGSL extension.
             break;
         case ProgramElement::Kind::kGlobalVar:
             this->writeGlobalVarDeclaration(e.as<GlobalVarDeclaration>());
@@ -3487,6 +3645,9 @@ void WGSLCodeGenerator::writeProgramElement(const ProgramElement& e) {
             break;
         case ProgramElement::Kind::kFunction:
             this->writeFunction(e.as<FunctionDefinition>());
+            break;
+        case ProgramElement::Kind::kModifiers:
+            this->writeModifiersDeclaration(e.as<ModifiersDeclaration>());
             break;
         default:
             SkDEBUGFAILF("unsupported program element: %s\n", e.description().c_str());
@@ -3546,11 +3707,11 @@ void WGSLCodeGenerator::writeGlobalVarDeclaration(const GlobalVarDeclaration& d)
         int textureLocation = var.layout().fBinding >= 0 ? var.layout().fBinding
                                                          : 10000 + fScratchCount++;
         // For a texture without an associated sampler, we don't apply a suffix.
-        this->writeTextureOrSampler(var, textureLocation, /*suffix=*/"", "texture_2d<f32>");
+        this->writeTextureOrSampler(var, textureLocation, /*suffix=*/"",
+                                    to_wgsl_type(fContext, var.type(), &var.layout()));
         return;
     }
 
-    // TODO(skia:13092): Implement workgroup variable decoration
     std::string initializer;
     if (decl.value()) {
         // We assume here that the initial-value expression will not emit any helper statements.
@@ -3559,9 +3720,18 @@ void WGSLCodeGenerator::writeGlobalVarDeclaration(const GlobalVarDeclaration& d)
         initializer += " = ";
         initializer += this->assembleExpression(*decl.value(), Precedence::kAssignment);
     }
-    this->write(var.modifierFlags().isConst() ? "const " : "var<private> ");
+
+    if (var.modifierFlags().isConst()) {
+        this->write("const ");
+    } else if (var.modifierFlags().isWorkgroup()) {
+        this->write("var<workgroup> ");
+    } else if (var.modifierFlags().isPixelLocal()) {
+        this->write("var<pixel_local> ");
+    } else {
+        this->write("var<private> ");
+    }
     this->write(this->assembleName(var.mangledName()));
-    this->write(": " + to_wgsl_type(var.type()));
+    this->write(": " + to_wgsl_type(fContext, var.type(), &var.layout()));
     this->write(initializer);
     this->writeLine(";");
 }
@@ -3571,6 +3741,25 @@ void WGSLCodeGenerator::writeStructDefinition(const StructDefinition& s) {
     this->writeLine("struct " + type.displayName() + " {");
     this->writeFields(type.fields(), /*memoryLayout=*/nullptr);
     this->writeLine("};");
+}
+
+void WGSLCodeGenerator::writeModifiersDeclaration(const ModifiersDeclaration& modifiers) {
+    LayoutFlags flags = modifiers.layout().fFlags;
+    flags &= ~(LayoutFlag::kLocalSizeX | LayoutFlag::kLocalSizeY | LayoutFlag::kLocalSizeZ);
+    if (flags != LayoutFlag::kNone) {
+        fContext.fErrors->error(modifiers.position(), "unsupported declaration");
+        return;
+    }
+
+    if (modifiers.layout().fLocalSizeX >= 0) {
+        fLocalSizeX = modifiers.layout().fLocalSizeX;
+    }
+    if (modifiers.layout().fLocalSizeY >= 0) {
+        fLocalSizeY = modifiers.layout().fLocalSizeY;
+    }
+    if (modifiers.layout().fLocalSizeZ >= 0) {
+        fLocalSizeZ = modifiers.layout().fLocalSizeZ;
+    }
 }
 
 void WGSLCodeGenerator::writeFields(SkSpan<const Field> fields, const MemoryLayout* memoryLayout) {
@@ -3622,7 +3811,7 @@ void WGSLCodeGenerator::writeFields(SkSpan<const Field> fields, const MemoryLayo
                 SkDEBUGFAILF("need polyfill for %s", info->fReplacementName.c_str());
             }
         } else {
-            this->write(to_wgsl_type(*field.fType));
+            this->write(to_wgsl_type(fContext, *field.fType, &field.fLayout));
         }
         this->writeLine(",");
     }
@@ -3630,113 +3819,95 @@ void WGSLCodeGenerator::writeFields(SkSpan<const Field> fields, const MemoryLayo
     fIndentation--;
 }
 
+void WGSLCodeGenerator::writeEnables() {
+    this->writeLine("diagnostic(off, derivative_uniformity);");
+    if (fRequirements.fPixelLocalExtension) {
+        this->writeLine("enable chromium_experimental_pixel_local;");
+    }
+    if (fProgram.fInterface.fOutputSecondaryColor) {
+        this->writeLine("enable chromium_internal_dual_source_blending;");
+    }
+}
+
+bool WGSLCodeGenerator::needsStageInputStruct() const {
+    // It is illegal to declare a struct with no members; we can't emit a placeholder empty stage
+    // input struct.
+    return !fPipelineInputs.empty();
+}
+
 void WGSLCodeGenerator::writeStageInputStruct() {
-    std::string_view structNamePrefix = pipeline_struct_prefix(fProgram.fConfig->fKind);
-    if (structNamePrefix.empty()) {
-        // There's no need to declare pipeline stage outputs.
+    if (!this->needsStageInputStruct()) {
         return;
     }
 
-    // It is illegal to declare a struct with no members.
-    if (fPipelineInputCount < 1) {
-        return;
-    }
+    std::string_view structNamePrefix = pipeline_struct_prefix(fProgram.fConfig->fKind);
+    SkASSERT(!structNamePrefix.empty());
 
     this->write("struct ");
     this->write(structNamePrefix);
     this->writeLine("In {");
     fIndentation++;
 
-    bool declaredFragCoordsBuiltin = false;
-    for (const ProgramElement* e : fProgram.elements()) {
-        if (e->is<GlobalVarDeclaration>()) {
-            const Variable* v = e->as<GlobalVarDeclaration>().declaration()
-                                 ->as<VarDeclaration>().var();
-            if (v->modifierFlags() & ModifierFlag::kIn) {
-                this->writePipelineIODeclaration(v->layout(), v->type(), v->mangledName(),
-                                                 Delimiter::kComma);
-                if (v->layout().fBuiltin == SK_FRAGCOORD_BUILTIN) {
-                    declaredFragCoordsBuiltin = true;
-                }
+    for (const Variable* v : fPipelineInputs) {
+        if (v->interfaceBlock()) {
+            for (const Field& f : v->type().fields()) {
+                this->writePipelineIODeclaration(f.fLayout, *f.fType, f.fName, Delimiter::kComma);
             }
-        } else if (e->is<InterfaceBlock>()) {
-            const Variable* v = e->as<InterfaceBlock>().var();
-            // Merge all the members of `in` interface blocks to the input struct, which are
-            // specified as either "builtin" or with a "layout(location=".
-            //
-            // TODO(armansito): Is it legal to have an interface block without a storage qualifier
-            // but with members that have individual storage qualifiers?
-            if (v->modifierFlags() & ModifierFlag::kIn) {
-                for (const auto& f : v->type().fields()) {
-                    this->writePipelineIODeclaration(f.fLayout, *f.fType, f.fName,
-                                                     Delimiter::kComma);
-                    if (f.fLayout.fBuiltin == SK_FRAGCOORD_BUILTIN) {
-                        declaredFragCoordsBuiltin = true;
-                    }
-                }
-            }
+        } else {
+            this->writePipelineIODeclaration(v->layout(), v->type(), v->mangledName(),
+                                             Delimiter::kComma);
         }
-    }
-
-    if (ProgramConfig::IsFragment(fProgram.fConfig->fKind) &&
-        fRequirements.mainNeedsCoordsArgument && !declaredFragCoordsBuiltin) {
-        this->writeLine("@builtin(position) sk_FragCoord: vec4<f32>,");
     }
 
     fIndentation--;
     this->writeLine("};");
 }
 
+bool WGSLCodeGenerator::needsStageOutputStruct() const {
+    // It is illegal to declare a struct with no members. However, vertex programs will _always_
+    // have an output stage in WGSL, because the spec requires them to emit `@builtin(position)`.
+    // So we always synthesize a reference to `sk_Position` even if the program doesn't need it.
+    return !fPipelineOutputs.empty() || ProgramConfig::IsVertex(fProgram.fConfig->fKind);
+}
+
 void WGSLCodeGenerator::writeStageOutputStruct() {
-    std::string_view structNamePrefix = pipeline_struct_prefix(fProgram.fConfig->fKind);
-    if (structNamePrefix.empty()) {
-        // There's no need to declare pipeline stage outputs.
+    if (!this->needsStageOutputStruct()) {
         return;
     }
+
+    std::string_view structNamePrefix = pipeline_struct_prefix(fProgram.fConfig->fKind);
+    SkASSERT(!structNamePrefix.empty());
 
     this->write("struct ");
     this->write(structNamePrefix);
     this->writeLine("Out {");
     fIndentation++;
 
-    // TODO(skia:13092): Remember all variables that are added to the output struct here so they
-    // can be referenced correctly when handling variable references.
     bool declaredPositionBuiltin = false;
     bool requiresPointSizeBuiltin = false;
-    for (const ProgramElement* e : fProgram.elements()) {
-        if (e->is<GlobalVarDeclaration>()) {
-            const Variable* v = e->as<GlobalVarDeclaration>().declaration()
-                                 ->as<VarDeclaration>().var();
-            if (v->modifierFlags() & ModifierFlag::kOut) {
-                this->writePipelineIODeclaration(v->layout(), v->type(), v->mangledName(),
-                                                 Delimiter::kComma);
-            }
-        } else if (e->is<InterfaceBlock>()) {
-            const Variable* v = e->as<InterfaceBlock>().var();
-            // Merge all the members of `out` interface blocks to the output struct, which are
-            // specified as either "builtin" or with a "layout(location=".
-            //
-            // TODO(armansito): Is it legal to have an interface block without a storage qualifier
-            // but with members that have individual storage qualifiers?
-            if (v->modifierFlags() & ModifierFlag::kOut) {
-                for (const auto& f : v->type().fields()) {
-                    this->writePipelineIODeclaration(f.fLayout, *f.fType, f.fName,
-                                                     Delimiter::kComma);
-                    if (f.fLayout.fBuiltin == SK_POSITION_BUILTIN) {
-                        declaredPositionBuiltin = true;
-                    } else if (f.fLayout.fBuiltin == SK_POINTSIZE_BUILTIN) {
-                        // sk_PointSize is explicitly not supported by `builtin_from_sksl_name` so
-                        // writePipelineIODeclaration will never write it. We mark it here if the
-                        // declaration is needed so we can synthesize it below.
-                        requiresPointSizeBuiltin = true;
-                    }
+    for (const Variable* v : fPipelineOutputs) {
+        if (v->interfaceBlock()) {
+            for (const auto& f : v->type().fields()) {
+                this->writePipelineIODeclaration(f.fLayout, *f.fType, f.fName, Delimiter::kComma);
+                if (f.fLayout.fBuiltin == SK_POSITION_BUILTIN) {
+                    declaredPositionBuiltin = true;
+                } else if (f.fLayout.fBuiltin == SK_POINTSIZE_BUILTIN) {
+                    // sk_PointSize is explicitly not supported by `builtin_from_sksl_name` so
+                    // writePipelineIODeclaration will never write it. We mark it here if the
+                    // declaration is needed so we can synthesize it below.
+                    requiresPointSizeBuiltin = true;
                 }
             }
+
+        } else {
+            this->writePipelineIODeclaration(v->layout(), v->type(), v->mangledName(),
+                                             Delimiter::kComma);
         }
     }
 
-    // A vertex program must include the `position` builtin in its entry point return type.
-    if (ProgramConfig::IsVertex(fProgram.fConfig->fKind) && !declaredPositionBuiltin) {
+    // A vertex program must include the `position` builtin in its entrypoint's return type.
+    const bool positionBuiltinRequired = ProgramConfig::IsVertex(fProgram.fConfig->fKind);
+    if (positionBuiltinRequired && !declaredPositionBuiltin) {
         this->writeLine("@builtin(position) sk_Position: vec4<f32>,");
     }
 
@@ -3746,9 +3917,9 @@ void WGSLCodeGenerator::writeStageOutputStruct() {
     // In WebGPU/WGSL, the vertex stage does not support a point-size output and the size
     // of a point primitive is always 1 pixel (see https://github.com/gpuweb/gpuweb/issues/332).
     //
-    // There isn't anything we can do to emulate this correctly at this stage so we
-    // synthesize a placeholder variable that has no effect. Programs should not rely on
-    // sk_PointSize when using the Dawn backend.
+    // There isn't anything we can do to emulate this correctly at this stage so we synthesize a
+    // placeholder global variable that has no effect. Programs should not rely on sk_PointSize when
+    // using the Dawn backend.
     if (ProgramConfig::IsVertex(fProgram.fConfig->fKind) && requiresPointSizeBuiltin) {
         this->writeLine("/* unsupported */ var<private> sk_PointSize: f32;");
     }
@@ -3820,13 +3991,7 @@ void WGSLCodeGenerator::writeUniformsAndBuffers() {
         } else if (ib.var()->modifierFlags().isBuffer()) {
             addressSpace = "storage";
             nativeLayout = MemoryLayout::Standard::kWGSLStorage_Base;
-            if (ib.var()->modifierFlags().isReadOnly()) {
-                accessMode = ", read";
-            } else if (ib.var()->modifierFlags().isWriteOnly()) {
-                accessMode = ", write";
-            } else {
-                accessMode = ", read_write";
-            }
+            accessMode = ib.var()->modifierFlags().isReadOnly() ? ", read" : ", read_write";
         } else {
             continue;
         }
@@ -3868,7 +4033,7 @@ void WGSLCodeGenerator::writeUniformsAndBuffers() {
         this->write("> ");
         this->write(instanceName);
         this->write(" : ");
-        this->write(to_wgsl_type(ib.var()->type()));
+        this->write(to_wgsl_type(fContext, ib.var()->type(), &ib.var()->layout()));
         this->writeLine(";");
     }
 }
@@ -3886,7 +4051,8 @@ void WGSLCodeGenerator::writeNonBlockUniformsForTests() {
                     declaredUniformsStruct = true;
                 }
                 this->write("  ");
-                this->writeVariableDecl(var.type(), var.mangledName(), Delimiter::kComma);
+                this->writeVariableDecl(var.layout(), var.type(), var.mangledName(),
+                                        Delimiter::kComma);
             }
         }
     }
@@ -3901,7 +4067,7 @@ void WGSLCodeGenerator::writeNonBlockUniformsForTests() {
 }
 
 std::string WGSLCodeGenerator::functionDependencyArgs(const FunctionDeclaration& f) {
-    WGSLFunctionDependencies* deps = fRequirements.dependencies.find(&f);
+    WGSLFunctionDependencies* deps = fRequirements.fDependencies.find(&f);
     std::string args;
     if (deps && *deps) {
         const char* separator = "";
@@ -3918,7 +4084,7 @@ std::string WGSLCodeGenerator::functionDependencyArgs(const FunctionDeclaration&
 }
 
 bool WGSLCodeGenerator::writeFunctionDependencyParams(const FunctionDeclaration& f) {
-    WGSLFunctionDependencies* deps = fRequirements.dependencies.find(&f);
+    WGSLFunctionDependencies* deps = fRequirements.fDependencies.find(&f);
     if (!deps || !*deps) {
         return false;
     }

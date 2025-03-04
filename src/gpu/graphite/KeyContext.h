@@ -12,6 +12,7 @@
 #include "include/core/SkM44.h"
 #include "include/core/SkMatrix.h"
 #include "include/private/SkColorData.h"
+#include "src/core/SkColorSpaceXformSteps.h"
 #include "src/gpu/graphite/TextureProxy.h"
 
 namespace skgpu::graphite {
@@ -70,6 +71,13 @@ public:
 
     const SkPMColor4f& paintColor() const { return fPaintColor; }
 
+    enum class Scope {
+        kDefault,
+        kRuntimeEffect,
+    };
+
+    Scope scope() const { return fScope; }
+
 protected:
     Recorder* fRecorder = nullptr;
     SkM44 fLocal2Dev;
@@ -78,6 +86,7 @@ protected:
     RuntimeEffectDictionary* fRTEffectDict;
     SkColorInfo fDstColorInfo;
     SkPMColor4f fPaintColor = SK_PMColor4fBLACK;
+    Scope fScope = Scope::kDefault;
 
 private:
     const Caps* fCaps = nullptr;
@@ -103,6 +112,30 @@ private:
     KeyContextWithLocalMatrix& operator=(const KeyContextWithLocalMatrix&) = delete;
 
     SkMatrix fStorage;
+};
+
+class KeyContextWithColorInfo : public KeyContext {
+public:
+    KeyContextWithColorInfo(const KeyContext& other, const SkColorInfo& info) : KeyContext(other) {
+        SkASSERT(fPaintColor.isOpaque());
+        SkColorSpaceXformSteps(fDstColorInfo, info).apply(fPaintColor.vec());
+        fDstColorInfo = info;
+    }
+
+private:
+    KeyContextWithColorInfo(const KeyContextWithColorInfo&) = delete;
+    KeyContextWithColorInfo& operator=(const KeyContextWithColorInfo&) = delete;
+};
+
+class KeyContextWithScope : public KeyContext {
+public:
+    KeyContextWithScope(const KeyContext& other, KeyContext::Scope scope) : KeyContext(other) {
+        fScope = scope;
+    }
+
+private:
+    KeyContextWithScope(const KeyContextWithScope&) = delete;
+    KeyContextWithScope& operator=(const KeyContextWithScope&) = delete;
 };
 
 } // namespace skgpu::graphite

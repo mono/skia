@@ -78,10 +78,27 @@ public:
     SkString nameVariable(char prefix, const char* name, bool mangle = true);
 
     /**
+     * Emits samplers for TextureEffect fragment processors as needed. `fp` can be a TextureEffect,
+     * or a tree containing zero or more TextureEffects.
+     */
+    bool emitTextureSamplersForFPs(const GrFragmentProcessor& fp,
+                                   GrFragmentProcessor::ProgramImpl& impl,
+                                   int* samplerIndex);
+
+    /**
+     * Returns a function-call invocation of `fp` in string form, passing the appropriate
+     * combination of `inputColor`, `destColor` and `fLocalCoordsVar` for the FP.
+     */
+    std::string invokeFP(const GrFragmentProcessor& fp,
+                         const GrFragmentProcessor::ProgramImpl& impl,
+                         const char* inputColor,
+                         const char* destColor,
+                         const char* coords) const;
+    /**
      * If the FP's coords are unused or all uses have been lifted to interpolated varyings then
      * don't put coords in the FP's function signature or call sites.
      */
-    bool fragmentProcessorHasCoordsParam(const GrFragmentProcessor*);
+    bool fragmentProcessorHasCoordsParam(const GrFragmentProcessor*) const;
 
     virtual GrGLSLUniformHandler* uniformHandler() = 0;
     virtual const GrGLSLUniformHandler* uniformHandler() const = 0;

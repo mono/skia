@@ -217,9 +217,6 @@ DEF_MAP(SkRegion::Iterator, sk_region_iterator_t, RegionIterator)
 DEF_MAP(SkRegion::Cliperator, sk_region_cliperator_t, RegionCliperator)
 DEF_MAP(SkRegion::Spanerator, sk_region_spanerator_t, RegionSpanerator)
 
-#include "include/core/SkTime.h"
-DEF_MAP(SkTime::DateTime, sk_time_datetime_t, TimeDateTime)
-
 #include "include/encode/SkWebpEncoder.h"
 DEF_MAP(SkWebpEncoder::Options, sk_webpencoder_options_t, WebpEncoderOptions)
 
@@ -301,11 +298,12 @@ static inline sk_textblob_builder_runbuffer_t ToTextBlobBuilderRunBuffer(const S
 }
 
 #include "include/docs/SkPDFDocument.h"
-static inline SkTime::DateTime AsDocumentOptionalTimestamp(const sk_time_datetime_t* datetime) {
+DEF_MAP(SkPDF::DateTime, sk_document_pdf_datetime_t, TimeDateTime)
+static inline SkPDF::DateTime AsDocumentOptionalTimestamp(const sk_document_pdf_datetime_t* datetime) {
     if (datetime) {
         return *AsTimeDateTime(datetime);
     } else {
-        return SkTime::DateTime();
+        return SkPDF::DateTime();
     }
 }
 static inline SkString AsDocumentOptionalString(const sk_string_t* skstring) {

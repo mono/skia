@@ -7,6 +7,8 @@
 
 #include "src/gpu/graphite/dawn/DawnAsyncWait.h"
 
+#include <thread>
+
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
 #endif  // __EMSCRIPTEN__
@@ -35,7 +37,7 @@ EM_ASYNC_JS(void, asyncSleep, (), {
 DawnAsyncWait::DawnAsyncWait(const wgpu::Device& device) : fDevice(device), fSignaled(false) {}
 
 bool DawnAsyncWait::yieldAndCheck() const {
-    if (fSignaled.load()) {
+    if (fSignaled.load(std::memory_order_acquire)) {
         return true;
     }
 #ifdef __EMSCRIPTEN__
@@ -43,7 +45,7 @@ bool DawnAsyncWait::yieldAndCheck() const {
 #else
     fDevice.Tick();
 #endif  // __EMSCRIPTEN__
-    return fSignaled.load();
+    return fSignaled.load(std::memory_order_acquire);
 }
 
 void DawnAsyncWait::busyWait() const {

@@ -34,8 +34,8 @@
 #include <algorithm>
 #include <csetjmp>
 #include <cstdint>
+#include <cstring>
 #include <memory>
-#include <string>
 #include <utility>
 #include <vector>
 
@@ -193,6 +193,7 @@ bool SkPngEncoderMgr::setHeader(const SkImageInfo& srcInfo, const SkPngEncoder::
             pngColorType = srcInfo.isOpaque() ? PNG_COLOR_TYPE_RGB : PNG_COLOR_TYPE_RGB_ALPHA;
             fPngBytesPerPixel = 8;
             break;
+        case kBGR_101010x_XR_SkColorType:
         case kRGB_101010x_SkColorType:
             bitDepth = 16;
             sigBit.red = 10;
@@ -356,9 +357,13 @@ static transform_scanline_proc choose_proc(const SkImageInfo& info) {
         case kBGR_101010x_SkColorType:
             return transform_scanline_bgr_101010x;
         case kBGR_101010x_XR_SkColorType:
-            SkDEBUGFAIL("unsupported color type");
-            return nullptr;
-
+            switch (info.alphaType()) {
+                case kOpaque_SkAlphaType:
+                    return transform_scanline_bgr_101010x_xr;
+                default:
+                    SkDEBUGFAIL("unsupported color type");
+                    return nullptr;
+            }
         case kAlpha_8_SkColorType:
             return transform_scanline_A8_to_GrayAlpha;
         case kR8G8_unorm_SkColorType:
@@ -368,6 +373,7 @@ static transform_scanline_proc choose_proc(const SkImageInfo& info) {
         case kA16_float_SkColorType:
         case kR16G16B16A16_unorm_SkColorType:
         case kR8_unorm_SkColorType:
+        case kRGBA_10x6_SkColorType:
             return nullptr;
     }
     SkDEBUGFAIL("unsupported color type");

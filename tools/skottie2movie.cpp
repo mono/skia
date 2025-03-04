@@ -10,16 +10,17 @@
 #include "include/core/SkGraphics.h"
 #include "include/core/SkStream.h"
 #include "include/core/SkSurface.h"
-#include "include/core/SkTime.h"
 #include "include/private/base/SkTPin.h"
 #include "modules/skottie/include/Skottie.h"
 #include "modules/skresources/include/SkResources.h"
+#include "src/base/SkTime.h"
 #include "src/utils/SkOSPath.h"
 
 #include "tools/flags/CommandLineFlags.h"
 #include "tools/gpu/GrContextFactory.h"
 
 #include "include/gpu/GrContextOptions.h"
+#include "include/gpu/GrTypes.h"
 #include "include/gpu/ganesh/SkSurfaceGanesh.h"
 
 static DEFINE_string2(input, i, "", "skottie animation to render");
@@ -158,7 +159,7 @@ int main(int argc, char** argv) {
 
         if (grctx) {
             // ensure all pending reads are completed
-            grctx->flushAndSubmit(true);
+            grctx->flushAndSubmit(GrSyncCpu::kYes);
         }
         data = encoder.endRecording();
 

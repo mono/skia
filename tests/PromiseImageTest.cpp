@@ -158,7 +158,7 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(PromiseImageTest,
                                                             kHeight,
                                                             kRGBA_8888_SkColorType,
                                                             SkColors::kTransparent,
-                                                            GrMipmapped::kNo,
+                                                            skgpu::Mipmapped::kNo,
                                                             GrRenderable::kYes,
                                                             GrProtected::kNo);
     REPORTER_ASSERT(reporter, backendTex.isValid());
@@ -171,7 +171,7 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(PromiseImageTest,
     sk_sp<SkImage> refImg(SkImages::PromiseTextureFrom(ctx->threadSafeProxy(),
                                                        backendFormat,
                                                        {kWidth, kHeight},
-                                                       GrMipmapped::kNo,
+                                                       skgpu::Mipmapped::kNo,
                                                        texOrigin,
                                                        kRGBA_8888_SkColorType,
                                                        kPremul_SkAlphaType,
@@ -187,23 +187,23 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(PromiseImageTest,
     canvas->drawImage(refImg, 0, 0);
     check_unfulfilled(promiseChecker, reporter);
 
-    ctx->flushAndSubmit(surface);
+    ctx->flushAndSubmit(surface.get(), GrSyncCpu::kNo);
     // We still own the image so we should not have called Release or Done.
     check_only_fulfilled(reporter, promiseChecker);
 
-    ctx->submit(true);
+    ctx->submit(GrSyncCpu::kYes);
     check_only_fulfilled(reporter, promiseChecker);
 
     canvas->drawImage(refImg, 0, 0);
     canvas->drawImage(refImg, 0, 0);
 
-    ctx->flushAndSubmit(surface, true);
+    ctx->flushAndSubmit(surface.get(), GrSyncCpu::kYes);
 
     // Image should still be fulfilled from the first time we drew/flushed it.
     check_only_fulfilled(reporter, promiseChecker);
 
     canvas->drawImage(refImg, 0, 0);
-    ctx->flushAndSubmit(surface);
+    ctx->flushAndSubmit(surface.get(), GrSyncCpu::kNo);
     check_only_fulfilled(reporter, promiseChecker);
 
     canvas->drawImage(refImg, 0, 0);
@@ -211,11 +211,11 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(PromiseImageTest,
     // We no longer own the image but the last draw is still unflushed.
     check_only_fulfilled(reporter, promiseChecker);
 
-    ctx->flushAndSubmit(surface);
+    ctx->flushAndSubmit(surface.get(), GrSyncCpu::kNo);
     // Flushing should have called Release. Depending on the backend and timing it may have called
     // done.
     check_all_flushed_but_not_synced(reporter, promiseChecker, ctx->backend());
-    ctx->submit(true);
+    ctx->submit(GrSyncCpu::kYes);
     // Now Done should definitely have been called.
     check_all_done(reporter, promiseChecker);
 
@@ -261,7 +261,7 @@ DEF_GANESH_TEST(PromiseImageTextureShutdown, reporter, ctxInfo, CtsEnforcement::
                                                                             kWidth,
                                                                             kHeight,
                                                                             kAlpha_8_SkColorType,
-                                                                            GrMipmapped::kNo,
+                                                                            skgpu::Mipmapped::kNo,
                                                                             GrRenderable::kNo);
             if (!mbet) {
                 ERRORF(reporter, "Could not create texture alpha texture.");
@@ -277,7 +277,7 @@ DEF_GANESH_TEST(PromiseImageTextureShutdown, reporter, ctxInfo, CtsEnforcement::
             sk_sp<SkImage> image(SkImages::PromiseTextureFrom(ctx->threadSafeProxy(),
                                                               mbet->texture().getBackendFormat(),
                                                               {kWidth, kHeight},
-                                                              GrMipmapped::kNo,
+                                                              skgpu::Mipmapped::kNo,
                                                               kTopLeft_GrSurfaceOrigin,
                                                               kAlpha_8_SkColorType,
                                                               kPremul_SkAlphaType,
@@ -314,7 +314,7 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(PromiseImageTextureFullCache,
                                                                  kHeight,
                                                                  kAlpha_8_SkColorType,
                                                                  SkColors::kTransparent,
-                                                                 GrMipmapped::kNo,
+                                                                 skgpu::Mipmapped::kNo,
                                                                  GrRenderable::kNo,
                                                                  GrProtected::kNo);
     REPORTER_ASSERT(reporter, backendTex.isValid());
@@ -328,7 +328,7 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(PromiseImageTextureFullCache,
     sk_sp<SkImage> image(SkImages::PromiseTextureFrom(dContext->threadSafeProxy(),
                                                       backendTex.getBackendFormat(),
                                                       {kWidth, kHeight},
-                                                      GrMipmapped::kNo,
+                                                      skgpu::Mipmapped::kNo,
                                                       kTopLeft_GrSurfaceOrigin,
                                                       kAlpha_8_SkColorType,
                                                       kPremul_SkAlphaType,
@@ -352,7 +352,7 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(PromiseImageTextureFullCache,
                 GrTextureType::k2D,
                 GrRenderable::kNo,
                 1,
-                GrMipmapped::kNo,
+                skgpu::Mipmapped::kNo,
                 skgpu::Budgeted::kYes,
                 GrProtected::kNo,
                 /*label=*/"PromiseImageTextureFullCacheTest"));
@@ -367,20 +367,20 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(PromiseImageTextureFullCache,
     // Relying on the asserts in the promiseImageChecker to ensure that fulfills and releases are
     // properly ordered.
     canvas->drawImage(image, 0, 0);
-    dContext->flushAndSubmit(surface);
+    dContext->flushAndSubmit(surface.get(), GrSyncCpu::kNo);
     canvas->drawImage(image, 1, 0);
-    dContext->flushAndSubmit(surface);
+    dContext->flushAndSubmit(surface.get(), GrSyncCpu::kNo);
     canvas->drawImage(image, 2, 0);
-    dContext->flushAndSubmit(surface);
+    dContext->flushAndSubmit(surface.get(), GrSyncCpu::kNo);
     canvas->drawImage(image, 3, 0);
-    dContext->flushAndSubmit(surface);
+    dContext->flushAndSubmit(surface.get(), GrSyncCpu::kNo);
     canvas->drawImage(image, 4, 0);
-    dContext->flushAndSubmit(surface);
+    dContext->flushAndSubmit(surface.get(), GrSyncCpu::kNo);
     canvas->drawImage(image, 5, 0);
-    dContext->flushAndSubmit(surface);
+    dContext->flushAndSubmit(surface.get(), GrSyncCpu::kNo);
     // Must call these to ensure that all callbacks are performed before the checker is destroyed.
     image.reset();
-    dContext->flushAndSubmit(true);
+    dContext->flushAndSubmit(GrSyncCpu::kYes);
 
     dContext->deleteBackendTexture(backendTex);
 }
@@ -417,7 +417,7 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(PromiseImageNullFulfill,
     sk_sp<SkImage> refImg(SkImages::PromiseTextureFrom(dContext->threadSafeProxy(),
                                                        backendFormat,
                                                        {kWidth, kHeight},
-                                                       GrMipmapped::kNo,
+                                                       skgpu::Mipmapped::kNo,
                                                        texOrigin,
                                                        kRGBA_8888_SkColorType,
                                                        kPremul_SkAlphaType,
@@ -440,7 +440,7 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(PromiseImageNullFulfill,
     canvas->drawRect(SkRect::MakeWH(1,1), paint);
     paint.setShader(nullptr);
     refImg.reset();
-    dContext->flushAndSubmit(surface);
+    dContext->flushAndSubmit(surface.get(), GrSyncCpu::kNo);
     // We should only call each callback once and we should have made all the calls by this point.
     REPORTER_ASSERT(reporter, counts.fFulfillCount == 1);
     REPORTER_ASSERT(reporter, counts.fReleaseCount == 1);
