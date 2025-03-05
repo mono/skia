@@ -323,6 +323,14 @@ config("default") {
       defines += [ "SK_BUILD_FOR_TVOS" ]
       cflags += [ "-mtvos-version-min=$min_tvos_version" ]
       ldflags += [ "-Wl,tvos_version_min=$min_tvos_version" ]
+      if (ios_use_simulator) {
+        cflags += [
+          "-target", "$target_cpu-apple-tvos$min_tvos_version-simulator",
+        ]
+        ldflags += [
+          "-target", "$target_cpu-apple-tvos$min_tvos_version-simulator",
+        ]
+      }
     } else if (is_maccatalyst) {
       defines += [ "SK_BUILD_FOR_MACCATALYST" ]
       if (target_cpu == "x64") {
