@@ -13,12 +13,6 @@
 #include "include/gpu/gl/GrGLInterface.h"
 #include "src/gpu/ganesh/gl/GrGLUtil.h"
 
-#if defined(_M_ARM64)
-
-sk_sp<const GrGLInterface> GrGLMakeNativeInterface() { return nullptr; }
-
-#else
-
 typedef HGLRC (WINAPI *WGLGetCurrentContextProc)(VOID);
 typedef PROC (WINAPI *WGLGetProcAddressProc)(LPCSTR name);
 
@@ -108,7 +102,5 @@ sk_sp<const GrGLInterface> GrGLMakeNativeInterface() {
     }
     return nullptr;
 }
-
-#endif // ARM64
 
 #endif//defined(SK_BUILD_FOR_WIN)
