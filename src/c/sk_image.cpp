@@ -60,7 +60,7 @@ sk_image_t* sk_image_new_from_picture(sk_picture_t* picture, const sk_isize_t* d
     if (cmatrix) {
         m = AsMatrix(cmatrix);
     }
-    return ToImage(SkImages::DeferredFromPicture(sk_ref_sp(AsPicture(picture)), *AsISize(dimensions), cmatrix ? &m : nullptr, AsPaint(paint), useFloatingPointBitDepth ? SkImages::BitDepth::kF16 : SkImages::BitDepth::kU8, sk_ref_sp(AsColorSpace(colorSpace)), *AsSurfaceProps(props)).release());
+    return ToImage(SkImages::DeferredFromPicture(sk_ref_sp(AsPicture(picture)), *AsISize(dimensions), cmatrix ? &m : nullptr, AsPaint(paint), useFloatingPointBitDepth ? SkImages::BitDepth::kF16 : SkImages::BitDepth::kU8, sk_ref_sp(AsColorSpace(colorSpace)), props ? (*AsSurfaceProps(props)).release()) : {});
 }
 
 int sk_image_get_width(const sk_image_t* cimage) {
