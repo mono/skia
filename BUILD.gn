@@ -3541,8 +3541,7 @@ skiasharp_build("SkiaSharp") {
     "src/xamarin/SkCompatPaint.cpp",
     "src/xamarin/SkManagedDrawable.cpp",
     "src/xamarin/SkManagedStream.cpp",
-    "src/xamarin/SkManagedTraceMemoryDump.cpp",
-    "src/xamarin/WinRTCompat.cpp",
+    "src/xamarin/SkManagedTraceMemoryDump.cpp"
   ]
 
   libs = []

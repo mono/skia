@@ -3,8 +3,6 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-exec_script("//gn/xamarin_inject_compat.py", [ rebase_path("../..") ])
-
 if (is_fuchsia) {
   import("//build/fuchsia/sdk.gni")
 }
