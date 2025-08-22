@@ -116,6 +116,12 @@ sk_string_t* sk_typeface_get_family_name(const sk_typeface_t* typeface) {
     return ToString(family_name);
 }
 
+sk_string_t* sk_typeface_get_post_script_name(const sk_typeface_t* typeface) {
+    SkString* ps_name = new SkString();
+    AsTypeface(typeface)->getPostScriptName(ps_name);
+    return ToString(ps_name);
+}
+
 sk_stream_asset_t* sk_typeface_open_stream(const sk_typeface_t* typeface, int* ttcIndex) {
     return ToStreamAsset(AsTypeface(typeface)->openStream(ttcIndex).release());
 }
