@@ -1235,10 +1235,9 @@ sk_sp<GrDirectContext> GrDirectContext::MakeMetal(void* device, void* queue) {
 // remove include/gpu/mtl/GrMtlBackendContext.h, above, when removed
 sk_sp<GrDirectContext> GrDirectContext::MakeMetal(void* device, void* queue,
                                                   const GrContextOptions& options) {
-    sk_sp<GrDirectContext> direct(new GrDirectContext(GrBackendApi::kMetal, options));
     GrMtlBackendContext backendContext = {};
-    backendContext.fDevice.reset(device);
-    backendContext.fQueue.reset(queue);
+    backendContext.fDevice.retain(device);
+    backendContext.fQueue.retain(queue);
 
     return GrDirectContext::MakeMetal(backendContext, options);
 }
