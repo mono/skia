@@ -817,7 +817,7 @@ config("optimize") {
     if (is_mac || is_ios) {
       ldflags += [ "-dead_strip" ]
     } else {
-      ldflags += [ "-s", "-Wl,--gc-sections" ]
+      ldflags += [ "-Wl,--gc-sections" ]
     }
     if (target_cpu == "wasm") {
       # The compiler asks us to add an optimization flag to both cflags
