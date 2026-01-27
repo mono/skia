@@ -28,12 +28,24 @@ if (skia_use_system_libwebp) {
     ]
   }
 
+  # Disable AVX2 support for now. libwebp 1.6.0 added AVX2 optimizations but
+  # enabling them requires adding new source files (lossless_avx2.c, lossless_enc_avx2.c).
+  # The -mno-avx2 flag prevents the compiler from defining __AVX2__ which would
+  # otherwise trigger AVX2 code paths without the required source files.
+  # Added in libwebp: https://github.com/webmproject/libwebp/commit/f2b3f527
+  # Tracking issue: https://github.com/mono/SkiaSharp/issues/3464
+  config("libwebp_no_avx2") {
+    if (current_cpu == "x86" || current_cpu == "x64") {
+      cflags = [ "-mno-avx2" ]
+    }
+  }
+
   third_party("libwebp_sse41") {
     public_include_dirs = [
       "../externals/libwebp/src",
       "../externals/libwebp",
     ]
-    configs = [ ":libwebp_defines" ]
+    configs = [ ":libwebp_defines", ":libwebp_no_avx2" ]
     sources = [
       "../externals/libwebp/src/dsp/alpha_processing_sse41.c",
       "../externals/libwebp/src/dsp/dec_sse41.c",
@@ -60,7 +72,7 @@ if (skia_use_system_libwebp) {
       deps += [ "//third_party/cpu-features" ]
     }
 
-    configs = [ ":libwebp_defines" ]
+    configs = [ ":libwebp_defines", ":libwebp_no_avx2" ]
     sources = [
       "../externals/libwebp/sharpyuv/sharpyuv.c",
       "../externals/libwebp/sharpyuv/sharpyuv_cpu.c",
