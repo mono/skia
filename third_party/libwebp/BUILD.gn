@@ -33,7 +33,10 @@ if (skia_use_system_libwebp) {
       "../externals/libwebp/src",
       "../externals/libwebp",
     ]
-    configs = [ ":libwebp_defines" ]
+    configs = [ 
+      ":libwebp_defines",
+      "//:spectre_mitigation"
+      ]
     sources = [
       "../externals/libwebp/src/dsp/alpha_processing_sse41.c",
       "../externals/libwebp/src/dsp/dec_sse41.c",
@@ -54,7 +57,10 @@ if (skia_use_system_libwebp) {
       "../externals/libwebp/src",
       "../externals/libwebp",
     ]
-    configs = [ ":libwebp_defines" ]
+    configs = [
+      ":libwebp_defines",
+      "//:spectre_mitigation",
+    ]
     sources = [
       "../externals/libwebp/src/dsp/lossless_avx2.c",
       "../externals/libwebp/src/dsp/lossless_enc_avx2.c",
@@ -76,7 +82,10 @@ if (skia_use_system_libwebp) {
       deps += [ "//third_party/cpu-features" ]
     }
 
-    configs = [ ":libwebp_defines" ]
+    configs = [
+      ":libwebp_defines",
+      "//:spectre_mitigation",
+    ]
     sources = [
       "../externals/libwebp/sharpyuv/sharpyuv.c",
       "../externals/libwebp/sharpyuv/sharpyuv_cpu.c",

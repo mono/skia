@@ -17,6 +17,8 @@ if (skia_use_system_expat) {
   third_party("expat") {
     _src = "../externals/expat"
 
+    configs = [ "//:spectre_mitigation" ]
+
     public_defines = [ "XML_STATIC" ]
 
     public_include_dirs = [

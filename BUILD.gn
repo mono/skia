@@ -134,10 +134,26 @@ config("skia_library") {
   defines = [ "SKIA_IMPLEMENTATION=1" ]
 }
 
+# Spectre mitigation config
+config("spectre_mitigation") {
+  visibility = [ "./*" ]
+  # Spectre mitigation for Windows builds
+  if (is_win) {
+    if (is_clang) {
+      # Clang Spectre mitigation flag
+      cflags = [ "-mretpoline" ]  # Spectre V2 mitigation
+    } else {
+      # MSVC Spectre mitigation flag
+      cflags = [ "/Qspectre" ]
+    }
+  }
+}
+
 skia_library_configs = [
   ":skia_public",
   ":skia_private",
   ":skia_library",
+  ":spectre_mitigation",
 ]
 
 # Use for CPU-specific Skia code that needs particular compiler flags.

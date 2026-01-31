@@ -11,6 +11,8 @@ import("../third_party.gni")
 third_party("piex") {
   public_include_dirs = [ "../externals/piex" ]
 
+  configs = [ "//:spectre_mitigation" ]
+
   defines = [ "BREAK_IF_DEBUGGING_AND_OUT_OF_RANGE" ]
 
   sources = [

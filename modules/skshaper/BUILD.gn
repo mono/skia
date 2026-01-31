@@ -55,7 +55,10 @@ if (skia_enable_skshaper) {
         "//third_party/harfbuzz",
       ]
     }
-    configs += [ "../../:skia_private" ]
+    configs += [
+      "../../:skia_private",
+      "../../:spectre_mitigation",
+    ]
   }
 
   if (defined(is_skia_standalone) && skia_enable_tools) {

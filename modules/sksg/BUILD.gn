@@ -14,7 +14,10 @@ skia_component("sksg") {
   import("sksg.gni")
   public_configs = [ ":public_config" ]
   sources = skia_sksg_sources
-  configs = [ "../../:skia_private" ]
+  configs = [
+    "../../:skia_private",
+    "../../:spectre_mitigation",
+  ]
   deps = [ "../..:skia" ]
 }
 

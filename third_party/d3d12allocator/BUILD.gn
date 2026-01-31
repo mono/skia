@@ -11,5 +11,7 @@ import("../third_party.gni")
 third_party("d3d12allocator") {
   public_include_dirs = [ "../externals/d3d12allocator/src" ]
 
+  configs = [ "//:spectre_mitigation" ]
+
   sources = [ "../externals/d3d12allocator/src/D3D12MemAlloc.cpp" ]
 }

@@ -20,6 +20,8 @@ if (skia_use_system_libjpeg_turbo) {
       "../externals/libjpeg-turbo",
     ]
 
+    configs = [ "//:spectre_mitigation" ]
+
     defines = [
       "TURBO_FOR_WINDOWS",
 

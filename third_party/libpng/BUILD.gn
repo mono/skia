@@ -20,6 +20,8 @@ if (skia_use_system_libpng) {
       "../externals/libpng",
     ]
 
+    configs = [ "//:spectre_mitigation" ]
+
     defines = [ "PNG_SET_OPTION_SUPPORTED" ]
     deps = [ "//third_party/zlib" ]
     sources = [

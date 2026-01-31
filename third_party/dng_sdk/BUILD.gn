@@ -15,6 +15,7 @@ third_party("dng_sdk") {
   configs = [
     "//gn/portable:add_exceptions",
     "//gn/portable:add_rtti",
+    "//:spectre_mitigation",
   ]
 
   public_defines = [ "qDNGBigEndian=0" ]
