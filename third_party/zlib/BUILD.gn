@@ -58,7 +58,7 @@ if (skia_use_system_zlib) {
 
   source_set("zlib_adler32_simd") {
     visibility = [ ":*" ]
-    configs += [ ":zlib_simd_config", "../../:spectre_mitigation" ]
+    configs += [ ":zlib_simd_config", "//:spectre_mitigation" ]
     if (use_x86_x64_optimizations) {
       defines = [ "ADLER32_SIMD_SSSE3" ]
       if (!is_win || is_clang) {
@@ -104,7 +104,7 @@ if (skia_use_system_zlib) {
 
   source_set("zlib_inflate_chunk_simd") {
     visibility = [ ":*" ]
-    configs += [ ":zlib_simd_config", "../../:spectre_mitigation" ]
+    configs += [ ":zlib_simd_config", "//:spectre_mitigation" ]
     if (use_x86_x64_optimizations) {
       defines = [ "INFLATE_CHUNK_SIMD_SSE2" ]
       if (current_cpu == "x64") {

@@ -11,7 +11,7 @@ static_library("skcms") {
     cflags += [ "-std=c11" ]
   }
 
-  configs += [ "../../:spectre_mitigation" ]
+  configs += [ "//:spectre_mitigation" ]
 
   public = skcms_public_headers
   sources = skcms_sources
