@@ -85,6 +85,10 @@ void sk_surface_draw(sk_surface_t* surface, sk_canvas_t* canvas, float x, float 
     AsSurface(surface)->draw(AsCanvas(canvas), x, y, AsPaint(paint));
 }
 
+void sk_surface_draw_with_sampling(sk_surface_t* surface, sk_canvas_t* canvas, float x, float y, const sk_sampling_options_t* sampling, const sk_paint_t* paint) {
+    AsSurface(surface)->draw(AsCanvas(canvas), x, y, *AsSamplingOptions(sampling), AsPaint(paint));
+}
+
 bool sk_surface_peek_pixels(sk_surface_t* surface, sk_pixmap_t* pixmap) {
     return AsSurface(surface)->peekPixels(AsPixmap(pixmap));
 }
