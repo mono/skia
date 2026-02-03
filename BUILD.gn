@@ -147,6 +147,19 @@ config("spectre_mitigation") {
       cflags = [ "/Qspectre" ]
     }
   }
+  # Spectre mitigation for Linux builds
+  else if (is_linux) {
+    if (is_clang) {
+      # Clang Spectre mitigation flag (Clang 5.0+)
+      cflags = [ "-mretpoline" ]  # Spectre V2 mitigation
+    } else {
+      # GCC Spectre mitigation flags (GCC 7.3+)
+      cflags = [
+        "-mindirect-branch=thunk",  # Convert indirect branches to thunks
+        "-mindirect-branch-register",  # Also convert indirect jumps via registers
+      ]
+    }
+  }
 }
 
 skia_library_configs = [
