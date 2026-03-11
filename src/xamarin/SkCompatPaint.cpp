@@ -8,11 +8,20 @@
 
 #include "include/core/SkPaint.h"
 #include "include/core/SkFont.h"
+#include "include/core/SkFontMgr.h"
 #include "include/utils/SkTextUtils.h"
 #include "include/xamarin/SkCompatPaint.h"
 
+// Shared font manager singleton from sk_typeface.cpp
+extern sk_sp<SkFontMgr> skiasharp_ref_default_fontmgr();
+
+static sk_sp<SkTypeface> get_default_typeface_for_paint() {
+    auto mgr = skiasharp_ref_default_fontmgr();
+    return mgr ? mgr->matchFamilyStyle(nullptr, SkFontStyle()) : nullptr;
+}
+
 SkCompatPaint::SkCompatPaint()
-    : fFont(SkFont())
+    : fFont(SkFont(get_default_typeface_for_paint()))
     , fTextAlign(SkTextUtils::Align::kLeft_Align)
     , fTextEncoding(SkTextEncoding::kUTF8)
     , fFilterQuality(SkFilterQuality::None)

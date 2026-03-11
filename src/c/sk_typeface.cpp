@@ -158,10 +158,17 @@ sk_fontmgr_t* sk_fontmgr_create_default(void) {
     return ToFontMgr(create_platform_fontmgr().release());
 }
 
-sk_fontmgr_t* sk_fontmgr_ref_default(void) {
+// Shared accessor for the default font manager singleton, used by sk_font.cpp
+// to provide platform default typeface when null is passed (Skia m122+ behavior change).
+sk_sp<SkFontMgr> skiasharp_ref_default_fontmgr() {
     static sk_sp<SkFontMgr> singleton = create_platform_fontmgr();
-    singleton->ref();
-    return ToFontMgr(singleton.get());
+    return singleton;
+}
+
+sk_fontmgr_t* sk_fontmgr_ref_default(void) {
+    auto mgr = skiasharp_ref_default_fontmgr();
+    mgr->ref();
+    return ToFontMgr(mgr.get());
 }
 
 void sk_fontmgr_unref(sk_fontmgr_t* fontmgr) {

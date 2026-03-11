@@ -8,6 +8,7 @@
  */
 
 #include "include/core/SkFont.h"
+#include "include/core/SkFontMgr.h"
 #include "include/core/SkTypeface.h"
 #include "include/utils/SkTextUtils.h"
 
@@ -15,14 +16,25 @@
 
 #include "src/c/sk_types_priv.h"
 
+// Returns the platform default typeface via the shared font manager singleton.
+// In Skia m122+, SkFont(nullptr) creates an empty typeface that draws nothing.
+// SkiaSharp preserves the legacy behavior where null means "platform default".
+extern sk_sp<SkFontMgr> skiasharp_ref_default_fontmgr();
+
+static sk_sp<SkTypeface> get_default_typeface() {
+    auto mgr = skiasharp_ref_default_fontmgr();
+    return mgr ? mgr->matchFamilyStyle(nullptr, SkFontStyle()) : nullptr;
+}
+
 // sk_font_t
 
 sk_font_t* sk_font_new(void) {
-    return ToFont(new SkFont());
+    return ToFont(new SkFont(get_default_typeface()));
 }
 
 sk_font_t* sk_font_new_with_values(sk_typeface_t* typeface, float size, float scaleX, float skewX) {
-    return ToFont(new SkFont(sk_ref_sp(AsTypeface(typeface)), size, scaleX, skewX));
+    sk_sp<SkTypeface> tf = typeface ? sk_ref_sp(AsTypeface(typeface)) : get_default_typeface();
+    return ToFont(new SkFont(std::move(tf), size, scaleX, skewX));
 }
 
 void sk_font_delete(sk_font_t* font) {
@@ -102,7 +114,8 @@ sk_typeface_t* sk_font_get_typeface(const sk_font_t* font) {
 }
 
 void sk_font_set_typeface(sk_font_t* font, sk_typeface_t* value) {
-    AsFont(font)->setTypeface(sk_ref_sp(AsTypeface(value)));
+    sk_sp<SkTypeface> tf = value ? sk_ref_sp(AsTypeface(value)) : get_default_typeface();
+    AsFont(font)->setTypeface(std::move(tf));
 }
 
 float sk_font_get_size(const sk_font_t* font) {
