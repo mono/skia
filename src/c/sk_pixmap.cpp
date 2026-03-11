@@ -109,7 +109,7 @@ bool sk_webpencoder_encode(sk_wstream_t* dst, const sk_pixmap_t* src, const sk_w
 }
 
 bool sk_jpegencoder_encode(sk_wstream_t* dst, const sk_pixmap_t* src, const sk_jpegencoder_options_t* options) {
-    return SkJpegEncoder::Encode(AsWStream(dst), *AsPixmap(src), *AsJpegEncoderOptions(options));
+    return SkJpegEncoder::Encode(AsWStream(dst), *AsPixmap(src), AsJpegEncoderOptions(options));
 }
 
 bool sk_pngencoder_encode(sk_wstream_t* dst, const sk_pixmap_t* src, const sk_pngencoder_options_t* options) {

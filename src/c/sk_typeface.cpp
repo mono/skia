@@ -17,6 +17,7 @@
 #include "include/c/sk_typeface.h"
 
 #include "src/c/sk_types_priv.h"
+#include "src/c/sk_default_fontmgr.h"
 
 // typeface
 
@@ -46,28 +47,31 @@ bool sk_typeface_is_fixed_pitch(const sk_typeface_t* typeface) {
 }
 
 sk_typeface_t* sk_typeface_create_default(void) {
-    return ToTypeface(SkTypeface::MakeDefault().release());
+    return ToTypeface(sk_get_default_typeface().release());
 }
 
 sk_typeface_t* sk_typeface_ref_default(void) {
-    return ToTypeface(SkTypeface::RefDefault().release());
+    // Cache a default typeface to preserve the singleton behavior of the old RefDefault()
+    static sk_sp<SkTypeface> defaultTf = sk_get_default_typeface();
+    defaultTf->ref();
+    return ToTypeface(defaultTf.get());
 }
 
 sk_typeface_t* sk_typeface_create_from_name(const char* familyName, const sk_fontstyle_t* style) {
-    return ToTypeface(SkTypeface::MakeFromName(familyName, *AsFontStyle(style)).release());
+    return ToTypeface(sk_get_default_fontmgr()->legacyMakeTypeface(familyName, *AsFontStyle(style)).release());
 }
 
 sk_typeface_t* sk_typeface_create_from_file(const char* path, int index) {
-    return ToTypeface(SkTypeface::MakeFromFile(path, index).release());
+    return ToTypeface(sk_get_default_fontmgr()->makeFromFile(path, index).release());
 }
 
 sk_typeface_t* sk_typeface_create_from_stream(sk_stream_asset_t* stream, int index) {
     std::unique_ptr<SkStreamAsset> skstream(AsStreamAsset(stream));
-    return ToTypeface(SkTypeface::MakeFromStream(std::move(skstream), index).release());
+    return ToTypeface(sk_get_default_fontmgr()->makeFromStream(std::move(skstream), index).release());
 }
 
 sk_typeface_t* sk_typeface_create_from_data(sk_data_t* data, int index) {
-    return ToTypeface(SkTypeface::MakeFromData(sk_ref_sp(AsData(data)), index).release());
+    return ToTypeface(sk_get_default_fontmgr()->makeFromData(sk_ref_sp(AsData(data)), index).release());
 }
 
 void sk_typeface_unichars_to_glyphs(const sk_typeface_t* typeface, const int32_t unichars[], int count, uint16_t glyphs[]) {
@@ -130,11 +134,12 @@ sk_stream_asset_t* sk_typeface_open_stream(const sk_typeface_t* typeface, int* t
 // font manager
 
 sk_fontmgr_t* sk_fontmgr_create_default(void) {
-    return ToFontMgr(SkFontMgr::MakeDefault().release());
+    return ToFontMgr(sk_create_default_fontmgr().release());
 }
 
 sk_fontmgr_t* sk_fontmgr_ref_default(void) {
-    return ToFontMgr(SkFontMgr::RefDefault().release());
+    sk_sp<SkFontMgr> mgr = sk_get_default_fontmgr();
+    return ToFontMgr(mgr.release());
 }
 
 void sk_fontmgr_unref(sk_fontmgr_t* fontmgr) {

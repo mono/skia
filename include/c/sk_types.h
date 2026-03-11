@@ -108,10 +108,12 @@ typedef enum {
     RGB_101010X_SK_COLORTYPE,
     BGR_101010X_SK_COLORTYPE,
     BGR_101010X_XR_SK_COLORTYPE,
+    BGRA_10101010_XR_SK_COLORTYPE,
     RGBA_10X6_SK_COLORTYPE,
     GRAY_8_SK_COLORTYPE,
     RGBA_F16_NORM_SK_COLORTYPE,
     RGBA_F16_SK_COLORTYPE,
+    RGB_F16F16F16X_SK_COLORTYPE,
     RGBA_F32_SK_COLORTYPE,
 
     // READONLY
@@ -685,18 +687,13 @@ typedef struct {
     vk_device_t*                            fDevice;
     vk_queue_t*                             fQueue;
     uint32_t                                fGraphicsQueueIndex;
-    uint32_t                                fMinAPIVersion;
-    uint32_t                                fInstanceVersion;
     uint32_t                                fMaxAPIVersion;
-    uint32_t                                fExtensions;
     const gr_vk_extensions_t*               fVkExtensions;
-    uint32_t                                fFeatures;
     const vk_physical_device_features_t*    fDeviceFeatures;
     const vk_physical_device_features_2_t*  fDeviceFeatures2;
     gr_vk_memory_allocator_t*               fMemoryAllocator;
     gr_vk_get_proc                          fGetProc;
     void*                                   fGetProcUserData;
-    bool                                    fOwnsInstanceAndDevice;
     bool                                    fProtectedContext;
 } gr_vk_backendcontext_t;
 
@@ -721,6 +718,12 @@ typedef struct {
     uint32_t  fChromaFilter;
     uint32_t  fForceExplicitReconstruction;
     uint32_t  fFormatFeatures;
+    struct {
+        uint32_t  r;
+        uint32_t  g;
+        uint32_t  b;
+        uint32_t  a;
+    }         fComponents;
 } gr_vk_ycbcrconversioninfo_t;
 
 typedef struct {
@@ -956,6 +959,8 @@ typedef struct {
     const sk_data_t* xmpMetadata;
     const sk_colorspace_icc_profile_t* fICCProfile;
     const char* fICCProfileDescription;
+    int32_t fOrigin;
+    bool fHasOrigin;
 } sk_jpegencoder_options_t;
 
 typedef enum {

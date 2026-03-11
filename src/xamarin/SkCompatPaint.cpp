@@ -10,9 +10,10 @@
 #include "include/core/SkFont.h"
 #include "include/utils/SkTextUtils.h"
 #include "include/xamarin/SkCompatPaint.h"
+#include "src/c/sk_default_fontmgr.h"
 
 SkCompatPaint::SkCompatPaint()
-    : fFont(SkFont())
+    : fFont(SkFont(sk_get_default_typeface()))
     , fTextAlign(SkTextUtils::Align::kLeft_Align)
     , fTextEncoding(SkTextEncoding::kUTF8)
     , fFilterQuality(SkFilterQuality::None)

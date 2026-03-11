@@ -148,7 +148,7 @@ sk_image_t* sk_image_make_subset(const sk_image_t* cimage, gr_direct_context_t* 
 }
 
 sk_image_t* sk_image_make_texture_image(const sk_image_t* cimage, gr_direct_context_t* context, bool mipmapped, bool budgeted) {
-    return ToImage(SkImages::TextureFromImage(AsGrDirectContext(context), AsImage(cimage), (GrMipMapped)mipmapped, (skgpu::Budgeted)budgeted).release());
+    return ToImage(SkImages::TextureFromImage(AsGrDirectContext(context), AsImage(cimage), (skgpu::Mipmapped)mipmapped, (skgpu::Budgeted)budgeted).release());
 }
 
 sk_image_t* sk_image_make_non_texture_image(const sk_image_t* cimage) {
