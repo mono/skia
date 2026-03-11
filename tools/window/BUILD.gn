@@ -110,6 +110,9 @@ skia_component("window") {
     }
     if (is_android) {
       sources += [ "android/VulkanWindowContext_android.cpp" ]
+      if (skia_enable_graphite) {
+        sources += [ "android/GraphiteVulkanWindowContext_android.cpp" ]
+      }
     } else if (is_linux) {
       sources += [ "unix/VulkanWindowContext_unix.cpp" ]
       if (skia_enable_graphite) {
@@ -163,7 +166,7 @@ skia_component("window") {
         }
       }
     } else if (is_win) {
-      if (dawn_enable_d3d12) {
+      if (dawn_enable_d3d12 || dawn_enable_d3d11) {
         if (skia_enable_graphite) {
           sources += [
             "GraphiteDawnWindowContext.cpp",

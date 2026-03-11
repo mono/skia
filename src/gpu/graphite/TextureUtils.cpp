@@ -95,6 +95,7 @@ sk_sp<SkSpecialImage> eval_blur(skgpu::graphite::Recorder* recorder,
                                 const SkSurfaceProps& outProps) {
     SkImageInfo outII = SkImageInfo::Make({dstRect.width(), dstRect.height()},
                                           colorType, kPremul_SkAlphaType, std::move(outCS));
+    // Protected-ness is pulled off of the recorder
     auto device = skgpu::graphite::Device::Make(recorder,
                                                 outII,
                                                 skgpu::Budgeted::kYes,
@@ -313,11 +314,12 @@ std::tuple<TextureProxyView, SkColorType> MakeBitmapProxyView(Recorder* recorder
         mipmapped = Mipmapped::kNo;
     }
 
-    auto textureInfo = caps->getDefaultSampledTextureInfo(ct, mipmapped, Protected::kNo,
+    Protected isProtected = recorder->priv().isProtected();
+    auto textureInfo = caps->getDefaultSampledTextureInfo(ct, mipmapped, isProtected,
                                                           Renderable::kNo);
     if (!textureInfo.isValid()) {
         ct = kRGBA_8888_SkColorType;
-        textureInfo = caps->getDefaultSampledTextureInfo(ct, mipmapped, Protected::kNo,
+        textureInfo = caps->getDefaultSampledTextureInfo(ct, mipmapped, isProtected,
                                                          Renderable::kNo);
     }
     SkASSERT(textureInfo.isValid());
@@ -580,46 +582,51 @@ bool GenerateMipmaps(Recorder* recorder,
 
     SkASSERT(texture->mipmapped() == Mipmapped::kYes);
 
-    // Within a rescaling pass tempInput is read from and tempOutput is written to.
-    // At the end of the pass tempOutput's texture is wrapped and assigned to tempInput.
-    sk_sp<SkImage> tempInput(new Image(kNeedNewImageUniqueID,
-                                       TextureProxyView(texture),
-                                       colorInfo));
-    sk_sp<SkSurface> tempOutput;
+    // Within a rescaling pass scratchImg is read from and a scratch surface is written to.
+    // At the end of the pass the scratch surface's texture is wrapped and assigned to scratchImg.
+    sk_sp<SkImage> scratchImg(
+            new Image(kNeedNewImageUniqueID, TextureProxyView(texture), colorInfo));
 
     SkISize srcSize = texture->dimensions();
     const SkColorInfo outColorInfo = colorInfo.makeAlphaType(kPremul_SkAlphaType);
 
-    for (int mipLevel = 1; srcSize.width() > 1 || srcSize.height() > 1; ++mipLevel) {
-        SkISize stepSize = SkISize::Make(1, 1);
-        if (srcSize.width() > 1) {
-            stepSize.fWidth = srcSize.width() / 2;
-        }
-        if (srcSize.height() > 1) {
-            stepSize.fHeight = srcSize.height() / 2;
-        }
-
-        tempOutput = make_surface_with_fallback(recorder,
-                                                SkImageInfo::Make(stepSize, outColorInfo),
-                                                Mipmapped::kNo,
-                                                nullptr);
-        if (!tempOutput) {
+    // Alternate between two scratch surfaces to avoid reading from and writing to a texture in the
+    // same pass. The dimensions of the first usages of the two scratch textures will be 1/2 and 1/4
+    // those of the original texture, respectively.
+    sk_sp<SkSurface> scratchSurfaces[2];
+    for (int i = 0; i < 2; ++i) {
+        scratchSurfaces[i] = make_surface_with_fallback(
+                recorder,
+                SkImageInfo::Make(SkISize::Make(std::max(1, srcSize.width() >> (i + 1)),
+                                                std::max(1, srcSize.height() >> (i + 1))),
+                                  outColorInfo),
+                Mipmapped::kNo,
+                nullptr);
+        if (!scratchSurfaces[i]) {
             return false;
         }
-        SkCanvas* stepDst = tempOutput->getCanvas();
-        SkRect stepDstRect = SkRect::Make(stepSize);
+    }
+
+    for (int mipLevel = 1; srcSize.width() > 1 || srcSize.height() > 1; ++mipLevel) {
+        const SkISize dstSize = SkISize::Make(std::max(srcSize.width() >> 1, 1),
+                                              std::max(srcSize.height() >> 1, 1));
+
+        SkSurface* scratchSurface = scratchSurfaces[(mipLevel - 1) & 1].get();
 
         SkPaint paint;
-        stepDst->drawImageRect(tempInput, SkRect::Make(srcSize), stepDstRect, kSamplingOptions,
-                               &paint, SkCanvas::kStrict_SrcRectConstraint);
+        scratchSurface->getCanvas()->drawImageRect(scratchImg,
+                                                   SkRect::Make(srcSize),
+                                                   SkRect::Make(dstSize),
+                                                   kSamplingOptions,
+                                                   &paint,
+                                                   SkCanvas::kStrict_SrcRectConstraint);
 
         // Make sure the rescaling draw finishes before copying the results.
-        sk_sp<SkSurface> stepDstSurface = sk_ref_sp(stepDst->getSurface());
-        skgpu::graphite::Flush(stepDstSurface);
+        skgpu::graphite::Flush(scratchSurface);
 
         sk_sp<CopyTextureToTextureTask> copyTask = CopyTextureToTextureTask::Make(
-                static_cast<const Surface*>(stepDstSurface.get())->readSurfaceView().refProxy(),
-                SkIRect::MakeSize(stepSize),
+                static_cast<const Surface*>(scratchSurface)->readSurfaceView().refProxy(),
+                SkIRect::MakeSize(dstSize),
                 texture,
                 {0, 0},
                 mipLevel);
@@ -628,8 +635,8 @@ bool GenerateMipmaps(Recorder* recorder,
         }
         recorder->priv().add(std::move(copyTask));
 
-        tempInput = SkSurfaces::AsImage(tempOutput);
-        srcSize = stepSize;
+        scratchImg = static_cast<const Surface*>(scratchSurface)->asImage();
+        srcSize = dstSize;
     }
 
     return true;

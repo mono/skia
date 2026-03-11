@@ -32,6 +32,7 @@
 #include "src/gpu/graphite/RendererProvider.h"
 #include "src/gpu/graphite/SharedContext.h"
 #include "src/gpu/graphite/SpecialImage_Graphite.h"
+#include "src/gpu/graphite/Surface_Graphite.h"
 #include "src/gpu/graphite/TextureProxy.h"
 #include "src/gpu/graphite/TextureUtils.h"
 #include "src/gpu/graphite/geom/BoundsManager.h"
@@ -372,6 +373,34 @@ TextureProxyView Device::createCopy(const SkIRect* subset,
         return {};
     }
 
+    if (!fRecorder->priv().caps()->supportsReadPixels(srcView.proxy()->textureInfo())) {
+        if (!fRecorder->priv().caps()->isTexturable(srcView.proxy()->textureInfo())) {
+            return {};
+        }
+        // We ignore backingFit here and always make a tight texture.
+        auto size = subset ? subset->size() : this->size();
+        auto surface = SkSurfaces::RenderTarget(fRecorder,
+                                                this->imageInfo().makeDimensions(size),
+                                                mipmapped);
+
+        auto image = sk_make_sp<Image>(kNeedNewImageUniqueID,
+                                       readSurfaceView(),
+                                       this->imageInfo().colorInfo());
+        SkPaint paint;
+        paint.setBlendMode(SkBlendMode::kSrc);
+        auto pt = subset ? subset->topLeft() : SkIPoint{0, 0};
+        surface->getCanvas()->drawImage(image, -pt.x(), -pt.y(), SkFilterMode::kNearest, &paint);
+
+        auto readView = static_cast<Surface*>(surface.get())->readSurfaceView();
+        if (mipmapped == Mipmapped::kYes) {
+            if (!GenerateMipmaps(fRecorder, readView.refProxy(), this->imageInfo().colorInfo())) {
+                SKGPU_LOG_W("Device::createCopy: Failed to generate mipmaps");
+            }
+        }
+
+        return readView;
+    }
+
     SkIRect srcRect = subset ? *subset : SkIRect::MakeSize(this->imageInfo().dimensions());
     return TextureProxyView::Copy(this->recorder(),
                                   this->imageInfo().colorInfo(),
@@ -464,11 +493,25 @@ bool Device::onWritePixels(const SkPixmap& src, int x, int y) {
         return false;
     }
 
-    // TODO: check for readOnly or framebufferOnly target and return false if so
-
     // TODO: canvas2DFastPath?
-    // TODO: check that surface supports writePixels
-    // TODO: handle writePixels as draw if needed (e.g., canvas2DFastPath || !supportsWritePixels)
+
+    if (!fRecorder->priv().caps()->supportsWritePixels(target->textureInfo())) {
+        auto image = SkImages::RasterFromPixmap(src, nullptr, nullptr);
+        image = SkImages::TextureFromImage(fRecorder, image.get());
+        if (!image) {
+            return false;
+        }
+
+        SkPaint paint;
+        paint.setBlendMode(SkBlendMode::kSrc);
+        this->drawImageRect(image.get(),
+                            /*src=*/nullptr,
+                            SkRect::MakeXYWH(x, y, src.width(), src.height()),
+                            SkFilterMode::kNearest,
+                            paint,
+                            SkCanvas::kFast_SrcRectConstraint);
+        return true;
+    }
 
     // TODO: check for flips and either handle here or pass info to UploadTask
 
@@ -888,7 +931,16 @@ void Device::drawGeometry(const Transform& localToDevice,
         // TODO: If asADash() returns true and the base path matches the dashing fast path, then
         // that should be detected now as well. Maybe add dashPath to Device so canvas can handle it
         SkStrokeRec newStyle = style;
-        newStyle.setResScale(localToDevice.maxScaleFactor());
+        float maxScaleFactor = localToDevice.maxScaleFactor();
+        if (localToDevice.type() == Transform::Type::kProjection) {
+            auto bounds = geometry.bounds();
+            float tl = std::get<1>(localToDevice.scaleFactors({bounds.left(), bounds.top()}));
+            float tr = std::get<1>(localToDevice.scaleFactors({bounds.right(), bounds.top()}));
+            float br = std::get<1>(localToDevice.scaleFactors({bounds.right(), bounds.bot()}));
+            float bl = std::get<1>(localToDevice.scaleFactors({bounds.left(), bounds.bot()}));
+            maxScaleFactor = std::max(std::max(tl, tr), std::max(bl, br));
+        }
+        newStyle.setResScale(maxScaleFactor);
         SkPath dst;
         if (paint.getPathEffect()->filterPath(&dst, geometry.shape().asPath(), &newStyle,
                                               nullptr, localToDevice)) {
@@ -979,7 +1031,13 @@ void Device::drawGeometry(const Transform& localToDevice,
     // atlas entries for the current draw will be flushed.
     const bool needsFlush = this->needsFlushBeforeDraw(numNewRenderSteps, dstReadReq);
     if (needsFlush) {
-        this->flushPendingWorkToRecorder();
+        if (pathAtlas != nullptr) {
+            // We need to flush work for all devices associated with the current Recorder.
+            // Otherwise we may end up with outstanding draws that depend on past atlas state.
+            fRecorder->priv().flushTrackedDevices();
+        } else {
+            this->flushPendingWorkToRecorder();
+        }
     }
 
     // If an atlas path renderer was chosen we need to insert the shape into the atlas and schedule
@@ -996,7 +1054,9 @@ void Device::drawGeometry(const Transform& localToDevice,
         // work to clear up space in the atlas. If we had already flushed once (which would have
         // cleared the atlas) then the atlas is too small for this shape.
         if (!atlasMask && !needsFlush) {
-            this->flushPendingWorkToRecorder();
+            // We need to flush work for all devices associated with the current Recorder.
+            // Otherwise we may end up with outstanding draws that depend on past atlas state.
+            fRecorder->priv().flushTrackedDevices();
 
             // Try inserting the shape again.
             atlasMask = pathAtlas->addShape(recorder(),
@@ -1053,7 +1113,11 @@ void Device::drawGeometry(const Transform& localToDevice,
     // If a draw is not opaque, it must be drawn after the most recent draw it intersects with in
     // order to blend correctly. We always query the most recent draw (even when opaque) because it
     // also lets Device easily track whether or not there are any overlapping draws.
-    PaintParams shading{paint, std::move(primitiveBlender), dstReadReq, skipColorXform};
+    PaintParams shading{paint,
+                        std::move(primitiveBlender),
+                        sk_ref_sp(clip.shader()),
+                        dstReadReq,
+                        skipColorXform};
     const bool dependsOnDst = rendererCoverage != Coverage::kNone || paint_depends_on_dst(shading);
     if (dependsOnDst) {
         CompressedPaintersOrder prevDraw =
@@ -1319,8 +1383,6 @@ void Device::flushPendingWorkToRecorder() {
     if (uploadTask) {
         fRecorder->priv().add(std::move(uploadTask));
     }
-    // Issue next upload flush token
-    fRecorder->priv().tokenTracker()->issueFlushToken();
 
     fClip.recordDeferredClipDraws();
 
@@ -1357,7 +1419,8 @@ bool Device::needsFlushBeforeDraw(int numNewRenderSteps, DstReadRequirement dstR
 void Device::drawSpecial(SkSpecialImage* special,
                          const SkMatrix& localToDevice,
                          const SkSamplingOptions& sampling,
-                         const SkPaint& paint) {
+                         const SkPaint& paint,
+                         SkCanvas::SrcRectConstraint constraint) {
     SkASSERT(!paint.getMaskFilter() && !paint.getImageFilter());
 
     sk_sp<SkImage> img = special->asImage();
@@ -1372,7 +1435,7 @@ void Device::drawSpecial(SkSpecialImage* special,
             sampling,
             /*src=*/SkRect::Make(special->subset()),
             /*dst=*/SkRect::MakeIWH(special->width(), special->height()),
-            /*strictSrcSubset=*/true,
+            /*strictSrcSubset=*/constraint == SkCanvas::kStrict_SrcRectConstraint,
             &paintWithShader);
     if (dst.isEmpty()) {
         return;

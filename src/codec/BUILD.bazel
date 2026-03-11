@@ -25,8 +25,6 @@ CORE_FILES = [
     "SkImageGenerator_FromEncoded.cpp",
     "SkMaskSwizzler.cpp",
     "SkMaskSwizzler.h",
-    "SkMasks.cpp",
-    "SkMasks.h",
     "SkPixmapUtils.cpp",
     "SkPixmapUtilsPriv.h",
     "SkSampler.cpp",
@@ -298,6 +296,15 @@ skia_filegroup(
         "SkPixmapUtils.cpp",
         "SkPixmapUtilsPriv.h",
     ],
+)
+
+skia_filegroup(
+    name = "common_jpeg_srcs",
+    srcs = [
+        "SkJpegConstants.h",
+        "SkJpegPriv.h",
+    ],
+    visibility = ["//src/encode:__pkg__"],
 )
 
 skia_filegroup(

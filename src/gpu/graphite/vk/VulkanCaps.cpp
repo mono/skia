@@ -81,15 +81,20 @@ void VulkanCaps::init(const ContextOptions& contextOptions,
     fResourceBindingReqs.fSeparateTextureAndSamplerBinding = false;
     fResourceBindingReqs.fDistinctIndexRanges = false;
 
-    // Enable the use of memoryless attachments for tiler GPUs (ARM Mali and Qualcomm Adreno).
-    if (physDevProperties.vendorID == kARM_VkVendor ||
-        physDevProperties.vendorID == kQualcomm_VkVendor) {
-        // We currently don't see any Vulkan devices that expose a memory type that supports
-        // both lazy allocated and protected memory. So for simplicity we just disable the
-        // use of memoryless attachments when using protected memory. In the future, if we ever
-        // do see devices that support both, we can look through the device's memory types here
-        // and see if any support both flags.
-        fSupportsMemorylessAttachments = !fProtectedSupport;
+    VkPhysicalDeviceMemoryProperties deviceMemoryProperties;
+    VULKAN_CALL(vkInterface, GetPhysicalDeviceMemoryProperties(physDev, &deviceMemoryProperties));
+    fSupportsMemorylessAttachments = false;
+    VkMemoryPropertyFlags requiredLazyFlags = VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT;
+    if (fProtectedSupport) {
+        // If we have a protected context we can only use memoryless images if they also support
+        // being protected. With current devices we don't actually expect this combination to be
+        // supported, but this at least covers us for future devices that may allow it.
+        requiredLazyFlags |= VK_MEMORY_PROPERTY_PROTECTED_BIT;
+    }
+    for (uint32_t i = 0; i < deviceMemoryProperties.memoryTypeCount; ++i) {
+        if (deviceMemoryProperties.memoryTypes[i].propertyFlags & requiredLazyFlags) {
+            fSupportsMemorylessAttachments = true;
+        }
     }
 
 #ifdef SK_BUILD_FOR_UNIX
@@ -127,6 +132,13 @@ void VulkanCaps::init(const ContextOptions& contextOptions,
         fMaxVertexAttributes = physDevProperties.limits.maxVertexInputAttributes;
     }
     fMaxUniformBufferRange = physDevProperties.limits.maxUniformBufferRange;
+
+#ifdef SK_BUILD_FOR_ANDROID
+    if (extensions->hasExtension(
+            VK_ANDROID_EXTERNAL_MEMORY_ANDROID_HARDWARE_BUFFER_EXTENSION_NAME, 2)) {
+        fSupportsAHardwareBufferImages = true;
+    }
+#endif
 
     // Determine whether the client enabled certain physical device features.
     if (features) {
@@ -503,7 +515,10 @@ void VulkanCaps::initFormatTable(const skgpu::VulkanInterface* interface,
                 constexpr SkColorType ct = SkColorType::kRGB_888x_SkColorType;
                 auto& ctInfo = info.fColorTypeInfos[ctIdx++];
                 ctInfo.fColorType = ct;
-                // The Vulkan format is 3 bpp so we must convert to/from that when transferring.
+                // This SkColorType is a lie, but we don't have a kRGB_888_SkColorType. The Vulkan
+                // format is 3 bpp so we must manualy convert to/from this and kRGB_888x when doing
+                // transfers. We signal this need for manual conversions in the
+                // supportedRead/WriteColorType calls.
                 ctInfo.fTransferColorType = SkColorType::kRGB_888x_SkColorType;
                 ctInfo.fFlags = ColorTypeInfo::kUploadData_Flag | ColorTypeInfo::kRenderable_Flag;
             }
@@ -1230,60 +1245,62 @@ bool VulkanCaps::supportsReadPixels(const TextureInfo& texInfo) const {
     return true;
 }
 
-SkColorType VulkanCaps::supportedWritePixelsColorType(SkColorType dstColorType,
-                                                      const TextureInfo& dstTextureInfo,
-                                                      SkColorType srcColorType) const {
+std::pair<SkColorType, bool /*isRGBFormat*/> VulkanCaps::supportedWritePixelsColorType(
+        SkColorType dstColorType,
+        const TextureInfo& dstTextureInfo,
+        SkColorType srcColorType) const {
     VulkanTextureInfo vkInfo;
     if (!dstTextureInfo.getVulkanTextureInfo(&vkInfo)) {
-        return kUnknown_SkColorType;
+        return {kUnknown_SkColorType, false};
     }
 
     // Can't write to YCbCr formats
     // TODO: Can't write to external formats, either
     if (VkFormatNeedsYcbcrSampler(vkInfo.fFormat)) {
-        return kUnknown_SkColorType;
+        return {kUnknown_SkColorType, false};
     }
 
     const FormatInfo& info = this->getFormatInfo(vkInfo.fFormat);
     for (int i = 0; i < info.fColorTypeInfoCount; ++i) {
         const auto& ctInfo = info.fColorTypeInfos[i];
         if (ctInfo.fColorType == dstColorType) {
-            return dstColorType;
+            return {ctInfo.fTransferColorType, vkInfo.fFormat == VK_FORMAT_R8G8B8_UNORM};
         }
     }
 
-    return kUnknown_SkColorType;
+    return {kUnknown_SkColorType, false};
 }
 
-SkColorType VulkanCaps::supportedReadPixelsColorType(SkColorType srcColorType,
-                                                     const TextureInfo& srcTextureInfo,
-                                                     SkColorType dstColorType) const {
+std::pair<SkColorType, bool /*isRGBFormat*/> VulkanCaps::supportedReadPixelsColorType(
+        SkColorType srcColorType,
+        const TextureInfo& srcTextureInfo,
+        SkColorType dstColorType) const {
     VulkanTextureInfo vkInfo;
     if (!srcTextureInfo.getVulkanTextureInfo(&vkInfo)) {
-        return kUnknown_SkColorType;
+        return {kUnknown_SkColorType, false};
     }
 
     // Can't read from YCbCr formats
     // TODO: external formats?
     if (VkFormatNeedsYcbcrSampler(vkInfo.fFormat)) {
-        return kUnknown_SkColorType;
+        return {kUnknown_SkColorType, false};
     }
 
     // TODO: handle compressed formats
     if (VkFormatIsCompressed(vkInfo.fFormat)) {
         SkASSERT(this->isTexturable(vkInfo));
-        return kUnknown_SkColorType;
+        return {kUnknown_SkColorType, false};
     }
 
     const FormatInfo& info = this->getFormatInfo(vkInfo.fFormat);
     for (int i = 0; i < info.fColorTypeInfoCount; ++i) {
         const auto& ctInfo = info.fColorTypeInfos[i];
         if (ctInfo.fColorType == srcColorType) {
-            return srcColorType;
+            return {ctInfo.fTransferColorType, vkInfo.fFormat == VK_FORMAT_R8G8B8_UNORM};
         }
     }
 
-    return kUnknown_SkColorType;
+    return {kUnknown_SkColorType, false};
 }
 
 UniqueKey VulkanCaps::makeGraphicsPipelineKey(const GraphicsPipelineDesc& pipelineDesc,

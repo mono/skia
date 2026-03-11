@@ -443,7 +443,7 @@ static void draw_stats_box(SkCanvas* canvas, const skottie::Animation::Builder::
     paint.setAntiAlias(true);
     paint.setColor(0xffeeeeee);
 
-    SkFont font(nullptr, kTextSize);
+    SkFont font(ToolUtils::DefaultTypeface(), kTextSize);
 
     canvas->drawRect(kR, paint);
 
@@ -533,6 +533,7 @@ void SkottieSlide::init() {
     auto text_tracker = sk_make_sp<TextTracker>(fTransformTracker);
 
     builder.setLogger(logger)
+           .setFontManager(ToolUtils::TestFontMgr())
            .setPrecompInterceptor(std::move(precomp_interceptor))
            .setResourceProvider(resource_provider)
            .setPropertyObserver(text_tracker);

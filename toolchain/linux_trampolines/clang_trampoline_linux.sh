@@ -121,6 +121,7 @@ supported_files_or_dirs=(
   "src/gpu/ganesh/gl/GrGLGpu.cpp"
   "src/gpu/ganesh/gl/GrGLSemaphore.cpp"
   "src/gpu/ganesh/ops/AtlasTextOp.cpp"
+  "src/gpu/ganesh/text/GrAtlasManager.cpp"
   "src/gpu/ganesh/vk/GrVkContextThread"
   "src/gpu/ganesh/vk/GrVkDirectContext.cpp"
   "src/gpu/vk/VulkanMutableTextureState.cpp"
@@ -147,6 +148,7 @@ excluded_files=(
   "src/core/SkMipmapHQDownSampler.cpp"
   "src/core/SkMaskBlurFilter.cpp"
   "src/core/SkM44.cpp"
+  "src/core/SkPixmap.cpp"
 )
 
 function opted_in_to_IWYU_checks() {

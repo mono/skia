@@ -28,14 +28,7 @@ import("gn/ios.gni")
 config("skia_public") {
   include_dirs = [ "." ]
 
-  defines = [
-    "SK_DEFAULT_TYPEFACE_IS_EMPTY",
-    "SK_DISABLE_LEGACY_DEFAULT_TYPEFACE",
-
-    # TODO(305780908) re-enable after fixing Android and G3
-    #"SK_DISABLE_LEGACY_FONTMGR_FACTORY",
-    #"SK_DISABLE_LEGACY_FONTMGR_REFDEFAULT",
-  ]
+  defines = []
   cflags_objcc = []
   if (is_component_build) {
     defines += [ "SKIA_DLL" ]
@@ -54,6 +47,9 @@ config("skia_public") {
   }
   if (skia_enable_precompile) {
     defines += [ "SK_ENABLE_PRECOMPILE" ]
+  }
+  if (skia_enable_sksl_tracing) {
+    defines += [ "SKSL_ENABLE_TRACING" ]
   }
   if (is_fuchsia) {
     defines += fuchsia_defines
@@ -76,6 +72,9 @@ config("skia_public") {
   }
   if (skia_enable_graphite) {
     defines += [ "SK_GRAPHITE" ]
+  }
+  if (skia_disable_tracing) {
+    defines += [ "SK_DISABLE_TRACING" ]
   }
   if (skia_use_perfetto) {
     defines += [ "SK_USE_PERFETTO" ]
@@ -133,6 +132,9 @@ config("skia_private") {
   if (skia_print_native_shaders) {
     defines += [ "SK_PRINT_NATIVE_SHADERS" ]
   }
+
+  # Temporary staging flag:
+  defines += [ "SK_ENABLE_AVX512_OPTS" ]
 }
 
 # Any code that's linked into Skia-the-library should use this config via += skia_library_configs.
@@ -183,6 +185,16 @@ opts("hsw") {
     cflags = [ "/arch:AVX2" ]
   } else {
     cflags = [ "-march=haswell" ]
+  }
+}
+
+opts("skx") {
+  enabled = is_x86
+  sources = skia_opts.skx_sources
+  if (is_win) {
+    cflags = [ "/arch:AVX512" ]
+  } else {
+    cflags = [ "-march=skylake-avx512" ]
   }
 }
 
@@ -297,15 +309,6 @@ optional("android_utils") {
   ]
 }
 
-group("fontmgr_factory") {
-  public_deps = [ skia_fontmgr_factory ]
-}
-
-optional("fontmgr_empty_factory") {
-  enabled = true
-  sources = [ "src/ports/SkFontMgr_empty_factory.cpp" ]
-}
-
 optional("fontmgr_android") {
   enabled = skia_enable_fontmgr_android
 
@@ -321,11 +324,6 @@ optional("fontmgr_android") {
     "src/ports/SkFontMgr_android_parser.h",
   ]
   sources_for_tests = [ "tests/FontMgrAndroidParserTest.cpp" ]
-}
-optional("fontmgr_android_factory") {
-  enabled = skia_enable_fontmgr_android
-  deps = [ ":fontmgr_android" ]
-  sources = [ "src/ports/SkFontMgr_android_factory.cpp" ]
 }
 
 optional("fontmgr_custom") {
@@ -348,11 +346,6 @@ optional("fontmgr_custom_directory") {
   public = [ "include/ports/SkFontMgr_directory.h" ]
   sources = [ "src/ports/SkFontMgr_custom_directory.cpp" ]
 }
-optional("fontmgr_custom_directory_factory") {
-  enabled = skia_enable_fontmgr_custom_directory
-  deps = [ ":fontmgr_custom_directory" ]
-  sources = [ "src/ports/SkFontMgr_custom_directory_factory.cpp" ]
-}
 
 optional("fontmgr_custom_embedded") {
   enabled = skia_enable_fontmgr_custom_embedded
@@ -362,11 +355,6 @@ optional("fontmgr_custom_embedded") {
     ":typeface_freetype",
   ]
   sources = [ "src/ports/SkFontMgr_custom_embedded.cpp" ]
-}
-optional("fontmgr_custom_embedded_factory") {
-  enabled = skia_enable_fontmgr_custom_embedded
-  deps = [ ":fontmgr_custom_embedded" ]
-  sources = [ "src/ports/SkFontMgr_custom_embedded_factory.cpp" ]
 }
 
 optional("fontmgr_custom_empty") {
@@ -379,11 +367,6 @@ optional("fontmgr_custom_empty") {
   public = [ "include/ports/SkFontMgr_empty.h" ]
   sources = [ "src/ports/SkFontMgr_custom_empty.cpp" ]
 }
-optional("fontmgr_custom_empty_factory") {
-  enabled = skia_enable_fontmgr_custom_empty
-  deps = [ ":fontmgr_custom_empty" ]
-  sources = [ "src/ports/SkFontMgr_custom_empty_factory.cpp" ]
-}
 
 optional("fontmgr_fontconfig") {
   enabled = skia_enable_fontmgr_fontconfig
@@ -395,11 +378,6 @@ optional("fontmgr_fontconfig") {
   deps = [ ":typeface_freetype" ]
   sources = [ "src/ports/SkFontMgr_fontconfig.cpp" ]
   sources_for_tests = [ "tests/FontMgrFontConfigTest.cpp" ]
-}
-optional("fontmgr_fontconfig_factory") {
-  enabled = skia_enable_fontmgr_fontconfig
-  deps = [ ":fontmgr_fontconfig" ]
-  sources = [ "src/ports/SkFontMgr_fontconfig_factory.cpp" ]
 }
 
 optional("fontmgr_FontConfigInterface") {
@@ -421,11 +399,6 @@ optional("fontmgr_FontConfigInterface") {
     "src/ports/SkFontMgr_FontConfigInterface.cpp",
   ]
   sources_for_tests = [ "tests/FCITest.cpp" ]
-}
-optional("fontmgr_FontConfigInterface_factory") {
-  enabled = skia_enable_fontmgr_FontConfigInterface
-  deps = [ ":fontmgr_FontConfigInterface" ]
-  sources = [ "src/ports/SkFontMgr_FontConfigInterface_factory.cpp" ]
 }
 
 optional("fontmgr_fuchsia") {
@@ -481,11 +454,6 @@ optional("fontmgr_mac_ct") {
     ]
   }
 }
-optional("fontmgr_mac_ct_factory") {
-  enabled = skia_use_fonthost_mac
-  deps = [ ":fontmgr_mac_ct" ]
-  sources = [ "src/ports/SkFontMgr_mac_ct_factory.cpp" ]
-}
 
 optional("fontmgr_win") {
   enabled = skia_enable_fontmgr_win
@@ -521,11 +489,6 @@ optional("fontmgr_win") {
       include_dirs = [ "${skia_dwritecore_sdk}/include" ]
     }
   }
-}
-optional("fontmgr_win_factory") {
-  enabled = skia_enable_fontmgr_win
-  deps = [ ":fontmgr_win" ]
-  sources = [ "src/ports/SkFontMgr_win_dw_factory.cpp" ]
 }
 
 optional("fontmgr_win_gdi") {
@@ -594,7 +557,9 @@ if (skia_compile_modules || skia_compile_sksl_tests) {
       "src/sksl/sksl_frag.sksl",
       "src/sksl/sksl_gpu.sksl",
       "src/sksl/sksl_graphite_frag.sksl",
+      "src/sksl/sksl_graphite_frag_es2.sksl",
       "src/sksl/sksl_graphite_vert.sksl",
+      "src/sksl/sksl_graphite_vert_es2.sksl",
       "src/sksl/sksl_public.sksl",
       "src/sksl/sksl_rt_shader.sksl",
       "src/sksl/sksl_shared.sksl",
@@ -924,8 +889,8 @@ optional("gpu_shared") {
         "//third_party/externals/dawn/src/dawn:proc",
       ]
 
-      if (dawn_enable_d3d12 || dawn_enable_desktop_gl || dawn_enable_metal ||
-          dawn_enable_opengles || dawn_enable_vulkan) {
+      if (dawn_enable_d3d12 || dawn_enable_d3d11 || dawn_enable_desktop_gl ||
+          dawn_enable_metal || dawn_enable_opengles || dawn_enable_vulkan) {
         public_deps += [ "//third_party/externals/dawn/src/dawn/native" ]
       }
       if (dawn_enable_d3d12) {
@@ -962,6 +927,10 @@ optional("gpu_shared") {
     public_defines += [ "SK_METAL" ]
     sources += skia_shared_mtl_sources
   }
+
+  if (is_android) {
+    sources += skia_shared_android_sources
+  }
 }
 
 optional("gpu") {
@@ -991,6 +960,11 @@ optional("gpu") {
 
   if (is_android) {
     sources += skia_gpu_android_private
+
+    # this lib is required to link against AHardwareBuffer
+    if (defined(ndk_api) && ndk_api >= 26) {
+      libs += [ "android" ]
+    }
   }
 
   if (skia_use_gl) {
@@ -1046,13 +1020,6 @@ optional("gpu") {
     }
     if (is_android) {
       sources += skia_gpu_vk_android_private
-    }
-  }
-
-  if (is_android && (skia_use_gl || skia_use_vulkan)) {
-    # this lib is required to link against AHardwareBuffer
-    if (defined(ndk_api) && ndk_api >= 26) {
-      libs += [ "android" ]
     }
   }
 
@@ -1199,6 +1166,10 @@ optional("graphite") {
   public = skia_graphite_public
   sources = skia_graphite_sources
 
+  if (is_android) {
+    sources += skia_graphite_android_private
+  }
+
   if (skia_enable_vello_shaders) {
     sources += skia_graphite_vello_sources
   }
@@ -1231,7 +1202,8 @@ optional("graphite") {
 }
 
 optional("pdf") {
-  enabled = skia_use_zlib && skia_enable_pdf
+  enabled = skia_use_zlib && skia_enable_pdf && skia_use_libjpeg_turbo_decode &&
+            skia_use_libjpeg_turbo_encode
   public_defines = [ "SK_SUPPORT_PDF" ]
 
   deps = [ "//third_party/zlib" ]
@@ -1246,21 +1218,10 @@ optional("pdf") {
     defines = [ "SK_PDF_USE_SFNTLY" ]
   }
 
-  if (skia_use_libjpeg_turbo_decode) {
-    deps += [
-      ":jpeg_decode",
-
-      # This is not a public_dep so we need to directly depend on it
-      # to use jpeg headers
-      "//third_party/libjpeg-turbo:libjpeg",
-    ]
-    sources += [ "src/pdf/SkJpegInfo_libjpegturbo.cpp" ]
-  } else {
-    sources += [ "src/pdf/SkJpegInfo_none.cpp" ]
-  }
-  if (skia_use_libjpeg_turbo_encode) {
-    deps += [ ":jpeg_encode" ]
-  }
+  deps += [
+    ":jpeg_decode",
+    ":jpeg_encode",
+  ]
 }
 
 optional("xps") {
@@ -1315,6 +1276,7 @@ optional("typeface_freetype") {
     "src/ports/SkFontHost_FreeType.cpp",
     "src/ports/SkFontHost_FreeType_common.cpp",
     "src/ports/SkFontHost_FreeType_common.h",
+    "src/ports/SkTypeface_FreeType.h",
   ]
 }
 
@@ -1492,7 +1454,6 @@ skia_component("skia") {
   deps = [
     ":android_utils",
     ":avif",
-    ":fontmgr_factory",
     ":heif",
     ":hsw",
     ":jpeg_decode",
@@ -1501,6 +1462,7 @@ skia_component("skia") {
     ":ndk_images",
     ":png_decode",
     ":raw",
+    ":skx",
     ":typeface_fontations",
     ":vello",
     ":webp_decode",
@@ -1546,10 +1508,8 @@ skia_component("skia") {
   libs = []
 
   if (skia_enable_sksl_tracing) {
-    defines += [ "SKSL_ENABLE_TRACING" ]
     sources += skia_sksl_tracing_sources
   }
-
   if (skia_build_for_debugger) {
     defines += [ "SK_BUILD_FOR_DEBUGGER" ]
   }
@@ -2024,7 +1984,11 @@ if (skia_enable_tools) {
           "X11",
         ]
       } else if (is_win) {
-        sources += [ "tools/gpu/gl/win/CreatePlatformGLTestContext_win.cpp" ]
+        sources += [
+          "tools/gpu/gl/win/CreatePlatformGLTestContext_win.cpp",
+          "tools/gpu/gl/win/SkWGL.h",
+          "tools/gpu/gl/win/SkWGL_win.cpp",
+        ]
         libs += [ "Gdi32.lib" ]
         if (target_cpu != "arm64") {
           libs += [ "OpenGL32.lib" ]
@@ -2059,6 +2023,11 @@ if (skia_enable_tools) {
       sources -= [ "tools/gpu/GrTest.cpp" ]
       sources -= [ "tools/gpu/TestOps.cpp" ]
       sources -= [ "tools/gpu/TestOps.h" ]
+    } else {
+      sources += [
+        "tools/gpu/ganesh/GrAtlasTools.cpp",
+        "tools/gpu/ganesh/GrAtlasTools.h",
+      ]
     }
     if (skia_enable_graphite) {
       sources += [ "tools/graphite/ContextFactory.h" ]
@@ -3042,13 +3011,6 @@ if (skia_enable_tools) {
       sources += [ "tools/gpu/vk/VkTestUtils.h" ]
       sources += [ "tools/gpu/vk/VkTestUtils.cpp" ]
       deps = [ ":skia" ]
-    }
-  }
-
-  if (is_android && defined(ndk) && ndk != "") {
-    copy("gdbserver") {
-      sources = [ "$ndk/$ndk_gdbserver" ]
-      outputs = [ "$root_out_dir/gdbserver" ]
     }
   }
 

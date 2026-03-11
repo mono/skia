@@ -230,7 +230,8 @@ sk_sp<SkDevice> SkPDFDevice::createDevice(const CreateInfo& cinfo, const SkPaint
     // to improve quality and file size (https://bug.skia.org/3043)
     if (layerPaint && (layerPaint->getImageFilter() || layerPaint->getColorFilter())) {
         // need to return a raster device, which we will detect in drawDevice()
-        return SkBitmapDevice::Create(cinfo.fInfo, SkSurfaceProps(0, kUnknown_SkPixelGeometry));
+        return SkBitmapDevice::Create(cinfo.fInfo,
+                                      SkSurfaceProps());
     }
     return sk_make_sp<SkPDFDevice>(cinfo.fInfo.dimensions(), fDocument);
 }
@@ -318,12 +319,11 @@ private:
 ////////////////////////////////////////////////////////////////////////////////
 
 SkPDFDevice::SkPDFDevice(SkISize pageSize, SkPDFDocument* doc, const SkMatrix& transform)
-    : SkClipStackDevice(SkImageInfo::MakeUnknown(pageSize.width(), pageSize.height()),
-                        SkSurfaceProps(0, kUnknown_SkPixelGeometry))
-    , fInitialTransform(transform)
-    , fNodeId(0)
-    , fDocument(doc)
-{
+        : SkClipStackDevice(SkImageInfo::MakeUnknown(pageSize.width(), pageSize.height()),
+                            SkSurfaceProps())
+        , fInitialTransform(transform)
+        , fNodeId(0)
+        , fDocument(doc) {
     SkASSERT(!pageSize.isEmpty());
 }
 
@@ -339,7 +339,7 @@ void SkPDFDevice::reset() {
 }
 
 void SkPDFDevice::drawAnnotation(const SkRect& rect, const char key[], SkData* value) {
-    if (!value) {
+    if (!value || !fDocument->hasCurrentPage()) {
         return;
     }
     // Annotations are specified in absolute coordinates, so the page xform maps from device space
@@ -839,9 +839,9 @@ void SkPDFDevice::internalDrawGlyphRun(
         this->drawGlyphRunAsPath(glyphRun, offset, runPaint);
         return;
     }
-    SkTypeface* typeface = SkFontPriv::GetTypefaceOrDefault(glyphRunFont);
+    SkTypeface* typeface = glyphRunFont.getTypeface();
     if (!typeface) {
-        SkDebugf("SkPDF: SkTypeface::MakeDefault() returned nullptr.\n");
+        SkDebugf("SkPDF: glyphRunFont has no typeface.\n");
         return;
     }
 
@@ -1754,7 +1754,8 @@ void SkPDFDevice::drawDevice(SkDevice* device, const SkSamplingOptions& sampling
 }
 
 void SkPDFDevice::drawSpecial(SkSpecialImage* srcImg, const SkMatrix& localToDevice,
-                              const SkSamplingOptions& sampling, const SkPaint& paint) {
+                              const SkSamplingOptions& sampling, const SkPaint& paint,
+                              SkCanvas::SrcRectConstraint) {
     if (this->hasEmptyClip()) {
         return;
     }
@@ -1762,7 +1763,7 @@ void SkPDFDevice::drawSpecial(SkSpecialImage* srcImg, const SkMatrix& localToDev
     SkASSERT(!paint.getMaskFilter() && !paint.getImageFilter());
 
     SkBitmap resultBM;
-    if (srcImg->getROPixels(&resultBM)) {
+    if (SkSpecialImages::AsBitmap(srcImg, &resultBM)) {
         auto r = SkRect::MakeWH(resultBM.width(), resultBM.height());
         this->internalDrawImageRect(SkKeyedImage(resultBM), nullptr, r, sampling, paint,
                                     localToDevice);

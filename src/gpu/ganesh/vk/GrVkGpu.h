@@ -156,10 +156,6 @@ public:
 
     void submit(GrOpsRenderPass*) override;
 
-    [[nodiscard]] GrFence insertFence() override;
-    bool waitFence(GrFence) override;
-    void deleteFence(GrFence) override;
-
     [[nodiscard]] std::unique_ptr<GrSemaphore> makeSemaphore(bool isOwned) override;
     std::unique_ptr<GrSemaphore> wrapBackendSemaphore(const GrBackendSemaphore&,
                                                       GrSemaphoreWrapType,
@@ -244,7 +240,8 @@ private:
     bool setBackendSurfaceState(GrVkImageInfo info,
                                 sk_sp<skgpu::MutableTextureState> currentState,
                                 SkISize dimensions,
-                                const skgpu::VulkanMutableTextureState& newState,
+                                VkImageLayout newLayout,
+                                uint32_t newQueueFamilyIndex,
                                 skgpu::MutableTextureState* previousState,
                                 sk_sp<skgpu::RefCntedCallback> finishedCallback);
 

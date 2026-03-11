@@ -6,15 +6,17 @@
  */
 #include "include/gpu/MutableTextureState.h"
 
-namespace skgpu {
-#if defined(SK_VULKAN)
-MutableTextureState::MutableTextureState(VkImageLayout layout, uint32_t queueFamilyIndex)
-            : fVkState(layout, queueFamilyIndex)
-            , fBackend(BackendApi::kVulkan)
-            , fIsValid(true) {}
-#endif
+#include "include/gpu/GpuTypes.h"
+#include "src/gpu/MutableTextureStatePriv.h"
 
-MutableTextureState::MutableTextureState(const MutableTextureState& that) {
+namespace skgpu {
+
+MutableTextureState::MutableTextureState():
+    fBackend(BackendApi::kUnsupported),
+    fIsValid(false) {}
+MutableTextureState::~MutableTextureState() = default;
+
+MutableTextureState::MutableTextureState(const MutableTextureState& that): fIsValid(false) {
     this->set(that);
 }
 
@@ -32,14 +34,16 @@ void MutableTextureState::set(const MutableTextureState& that) {
     if (!fIsValid) {
         return;
     }
+    fStateData.reset();
     switch (fBackend) {
         case BackendApi::kVulkan:
-#ifdef SK_VULKAN
-            fVkState = that.fVkState;
-#endif
+            that.fStateData->copyTo(fStateData);
             break;
         default:
             SK_ABORT("Unknown BackendApi");
     }
 }
+
+MutableTextureStateData::~MutableTextureStateData() = default;
+
 }  // namespace skgpu

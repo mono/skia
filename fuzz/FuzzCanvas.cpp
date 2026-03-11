@@ -867,7 +867,7 @@ constexpr int kMaxGlyphCount = 30;
 static SkTDArray<uint8_t> make_fuzz_text(Fuzz* fuzz, const SkFont& font, SkTextEncoding encoding) {
     SkTDArray<uint8_t> array;
     if (SkTextEncoding::kGlyphID == encoding) {
-        int glyphRange = SkFontPriv::GetTypefaceOrDefault(font)->countGlyphs();
+        int glyphRange = font.getTypeface()->countGlyphs();
         if (glyphRange == 0) {
             // Some fuzzing environments have no fonts, so empty array is the best
             // we can do.
@@ -952,7 +952,7 @@ static sk_sp<SkTextBlob> make_fuzz_textblob(Fuzz* fuzz) {
     int8_t runCount;
     fuzz->nextRange(&runCount, (int8_t)1, (int8_t)8);
     while (runCount-- > 0) {
-        SkFont font;
+        SkFont font = ToolUtils::DefaultFont();
         SkTextEncoding encoding = fuzz_paint_text_encoding(fuzz);
         font.setEdging(make_fuzz_t<bool>(fuzz) ? SkFont::Edging::kAlias : SkFont::Edging::kAntiAlias);
         SkTDArray<uint8_t> text = make_fuzz_text(fuzz, font, encoding);
@@ -1004,7 +1004,7 @@ static void fuzz_canvas(Fuzz* fuzz, SkCanvas* canvas, int depth = 9) {
             return;
         }
         SkPaint paint;
-        SkFont font;
+        SkFont font = ToolUtils::DefaultFont();
         unsigned drawCommand;
         fuzz->nextRange(&drawCommand, 0, 62);
         switch (drawCommand) {

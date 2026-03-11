@@ -45,9 +45,8 @@ GrGpu::~GrGpu() {
     this->callSubmittedProcs(false);
 }
 
-void GrGpu::initCapsAndCompiler(sk_sp<const GrCaps> caps) {
+void GrGpu::initCaps(sk_sp<const GrCaps> caps) {
     fCaps = std::move(caps);
-    fCompiler = std::make_unique<SkSL::Compiler>(fCaps->shaderCaps());
 }
 
 void GrGpu::disconnect(DisconnectType type) {}

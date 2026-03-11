@@ -17,6 +17,7 @@
 #include "include/gpu/graphite/Surface.h"
 #include "include/gpu/graphite/TextureInfo.h"
 #include "src/base/SkRectMemcpy.h"
+#include "src/core/SkAutoPixmapStorage.h"
 #include "src/core/SkConvertPixels.h"
 #include "src/core/SkTraceEvent.h"
 #include "src/core/SkYUVMath.h"
@@ -49,6 +50,7 @@
 #include "src/gpu/graphite/TextureProxyView.h"
 #include "src/gpu/graphite/TextureUtils.h"
 #include "src/gpu/graphite/UploadTask.h"
+#include "src/image/SkSurface_Base.h"
 
 #if defined(GRAPHITE_TEST_UTILS)
 #include "include/private/gpu/graphite/ContextOptionsPriv.h"
@@ -84,7 +86,6 @@ Context::Context(sk_sp<SharedContext> sharedContext,
                                                              SK_InvalidGenID,
                                                              options.fGpuBudgetInBytes);
     fMappedBufferManager = std::make_unique<ClientMappedBufferManager>(this->contextID());
-    fPlotUploadTracker = std::make_unique<PlotUploadTracker>();
 #if defined(GRAPHITE_TEST_UTILS)
     if (options.fOptionsPriv) {
         fStoreContextRefInRecorder = options.fOptionsPriv->fStoreContextRefInRecorder;
@@ -279,8 +280,47 @@ void Context::asyncReadPixels(const TextureProxy* proxy,
 
     const Caps* caps = fSharedContext->caps();
     if (!caps->supportsReadPixels(proxy->textureInfo())) {
-        // TODO: try to copy to a readable texture instead
-        callback(callbackContext, nullptr);
+        if (!caps->isTexturable(proxy->textureInfo())) {
+            callback(callbackContext, nullptr);
+            return;
+        }
+
+        auto recorder = this->makeRecorder();
+
+        auto surface = SkSurfaces::RenderTarget(recorder.get(),
+                                                srcImageInfo.makeDimensions(srcRect.size()));
+        if (!surface) {
+            surface = SkSurfaces::RenderTarget(recorder.get(),
+                                               SkImageInfo::Make(srcRect.size(), dstColorInfo));
+            if (!surface) {
+                callback(callbackContext, nullptr);
+                return;
+            }
+        }
+
+        auto swizzle = caps->getReadSwizzle(srcImageInfo.colorType(), proxy->textureInfo());
+        TextureProxyView view(sk_ref_sp(proxy), swizzle);
+        auto srcImage = sk_make_sp<Image>(kNeedNewImageUniqueID, view, srcImageInfo.colorInfo());
+
+        SkPaint paint;
+        paint.setBlendMode(SkBlendMode::kSrc);
+        surface->getCanvas()->drawImage(srcImage,
+                                        -srcRect.x(), -srcRect.y(),
+                                        SkFilterMode::kNearest,
+                                        &paint);
+
+        auto recording = recorder->snap();
+        InsertRecordingInfo recordingInfo;
+        recordingInfo.fRecording = recording.get();
+        this->insertRecording(recordingInfo);
+
+        this->asyncReadPixels(static_cast<Surface*>(surface.get())->readSurfaceView().proxy(),
+                              surface->imageInfo(),
+                              dstColorInfo,
+                              SkIRect::MakeSize(srcRect.size()),
+                              callback,
+                              callbackContext);
+
         return;
     }
 
@@ -654,7 +694,9 @@ Context::PixelTransferResult Context::transferPixels(const TextureProxy* proxy,
     SkASSERT(srcImageInfo.bounds().contains(srcRect));
 
     const Caps* caps = fSharedContext->caps();
-    SkColorType supportedColorType =
+    SkColorType supportedColorType;
+    bool isRGB888Format;
+    std::tie(supportedColorType, isRGB888Format) =
             caps->supportedReadPixelsColorType(srcImageInfo.colorType(),
                                                proxy->textureInfo(),
                                                dstColorInfo.colorType());
@@ -671,8 +713,8 @@ Context::PixelTransferResult Context::transferPixels(const TextureProxy* proxy,
         return {};
     }
 
-    size_t rowBytes = caps->getAlignedTextureDataRowBytes(
-                              SkColorTypeBytesPerPixel(supportedColorType) * srcRect.width());
+    int bpp = isRGB888Format ? 3 : SkColorTypeBytesPerPixel(supportedColorType);
+    size_t rowBytes = caps->getAlignedTextureDataRowBytes(bpp * srcRect.width());
     size_t size = SkAlignTo(rowBytes * srcRect.height(), caps->requiredTransferBufferAlignment());
     sk_sp<Buffer> buffer = fResourceProvider->findOrCreateBuffer(
             size, BufferType::kXferGpuToCpu, AccessPattern::kHostVisible);
@@ -698,15 +740,33 @@ Context::PixelTransferResult Context::transferPixels(const TextureProxy* proxy,
     PixelTransferResult result;
     result.fTransferBuffer = std::move(buffer);
     result.fSize = srcRect.size();
-    if (srcImageInfo.colorInfo() != dstColorInfo) {
+    if (srcImageInfo.colorInfo() != dstColorInfo || isRGB888Format) {
         SkISize dims = srcRect.size();
         SkImageInfo srcInfo = SkImageInfo::Make(dims, srcImageInfo.colorInfo());
         SkImageInfo dstInfo = SkImageInfo::Make(dims, dstColorInfo);
         result.fRowBytes = dstInfo.minRowBytes();
-        result.fPixelConverter = [dstInfo, srcInfo, rowBytes](
+        result.fPixelConverter = [dstInfo, srcInfo, rowBytes, isRGB888Format](
                 void* dst, const void* src) {
+            SkAutoPixmapStorage temp;
+            size_t srcRowBytes = rowBytes;
+            if (isRGB888Format) {
+                temp.alloc(srcInfo);
+                size_t tRowBytes = temp.rowBytes();
+                auto* sRow = reinterpret_cast<const char*>(src);
+                auto* tRow = reinterpret_cast<char*>(temp.writable_addr());
+                for (int y = 0; y < srcInfo.height(); ++y, sRow += srcRowBytes, tRow += tRowBytes) {
+                    for (int x = 0; x < srcInfo.width(); ++x) {
+                        auto s = sRow + x*3;
+                        auto t = tRow + x*sizeof(uint32_t);
+                        memcpy(t, s, 3);
+                        t[3] = static_cast<char>(0xFF);
+                    }
+                }
+                src = temp.addr();
+                srcRowBytes = tRowBytes;
+            }
             SkAssertResult(SkConvertPixels(dstInfo, dst, dstInfo.minRowBytes(),
-                                           srcInfo, src, rowBytes));
+                                           srcInfo, src, srcRowBytes));
         };
     } else {
         result.fRowBytes = rowBytes;

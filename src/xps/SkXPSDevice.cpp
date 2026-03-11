@@ -120,9 +120,9 @@ HRESULT SkXPSDevice::createId(wchar_t* buffer, size_t bufferSize, wchar_t sep) {
 }
 
 SkXPSDevice::SkXPSDevice(SkISize s)
-    : SkClipStackDevice(SkImageInfo::MakeUnknown(s.width(), s.height()),
-                        SkSurfaceProps(0, kUnknown_SkPixelGeometry))
-    , fCurrentPage(0), fTopTypefaces(&fTypefaces) {}
+        : SkClipStackDevice(SkImageInfo::MakeUnknown(s.width(), s.height()), SkSurfaceProps())
+        , fCurrentPage(0)
+        , fTopTypefaces(&fTypefaces) {}
 
 SkXPSDevice::~SkXPSDevice() {}
 
@@ -1725,7 +1725,7 @@ HRESULT SkXPSDevice::clipToPath(IXpsOMVisual* xpsVisual,
 
 HRESULT SkXPSDevice::CreateTypefaceUse(const SkFont& font,
                                        TypefaceUse** typefaceUse) {
-    SkTypeface* typeface = SkFontPriv::GetTypefaceOrDefault(font);
+    SkTypeface* typeface = font.getTypeface();
 
     //Check cache.
     const SkTypefaceID typefaceID = typeface->uniqueID();

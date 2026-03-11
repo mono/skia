@@ -21,6 +21,7 @@
 #include "src/gpu/graphite/dawn/DawnGraphiteUtilsPriv.h"
 #include "src/gpu/graphite/dawn/DawnResourceProvider.h"
 #include "src/gpu/graphite/dawn/DawnSharedContext.h"
+#include "src/gpu/graphite/dawn/DawnUtilsPriv.h"
 #include "src/sksl/SkSLProgramSettings.h"
 #include "src/sksl/SkSLUtil.h"
 #include "src/sksl/ir/SkSLProgram.h"
@@ -247,7 +248,6 @@ static wgpu::BlendOperation blend_equation_to_dawn_blend_op(skgpu::BlendEquation
 // static
 sk_sp<DawnGraphicsPipeline> DawnGraphicsPipeline::Make(const DawnSharedContext* sharedContext,
                                                        DawnResourceProvider* resourceProvider,
-                                                       SkSL::Compiler* compiler,
                                                        const RuntimeEffectDictionary* runtimeDict,
                                                        const GraphicsPipelineDesc& pipelineDesc,
                                                        const RenderPassDesc& renderPassDesc) {
@@ -283,13 +283,13 @@ sk_sp<DawnGraphicsPipeline> DawnGraphicsPipeline::Make(const DawnSharedContext* 
 
     bool hasFragmentSkSL = !fsSkSL.empty();
     if (hasFragmentSkSL) {
-        if (!SkSLToWGSL(compiler,
-                        fsSkSL,
-                        SkSL::ProgramKind::kGraphiteFragment,
-                        settings,
-                        &fsCode,
-                        &fsInterface,
-                        errorHandler)) {
+        if (!skgpu::SkSLToWGSL(caps.shaderCaps(),
+                               fsSkSL,
+                               SkSL::ProgramKind::kGraphiteFragment,
+                               settings,
+                               &fsCode,
+                               &fsInterface,
+                               errorHandler)) {
             return {};
         }
         if (!DawnCompileWGSLShaderModule(sharedContext, fsCode, &fsModule, errorHandler)) {
@@ -302,13 +302,13 @@ sk_sp<DawnGraphicsPipeline> DawnGraphicsPipeline::Make(const DawnSharedContext* 
                                               useStorageBuffers,
                                               localCoordsNeeded);
     const std::string& vsSkSL = vsSkSLInfo.fSkSL;
-    if (!SkSLToWGSL(compiler,
-                    vsSkSL,
-                    SkSL::ProgramKind::kGraphiteVertex,
-                    settings,
-                    &vsCode,
-                    &vsInterface,
-                    errorHandler)) {
+    if (!skgpu::SkSLToWGSL(caps.shaderCaps(),
+                           vsSkSL,
+                           SkSL::ProgramKind::kGraphiteVertex,
+                           settings,
+                           &vsCode,
+                           &vsInterface,
+                           errorHandler)) {
         return {};
     }
     if (!DawnCompileWGSLShaderModule(sharedContext, vsCode, &vsModule, errorHandler)) {

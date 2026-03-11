@@ -735,7 +735,7 @@ func (b *jobBuilder) deriveCompileTaskName() string {
 				"DDLTotal", "DDLRecord", "9x9", "BonusConfigs", "ColorSpaces", "GL",
 				"SkottieTracing", "SkottieWASM", "GpuTess", "DMSAAStats", "Mskp", "Docker", "PDF",
 				"Puppeteer", "SkottieFrames", "RenderSKP", "CanvasPerf", "AllPathsVolatile",
-				"WebGL2", "i5", "OldestSupportedSkpVersion"}
+				"WebGL2", "i5", "OldestSupportedSkpVersion", "FakeWGPU", "Protected"}
 			keep := make([]string, 0, len(ec))
 			for _, part := range ec {
 				if !In(part, ignore) {
@@ -1638,7 +1638,7 @@ func (b *jobBuilder) codesize() {
 		if strings.Contains(compileTaskName, "Android") {
 			b.asset("android_ndk_linux")
 			cmd = append(cmd, "--strip_binary",
-				"android_ndk_linux/toolchains/arm-linux-androideabi-4.9/prebuilt/linux-x86_64/bin/arm-linux-androideabi-strip")
+				"android_ndk_linux/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip")
 		} else {
 			b.asset("binutils_linux_x64")
 			cmd = append(cmd, "--strip_binary", "binutils_linux_x64/strip")
@@ -2197,6 +2197,8 @@ var shorthandToLabel = map[string]labelAndSavedOutputDir{
 	// Note: these paths are relative to the WORKSPACE in //example/external_client
 	"path_combiner":     {"//:path_combiner", ""},
 	"png_decoder":       {"//:png_decoder", ""},
+	"shape_text":        {"//:shape_text", ""},
+	"use_ganesh_gl":     {"//:use_ganesh_gl", ""},
 	"write_text_to_png": {"//:write_text_to_png", ""},
 
 	// Currently there is no way to tell Bazel "only test go_test targets", so we must group them

@@ -347,7 +347,11 @@ public:
             // Snap a subset of the device matching the expected dst bounds.
             SkIRect subset = SkIRect::MakeWH(fDstBounds.width(), fDstBounds.height());
             fCanvas->restoreToCount(0);
-            return {this->device()->snapSpecial(subset), fDstBounds.topLeft()};
+            this->device()->setImmutable();
+            auto snapped = std::make_pair(this->device()->snapSpecial(subset),
+                                          fDstBounds.topLeft());
+            fCanvas.reset(); // Only use the AutoSurface once
+            return snapped;
         } else {
             return {nullptr, {}};
         }
@@ -414,12 +418,9 @@ SkIRect RoundOut(SkRect r) { return r.makeInset(kRoundEpsilon, kRoundEpsilon).ro
 
 SkIRect RoundIn(SkRect r) { return r.makeOutset(kRoundEpsilon, kRoundEpsilon).roundIn(); }
 
-bool Mapping::decomposeCTM(const SkMatrix& ctm, const SkImageFilter* filter,
+bool Mapping::decomposeCTM(const SkMatrix& ctm, MatrixCapability capability,
                            const skif::ParameterSpace<SkPoint>& representativePt) {
     SkMatrix remainder, layer;
-    using MatrixCapability = SkImageFilter_Base::MatrixCapability;
-    MatrixCapability capability =
-            filter ? as_IFB(filter)->getCTMCapability() : MatrixCapability::kComplex;
     if (capability == MatrixCapability::kTranslate) {
         // Apply the entire CTM post-filtering
         remainder = ctm;
@@ -448,6 +449,15 @@ bool Mapping::decomposeCTM(const SkMatrix& ctm, const SkImageFilter* filter,
         fDevToLayerMatrix = invRemainder;
         return true;
     }
+}
+
+bool Mapping::decomposeCTM(const SkMatrix& ctm,
+                           const SkImageFilter* filter,
+                           const skif::ParameterSpace<SkPoint>& representativePt) {
+    return this->decomposeCTM(
+            ctm,
+            filter ? as_IFB(filter)->getCTMCapability() : MatrixCapability::kComplex,
+            representativePt);
 }
 
 bool Mapping::adjustLayerSpace(const SkMatrix& layer) {
@@ -1173,11 +1183,15 @@ sk_sp<SkShader> FilterResult::asShader(const Context& ctx,
     const bool currentXformIsInteger = is_nearly_integer_translation(fTransform);
     const bool nextXformIsInteger = !(flags & ShaderFlags::kNonTrivialSampling);
 
+    SkBlendMode colorFilterMode;
     SkSamplingOptions sampling = xtraSampling;
     const bool needsResolve =
-            // Deferred calculations on the input would be repeated with each sample
+            // Deferred calculations on the input would be repeated with each sample, but we allow
+            // simple color filters to skip resolving since their repeated math should be cheap.
             (flags & ShaderFlags::kSampledRepeatedly &&
-             (fColorFilter || !SkColorSpace::Equals(fImage->getColorSpace(), ctx.colorSpace()))) ||
+                    ((fColorFilter && (!fColorFilter->asAColorMode(nullptr, &colorFilterMode) ||
+                                       colorFilterMode > SkBlendMode::kLastCoeffMode)) ||
+                     !SkColorSpace::Equals(fImage->getColorSpace(), ctx.colorSpace()))) ||
             // The deferred sampling options can't be merged with the one requested
             !compatible_sampling(fSamplingOptions, currentXformIsInteger,
                                  &sampling, nextXformIsInteger) ||
