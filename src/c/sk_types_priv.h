@@ -182,8 +182,10 @@ DEF_STRUCT_MAP(GrGLTextureInfo, gr_gl_textureinfo_t, GrGLTextureInfo)
 DEF_STRUCT_MAP(GrGLFramebufferInfo, gr_gl_framebufferinfo_t, GrGLFramebufferInfo)
 DEF_STRUCT_MAP(GrGLInterface, gr_glinterface_t, GrGLInterface)
 
-DEF_STRUCT_MAP(GrVkYcbcrConversionInfo, gr_vk_ycbcrconversioninfo_t, GrVkYcbcrConversionInfo)
+#if defined(SK_VULKAN)
+DEF_MAP(GrVkYcbcrConversionInfo, gr_vk_ycbcrconversioninfo_t, GrVkYcbcrConversionInfo)
 DEF_STRUCT_MAP(GrVkImageInfo, gr_vk_imageinfo_t, GrVkImageInfo)
+#endif
 
 DEF_STRUCT_MAP(GrD3DBackendContext, gr_d3d_backendcontext_t, GrD3DBackendContext)
 DEF_STRUCT_MAP(GrD3DTextureResourceInfo, gr_d3d_textureresourceinfo_t, GrD3DTextureResourceInfo)
