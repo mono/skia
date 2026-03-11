@@ -119,16 +119,14 @@ sk_sp<GraphicsPipeline> MtlResourceProvider::createGraphicsPipeline(
 
     const RenderStep* step =
             fSharedContext->rendererProvider()->lookup(pipelineDesc.renderStepID());
-
-    bool useShadingSsboIndex =
-            fSharedContext->caps()->storageBufferPreferred() && step->performsShading();
+    const bool useStorageBuffers = fSharedContext->caps()->storageBufferPreferred();
 
     FragSkSLInfo fsSkSLInfo = BuildFragmentSkSL(fSharedContext->caps(),
                                                 fSharedContext->shaderCodeDictionary(),
                                                 runtimeDict,
                                                 step,
                                                 pipelineDesc.paintParamsID(),
-                                                useShadingSsboIndex,
+                                                useStorageBuffers,
                                                 renderPassDesc.fWriteSwizzle);
     std::string& fsSkSL = fsSkSLInfo.fSkSL;
     const BlendInfo& blendInfo = fsSkSLInfo.fBlendInfo;
@@ -143,10 +141,11 @@ sk_sp<GraphicsPipeline> MtlResourceProvider::createGraphicsPipeline(
         return nullptr;
     }
 
-    std::string vsSkSL = BuildVertexSkSL(fSharedContext->caps()->resourceBindingRequirements(),
-                                         step,
-                                         useShadingSsboIndex,
-                                         localCoordsNeeded);
+    VertSkSLInfo vsSkSLInfo = BuildVertexSkSL(fSharedContext->caps()->resourceBindingRequirements(),
+                                              step,
+                                              useStorageBuffers,
+                                              localCoordsNeeded);
+    const std::string& vsSkSL = vsSkSLInfo.fSkSL;
     if (!SkSLToMSL(&skslCompiler,
                    vsSkSL,
                    SkSL::ProgramKind::kGraphiteVertex,

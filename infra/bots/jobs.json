@@ -30,9 +30,9 @@
     "name": "BazelBuild-all_tests-release-linux_x64",
     "cq_config": {}
   },
-  {"name": "BazelBuild-cpu_8888_benchmark_android_test-pixel_5-linux_x64"},
-  {"name": "BazelBuild-hello_bazel_world_android_test-pixel_5-linux_x64"},
-  {"name": "BazelBuild-android_math_test-pixel_5-linux_x64"},
+  {"name": "BazelBuild-cpu_8888_benchmark_android_test-for_android_arm64_release-linux_x64"},
+  {"name": "BazelBuild-hello_bazel_world_android_test-for_android_arm64_release-linux_x64"},
+  {"name": "BazelBuild-android_math_test-for_android_arm64_release-linux_x64"},
   {
     "name": "BazelTest-canvaskit_gold-modules_canvaskit_js_tests-ck_full_cpu_release_chrome-linux_x64",
     "cq_config": {
@@ -50,13 +50,13 @@
     }
   },
   {
-    "name": "BazelTest-gm-cpu_gms-cpu_only_debug_rbe-linux_x64",
+    "name": "BazelTest-gm-cpu_gms-cpu_only_debug_rbe-linux_x64-NUC9i7QN_Debian11",
     "cq_config": {
       "experimental": true
     }
   },
   {
-    "name": "BazelTest-benchmark-cpu_8888_benchmark_test-linux_rbe-linux_x64",
+    "name": "BazelTest-benchmark-cpu_8888_benchmark_test-linux_rbe-linux_x64-NUC9i7QN_Debian11",
     "cq_config": {
       "experimental": true
     }
@@ -65,6 +65,7 @@
   {"name": "BazelTest-cpu_tests-all_go_tests-linux_rbe-linux_x64"},
   {"name": "BazelTest-external_client-path_combiner-default-linux_x64"},
   {"name": "BazelTest-external_client-png_decoder-default-linux_x64"},
+  {"name": "BazelTest-external_client-write_text_to_png-default-linux_x64"},
   {
     "name": "BazelTest-cpu_tests-all_tests-cpu_only_debug_rbe-linux_x64",
     "cq_config": {
@@ -72,19 +73,19 @@
     }
   },
   {
-    "name": "BazelTest-precompiled_benchmark-cpu_8888_benchmark_android_test-pixel_5-linux_arm64",
+    "name": "BazelTest-precompiled_benchmark-cpu_8888_benchmark_android_test-for_android_arm64_release-on_rpi-Pixel5_Android12",
     "cq_config": {
       "experimental": true
     }
   },
   {
-    "name": "BazelTest-precompiled_gm-hello_bazel_world_android_test-pixel_5-linux_arm64",
+    "name": "BazelTest-precompiled_gm-hello_bazel_world_android_test-for_android_arm64_release-on_rpi-Pixel5_Android12",
     "cq_config": {
       "experimental": true
     }
   },
   {
-    "name": "BazelTest-precompiled_test-android_math_test-pixel_5-linux_arm64",
+    "name": "BazelTest-precompiled_test-android_math_test-for_android_arm64_release-on_rpi-Pixel5_Android12",
     "cq_config": {
       "experimental": true
     }
@@ -134,13 +135,19 @@
       ]
     }
   },
-  {"name": "Build-Debian10-Clang-arm64-Debug-Android_Graphite_Vulkan"},
+  {
+    "name": "Build-Debian10-Clang-arm64-Debug-Android_Graphite_Vulkan",
+    "cq_config": {}
+  },
   {"name": "Build-Debian10-Clang-arm64-Debug-Android_HWASAN"},
   {"name": "Build-Debian10-Clang-arm64-Debug-Android_Vulkan"},
   {"name": "Build-Debian10-Clang-arm64-Release-Android"},
   {"name": "Build-Debian10-Clang-arm64-Release-Android_API30"},
   {"name": "Build-Debian10-Clang-arm64-Release-Android_Graphite_Dawn"},
-  {"name": "Build-Debian10-Clang-arm64-Release-Android_Graphite_Vulkan"},
+  {
+    "name": "Build-Debian10-Clang-arm64-Release-Android_Graphite_Vulkan",
+    "cq_config": {}
+  },
   {"name": "Build-Debian10-Clang-arm64-Release-Android_Vulkan"},
   {"name": "Build-Debian10-Clang-arm64-Release-Android_Wuffs"},
   {"name": "Build-Debian10-Clang-x64-Debug-Android"},
@@ -148,7 +155,10 @@
   {"name": "Build-Debian10-Clang-x86-Debug"},
   {"name": "Build-Debian10-Clang-x86-Debug-Android"},
   {"name": "Build-Debian10-Clang-x86-Debug-Android_Graphite_Dawn"},
-  {"name": "Build-Debian10-Clang-x86-Debug-Android_Graphite_Vulkan"},
+  {
+    "name": "Build-Debian10-Clang-x86-Debug-Android_Graphite_Vulkan",
+    "cq_config": {}
+  },
   {"name": "Build-Debian10-Clang-x86-Debug-Android_Vulkan"},
   {"name": "Build-Debian10-Clang-x86-Release-Android"},
   {"name": "Build-Debian10-Clang-x86-Release-Android_Vulkan"},
@@ -221,6 +231,7 @@
   {"name": "Build-Debian10-EMCC-asmjs-Debug-PathKit"},
   {"name": "Build-Debian10-EMCC-asmjs-Release-PathKit"},
   {"name": "Build-Debian10-EMCC-wasm-Debug-CanvasKit"},
+  {"name": "Build-Debian10-EMCC-wasm-Debug-CanvasKit_WebGPU"},
   {"name": "Build-Debian10-EMCC-wasm-Debug-CanvasKit_CPU"},
   {"name": "Build-Debian10-EMCC-wasm-Debug-PathKit"},
   {
@@ -487,7 +498,10 @@
     "name": "Housekeeper-PerCommit-CheckGeneratedFiles",
     "cq_config": {}
   },
-  {"name": "Housekeeper-PerCommit-CreateDockerImage_Skia_Release"},
+  {
+    "name": "Housekeeper-PerCommit-GoLinters",
+    "cq_config": {}
+  },
   {
     "name": "Housekeeper-PerCommit-InfraTests_Linux",
     "cq_config": {}
@@ -496,7 +510,6 @@
   {"name": "Housekeeper-PerCommit-IsolateSKP"},
   {"name": "Housekeeper-PerCommit-IsolateSVG"},
   {"name": "Housekeeper-PerCommit-IsolateSkImage"},
-  {"name": "Housekeeper-PerCommit-PushAppsFromSkiaDockerImage"},
   {
     "name": "Housekeeper-PerCommit-RunGnToBp",
     "cq_config": {}
@@ -516,6 +529,10 @@
   {"name": "Perf-Android-Clang-GalaxyS20-GPU-MaliG77-arm64-Release-All-Android_AllPathsVolatile_Skpbench"},
   {"name": "Perf-Android-Clang-GalaxyS20-GPU-MaliG77-arm64-Release-All-Android_Vulkan_AllPathsVolatile_Skpbench"},
   {"name": "Perf-Android-Clang-JioNext-CPU-SnapdragonQM215-arm-Release-All-Android"},
+  {"name": "Perf-Android-Clang-Mokey-CPU-Cortex-arm64-Release-All-Android"},
+  {"name": "Perf-Android-Clang-Mokey-GPU-MaliG52-arm64-Release-All-Android"},
+  {"name": "Perf-Android-Clang-MokeyGo32-CPU-Cortex-arm-Release-All-Android"},
+  {"name": "Perf-Android-Clang-MokeyGo32-GPU-MaliG52-arm-Release-All-Android"},
   {"name": "Perf-Android-Clang-Nexus7-GPU-Tegra3-arm-Release-All-Android"},
   {"name": "Perf-Android-Clang-P30-GPU-MaliG76-arm64-Release-All-Android"},
   {"name": "Perf-Android-Clang-P30-GPU-MaliG76-arm64-Release-All-Android_Vulkan"},
@@ -539,7 +556,9 @@
   {"name": "Perf-Android12-Clang-Pixel5-GPU-Adreno620-arm64-Release-All-Android"},
   {"name": "Perf-Android12-Clang-Pixel5-GPU-Adreno620-arm64-Release-All-Android_Vulkan"},
   {"name": "Perf-Android-Clang-Pixel6-GPU-MaliG78-arm64-Release-All-Android_Vulkan"},
+  {"name": "Perf-Android-Clang-Pixel6-GPU-MaliG78-arm64-Release-All-Android_Graphite_Vulkan"},
   {"name": "Perf-Android-Clang-Pixel7-GPU-MaliG710-arm64-Release-All-Android_Vulkan"},
+  {"name": "Perf-Android-Clang-Pixel7-GPU-MaliG710-arm64-Release-All-Android_Graphite_Vulkan"},
   {"name": "Perf-Android-Clang-Wembley-GPU-PowerVRGE8320-arm-Release-All-Android"},
   {"name": "Perf-ChromeOS-Clang-Kevin-GPU-MaliT860-arm-Release-All"},
   {"name": "Perf-ChromeOS-Clang-Sparky360-GPU-IntelUHDGraphics605-x86_64-Release-All"},
@@ -573,7 +592,18 @@
   {"name": "Perf-Mac10.13-Clang-MacBookPro11.5-GPU-RadeonHD8870M-x86_64-Release-All"},
   {"name": "Perf-Mac10.13-Clang-MacMini7.1-GPU-IntelIris5100-x86_64-Release-All"},
   {"name": "Perf-Mac10.15.1-Clang-MacBookAir7.2-GPU-IntelHD6000-x86_64-Release-All"},
+  {"name": "Perf-Mac10.15.1-Clang-MacBookAir7.2-GPU-IntelHD6000-x86_64-Release-All-Graphite_Dawn"},
+  {"name": "Perf-Mac10.15.1-Clang-MacBookAir7.2-GPU-IntelHD6000-x86_64-Release-All-Graphite_Metal"},
   {"name": "Perf-Mac10.15.1-Clang-MacBookAir7.2-GPU-IntelHD6000-x86_64-Release-All-Metal"},
+  {
+    "name": "Perf-Mac10.15.7-Clang-MacBookPro11.5-GPU-RadeonHD8870M-x86_64-Release-All-Graphite_Dawn",
+    "cq_config": {
+      "location_regexes": [
+        "(tests|src/gpu)/graphite/.*",
+        "src/sksl/generated/.*"
+      ]
+    }
+  },
   {
     "name": "Perf-Mac10.15.7-Clang-MacBookPro11.5-GPU-RadeonHD8870M-x86_64-Release-All-Graphite_Metal",
     "cq_config": {
@@ -586,7 +616,7 @@
   {"name": "Perf-Mac10.15.7-Clang-MacBookPro11.5-GPU-RadeonHD8870M-x86_64-Release-All-Metal"},
   {"name": "Perf-Mac11-Clang-MacMini9.1-GPU-AppleM1-arm64-Release-All"},
   {
-    "name": "Perf-Mac11-Clang-MacMini9.1-GPU-AppleM1-arm64-Release-All-Graphite_Metal",
+    "name": "Perf-Mac11-Clang-MacMini9.1-GPU-AppleM1-arm64-Release-All-Graphite_Dawn",
     "cq_config": {
       "location_regexes": [
         "(tests|src/gpu)/graphite/.*",
@@ -594,6 +624,7 @@
       ]
     }
   },
+  {"name": "Perf-Mac11-Clang-MacMini9.1-GPU-AppleM1-arm64-Release-All-Graphite_Metal"},
   {"name": "Perf-Mac11-Clang-MacMini9.1-GPU-AppleM1-arm64-Release-All-Skpbench"},
   {"name": "Perf-Mac11-Clang-MacMini9.1-GPU-AppleM1-arm64-Release-All-AllPathsVolatile_Skpbench"},
   {"name": "Perf-Mac11-Clang-MacMini9.1-GPU-AppleM1-arm64-Release-All-Metal_AllPathsVolatile_Skpbench"},
@@ -716,10 +747,13 @@
   {"name": "Test-Android-Clang-Pixel6-GPU-MaliG78-arm64-Release-All-Android"},
   {"name": "Test-Android-Clang-Pixel6-GPU-MaliG78-arm64-Debug-All-Android"},
   {"name": "Test-Android-Clang-Pixel6-GPU-MaliG78-arm64-Release-All-Android_Vulkan"},
+  {"name": "Test-Android-Clang-Pixel6-GPU-MaliG78-arm64-Release-All-Android_Graphite_Vulkan"},
   {"name": "Test-Android-Clang-Pixel7-GPU-MaliG710-arm64-Release-All-Android"},
   {"name": "Test-Android-Clang-Pixel7-GPU-MaliG710-arm64-Debug-All-Android"},
   {"name": "Test-Android-Clang-Pixel7-GPU-MaliG710-arm64-Release-All-Android_Vulkan"},
+  {"name": "Test-Android-Clang-Pixel7-GPU-MaliG710-arm64-Release-All-Android_Graphite_Vulkan"},
   {"name": "Test-Android-Clang-Pixel7-GPU-MaliG710-arm64-Debug-All-Android_Vulkan"},
+  {"name": "Test-Android-Clang-Pixel7-GPU-MaliG710-arm64-Debug-All-Android_Graphite_Vulkan"},
   {"name": "Test-Android-Clang-Wembley-GPU-PowerVRGE8320-arm-Debug-All-Android"},
   {"name": "Test-Android-Clang-Wembley-GPU-PowerVRGE8320-arm-Release-All-Android"},
   {"name": "Test-ChromeOS-Clang-Kevin-GPU-MaliT860-arm-Debug-All"},
@@ -888,7 +922,8 @@
       "location_regexes": [
         "(tests|src/gpu)/graphite/.*",
         "src/sksl/generated/.*",
-        "dm/.+"
+        "dm/.+",
+        "DEPS"
       ]
     }
   },
@@ -965,6 +1000,8 @@
     "name": "Test-Ubuntu18-Clang-Golo-GPU-QuadroP400-x86_64-Release-All",
     "cq_config": {}
   },
+  {"name": "Build-Debian10-Clang-x86_64-Release-SK_USE_PADDED_BLUR_UPSCALE"},
+  {"name": "Test-Ubuntu18-Clang-Golo-GPU-QuadroP400-x86_64-Release-All-SK_USE_PADDED_BLUR_UPSCALE"},
   {"name": "Test-Ubuntu18-Clang-Golo-GPU-QuadroP400-x86_64-Release-All-DDL3_TSAN"},
   {"name": "Test-Ubuntu18-Clang-Golo-GPU-QuadroP400-x86_64-Release-All-Graphite_Vulkan"},
   {"name": "Test-Ubuntu18-Clang-Golo-GPU-QuadroP400-x86_64-Release-All-PreAbandonGpuContext"},
@@ -1062,7 +1099,8 @@
       "location_regexes": [
         "(tests|src/gpu)/graphite/.*",
         "src/sksl/generated/.*",
-        "dm/.+"
+        "dm/.+",
+        "DEPS"
       ]
     }
   },

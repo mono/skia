@@ -5,6 +5,10 @@
  * found in the LICENSE file.
  */
 
+#include "include/core/SkTypes.h"
+
+#ifndef SK_USE_DRAWING_MIPMAP_DOWNSAMPLER
+
 #include "include/private/SkColorData.h"
 #include "src/base/SkHalf.h"
 #include "src/base/SkVx.h"
@@ -426,14 +430,14 @@ void HQDownSampler::buildLevel(const SkPixmap& dst, const SkPixmap& src) {
 
     for (int y = 0; y < dst.height(); y++) {
         proc(dstBasePtr, srcBasePtr, srcRB, dst.width());
-        srcBasePtr = (char*)srcBasePtr + srcRB * 2; // jump two rows
-        dstBasePtr = (char*)dstBasePtr + dst.rowBytes();
+        srcBasePtr = (const char*)srcBasePtr + srcRB * 2; // jump two rows
+        dstBasePtr = (      char*)dstBasePtr + dst.rowBytes();
     }
 }
 
 } // namespace
 
-std::unique_ptr<SkMipmapDownSampler> SkMakeHQDownSampler(const SkPixmap& root) {
+std::unique_ptr<SkMipmapDownSampler> SkMipmap::MakeDownSampler(const SkPixmap& root) {
     FilterProc* proc_1_2 = nullptr;
     FilterProc* proc_1_3 = nullptr;
     FilterProc* proc_2_1 = nullptr;
@@ -595,3 +599,4 @@ std::unique_ptr<SkMipmapDownSampler> SkMakeHQDownSampler(const SkPixmap& root) {
     return sampler;
 }
 
+#endif

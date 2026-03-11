@@ -1676,7 +1676,7 @@ bool Program::appendStages(SkRasterPipeline* pipeline,
     for (const Stage& stage : stages) {
         switch (stage.op) {
             case ProgramOp::stack_rewind:
-                pipeline->append_stack_rewind();
+                pipeline->appendStackRewind();
                 break;
 
             case ProgramOp::invoke_shader:
@@ -1799,7 +1799,7 @@ void Program::makeStages(TArray<Stage>* pipeline,
 
     auto* const basePtr = (std::byte*)slots.values.data();
     auto OffsetFromBase = [&](const void* ptr) -> SkRPOffset {
-        return (SkRPOffset)((std::byte*)ptr - basePtr);
+        return (SkRPOffset)((const std::byte*)ptr - basePtr);
     };
 
     // Copy all immutable values into the immutable slots.
@@ -1835,7 +1835,6 @@ void Program::makeStages(TArray<Stage>* pipeline,
                 break;
 
             case BuilderOp::jump:
-            case BuilderOp::branch_if_all_lanes_active:
             case BuilderOp::branch_if_any_lanes_active:
             case BuilderOp::branch_if_no_lanes_active: {
                 SkASSERT(inst.fImmA >= 0 && inst.fImmA < fNumLabels);
@@ -1844,6 +1843,15 @@ void Program::makeStages(TArray<Stage>* pipeline,
                 auto* ctx = alloc->make<SkRasterPipeline_BranchCtx>();
                 ctx->offset = inst.fImmA;
                 pipeline->push_back({(ProgramOp)inst.fOp, ctx});
+                break;
+            }
+            case BuilderOp::branch_if_all_lanes_active: {
+                SkASSERT(inst.fImmA >= 0 && inst.fImmA < fNumLabels);
+                EmitStackRewindForBackwardsBranch(inst.fImmA);
+
+                auto* ctx = alloc->make<SkRasterPipeline_BranchIfAllLanesActiveCtx>();
+                ctx->offset = inst.fImmA;
+                pipeline->push_back({ProgramOp::branch_if_all_lanes_active, ctx});
                 break;
             }
             case BuilderOp::branch_if_no_active_lanes_on_stack_top_equal: {
@@ -1857,10 +1865,11 @@ void Program::makeStages(TArray<Stage>* pipeline,
                 pipeline->push_back({ProgramOp::branch_if_no_active_lanes_eq, ctx});
                 break;
             }
-            case BuilderOp::init_lane_masks:
-                pipeline->push_back({ProgramOp::init_lane_masks, nullptr});
+            case BuilderOp::init_lane_masks: {
+                auto* ctx = alloc->make<SkRasterPipeline_InitLaneMasksCtx>();
+                pipeline->push_back({ProgramOp::init_lane_masks, ctx});
                 break;
-
+            }
             case BuilderOp::store_src_rg:
                 pipeline->push_back({ProgramOp::store_src_rg, SlotA()});
                 break;

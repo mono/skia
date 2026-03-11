@@ -27,22 +27,27 @@
 
 namespace skgpu::graphite {
 
-VulkanCaps::VulkanCaps(const skgpu::VulkanInterface* vkInterface,
+VulkanCaps::VulkanCaps(const ContextOptions& contextOptions,
+                       const skgpu::VulkanInterface* vkInterface,
                        VkPhysicalDevice physDev,
                        uint32_t physicalDeviceVersion,
+                       const VkPhysicalDeviceFeatures2* features,
                        const skgpu::VulkanExtensions* extensions,
-                       const ContextOptions& contextOptions)
+                       Protected isProtected)
         : Caps() {
-    this->init(vkInterface, physDev, physicalDeviceVersion, extensions, contextOptions);
+    this->init(contextOptions, vkInterface, physDev, physicalDeviceVersion, features, extensions,
+               isProtected);
 }
 
 VulkanCaps::~VulkanCaps() {}
 
-void VulkanCaps::init(const skgpu::VulkanInterface* vkInterface,
+void VulkanCaps::init(const ContextOptions& contextOptions,
+                      const skgpu::VulkanInterface* vkInterface,
                       VkPhysicalDevice physDev,
                       uint32_t physicalDeviceVersion,
+                      const VkPhysicalDeviceFeatures2* features,
                       const skgpu::VulkanExtensions* extensions,
-                      const ContextOptions& contextOptions) {
+                      Protected isProtected) {
     VkPhysicalDeviceProperties physDevProperties;
     VULKAN_CALL(vkInterface, GetPhysicalDeviceProperties(physDev, &physDevProperties));
 
@@ -50,8 +55,16 @@ void VulkanCaps::init(const skgpu::VulkanInterface* vkInterface,
     this->setDeviceName(physDevProperties.deviceName);
 #endif
 
-    // Graphite requires Vulkan version 1.1 or later, which has protected support.
-    fProtectedSupport = true;
+    // Graphite requires Vulkan version 1.1 or later, which always has protected support.
+    if (isProtected == Protected::kYes) {
+        fProtectedSupport = true;
+        fShouldAlwaysUseDedicatedImageMemory = true;
+    }
+
+    fPhysicalDeviceMemoryProperties2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MEMORY_PROPERTIES_2;
+    fPhysicalDeviceMemoryProperties2.pNext = nullptr;
+    VULKAN_CALL(vkInterface,
+                GetPhysicalDeviceMemoryProperties2(physDev, &fPhysicalDeviceMemoryProperties2));
 
     // We could actually query and get a max size for each config, however maxImageDimension2D will
     // give the minimum max size across all configs. So for simplicity we will use that for now.
@@ -71,7 +84,12 @@ void VulkanCaps::init(const skgpu::VulkanInterface* vkInterface,
     // Enable the use of memoryless attachments for tiler GPUs (ARM Mali and Qualcomm Adreno).
     if (physDevProperties.vendorID == kARM_VkVendor ||
         physDevProperties.vendorID == kQualcomm_VkVendor) {
-        fSupportsMemorylessAttachments = true;
+        // We currently don't see any Vulkan devices that expose a memory type that supports
+        // both lazy allocated and protected memory. So for simplicity we just disable the
+        // use of memoryless attachments when using protected memory. In the future, if we ever
+        // do see devices that support both, we can look through the device's memory types here
+        // and see if any support both flags.
+        fSupportsMemorylessAttachments = !fProtectedSupport;
     }
 
 #ifdef SK_BUILD_FOR_UNIX
@@ -109,6 +127,17 @@ void VulkanCaps::init(const skgpu::VulkanInterface* vkInterface,
         fMaxVertexAttributes = physDevProperties.limits.maxVertexInputAttributes;
     }
     fMaxUniformBufferRange = physDevProperties.limits.maxUniformBufferRange;
+
+    // Determine whether the client enabled certain physical device features.
+    if (features) {
+        auto ycbcrFeatures =
+                skgpu::GetExtensionFeatureStruct<VkPhysicalDeviceSamplerYcbcrConversionFeatures>(
+                        *features,
+                        VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SAMPLER_YCBCR_CONVERSION_FEATURES);
+        if (ycbcrFeatures && ycbcrFeatures->samplerYcbcrConversion) {
+            fSupportsYcbcrConversion = true;
+        }
+    }
 
     this->finishInitialization(contextOptions);
 }
@@ -205,7 +234,7 @@ TextureInfo VulkanCaps::getTextureInfoForSampledCopy(const TextureInfo& textureI
 
     info.fSampleCount = 1;
     info.fMipmapped = mipmapped;
-    info.fFlags = 0;
+    info.fFlags = (textureInfo.fProtected == Protected::kYes) ? VK_IMAGE_CREATE_PROTECTED_BIT : 0;
     info.fImageTiling = VK_IMAGE_TILING_OPTIMAL;
     info.fImageUsageFlags = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT |
                             VK_IMAGE_USAGE_TRANSFER_DST_BIT;
@@ -947,6 +976,30 @@ bool VulkanCaps::FormatInfo::isStorage(VkImageTiling imageTiling) const {
     SkUNREACHABLE;
 }
 
+bool VulkanCaps::FormatInfo::isTransferSrc(VkImageTiling imageTiling) const {
+    switch (imageTiling) {
+        case VK_IMAGE_TILING_OPTIMAL:
+            return this->isTransferSrc(fFormatProperties.optimalTilingFeatures);
+        case VK_IMAGE_TILING_LINEAR:
+            return this->isTransferSrc(fFormatProperties.linearTilingFeatures);
+        default:
+            return false;
+    }
+    SkUNREACHABLE;
+}
+
+bool VulkanCaps::FormatInfo::isTransferDst(VkImageTiling imageTiling) const {
+    switch (imageTiling) {
+        case VK_IMAGE_TILING_OPTIMAL:
+            return this->isTransferDst(fFormatProperties.optimalTilingFeatures);
+        case VK_IMAGE_TILING_LINEAR:
+            return this->isTransferDst(fFormatProperties.linearTilingFeatures);
+        default:
+            return false;
+    }
+    SkUNREACHABLE;
+}
+
 bool VulkanCaps::FormatInfo::isTexturable(VkFormatFeatureFlags flags) const {
     return SkToBool(VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT & flags) &&
            SkToBool(VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT & flags);
@@ -958,6 +1011,14 @@ bool VulkanCaps::FormatInfo::isRenderable(VkFormatFeatureFlags flags) const {
 
 bool VulkanCaps::FormatInfo::isStorage(VkFormatFeatureFlags flags) const {
     return SkToBool(VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT & flags);
+}
+
+bool VulkanCaps::FormatInfo::isTransferSrc(VkFormatFeatureFlags flags) const {
+    return SkToBool(VK_FORMAT_FEATURE_TRANSFER_SRC_BIT & flags);
+}
+
+bool VulkanCaps::FormatInfo::isTransferDst(VkFormatFeatureFlags flags) const {
+    return SkToBool(VK_FORMAT_FEATURE_TRANSFER_DST_BIT & flags);
 }
 
 void VulkanCaps::setColorType(SkColorType colorType, std::initializer_list<VkFormat> formats) {
@@ -1105,6 +1166,16 @@ bool VulkanCaps::isStorage(const TextureInfo& texInfo) const {
 
     const FormatInfo& info = this->getFormatInfo(vkInfo.fFormat);
     return info.isStorage(vkInfo.fImageTiling);
+}
+
+bool VulkanCaps::isTransferSrc(const VulkanTextureInfo& vkInfo) const {
+    const FormatInfo& info = this->getFormatInfo(vkInfo.fFormat);
+    return info.isTransferSrc(vkInfo.fImageTiling);
+}
+
+bool VulkanCaps::isTransferDst(const VulkanTextureInfo& vkInfo) const {
+    const FormatInfo& info = this->getFormatInfo(vkInfo.fFormat);
+    return info.isTransferDst(vkInfo.fImageTiling);
 }
 
 bool VulkanCaps::supportsWritePixels(const TextureInfo& texInfo) const {

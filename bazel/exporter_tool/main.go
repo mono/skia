@@ -408,11 +408,6 @@ var gniExportDescs = []exporter.GNIExportDesc{
 				"//src/text/gpu:gpu_hdrs",
 				"//src/text/gpu:gpu_srcs",
 			}},
-		{Var: "skia_shared_dawn_sources",
-			Rules: []string{
-				"//src/gpu/dawn:dawn_hdrs",
-				"//src/gpu/dawn:dawn_srcs",
-			}},
 		{Var: "skia_shared_vk_sources",
 			Rules: []string{
 				"//include/gpu/vk:shared_public_hdrs",
@@ -498,6 +493,8 @@ var gniExportDescs = []exporter.GNIExportDesc{
 			Rules: []string{"//modules/skunicode/src:icu_srcs"}},
 		{Var: "skia_unicode_icu_bidi_sources",
 			Rules: []string{"//modules/skunicode/src:icu_bidi_srcs"}},
+		{Var: "skia_unicode_icu4x_sources",
+			Rules: []string{"//modules/skunicode/src:icu4x_srcs"}},
 		{Var: "skia_unicode_client_icu_sources",
 			Rules: []string{"//modules/skunicode/src:client_srcs"}},
 		{Var: "skia_unicode_builtin_icu_sources",
@@ -529,10 +526,29 @@ var gniExportDescs = []exporter.GNIExportDesc{
 	{GNI: "modules/skcms/skcms.gni", Vars: []exporter.GNIFileListExportDesc{
 		{Var: "skcms_public_headers",
 			Rules: []string{"//modules/skcms:public_hdrs"}},
+
+		// TODO(b/310927123): Replace external dependencies on skcms_sources with the more fine-
+		// grained dependencies (skcms_public + skcms_Transform*) below, and remove skcms_sources.
 		{Var: "skcms_sources",
 			Rules: []string{
 				"//modules/skcms:srcs",
 				"//modules/skcms:textual_hdrs",
+			}},
+		{Var: "skcms_public",
+			Rules: []string{
+				"//modules/skcms:skcms_public",
+			}},
+		{Var: "skcms_TransformBaseline",
+			Rules: []string{
+				"//modules/skcms:skcms_TransformBaseline",
+			}},
+		{Var: "skcms_TransformHsw",
+			Rules: []string{
+				"//modules/skcms:skcms_TransformHsw",
+			}},
+		{Var: "skcms_TransformSkx",
+			Rules: []string{
+				"//modules/skcms:skcms_TransformSkx",
 			}},
 	}},
 }

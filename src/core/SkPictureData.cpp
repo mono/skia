@@ -345,8 +345,13 @@ bool SkPictureData::parseStreamTag(SkStream* stream,
                 sk_sp<SkTypeface> tf;
                 if (procs.fTypefaceProc) {
                     tf = procs.fTypefaceProc(&stream, sizeof(stream), procs.fTypefaceCtx);
-                } else {
+                }
+                else {
+#if !defined(SK_DISABLE_LEGACY_FONTMGR_REFDEFAULT)
                     tf = SkTypeface::MakeDeserialize(stream, SkFontMgr::RefDefault());
+#else
+                    tf = SkTypeface::MakeDeserialize(stream, nullptr);
+#endif
                 }
                 if (!tf) {    // failed to deserialize
                     // fTFPlayback asserts it never has a null, so we plop in

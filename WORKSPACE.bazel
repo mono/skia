@@ -155,13 +155,13 @@ go_download_sdk(
     name = "go_sdk_linux_amd64",
     goarch = "amd64",
     goos = "linux",
-    version = "1.18",
+    version = "1.19.11",
 )
 
 # For the host machine
 go_download_sdk(
     name = "go_sdk",
-    version = "1.18",
+    version = "1.19.11",
 )
 
 # Do not specify a version here or it will be an error (because we
@@ -332,6 +332,21 @@ load("@fontations//:defs.bzl", fontations_crates = "crate_repositories")
 
 fontations_crates()
 
+# The icu4x repository consists of multiple crates. We download those
+# listed in the external/icu4x/Cargo.* files.
+# Add this entry to have a root repository from which the individual
+# icu4x crates can be fetched.
+# This allows them to be used as deps in other bazel targets.
+crates_repository(
+    name = "icu4x_deps",
+    cargo_lockfile = "//bazel/external/icu4x:Cargo.lock",
+    manifests = ["//bazel/external/icu4x:Cargo.toml"],
+)
+
+load("@icu4x_deps//:defs.bzl", icu4x_deps = "crate_repositories")
+
+icu4x_deps()
+
 # Skia uses crates from the vello repository that are under development and have not been published
 # to crates.io. Normally we could fetch them directly from the git mirror in the Cargo.lock file as
 # Bazel supports compiling them without any custom build rules. However, since Bazel's repository
@@ -389,6 +404,7 @@ local_repository(
 # @freetype - //bazel/external/freetype:BUILD.bazel
 # @harfbuzz - //bazel/external/harfbuzz:BUILD.bazel
 # @icu - //bazel/external/icu:BUILD.bazel
+# @icu4x - //bazel/external/icu4x:BUILD.bazel
 # @imgui - //bazel/external/imgui:BUILD.bazel
 # @libavif - //bazel/external/libavif:BUILD.bazel
 # @libgav1 - //bazel/external/libgav1:BUILD.bazel
@@ -557,7 +573,7 @@ load(
 # Pulls the gcr.io/skia-public/debugger-app-base container.
 container_pull(
     name = "debugger-app-base",
-    digest = "sha256:b842291db7bb2b62dd339a6a5fa62b0f73982e2677a4b48f253fa5862d6deeaa",
+    digest = "sha256:7c0dd491306e0a253695e6a085e3fde3b92f45efd9043ab76c7811984b8a0a8b",
     registry = "gcr.io",
     repository = "skia-public/debugger-app-base",
 )
@@ -565,7 +581,7 @@ container_pull(
 # Pulls the gcr.io/skia-public/jsfiddle-base container.
 container_pull(
     name = "jsfiddle-base",
-    digest = "sha256:b8b6ef8feccd98acbf71cefa1fb982fab5fa61d03e375744d279acf505e59f12",
+    digest = "sha256:b23272a3cb61e2918b36556dafd0b626d35aac6ae84c3ddd866b29831161fca3",
     registry = "gcr.io",
     repository = "skia-public/jsfiddle-base",
 )
@@ -573,7 +589,7 @@ container_pull(
 # Pulls the gcr.io/skia-public/shaders-base container.
 container_pull(
     name = "shaders-base",
-    digest = "sha256:a536f59bdab001ceb91c859f84fa2645d884825761b85939669bd5398a88322c",
+    digest = "sha256:debc2d5dd36ca7163a23765a3c6d1df04a0a4806e097037f0c0fd8bf12358cf7",
     registry = "gcr.io",
     repository = "skia-public/shaders-base",
 )
@@ -581,7 +597,7 @@ container_pull(
 # Pulls the gcr.io/skia-public/skottie-base container.
 container_pull(
     name = "skottie-base",
-    digest = "sha256:6f7cb42b9111bda3feda6f1adb3aa130cfdc4694c568ae302875348e3e6c805d",
+    digest = "sha256:a85db99b109ff24f6d3cb975dd009e5c3a39d9a07e491026b97a30cf3bf90c71",
     registry = "gcr.io",
     repository = "skia-public/skottie-base",
 )

@@ -8,6 +8,7 @@ Instead, do:
 load("@bazel_tools//tools/build_defs/repo:git.bzl", "git_repository", "new_git_repository")
 load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 load("@bazel_tools//tools/build_defs/repo:utils.bzl", "maybe")
+load("//bazel:download_config_files.bzl", "download_config_files")
 load("//bazel:gcs_mirror.bzl", "gcs_mirror_url")
 
 def c_plus_plus_deps(ws = "@skia"):
@@ -29,7 +30,7 @@ def c_plus_plus_deps(ws = "@skia"):
     new_git_repository(
         name = "dawn",
         build_file = ws + "//bazel/external/dawn:BUILD.bazel",
-        commit = "52564ab1a0e3359b7bbadd282865cc28612c33ce",
+        commit = "7ce5da31c2af7a4461e185117c8ae4799e37d29e",
         remote = "https://dawn.googlesource.com/dawn.git",
     )
 
@@ -78,6 +79,13 @@ def c_plus_plus_deps(ws = "@skia"):
         build_file = ws + "//bazel/external/icu:BUILD.bazel",
         commit = "a0718d4f121727e30b8d52c7a189ebf5ab52421f",
         remote = "https://chromium.googlesource.com/chromium/deps/icu.git",
+    )
+
+    new_git_repository(
+        name = "icu4x",
+        build_file = ws + "//bazel/external/icu4x:BUILD.bazel",
+        commit = "4f81635489681ecf7707623177123cb78d6a66a0",
+        remote = "https://chromium.googlesource.com/external/github.com/unicode-org/icu4x.git",
     )
 
     new_git_repository(
@@ -160,19 +168,19 @@ def c_plus_plus_deps(ws = "@skia"):
     new_git_repository(
         name = "spirv_cross",
         build_file = ws + "//bazel/external/spirv_cross:BUILD.bazel",
-        commit = "637cff3d05892801daa43c93907e17151c7dfd31",
+        commit = "a3da0e87fa1a6aacdf32c5e729a653b60afe82af",
         remote = "https://chromium.googlesource.com/external/github.com/KhronosGroup/SPIRV-Cross",
     )
 
     git_repository(
         name = "spirv_headers",
-        commit = "88bc5e321c2839707df8b1ab534e243e00744177",
+        commit = "cca08c63cefa129d082abca0302adcb81610b465",
         remote = "https://skia.googlesource.com/external/github.com/KhronosGroup/SPIRV-Headers.git",
     )
 
     git_repository(
         name = "spirv_tools",
-        commit = "4f014aff9c653e5e16de1cc5f7130e99e02982e5",
+        commit = "0d87845532579ec3787165cc55635c95180463e0",
         remote = "https://skia.googlesource.com/external/github.com/KhronosGroup/SPIRV-Tools.git",
     )
 
@@ -186,21 +194,21 @@ def c_plus_plus_deps(ws = "@skia"):
     new_git_repository(
         name = "vulkan_headers",
         build_file = ws + "//bazel/external/vulkan_headers:BUILD.bazel",
-        commit = "aff5071d4ee6215c60a91d8d983cad91bb25fb57",
+        commit = "19a863ccce773ff393b186329478b1eb1a519fd3",
         remote = "https://chromium.googlesource.com/external/github.com/KhronosGroup/Vulkan-Headers",
     )
 
     new_git_repository(
         name = "vulkan_tools",
         build_file = ws + "//bazel/external/vulkan_tools:BUILD.bazel",
-        commit = "2d956672d73321bfb22b378c06033f0bd885d61c",
+        commit = "8718f7f80506b4377d1a37608b532c7c3c54c685",
         remote = "https://chromium.googlesource.com/external/github.com/KhronosGroup/Vulkan-Tools",
     )
 
     new_git_repository(
         name = "vulkan_utility_libraries",
         build_file = ws + "//bazel/external/vulkan_utility_libraries:BUILD.bazel",
-        commit = "5b3147a535e28a48ae760efacdf97b296d9e8c73",
+        commit = "2feac587338c7e1b631b2ef9bd6e894d7ad7f56d",
         remote = "https://chromium.googlesource.com/external/github.com/KhronosGroup/Vulkan-Utility-Libraries",
     )
 
@@ -239,3 +247,18 @@ def bazel_deps():
             url = "https://github.com/bazelbuild/bazel-toolchains/archive/refs/tags/v5.1.1.tar.gz",
         ),
     )
+
+def header_based_configs():
+    maybe(
+        download_config_files,
+        name = "freetype_config",
+        skia_revision = "7b730016006e6b66d24a6f94eefe8bec00ac1674",
+        files = {
+            "BUILD.bazel": "bazel/external/freetype/config/BUILD.bazel",
+            "android/freetype/config/ftmodule.h": "third_party/freetype2/include/freetype-android/freetype/config/ftmodule.h",
+            "android/freetype/config/ftoption.h": "third_party/freetype2/include/freetype-android/freetype/config/ftoption.h",
+            "no-type1/freetype/config/ftmodule.h": "third_party/freetype2/include/freetype-no-type1/freetype/config/ftmodule.h",
+            "no-type1/freetype/config/ftoption.h": "third_party/freetype2/include/freetype-no-type1/freetype/config/ftoption.h",
+        },
+    )
+    # TODO(kjlubick) add the other configurations (e.g. harfbuzz, icu)

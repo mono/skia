@@ -8,6 +8,7 @@ import("codec.gni")
 import("core.gni")
 import("effects.gni")
 import("effects_imagefilters.gni")
+import("fuzz.gni")
 import("gpu.gni")
 import("graphite.gni")
 import("opts.gni")
@@ -19,3 +20,6 @@ import("xps.gni")
 skia_opts = {
   hsw_sources = hsw
 }
+
+#Removed from Skia but still referenced by skia/BUILD.gn in chromium.
+skia_shared_dawn_sources = []

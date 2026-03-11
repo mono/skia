@@ -39,6 +39,7 @@
 #include "include/private/base/SkTo.h"
 #include "include/private/chromium/Slug.h"
 #include "include/utils/SkNoDrawCanvas.h"
+#include "src/base/SkEnumBitMask.h"
 #include "src/base/SkMSAN.h"
 #include "src/core/SkBlenderBase.h"
 #include "src/core/SkCanvasPriv.h"
@@ -49,7 +50,6 @@
 #include "src/core/SkLatticeIter.h"
 #include "src/core/SkMatrixPriv.h"
 #include "src/core/SkPaintPriv.h"
-#include "src/core/SkRectPriv.h"
 #include "src/core/SkSpecialImage.h"
 #include "src/core/SkSurfacePriv.h"
 #include "src/core/SkTraceEvent.h"
@@ -82,6 +82,8 @@ using Slug = sktext::gpu::Slug;
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
+SK_MAKE_BITMASK_OPS(SkCanvas::PredrawFlags)
+
 /*
  *  Return true if the drawing this rect would hit every pixels in the canvas.
  *
@@ -91,16 +93,13 @@ using Slug = sktext::gpu::Slug;
  *  - paint would blur or otherwise change the coverage of the rect
  */
 bool SkCanvas::wouldOverwriteEntireSurface(const SkRect* rect, const SkPaint* paint,
-                                           ShaderOverrideOpacity overrideOpacity) const {
-    static_assert((int)SkPaintPriv::kNone_ShaderOverrideOpacity ==
-                  (int)kNone_ShaderOverrideOpacity,
-                  "need_matching_enums0");
-    static_assert((int)SkPaintPriv::kOpaque_ShaderOverrideOpacity ==
-                  (int)kOpaque_ShaderOverrideOpacity,
-                  "need_matching_enums1");
-    static_assert((int)SkPaintPriv::kNotOpaque_ShaderOverrideOpacity ==
-                  (int)kNotOpaque_ShaderOverrideOpacity,
-                  "need_matching_enums2");
+                                           SkEnumBitMask<PredrawFlags> flags) const {
+    // Convert flags to a ShaderOverrideOpacity enum
+    auto overrideOpacity = (flags & PredrawFlags::kOpaqueShaderOverride) ?
+                                    SkPaintPriv::kOpaque_ShaderOverrideOpacity :
+                           (flags & PredrawFlags::kNonOpaqueShaderOverride) ?
+                                    SkPaintPriv::kNotOpaque_ShaderOverrideOpacity :
+                                    SkPaintPriv::kNone_ShaderOverrideOpacity;
 
     const SkISize size = this->getBaseLayerSize();
     const SkRect bounds = SkRect::MakeIWH(size.width(), size.height());
@@ -139,7 +138,7 @@ bool SkCanvas::wouldOverwriteEntireSurface(const SkRect* rect, const SkPaint* pa
             return false; // conservative
         }
     }
-    return SkPaintPriv::Overwrites(paint, (SkPaintPriv::ShaderOverrideOpacity)overrideOpacity);
+    return SkPaintPriv::Overwrites(paint, overrideOpacity);
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -156,7 +155,7 @@ bool SkCanvas::predrawNotify(bool willOverwritesEntireSurface) {
 }
 
 bool SkCanvas::predrawNotify(const SkRect* rect, const SkPaint* paint,
-                             ShaderOverrideOpacity overrideOpacity) {
+                             SkEnumBitMask<PredrawFlags> flags) {
     if (fSurfaceBase) {
         SkSurface::ContentChangeMode mode = SkSurface::kRetain_ContentChangeMode;
         // Since willOverwriteAllPixels() may not be complete free to call, we only do so if
@@ -164,7 +163,7 @@ bool SkCanvas::predrawNotify(const SkRect* rect, const SkPaint* paint,
         // and therefore we don't care which mode we're in.
         //
         if (fSurfaceBase->outstandingImageSnapshot()) {
-            if (this->wouldOverwriteEntireSurface(rect, paint, overrideOpacity)) {
+            if (this->wouldOverwriteEntireSurface(rect, paint, flags)) {
                 mode = SkSurface::kDiscard_ContentChangeMode;
             }
         }
@@ -252,14 +251,11 @@ private:
 /////////////////////////////////////////////////////////////////////////////
 
 std::optional<AutoLayerForImageFilter> SkCanvas::aboutToDraw(
-    SkCanvas* canvas,
-    const SkPaint& paint,
-    const SkRect* rawBounds,
-    CheckForOverwrite checkOverwrite,
-    ShaderOverrideOpacity overrideOpacity)
-{
-    if (checkOverwrite == CheckForOverwrite::kYes) {
-        if (!this->predrawNotify(rawBounds, &paint, overrideOpacity)) {
+        const SkPaint& paint,
+        const SkRect* rawBounds,
+        SkEnumBitMask<PredrawFlags> flags) {
+    if (flags & PredrawFlags::kCheckForOverwrite) {
+        if (!this->predrawNotify(rawBounds, &paint, flags)) {
             return std::nullopt;
         }
     } else {
@@ -267,7 +263,18 @@ std::optional<AutoLayerForImageFilter> SkCanvas::aboutToDraw(
             return std::nullopt;
         }
     }
-    return std::optional<AutoLayerForImageFilter>(std::in_place, canvas, paint, rawBounds);
+
+    // TODO: Eventually all devices will use this code path and this will just test 'flags'.
+    const bool skipMaskFilterLayer = (flags & PredrawFlags::kSkipMaskFilterAutoLayer) ||
+                                     !this->topDevice()->useDrawCoverageMaskForMaskFilters();
+    return std::optional<AutoLayerForImageFilter>(
+            std::in_place, this, paint, rawBounds, skipMaskFilterLayer);
+}
+
+std::optional<AutoLayerForImageFilter> SkCanvas::aboutToDraw(
+        const SkPaint& paint,
+        const SkRect* rawBounds) {
+    return this->aboutToDraw(paint, rawBounds, PredrawFlags::kNone);
 }
 
 ////////////////////////////////////////////////////////////////////////////
@@ -776,28 +783,22 @@ void SkCanvas::internalDrawDeviceWithFilter(SkDevice* src,
         if (!srcToLayer.inverseMapRect(requiredInput, &srcSubset)) {
             return;
         }
-        if (!srcSubset.intersect(skif::LayerSpace<SkIRect>(SkIRect::MakeSize(src->size())))) {
-            // We apply clamp tiling for unavailable pixels for backdrop filters. For forward
-            // filters, this should have been detected as an unnecessary layer or a filter that
-            // could be invoked on an empty input and never reached internalDrawDeviceWithFilter.
-            SkASSERT(compat == DeviceCompatibleWithFilter::kUnknown);
-            srcSubset = skif::LayerSpace<SkIRect>(SkRectPriv::ClosestDisjointEdge(
-                    SkIRect::MakeSize(src->size()),
-                    SkIRect(srcSubset)));
-        }
+
+        auto availSrc = skif::LayerSpace<SkIRect>(src->size()).relevantSubset(
+                srcSubset, SkTileMode::kClamp);
 
         if (SkMatrix(srcToLayer).isScaleTranslate()) {
             // Apply the srcToLayer transformation directly while snapping an image from the src
             // device. Calculate the subset of requiredInput that corresponds to srcSubset that was
             // restricted to the actual src dimensions.
-            auto requiredSubset = srcToLayer.mapRect(srcSubset);
-            if (requiredSubset.width() == srcSubset.width() &&
-                requiredSubset.height() == srcSubset.height()) {
+            auto requiredSubset = srcToLayer.mapRect(availSrc);
+            if (requiredSubset.width() == availSrc.width() &&
+                requiredSubset.height() == availSrc.height()) {
                 // Unlike snapSpecialScaled(), snapSpecial() can avoid a copy when the underlying
                 // representation permits it.
-                source = {src->snapSpecial(SkIRect(srcSubset)), requiredSubset.topLeft()};
+                source = {src->snapSpecial(SkIRect(availSrc)), requiredSubset.topLeft()};
             } else {
-                source = {src->snapSpecialScaled(SkIRect(srcSubset),
+                source = {src->snapSpecialScaled(SkIRect(availSrc),
                                                  SkISize(requiredSubset.size())),
                           requiredSubset.topLeft()};
             }
@@ -810,9 +811,11 @@ void SkCanvas::internalDrawDeviceWithFilter(SkDevice* src,
         if (!requiredInput.isEmpty() && !source) {
             // Snap the source image at its original resolution and then apply srcToLayer to map to
             // the effective layer coordinate space.
-            source = {src->snapSpecial(SkIRect(srcSubset)), srcSubset.topLeft()};
+            source = {src->snapSpecial(SkIRect(availSrc)), availSrc.topLeft()};
             // We adjust the desired output of the applyCrop() because ctx was original set to
-            // fulfill 'requiredInput', which is valid *after* we apply srcToLayer.
+            // fulfill 'requiredInput', which is valid *after* we apply srcToLayer. Use the original
+            // 'srcSubset' for the desired output so that the kClamp applied to the available subset
+            // is not discarded as a no-op.
             source = source.applyCrop(ctx.withNewDesiredOutput(srcSubset),
                                       source.layerBounds(),
                                       SkTileMode::kClamp)
@@ -1120,8 +1123,10 @@ void SkCanvas::internalSaveLayer(const SaveLayerRec& rec,
     // relevant. Filtering is automatically chosen in internalDrawDeviceWithFilter based on the
     // device's coordinate space.
     SkPaint restorePaint(rec.fPaint ? *rec.fPaint : SkPaint());
-    restorePaint.setMaskFilter(nullptr);  // mask filters are ignored for saved layers
-    restorePaint.setImageFilter(nullptr); // the image filter is held separately
+    restorePaint.setStyle(SkPaint::kFill_Style); // a layer is filled out "infinitely"
+    restorePaint.setPathEffect(nullptr);         // path effects are ignored for saved layers
+    restorePaint.setMaskFilter(nullptr);         // mask filters are ignored for saved layers
+    restorePaint.setImageFilter(nullptr);        // the image filter is held separately
     // Smooth non-axis-aligned layer edges; this automatically downgrades to non-AA for aligned
     // layer restores. This is done to match legacy behavior where the post-applied MatrixTransform
     // bilerp also smoothed cropped edges. See skbug.com/11252
@@ -2139,7 +2144,7 @@ void SkCanvas::internalDrawPaint(const SkPaint& paint) {
         return;
     }
 
-    auto layer = this->aboutToDraw(this, paint, nullptr, CheckForOverwrite::kYes);
+    auto layer = this->aboutToDraw(paint, nullptr, PredrawFlags::kCheckForOverwrite);
     if (layer) {
         this->topDevice()->drawPaint(layer->paint());
     }
@@ -2167,7 +2172,7 @@ void SkCanvas::onDrawPoints(PointMode mode, size_t count, const SkPoint pts[],
         return;
     }
 
-    auto layer = this->aboutToDraw(this, strokePaint, &bounds);
+    auto layer = this->aboutToDraw(strokePaint, &bounds);
     if (layer) {
         this->topDevice()->drawPoints(mode, count, pts, layer->paint());
     }
@@ -2179,7 +2184,7 @@ void SkCanvas::onDrawRect(const SkRect& r, const SkPaint& paint) {
         return;
     }
 
-    auto layer = this->aboutToDraw(this, paint, &r, CheckForOverwrite::kYes);
+    auto layer = this->aboutToDraw(paint, &r, PredrawFlags::kCheckForOverwrite);
     if (layer) {
         this->topDevice()->drawRect(r, layer->paint());
     }
@@ -2191,7 +2196,7 @@ void SkCanvas::onDrawRegion(const SkRegion& region, const SkPaint& paint) {
         return;
     }
 
-    auto layer = this->aboutToDraw(this, paint, &bounds);
+    auto layer = this->aboutToDraw(paint, &bounds);
     if (layer) {
         this->topDevice()->drawRegion(region, layer->paint());
     }
@@ -2233,7 +2238,7 @@ void SkCanvas::onDrawBehind(const SkPaint& paint) {
         // ~adtr will reset the local-to-device matrix so that drawPaint() shades correctly.
     }
 
-    auto layer = this->aboutToDraw(this, paint);
+    auto layer = this->aboutToDraw(paint);
     if (layer) {
         this->topDevice()->drawPaint(layer->paint());
     }
@@ -2247,7 +2252,7 @@ void SkCanvas::onDrawOval(const SkRect& oval, const SkPaint& paint) {
         return;
     }
 
-    auto layer = this->aboutToDraw(this, paint, &oval);
+    auto layer = this->aboutToDraw(paint, &oval);
     if (layer) {
         this->topDevice()->drawOval(oval, layer->paint());
     }
@@ -2261,7 +2266,7 @@ void SkCanvas::onDrawArc(const SkRect& oval, SkScalar startAngle,
         return;
     }
 
-    auto layer = this->aboutToDraw(this, paint, &oval);
+    auto layer = this->aboutToDraw(paint, &oval);
     if (layer) {
         this->topDevice()->drawArc(oval, startAngle, sweepAngle, useCenter, layer->paint());
     }
@@ -2285,7 +2290,7 @@ void SkCanvas::onDrawRRect(const SkRRect& rrect, const SkPaint& paint) {
         return;
     }
 
-    auto layer = this->aboutToDraw(this, paint, &bounds);
+    auto layer = this->aboutToDraw(paint, &bounds);
     if (layer) {
         this->topDevice()->drawRRect(rrect, layer->paint());
     }
@@ -2297,7 +2302,7 @@ void SkCanvas::onDrawDRRect(const SkRRect& outer, const SkRRect& inner, const Sk
         return;
     }
 
-    auto layer = this->aboutToDraw(this, paint, &bounds);
+    auto layer = this->aboutToDraw(paint, &bounds);
     if (layer) {
         this->topDevice()->drawDRRect(outer, inner, layer->paint());
     }
@@ -2317,7 +2322,7 @@ void SkCanvas::onDrawPath(const SkPath& path, const SkPaint& paint) {
         return;
     }
 
-    auto layer = this->aboutToDraw(this, paint, path.isInverseFillType() ? nullptr : &pathBounds);
+    auto layer = this->aboutToDraw(paint, path.isInverseFillType() ? nullptr : &pathBounds);
     if (layer) {
         this->topDevice()->drawPath(path, layer->paint());
     }
@@ -2432,7 +2437,7 @@ void SkCanvas::onDrawImage2(const SkImage* image, SkScalar x, SkScalar y,
         return;
     }
 
-    auto layer = this->aboutToDraw(this, realPaint, &dst);
+    auto layer = this->aboutToDraw(realPaint, &dst);
     if (layer) {
         this->topDevice()->drawImageRect(image, nullptr, dst, sampling,
                                          layer->paint(), kFast_SrcRectConstraint);
@@ -2546,9 +2551,10 @@ void SkCanvas::onDrawImageRect2(const SkImage* image, const SkRect& src, const S
         }
     }
 
-    auto layer = this->aboutToDraw(this, realPaint, &dst, CheckForOverwrite::kYes,
-                                   image->isOpaque() ? kOpaque_ShaderOverrideOpacity
-                                                     : kNotOpaque_ShaderOverrideOpacity);
+    auto layer = this->aboutToDraw(realPaint, &dst,
+                                   PredrawFlags::kCheckForOverwrite |
+                                   (image->isOpaque() ? PredrawFlags::kOpaqueShaderOverride
+                                                      : PredrawFlags::kNonOpaqueShaderOverride));
     if (layer) {
         this->topDevice()->drawImageRect(image, &src, dst, realSampling, layer->paint(),
                                          constraint);
@@ -2563,7 +2569,7 @@ void SkCanvas::onDrawImageLattice2(const SkImage* image, const Lattice& lattice,
         return;
     }
 
-    auto layer = this->aboutToDraw(this, realPaint, &dst);
+    auto layer = this->aboutToDraw(realPaint, &dst);
     if (layer) {
         this->topDevice()->drawImageLattice(image, lattice, dst, filter, layer->paint());
     }
@@ -2613,7 +2619,12 @@ void SkCanvas::onDrawGlyphRunList(const sktext::GlyphRunList& glyphRunList, cons
     if (this->internalQuickReject(bounds, paint)) {
         return;
     }
-    auto layer = this->aboutToDraw(this, paint, &bounds);
+
+    // Text attempts to apply any SkMaskFilter internally and save the blurred masks in the
+    // strike cache; if a glyph must be drawn as a path or drawable, SkDevice routes back to
+    // this SkCanvas to retry, which will go through a function that does *not* skip the mask
+    // filter layer.
+    auto layer = this->aboutToDraw(paint, &bounds, PredrawFlags::kSkipMaskFilterAutoLayer);
     if (layer) {
         this->topDevice()->drawGlyphRunList(this, glyphRunList, paint, layer->paint());
     }
@@ -2633,7 +2644,8 @@ SkCanvas::onConvertGlyphRunListToSlug(
     if (bounds.isEmpty() || !bounds.isFinite() || paint.nothingToDraw()) {
         return nullptr;
     }
-    auto layer = this->aboutToDraw(this, paint, &bounds);
+    // See comment in onDrawGlyphRunList()
+    auto layer = this->aboutToDraw(paint, &bounds, PredrawFlags::kSkipMaskFilterAutoLayer);
     if (layer) {
         return this->topDevice()->convertGlyphRunListToSlug(glyphRunList, paint, layer->paint());
     }
@@ -2652,8 +2664,9 @@ void SkCanvas::onDrawSlug(const Slug* slug) {
     if (this->internalQuickReject(bounds, slug->initialPaint())) {
         return;
     }
-
-    auto layer = this->aboutToDraw(this, slug->initialPaint(), &bounds);
+    // See comment in onDrawGlyphRunList()
+    auto layer = this->aboutToDraw(slug->initialPaint(), &bounds,
+                                   PredrawFlags::kSkipMaskFilterAutoLayer);
     if (layer) {
         this->topDevice()->drawSlug(this, slug, layer->paint());
     }
@@ -2762,7 +2775,7 @@ void SkCanvas::onDrawVerticesObject(const SkVertices* vertices, SkBlendMode bmod
         return;
     }
 
-    auto layer = this->aboutToDraw(this, simplePaint, &bounds);
+    auto layer = this->aboutToDraw(simplePaint, &bounds);
     if (layer) {
         this->topDevice()->drawVertices(vertices, SkBlender::Mode(bmode), layer->paint());
     }
@@ -2770,7 +2783,7 @@ void SkCanvas::onDrawVerticesObject(const SkVertices* vertices, SkBlendMode bmod
 
 void SkCanvas::onDrawMesh(const SkMesh& mesh, sk_sp<SkBlender> blender, const SkPaint& paint) {
     SkPaint simplePaint = clean_paint_for_drawVertices(paint);
-    auto layer = this->aboutToDraw(this, simplePaint, nullptr);
+    auto layer = this->aboutToDraw(simplePaint, nullptr);
     if (layer) {
         this->topDevice()->drawMesh(mesh, std::move(blender), paint);
     }
@@ -2801,7 +2814,7 @@ void SkCanvas::onDrawPatch(const SkPoint cubics[12], const SkColor colors[4],
         return;
     }
 
-    auto layer = this->aboutToDraw(this, simplePaint, &bounds);
+    auto layer = this->aboutToDraw(simplePaint, &bounds);
     if (layer) {
         this->topDevice()->drawPatch(cubics, colors, texCoords, SkBlender::Mode(bmode),
                                      layer->paint());
@@ -2855,7 +2868,7 @@ void SkCanvas::onDrawAtlas2(const SkImage* atlas, const SkRSXform xform[], const
     // drawAtlas should not have mask filters on its paint, so we don't need to worry about
     // converting its "drawImage" behavior into the paint to work with the auto-mask-filter system.
     SkASSERT(!realPaint.getMaskFilter());
-    auto layer = this->aboutToDraw(this, realPaint);
+    auto layer = this->aboutToDraw(realPaint);
     if (layer) {
         this->topDevice()->drawAtlas(xform, tex, colors, count, SkBlender::Mode(bmode),
                                      layer->paint());
@@ -2923,7 +2936,7 @@ void SkCanvas::onDrawEdgeAAImageSet2(const ImageSetEntry imageSet[], int count,
         return;
     }
 
-    auto layer = this->aboutToDraw(this, realPaint, setBoundsValid ? &setBounds : nullptr);
+    auto layer = this->aboutToDraw(realPaint, setBoundsValid ? &setBounds : nullptr);
     if (layer) {
         this->topDevice()->drawEdgeAAImageSet(imageSet, count, dstClips, preViewMatrices,
                                               realSampling, layer->paint(), constraint);

@@ -21,6 +21,10 @@ namespace skgpu::graphite {
 
 sk_sp<SharedContext> VulkanSharedContext::Make(const VulkanBackendContext& context,
                                                const ContextOptions& options) {
+    if (options.fNeverYieldToWebGPU) {
+        SKGPU_LOG_W("fNeverYieldToWebGPU is not supported with Vulkan.");
+        return nullptr;
+    }
     if (context.fInstance == VK_NULL_HANDLE ||
         context.fPhysicalDevice == VK_NULL_HANDLE ||
         context.fDevice == VK_NULL_HANDLE ||
@@ -81,11 +85,25 @@ sk_sp<SharedContext> VulkanSharedContext::Make(const VulkanBackendContext& conte
         return nullptr;
     }
 
-    std::unique_ptr<const VulkanCaps> caps(new VulkanCaps(interface.get(),
+    VkPhysicalDeviceFeatures2 features;
+    const VkPhysicalDeviceFeatures2* featuresPtr;
+    // If fDeviceFeatures2 is not null, then we ignore fDeviceFeatures. If both are null, we assume
+    // no features are enabled.
+    if (!context.fDeviceFeatures2 && context.fDeviceFeatures) {
+        features.pNext = nullptr;
+        features.features = *context.fDeviceFeatures;
+        featuresPtr = &features;
+    } else {
+        featuresPtr = context.fDeviceFeatures2;
+    }
+
+    std::unique_ptr<const VulkanCaps> caps(new VulkanCaps(options,
+                                                          interface.get(),
                                                           context.fPhysicalDevice,
                                                           physDevVersion,
+                                                          featuresPtr,
                                                           context.fVkExtensions,
-                                                          options));
+                                                          context.fProtectedContext));
 
     sk_sp<skgpu::VulkanMemoryAllocator> memoryAllocator = context.fMemoryAllocator;
     if (!memoryAllocator) {

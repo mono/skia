@@ -29,6 +29,7 @@
 #include "include/gpu/graphite/Recording.h"
 #include "include/gpu/graphite/Surface.h"
 #include "src/gpu/BlurUtils.h"
+#include "src/gpu/SkBackingFit.h"
 #include "src/gpu/graphite/Buffer.h"
 #include "src/gpu/graphite/Caps.h"
 #include "src/gpu/graphite/CommandBuffer.h"
@@ -98,6 +99,11 @@ sk_sp<SkSpecialImage> eval_blur(skgpu::graphite::Recorder* recorder,
                                                 outII,
                                                 skgpu::Budgeted::kYes,
                                                 skgpu::Mipmapped::kNo,
+#if defined(GRAPHITE_USE_APPROX_FIT_FOR_FILTERS)
+                                                SkBackingFit::kApprox,
+#else
+                                                SkBackingFit::kExact,
+#endif
                                                 outProps,
                                                 /*addInitialClear=*/false);
     if (!device) {
@@ -743,6 +749,11 @@ public:
                                              imageInfo,
                                              skgpu::Budgeted::kYes,
                                              skgpu::Mipmapped::kNo,
+#if defined(GRAPHITE_USE_APPROX_FIT_FOR_FILTERS)
+                                             SkBackingFit::kApprox,
+#else
+                                             SkBackingFit::kExact,
+#endif
                                              props ? *props : this->surfaceProps(),
                                              /*addInitialClear=*/false);
     }
@@ -770,7 +781,6 @@ public:
 
     // SkBlurEngine
     const SkBlurEngine::Algorithm* findAlgorithm(SkSize sigma,
-                                                 SkTileMode tileMode,
                                                  SkColorType colorType) const override {
         // The runtime effect blurs handle all tilemodes and color types
         return this;
@@ -782,6 +792,8 @@ public:
         // skgpu::kMaxLinearBlurSigma.
         return SK_ScalarInfinity;
     }
+
+    bool supportsOnlyDecalTiling() const override { return false; }
 
     sk_sp<SkSpecialImage> blur(SkSize sigma,
                                sk_sp<SkSpecialImage> src,

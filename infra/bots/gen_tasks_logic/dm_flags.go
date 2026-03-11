@@ -278,17 +278,6 @@ func (b *taskBuilder) dmFlags(internalHardwareLabel string) {
 		if b.extraConfig("Graphite") {
 			args = append(args, "--nogpu") // disable non-Graphite tests
 
-			// Failed to make lazy image.
-			skip(ALL, "gm", ALL, "image_subset")
-
-			// Could not readback from surface.
-			skip(ALL, "gm", ALL, "hugebitmapshader")
-			skip(ALL, "gm", ALL, "async_rescale_and_read_no_bleed")
-			skip(ALL, "gm", ALL, "async_rescale_and_read_text_up")
-			skip(ALL, "gm", ALL, "async_rescale_and_read_dog_down")
-			skip(ALL, "gm", ALL, "async_rescale_and_read_dog_up")
-			skip(ALL, "gm", ALL, "async_rescale_and_read_rose")
-
 			if b.extraConfig("Metal") {
 				configs = []string{"grmtl"}
 				if b.gpu("IntelIrisPlus") {
@@ -348,6 +337,11 @@ func (b *taskBuilder) dmFlags(internalHardwareLabel string) {
 				skip(ALL, "test", ALL, "SkRuntimeEffectSimple_Graphite")
 				skip(ALL, "test", ALL, "VolatileGraphiteYUVAPromiseImageTest")
 				skip(ALL, "test", ALL, "VolatileGraphitePromiseImageTest")
+				if b.matchOs("Android") {
+					// Currently broken on Android Vulkan (skbug.com/310180104)
+					skip(ALL, "test", ALL, "ImageAsyncReadPixelsGraphite")
+					skip(ALL, "test", ALL, "SurfaceAsyncReadPixelsGraphite")
+				}
 			}
 		}
 

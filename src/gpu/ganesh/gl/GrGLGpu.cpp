@@ -1278,7 +1278,7 @@ bool GrGLGpu::uploadCompressedTexData(SkTextureCompressionType compressionType,
                                                           dimensions.height(),
                                                           internalFormat,
                                                           SkToInt(levelDataSize),
-                                                          &((char*)data)[offset]));
+                                                          &((const char*)data)[offset]));
 
             if (error != GR_GL_NO_ERROR) {
                 return false;
@@ -1294,7 +1294,7 @@ bool GrGLGpu::uploadCompressedTexData(SkTextureCompressionType compressionType,
             size_t levelDataSize = SkCompressedDataSize(compressionType, dimensions,
                                                         nullptr, false);
 
-            const char* rawLevelData = &((char*)data)[offset];
+            const char* rawLevelData = &((const char*)data)[offset];
             GrGLenum error = GL_ALLOC_CALL(CompressedTexImage2D(target,
                                                                 level,
                                                                 internalFormat,
@@ -3347,6 +3347,7 @@ bool GrGLGpu::createCopyProgram(GrTexture* srcTex) {
                                                   fCopyPrograms[progIdx].fProgram,
                                                   GR_GL_VERTEX_SHADER,
                                                   glsl[kVertex_GrShaderType],
+                                                  /*shaderWasCached=*/false,
                                                   fProgramCache->stats(),
                                                   errorHandler);
     SkASSERT(interface == SkSL::Program::Interface());
@@ -3362,6 +3363,7 @@ bool GrGLGpu::createCopyProgram(GrTexture* srcTex) {
                                                   fCopyPrograms[progIdx].fProgram,
                                                   GR_GL_FRAGMENT_SHADER,
                                                   glsl[kFragment_GrShaderType],
+                                                  /*shaderWasCached=*/false,
                                                   fProgramCache->stats(),
                                                   errorHandler);
     SkASSERT(interface == SkSL::Program::Interface());
@@ -3373,7 +3375,12 @@ bool GrGLGpu::createCopyProgram(GrTexture* srcTex) {
 
     const std::string* sksl[kGrShaderTypeCount] = {&vertexSkSL, &fragmentSkSL};
     GL_CALL(LinkProgram(fCopyPrograms[progIdx].fProgram));
-    if (!GrGLCheckLinkStatus(this, fCopyPrograms[progIdx].fProgram, errorHandler, sksl, glsl)) {
+    if (!GrGLCheckLinkStatus(this,
+                             fCopyPrograms[progIdx].fProgram,
+                             /*shaderWasCached=*/false,
+                             errorHandler,
+                             sksl,
+                             glsl)) {
         // Failed to link, delete everything
         cleanup_program(this, &fCopyPrograms[progIdx].fProgram, &vshader, &fshader);
         return false;
@@ -3525,6 +3532,7 @@ bool GrGLGpu::createMipmapProgram(int progIdx) {
                                                   fMipmapPrograms[progIdx].fProgram,
                                                   GR_GL_VERTEX_SHADER,
                                                   glsl[kVertex_GrShaderType],
+                                                  /*shaderWasCached=*/false,
                                                   fProgramCache->stats(),
                                                   errorHandler);
     SkASSERT(interface == SkSL::Program::Interface());
@@ -3539,6 +3547,7 @@ bool GrGLGpu::createMipmapProgram(int progIdx) {
                                                   fMipmapPrograms[progIdx].fProgram,
                                                   GR_GL_FRAGMENT_SHADER,
                                                   glsl[kFragment_GrShaderType],
+                                                  /*shaderWasCached=*/false,
                                                   fProgramCache->stats(),
                                                   errorHandler);
     SkASSERT(interface == SkSL::Program::Interface());
@@ -3549,7 +3558,12 @@ bool GrGLGpu::createMipmapProgram(int progIdx) {
 
     const std::string* sksl[kGrShaderTypeCount] = {&vertexSkSL, &fragmentSkSL};
     GL_CALL(LinkProgram(fMipmapPrograms[progIdx].fProgram));
-    if (!GrGLCheckLinkStatus(this, fMipmapPrograms[progIdx].fProgram, errorHandler, sksl, glsl)) {
+    if (!GrGLCheckLinkStatus(this,
+                             fMipmapPrograms[progIdx].fProgram,
+                             /*shaderWasCached=*/false,
+                             errorHandler,
+                             sksl,
+                             glsl)) {
         // Program linking failed, clean up
         cleanup_program(this, &fMipmapPrograms[progIdx].fProgram, &vshader, &fshader);
         return false;

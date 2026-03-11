@@ -215,6 +215,13 @@ bool GrMtlCaps::getGPUFamily(id<MTLDevice> device, GPUFamily* gpuFamily, int* gr
 #endif
 
         // Older Macs
+#if GR_METAL_SDK_VERSION >= 300
+        // TODO: replace with Metal 3 definitions
+        SkASSERT([device supportsFamily:MTLGPUFamilyMac2]);
+        *gpuFamily = GPUFamily::kMac;
+        *group = 2;
+        return true;
+#else
         // At the moment MacCatalyst families have the same features as Mac,
         // so we treat them the same
         if ([device supportsFamily:MTLGPUFamilyMac2] ||
@@ -229,6 +236,7 @@ bool GrMtlCaps::getGPUFamily(id<MTLDevice> device, GPUFamily* gpuFamily, int* gr
             *group = 1;
             return true;
         }
+#endif
     }
 #endif
 
@@ -1227,7 +1235,7 @@ GrProgramDesc GrMtlCaps::makeDesc(GrRenderTarget*, const GrProgramInfo& programI
     return desc;
 }
 
-MTLPixelFormat GrMtlCaps::getStencilPixelFormat(const GrProgramDesc& desc) {
+MTLPixelFormat GrMtlCaps::getStencilPixelFormat(const GrProgramDesc& desc) const {
     // Set up read buffer to point to platform-dependent part of the key
     SkReadBuffer readBuffer(desc.asKey() + desc.initialKeyLength()/sizeof(uint32_t),
                             desc.keyLength() - desc.initialKeyLength());

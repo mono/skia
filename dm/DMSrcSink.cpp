@@ -19,6 +19,7 @@
 #include "include/core/SkStream.h"
 #include "include/core/SkSurface.h"
 #include "include/core/SkSurfaceProps.h"
+#include "include/docs/SkMultiPictureDocument.h"
 #include "include/docs/SkPDFDocument.h"
 #include "include/encode/SkPngEncoder.h"
 #include "include/gpu/GrBackendSurface.h"
@@ -53,7 +54,6 @@
 #include "src/gpu/ganesh/image/GrImageUtils.h"
 #include "src/image/SkImage_Base.h"
 #include "src/utils/SkJSONWriter.h"
-#include "include/docs/SkMultiPictureDocument.h"
 #include "src/utils/SkMultiPictureDocumentPriv.h"
 #include "src/utils/SkOSPath.h"
 #include "src/utils/SkTestCanvas.h"
@@ -66,6 +66,7 @@
 #include "tools/ToolUtils.h"
 #include "tools/UrlDataManager.h"
 #include "tools/debugger/DebugCanvas.h"
+#include "tools/fonts/FontToolUtils.h"
 #include "tools/gpu/BackendSurfaceFactory.h"
 #include "tools/gpu/MemoryCache.h"
 
@@ -1143,6 +1144,14 @@ Result SKPSrc::draw(SkCanvas* canvas) const {
     };
     procs.fImageCtx = &ctx;
 
+    // SKPs may have typefaces encoded in them (e.g. with FreeType). We can try falling back
+    // to the Test FontMgr (possibly a native one) if we have do not have FreeType built-in.
+    procs.fTypefaceProc = [](const void* data, size_t size, void*) -> sk_sp<SkTypeface> {
+        SkStream** stream = reinterpret_cast<SkStream**>(const_cast<void*>(data));
+        return SkTypeface::MakeDeserialize(*stream, ToolUtils::TestFontMgr());
+    };
+
+
     std::unique_ptr<SkStream> stream = SkStream::MakeFromFile(fPath.c_str());
     if (!stream) {
         return Result::Fatal("Couldn't read %s.", fPath.c_str());
@@ -1241,11 +1250,11 @@ static DEFINE_bool(useLottieGlyphPaths, false,
 SkottieSrc::SkottieSrc(Path path) : fPath(std::move(path)) {}
 
 Result SkottieSrc::draw(SkCanvas* canvas) const {
-    auto resource_provider =
-            skresources::DataURIResourceProviderProxy::Make(
-                skresources::FileResourceProvider::Make(SkOSPath::Dirname(fPath.c_str()),
-                                                        /*predecode=*/true),
-                /*predecode=*/true);
+    auto predecode = skresources::ImageDecodeStrategy::kPreDecode;
+    auto resource_provider = skresources::DataURIResourceProviderProxy::Make(
+            skresources::FileResourceProvider::Make(SkOSPath::Dirname(fPath.c_str()), predecode),
+            predecode,
+            ToolUtils::TestFontMgr());
 
     static constexpr char kInterceptPrefix[] = "__";
     auto precomp_interceptor =
@@ -1257,6 +1266,7 @@ Result SkottieSrc::draw(SkCanvas* canvas) const {
     }
 
     auto animation = skottie::Animation::Builder(flags)
+        .setFontManager(ToolUtils::TestFontMgr())
         .setResourceProvider(std::move(resource_provider))
         .setPrecompInterceptor(std::move(precomp_interceptor))
         .makeFromFile(fPath.c_str());
@@ -1329,11 +1339,14 @@ SVGSrc::SVGSrc(Path path)
         return;
     }
 
+    auto predecode = skresources::ImageDecodeStrategy::kPreDecode;
     auto rp = skresources::DataURIResourceProviderProxy::Make(
-                  skresources::FileResourceProvider::Make(SkOSPath::Dirname(path.c_str()),
-                                                          /*predecode=*/true),
-                  /*predecode=*/true);
+            skresources::FileResourceProvider::Make(SkOSPath::Dirname(path.c_str()), predecode),
+            predecode,
+            ToolUtils::TestFontMgr());
+
     fDom = SkSVGDOM::Builder().setResourceProvider(std::move(rp))
+                              .setFontManager(ToolUtils::TestFontMgr())
                               .make(*stream);
     if (!fDom) {
         return;
@@ -1345,7 +1358,7 @@ SVGSrc::SVGSrc(Path path)
         fDom->setContainerSize(kDefaultSVGSize);
     } else {
         fScale = std::max(1.f, std::max(kMinimumSVGSize.width()  / sz.width(),
-                                    kMinimumSVGSize.height() / sz.height()));
+                                        kMinimumSVGSize.height() / sz.height()));
     }
 }
 
@@ -2280,7 +2293,7 @@ Result ViaSerialization::draw(
 
     SkSerialProcs procs = serial_procs_using_png();
     // Serialize it and then deserialize it.
-    sk_sp<SkPicture> deserialized(SkPicture::MakeFromData(pic->serialize(&procs).get()));
+    sk_sp<SkPicture> deserialized = SkPicture::MakeFromData(pic->serialize(&procs).get());
 
     result = draw_to_canvas(fSink.get(), bitmap, stream, log, size,
                             [&](SkCanvas* canvas) {
@@ -2365,7 +2378,8 @@ Result ViaSVG::draw(const Src& src, SkBitmap* bitmap, SkWStream* stream, SkStrin
             return result;
         }
         std::unique_ptr<SkStream> rstream(wstream.detachAsStream());
-        auto dom = SkSVGDOM::MakeFromStream(*rstream);
+        sk_sp<SkSVGDOM> dom =
+                SkSVGDOM::Builder().setFontManager(ToolUtils::TestFontMgr()).make(*rstream);
         if (dom) {
             dom->setContainerSize(SkSize::Make(size));
             dom->render(canvas);

@@ -313,17 +313,28 @@ public:
         const auto shape_ltr    = fDesc.fDirection == Shaper::Direction::kLTR;
         const size_t utf8_bytes = SkToSizeT(end - start);
 
-        SkASSERT(fFontMgr);
         static constexpr uint8_t kBidiLevelLTR = 0,
                                  kBidiLevelRTL = 1;
-        const auto font_iter = SkShaper::MakeFontMgrRunIterator(start, utf8_bytes, fFont, fFontMgr);
+        const auto lang_iter = fDesc.fLocale
+                ? std::make_unique<SkShaper::TrivialLanguageRunIterator>(fDesc.fLocale, utf8_bytes)
+                : SkShaper::MakeStdLanguageRunIterator(start, utf8_bytes);
+#if defined(SKOTTIE_TRIVIAL_FONTRUN_ITER)
+        // Chrome Linux/CrOS does not have a fallback-capable fontmgr, and crashes if fallback is
+        // triggered.  Using a TrivialFontRunIterator avoids the issue (https://crbug.com/1520148).
+        const auto font_iter = std::make_unique<SkShaper::TrivialFontRunIterator>(fFont,
+                                                                                  utf8_bytes);
+#else
+        const auto font_iter = SkShaper::MakeFontMgrRunIterator(
+                                    start, utf8_bytes, fFont,
+                                    fFontMgr ? fFontMgr : SkFontMgr::RefEmpty(), // used as fallback
+                                    fDesc.fFontFamily,
+                                    SkFontPriv::RefTypefaceOrDefault(fFont)->fontStyle(),
+                                    lang_iter.get());
+#endif
         const auto bidi_iter = SkShaper::MakeBiDiRunIterator(start, utf8_bytes,
                                     shape_ltr ? kBidiLevelLTR : kBidiLevelRTL);
         const auto scpt_iter = SkShaper::MakeScriptRunIterator(start, utf8_bytes,
                                     SkSetFourByteTag('Z', 'z', 'z', 'z'));
-        const auto lang_iter = fDesc.fLocale
-                ? std::make_unique<SkShaper::TrivialLanguageRunIterator>(fDesc.fLocale, utf8_bytes)
-                : SkShaper::MakeStdLanguageRunIterator(start, utf8_bytes);
 
         if (!font_iter || !bidi_iter || !scpt_iter || !lang_iter) {
             return;

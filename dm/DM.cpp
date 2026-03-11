@@ -9,6 +9,7 @@
 #include "dm/DMSrcSink.h"
 #include "include/codec/SkBmpDecoder.h"
 #include "include/codec/SkCodec.h"
+#include "include/codec/SkEncodedImageFormat.h"
 #include "include/codec/SkGifDecoder.h"
 #include "include/codec/SkIcoDecoder.h"
 #include "include/codec/SkJpegDecoder.h"
@@ -42,11 +43,11 @@
 #include "tools/ToolUtils.h"
 #include "tools/flags/CommonFlags.h"
 #include "tools/flags/CommonFlagsConfig.h"
+#include "tools/fonts/FontToolUtils.h"
 #include "tools/ios_utils.h"
 #include "tools/trace/ChromeTracingTracer.h"
 #include "tools/trace/EventTracingPriv.h"
 #include "tools/trace/SkDebugfTracer.h"
-#include "include/codec/SkEncodedImageFormat.h"
 
 #include <memory>
 #include <vector>
@@ -296,14 +297,17 @@ static void register_codecs() {
 // We use a spinlock to make locking this in a signal handler _somewhat_ safe.
 static SkSpinlock*        gMutex = new SkSpinlock;
 static int                gPending;
+static int                gTotalCounts;
+static int                gDoneCounts = 1;
 static TArray<Running>*   gRunning = new TArray<Running>;
 
 static void done(const char* config, const char* src, const char* srcOptions, const char* name) {
     SkString id = SkStringPrintf("%s %s %s %s", config, src, srcOptions, name);
-    vlog("done  %s\n", id.c_str());
+    vlog("[%d/%d] done  %s\n", gDoneCounts, gTotalCounts, id.c_str());
     int pending;
     {
         SkAutoSpinlock lock(*gMutex);
+        gDoneCounts++;
         for (int i = 0; i < gRunning->size(); i++) {
             if (gRunning->at(i).id == id) {
                 gRunning->removeShuffle(i);
@@ -332,7 +336,7 @@ static void done(const char* config, const char* src, const char* srcOptions, co
 
 static void start(const char* config, const char* src, const char* srcOptions, const char* name) {
     SkString id = SkStringPrintf("%s %s %s %s", config, src, srcOptions, name);
-    vlog("start %s\n", id.c_str());
+    vlog("\tstart %s\n", id.c_str());
     SkAutoSpinlock lock(*gMutex);
     gRunning->push_back({id,SkGetThreadID()});
 }
@@ -1572,7 +1576,9 @@ int main(int argc, char** argv) {
     setbuf(stdout, nullptr);
     setup_crash_handler();
 
-    CommonFlags::SetDefaultFontMgr();
+#if !defined(SK_DISABLE_LEGACY_FONTMGR_FACTORY)
+    ToolUtils::SetDefaultFontMgr();
+#endif
     CommonFlags::SetAnalyticAA();
     skiatest::SetFontTestDataDirectory();
 
@@ -1627,6 +1633,7 @@ int main(int argc, char** argv) {
     gather_tests();
     int testCount = gCPUTests->size() + gGaneshTests->size() + gGraphiteTests->size();
     gPending = gSrcs->size() * gSinks->size() + testCount;
+    gTotalCounts = gPending;
     info("%d srcs * %d sinks + %d tests == %d tasks\n",
          gSrcs->size(), gSinks->size(), testCount,
          gPending);

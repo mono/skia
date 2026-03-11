@@ -9,27 +9,26 @@
 #include "include/core/SkFontMetrics.h"
 #include "include/core/SkFontMgr.h"
 #include "include/core/SkFontStyle.h"
-#include "include/core/SkString.h"
 #include "include/core/SkTypeface.h"
 #include "include/private/base/SkTFitsIn.h"
 #include "modules/skshaper/include/SkShaper.h"
+#include "src/base/SkUTF.h"
 #include "src/core/SkFontPriv.h"
 
-#ifdef SK_SHAPER_UNICODE_AVAILABLE
-#include "modules/skunicode/include/SkUnicode.h"
-#endif
-#include "src/base/SkUTF.h"
-#include "src/core/SkTextBlobPriv.h"
-
 #include <limits.h>
-#include <string.h>
+#include <algorithm>
+#include <cstring>
 #include <locale>
 #include <string>
 #include <utility>
 
-std::unique_ptr<SkShaper> SkShaper::Make(sk_sp<SkFontMgr> fontmgr) {
+#ifdef SK_SHAPER_UNICODE_AVAILABLE
+#include "modules/skunicode/include/SkUnicode.h"
+#endif
+
+std::unique_ptr<SkShaper> SkShaper::Make(sk_sp<SkFontMgr> fallback) {
 #ifdef SK_SHAPER_HARFBUZZ_AVAILABLE
-    std::unique_ptr<SkShaper> shaper = SkShaper::MakeShaperDrivenWrapper(std::move(fontmgr));
+    std::unique_ptr<SkShaper> shaper = SkShaper::MakeShaperDrivenWrapper(std::move(fallback));
     if (shaper) {
         return shaper;
     }
@@ -100,6 +99,8 @@ public:
         , fRequestStyle(requestStyle)
         , fLanguage(lang)
     {
+        // If fallback is not wanted, clients should use TrivialFontRunIterator.
+        SkASSERT(fFallbackMgr);
         fFont.setTypeface(SkFontPriv::RefTypefaceOrDefault(font));
         fFallbackFont.setTypeface(nullptr);
     }
@@ -194,7 +195,7 @@ SkShaper::MakeFontMgrRunIterator(const char* utf8, size_t utf8Bytes, const SkFon
                                  const SkShaper::LanguageRunIterator* language)
 {
     return std::make_unique<FontMgrRunIterator>(utf8, utf8Bytes, font, std::move(fallback),
-                                                  requestName, requestStyle, language);
+                                                requestName, requestStyle, language);
 }
 
 std::unique_ptr<SkShaper::LanguageRunIterator>

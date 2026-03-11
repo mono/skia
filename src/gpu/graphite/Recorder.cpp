@@ -9,6 +9,7 @@
 
 #include "include/core/SkBitmap.h"
 #include "include/core/SkCanvas.h"
+#include "include/core/SkTraceMemoryDump.h"
 #include "include/effects/SkRuntimeEffect.h"
 #include "include/gpu/graphite/BackendTexture.h"
 #include "include/gpu/graphite/GraphiteTypes.h"
@@ -107,10 +108,12 @@ Recorder::Recorder(sk_sp<SharedContext> sharedContext, const RecorderOptions& op
     fResourceProvider = fSharedContext->makeResourceProvider(this->singleOwner(),
                                                              fUniqueID,
                                                              options.fGpuBudgetInBytes);
-    fDrawBufferManager = std::make_unique<DrawBufferManager>(fResourceProvider.get(),
-                                                             fSharedContext->caps());
     fUploadBufferManager = std::make_unique<UploadBufferManager>(fResourceProvider.get(),
                                                                  fSharedContext->caps());
+    fDrawBufferManager = std::make_unique<DrawBufferManager>(fResourceProvider.get(),
+                                                             fSharedContext->caps(),
+                                                             fUploadBufferManager.get());
+
     SkASSERT(fResourceProvider);
 }
 
@@ -165,7 +168,8 @@ std::unique_ptr<Recording> Recorder::snap() {
         // Leaving 'fTrackedDevices' alone since they were flushed earlier and could still be
         // attached to extant SkSurfaces.
         fDrawBufferManager = std::make_unique<DrawBufferManager>(fResourceProvider.get(),
-                                                                 fSharedContext->caps());
+                                                                 fSharedContext->caps(),
+                                                                 fUploadBufferManager.get());
         fTextureDataCache = std::make_unique<TextureDataCache>();
         fUniformDataCache = std::make_unique<UniformDataCache>();
         fGraph->reset();
@@ -250,6 +254,27 @@ BackendTexture Recorder::createBackendTexture(SkISize dimensions, const TextureI
     }
     return fResourceProvider->createBackendTexture(dimensions, info);
 }
+
+#ifdef SK_BUILD_FOR_ANDROID
+
+BackendTexture Recorder::createBackendTexture(AHardwareBuffer* hardwareBuffer,
+                                              bool isRenderable,
+                                              bool isProtectedContent,
+                                              SkISize dimensions,
+                                              bool fromAndroidWindow) const {
+    if (fSharedContext->backend() != BackendApi::kVulkan) {
+        SKGPU_LOG_W("Creating an AHardwareBuffer-backed BackendTexture is only supported with the"
+                    "Vulkan backend.");
+        return {};
+    }
+    return fResourceProvider->createBackendTexture(hardwareBuffer,
+                                                   isRenderable,
+                                                   isProtectedContent,
+                                                   dimensions,
+                                                   fromAndroidWindow);
+}
+
+#endif // SK_BUILD_FOR_ANDROID
 
 bool Recorder::updateBackendTexture(const BackendTexture& backendTex,
                                     const SkPixmap srcData[],
@@ -364,6 +389,13 @@ void Recorder::performDeferredCleanup(std::chrono::milliseconds msNotUsed) {
 size_t Recorder::currentBudgetedBytes() const {
     ASSERT_SINGLE_OWNER
     return fResourceProvider->getResourceCacheCurrentBudgetedBytes();
+}
+
+void Recorder::dumpMemoryStatistics(SkTraceMemoryDump* traceMemoryDump) const {
+    ASSERT_SINGLE_OWNER
+    fResourceProvider->dumpMemoryStatistics(traceMemoryDump);
+    // TODO: What is the graphite equivalent for the text blob cache and how do we print out its
+    // used bytes here (see Ganesh implementation).
 }
 
 void RecorderPriv::add(sk_sp<Task> task) {

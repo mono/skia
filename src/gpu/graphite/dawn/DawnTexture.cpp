@@ -7,10 +7,10 @@
 
 #include "src/gpu/graphite/dawn/DawnTexture.h"
 
+#include "include/gpu/MutableTextureState.h"
 #include "include/gpu/graphite/dawn/DawnTypes.h"
 #include "include/private/gpu/graphite/DawnTypesPriv.h"
 #include "src/core/SkMipmap.h"
-#include "src/gpu/MutableTextureStateRef.h"
 #include "src/gpu/graphite/Log.h"
 #include "src/gpu/graphite/dawn/DawnCaps.h"
 #include "src/gpu/graphite/dawn/DawnGraphiteUtilsPriv.h"
@@ -116,19 +116,30 @@ DawnTexture::DawnTexture(const DawnSharedContext* sharedContext,
         , fSampleTextureView(std::move(sampleTextureView))
         , fRenderTextureView(std::move(renderTextureView)) {}
 
-std::pair<wgpu::TextureView, wgpu::TextureView> create_texture_views(const wgpu::Texture& texture,
-                                                                     const TextureInfo& info) {
-    wgpu::TextureView sampleTextureView = texture.CreateView();
-    wgpu::TextureView renderTextureView;
-    if (info.mipmapped() == Mipmapped::kYes) {
-        wgpu::TextureViewDescriptor renderViewDesc = {};
-        renderViewDesc.baseMipLevel = 0;
-        renderViewDesc.mipLevelCount = 1;
-        renderTextureView = texture.CreateView(&renderViewDesc);
-    } else {
-        renderTextureView = sampleTextureView;
+std::pair<wgpu::TextureView, wgpu::TextureView> create_texture_views(
+        const wgpu::Texture& texture, const TextureInfo& info, const wgpu::TextureAspect aspect) {
+    if (aspect == wgpu::TextureAspect::All) {
+        wgpu::TextureView sampleTextureView = texture.CreateView();
+        wgpu::TextureView renderTextureView;
+        if (info.mipmapped() == Mipmapped::kYes) {
+            wgpu::TextureViewDescriptor renderViewDesc = {};
+            renderViewDesc.baseMipLevel = 0;
+            renderViewDesc.mipLevelCount = 1;
+            renderTextureView = texture.CreateView(&renderViewDesc);
+        } else {
+            renderTextureView = sampleTextureView;
+        }
+        return {sampleTextureView, renderTextureView};
     }
-    return {sampleTextureView, renderTextureView};
+
+    SkASSERT(aspect == wgpu::TextureAspect::Plane0Only ||
+             aspect == wgpu::TextureAspect::Plane1Only ||
+             aspect == wgpu::TextureAspect::Plane2Only);
+    wgpu::TextureView planeTextureView;
+    wgpu::TextureViewDescriptor planeViewDesc = {};
+    planeViewDesc.aspect = aspect;
+    planeTextureView = texture.CreateView(&planeViewDesc);
+    return {planeTextureView, planeTextureView};
 }
 
 sk_sp<Texture> DawnTexture::Make(const DawnSharedContext* sharedContext,
@@ -139,7 +150,8 @@ sk_sp<Texture> DawnTexture::Make(const DawnSharedContext* sharedContext,
     if (!texture) {
         return {};
     }
-    auto [sampleTextureView, renderTextureView] = create_texture_views(texture, info);
+    auto [sampleTextureView, renderTextureView] =
+            create_texture_views(texture, info, wgpu::TextureAspect::All);
     return sk_sp<Texture>(new DawnTexture(sharedContext,
                                           dimensions,
                                           info,
@@ -158,7 +170,9 @@ sk_sp<Texture> DawnTexture::MakeWrapped(const DawnSharedContext* sharedContext,
         SKGPU_LOG_E("No valid texture passed into MakeWrapped\n");
         return {};
     }
-    auto [sampleTextureView, renderTextureView] = create_texture_views(texture, info);
+
+    const wgpu::TextureAspect aspect = info.dawnTextureSpec().fAspect;
+    auto [sampleTextureView, renderTextureView] = create_texture_views(texture, info, aspect);
     return sk_sp<Texture>(new DawnTexture(sharedContext,
                                           dimensions,
                                           info,
@@ -169,25 +183,13 @@ sk_sp<Texture> DawnTexture::MakeWrapped(const DawnSharedContext* sharedContext,
                                           skgpu::Budgeted::kNo));
 }
 
-sk_sp<Texture> DawnTexture::MakeWrapped(const DawnSharedContext* sharedContext,
-                                        SkISize dimensions,
-                                        const TextureInfo& info,
-                                        const wgpu::TextureView& textureView) {
-    if (!textureView) {
-        SKGPU_LOG_E("No valid texture passed into MakeWrapped\n");
-        return {};
-    }
-    return sk_sp<Texture>(new DawnTexture(sharedContext,
-                                          dimensions,
-                                          info,
-                                          nullptr,
-                                          /*sampleTextureView=*/textureView,
-                                          /*renderTextureView=*/textureView,
-                                          Ownership::kWrapped,
-                                          skgpu::Budgeted::kNo));
-}
-
 void DawnTexture::freeGpuData() {
+    if (this->ownership() != Ownership::kWrapped && fTexture) {
+        // Destroy the texture even if it is still referenced by other BindGroup or views.
+        // Graphite should already guarantee that all command buffers using this texture (indirectly
+        // via BindGroup or views) are already completed.
+        fTexture.Destroy();
+    }
     fTexture = nullptr;
     fSampleTextureView = nullptr;
     fRenderTextureView = nullptr;
