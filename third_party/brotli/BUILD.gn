@@ -19,7 +19,6 @@ third_party("brotli") {
     "../externals/brotli/c/dec/bit_reader.c",
     "../externals/brotli/c/dec/decode.c",
     "../externals/brotli/c/dec/huffman.c",
-    "../externals/brotli/c/dec/prefix.c",
     "../externals/brotli/c/dec/state.c",
   ]
 }

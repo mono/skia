@@ -1640,6 +1640,10 @@ skia_component("skia") {
   defines = []
   libs = []
 
+  if (skia_use_vulkan) {
+    configs += [ ":use_skia_vulkan_headers" ]
+  }
+
   if (skia_build_for_debugger) {
     defines += [ "SK_BUILD_FOR_DEBUGGER" ]
   }
@@ -3599,6 +3603,10 @@ if (skia_build_rust_targets) {
 skiasharp_build("SkiaSharp") {
   public_configs = [ ":skia_public" ]
   configs += skia_library_configs
+
+  if (skia_use_vulkan) {
+    configs += [ ":use_skia_vulkan_headers" ]
+  }
 
   defines = [ "SKIA_C_DLL" ]
 
