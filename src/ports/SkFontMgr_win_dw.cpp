@@ -913,6 +913,11 @@ sk_sp<SkFontMgr> SkFontMgr_New_DirectWrite(IDWriteFactory* factory,
 
     const WCHAR* defaultFamilyName = L"";
     int defaultFamilyNameLen = 1;
+
+#ifdef SK_BUILD_FOR_WINRT
+    defaultFamilyName = L"Segoe UI";
+    defaultFamilyNameLen = LF_FACESIZE;
+#else // SK_BUILD_FOR_WINRT
     NONCLIENTMETRICSW metrics;
     metrics.cbSize = sizeof(metrics);
 
@@ -924,6 +929,7 @@ sk_sp<SkFontMgr> SkFontMgr_New_DirectWrite(IDWriteFactory* factory,
         }
     }
     #endif //SK_WINUWP
+#endif // SK_BUILD_FOR_WINRT
 
     WCHAR localeNameStorage[LOCALE_NAME_MAX_LENGTH];
     const WCHAR* localeName = L"";

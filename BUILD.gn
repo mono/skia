@@ -1006,19 +1006,17 @@ optional("gpu") {
         "src/gpu/ganesh/gl/glx/GrGLMakeGLXInterface.cpp",
         "src/gpu/ganesh/gl/glx/GrGLMakeNativeInterface_glx.cpp",
       ]
-      libs += [ "GL" ]
+      libs += [ "dl" ]
     } else if (is_mac) {
       sources += [ "src/gpu/ganesh/gl/mac/GrGLMakeNativeInterface_mac.cpp" ]
     } else if (is_ios) {
       sources += [ "src/gpu/ganesh/gl/iOS/GrGLMakeNativeInterface_iOS.cpp" ]
-    } else if (is_win && !skia_enable_winuwp) {
+    } else if (is_win && !is_winrt && !skia_enable_winuwp) {
       sources += [
         "src/gpu/ganesh/gl/win/GrGLMakeNativeInterface_win.cpp",
         "src/gpu/ganesh/gl/win/GrGLMakeWinInterface.cpp",
       ]
-      if (target_cpu != "arm64") {
-        libs += [ "OpenGL32.lib" ]
-      }
+      # GPU is not linked in, but loaded at runtime
     } else {
       sources += [ "src/gpu/ganesh/gl/GrGLMakeNativeInterface_none.cpp" ]
     }
@@ -3594,4 +3592,58 @@ if (skia_build_rust_targets) {
       "../../bazel-bin/experimental/rust_cxx/cpp_with_rust",
     ]
   }
+}
+
+# SkiaSharp + HarfBuzzSharp
+
+skiasharp_build("SkiaSharp") {
+  public_configs = [ ":skia_public" ]
+  configs += skia_library_configs
+
+  defines = [ "SKIA_C_DLL" ]
+
+  deps = [
+    ":skia",
+    "modules/skottie",
+  ]
+
+  sources = [
+    "src/xamarin/sk_compatpaint.cpp",
+    "src/xamarin/sk_manageddrawable.cpp",
+    "src/xamarin/sk_managedstream.cpp",
+    "src/xamarin/sk_managedtracememorydump.cpp",
+    "src/xamarin/sk_xamarin.cpp",
+    "src/xamarin/SkiaKeeper.c",
+    "src/xamarin/SkCompatPaint.cpp",
+    "src/xamarin/SkManagedDrawable.cpp",
+    "src/xamarin/SkManagedStream.cpp",
+    "src/xamarin/SkManagedTraceMemoryDump.cpp"
+  ]
+
+  libs = []
+}
+
+skiasharp_build("HarfBuzzSharp") {
+  cflags = [
+    "-fno-threadsafe-statics",
+  ]
+
+  defines = [
+    #"HAVE_FREETYPE",
+    #"HAVE_ICU",
+    #"HAVE_ICU_BUILTIN",
+    "HAVE_OT",
+    "HAVE_CONFIG_OVERRIDE_H",
+    "HB_NO_FALLBACK_SHAPE",
+    # "HB_NO_WIN1256",
+  ]
+
+  include_dirs = [
+    "third_party/harfbuzz"
+  ]
+
+  _src = "third_party/externals/harfbuzz/src"
+  sources = [
+    "$_src/harfbuzz-subset.cc",
+  ]
 }

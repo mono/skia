@@ -49,13 +49,29 @@ if (skia_use_system_libwebp) {
     }
   }
 
+  third_party("libwebp_avx2") {
+    public_include_dirs = [
+      "../externals/libwebp/src",
+      "../externals/libwebp",
+    ]
+    configs = [ ":libwebp_defines" ]
+    sources = [
+      "../externals/libwebp/src/dsp/lossless_avx2.c",
+      "../externals/libwebp/src/dsp/lossless_enc_avx2.c",
+    ]
+    if ((current_cpu == "x86" || current_cpu == "x64") &&
+        (!is_win || is_clang)) {
+      cflags_c = [ "-mavx2" ]
+    }
+  }
+
   third_party("libwebp") {
     public_include_dirs = [
       "../externals/libwebp/src",
       "../externals/libwebp",
     ]
 
-    deps = [ ":libwebp_sse41" ]
+    deps = [ ":libwebp_sse41", ":libwebp_avx2" ]
     if (is_android) {
       deps += [ "//third_party/cpu-features" ]
     }

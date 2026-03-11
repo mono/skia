@@ -122,5 +122,11 @@ skia_utils_private = [
   "$_src/utils/win/SkIStream.h",
   "$_src/utils/win/SkObjBase.h",
   "$_src/utils/win/SkTScopedComPtr.h",
-  "$_src/utils/win/SkWGL_win.cpp",
 ]
+
+if (!is_winrt) {
+  skia_utils_private += [
+    "$_src/utils/win/SkWGL_win.cpp",
+  ]
+}
+

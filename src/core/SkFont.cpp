@@ -230,6 +230,90 @@ SkScalar SkFont::measureText(const void* text, size_t length, SkTextEncoding enc
     return width;
 }
 
+size_t SkFont::breakText(const void* text, size_t byteLength, SkTextEncoding encoding,
+                         SkScalar maxWidth, SkScalar* measuredWidth, const SkPaint* paint) const {
+    if (0 == byteLength || 0 >= maxWidth) {
+        if (measuredWidth) {
+            *measuredWidth = 0;
+        }
+        return 0;
+    }
+    if (0 == getSize()) {
+        if (measuredWidth) {
+            *measuredWidth = 0;
+        }
+        return byteLength;
+    }
+
+    SkASSERT(text != nullptr);
+
+    auto [strikeSpec, scale] = SkStrikeSpec::MakeCanonicalized(*this, paint);
+    SkBulkGlyphMetrics metrics{strikeSpec};
+
+    // adjust max instead of each glyph
+    if (scale) {
+        maxWidth /= scale;
+    }
+
+    SkScalar width = 0;
+
+    const char* start = (const char*)text;
+    const char* stop = start + byteLength;
+    while (start < stop) {
+        const char* curr = start;
+
+        // read the glyph and move the pointer
+        SkGlyphID glyphID;
+        switch (encoding) {
+            case SkTextEncoding::kGlyphID: {
+                auto glyphs = (const uint16_t*)start;
+                glyphID = *glyphs;
+                glyphs++;
+                start = (const char*)glyphs;
+            } break;
+            case SkTextEncoding::kUTF8: {
+                const char* ptr = (const char*)start;
+                auto unichar = SkUTF::NextUTF8(&ptr, (const char*)stop);
+                start = (const char*)ptr;
+                glyphID = unicharToGlyph(unichar);
+            } break;
+            case SkTextEncoding::kUTF16: {
+                const uint16_t* ptr = (const uint16_t*)start;
+                auto unichar = SkUTF::NextUTF16(&ptr, (const uint16_t*)stop);
+                start = (const char*)ptr;
+                glyphID = unicharToGlyph(unichar);
+            } break;
+            case SkTextEncoding::kUTF32: {
+                const int32_t* ptr = (const int32_t*)start;
+                auto unichar = SkUTF::NextUTF32(&ptr, (const int32_t*)stop);
+                start = (const char*)ptr;
+                glyphID = unicharToGlyph(unichar);
+            } break;
+            default:
+                SK_ABORT("unexpected enum");
+        }
+
+        auto glyph = metrics.glyph(glyphID);
+
+        SkScalar x = glyph->advanceX();
+        if ((width += x) > maxWidth) {
+            width -= x;
+            start = curr;
+            break;
+        }
+    }
+
+    if (measuredWidth) {
+        if (scale) {
+            width *= scale;
+        }
+        *measuredWidth = width;
+    }
+
+    // return the number of bytes measured
+    return start - stop + byteLength;
+}
+
 void SkFont::getWidthsBounds(const SkGlyphID glyphIDs[],
                              int count,
                              SkScalar widths[],

@@ -11,29 +11,47 @@ declare_args() {
   is_official_build = false
   is_component_build = false
   use_libfuzzer = false
+  is_static_skiasharp = false
   ndk = ""
 
   # Android 5.0, Lollipop
   ndk_api = 21
 
+  linux_soname_version = ""
   sanitize = ""
 
   ar = "ar"
   cc = "cc"
   cxx = "c++"
 
-  win_sdk = "C:/Program Files (x86)/Windows Kits/10"
+  win_sdk = ""
+  min_win_sdk_version = "10.0.16299.0"
   win_sdk_version = ""
 
   win_vc = ""
   win_toolchain_version = ""
+  win_vcvars_version = ""
 
   clang_win = ""
   clang_win_version = ""
 
+  ncli = ""
+  ncli_version = "4.0"
+  ncli_gcc_version = "9.2.0"
+  ncli_gcc_version_short = "9.2"
+  ncli_llvm_version = "10"
+
   ios_min_target = ""
+
+  min_ios_version = "8.0"
+  min_tvos_version = "9.0"
+  min_watchos_version = "2.0"
+  min_macos_version = "10.8"
+  min_maccatalyst_version = "13.0"
+
   ios_use_simulator =
-      target_os == "ios" && (target_cpu == "x86" || target_cpu == "x64")
+    (target_os == "ios" || target_os == "tvos" || target_os == "watchos") &&
+    (target_cpu == "x86" || target_cpu == "x64")
 
   # Enable -H, which prints the include tree during compilation.
   # For use by external tools for analyzing include files.
@@ -65,12 +83,16 @@ if (current_os == "") {
 
 is_android = current_os == "android"
 is_fuchsia = current_os == "fuchsia"
-is_ios = current_os == "ios" || current_os == "tvos"
+is_ios = current_os == "ios" || current_os == "tvos" || current_os == "watchos" || current_os == "maccatalyst"
 is_tvos = current_os == "tvos"
-is_linux = current_os == "linux"
+is_watchos = current_os == "watchos"
+is_maccatalyst = current_os == "maccatalyst"
+is_linux = current_os == "linux" || current_os == "tizen"
 is_mac = current_os == "mac"
 is_wasm = current_os == "wasm"
-is_win = current_os == "win"
+is_win = current_os == "win" || current_os == "winrt"
+is_winrt = current_os == "winrt"
+is_tizen = current_os == "tizen"
 
 # This is just to make the Dawn build files happy. Skia itself uses target_os = "linux"
 # for ChromeOS, so this variable will not affect Skia proper.
@@ -92,7 +114,7 @@ if (current_cpu == "") {
   current_cpu = target_cpu
 }
 
-is_clang = is_android || is_ios || is_mac || is_fuchsia || is_wasm ||
+is_clang = is_android || is_ios || is_mac || is_fuchsia || is_tizen || is_wasm ||
            (cc == "clang" && cxx == "clang++") || clang_win != ""
 if (!is_clang && !is_win) {
   is_clang = exec_script("//gn/is_clang.py",
@@ -126,33 +148,30 @@ if (is_android) {
   }
 }
 
-if (target_os == "win") {
+if (is_win) {
   # By default we look for 2017 (Enterprise, Pro, and Community), then 2015. If MSVC is installed in a
   # non-default location, you can set win_vc to inform us where it is.
 
   if (win_vc == "") {
     win_vc = exec_script("//gn/find_msvc.py", [], "trim string")
   }
-  assert(win_vc != "")  # Could not find VC installation. Set win_vc to your VC
-                        # directory.
-}
-
-if (target_os == "win") {
-  if (win_toolchain_version == "") {
-    win_toolchain_version = exec_script("//gn/highest_version_dir.py",
-                                        [
-                                          "$win_vc/Tools/MSVC",
-                                          "[0-9]{2}\.[0-9]{2}\.[0-9]{5}",
-                                        ],
-                                        "trim string")
+  if (win_vc != "") {
+    if (win_toolchain_version == "") {
+      if (win_vcvars_version != "") {
+        win_toolchain_version = exec_script("//gn/highest_version_dir.py", [ "$win_vc/Tools/MSVC", "$win_vcvars_version[0-9]{1}\.[0-9]{5}" ], "trim string")
+      } else {
+        win_toolchain_version = exec_script("//gn/highest_version_dir.py", [ "$win_vc/Tools/MSVC", "[0-9]{2}\.[0-9]{2}\.[0-9]{5}" ], "trim string")
+      }
+    }
+    if (win_vcvars_version == "") {
+      win_vcvars_version = exec_script("//gn/get_vcvars_version.py", [ win_toolchain_version ], "trim string")
+    }
   }
-  if (win_sdk_version == "") {
-    win_sdk_version = exec_script("//gn/highest_version_dir.py",
-                                  [
-                                    "$win_sdk/Include",
-                                    "[0-9]{2}\.[0-9]\.[0-9]{5}\.[0-9]",
-                                  ],
-                                  "trim string")
+  if (win_sdk == "") {
+    win_sdk = exec_script("//gn/find_winsdk.py", [], "trim string")
+  }
+  if (win_sdk != "" && win_sdk_version == "") {
+    win_sdk_version = exec_script("//gn/lowest_version_dir.py", [ "$win_sdk/Include", "[0-9]{2}\.[0-9]\.[0-9]{5}\.[0-9]", min_win_sdk_version ], "trim string")
   }
   if (clang_win != "" && clang_win_version == "") {
     clang_win_version = exec_script("//gn/highest_version_dir.py",
@@ -164,6 +183,21 @@ if (target_os == "win") {
   }
 }
 
+if (is_tizen) {
+  ncli_target = ""
+  ncli_platform = ""
+  ncli_gccdir = ""
+  if (target_cpu == "arm") {
+    ncli_target = "arm-tizen-linux-gnueabi"
+    ncli_platform = "tizen-${ncli_version}/mobile/rootstraps/mobile-${ncli_version}-device.core"
+    ncli_gccdir = "arm-linux-gnueabi-gcc-${ncli_gcc_version_short}"
+  } else if (target_cpu == "x86") {
+    ncli_target = "i586-tizen-linux-gnueabi"
+    ncli_platform = "tizen-${ncli_version}/mobile/rootstraps/mobile-${ncli_version}-emulator.core"
+    ncli_gccdir = "i586-linux-gnueabi-gcc-${ncli_gcc_version_short}"
+  }
+}
+
 # A component is either a static or a shared library.
 template("component") {
   _component_mode = "static_library"
@@ -172,6 +206,18 @@ template("component") {
   }
 
   target(_component_mode, target_name) {
+    forward_variables_from(invoker, "*")
+  }
+}
+
+# SkiaSharp differs depending on the platform
+template("skiasharp_build") {
+  _skiasharp_mode = "shared_library"
+  if (is_static_skiasharp) {
+    _skiasharp_mode = "static_library"
+  }
+
+  target(_skiasharp_mode, target_name) {
     forward_variables_from(invoker, "*")
   }
 }
@@ -244,4 +290,11 @@ if (is_win) {
   set_default_toolchain("//gn/toolchain:gcc_like")
   default_toolchain_name = "gcc_like"
   host_toolchain = "gcc_like_host"
+}
+
+set_defaults("skiasharp_build") {
+  configs = default_configs
+  if (is_static_skiasharp) {
+    complete_static_lib = true
+  }
 }

@@ -18,23 +18,32 @@ declare_args() {
   extra_cflags_c = []
   extra_cflags_cc = []
   extra_ldflags = []
+  use_PIC = true
 
   malloc = ""
+
+  enable_bitcode =
+    (is_tvos || is_watchos) &&
+    (target_cpu == "arm" || target_cpu == "arm64")
+
   werror = false
   xcode_sysroot = ""
+
+  visibility_hidden = true
 }
 
-if (is_ios && xcode_sysroot == "") {
+if (is_ios && !is_maccatalyst && xcode_sysroot == "") {
   if (is_tvos) {
-    sdk = "appletvos"
-    if (ios_use_simulator) {
-      sdk = "appletvsimulator"
-    }
+    sdk = "appletv"
+  } else if (is_watchos) {
+    sdk = "watch"
   } else {
-    sdk = "iphoneos"
-    if (ios_use_simulator) {
-      sdk = "iphonesimulator"
-    }
+    sdk = "iphone"
+  }
+  if (ios_use_simulator) {
+    sdk += "simulator"
+  } else {
+    sdk += "os"
   }
   xcode_sysroot =
       exec_script("../find_xcode_sysroot.py", [ sdk ], "trim string")
@@ -44,7 +53,7 @@ if (is_ios && xcode_sysroot == "") {
 # shipped with chrome can find them. When the gn_to_bp.py tool is run, then the host_os != mac.
 # In this case leave the xcode_sysroot empty, and the cc/c++ that come with XCode will be able to
 # find needed include paths.
-if (is_mac && host_os == "mac" && xcode_sysroot == "") {
+if ((is_mac || is_maccatalyst) && host_os == "mac" && xcode_sysroot == "") {
   xcode_sysroot =
       exec_script("../find_xcode_sysroot.py", [ "macosx" ], "trim string")
 }
@@ -116,6 +125,16 @@ config("default") {
       "WIN32_LEAN_AND_MEAN",
       "NOMINMAX",
     ]
+    if (is_winrt) {
+      defines += [
+        "WINAPI_FAMILY=WINAPI_FAMILY_APP",
+        "SK_BUILD_FOR_WINRT",
+      ]
+      ldflags += [
+        "/APPCONTAINER",
+        "WindowsApp.lib",
+      ]
+    }
 
     _include_dirs = [
       "$win_vc/Tools/MSVC/$win_toolchain_version/include",
@@ -136,24 +155,32 @@ config("default") {
       include_dirs = _include_dirs
     }
 
+    _is_store = ""
+    if (is_winrt) {
+      _is_store = "/store"
+    }
+
     lib_dirs = [
-      "$win_sdk/Lib/$win_sdk_version/ucrt/$current_cpu",
-      "$win_sdk/Lib/$win_sdk_version/um/$current_cpu",
-      "$win_vc/Tools/MSVC/$win_toolchain_version/lib/$current_cpu",
+      "$win_sdk/Lib/$win_sdk_version/ucrt/$target_cpu",
+      "$win_sdk/Lib/$win_sdk_version/um/$target_cpu",
+      "$win_vc/Tools/MSVC/$win_toolchain_version/lib/$target_cpu$_is_store",
     ]
   } else {
-    cflags += [
-      "-fstrict-aliasing",
-      "-fPIC",
-      "-fvisibility=hidden",
-    ]
-    cflags_cc += [
-      "-std=c++17",
-      "-fvisibility-inlines-hidden",
-    ]
+    if (use_PIC) {
+      cflags += [ "-fPIC" ]
+    }
+    cflags += [ "-fstrict-aliasing" ]
+    cflags_cc += [ "-std=c++17" ]
+
+    if (visibility_hidden) {
+      # The main idea is to slim the exported API, but these flags also improve link time on Mac.
+      # These would make stack traces worse on Linux, so we don't just set them willy-nilly.
+      cflags += [ "-fvisibility=hidden" ]
+      cflags_cc += [ "-fvisibility-inlines-hidden" ]
+    }
   }
 
-  if (current_cpu == "arm") {
+  if (current_cpu == "arm" && !is_win) {
     cflags += [
       "-march=armv7-a",
       "-mfpu=neon",
@@ -189,6 +216,31 @@ config("default") {
     ldflags += [ "-static-libstdc++" ]
   }
 
+  if (is_tizen) {
+    defines += [ "SK_BUILD_FOR_TIZEN" ]
+    asmflags += [
+      "--target=$ncli_target",
+      "-B$ncli/tools/$ncli_gccdir/$ncli_target/bin",
+    ]
+    cflags += [
+      "--sysroot=$ncli/platforms/$ncli_platform",
+      "--target=$ncli_target",
+      "-B$ncli/tools/$ncli_gccdir/$ncli_target/bin",
+    ]
+    cflags_cc += [
+      "-isystem$ncli/tools/$ncli_gccdir/$ncli_target/include/c++/${ncli_gcc_version}",
+      "-isystem$ncli/tools/$ncli_gccdir/$ncli_target/include/c++/${ncli_gcc_version}/$ncli_target",
+    ]
+    ldflags += [
+      "--sysroot=$ncli/platforms/$ncli_platform",
+      "--target=$ncli_target",
+      "-B$ncli/tools/$ncli_gccdir/$ncli_target/bin",
+    ]
+    lib_dirs = [
+      "$ncli/platforms/$ncli_platform/usr/lib",
+    ]
+  }
+
   if (show_includes) {
     assert(is_clang, "show_includes requires clang to build.")
     if (is_win) {
@@ -205,19 +257,37 @@ config("default") {
   }
 
   if (is_ios) {
-    if (current_cpu == "arm") {
-      _arch_flags = [
-        "-arch",
-        "armv7",
-      ]
-    } else if (current_cpu == "arm64") {
-      _arch_flags = [
-        "-arch",
-        "arm64",
-        "-arch",
-        "arm64e",
-      ]
-    } else if (current_cpu == "x86") {
+    if (target_cpu == "arm") {
+      if (is_watchos) {
+        _arch_flags = [
+          "-arch",
+          "armv7k",
+        ]
+      } else {
+        _arch_flags = [
+          "-arch",
+          "armv7",
+        ]
+      }
+    } else if (target_cpu == "arm64") {
+      if (is_watchos) {
+        _arch_flags = [
+          "-arch",
+          "arm64_32",
+        ]
+      } else {
+        _arch_flags = [
+          "-arch",
+          "arm64",
+        ]
+        if (!ios_use_simulator) {
+          _arch_flags += [
+            "-arch",
+            "arm64e",
+          ]
+        }
+      }
+    } else if (target_cpu == "x86") {
       _arch_flags = [
         "-arch",
         "i386",
@@ -252,17 +322,55 @@ config("default") {
                  "-stdlib=libc++",
                ] + _arch_flags
     libs += [ "objc" ]
-    if (ios_min_target != "") {
+    if (is_watchos) {
+      defines += [ "SK_BUILD_FOR_WATCHOS" ]
+      cflags += [ "-mwatchos-version-min=$min_watchos_version" ]
+      ldflags += [ "-Wl,watchos_version_min=$min_watchos_version" ]
+    } else if (is_tvos) {
+      defines += [ "SK_BUILD_FOR_TVOS" ]
+      cflags += [ "-mtvos-version-min=$min_tvos_version" ]
+      ldflags += [ "-Wl,tvos_version_min=$min_tvos_version" ]
       if (ios_use_simulator) {
-        cflags += [ "-miphonesimulator-version-min=$ios_min_target" ]
-        asmflags += [ "-miphonesimulator-version-min=$ios_min_target" ]
-        ldflags += [ "-miphonesimulator-version-min=$ios_min_target" ]
-      } else {
-        cflags += [ "-miphoneos-version-min=$ios_min_target" ]
-        asmflags += [ "-miphoneos-version-min=$ios_min_target" ]
-        ldflags += [ "-miphoneos-version-min=$ios_min_target" ]
+        cflags += [
+          "-target", "$target_cpu-apple-tvos$min_tvos_version-simulator",
+        ]
+        ldflags += [
+          "-target", "$target_cpu-apple-tvos$min_tvos_version-simulator",
+        ]
+      }
+    } else if (is_maccatalyst) {
+      defines += [ "SK_BUILD_FOR_MACCATALYST" ]
+      if (target_cpu == "x64") {
+        _target = "x86_64"
+      } else if (target_cpu == "arm64") {
+        _target = "arm64"
+      }
+      cflags += [
+        "-target", "$_target-apple-ios$min_maccatalyst_version-macabi",
+        "-iframework", "$xcode_sysroot/System/iOSSupport/System/Library/Frameworks",
+      ]
+      ldflags += [
+        "-target", "$_target-apple-ios$min_maccatalyst_version-macabi",
+        "-iframework", "$xcode_sysroot/System/iOSSupport/System/Library/Frameworks",
+      ]
+    } else {
+      cflags += [ "-mios-version-min=$min_ios_version" ]
+      ldflags += [ "-Wl,ios_version_min=$min_ios_version" ]
+      if (ios_use_simulator) {
+        cflags += [
+          "-target", "$target_cpu-apple-ios$min_ios_version-simulator",
+        ]
+        ldflags += [
+          "-target", "$target_cpu-apple-ios$min_ios_version-simulator",
+        ]
       }
     }
+  }
+
+  if (enable_bitcode) {
+    cflags += [
+      "-fembed-bitcode"
+    ]
   }
 
   if (is_linux) {
@@ -280,10 +388,12 @@ config("default") {
       cflags += [
         "-isysroot",
         xcode_sysroot,
+        "-mmacosx-version-min=$min_macos_version",
       ]
       ldflags += [
         "-isysroot",
         xcode_sysroot,
+        "-Wl,macosx_version_min=$min_macos_version",
       ]
     }
 
@@ -299,33 +409,34 @@ config("default") {
     if (current_cpu == "arm64") {
       asmflags += [
         "-target",
-        "arm64-apple-macos11",
+        "arm64-apple-macos$min_macos_version",
       ]
       cflags += [
         "-target",
-        "arm64-apple-macos11",
+        "arm64-apple-macos$min_macos_version",
       ]
       ldflags += [
         "-target",
-        "arm64-apple-macos11",
+        "arm64-apple-macos$min_macos_version",
       ]
     } else {
       asmflags += [
         "-target",
-        "x86_64-apple-macos10.15",
+        "x86_64-apple-macos$min_macos_version",
       ]
       cflags += [
         "-target",
-        "x86_64-apple-macos10.15",
+        "x86_64-apple-macos$min_macos_version",
       ]
       ldflags += [
         "-target",
-        "x86_64-apple-macos10.15",
+        "x86_64-apple-macos$min_macos_version",
       ]
     }
   }
 
   if (is_wasm) {
+    defines += [ "SK_BUILD_FOR_WASM" ]
     cflags += [ "--sysroot=$skia_emsdk_dir/upstream/emscripten/cache/sysroot" ]
     ldflags += [ "--sysroot=$skia_emsdk_dir/upstream/emscripten/cache/sysroot" ]
   }
@@ -731,14 +842,23 @@ config("optimize") {
     } else {
       cflags = [ "-O3" ]
     }
-    if (is_mac || is_ios) {
-      ldflags += [ "-dead_strip" ]
-    } else if (!is_wasm) {
+    if (!enable_bitcode) {
       cflags += [
         "-fdata-sections",
         "-ffunction-sections",
       ]
+    }
+    if (is_mac || is_ios) {
+      ldflags += [ "-dead_strip" ]
+    } else {
       ldflags += [ "-Wl,--gc-sections" ]
+    }
+    if (target_cpu == "wasm") {
+      # The compiler asks us to add an optimization flag to both cflags
+      # and ldflags to cut down on the local variables,
+      # for performance reasons.
+      # The "linking" step is the conversion to javascript.
+      ldflags += [ "-O3" ]
     }
   }
 }

@@ -12,6 +12,8 @@
 .project
 .recipe_deps/
 .settings/
+.vs/
+/_ReSharper.Caches
 .vscode/
 .win_toolchain/
 TAGS

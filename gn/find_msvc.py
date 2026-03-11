@@ -9,7 +9,7 @@ import subprocess
 
 '''
 Look for the first match in the format
-    C:\\Program Files (x86)\\Microsoft Visual Studio\\${RELEASE}\\${VERSION}\\VC
+    C:\\Program Files (x86)\\Microsoft Visual Studio\\${RELEASE}\\${VERSION}\\VC\\Tools\\MSVC
 '''
 def find_msvc():
   if sys.platform.startswith('win'):
@@ -17,7 +17,8 @@ def find_msvc():
     for release in ['2019', '2017']:
       for version in ['Enterprise', 'Professional', 'Community', 'BuildTools', 'Preview']:
         path = os.path.join(default_dir, release, version, 'VC')
-        if os.path.isdir(path):
+        tools = os.path.join(path, 'Tools', 'MSVC')
+        if os.path.isdir(tools):
           return path
 
     # Fall back to vswhere.exe to determine non-standard installation paths

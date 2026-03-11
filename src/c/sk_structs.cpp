@@ -1,0 +1,92 @@
+/*
+ * Copyright 2014 Google Inc.
+ * Copyright 2015 Xamarin Inc.
+ * Copyright 2017 Microsoft Corporation. All rights reserved.
+ *
+ * Use of this source code is governed by a BSD-style license that can be
+ * found in the LICENSE file.
+ */
+
+#include "src/c/sk_types_priv.h"
+
+#include "include/codec/SkCodec.h"
+#include "include/core/SkCanvas.h"
+#include "include/core/SkDocument.h"
+#include "include/core/SkImageInfo.h"
+#include "include/core/SkPaint.h"
+#include "include/core/SkPoint.h"
+#include "include/core/SkPoint3.h"
+#include "include/core/SkRect.h"
+#include "include/core/SkRSXform.h"
+#include "include/core/SkSize.h"
+#include "include/core/SkSurfaceProps.h"
+#include "include/core/SkTextBlob.h"
+#include "include/docs/SkPDFDocument.h"
+#include "include/effects/SkHighContrastFilter.h"
+#include "include/effects/SkRuntimeEffect.h"
+#include "src/core/SkMask.h"
+
+#if defined(SK_GANESH)
+#include "include/gpu/GrTypes.h"
+#include "include/gpu/GrContextOptions.h"
+#include "include/gpu/gl/GrGLTypes.h"
+
+#if defined(SK_VULKAN)
+#include "include/gpu/vk/GrVkTypes.h"
+#endif
+
+#endif
+
+#if __cplusplus >= 199711L
+
+#define STRINGIFY(x) #x
+#define TOSTRING(x) STRINGIFY(x)
+#define ASSERT_MSG(SK, C) "ABI changed, you must update the C structure for " TOSTRING(#SK) " to " TOSTRING(#C) "."
+
+// custom mappings:
+//  - sk_matrix_t
+//  - sk_document_pdf_metadata_t
+
+static_assert (sizeof (sk_ipoint_t) == sizeof (SkIPoint), ASSERT_MSG(SkIPoint, sk_ipoint_t));
+static_assert (sizeof (sk_point_t) == sizeof (SkPoint), ASSERT_MSG(SkPoint, sk_point_t));
+static_assert (sizeof (sk_irect_t) == sizeof (SkIRect), ASSERT_MSG(SkIRect, sk_irect_t));
+static_assert (sizeof (sk_rect_t) == sizeof (SkRect), ASSERT_MSG(SkRect, sk_rect_t));
+static_assert (sizeof (sk_isize_t) == sizeof (SkISize), ASSERT_MSG(SkISize, sk_isize_t));
+static_assert (sizeof (sk_size_t) == sizeof (SkSize), ASSERT_MSG(SkSize, sk_size_t));
+static_assert (sizeof (sk_point3_t) == sizeof (SkPoint3), ASSERT_MSG(SkPoint3, sk_point3_t));
+static_assert (sizeof (sk_imageinfo_t) == sizeof (SkImageInfo), ASSERT_MSG(SkImageInfo, sk_imageinfo_t));
+static_assert (sizeof (sk_fontmetrics_t) == sizeof (SkFontMetrics), ASSERT_MSG(SkFontMetrics, sk_fontmetrics_t));
+static_assert (sizeof (sk_codec_options_t) == sizeof (SkCodec::Options), ASSERT_MSG(SkCodec::Options, sk_codec_options_t));
+static_assert (sizeof (sk_lattice_t) == sizeof (SkCanvas::Lattice), ASSERT_MSG(SkCanvas::Lattice, sk_lattice_t));
+static_assert (sizeof (sk_document_pdf_datetime_t) == sizeof (SkPDF::DateTime), ASSERT_MSG(SkPDF::DateTime, sk_document_pdf_datetime_t));
+static_assert (sizeof (sk_codec_frameinfo_t) == sizeof (SkCodec::FrameInfo), ASSERT_MSG(SkCodec::FrameInfo, sk_codec_frameinfo_t));
+static_assert (sizeof (sk_colorspace_transfer_fn_t) == sizeof (skcms_TransferFunction), ASSERT_MSG(skcms_TransferFunction, sk_colorspace_transfer_fn_t));
+static_assert (sizeof (sk_colorspace_primaries_t) == sizeof (SkColorSpacePrimaries), ASSERT_MSG(SkColorSpacePrimaries, sk_colorspace_primaries_t));
+static_assert (sizeof (sk_highcontrastconfig_t) == sizeof (SkHighContrastConfig), ASSERT_MSG(SkHighContrastConfig, sk_highcontrastconfig_t));
+static_assert (sizeof (sk_pngencoder_options_t) == sizeof (SkPngEncoder::Options), ASSERT_MSG(SkPngEncoder::Options, sk_pngencoder_options_t));
+static_assert (sizeof (sk_jpegencoder_options_t) == sizeof (SkJpegEncoder::Options), ASSERT_MSG(SkJpegEncoder::Options, sk_jpegencoder_options_t));
+static_assert (sizeof (sk_webpencoder_options_t) == sizeof (SkWebpEncoder::Options), ASSERT_MSG(SkWebpEncoder::Options, sk_webpencoder_options_t));
+static_assert (sizeof (sk_textblob_builder_runbuffer_t) == sizeof (SkTextBlobBuilder::RunBuffer), ASSERT_MSG(SkTextBlobBuilder::RunBuffer, sk_textblob_builder_runbuffer_t));
+static_assert (sizeof (sk_rsxform_t) == sizeof (SkRSXform), ASSERT_MSG(SkRSXform, sk_rsxform_t));
+static_assert (sizeof (sk_color4f_t) == sizeof (SkColor4f), ASSERT_MSG(SkColor4f, sk_color4f_t));
+static_assert (sizeof (sk_colorspace_xyz_t) == sizeof (skcms_Matrix3x3), ASSERT_MSG(skcms_Matrix3x3, sk_colorspace_xyz_t));
+static_assert (sizeof (sk_cubic_resampler_t) == sizeof (SkCubicResampler), ASSERT_MSG(SkCubicResampler, sk_cubic_resampler_t));
+static_assert (sizeof (sk_sampling_options_t) == sizeof (SkSamplingOptions), ASSERT_MSG(SkSamplingOptions, sk_sampling_options_t));
+static_assert (sizeof (sk_runtimeeffect_uniform_t) == sizeof (SkRuntimeEffect::Uniform), ASSERT_MSG(SkRuntimeEffect::Uniform, sk_runtimeeffect_uniform_t));
+static_assert (sizeof (sk_runtimeeffect_child_t) == sizeof (SkRuntimeEffect::Child), ASSERT_MSG(SkRuntimeEffect::Child, sk_runtimeeffect_child_t));
+static_assert (sizeof (sk_matrix44_t) == sizeof (SkM44), ASSERT_MSG(SkM44, sk_matrix44_t));
+
+static_assert (sizeof (skottie_animation_builder_stats_t) == sizeof (skottie::Animation::Builder::Stats), ASSERT_MSG(skottie::Animation::Builder::Stats, skottie_animation_builder_stats_t));
+
+#if defined(SK_GANESH)
+static_assert (sizeof (gr_gl_framebufferinfo_t) == sizeof (GrGLFramebufferInfo), ASSERT_MSG(GrGLFramebufferInfo, gr_gl_framebufferinfo_t));
+static_assert (sizeof (gr_gl_textureinfo_t) == sizeof (GrGLTextureInfo), ASSERT_MSG(GrGLTextureInfo, gr_gl_textureinfo_t));
+
+#if defined(SK_VULKAN)
+static_assert (sizeof (gr_vk_alloc_t) == sizeof (GrVkAlloc), ASSERT_MSG(GrVkAlloc, gr_vk_alloc_t));
+static_assert (sizeof (gr_vk_imageinfo_t) == sizeof (GrVkImageInfo), ASSERT_MSG(GrVkImageInfo, gr_vk_imageinfo_t));
+static_assert (sizeof (gr_vk_ycbcrconversioninfo_t) == sizeof (GrVkYcbcrConversionInfo), ASSERT_MSG(GrVkYcbcrConversionInfo, gr_vk_ycbcrconversioninfo_t));
+#endif
+#endif
+
+#endif

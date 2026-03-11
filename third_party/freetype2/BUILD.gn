@@ -25,6 +25,9 @@ if (skia_use_system_freetype2) {
   system("freetype2") {
     include_dirs = [ skia_system_freetype2_include_path ]
     libs = [ skia_system_freetype2_lib ]
+    if (is_tizen) {
+      cflags = [ "-I=$skia_system_freetype2_include_path" ]
+    }
   }
 } else {
   third_party("freetype2") {
