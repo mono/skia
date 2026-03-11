@@ -15,12 +15,17 @@ import (
 	"fmt"
 	"path/filepath"
 
-	sk_common "go.skia.org/infra/go/common"
+	"cloud.google.com/go/storage"
+	"go.skia.org/infra/go/auth"
 	sk_exec "go.skia.org/infra/go/exec"
+	"go.skia.org/infra/go/gcs"
+	"go.skia.org/infra/go/gcs/gcsclient"
 	"go.skia.org/infra/go/skerr"
+	"go.skia.org/infra/task_driver/go/lib/auth_steps"
 	"go.skia.org/infra/task_driver/go/lib/os_steps"
 	"go.skia.org/infra/task_driver/go/td"
 	"go.skia.org/skia/infra/bots/task_drivers/common"
+	"google.golang.org/api/option"
 )
 
 var (
@@ -31,22 +36,21 @@ var (
 	workdir        = flag.String("workdir", ".", "Working directory, the root directory of a full Skia checkout")
 	command        = flag.String("command", "", "Path to the command to run (e.g. a shell script in a directory with CAS inputs).")
 	commandWorkDir = flag.String("command_workdir", "", "Path to the working directory of the command to run (e.g. a directory with CAS inputs).")
+	kind           = flag.String("kind", "", `Test kind ("benchmark", "gm" or "unit"). Required.`)
 
-	// Flags required for GM tests.
-	isGM  = flag.Bool("gm", false, "Whether this test is a GM (if so, we'll upload any produced images to Gold)")
-	label = flag.String("bazel_label", "", "The label of the Bazel target to test (only used if --gm is set)")
-
-	// goldctl data.
-	goldctlPath      = flag.String("goldctl_path", "", "The path to the golctl binary on disk.")
+	// Flags used by benchmark and GM tests.
 	gitCommit        = flag.String("git_commit", "", "The git hash to which the data should be associated. This will be used when changelist_id and patchset_order are not set to report data to Gold that belongs on the primary branch.")
 	changelistID     = flag.String("changelist_id", "", "Should be non-empty only when run on the CQ.")
 	patchsetOrderStr = flag.String("patchset_order", "", "Should be non-zero only when run on the CQ.")
-	tryjobID         = flag.String("tryjob_id", "", "Should be non-zero only when run on the CQ.")
+
+	// Flags used by GM tests.
+	label       = flag.String("bazel_label", "", "The label of the Bazel target to test (only used for GM tests)")
+	goldctlPath = flag.String("goldctl_path", "", "The path to the golctl binary on disk.")
+	tryjobID    = flag.String("tryjob_id", "", "Should be non-zero only when run on the CQ.")
 
 	// Optional flags.
-	commandArgs = sk_common.NewMultiStringFlag("command_args", nil, "Any arguments to pass to the command to run. Optional.")
-	local       = flag.Bool("local", false, "True if running locally (as opposed to on the CI/CQ)")
-	output      = flag.String("o", "", "If provided, dump a JSON blob of step data to the given file. Prints to stdout if '-' is given.")
+	local  = flag.Bool("local", false, "True if running locally (as opposed to on the CI/CQ)")
+	output = flag.String("o", "", "If provided, dump a JSON blob of step data to the given file. Prints to stdout if '-' is given.")
 )
 
 func main() {
@@ -54,10 +58,38 @@ func main() {
 	ctx := td.StartRun(projectId, taskId, taskName, output, local)
 	defer td.EndRun(ctx)
 
+	if *kind == "" {
+		td.Fatal(ctx, skerr.Fmt("Flag --kind is required."))
+	}
+
+	var testKind testKind
+	if *kind == "benchmark" {
+		testKind = benchmarkTest
+	} else if *kind == "gm" {
+		testKind = gmTest
+	} else if *kind == "unit" {
+		testKind = unitTest
+	} else {
+		td.Fatal(ctx, skerr.Fmt("Unknown flag --kind value: %q", *kind))
+	}
+
 	wd, err := os_steps.Abs(ctx, *workdir)
 	if err != nil {
 		td.Fatal(ctx, err)
 	}
+
+	// Make an HTTP client with the required permissions to upload to the perf.skia.org GCS bucket.
+	httpClient, _, err := auth_steps.InitHttpClient(ctx, *local, auth.ScopeReadWrite, auth.ScopeUserinfoEmail)
+	if err != nil {
+		td.Fatal(ctx, skerr.Wrap(err))
+	}
+
+	// Make a GCS client to to upload to the perf.skia.org GCS bucket.
+	store, err := storage.NewClient(ctx, option.WithHTTPClient(httpClient))
+	if err != nil {
+		td.Fatal(ctx, skerr.Wrap(err))
+	}
+	gcsClient := gcsclient.New(store, common.PerfGCSBucketName)
 
 	tdArgs := taskDriverArgs{
 		UploadToGoldArgs: common.UploadToGoldArgs{
@@ -69,12 +101,21 @@ func main() {
 			TryjobID:      *tryjobID,
 		},
 
-		isGM:           *isGM,
+		BenchmarkInfo: common.BenchmarkInfo{
+			GitCommit:     *gitCommit,
+			TaskName:      *taskName,
+			TaskID:        *taskId,
+			ChangelistID:  *changelistID,
+			PatchsetOrder: *patchsetOrderStr,
+		},
+
+		testKind:       testKind,
 		commandPath:    filepath.Join(wd, *command),
-		commandArgs:    *commandArgs,
 		commandWorkDir: filepath.Join(wd, *commandWorkDir),
+
+		gcsClient: gcsClient,
 	}
-	if *isGM {
+	if testKind == benchmarkTest || testKind == gmTest {
 		tdArgs.undeclaredOutputsDir, err = os_steps.TempDir(ctx, "", "test-undeclared-outputs-dir-*")
 		if err != nil {
 			td.Fatal(ctx, err)
@@ -86,29 +127,44 @@ func main() {
 	}
 }
 
+type testKind int
+
+const (
+	benchmarkTest testKind = iota
+	gmTest
+	unitTest
+)
+
 // taskDriverArgs gathers the inputs to this task driver, and decouples the task driver's
 // entry-point function from the command line flags, which facilitates writing unit tests.
 type taskDriverArgs struct {
 	common.UploadToGoldArgs
+	common.BenchmarkInfo
 
 	commandPath          string
-	commandArgs          []string
 	commandWorkDir       string
-	isGM                 bool
+	testKind             testKind
 	undeclaredOutputsDir string
+
+	gcsClient gcs.GCSClient // Only used to upload benchmark results to Perf.
 }
 
 // run is the entrypoint of this task driver.
 func run(ctx context.Context, tdArgs taskDriverArgs) error {
 	// GM tests require an output directory in which to store any PNGs produced.
 	var env []string
-	if tdArgs.isGM {
+	if tdArgs.testKind == benchmarkTest || tdArgs.testKind == gmTest {
 		env = append(env, fmt.Sprintf("TEST_UNDECLARED_OUTPUTS_DIR=%s", tdArgs.undeclaredOutputsDir))
+	}
+
+	var args []string
+	if tdArgs.testKind == benchmarkTest {
+		args = common.ComputeBenchmarkTestRunnerCLIFlags(ctx, tdArgs.BenchmarkInfo)
 	}
 
 	runCmd := &sk_exec.Command{
 		Name:       tdArgs.commandPath,
-		Args:       tdArgs.commandArgs,
+		Args:       args,
 		Env:        env,
 		InheritEnv: true, // Makes sure any CIPD-downloaded tools are available on $PATH.
 		Dir:        tdArgs.commandWorkDir,
@@ -120,7 +176,11 @@ func run(ctx context.Context, tdArgs taskDriverArgs) error {
 		return skerr.Wrap(err)
 	}
 
-	if tdArgs.isGM {
+	if tdArgs.testKind == benchmarkTest {
+		return skerr.Wrap(common.UploadToPerf(ctx, tdArgs.gcsClient, tdArgs.BenchmarkInfo, tdArgs.undeclaredOutputsDir))
+	}
+
+	if tdArgs.testKind == gmTest {
 		return skerr.Wrap(common.UploadToGold(ctx, tdArgs.UploadToGoldArgs, tdArgs.undeclaredOutputsDir))
 	}
 

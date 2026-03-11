@@ -39,7 +39,9 @@
 #include "src/core/SkReadBuffer.h"
 #include "src/core/SkWriteBuffer.h"
 #include "src/image/SkImage_Base.h"
+#include "tools/GpuToolUtils.h"
 #include "tools/ToolUtils.h"
+#include "tools/fonts/FontToolUtils.h"
 
 #if defined(SK_GRAPHITE)
 #include "include/gpu/graphite/Surface.h"
@@ -154,7 +156,7 @@ protected:
     void onDraw(SkCanvas* canvas) override {
         canvas->scale(2, 2);
 
-        SkFont font(ToolUtils::create_portable_typeface(), 8);
+        SkFont font(ToolUtils::DefaultPortableTypeface(), 8);
 
         canvas->drawString("Original Img",  10,  60, font, SkPaint());
         canvas->drawString("Modified Img",  10, 140, font, SkPaint());

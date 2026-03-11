@@ -19,6 +19,11 @@ import (
 
 var gniExportDescs = []exporter.GNIExportDesc{
 	{GNI: "gn/codec.gni", Vars: []exporter.GNIFileListExportDesc{
+		{Var: "skia_codec_public",
+			Rules: []string{
+				"//include/codec:public_hdrs",
+			},
+		},
 		{Var: "skia_codec_core",
 			Rules: []string{
 				"//src/codec:core_hdrs",
@@ -78,8 +83,8 @@ var gniExportDescs = []exporter.GNIExportDesc{
 			Rules: []string{"//include/pathops:public_hdrs"}},
 		{Var: "skia_pathops_sources",
 			Rules: []string{
-				"//src/pathops:_pathops_hdrs",
-				"//src/pathops:_pathops_srcs",
+				"//src/pathops:legacy_pathops_hdrs",
+				"//src/pathops:legacy_pathops_srcs",
 			}},
 		{Var: "skia_encode_public",
 			Rules: []string{"//include/encode:encode_hdrs"}},
@@ -226,6 +231,7 @@ var gniExportDescs = []exporter.GNIExportDesc{
 				"//include/utils/mac:public_hdrs"}},
 		{Var: "skia_utils_chromium",
 			Rules: []string{
+				"//include/docs:chromium_hdrs",
 				"//src/utils:chromium_hdrs"}},
 		{Var: "skia_utils_private",
 			Rules: []string{
@@ -274,7 +280,6 @@ var gniExportDescs = []exporter.GNIExportDesc{
 		{Var: "skia_ganesh_private",
 			Rules: []string{
 				"//include/private/gpu/ganesh:private_hdrs",
-				"//include/private/gpu/ganesh:gl_private_hdrs",
 				"//src/gpu/ganesh/effects:effects_hdrs",
 				"//src/gpu/ganesh/effects:effects_srcs",
 				"//src/gpu/ganesh/geometry:geometry_hdrs",
@@ -291,7 +296,6 @@ var gniExportDescs = []exporter.GNIExportDesc{
 				"//src/gpu/ganesh/ops:ops_srcs",
 				"//src/gpu/ganesh/surface:surface_srcs",
 				"//src/gpu/ganesh/surface:surface_srcs",
-				"//src/gpu/ganesh/surface:android_srcs",
 				"//src/gpu/ganesh/tessellate:tessellate_hdrs",
 				"//src/gpu/ganesh/tessellate:tessellate_srcs",
 				"//src/gpu/ganesh/text:private_hdrs",
@@ -300,6 +304,11 @@ var gniExportDescs = []exporter.GNIExportDesc{
 				"//src/gpu/ganesh:core_skslc_hdrs",
 				"//src/gpu/ganesh:core_skslc_srcs",
 				"//src/gpu/ganesh:core_srcs",
+			}},
+		{Var: "skia_gpu_android_private",
+			Rules: []string{
+				"//src/gpu/ganesh/surface:android_srcs",
+				"//src/gpu/ganesh:android_srcs",
 				"//src/image:android_srcs",
 			}},
 		{Var: "skia_gpu_chromium_public",
@@ -317,6 +326,10 @@ var gniExportDescs = []exporter.GNIExportDesc{
 				"//src/gpu/ganesh/gl:core_srcs",
 				"//src/gpu/ganesh/gl/builders:builder_hdrs",
 				"//src/gpu/ganesh/gl/builders:builder_srcs",
+			}},
+		{Var: "skia_android_gl_sources",
+			Rules: []string{
+				"//src/gpu/ganesh/gl:android_srcs",
 			}},
 		{Var: "skia_null_gpu_sources",
 			Rules: []string{
@@ -338,9 +351,12 @@ var gniExportDescs = []exporter.GNIExportDesc{
 			}},
 		{Var: "skia_gpu_vk_private",
 			Rules: []string{
-				"//include/private/gpu/ganesh:vk_private_hdrs",
 				"//src/gpu/ganesh/vk:vk_hdrs",
 				"//src/gpu/ganesh/vk:vk_srcs",
+			}},
+		{Var: "skia_gpu_vk_android_private",
+			Rules: []string{
+				"//src/gpu/ganesh/vk:android_srcs",
 			}},
 		{Var: "skia_gpu_vk_chromium_private",
 			Rules: []string{
@@ -359,7 +375,6 @@ var gniExportDescs = []exporter.GNIExportDesc{
 			}},
 		{Var: "skia_gpu_metal_private",
 			Rules: []string{
-				"//include/private/gpu/ganesh:mtl_private_hdrs",
 				"//src/gpu/ganesh/surface:mtl_objc_srcs",
 				"//src/gpu/ganesh/mtl:mtl_hdrs",
 				"//src/gpu/ganesh/mtl:mtl_srcs",

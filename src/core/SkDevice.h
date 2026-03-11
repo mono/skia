@@ -39,7 +39,6 @@ class SkColorSpace;
 class SkMesh;
 struct SkDrawShadowRec;
 class SkImageFilter;
-class SkImageFilterCache;
 class SkRasterHandleAllocator;
 class SkSpecialImage;
 class GrRecordingContext;
@@ -62,8 +61,7 @@ class GlyphRunList;
 }
 
 namespace skif {
-class Context;
-struct ContextInfo;
+class Backend;
 class Mapping;
 }
 namespace skgpu::ganesh {
@@ -270,6 +268,13 @@ public:
 
     // -- Device reflection
 
+    // TEMPORARY: Whether or not SkCanvas should use an layer and image filters to simulate
+    // mask filters and then draw the filtered mask using drawCoverageMask. Unlike regular
+    // layers, the color type passed to SkDevice::createDevice() will always be an alpha-only
+    // color type. Eventually this will be the only way that mask filters are handled (barring
+    // dedicated fast-paths for blurs on [r]rects and text).
+    virtual bool useDrawCoverageMaskForMaskFilters() const { return false; }
+
     // SkCanvas uses NoPixelsDevice when onCreateDevice fails; but then it needs to be able to
     // inspect a layer's device to know if calling drawDevice() later is allowed.
     virtual bool isNoPixelsDevice() const { return false; }
@@ -440,6 +445,20 @@ public:
                              const SkSamplingOptions&, const SkPaint&);
 
     /**
+     * Draw the special image's subset to this device, treating its alpha channel as coverage for
+     * the draw and ignoring any RGB channels that might be present. This will be drawn using the
+     * provided matrix transform instead of the device's current local to device matrix.
+     *
+     * Coverage values beyond the image's subset are treated as 0 (i.e. kDecal tiling). Color values
+     * before coverage are determined as normal by the SkPaint, ignoring style, path effects,
+     * mask filters and image filters. The local coords of any SkShader on the paint should be
+     * relative to the SkDevice's current matrix (i.e. 'maskToDevice' determines how the coverage
+     * mask aligns with device-space, but otherwise shading proceeds like other draws).
+    */
+    virtual void drawCoverageMask(const SkSpecialImage*, const SkMatrix& maskToDevice,
+                                  const SkSamplingOptions&, const SkPaint&);
+
+    /**
      * Evaluate 'filter' and draw the final output into this device using 'paint'. The 'mapping'
      * defines the parameter-to-layer space transform used to evaluate the image filter on 'src',
      * and the layer-to-device space transform that is used to draw the result into this device.
@@ -489,10 +508,9 @@ private:
     friend class SkCanvas; // for setOrigin/setDeviceCoordinateSystem
     friend class DeviceTestingAccess;
 
-    // Defaults to a CPU image filtering context.
-    virtual skif::Context createContext(const skif::ContextInfo&) const;
-
-    virtual SkImageFilterCache* getImageFilterCache() { return nullptr; }
+    // Defaults to a CPU image filtering backend.
+    virtual sk_sp<skif::Backend> createImageFilteringBackend(const SkSurfaceProps& surfaceProps,
+                                                             SkColorType colorType) const;
 
     // Implementations can assume that the device from (x,y) to (w,h) will fit within dst.
     virtual bool onReadPixels(const SkPixmap&, int x, int y) { return false; }

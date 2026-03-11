@@ -26,7 +26,7 @@ GrBackendTextureImageGenerator::RefHelper::RefHelper(
         sk_sp<GrTexture> texture,
         GrDirectContext::DirectContextID owningContextID,
         std::unique_ptr<GrSemaphore> semaphore)
-        : fOriginalTexture(texture)
+        : fOriginalTexture(std::move(texture))
         , fOwningContextID(owningContextID)
         , fBorrowingContextReleaseProc(nullptr)
         , fSemaphore(std::move(semaphore)) {}
@@ -39,7 +39,7 @@ GrBackendTextureImageGenerator::RefHelper::~RefHelper() {
 }
 
 std::unique_ptr<GrTextureGenerator>
-GrBackendTextureImageGenerator::Make(sk_sp<GrTexture> texture,
+GrBackendTextureImageGenerator::Make(const sk_sp<GrTexture>& texture,
                                      GrSurfaceOrigin origin,
                                      std::unique_ptr<GrSemaphore> semaphore,
                                      SkColorType colorType,
@@ -55,7 +55,7 @@ GrBackendTextureImageGenerator::Make(sk_sp<GrTexture> texture,
     SkColorInfo info(colorType, alphaType, std::move(colorSpace));
     return std::unique_ptr<GrTextureGenerator>(new GrBackendTextureImageGenerator(
             info,
-            std::move(texture),
+            texture,
             origin,
             dContext->directContextID(),
             std::move(semaphore)));
@@ -63,7 +63,7 @@ GrBackendTextureImageGenerator::Make(sk_sp<GrTexture> texture,
 
 GrBackendTextureImageGenerator::GrBackendTextureImageGenerator(
         const SkColorInfo& info,
-        sk_sp<GrTexture> texture,
+        const sk_sp<GrTexture>& texture,
         GrSurfaceOrigin origin,
         GrDirectContext::DirectContextID owningContextID,
         std::unique_ptr<GrSemaphore> semaphore)

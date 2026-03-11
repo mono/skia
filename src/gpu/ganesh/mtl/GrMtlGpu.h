@@ -10,7 +10,7 @@
 
 #include "include/gpu/mtl/GrMtlBackendContext.h"
 #include "include/private/base/SkDeque.h"
-#include "include/private/gpu/ganesh/GrMtlTypesPriv.h"
+#include "src/gpu/ganesh/mtl/GrMtlTypesPriv.h"
 
 #include "src/gpu/ganesh/GrFinishCallbacks.h"
 #include "src/gpu/ganesh/GrGpu.h"
@@ -45,7 +45,7 @@ public:
     GrThreadSafePipelineBuilder* pipelineBuilder() override;
     sk_sp<GrThreadSafePipelineBuilder> refPipelineBuilder() override;
 
-    const GrMtlCaps& mtlCaps() const { return *fMtlCaps.get(); }
+    const GrMtlCaps& mtlCaps() const { return *fMtlCaps; }
 
     id<MTLDevice> device() const { return fDevice; }
 

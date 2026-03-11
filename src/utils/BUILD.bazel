@@ -1,5 +1,5 @@
-load("//bazel:skia_rules.bzl", "exports_files_legacy", "skia_filegroup", "split_srcs_and_hdrs")
 load("//bazel:flags.bzl", "selects")
+load("//bazel:skia_rules.bzl", "exports_files_legacy", "skia_filegroup", "split_srcs_and_hdrs")
 
 licenses(["notice"])
 
@@ -21,7 +21,6 @@ split_srcs_and_hdrs(
 
 UTIL_FILES = [
     "SkAnimCodecPlayer.cpp",
-    "SkBase64.cpp",
     "SkBitSet.h",
     "SkCallableTraits.h",
     "SkCamera.cpp",
@@ -83,9 +82,10 @@ skia_filegroup(
         "SkJSONWriter.h",
     ],
     visibility = [
-        "//gm:__pkg__",
         "//modules/skottie:__pkg__",
         "//tools/debugger:__pkg__",
+        "//tools/testrunners/benchmark:__pkg__",
+        "//tools/testrunners/gm:__pkg__",
     ],
 )
 
@@ -96,9 +96,10 @@ skia_filegroup(
         "SkJSONWriter.cpp",
     ],
     visibility = [
-        "//gm:__pkg__",
         "//modules/skottie:__pkg__",
         "//tools/debugger:__pkg__",
+        "//tools/testrunners/benchmark:__pkg__",
+        "//tools/testrunners/gm:__pkg__",
     ],
 )
 
@@ -155,8 +156,10 @@ skia_filegroup(
     name = "core_priv_hdrs",
     srcs = [
         "SkBitSet.h",
+        "SkCanvasStack.h",
         "SkDashPathPriv.h",
         "SkMatrix22.h",
+        "SkOSPath.h",
         "SkPatchUtils.h",
         "SkPolyUtils.h",
     ],
@@ -166,10 +169,17 @@ skia_filegroup(
 skia_filegroup(
     name = "core_srcs",
     srcs = [
+        "SkCanvasStack.cpp",
         "SkCustomTypeface.cpp",
         "SkDashPath.cpp",
         "SkEventTracer.cpp",
         "SkMatrix22.cpp",
+        "SkNWayCanvas.cpp",
+        "SkOSPath.cpp",
+        "SkPaintFilterCanvas.cpp",
+        "SkParse.cpp",
+        "SkParseColor.cpp",
+        "SkParsePath.cpp",
         "SkPatchUtils.cpp",
         "SkPolyUtils.cpp",
         "SkShadowTessellator.cpp",

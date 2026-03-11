@@ -474,12 +474,11 @@ std::string to_wgsl_type(const Context& context, const Type& raw, const Layout* 
                         return result + "write>";
                 }
             }
-            // WGSL only bakes in the pixel format for read-only textures.
-            SkASSERTF(type.matches(*context.fTypes.fReadOnlyTexture2D),
-                      "unexpected texture type: %s", type.description().c_str());
-            return "texture_2d<f32>";
+            if (type.matches(*context.fTypes.fReadOnlyTexture2D)) {
+                return "texture_2d<f32>";
+            }
+            break;
         }
-
         default:
             break;
     }
@@ -1241,12 +1240,21 @@ void WGSLCodeGenerator::writePipelineIODeclaration(const Layout& layout,
     // https://www.w3.org/TR/WGSL/#builtin-inputs-outputs
     if (layout.fLocation >= 0) {
         this->writeUserDefinedIODecl(layout, type, name, delimiter);
-    } else if (layout.fBuiltin >= 0) {
+        return;
+    }
+    if (layout.fBuiltin >= 0) {
+        if (layout.fBuiltin == SK_POINTSIZE_BUILTIN) {
+            // WebGPU does not support the point-size builtin, but we silently replace it with a
+            // global variable when it is used, instead of reporting an error.
+            return;
+        }
         auto builtin = builtin_from_sksl_name(layout.fBuiltin);
         if (builtin.has_value()) {
             this->writeBuiltinIODecl(type, name, *builtin, delimiter);
+            return;
         }
     }
+    fContext.fErrors->error(Position(), "declaration '" + std::string(name) + "' is not supported");
 }
 
 void WGSLCodeGenerator::writeUserDefinedIODecl(const Layout& layout,
@@ -2885,6 +2893,7 @@ std::string WGSLCodeGenerator::assembleIntrinsicCall(const FunctionCall& call,
         case k_log2_IntrinsicKind:
         case k_radians_IntrinsicKind:
         case k_pow_IntrinsicKind:
+        case k_saturate_IntrinsicKind:
         case k_sign_IntrinsicKind:
         case k_sin_IntrinsicKind:
         case k_sqrt_IntrinsicKind:
@@ -3849,7 +3858,7 @@ void WGSLCodeGenerator::writeStageInputStruct() {
     fIndentation++;
 
     for (const Variable* v : fPipelineInputs) {
-        if (v->interfaceBlock()) {
+        if (v->type().isInterfaceBlock()) {
             for (const Field& f : v->type().fields()) {
                 this->writePipelineIODeclaration(f.fLayout, *f.fType, f.fName, Delimiter::kComma);
             }
@@ -3886,7 +3895,7 @@ void WGSLCodeGenerator::writeStageOutputStruct() {
     bool declaredPositionBuiltin = false;
     bool requiresPointSizeBuiltin = false;
     for (const Variable* v : fPipelineOutputs) {
-        if (v->interfaceBlock()) {
+        if (v->type().isInterfaceBlock()) {
             for (const auto& f : v->type().fields()) {
                 this->writePipelineIODeclaration(f.fLayout, *f.fType, f.fName, Delimiter::kComma);
                 if (f.fLayout.fBuiltin == SK_POSITION_BUILTIN) {
@@ -3898,7 +3907,6 @@ void WGSLCodeGenerator::writeStageOutputStruct() {
                     requiresPointSizeBuiltin = true;
                 }
             }
-
         } else {
             this->writePipelineIODeclaration(v->layout(), v->type(), v->mangledName(),
                                              Delimiter::kComma);

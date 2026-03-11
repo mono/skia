@@ -13,8 +13,10 @@
 #include "include/core/SkPaint.h"
 #include "include/core/SkTypeface.h"
 #include "include/core/SkTypes.h"
+#include "tools/DecodeUtils.h"
 #include "tools/Resources.h"
 #include "tools/ToolUtils.h"
+#include "tools/fonts/FontToolUtils.h"
 
 // Hue, Saturation, Color, and Luminosity blend modes are oddballs.
 // They nominally convert their inputs to unpremul, then to HSL, then
@@ -154,7 +156,7 @@ static SkColor blend(SkColor dst, SkColor src,
 
 DEF_SIMPLE_GM(hsl, canvas, 600, 100) {
     SkPaint paint;
-    SkFont  font(ToolUtils::create_portable_typeface());
+    SkFont  font = ToolUtils::DefaultPortableFont();
 
     const char* comment = "HSL blend modes are correct when you see no circles in the squares.";
     canvas->drawString(comment, 10,10, font, paint);
@@ -208,7 +210,7 @@ static sk_sp<SkShader> make_grad(SkScalar width) {
 }
 
 DEF_SIMPLE_GM(HSL_duck, canvas, 1110, 620) {
-    auto src = GetResourceAsImage("images/ducky.png");
+    auto src = ToolUtils::GetResourceAsImage("images/ducky.png");
     auto dst = make_grad(src->width());
     SkRect r = SkRect::MakeIWH(src->width(), src->height());
 
@@ -225,7 +227,7 @@ DEF_SIMPLE_GM(HSL_duck, canvas, 1110, 620) {
         { SkBlendMode::kLuminosity, "Luminosity" },
     };
 
-    SkFont font;
+    SkFont font = ToolUtils::DefaultPortableFont();
     font.setSize(40);
     font.setEdging(SkFont::Edging::kAntiAlias);
 

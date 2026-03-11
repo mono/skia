@@ -17,6 +17,7 @@ skia_filegroup(
     srcs = [
         "SkColorData.h",
         "SkEncodedInfo.h",
+        "SkExif.h",
         "SkGainmapInfo.h",
         "SkGainmapShader.h",
         "SkIDChangeListener.h",
@@ -66,4 +67,12 @@ skia_filegroup(
         "SkEncodedInfo.h",
     ],
     visibility = ["//src/codec:__pkg__"],
+)
+
+skia_filegroup(
+    name = "opts_srcs",
+    srcs = [
+        "SkColorData.h",
+    ],
+    visibility = ["//src/opts:__pkg__"],
 )

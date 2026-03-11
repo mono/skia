@@ -1,12 +1,11 @@
-load("//bazel:skia_rules.bzl", "exports_files_legacy", "skia_filegroup", "split_srcs_and_hdrs")
 load("//bazel:flags.bzl", "bool_flag")
+load("//bazel:skia_rules.bzl", "exports_files_legacy", "skia_filegroup", "split_srcs_and_hdrs")
 
 licenses(["notice"])
 
 exports_files_legacy()
 
 VK_FILES = [
-    "AHardwareBufferVk.cpp",
     "GrVkBackendSurface.cpp",
     "GrVkBackendSurfacePriv.h",
     "GrVkBuffer.cpp",
@@ -23,6 +22,7 @@ VK_FILES = [
     "GrVkDescriptorSet.h",
     "GrVkDescriptorSetManager.cpp",
     "GrVkDescriptorSetManager.h",
+    "GrVkDirectContext.cpp",
     "GrVkFramebuffer.cpp",
     "GrVkFramebuffer.h",
     "GrVkGpu.cpp",
@@ -63,6 +63,7 @@ VK_FILES = [
     "GrVkTextureRenderTarget.cpp",
     "GrVkTextureRenderTarget.h",
     "GrVkTypesPriv.cpp",
+    "GrVkTypesPriv.h",
     "GrVkUniformHandler.cpp",
     "GrVkUniformHandler.h",
     "GrVkUtil.cpp",
@@ -87,8 +88,14 @@ skia_filegroup(
 )
 
 skia_filegroup(
+    name = "android_srcs",
+    srcs = ["AHardwareBufferVk.cpp"],
+)
+
+skia_filegroup(
     name = "srcs",
     srcs = [
+        ":android_srcs",
         ":vk_srcs",
     ] + select({
         ":enable_secondary_draw_context_true": [":vk_chromium_srcs"],

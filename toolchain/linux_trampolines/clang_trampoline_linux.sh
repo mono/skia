@@ -26,6 +26,7 @@ fi
 supported_files_or_dirs=(
   "gm/"
   "include/private/base/"
+  "modules/bentleyottmann/"
   "modules/skunicode/"
   "src/base/"
   "src/codec/"
@@ -85,6 +86,7 @@ supported_files_or_dirs=(
   "src/core/SkYUVAInfo.cpp"
   "src/core/SkYUVAPixmaps.cpp"
   "src/gpu/ganesh/Device.cpp"
+  "src/gpu/ganesh/GrBackendSemaphore.cpp"
   "src/gpu/ganesh/GrBackendSurface.cpp"
   "src/gpu/ganesh/GrBackendUtils.cpp"
   "src/gpu/ganesh/GrBlurUtils.cpp"
@@ -114,8 +116,17 @@ supported_files_or_dirs=(
   "src/gpu/ganesh/gl/GrGLCaps.cpp"
   "src/gpu/ganesh/gl/GrGLDirectContext.cpp"
   "src/gpu/ganesh/gl/GrGLGpu.cpp"
+  "src/gpu/ganesh/gl/GrGLSemaphore.cpp"
   "src/gpu/ganesh/ops/AtlasTextOp.cpp"
+  "src/gpu/ganesh/vk/GrVkDirectContext.cpp"
   "src/pdf/SkJpeg"
+  "tools/DecodeUtils.cpp"
+  "tools/EncodeUtils.cpp"
+  "tools/GpuToolUtils.cpp"
+  "tools/Resources.cpp"
+  "tools/SvgPathExtractor.cpp"
+  "tools/ToolUtils.cpp"
+  "tools/fonts/FontToolUtils.cpp"
 
   # See //bazel/generate_cpp_files_for_headers.bzl and //include/BUILD.bazel for more.
   "include/gen/"
@@ -128,6 +139,7 @@ excluded_files=(
   "tests/SkVxTest.cpp"
   "src/base/SkHalf.cpp"
   "src/core/SkMipmap.cpp"
+  "src/core/SkMipmapHQDownSampler.cpp"
   "src/core/SkMaskBlurFilter.cpp"
   "src/core/SkM44.cpp"
 )

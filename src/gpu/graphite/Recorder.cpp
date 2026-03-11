@@ -32,6 +32,7 @@
 #include "src/gpu/graphite/PipelineData.h"
 #include "src/gpu/graphite/PipelineDataCache.h"
 #include "src/gpu/graphite/ProxyCache.h"
+#include "src/gpu/graphite/RasterPathAtlas.h"
 #include "src/gpu/graphite/RecorderPriv.h"
 #include "src/gpu/graphite/ResourceProvider.h"
 #include "src/gpu/graphite/RuntimeEffectDictionary.h"
@@ -106,10 +107,10 @@ Recorder::Recorder(sk_sp<SharedContext> sharedContext, const RecorderOptions& op
     fResourceProvider = fSharedContext->makeResourceProvider(this->singleOwner(),
                                                              fUniqueID,
                                                              options.fGpuBudgetInBytes);
-    fDrawBufferManager.reset( new DrawBufferManager(fResourceProvider.get(),
-                                                    fSharedContext->caps()));
-    fUploadBufferManager.reset(new UploadBufferManager(fResourceProvider.get(),
-                                                       fSharedContext->caps()));
+    fDrawBufferManager = std::make_unique<DrawBufferManager>(fResourceProvider.get(),
+                                                             fSharedContext->caps());
+    fUploadBufferManager = std::make_unique<UploadBufferManager>(fResourceProvider.get(),
+                                                                 fSharedContext->caps());
     SkASSERT(fResourceProvider);
 }
 
@@ -163,8 +164,8 @@ std::unique_ptr<Recording> Recorder::snap() {
     if (!fGraph->prepareResources(fResourceProvider.get(), fRuntimeEffectDict.get())) {
         // Leaving 'fTrackedDevices' alone since they were flushed earlier and could still be
         // attached to extant SkSurfaces.
-        fDrawBufferManager.reset(new DrawBufferManager(fResourceProvider.get(),
-                                                       fSharedContext->caps()));
+        fDrawBufferManager = std::make_unique<DrawBufferManager>(fResourceProvider.get(),
+                                                                 fSharedContext->caps());
         fTextureDataCache = std::make_unique<TextureDataCache>();
         fUniformDataCache = std::make_unique<UniformDataCache>();
         fGraph->reset();
@@ -360,6 +361,11 @@ void Recorder::performDeferredCleanup(std::chrono::milliseconds msNotUsed) {
     fResourceProvider->purgeResourcesNotUsedSince(purgeTime);
 }
 
+size_t Recorder::currentBudgetedBytes() const {
+    ASSERT_SINGLE_OWNER
+    return fResourceProvider->getResourceCacheCurrentBudgetedBytes();
+}
+
 void RecorderPriv::add(sk_sp<Task> task) {
     ASSERT_SINGLE_OWNER_PRIV
     fRecorder->fGraph->add(std::move(task));
@@ -376,6 +382,10 @@ sk_sp<TextureProxy> RecorderPriv::CreateCachedProxy(Recorder* recorder,
                                                     const SkBitmap& bitmap,
                                                     Mipmapped mipmapped) {
     SkASSERT(!bitmap.isNull());
+
+    if (!recorder) {
+        return nullptr;
+    }
     return recorder->priv().proxyCache()->findOrCreateCachedProxy(recorder, bitmap, mipmapped);
 }
 

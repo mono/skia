@@ -31,7 +31,7 @@ const int $kColorSpaceXformFlagPremul = 0x10;
 const float $kLinearInset = 0.5 + 0.00001;
 
 $pure half4 sk_error() {
-    return half4(1.0, 0.0, 1.0, 1.0);
+    return half4(1.0, 0.0, 0.0, 1.0);
 }
 
 $pure half4 sk_passthrough(half4 color) {
@@ -40,6 +40,14 @@ $pure half4 sk_passthrough(half4 color) {
 
 $pure half4 sk_solid_shader(float4 colorParam) {
     return half4(colorParam);
+}
+
+$pure half4 sk_rgb_opaque(float4 colorParam) {
+    return half4(colorParam.rgb, 1.0);
+}
+
+$pure half4 sk_alpha_only(float4 colorParam) {
+    return half4(0.0, 0.0, 0.0, colorParam.a);
 }
 
 $pure half4 $apply_swizzle(int swizzleType, half4 color) {
@@ -145,14 +153,19 @@ $pure float $tile(int tileMode, float f, float low, float high) {
     }
 }
 
-$pure half4 $sample_image(float2 pos,
-                          float2 imgSize,
-                          float4 subset,
-                          int tileModeX,
-                          int tileModeY,
-                          int filterMode,
-                          int readSwizzle,
-                          sampler2D s) {
+$pure half4 $sample_image(float2 pos, float2 imgSize, int readSwizzle, sampler2D s) {
+    half4 color = sample(s, pos / imgSize);
+    return $apply_swizzle(readSwizzle, color);
+}
+
+$pure half4 $sample_image_subset(float2 pos,
+                                 float2 imgSize,
+                                 float4 subset,
+                                 int tileModeX,
+                                 int tileModeY,
+                                 int filterMode,
+                                 int readSwizzle,
+                                 sampler2D s) {
     // Do hard-edge shader transitions to the border color for nearest-neighbor decal tiling at the
     // subset boundaries. Snap the input coordinates to nearest neighbor before comparing to the
     // subset rect, to avoid GPU interpolation errors. See https://crbug.com/skia/10403.
@@ -181,8 +194,7 @@ $pure half4 $sample_image(float2 pos,
         insetClamp = float4(subset.xy + $kLinearInset, subset.zw - $kLinearInset);
     }
     float2 clampedPos = clamp(pos, insetClamp.xy, insetClamp.zw);
-    half4 color = sample(s, clampedPos / imgSize);
-    color = $apply_swizzle(readSwizzle, color);
+    half4 color = $sample_image(clampedPos, imgSize, readSwizzle, s);
 
     if (filterMode == $kFilterModeLinear) {
         // Remember the amount the coord moved for clamping. This is used to implement shader-based
@@ -202,17 +214,17 @@ $pure half4 $sample_image(float2 pos,
             half4 extraColorY;
             if (sampleExtraX) {
                 extraCoordX = error.x > 0 ? insetClamp.x : insetClamp.z;
-                extraColorX = sample(s, float2(extraCoordX, clampedPos.y) / imgSize);
-                extraColorX = $apply_swizzle(readSwizzle, extraColorX);
+                extraColorX = $sample_image(float2(extraCoordX, clampedPos.y),
+                                            imgSize, readSwizzle, s);
             }
             if (sampleExtraY) {
                 extraCoordY = error.y > 0 ? insetClamp.y : insetClamp.w;
-                extraColorY = sample(s, float2(clampedPos.x, extraCoordY) / imgSize);
-                extraColorY = $apply_swizzle(readSwizzle, extraColorY);
+                extraColorY = $sample_image(float2(clampedPos.x, extraCoordY),
+                                            imgSize, readSwizzle, s);
             }
             if (sampleExtraX && sampleExtraY) {
-                half4 extraColorXY = sample(s, float2(extraCoordX, extraCoordY) / imgSize);
-                extraColorXY = $apply_swizzle(readSwizzle, extraColorXY);
+                half4 extraColorXY = $sample_image(float2(extraCoordX, extraCoordY),
+                                                   imgSize, readSwizzle, s);
                 color = mix(mix(color, extraColorX, absError.x),
                             mix(extraColorY, extraColorXY, absError.x),
                             absError.y);
@@ -257,9 +269,9 @@ $pure half4 $cubic_filter_image(float2 pos,
     for (int y = 0; y < 4; ++y) {
         half4 rowColor = half4(0);
         for (int x = 0; x < 4; ++x) {
-            rowColor += wx[x] * $sample_image(pos + float2(x, y), imgSize, subset,
-                                              tileModeX, tileModeY, $kFilterModeNearest,
-                                              readSwizzle, s);
+            rowColor += wx[x] * $sample_image_subset(pos + float2(x, y), imgSize, subset,
+                                                     tileModeX, tileModeY, $kFilterModeNearest,
+                                                     readSwizzle, s);
         }
         color += wy[y] * rowColor;
     }
@@ -282,8 +294,8 @@ $pure half4 sk_image_shader(float2 coords,
                             int csXformDstKind,
                             half4x4 csXformCoeffs,
                             sampler2D s) {
-    half4 sampleColor =
-        $sample_image(coords, imgSize, subset, tileModeX, tileModeY, filterMode, readSwizzle, s);
+    half4 sampleColor = $sample_image_subset(coords, imgSize, subset, tileModeX, tileModeY,
+                                             filterMode, readSwizzle, s);
     return sk_color_space_transform(sampleColor, csXformFlags, csXformSrcKind,
                                     csXformGamutTransform, csXformDstKind, csXformCoeffs);
 }
@@ -303,6 +315,20 @@ $pure half4 sk_cubic_image_shader(float2 coords,
                                   sampler2D s) {
     half4 sampleColor = $cubic_filter_image(coords, imgSize, subset, tileModeX, tileModeY,
                                             cubicCoeffs, readSwizzle, s);
+    return sk_color_space_transform(sampleColor, csXformFlags, csXformSrcKind,
+                                    csXformGamutTransform, csXformDstKind, csXformCoeffs);
+}
+
+$pure half4 sk_hw_image_shader(float2 coords,
+                               float2 imgSize,
+                               int readSwizzle,
+                               int csXformFlags,
+                               int csXformSrcKind,
+                               half3x3 csXformGamutTransform,
+                               int csXformDstKind,
+                               half4x4 csXformCoeffs,
+                               sampler2D s) {
+    half4 sampleColor = $sample_image(coords, imgSize, readSwizzle, s);
     return sk_color_space_transform(sampleColor, csXformFlags, csXformSrcKind,
                                     csXformGamutTransform, csXformDstKind, csXformCoeffs);
 }
@@ -333,32 +359,32 @@ $pure half4 sk_yuv_image_shader(float2 coords,
     half4 sampleColorY = (useCubic != 0)
         ? $cubic_filter_image(coords, imgSize, subset, tileModeX, tileModeY, cubicCoeffs,
                               $kReadSwizzleNormalRGBA, sY)
-        : $sample_image(coords, imgSize, subset, tileModeX, tileModeY, filterMode,
-                        $kReadSwizzleNormalRGBA, sY);
+        : $sample_image_subset(coords, imgSize, subset, tileModeX, tileModeY, filterMode,
+                               $kReadSwizzleNormalRGBA, sY);
     half4 sampleColorU = (useCubic != 0)
         ? $cubic_filter_image(coords, imgSize, subset, tileModeX, tileModeY, cubicCoeffs,
                               $kReadSwizzleNormalRGBA, sU)
-        : $sample_image(coords, imgSize, subset, tileModeX, tileModeY, filterMode,
-                        $kReadSwizzleNormalRGBA, sU);
+        : $sample_image_subset(coords, imgSize, subset, tileModeX, tileModeY, filterMode,
+                               $kReadSwizzleNormalRGBA, sU);
     half4 sampleColorV = (useCubic != 0)
         ? $cubic_filter_image(coords, imgSize, subset, tileModeX, tileModeY, cubicCoeffs,
                               $kReadSwizzleNormalRGBA, sY)
-        : $sample_image(coords, imgSize, subset, tileModeX, tileModeY, filterMode,
-                        $kReadSwizzleNormalRGBA, sV);
+        : $sample_image_subset(coords, imgSize, subset, tileModeX, tileModeY, filterMode,
+                               $kReadSwizzleNormalRGBA, sV);
     float Y = dot(channelSelectY, sampleColorY);
     float U = dot(channelSelectU, sampleColorU);
     float V = dot(channelSelectV, sampleColorV);
     half3 preColor = half3(Y, U, V);
     half4 sampleColor;
-    sampleColor.rgb = saturate(preColor.rgb * yuvToRGBMatrix + half3(yuvToRGBTranslate));
+    sampleColor.rgb = saturate(yuvToRGBMatrix * preColor.rgb + half3(yuvToRGBTranslate));
     if (channelSelectA == half4(0)) {
         sampleColor.a = 1;
     } else {
         half4 sampleColorA = (useCubic != 0)
             ? $cubic_filter_image(coords, imgSize, subset, tileModeX, tileModeY, cubicCoeffs,
                                   $kReadSwizzleNormalRGBA, sA)
-            : $sample_image(coords, imgSize, subset, tileModeX, tileModeY, filterMode,
-                            $kReadSwizzleNormalRGBA, sA);
+            : $sample_image_subset(coords, imgSize, subset, tileModeX, tileModeY, filterMode,
+                                   $kReadSwizzleNormalRGBA, sA);
         sampleColor.a = dot(channelSelectA, sampleColorA);
         // premul alpha
         sampleColor.rgb *= sampleColor.a;
@@ -1285,6 +1311,88 @@ $pure half4 analytic_rrect_coverage_fn(float4 coords,
                                        float4 yRadii,
                                        float2 strokeParams,
                                        float2 perPixelControl) {
+    if (perPixelControl.x > 0.0) {
+        // A trivially solid interior pixel, either from a filled rect or round rect, or a
+        // stroke with sufficiently large width that the interior completely overlaps itself.
+        return half4(1.0);
+    } else if (perPixelControl.y > 1.0) {
+        // This represents a filled rectangle or quadrilateral, where the distances have already
+        // been converted to device space. Mitered strokes cannot use this optimization because
+        // their scale and bias is not uniform over the shape; Rounded shapes cannot use this
+        // because they rely on the edge distances being in local space to reconstruct the
+        // per-corner positions for the elliptical implicit functions.
+        float2 outerDist = min(edgeDistances.xy, edgeDistances.zw);
+        float c = min(outerDist.x, outerDist.y) * coords.w;
+        float scale = (perPixelControl.y - 1.0) * coords.w;
+        float bias = coverage_bias(scale);
+        return half4(saturate(scale * (c + bias)));
+    } else {
+        // Compute per-pixel coverage, mixing four outer edge distances, possibly four inner
+        // edge distances, and per-corner elliptical distances into a final coverage value.
+        // The Jacobian needs to be multiplied by W, but coords.w stores 1/w.
+        float2x2 J = float2x2(jacobian) / coords.w;
+
+        float2 invGradLen = float2($inverse_grad_len(float2(1.0, 0.0), J),
+                                   $inverse_grad_len(float2(0.0, 1.0), J));
+        float2 outerDist = invGradLen * (strokeParams.x + min(edgeDistances.xy,
+                                                              edgeDistances.zw));
+
+        // d.x tracks minimum outer distance (pre scale-and-biasing to a coverage value).
+        // d.y tracks negative maximum inner distance (so min() over c accumulates min and outer
+        // and max inner simultaneously).)
+        float2 d = float2(min(outerDist.x, outerDist.y), -1.0);
+        float scale, bias;
+
+        // Check for bidirectional coverage, which is is marked as a -1 from the vertex shader.
+        // We don't just check for < 0 since extrapolated fill triangle samples can have small
+        // negative values.
+        if (perPixelControl.x > -0.95) {
+            // A solid interior, so update scale and bias based on full width and height
+            float2 dim = invGradLen * (edgeDistances.xy + edgeDistances.zw + 2*strokeParams.xx);
+            scale = min(min(dim.x, dim.y), 1.0);
+            bias = coverage_bias(scale);
+            // Since we leave d.y = -1.0, no inner curve coverage will adjust it closer to 0,
+            // so 'finalCoverage' is based solely on outer edges and curves.
+        } else {
+            // Bidirectional coverage, so we modify c.y to hold the negative of the maximum
+            // interior coverage, and update scale and bias based on stroke width.
+            float2 strokeWidth = 2.0 * strokeParams.x * invGradLen;
+            float2 innerDist = strokeWidth - outerDist;
+
+            d.y = -max(innerDist.x, innerDist.y);
+            if (strokeParams.x > 0.0) {
+                float strokeDim = min(strokeWidth.x, strokeWidth.y);
+                if (innerDist.y >= -0.5 && strokeWidth.y > strokeDim) {
+                    strokeDim = strokeWidth.y;
+                }
+                if (innerDist.x >= -0.5 && strokeWidth.x > strokeDim) {
+                    strokeDim = strokeWidth.x;
+                }
+                scale = min(strokeDim, 1.0);
+                bias = coverage_bias(scale);
+            } else {
+                // A hairline, so scale and bias should both be 1
+                 scale = bias = 1.0;
+            }
+        }
+
+        // Check all corners, although most pixels should only be influenced by 1.
+        $corner_distances(d, J, strokeParams, edgeDistances, xRadii, yRadii);
+
+        float outsetDist = min(perPixelControl.y, 0.0) * coords.w;
+        float finalCoverage = scale * (min(d.x + outsetDist, -d.y) + bias);
+
+        return half4(saturate(finalCoverage));
+    }
+}
+
+$pure half4 per_edge_aa_quad_coverage_fn(float4 coords,
+                                        float4 jacobian,
+                                        float4 edgeDistances,
+                                        float4 xRadii,
+                                        float4 yRadii,
+                                        float2 strokeParams,
+                                        float2 perPixelControl) {
     if (perPixelControl.x > 0.0) {
         // A trivially solid interior pixel, either from a filled rect or round rect, or a
         // stroke with sufficiently large width that the interior completely overlaps itself.

@@ -16,9 +16,11 @@
 #include "include/core/SkSize.h"
 #include "include/core/SkString.h"
 #include "include/core/SkSurface.h"
+#include "tools/DecodeUtils.h"
+#include "tools/EncodeUtils.h"
 #include "tools/Resources.h"
 #include "tools/ToolUtils.h"
-
+#include "tools/fonts/FontToolUtils.h"
 
 static constexpr int kImgW = 100;
 static constexpr int kImgH =  80;
@@ -70,7 +72,7 @@ static void make_images() {
         canvas->drawRect(SkRect::MakeXYWH(1, midY, w, h), paint);
         paint.setColor(SK_ColorYELLOW);
         canvas->drawRect(SkRect::MakeXYWH(midX, midY, w, h), paint);
-        SkFont font(ToolUtils::create_portable_typeface(), kImgH / 4.f);
+        SkFont font(ToolUtils::DefaultPortableTypeface(), kImgH / 4.f);
 
         SkPaint blurPaint;
         blurPaint.setMaskFilter(SkMaskFilter::MakeBlur(kNormal_SkBlurStyle, .75f));
@@ -132,7 +134,7 @@ static void draw(SkCanvas* canvas, const char* suffix) {
     canvas->save();
     for (char i = '1'; i <= '8'; i++) {
         SkString path = SkStringPrintf("images/orientation/%c%s.jpg", i, suffix);
-        auto image = GetResourceAsImage(path.c_str());
+        auto image = ToolUtils::GetResourceAsImage(path.c_str());
         if (!image) {
             continue;
         }

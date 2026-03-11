@@ -794,13 +794,6 @@ std::tuple<bool, SkString> SkMesh::validate() const {
         }
     }
 
-    // TODO(b/40045302): only allow null child effects. Non-null children are a work in progress.
-    for (const ChildPtr& child : fChildren) {
-        if (child.type().has_value()) {
-            FAIL_MESH_VALIDATE("effects are not permitted in mesh fragment shaders");
-        }
-    }
-
     auto vb = static_cast<SkMeshPriv::VB*>(fVB.get());
     auto ib = static_cast<SkMeshPriv::IB*>(fIB.get());
 
@@ -898,7 +891,7 @@ sk_sp<IndexBuffer> MakeIndexBuffer(const void* data, size_t size) {
     return SkMeshPriv::CpuIndexBuffer::Make(data, size);
 }
 
-sk_sp<IndexBuffer> CopyIndexBuffer(sk_sp<IndexBuffer> src) {
+sk_sp<IndexBuffer> CopyIndexBuffer(const sk_sp<IndexBuffer>& src) {
     if (!src) {
         return nullptr;
     }
@@ -914,7 +907,7 @@ sk_sp<VertexBuffer> MakeVertexBuffer(const void* data, size_t size) {
     return SkMeshPriv::CpuVertexBuffer::Make(data, size);
 }
 
-sk_sp<VertexBuffer> CopyVertexBuffer(sk_sp<VertexBuffer> src) {
+sk_sp<VertexBuffer> CopyVertexBuffer(const sk_sp<VertexBuffer>& src) {
     if (!src) {
         return nullptr;
     }

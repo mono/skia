@@ -8,15 +8,18 @@
 #include "src/shaders/gradients/SkGradientBaseShader.h"
 
 #include "include/core/SkAlphaType.h"
+#include "include/core/SkColor.h"
 #include "include/core/SkColorSpace.h"
 #include "include/core/SkColorType.h"
 #include "include/core/SkData.h"
 #include "include/core/SkImageInfo.h"
 #include "include/core/SkShader.h"
 #include "include/core/SkTileMode.h"
+#include "include/private/SkColorData.h"
 #include "include/private/base/SkFloatBits.h"
 #include "include/private/base/SkFloatingPoint.h"
 #include "include/private/base/SkMalloc.h"
+#include "include/private/base/SkTArray.h"
 #include "include/private/base/SkTPin.h"
 #include "include/private/base/SkTo.h"
 #include "src/base/SkArenaAlloc.h"
@@ -505,7 +508,10 @@ bool SkGradientBaseShader::appendStages(const SkStageRec& rec,
 
     // Transform all of the colors to destination color space, possibly premultiplied
     SkColor4fXformer xformedColors(this, rec.fDstCS);
-    AppendGradientFillStages(p, alloc, xformedColors.fColors.begin(), fPositions, fColorCount);
+    AppendGradientFillStages(p, alloc,
+                             xformedColors.fColors.begin(),
+                             xformedColors.fPositions,
+                             xformedColors.fColors.size());
     AppendInterpolatedToDstStages(p, alloc, fColorsAreOpaque, fInterpolation,
                                   xformedColors.fIntermediateColorSpace.get(), rec.fDstCS);
 
@@ -580,9 +586,10 @@ static sk_sp<SkColorSpace> intermediate_color_space(SkGradientShader::Interpolat
     SkUNREACHABLE;
 }
 
-typedef SkPMColor4f (*ConvertColorProc)(SkPMColor4f);
+using ConvertColorProc = SkPMColor4f(*)(SkPMColor4f, bool*);
+using PremulColorProc = SkPMColor4f(*)(SkPMColor4f);
 
-static SkPMColor4f srgb_to_hsl(SkPMColor4f rgb) {
+static SkPMColor4f srgb_to_hsl(SkPMColor4f rgb, bool* hueIsPowerless) {
     float mx = std::max({rgb.fR, rgb.fG, rgb.fB});
     float mn = std::min({rgb.fR, rgb.fG, rgb.fB});
     float hue = 0, sat = 0, light = (mn + mx) / 2;
@@ -600,17 +607,20 @@ static SkPMColor4f srgb_to_hsl(SkPMColor4f rgb) {
 
         hue *= 60;
     }
+    if (sat == 0) {
+        *hueIsPowerless = true;
+    }
     return {hue, sat * 100, light * 100, rgb.fA};
 }
 
-static SkPMColor4f srgb_to_hwb(SkPMColor4f rgb) {
-    SkPMColor4f hsl = srgb_to_hsl(rgb);
+static SkPMColor4f srgb_to_hwb(SkPMColor4f rgb, bool* hueIsPowerless) {
+    SkPMColor4f hsl = srgb_to_hsl(rgb, hueIsPowerless);
     float white = std::min({rgb.fR, rgb.fG, rgb.fB});
     float black = 1 - std::max({rgb.fR, rgb.fG, rgb.fB});
     return {hsl.fR, white * 100, black * 100, rgb.fA};
 }
 
-static SkPMColor4f xyzd50_to_lab(SkPMColor4f xyz) {
+static SkPMColor4f xyzd50_to_lab(SkPMColor4f xyz, bool* /*hueIsPowerless*/) {
     constexpr float D50[3] = {0.3457f / 0.3585f, 1.0f, (1.0f - 0.3457f - 0.3585f) / 0.3585f};
 
     constexpr float e = 216.0f / 24389;
@@ -627,14 +637,20 @@ static SkPMColor4f xyzd50_to_lab(SkPMColor4f xyz) {
 
 // The color space is technically LCH, but we produce HCL, so that all polar spaces have hue in the
 // first component. This simplifies the hue handling for HueMethod and premul/unpremul.
-static SkPMColor4f xyzd50_to_hcl(SkPMColor4f xyz) {
-    SkPMColor4f Lab = xyzd50_to_lab(xyz);
+static SkPMColor4f xyzd50_to_hcl(SkPMColor4f xyz, bool* hueIsPowerless) {
+    SkPMColor4f Lab = xyzd50_to_lab(xyz, hueIsPowerless);
     float hue = sk_float_radians_to_degrees(atan2f(Lab[2], Lab[1]));
-    return {hue >= 0 ? hue : hue + 360, sqrtf(Lab[1] * Lab[1] + Lab[2] * Lab[2]), Lab[0], xyz.fA};
+    float chroma = sqrtf(Lab[1] * Lab[1] + Lab[2] * Lab[2]);
+    // The LCH math produces small-ish (but not tiny) chroma values for achromatic colors:
+    constexpr float kMaxChromaForPowerlessHue = 1e-2f;
+    if (chroma <= kMaxChromaForPowerlessHue) {
+        *hueIsPowerless = true;
+    }
+    return {hue >= 0 ? hue : hue + 360, chroma, Lab[0], xyz.fA};
 }
 
 // https://bottosson.github.io/posts/oklab/#converting-from-linear-srgb-to-oklab
-static SkPMColor4f lin_srgb_to_oklab(SkPMColor4f rgb) {
+static SkPMColor4f lin_srgb_to_oklab(SkPMColor4f rgb, bool* /*hueIsPowerless*/) {
     float l = 0.4122214708f * rgb.fR + 0.5363325363f * rgb.fG + 0.0514459929f * rgb.fB;
     float m = 0.2119034982f * rgb.fR + 0.6806995451f * rgb.fG + 0.1073969566f * rgb.fB;
     float s = 0.0883024619f * rgb.fR + 0.2817188376f * rgb.fG + 0.6299787005f * rgb.fB;
@@ -649,13 +665,16 @@ static SkPMColor4f lin_srgb_to_oklab(SkPMColor4f rgb) {
 
 // The color space is technically OkLCH, but we produce HCL, so that all polar spaces have hue in
 // the first component. This simplifies the hue handling for HueMethod and premul/unpremul.
-static SkPMColor4f lin_srgb_to_okhcl(SkPMColor4f rgb) {
-    SkPMColor4f OKLab = lin_srgb_to_oklab(rgb);
+static SkPMColor4f lin_srgb_to_okhcl(SkPMColor4f rgb, bool* hueIsPowerless) {
+    SkPMColor4f OKLab = lin_srgb_to_oklab(rgb, hueIsPowerless);
     float hue = sk_float_radians_to_degrees(atan2f(OKLab[2], OKLab[1]));
-    return {hue >= 0 ? hue : hue + 360,
-            sqrtf(OKLab[1] * OKLab[1] + OKLab[2] * OKLab[2]),
-            OKLab[0],
-            rgb.fA};
+    float chroma = sqrtf(OKLab[1] * OKLab[1] + OKLab[2] * OKLab[2]);
+    // The OKLCH math produces very small chroma values for achromatic colors:
+    constexpr float kMaxChromaForPowerlessHue = 1e-6f;
+    if (chroma <= kMaxChromaForPowerlessHue) {
+        *hueIsPowerless = true;
+    }
+    return {hue >= 0 ? hue : hue + 360, chroma, OKLab[0], rgb.fA};
 }
 
 static SkPMColor4f premul_polar(SkPMColor4f hsl) {
@@ -702,14 +721,20 @@ static bool color_space_is_polar(SkGradientShader::Interpolation::ColorSpace cs)
 //    Two have hue as the first component, and two have it as the third component. To reduce
 //    complexity, we always store hue in the first component, swapping it with luminance for
 //    LCH and Oklch. The backend code (eg, shaders) needs to know about this.
-SkColor4fXformer::SkColor4fXformer(const SkGradientBaseShader* shader, SkColorSpace* dst) {
+SkColor4fXformer::SkColor4fXformer(const SkGradientBaseShader* shader,
+                                   SkColorSpace* dst,
+                                   bool forceExplicitPositions) {
     using ColorSpace = SkGradientShader::Interpolation::ColorSpace;
     using HueMethod = SkGradientShader::Interpolation::HueMethod;
 
-    const int colorCount = shader->fColorCount;
+    int colorCount = shader->fColorCount;
     const SkGradientShader::Interpolation interpolation = shader->fInterpolation;
 
-    // 1) Determine the color space of our intermediate colors
+    // 0) Copy the shader's position pointer. Certain interpolation modes might force us to add
+    //    new stops, in which case we'll allocate & edit the positions.
+    fPositions = shader->fPositions;
+
+    // 1) Determine the color space of our intermediate colors.
     fIntermediateColorSpace = intermediate_color_space(interpolation.fColorSpace, dst);
 
     // 2) Convert all colors to the intermediate color space
@@ -738,10 +763,55 @@ SkColor4fXformer::SkColor4fXformer(const SkGradientBaseShader* shader, SkColorSp
         default: break;
     }
 
+    skia_private::STArray<4, bool> hueIsPowerless;
+    bool anyPowerlessHue = false;
+    hueIsPowerless.push_back_n(colorCount, false);
     if (convertFn) {
         for (int i = 0; i < colorCount; ++i) {
-            fColors[i] = convertFn(fColors[i]);
+            fColors[i] = convertFn(fColors[i], hueIsPowerless.data() + i);
+            anyPowerlessHue = anyPowerlessHue || hueIsPowerless[i];
         }
+    }
+
+    if (anyPowerlessHue) {
+        // In theory, if we knew we were just going to adjust the existing colors (without adding
+        // new ones), we could do it all in-place. To keep things simple, we always generate the
+        // new colors in separate storage.
+        ColorStorage newColors;
+        PositionStorage newPositions;
+
+        for (int i = 0; i < colorCount; ++i) {
+            const SkPMColor4f& curColor = fColors[i];
+            float curPos = shader->getPos(i);
+
+            if (!hueIsPowerless[i]) {
+                newColors.push_back(curColor);
+                newPositions.push_back(curPos);
+                continue;
+            }
+
+            auto colorWithHueFrom = [](const SkPMColor4f& color, const SkPMColor4f& hueColor) {
+                // If we have any powerless hue, then all colors are already in (some) polar space,
+                // and they all store their hue in the red channel.
+                return SkPMColor4f{hueColor.fR, color.fG, color.fB, color.fA};
+            };
+
+            // In each case, we might be copying a powerless (invalid) hue from the neighbor, but
+            // that should be fine, as it will match that neighbor perfectly, and any hue is ok.
+            if (i != 0) {
+                newPositions.push_back(curPos);
+                newColors.push_back(colorWithHueFrom(curColor, fColors[i - 1]));
+            }
+            if (i != colorCount - 1) {
+                newPositions.push_back(curPos);
+                newColors.push_back(colorWithHueFrom(curColor, fColors[i + 1]));
+            }
+        }
+
+        fColors.swap(newColors);
+        fPositionStorage.swap(newPositions);
+        fPositions = fPositionStorage.data();
+        colorCount = fColors.size();
     }
 
     // 4) For polar colors, adjust hue values to respect the hue method. We're using a trick here...
@@ -796,7 +866,7 @@ SkColor4fXformer::SkColor4fXformer(const SkGradientBaseShader* shader, SkColorSp
     }
 
     // 5) Apply premultiplication
-    ConvertColorProc premulFn = nullptr;
+    PremulColorProc premulFn = nullptr;
     if (static_cast<bool>(interpolation.fInPremul)) {
         switch (interpolation.fColorSpace) {
             case ColorSpace::kHSL:
@@ -815,6 +885,16 @@ SkColor4fXformer::SkColor4fXformer(const SkGradientBaseShader* shader, SkColorSp
         for (int i = 0; i < colorCount; ++i) {
             fColors[i] = premulFn(fColors[i]);
         }
+    }
+
+    // Ganesh requires that the positions be explicit (rather than implicitly evenly spaced)
+    if (forceExplicitPositions && !fPositions) {
+        fPositionStorage.reserve_exact(colorCount);
+        float posScale = 1.0f / (colorCount - 1);
+        for (int i = 0; i < colorCount; i++) {
+            fPositionStorage.push_back(i * posScale);
+        }
+        fPositions = fPositionStorage.data();
     }
 }
 

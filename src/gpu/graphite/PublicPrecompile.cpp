@@ -60,7 +60,7 @@ void compile(const RendererProvider* rendererProvider,
                                                                : UniquePaintParamsID::InvalidID();
             GraphicsPipelineDesc pipelineDesc(s, paintID);
 
-            for (RenderPassDesc renderPassDesc : renderPassDescs) {
+            for (const RenderPassDesc& renderPassDesc : renderPassDescs) {
                 auto pipeline = resourceProvider->findOrCreateGraphicsPipeline(
                         keyContext.rtEffectDict(),
                         pipelineDesc,
@@ -88,6 +88,10 @@ void Precompile(Context* context, const PaintOptions& options, DrawTypeFlags dra
     SkColorInfo ci(kRGBA_8888_SkColorType, kPremul_SkAlphaType, nullptr);
     KeyContext keyContext(
             caps, dict, rtEffectDict.get(), ci, /* dstTexture= */ nullptr, /* dstOffset= */ {0, 0});
+
+    // Since the precompilation path's uniforms aren't used and don't change the key,
+    // the exact layout doesn't matter
+    PipelineDataGatherer gatherer(Layout::kMetal);
 
     // TODO: we need iterate over a broader set of TextureInfos here. Perhaps, allow the client
     // to pass in colorType, mipmapping and protection.
@@ -138,6 +142,7 @@ void Precompile(Context* context, const PaintOptions& options, DrawTypeFlags dra
     for (Coverage coverage : {Coverage::kNone, Coverage::kSingleChannel, Coverage::kLCD}) {
         options.priv().buildCombinations(
             keyContext,
+            &gatherer,
             /* addPrimitiveBlender= */ false,
             coverage,
              [&](UniquePaintParamsID uniqueID) {
@@ -153,6 +158,7 @@ void Precompile(Context* context, const PaintOptions& options, DrawTypeFlags dra
         for (Coverage coverage : {Coverage::kNone, Coverage::kSingleChannel, Coverage::kLCD}) {
             options.priv().buildCombinations(
                 keyContext,
+                &gatherer,
                 /* addPrimitiveBlender= */ true,
                 coverage,
                 [&](UniquePaintParamsID uniqueID) {

@@ -5,8 +5,8 @@
  * found in the LICENSE file.
  */
 
-#include "skcms.h"
-#include "skcms_internal.h"
+#include "skcms.h"  // NO_G3_REWRITE
+#include "skcms_internal.h"  // NO_G3_REWRITE
 #include <assert.h>
 #include <float.h>
 #include <limits.h>
@@ -36,6 +36,17 @@ static bool runtime_cpu_detection = true;
 void skcms_DisableRuntimeCPUDetection() {
     runtime_cpu_detection = false;
 }
+
+#if defined(__clang__)
+    #define SKCMS_MAYBE_UNUSED __attribute__((unused))
+    #pragma clang diagnostic ignored "-Wused-but-marked-unused"
+#elif defined(__GNUC__)
+    #define SKCMS_MAYBE_UNUSED __attribute__((unused))
+#elif defined(_MSC_VER)
+    #define SKCMS_MAYBE_UNUSED __pragma(warning(suppress:4100))
+#else
+    #define SKCMS_MAYBE_UNUSED
+#endif
 
 // sizeof(x) will return size_t, which is 32-bit on some machines and 64-bit on others.
 // We have better testing on 64-bit machines, so force 32-bit machines to behave like 64-bit.
@@ -83,6 +94,8 @@ static float logf_(float x) {
 static float exp2f_(float x) {
     if (x > 128.0f) {
         return INFINITY_;
+    } else if (x < -127.0f) {
+        return 0.0f;
     }
     float fract = x - floorf_(x);
 
@@ -2302,81 +2315,99 @@ bool skcms_ApproximateCurve(const skcms_Curve* curve,
 
 // ~~~~ Impl. of skcms_Transform() ~~~~
 
+#define SKCMS_LOAD_OPS(M) \
+    M(load_a8)            \
+    M(load_g8)            \
+    M(load_4444)          \
+    M(load_565)           \
+    M(load_888)           \
+    M(load_8888)          \
+    M(load_1010102)       \
+    M(load_101010x_XR)    \
+    M(load_161616LE)      \
+    M(load_16161616LE)    \
+    M(load_161616BE)      \
+    M(load_16161616BE)    \
+    M(load_hhh)           \
+    M(load_hhhh)          \
+    M(load_fff)           \
+    M(load_ffff)
+
+#define SKCMS_WORK_OPS(M) \
+    M(swap_rb)            \
+    M(clamp)              \
+    M(invert)             \
+    M(force_opaque)       \
+    M(premul)             \
+    M(unpremul)           \
+    M(matrix_3x3)         \
+    M(matrix_3x4)         \
+                          \
+    M(lab_to_xyz)         \
+    M(xyz_to_lab)         \
+                          \
+    M(gamma_r)            \
+    M(gamma_g)            \
+    M(gamma_b)            \
+    M(gamma_a)            \
+    M(gamma_rgb)          \
+                          \
+    M(tf_r)               \
+    M(tf_g)               \
+    M(tf_b)               \
+    M(tf_a)               \
+    M(tf_rgb)             \
+                          \
+    M(pq_r)               \
+    M(pq_g)               \
+    M(pq_b)               \
+    M(pq_a)               \
+    M(pq_rgb)             \
+                          \
+    M(hlg_r)              \
+    M(hlg_g)              \
+    M(hlg_b)              \
+    M(hlg_a)              \
+    M(hlg_rgb)            \
+                          \
+    M(hlginv_r)           \
+    M(hlginv_g)           \
+    M(hlginv_b)           \
+    M(hlginv_a)           \
+    M(hlginv_rgb)         \
+                          \
+    M(table_r)            \
+    M(table_g)            \
+    M(table_b)            \
+    M(table_a)            \
+                          \
+    M(clut_A2B)           \
+    M(clut_B2A)
+
+#define SKCMS_STORE_OPS(M) \
+    M(store_a8)            \
+    M(store_g8)            \
+    M(store_4444)          \
+    M(store_565)           \
+    M(store_888)           \
+    M(store_8888)          \
+    M(store_1010102)       \
+    M(store_161616LE)      \
+    M(store_16161616LE)    \
+    M(store_161616BE)      \
+    M(store_16161616BE)    \
+    M(store_101010x_XR)    \
+    M(store_hhh)           \
+    M(store_hhhh)          \
+    M(store_fff)           \
+    M(store_ffff)
+
 typedef enum {
-    Op_load_a8,
-    Op_load_g8,
-    Op_load_8888_palette8,
-    Op_load_4444,
-    Op_load_565,
-    Op_load_888,
-    Op_load_8888,
-    Op_load_1010102,
-    Op_load_101010x_XR,
-    Op_load_161616LE,
-    Op_load_16161616LE,
-    Op_load_161616BE,
-    Op_load_16161616BE,
-    Op_load_hhh,
-    Op_load_hhhh,
-    Op_load_fff,
-    Op_load_ffff,
-
-    Op_swap_rb,
-    Op_clamp,
-    Op_invert,
-    Op_force_opaque,
-    Op_premul,
-    Op_unpremul,
-    Op_matrix_3x3,
-    Op_matrix_3x4,
-
-    Op_lab_to_xyz,
-    Op_xyz_to_lab,
-
-    Op_tf_r,
-    Op_tf_g,
-    Op_tf_b,
-    Op_tf_a,
-
-    Op_pq_r,
-    Op_pq_g,
-    Op_pq_b,
-    Op_pq_a,
-
-    Op_hlg_r,
-    Op_hlg_g,
-    Op_hlg_b,
-    Op_hlg_a,
-
-    Op_hlginv_r,
-    Op_hlginv_g,
-    Op_hlginv_b,
-    Op_hlginv_a,
-
-    Op_table_r,
-    Op_table_g,
-    Op_table_b,
-    Op_table_a,
-
-    Op_clut_A2B,
-    Op_clut_B2A,
-
-    Op_store_a8,
-    Op_store_g8,
-    Op_store_4444,
-    Op_store_565,
-    Op_store_888,
-    Op_store_8888,
-    Op_store_1010102,
-    Op_store_161616LE,
-    Op_store_16161616LE,
-    Op_store_161616BE,
-    Op_store_16161616BE,
-    Op_store_101010x_XR,
-    Op_store_hhh,
-    Op_store_hhhh,
-    Op_store_fff,
-    Op_store_ffff,
+#define M(op) Op_##op,
+    SKCMS_LOAD_OPS(M)
+    SKCMS_WORK_OPS(M)
+    SKCMS_STORE_OPS(M)
+#undef M
 } Op;
 
 #if defined(__clang__)
@@ -2540,28 +2571,36 @@ namespace baseline {
 
 #endif
 
-typedef struct {
+static bool tf_is_gamma(const skcms_TransferFunction& tf) {
+    return tf.g > 0 && tf.a == 1 &&
+           tf.b == 0 && tf.c == 0 && tf.d == 0 && tf.e == 0 && tf.f == 0;
+}
+
+struct OpAndArg {
     Op          op;
     const void* arg;
-} OpAndArg;
+};
 
 static OpAndArg select_curve_op(const skcms_Curve* curve, int channel) {
-    static const struct { Op sRGBish, PQish, HLGish, HLGinvish, table; } ops[] = {
-        { Op_tf_r, Op_pq_r, Op_hlg_r, Op_hlginv_r, Op_table_r },
-        { Op_tf_g, Op_pq_g, Op_hlg_g, Op_hlginv_g, Op_table_g },
-        { Op_tf_b, Op_pq_b, Op_hlg_b, Op_hlginv_b, Op_table_b },
-        { Op_tf_a, Op_pq_a, Op_hlg_a, Op_hlginv_a, Op_table_a },
+    struct OpType {
+        Op sGamma, sRGBish, PQish, HLGish, HLGinvish, table;
     };
-    const auto& op = ops[channel];
+    static constexpr OpType kOps[] = {
+        { Op_gamma_r, Op_tf_r, Op_pq_r, Op_hlg_r, Op_hlginv_r, Op_table_r },
+        { Op_gamma_g, Op_tf_g, Op_pq_g, Op_hlg_g, Op_hlginv_g, Op_table_g },
+        { Op_gamma_b, Op_tf_b, Op_pq_b, Op_hlg_b, Op_hlginv_b, Op_table_b },
+        { Op_gamma_a, Op_tf_a, Op_pq_a, Op_hlg_a, Op_hlginv_a, Op_table_a },
+    };
+    const auto& op = kOps[channel];
 
     if (curve->table_entries == 0) {
         const OpAndArg noop = { Op_load_a8/*doesn't matter*/, nullptr };
 
         const skcms_TransferFunction& tf = curve->parametric;
 
-        if (tf.g == 1 && tf.a == 1 &&
-            tf.b == 0 && tf.c == 0 && tf.d == 0 && tf.e == 0 && tf.f == 0) {
-            return noop;
+        if (tf_is_gamma(tf)) {
+            return tf.g != 1 ? OpAndArg{op.sGamma, &tf}
+                             : noop;
         }
 
         switch (classify(tf)) {
@@ -2575,28 +2614,66 @@ static OpAndArg select_curve_op(const skcms_Curve* curve, int channel) {
     return OpAndArg{op.table, curve};
 }
 
+static int select_curve_ops(const skcms_Curve* curves, int numChannels, OpAndArg* ops) {
+    int position = 0;
+    for (int index = 0; index < numChannels; ++index) {
+        ops[position] = select_curve_op(&curves[index], index);
+        if (ops[position].arg) {
+            ++position;
+        }
+
+        // Identify separate R/G/B functions which can be fused into a single op.
+        // (We do this check inside the loop in order to allow R+G+B+A to be fused into RGB+A.)
+        if (index == 2 && position == 3) {
+            struct FusableOps {
+                Op r, g, b, rgb;
+            };
+            static constexpr FusableOps kFusableOps[] = {
+                {Op_gamma_r,  Op_gamma_g,  Op_gamma_b,  Op_gamma_rgb},
+                {Op_tf_r,     Op_tf_g,     Op_tf_b,     Op_tf_rgb},
+                {Op_pq_r,     Op_pq_g,     Op_pq_b,     Op_pq_rgb},
+                {Op_hlg_r,    Op_hlg_g,    Op_hlg_b,    Op_hlg_rgb},
+                {Op_hlginv_r, Op_hlginv_g, Op_hlginv_b, Op_hlginv_rgb},
+            };
+            for (const FusableOps& fusableOp : kFusableOps) {
+                if (ops[0].op == fusableOp.r &&
+                    ops[1].op == fusableOp.g &&
+                    ops[2].op == fusableOp.b &&
+                    (0 == memcmp(ops[0].arg, ops[1].arg, sizeof(skcms_TransferFunction))) &&
+                    (0 == memcmp(ops[0].arg, ops[2].arg, sizeof(skcms_TransferFunction)))) {
+
+                    ops[0].op = fusableOp.rgb;
+                    position = 1;
+                    break;
+                }
+            }
+        }
+    }
+
+    return position;
+}
+
 static size_t bytes_per_pixel(skcms_PixelFormat fmt) {
     switch (fmt >> 1) {   // ignore rgb/bgr
-        case skcms_PixelFormat_A_8                >> 1: return  1;
-        case skcms_PixelFormat_G_8                >> 1: return  1;
-        case skcms_PixelFormat_RGBA_8888_Palette8 >> 1: return  1;
-        case skcms_PixelFormat_ABGR_4444          >> 1: return  2;
-        case skcms_PixelFormat_RGB_565            >> 1: return  2;
-        case skcms_PixelFormat_RGB_888            >> 1: return  3;
-        case skcms_PixelFormat_RGBA_8888          >> 1: return  4;
-        case skcms_PixelFormat_RGBA_8888_sRGB     >> 1: return  4;
-        case skcms_PixelFormat_RGBA_1010102       >> 1: return  4;
-        case skcms_PixelFormat_RGB_101010x_XR     >> 1: return  4;
-        case skcms_PixelFormat_RGB_161616LE       >> 1: return  6;
-        case skcms_PixelFormat_RGBA_16161616LE    >> 1: return  8;
-        case skcms_PixelFormat_RGB_161616BE       >> 1: return  6;
-        case skcms_PixelFormat_RGBA_16161616BE    >> 1: return  8;
-        case skcms_PixelFormat_RGB_hhh_Norm       >> 1: return  6;
-        case skcms_PixelFormat_RGBA_hhhh_Norm     >> 1: return  8;
-        case skcms_PixelFormat_RGB_hhh            >> 1: return  6;
-        case skcms_PixelFormat_RGBA_hhhh          >> 1: return  8;
-        case skcms_PixelFormat_RGB_fff            >> 1: return 12;
-        case skcms_PixelFormat_RGBA_ffff          >> 1: return 16;
+        case skcms_PixelFormat_A_8             >> 1: return  1;
+        case skcms_PixelFormat_G_8             >> 1: return  1;
+        case skcms_PixelFormat_ABGR_4444       >> 1: return  2;
+        case skcms_PixelFormat_RGB_565         >> 1: return  2;
+        case skcms_PixelFormat_RGB_888         >> 1: return  3;
+        case skcms_PixelFormat_RGBA_8888       >> 1: return  4;
+        case skcms_PixelFormat_RGBA_8888_sRGB  >> 1: return  4;
+        case skcms_PixelFormat_RGBA_1010102    >> 1: return  4;
+        case skcms_PixelFormat_RGB_101010x_XR  >> 1: return  4;
+        case skcms_PixelFormat_RGB_161616LE    >> 1: return  6;
+        case skcms_PixelFormat_RGBA_16161616LE >> 1: return  8;
+        case skcms_PixelFormat_RGB_161616BE    >> 1: return  6;
+        case skcms_PixelFormat_RGBA_16161616BE >> 1: return  8;
+        case skcms_PixelFormat_RGB_hhh_Norm    >> 1: return  6;
+        case skcms_PixelFormat_RGBA_hhhh_Norm  >> 1: return  8;
+        case skcms_PixelFormat_RGB_hhh         >> 1: return  6;
+        case skcms_PixelFormat_RGBA_hhhh       >> 1: return  8;
+        case skcms_PixelFormat_RGB_fff         >> 1: return 12;
+        case skcms_PixelFormat_RGBA_ffff       >> 1: return 16;
     }
     assert(false);
     return 0;
@@ -2629,22 +2706,7 @@ bool skcms_Transform(const void*             src,
                      skcms_PixelFormat       dstFmt,
                      skcms_AlphaFormat       dstAlpha,
                      const skcms_ICCProfile* dstProfile,
-                     size_t                  npixels) {
-    return skcms_TransformWithPalette(src, srcFmt, srcAlpha, srcProfile,
-                                      dst, dstFmt, dstAlpha, dstProfile,
-                                      npixels, nullptr);
-}
-
-bool skcms_TransformWithPalette(const void*             src,
-                                skcms_PixelFormat       srcFmt,
-                                skcms_AlphaFormat       srcAlpha,
-                                const skcms_ICCProfile* srcProfile,
-                                void*                   dst,
-                                skcms_PixelFormat       dstFmt,
-                                skcms_AlphaFormat       dstAlpha,
-                                const skcms_ICCProfile* dstProfile,
-                                size_t                  nz,
-                                const void*             palette) {
+                     size_t                  nz) {
     const size_t dst_bpp = bytes_per_pixel(dstFmt),
                  src_bpp = bytes_per_pixel(srcFmt);
     // Let's just refuse if the request is absurdly big.
@@ -2667,15 +2729,32 @@ bool skcms_TransformWithPalette(const void*             src,
     }
     // TODO: more careful alias rejection (like, dst == src + 1)?
 
-    if (needs_palette(srcFmt) && !palette) {
-        return false;
-    }
+    Op          program[32];
+    const void* context[32];
 
-    Op          program  [32];
-    const void* arguments[32];
+    Op*          ops      = program;
+    const void** contexts = context;
 
-    Op*          ops  = program;
-    const void** args = arguments;
+    auto add_op = [&](Op o) {
+        *ops++ = o;
+        *contexts++ = nullptr;
+    };
+
+    auto add_op_ctx = [&](Op o, const void* c) {
+        *ops++ = o;
+        *contexts++ = c;
+    };
+
+    auto add_curve_ops = [&](const skcms_Curve* curves, int numChannels) {
+        OpAndArg oa[4];
+        assert(numChannels <= ARRAY_COUNT(oa));
+
+        int numOps = select_curve_ops(curves, numChannels, oa);
+
+        for (int i = 0; i < numOps; ++i) {
+            add_op_ctx(oa[i].op, oa[i].arg);
+        }
+    };
 
     // These are always parametric curves of some sort.
     skcms_Curve dst_curves[3];
@@ -2687,41 +2766,36 @@ bool skcms_TransformWithPalette(const void*             src,
 
     switch (srcFmt >> 1) {
         default: return false;
-        case skcms_PixelFormat_A_8             >> 1: *ops++ = Op_load_a8;         break;
-        case skcms_PixelFormat_G_8             >> 1: *ops++ = Op_load_g8;         break;
-        case skcms_PixelFormat_ABGR_4444       >> 1: *ops++ = Op_load_4444;       break;
-        case skcms_PixelFormat_RGB_565         >> 1: *ops++ = Op_load_565;        break;
-        case skcms_PixelFormat_RGB_888         >> 1: *ops++ = Op_load_888;        break;
-        case skcms_PixelFormat_RGBA_8888       >> 1: *ops++ = Op_load_8888;       break;
-        case skcms_PixelFormat_RGBA_1010102    >> 1: *ops++ = Op_load_1010102;    break;
-        case skcms_PixelFormat_RGB_101010x_XR  >> 1: *ops++ = Op_load_101010x_XR; break;
-        case skcms_PixelFormat_RGB_161616LE    >> 1: *ops++ = Op_load_161616LE;   break;
-        case skcms_PixelFormat_RGBA_16161616LE >> 1: *ops++ = Op_load_16161616LE; break;
-        case skcms_PixelFormat_RGB_161616BE    >> 1: *ops++ = Op_load_161616BE;   break;
-        case skcms_PixelFormat_RGBA_16161616BE >> 1: *ops++ = Op_load_16161616BE; break;
-        case skcms_PixelFormat_RGB_hhh_Norm    >> 1: *ops++ = Op_load_hhh;        break;
-        case skcms_PixelFormat_RGBA_hhhh_Norm  >> 1: *ops++ = Op_load_hhhh;       break;
-        case skcms_PixelFormat_RGB_hhh         >> 1: *ops++ = Op_load_hhh;        break;
-        case skcms_PixelFormat_RGBA_hhhh       >> 1: *ops++ = Op_load_hhhh;       break;
-        case skcms_PixelFormat_RGB_fff         >> 1: *ops++ = Op_load_fff;        break;
-        case skcms_PixelFormat_RGBA_ffff       >> 1: *ops++ = Op_load_ffff;       break;
+        case skcms_PixelFormat_A_8             >> 1: add_op(Op_load_a8);         break;
+        case skcms_PixelFormat_G_8             >> 1: add_op(Op_load_g8);         break;
+        case skcms_PixelFormat_ABGR_4444       >> 1: add_op(Op_load_4444);       break;
+        case skcms_PixelFormat_RGB_565         >> 1: add_op(Op_load_565);        break;
+        case skcms_PixelFormat_RGB_888         >> 1: add_op(Op_load_888);        break;
+        case skcms_PixelFormat_RGBA_8888       >> 1: add_op(Op_load_8888);       break;
+        case skcms_PixelFormat_RGBA_1010102    >> 1: add_op(Op_load_1010102);    break;
+        case skcms_PixelFormat_RGB_101010x_XR  >> 1: add_op(Op_load_101010x_XR); break;
+        case skcms_PixelFormat_RGB_161616LE    >> 1: add_op(Op_load_161616LE);   break;
+        case skcms_PixelFormat_RGBA_16161616LE >> 1: add_op(Op_load_16161616LE); break;
+        case skcms_PixelFormat_RGB_161616BE    >> 1: add_op(Op_load_161616BE);   break;
+        case skcms_PixelFormat_RGBA_16161616BE >> 1: add_op(Op_load_16161616BE); break;
+        case skcms_PixelFormat_RGB_hhh_Norm    >> 1: add_op(Op_load_hhh);        break;
+        case skcms_PixelFormat_RGBA_hhhh_Norm  >> 1: add_op(Op_load_hhhh);       break;
+        case skcms_PixelFormat_RGB_hhh         >> 1: add_op(Op_load_hhh);        break;
+        case skcms_PixelFormat_RGBA_hhhh       >> 1: add_op(Op_load_hhhh);       break;
+        case skcms_PixelFormat_RGB_fff         >> 1: add_op(Op_load_fff);        break;
+        case skcms_PixelFormat_RGBA_ffff       >> 1: add_op(Op_load_ffff);       break;
 
-        case skcms_PixelFormat_RGBA_8888_Palette8 >> 1: *ops++  = Op_load_8888_palette8;
-                                                        *args++ = palette;
-                                                        break;
         case skcms_PixelFormat_RGBA_8888_sRGB >> 1:
-            *ops++ = Op_load_8888;
-            *ops++ = Op_tf_r;       *args++ = skcms_sRGB_TransferFunction();
-            *ops++ = Op_tf_g;       *args++ = skcms_sRGB_TransferFunction();
-            *ops++ = Op_tf_b;       *args++ = skcms_sRGB_TransferFunction();
+            add_op(Op_load_8888);
+            add_op_ctx(Op_tf_rgb, skcms_sRGB_TransferFunction());
             break;
     }
     if (srcFmt == skcms_PixelFormat_RGB_hhh_Norm ||
         srcFmt == skcms_PixelFormat_RGBA_hhhh_Norm) {
-        *ops++ = Op_clamp;
+        add_op(Op_clamp);
     }
     if (srcFmt & 1) {
-        *ops++ = Op_swap_rb;
+        add_op(Op_swap_rb);
     }
     skcms_ICCProfile gray_dst_profile;
     if ((dstFmt >> 1) == (skcms_PixelFormat_G_8 >> 1)) {
@@ -2735,15 +2809,15 @@ bool skcms_TransformWithPalette(const void*             src,
     if (srcProfile->data_color_space == skcms_Signature_CMYK) {
         // Photoshop creates CMYK images as inverse CMYK.
         // These happen to be the only ones we've _ever_ seen.
-        *ops++ = Op_invert;
+        add_op(Op_invert);
         // With CMYK, ignore the alpha type, to avoid changing K or conflating CMY with K.
         srcAlpha = skcms_AlphaFormat_Unpremul;
     }
 
     if (srcAlpha == skcms_AlphaFormat_Opaque) {
-        *ops++ = Op_force_opaque;
+        add_op(Op_force_opaque);
     } else if (srcAlpha == skcms_AlphaFormat_PremulAsEncoded) {
-        *ops++ = Op_unpremul;
+        add_op(Op_unpremul);
     }
 
     if (dstProfile != srcProfile) {
@@ -2758,26 +2832,14 @@ bool skcms_TransformWithPalette(const void*             src,
 
         if (srcProfile->has_A2B) {
             if (srcProfile->A2B.input_channels) {
-                for (int i = 0; i < (int)srcProfile->A2B.input_channels; i++) {
-                    OpAndArg oa = select_curve_op(&srcProfile->A2B.input_curves[i], i);
-                    if (oa.arg) {
-                        *ops++  = oa.op;
-                        *args++ = oa.arg;
-                    }
-                }
-                *ops++  = Op_clamp;
-                *ops++  = Op_clut_A2B;
-                *args++ = &srcProfile->A2B;
+                add_curve_ops(srcProfile->A2B.input_curves,
+                              (int)srcProfile->A2B.input_channels);
+                add_op(Op_clamp);
+                add_op_ctx(Op_clut_A2B, &srcProfile->A2B);
             }
 
             if (srcProfile->A2B.matrix_channels == 3) {
-                for (int i = 0; i < 3; i++) {
-                    OpAndArg oa = select_curve_op(&srcProfile->A2B.matrix_curves[i], i);
-                    if (oa.arg) {
-                        *ops++  = oa.op;
-                        *args++ = oa.arg;
-                    }
-                }
+                add_curve_ops(srcProfile->A2B.matrix_curves, /*numChannels=*/3);
 
                 static const skcms_Matrix3x4 I = {{
                     {1,0,0,0},
@@ -2785,33 +2847,20 @@ bool skcms_TransformWithPalette(const void*             src,
                     {0,0,1,0},
                 }};
                 if (0 != memcmp(&I, &srcProfile->A2B.matrix, sizeof(I))) {
-                    *ops++  = Op_matrix_3x4;
-                    *args++ = &srcProfile->A2B.matrix;
+                    add_op_ctx(Op_matrix_3x4, &srcProfile->A2B.matrix);
                 }
             }
 
             if (srcProfile->A2B.output_channels == 3) {
-                for (int i = 0; i < 3; i++) {
-                    OpAndArg oa = select_curve_op(&srcProfile->A2B.output_curves[i], i);
-                    if (oa.arg) {
-                        *ops++  = oa.op;
-                        *args++ = oa.arg;
-                    }
-                }
+                add_curve_ops(srcProfile->A2B.output_curves, /*numChannels=*/3);
             }
 
             if (srcProfile->pcs == skcms_Signature_Lab) {
-                *ops++ = Op_lab_to_xyz;
+                add_op(Op_lab_to_xyz);
             }
 
         } else if (srcProfile->has_trc && srcProfile->has_toXYZD50) {
-            for (int i = 0; i < 3; i++) {
-                OpAndArg oa = select_curve_op(&srcProfile->trc[i], i);
-                if (oa.arg) {
-                    *ops++  = oa.op;
-                    *args++ = oa.arg;
-                }
-            }
+            add_curve_ops(srcProfile->trc, /*numChannels=*/3);
         } else {
             return false;
         }
@@ -2822,22 +2871,15 @@ bool skcms_TransformWithPalette(const void*             src,
         if (dstProfile->has_B2A) {
             // B2A needs its input in XYZD50, so transform TRC sources now.
             if (!srcProfile->has_A2B) {
-                *ops++  = Op_matrix_3x3;
-                *args++ = &srcProfile->toXYZD50;
+                add_op_ctx(Op_matrix_3x3, &srcProfile->toXYZD50);
             }
 
             if (dstProfile->pcs == skcms_Signature_Lab) {
-                *ops++ = Op_xyz_to_lab;
+                add_op(Op_xyz_to_lab);
             }
 
             if (dstProfile->B2A.input_channels == 3) {
-                for (int i = 0; i < 3; i++) {
-                    OpAndArg oa = select_curve_op(&dstProfile->B2A.input_curves[i], i);
-                    if (oa.arg) {
-                        *ops++  = oa.op;
-                        *args++ = oa.arg;
-                    }
-                }
+                add_curve_ops(dstProfile->B2A.input_curves, /*numChannels=*/3);
             }
 
             if (dstProfile->B2A.matrix_channels == 3) {
@@ -2847,30 +2889,18 @@ bool skcms_TransformWithPalette(const void*             src,
                     {0,0,1,0},
                 }};
                 if (0 != memcmp(&I, &dstProfile->B2A.matrix, sizeof(I))) {
-                    *ops++  = Op_matrix_3x4;
-                    *args++ = &dstProfile->B2A.matrix;
+                    add_op_ctx(Op_matrix_3x4, &dstProfile->B2A.matrix);
                 }
 
-                for (int i = 0; i < 3; i++) {
-                    OpAndArg oa = select_curve_op(&dstProfile->B2A.matrix_curves[i], i);
-                    if (oa.arg) {
-                        *ops++  = oa.op;
-                        *args++ = oa.arg;
-                    }
-                }
+                add_curve_ops(dstProfile->B2A.matrix_curves, /*numChannels=*/3);
             }
 
             if (dstProfile->B2A.output_channels) {
-                *ops++  = Op_clamp;
-                *ops++  = Op_clut_B2A;
-                *args++ = &dstProfile->B2A;
-                for (int i = 0; i < (int)dstProfile->B2A.output_channels; i++) {
-                    OpAndArg oa = select_curve_op(&dstProfile->B2A.output_curves[i], i);
-                    if (oa.arg) {
-                        *ops++  = oa.op;
-                        *args++ = oa.arg;
-                    }
-                }
+                add_op(Op_clamp);
+                add_op_ctx(Op_clut_B2A, &dstProfile->B2A);
+
+                add_curve_ops(dstProfile->B2A.output_curves,
+                              (int)dstProfile->B2A.output_channels);
             }
         } else {
             // This is a TRC destination.
@@ -2889,21 +2919,18 @@ bool skcms_TransformWithPalette(const void*             src,
                 // Concat the entire gamut transform into from_xyz,
                 // now slightly misnamed but it's a handy spot to stash the result.
                 from_xyz = skcms_Matrix3x3_concat(&from_xyz, to_xyz);
-                *ops++  = Op_matrix_3x3;
-                *args++ = &from_xyz;
+                add_op_ctx(Op_matrix_3x3, &from_xyz);
             }
 
             // Encode back to dst RGB using its parametric transfer functions.
-            for (int i = 0; i < 3; i++) {
-                OpAndArg oa = select_curve_op(dst_curves+i, i);
-                if (oa.arg) {
-                    assert (oa.op != Op_table_r &&
-                            oa.op != Op_table_g &&
-                            oa.op != Op_table_b &&
-                            oa.op != Op_table_a);
-                    *ops++  = oa.op;
-                    *args++ = oa.arg;
-                }
+            OpAndArg oa[3];
+            int numOps = select_curve_ops(dst_curves, /*numChannels=*/3, oa);
+            for (int index = 0; index < numOps; ++index) {
+                assert(oa[index].op != Op_table_r &&
+                       oa[index].op != Op_table_g &&
+                       oa[index].op != Op_table_b &&
+                       oa[index].op != Op_table_a);
+                add_op_ctx(oa[index].op, oa[index].arg);
             }
         }
     }
@@ -2914,54 +2941,55 @@ bool skcms_TransformWithPalette(const void*             src,
     // E.g. r = 1.1, a = 0.5 would fit fine in fixed point after premul (ra=0.55,a=0.5),
     // but would be carrying r > 1, which is really unexpected for downstream consumers.
     if (dstFmt < skcms_PixelFormat_RGB_hhh) {
-        *ops++ = Op_clamp;
+        add_op(Op_clamp);
     }
 
     if (dstProfile->data_color_space == skcms_Signature_CMYK) {
         // Photoshop creates CMYK images as inverse CMYK.
         // These happen to be the only ones we've _ever_ seen.
-        *ops++ = Op_invert;
+        add_op(Op_invert);
 
         // CMYK has no alpha channel, so make sure dstAlpha is a no-op.
         dstAlpha = skcms_AlphaFormat_Unpremul;
     }
 
     if (dstAlpha == skcms_AlphaFormat_Opaque) {
-        *ops++ = Op_force_opaque;
+        add_op(Op_force_opaque);
     } else if (dstAlpha == skcms_AlphaFormat_PremulAsEncoded) {
-        *ops++ = Op_premul;
+        add_op(Op_premul);
     }
     if (dstFmt & 1) {
-        *ops++ = Op_swap_rb;
+        add_op(Op_swap_rb);
     }
     switch (dstFmt >> 1) {
         default: return false;
-        case skcms_PixelFormat_A_8             >> 1: *ops++ = Op_store_a8;         break;
-        case skcms_PixelFormat_G_8             >> 1: *ops++ = Op_store_g8;         break;
-        case skcms_PixelFormat_ABGR_4444       >> 1: *ops++ = Op_store_4444;       break;
-        case skcms_PixelFormat_RGB_565         >> 1: *ops++ = Op_store_565;        break;
-        case skcms_PixelFormat_RGB_888         >> 1: *ops++ = Op_store_888;        break;
-        case skcms_PixelFormat_RGBA_8888       >> 1: *ops++ = Op_store_8888;       break;
-        case skcms_PixelFormat_RGBA_1010102    >> 1: *ops++ = Op_store_1010102;    break;
-        case skcms_PixelFormat_RGB_161616LE    >> 1: *ops++ = Op_store_161616LE;   break;
-        case skcms_PixelFormat_RGBA_16161616LE >> 1: *ops++ = Op_store_16161616LE; break;
-        case skcms_PixelFormat_RGB_161616BE    >> 1: *ops++ = Op_store_161616BE;   break;
-        case skcms_PixelFormat_RGBA_16161616BE >> 1: *ops++ = Op_store_16161616BE; break;
-        case skcms_PixelFormat_RGB_hhh_Norm    >> 1: *ops++ = Op_store_hhh;        break;
-        case skcms_PixelFormat_RGBA_hhhh_Norm  >> 1: *ops++ = Op_store_hhhh;       break;
-        case skcms_PixelFormat_RGB_101010x_XR  >> 1: *ops++ = Op_store_101010x_XR; break;
-        case skcms_PixelFormat_RGB_hhh         >> 1: *ops++ = Op_store_hhh;        break;
-        case skcms_PixelFormat_RGBA_hhhh       >> 1: *ops++ = Op_store_hhhh;       break;
-        case skcms_PixelFormat_RGB_fff         >> 1: *ops++ = Op_store_fff;        break;
-        case skcms_PixelFormat_RGBA_ffff       >> 1: *ops++ = Op_store_ffff;       break;
+        case skcms_PixelFormat_A_8             >> 1: add_op(Op_store_a8);         break;
+        case skcms_PixelFormat_G_8             >> 1: add_op(Op_store_g8);         break;
+        case skcms_PixelFormat_ABGR_4444       >> 1: add_op(Op_store_4444);       break;
+        case skcms_PixelFormat_RGB_565         >> 1: add_op(Op_store_565);        break;
+        case skcms_PixelFormat_RGB_888         >> 1: add_op(Op_store_888);        break;
+        case skcms_PixelFormat_RGBA_8888       >> 1: add_op(Op_store_8888);       break;
+        case skcms_PixelFormat_RGBA_1010102    >> 1: add_op(Op_store_1010102);    break;
+        case skcms_PixelFormat_RGB_161616LE    >> 1: add_op(Op_store_161616LE);   break;
+        case skcms_PixelFormat_RGBA_16161616LE >> 1: add_op(Op_store_16161616LE); break;
+        case skcms_PixelFormat_RGB_161616BE    >> 1: add_op(Op_store_161616BE);   break;
+        case skcms_PixelFormat_RGBA_16161616BE >> 1: add_op(Op_store_16161616BE); break;
+        case skcms_PixelFormat_RGB_hhh_Norm    >> 1: add_op(Op_store_hhh);        break;
+        case skcms_PixelFormat_RGBA_hhhh_Norm  >> 1: add_op(Op_store_hhhh);       break;
+        case skcms_PixelFormat_RGB_101010x_XR  >> 1: add_op(Op_store_101010x_XR); break;
+        case skcms_PixelFormat_RGB_hhh         >> 1: add_op(Op_store_hhh);        break;
+        case skcms_PixelFormat_RGBA_hhhh       >> 1: add_op(Op_store_hhhh);       break;
+        case skcms_PixelFormat_RGB_fff         >> 1: add_op(Op_store_fff);        break;
+        case skcms_PixelFormat_RGBA_ffff       >> 1: add_op(Op_store_ffff);       break;
 
         case skcms_PixelFormat_RGBA_8888_sRGB >> 1:
-            *ops++ = Op_tf_r;       *args++ = skcms_sRGB_Inverse_TransferFunction();
-            *ops++ = Op_tf_g;       *args++ = skcms_sRGB_Inverse_TransferFunction();
-            *ops++ = Op_tf_b;       *args++ = skcms_sRGB_Inverse_TransferFunction();
-            *ops++ = Op_store_8888;
+            add_op_ctx(Op_tf_rgb, skcms_sRGB_Inverse_TransferFunction());
+            add_op(Op_store_8888);
             break;
     }
+
+    assert(ops      <= program + ARRAY_COUNT(program));
+    assert(contexts <= context + ARRAY_COUNT(context));
 
     auto run = baseline::run_program;
 #if defined(TEST_FOR_HSW)
@@ -2978,7 +3006,7 @@ bool skcms_TransformWithPalette(const void*             src,
         case CpuType::SKX: run = skx::run_program; break;
     }
 #endif
-    run(program, arguments, (const char*)src, (char*)dst, n, src_bpp,dst_bpp);
+    run(program, context, (const char*)src, (char*)dst, n, src_bpp,dst_bpp);
     return true;
 }
 

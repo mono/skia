@@ -6,6 +6,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+ - `Typeface.MakeFreeTypeFaceFromData` is now `Typeface.MakeTypefaceFromData` to be consistent
+   with the rest of the Skia library in the capitalization of the f in Typeface.
+   (CK still uses Freetype under the hood).
+ - Passing a `null` `Typeface` to the `Font` constructor no longer uses the default typeface. See
+   `CanvasKit.Typeface.GetDefault()` as a way to get the compiled-in typeface to replace this
+   behavior.
+
+### Added
+ - `CanvasKit.Typeface.GetDefault()` as a way to explicitly get the compiled-in typeface (if any).
+
+## [0.39.1] - 2023-10-12
+
+### Fixed
+ - `@webgpu/types` is actually a dependency, not just a devDependency.
+
+## [0.39.0] - 2023-10-11
+
 ### Added
 - `ImageFilter.getOutputBounds` returns the adjusted bounds of a rect after
    applying the `ImageFilter`.
@@ -27,6 +45,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `Paragraph.getLineMetricsAt`, returns the line metrics of a line.
 - `Paragraph.getNumberOfLines`, returns the number of visible lines in the paragraph.
 - `Paragraph.getLineNumberAt`, finds the line that contains the given UTF-16 index.
+- `ManagedAnimation.setEditorCursorWeight` -- adjust the WYSIWYG editor cursor weight.
 
 
 ### Fixed

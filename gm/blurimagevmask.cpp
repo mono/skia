@@ -19,8 +19,10 @@
 #include "include/core/SkString.h"
 #include "include/core/SkTypeface.h"
 #include "include/effects/SkImageFilters.h"
+#include "tools/DecodeUtils.h"
 #include "tools/Resources.h"
 #include "tools/ToolUtils.h"
+#include "tools/fonts/FontToolUtils.h"
 
 #include <stdio.h>
 
@@ -29,7 +31,7 @@ DEF_SIMPLE_GM(blurimagevmask, canvas, 700, 1200) {
     paint.setAntiAlias(true);
     paint.setColor(SK_ColorBLACK);
 
-    SkFont font(ToolUtils::create_portable_typeface(), 25);
+    SkFont font(ToolUtils::DefaultPortableTypeface(), 25);
 
     const double sigmas[] = {3.0, 8.0, 16.0, 24.0, 32.0};
 
@@ -65,7 +67,7 @@ DEF_SIMPLE_GM(blurimagevmask, canvas, 700, 1200) {
 }
 
 DEF_SIMPLE_GM_CAN_FAIL(blur_image, canvas, errorMsg, 500, 500) {
-    auto image = GetResourceAsImage("images/mandrill_128.png");
+    auto image = ToolUtils::GetResourceAsImage("images/mandrill_128.png");
     if (!image) {
         *errorMsg = "Could not load mandrill_128.png. Did you forget to set the resourcePath?";
         return skiagm::DrawResult::kFail;
