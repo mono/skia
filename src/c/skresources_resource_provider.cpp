@@ -27,11 +27,15 @@ sk_typeface_t* skresources_resource_provider_load_typeface(skresources_resource_
 }
 
 skresources_resource_provider_t* skresources_file_resource_provider_make(sk_string_t* base_dir, bool predecode){
-    return ToSkResourcesResourceProvider(skresources::FileResourceProvider::Make(AsString(*base_dir), predecode).release());
+    auto strategy = predecode ? skresources::ImageDecodeStrategy::kPreDecode
+                              : skresources::ImageDecodeStrategy::kLazyDecode;
+    return ToSkResourcesResourceProvider(skresources::FileResourceProvider::Make(AsString(*base_dir), strategy).release());
 }
 skresources_resource_provider_t* skresources_caching_resource_provider_proxy_make(skresources_resource_provider_t* rp) {
     return ToSkResourcesResourceProvider(skresources::CachingResourceProvider::Make(sk_ref_sp(AsSkResourcesResourceProvider(rp))).release());
 }
 skresources_resource_provider_t* skresources_data_uri_resource_provider_proxy_make(skresources_resource_provider_t* rp, bool predecode) {
-    return ToSkResourcesResourceProvider(skresources::DataURIResourceProviderProxy::Make(sk_ref_sp(AsSkResourcesResourceProvider(rp)), predecode).release());
+    auto strategy = predecode ? skresources::ImageDecodeStrategy::kPreDecode
+                              : skresources::ImageDecodeStrategy::kLazyDecode;
+    return ToSkResourcesResourceProvider(skresources::DataURIResourceProviderProxy::Make(sk_ref_sp(AsSkResourcesResourceProvider(rp)), strategy).release());
 }
