@@ -57,30 +57,6 @@ bool sk_typeface_is_fixed_pitch(const sk_typeface_t* typeface) {
     return AsTypeface(typeface)->isFixedPitch();
 }
 
-sk_typeface_t* sk_typeface_create_default(void) {
-    return nullptr; // removed: use sk_fontmgr_match_family_style instead
-}
-
-sk_typeface_t* sk_typeface_ref_default(void) {
-    return nullptr; // removed: use sk_fontmgr_match_family_style instead
-}
-
-sk_typeface_t* sk_typeface_create_from_name(const char* familyName, const sk_fontstyle_t* style) {
-    return nullptr; // removed: use sk_fontmgr_match_family_style instead
-}
-
-sk_typeface_t* sk_typeface_create_from_file(const char* path, int index) {
-    return nullptr; // removed: use sk_fontmgr_create_from_file instead
-}
-
-sk_typeface_t* sk_typeface_create_from_stream(sk_stream_asset_t* stream, int index) {
-    return nullptr; // removed: use sk_fontmgr_create_from_stream instead
-}
-
-sk_typeface_t* sk_typeface_create_from_data(sk_data_t* data, int index) {
-    return nullptr; // removed: use sk_fontmgr_create_from_data instead
-}
-
 void sk_typeface_unichars_to_glyphs(const sk_typeface_t* typeface, const int32_t unichars[], int count, uint16_t glyphs[]) {
     AsTypeface(typeface)->unicharsToGlyphs(unichars, count, glyphs);
 }
