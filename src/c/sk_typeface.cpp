@@ -14,6 +14,18 @@
 
 #include <memory>
 
+#if defined(SK_BUILD_FOR_MAC) || defined(SK_BUILD_FOR_IOS)
+#include "include/ports/SkFontMgr_mac_ct.h"
+#elif defined(SK_BUILD_FOR_WIN)
+#include "include/ports/SkTypeface_win.h"
+#elif defined(SK_BUILD_FOR_ANDROID)
+#include "include/ports/SkFontMgr_android.h"
+#elif defined(SK_FONTMGR_FONTCONFIG_AVAILABLE)
+#include "include/ports/SkFontMgr_fontconfig.h"
+#else
+#include "include/ports/SkFontMgr_empty.h"
+#endif
+
 #include "include/c/sk_typeface.h"
 
 #include "src/c/sk_types_priv.h"
@@ -46,28 +58,27 @@ bool sk_typeface_is_fixed_pitch(const sk_typeface_t* typeface) {
 }
 
 sk_typeface_t* sk_typeface_create_default(void) {
-    return ToTypeface(SkTypeface::MakeDefault().release());
+    return nullptr; // removed: use sk_fontmgr_match_family_style instead
 }
 
 sk_typeface_t* sk_typeface_ref_default(void) {
-    return ToTypeface(SkTypeface::RefDefault().release());
+    return nullptr; // removed: use sk_fontmgr_match_family_style instead
 }
 
 sk_typeface_t* sk_typeface_create_from_name(const char* familyName, const sk_fontstyle_t* style) {
-    return ToTypeface(SkTypeface::MakeFromName(familyName, *AsFontStyle(style)).release());
+    return nullptr; // removed: use sk_fontmgr_match_family_style instead
 }
 
 sk_typeface_t* sk_typeface_create_from_file(const char* path, int index) {
-    return ToTypeface(SkTypeface::MakeFromFile(path, index).release());
+    return nullptr; // removed: use sk_fontmgr_create_from_file instead
 }
 
 sk_typeface_t* sk_typeface_create_from_stream(sk_stream_asset_t* stream, int index) {
-    std::unique_ptr<SkStreamAsset> skstream(AsStreamAsset(stream));
-    return ToTypeface(SkTypeface::MakeFromStream(std::move(skstream), index).release());
+    return nullptr; // removed: use sk_fontmgr_create_from_stream instead
 }
 
 sk_typeface_t* sk_typeface_create_from_data(sk_data_t* data, int index) {
-    return ToTypeface(SkTypeface::MakeFromData(sk_ref_sp(AsData(data)), index).release());
+    return nullptr; // removed: use sk_fontmgr_create_from_data instead
 }
 
 void sk_typeface_unichars_to_glyphs(const sk_typeface_t* typeface, const int32_t unichars[], int count, uint16_t glyphs[]) {
@@ -129,12 +140,28 @@ sk_stream_asset_t* sk_typeface_open_stream(const sk_typeface_t* typeface, int* t
 
 // font manager
 
+static sk_sp<SkFontMgr> create_platform_fontmgr() {
+#if defined(SK_BUILD_FOR_MAC) || defined(SK_BUILD_FOR_IOS)
+    return SkFontMgr_New_CoreText(nullptr);
+#elif defined(SK_BUILD_FOR_WIN)
+    return SkFontMgr_New_DirectWrite();
+#elif defined(SK_BUILD_FOR_ANDROID)
+    return SkFontMgr_New_Android(nullptr);
+#elif defined(SK_FONTMGR_FONTCONFIG_AVAILABLE)
+    return SkFontMgr_New_FontConfig(nullptr);
+#else
+    return SkFontMgr_New_Custom_Empty();
+#endif
+}
+
 sk_fontmgr_t* sk_fontmgr_create_default(void) {
-    return ToFontMgr(SkFontMgr::MakeDefault().release());
+    return ToFontMgr(create_platform_fontmgr().release());
 }
 
 sk_fontmgr_t* sk_fontmgr_ref_default(void) {
-    return ToFontMgr(SkFontMgr::RefDefault().release());
+    static sk_sp<SkFontMgr> singleton = create_platform_fontmgr();
+    singleton->ref();
+    return ToFontMgr(singleton.get());
 }
 
 void sk_fontmgr_unref(sk_fontmgr_t* fontmgr) {

@@ -9,8 +9,10 @@
 
 #include "include/core/SkImage.h"
 #include "include/core/SkSurface.h"
+#include "include/gpu/GpuTypes.h"
 #include "include/gpu/ganesh/gl/GrGLBackendSurface.h"
 #include "include/gpu/ganesh/vk/GrVkBackendSurface.h"
+#include "include/gpu/ganesh/vk/GrVkDirectContext.h"
 
 #include "include/c/gr_context.h"
 
@@ -62,7 +64,7 @@ gr_direct_context_t* gr_direct_context_make_gl_with_options(const gr_glinterface
 }
 
 gr_direct_context_t* gr_direct_context_make_vulkan(const gr_vk_backendcontext_t vkBackendContext) {
-    return SK_ONLY_VULKAN(ToGrDirectContext(GrDirectContext::MakeVulkan(AsGrVkBackendContext(&vkBackendContext)).release()), nullptr);
+    return SK_ONLY_VULKAN(ToGrDirectContext(GrDirectContexts::MakeVulkan(AsGrVkBackendContext(&vkBackendContext)).release()), nullptr);
 }
 
 gr_direct_context_t* gr_direct_context_make_vulkan_with_options(const gr_vk_backendcontext_t vkBackendContext, const gr_context_options_t* options) {
@@ -71,7 +73,7 @@ gr_direct_context_t* gr_direct_context_make_vulkan_with_options(const gr_vk_back
         if (options) {
             opts = AsGrContextOptions(options);
         })
-    return SK_ONLY_VULKAN(ToGrDirectContext(GrDirectContext::MakeVulkan(AsGrVkBackendContext(&vkBackendContext), opts).release()), nullptr);
+    return SK_ONLY_VULKAN(ToGrDirectContext(GrDirectContexts::MakeVulkan(AsGrVkBackendContext(&vkBackendContext), opts).release()), nullptr);
 }
 
 gr_direct_context_t* gr_direct_context_make_metal(void* device, void* queue) {
@@ -234,7 +236,7 @@ bool gr_vk_extensions_has_extension(gr_vk_extensions_t* extensions, const char* 
 // GrBackendTexture
 
 gr_backendtexture_t* gr_backendtexture_new_gl(int width, int height, bool mipmapped, const gr_gl_textureinfo_t* glInfo) {
-    return SK_ONLY_GPU(ToGrBackendTexture(new GrBackendTexture(GrBackendTextures::MakeGL(width, height, (GrMipMapped)mipmapped, *AsGrGLTextureInfo(glInfo)))), nullptr);
+    return SK_ONLY_GPU(ToGrBackendTexture(new GrBackendTexture(GrBackendTextures::MakeGL(width, height, (skgpu::Mipmapped)mipmapped, *AsGrGLTextureInfo(glInfo)))), nullptr);
 }
 
 gr_backendtexture_t* gr_backendtexture_new_vulkan(int width, int height, const gr_vk_imageinfo_t* vkInfo) {
@@ -242,7 +244,7 @@ gr_backendtexture_t* gr_backendtexture_new_vulkan(int width, int height, const g
 }
 
 gr_backendtexture_t* gr_backendtexture_new_metal(int width, int height, bool mipmapped, const gr_mtl_textureinfo_t* mtlInfo) {
-    return SK_ONLY_METAL(ToGrBackendTexture(new GrBackendTexture(width, height, (GrMipMapped)mipmapped, AsGrMtlTextureInfo(mtlInfo))), nullptr);
+    return SK_ONLY_METAL(ToGrBackendTexture(new GrBackendTexture(width, height, (skgpu::Mipmapped)mipmapped, AsGrMtlTextureInfo(mtlInfo))), nullptr);
 }
 
 gr_backendtexture_t* gr_backendtexture_new_direct3d(int width, int height, const gr_d3d_textureresourceinfo_t* d3dInfo) {

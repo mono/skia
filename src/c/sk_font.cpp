@@ -94,7 +94,11 @@ void sk_font_set_hinting(sk_font_t* font, sk_font_hinting_t value) {
 }
 
 sk_typeface_t* sk_font_get_typeface(const sk_font_t* font) {
-    return ToTypeface(AsFont(font)->refTypeface().release());
+    auto tf = AsFont(font)->refTypeface();
+    if (tf == SkTypeface::MakeEmpty()) {
+        return nullptr;
+    }
+    return ToTypeface(tf.release());
 }
 
 void sk_font_set_typeface(sk_font_t* font, sk_typeface_t* value) {
