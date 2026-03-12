@@ -22,6 +22,8 @@
 #include "include/ports/SkFontMgr_android.h"
 #elif defined(SK_FONTMGR_FONTCONFIG_AVAILABLE)
 #include "include/ports/SkFontMgr_fontconfig.h"
+#elif defined(__EMSCRIPTEN__) || defined(SK_FONTMGR_FREETYPE_EMBEDDED_AVAILABLE)
+#include "include/ports/SkFontMgr_data.h"
 #endif
 
 #include "include/c/sk_typeface.h"
@@ -123,9 +125,12 @@ static sk_sp<SkFontMgr> create_platform_fontmgr() {
     return SkFontMgr_New_Android(nullptr);
 #elif defined(SK_FONTMGR_FONTCONFIG_AVAILABLE)
     return SkFontMgr_New_FontConfig(nullptr);
+#elif defined(__EMSCRIPTEN__) || defined(SK_FONTMGR_FREETYPE_EMBEDDED_AVAILABLE)
+    // WASM uses the custom data font manager which supports creating
+    // typefaces from data/streams via FreeType. Start with no fonts —
+    // users register fonts via SKFontManager.CreateTypeface(data).
+    return SkFontMgr_New_Custom_Data(SkSpan<sk_sp<SkData>>());
 #else
-    // WASM, Tizen, and other platforms without a system font manager.
-    // SkFontMgr::RefEmpty() is always available from core Skia.
     return SkFontMgr::RefEmpty();
 #endif
 }
