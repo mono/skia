@@ -13,24 +13,33 @@
 #include <memory>
 #include <type_traits>
 
+using wglGetCurrentContextProc = HGLRC (WINAPI *)();
+using wglGetProcAddressProc = PROC (WINAPI *)(LPCSTR);
+
 namespace GrGLInterfaces {
 sk_sp<const GrGLInterface> MakeWin() {
-    if (nullptr == wglGetCurrentContext()) {
-        return nullptr;
-    }
-
     struct FreeModule { void operator()(HMODULE m) { (void)FreeLibrary(m); } };
     std::unique_ptr<typename std::remove_pointer<HMODULE>::type, FreeModule> module(
             LoadLibraryExA("opengl32.dll", NULL, LOAD_LIBRARY_SEARCH_SYSTEM32));
     if (!module) {
         return nullptr;
     }
+    static wglGetCurrentContextProc wglGetCurrentContext_ =
+            (wglGetCurrentContextProc)GetProcAddress(module.get(), "wglGetCurrentContext");
+    static wglGetProcAddressProc wglGetProcAddress_ =
+            (wglGetProcAddressProc)GetProcAddress(module.get(), "wglGetProcAddress");
+    if (!wglGetCurrentContext_ || !wglGetProcAddress_) {
+        return nullptr;
+    }
+    if (nullptr == wglGetCurrentContext_()) {
+        return nullptr;
+    }
     const GrGLGetProc win_get_gl_proc = [](void* ctx, const char* name) {
-        SkASSERT(wglGetCurrentContext());
+        SkASSERT(wglGetCurrentContext_());
         if (GrGLFuncPtr p = (GrGLFuncPtr)GetProcAddress((HMODULE)ctx, name)) {
             return p;
         }
-        if (GrGLFuncPtr p = (GrGLFuncPtr)wglGetProcAddress(name)) {
+        if (GrGLFuncPtr p = (GrGLFuncPtr)wglGetProcAddress_(name)) {
             return p;
         }
         return (GrGLFuncPtr)nullptr;
