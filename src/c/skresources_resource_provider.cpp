@@ -27,15 +27,21 @@ sk_typeface_t* skresources_resource_provider_load_typeface(skresources_resource_
 }
 
 skresources_resource_provider_t* skresources_file_resource_provider_make(sk_string_t* base_dir, bool predecode){
-    auto strategy = predecode ? skresources::ImageDecodeStrategy::kPreDecode
-                              : skresources::ImageDecodeStrategy::kLazyDecode;
-    return ToSkResourcesResourceProvider(skresources::FileResourceProvider::Make(AsString(*base_dir), strategy).release());
+    return skresources_file_resource_provider_make2(base_dir,
+        predecode ? SKRESOURCES_IMAGE_DECODE_STRATEGY_PRE_DECODE : SKRESOURCES_IMAGE_DECODE_STRATEGY_LAZY_DECODE);
+}
+skresources_resource_provider_t* skresources_file_resource_provider_make2(sk_string_t* base_dir, skresources_image_decode_strategy_t strategy){
+    return ToSkResourcesResourceProvider(skresources::FileResourceProvider::Make(AsString(*base_dir),
+        (skresources::ImageDecodeStrategy)strategy).release());
 }
 skresources_resource_provider_t* skresources_caching_resource_provider_proxy_make(skresources_resource_provider_t* rp) {
     return ToSkResourcesResourceProvider(skresources::CachingResourceProvider::Make(sk_ref_sp(AsSkResourcesResourceProvider(rp))).release());
 }
 skresources_resource_provider_t* skresources_data_uri_resource_provider_proxy_make(skresources_resource_provider_t* rp, bool predecode) {
-    auto strategy = predecode ? skresources::ImageDecodeStrategy::kPreDecode
-                              : skresources::ImageDecodeStrategy::kLazyDecode;
-    return ToSkResourcesResourceProvider(skresources::DataURIResourceProviderProxy::Make(sk_ref_sp(AsSkResourcesResourceProvider(rp)), strategy).release());
+    return skresources_data_uri_resource_provider_proxy_make2(rp,
+        predecode ? SKRESOURCES_IMAGE_DECODE_STRATEGY_PRE_DECODE : SKRESOURCES_IMAGE_DECODE_STRATEGY_LAZY_DECODE);
+}
+skresources_resource_provider_t* skresources_data_uri_resource_provider_proxy_make2(skresources_resource_provider_t* rp, skresources_image_decode_strategy_t strategy) {
+    return ToSkResourcesResourceProvider(skresources::DataURIResourceProviderProxy::Make(
+        sk_ref_sp(AsSkResourcesResourceProvider(rp)), (skresources::ImageDecodeStrategy)strategy).release());
 }

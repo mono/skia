@@ -1129,6 +1129,11 @@ typedef struct skresources_external_track_asset_t skresources_external_track_ass
 
 typedef struct skresources_resource_provider_t skresources_resource_provider_t;
 
+typedef enum {
+    SKRESOURCES_IMAGE_DECODE_STRATEGY_LAZY_DECODE,
+    SKRESOURCES_IMAGE_DECODE_STRATEGY_PRE_DECODE,
+} skresources_image_decode_strategy_t;
+
 SK_C_PLUS_PLUS_END_GUARD
 
 typedef struct d3d_dxgi_adapter_t d3d_dxgi_adapter_t;

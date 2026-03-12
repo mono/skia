@@ -24,8 +24,10 @@ SK_C_API skresources_external_track_asset_t* skresources_resource_provider_load_
 SK_C_API sk_typeface_t* skresources_resource_provider_load_typeface(skresources_resource_provider_t *instance, const char* name, const char* url);
 
 SK_C_API skresources_resource_provider_t* skresources_file_resource_provider_make(sk_string_t* base_dir, bool predecode);
+SK_C_API skresources_resource_provider_t* skresources_file_resource_provider_make2(sk_string_t* base_dir, skresources_image_decode_strategy_t strategy);
 SK_C_API skresources_resource_provider_t* skresources_caching_resource_provider_proxy_make(skresources_resource_provider_t* rp);
 SK_C_API skresources_resource_provider_t* skresources_data_uri_resource_provider_proxy_make(skresources_resource_provider_t* rp, bool predecode);
+SK_C_API skresources_resource_provider_t* skresources_data_uri_resource_provider_proxy_make2(skresources_resource_provider_t* rp, skresources_image_decode_strategy_t strategy);
 
 SK_C_PLUS_PLUS_END_GUARD
 
