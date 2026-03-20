@@ -381,9 +381,9 @@ public:
 
         @return  bounds within SkPixelRef bounds
     */
-    SkIRect getSubset() const {
+    SkRect getSubset() const {
         SkIPoint origin = this->pixelRefOrigin();
-        return SkIRect::MakeXYWH(origin.x(), origin.y(), this->width(), this->height());
+        return SkRect::MakeXYWH(origin.x(), origin.y(), this->width(), this->height());
     }
 
     /** Sets width, height, SkAlphaType, SkColorType, SkColorSpace, and optional
