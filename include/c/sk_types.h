@@ -709,6 +709,13 @@ typedef struct {
 } gr_vk_alloc_t;
 
 typedef struct {
+    uint32_t  r;
+    uint32_t  g;
+    uint32_t  b;
+    uint32_t  a;
+} gr_vk_ycbcr_components_t;
+
+typedef struct {
     uint32_t  fFormat;
     uint64_t  fExternalFormat;
     uint32_t  fYcbcrModel;
@@ -718,12 +725,7 @@ typedef struct {
     uint32_t  fChromaFilter;
     uint32_t  fForceExplicitReconstruction;
     uint32_t  fFormatFeatures;
-    struct {
-        uint32_t  r;
-        uint32_t  g;
-        uint32_t  b;
-        uint32_t  a;
-    }         fComponents;
+    gr_vk_ycbcr_components_t fComponents;
 } gr_vk_ycbcrconversioninfo_t;
 
 typedef struct {
