@@ -109,6 +109,12 @@ public:
      */
     static bool Equal(const SkTypeface* facea, const SkTypeface* faceb);
 
+    /** Return the uniqueID for the specified typeface. If the face is null,
+        resolve it to the default font and return its uniqueID. Will never
+        return 0.
+    */
+    static SkTypefaceID UniqueID(const SkTypeface* face);
+
 #if !defined(SK_DISABLE_LEGACY_DEFAULT_TYPEFACE)
     /** Returns the default normal typeface, which is never nullptr. */
     static sk_sp<SkTypeface> MakeDefault();
