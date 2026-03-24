@@ -53,31 +53,31 @@ enum class DstColorType {
  * as parent-child relationships.
  */
 
-struct PriorOutputBlock {
-    static void BeginBlock(const KeyContext&,
-                           PaintParamsKeyBuilder*,
-                           PipelineDataGatherer*);
-};
-
 struct DstReadSampleBlock {
-    static void BeginBlock(const KeyContext&,
-                           PaintParamsKeyBuilder*,
-                           PipelineDataGatherer*,
-                           sk_sp<TextureProxy> dst,
-                           SkIPoint dstOffset);
-};
-
-struct DstReadFetchBlock {
-    static void BeginBlock(const KeyContext&,
-                           PaintParamsKeyBuilder*,
-                           PipelineDataGatherer*);
+    static void AddBlock(const KeyContext&,
+                         PaintParamsKeyBuilder*,
+                         PipelineDataGatherer*,
+                         sk_sp<TextureProxy> dst,
+                         SkIPoint dstOffset);
 };
 
 struct SolidColorShaderBlock {
-    static void BeginBlock(const KeyContext&,
-                           PaintParamsKeyBuilder*,
-                           PipelineDataGatherer*,
-                           const SkPMColor4f&);
+    static void AddBlock(const KeyContext&,
+                         PaintParamsKeyBuilder*,
+                         PipelineDataGatherer*,
+                         const SkPMColor4f&);
+};
+
+struct RGBPaintColorBlock {
+    static void AddBlock(const KeyContext&,
+                         PaintParamsKeyBuilder*,
+                         PipelineDataGatherer*);
+};
+
+struct AlphaOnlyPaintColorBlock {
+    static void AddBlock(const KeyContext&,
+                         PaintParamsKeyBuilder*,
+                         PipelineDataGatherer*);
 };
 
 struct GradientShaderBlocks {
@@ -128,10 +128,10 @@ struct GradientShaderBlocks {
         SkGradientShader::Interpolation fInterpolation;
     };
 
-    static void BeginBlock(const KeyContext&,
-                           PaintParamsKeyBuilder*,
-                           PipelineDataGatherer*,
-                           const GradientData&);
+    static void AddBlock(const KeyContext&,
+                         PaintParamsKeyBuilder*,
+                         PipelineDataGatherer*,
+                         const GradientData&);
 };
 
 struct LocalMatrixShaderBlock {
@@ -146,7 +146,7 @@ struct LocalMatrixShaderBlock {
     static void BeginBlock(const KeyContext&,
                            PaintParamsKeyBuilder*,
                            PipelineDataGatherer*,
-                           const LMShaderData*);
+                           const LMShaderData&);
 };
 
 struct ImageShaderBlock {
@@ -154,11 +154,13 @@ struct ImageShaderBlock {
         ImageData(const SkSamplingOptions& sampling,
                   SkTileMode tileModeX,
                   SkTileMode tileModeY,
+                  SkISize imgSize,
                   SkRect subset,
                   ReadSwizzle readSwizzle);
 
         SkSamplingOptions fSampling;
         SkTileMode fTileModes[2];
+        SkISize fImgSize;
         SkRect fSubset;
         ReadSwizzle fReadSwizzle;
 
@@ -170,18 +172,10 @@ struct ImageShaderBlock {
         sk_sp<TextureProxy> fTextureProxy;
     };
 
-    // The gatherer and imageData should be null or non-null together
-    // If imageData is not null, it's sampling options must have useCubic == false
-    static void BeginBlock(const KeyContext&,
-                           PaintParamsKeyBuilder*,
-                           PipelineDataGatherer*,
-                           const ImageData*);
-
-    // If imageData is not null, it's sampling options must have useCubic == true
-    static void BeginCubicBlock(const KeyContext&,
-                                PaintParamsKeyBuilder*,
-                                PipelineDataGatherer*,
-                                const ImageData*);
+    static void AddBlock(const KeyContext&,
+                         PaintParamsKeyBuilder*,
+                         PipelineDataGatherer*,
+                         const ImageData&);
 };
 
 struct YUVImageShaderBlock {
@@ -189,11 +183,12 @@ struct YUVImageShaderBlock {
         ImageData(const SkSamplingOptions& sampling,
                   SkTileMode tileModeX,
                   SkTileMode tileModeY,
+                  SkISize imgSize,
                   SkRect subset);
 
-        SkPoint fImgSize;
         SkSamplingOptions fSampling;
         SkTileMode fTileModes[2];
+        SkISize fImgSize;
         SkRect fSubset;
         SkColor4f fChannelSelect[4];
         SkMatrix fYUVtoRGBMatrix;
@@ -207,11 +202,10 @@ struct YUVImageShaderBlock {
         sk_sp<TextureProxy> fTextureProxies[4];
     };
 
-    // The gatherer and imageData should be null or non-null together
-    static void BeginBlock(const KeyContext&,
-                           PaintParamsKeyBuilder*,
-                           PipelineDataGatherer*,
-                           const ImageData*);
+    static void AddBlock(const KeyContext&,
+                         PaintParamsKeyBuilder*,
+                         PipelineDataGatherer*,
+                         const ImageData&);
 };
 
 struct CoordClampShaderBlock {
@@ -225,21 +219,23 @@ struct CoordClampShaderBlock {
     static void BeginBlock(const KeyContext&,
                            PaintParamsKeyBuilder*,
                            PipelineDataGatherer*,
-                           const CoordClampData*);
+                           const CoordClampData&);
 };
 
 struct DitherShaderBlock {
     struct DitherData {
-        DitherData(float range) : fRange(range) {}
+        DitherData(float range, sk_sp<TextureProxy> proxy)
+            : fRange(range)
+            , fLUTProxy(std::move(proxy)) {}
 
         float fRange;
+        sk_sp<TextureProxy> fLUTProxy;
     };
 
-    // The gatherer and data should be null or non-null together
-    static void BeginBlock(const KeyContext&,
-                           PaintParamsKeyBuilder*,
-                           PipelineDataGatherer*,
-                           const DitherData*);
+    static void AddBlock(const KeyContext&,
+                         PaintParamsKeyBuilder*,
+                         PipelineDataGatherer*,
+                         const DitherData&);
 };
 
 struct PerlinNoiseShaderBlock {
@@ -271,10 +267,10 @@ struct PerlinNoiseShaderBlock {
     };
 
     // The gatherer and data should be null or non-null together
-    static void BeginBlock(const KeyContext&,
-                           PaintParamsKeyBuilder*,
-                           PipelineDataGatherer*,
-                           const PerlinNoiseData*);
+    static void AddBlock(const KeyContext&,
+                         PaintParamsKeyBuilder*,
+                         PipelineDataGatherer*,
+                         const PerlinNoiseData&);
 };
 
 struct BlendShaderBlock {
@@ -282,21 +278,17 @@ struct BlendShaderBlock {
 };
 
 struct BlendModeBlenderBlock {
-    static void BeginBlock(const KeyContext&,
-                           PaintParamsKeyBuilder*,
-                           PipelineDataGatherer*,
-                           SkBlendMode blendMode);
+    static void AddBlock(const KeyContext&,
+                         PaintParamsKeyBuilder*,
+                         PipelineDataGatherer*,
+                         SkBlendMode);
 };
 
 struct CoeffBlenderBlock {
-    static void BeginBlock(const KeyContext&,
-                           PaintParamsKeyBuilder*,
-                           PipelineDataGatherer*,
-                           SkSpan<const float> coeffs);
-};
-
-struct PrimitiveColorBlock {
-    static void BeginBlock(const KeyContext&, PaintParamsKeyBuilder*, PipelineDataGatherer*);
+    static void AddBlock(const KeyContext&,
+                         PaintParamsKeyBuilder*,
+                         PipelineDataGatherer*,
+                         SkSpan<const float> coeffs);
 };
 
 struct ComposeBlock {
@@ -323,10 +315,10 @@ struct MatrixColorFilterBlock {
     };
 
     // The gatherer and matrixCFData should be null or non-null together
-    static void BeginBlock(const KeyContext&,
-                           PaintParamsKeyBuilder*,
-                           PipelineDataGatherer*,
-                           const MatrixColorFilterData*);
+    static void AddBlock(const KeyContext&,
+                         PaintParamsKeyBuilder*,
+                         PipelineDataGatherer*,
+                         const MatrixColorFilterData&);
 };
 
 struct TableColorFilterBlock {
@@ -336,16 +328,10 @@ struct TableColorFilterBlock {
         sk_sp<TextureProxy> fTextureProxy;
     };
 
-    static void BeginBlock(const KeyContext&,
-                           PaintParamsKeyBuilder*,
-                           PipelineDataGatherer*,
-                           const TableColorFilterData&);
-};
-
-struct GaussianColorFilterBlock {
-    static void BeginBlock(const KeyContext&,
-                           PaintParamsKeyBuilder*,
-                           PipelineDataGatherer*);
+    static void AddBlock(const KeyContext&,
+                         PaintParamsKeyBuilder*,
+                         PipelineDataGatherer*,
+                         const TableColorFilterData&);
 };
 
 struct ColorSpaceTransformBlock {
@@ -357,10 +343,10 @@ struct ColorSpaceTransformBlock {
         SkColorSpaceXformSteps fSteps;
     };
 
-    static void BeginBlock(const KeyContext&,
-                           PaintParamsKeyBuilder*,
-                           PipelineDataGatherer*,
-                           const ColorSpaceTransformData*);
+    static void AddBlock(const KeyContext&,
+                         PaintParamsKeyBuilder*,
+                         PipelineDataGatherer*,
+                         const ColorSpaceTransformData&);
 };
 
 /**

@@ -19,6 +19,7 @@
 #include "src/gpu/graphite/Log.h"
 #include "src/gpu/graphite/RendererProvider.h"
 #include "src/gpu/graphite/RuntimeEffectDictionary.h"
+#include "src/gpu/graphite/vk/VulkanCaps.h"
 #include "src/gpu/graphite/vk/VulkanGraphicsPipeline.h"
 #include "src/gpu/graphite/vk/VulkanRenderPass.h"
 #include "src/gpu/graphite/vk/VulkanSharedContext.h"
@@ -440,17 +441,18 @@ static void setup_shader_stage_info(VkShaderStageFlagBits stage,
 
 static VkPipelineLayout setup_pipeline_layout(const VulkanSharedContext* sharedContext,
                                               bool hasStepUniforms,
-                                              bool hasFragment,
+                                              int numPaintUniforms,
                                               int numTextureSamplers) {
     // Determine descriptor set layouts based upon the number of uniform buffers & texture/samplers.
     skia_private::STArray<2, VkDescriptorSetLayout> setLayouts;
     skia_private::STArray<VulkanGraphicsPipeline::kNumUniformBuffers, DescriptorData>
             uniformDescriptors;
-    uniformDescriptors.push_back(VulkanGraphicsPipeline::kIntrinsicUniformDescriptor);
+
+    uniformDescriptors.push_back(VulkanGraphicsPipeline::kIntrinsicUniformBufferDescriptor);
     if (hasStepUniforms) {
         uniformDescriptors.push_back(VulkanGraphicsPipeline::kRenderStepUniformDescriptor);
     }
-    if (hasFragment) {
+    if (numPaintUniforms > 0) {
         uniformDescriptors.push_back(VulkanGraphicsPipeline::kPaintUniformDescriptor);
     }
     VkDescriptorSetLayout uniformSetLayout;
@@ -543,7 +545,7 @@ sk_sp<VulkanGraphicsPipeline> VulkanGraphicsPipeline::Make(
         const RuntimeEffectDictionary* runtimeDict,
         const GraphicsPipelineDesc& pipelineDesc,
         const RenderPassDesc& renderPassDesc,
-        sk_sp<VulkanRenderPass> compatibleRenderPass,
+        const sk_sp<VulkanRenderPass>& compatibleRenderPass,
         VkPipelineCache pipelineCache) {
 
     SkSL::Program::Interface vsInterface, fsInterface;
@@ -572,11 +574,11 @@ sk_sp<VulkanGraphicsPipeline> VulkanGraphicsPipeline::Make(
     std::string& fsSkSL = fsSkSLInfo.fSkSL;
     const bool localCoordsNeeded = fsSkSLInfo.fRequiresLocalCoords;
 
-    bool hasFragment = !fsSkSL.empty();
+    bool hasFragmentSkSL = !fsSkSL.empty();
     std::string vsSPIRV, fsSPIRV;
     VkShaderModule fsModule = VK_NULL_HANDLE, vsModule = VK_NULL_HANDLE;
 
-    if (hasFragment) {
+    if (hasFragmentSkSL) {
         if (!SkSLToSPIRV(compiler,
                          fsSkSL,
                          SkSL::ProgramKind::kGraphiteFragment,
@@ -649,7 +651,7 @@ sk_sp<VulkanGraphicsPipeline> VulkanGraphicsPipeline::Make(
     setup_shader_stage_info(VK_SHADER_STAGE_VERTEX_BIT,
                             vsModule,
                             &pipelineShaderStages[0]);
-    if (hasFragment) {
+    if (hasFragmentSkSL) {
         setup_shader_stage_info(VK_SHADER_STAGE_FRAGMENT_BIT,
                                 fsModule,
                                 &pipelineShaderStages[1]);
@@ -657,7 +659,7 @@ sk_sp<VulkanGraphicsPipeline> VulkanGraphicsPipeline::Make(
 
     VkPipelineLayout pipelineLayout = setup_pipeline_layout(sharedContext,
                                                             !step->uniforms().empty(),
-                                                            hasFragment,
+                                                            fsSkSLInfo.fNumPaintUniforms,
                                                             fsSkSLInfo.fNumTexturesAndSamplers);
     if (pipelineLayout == VK_NULL_HANDLE) {
         destroy_shader_modules(sharedContext, vsModule, fsModule);
@@ -673,7 +675,7 @@ sk_sp<VulkanGraphicsPipeline> VulkanGraphicsPipeline::Make(
     pipelineCreateInfo.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
     pipelineCreateInfo.pNext = nullptr;
     pipelineCreateInfo.flags = 0;
-    pipelineCreateInfo.stageCount = hasFragment ? 2 : 1;
+    pipelineCreateInfo.stageCount = hasFragmentSkSL ? 2 : 1;
     pipelineCreateInfo.pStages = &pipelineShaderStages[0];
     pipelineCreateInfo.pVertexInputState = &vertexInputInfo;
     pipelineCreateInfo.pInputAssemblyState = &inputAssemblyInfo;
@@ -731,7 +733,7 @@ sk_sp<VulkanGraphicsPipeline> VulkanGraphicsPipeline::Make(
                                        pipelineInfoPtr,
                                        pipelineLayout,
                                        vkPipeline,
-                                       hasFragment,
+                                       fsSkSLInfo.fNumPaintUniforms > 0,
                                        !step->uniforms().empty(),
                                        fsSkSLInfo.fNumTexturesAndSamplers));
 }
@@ -740,13 +742,13 @@ VulkanGraphicsPipeline::VulkanGraphicsPipeline(const skgpu::graphite::SharedCont
                                                PipelineInfo* pipelineInfo,
                                                VkPipelineLayout pipelineLayout,
                                                VkPipeline pipeline,
-                                               bool hasFragment,
+                                               bool hasFragmentUniforms,
                                                bool hasStepUniforms,
                                                int numTextureSamplers)
         : GraphicsPipeline(sharedContext, pipelineInfo)
         , fPipelineLayout(pipelineLayout)
         , fPipeline(pipeline)
-        , fHasFragment(hasFragment)
+        , fHasFragmentUniforms(hasFragmentUniforms)
         , fHasStepUniforms(hasStepUniforms)
         , fNumTextureSamplers(numTextureSamplers) {}
 

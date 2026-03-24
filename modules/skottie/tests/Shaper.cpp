@@ -9,6 +9,7 @@
 #include "modules/skottie/include/TextShaper.h"
 #include "tests/Test.h"
 #include "tools/ToolUtils.h"
+#include "tools/fonts/FontToolUtils.h"
 
 using namespace skottie;
 
@@ -18,8 +19,7 @@ DEF_TEST(Skottie_Shaper_Clusters, r) {
     auto check_clusters = [](skiatest::Reporter* r, const SkString& text, Shaper::Flags flags,
                              const std::vector<size_t>& expected_clusters) {
         const Shaper::TextDesc desc = {
-            ToolUtils::create_portable_typeface("Serif", SkFontStyle()),
-            nullptr,
+            ToolUtils::CreatePortableTypeface("Serif", SkFontStyle()),
             18,
             0, 18,
             18,
@@ -32,7 +32,8 @@ DEF_TEST(Skottie_Shaper_Clusters, r) {
             Shaper::Direction::kLTR,
             Shaper::Capitalization::kNone,
             0,
-            flags
+            flags,
+            nullptr,
         };
         const auto result = Shaper::Shape(text, desc, SkRect::MakeWH(1000, 1000),
                                           SkFontMgr::RefDefault());
@@ -64,7 +65,7 @@ DEF_TEST(Skottie_Shaper_Clusters, r) {
 }
 
 DEF_TEST(Skottie_Shaper_HAlign, reporter) {
-    auto typeface = SkTypeface::MakeDefault();
+    sk_sp<SkTypeface> typeface = ToolUtils::DefaultTypeface();
     REPORTER_ASSERT(reporter, typeface);
 
     static constexpr struct {
@@ -96,7 +97,6 @@ DEF_TEST(Skottie_Shaper_HAlign, reporter) {
         for (const auto& talign : kTestAligns) {
             const skottie::Shaper::TextDesc desc = {
                 typeface,
-                nullptr,
                 tsize.text_size,
                 0, tsize.text_size,
                 tsize.text_size,
@@ -108,6 +108,9 @@ DEF_TEST(Skottie_Shaper_HAlign, reporter) {
                 Shaper::LinebreakPolicy::kExplicit,
                 Shaper::Direction::kLTR,
                 Shaper::Capitalization::kNone,
+                0,
+                0,
+                nullptr
             };
 
             const auto shape_result = Shaper::Shape(text, desc, text_point,
@@ -135,7 +138,7 @@ DEF_TEST(Skottie_Shaper_HAlign, reporter) {
 }
 
 DEF_TEST(Skottie_Shaper_VAlign, reporter) {
-    auto typeface = SkTypeface::MakeDefault();
+    sk_sp<SkTypeface> typeface = ToolUtils::DefaultTypeface();
     REPORTER_ASSERT(reporter, typeface);
 
     static constexpr struct {
@@ -167,7 +170,6 @@ DEF_TEST(Skottie_Shaper_VAlign, reporter) {
         for (const auto& talign : kTestAligns) {
             const skottie::Shaper::TextDesc desc = {
                 typeface,
-                nullptr,
                 tsize.text_size,
                 0, tsize.text_size,
                 tsize.text_size,
@@ -179,6 +181,9 @@ DEF_TEST(Skottie_Shaper_VAlign, reporter) {
                 Shaper::LinebreakPolicy::kParagraph,
                 Shaper::Direction::kLTR,
                 Shaper::Capitalization::kNone,
+                0,
+                0,
+                nullptr
             };
 
             const auto shape_result = Shaper::Shape(text, desc, text_box, SkFontMgr::RefDefault());
@@ -207,8 +212,7 @@ DEF_TEST(Skottie_Shaper_VAlign, reporter) {
 
 DEF_TEST(Skottie_Shaper_FragmentGlyphs, reporter) {
     skottie::Shaper::TextDesc desc = {
-        SkTypeface::MakeDefault(),
-        nullptr,
+        ToolUtils::DefaultTypeface(),
         18,
         0, 18,
         18,
@@ -220,6 +224,9 @@ DEF_TEST(Skottie_Shaper_FragmentGlyphs, reporter) {
         Shaper::LinebreakPolicy::kParagraph,
         Shaper::Direction::kLTR,
         Shaper::Capitalization::kNone,
+        0,
+        0,
+        nullptr
     };
 
     const SkString text("Foo bar baz");
@@ -300,8 +307,7 @@ DEF_TEST(Skottie_Shaper_ExplicitFontMgr, reporter) {
     auto fontmgr = sk_make_sp<CountingFontMgr>();
 
     skottie::Shaper::TextDesc desc = {
-        ToolUtils::create_portable_typeface(),
-        nullptr,
+        ToolUtils::DefaultPortableTypeface(),
         18,
         0, 18,
         18,
@@ -313,6 +319,9 @@ DEF_TEST(Skottie_Shaper_ExplicitFontMgr, reporter) {
         Shaper::LinebreakPolicy::kParagraph,
         Shaper::Direction::kLTR,
         Shaper::Capitalization::kNone,
+        0,
+        0,
+        nullptr
     };
 
     const auto text_box = SkRect::MakeWH(100, 100);

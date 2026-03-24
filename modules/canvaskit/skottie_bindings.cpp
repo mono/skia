@@ -18,6 +18,7 @@
 #include "modules/skresources/include/SkResources.h"
 #include "modules/sksg/include/SkSGInvalidationController.h"
 #include "modules/skunicode/include/SkUnicode.h"
+#include "src/base/SkUTF.h"
 #include "tools/skui/InputState.h"
 #include "tools/skui/ModifierKey.h"
 
@@ -564,22 +565,34 @@ public:
             if (key == "ArrowRight") return ']';
             if (key == "Backspace")  return '\\';
 
-            // Passthrough regular keys.
-            if (key.size() == 1) return key[0];
+            const char* str = key.c_str();
+            const char* end = str + key.size();
+            const SkUnichar uch = SkUTF::NextUTF8(&str, end);
 
-            // Ignored.
-            return '\0';
+            // Pass through single code points, ignore everything else.
+            return str == end ? uch : -1;
         };
 
-        return fTextEditor
-                ? fTextEditor->onCharInput(key2char(key))
-                : false;
+        if (fTextEditor) {
+            const auto uch = key2char(key);
+            if (uch != -1) {
+                return fTextEditor->onCharInput(uch);
+            }
+        }
+
+        return false;
     }
 
     bool dispatchEditorPointer(float x, float y, skui::InputState state, skui::ModifierKey mod) {
         return fTextEditor
                 ? fTextEditor->onMouseInput(x, y, state, mod)
                 : false;
+    }
+
+    void setEditorCursorWeight(float w) {
+        if (fTextEditor) {
+            fTextEditor->setCursorWeight(w);
+        }
     }
 
     bool setTextSlot(const std::string& slotID, SimpleSlottableTextProperty t) {
@@ -703,6 +716,7 @@ EMSCRIPTEN_BINDINGS(Skottie) {
         .function("enableEditor"         , &ManagedAnimation::enableEditor)
         .function("dispatchEditorKey"    , &ManagedAnimation::dispatchEditorKey)
         .function("dispatchEditorPointer", &ManagedAnimation::dispatchEditorPointer)
+        .function("setEditorCursorWeight", &ManagedAnimation::setEditorCursorWeight)
         .function("getTextSlot"      , &ManagedAnimation::getTextSlot)
         .function("_setTextSlot"     , &ManagedAnimation::setTextSlot)
         .function("setImageSlot"     , &ManagedAnimation::setImageSlot);

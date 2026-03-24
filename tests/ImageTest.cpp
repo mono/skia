@@ -70,6 +70,7 @@
 #include "src/shaders/SkImageShader.h"
 #include "tests/CtsEnforcement.h"
 #include "tests/Test.h"
+#include "tools/DecodeUtils.h"
 #include "tools/Resources.h"
 #include "tools/ToolUtils.h"
 #include "tools/gpu/FenceSync.h"
@@ -979,9 +980,11 @@ DEF_GANESH_TEST_FOR_GL_CONTEXT(SkImage_NewFromTextureRelease,
     REPORTER_ASSERT(reporter, 1 == releaseChecker.fReleaseCount);
 }
 
-static void test_cross_context_image(skiatest::Reporter* reporter, const GrContextOptions& options,
-                                     const char* testName,
-                                     std::function<sk_sp<SkImage>(GrDirectContext*)> imageMaker) {
+static void test_cross_context_image(
+        skiatest::Reporter* reporter,
+        const GrContextOptions& options,
+        const char* testName,
+        const std::function<sk_sp<SkImage>(GrDirectContext*)>& imageMaker) {
     for (int i = 0; i < skgpu::kContextTypeCount; ++i) {
         GrContextFactory testFactory(options);
         skgpu::ContextType ctxType = static_cast<skgpu::ContextType>(i);
@@ -1146,7 +1149,8 @@ DEF_GANESH_TEST(SkImage_MakeCrossContextFromPixmapRelease,
                 CtsEnforcement::kApiLevel_T) {
     SkBitmap bitmap;
     SkPixmap pixmap;
-    if (!GetResourceAsBitmap("images/mandrill_128.png", &bitmap) || !bitmap.peekPixels(&pixmap)) {
+    if (!ToolUtils::GetResourceAsBitmap("images/mandrill_128.png", &bitmap) ||
+        !bitmap.peekPixels(&pixmap)) {
         ERRORF(reporter, "missing resource");
         return;
     }
@@ -1301,10 +1305,10 @@ static sk_sp<SkImage> create_picture_image(sk_sp<SkColorSpace> space) {
 
 DEF_TEST(Image_ColorSpace, r) {
     sk_sp<SkColorSpace> srgb = SkColorSpace::MakeSRGB();
-    sk_sp<SkImage> image = GetResourceAsImage("images/mandrill_512_q075.jpg");
+    sk_sp<SkImage> image = ToolUtils::GetResourceAsImage("images/mandrill_512_q075.jpg");
     REPORTER_ASSERT(r, srgb.get() == image->colorSpace());
 
-    image = GetResourceAsImage("images/webp-color-profile-lossy.webp");
+    image = ToolUtils::GetResourceAsImage("images/webp-color-profile-lossy.webp");
     skcms_TransferFunction fn;
     bool success = image->colorSpace()->isNumericalTransferFn(&fn);
     REPORTER_ASSERT(r, success);
@@ -1361,7 +1365,7 @@ DEF_TEST(Image_makeColorSpace, r) {
     REPORTER_ASSERT(r, almost_equal(0x31, SkGetPackedG32(*adobeBitmap.getAddr32(0, 0))));
     REPORTER_ASSERT(r, almost_equal(0x4C, SkGetPackedB32(*adobeBitmap.getAddr32(0, 0))));
 
-    srgbImage = GetResourceAsImage("images/1x1.png");
+    srgbImage = ToolUtils::GetResourceAsImage("images/1x1.png");
     p3Image = srgbImage->makeColorSpace(nullptr, p3);
     success = p3Image->asLegacyBitmap(&p3Bitmap);
     REPORTER_ASSERT(r, success);
@@ -1509,7 +1513,7 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(ImageScalePixels_Gpu,
 }
 
 static sk_sp<SkImage> any_image_will_do() {
-    return GetResourceAsImage("images/mandrill_32.png");
+    return ToolUtils::GetResourceAsImage("images/mandrill_32.png");
 }
 
 DEF_TEST(Image_nonfinite_dst, reporter) {
@@ -1655,11 +1659,11 @@ DEF_TEST(image_cubicresampler, reporter) {
 }
 
 DEF_TEST(image_subset_encode_skbug_7752, reporter) {
-    sk_sp<SkImage> image = GetResourceAsImage("images/mandrill_128.png");
+    sk_sp<SkImage> image = ToolUtils::GetResourceAsImage("images/mandrill_128.png");
     const int W = image->width();
     const int H = image->height();
 
-    auto check_roundtrip = [&](sk_sp<SkImage> img) {
+    auto check_roundtrip = [&](const sk_sp<SkImage>& img) {
         auto img2 = SkImages::DeferredFromEncodedData(SkPngEncoder::Encode(nullptr, img.get(), {}));
         REPORTER_ASSERT(reporter, ToolUtils::equal_pixels(img.get(), img2.get()));
     };

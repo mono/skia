@@ -11,6 +11,7 @@
 #include "include/core/SkCanvas.h"
 #include "include/core/SkColor.h"
 #include "include/core/SkColorFilter.h"
+#include "include/core/SkFont.h"
 #include "include/core/SkImage.h"
 #include "include/core/SkImageFilter.h"
 #include "include/core/SkImageInfo.h"
@@ -26,8 +27,11 @@
 #include "include/core/SkSurface.h"
 #include "include/core/SkTypes.h"
 #include "include/effects/SkImageFilters.h"
+#include "tools/DecodeUtils.h"
+#include "tools/GpuToolUtils.h"
 #include "tools/Resources.h"
 #include "tools/ToolUtils.h"
+#include "tools/fonts/FontToolUtils.h"
 
 #if defined(SK_GANESH)
 #include "include/gpu/GrDirectContext.h"
@@ -211,7 +215,7 @@ protected:
         SkImageInfo info = SkImageInfo::MakeN32(100, 100, kUnpremul_SkAlphaType);
         auto surface = SkSurfaces::Raster(info, nullptr);
 
-        sk_sp<SkImage> colorImage = GetResourceAsImage("images/mandrill_128.png");
+        sk_sp<SkImage> colorImage = ToolUtils::GetResourceAsImage("images/mandrill_128.png");
         // Resize to 100x100
         surface->getCanvas()->drawImageRect(
                 colorImage, SkRect::MakeWH(colorImage->width(), colorImage->height()),
@@ -296,7 +300,8 @@ protected:
         // Header hinting at what the filters do
         SkPaint textPaint;
         textPaint.setAntiAlias(true);
-        SkFont font(nullptr, 12);
+        SkFont font = ToolUtils::DefaultPortableFont();
+        font.setSize(12);
         for (size_t i = 0; i < std::size(filterNames); ++i) {
             canvas->drawString(filterNames[i], DX * i + MARGIN, 15, font, textPaint);
         }

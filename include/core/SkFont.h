@@ -19,6 +19,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <type_traits>
+#include <utility>
 #include <vector>
 
 class SkMatrix;
@@ -208,14 +209,6 @@ public:
     */
     SkTypeface* getTypeface() const {return fTypeface.get(); }
 
-    /** Returns SkTypeface if set, or the default typeface.
-        Does not alter SkTypeface SkRefCnt.
-
-        @return  SkTypeface if previously set or, a pointer to the default typeface if not
-        previously set.
-    */
-    SkTypeface* getTypefaceOrDefault() const;
-
     /** Returns text size in points.
 
         @return  typographic height of text
@@ -242,20 +235,13 @@ public:
     */
     sk_sp<SkTypeface> refTypeface() const { return fTypeface; }
 
-    /** Increases SkTypeface SkRefCnt by one.
-
-        @return  SkTypeface if previously set or, a pointer to the default typeface if not
-        previously set.
-    */
-    sk_sp<SkTypeface> refTypefaceOrDefault() const;
-
     /** Sets SkTypeface to typeface, decreasing SkRefCnt of the previous SkTypeface.
         Pass nullptr to clear SkTypeface and use the default typeface. Increments
         tf SkRefCnt by one.
 
         @param tf  font and style used to draw text
     */
-    void setTypeface(sk_sp<SkTypeface> tf) { fTypeface = tf; }
+    void setTypeface(sk_sp<SkTypeface> tf) { fTypeface = std::move(tf); }
 
     /** Sets text size in points.
         Has no effect if textSize is not greater than or equal to zero.
@@ -552,6 +538,9 @@ private:
     friend class SkGlyphRunListPainterCPU;
     friend class SkStrikeSpec;
     friend class SkRemoteGlyphCacheTest;
+
+    sk_sp<SkTypeface> refTypefaceOrDefault() const;
+    SkTypeface* getTypefaceOrDefault() const;
 };
 
 #endif

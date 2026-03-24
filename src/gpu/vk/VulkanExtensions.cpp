@@ -56,13 +56,13 @@ void VulkanExtensions::init(VulkanGetProc getProc,
             SkTQSort(fExtensions.begin(), fExtensions.end(), extension_compare);
         }
     }
-    this->getSpecVersions(getProc, instance, physDev);
+    this->getSpecVersions(std::move(getProc), instance, physDev);
 }
 
 #define GET_PROC(F, inst)                                                        \
         PFN_vk##F grVk##F = (PFN_vk ## F) getProc("vk" #F, inst, VK_NULL_HANDLE)
 
-void VulkanExtensions::getSpecVersions(VulkanGetProc getProc,
+void VulkanExtensions::getSpecVersions(const VulkanGetProc& getProc,
                                        VkInstance instance,
                                        VkPhysicalDevice physDevice) {
     // We grab all the extensions for the VkInstance and VkDevice so we can look up what spec

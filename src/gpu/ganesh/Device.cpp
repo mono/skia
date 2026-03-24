@@ -9,7 +9,6 @@
 #include "include/core/SkAlphaType.h"
 #include "include/core/SkBitmap.h"
 #include "include/core/SkBlendMode.h"
-#include "include/core/SkBlender.h"
 #include "include/core/SkCanvas.h"
 #include "include/core/SkClipOp.h"
 #include "include/core/SkColor.h"
@@ -55,8 +54,7 @@
 #include "src/base/SkTLazy.h"
 #include "src/core/SkDevice.h"
 #include "src/core/SkDrawBase.h"
-#include "src/core/SkImageFilterCache.h"
-#include "src/core/SkImageFilterTypes.h"
+#include "src/core/SkImageFilterTypes.h"  // IWYU pragma: keep
 #include "src/core/SkImageInfoPriv.h"
 #include "src/core/SkLatticeIter.h"
 #include "src/core/SkMeshPriv.h"
@@ -158,7 +156,7 @@ bool init_vertices_paint(GrRecordingContext* rContext,
                          const GrColorInfo& colorInfo,
                          const SkPaint& skPaint,
                          const SkMatrix& ctm,
-                         sk_sp<SkBlender> blender,
+                         SkBlender* blender,
                          bool hasColors,
                          const SkSurfaceProps& props,
                          GrPaint* grPaint) {
@@ -167,7 +165,7 @@ bool init_vertices_paint(GrRecordingContext* rContext,
                                          colorInfo,
                                          skPaint,
                                          ctm,
-                                         blender.get(),
+                                         blender,
                                          props,
                                          grPaint);
     } else {
@@ -822,8 +820,10 @@ void Device::drawPath(const SkPath& origSrcPath, const SkPaint& paint, bool path
                                          paint, this->localToDevice(), shape);
 }
 
-skif::Context Device::createContext(const skif::ContextInfo& ctxInfo) const {
-    return skif::MakeGaneshContext(fContext.get(), fSurfaceDrawContext->origin(), ctxInfo);
+sk_sp<skif::Backend> Device::createImageFilteringBackend(const SkSurfaceProps& surfaceProps,
+                                                         SkColorType colorType) const {
+    return skif::MakeGaneshBackend(
+            fContext, fSurfaceDrawContext->origin(), surfaceProps, colorType);
 }
 
 sk_sp<SkSpecialImage> Device::makeSpecial(const SkBitmap& bitmap) {
@@ -1086,7 +1086,7 @@ void Device::drawVertices(const SkVertices* vertices,
                              fSurfaceDrawContext->colorInfo(),
                              paint,
                              this->localToDevice(),
-                             std::move(blender),
+                             blender.get(),
                              info.hasColors(),
                              fSurfaceDrawContext->surfaceProps(),
                              &grPaint)) {
@@ -1112,7 +1112,7 @@ void Device::drawMesh(const SkMesh& mesh, sk_sp<SkBlender> blender, const SkPain
                              fSurfaceDrawContext->colorInfo(),
                              paint,
                              this->localToDevice(),
-                             std::move(blender),
+                             blender.get(),
                              SkMeshSpecificationPriv::HasColors(*mesh.spec()),
                              fSurfaceDrawContext->surfaceProps(),
                              &grPaint)) {
@@ -1416,13 +1416,6 @@ sk_sp<SkSurface> Device::makeSurface(const SkImageInfo& info, const SkSurfacePro
                                     &props,
                                     /* shouldCreateWithMips= */ false,
                                     isProtected);
-}
-
-SkImageFilterCache* Device::getImageFilterCache() {
-    ASSERT_SINGLE_OWNER
-    // We always return a transient cache, so it is freed after each
-    // filter traversal.
-    return SkImageFilterCache::Create(SkImageFilterCache::kDefaultTransientSize);
 }
 
 ////////////////////////////////////////////////////////////////////////////////////

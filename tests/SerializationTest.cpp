@@ -58,6 +58,7 @@
 #include "tests/Test.h"
 #include "tools/Resources.h"
 #include "tools/ToolUtils.h"
+#include "tools/fonts/FontToolUtils.h"
 
 #include <algorithm>
 #include <array>
@@ -541,7 +542,8 @@ SkString DumpFontMetrics(const SkFontMetrics& metrics) {
     m.appendf("StrikeoutPosition: %f\n", metrics.fStrikeoutPosition);
     return m;
 }
-static void TestTypefaceSerialization(skiatest::Reporter* reporter, sk_sp<SkTypeface> typeface) {
+static void TestTypefaceSerialization(skiatest::Reporter* reporter,
+                                      const sk_sp<SkTypeface>& typeface) {
     SkDynamicMemoryWStream typefaceWStream;
     typeface->serialize(&typefaceWStream);
 
@@ -574,9 +576,8 @@ static void TestTypefaceSerialization(skiatest::Reporter* reporter, sk_sp<SkType
         DumpTypeface(*cloneTypeface).c_str());
 }
 DEF_TEST(Serialization_Typeface, reporter) {
-    SkFont font;
-    TestTypefaceSerialization(reporter, font.refTypefaceOrDefault());
-    TestTypefaceSerialization(reporter, ToolUtils::sample_user_typeface());
+    TestTypefaceSerialization(reporter, ToolUtils::DefaultTypeface());
+    TestTypefaceSerialization(reporter, ToolUtils::SampleUserTypeface());
 }
 
 static void setup_bitmap_for_canvas(SkBitmap* bitmap) {
@@ -940,8 +941,7 @@ DEF_TEST(WriteBuffer_storage, reporter) {
 }
 
 DEF_TEST(WriteBuffer_external_memory_textblob, reporter) {
-    SkFont font;
-    font.setTypeface(SkTypeface::MakeDefault());
+    SkFont font = ToolUtils::DefaultFont();
 
     SkTextBlobBuilder builder;
     int glyph_count = 5;

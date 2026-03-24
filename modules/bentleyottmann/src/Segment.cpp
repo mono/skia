@@ -28,6 +28,14 @@ std::tuple<int32_t, int32_t, int32_t, int32_t> Segment::bounds() const {
     return std::make_tuple(l, t, r, b);
 }
 
+bool operator==(const Segment& s0, const Segment& s1) {
+    return s0.upper() == s1.upper() && s0.lower() == s1.lower();
+}
+
+bool operator<(const Segment& s0, const Segment& s1) {
+    return std::make_tuple(s0.upper(), s0.lower()) < std::make_tuple(s1.upper(), s1.lower());
+}
+
 bool no_intersection_by_bounding_box(const Segment& s0, const Segment& s1) {
     auto [left0, top0, right0, bottom0] = s0.bounds();
     auto [left1, top1, right1, bottom1] = s1.bounds();
@@ -78,8 +86,8 @@ bool no_intersection_by_bounding_box(const Segment& s0, const Segment& s1) {
 //    t = (Q x R) / ((Q x R) - (Q x S)).
 // This is then substituted into I = (x2 + t(x3 - x2), y2 + t(y3 - y2)).
 //
-// This method of calculating the intersection only uses 6 multiplies, and 1 division. It also
-// determines if the two segments cross with no round-off error and is always correct using 4
+// This method of calculating the intersection only uses 10 multiplies, and 1 division. It also
+// determines if the two segments cross with no round-off error and is always correct using 8
 // multiplies. However, the actual crossing point is rounded to fit back into the int32_t.
 std::optional<Point> intersect(const Segment& s0, const Segment& s1) {
 
@@ -88,11 +96,15 @@ std::optional<Point> intersect(const Segment& s0, const Segment& s1) {
         return std::nullopt;
     }
 
-    // Create the Q, R, and S vectors rooted at s0.p0.
-    Point O = s0.p0,
-          Q = s0.p1 - O,
-          R = s1.p0 - O,
-          S = s1.p1 - O;
+    // Create the Qa, Ra, and Sa vectors rooted at s0.p0, Qb, Rb, Sb rooted at s1.p0.
+    Point Oa = s0.p0,
+          Qa = s0.p1 - Oa,
+          Ra = s1.p0 - Oa,
+          Sa = s1.p1 - Oa,
+          Ob = s1.p0,
+          Qb = s1.p1 - Ob,
+          Rb = s0.p0 - Ob,
+          Sb = s0.p1 - Ob;
 
     // 64-bit cross product.
     auto cross = [](const Point& v0, const Point& v1) {
@@ -103,19 +115,24 @@ std::optional<Point> intersect(const Segment& s0, const Segment& s1) {
         return x0 * y1 - y0 * x1;
     };
 
-    // Calculate the two cross products.
-    int64_t QxR = cross(Q, R),
-            QxS = cross(Q, S);
+    // Calculate the four cross products. Calculate the cross product of two sets of two
+    // triangles -- the 'a' set and the b set. The two for the 'a' set are described by the vectors
+    // Qa x Ra and Qa x Sa, and like wise for the 'b' set. If either set of cross products have the
+    // same signs, then there is no crossing.
+    int64_t QaxRa = cross(Qa, Ra),
+            QaxSa = cross(Qa, Sa),
+            QbxRb = cross(Qb, Rb),
+            QbxSb = cross(Qb, Sb);
 
     // If the endpoint is on Q, then there is no crossing. Only true intersections are returned.
     // For the intersection calculation, line segments do not include their end-points.
-    if (QxR == 0 || QxS == 0) {
+    if (QaxRa == 0 || QaxSa == 0 || QbxRb == 0 || QbxSb == 0) {
         return std::nullopt;
     }
 
     // The cross products have the same sign, so no intersection. There is no round-off error in
-    // QXR or QXS. This ensures that there is really an intersection.
-    if ((QxR ^ QxS) >= 0) {
+    // QaxRa, QaxSa, QbxRb or QbxSb. This ensures that there is really an intersection.
+    if ((QaxRa ^ QaxSa) >= 0 || (QbxRb ^ QbxSb) >= 0) {
         return std::nullopt;
     }
 
@@ -123,8 +140,8 @@ std::optional<Point> intersect(const Segment& s0, const Segment& s1) {
     // 96-bit / 64-bit -> 32-bit quotient and a 64-bit remainder. Fake it with doubles below.
     // N / D constitute a value on [0, 1], where the intersection I is
     //     I = s0.p0 + (s0.p1 - s0.p0) * N/D.
-    double N = QxR,
-           D = QxR - QxS,
+    double N = QaxRa,
+           D = QaxRa - QaxSa,
            t = N / D;
 
     SkASSERT(0 <= t && t <= 1);
@@ -149,7 +166,7 @@ std::optional<Point> intersect(const Segment& s0, const Segment& s1) {
 // and the same applies to the other side of the <?. Because y0 <= y1 and y2 <= y3, then the
 // differences of (y1 - y0) and (y3 - y2) are positive allowing us to multiply through without
 // worrying about sign changes.
-bool lessThanAt(const Segment& s0, const Segment& s1, int32_t y) {
+bool less_than_at(const Segment& s0, const Segment& s1, int32_t y) {
     auto [l0, t0, r0, b0] = s0.bounds();
     auto [l1, t1, r1, b1] = s1.bounds();
     SkASSERT(t0 <= y && y <= b0);
@@ -183,5 +200,70 @@ bool lessThanAt(const Segment& s0, const Segment& s1, int32_t y) {
           s1Factor = multiply(x2Offset, y1 - y0);
 
     return s0Factor < s1Factor;
+}
+
+bool point_less_than_segment_in_x(Point p, const Segment& segment) {
+    auto [l, t, r, b] = segment.bounds();
+
+    // Ensure that the segment intersects the horizontal sweep line
+    SkASSERT(t <= p.y && p.y <= b);
+
+    // Fast answers using bounding boxes.
+    if (p.x < l) {
+        return true;
+    } else if (p.x >= r) {
+        return false;
+    }
+
+    auto [x0, y0] = segment.upper();
+    auto [x1, y1] = segment.lower();
+    auto [x2, y2] = p;
+
+    // For a point and a segment the comparison is:
+    //    x2 < x0 + (y2 - y0)(x1 - x0) / (y1 - y0)
+    // becomes
+    //    (x2 - x0)(y1 - y0) < (x1 - x0)(y2 - y0)
+    // We don't need to worry about the signs changing in the cross multiply because (y1 - y0) is
+    // always positive. Manipulating a little further derives predicate 2 from "Robust Plane
+    // Sweep for Intersecting Segments" page 9.
+    //    0 < (x1 - x0)(y2 - y0) - (x2 - x0)(y1 - y0)
+    // becomes
+    //        | x1-x0   x2-x0 |
+    //   0 <  | y1-y0   y2-y0 |
+    return SkToS64(x2 - x0) * SkToS64(y1 - y0) < SkToS64(y2 - y0) * SkToS64(x1 - x0);
+}
+
+int compare_slopes(const Segment& s0, const Segment& s1) {
+    Point s0Delta = s0.lower() - s0.upper(),
+          s1Delta = s1.lower() - s1.upper();
+
+    // Handle the horizontal cases to avoid dealing with infinities.
+    if (s0Delta.y == 0 || s1Delta.y == 0) {
+        if (s0Delta.y != 0) {
+            return -1;
+        } else if (s1Delta.y != 0) {
+            return 1;
+        } else {
+            return 0;
+        }
+    }
+
+    // Compare s0Delta.x / s0Delta.y ? s1Delta.x / s1Delta.y. I used the alternate slope form for
+    // two reasons.
+    // * no change of sign - since the delta ys are always positive, then I don't need to worry
+    //                       about the change in sign with the cross-multiply.
+    // * proper slope ordering - the slope monotonically increases from the smallest along the
+    //                           negative x-axis increasing counterclockwise to the largest along
+    //                           the positive x-axis.
+    int64_t lhs = SkToS64(s0Delta.x) * SkToS64(s1Delta.y),
+            rhs = SkToS64(s1Delta.x) * SkToS64(s0Delta.y);
+
+    if (lhs < rhs) {
+        return -1;
+    } else if (lhs > rhs) {
+        return 1;
+    } else {
+        return 0;
+    }
 }
 }  // namespace bentleyottmann

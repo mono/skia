@@ -15,6 +15,7 @@
 #include "src/gpu/graphite/FactoryFunctions.h"
 #include "src/gpu/graphite/KeyContext.h"
 #include "src/gpu/graphite/PaintOptionsPriv.h"
+#include "src/gpu/graphite/PipelineData.h"
 #include "src/gpu/graphite/Precompile.h"
 #include "src/gpu/graphite/Renderer.h"
 #include "src/gpu/graphite/RuntimeEffectDictionary.h"
@@ -27,13 +28,16 @@ namespace {
 
 // The default PaintOptions should create a single combination with a solid color shader and
 // kSrcOver blending
-void empty_test(const KeyContext& keyContext, skiatest::Reporter* reporter) {
+void empty_test(const KeyContext& keyContext,
+                PipelineDataGatherer* gatherer,
+                skiatest::Reporter* reporter) {
     PaintOptions paintOptions;
 
     REPORTER_ASSERT(reporter, paintOptions.priv().numCombinations() == 1);
 
     std::vector<UniquePaintParamsID> precompileIDs;
     paintOptions.priv().buildCombinations(keyContext,
+                                          gatherer,
                                           /* addPrimitiveBlender= */ false,
                                           Coverage::kNone,
                                           [&](UniquePaintParamsID id) {
@@ -44,7 +48,9 @@ void empty_test(const KeyContext& keyContext, skiatest::Reporter* reporter) {
 }
 
 // A PaintOptions will supply a default solid color shader if needed.
-void no_shader_option_test(const KeyContext& keyContext, skiatest::Reporter* reporter) {
+void no_shader_option_test(const KeyContext& keyContext,
+                           PipelineDataGatherer* gatherer,
+                           skiatest::Reporter* reporter) {
     SkBlendMode blendModes[] = { SkBlendMode::kSrcOver };
 
     PaintOptions paintOptions;
@@ -54,6 +60,7 @@ void no_shader_option_test(const KeyContext& keyContext, skiatest::Reporter* rep
 
     std::vector<UniquePaintParamsID> precompileIDs;
     paintOptions.priv().buildCombinations(keyContext,
+                                          gatherer,
                                           /* addPrimitiveBlender= */ false,
                                           Coverage::kNone,
                                           [&](UniquePaintParamsID id) {
@@ -64,7 +71,9 @@ void no_shader_option_test(const KeyContext& keyContext, skiatest::Reporter* rep
 }
 
 // A default kSrcOver blend mode will be supplied if no other blend options are added
-void no_blend_mode_option_test(const KeyContext& keyContext, skiatest::Reporter* reporter) {
+void no_blend_mode_option_test(const KeyContext& keyContext,
+                               PipelineDataGatherer* gatherer,
+                               skiatest::Reporter* reporter) {
     PaintOptions paintOptions;
     paintOptions.setShaders({ PrecompileShaders::Color() });
 
@@ -72,6 +81,7 @@ void no_blend_mode_option_test(const KeyContext& keyContext, skiatest::Reporter*
 
     std::vector<UniquePaintParamsID> precompileIDs;
     paintOptions.priv().buildCombinations(keyContext,
+                                          gatherer,
                                           /* addPrimitiveBlender= */ false,
                                           Coverage::kNone,
                                           [&](UniquePaintParamsID id) {
@@ -81,15 +91,17 @@ void no_blend_mode_option_test(const KeyContext& keyContext, skiatest::Reporter*
     SkASSERT(precompileIDs.size() == 1);
 }
 
-void big_test(const KeyContext& keyContext, skiatest::Reporter* reporter) {
-    // paintOptions (17)
-    //  |- sweepGrad_0 (2) | blendShader_0 (15)
+void big_test(const KeyContext& keyContext,
+              PipelineDataGatherer* gatherer,
+              skiatest::Reporter* reporter) {
+    // paintOptions (35)
+    //  |- sweepGrad_0 (2) | blendShader_0 (33)
     //  |                     0: kSrc (1)
     //  |                     1: (dsts) linearGrad_0 (2) | solid_0 (1)
-    //  |                     2: (srcs) linearGrad_1 (2) | blendShader_1 (3)
+    //  |                     2: (srcs) linearGrad_1 (2) | blendShader_1 (9)
     //  |                                            0: kDst (1)
     //  |                                            1: (dsts) radGrad_0 (2) | solid_1 (1)
-    //  |                                            2: (srcs) imageShader_0 (1)
+    //  |                                            2: (srcs) imageShader_0 (3)
     //  |
     //  |- 4-built-in-blend-modes (just 1 since all are PorterDuff)
 
@@ -134,17 +146,18 @@ void big_test(const KeyContext& keyContext, skiatest::Reporter* reporter) {
     // now, blend modes
     paintOptions.setBlendModes(evenMoreBlendModes);                             // c array
 
-    REPORTER_ASSERT(reporter, paintOptions.priv().numCombinations() == 26);
+    REPORTER_ASSERT(reporter, paintOptions.priv().numCombinations() == 35);
 
     std::vector<UniquePaintParamsID> precompileIDs;
     paintOptions.priv().buildCombinations(keyContext,
+                                          gatherer,
                                           /* addPrimitiveBlender= */ false,
                                           Coverage::kNone,
                                           [&](UniquePaintParamsID id) {
                                               precompileIDs.push_back(id);
                                           });
 
-    SkASSERT(precompileIDs.size() == 26);
+    SkASSERT(precompileIDs.size() == 35);
 }
 
 template <typename T>
@@ -175,7 +188,9 @@ std::vector<sk_sp<T>> create_runtime_combos(
     return { combine };
 }
 
-void runtime_effect_test(const KeyContext& keyContext, skiatest::Reporter* reporter) {
+void runtime_effect_test(const KeyContext& keyContext,
+                         PipelineDataGatherer* gatherer,
+                         skiatest::Reporter* reporter) {
     // paintOptions (8)
     //  |- combineShader (2)
     //  |       0: redShader   | greenShader
@@ -274,6 +289,7 @@ void runtime_effect_test(const KeyContext& keyContext, skiatest::Reporter* repor
 
     std::vector<UniquePaintParamsID> precompileIDs;
     paintOptions.priv().buildCombinations(keyContext,
+                                          gatherer,
                                           /* addPrimitiveBlender= */ false,
                                           Coverage::kNone,
                                           [&](UniquePaintParamsID id) {
@@ -299,11 +315,13 @@ DEF_GRAPHITE_TEST_FOR_ALL_CONTEXTS(CombinationBuilderTest, reporter, context,
                           /* dstTexture= */ nullptr,
                           /* dstOffset= */ {0, 0});
 
-    empty_test(keyContext, reporter);
-    no_shader_option_test(keyContext, reporter);
-    no_blend_mode_option_test(keyContext, reporter);
-    big_test(keyContext, reporter);
-    runtime_effect_test(keyContext, reporter);
+    PipelineDataGatherer gatherer(Layout::kMetal);
+
+    empty_test(keyContext, &gatherer, reporter);
+    no_shader_option_test(keyContext, &gatherer, reporter);
+    no_blend_mode_option_test(keyContext, &gatherer, reporter);
+    big_test(keyContext, &gatherer, reporter);
+    runtime_effect_test(keyContext, &gatherer, reporter);
 }
 
 #endif // SK_GRAPHITE

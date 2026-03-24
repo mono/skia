@@ -102,11 +102,6 @@ VulkanCommandBuffer::VulkanCommandBuffer(VkCommandPool pool,
         , fResourceProvider(resourceProvider) {
     // When making a new command buffer, we automatically begin the command buffer
     this->begin();
-    // Each command buffer will have an intrinsic uniform buffer, so create & store that buffer
-    // TODO: Look into implementing this with a push constant or an inline uniform block
-    fIntrinsicUniformBuffer = resourceProvider->createBuffer(4 * sizeof(float),
-                                                             BufferType::kUniform,
-                                                             AccessPattern::kHostVisible);
 }
 
 VulkanCommandBuffer::~VulkanCommandBuffer() {
@@ -314,7 +309,8 @@ bool VulkanCommandBuffer::submit(VkQueue queue) {
     int waitCount = fWaitSemaphores.size();
     TArray<VkPipelineStageFlags> vkWaitStages(waitCount);
     for (int i = 0; i < waitCount; ++i) {
-        vkWaitStages.push_back(VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
+        vkWaitStages.push_back(VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT |
+                               VK_PIPELINE_STAGE_TRANSFER_BIT);
     }
 
     bool submitted = submit_to_queue(interface,
@@ -374,6 +370,50 @@ void VulkanCommandBuffer::waitUntilFinished() {
                                                                     /*timeout=*/UINT64_MAX));
 }
 
+void VulkanCommandBuffer::updateRtAdjustUniform(const SkRect& viewport) {
+    // vkCmdUpdateBuffer can only be called outside of a render pass.
+    SkASSERT(fActive && !fActiveRenderPass);
+
+    // Vulkan's framebuffer space has (0, 0) at the top left. This agrees with Skia's device coords.
+    // However, in NDC (-1, -1) is the bottom left. So we flip the origin here (assuming all
+    // surfaces we have are TopLeft origin). We then store the adjustment values as a uniform.
+    const float x = viewport.x() - fReplayTranslation.x();
+    const float y = viewport.y() - fReplayTranslation.y();
+    float invTwoW = 2.f / viewport.width();
+    float invTwoH = 2.f / viewport.height();
+    const float rtAdjust[4] = {invTwoW, invTwoH, -1.f - x * invTwoW, -1.f - y * invTwoH};
+
+    auto intrinsicUniformBuffer = fResourceProvider->refIntrinsicConstantBuffer();
+    const auto intrinsicVulkanBuffer = static_cast<VulkanBuffer*>(intrinsicUniformBuffer.get());
+    SkASSERT(intrinsicVulkanBuffer);
+
+    fUniformBuffersToBind[VulkanGraphicsPipeline::kIntrinsicUniformBufferIndex] =
+            {intrinsicUniformBuffer.get(), /*offset=*/0};
+
+    // TODO(b/307577875): Once synchronization for uniform buffers as a whole is improved, we should
+    // be able to rely upon the bindUniformBuffers() call to handle buffer access changes for us,
+    // removing the need to call setBufferAccess(...) within this method.
+
+    // Per the spec, vkCmdUpdateBuffer is treated as a “transfer" operation for the purposes of
+    // synchronization barriers. Ensure this write operation occurs after any previous read
+    // operations and without clobbering any other write operations on the same memory in the cache.
+    intrinsicVulkanBuffer->setBufferAccess(this, VK_ACCESS_TRANSFER_WRITE_BIT,
+                                           VK_PIPELINE_STAGE_TRANSFER_BIT);
+    this->submitPipelineBarriers();
+
+    VULKAN_CALL(fSharedContext->interface(), CmdUpdateBuffer(
+            fPrimaryCommandBuffer,
+            intrinsicVulkanBuffer->vkBuffer(),
+            /*dstOffset=*/0,
+            VulkanResourceProvider::kIntrinsicConstantSize,
+            &rtAdjust));
+
+    // Ensure the buffer update is completed and made visible before reading
+    intrinsicVulkanBuffer->setBufferAccess(this, VK_ACCESS_UNIFORM_READ_BIT,
+                                           VK_PIPELINE_STAGE_VERTEX_SHADER_BIT);
+    this->trackResource(std::move(intrinsicUniformBuffer));
+}
+
 bool VulkanCommandBuffer::onAddRenderPass(const RenderPassDesc& renderPassDesc,
                                           const Texture* colorTexture,
                                           const Texture* resolveTexture,
@@ -386,7 +426,7 @@ bool VulkanCommandBuffer::onAddRenderPass(const RenderPassDesc& renderPassDesc,
         // of all sampled textures from the drawpass so they can be sampled from the shader.
         const skia_private::TArray<sk_sp<TextureProxy>>& sampledTextureProxies =
                 drawPass->sampledTextures();
-        for (sk_sp<TextureProxy> textureProxy : sampledTextureProxies) {
+        for (const sk_sp<TextureProxy>& textureProxy : sampledTextureProxies) {
             VulkanTexture* vulkanTexture = const_cast<VulkanTexture*>(
                                            static_cast<const VulkanTexture*>(
                                            textureProxy->texture()));
@@ -399,10 +439,7 @@ bool VulkanCommandBuffer::onAddRenderPass(const RenderPassDesc& renderPassDesc,
         }
     }
 
-    if (!this->beginRenderPass(renderPassDesc, colorTexture, resolveTexture, depthStencilTexture)) {
-        return false;
-    }
-
+    this->updateRtAdjustUniform(viewport);
     VkViewport vkViewport = {
         viewport.fLeft,
         viewport.fTop,
@@ -416,7 +453,10 @@ bool VulkanCommandBuffer::onAddRenderPass(const RenderPassDesc& renderPassDesc,
                                /*firstViewport=*/0,
                                /*viewportCount=*/1,
                                &vkViewport));
-    fCurrentViewport = viewport;
+
+    if (!this->beginRenderPass(renderPassDesc, colorTexture, resolveTexture, depthStencilTexture)) {
+        return false;
+    }
 
     for (const auto& drawPass : drawPasses) {
         this->addDrawPass(drawPass.get());
@@ -521,12 +561,11 @@ bool VulkanCommandBuffer::beginRenderPass(const RenderPassDesc& renderPassDesc,
         frameBufferWidth = depthStencilTexture->dimensions().width();
         frameBufferHeight = depthStencilTexture->dimensions().height();
     }
-    sk_sp<VulkanFramebuffer> framebuffer =
-            fResourceProvider->createFramebuffer(fSharedContext,
-                                                 attachmentViews,
-                                                 *(vulkanRenderPass.get()),
-                                                 frameBufferWidth,
-                                                 frameBufferHeight);
+    sk_sp<VulkanFramebuffer> framebuffer = fResourceProvider->createFramebuffer(fSharedContext,
+                                                                                attachmentViews,
+                                                                                *vulkanRenderPass,
+                                                                                frameBufferWidth,
+                                                                                frameBufferHeight);
     if (!framebuffer) {
         SKGPU_LOG_W("Could not create Vulkan Framebuffer");
         return false;
@@ -702,15 +741,13 @@ void VulkanCommandBuffer::bindUniformBuffers() {
 
     // We always bind at least one uniform buffer descriptor for intrinsic uniforms, but can bind
     // up to three (one for render step uniforms, one for paint uniforms).
-    fUniformBuffersToBind[VulkanGraphicsPipeline::kIntrinsicUniformBufferIndex] =
-            {fIntrinsicUniformBuffer.get(), /*size_t offset=*/0};
     STArray<VulkanGraphicsPipeline::kNumUniformBuffers, DescriptorData> descriptors;
-    descriptors.push_back(VulkanGraphicsPipeline::kIntrinsicUniformDescriptor);
+    descriptors.push_back(VulkanGraphicsPipeline::kIntrinsicUniformBufferDescriptor);
     if (fActiveGraphicsPipeline->hasStepUniforms() &&
             fUniformBuffersToBind[VulkanGraphicsPipeline::kRenderStepUniformBufferIndex].fBuffer) {
         descriptors.push_back(VulkanGraphicsPipeline::kRenderStepUniformDescriptor);
     }
-    if (fActiveGraphicsPipeline->hasFragment() &&
+    if (fActiveGraphicsPipeline->hasFragmentUniforms() &&
             fUniformBuffersToBind[VulkanGraphicsPipeline::kPaintUniformBufferIndex].fBuffer) {
         descriptors.push_back(VulkanGraphicsPipeline::kPaintUniformDescriptor);
     }
@@ -723,7 +760,6 @@ void VulkanCommandBuffer::bindUniformBuffers() {
     }
     static uint64_t maxUniformBufferRange = static_cast<const VulkanSharedContext*>(
             fSharedContext)->vulkanCaps().maxUniformBufferRange();
-    float rtAdjust[4];
 
     for (int i = 0; i < descriptors.size(); i++) {
         int descriptorBindingIndex = descriptors.at(i).bindingIndex;
@@ -737,36 +773,12 @@ void VulkanCommandBuffer::bindUniformBuffers() {
             bufferInfo.buffer = vulkanBuffer->vkBuffer();
             bufferInfo.offset = fUniformBuffersToBind[descriptorBindingIndex].fOffset;
             bufferInfo.range = clamp_ubo_binding_size(bufferInfo.offset, vulkanBuffer->size(),
-                                                        maxUniformBufferRange);
+                                                      maxUniformBufferRange);
 
             VkWriteDescriptorSet writeInfo;
-            VkWriteDescriptorSetInlineUniformBlockEXT writeInlineUniform;
             memset(&writeInfo, 0, sizeof(VkWriteDescriptorSet));
             writeInfo.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            // Perform special setup for intrinsic uniform when appropriate.
-            if (descriptors.at(i).type == DescriptorType::kInlineUniform) {
-                // Vulkan's framebuffer space has (0, 0) at the top left. This agrees with
-                // Skia's device coords. However, in NDC (-1, -1) is the bottom left. So we flip
-                // the origin here (assuming all surfaces we have are TopLeft origin).
-                const float x = fCurrentViewport.x() - fReplayTranslation.x();
-                const float y = fCurrentViewport.y() - fReplayTranslation.y();
-                float invTwoW = 2.f / fCurrentViewport.width();
-                float invTwoH = 2.f / fCurrentViewport.height();
-                rtAdjust[0] = invTwoW;
-                rtAdjust[1] = invTwoH;
-                rtAdjust[2] = -1.f - x * invTwoW;
-                rtAdjust[3] = -1.f - y * invTwoH;
-
-                writeInlineUniform.sType =
-                        VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_INLINE_UNIFORM_BLOCK_EXT;
-                writeInlineUniform.pNext = nullptr;
-                writeInlineUniform.dataSize = fIntrinsicUniformBuffer->size();
-                writeInlineUniform.pData = &rtAdjust;
-
-                writeInfo.pNext = &writeInlineUniform;
-            } else {
-                writeInfo.pNext = nullptr;
-            }
+            writeInfo.pNext = nullptr;
             writeInfo.dstSet = *set->descriptorSet();
             writeInfo.dstBinding = descriptorBindingIndex;
             writeInfo.dstArrayElement = 0;
@@ -791,13 +803,13 @@ void VulkanCommandBuffer::bindUniformBuffers() {
     }
     VULKAN_CALL(fSharedContext->interface(),
                 CmdBindDescriptorSets(fPrimaryCommandBuffer,
-                                        VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                        fActiveGraphicsPipeline->layout(),
-                                        VulkanGraphicsPipeline::kUniformBufferDescSetIndex,
-                                        /*setCount=*/1,
-                                        set->descriptorSet(),
-                                        /*dynamicOffsetCount=*/0,
-                                        /*dynamicOffsets=*/nullptr));
+                                      VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                      fActiveGraphicsPipeline->layout(),
+                                      VulkanGraphicsPipeline::kUniformBufferDescSetIndex,
+                                      /*setCount=*/1,
+                                      set->descriptorSet(),
+                                      /*dynamicOffsetCount=*/0,
+                                      /*dynamicOffsets=*/nullptr));
     this->trackResource(std::move(set));
 }
 
@@ -1139,8 +1151,7 @@ bool VulkanCommandBuffer::onCopyTextureToBuffer(const Texture* texture,
     // Set current access mask for buffer
     const_cast<VulkanBuffer*>(dstBuffer)->setBufferAccess(this,
                                                           VK_ACCESS_TRANSFER_WRITE_BIT,
-                                                          VK_PIPELINE_STAGE_TRANSFER_BIT,
-                                                          false);
+                                                          VK_PIPELINE_STAGE_TRANSFER_BIT);
 
     this->submitPipelineBarriers();
 
@@ -1250,8 +1261,7 @@ bool VulkanCommandBuffer::onCopyTextureToTexture(const Texture* src,
 bool VulkanCommandBuffer::onSynchronizeBufferToCpu(const Buffer* buffer, bool* outDidResultInWork) {
     static_cast<const VulkanBuffer*>(buffer)->setBufferAccess(this,
                                                               VK_ACCESS_HOST_READ_BIT,
-                                                              VK_PIPELINE_STAGE_HOST_BIT,
-                                                              false);
+                                                              VK_PIPELINE_STAGE_HOST_BIT);
 
     *outDidResultInWork = true;
     return true;
@@ -1264,20 +1274,18 @@ bool VulkanCommandBuffer::onClearBuffer(const Buffer*, size_t offset, size_t siz
 void VulkanCommandBuffer::addBufferMemoryBarrier(const Resource* resource,
                                                  VkPipelineStageFlags srcStageMask,
                                                  VkPipelineStageFlags dstStageMask,
-                                                 bool byRegion,
                                                  VkBufferMemoryBarrier* barrier) {
     SkASSERT(resource);
     this->pipelineBarrier(resource,
                           srcStageMask,
                           dstStageMask,
-                          byRegion,
+                          /*byRegion=*/false,
                           kBufferMemory_BarrierType,
                           barrier);
 }
 
 void VulkanCommandBuffer::addBufferMemoryBarrier(VkPipelineStageFlags srcStageMask,
                                                  VkPipelineStageFlags dstStageMask,
-                                                 bool byRegion,
                                                  VkBufferMemoryBarrier* barrier) {
     // We don't pass in a resource here to the command buffer. The command buffer only is using it
     // to hold a ref, but every place where we add a buffer memory barrier we are doing some other
@@ -1286,7 +1294,7 @@ void VulkanCommandBuffer::addBufferMemoryBarrier(VkPipelineStageFlags srcStageMa
     this->pipelineBarrier(/*resource=*/nullptr,
                           srcStageMask,
                           dstStageMask,
-                          byRegion,
+                          /*byRegion=*/false,
                           kBufferMemory_BarrierType,
                           barrier);
 }
@@ -1412,4 +1420,3 @@ void VulkanCommandBuffer::submitPipelineBarriers(bool forSelfDependency) {
 
 
 } // namespace skgpu::graphite
-

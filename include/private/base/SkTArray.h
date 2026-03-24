@@ -185,9 +185,8 @@ public:
     bool empty() const { return fSize == 0; }
 
     /**
-     * Adds 1 new default-initialized T value and returns it by reference. Note
-     * the reference only remains valid until the next call that adds or removes
-     * elements.
+     * Adds one new default-initialized T value and returns it by reference. Note that the reference
+     * only remains valid until the next call that adds or removes elements.
      */
     T& push_back() {
         void* newT = this->push_back_raw(1);
@@ -195,27 +194,52 @@ public:
     }
 
     /**
-     * Version of above that uses a copy constructor to initialize the new item
+     * Adds one new T value which is copy-constructed, returning it by reference. As always,
+     * the reference only remains valid until the next call that adds or removes elements.
      */
     T& push_back(const T& t) {
-        void* newT = this->push_back_raw(1);
-        return *new (newT) T(t);
+        T* newT;
+        if (this->capacity() > fSize) SK_LIKELY {
+            // Copy over the element directly.
+            newT = new (fData + fSize) T(t);
+        } else {
+            newT = this->growAndConstructAtEnd(t);
+        }
+
+        fSize += 1;
+        return *newT;
     }
 
     /**
-     * Version of above that uses a move constructor to initialize the new item
+     * Adds one new T value which is copy-constructed, returning it by reference.
      */
     T& push_back(T&& t) {
-        void* newT = this->push_back_raw(1);
-        return *new (newT) T(std::move(t));
+        T* newT;
+        if (this->capacity() > fSize) SK_LIKELY {
+            // Move over the element directly.
+            newT = new (fData + fSize) T(std::move(t));
+        } else {
+            newT = this->growAndConstructAtEnd(std::move(t));
+        }
+
+        fSize += 1;
+        return *newT;
     }
 
     /**
-     *  Construct a new T at the back of this array.
+     *  Constructs a new T at the back of this array, returning it by reference.
      */
-    template<class... Args> T& emplace_back(Args&&... args) {
-        void* newT = this->push_back_raw(1);
-        return *new (newT) T(std::forward<Args>(args)...);
+    template <typename... Args> T& emplace_back(Args&&... args) {
+        T* newT;
+        if (this->capacity() > fSize) SK_LIKELY {
+            // Emplace the new element in directly.
+            newT = new (fData + fSize) T(std::forward<Args>(args)...);
+        } else {
+            newT = this->growAndConstructAtEnd(std::forward<Args>(args)...);
+        }
+
+        fSize += 1;
+        return *newT;
     }
 
     /**
@@ -357,7 +381,7 @@ public:
     T* data() { return fData; }
     const T* data() const { return fData; }
     int size() const { return fSize; }
-    size_t size_bytes() const { return this->bytes(fSize); }
+    size_t size_bytes() const { return Bytes(fSize); }
     void resize(size_t count) { this->resize_back((int)count); }
 
     void clear() {
@@ -503,7 +527,7 @@ private:
         // to a full divide instruction. If done here the size is known at compile, and usually
         // can be implemented by a right shift. The full divide takes ~50X longer than the shift.
         size_t size = std::min(allocation.size() / sizeof(T), SkToSizeT(kMaxCapacity));
-        setData(SkSpan<T>(data, size));
+        this->setData(SkSpan<T>(data, size));
     }
 
     void setData(SkSpan<T> array) {
@@ -524,7 +548,7 @@ private:
         return (T*)buffer;
     }
 
-    size_t bytes(int n) const {
+    static size_t Bytes(int n) {
         SkASSERT(n <= kMaxCapacity);
         return SkToSizeT(n) * sizeof(T);
     }
@@ -577,10 +601,10 @@ private:
 
     void move(void* dst) {
         if constexpr (MEM_MOVE) {
-            sk_careful_memcpy(dst, fData, this->bytes(fSize));
+            sk_careful_memcpy(dst, fData, Bytes(fSize));
         } else {
             for (int i = 0; i < this->size(); ++i) {
-                new (static_cast<char*>(dst) + this->bytes(i)) T(std::move(fData[i]));
+                new (static_cast<char*>(dst) + Bytes(i)) T(std::move(fData[i]));
                 fData[i].~T();
             }
         }
@@ -595,17 +619,31 @@ private:
         return ptr;
     }
 
+    template <typename... Args>
+    SK_ALWAYS_INLINE T* growAndConstructAtEnd(Args&&... args) {
+        SkSpan<std::byte> buffer = this->preallocateNewData(/*delta=*/1, kGrowing);
+        T* newT = new (TCast(buffer.data()) + fSize) T(std::forward<Args>(args)...);
+        this->installDataAndUpdateCapacity(buffer);
+
+        return newT;
+    }
+
     void checkRealloc(int delta, double growthFactor) {
-        // This constant needs to be declared in the function where it is used to work around
-        // MSVC's persnickety nature about template definitions.
         SkASSERT(delta >= 0);
         SkASSERT(fSize >= 0);
         SkASSERT(fCapacity >= 0);
 
-        // Return if there are enough remaining allocated elements to satisfy the request.
-        if (this->capacity() - fSize >= delta) {
-            return;
+        // Check if there are enough remaining allocated elements to satisfy the request.
+        if (this->capacity() - fSize < delta) {
+            // Looks like we need to reallocate.
+            this->installDataAndUpdateCapacity(this->preallocateNewData(delta, growthFactor));
         }
+    }
+
+    SkSpan<std::byte> preallocateNewData(int delta, double growthFactor) {
+        SkASSERT(delta >= 0);
+        SkASSERT(fSize >= 0);
+        SkASSERT(fCapacity >= 0);
 
         // Don't overflow fSize or size_t later in the memory allocation. Overflowing memory
         // allocation really only applies to fSizes on 32-bit machines; on 64-bit machines this
@@ -616,14 +654,15 @@ private:
         }
         const int newCount = fSize + delta;
 
-        SkSpan<std::byte> allocation = Allocate(newCount, growthFactor);
+        return Allocate(newCount, growthFactor);
+    }
 
+    void installDataAndUpdateCapacity(SkSpan<std::byte> allocation) {
         this->move(TCast(allocation.data()));
         if (fOwnMemory) {
             sk_free(fData);
         }
         this->setDataFromBytes(allocation);
-        SkASSERT(this->capacity() >= newCount);
         SkASSERT(fData != nullptr);
     }
 

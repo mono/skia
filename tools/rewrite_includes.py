@@ -45,13 +45,13 @@ ignorelist = [
   # Some node_modules/ files (used by CanvasKit et al) have c++ code which we should ignore.
   'node_modules',
   'include/third_party/skcms',
+  'src/gpu/vk/vulkanmemoryallocator',
   # Used by Jetski and Graphite
   'Surface.h',
   # Used by Ganesh and Graphite
   'Device.h',
   # Temporary shims
-  'SkEncodedImageFormat.h',
-  'SkICC.h',
+  'SkMultiPictureDocument.h',
   # Transitional
   'tools/window',
 ]

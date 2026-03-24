@@ -21,12 +21,24 @@ class SkMatrix;
 struct SkPoint;
 struct SkPoint3;
 struct SkRect;
+struct SkSize;
 struct SkV2;
 struct SkV4;
 
 namespace skgpu::graphite {
 
-enum class CType : unsigned;
+enum class CType : unsigned {
+    // Any float/half, vector of floats/half, or matrices of floats/halfs are a tightly
+    // packed array of floats. Similarly, any bool/shorts/ints are a tightly packed array
+    // of int32_t.
+    kDefault,
+    // Can be used with kFloat3x3 or kHalf3x3. SkMatrix stores its data in row-major order, so
+    // cannot be copied directly to uniforms that expect col-major order. SkM44 is already
+    // column-major so can use kDefault.
+    kSkMatrix,
+
+    kLast = kSkMatrix
+};
 
 class UniformDataBlock;
 
@@ -70,20 +82,26 @@ public:
     void reset();
 
     // Write a single instance of `type` from the data block referenced by `src`.
-    void write(SkSLType type, const void* src);
+    // DEPRECATED: Prefer to use a compile-time typed write method.
+    void write(SkSLType type, const void* src, CType ctype = CType::kDefault);
 
     // Write an array of `type` with `count` elements from the data block referenced by `src`.
     // Does nothing if `count` is 0.
-    void writeArray(SkSLType type, const void* src, unsigned int count);
+    // DEPRECATED: Prefer to use a compile-time typed write method.
+    void writeArray(SkSLType type, const void* src, unsigned int count,
+                    CType ctype = CType::kDefault);
 
     // Copy from `src` using Uniform array-count semantics.
     void write(const Uniform&, const uint8_t* src);
 
     void write(const SkM44&);
+    void write(const SkMatrix&);
     void write(const SkPMColor4f&);
+    void writePaintColor(const SkPMColor4f&);
     void write(const SkRect&);
     void write(const SkV2&);
     void write(const SkV4&);
+    void write(const SkSize&);
     void write(const SkPoint&);
     void write(const SkPoint3&);
     void write(float f);
@@ -112,8 +130,10 @@ private:
     // Do not call this method directly for any new write()/writeArray() overloads. Instead
     // call the write(SkSLType, const void*) and writeArray(SkSLType, const void*, unsigned int)
     // overloads which correctly abstract the array vs non-array semantics.
-    void writeInternal(SkSLType type, unsigned int count, const void* src);
+    void writeInternal(SkSLType type, CType ctype, unsigned int count, const void* src);
 
+    // The paint color is treated special and we only add its uniform once.
+    bool fWrotePaintColor = false;
 #ifdef SK_DEBUG
     SkSpan<const Uniform> fExpectedUniforms;
     int fExpectedUniformIndex = 0;
@@ -123,6 +143,6 @@ private:
     uint32_t fReqAlignment = 0;
 };
 
-} // namespace skgpu
+}  // namespace skgpu::graphite
 
 #endif // skgpu_UniformManager_DEFINED

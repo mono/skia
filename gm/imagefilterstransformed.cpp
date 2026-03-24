@@ -10,6 +10,7 @@
 #include "include/core/SkBlendMode.h"
 #include "include/core/SkCanvas.h"
 #include "include/core/SkColor.h"
+#include "include/core/SkFont.h"
 #include "include/core/SkImage.h"
 #include "include/core/SkImageFilter.h"
 #include "include/core/SkPaint.h"
@@ -25,8 +26,10 @@
 #include "include/core/SkTypes.h"
 #include "include/effects/SkGradientShader.h"
 #include "include/effects/SkImageFilters.h"
+#include "tools/DecodeUtils.h"
 #include "tools/Resources.h"
 #include "tools/ToolUtils.h"
+#include "tools/fonts/FontToolUtils.h"
 #include "tools/timer/TimeUtils.h"
 
 #include <utility>
@@ -185,7 +188,7 @@ protected:
     }
 
     void onOnceBeforeDraw() override {
-        fImage = GetResourceAsImage("images/mandrill_256.png");
+        fImage = ToolUtils::GetResourceAsImage("images/mandrill_256.png");
     }
 
     void onDraw(SkCanvas* canvas) override {
@@ -233,7 +236,7 @@ protected:
     }
 
     void onOnceBeforeDraw() override {
-        fImage = GetResourceAsImage("images/mandrill_256.png");
+        fImage = ToolUtils::GetResourceAsImage("images/mandrill_256.png");
     }
 
     void onDraw(SkCanvas* canvas) override {
@@ -311,7 +314,7 @@ DEF_GM(return new ImageFilterComposedTransform();)
 
 // Tests SkImageFilters::Image under tricky matrices (mirrors and perspective)
 DEF_SIMPLE_GM(imagefilter_transformed_image, canvas, 256, 256) {
-    sk_sp<SkImage> image = GetResourceAsImage("images/color_wheel.png");
+    sk_sp<SkImage> image = ToolUtils::GetResourceAsImage("images/color_wheel.png");
     sk_sp<SkImageFilter> imageFilter = SkImageFilters::Image(image, SkFilterMode::kLinear);
 
     const SkRect imageRect = SkRect::MakeIWH(image->width(), image->height());
@@ -325,7 +328,7 @@ DEF_SIMPLE_GM(imagefilter_transformed_image, canvas, 256, 256) {
                SkM44::Rotate({0.f, 1.f, 0.f}, SK_ScalarPI / 6.f) *
                SkM44::RectToRect(imageRect, {-1.f, -1.f, 1.f, 1.f});
 
-    SkFont font(ToolUtils::create_portable_typeface());
+    SkFont font = ToolUtils::DefaultPortableFont();
     canvas->drawString("Columns should match", 5.f, 15.f, font, SkPaint());
     canvas->translate(0.f, 10.f);
 

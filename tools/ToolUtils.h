@@ -8,46 +8,48 @@
 #ifndef ToolUtils_DEFINED
 #define ToolUtils_DEFINED
 
-#include "include/codec/SkEncodedImageFormat.h"
 #include "include/core/SkColor.h"
-#include "include/core/SkData.h"
-#include "include/core/SkFont.h"
+#include "include/core/SkFontArguments.h"
+#include "include/core/SkFontParameters.h"
 #include "include/core/SkFontStyle.h"
-#include "include/core/SkFontTypes.h"
-#include "include/core/SkImageInfo.h"
 #include "include/core/SkPixmap.h"
+#include "include/core/SkPoint.h"
 #include "include/core/SkRect.h"
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkScalar.h"
 #include "include/core/SkSpan.h"
-#include "include/core/SkStream.h"
+#include "include/core/SkString.h"
 #include "include/core/SkSurface.h"
-#include "include/core/SkTypeface.h"
+#include "include/core/SkTypeface.h"  // IWYU pragma: keep
 #include "include/core/SkTypes.h"
+#include "include/private/base/SkDebug.h"
 #include "include/private/base/SkTArray.h"
 #include "include/private/base/SkTDArray.h"
 #include "src/base/SkRandom.h"
 #include "src/base/SkTInternalLList.h"
-#include "tools/SkMetaData.h"
 
-#if defined(SK_GRAPHITE)
-#include "include/gpu/graphite/Recorder.h"
-#endif
-
+#include <cstddef>
+#include <cstdint>
+#include <memory>
+#include <vector>
 #include <functional>
 
 class SkBitmap;
 class SkCanvas;
-class SkFontStyle;
+class SkFont;
 class SkImage;
+class SkMatrix;
+class SkMetaData;
+class SkPaint;
 class SkPath;
-class SkPixmap;
-class SkRRect;
 class SkShader;
-class SkSurface;
 class SkSurfaceProps;
 class SkTextBlobBuilder;
-class SkTypeface;
+enum SkAlphaType : int;
+enum SkColorType : int;
+enum class SkTextEncoding;
+enum class SkTileMode;
+struct SkImageInfo;
 
 namespace ToolUtils {
 
@@ -60,31 +62,6 @@ const char* tilemode_name(SkTileMode);
  * Map opaque colors from 8888 to 565.
  */
 SkColor color_to_565(SkColor color);
-
-/* Return a color emoji typeface with planets to scale if available. */
-sk_sp<SkTypeface> planet_typeface();
-
-/** Return a color emoji typeface if available. */
-sk_sp<SkTypeface> emoji_typeface();
-
-/** Sample text for the emoji_typeface font. */
-constexpr const char* emoji_sample_text() {
-    return "\xF0\x9F\x98\x80"
-           " "
-           "\xE2\x99\xA2";  // 😀 ♢
-}
-
-/** A simple SkUserTypeface for testing. */
-sk_sp<SkTypeface> sample_user_typeface();
-
-/**
- * Returns a platform-independent text renderer.
- */
-sk_sp<SkTypeface> create_portable_typeface(const char* name, SkFontStyle style);
-
-static inline sk_sp<SkTypeface> create_portable_typeface() {
-    return create_portable_typeface(nullptr, SkFontStyle());
-}
 
 void get_text_path(const SkFont&,
                    const void* text,
@@ -157,9 +134,6 @@ int make_pixmaps(SkColorType,
                  const SkColor4f colors[6],
                  SkPixmap pixmaps[6],
                  std::unique_ptr<char[]>* mem);
-
-SkBitmap create_string_bitmap(int w, int h, SkColor c, int x, int y, int textSize, const char* str);
-sk_sp<SkImage> create_string_image(int w, int h, SkColor c, int x, int y, int textSize, const char* str);
 
 // If the canvas doesn't make a surface (e.g. recording), make a raster surface
 sk_sp<SkSurface> makeSurface(SkCanvas*, const SkImageInfo&, const SkSurfaceProps* = nullptr);
@@ -290,9 +264,6 @@ private:
     SkTDArray<uint32_t>      fTargets;
 };
 
-bool EncodeImageToPngFile(const char* path, const SkBitmap& src);
-bool EncodeImageToPngFile(const char* path, const SkPixmap& src);
-
 bool copy_to(SkBitmap* dst, SkColorType dstCT, const SkBitmap& src);
 void copy_to_g8(SkBitmap* dst, const SkBitmap& src);
 
@@ -340,12 +311,8 @@ private:
 using PathSniffCallback = void(const SkMatrix&, const SkPath&, const SkPaint&);
 
 // Calls the provided PathSniffCallback for each path in the given file.
-// Supported file formats are .svg and .skp.
-void sniff_paths(const char filepath[], std::function<PathSniffCallback>);
-
-#if defined(SK_GANESH)
-sk_sp<SkImage> MakeTextureImage(SkCanvas* canvas, sk_sp<SkImage> orig);
-#endif
+// Supported file formats .skp. (See SvgPathExtractor for .svg)
+void ExtractPathsFromSKP(const char filepath[], std::function<PathSniffCallback>);
 
 // Initialised with a font, this class can be called to setup GM UI with sliders for font
 // variations, and returns a set of variation coordinates that matches what the sliders in the UI
@@ -378,10 +345,6 @@ private:
     std::unique_ptr<SkFontArguments::VariationPosition::Coordinate[]> fCoords;
     static constexpr size_t kAxisVarsSize = 3;
 };
-
-#if defined(SK_GRAPHITE)
-skgpu::graphite::RecorderOptions CreateTestingRecorderOptions();
-#endif
 
 }  // namespace ToolUtils
 

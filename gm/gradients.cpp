@@ -25,7 +25,11 @@
 #include "include/core/SkTileMode.h"
 #include "include/core/SkTypes.h"
 #include "include/effects/SkGradientShader.h"
+#include "include/private/base/SkAssert.h"
+#include "tools/ToolUtils.h"
+#include "tools/fonts/FontToolUtils.h"
 
+#include <initializer_list>
 #include <math.h>
 
 namespace {
@@ -1136,6 +1140,7 @@ DEF_SIMPLE_GM_BG(gradients_color_space, canvas, 265, 205, SK_ColorGRAY) {
     SkPaint p;
     SkGradientShader::Interpolation interpolation;
     canvas->translate(5, 5);
+    SkFont font = ToolUtils::DefaultPortableFont();
 
     for (const Config& config : kConfigs) {
         interpolation.fColorSpace = config.fColorSpace;
@@ -1143,7 +1148,7 @@ DEF_SIMPLE_GM_BG(gradients_color_space, canvas, 265, 205, SK_ColorGRAY) {
                                                  SkTileMode::kClamp, interpolation, nullptr));
         canvas->drawRect({0, 0, 200, 20}, p);
         canvas->drawSimpleText(config.fLabel, strlen(config.fLabel), SkTextEncoding::kUTF8, 210, 15,
-                               SkFont{}, labelPaint);
+                               font, labelPaint);
         canvas->translate(0, 25);
     }
 }
@@ -1170,6 +1175,7 @@ DEF_SIMPLE_GM_BG(gradients_hue_method, canvas, 285, 155, SK_ColorGRAY) {
     SkGradientShader::Interpolation interpolation;
     interpolation.fColorSpace = SkGradientShader::Interpolation::ColorSpace::kHSL;
     canvas->translate(5, 5);
+    SkFont font = ToolUtils::DefaultPortableFont();
 
     for (const Config& config : kConfigs) {
         interpolation.fHueMethod = config.fHueMethod;
@@ -1177,7 +1183,7 @@ DEF_SIMPLE_GM_BG(gradients_hue_method, canvas, 285, 155, SK_ColorGRAY) {
                                                  SkTileMode::kClamp, interpolation, nullptr));
         canvas->drawRect({0, 0, 200, 20}, p);
         canvas->drawSimpleText(config.fLabel, strlen(config.fLabel), SkTextEncoding::kUTF8, 210, 15,
-                               SkFont{}, labelPaint);
+                               font, labelPaint);
         canvas->translate(0, 25);
     }
 
@@ -1258,3 +1264,138 @@ DEF_SIMPLE_GM_BG(gradients_color_space_many_stops, canvas, 500, 500, SK_ColorGRA
 
     canvas->drawRect(SkRect::MakeXYWH(0, 0, 500, 500), p);
 }
+
+static void draw_powerless_hue_gradients(SkCanvas* canvas,
+                                         SkGradientShader::Interpolation::ColorSpace colorSpace) {
+    ToolUtils::draw_checkerboard(canvas);
+
+    auto nextRow = [=]() {
+        canvas->restore();
+        canvas->translate(0, 25);
+        canvas->save();
+    };
+
+    auto gradient = [&](std::initializer_list<SkColor4f> colors,
+                        std::initializer_list<float> pos,
+                        bool inPremul = false) {
+        using Interpolation = SkGradientShader::Interpolation;
+        SkASSERT(pos.size() == 0 || pos.size() == colors.size());
+        SkPaint paint;
+        SkPoint pts[] = {{0, 0}, {200, 0}};
+        Interpolation interpolation;
+        interpolation.fColorSpace = colorSpace;
+        interpolation.fInPremul = static_cast<Interpolation::InPremul>(inPremul);
+        paint.setShader(SkGradientShader::MakeLinear(pts,
+                                                     colors.begin(),
+                                                     SkColorSpace::MakeSRGB(),
+                                                     pos.size() == 0 ? nullptr : pos.begin(),
+                                                     colors.size(),
+                                                     SkTileMode::kClamp,
+                                                     interpolation,
+                                                     nullptr));
+        canvas->drawRect({0, 0, 200, 20}, paint);
+        canvas->translate(205, 0); // next column
+    };
+
+    canvas->translate(5, 5);
+    canvas->save();
+
+    // For each test case, the first gradient (first column) has an under-specified result due to a
+    // powerless component after conversion to LCH. The second gradient (second column) "hints" the
+    // correct result, by slightly tinting the otherwise powerless color.
+
+    gradient({SkColors::kWhite,            SkColors::kBlue}, {});
+    gradient({{0.99f, 0.99f, 1.00f, 1.0f}, SkColors::kBlue}, {}); // white, with blue hue
+    nextRow();
+
+    gradient({SkColors::kBlack,            SkColors::kBlue}, {});
+    gradient({{0.00f, 0.00f, 0.01f, 1.0f}, SkColors::kBlue}, {}); // black, with blue hue
+    nextRow();
+
+    // Transparent cases are done in both premul and unpremul interpolation:
+
+    gradient({SkColors::kTransparent,      SkColors::kBlue}, {}, /*inPremul=*/false);
+    gradient({{0.00f, 0.00f, 0.01f, 0.0f}, SkColors::kBlue}, {}, /*inPremul=*/false);
+    nextRow();
+
+    gradient({SkColors::kTransparent,      SkColors::kBlue}, {}, /*inPremul=*/true);
+    gradient({{0.00f, 0.00f, 0.01f, 0.0f}, SkColors::kBlue}, {}, /*inPremul=*/true);
+    nextRow();
+
+    gradient({{1.00f, 1.00f, 1.00f, 0.0f}, SkColors::kBlue}, {}, /*inPremul=*/false);
+    gradient({{0.99f, 0.99f, 1.00f, 0.0f}, SkColors::kBlue}, {}, /*inPremul=*/false);
+    nextRow();
+
+    gradient({{1.00f, 1.00f, 1.00f, 0.0f}, SkColors::kBlue}, {}, /*inPremul=*/true);
+    gradient({{0.99f, 0.99f, 1.00f, 0.0f}, SkColors::kBlue}, {}, /*inPremul=*/true);
+    nextRow();
+
+    // Now we test three-stop gradients, where the middle stop needs to be "split" to handle the
+    // different hues on either side. Again, the second column explicitly injects those to produce
+    // a reference result. See: https://github.com/w3c/csswg-drafts/issues/9295
+
+    gradient({SkColors::kRed, SkColors::kWhite, SkColors::kBlue}, {});
+    gradient({SkColors::kRed,
+              {1.00f, 0.99f, 0.99f, 1.0f},
+              {0.99f, 0.99f, 1.00f, 1.0f},
+              SkColors::kBlue},
+             {0.0f, 0.5f, 0.5f, 1.0f});
+    nextRow();
+
+    gradient({SkColors::kRed, SkColors::kBlack, SkColors::kBlue}, {});
+    gradient({SkColors::kRed,
+              {0.01f, 0.00f, 0.00f, 1.0f},
+              {0.00f, 0.00f, 0.01f, 1.0f},
+              SkColors::kBlue},
+             {0.0f, 0.5f, 0.5f, 1.0f});
+    nextRow();
+
+    gradient({SkColors::kRed, SkColors::kTransparent, SkColors::kBlue}, {});
+    gradient({SkColors::kRed,
+              {0.01f, 0.00f, 0.00f, 0.0f},
+              {0.00f, 0.00f, 0.01f, 0.0f},
+              SkColors::kBlue},
+             {0.0f, 0.5f, 0.5f, 1.0f});
+    nextRow();
+
+    // Now do a few black-white tests, to ensure that the hue propagation works correctly, even
+    // when there isn't any hue in the adjacent stops.
+    using HueMethod = SkGradientShader::Interpolation::HueMethod;
+    auto blackWhiteGradient = [&](HueMethod hm) {
+        using Interpolation = SkGradientShader::Interpolation;
+        SkPaint paint;
+        SkPoint pts[] = {{0, 0}, {405, 0}};
+        Interpolation interpolation;
+        interpolation.fColorSpace = colorSpace;
+        interpolation.fHueMethod = hm;
+        const SkColor4f colors[] = {SkColors::kWhite, SkColors::kGray,
+                                    SkColors::kWhite, SkColors::kDkGray,
+                                    SkColors::kWhite, SkColors::kBlack};
+        paint.setShader(SkGradientShader::MakeLinear(pts,
+                                                     colors,
+                                                     SkColorSpace::MakeSRGB(),
+                                                     nullptr,
+                                                     std::size(colors),
+                                                     SkTileMode::kClamp,
+                                                     interpolation,
+                                                     nullptr));
+        canvas->drawRect({0, 0, 405, 20}, paint);
+        nextRow();
+    };
+
+    blackWhiteGradient(HueMethod::kShorter);
+    blackWhiteGradient(HueMethod::kIncreasing);
+    blackWhiteGradient(HueMethod::kDecreasing);
+    blackWhiteGradient(HueMethod::kLonger);
+}
+
+#define DEF_POWERLESS_HUE_GM(colorSpace)                                                          \
+    DEF_SIMPLE_GM(gradients_powerless_hue_##colorSpace, canvas, 415, 330) {                       \
+        draw_powerless_hue_gradients(canvas,                                                      \
+                                     SkGradientShader::Interpolation::ColorSpace::k##colorSpace); \
+    }
+
+DEF_POWERLESS_HUE_GM(LCH)
+DEF_POWERLESS_HUE_GM(OKLCH)
+DEF_POWERLESS_HUE_GM(HSL)
+DEF_POWERLESS_HUE_GM(HWB)

@@ -4,26 +4,23 @@
 #include "modules/bentleyottmann/include/BentleyOttmann1.h"
 
 #include "modules/bentleyottmann/include/EventQueue.h"
+#include "modules/bentleyottmann/include/Segment.h"
+#include "modules/bentleyottmann/include/SweepLine.h"
 
 #include <optional>
+#include <utility>
 #include <vector>
 
 namespace bentleyottmann {
 
-class SweepLine {
-public:
-    void handleEvent(const Event& event, EventQueue* eventQueue) {}
-};
-
-std::optional<std::vector<Point>> bentley_ottmann_1(SkSpan<const Segment> segments) {
+std::optional<std::vector<Crossing>> bentley_ottmann_1(SkSpan<const Segment> segments) {
     if (auto possibleEQ = EventQueue::Make(segments)) {
         EventQueue eventQueue = std::move(possibleEQ.value());
         SweepLine sweepLine;
         while(eventQueue.hasMoreEvents()) {
-            Event event = eventQueue.nextEvent();
-            sweepLine.handleEvent(event, &eventQueue);
+            eventQueue.handleNextEventPoint(&sweepLine);
         }
-
+        return eventQueue.crossings();
     }
     return std::nullopt;
 }

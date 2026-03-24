@@ -53,6 +53,7 @@
 #include "tests/Test.h"
 #include "tools/Resources.h"
 #include "tools/ToolUtils.h"
+#include "tools/fonts/FontToolUtils.h"
 #include "tools/fonts/TestEmptyTypeface.h"
 
 #include <cmath>
@@ -663,8 +664,9 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(SkRemoteGlyphCache_DrawTextAsPath,
     SkPaint paint;
     paint.setStyle(SkPaint::kStroke_Style);
     paint.setStrokeWidth(0);
+    SkFont font = ToolUtils::DefaultFont();
     REPORTER_ASSERT(reporter,
-            SkStrikeSpec::ShouldDrawAsPath(paint, SkFont(), SkMatrix::I()));
+            SkStrikeSpec::ShouldDrawAsPath(paint, font, SkMatrix::I()));
 
     // Server.
     auto serverTypeface = SkTypeface::MakeFromName("monospace", SkFontStyle());
@@ -880,10 +882,11 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(SkRemoteGlyphCache_CacheMissReporting,
     SkStrikeClient client(discardableManager, false);
 
     auto serverTypeface = SkTypeface::MakeFromName("monospace", SkFontStyle());
+    REPORTER_ASSERT(reporter, serverTypeface);
 
     // Create the clientTypeface proxy directly from the serverTypeface.
     auto clientTypeface = sk_make_sp<SkTypefaceProxy>(
-            SkTypeface::UniqueID(serverTypeface.get()),
+            serverTypeface->uniqueID(),
             serverTypeface->countGlyphs(),
             serverTypeface->fontStyle(),
             serverTypeface->isFixedPitch(),
@@ -919,7 +922,7 @@ sk_sp<SkTextBlob> MakeEmojiBlob(sk_sp<SkTypeface> serverTf, SkScalar textSize,
     font.setTypeface(serverTf);
     font.setSize(textSize);
 
-    const char* text = ToolUtils::emoji_sample_text();
+    const char* text = ToolUtils::EmojiSampleText();
     auto blob = SkTextBlob::MakeFromText(text, strlen(text), font);
     if (clientTf == nullptr) return blob;
 
@@ -946,7 +949,7 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(SkRemoteGlyphCache_TypefaceWithNoPaths,
     SkStrikeServer server(discardableManager.get());
     SkStrikeClient client(discardableManager, false);
 
-    auto serverTypeface = ToolUtils::emoji_typeface();
+    auto serverTypeface = ToolUtils::EmojiTypeface();
     const SkTypefaceID serverTypefaceID = serverTypeface->uniqueID();
 
     auto props = FindSurfaceProps(direct);
@@ -1021,7 +1024,7 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(SkRemoteGlyphCache_TypefaceWithPaths_Mask
     SkStrikeServer server(discardableManager.get());
     SkStrikeClient client(discardableManager, true);
 
-    auto serverTypeface = ToolUtils::create_portable_typeface();
+    auto serverTypeface = ToolUtils::DefaultPortableTypeface();
     const SkTypefaceID serverTypefaceID = serverTypeface->uniqueID();
 
     auto props = FindSurfaceProps(direct);
@@ -1080,7 +1083,7 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(SkRemoteGlyphCache_TypefaceWithPaths_Path
     SkStrikeServer server(discardableManager.get());
     SkStrikeClient client(discardableManager, true);
 
-    auto serverTypeface = ToolUtils::create_portable_typeface();
+    auto serverTypeface = ToolUtils::DefaultPortableTypeface();
     const SkTypefaceID serverTypefaceID = serverTypeface->uniqueID();
 
     auto props = FindSurfaceProps(direct);

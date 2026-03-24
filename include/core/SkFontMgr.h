@@ -112,8 +112,10 @@ public:
 
     sk_sp<SkTypeface> legacyMakeTypeface(const char familyName[], SkFontStyle style) const;
 
+#if !defined(SK_DISABLE_LEGACY_FONTMGR_REFDEFAULT)
     /** Return the default fontmgr. */
     static sk_sp<SkFontMgr> RefDefault();
+#endif
 
     /** Construct a new instance of the fontmgr. */
     static sk_sp<SkFontMgr> MakeDefault() { return SkFontMgr::Factory(); }
@@ -147,7 +149,9 @@ protected:
 
 private:
     /** Implemented by porting layer to return the default factory. */
+#if !defined(SK_DISABLE_LEGACY_FONTMGR_FACTORY)
     static sk_sp<SkFontMgr> Factory();
+#endif
 };
 
 #endif

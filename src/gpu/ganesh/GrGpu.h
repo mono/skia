@@ -423,6 +423,7 @@ public:
     virtual void checkFinishProcs() = 0;
     virtual void finishOutstandingGpuWork() = 0;
 
+    // NOLINTNEXTLINE(performance-unnecessary-value-param)
     virtual void takeOwnershipOfBuffer(sk_sp<GrGpuBuffer>) {}
 
     /**
@@ -588,6 +589,7 @@ public:
     virtual bool setBackendTextureState(const GrBackendTexture&,
                                         const skgpu::MutableTextureState&,
                                         skgpu::MutableTextureState* previousState,
+                                        // NOLINTNEXTLINE(performance-unnecessary-value-param)
                                         sk_sp<skgpu::RefCntedCallback> finishedCallback) {
         return false;
     }
@@ -595,6 +597,7 @@ public:
     virtual bool setBackendRenderTargetState(const GrBackendRenderTarget&,
                                              const skgpu::MutableTextureState&,
                                              skgpu::MutableTextureState* previousState,
+                                            // NOLINTNEXTLINE(performance-unnecessary-value-param)
                                              sk_sp<skgpu::RefCntedCallback> finishedCallback) {
         return false;
     }

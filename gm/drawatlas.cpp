@@ -25,6 +25,7 @@
 #include "include/core/SkScalar.h"
 #include "include/core/SkShader.h"
 #include "include/core/SkSize.h"
+#include "include/core/SkStream.h"
 #include "include/core/SkString.h"
 #include "include/core/SkSurface.h"
 #include "include/core/SkTextBlob.h"
@@ -36,8 +37,10 @@
 #include "include/private/base/SkTemplates.h"
 #include "src/base/SkAutoMalloc.h"
 #include "src/core/SkFontPriv.h"
+#include "tools/DecodeUtils.h"
 #include "tools/Resources.h"
 #include "tools/ToolUtils.h"
+#include "tools/fonts/FontToolUtils.h"
 
 #include <initializer_list>
 
@@ -186,7 +189,7 @@ static void drawTextPath(SkCanvas* canvas, bool doStroke) {
     const int N = sizeof(text0) - 1;
     SkPoint pos[N];
 
-    SkFont font;
+    SkFont font = ToolUtils::DefaultPortableFont();
     font.setSize(100);
 
     SkPaint paint;
@@ -232,8 +235,7 @@ DEF_SIMPLE_GM(drawTextRSXform, canvas, 430, 860) {
 
 // Exercise xform blob and its bounds
 DEF_SIMPLE_GM(blob_rsxform, canvas, 500, 100) {
-    SkFont font;
-    font.setTypeface(ToolUtils::create_portable_typeface());
+    SkFont font = ToolUtils::DefaultPortableFont();
     font.setSize(50);
 
     const char text[] = "CrazyXform";
@@ -270,6 +272,9 @@ DEF_SIMPLE_GM(blob_rsxform_distortable, canvas, 500, 100) {
         SkFontArguments params;
         params.setVariationDesignPosition({position, std::size(position)});
         typeface = fm->makeFromStream(std::move(distortable), params);
+    }
+    if (!typeface) {
+        typeface = ToolUtils::DefaultPortableTypeface();
     }
 
     SkFont font(typeface, 50);
@@ -321,7 +326,7 @@ DEF_SIMPLE_GM(compare_atlas_vertices, canvas, 560, 585) {
     const SkRSXform xform = SkRSXform::Make(1, 0, 0, 0);
     const SkColor color = 0x884488CC;
 
-    auto image = GetResourceAsImage("images/mandrill_128.png");
+    auto image = ToolUtils::GetResourceAsImage("images/mandrill_128.png");
     auto verts = make_vertices(image, tex, color);
     const sk_sp<SkColorFilter> filters[] = {
         nullptr,

@@ -53,6 +53,17 @@ public:
         return Transform(SkM44(SkM44::kNaN_Constructor), SkM44(), Type::kInvalid, {1.f, 1.f});
     }
 
+    static inline Transform Translate(float x, float y) {
+        if (x == 0.f && y == 0.f) {
+            return Identity();
+        } else if (SkScalarsAreFinite(x, y)) {
+            return Transform(SkM44::Translate(x, y), SkM44::Translate(-x, -y),
+                             Type::kSimpleRectStaysRect, {1.f, 1.f});
+        } else {
+            return Invalid();
+        }
+    }
+
     Transform& operator=(const Transform& t) = default;
 
     operator const SkM44&() const { return fM; }

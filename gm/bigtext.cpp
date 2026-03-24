@@ -8,6 +8,7 @@
 #include "gm/gm.h"
 #include "include/core/SkCanvas.h"
 #include "include/core/SkColor.h"
+#include "include/core/SkData.h"
 #include "include/core/SkFont.h"
 #include "include/core/SkFontTypes.h"
 #include "include/core/SkPaint.h"
@@ -18,6 +19,7 @@
 #include "include/core/SkTypeface.h"
 #include "tools/Resources.h"
 #include "tools/ToolUtils.h"
+#include "tools/fonts/FontToolUtils.h"
 
 /**
  *  Skia may draw from outlines when the size is very large, so we exercise that
@@ -36,7 +38,7 @@ protected:
     void onDraw(SkCanvas* canvas) override {
         SkPaint paint;
         paint.setAntiAlias(true);
-        SkFont font(ToolUtils::create_portable_typeface(), 1500);
+        SkFont font(ToolUtils::DefaultPortableTypeface(), 1500);
 
         SkRect r;
         (void)font.measureText("/", 1, SkTextEncoding::kUTF8, &r);
@@ -65,6 +67,7 @@ DEF_SIMPLE_GM(bigtext_crbug_1370488, canvas, 512, 512) {
     auto typeface = MakeResourceAsTypeface("fonts/SpiderSymbol.ttf");
     const char* text = "\xEF\x80\xA1";
     if (!typeface) {
+        typeface = ToolUtils::DefaultPortableTypeface();
         text = "H";
     }
 

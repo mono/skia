@@ -28,6 +28,8 @@ import("gn/ios.gni")
 config("skia_public") {
   include_dirs = [ "." ]
 
+  # TODO(kjlubick) Put this back after fixing Flutter.
+  # defines = [ "SK_DEFAULT_TYPEFACE_IS_EMPTY" ]
   defines = []
   cflags_objcc = []
   if (is_component_build) {
@@ -940,7 +942,7 @@ optional("gpu_shared") {
       public_defines += [ "SK_ENABLE_VK_LAYERS" ]
     }
     if (skia_use_vma) {
-      public_deps += [ "third_party/vulkanmemoryallocator" ]
+      public_deps += [ "src/gpu/vk/vulkanmemoryallocator" ]
     }
   }
 
@@ -975,6 +977,10 @@ optional("gpu") {
   libs = []
   frameworks = []
 
+  if (is_android) {
+    sources += skia_gpu_android_private
+  }
+
   if (skia_use_gl) {
     public_defines += [ "SK_GL" ]
     if (is_android) {
@@ -982,6 +988,7 @@ optional("gpu") {
         "src/gpu/ganesh/gl/egl/GrGLMakeEGLInterface.cpp",
         "src/gpu/ganesh/gl/egl/GrGLMakeNativeInterface_egl.cpp",
       ]
+      sources += skia_android_gl_sources
 
       # this lib is required to link against AHardwareBuffer
       if (defined(ndk_api) && ndk_api >= 26) {
@@ -1024,6 +1031,9 @@ optional("gpu") {
       } else {
         public_deps += [ "//src/graphics/lib/vulkan" ]
       }
+    }
+    if (is_android) {
+      sources += skia_gpu_vk_android_private
     }
   }
 
@@ -1488,6 +1498,7 @@ skia_component("skia") {
   ]
 
   public = skia_core_public
+  public += skia_codec_public
   public += skia_utils_public
   public += skia_effects_public
   public += skia_effects_imagefilter_public
@@ -2128,6 +2139,12 @@ if (skia_enable_tools) {
       "tools/DDLPromiseImageHelper.h",
       "tools/DDLTileHelper.cpp",
       "tools/DDLTileHelper.h",
+      "tools/DecodeUtils.cpp",
+      "tools/DecodeUtils.h",
+      "tools/EncodeUtils.cpp",
+      "tools/EncodeUtils.h",
+      "tools/GpuToolUtils.cpp",
+      "tools/GpuToolUtils.h",
       "tools/LsanSuppressions.cpp",
       "tools/MSKPPlayer.cpp",
       "tools/MSKPPlayer.h",
@@ -2156,6 +2173,8 @@ if (skia_enable_tools) {
       "tools/debugger/DrawCommand.h",
       "tools/debugger/JsonWriteBuffer.cpp",
       "tools/debugger/JsonWriteBuffer.h",
+      "tools/fonts/FontToolUtils.cpp",
+      "tools/fonts/FontToolUtils.h",
       "tools/fonts/RandomScalerContext.cpp",
       "tools/fonts/RandomScalerContext.h",
       "tools/fonts/TestEmptyTypeface.h",
@@ -2165,11 +2184,16 @@ if (skia_enable_tools) {
       "tools/fonts/TestSVGTypeface.h",
       "tools/fonts/TestTypeface.cpp",
       "tools/fonts/TestTypeface.h",
-      "tools/fonts/ToolUtilsFont.cpp",
       "tools/timer/TimeUtils.h",
       "tools/timer/Timer.cpp",
       "tools/timer/Timer.h",
     ]
+    if (skia_enable_svg) {
+      sources += [
+        "tools/SvgPathExtractor.cpp",
+        "tools/SvgPathExtractor.h",
+      ]
+    }
     if (target_cpu != "wasm") {
       sources += [ "tools/CrashHandler.cpp" ]
     }
@@ -2418,7 +2442,8 @@ if (skia_enable_tools) {
       ]
     }
 
-    if (!skia_enable_optimize_size && !skia_use_fontations) {
+    if (!skia_enable_optimize_size && !skia_use_fontations &&
+        !skia_enable_vello_shaders) {
       # optional separate library to dlopen when running CanvasStateTests.
       skia_shared_library("canvas_state_lib") {
         sources = [
@@ -2592,6 +2617,7 @@ if (skia_enable_tools) {
       "fuzz/oss_fuzz/FuzzAndroidCodec.cpp",
       "fuzz/oss_fuzz/FuzzAnimatedImage.cpp",
       "fuzz/oss_fuzz/FuzzCOLRv1.cpp",
+      "fuzz/oss_fuzz/FuzzColorspace.cpp",
       "fuzz/oss_fuzz/FuzzImage.cpp",
       "fuzz/oss_fuzz/FuzzImageFilterDeserialize.cpp",
       "fuzz/oss_fuzz/FuzzIncrementalImage.cpp",
@@ -2604,10 +2630,13 @@ if (skia_enable_tools) {
       "fuzz/oss_fuzz/FuzzSKSL2Metal.cpp",
       "fuzz/oss_fuzz/FuzzSKSL2Pipeline.cpp",
       "fuzz/oss_fuzz/FuzzSKSL2SPIRV.cpp",
+      "fuzz/oss_fuzz/FuzzSKSL2WGSL.cpp",
       "fuzz/oss_fuzz/FuzzSVG.cpp",
       "fuzz/oss_fuzz/FuzzSkDescriptorDeserialize.cpp",
       "fuzz/oss_fuzz/FuzzSkMeshSpecification.cpp",
       "fuzz/oss_fuzz/FuzzSkParagraph.cpp",
+      "fuzz/oss_fuzz/FuzzSkRuntimeBlender.cpp",
+      "fuzz/oss_fuzz/FuzzSkRuntimeColorFilter.cpp",
       "fuzz/oss_fuzz/FuzzSkRuntimeEffect.cpp",
       "fuzz/oss_fuzz/FuzzTextBlobDeserialize.cpp",
       "tools/UrlDataManager.cpp",
@@ -2615,6 +2644,7 @@ if (skia_enable_tools) {
       "tools/debugger/DebugLayerManager.cpp",
       "tools/debugger/DrawCommand.cpp",
       "tools/debugger/JsonWriteBuffer.cpp",
+      "tools/fonts/FontToolUtils.cpp",
     ]
     if (skia_enable_graphite && skia_enable_precompile) {
       sources += [ "fuzz/FuzzPrecompile.cpp" ]
@@ -3062,6 +3092,7 @@ if (skia_enable_tools) {
           ":flags",
           ":gpu_tool_utils",
           ":skia",
+          ":tool_utils",
         ]
         defines = [
           "SK_BUILD_FOR_LIBFUZZER",
@@ -3081,17 +3112,7 @@ if (skia_enable_tools) {
     }
 
     libfuzzer_app("image_filter_deserialize") {
-      include_dirs = [
-        "tools",
-        "tools/fonts",
-      ]
-      sources = [
-        "fuzz/oss_fuzz/FuzzImageFilterDeserialize.cpp",
-        "tools/Resources.cpp",
-        "tools/fonts/TestFontMgr.cpp",
-        "tools/fonts/TestSVGTypeface.cpp",
-        "tools/fonts/TestTypeface.cpp",
-      ]
+      sources = [ "fuzz/oss_fuzz/FuzzImageFilterDeserialize.cpp" ]
       deps = [ "modules/svg" ]
     }
 
@@ -3101,17 +3122,7 @@ if (skia_enable_tools) {
     }
 
     libfuzzer_app("textblob_deserialize") {
-      include_dirs = [
-        "tools",
-        "tools/fonts",
-      ]
-      sources = [
-        "fuzz/oss_fuzz/FuzzTextBlobDeserialize.cpp",
-        "tools/Resources.cpp",
-        "tools/fonts/TestFontMgr.cpp",
-        "tools/fonts/TestSVGTypeface.cpp",
-        "tools/fonts/TestTypeface.cpp",
-      ]
+      sources = [ "fuzz/oss_fuzz/FuzzTextBlobDeserialize.cpp" ]
       deps = [ "modules/svg" ]
     }
 
@@ -3131,22 +3142,9 @@ if (skia_enable_tools) {
     }
 
     libfuzzer_app("api_create_ddl") {
-      include_dirs = [
-        "include",
-        "include/gpu",
-      ]
       sources = [
         "fuzz/FuzzCreateDDL.cpp",
         "fuzz/oss_fuzz/FuzzAPICreateDDL.cpp",
-        "tools/Resources.cpp",
-        "tools/UrlDataManager.cpp",
-        "tools/debugger/DebugCanvas.cpp",
-        "tools/debugger/DebugLayerManager.cpp",
-        "tools/debugger/DrawCommand.cpp",
-        "tools/debugger/JsonWriteBuffer.cpp",
-        "tools/fonts/TestFontMgr.cpp",
-        "tools/fonts/TestSVGTypeface.cpp",
-        "tools/fonts/TestTypeface.cpp",
       ]
       deps = [
         "modules/svg",
@@ -3179,18 +3177,9 @@ if (skia_enable_tools) {
     }
 
     libfuzzer_app("api_image_filter") {
-      include_dirs = [
-        "tools",
-        "tools/debugger",
-      ]
       sources = [
         "fuzz/FuzzCanvas.cpp",
         "fuzz/oss_fuzz/FuzzAPIImageFilter.cpp",
-        "tools/UrlDataManager.cpp",
-        "tools/debugger/DebugCanvas.cpp",
-        "tools/debugger/DebugLayerManager.cpp",
-        "tools/debugger/DrawCommand.cpp",
-        "tools/debugger/JsonWriteBuffer.cpp",
       ]
       deps = [ "//third_party/libpng" ]
     }
@@ -3220,23 +3209,9 @@ if (skia_enable_tools) {
     }
 
     libfuzzer_app("api_raster_n32_canvas") {
-      include_dirs = [
-        "tools",
-        "tools/debugger",
-        "tools/fonts",
-      ]
       sources = [
         "fuzz/FuzzCanvas.cpp",
         "fuzz/oss_fuzz/FuzzRasterN32Canvas.cpp",
-        "tools/Resources.cpp",
-        "tools/UrlDataManager.cpp",
-        "tools/debugger/DebugCanvas.cpp",
-        "tools/debugger/DebugLayerManager.cpp",
-        "tools/debugger/DrawCommand.cpp",
-        "tools/debugger/JsonWriteBuffer.cpp",
-        "tools/fonts/TestFontMgr.cpp",
-        "tools/fonts/TestSVGTypeface.cpp",
-        "tools/fonts/TestTypeface.cpp",
       ]
       deps = [
         "modules/svg",
@@ -3254,24 +3229,9 @@ if (skia_enable_tools) {
 
     if (skia_enable_ganesh) {
       libfuzzer_app("api_mock_gpu_canvas") {
-        include_dirs = [
-          "tools",
-          "tools/debugger",
-          "tools/fonts",
-        ]
         sources = [
           "fuzz/FuzzCanvas.cpp",
           "fuzz/oss_fuzz/FuzzMockGPUCanvas.cpp",
-          "tools/LsanSuppressions.cpp",
-          "tools/Resources.cpp",
-          "tools/UrlDataManager.cpp",
-          "tools/debugger/DebugCanvas.cpp",
-          "tools/debugger/DebugLayerManager.cpp",
-          "tools/debugger/DrawCommand.cpp",
-          "tools/debugger/JsonWriteBuffer.cpp",
-          "tools/fonts/TestFontMgr.cpp",
-          "tools/fonts/TestSVGTypeface.cpp",
-          "tools/fonts/TestTypeface.cpp",
         ]
         deps = [
           "modules/svg",
@@ -3282,35 +3242,18 @@ if (skia_enable_tools) {
 
     if (skia_enable_graphite && skia_enable_precompile) {
       libfuzzer_app("api_precompile") {
-        include_dirs = []
         sources = [
           "fuzz/FuzzPrecompile.cpp",
           "fuzz/oss_fuzz/FuzzPrecompile.cpp",
-          "tools/fonts/TestFontMgr.cpp",
-          "tools/fonts/TestTypeface.cpp",
         ]
         deps = []
       }
     }
 
     libfuzzer_app("api_null_canvas") {
-      include_dirs = [
-        "tools",
-        "tools/debugger",
-        "tools/fonts",
-      ]
       sources = [
         "fuzz/FuzzCanvas.cpp",
         "fuzz/oss_fuzz/FuzzNullCanvas.cpp",
-        "tools/Resources.cpp",
-        "tools/UrlDataManager.cpp",
-        "tools/debugger/DebugCanvas.cpp",
-        "tools/debugger/DebugLayerManager.cpp",
-        "tools/debugger/DrawCommand.cpp",
-        "tools/debugger/JsonWriteBuffer.cpp",
-        "tools/fonts/TestFontMgr.cpp",
-        "tools/fonts/TestSVGTypeface.cpp",
-        "tools/fonts/TestTypeface.cpp",
       ]
       deps = [
         "modules/svg",
@@ -3322,28 +3265,14 @@ if (skia_enable_tools) {
       sources = [
         "fuzz/FuzzSkParagraph.cpp",
         "fuzz/oss_fuzz/FuzzSkParagraph.cpp",
-        "tools/Resources.cpp",
       ]
       deps = [ "modules/skparagraph" ]
     }
 
     libfuzzer_app("api_svg_canvas") {
-      include_dirs = [
-        "include",
-        "include/svg",
-      ]
       sources = [
         "fuzz/FuzzCanvas.cpp",
         "fuzz/oss_fuzz/FuzzAPISVGCanvas.cpp",
-        "tools/Resources.cpp",
-        "tools/UrlDataManager.cpp",
-        "tools/debugger/DebugCanvas.cpp",
-        "tools/debugger/DebugLayerManager.cpp",
-        "tools/debugger/DrawCommand.cpp",
-        "tools/debugger/JsonWriteBuffer.cpp",
-        "tools/fonts/TestFontMgr.cpp",
-        "tools/fonts/TestSVGTypeface.cpp",
-        "tools/fonts/TestTypeface.cpp",
       ]
       deps = [
         "modules/svg",
@@ -3376,13 +3305,7 @@ if (skia_enable_tools) {
     }
 
     libfuzzer_app("skottie_json") {
-      sources = [
-        "modules/skottie/fuzz/FuzzSkottieJSON.cpp",
-        "tools/Resources.cpp",
-        "tools/fonts/TestFontMgr.cpp",
-        "tools/fonts/TestSVGTypeface.cpp",
-        "tools/fonts/TestTypeface.cpp",
-      ]
+      sources = [ "modules/skottie/fuzz/FuzzSkottieJSON.cpp" ]
       deps = [
         "modules/skottie:skottie",
         "modules/svg",
@@ -3417,11 +3340,6 @@ if (skia_enable_tools) {
       deps = []
     }
 
-    libfuzzer_app("sksl2spirv") {
-      sources = [ "fuzz/oss_fuzz/FuzzSKSL2SPIRV.cpp" ]
-      deps = []
-    }
-
     libfuzzer_app("sksl2metal") {
       sources = [ "fuzz/oss_fuzz/FuzzSKSL2Metal.cpp" ]
       deps = []
@@ -3429,6 +3347,16 @@ if (skia_enable_tools) {
 
     libfuzzer_app("sksl2pipeline") {
       sources = [ "fuzz/oss_fuzz/FuzzSKSL2Pipeline.cpp" ]
+      deps = []
+    }
+
+    libfuzzer_app("sksl2spirv") {
+      sources = [ "fuzz/oss_fuzz/FuzzSKSL2SPIRV.cpp" ]
+      deps = []
+    }
+
+    libfuzzer_app("sksl2wgsl") {
+      sources = [ "fuzz/oss_fuzz/FuzzSKSL2WGSL.cpp" ]
       deps = []
     }
 
@@ -3440,6 +3368,16 @@ if (skia_enable_tools) {
     libfuzzer_app("svg_dom") {
       sources = [ "fuzz/oss_fuzz/FuzzSVG.cpp" ]
       deps = [ "modules/svg" ]
+    }
+
+    libfuzzer_app("skruntimeblender") {
+      sources = [ "fuzz/oss_fuzz/FuzzSkRuntimeBlender.cpp" ]
+      deps = []
+    }
+
+    libfuzzer_app("skruntimecolorfilter") {
+      sources = [ "fuzz/oss_fuzz/FuzzSkRuntimeColorFilter.cpp" ]
+      deps = []
     }
 
     libfuzzer_app("skruntimeeffect") {
@@ -3475,6 +3413,11 @@ if (skia_enable_tools) {
         "fuzz/FuzzCubicRoots.cpp",
         "fuzz/oss_fuzz/FuzzCubicRoots.cpp",
       ]
+      deps = []
+    }
+
+    libfuzzer_app("skcolorspace") {
+      sources = [ "fuzz/oss_fuzz/FuzzColorspace.cpp" ]
       deps = []
     }
   }

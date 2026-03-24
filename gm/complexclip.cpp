@@ -22,8 +22,10 @@
 #include "include/core/SkTypeface.h"
 #include "include/core/SkTypes.h"
 #include "include/effects/SkGradientShader.h"
+#include "tools/DecodeUtils.h"
 #include "tools/Resources.h"
 #include "tools/ToolUtils.h"
+#include "tools/fonts/FontToolUtils.h"
 
 #include <string.h>
 
@@ -84,7 +86,7 @@ protected:
 
         SkPath clipB = SkPath::Polygon({{40,  10}, {190, 15}, {195, 190}, {40,  185}, {155, 100}}, true);
 
-        SkFont font(ToolUtils::create_portable_typeface(), 20);
+        SkFont font(ToolUtils::DefaultPortableTypeface(), 20);
 
         constexpr struct {
             SkClipOp fOp;
@@ -210,7 +212,7 @@ DEF_GM(return new ComplexClipGM(true, true, true);)
 }  // namespace skiagm
 
 DEF_SIMPLE_GM(clip_shader, canvas, 840, 650) {
-    auto img = GetResourceAsImage("images/yellow_rose.png");
+    auto img = ToolUtils::GetResourceAsImage("images/yellow_rose.png");
     auto sh = img->makeShader(SkSamplingOptions());
 
     SkRect r = SkRect::MakeIWH(img->width(), img->height());
@@ -247,7 +249,7 @@ DEF_SIMPLE_GM(clip_shader, canvas, 840, 650) {
 }
 
 DEF_SIMPLE_GM(clip_shader_layer, canvas, 430, 320) {
-    auto img = GetResourceAsImage("images/yellow_rose.png");
+    auto img = ToolUtils::GetResourceAsImage("images/yellow_rose.png");
     auto sh = img->makeShader(SkSamplingOptions());
 
     SkRect r = SkRect::MakeIWH(img->width(), img->height());
@@ -340,7 +342,7 @@ static void draw_banner(SkCanvas* canvas, Config config) {
         banner.append(" (w/ LM, should equal top row)");
     }
 
-    static const SkFont kFont(ToolUtils::create_portable_typeface(), 12);
+    static const SkFont kFont(ToolUtils::DefaultPortableTypeface(), 12);
     canvas->drawString(banner.c_str(), 20.f, -30.f, kFont, SkPaint());
 };
 
@@ -365,7 +367,7 @@ DEF_SIMPLE_GM(clip_shader_persp, canvas, 1370, 1030) {
     };
 
     // The image that is drawn
-    auto img = GetResourceAsImage("images/yellow_rose.png");
+    auto img = ToolUtils::GetResourceAsImage("images/yellow_rose.png");
     // Scale factor always applied to the image shader so that it tiles
     SkMatrix scale = SkMatrix::Scale(1.f / 4.f, 1.f / 4.f);
     // The perspective matrix applied wherever needed
@@ -443,7 +445,7 @@ DEF_SIMPLE_GM(clip_shader_persp, canvas, 1370, 1030) {
 }
 
 DEF_SIMPLE_GM(clip_shader_difference, canvas, 512, 512) {
-    auto image = GetResourceAsImage("images/yellow_rose.png");
+    auto image = ToolUtils::GetResourceAsImage("images/yellow_rose.png");
     canvas->clear(SK_ColorGRAY);
 
     SkRect rect = SkRect::MakeWH(256, 256);
@@ -497,8 +499,9 @@ DEF_SIMPLE_GM(clip_shader_difference, canvas, 512, 512) {
         canvas->save();
         canvas->translate(256, 256);
         canvas->clipShader(shader, SkClipOp::kDifference);
+        SkFont font = SkFont(ToolUtils::DefaultPortableTypeface(), 64.f);
         for (int y = 0; y < 4; ++y) {
-            canvas->drawString("Hello", 32.f, y * 64.f, SkFont(nullptr, 64.f), paint);
+            canvas->drawString("Hello", 32.f, y * 64.f, font, paint);
         }
         canvas->restore();
     }

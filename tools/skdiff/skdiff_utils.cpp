@@ -9,6 +9,7 @@
 #include "include/core/SkData.h"
 #include "include/core/SkStream.h"
 #include "include/core/SkTypes.h"
+#include "tools/EncodeUtils.h"
 #include "tools/ToolUtils.h"
 #include "tools/skdiff/skdiff.h"
 #include "tools/skdiff/skdiff_utils.h"
@@ -35,7 +36,7 @@ sk_sp<SkData> read_file(const char* file_path) {
 
 bool get_bitmap(sk_sp<SkData> fileBits, DiffResource& resource, bool sizeOnly,
                 bool ignoreColorSpace) {
-    auto codec = SkCodec::MakeFromData(fileBits);
+    auto codec = SkCodec::MakeFromData(std::move(fileBits));
     if (!codec) {
         SkDebugf("ERROR: could not create codec for <%s>\n", resource.fFullPath.c_str());
         resource.fStatus = DiffResource::kCouldNotDecode_Status;

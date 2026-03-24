@@ -27,7 +27,6 @@
 #include "include/private/base/SkFloatingPoint.h"
 #include "include/private/chromium/Slug.h"  // IWYU pragma: keep
 #include "src/core/SkEnumerate.h"
-#include "src/core/SkImageFilterCache.h"
 #include "src/core/SkImageFilterTypes.h"
 #include "src/core/SkImageFilter_Base.h"
 #include "src/core/SkLatticeIter.h"
@@ -305,6 +304,13 @@ void SkDevice::drawDrawable(SkCanvas* canvas, SkDrawable* drawable, const SkMatr
 
 void SkDevice::drawSpecial(SkSpecialImage*, const SkMatrix&, const SkSamplingOptions&,
                            const SkPaint&) {}
+void SkDevice::drawCoverageMask(const SkSpecialImage*, const SkMatrix& maskToDevice,
+                                const SkSamplingOptions&, const SkPaint&) {
+    // This shouldn't be reached; SkCanvas will only call this if
+    // useDrawCoverageMaskForMaskFilters() is overridden to return true.
+    SK_ABORT("Must override if useDrawCoverageMaskForMaskFilters() is true");
+}
+
 sk_sp<SkSpecialImage> SkDevice::makeSpecial(const SkBitmap&) { return nullptr; }
 sk_sp<SkSpecialImage> SkDevice::makeSpecial(const SkImage*) { return nullptr; }
 sk_sp<SkSpecialImage> SkDevice::snapSpecial(const SkIRect&, bool forceCopy) { return nullptr; }
@@ -316,8 +322,9 @@ sk_sp<SkSpecialImage> SkDevice::snapSpecial() {
     return this->snapSpecial(SkIRect::MakeWH(this->width(), this->height()));
 }
 
-skif::Context SkDevice::createContext(const skif::ContextInfo& ctxInfo) const {
-    return skif::Context::MakeRaster(ctxInfo);
+sk_sp<skif::Backend> SkDevice::createImageFilteringBackend(const SkSurfaceProps& surfaceProps,
+                                                           SkColorType colorType) const {
+    return skif::MakeRasterBackend(surfaceProps, colorType);
 }
 
 void SkDevice::drawDevice(SkDevice* device,
@@ -344,16 +351,12 @@ void SkDevice::drawFilteredImage(const skif::Mapping& mapping,
         colorType = kRGBA_8888_SkColorType;
     }
 
-    // getImageFilterCache returns a bare image filter cache pointer that must be ref'ed until the
-    // filter's filterImage(ctx) function returns.
-    sk_sp<SkImageFilterCache> cache(this->getImageFilterCache());
-    skif::Context ctx = this->createContext({mapping,
-                                             targetOutput,
-                                             skif::FilterResult(sk_ref_sp(src)),
-                                             colorType,
-                                             this->imageInfo().colorSpace(),
-                                             src ? src->props() : this->surfaceProps(),
-                                             cache.get()});
+    skif::Context ctx{this->createImageFilteringBackend(src ? src->props() : this->surfaceProps(),
+                                                        colorType),
+                      mapping,
+                      targetOutput,
+                      skif::FilterResult(sk_ref_sp(src)),
+                      this->imageInfo().colorSpace()};
 
     SkIPoint offset;
     sk_sp<SkSpecialImage> result = as_IFB(filter)->filterImage(ctx).imageAndOffset(ctx, &offset);

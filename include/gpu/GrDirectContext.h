@@ -41,7 +41,6 @@ class SkTaskGroup;
 class SkTraceMemoryDump;
 enum SkColorType : int;
 enum class SkTextureCompressionType;
-struct GrGLInterface;
 struct GrMockOptions;
 struct GrVkBackendContext; // IWYU pragma: keep
 struct GrD3DBackendContext; // IWYU pragma: keep
@@ -62,18 +61,7 @@ enum class BackendSurfaceAccess;
 
 class SK_API GrDirectContext : public GrRecordingContext {
 public:
-#if defined(SK_GL) && !defined(SK_DISABLE_LEGACY_GL_GRDIRECTCONTEXT_FACTORIES)
-    /**
-     * Creates a GrDirectContext for a backend context. If no GrGLInterface is provided then the
-     * result of GrGLMakeNativeInterface() is used if it succeeds.
-     */
-    static sk_sp<GrDirectContext> MakeGL(sk_sp<const GrGLInterface>, const GrContextOptions&);
-    static sk_sp<GrDirectContext> MakeGL(sk_sp<const GrGLInterface>);
-    static sk_sp<GrDirectContext> MakeGL(const GrContextOptions&);
-    static sk_sp<GrDirectContext> MakeGL();
-#endif
-
-#ifdef SK_VULKAN
+#if defined(SK_VULKAN) && !defined(SK_DISABLE_LEGACY_VK_GRDIRECTCONTEXT_FACTORIES)
     /**
      * The Vulkan context (VkQueue, VkDevice, VkInstance) must be kept alive until the returned
      * GrDirectContext is destroyed. This also means that any objects created with this
@@ -357,14 +345,17 @@ public:
 
     /**
      * Inserts a list of GPU semaphores that the current GPU-backed API must wait on before
-     * executing any more commands on the GPU. If this call returns false, then the GPU back-end
-     * will not wait on any passed in semaphores, and the client will still own the semaphores,
-     * regardless of the value of deleteSemaphoresAfterWait.
+     * executing any more commands on the GPU. We only guarantee blocking transfer and fragment
+     * shader work, but may block earlier stages as well depending on the backend.If this call
+     * returns false, then the GPU back-end will not wait on any passed in semaphores, and the
+     * client will still own the semaphores, regardless of the value of deleteSemaphoresAfterWait.
      *
      * If deleteSemaphoresAfterWait is false then Skia will not delete the semaphores. In this case
      * it is the client's responsibility to not destroy or attempt to reuse the semaphores until it
      * knows that Skia has finished waiting on them. This can be done by using finishedProcs on
      * flush calls.
+     *
+     * This is not supported on the GL backend.
      */
     bool wait(int numSemaphores, const GrBackendSemaphore* waitSemaphores,
               bool deleteSemaphoresAfterWait = true);
@@ -416,13 +407,13 @@ public:
      *  @param image    the non-null image to flush.
      *  @param info     flush options
      */
-    GrSemaphoresSubmitted flush(sk_sp<const SkImage> image, const GrFlushInfo& info);
-    void flush(sk_sp<const SkImage> image);
+    GrSemaphoresSubmitted flush(const sk_sp<const SkImage>& image, const GrFlushInfo& info);
+    void flush(const sk_sp<const SkImage>& image);
 
     /** Version of flush() that uses a default GrFlushInfo. Also submits the flushed work to the
      *   GPU.
      */
-    void flushAndSubmit(sk_sp<const SkImage> image);
+    void flushAndSubmit(const sk_sp<const SkImage>& image);
 
     /** Issues pending SkSurface commands to the GPU-backed API objects and resolves any SkSurface
      *  MSAA. A call to GrDirectContext::submit is always required to ensure work is actually sent

@@ -345,7 +345,7 @@ protected:
             sk_sp<SkTypeface_AndroidSystem> face(family->matchAStyle(style));
 
             if (!langTag.isEmpty() &&
-                std::none_of(face->fLang.begin(), face->fLang.end(), [&](SkLanguage lang){
+                std::none_of(face->fLang.begin(), face->fLang.end(), [&](const SkLanguage& lang){
                     return lang.getTag().startsWith(langTag.c_str());
                 }))
             {
@@ -468,7 +468,7 @@ private:
         }
         fStyleSets.emplace_back(std::move(newSet));
     }
-    void buildNameToFamilyMap(SkTDArray<FontFamily*> families, const bool isolated) {
+    void buildNameToFamilyMap(const SkTDArray<FontFamily*>& families, const bool isolated) {
         int familyIndex = 0;
         for (FontFamily* family : families) {
             addFamily(*family, isolated, familyIndex++);

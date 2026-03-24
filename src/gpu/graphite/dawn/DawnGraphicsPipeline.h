@@ -13,8 +13,9 @@
 #include "include/ports/SkCFObject.h"
 #include "src/gpu/graphite/DrawTypes.h"
 #include "src/gpu/graphite/GraphicsPipeline.h"
+#include "src/gpu/graphite/dawn/DawnAsyncWait.h"
 
-#include "webgpu/webgpu_cpp.h"
+#include "webgpu/webgpu_cpp.h"  // NO_G3_REWRITE
 
 class SkUniform;
 
@@ -40,6 +41,7 @@ class DawnGraphicsPipeline final : public GraphicsPipeline {
 public:
     inline static constexpr unsigned int kUniformBufferBindGroupIndex = 0;
     inline static constexpr unsigned int kTextureBindGroupIndex = 1;
+    inline static constexpr unsigned int kBindGroupCount = 2;
 
     inline static constexpr unsigned int kIntrinsicUniformBufferIndex = 0;
     inline static constexpr unsigned int kRenderStepUniformBufferIndex = 1;
@@ -61,25 +63,32 @@ public:
     uint32_t stencilReferenceValue() const { return fStencilReferenceValue; }
     PrimitiveType primitiveType() const { return fPrimitiveType; }
     bool hasStepUniforms() const { return fHasStepUniforms; }
-    bool hasFragment() const { return fHasFragment; }
+    bool hasFragmentUniforms() const { return fHasFragmentUniforms; }
     const wgpu::RenderPipeline& dawnRenderPipeline() const;
 
+    using BindGroupLayouts = std::array<wgpu::BindGroupLayout, kBindGroupCount>;
+    const BindGroupLayouts& dawnGroupLayouts() const { return fGroupLayouts; }
+
 private:
+    using AsyncPipelineCreation = DawnAsyncResult<wgpu::RenderPipeline>;
+
     DawnGraphicsPipeline(const skgpu::graphite::SharedContext* sharedContext,
                          PipelineInfo* pipelineInfo,
-                         wgpu::RenderPipeline renderPipeline,
+                         std::unique_ptr<AsyncPipelineCreation> pipelineCreationInfo,
+                         BindGroupLayouts groupLayouts,
                          PrimitiveType primitiveType,
                          uint32_t refValue,
                          bool hasStepUniforms,
-                         bool hasFragment);
+                         bool hasFragmentUniforms);
 
     void freeGpuData() override;
 
-    wgpu::RenderPipeline fRenderPipeline;
+    std::unique_ptr<AsyncPipelineCreation> fAsyncPipelineCreation;
+    BindGroupLayouts fGroupLayouts;
     const PrimitiveType fPrimitiveType;
     const uint32_t fStencilReferenceValue;
     const bool fHasStepUniforms;
-    const bool fHasFragment;
+    const bool fHasFragmentUniforms;
 };
 
 } // namespace skgpu::graphite
