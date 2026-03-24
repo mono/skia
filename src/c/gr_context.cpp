@@ -10,6 +10,7 @@
 #include "include/core/SkImage.h"
 #include "include/core/SkSurface.h"
 #include "include/gpu/ganesh/gl/GrGLBackendSurface.h"
+#include "include/gpu/ganesh/gl/GrGLDirectContext.h"
 #include "include/gpu/ganesh/vk/GrVkBackendSurface.h"
 
 #include "include/c/gr_context.h"
@@ -49,7 +50,7 @@ gr_direct_context_t* gr_recording_context_get_direct_context(gr_recording_contex
 // GrDirectContext
 
 gr_direct_context_t* gr_direct_context_make_gl(const gr_glinterface_t* glInterface) {
-    return SK_ONLY_GPU(ToGrDirectContext(GrDirectContext::MakeGL(sk_ref_sp(AsGrGLInterface(glInterface))).release()), nullptr);
+    return SK_ONLY_GPU(ToGrDirectContext(GrDirectContexts::MakeGL(sk_ref_sp(AsGrGLInterface(glInterface))).release()), nullptr);
 }
 
 gr_direct_context_t* gr_direct_context_make_gl_with_options(const gr_glinterface_t* glInterface, const gr_context_options_t* options) {
@@ -58,7 +59,7 @@ gr_direct_context_t* gr_direct_context_make_gl_with_options(const gr_glinterface
         if (options) {
             opts = AsGrContextOptions(options);
         })
-    return SK_ONLY_GPU(ToGrDirectContext(GrDirectContext::MakeGL(sk_ref_sp(AsGrGLInterface(glInterface)), opts).release()), nullptr);
+    return SK_ONLY_GPU(ToGrDirectContext(GrDirectContexts::MakeGL(sk_ref_sp(AsGrGLInterface(glInterface)), opts).release()), nullptr);
 }
 
 gr_direct_context_t* gr_direct_context_make_vulkan(const gr_vk_backendcontext_t vkBackendContext) {
