@@ -13,8 +13,8 @@ Skia's headers. These libraries are each compiled with a different set of compil
 
 load("@skia_user_config//:copts.bzl", "DEFAULT_COPTS")
 load("//:defines.bzl", "DEFAULT_DEFINES", "DEFAULT_LOCAL_DEFINES")
-load("//bazel:skia_rules.bzl", "exports_files_legacy", "skia_cc_deps", "skia_cc_library", "skia_filegroup")
 load("//bazel:flags.bzl", "selects")
+load("//bazel:skia_rules.bzl", "exports_files_legacy", "skia_cc_deps", "skia_cc_library", "skia_filegroup")
 
 package(
     features = [
@@ -50,6 +50,7 @@ skia_cc_library(
     srcs = [
         "SkOpts_hsw.cpp",
         "//include/core:opts_srcs",
+        "//include/private:opts_srcs",
         "//include/private/base:private_hdrs",
         "//src/base:private_hdrs",
         "//src/core:opts_srcs",
@@ -88,8 +89,8 @@ skia_cc_library(
     name = "hsw",  # https://en.wikipedia.org/wiki/Advanced_Vector_Extensions#Advanced_Vector_Extensions_2
     srcs = [
         "SkOpts_hsw.cpp",
-        ":private_hdrs",
         "//include/core:opts_srcs",
+        "//include/private:opts_srcs",
         "//src/core:opts_srcs",
         "//src/sksl/tracing:opts_srcs",
     ],
@@ -97,6 +98,7 @@ skia_cc_library(
     local_defines = DEFAULT_DEFINES + DEFAULT_LOCAL_DEFINES,
     textual_hdrs = [
         "SkRasterPipeline_opts.h",
+        ":private_hdrs",
     ],
     deps = [
         "//modules/skcms",  # Needed to implement SkRasterPipeline_opts.h

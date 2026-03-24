@@ -205,13 +205,15 @@ static sk_sp<GrSurfaceProxy> make_proxy(GrDirectContext* dContext, const ProxyPa
 // Basic test that two proxies with overlapping intervals and compatible descriptors are
 // assigned different GrSurfaces.
 static void overlap_test(skiatest::Reporter* reporter, GrDirectContext* dContext,
-                         sk_sp<GrSurfaceProxy> p1, sk_sp<GrSurfaceProxy> p2,
+                         const sk_sp<GrSurfaceProxy>& p1, const sk_sp<GrSurfaceProxy>& p2,
                          bool expectedResult) {
     GrResourceAllocator alloc(dContext);
 
-    alloc.addInterval(p1.get(), 0, 4, GrResourceAllocator::ActualUse::kYes);
+    alloc.addInterval(p1.get(), 0, 4, GrResourceAllocator::ActualUse::kYes,
+                      GrResourceAllocator::AllowRecycling::kYes);
     alloc.incOps();
-    alloc.addInterval(p2.get(), 1, 2, GrResourceAllocator::ActualUse::kYes);
+    alloc.addInterval(p2.get(), 1, 2, GrResourceAllocator::ActualUse::kYes,
+                      GrResourceAllocator::AllowRecycling::kYes);
     alloc.incOps();
 
     REPORTER_ASSERT(reporter, alloc.planAssignment());
@@ -227,7 +229,7 @@ static void overlap_test(skiatest::Reporter* reporter, GrDirectContext* dContext
 // Test various cases when two proxies do not have overlapping intervals.
 // This mainly acts as a test of the ResourceAllocator's free pool.
 static void non_overlap_test(skiatest::Reporter* reporter, GrDirectContext* dContext,
-                             sk_sp<GrSurfaceProxy> p1, sk_sp<GrSurfaceProxy> p2,
+                             const sk_sp<GrSurfaceProxy>& p1, const sk_sp<GrSurfaceProxy>& p2,
                              bool expectedResult) {
     GrResourceAllocator alloc(dContext);
 
@@ -238,8 +240,10 @@ static void non_overlap_test(skiatest::Reporter* reporter, GrDirectContext* dCon
     alloc.incOps();
     alloc.incOps();
 
-    alloc.addInterval(p1.get(), 0, 2, GrResourceAllocator::ActualUse::kYes);
-    alloc.addInterval(p2.get(), 3, 5, GrResourceAllocator::ActualUse::kYes);
+    alloc.addInterval(p1.get(), 0, 2, GrResourceAllocator::ActualUse::kYes,
+                      GrResourceAllocator::AllowRecycling::kYes);
+    alloc.addInterval(p2.get(), 3, 5, GrResourceAllocator::ActualUse::kYes,
+                      GrResourceAllocator::AllowRecycling::kYes);
 
     REPORTER_ASSERT(reporter, alloc.planAssignment());
     REPORTER_ASSERT(reporter, alloc.makeBudgetHeadroom());
@@ -459,7 +463,8 @@ static void memory_budget_test(skiatest::Reporter* reporter,
             alloc.incOps();
         }
         alloc.addInterval(interval.fProxy.get(), interval.fStart, interval.fEnd,
-                          GrResourceAllocator::ActualUse::kYes);
+                          GrResourceAllocator::ActualUse::kYes,
+                          GrResourceAllocator::AllowRecycling::kYes);
     }
     REPORTER_ASSERT(reporter, alloc.planAssignment());
     REPORTER_ASSERT(reporter, alloc.makeBudgetHeadroom() == test.fShouldFit);

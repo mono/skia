@@ -168,10 +168,7 @@ public:
      */
     SkSpan<const Uniform> uniforms() const { return SkSpan(fUniforms); }
 
-    /**
-     * Provides basic info about individual children: names, indices and runtime effect type.
-     * TODO(b/40045302): SkMesh will currently reject mesh specifications that include child effects
-     */
+    /** Provides basic info about individual children: names, indices and runtime effect type. */
     SkSpan<const Child> children() const { return SkSpan(fChildren); }
 
     /** Returns a pointer to the named child's description, or nullptr if not found. */
@@ -317,8 +314,6 @@ public:
      * If the mesh is invalid the returned string give contain the reason for the failure (e.g. the
      * vertex buffer was null or uniform data too small).
      */
-
-    // TODO(b/40045302): support for `children` is a work-in-progress
     static Result Make(sk_sp<SkMeshSpecification>,
                        Mode,
                        sk_sp<VertexBuffer>,
@@ -334,8 +329,6 @@ public:
      * If the mesh is invalid the returned string give contain the reason for the failure (e.g. the
      * index buffer was null or uniform data too small).
      */
-
-    // TODO(b/40045302): support for `children` is a work-in-progress
     static Result MakeIndexed(sk_sp<SkMeshSpecification>,
                               Mode,
                               sk_sp<VertexBuffer>,
@@ -405,14 +398,14 @@ namespace SkMeshes {
  * @param  data              The data used to populate the buffer, or nullptr to create a zero-
  *                           initialized buffer.
  * @param  size              Both the size of the data in 'data' and the size of the resulting
- *                           buffer.
+ *                           buffer, in bytes.
  */
 SK_API sk_sp<SkMesh::IndexBuffer> MakeIndexBuffer(const void* data, size_t size);
 
 /**
  * Makes a copy of an index buffer. The copy will be CPU-backed.
  */
-SK_API sk_sp<SkMesh::IndexBuffer> CopyIndexBuffer(sk_sp<SkMesh::IndexBuffer>);
+SK_API sk_sp<SkMesh::IndexBuffer> CopyIndexBuffer(const sk_sp<SkMesh::IndexBuffer>&);
 
 /**
  * Makes a CPU-backed vertex buffer to be used with SkMeshes.
@@ -420,14 +413,14 @@ SK_API sk_sp<SkMesh::IndexBuffer> CopyIndexBuffer(sk_sp<SkMesh::IndexBuffer>);
  * @param  data              The data used to populate the buffer, or nullptr to create a zero-
  *                           initialized buffer.
  * @param  size              Both the size of the data in 'data' and the size of the resulting
- *                           buffer.
+ *                           buffer, in bytes.
  */
 SK_API sk_sp<SkMesh::VertexBuffer> MakeVertexBuffer(const void*, size_t size);
 
 /**
  * Makes a copy of a vertex buffer.  The copy will be CPU-backed.
  */
-SK_API sk_sp<SkMesh::VertexBuffer> CopyVertexBuffer(sk_sp<SkMesh::VertexBuffer>);
+SK_API sk_sp<SkMesh::VertexBuffer> CopyVertexBuffer(const sk_sp<SkMesh::VertexBuffer>&);
 }  // namespace SkMeshes
 
 #endif

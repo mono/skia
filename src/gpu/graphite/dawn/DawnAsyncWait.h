@@ -8,7 +8,7 @@
 #ifndef skgpu_graphite_DawnAsyncWait_DEFINED
 #define skgpu_graphite_DawnAsyncWait_DEFINED
 
-#include "webgpu/webgpu_cpp.h"
+#include "webgpu/webgpu_cpp.h"  // NO_G3_REWRITE
 
 #include <atomic>
 #include <functional>
@@ -38,6 +38,27 @@ public:
 private:
     wgpu::Device fDevice;
     std::atomic_bool fSignaled;
+};
+
+template <typename T> class DawnAsyncResult {
+public:
+    DawnAsyncResult(const wgpu::Device& device) : fSync(device) {}
+    ~DawnAsyncResult() { fSync.busyWait(); }
+
+    void set(const T& result) {
+        fResult = result;
+        fSync.signal();
+    }
+
+    const T& waitAndGet() const {
+        // If fSync is already signaled, the wait will return immediately.
+        fSync.busyWait();
+        return fResult;
+    }
+
+private:
+    DawnAsyncWait fSync;
+    T fResult;
 };
 
 } // namespace skgpu::graphite

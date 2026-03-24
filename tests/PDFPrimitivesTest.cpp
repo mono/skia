@@ -46,6 +46,7 @@
 #include "src/utils/SkFloatToDecimal.h"
 #include "tools/Resources.h"
 #include "tools/ToolUtils.h"
+#include "tools/fonts/FontToolUtils.h"
 
 #include <cfloat>
 #include <cmath>
@@ -107,7 +108,8 @@ static void test_issue1083() {
     SkCanvas* canvas = doc->beginPage(100.0f, 100.0f);
 
     uint16_t glyphID = 65000;
-    canvas->drawSimpleText(&glyphID, 2, SkTextEncoding::kGlyphID, 0, 0, SkFont(), SkPaint());
+    SkFont font = ToolUtils::DefaultFont();
+    canvas->drawSimpleText(&glyphID, 2, SkTextEncoding::kGlyphID, 0, 0, font, SkPaint());
 
     doc->close();
 }
@@ -341,7 +343,7 @@ DEF_TEST(SkPDF_FontCanEmbedTypeface, reporter) {
         REPORTER_ASSERT(reporter,
                         !SkPDFFont::CanEmbedTypeface(noEmbedTypeface.get(), &doc));
     }
-    sk_sp<SkTypeface> portableTypeface(ToolUtils::create_portable_typeface(nullptr, SkFontStyle()));
+    sk_sp<SkTypeface> portableTypeface(ToolUtils::DefaultTypeface());
     REPORTER_ASSERT(reporter,
                     SkPDFFont::CanEmbedTypeface(portableTypeface.get(), &doc));
 }

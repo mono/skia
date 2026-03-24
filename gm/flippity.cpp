@@ -32,6 +32,7 @@
 #include "src/gpu/ganesh/image/SkImage_Ganesh.h"
 #include "src/image/SkImage_Base.h"
 #include "tools/ToolUtils.h"
+#include "tools/fonts/FontToolUtils.h"
 #include "tools/gpu/ProxyUtils.h"
 
 #include <string.h>
@@ -87,9 +88,8 @@ static sk_sp<SkImage> make_text_image(const char* text, SkColor color) {
     paint.setAntiAlias(true);
     paint.setColor(color);
 
-    SkFont font;
+    SkFont font = ToolUtils::DefaultPortableFont();
     font.setEdging(SkFont::Edging::kAntiAlias);
-    font.setTypeface(ToolUtils::create_portable_typeface());
     font.setSize(32);
 
     SkRect bounds;

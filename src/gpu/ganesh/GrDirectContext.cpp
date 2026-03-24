@@ -8,7 +8,6 @@
 
 #include "include/gpu/GrDirectContext.h"
 
-#include "include/core/SkImage.h"
 #include "include/core/SkImageInfo.h"
 #include "include/core/SkPixmap.h"
 #include "include/core/SkSize.h"
@@ -73,9 +72,6 @@ class GrSemaphore;
 #ifdef SK_METAL
 #include "include/gpu/mtl/GrMtlBackendContext.h"
 #include "src/gpu/ganesh/mtl/GrMtlTrampoline.h"
-#endif
-#ifdef SK_VULKAN
-#include "src/gpu/ganesh/vk/GrVkGpu.h"
 #endif
 #ifdef SK_DIRECT3D
 #include "src/gpu/ganesh/d3d/GrD3DGpu.h"
@@ -404,7 +400,7 @@ void GrDirectContext::purgeUnlockedResources(size_t bytesToPurge, bool preferScr
 ////////////////////////////////////////////////////////////////////////////////
 bool GrDirectContext::wait(int numSemaphores, const GrBackendSemaphore waitSemaphores[],
                            bool deleteSemaphoresAfterWait) {
-    if (!fGpu || !fGpu->caps()->semaphoreSupport()) {
+    if (!fGpu || !fGpu->caps()->backendSemaphoreSupport()) {
         return false;
     }
     GrWrapOwnership ownership =
@@ -468,7 +464,7 @@ bool GrDirectContext::submit(GrSyncCpu sync) {
     return fGpu->submitToGpu(sync);
 }
 
-GrSemaphoresSubmitted GrDirectContext::flush(sk_sp<const SkImage> image,
+GrSemaphoresSubmitted GrDirectContext::flush(const sk_sp<const SkImage>& image,
                                              const GrFlushInfo& flushInfo) {
     if (!image) {
         return GrSemaphoresSubmitted::kNo;
@@ -481,9 +477,11 @@ GrSemaphoresSubmitted GrDirectContext::flush(sk_sp<const SkImage> image,
     return igb->flush(this, flushInfo);
 }
 
-void GrDirectContext::flush(sk_sp<const SkImage> image) { this->flush(image, {}); }
+void GrDirectContext::flush(const sk_sp<const SkImage>& image) {
+    this->flush(image, {});
+}
 
-void GrDirectContext::flushAndSubmit(sk_sp<const SkImage> image) {
+void GrDirectContext::flushAndSubmit(const sk_sp<const SkImage>& image) {
     this->flush(image, {});
     this->submit();
 }
@@ -1185,26 +1183,6 @@ sk_sp<GrDirectContext> GrDirectContext::MakeMock(const GrMockOptions* mockOption
 
     return direct;
 }
-
-#ifdef SK_VULKAN
-/*************************************************************************************************/
-sk_sp<GrDirectContext> GrDirectContext::MakeVulkan(const GrVkBackendContext& backendContext) {
-    GrContextOptions defaultOptions;
-    return MakeVulkan(backendContext, defaultOptions);
-}
-
-sk_sp<GrDirectContext> GrDirectContext::MakeVulkan(const GrVkBackendContext& backendContext,
-                                                   const GrContextOptions& options) {
-    sk_sp<GrDirectContext> direct(new GrDirectContext(GrBackendApi::kVulkan, options));
-
-    direct->fGpu = GrVkGpu::Make(backendContext, options, direct.get());
-    if (!direct->init()) {
-        return nullptr;
-    }
-
-    return direct;
-}
-#endif
 
 #ifdef SK_METAL
 /*************************************************************************************************/

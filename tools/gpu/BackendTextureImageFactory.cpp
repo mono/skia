@@ -22,7 +22,6 @@
 #ifdef SK_GRAPHITE
 #include "include/gpu/graphite/Image.h"
 #include "include/gpu/graphite/Recorder.h"
-#include "src/gpu/graphite/ImageFactories.cpp"
 #include "src/gpu/graphite/RecorderPriv.h"
 #endif
 
@@ -100,14 +99,14 @@ sk_sp<SkImage> MakeBackendTextureImage(Recorder* recorder,
         return nullptr;
     }
 
-    return SkImages::AdoptTextureFrom(recorder,
-                                      mbet->texture(),
-                                      pixmap.colorType(),
-                                      pixmap.alphaType(),
-                                      pixmap.refColorSpace(),
-                                      origin,
-                                      sk_gpu_test::ManagedGraphiteTexture::ImageReleaseProc,
-                                      mbet->releaseContext());
+    return SkImages::WrapTexture(recorder,
+                                 mbet->texture(),
+                                 pixmap.colorType(),
+                                 pixmap.alphaType(),
+                                 pixmap.refColorSpace(),
+                                 origin,
+                                 sk_gpu_test::ManagedGraphiteTexture::ImageReleaseProc,
+                                 mbet->releaseContext());
 }
 #endif  // SK_GRAPHITE
 

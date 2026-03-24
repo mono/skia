@@ -47,7 +47,9 @@
 #include "src/core/SkYUVMath.h"
 #include "src/gpu/ganesh/GrCaps.h"
 #include "src/gpu/ganesh/GrRecordingContextPriv.h"
+#include "tools/DecodeUtils.h"
 #include "tools/ToolUtils.h"
+#include "tools/fonts/FontToolUtils.h"
 #include "tools/gpu/YUVUtils.h"
 
 #include <math.h>
@@ -692,7 +694,7 @@ static void draw_col_label(SkCanvas* canvas, int x, int yuvColorSpace, bool opaq
     static_assert(std::size(kYUVColorSpaceNames) == kLastEnum_SkYUVColorSpace + 1);
 
     SkPaint paint;
-    SkFont  font(ToolUtils::create_portable_typeface(nullptr, SkFontStyle::Bold()), 16);
+    SkFont  font(ToolUtils::CreatePortableTypeface("Sans", SkFontStyle::Bold()), 16);
     font.setEdging(SkFont::Edging::kAlias);
 
     SkRect textRect;
@@ -719,7 +721,7 @@ static void draw_row_label(SkCanvas* canvas, int y, int yuvFormat) {
     static_assert(std::size(kYUVFormatNames) == kLast_YUVFormat + 1);
 
     SkPaint paint;
-    SkFont  font(ToolUtils::create_portable_typeface(nullptr, SkFontStyle::Bold()), 16);
+    SkFont  font(ToolUtils::CreatePortableTypeface("Sans", SkFontStyle::Bold()), 16);
     font.setEdging(SkFont::Edging::kAlias);
 
     SkRect textRect;
@@ -1214,7 +1216,7 @@ protected:
     SkISize getISize() override { return SkISize::Make(1280, 768); }
 
     void onOnceBeforeDraw() override {
-        fOrig = GetResourceAsImage("images/mandrill_256.png");
+        fOrig = ToolUtils::GetResourceAsImage("images/mandrill_256.png");
     }
 
     void onDraw(SkCanvas* canvas) override {

@@ -11,7 +11,7 @@
 #include "include/core/SkRefCnt.h"
 #include "src/gpu/graphite/ComputePipeline.h"
 
-#include "webgpu/webgpu_cpp.h"
+#include "webgpu/webgpu_cpp.h"  // NO_G3_REWRITE
 
 namespace skgpu::graphite {
 
@@ -25,13 +25,15 @@ public:
     ~DawnComputePipeline() override = default;
 
     const wgpu::ComputePipeline& dawnComputePipeline() const { return fPipeline; }
+    const wgpu::BindGroupLayout& dawnGroupLayout() const { return fGroupLayout; }
 
 private:
-    DawnComputePipeline(const SharedContext*, wgpu::ComputePipeline);
+    DawnComputePipeline(const SharedContext*, wgpu::ComputePipeline, wgpu::BindGroupLayout);
 
     void freeGpuData() override;
 
     wgpu::ComputePipeline fPipeline;
+    wgpu::BindGroupLayout fGroupLayout;
 };
 
 }  // namespace skgpu::graphite

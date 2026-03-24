@@ -26,6 +26,7 @@
 #include "src/gpu/graphite/vk/VulkanGraphiteUtilsPriv.h"
 #include "src/gpu/vk/VulkanInterface.h"
 #include "tools/ToolUtils.h"
+#include "tools/GpuToolUtils.h"
 
 #ifdef VK_USE_PLATFORM_WIN32_KHR
 // windows wants to define this as CreateSemaphoreA or CreateSemaphoreW
@@ -44,8 +45,8 @@ GraphiteVulkanWindowContext::GraphiteVulkanWindowContext(const DisplayParams& pa
                                                          CanPresentFn canPresent,
                                                          PFN_vkGetInstanceProcAddr instProc)
     : WindowContext(params)
-    , fCreateVkSurfaceFn(createVkSurface)
-    , fCanPresentFn(canPresent)
+    , fCreateVkSurfaceFn(std::move(createVkSurface))
+    , fCanPresentFn(std::move(canPresent))
     , fSurface(VK_NULL_HANDLE)
     , fSwapchain(VK_NULL_HANDLE)
     , fImages(nullptr)

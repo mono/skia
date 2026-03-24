@@ -18,12 +18,14 @@
 #include "include/core/SkPathEffect.h"
 #include "include/core/SkPoint.h"
 #include "include/core/SkScalar.h"
+#include "include/core/SkStream.h"
 #include "include/core/SkTextBlob.h"
 #include "include/core/SkTypeface.h"
 #include "include/core/SkTypes.h"
 #include "include/effects/SkDashPathEffect.h"
 #include "tools/Resources.h"
 #include "tools/ToolUtils.h"
+#include "tools/fonts/FontToolUtils.h"
 
 static void test_nulldev(SkCanvas* canvas) {
     SkBitmap bm;
@@ -89,7 +91,7 @@ DEF_SIMPLE_GM(stroketext, canvas, 1200, 480) {
     SkPaint paint;
     paint.setAntiAlias(true);
 
-    SkFont font(ToolUtils::create_portable_typeface(), kBelowThreshold_TextSize);
+    SkFont font(ToolUtils::DefaultPortableTypeface(), kBelowThreshold_TextSize);
     draw_text_set(canvas, paint, font);
 
     canvas->translate(600, 0);

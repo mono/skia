@@ -39,6 +39,7 @@
 #include "include/utils/SkShadowUtils.h"
 #include "src/base/SkAutoMalloc.h"
 #include "src/core/SkCanvasPriv.h"
+#include "src/core/SkFontPriv.h"
 #include "src/core/SkMaskFilterBase.h"
 #include "src/core/SkPaintDefaults.h"
 #include "src/core/SkRectPriv.h"
@@ -646,7 +647,7 @@ void DrawCommand::flatten(const SkFlattenable* flattenable,
     sk_free(data);
 }
 
-void DrawCommand::WritePNG(SkBitmap bitmap, SkWStream& out) {
+void DrawCommand::WritePNG(const SkBitmap& bitmap, SkWStream& out) {
     SkPixmap pm;
     SkAssertResult(bitmap.peekPixels(&pm));
 
@@ -898,7 +899,7 @@ static void apply_paint_patheffect(const SkPaint&  paint,
 static void apply_font_typeface(const SkFont&   font,
                                 SkJSONWriter&   writer,
                                 UrlDataManager& urlDataManager) {
-    SkTypeface* typeface = font.getTypefaceOrDefault();
+    SkTypeface* typeface = SkFontPriv::GetTypefaceOrDefault(font);
     if (typeface != nullptr) {
         writer.beginObject(DEBUGCANVAS_ATTRIBUTE_TYPEFACE);
         SkDynamicMemoryWStream buffer;
@@ -1092,7 +1093,7 @@ void ClipRRectCommand::toJSON(SkJSONWriter& writer, UrlDataManager& urlDataManag
 
 ClipShaderCommand::ClipShaderCommand(sk_sp<SkShader> cs, SkClipOp op)
         : INHERITED(kClipShader_OpType) {
-    fShader = cs;
+    fShader = std::move(cs);
     fOp     = op;
 }
 

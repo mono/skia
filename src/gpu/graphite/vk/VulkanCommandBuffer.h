@@ -37,11 +37,9 @@ public:
     void addBufferMemoryBarrier(const Resource* resource,
                                 VkPipelineStageFlags srcStageMask,
                                 VkPipelineStageFlags dstStageMask,
-                                bool byRegion,
                                 VkBufferMemoryBarrier* barrier);
     void addBufferMemoryBarrier(VkPipelineStageFlags srcStageMask,
                                 VkPipelineStageFlags dstStageMask,
-                                bool byRegion,
                                 VkBufferMemoryBarrier* barrier);
     void addImageMemoryBarrier(const Resource*,
                                VkPipelineStageFlags srcStageMask,
@@ -91,7 +89,6 @@ private:
     void bindUniformBuffers();
     void syncDescriptorSets();
 
-    // TODO: Populate the following methods to handle the possible commands in a draw pass.
     void bindGraphicsPipeline(const GraphicsPipeline*);
     void setBlendConstants(float* blendConstants);
     void bindDrawBuffers(const BindBufferInfo& vertices,
@@ -157,6 +154,11 @@ private:
                          void* barrier);
     void submitPipelineBarriers(bool forSelfDependency = false);
 
+    // Update the intrinsic constant uniform with the latest rtAdjust value as determined by a
+    // given viewport. The resource provider is responsible for finding a suitable buffer and
+    // managing its lifetime.
+    void updateRtAdjustUniform(const SkRect& viewport);
+
     VkCommandPool fPool;
     VkCommandBuffer fPrimaryCommandBuffer;
     const VulkanSharedContext* fSharedContext;
@@ -187,15 +189,11 @@ private:
     bool fBindUniformBuffers = false;
     bool fBindTextureSamplers = false;
 
-    sk_sp<Buffer> fIntrinsicUniformBuffer;
     std::array<BindBufferInfo, VulkanGraphicsPipeline::kNumUniformBuffers> fUniformBuffersToBind
             = {{{nullptr, 0}}};
     VkDescriptorSet fTextureSamplerDescSetToBind = VK_NULL_HANDLE;
 
     int fNumTextureSamplers = 0;
-    // Store the current viewport so we can calculate rtAdjust when it is time to populate / bind
-    // the intrinsic uniform buffer.
-    SkRect fCurrentViewport;
 
     VkBuffer fBoundInputBuffers[VulkanGraphicsPipeline::kNumInputBuffers];
     size_t fBoundInputBufferOffsets[VulkanGraphicsPipeline::kNumInputBuffers];

@@ -65,7 +65,7 @@ struct SK_API RecorderOptions final {
 
     sk_sp<ImageProvider> fImageProvider;
 
-    const size_t kDefaultRecorderBudget = 256 * (1 << 20);
+    static constexpr size_t kDefaultRecorderBudget = 256 * (1 << 20);
     // What is the budget for GPU resources allocated and held by this Recorder.
     size_t fGpuBudgetInBytes = kDefaultRecorderBudget;
 };
@@ -153,6 +153,11 @@ public:
      * budget.
      */
     void performDeferredCleanup(std::chrono::milliseconds msNotUsed);
+
+    /**
+     * Returns the number of bytes of gpu memory currently budgeted in the Recorder's cache.
+     */
+    size_t currentBudgetedBytes() const;
 
     // Provides access to functions that aren't part of the public API.
     RecorderPriv priv();

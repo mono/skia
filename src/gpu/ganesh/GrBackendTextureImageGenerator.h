@@ -32,7 +32,7 @@ class GrSemaphore;
  */
 class GrBackendTextureImageGenerator : public GrTextureGenerator {
 public:
-    static std::unique_ptr<GrTextureGenerator> Make(sk_sp<GrTexture>, GrSurfaceOrigin,
+    static std::unique_ptr<GrTextureGenerator> Make(const sk_sp<GrTexture>&, GrSurfaceOrigin,
                                                     std::unique_ptr<GrSemaphore>, SkColorType,
                                                     SkAlphaType, sk_sp<SkColorSpace>);
 
@@ -54,7 +54,7 @@ protected:
 
 private:
     GrBackendTextureImageGenerator(const SkColorInfo&,
-                                   sk_sp<GrTexture>,
+                                   const sk_sp<GrTexture>&,
                                    GrSurfaceOrigin,
                                    GrDirectContext::DirectContextID owningContextID,
                                    std::unique_ptr<GrSemaphore>);

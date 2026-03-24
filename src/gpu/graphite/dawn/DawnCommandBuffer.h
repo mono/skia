@@ -15,7 +15,7 @@
 #include "src/gpu/graphite/compute/DispatchGroup.h"
 #include "src/gpu/graphite/dawn/DawnGraphicsPipeline.h"
 
-#include "webgpu/webgpu_cpp.h"
+#include "webgpu/webgpu_cpp.h"  // NO_G3_REWRITE
 
 namespace skgpu::graphite {
 class ComputePipeline;
@@ -59,7 +59,8 @@ private:
             const RenderPassDesc& frontendRenderPassDesc,
             const wgpu::RenderPassDescriptor& wgpuRenderPassDesc,
             const DawnTexture* msaaTexture);
-    bool doBlitWithDraw(const RenderPassDesc& frontendRenderPassDesc,
+    bool doBlitWithDraw(const wgpu::RenderPassEncoder& renderEncoder,
+                        const RenderPassDesc& frontendRenderPassDesc,
                         const wgpu::TextureView& sourceTextureView,
                         int width,
                         int height);

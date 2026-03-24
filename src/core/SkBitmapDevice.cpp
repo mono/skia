@@ -31,7 +31,6 @@
 #include "include/private/base/SkTo.h"
 #include "src/base/SkTLazy.h"
 #include "src/core/SkDraw.h"
-#include "src/core/SkImageFilterCache.h"
 #include "src/core/SkImagePriv.h"
 #include "src/core/SkMatrixPriv.h"
 #include "src/core/SkRasterClip.h"
@@ -442,6 +441,7 @@ void SkBitmapDevice::drawImageRect(const SkImage* image, const SkRect* src, cons
 
     // clip the tmpSrc to the bounds of the bitmap, and recompute dstRect if
     // needed (if the src was clipped). No check needed if src==null.
+    bool srcIsSubset = false;
     if (src) {
         if (!bitmapBounds.contains(*src)) {
             if (!tmpSrc.intersect(bitmapBounds)) {
@@ -454,9 +454,10 @@ void SkBitmapDevice::drawImageRect(const SkImage* image, const SkRect* src, cons
             }
             dstPtr = &tmpDst;
         }
+        srcIsSubset = !tmpSrc.contains(bitmapBounds);
     }
 
-    if (src && !src->contains(bitmapBounds) &&
+    if (srcIsSubset &&
         SkCanvas::kFast_SrcRectConstraint == constraint &&
         sampling != SkSamplingOptions()) {
         // src is smaller than the bounds of the bitmap, and we are filtering, so we don't know
@@ -465,7 +466,7 @@ void SkBitmapDevice::drawImageRect(const SkImage* image, const SkRect* src, cons
         goto USE_SHADER;
     }
 
-    if (src) {
+    if (srcIsSubset) {
         // since we may need to clamp to the borders of the src rect within
         // the bitmap, we extract a subset.
         const SkIRect srcIR = tmpSrc.roundOut();
@@ -609,12 +610,6 @@ sk_sp<SkSpecialImage> SkBitmapDevice::snapSpecial(const SkIRect& bounds, bool fo
 
 sk_sp<SkSurface> SkBitmapDevice::makeSurface(const SkImageInfo& info, const SkSurfaceProps& props) {
     return SkSurfaces::Raster(info, &props);
-}
-
-SkImageFilterCache* SkBitmapDevice::getImageFilterCache() {
-    SkImageFilterCache* cache = SkImageFilterCache::Get();
-    cache->ref();
-    return cache;
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////

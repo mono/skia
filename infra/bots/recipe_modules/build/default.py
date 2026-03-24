@@ -168,7 +168,9 @@ def compile_fn(api, checkout_root, out_dir):
     # Increase ClangTidy code coverage by enabling features.
     args.update({
       'skia_enable_fontmgr_empty':     'true',
+      'skia_enable_graphite':          'true',
       'skia_enable_pdf':               'true',
+      'skia_use_dawn':                 'true',
       'skia_use_expat':                'true',
       'skia_use_freetype':             'true',
       'skia_use_vulkan':               'true',
@@ -265,6 +267,14 @@ def compile_fn(api, checkout_root, out_dir):
       'skia_use_wuffs':                'false',
       'skia_use_zlib':                 'false',
     })
+  elif configuration != 'OptimizeForSize':
+    args.update({
+      'skia_use_client_icu': 'true',
+      # Enable after fixing MSVC host and xSAN host toolchains.
+      #'skia_use_libgrapheme': 'true',
+    })
+
+
   if 'Shared' in extra_tokens:
     args['is_component_build'] = 'true'
   if 'Vulkan' in extra_tokens and not 'Android' in extra_tokens:

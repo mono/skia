@@ -53,6 +53,7 @@ struct GrContextOptions;
 #include "src/gpu/graphite/Caps.h"
 #include "src/gpu/graphite/RecorderPriv.h"
 #include "src/gpu/graphite/Texture.h"
+#include "tools/GpuToolUtils.h"
 #else
 namespace skgpu { namespace graphite { class Recorder; } }
 #endif
@@ -516,6 +517,7 @@ void tiled_image_caching_test(GrDirectContext* dContext,
 
 #if defined(SK_GANESH)
 
+// TODO(b/306005622): fix in SkQP and move to CtsEnforcement::kNextRelease
 DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(BigImageTest_Ganesh,
                                        reporter,
                                        ctxInfo,
@@ -525,6 +527,7 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(BigImageTest_Ganesh,
     tiling_comparison_test(dContext, /* recorder= */ nullptr, reporter);
 }
 
+// TODO(b/306005622): fix in SkQP and move to CtsEnforcement::kNextRelease
 DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(TiledDrawCacheTest_Ganesh,
                                        reporter,
                                        ctxInfo,
@@ -538,10 +541,11 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(TiledDrawCacheTest_Ganesh,
 
 #if defined(SK_GRAPHITE)
 
+// TODO(b/306005622): fix in SkQP and move to CtsEnforcement::kNextRelease
 DEF_GRAPHITE_TEST_FOR_RENDERING_CONTEXTS(BigImageTest_Graphite,
                                          reporter,
                                          context,
-                                         CtsEnforcement::kNextRelease) {
+                                         CtsEnforcement::kNever) {
     std::unique_ptr<skgpu::graphite::Recorder> recorder =
             context->makeRecorder(ToolUtils::CreateTestingRecorderOptions());
 

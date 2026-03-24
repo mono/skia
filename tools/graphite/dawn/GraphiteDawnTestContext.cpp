@@ -31,11 +31,7 @@ std::unique_ptr<GraphiteTestContext> DawnTestContext::Make(std::optional<wgpu::B
         "use_user_defined_labels_in_backend",
     };
     wgpu::DawnTogglesDescriptor togglesDesc;
-#ifdef WGPU_BREAKING_CHANGE_COUNT_RENAME
     togglesDesc.enabledToggleCount  = std::size(kToggles);
-#else
-    togglesDesc.enabledTogglesCount = std::size(kToggles);
-#endif
     togglesDesc.enabledToggles      = kToggles;
 
     sOnce([&]{
@@ -60,7 +56,7 @@ std::unique_ptr<GraphiteTestContext> DawnTestContext::Make(std::optional<wgpu::B
                              std::tuple(propB.adapterType, propB.backendType);
                   });
 
-        for (auto adapter : adapters) {
+        for (const auto& adapter : adapters) {
             wgpu::AdapterProperties props;
             adapter.GetProperties(&props);
             if (backend.has_value() && backend.value() == props.backendType) {
@@ -101,11 +97,7 @@ std::unique_ptr<GraphiteTestContext> DawnTestContext::Make(std::optional<wgpu::B
     }
 
     wgpu::DeviceDescriptor desc;
-#ifdef WGPU_BREAKING_CHANGE_COUNT_RENAME
     desc.requiredFeatureCount  = features.size();
-#else
-    desc.requiredFeaturesCount = features.size();
-#endif
     desc.requiredFeatures      = features.data();
     desc.nextInChain           = &togglesDesc;
 
