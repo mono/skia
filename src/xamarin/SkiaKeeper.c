@@ -56,6 +56,9 @@
 #include "include/xamarin/sk_managedtracememorydump.h"
 #include "include/xamarin/sk_compatpaint.h"
 
+// Debugger (only when built with skia_build_for_debugger=true)
+#include "include/c/sk_debugger.h"
+
 SK_X_API void** KeepSkiaCSymbols (void);
 
 void** KeepSkiaCSymbols (void)
@@ -110,6 +113,22 @@ void** KeepSkiaCSymbols (void)
 
         // Linker
         (void*)sk_linker_keep_alive,
+
+        // Debugger (symbols only present when built with skia_build_for_debugger=true)
+        (void*)sk_debug_canvas_new,
+        (void*)sk_debug_canvas_destroy,
+        (void*)sk_debug_canvas_load_skp,
+        (void*)sk_debug_canvas_get_command_count,
+        (void*)sk_debug_canvas_draw,
+        (void*)sk_debug_canvas_draw_to,
+        (void*)sk_debug_canvas_get_command_list_json,
+        (void*)sk_debug_canvas_get_command_info_json,
+        (void*)sk_debug_canvas_set_command_visibility,
+        (void*)sk_debug_canvas_delete_command,
+        (void*)sk_debug_canvas_set_overdraw_vis,
+        (void*)sk_debug_canvas_set_clip_viz_color,
+        (void*)sk_debug_canvas_set_origin_visible,
+        (void*)sk_debug_canvas_get_bounds,
     };
     return ret;
 }

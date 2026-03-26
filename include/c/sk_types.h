@@ -193,6 +193,11 @@ typedef struct sk_nodraw_canvas_t sk_nodraw_canvas_t;
 typedef struct sk_nway_canvas_t sk_nway_canvas_t;
 typedef struct sk_overdraw_canvas_t sk_overdraw_canvas_t;
 /**
+    A sk_debug_canvas_t wraps a DebugCanvas for SKP file introspection
+    and command-level debugging.
+*/
+typedef struct sk_debug_canvas_t sk_debug_canvas_t;
+/**
     A sk_data_ holds an immutable data buffer.
 */
 typedef struct sk_data_t sk_data_t;
