@@ -11,11 +11,6 @@
 #include "include/gpu/ganesh/gl/GrGLInterface.h"
 #include "include/gpu/ganesh/gl/win/GrGLMakeWinInterface.h"
 
-#if defined(_M_ARM64)
-
-sk_sp<const GrGLInterface> GrGLMakeNativeInterface() { return nullptr; }
-
-#else
 /*
  * Windows makes the GL funcs all be __stdcall instead of __cdecl :(
  * This implementation will only work if GR_GL_FUNCTION_TYPE is __stdcall.
@@ -24,7 +19,5 @@ sk_sp<const GrGLInterface> GrGLMakeNativeInterface() { return nullptr; }
 sk_sp<const GrGLInterface> GrGLMakeNativeInterface() {
     return GrGLInterfaces::MakeWin();
 }
-
-#endif // ARM64
 
 #endif // SK_DISABLE_LEGACY_GL_MAKE_NATIVE_INTERFACE

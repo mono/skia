@@ -25,6 +25,10 @@ static GrGLFuncPtr egl_get_gl_proc(void* ctx, const char name[]) {
 
 namespace GrGLInterfaces {
 sk_sp<const GrGLInterface> MakeEGL() {
+#if !SK_USE_WEBGL
+    if (!eglGetCurrentContext())
+        return nullptr;
+#endif
     return GrGLMakeAssembledInterface(nullptr, egl_get_gl_proc);
 }
 }  // namespace GrGLInterfaces
