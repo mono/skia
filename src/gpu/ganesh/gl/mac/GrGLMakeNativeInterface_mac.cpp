@@ -15,11 +15,21 @@
 #include <dlfcn.h>
 #include <memory>
 
+typedef void* (*CGLGetCurrentContextProc)(void);
+
 namespace GrGLInterfaces {
 sk_sp<const GrGLInterface> MakeMac() {
     static const char kPath[] =
         "/System/Library/Frameworks/OpenGL.framework/Versions/A/Libraries/libGL.dylib";
     std::unique_ptr<void, SkFunctionObject<dlclose>> lib(dlopen(kPath, RTLD_LAZY));
+    if (!lib) {
+        return nullptr;
+    }
+    CGLGetCurrentContextProc getCGLCurrentContext =
+        (CGLGetCurrentContextProc)dlsym(lib.get(), "CGLGetCurrentContext");
+    if (!getCGLCurrentContext || !getCGLCurrentContext()) {
+        return nullptr;
+    }
     return GrGLMakeAssembledGLInterface(lib.get(), [](void* ctx, const char* name) {
             return (GrGLFuncPtr)dlsym(ctx ? ctx : RTLD_DEFAULT, name); });
 }
