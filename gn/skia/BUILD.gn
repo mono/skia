@@ -204,7 +204,10 @@ config("default") {
 
   if (is_android) {
     cflags += [ "--sysroot=$ndk/toolchains/llvm/prebuilt/$ndk_host/sysroot" ]
-    ldflags += [ "-static-libstdc++" ]
+    ldflags += [
+      "-static-libstdc++",
+      "-Wl,--no-undefined",
+    ]
   }
 
   if (is_tizen) {
@@ -366,6 +369,7 @@ config("default") {
 
   if (is_linux) {
     libs += [ "pthread" ]
+    ldflags += [ "-Wl,--no-undefined" ]
   }
 
   if (is_mac) {
