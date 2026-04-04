@@ -20,7 +20,7 @@ extern sk_sp<SkFontMgr> SkFontMgr_New_Custom_Embedded(const SkEmbeddedResourceHe
 #include "include/ports/SkFontMgr_mac_ct.h"
 #elif defined(SK_BUILD_FOR_WIN)
 #include "include/ports/SkTypeface_win.h"
-#elif defined(SK_BUILD_FOR_UNIX)
+#elif defined(SK_FONTMGR_FONTCONFIG_AVAILABLE)
 #include "include/ports/SkFontMgr_fontconfig.h"
 #else
 #include "include/ports/SkFontMgr_empty.h"
