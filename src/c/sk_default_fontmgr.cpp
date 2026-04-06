@@ -35,7 +35,7 @@ static sk_sp<SkFontMgr> create_platform_fontmgr() {
     return SkFontMgr_New_CoreText(nullptr);
 #elif defined(SK_BUILD_FOR_WIN)
     return SkFontMgr_New_DirectWrite();
-#elif defined(SK_BUILD_FOR_UNIX)
+#elif defined(SK_FONTMGR_FONTCONFIG_AVAILABLE)
     return SkFontMgr_New_FontConfig(nullptr);
 #else
     return SkFontMgr_New_Custom_Empty();
