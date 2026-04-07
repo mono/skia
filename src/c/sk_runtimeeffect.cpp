@@ -129,3 +129,17 @@ void sk_runtimeeffect_get_child_from_index(const sk_runtimeeffect_t* effect, int
 void sk_runtimeeffect_get_child_from_name(const sk_runtimeeffect_t* effect, const char* name, size_t len, sk_runtimeeffect_child_t* cchild) {
     *cchild = *ToRuntimeEffectChild(AsRuntimeEffect(effect)->findChild(std::string_view(name, len)));
 }
+
+sk_runtimeshaderbuilder_t* sk_runtimeshaderbuilder_new(const sk_runtimeeffect_t* effect, sk_data_t* uniforms, sk_flattenable_t** children, size_t childCount)
+{
+    std::vector<SkRuntimeEffect::ChildPtr> skChildren(childCount);
+    for (size_t i = 0; i < childCount; i++) {
+        skChildren[i] = sk_ref_sp(AsFlattenable(children[i]));
+    }
+    SkRuntimeShaderBuilder* builder = new SkRuntimeShaderBuilder(sk_ref_sp(AsRuntimeEffect(effect)), sk_ref_sp(AsData(uniforms)), std::move(skChildren));
+    return ToRuntimeShaderBuilder(builder);
+}
+
+void sk_runtimeshaderbuilder_destructor(sk_runtimeshaderbuilder_t* builder) {
+    delete AsRuntimeShaderBuilder(builder);
+}

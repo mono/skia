@@ -430,6 +430,10 @@ protected:
             : fEffect(std::move(effect))
             , fUniforms(std::move(uniforms))
             , fChildren(fEffect->children().size()) {}
+    explicit SkRuntimeEffectBuilder(sk_sp<SkRuntimeEffect> effect, sk_sp<SkData> uniforms, std::vector<SkRuntimeEffect::ChildPtr> children)
+            : fEffect(std::move(effect))
+            , fUniforms(std::move(uniforms))
+            , fChildren(std::move(children)) {}
 
     SkRuntimeEffectBuilder(SkRuntimeEffectBuilder&&) = default;
     SkRuntimeEffectBuilder(const SkRuntimeEffectBuilder&) = default;
@@ -475,6 +479,8 @@ public:
     explicit SkRuntimeShaderBuilder(sk_sp<SkRuntimeEffect>);
     // This is currently required by Android Framework but may go away if that dependency
     // can be removed.
+    explicit SkRuntimeShaderBuilder(sk_sp<SkRuntimeEffect> effect, sk_sp<SkData> uniforms, std::vector<SkRuntimeEffect::ChildPtr> children)
+            : SkRuntimeEffectBuilder(std::move(effect), std::move(uniforms), std::move(children)) {}
     SkRuntimeShaderBuilder(const SkRuntimeShaderBuilder&) = default;
     ~SkRuntimeShaderBuilder();
 

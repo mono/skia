@@ -31,6 +31,9 @@ SK_C_API void sk_runtimeeffect_get_child_name(const sk_runtimeeffect_t* effect, 
 SK_C_API void sk_runtimeeffect_get_child_from_index(const sk_runtimeeffect_t* effect, int index, sk_runtimeeffect_child_t* cchild);
 SK_C_API void sk_runtimeeffect_get_child_from_name(const sk_runtimeeffect_t* effect, const char* name, size_t len, sk_runtimeeffect_child_t* cchild);
 
+SK_C_API sk_runtimeshaderbuilder_t* sk_runtimeshaderbuilder_new(const sk_runtimeeffect_t* effect, sk_data_t* uniforms, sk_flattenable_t** children, size_t childCount);
+SK_C_API void sk_runtimeshaderbuilder_destructor(sk_runtimeshaderbuilder_t* builder);
+
 SK_C_PLUS_PLUS_END_GUARD
 
 #endif
