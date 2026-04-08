@@ -10,7 +10,7 @@
 
 #include "src/gpu/graphite/QueueManager.h"
 
-#include "webgpu/webgpu_cpp.h"
+#include "webgpu/webgpu_cpp.h"  // NO_G3_REWRITE
 
 namespace skgpu::graphite {
 
@@ -24,13 +24,15 @@ public:
 
     const wgpu::Queue& dawnQueue() const { return fQueue; }
 
+    void tick() const override;
+
 private:
     const DawnSharedContext* dawnSharedContext() const;
 
-    std::unique_ptr<CommandBuffer> getNewCommandBuffer(ResourceProvider*) override;
+    std::unique_ptr<CommandBuffer> getNewCommandBuffer(ResourceProvider*, Protected) override;
     OutstandingSubmission onSubmitToGpu() override;
 
-#if defined(GRAPHITE_TEST_UTILS)
+#if defined(GPU_TEST_UTILS)
     void startCapture() override;
     void stopCapture() override;
 #endif

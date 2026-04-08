@@ -8,6 +8,7 @@
 #include "src/core/SkBitmapCache.h"
 
 #include "include/core/SkBitmap.h"
+#include "include/core/SkFourByteTag.h"
 #include "include/core/SkImage.h"
 #include "include/core/SkImageInfo.h"
 #include "include/core/SkPixelRef.h"
@@ -158,7 +159,7 @@ public:
     }
 
     static bool Finder(const SkResourceCache::Rec& baseRec, void* contextBitmap) {
-        Rec* rec = (Rec*)&baseRec;
+        Rec* rec = const_cast<Rec*>(static_cast<const Rec*>(&baseRec));
         SkBitmap* result = (SkBitmap*)contextBitmap;
         return rec->install(result);
     }

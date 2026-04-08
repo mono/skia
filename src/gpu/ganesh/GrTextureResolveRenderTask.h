@@ -8,7 +8,19 @@
 #ifndef GrTextureResolveRenderTask_DEFINED
 #define GrTextureResolveRenderTask_DEFINED
 
+#include "include/core/SkRect.h"
+#include "include/core/SkRefCnt.h"
+#include "include/private/base/SkDebug.h"
+#include "include/private/base/SkTArray.h"
+#include "include/private/gpu/ganesh/GrTypesPriv.h"
+#include "src/gpu/ganesh/GrCaps.h"
 #include "src/gpu/ganesh/GrRenderTask.h"
+#include "src/gpu/ganesh/GrSurfaceProxy.h"
+
+class GrDrawingManager;
+class GrOpFlushState;
+class GrRecordingContext;
+class GrResourceAllocator;
 
 class GrTextureResolveRenderTask final : public GrRenderTask {
 public:
@@ -16,7 +28,7 @@ public:
 
     void addProxy(GrDrawingManager*, sk_sp<GrSurfaceProxy> proxy,
                   GrSurfaceProxy::ResolveFlags, const GrCaps&);
-#if defined(GR_TEST_UTILS)
+#if defined(GPU_TEST_UTILS)
     GrSurfaceProxy::ResolveFlags flagsForProxy(sk_sp<GrSurfaceProxy>) const;
 #endif
 
@@ -32,7 +44,7 @@ private:
 
     bool onExecute(GrOpFlushState*) override;
 
-#if defined(GR_TEST_UTILS)
+#if defined(GPU_TEST_UTILS)
     const char* name() const final { return "TextureResolve"; }
 #endif
 #ifdef SK_DEBUG

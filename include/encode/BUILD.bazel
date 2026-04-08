@@ -1,15 +1,25 @@
-load("//bazel:skia_rules.bzl", "exports_files_legacy", "skia_filegroup")
+load("//bazel:skia_rules.bzl", "generate_cpp_files_for_headers", "skia_filegroup")
+
+package(
+    default_applicable_licenses = ["//:license"],
+)
 
 licenses(["notice"])
-
-exports_files_legacy()
 
 skia_filegroup(
     name = "encode_hdrs",
     srcs = [
         "SkEncoder.h",
+    ],
+    visibility = ["//src/encode:__pkg__"],
+)
+
+skia_filegroup(
+    name = "icc_hdrs",
+    srcs = [
         "SkICC.h",
     ],
+    visibility = ["//src/encode:__pkg__"],
 )
 
 skia_filegroup(
@@ -17,6 +27,7 @@ skia_filegroup(
     srcs = [
         "SkJpegEncoder.h",
     ],
+    visibility = ["//src/encode:__pkg__"],
 )
 
 skia_filegroup(
@@ -24,6 +35,7 @@ skia_filegroup(
     srcs = [
         "SkPngEncoder.h",
     ],
+    visibility = ["//src/encode:__pkg__"],
 )
 
 skia_filegroup(
@@ -31,15 +43,15 @@ skia_filegroup(
     srcs = [
         "SkWebpEncoder.h",
     ],
+    visibility = ["//src/encode:__pkg__"],
 )
 
-skia_filegroup(
-    name = "public_hdrs",
-    srcs = [
-        ":encode_hdrs",
-        ":jpeg_hdrs",
-        ":png_hdrs",
-        ":webp_hdrs",
+generate_cpp_files_for_headers(
+    name = "headers_to_compile",
+    headers = [
+        "SkEncoder.h",
+        "SkJpegEncoder.h",
+        "SkPngEncoder.h",
+        "SkWebpEncoder.h",
     ],
-    visibility = ["//include:__pkg__"],
 )

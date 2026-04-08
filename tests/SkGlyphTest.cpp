@@ -164,7 +164,7 @@ DEF_TEST(SkGlyph_SendWithImage, reporter) {
 
     dstGlyph->addImageFromBuffer(readBuffer, &alloc);
     REPORTER_ASSERT(reporter, readBuffer.isValid());
-    uint8_t* dstImage = (uint8_t*)dstGlyph->image();
+    const uint8_t* dstImage = (const uint8_t*)dstGlyph->image();
     for (int y = 0; y < dstGlyph->height(); ++y) {
         for (int x = 0; x < dstGlyph->width(); ++x) {
             REPORTER_ASSERT(reporter, imageData[y][x] == dstImage[y * dstGlyph->rowBytes() + x]);
@@ -200,7 +200,7 @@ DEF_TEST(SkGlyph_SendWithPath, reporter) {
     SkPath srcPath;
     srcPath.addRect(srcGlyph.rect());
 
-    srcGlyph.setPath(&alloc, &srcPath, false);
+    srcGlyph.setPath(&alloc, &srcPath, false, false);
 
     SkBinaryWriteBuffer writeBuffer({});
     srcGlyph.flattenMetrics(writeBuffer);

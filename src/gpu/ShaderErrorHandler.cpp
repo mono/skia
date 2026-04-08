@@ -7,7 +7,11 @@
 
 #include "include/gpu/ShaderErrorHandler.h"
 
+#include "include/private/base/SkDebug.h"
 #include "src/utils/SkShaderUtils.h"
+
+#include <functional>
+#include <string>
 
 namespace skgpu {
 
@@ -19,7 +23,7 @@ ShaderErrorHandler* DefaultShaderErrorHandler() {
             SkShaderUtils::VisitLineByLine(message, [](int, const char* lineText) {
                 SkDebugf("%s\n", lineText);
             });
-            SkDEBUGFAIL("Shader compilation failed!");
+            SkDEBUGFAILF("Shader compilation failed!\n\n%s", message.c_str());
         }
     };
 

@@ -19,7 +19,7 @@
 #include "include/core/SkSurface.h"
 #include "include/core/SkTypes.h"
 #include "include/gpu/GpuTypes.h"
-#include "include/gpu/GrDirectContext.h"
+#include "include/gpu/ganesh/GrDirectContext.h"
 #include "include/gpu/ganesh/SkSurfaceGanesh.h"
 #include "src/gpu/ganesh/GrDirectContextPriv.h"
 #include "src/gpu/ganesh/GrGpu.h"
@@ -36,7 +36,7 @@ static bool check_read(skiatest::Reporter* reporter, const SkBitmap& bitmap) {
         const uint32_t srcPixel = *bitmap.getAddr32(x, 0);
         if (srcPixel != SK_ColorGREEN) {
             ERRORF(reporter, "Expected color of Green, but got 0x%08x, at pixel (%d, 0).",
-                   x, srcPixel);
+                   srcPixel, x);
             result = false;
         }
     }

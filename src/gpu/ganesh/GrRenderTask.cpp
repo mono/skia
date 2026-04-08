@@ -4,14 +4,23 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
-
 #include "src/gpu/ganesh/GrRenderTask.h"
 
-#include "src/gpu/ganesh/GrAttachment.h"
-#include "src/gpu/ganesh/GrRenderTarget.h"
+#include "include/core/SkRect.h"
+#include "include/core/SkString.h"
+#include "include/core/SkTypes.h"
+#include "src/gpu/ganesh/GrDrawingManager.h"
 #include "src/gpu/ganesh/GrRenderTargetProxy.h"
+#include "src/gpu/ganesh/GrSurface.h"
+#include "src/gpu/ganesh/GrSurfaceProxy.h"
+#include "src/gpu/ganesh/GrTextureProxy.h"
 #include "src/gpu/ganesh/GrTextureProxyPriv.h"
+#include "src/gpu/ganesh/GrTextureResolveManager.h"
 #include "src/gpu/ganesh/GrTextureResolveRenderTask.h"
+
+#include <algorithm>
+#include <atomic>
+#include <utility>
 
 uint32_t GrRenderTask::CreateUniqueID() {
     static std::atomic<uint32_t> nextID{1};
@@ -312,7 +321,7 @@ void GrRenderTask::addTarget(GrDrawingManager* drawingMgr, sk_sp<GrSurfaceProxy>
     fTargets.emplace_back(std::move(proxy));
 }
 
-#if defined(GR_TEST_UTILS)
+#if defined(GPU_TEST_UTILS)
 void GrRenderTask::dump(const SkString& label,
                         SkString indent,
                         bool printDependencies,
@@ -320,7 +329,7 @@ void GrRenderTask::dump(const SkString& label,
     SkDebugf("%s%s --------------------------------------------------------------\n",
              indent.c_str(),
              label.c_str());
-    SkDebugf("%s%s task - renderTaskID: %d\n", indent.c_str(), this->name(), fUniqueID);
+    SkDebugf("%s%s task - renderTaskID: %u\n", indent.c_str(), this->name(), fUniqueID);
 
     if (!fTargets.empty()) {
         SkDebugf("%sTargets: \n", indent.c_str());
@@ -334,13 +343,13 @@ void GrRenderTask::dump(const SkString& label,
     if (printDependencies) {
         SkDebugf("%sI rely On (%d): ", indent.c_str(), fDependencies.size());
         for (int i = 0; i < fDependencies.size(); ++i) {
-            SkDebugf("%d, ", fDependencies[i]->fUniqueID);
+            SkDebugf("%u, ", fDependencies[i]->fUniqueID);
         }
         SkDebugf("\n");
 
         SkDebugf("%s(%d) Rely On Me: ", indent.c_str(), fDependents.size());
         for (int i = 0; i < fDependents.size(); ++i) {
-            SkDebugf("%d, ", fDependents[i]->fUniqueID);
+            SkDebugf("%u, ", fDependents[i]->fUniqueID);
         }
         SkDebugf("\n");
     }

@@ -20,7 +20,7 @@
 static bool valid_divs(const int* divs, int count, int start, int end) {
     int prev = start - 1;
     for (int i = 0; i < count; i++) {
-        if (prev >= divs[i] || divs[i] >= end) {
+        if (prev >= divs[i] || divs[i] > end) {
             return false;
         }
         prev = divs[i];
@@ -275,16 +275,15 @@ bool SkLatticeIter::next(SkIRect* src, SkRect* dst, bool* isFixedColor, SkColor*
         fCurrY += 1;
     }
 
-    if (fRectTypes.size() > 0
-        && SkToBool(SkCanvas::Lattice::kTransparent == fRectTypes[currRect])) {
+    if (!fRectTypes.empty() && SkToBool(SkCanvas::Lattice::kTransparent == fRectTypes[currRect])) {
         return this->next(src, dst, isFixedColor, fixedColor);
     }
 
     src->setLTRB(fSrcX[x], fSrcY[y], fSrcX[x + 1], fSrcY[y + 1]);
     dst->setLTRB(fDstX[x], fDstY[y], fDstX[x + 1], fDstY[y + 1]);
     if (isFixedColor && fixedColor) {
-        *isFixedColor = fRectTypes.size() > 0
-                     && SkToBool(SkCanvas::Lattice::kFixedColor == fRectTypes[currRect]);
+        *isFixedColor = !fRectTypes.empty() &&
+                        SkToBool(SkCanvas::Lattice::kFixedColor == fRectTypes[currRect]);
         if (*isFixedColor) {
             *fixedColor = fColors[currRect];
         }

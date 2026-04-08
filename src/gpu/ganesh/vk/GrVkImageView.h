@@ -1,21 +1,27 @@
 /*
-* Copyright 2016 Google Inc.
-*
-* Use of this source code is governed by a BSD-style license that can be
-* found in the LICENSE file.
-*/
-
+ * Copyright 2016 Google Inc.
+ *
+ * Use of this source code is governed by a BSD-style license that can be
+ * found in the LICENSE file.
+ */
 #ifndef GrVkImageView_DEFINED
 #define GrVkImageView_DEFINED
 
-#include "include/gpu/GrTypes.h"
-#include "include/gpu/vk/GrVkTypes.h"
+#include "include/core/SkRefCnt.h"
+#include "include/private/base/SkDebug.h"
+#include "include/private/gpu/vk/SkiaVulkan.h"
+#include "src/gpu/ganesh/GrManagedResource.h"
 #include "src/gpu/ganesh/vk/GrVkManagedResource.h"
 
 #include <cinttypes>
+#include <cstdint>
 
+class GrVkGpu;
 class GrVkSamplerYcbcrConversion;
-struct GrVkYcbcrConversionInfo;
+
+namespace skgpu {
+struct VulkanYcbcrConversionInfo;
+}
 
 class GrVkImageView : public GrVkManagedResource {
 public:
@@ -24,9 +30,12 @@ public:
         kStencil_Type
     };
 
-    static sk_sp<const GrVkImageView> Make(GrVkGpu* gpu, VkImage image, VkFormat format,
-                                           Type viewType, uint32_t miplevels,
-                                           const GrVkYcbcrConversionInfo& ycbcrInfo);
+    static sk_sp<const GrVkImageView> Make(GrVkGpu* gpu,
+                                           VkImage image,
+                                           VkFormat format,
+                                           Type viewType,
+                                           uint32_t miplevels,
+                                           const skgpu::VulkanYcbcrConversionInfo& ycbcrInfo);
 
     VkImageView imageView() const { return fImageView; }
 

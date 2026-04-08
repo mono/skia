@@ -6,18 +6,19 @@
  */
 #ifndef SkUnicode_DEFINED
 #define SkUnicode_DEFINED
+#include "include/core/SkRefCnt.h"
 #include "include/core/SkSpan.h"
 #include "include/core/SkString.h"
 #include "include/core/SkTypes.h"
 #include "include/private/base/SkTArray.h"
 #include "include/private/base/SkTo.h"
 #include "src/base/SkUTF.h"
-
 #include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <string>
 #include <vector>
+namespace sknonstd { template <typename T> struct is_bitmask_enum; }
 
 #if !defined(SKUNICODE_IMPLEMENTATION)
     #define SKUNICODE_IMPLEMENTATION 0
@@ -38,10 +39,6 @@
         #define SKUNICODE_API
     #endif
 #endif
-
-namespace sknonstd {
-template <typename T> struct is_bitmask_enum;
-}
 
 class SKUNICODE_API SkBidiIterator {
 public:
@@ -77,7 +74,7 @@ public:
     virtual bool setText(const char16_t utftext16[], int utf16Units) = 0;
 };
 
-class SKUNICODE_API SkUnicode {
+class SKUNICODE_API SkUnicode : public SkRefCnt {
     public:
         enum CodeUnitFlags {
             kNoCodeUnitFlag = 0x00,
@@ -120,16 +117,28 @@ class SKUNICODE_API SkUnicode {
             LineBreakType breakType;
         };
 
-        virtual ~SkUnicode() = default;
+        ~SkUnicode() override = default;
 
+        // deprecated
         virtual SkString toUpper(const SkString&) = 0;
+        virtual SkString toUpper(const SkString&, const char* locale) = 0;
 
         virtual bool isControl(SkUnichar utf8) = 0;
         virtual bool isWhitespace(SkUnichar utf8) = 0;
         virtual bool isSpace(SkUnichar utf8) = 0;
         virtual bool isTabulation(SkUnichar utf8) = 0;
         virtual bool isHardBreak(SkUnichar utf8) = 0;
+        /**
+         * Returns if a code point may start an emoji sequence.
+         * Returns true for '#', '*', and '0'-'9' since they may start an emoji sequence.
+         * To determine if a list of code points begins with an emoji sequence, use
+         * getEmojiSequence.
+         **/
         virtual bool isEmoji(SkUnichar utf8) = 0;
+        virtual bool isEmojiComponent(SkUnichar utf8) = 0;
+        virtual bool isEmojiModifierBase(SkUnichar utf8) = 0;
+        virtual bool isEmojiModifier(SkUnichar utf8) = 0;
+        virtual bool isRegionalIndicator(SkUnichar utf8) = 0;
         virtual bool isIdeographic(SkUnichar utf8) = 0;
 
         // Methods used in SkShaper and SkText
@@ -289,20 +298,6 @@ class SKUNICODE_API SkUnicode {
         }
 
         virtual void reorderVisual(const BidiLevel runLevels[], int levelsCount, int32_t logicalFromVisual[]) = 0;
-
-        virtual std::unique_ptr<SkUnicode> copy() = 0;
-
-        static std::unique_ptr<SkUnicode> Make();
-
-        static std::unique_ptr<SkUnicode> MakeIcuBasedUnicode();
-
-        static std::unique_ptr<SkUnicode> MakeClientBasedUnicode(
-                SkSpan<char> text,
-                std::vector<SkUnicode::Position> words,
-                std::vector<SkUnicode::Position> graphemeBreaks,
-                std::vector<SkUnicode::LineBreakBefore> lineBreaks);
-
-        static std::unique_ptr<SkUnicode> MakeLibgraphemeBasedUnicode();
 };
 
 namespace sknonstd {

@@ -45,7 +45,7 @@ DEF_TEST(srgb_roundtrip, r) {
 
     for (int i = 0; i < 256; i++) {
         if (reds[i] != (uint32_t)i) {
-            ERRORF(r, "%d doesn't round trip, %d", i, reds[i]);
+            ERRORF(r, "%d doesn't round trip, %u", i, reds[i]);
         }
     }
 }
@@ -65,7 +65,7 @@ DEF_TEST(srgb_edge_cases, r) {
 
     SkSTArenaAlloc<256> alloc;
     SkRasterPipeline p(&alloc);
-    p.append_constant_color(&alloc, color);
+    p.appendConstantColor(&alloc, color);
     steps.apply(&p);
     p.append(SkRasterPipelineOp::store_f32, &dst);
     p.run(0,0,4,1);

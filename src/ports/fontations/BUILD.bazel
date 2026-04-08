@@ -1,15 +1,15 @@
+load("@rules_rust//rust:defs.bzl", "rust_static_library", "rust_test")
+load("//bazel:rust_cxx_bridge.bzl", "rust_cxx_bridge")
 load(
     "//bazel:skia_rules.bzl",
-    "exports_files_legacy",
-    "skia_cc_deps",
     "skia_cc_library",
 )
-load("@rules_rust//rust:defs.bzl", "rust_static_library")
-load("//bazel:rust_cxx_bridge.bzl", "rust_cxx_bridge")
+
+package(
+    default_applicable_licenses = ["//:license"],
+)
 
 licenses(["notice"])
-
-exports_files_legacy()
 
 rust_cxx_bridge(
     name = "fontations_ffi",
@@ -35,12 +35,21 @@ skia_cc_library(
     ],
 )
 
-skia_cc_deps(
+skia_cc_library(
     name = "deps",
     visibility = ["//src/ports:__pkg__"],
     deps = [
         ":bridge_rust_side",
         ":fontations_ffi",
         ":path_bridge_include",
+        # For color bitmap fonts.
+        "//src/codec:png_decode",
     ],
+)
+
+rust_test(
+    name = "test_ffi",
+    timeout = "short",
+    crate = ":bridge_rust_side",
+    data = ["//resources"],
 )

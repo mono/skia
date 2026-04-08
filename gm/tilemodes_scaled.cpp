@@ -25,6 +25,7 @@
 #include "include/effects/SkGradientShader.h"
 #include "include/utils/SkTextUtils.h"
 #include "tools/ToolUtils.h"
+#include "tools/fonts/FontToolUtils.h"
 
 const SkSamplingOptions gSamplings[] = {
     SkSamplingOptions(SkFilterMode::kNearest),
@@ -69,10 +70,8 @@ public:
     SkBitmap    fTexture[std::size(gColorTypes)];
 
 protected:
-    enum {
-        kPOTSize = 4,
-        kNPOTSize = 3,
-    };
+    static constexpr int kPOTSize = 4;
+    static constexpr int kNPOTSize = 3;
 
     SkString getName() const override {
         SkString name("scaled_tilemodes");
@@ -93,7 +92,7 @@ protected:
 
     void onDraw(SkCanvas* canvas) override {
         SkPaint textPaint;
-        SkFont  font(ToolUtils::create_portable_typeface(), 12);
+        SkFont  font(ToolUtils::DefaultPortableTypeface(), 12);
 
         float scale = 32.f/kPOTSize;
 
@@ -185,7 +184,8 @@ static sk_sp<SkShader> make_grad(SkTileMode tx, SkTileMode ty) {
         case 1:
             return SkGradientShader::MakeRadial(center, rad, colors, nullptr, std::size(colors), tx);
         case 2:
-            return SkGradientShader::MakeSweep(center.fX, center.fY, colors, nullptr, std::size(colors));
+            return SkGradientShader::MakeSweep(center.fX, center.fY, colors, nullptr,
+                                               std::size(colors), tx, 135, 225, 0, nullptr);
     }
 
     return nullptr;
@@ -221,7 +221,7 @@ private:
         SkScalar y = SkIntToScalar(24);
         SkScalar x = SkIntToScalar(66);
 
-        SkFont font(ToolUtils::create_portable_typeface());
+        SkFont font = ToolUtils::DefaultPortableFont();
 
         for (size_t kx = 0; kx < std::size(gModes); kx++) {
             SkString str(gModeNames[kx]);

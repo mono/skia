@@ -10,11 +10,15 @@
 
 #include "include/sksl/SkSLVersion.h"
 #include "src/sksl/SkSLDefines.h"
+#include "src/sksl/SkSLModule.h"
 #include "src/sksl/SkSLProgramKind.h"
 
+#include <optional>
 #include <vector>
 
 namespace SkSL {
+
+enum class ModuleType : int8_t;
 
 /**
  * Holds the compiler settings for a program.
@@ -28,8 +32,8 @@ struct ProgramSettings {
     // if true, add -0.5 bias to LOD of all texture lookups
     bool fSharpenTextures = false;
     // If true, sk_FragCoord, the dFdy gradient, and sk_Clockwise won't be modified by the
-    // rtFlip. Additionally, the 'fUseFlipRTUniform' boolean will be forced to false so no rtFlip
-    // uniform will be emitted.
+    // rtFlip. Additionally, the program interface's 'fRTFlipUniform' value will be left as None,
+    // so no rtFlip uniform will be emitted.
     bool fForceNoRTFlip = false;
     // if the program needs to create an RTFlip uniform, this is its offset in the uniform buffer
     int fRTFlipOffset = -1;
@@ -73,19 +77,23 @@ struct ProgramSettings {
     // investigating memory corruption. (This controls behavior of the SkSL compiler, not the code
     // we generate.)
     bool fUseMemoryPool = true;
-    // If true, VarDeclaration can be cloned for testing purposes. See VarDeclaration::clone for
-    // more information.
-    bool fAllowVarDeclarationCloneForTesting = false;
 };
 
 /**
  * All the configuration data for a given program.
  */
 struct ProgramConfig {
-    /** True if we are currently processing one of the built-in SkSL include modules. */
-    bool fIsBuiltinCode;
+    /**
+     * If we are compiling one of the SkSL built-in modules, this field indicates which one.
+     * Contains `ModuleType::program` when not compiling a module at all.
+     */
+    ModuleType fModuleType;
     ProgramKind fKind;
     ProgramSettings fSettings;
+
+    bool isBuiltinCode() {
+        return fModuleType != ModuleType::program;
+    }
 
     // When enforcesSkSLVersion() is true, this determines the available feature set that will be
     // enforced. This is set automatically when the `#version` directive is parsed.
@@ -115,12 +123,14 @@ struct ProgramConfig {
 
     static bool IsFragment(ProgramKind kind) {
         return kind == ProgramKind::kFragment ||
-               kind == ProgramKind::kGraphiteFragment;
+               kind == ProgramKind::kGraphiteFragment ||
+               kind == ProgramKind::kGraphiteFragmentES2;
     }
 
     static bool IsVertex(ProgramKind kind) {
         return kind == ProgramKind::kVertex ||
-               kind == ProgramKind::kGraphiteVertex;
+               kind == ProgramKind::kGraphiteVertex ||
+               kind == ProgramKind::kGraphiteVertexES2;
     }
 
     static bool IsCompute(ProgramKind kind) {
@@ -151,6 +161,11 @@ struct ProgramConfig {
     static bool IsRuntimeBlender(ProgramKind kind) {
         return (kind == ProgramKind::kRuntimeBlender ||
                 kind == ProgramKind::kPrivateRuntimeBlender);
+    }
+
+    static bool IsMesh(ProgramKind kind) {
+        return (kind == ProgramKind::kMeshVertex ||
+                kind == ProgramKind::kMeshFragment);
     }
 
     static bool AllowsPrivateIdentifiers(ProgramKind kind) {

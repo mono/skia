@@ -4,22 +4,25 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
+#include "src/gpu/ganesh/gl/builders/GrGLShaderStringBuilder.h"
 
+#include "include/gpu/ganesh/gl/GrGLFunctions.h"
+#include "include/gpu/ganesh/gl/GrGLInterface.h"
+#include "include/private/base/SkTo.h"
 #include "src/base/SkAutoMalloc.h"
 #include "src/core/SkTraceEvent.h"
-#include "src/gpu/PipelineUtils.h"
+#include "src/gpu/ganesh/gl/GrGLDefines.h"
 #include "src/gpu/ganesh/gl/GrGLGpu.h"
-#include "src/gpu/ganesh/gl/builders/GrGLShaderStringBuilder.h"
-#include "src/sksl/SkSLCompiler.h"
-#include "src/sksl/SkSLProgramSettings.h"
-#include "src/sksl/codegen/SkSLGLSLCodeGenerator.h"
-#include "src/sksl/ir/SkSLProgram.h"
-#include "src/utils/SkShaderUtils.h"
+#include "src/gpu/ganesh/gl/GrGLUtil.h"
+#include "src/sksl/SkSLString.h"
+
+#include <cstdint>
 
 GrGLuint GrGLCompileAndAttachShader(const GrGLContext& glCtx,
                                     GrGLuint programId,
                                     GrGLenum type,
                                     const std::string& glsl,
+                                    bool shaderWasCached,
                                     GrThreadSafePipelineBuilder::Stats* stats,
                                     GrContextOptions::ShaderErrorHandler* errorHandler) {
     TRACE_EVENT0_ALWAYS("skia.shaders", "driver_compile_shader");
@@ -53,7 +56,8 @@ GrGLuint GrGLCompileAndAttachShader(const GrGLContext& glCtx,
                 GrGLsizei length = GR_GL_INIT_ZERO;
                 GR_GL_CALL(gli, GetShaderInfoLog(shaderId, infoLen+1, &length, (char*)log.get()));
             }
-            errorHandler->compileError(glsl.c_str(), infoLen > 0 ? (const char*)log.get() : "");
+            errorHandler->compileError(
+                    glsl.c_str(), infoLen > 0 ? (const char*)log.get() : "", shaderWasCached);
             GR_GL_CALL(gli, DeleteShader(shaderId));
             return 0;
         }
@@ -69,6 +73,7 @@ GrGLuint GrGLCompileAndAttachShader(const GrGLContext& glCtx,
 
 bool GrGLCheckLinkStatus(const GrGLGpu* gpu,
                          GrGLuint programID,
+                         bool shaderWasCached,
                          GrContextOptions::ShaderErrorHandler* errorHandler,
                          const std::string* sksl[kGrShaderTypeCount],
                          const std::string glsl[kGrShaderTypeCount]) {
@@ -101,7 +106,7 @@ bool GrGLCheckLinkStatus(const GrGLGpu* gpu,
         }
         const char* errorMsg = (infoLen > 0) ? (const char*)log.get()
                                              : "link failed but did not provide an info log";
-        errorHandler->compileError(allShaders.c_str(), errorMsg);
+        errorHandler->compileError(allShaders.c_str(), errorMsg, shaderWasCached);
     }
     return SkToBool(linked);
 }

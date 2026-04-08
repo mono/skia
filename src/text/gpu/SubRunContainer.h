@@ -25,7 +25,6 @@ class SkPaint;
 class SkReadBuffer;
 class SkStrikeClient;
 class SkWriteBuffer;
-struct SkIRect;
 struct SkPoint;
 struct SkStrikeDeviceInfo;
 
@@ -38,11 +37,12 @@ namespace skgpu {
 enum class MaskFormat : int;
 }
 
-#if defined(SK_GANESH)
+#if defined(SK_GANESH) || defined(SK_USE_LEGACY_GANESH_TEXT_APIS)
 #include "src/gpu/ganesh/GrColor.h"
 #include "src/gpu/ganesh/ops/GrOp.h"
 
 class GrClip;
+struct SkIRect;
 namespace skgpu::ganesh {
 class SurfaceDrawContext;
 }
@@ -63,6 +63,7 @@ using RegenerateAtlasDelegate = std::function<std::tuple<bool, int>(GlyphVector*
 struct RendererData {
     bool isSDF = false;
     bool isLCD = false;
+    skgpu::MaskFormat maskFormat;
 };
 
 // -- AtlasSubRun --------------------------------------------------------------------------------
@@ -89,7 +90,7 @@ public:
     virtual int glyphSrcPadding() const = 0;
     virtual unsigned short instanceFlags() const = 0;
 
-#if defined(SK_GANESH)
+#if defined(SK_GANESH) || defined(SK_USE_LEGACY_GANESH_TEXT_APIS)
     virtual size_t vertexStride(const SkMatrix& drawMatrix) const = 0;
 
     virtual std::tuple<const GrClip*, GrOp::Owner> makeAtlasTextOp(
@@ -132,7 +133,7 @@ public:
     virtual ~SubRun();
 
     virtual void draw(SkCanvas*, SkPoint drawOrigin, const SkPaint&, sk_sp<SkRefCnt> subRunStorage,
-                      AtlasDrawDelegate) const = 0;
+                      const AtlasDrawDelegate&) const = 0;
 
     void flatten(SkWriteBuffer& buffer) const;
     static SubRunOwner MakeFromBuffer(SkReadBuffer& buffer,
@@ -236,14 +237,14 @@ public:
     static size_t EstimateAllocSize(const GlyphRunList& glyphRunList);
 
     void draw(SkCanvas*, SkPoint drawOrigin, const SkPaint&, const SkRefCnt* subRunStorage,
-              AtlasDrawDelegate) const;
+              const AtlasDrawDelegate&) const;
 
     const SkMatrix& initialPosition() const { return fInitialPositionMatrix; }
     bool isEmpty() const { return fSubRuns.isEmpty(); }
     bool canReuse(const SkPaint& paint, const SkMatrix& positionMatrix) const;
 
 private:
-    friend struct SubRunContainerPeer;
+    friend class TextBlobTools;
     const SkMatrix fInitialPositionMatrix;
     SubRunList fSubRuns;
 };

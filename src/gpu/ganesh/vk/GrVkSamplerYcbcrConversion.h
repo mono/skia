@@ -8,33 +8,38 @@
 #ifndef GrVkSamplerYcbcrConverison_DEFINED
 #define GrVkSamplerYcbcrConverison_DEFINED
 
+#include "include/private/base/SkDebug.h"
+#include "include/private/base/SkMacros.h"
+#include "include/private/gpu/vk/SkiaVulkan.h"
+#include "src/core/SkChecksum.h"
+#include "src/gpu/ganesh/GrManagedResource.h"
 #include "src/gpu/ganesh/vk/GrVkManagedResource.h"
 
-#include "include/gpu/vk/GrVkTypes.h"
-#include "src/core/SkChecksum.h"
-
 #include <cinttypes>
-
+#include <cstdint>
 class GrVkGpu;
+namespace skgpu {
+struct VulkanYcbcrConversionInfo;
+}
 
 class GrVkSamplerYcbcrConversion : public GrVkManagedResource {
 public:
-    static GrVkSamplerYcbcrConversion* Create(GrVkGpu* gpu, const GrVkYcbcrConversionInfo&);
+    static GrVkSamplerYcbcrConversion* Create(GrVkGpu* gpu,
+                                              const skgpu::VulkanYcbcrConversionInfo&);
 
     VkSamplerYcbcrConversion ycbcrConversion() const { return fYcbcrConversion; }
 
     SK_BEGIN_REQUIRE_DENSE
     struct Key {
         Key() = default;
-        Key(VkFormat vkFormat, uint64_t externalFormat, uint8_t conversionKey) {
+        Key(VkFormat vkFormat, uint64_t externalFormat, uint32_t conversionKey) {
             fVkFormat = vkFormat;
             fExternalFormat = externalFormat;
             fConversionKey = conversionKey;
         }
 
         VkFormat fVkFormat = VK_FORMAT_UNDEFINED;
-        uint8_t  fConversionKey = 0;
-        uint8_t  fPadding[3] = {0, 0, 0};
+        uint32_t fConversionKey = 0;
         uint64_t fExternalFormat = 0;
 
         bool operator==(const Key& that) const {
@@ -46,7 +51,7 @@ public:
     SK_END_REQUIRE_DENSE
 
     // Helpers for hashing GrVkSamplerYcbcrConversion
-    static Key GenerateKey(const GrVkYcbcrConversionInfo& ycbcrInfo);
+    static Key GenerateKey(const skgpu::VulkanYcbcrConversionInfo& ycbcrInfo);
 
     static const Key& GetKey(const GrVkSamplerYcbcrConversion& ycbcrConversion) {
         return ycbcrConversion.fKey;

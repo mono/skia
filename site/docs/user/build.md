@@ -97,10 +97,24 @@ bin/gn gen out/Cached   --args='cc_wrapper="ccache"'
 bin/gn gen out/RTTI     --args='extra_cflags_cc=["-frtti"]'
 ```
 
-Once you have generated your build files, run Ninja to compile and link Skia:
+Once you have generated your build files, run Ninja to compile and link all of Skia:
 
 ```
 ninja -C out/Static
+```
+
+To avoid building everything, include the target or targets after the ninja command. For example:
+
+```
+ninja -C out/Debug skia
+ninja -C out/Debug viewer dm
+```
+
+Not all targets are available for all sets of build arguments. For a list of all available targets
+for a given build directory, run:
+
+```
+gn ls out/Debug
 ```
 
 If some header files are missing, install the corresponding dependencies:
@@ -113,13 +127,14 @@ To pull new changes and rebuild:
 
 ```
 git pull
-python tools/git-sync-deps
+python3 tools/git-sync-deps
 ninja -C out/Static
 ```
 
 ## Android
 
-To build Skia for Android you need an
+To build Skia for Android you need a recent version of
+[Java](https://www.oracle.com/java/technologies/downloads/) and a recent
 [Android NDK](https://developer.android.com/ndk/index.html).
 
 If you do not have an NDK and have access to CIPD, you can use one of these
@@ -292,8 +307,12 @@ bin/gn gen out/iossim-apple --args='target_os="ios" target_cpu="arm64" ios_use_s
 bin/gn gen out/iossim-intel --args='target_os="ios" target_cpu="x64"'
 ```
 
-This will also package (and for devices, sign) iOS test binaries. This defaults
-to a Google signing identity and provisioning profile. To use a different one
+By default this will also package (and for non-simulator devices, sign) iOS test binaries.
+If you wish to skip signing (for testing compilation alone, for example), you can disable it by
+setting `skia_ios_use_signing` to `false`.
+
+When signing, the build defaults to a Google signing identity and provisioning profile.
+To use a different one
 set the GN args `skia_ios_identity` to match your code signing identity and
 `skia_ios_profile` to the name of your provisioning profile, e.g.
 
@@ -304,11 +323,14 @@ skia_ios_profile="iPad Profile"`
 
 A list of identities can be found by typing `security find-identity` on the
 command line. The name of the provisioning profile should be available on the
-Apple Developer site. Alternatively, `skia_ios_profile` can be the absolute path
-to the mobileprovision file.
+Apple Developer site. Alternatively, you can examine the installed provisioning profile files in the Finder
+by going to `~/Library/MobileDevice/Provisioning Profiles`, selecting a `.mobileprovision` file,
+and hitting space. The value of `skia_ios_profile` can either be the string
+given at the top of that file or on the Developer site, or the absolute path
+to the file.
 
 If you find yourself missing a Google signing identity or provisioning profile,
-you'll want to have a read through go/appledev.
+you'll want to have a read through go/appledev and go/ios-signing.
 
 For signed packages `ios-deploy` makes installing and running them on a device
 easy:
@@ -317,7 +339,7 @@ easy:
 ios-deploy -b out/Debug/dm.app -d --args "--match foo"
 ```
 
-Alternatively you can generate an Xcode project by passing `--ide=xcode` to
+If you wish to deploy through Xcode you can generate a project by passing `--ide=xcode` to
 `bin/gn gen`. If you are using Xcode version 10 or later, you may need to go to
 `Project Settings...` and verify that `Build System:` is set to
 `Legacy Build System`.
@@ -367,7 +389,7 @@ Setting the `cc` and `cxx` gn args is _not_ sufficient to build with clang-cl.
 These variables are ignored on Windows. Instead set the variable `clang_win` to
 your LLVM installation directory. If you installed the prebuilt LLVM downloaded
 from [here](https://releases.llvm.org/download.html 'LLVM Download') in the
-default location that would be:
+default location, that would be:
 
 ```
 clang_win = "C:\Program Files\LLVM"
@@ -375,6 +397,13 @@ clang_win = "C:\Program Files\LLVM"
 
 Follow the standard Windows path specification and not MinGW convention (e.g.
 `C:\Program Files\LLVM` not ~~`/c/Program Files/LLVM`~~).
+
+If you will be compiling the rest of your program with a compiler other than
+Clang, add this GN argument as well:
+
+```
+is_trivial_abi = false
+```
 
 ### Visual Studio Solutions
 

@@ -5,7 +5,7 @@
  * found in the LICENSE file.
  */
 
-#include "include/private/gpu/graphite/VulkanGraphiteTypesPriv.h"
+#include "src/gpu/graphite/vk/VulkanGraphiteTypesPriv.h"
 
 namespace skgpu::graphite {
 
@@ -19,7 +19,8 @@ VulkanTextureInfo VulkanTextureSpecToTextureInfo(const VulkanTextureSpec& vkSpec
                              vkSpec.fImageTiling,
                              vkSpec.fImageUsageFlags,
                              vkSpec.fSharingMode,
-                             vkSpec.fAspectMask);
+                             vkSpec.fAspectMask,
+                             vkSpec.fYcbcrConversionInfo);
 }
 
 } // namespace skgpu::graphite

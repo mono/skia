@@ -19,7 +19,9 @@
 #include "include/core/SkString.h"
 #include "include/encode/SkJpegEncoder.h"
 #include "include/encode/SkPngEncoder.h"
+#include "tools/DecodeUtils.h"
 #include "tools/Resources.h"
+#include "tools/fonts/FontToolUtils.h"
 
 namespace skiagm {
 
@@ -34,7 +36,7 @@ protected:
 
     void onDraw(SkCanvas* canvas) override {
         SkBitmap orig;
-        GetResourceAsBitmap("images/mandrill_512_q075.jpg", &orig);
+        ToolUtils::GetResourceAsBitmap("images/mandrill_512_q075.jpg", &orig);
         SkDynamicMemoryWStream stream;
         SkASSERT_RELEASE(SkPngEncoder::Encode(&stream, orig.pixmap(), {}));
         sk_sp<SkData> pngData = stream.detachAsData();
@@ -48,7 +50,7 @@ protected:
         canvas->drawImage(pngImage.get(), 0.0f, 0.0f);
         canvas->drawImage(jpgImage.get(), 512.0f, 0.0f);
 
-        SkFont font;
+        SkFont font = ToolUtils::DefaultPortableFont();
         font.setEdging(SkFont::Edging::kAlias);
         canvas->drawString("Images should look identical.", 450.0f, 550.0f, font, SkPaint());
     }

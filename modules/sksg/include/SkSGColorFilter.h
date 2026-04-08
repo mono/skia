@@ -8,17 +8,24 @@
 #ifndef SkSGColorFilter_DEFINED
 #define SkSGColorFilter_DEFINED
 
+#include "include/core/SkColorFilter.h"
+#include "include/core/SkRect.h"
+#include "include/core/SkRefCnt.h"
 #include "modules/sksg/include/SkSGEffectNode.h"
-
-#include "include/core/SkBlendMode.h"
+#include "modules/sksg/include/SkSGNode.h"
 
 #include <vector>
 
-class SkColorFilter;
+class SkCanvas;
+class SkMatrix;
+enum class SkBlendMode;
+struct SkPoint;
 
 namespace sksg {
 
 class Color;
+class InvalidationController;
+class RenderNode;
 
 /**
  * Base class for nodes which apply a color filter when rendering their descendants.
@@ -51,7 +58,13 @@ public:
 
     ~ExternalColorFilter() override;
 
+    enum class Coverage {
+        kNormal,       // the effect applies to the regular content coverage
+        kBoundingBox,  // the effect applies to the full content bounding box
+    };
+
     SG_ATTRIBUTE(ColorFilter, sk_sp<SkColorFilter>, fColorFilter)
+    SG_ATTRIBUTE(Coverage   , Coverage            , fCoverage   )
 
 protected:
     void onRender(SkCanvas*, const RenderContext*) const override;
@@ -60,6 +73,7 @@ private:
     explicit ExternalColorFilter(sk_sp<RenderNode>);
 
     sk_sp<SkColorFilter> fColorFilter;
+    Coverage             fCoverage = Coverage::kNormal;
 
     using INHERITED = EffectNode;
 };

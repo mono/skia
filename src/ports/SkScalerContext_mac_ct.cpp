@@ -47,6 +47,7 @@
 #include "src/utils/mac/SkCGBase.h"
 #include "src/utils/mac/SkCGGeometry.h"
 #include "src/utils/mac/SkCTFont.h"
+#include "src/utils/mac/SkCTFontCreateExactCopy.h"
 #include "src/utils/mac/SkUniqueCFRef.h"
 
 #include <algorithm>
@@ -625,7 +626,7 @@ public:
  */
 #define kScaleForSubPixelPositionHinting (4.0f)
 
-bool SkScalerContext_Mac::generatePath(const SkGlyph& glyph, SkPath* path) {
+bool SkScalerContext_Mac::generatePath(const SkGlyph& glyph, SkPath* path, bool* modified) {
     SkScalar scaleX = SK_Scalar1;
     SkScalar scaleY = SK_Scalar1;
 

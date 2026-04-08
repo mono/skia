@@ -7,13 +7,25 @@
 
 #include "src/gpu/graphite/render/MiddleOutFanRenderStep.h"
 
+#include "include/core/SkPath.h"
+#include "include/private/base/SkDebug.h"
+#include "src/base/SkEnumBitMask.h"
+#include "src/core/SkSLTypeShared.h"
+#include "src/gpu/BufferWriter.h"
+#include "src/gpu/graphite/Attribute.h"
+#include "src/gpu/graphite/DrawOrder.h"
 #include "src/gpu/graphite/DrawParams.h"
+#include "src/gpu/graphite/DrawTypes.h"
 #include "src/gpu/graphite/DrawWriter.h"
 #include "src/gpu/graphite/PipelineData.h"
+#include "src/gpu/graphite/geom/Geometry.h"
+#include "src/gpu/graphite/geom/Shape.h"
+#include "src/gpu/graphite/geom/Transform_graphite.h"
 #include "src/gpu/graphite/render/CommonDepthStencilSettings.h"
-
-#include "src/gpu/tessellate/FixedCountBufferUtils.h"
 #include "src/gpu/tessellate/MiddleOutPolygonTriangulator.h"
+
+#include <algorithm>
+#include <string_view>
 
 namespace skgpu::graphite {
 
@@ -27,7 +39,7 @@ MiddleOutFanRenderStep::MiddleOutFanRenderStep(bool evenOdd)
                      /*vertexAttrs=*/
                             {{"position", VertexAttribType::kFloat2, SkSLType::kFloat2},
                              {"depth", VertexAttribType::kFloat, SkSLType::kFloat},
-                             {"ssboIndex", VertexAttribType::kInt, SkSLType::kInt}},
+                             {"ssboIndices", VertexAttribType::kUInt2, SkSLType::kUInt2}},
                      /*instanceAttrs=*/{}) {}
 
 MiddleOutFanRenderStep::~MiddleOutFanRenderStep() {}
@@ -42,7 +54,7 @@ std::string MiddleOutFanRenderStep::vertexSkSL() const {
 
 void MiddleOutFanRenderStep::writeVertices(DrawWriter* writer,
                                            const DrawParams& params,
-                                           int ssboIndex) const {
+                                           skvx::uint2 ssboIndices) const {
     // TODO: Have Shape provide a path-like iterator so we don't actually have to convert non
     // paths to SkPath just to iterate their pts/verbs
     SkPath path = params.geometry().shape().asPath();
@@ -55,9 +67,9 @@ void MiddleOutFanRenderStep::writeVertices(DrawWriter* writer,
     verts.reserve(maxTrianglesInFans * 3);
     for (tess::PathMiddleOutFanIter it(path); !it.done();) {
         for (auto [p0, p1, p2] : it.nextStack()) {
-            verts.append(3) << p0 << depth << ssboIndex
-                            << p1 << depth << ssboIndex
-                            << p2 << depth << ssboIndex;
+            verts.append(3) << p0 << depth << ssboIndices
+                            << p1 << depth << ssboIndices
+                            << p2 << depth << ssboIndices;
         }
     }
 }

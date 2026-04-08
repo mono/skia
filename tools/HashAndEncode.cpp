@@ -52,6 +52,8 @@ HashAndEncode::HashAndEncode(const SkBitmap& bitmap) : fSize(bitmap.info().dimen
                                               srcAlpha = skcms_AlphaFormat_Opaque;     break;
         case kBGR_101010x_SkColorType:        srcFmt = skcms_PixelFormat_BGRA_1010102;
                                               srcAlpha = skcms_AlphaFormat_Opaque;     break;
+        case kRGB_F16F16F16x_SkColorType:     srcFmt = skcms_PixelFormat_RGBA_hhhh;
+                                              srcAlpha = skcms_AlphaFormat_Opaque;     break;
 
         case kR8G8_unorm_SkColorType:         return;
         case kR16G16_unorm_SkColorType:       return;
@@ -59,6 +61,7 @@ HashAndEncode::HashAndEncode(const SkBitmap& bitmap) : fSize(bitmap.info().dimen
         case kA16_unorm_SkColorType:          return;
         case kA16_float_SkColorType:          return;
         case kRGBA_10x6_SkColorType:          return;
+        case kBGRA_10101010_XR_SkColorType:   return;
     }
 
     skcms_ICCProfile srcProfile = *skcms_sRGB_profile();
@@ -96,8 +99,8 @@ HashAndEncode::HashAndEncode(const SkBitmap& bitmap) : fSize(bitmap.info().dimen
             fPixels.reset(nullptr);
             break;
         }
-        src = (char*)src + todo*SkColorTypeBytesPerPixel(bitmap.colorType());
-        dst = (char*)dst + todo*sizeof(uint64_t);
+        src = (const char*)src + todo*SkColorTypeBytesPerPixel(bitmap.colorType());
+        dst = (      char*)dst + todo*sizeof(uint64_t);
         N -= todo;
     }
 }
@@ -156,11 +159,11 @@ bool HashAndEncode::encodePNG(SkWStream* st,
     description.appendf("MD5: %s", md5);
 
     png_text text[2];
-    text[0].key  = (png_charp)"Author";
-    text[0].text = (png_charp)"DM unified Rec.2020";
+    text[0].key  = const_cast<png_charp>("Author");
+    text[0].text = const_cast<png_charp>("DM unified Rec.2020");
     text[0].compression = PNG_TEXT_COMPRESSION_NONE;
-    text[1].key  = (png_charp)"Description";
-    text[1].text = (png_charp)description.c_str();
+    text[1].key  = const_cast<png_charp>("Description");
+    text[1].text = const_cast<png_charp>(description.c_str());
     text[1].compression = PNG_TEXT_COMPRESSION_NONE;
     png_set_text(png, info, text, std::size(text));
 

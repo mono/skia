@@ -10,10 +10,19 @@
 #include "include/core/SkCanvas.h"
 #include "include/core/SkColor.h"
 #include "include/core/SkM44.h"
+#include "include/core/SkMatrix.h"
+#include "include/core/SkPaint.h"
 #include "include/core/SkPath.h"
+#include "include/core/SkPoint.h"
+#include "include/core/SkRefCnt.h"
+#include "include/core/SkSpan.h"
 #include "include/core/SkString.h"
-#include "include/private/base/SkAssert.h"
 #include "src/base/SkUTF.h"
+#include "tools/skui/InputState.h"
+
+#include <algorithm>
+#include <limits>
+#include <utility>
 
 namespace skottie_utils {
 
@@ -160,6 +169,13 @@ void TextEditor::drawCursor(SkCanvas* canvas, const TextInfo& tinfo) const {
     const auto cpath  = fCursorPath.makeTransform(SkMatrix::Translate(cxpos, cypos) *
                                                   SkMatrix::Scale(cscale, cscale));
 
+    // We stroke the cursor twice, with different colors, to ensure reasonable contrast
+    // regardless of background.
+    // The default inner stroke width is .5px for a font size of 10, and scales proportionally.
+    // The outer stroke width is slightly larger.
+    const auto inner_width = cscale * fCursorWeight * 0.05f,
+               outer_width = inner_width * 3 / 2;
+
     SkPaint p;
     p.setAntiAlias(true);
     p.setStyle(SkPaint::kStroke_Style);
@@ -169,10 +185,10 @@ void TextEditor::drawCursor(SkCanvas* canvas, const TextInfo& tinfo) const {
     canvas->concat(tinfo.fGlyphs[glyph_index].fMatrix);
 
     p.setColor(SK_ColorWHITE);
-    p.setStrokeWidth(3);
+    p.setStrokeWidth(outer_width);
     canvas->drawPath(cpath, p);
     p.setColor(SK_ColorBLACK);
-    p.setStrokeWidth(2);
+    p.setStrokeWidth(inner_width);
     canvas->drawPath(cpath, p);
 }
 

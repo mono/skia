@@ -1,25 +1,9 @@
 ### Compilation failed:
 
-error: :8:14 error: uniform storage requires that array elements are aligned to 16 bytes, but array element of type 'f32' has a stride of 4 bytes. Consider using a vector or struct as the element type instead.
-  testArray: array<f32, 5>,
-             ^^^^^^^^^^^^^
-
-:5:1 note: see layout of struct:
-/*            align(16) size(64) */ struct _GlobalUniforms {
-/* offset( 0) align(16) size(16) */   colorRed : vec4<f32>;
-/* offset(16) align( 8) size(16) */   testMatrix2x2 : mat2x2<f32>;
-/* offset(32) align( 4) size(20) */   testArray : array<f32, 5>;
-/* offset(52) align( 1) size(12) */   // -- implicit struct size padding --;
-/*                               */ };
-struct _GlobalUniforms {
-^^^^^^
-
-:10:36 note: '_GlobalUniforms' used in address space 'uniform' here
-@binding(0) @group(0) var<uniform> _globalUniforms: _GlobalUniforms;
-                                   ^^^^^^^^^^^^^^^
-
+error: Tint compilation failed.
 
 diagnostic(off, derivative_uniformity);
+diagnostic(off, chromium.unreachable_code);
 struct FSOut {
   @location(0) sk_FragColor: vec4<f32>,
 };

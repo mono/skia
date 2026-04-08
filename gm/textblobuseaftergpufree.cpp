@@ -15,8 +15,9 @@
 #include "include/core/SkString.h"
 #include "include/core/SkTextBlob.h"
 #include "include/core/SkTypeface.h"
-#include "include/gpu/GrDirectContext.h"
+#include "include/gpu/ganesh/GrDirectContext.h"
 #include "tools/ToolUtils.h"
+#include "tools/fonts/FontToolUtils.h"
 
 #include <string.h>
 
@@ -36,7 +37,7 @@ protected:
 
         const char text[] = "Hamburgefons";
 
-        SkFont font(ToolUtils::create_portable_typeface(), 20);
+        SkFont font(ToolUtils::DefaultPortableTypeface(), 20);
         auto blob = SkTextBlob::MakeFromText(text, strlen(text), font);
 
         // draw textblob

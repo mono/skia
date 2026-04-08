@@ -10,9 +10,9 @@
 #include "include/core/SkTypes.h"
 #include "include/pathops/SkPathOps.h"
 #include "include/private/base/SkDebug.h"
-#include "include/private/base/SkFloatBits.h"
 #include "include/private/base/SkMath.h"
 #include "src/base/SkArenaAlloc.h"
+#include "src/base/SkFloatBits.h"
 #include "src/pathops/SkIntersections.h"
 #include "src/pathops/SkOpAngle.h"
 #include "src/pathops/SkOpCoincidence.h"
@@ -364,7 +364,7 @@ void SkPathOpsDebug::DumpCoinDict() {
 }
 
 void SkPathOpsDebug::CoinDict::dump(const char* str, bool visitCheck) const {
-    int count = fDict.count();
+    int count = fDict.size();
     for (int index = 0; index < count; ++index) {
         const auto& entry = fDict[index];
         if (visitCheck || entry.fGlitchType == kUninitialized_Glitch) {

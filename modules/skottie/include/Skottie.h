@@ -8,24 +8,26 @@
 #ifndef Skottie_DEFINED
 #define Skottie_DEFINED
 
-#include "include/core/SkFontMgr.h"
 #include "include/core/SkRefCnt.h"
+#include "include/core/SkScalar.h"
 #include "include/core/SkSize.h"
 #include "include/core/SkString.h"
 #include "include/core/SkTypes.h"
-#include "modules/skottie/include/ExternalLayer.h"
-#include "modules/skottie/include/SkottieProperty.h"
-#include "modules/skottie/include/SlotManager.h"
 #include "modules/skresources/include/SkResources.h"
 
-#include <memory>
+// TODO(kjlubick) update clients and then remove the following:
+#include "include/core/SkFontMgr.h"  // IWYU pragma: keep
+#include "modules/skottie/include/ExternalLayer.h"  // IWYU pragma: keep
+#include "modules/skottie/include/SkottieProperty.h"  // IWYU pragma: keep
+#include "modules/skottie/include/SlotManager.h"  // IWYU pragma: keep
+
+#include <cstddef>
+#include <cstdint>
 #include <vector>
 
 class SkCanvas;
-struct SkRect;
 class SkStream;
-
-namespace skjson { class ObjectValue; }
+struct SkRect;
 
 namespace sksg {
 
@@ -33,6 +35,8 @@ class InvalidationController;
 class RenderNode;
 
 } // namespace sksg
+
+namespace SkShapers { class Factory; }
 
 namespace skottie {
 
@@ -51,7 +55,7 @@ public:
         kError,
     };
 
-    virtual void log(Level, const char message[], const char* json = nullptr);
+    virtual void log(Level, const char message[], const char* json = nullptr) = 0;
 };
 
 // Evaluates AE expressions.
@@ -99,6 +103,8 @@ public:
         };
 
         explicit Builder(uint32_t flags = 0);
+        Builder(const Builder&);
+        Builder(Builder&&);
         ~Builder();
 
         struct Stats {
@@ -157,6 +163,13 @@ public:
         Builder& setExpressionManager(sk_sp<ExpressionManager>);
 
         /**
+         * Registers a factory to be used when shaping text.
+         * If unspecified, text will be shaped with primitive shaping.
+         * See //modules/skshaper/utils/FactoryHelpers.h
+         */
+        Builder& setTextShapingFactory(sk_sp<SkShapers::Factory>);
+
+        /**
          * Animation factories.
          */
         sk_sp<Animation> make(SkStream*);
@@ -178,6 +191,7 @@ public:
         sk_sp<MarkerObserver  >   fMarkerObserver;
         sk_sp<PrecompInterceptor> fPrecompInterceptor;
         sk_sp<ExpressionManager>  fExpressionManager;
+        sk_sp<SkShapers::Factory> fShapingFactory;
         sk_sp<SlotManager>        fSlotManager;
         Stats                     fStats;
     };

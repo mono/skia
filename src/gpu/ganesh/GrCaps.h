@@ -11,8 +11,9 @@
 #include "include/core/SkCapabilities.h"
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkTypes.h"
-#include "include/gpu/GrDriverBugWorkarounds.h"
-#include "include/gpu/GrTypes.h"
+#include "include/gpu/ganesh/GrDriverBugWorkarounds.h"
+#include "include/gpu/ganesh/GrTypes.h"
+#include "include/private/base/SkMacros.h"
 #include "include/private/base/SkTo.h"
 #include "include/private/gpu/ganesh/GrTypesPriv.h"
 #include "src/gpu/Blend.h"
@@ -62,7 +63,7 @@ public:
 
     const GrShaderCaps* shaderCaps() const { return fShaderCaps.get(); }
 
-#if defined(GR_TEST_UTILS)
+#if defined(GPU_TEST_UTILS)
     std::string_view deviceName() const { return fDeviceName; }
 #endif
 
@@ -398,11 +399,15 @@ public:
 
     bool wireframeMode() const { return fWireframeMode; }
 
-    /** Supports using GrFence. */
-    bool fenceSyncSupport() const { return fFenceSyncSupport; }
-
-    /** Supports using GrSemaphore. */
+    /** Supports using GrSemaphores. */
     bool semaphoreSupport() const { return fSemaphoreSupport; }
+
+    /** Supports using GrBackendSemaphore as "signal" semaphores or for waiting. See also
+     *  GrFlushInfo and GrDirectContext. */
+    bool backendSemaphoreSupport() const { return fBackendSemaphoreSupport; }
+
+    /** Supports async callback for finishedProcs */
+    bool finishedProcAsyncCallbackSupport() const { return fFinishedProcAsyncCallbackSupport; }
 
     bool crossContextTextureSupport() const { return fCrossContextTextureSupport; }
     /**
@@ -516,7 +521,7 @@ public:
         // approach, but inline uploads are very rare and already slow.
         kVulkanHasResolveLoadSubpass = 0x1,
     };
-    GR_DECL_BITFIELD_CLASS_OPS_FRIENDS(ProgramDescOverrideFlags);
+    SK_DECL_BITFIELD_CLASS_OPS_FRIENDS(ProgramDescOverrideFlags);
 
 
     virtual GrProgramDesc makeDesc(
@@ -559,7 +564,7 @@ public:
     std::tuple<GrColorType, GrBackendFormat> getFallbackColorTypeAndFormat(GrColorType,
                                                                            int sampleCount) const;
 
-#if defined(GR_TEST_UTILS)
+#if defined(GPU_TEST_UTILS)
     virtual std::vector<GrTest::TestFormatColorTypeCombination> getTestingCombinations() const = 0;
 #endif
 
@@ -569,7 +574,7 @@ protected:
     // NOTE: this method will only reduce the caps, never expand them.
     void finishInitialization(const GrContextOptions& options);
 
-#if defined(GR_TEST_UTILS)
+#if defined(GPU_TEST_UTILS)
     void setDeviceName(const char* n) {
         fDeviceName = n;
     }
@@ -631,8 +636,9 @@ protected:
     // ANGLE performance workaround
     bool fPreferVRAMUseOverFlushes                   : 1;
 
-    bool fFenceSyncSupport                           : 1;
     bool fSemaphoreSupport                           : 1;
+    bool fBackendSemaphoreSupport                    : 1;
+    bool fFinishedProcAsyncCallbackSupport           : 1;
 
     // Requires fence sync support in GL.
     bool fCrossContextTextureSupport                 : 1;
@@ -662,7 +668,7 @@ protected:
 
     GrDriverBugWorkarounds fDriverBugWorkarounds;
 
-#if defined(GR_TEST_UTILS)
+#if defined(GPU_TEST_UTILS)
     std::string fDeviceName;
 #endif
 
@@ -700,6 +706,6 @@ private:
     using INHERITED = SkRefCnt;
 };
 
-GR_MAKE_BITFIELD_CLASS_OPS(GrCaps::ProgramDescOverrideFlags)
+SK_MAKE_BITFIELD_CLASS_OPS(GrCaps::ProgramDescOverrideFlags)
 
 #endif

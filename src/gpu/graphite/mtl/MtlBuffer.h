@@ -24,14 +24,14 @@ public:
     id<MTLBuffer> mtlBuffer() const { return fBuffer.get(); }
 
 private:
-    MtlBuffer(const MtlSharedContext*,
-              size_t size,
-              sk_cfp<id<MTLBuffer>>);
+    MtlBuffer(const MtlSharedContext*, size_t size, sk_cfp<id<MTLBuffer>>);
 
     void onMap() override;
     void onUnmap() override;
 
     void freeGpuData() override;
+
+    void setBackendLabel(char const* label) override;
 
     sk_cfp<id<MTLBuffer>> fBuffer;
 };

@@ -1,7 +1,6 @@
 // Copyright 2019 Google LLC.
 // Use of this source code is governed by a BSD-style license that can be found in the LICENSE file.
 #include "tools/fiddle/examples.h"
-// HASH=dd92db963af190e849894038f39b598a
 REG_FIDDLE(Canvas_copy_const_SkBitmap, 256, 256, true, 0) {
 void draw(SkCanvas* ) {
     SkBitmap bitmap;
@@ -16,7 +15,7 @@ void draw(SkCanvas* ) {
     const SkPMColor* pixels = pixmap.addr32();  // points to top-left of bitmap
     SkPMColor pmWhite = pixels[0];  // the Premultiplied format may vary
     SkPaint paint;  // by default, draws black, 12 point text
-    SkFont font;
+    SkFont font = SkFont(fontMgr->matchFamilyStyle(nullptr, {}));
     canvas.drawString("!", 1, 10, font, paint);  // 1 char at baseline (1, 10)
     for (int y = 0; y < bitmap.height(); ++y) {
         for (int x = 0; x < bitmap.width(); ++x) {

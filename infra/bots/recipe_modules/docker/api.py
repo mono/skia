@@ -28,16 +28,15 @@ class DockerApi(recipe_api.RecipeApi):
     return MOUNT_OUT
 
   # Unless match_directory_structure ==True, src_dir must be
-  # self.m.path['start_dir'] for the script to be located correctly.
+  # self.m.path.start_dir for the script to be located correctly.
   def run(self, name, docker_image, src_dir, out_dir, script, args=None, docker_args=None, copies=None, recursive_read=None, attempts=1, match_directory_structure=False):
     # Setup. Docker runs as a different user, so we need to give it access to
     # read, write, and execute certain files.
     with self.m.step.nest('Docker setup'):
-      step_stdout = self.m.python.inline(
+      uid_gid_script = self.resource('get_uid_gid.py')
+      step_stdout = self.m.step(
           name='Get uid and gid',
-          program='''import os
-print('%d:%d' % (os.getuid(), os.getgid()))
-''',
+          cmd=['python3', uid_gid_script],
           stdout=self.m.raw_io.output(),
           step_test_data=(
               lambda: self.m.raw_io.test_api.stream_output('13:17'))
@@ -85,9 +84,9 @@ print('%d:%d' % (os.getuid(), os.getgid()))
     if docker_args:
       cmd.extend(docker_args)
     if not match_directory_structure:
-      # This only works when src_dir == self.m.path['start_dir'] but that's our
+      # This only works when src_dir == self.m.path.start_dir but that's our
       # only use case for now.
-      script = MOUNT_SRC + '/' + posixpath.relpath(str(script), str(self.m.path['start_dir']))
+      script = MOUNT_SRC + '/' + posixpath.relpath(str(script), str(self.m.path.start_dir))
     cmd.extend([docker_image, script])
     if args:
       cmd.extend(args)

@@ -7,24 +7,30 @@
 
 #include "include/gpu/ganesh/gl/GrGLDirectContext.h"
 
-#include "include/gpu/GrContextOptions.h"
-#include "include/gpu/GrDirectContext.h"
-#include "include/gpu/GrTypes.h"
-#include "include/gpu/gl/GrGLConfig.h"
-#include "include/gpu/gl/GrGLFunctions.h"
-#include "include/gpu/gl/GrGLInterface.h"
-#include "include/gpu/gl/GrGLTypes.h"
+#include "include/gpu/ganesh/GrContextOptions.h"
+#include "include/gpu/ganesh/GrDirectContext.h"
+#include "include/gpu/ganesh/GrTypes.h"
+#include "include/gpu/ganesh/gl/GrGLConfig.h"
+#include "include/gpu/ganesh/gl/GrGLFunctions.h"
+#include "include/gpu/ganesh/gl/GrGLInterface.h"
+#include "include/gpu/ganesh/gl/GrGLTypes.h"
+
+#include "src/gpu/ganesh/GrContextThreadSafeProxyPriv.h"
 #include "src/gpu/ganesh/GrDirectContextPriv.h"
 #include "src/gpu/ganesh/gl/GrGLDefines.h"
 #include "src/gpu/ganesh/gl/GrGLGpu.h"
 
 #include <utility>
 
-#if defined(GR_TEST_UTILS)
+#if defined(GPU_TEST_UTILS)
 #   include "src/base/SkRandom.h"
 #   if defined(SK_ENABLE_SCOPED_LSAN_SUPPRESSIONS)
 #       include <sanitizer/lsan_interface.h>
 #   endif
+#endif
+
+#if defined(SK_DISABLE_LEGACY_GL_MAKE_NATIVE_INTERFACE)
+#include "include/private/base/SkAssert.h"
 #endif
 
 namespace GrDirectContexts {
@@ -34,6 +40,7 @@ sk_sp<GrDirectContext> MakeGL(sk_sp<const GrGLInterface> glInterface) {
     return MakeGL(std::move(glInterface), defaultOptions);
 }
 
+#if !defined(SK_DISABLE_LEGACY_GL_MAKE_NATIVE_INTERFACE)
 sk_sp<GrDirectContext> MakeGL(const GrContextOptions& options) {
     return MakeGL(nullptr, options);
 }
@@ -42,8 +49,9 @@ sk_sp<GrDirectContext> MakeGL() {
     GrContextOptions defaultOptions;
     return MakeGL(nullptr, defaultOptions);
 }
+#endif
 
-#if defined(GR_TEST_UTILS)
+#if defined(GPU_TEST_UTILS)
 GrGLFunction<GrGLGetErrorFn> make_get_error_with_random_oom(GrGLFunction<GrGLGetErrorFn> original) {
     // A SkRandom and a GrGLFunction<GrGLGetErrorFn> are too big to be captured by a
     // GrGLFunction<GrGLGetError> (surprise, surprise). So we make a context object and
@@ -74,8 +82,14 @@ GrGLFunction<GrGLGetErrorFn> make_get_error_with_random_oom(GrGLFunction<GrGLGet
 
 sk_sp<GrDirectContext> MakeGL(sk_sp<const GrGLInterface> glInterface,
                               const GrContextOptions& options) {
-    auto direct = GrDirectContextPriv::Make(GrBackendApi::kOpenGL, options);
-#if defined(GR_TEST_UTILS)
+#if defined(SK_DISABLE_LEGACY_GL_MAKE_NATIVE_INTERFACE)
+    SkASSERT(glInterface);
+#endif
+    auto direct = GrDirectContextPriv::Make(
+            GrBackendApi::kOpenGL,
+            options,
+            GrContextThreadSafeProxyPriv::Make(GrBackendApi::kOpenGL, options));
+#if defined(GPU_TEST_UTILS)
     if (options.fRandomGLOOM) {
         auto copy = sk_make_sp<GrGLInterface>(*glInterface);
         copy->fFunctions.fGetError =
@@ -96,24 +110,3 @@ sk_sp<GrDirectContext> MakeGL(sk_sp<const GrGLInterface> glInterface,
 }
 
 }  // namespace GrDirectContexts
-
-#if !defined(SK_DISABLE_LEGACY_GL_GRDIRECTCONTEXT_FACTORIES)
-sk_sp<GrDirectContext> GrDirectContext::MakeGL(sk_sp<const GrGLInterface> glInterface) {
-    GrContextOptions defaultOptions;
-    return GrDirectContexts::MakeGL(std::move(glInterface), defaultOptions);
-}
-
-sk_sp<GrDirectContext> GrDirectContext::MakeGL(const GrContextOptions& options) {
-    return GrDirectContexts::MakeGL(options);
-}
-
-sk_sp<GrDirectContext> GrDirectContext::MakeGL() {
-    return GrDirectContexts::MakeGL();
-}
-
-sk_sp<GrDirectContext> GrDirectContext::MakeGL(sk_sp<const GrGLInterface> glInterface,
-                                               const GrContextOptions& options) {
-    return GrDirectContexts::MakeGL(std::move(glInterface), options);
-}
-
-#endif  // !defined(SK_DISABLE_LEGACY_GL_GRDIRECTCONTEXT_FACTORIES)

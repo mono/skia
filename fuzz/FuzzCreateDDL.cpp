@@ -8,13 +8,14 @@
 #include "include/core/SkCanvas.h"
 #include "include/core/SkPaint.h"
 #include "include/core/SkSurface.h"
-#include "include/gpu/GrDirectContext.h"
+#include "include/gpu/ganesh/GrDirectContext.h"
 #include "include/gpu/ganesh/SkSurfaceGanesh.h"
 #include "include/private/chromium/GrDeferredDisplayList.h"
 #include "include/private/chromium/GrDeferredDisplayListRecorder.h"
 #include "include/private/chromium/GrSurfaceCharacterization.h"
 #include "include/private/gpu/ganesh/GrTypesPriv.h"
 #include "src/gpu/ganesh/GrShaderCaps.h"
+#include "src/gpu/ganesh/GrUtil.h"
 #include "tools/gpu/GrContextFactory.h"
 
 #include "fuzz/Fuzz.h"
@@ -144,10 +145,16 @@ static GrSurfaceCharacterization make_characterization(Fuzz* fuzz, GrDirectConte
 #endif
     GrSurfaceCharacterization c;
     size_t maxResourceBytes = dContext->getResourceCacheLimit();
-    c = dContext->threadSafeProxy()->createCharacterization(
-                                maxResourceBytes, ii, backendFormat, kSampleCount,
-                                origin, gen_fuzzed_surface_props(fuzz), true,
-                                false, true, protect);
+    c = dContext->threadSafeProxy()->createCharacterization(maxResourceBytes,
+                                                            ii,
+                                                            backendFormat,
+                                                            kSampleCount,
+                                                            origin,
+                                                            gen_fuzzed_surface_props(fuzz),
+                                                            skgpu::Mipmapped::kYes,
+                                                            false,
+                                                            true,
+                                                            protect);
     if (!c.isValid()) {
         SkDebugf("Could not create Characterization in the backend %s",
                  GrBackendApiToStr(dContext->backend()));
@@ -182,7 +189,7 @@ static sk_sp<SkSurface> make_surface(Fuzz* fuzz, GrDirectContext* dContext, cons
 }
 
 static bool draw_ddl(sk_sp<SkSurface> surface, sk_sp<const GrDeferredDisplayList> ddl) {
-    return skgpu::ganesh::DrawDDL(surface, ddl);
+    return skgpu::ganesh::DrawDDL(std::move(surface), std::move(ddl));
 }
 
 using SurfaceAndChar = std::tuple<sk_sp<SkSurface>, GrSurfaceCharacterization>;

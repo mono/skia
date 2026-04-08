@@ -7,14 +7,22 @@
 
 #include "src/gpu/ganesh/GrResourceAllocator.h"
 
+#include "include/core/SkTypes.h"
+#include "include/gpu/GpuTypes.h"
+#include "include/gpu/ganesh/GrDirectContext.h"
+#include "include/private/gpu/ganesh/GrTypesPriv.h"
 #include "src/gpu/ganesh/GrCaps.h"
 #include "src/gpu/ganesh/GrDirectContextPriv.h"
 #include "src/gpu/ganesh/GrGpuResourcePriv.h"
-#include "src/gpu/ganesh/GrRenderTargetProxy.h"
+#include "src/gpu/ganesh/GrResourceCache.h"
 #include "src/gpu/ganesh/GrResourceProvider.h"
 #include "src/gpu/ganesh/GrSurfaceProxy.h"
 #include "src/gpu/ganesh/GrSurfaceProxyPriv.h"
-#include "src/gpu/ganesh/GrTexture.h"
+#include "src/gpu/ganesh/GrTexture.h"  // IWYU pragma: keep
+
+#include <cstddef>
+#include <limits>
+#include <utility>
 
 #ifdef SK_DEBUG
 #include <atomic>
@@ -45,7 +53,7 @@ GrResourceAllocator::~GrResourceAllocator() {
 }
 
 void GrResourceAllocator::addInterval(GrSurfaceProxy* proxy, unsigned int start, unsigned int end,
-                                      ActualUse actualUse
+                                      ActualUse actualUse, AllowRecycling allowRecycling
                                       SkDEBUGCODE(, bool isDirectDstRead)) {
     SkASSERT(start <= end);
     SkASSERT(!fAssigned);  // We shouldn't be adding any intervals after (or during) assignment
@@ -89,6 +97,11 @@ void GrResourceAllocator::addInterval(GrSurfaceProxy* proxy, unsigned int start,
         if (ActualUse::kYes == actualUse) {
             intvl->addUse();
         }
+        if (allowRecycling == AllowRecycling::kNo) {
+            // In this case, a preexisting interval is made non-reuseable since its proxy is sampled
+            // into a secondary command buffer.
+            intvl->disallowRecycling();
+        }
         intvl->extendEnd(end);
         return;
     }
@@ -96,6 +109,9 @@ void GrResourceAllocator::addInterval(GrSurfaceProxy* proxy, unsigned int start,
 
     if (ActualUse::kYes == actualUse) {
         newIntvl->addUse();
+    }
+    if (allowRecycling == AllowRecycling::kNo) {
+        newIntvl->disallowRecycling();
     }
     fIntvlList.insertByIncreasingStart(newIntvl);
     fIntvlHash.set(proxyID, newIntvl);
@@ -128,7 +144,12 @@ GrResourceAllocator::Register::Register(GrSurfaceProxy* originatingProxy,
 
 bool GrResourceAllocator::Register::isRecyclable(const GrCaps& caps,
                                                  GrSurfaceProxy* proxy,
-                                                 int knownUseCount) const {
+                                                 int knownUseCount,
+                                                 AllowRecycling allowRecycling) const {
+    if (allowRecycling == AllowRecycling::kNo) {
+        return false;
+    }
+
     if (!can_proxy_use_scratch(caps, proxy)) {
         return false;
     }
@@ -308,7 +329,8 @@ void GrResourceAllocator::expire(unsigned int curIndex) {
         SkASSERT(!intvl->next());
 
         Register* r = intvl->getRegister();
-        if (r && r->isRecyclable(*fDContext->priv().caps(), intvl->proxy(), intvl->uses())) {
+        if (r && r->isRecyclable(*fDContext->priv().caps(), intvl->proxy(), intvl->uses(),
+                                 intvl->allowRecycling())) {
 #if GR_ALLOCATION_SPEW
             SkDebugf("putting register %d back into pool\n", r->uniqueID());
 #endif

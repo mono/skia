@@ -17,9 +17,17 @@ mod ffi {
         Coarse,
         DrawLeaf,
         DrawReduce,
-        Fine,
-        PathCoarse,
-        PathCoarseFull,
+        FineArea,
+        FineMsaa16,
+        FineMsaa8,
+        FineAreaR8,
+        FineMsaa16R8,
+        FineMsaa8R8,
+        Flatten,
+        PathCount,
+        PathCountSetup,
+        PathTiling,
+        PathTilingSetup,
         Pathseg,
         PathtagReduce,
         PathtagReduce2,
@@ -84,8 +92,23 @@ mod ffi {
         EvenOdd,
     }
 
+    enum CapStyle {
+        Butt,
+        Square,
+        Round,
+    }
+
+    enum JoinStyle {
+        Bevel,
+        Miter,
+        Round,
+    }
+
     struct Stroke {
         width: f32,
+        miter_limit: f32,
+        cap: CapStyle,
+        join: JoinStyle,
     }
 
     #[derive(Copy, Clone, Default, Debug)]
@@ -126,16 +149,19 @@ mod ffi {
         path_scan1: WorkgroupSize,
         path_scan: WorkgroupSize,
         bbox_clear: WorkgroupSize,
-        path_seg: WorkgroupSize,
+        flatten: WorkgroupSize,
         draw_reduce: WorkgroupSize,
         draw_leaf: WorkgroupSize,
         clip_reduce: WorkgroupSize,
         clip_leaf: WorkgroupSize,
         binning: WorkgroupSize,
         tile_alloc: WorkgroupSize,
-        path_coarse: WorkgroupSize,
+        path_count_setup: WorkgroupSize,
+        // Note: `path_count` must use an indirect dispatch
         backdrop: WorkgroupSize,
         coarse: WorkgroupSize,
+        path_tiling_setup: WorkgroupSize,
+        // Note: `path_tiling` must use an indirect dispatch
         fine: WorkgroupSize,
     }
 
@@ -147,7 +173,6 @@ mod ffi {
         path_reduced_scan: u32,
         path_monoids: u32,
         path_bboxes: u32,
-        cubics: u32,
         draw_reduced: u32,
         draw_monoids: u32,
         info: u32,
@@ -157,11 +182,14 @@ mod ffi {
         clip_bboxes: u32,
         draw_bboxes: u32,
         bump_alloc: u32,
+        indirect_count: u32,
         bin_headers: u32,
         paths: u32,
         // Bump allocated buffers
+        lines: u32,
         bin_data: u32,
         tiles: u32,
+        seg_counts: u32,
         segments: u32,
         ptcl: u32,
     }
@@ -198,6 +226,7 @@ mod ffi {
         );
         fn begin_clip(self: &mut Encoding, transform: Affine, path_iter: Pin<&mut PathIterator>);
         fn end_clip(self: &mut Encoding);
+        fn append(self: &mut Encoding, other: &Encoding);
         fn prepare_render(
             self: &Encoding,
             width: u32,
@@ -205,7 +234,7 @@ mod ffi {
             background: &Color,
         ) -> Box<RenderConfiguration>;
 
-        /// The resolved scene encoding metadata that can be used to initiate pipeline dispatches.
+        /// Resolved scene encoding metadata that can be used to initiate pipeline dispatches.
         type RenderConfiguration;
         fn config_uniform_buffer_size(self: &RenderConfiguration) -> usize;
         fn scene_buffer_size(self: &RenderConfiguration) -> usize;
@@ -213,6 +242,11 @@ mod ffi {
         fn write_scene_buffer(self: &RenderConfiguration, out_buffer: &mut [u8]) -> bool;
         fn workgroup_counts(self: &RenderConfiguration) -> DispatchInfo;
         fn buffer_sizes(self: &RenderConfiguration) -> BufferSizes;
+
+        /// Sample mask lookup tables used in MSAA modes. This data can be computed once and reused
+        /// across all renders.
+        fn build_mask_lut_16() -> Vec<u8>;
+        fn build_mask_lut_8() -> Vec<u8>;
     }
 
     unsafe extern "C++" {
@@ -230,3 +264,11 @@ use {
     encoding::{new_encoding, Encoding, RenderConfiguration},
     shaders::{shader, Shader},
 };
+
+fn build_mask_lut_16() -> Vec<u8> {
+    vello_encoding::make_mask_lut_16()
+}
+
+fn build_mask_lut_8() -> Vec<u8> {
+    vello_encoding::make_mask_lut()
+}

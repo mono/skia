@@ -9,7 +9,7 @@
 
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkSurfaceProps.h"
-#include "include/gpu/GrTypes.h"
+#include "include/gpu/ganesh/GrTypes.h"
 #include "tools/window/DisplayParams.h"
 
 class GrDirectContext;
@@ -46,6 +46,7 @@ public:
 #if defined(SK_GRAPHITE)
     skgpu::graphite::Context* graphiteContext() const { return fGraphiteContext.get(); }
     skgpu::graphite::Recorder* graphiteRecorder() const { return fGraphiteRecorder.get(); }
+    void snapRecordingAndSubmit();
 #endif
 
     int width() const { return fWidth; }

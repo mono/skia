@@ -28,13 +28,14 @@
 #include "include/core/SkTextBlob.h"
 #include "include/core/SkTypeface.h"
 #include "include/core/SkTypes.h"
-#include "include/gpu/GrContextOptions.h"
-#include "include/gpu/GrDirectContext.h"
-#include "include/gpu/GrRecordingContext.h"
+#include "include/gpu/ganesh/GrContextOptions.h"
+#include "include/gpu/ganesh/GrDirectContext.h"
+#include "include/gpu/ganesh/GrRecordingContext.h"
 #include "include/private/base/SkTemplates.h"
 #include "include/private/gpu/ganesh/GrTypesPriv.h"
 #include "src/gpu/ganesh/GrDirectContextPriv.h"
 #include "tools/ToolUtils.h"
+#include "tools/fonts/FontToolUtils.h"
 
 #if defined(SK_GRAPHITE)
 #include "include/gpu/graphite/ContextOptions.h"
@@ -63,7 +64,7 @@ class FontRegenGM : public skiagm::GM {
 #if defined(SK_GRAPHITE)
     void modifyGraphiteContextOptions(skgpu::graphite::ContextOptions* options) const override {
         options->fGlyphCacheTextureMaximumBytes = 0;
-        options->fAllowMultipleGlyphCacheTextures = false;
+        options->fAllowMultipleAtlasTextures = false;
     }
 #endif
 
@@ -74,7 +75,7 @@ class FontRegenGM : public skiagm::GM {
     void onOnceBeforeDraw() override {
         this->setBGColor(SK_ColorLTGRAY);
 
-        auto tf = ToolUtils::create_portable_typeface("sans-serif", SkFontStyle::Normal());
+        auto tf = ToolUtils::CreatePortableTypeface("sans-serif", SkFontStyle::Normal());
 
         static const SkString kTexts[] = {
             SkString("abcdefghijklmnopqrstuvwxyz"),
@@ -141,14 +142,14 @@ class BadAppleGM : public skiagm::GM {
 
     void onOnceBeforeDraw() override {
         this->setBGColor(SK_ColorWHITE);
-        auto fm = SkFontMgr::RefDefault();
+        auto fm = ToolUtils::TestFontMgr();
 
         static const SkString kTexts[] = {
                 SkString("Meet"),
                 SkString("iPad Pro"),
         };
 
-        SkFont font;
+        SkFont font = ToolUtils::DefaultPortableFont();
         font.setEdging(SkFont::Edging::kSubpixelAntiAlias);
         font.setSubpixel(true);
         font.setSize(256);

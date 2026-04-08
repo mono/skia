@@ -7,6 +7,7 @@
 
 #include "src/gpu/ganesh/GrWaitRenderTask.h"
 
+#include "include/private/base/SkAssert.h"
 #include "src/gpu/ganesh/GrGpu.h"
 #include "src/gpu/ganesh/GrOpFlushState.h"
 #include "src/gpu/ganesh/GrResourceAllocator.h"
@@ -18,7 +19,8 @@ void GrWaitRenderTask::gatherProxyIntervals(GrResourceAllocator* alloc) const {
     SkASSERT(0 == this->numTargets());
     auto fakeOp = alloc->curOp();
     alloc->addInterval(fWaitedOn.proxy(), fakeOp, fakeOp,
-                       GrResourceAllocator::ActualUse::kYes);
+                       GrResourceAllocator::ActualUse::kYes,
+                       GrResourceAllocator::AllowRecycling::kYes);
     alloc->incOps();
 }
 

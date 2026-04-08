@@ -16,9 +16,9 @@
 #include "include/core/SkSurfaceProps.h"
 #include "include/core/SkTypes.h"
 #include "include/gpu/GpuTypes.h"
-#include "include/gpu/GrDirectContext.h"
-#include "include/gpu/GrRecordingContext.h"
-#include "include/gpu/GrTypes.h"
+#include "include/gpu/ganesh/GrDirectContext.h"
+#include "include/gpu/ganesh/GrRecordingContext.h"
+#include "include/gpu/ganesh/GrTypes.h"
 #include "include/private/gpu/ganesh/GrTypesPriv.h"
 #include "src/core/SkPathPriv.h"
 #include "src/gpu/SkBackingFit.h"
@@ -96,8 +96,8 @@ static bool cache_non_scratch_resources_equals(GrResourceCache* cache, int expec
 
 static void test_path(
         skiatest::Reporter* reporter,
-        std::function<SkPath(void)> createPath,
-        std::function<skgpu::ganesh::PathRenderer*(GrRecordingContext*)> makePathRenderer,
+        const std::function<SkPath(void)>& createPath,
+        const std::function<skgpu::ganesh::PathRenderer*(GrRecordingContext*)>& makePathRenderer,
         int expected,
         bool checkListeners,
         GrAAType aaType = GrAAType::kNone,
@@ -185,7 +185,7 @@ DEF_GANESH_TEST(TriangulatingPathRendererCacheTest,
     paint.setStrokeWidth(1);
     GrStyle style(paint);
     test_path(reporter, create_concave_path, createPR, kExpectedResources, false, GrAAType::kNone,
-              style);
+              std::move(style));
 }
 #endif
 
@@ -212,5 +212,5 @@ DEF_GANESH_TEST(SoftwarePathRendererCacheTest,
     paint.setStrokeWidth(1);
     GrStyle style(paint);
     test_path(reporter, create_concave_path, createPR, kExpectedResources, true,
-              GrAAType::kCoverage, style);
+              GrAAType::kCoverage, std::move(style));
 }

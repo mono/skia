@@ -12,6 +12,7 @@
 #undef GetGlyphIndices
 
 #include "include/codec/SkCodec.h"
+#include "include/codec/SkPngDecoder.h"
 #include "include/core/SkBBHFactory.h"
 #include "include/core/SkBitmap.h"
 #include "include/core/SkData.h"
@@ -1052,7 +1053,6 @@ bool SkScalerContext_DW::drawColorV1Paint(SkCanvas& canvas,
         // 2) Scale stops accordingly to 0 to 1 range.
 
         float colorStopRange = stops.back().position - stops.front().position;
-        bool colorStopInserted = false;
         if (colorStopRange == 0.f) {
             if (tileMode != SkTileMode::kClamp) {
                 //skPaint.setColor(SK_ColorTRANSPARENT);
@@ -1067,7 +1067,6 @@ bool SkScalerContext_DW::drawColorV1Paint(SkCanvas& canvas,
                 // color stops to the shader.
                 stops.push_back({ stops.back().position + 1.0f, stops.back().color });
                 colorStopRange = 1.0f;
-                colorStopInserted = true;
             }
         }
 
@@ -1088,8 +1087,7 @@ bool SkScalerContext_DW::drawColorV1Paint(SkCanvas& canvas,
         * start angle being larger than end angle. */
         startAngleScaled = 360.f - startAngleScaled;
         endAngleScaled = 360.f - endAngleScaled;
-        if (startAngleScaled > endAngleScaled ||
-            (startAngleScaled == endAngleScaled && !colorStopInserted)) {
+        if (startAngleScaled >= endAngleScaled) {
             std::swap(startAngleScaled, endAngleScaled);
             std::reverse(stops.begin(), stops.end());
             for (auto& stop : stops) {
@@ -1412,7 +1410,7 @@ bool SkScalerContext_DW::generateColorV1PaintBounds(
     }
 }
 
-bool SkScalerContext_DW::generateColorV1Metrics(const SkGlyph& glyph, SkIRect* ibounds) {
+bool SkScalerContext_DW::generateColorV1Metrics(const SkGlyph& glyph, SkRect* bounds) {
     DWriteFontTypeface* typeface = this->getDWriteTypeface();
     IDWriteFontFace7* fontFace = typeface->fDWriteFontFace7/*.get()*/;
     if (!fontFace) {
@@ -1460,17 +1458,17 @@ bool SkScalerContext_DW::generateColorV1Metrics(const SkGlyph& glyph, SkIRect* i
         if (!this->generateColorV1PaintBounds(&matrix, &r, *paintReader, paintElement)) {
             return false;
         }
+        *bounds = r;
     } else {
-        r = sk_rect_from(clipBox);
-        matrix.mapRect(&r);
+        *bounds = sk_rect_from(clipBox);
+        matrix.mapRect(bounds);
     }
-    r.roundOut(ibounds);
     return true;
 }
 
 #else  // DWRITE_CORE || (defined(NTDDI_WIN11_ZN) && NTDDI_VERSION >= NTDDI_WIN11_ZN)
 
-bool SkScalerContext_DW::generateColorV1Metrics(const SkGlyph&, SkIRect*) { return false; }
+bool SkScalerContext_DW::generateColorV1Metrics(const SkGlyph&, SkRect*) { return false; }
 bool SkScalerContext_DW::generateColorV1Image(const SkGlyph&, void*) { return false; }
 bool SkScalerContext_DW::drawColorV1Image(const SkGlyph&, SkCanvas&) { return false; }
 
@@ -1531,7 +1529,7 @@ bool SkScalerContext_DW::setAdvance(const SkGlyph& glyph, SkVector* advance) {
 bool SkScalerContext_DW::generateDWMetrics(const SkGlyph& glyph,
                                            DWRITE_RENDERING_MODE renderingMode,
                                            DWRITE_TEXTURE_TYPE textureType,
-                                           SkIRect* ibounds)
+                                           SkRect* bounds)
 {
     DWriteFontTypeface* typeface = this->getDWriteTypeface();
 
@@ -1603,7 +1601,7 @@ bool SkScalerContext_DW::generateDWMetrics(const SkGlyph& glyph,
         return false;
     }
 
-    *ibounds = SkIRect::MakeLTRB(bbox.left, bbox.top, bbox.right, bbox.bottom);
+    *bounds = SkRect::MakeLTRB(bbox.left, bbox.top, bbox.right, bbox.bottom);
     return true;
 }
 
@@ -1636,14 +1634,14 @@ bool SkScalerContext_DW::getColorGlyphRun(const SkGlyph& glyph,
     return true;
 }
 
-bool SkScalerContext_DW::generateColorMetrics(const SkGlyph& glyph, SkIRect* ibounds) {
+bool SkScalerContext_DW::generateColorMetrics(const SkGlyph& glyph, SkRect* bounds) {
     SkTScopedComPtr<IDWriteColorGlyphRunEnumerator> colorLayers;
     if (!getColorGlyphRun(glyph, &colorLayers)) {
         return false;
     }
     SkASSERT(colorLayers.get());
 
-    SkRect bounds = SkRect::MakeEmpty();
+    *bounds = SkRect::MakeEmpty();
     BOOL hasNextRun = FALSE;
     while (SUCCEEDED(colorLayers->MoveNext(&hasNextRun)) && hasNextRun) {
         const DWRITE_COLOR_GLYPH_RUN* colorGlyph;
@@ -1666,19 +1664,18 @@ bool SkScalerContext_DW::generateColorMetrics(const SkGlyph& glyph, SkIRect* ibo
                     geometryToPath.get()),
                  "Could not create glyph outline.");
         }
-        bounds.join(path.getBounds());
+        bounds->join(path.getBounds());
     }
     SkMatrix matrix = fSkXform;
     if (this->isSubpixel()) {
         matrix.postTranslate(SkFixedToScalar(glyph.getSubXFixed()),
                              SkFixedToScalar(glyph.getSubYFixed()));
     }
-    matrix.mapRect(&bounds);
-    bounds.roundOut(ibounds);
+    matrix.mapRect(bounds);
     return true;
 }
 
-bool SkScalerContext_DW::generateSVGMetrics(const SkGlyph& glyph, SkIRect* ibounds) {
+bool SkScalerContext_DW::generateSVGMetrics(const SkGlyph& glyph, SkRect* bounds) {
     SkPictureRecorder recorder;
     SkRect infiniteRect = SkRect::MakeLTRB(-SK_ScalarInfinity, -SK_ScalarInfinity,
                                             SK_ScalarInfinity,  SK_ScalarInfinity);
@@ -1688,9 +1685,9 @@ bool SkScalerContext_DW::generateSVGMetrics(const SkGlyph& glyph, SkIRect* iboun
         return false;
     }
     sk_sp<SkPicture> pic = recorder.finishRecordingAsPicture();
-    SkRect bounds = pic->cullRect();
-    SkASSERT(bounds.isFinite());
-    bounds.roundOut(ibounds);
+    *bounds = pic->cullRect();
+    SkASSERT(bounds->isFinite());
+    bounds->roundOut(bounds);
     return true;
 }
 
@@ -1711,7 +1708,7 @@ static void ReleaseProc(const void* ptr, void* context) {
 }
 }
 
-bool SkScalerContext_DW::generatePngMetrics(const SkGlyph& glyph, SkIRect* ibounds) {
+bool SkScalerContext_DW::generatePngMetrics(const SkGlyph& glyph, SkRect* bounds) {
     IDWriteFontFace4* fontFace4 = this->getDWriteTypeface()->fDWriteFontFace4.get();
     if (!fontFace4) {
         return false;
@@ -1739,16 +1736,13 @@ bool SkScalerContext_DW::generatePngMetrics(const SkGlyph& glyph, SkIRect* iboun
                                               &ReleaseProc,
                                               context);
 
-    std::unique_ptr<SkCodec> codec = SkCodec::MakeFromData(std::move(data));
+    std::unique_ptr<SkCodec> codec = SkPngDecoder::Decode(std::move(data), nullptr);
     if (!codec) {
         return false;
     }
 
     SkImageInfo info = codec->getInfo();
-    SkRect bounds = SkRect::MakeLTRB(SkIntToScalar(info.bounds().fLeft),
-                                     SkIntToScalar(info.bounds().fTop),
-                                     SkIntToScalar(info.bounds().fRight),
-                                     SkIntToScalar(info.bounds().fBottom));
+    *bounds = SkRect::Make(info.bounds());
 
     SkMatrix matrix = fSkXform;
     SkScalar scale = fTextSizeRender / glyphData.pixelsPerEm;
@@ -1758,8 +1752,8 @@ bool SkScalerContext_DW::generatePngMetrics(const SkGlyph& glyph, SkIRect* iboun
         matrix.postTranslate(SkFixedToScalar(glyph.getSubXFixed()),
                              SkFixedToScalar(glyph.getSubYFixed()));
     }
-    matrix.mapRect(&bounds);
-    bounds.roundOut(ibounds);
+    matrix.mapRect(bounds);
+    bounds->roundOut(bounds);
     return true;
 }
 
@@ -2415,7 +2409,7 @@ void SkScalerContext_DW::generateImage(const SkGlyph& glyph, void* imageBuffer) 
     }
 }
 
-bool SkScalerContext_DW::generatePath(const SkGlyph& glyph, SkPath* path) {
+bool SkScalerContext_DW::generatePath(const SkGlyph& glyph, SkPath* path, bool* modified) {
     SkASSERT(path);
     path->reset();
 

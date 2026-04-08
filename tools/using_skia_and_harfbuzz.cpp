@@ -21,18 +21,36 @@
 #include "include/core/SkTextBlob.h"
 #include "include/core/SkTypeface.h"
 #include "include/docs/SkPDFDocument.h"
-#include "modules/skshaper/include/SkShaper.h"
+#include "include/ports/SkFontMgr_empty.h"
+#include "modules/skshaper/include/SkShaper_harfbuzz.h"
+#include "modules/skshaper/include/SkShaper_skunicode.h"
+#include "modules/skunicode/include/SkUnicode.h"
+
+namespace {
+sk_sp<SkUnicode> get_unicode() {
+#if defined(SK_UNICODE_ICU_IMPLEMENTATION)
+    auto unicode = SkUnicodes::ICU::Make();
+    if (unicode) {
+        return unicode;
+    }
+#endif
+    SkDEBUGFAIL("Only ICU implementation of SkUnicode is supported");
+    return nullptr;
+}
+
+} // namespace
 
 // Options /////////////////////////////////////////////////////////////////////
 
 struct BaseOption {
     std::string selector;
     std::string description;
-    virtual void set(std::string _value) = 0;
+    virtual void set(const std::string& _value) = 0;
     virtual std::string valueToString() = 0;
 
     BaseOption(std::string _selector, std::string _description)
-        : selector(_selector), description(_description) {}
+            : selector(std::move(_selector))
+            , description(std::move(_description)) {}
 
     virtual ~BaseOption() {}
 
@@ -43,7 +61,8 @@ template <class T>
 struct Option : BaseOption {
     T value;
     Option(std::string _selector, std::string _description, T defaultValue)
-        : BaseOption(_selector, _description), value(defaultValue) {}
+            : BaseOption(std::move(_selector), std::move(_description))
+            , value(defaultValue) {}
 };
 
 void BaseOption::Init(const std::vector<BaseOption*> &option_list,
@@ -77,25 +96,25 @@ void BaseOption::Init(const std::vector<BaseOption*> &option_list,
 }
 
 struct DoubleOption : Option<double> {
-    void set(std::string _value) override { value = atof(_value.c_str()); }
+    void set(const std::string& _value) override { value = atof(_value.c_str()); }
     std::string valueToString() override {
         std::ostringstream stm;
         stm << value;
         return stm.str();
     }
-    DoubleOption(std::string _selector,
-                 std::string _description,
-                 double defaultValue)
-        : Option<double>(_selector, _description, defaultValue) {}
+    DoubleOption(std::string _selector, std::string _description, double defaultValue)
+            : Option<double>(std::move(_selector),
+                             std::move(_description),
+                             std::move(defaultValue)) {}
 };
 
 struct StringOption : Option<std::string> {
-    void set(std::string _value) override { value = _value; }
+    void set(const std::string& _value) override { value = _value; }
     std::string valueToString() override { return value; }
-    StringOption(std::string _selector,
-                 std::string _description,
-                 std::string defaultValue)
-        : Option<std::string>(_selector, _description, defaultValue) {}
+    StringOption(std::string _selector, std::string _description, std::string defaultValue)
+            : Option<std::string>(std::move(_selector),
+                                  std::move(_description),
+                                  std::move(defaultValue)) {}
 };
 
 // Config //////////////////////////////////////////////////////////////////////
@@ -138,10 +157,37 @@ public:
         font.setSize(SkDoubleToScalar(config->font_size.value));
     }
 
-    void WriteLine(const SkShaper& shaper, const char *text, size_t textBytes) {
+    void WriteLine(const SkShaper& shaper, const char* text, size_t textBytes) {
         SkTextBlobBuilderRunHandler textBlobBuilder(text, {0, 0});
-        shaper.shape(text, textBytes, font, true,
-                     config->page_width.value - 2*config->left_margin.value, &textBlobBuilder);
+
+        const SkBidiIterator::Level defaultLevel = SkBidiIterator::kLTR;
+        std::unique_ptr<SkShaper::BiDiRunIterator> bidi =
+                SkShapers::unicode::BidiRunIterator(get_unicode(), text, textBytes, defaultLevel);
+        SkASSERT(bidi);
+
+        std::unique_ptr<SkShaper::LanguageRunIterator> language =
+                SkShaper::MakeStdLanguageRunIterator(text, textBytes);
+        SkASSERT(language);
+
+        std::unique_ptr<SkShaper::ScriptRunIterator> script =
+                SkShapers::HB::ScriptRunIterator(text, textBytes);
+        SkASSERT(script);
+
+        std::unique_ptr<SkShaper::FontRunIterator> fontRuns =
+                SkShaper::MakeFontMgrRunIterator(text, textBytes, font, SkFontMgr::RefEmpty());
+        SkASSERT(fontRuns);
+
+        const SkScalar width = config->page_width.value - 2 * config->left_margin.value;
+        shaper.shape(text,
+                     textBytes,
+                     *fontRuns,
+                     *bidi,
+                     *script,
+                     *language,
+                     nullptr,
+                     0,
+                     width,
+                     &textBlobBuilder);
         SkPoint endPoint = textBlobBuilder.endPoint();
         sk_sp<const SkTextBlob> blob = textBlobBuilder.makeBlob();
         // If we don't have a page, or if we're not at the start of the page and the blob won't fit
@@ -206,9 +252,13 @@ int main(int argc, char **argv) {
     const std::string &font_file = config.font_file.value;
     sk_sp<SkTypeface> typeface;
     if (font_file.size() > 0) {
-        typeface = SkTypeface::MakeFromFile(font_file.c_str(), 0 /* index */);
+        // There are different font managers for different platforms. See include/ports
+        sk_sp<SkFontMgr> mgr = SkFontMgr_New_Custom_Empty();
+        assert(mgr);
+        typeface = mgr->makeFromFile(font_file.c_str(), 0 /* index */);
     }
-    std::unique_ptr<SkShaper> shaper = SkShaper::Make();
+    std::unique_ptr<SkShaper> shaper =
+            SkShapers::HB::ShaperDrivenWrapper(get_unicode(), nullptr);
     assert(shaper);
     //SkString line("This is هذا هو الخط a line.");
     //SkString line("⁧This is a line هذا هو الخط.⁩");

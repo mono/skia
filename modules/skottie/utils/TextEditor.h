@@ -9,11 +9,25 @@
 #define SkottieTextEditor_DEFINED
 
 #include "include/core/SkPath.h"
+#include "include/core/SkRect.h"
+#include "include/core/SkScalar.h"
+#include "include/core/SkTypes.h"
 #include "modules/skottie/include/SkottieProperty.h"
-#include "tools/skui/InputState.h"
-#include "tools/skui/ModifierKey.h"
 
 #include <chrono>
+#include <cstddef>
+#include <memory>
+#include <tuple>
+#include <vector>
+
+class SkCanvas;
+class SkString;
+struct SkPoint;
+
+namespace skui {
+enum class InputState;
+enum class ModifierKey;
+}  // namespace skui
 
 namespace skottie_utils {
 
@@ -32,6 +46,8 @@ public:
     bool onMouseInput(SkScalar x, SkScalar y, skui::InputState state, skui::ModifierKey);
 
     bool onCharInput(SkUnichar c);
+
+    void setCursorWeight(float w) { fCursorWeight = w; }
 
 private:
     struct GlyphData {
@@ -53,10 +69,11 @@ private:
     const SkRect                                                    fCursorBounds;
 
     std::vector<GlyphData>     fGlyphData;
-    std::tuple<size_t, size_t> fSelection   = {0,0};  // Indices in the glyphs domain.
-    size_t                     fCursorIndex = 0;      // Index in the UTF8 domain.
-    bool                       fEnabled     = false;
-    bool                       fMouseDown   = false;
+    std::tuple<size_t, size_t> fSelection    = {0,0};  // Indices in the glyphs domain.
+    size_t                     fCursorIndex  = 0;      // Index in the UTF8 domain.
+    float                      fCursorWeight = 1;
+    bool                       fEnabled      = false;
+    bool                       fMouseDown    = false;
 
     std::chrono::time_point<std::chrono::steady_clock> fTimeBase;
 };

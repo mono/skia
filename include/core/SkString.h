@@ -82,14 +82,14 @@ static inline bool SkStrContains(const char string[], const char subchar) {
  */
 
 static constexpr int kSkStrAppendU32_MaxSize = 10;
-char*   SkStrAppendU32(char buffer[], uint32_t);
+char* SkStrAppendU32(char buffer[], uint32_t);
 static constexpr int kSkStrAppendU64_MaxSize = 20;
-char*   SkStrAppendU64(char buffer[], uint64_t, int minDigits);
+char* SkStrAppendU64(char buffer[], uint64_t, int minDigits);
 
 static constexpr int kSkStrAppendS32_MaxSize = kSkStrAppendU32_MaxSize + 1;
-char*   SkStrAppendS32(char buffer[], int32_t);
+char* SkStrAppendS32(char buffer[], int32_t);
 static constexpr int kSkStrAppendS64_MaxSize = kSkStrAppendU64_MaxSize + 1;
-char*   SkStrAppendS64(char buffer[], int64_t, int minDigits);
+char* SkStrAppendS64(char buffer[], int64_t, int minDigits);
 
 /**
  *  Floats have at most 8 significant digits, so we limit our %g to that.
@@ -132,6 +132,8 @@ public:
     const char* data() const { return fRec->data(); }
     const char* c_str() const { return fRec->data(); }
     char operator[](size_t n) const { return this->c_str()[n]; }
+    const char* begin() const { return data(); }
+    const char* end() const { return data() + size(); }
 
     bool equals(const SkString&) const;
     bool equals(const char text[]) const;
@@ -177,6 +179,8 @@ public:
 
     char* data();
     char& operator[](size_t n) { return this->data()[n]; }
+    char* begin() { return data(); }
+    char* end() { return data() + size(); }
 
     void reset();
     /** String contents are preserved on resize. (For destructive resize, `set(nullptr, length)`.)
@@ -281,7 +285,7 @@ private:
 };
 
 /// Creates a new string and writes into it using a printf()-style format.
-SkString SkStringPrintf(const char* format, ...) SK_PRINTF_LIKE(1, 2);
+SK_API SkString SkStringPrintf(const char* format, ...) SK_PRINTF_LIKE(1, 2);
 /// This makes it easier to write a caller as a VAR_ARGS function where the format string is
 /// optional.
 static inline SkString SkStringPrintf() { return SkString(); }

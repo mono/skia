@@ -9,14 +9,18 @@
 #define skgpu_ResourceKey_DEFINED
 
 #include "include/core/SkData.h"
-#include "include/core/SkString.h"
+#include "include/core/SkRefCnt.h"
+#include "include/core/SkTypes.h"
 #include "include/private/base/SkAlign.h"
 #include "include/private/base/SkAlignedStorage.h"
-#include "include/private/base/SkOnce.h"
+#include "include/private/base/SkDebug.h"
 #include "include/private/base/SkTemplates.h"
 #include "include/private/base/SkTo.h"
 
+#include <cstdint>
+#include <cstring>
 #include <new>
+#include <utility>
 
 class TestResource;
 
@@ -130,12 +134,12 @@ protected:
         if (!this->isValid()) {
             SkDebugf("Invalid Key\n");
         } else {
-            SkDebugf("hash: %d ", this->hash());
-            SkDebugf("domain: %d ", this->domain());
+            SkDebugf("hash: %u ", this->hash());
+            SkDebugf("domain: %u ", this->domain());
             SkDebugf("size: %zuB ", this->internalSize());
             size_t dataCount = this->internalSize() / sizeof(uint32_t) - kMetaDataCnt;
             for (size_t i = 0; i < dataCount; ++i) {
-                SkDebugf("%d ", fKey[SkTo<int>(kMetaDataCnt+i)]);
+                SkDebugf("%u ", fKey[SkTo<int>(kMetaDataCnt+i)]);
             }
             SkDebugf("\n");
         }
@@ -261,7 +265,12 @@ public:
 
     const char* tag() const { return fTag; }
 
+    const uint32_t* data() const { return this->ResourceKey::data(); }
+
 #ifdef SK_DEBUG
+    uint32_t domain() const { return this->ResourceKey::domain(); }
+    size_t dataSize() const { return this->ResourceKey::dataSize(); }
+
     void dump(const char* label) const {
         SkDebugf("%s tag: %s\n", label, fTag ? fTag : "None");
         this->ResourceKey::dump();
@@ -377,6 +386,51 @@ static inline bool SkShouldPostMessageToBus(const UniqueKeyInvalidatedMsg_Graphi
                                             uint32_t msgBusUniqueID) {
     return msg.recorderID() == msgBusUniqueID;
 }
+
+/**
+ * This is a special key that doesn't have domain and can only be used in a dedicated cache.
+ * Unlike UniqueKey & ScratchKey, this key has compile time size (in number of uint32_t)
+ * and doesn't need dynamic allocations. In comparison, UniqueKey & ScratchKey will need
+ * dynamic allocation if a key is larger than 6 uint32_ts.
+ */
+template <size_t SizeInUInt32>
+class FixedSizeKey {
+public:
+    uint32_t hash() const { return fHash; }
+
+    bool operator==(const FixedSizeKey& that) const {
+        return fHash == that.fHash &&
+               0 == memcmp(fPackedData, that.fPackedData, sizeof(fPackedData));
+    }
+
+    class Builder {
+    public:
+        Builder(FixedSizeKey* key) : fKey(key) {}
+
+        void finish() {
+            SkASSERT(fKey);
+            fKey->fHash = ResourceKeyHash(fKey->fPackedData, sizeof(fKey->fPackedData));
+            fKey = nullptr;
+        }
+
+        uint32_t& operator[](int dataIdx) {
+            SkASSERT(fKey);
+            SkASSERT(SkToU32(dataIdx) < SizeInUInt32);
+            return fKey->fPackedData[dataIdx];
+        }
+
+    private:
+        FixedSizeKey* fKey = nullptr;
+    };
+
+    struct Hash {
+        uint32_t operator()(const FixedSizeKey& key) const { return key.hash(); }
+    };
+
+private:
+    uint32_t fHash = 0;
+    uint32_t fPackedData[SizeInUInt32] = {};
+};
 
 } // namespace skgpu
 

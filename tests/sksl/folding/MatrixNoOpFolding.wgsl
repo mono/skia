@@ -1,4 +1,5 @@
 diagnostic(off, derivative_uniformity);
+diagnostic(off, chromium.unreachable_code);
 struct _GlobalUniforms {
   testMatrix2x2: mat2x2<f32>,
   testMatrix3x3: mat3x3<f32>,
@@ -24,7 +25,7 @@ fn test_mat3_mat3_b() -> bool {
 }
 fn test_mat4_mat4_b() -> bool {
   {
-    var testMatrix4x4: mat4x4<f32> = mat4x4<f32>(_globalUniforms.testInputs[0], _globalUniforms.testInputs[1], _globalUniforms.testInputs[2], _globalUniforms.testInputs[3], _globalUniforms.testInputs[0], _globalUniforms.testInputs[1], _globalUniforms.testInputs[2], _globalUniforms.testInputs[3], _globalUniforms.testInputs[0], _globalUniforms.testInputs[1], _globalUniforms.testInputs[2], _globalUniforms.testInputs[3], _globalUniforms.testInputs[0], _globalUniforms.testInputs[1], _globalUniforms.testInputs[2], _globalUniforms.testInputs[3]);
+    let testMatrix4x4: mat4x4<f32> = mat4x4<f32>(_globalUniforms.testInputs[0], _globalUniforms.testInputs[1], _globalUniforms.testInputs[2], _globalUniforms.testInputs[3], _globalUniforms.testInputs[0], _globalUniforms.testInputs[1], _globalUniforms.testInputs[2], _globalUniforms.testInputs[3], _globalUniforms.testInputs[0], _globalUniforms.testInputs[1], _globalUniforms.testInputs[2], _globalUniforms.testInputs[3], _globalUniforms.testInputs[0], _globalUniforms.testInputs[1], _globalUniforms.testInputs[2], _globalUniforms.testInputs[3]);
     var m: mat4x4<f32>;
     var mm: mat4x4<f32>;
     const z: mat4x4<f32> = mat4x4<f32>(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0);

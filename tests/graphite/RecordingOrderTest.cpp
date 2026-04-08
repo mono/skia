@@ -8,6 +8,7 @@
 #include "tests/Test.h"
 
 #include "include/core/SkBitmap.h"
+#include "include/core/SkFont.h"
 #include "include/gpu/graphite/Context.h"
 #include "include/gpu/graphite/Recording.h"
 #include "include/gpu/graphite/Surface.h"
@@ -15,6 +16,7 @@
 #include "src/gpu/graphite/Surface_Graphite.h"
 #include "tests/TestUtils.h"
 #include "tools/ToolUtils.h"
+#include "tools/fonts/FontToolUtils.h"
 
 using namespace skgpu::graphite;
 
@@ -57,7 +59,7 @@ bool run_test(skiatest::Reporter* reporter,
     SkPaint paint;
     paint.setAntiAlias(true);
 
-    SkFont font(ToolUtils::create_portable_typeface("serif", SkFontStyle()));
+    SkFont font(ToolUtils::CreatePortableTypeface("serif", SkFontStyle()));
     font.setSubpixel(true);
     font.setSize(12);
 
@@ -123,7 +125,7 @@ bool run_test(skiatest::Reporter* reporter,
 // This test captures two recordings A and B, plays them back as A then B, and B then A,
 // and verifies that the result is the same.
 DEF_GRAPHITE_TEST_FOR_RENDERING_CONTEXTS(RecordingOrderTest_Graphite, reporter, context,
-                                         CtsEnforcement::kNextRelease) {
+                                         CtsEnforcement::kApiLevel_V) {
     std::unique_ptr<Recorder> recorder = context->makeRecorder();
 
     (void) run_test(reporter, context, recorder.get());

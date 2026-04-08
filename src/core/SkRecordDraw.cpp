@@ -40,6 +40,8 @@
 #include <optional>
 #include <vector>
 
+class SkImageFilter;
+
 void SkRecordDraw(const SkRecord& record,
                   SkCanvas* canvas,
                   SkPicture const* const drawablePicts[],
@@ -93,11 +95,16 @@ template <> void Draw::draw(const NoOp&) {}
 #define DRAW(T, call) template <> void Draw::draw(const T& r) { fCanvas->call; }
 DRAW(Restore, restore())
 DRAW(Save, save())
-DRAW(SaveLayer, saveLayer(SkCanvasPriv::ScaledBackdropLayer(r.bounds,
-                                                            r.paint,
-                                                            r.backdrop.get(),
-                                                            r.backdropScale,
-                                                            r.saveLayerFlags)))
+DRAW(SaveLayer,
+     saveLayer(SkCanvasPriv::ScaledBackdropLayer(
+               r.bounds,
+               r.paint,
+               r.backdrop.get(),
+               r.backdropScale,
+               r.backdropTileMode,
+               r.saveLayerFlags,
+               SkCanvas::FilterSpan{const_cast<sk_sp<SkImageFilter>*>(r.filters.data()),
+                                    r.filters.size()})))
 
 template <> void Draw::draw(const SaveBehind& r) {
     SkCanvasPriv::SaveBehind(fCanvas, r.subset);
@@ -151,7 +158,7 @@ DRAW(DrawRRect, drawRRect(r.rrect, r.paint))
 DRAW(DrawRect, drawRect(r.rect, r.paint))
 DRAW(DrawRegion, drawRegion(r.region, r.paint))
 DRAW(DrawTextBlob, drawTextBlob(r.blob.get(), r.x, r.y, r.paint))
-DRAW(DrawSlug, drawSlug(r.slug.get()))
+DRAW(DrawSlug, drawSlug(r.slug.get(), r.paint))
 DRAW(DrawAtlas, drawAtlas(r.atlas.get(), r.xforms, r.texs, r.colors, r.count, r.mode, r.sampling,
                           r.cull, r.paint))
 DRAW(DrawVertices, drawVertices(r.vertices, r.bmode, r.paint))
@@ -280,9 +287,15 @@ private:
 
     // The bounds of these ops must be calculated when we hit the Restore
     // from the bounds of the ops in the same Save block.
-    void trackBounds(const Save&)          { this->pushSaveBlock(nullptr); }
-    void trackBounds(const SaveLayer& op)  { this->pushSaveBlock(op.paint); }
-    void trackBounds(const SaveBehind&)    { this->pushSaveBlock(nullptr); }
+    void trackBounds(const Save&) {
+        this->pushSaveBlock(nullptr, /*hasBackdropFilter=*/false);
+    }
+    void trackBounds(const SaveLayer& op) {
+        this->pushSaveBlock(op.paint, /*hasBackdropFilter=*/op.backdrop != nullptr);
+    }
+    void trackBounds(const SaveBehind&) {
+        this->pushSaveBlock(nullptr, /*hasBackdropFilter=*/false);
+    }
     void trackBounds(const Restore&) {
         const bool isSaveLayer = fSaveStack.back().paint != nullptr;
         fBounds[fCurrentOp] = this->popSaveBlock();
@@ -310,14 +323,15 @@ private:
         this->updateSaveBounds(fBounds[fCurrentOp]);
     }
 
-    void pushSaveBlock(const SkPaint* paint) {
+    void pushSaveBlock(const SkPaint* paint, bool hasBackdropFilter) {
         // Starting a new Save block.  Push a new entry to represent that.
         SaveBounds sb;
         sb.controlOps = 0;
-        // If the paint affects transparent black,
+
+        // If the paint affects transparent black, or we have a backdrop filter,
         // the bound shouldn't be smaller than the cull.
-        sb.bounds =
-            PaintMayAffectTransparentBlack(paint) ? fCullRect : Bounds::MakeEmpty();
+        bool affectsFullCullRect = hasBackdropFilter || PaintMayAffectTransparentBlack(paint);
+        sb.bounds = affectsFullCullRect ? fCullRect : Bounds::MakeEmpty();
         sb.paint = paint;
         sb.ctm = this->fCTM;
 
@@ -485,7 +499,7 @@ private:
 
     Bounds bounds(const DrawSlug& op) const {
         SkRect dst = op.slug->sourceBoundsWithOrigin();
-        return this->adjustAndMap(dst, &op.slug->initialPaint());
+        return this->adjustAndMap(dst, &op.paint);
     }
 
     Bounds bounds(const DrawDrawable& op) const {

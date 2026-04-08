@@ -11,6 +11,7 @@
 #include "include/core/SkData.h"
 #include "include/core/SkDrawable.h"
 #include "include/core/SkImage.h"
+#include "include/core/SkImageFilter.h"
 #include "include/core/SkImageInfo.h"
 #include "include/core/SkMatrix.h"
 #include "include/core/SkPaint.h"
@@ -249,8 +250,8 @@ void SkRecorder::onDrawTextBlob(const SkTextBlob* blob, SkScalar x, SkScalar y,
     this->append<SkRecords::DrawTextBlob>(paint, sk_ref_sp(blob), x, y);
 }
 
-void SkRecorder::onDrawSlug(const sktext::gpu::Slug* slug) {
-    this->append<SkRecords::DrawSlug>(sk_ref_sp(slug));
+void SkRecorder::onDrawSlug(const sktext::gpu::Slug* slug, const SkPaint& paint) {
+    this->append<SkRecords::DrawSlug>(paint, sk_ref_sp(slug));
 }
 
 void SkRecorder::onDrawGlyphRunList(
@@ -340,11 +341,18 @@ void SkRecorder::willSave() {
 }
 
 SkCanvas::SaveLayerStrategy SkRecorder::getSaveLayerStrategy(const SaveLayerRec& rec) {
-    this->append<SkRecords::SaveLayer>(this->copy(rec.fBounds)
-                    , this->copy(rec.fPaint)
-                    , sk_ref_sp(rec.fBackdrop)
-                    , rec.fSaveLayerFlags
-                    , SkCanvasPriv::GetBackdropScaleFactor(rec));
+    AutoTArray<sk_sp<SkImageFilter>> filters(rec.fFilters.size());
+    for (size_t i = 0; i < rec.fFilters.size(); ++i) {
+        filters[i] = rec.fFilters[i];
+    }
+
+    this->append<SkRecords::SaveLayer>(this->copy(rec.fBounds),
+                                       this->copy(rec.fPaint),
+                                       sk_ref_sp(rec.fBackdrop),
+                                       rec.fSaveLayerFlags,
+                                       SkCanvasPriv::GetBackdropScaleFactor(rec),
+                                       rec.fBackdropTileMode,
+                                       std::move(filters));
     return SkCanvas::kNoLayer_SaveLayerStrategy;
 }
 

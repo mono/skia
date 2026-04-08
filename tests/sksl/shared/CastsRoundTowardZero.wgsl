@@ -1,4 +1,5 @@
 diagnostic(off, derivative_uniformity);
+diagnostic(off, chromium.unreachable_code);
 struct FSOut {
   @location(0) sk_FragColor: vec4<f32>,
 };
@@ -9,7 +10,7 @@ struct _GlobalUniforms {
 @binding(0) @group(0) var<uniform> _globalUniforms: _GlobalUniforms;
 fn _skslMain(coords: vec2<f32>) -> vec4<f32> {
   {
-    var ok: bool = true;
+    const ok: bool = true;
     return select(_globalUniforms.colorRed, _globalUniforms.colorGreen, vec4<bool>(ok));
   }
 }

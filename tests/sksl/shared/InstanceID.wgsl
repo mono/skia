@@ -1,9 +1,10 @@
 diagnostic(off, derivative_uniformity);
+diagnostic(off, chromium.unreachable_code);
 struct VSIn {
   @builtin(instance_index) sk_InstanceID: u32,
 };
 struct VSOut {
-  @location(1) @interpolate(flat) id: i32,
+  @location(1) @interpolate(flat, either) id: i32,
   @builtin(position) sk_Position: vec4<f32>,
 };
 fn _skslMain(_stageIn: VSIn, _stageOut: ptr<function, VSOut>) {

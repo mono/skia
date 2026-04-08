@@ -21,22 +21,12 @@ class FunctionPrototype final : public ProgramElement {
 public:
     inline static constexpr Kind kIRNodeKind = Kind::kFunctionPrototype;
 
-    FunctionPrototype(Position pos, const FunctionDeclaration* declaration, bool builtin)
+    FunctionPrototype(Position pos, const FunctionDeclaration* declaration)
             : INHERITED(pos, kIRNodeKind)
-            , fDeclaration(declaration)
-            , fBuiltin(builtin) {}
+            , fDeclaration(declaration) {}
 
     const FunctionDeclaration& declaration() const {
         return *fDeclaration;
-    }
-
-    bool isBuiltin() const {
-        return fBuiltin;
-    }
-
-    std::unique_ptr<ProgramElement> clone() const override {
-        return std::make_unique<FunctionPrototype>(fPosition, &this->declaration(),
-                /*builtin=*/false);
     }
 
     std::string description() const override {
@@ -45,7 +35,6 @@ public:
 
 private:
     const FunctionDeclaration* fDeclaration;
-    bool fBuiltin;
 
     using INHERITED = ProgramElement;
 };

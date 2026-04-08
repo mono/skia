@@ -9,6 +9,7 @@
 #define skgpu_graphite_MtlTexture_DEFINED
 
 #include "include/core/SkRefCnt.h"
+#include "include/ports/SkCFObject.h"
 #include "src/gpu/graphite/Texture.h"
 
 #import <Metal/Metal.h>
@@ -45,6 +46,8 @@ private:
                skgpu::Budgeted);
 
     void freeGpuData() override;
+
+    void setBackendLabel(char const* label) override;
 
     sk_cfp<id<MTLTexture>> fTexture;
 };

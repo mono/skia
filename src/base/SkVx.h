@@ -41,12 +41,21 @@
 #endif
 
 #if SKVX_USE_SIMD
-    #if SK_CPU_SSE_LEVEL >= SK_CPU_SSE_LEVEL_SSE1
+    #if SK_CPU_SSE_LEVEL >= SK_CPU_SSE_LEVEL_AVX
         #include <immintrin.h>
+    #elif SK_CPU_SSE_LEVEL >= SK_CPU_SSE_LEVEL_SSE41
+        #include <smmintrin.h>
+    #elif SK_CPU_SSE_LEVEL >= SK_CPU_SSE_LEVEL_SSE1
+        #include <xmmintrin.h>
     #elif defined(SK_ARM_HAS_NEON)
         #include <arm_neon.h>
     #elif defined(__wasm_simd128__)
         #include <wasm_simd128.h>
+    #elif SK_CPU_LSX_LEVEL >= SK_CPU_LSX_LEVEL_LASX
+        #include <lasxintrin.h>
+        #include <lsxintrin.h>
+    #elif SK_CPU_LSX_LEVEL >= SK_CPU_LSX_LEVEL_LSX
+        #include <lsxintrin.h>
     #endif
 #endif
 
@@ -207,7 +216,7 @@ struct alignas(2*sizeof(T)) Vec<2,T> {
 
 template <typename T>
 struct Vec<1,T> {
-    T val;
+    T val = {};
 
     SKVX_ALWAYS_INLINE Vec() = default;
     SKVX_ALWAYS_INLINE Vec(T s) : val(s) {}
@@ -499,6 +508,20 @@ SINT Vec<N,T> if_then_else(const Vec<N,M<T>>& cond, const Vec<N,T>& t, const Vec
                                               sk_bit_cast<uint8x16_t>(e)));
     }
 #endif
+#if SKVX_USE_SIMD && SK_CPU_LSX_LEVEL >= SK_CPU_LSX_LEVEL_LASX
+    if constexpr (N*sizeof(T) == 32) {
+        return sk_bit_cast<Vec<N,T>>(__lasx_xvbitsel_v(sk_bit_cast<__m256i>(e),
+                                                       sk_bit_cast<__m256i>(t),
+                                                       sk_bit_cast<__m256i>(cond)));
+    }
+#endif
+#if SKVX_USE_SIMD && SK_CPU_LSX_LEVEL >= SK_CPU_LSX_LEVEL_LSX
+    if constexpr (N*sizeof(T) == 16) {
+        return sk_bit_cast<Vec<N,T>>(__lsx_vbitsel_v(sk_bit_cast<__m128i>(e),
+                                                     sk_bit_cast<__m128i>(t),
+                                                     sk_bit_cast<__m128i>(cond)));
+    }
+#endif
     // Recurse for large vectors to try to hit the specializations above.
     if constexpr (N*sizeof(T) > 16) {
         return join(if_then_else(cond.lo, t.lo, e.lo),
@@ -542,6 +565,20 @@ SINT bool any(const Vec<N,T>& x) {
         return wasm_i32x4_any_true(sk_bit_cast<VExt<4,int>>(x));
     }
 #endif
+#if SKVX_USE_SIMD && SK_CPU_LSX_LEVEL >= SK_CPU_LSX_LEVEL_LASX
+    if constexpr (N*sizeof(T) == 32) {
+        v8i32 retv = (v8i32)__lasx_xvmskltz_w(__lasx_xvslt_wu(__lasx_xvldi(0),
+                                                              sk_bit_cast<__m256i>(x)));
+        return (retv[0] | retv[4]) != 0b0000;
+    }
+#endif
+#if SKVX_USE_SIMD && SK_CPU_LSX_LEVEL >= SK_CPU_LSX_LEVEL_LSX
+    if constexpr (N*sizeof(T) == 16) {
+        v4i32 retv = (v4i32)__lsx_vmskltz_w(__lsx_vslt_wu(__lsx_vldi(0),
+                                                          sk_bit_cast<__m128i>(x)));
+        return retv[0] != 0b0000;
+    }
+#endif
     return any(x.lo)
         || any(x.hi);
 }
@@ -569,6 +606,20 @@ SINT bool all(const Vec<N,T>& x) {
 #if SKVX_USE_SIMD && defined(__wasm_simd128__)
     if constexpr (N == 4 && sizeof(T) == 4) {
         return wasm_i32x4_all_true(sk_bit_cast<VExt<4,int>>(x));
+    }
+#endif
+#if SKVX_USE_SIMD && SK_CPU_LSX_LEVEL >= SK_CPU_LSX_LEVEL_LASX
+    if constexpr (N == 8 && sizeof(T) == 4) {
+        v8i32 retv = (v8i32)__lasx_xvmskltz_w(__lasx_xvslt_wu(__lasx_xvldi(0),
+                                                              sk_bit_cast<__m256i>(x)));
+        return (retv[0] & retv[4]) == 0b1111;
+    }
+#endif
+#if SKVX_USE_SIMD && SK_CPU_LSX_LEVEL >= SK_CPU_LSX_LEVEL_LSX
+    if constexpr (N == 4 && sizeof(T) == 4) {
+        v4i32 retv = (v4i32)__lsx_vmskltz_w(__lsx_vslt_wu(__lsx_vldi(0),
+                                                          sk_bit_cast<__m128i>(x)));
+        return retv[0] == 0b1111;
     }
 #endif
     return all(x.lo)
@@ -680,62 +731,91 @@ SIN Vec<N,int> lrint(const Vec<N,float>& x) {
         return sk_bit_cast<Vec<N,int>>(_mm_cvtps_epi32(sk_bit_cast<__m128>(x)));
     }
 #endif
+#if SKVX_USE_SIMD && SK_CPU_LSX_LEVEL >= SK_CPU_LSX_LEVEL_LASX
+    if constexpr (N == 8) {
+        return sk_bit_cast<Vec<N,int>>(__lasx_xvftint_w_s(sk_bit_cast<__m256>(x)));
+    }
+#endif
+#if SKVX_USE_SIMD && SK_CPU_LSX_LEVEL >= SK_CPU_LSX_LEVEL_LSX
+    if constexpr (N == 4) {
+        return sk_bit_cast<Vec<N,int>>(__lsx_vftint_w_s(sk_bit_cast<__m128>(x)));
+    }
+#endif
     return join(lrint(x.lo),
                 lrint(x.hi));
 }
 
 SIN Vec<N,float> fract(const Vec<N,float>& x) { return x - floor(x); }
 
-// Assumes inputs are finite and treat/flush denorm half floats as/to zero.
-// Key constants to watch for:
-//    - a float is 32-bit, 1-8-23 sign-exponent-mantissa, with 127 exponent bias;
-//    - a half  is 16-bit, 1-5-10 sign-exponent-mantissa, with  15 exponent bias.
-SIN Vec<N,uint16_t> to_half_finite_ftz(const Vec<N,float>& x) {
-    Vec<N,uint32_t> sem = sk_bit_cast<Vec<N,uint32_t>>(x),
-                    s   = sem & 0x8000'0000,
-                     em = sem ^ s,
-                is_norm =  em > 0x387f'd000, // halfway between largest f16 denorm and smallest norm
-                   norm = (em>>13) - ((127-15)<<10);
-    return cast<uint16_t>((s>>16) | (is_norm & norm));
-}
-SIN Vec<N,float> from_half_finite_ftz(const Vec<N,uint16_t>& x) {
-    Vec<N,uint32_t> wide = cast<uint32_t>(x),
-                      s  = wide & 0x8000,
-                      em = wide ^ s,
-                 is_norm =   em > 0x3ff,
-                    norm = (em<<13) + ((127-15)<<23);
-    return sk_bit_cast<Vec<N,float>>((s<<16) | (is_norm & norm));
-}
-
-// Like if_then_else(), these N=1 base cases won't actually be used unless explicitly called.
-SI Vec<1,uint16_t> to_half(const Vec<1,float>&    x) { return   to_half_finite_ftz(x); }
-SI Vec<1,float>  from_half(const Vec<1,uint16_t>& x) { return from_half_finite_ftz(x); }
-
+// Converts float to half, rounding to nearest even, and supporting de-normal f16 conversion,
+// and overflow to f16 infinity. Should not be called with NaNs, since it can convert NaN->inf.
+// KEEP IN SYNC with skcms' Half_from_F to ensure that f16 colors are computed consistently in both
+// skcms and skvx.
 SIN Vec<N,uint16_t> to_half(const Vec<N,float>& x) {
+    assert(all(x == x)); // No NaNs should reach this function
+
+    // Intrinsics for float->half tend to operate on 4 lanes, and the default implementation has
+    // enough instructions that it's better to split and join on 128 bits groups vs.
+    // recursing for each min/max/shift/etc.
+    if constexpr (N > 4) {
+        return join(to_half(x.lo),
+                    to_half(x.hi));
+    }
+
 #if SKVX_USE_SIMD && defined(__aarch64__)
     if constexpr (N == 4) {
         return sk_bit_cast<Vec<N,uint16_t>>(vcvt_f16_f32(sk_bit_cast<float32x4_t>(x)));
 
     }
 #endif
-    if constexpr (N > 4) {
-        return join(to_half(x.lo),
-                    to_half(x.hi));
-    }
-    return to_half_finite_ftz(x);
+
+#define I(x) sk_bit_cast<Vec<N,int32_t>>(x)
+#define F(x) sk_bit_cast<Vec<N,float>>(x)
+    Vec<N,int32_t> sem = I(x),
+                   s   = sem & 0x8000'0000,
+                    em = min(sem ^ s, 0x4780'0000), // |x| clamped to f16 infinity
+                 // F(em)*8192 increases the exponent by 13, which when added back to em will shift
+                 // the mantissa bits 13 to the right. We clamp to 1/2 for subnormal values, which
+                 // automatically shifts the mantissa to match 2^-14 expected for a subnorm f16.
+                 magic = I(max(F(em) * 8192.f, 0.5f)) & (255 << 23),
+               rounded = I((F(em) + F(magic))), // shift mantissa with automatic round-to-even
+                   // Subtract 127 for f32 bias, subtract 13 to undo the *8192, subtract 1 to remove
+                   // the implicit leading 1., and add 15 to get the f16 biased exponent.
+                   exp = ((magic >> 13) - ((127-15+13+1)<<10)), // shift and re-bias exponent
+                   f16 = rounded + exp; // use + if 'rounded' rolled over into first exponent bit
+    return cast<uint16_t>((s>>16) | f16);
+#undef I
+#undef F
 }
 
+// Converts from half to float, preserving NaN and +/- infinity.
+// KEEP IN SYNC with skcms' F_from_Half to ensure that f16 colors are computed consistently in both
+// skcms and skvx.
 SIN Vec<N,float> from_half(const Vec<N,uint16_t>& x) {
+    if constexpr (N > 4) {
+        return join(from_half(x.lo),
+                    from_half(x.hi));
+    }
+
 #if SKVX_USE_SIMD && defined(__aarch64__)
     if constexpr (N == 4) {
         return sk_bit_cast<Vec<N,float>>(vcvt_f32_f16(sk_bit_cast<float16x4_t>(x)));
     }
 #endif
-    if constexpr (N > 4) {
-        return join(from_half(x.lo),
-                    from_half(x.hi));
-    }
-    return from_half_finite_ftz(x);
+
+    Vec<N,int32_t> wide = cast<int32_t>(x),
+                      s  = wide & 0x8000,
+                      em = wide ^ s,
+              inf_or_nan =  (em >= (31 << 10)) & (255 << 23),  // Expands exponent to fill 8 bits
+                 is_norm =   em > 0x3ff,
+                     // subnormal f16's are 2^-14*0.[m0:9] == 2^-24*[m0:9].0
+                     sub = sk_bit_cast<Vec<N,int32_t>>((cast<float>(em) * (1.f/(1<<24)))),
+                    norm = ((em<<13) + ((127-15)<<23)), // Shifts mantissa, shifts + re-biases exp
+                  finite = (is_norm & norm) | (~is_norm & sub);
+    // If 'x' is f16 +/- infinity, inf_or_nan will be the filled 8-bit exponent but 'norm' will be
+    // all 0s since 'x's mantissa is 0. Thus norm | inf_or_nan becomes f32 infinity. However, if
+    // 'x' is an f16 NaN, some bits of 'norm' will be non-zero, so it stays an f32 NaN after the OR.
+    return sk_bit_cast<Vec<N,float>>((s<<16) | finite | inf_or_nan);
 }
 
 // div255(x) = (x + 127) / 255 is a bit-exact rounding divide-by-255, packing down to 8-bit.
@@ -756,13 +836,17 @@ SIN Vec<N,uint8_t> approx_scale(const Vec<N,uint8_t>& x, const Vec<N,uint8_t>& y
 // saturated_add(x,y) sums values and clamps to the maximum value instead of overflowing.
 SINT std::enable_if_t<std::is_unsigned_v<T>, Vec<N,T>> saturated_add(const Vec<N,T>& x,
                                                                      const Vec<N,T>& y) {
-#if SKVX_USE_SIMD && (SK_CPU_SSE_LEVEL >= SK_CPU_SSE_LEVEL_SSE1 || defined(SK_ARM_HAS_NEON))
+#if SKVX_USE_SIMD && (SK_CPU_SSE_LEVEL >= SK_CPU_SSE_LEVEL_SSE1 || defined(SK_ARM_HAS_NEON) || \
+        SK_CPU_LSX_LEVEL >= SK_CPU_LSX_LEVEL_LSX)
     // Both SSE and ARM have 16-lane saturated adds, so use intrinsics for those and recurse down
     // or join up to take advantage.
     if constexpr (N == 16 && sizeof(T) == 1) {
         #if SK_CPU_SSE_LEVEL >= SK_CPU_SSE_LEVEL_SSE1
         return sk_bit_cast<Vec<N,T>>(_mm_adds_epu8(sk_bit_cast<__m128i>(x),
                                                    sk_bit_cast<__m128i>(y)));
+        #elif SK_CPU_LSX_LEVEL >= SK_CPU_LSX_LEVEL_LSX
+        return sk_bit_cast<Vec<N,T>>(__lsx_vsadd_bu(sk_bit_cast<__m128i>(x),
+                                                    sk_bit_cast<__m128i>(y)));
         #else  // SK_ARM_HAS_NEON
         return sk_bit_cast<Vec<N,T>>(vqaddq_u8(sk_bit_cast<uint8x16_t>(x),
                                                sk_bit_cast<uint8x16_t>(y)));
@@ -816,6 +900,7 @@ public:
     }
 
     uint32_t half() const { return fHalf; }
+    uint32_t divisorFactor() const { return fDivisorFactor; }
 
 private:
     const uint32_t fDivisorFactor;
@@ -862,6 +947,15 @@ SIN Vec<N,uint16_t> mulhi(const Vec<N,uint16_t>& x,
     if constexpr (N == 8) {
         return sk_bit_cast<Vec<8,uint16_t>>(_mm_mulhi_epu16(sk_bit_cast<__m128i>(x),
                                                             sk_bit_cast<__m128i>(y)));
+    } else if constexpr (N < 8) {
+        return mulhi(join(x,x), join(y,y)).lo;
+    } else { // N > 8
+        return join(mulhi(x.lo, y.lo), mulhi(x.hi, y.hi));
+    }
+#elif SKVX_USE_SIMD && SK_CPU_LSX_LEVEL >= SK_CPU_LSX_LEVEL_LSX
+    if constexpr (N == 8) {
+        return sk_bit_cast<Vec<8,uint16_t>>(__lsx_vmuh_hu(sk_bit_cast<__m128i>(x),
+                                                          sk_bit_cast<__m128i>(y)));
     } else if constexpr (N < 8) {
         return mulhi(join(x,x), join(y,y)).lo;
     } else { // N > 8
@@ -914,7 +1008,7 @@ SIN Vec<N, double> normalize(const Vec<N, double>& v) {
 SINT bool isfinite(const Vec<N, T>& v) {
     // Multiply all values together with 0. If they were all finite, the output is
     // 0 (also finite). If any were not, we'll get nan.
-    return std::isfinite(dot(v, Vec<N, T>(0)));
+    return SkIsFinite(dot(v, Vec<N, T>(0)));
 }
 
 // De-interleaving load of 4 vectors.
@@ -985,6 +1079,35 @@ SI void strided_load4(const float* v,
     c = sk_bit_cast<Vec<4,float>>(c_);
     d = sk_bit_cast<Vec<4,float>>(d_);
 }
+
+#elif SKVX_USE_SIMD && SKVX_CPU_LSX_LEVEL >= SK_CPU_LSX_LEVEL_LSX
+#define _LSX_TRANSPOSE4(row0, row1, row2, row3) \
+do {                                            \
+    __m128i __t0 = __lsx_vilvl_w (row1, row0);  \
+    __m128i __t1 = __lsx_vilvl_w (row3, row2);  \
+    __m128i __t2 = __lsx_vilvh_w (row1, row0);  \
+    __m128i __t3 = __lsx_vilvh_w (row3, row2);  \
+    (row0) = __lsx_vilvl_d (__t1, __t0);        \
+    (row1) = __lsx_vilvh_d (__t1, __t0);        \
+    (row2) = __lsx_vilvl_d (__t3, __t2);        \
+    (row3) = __lsx_vilvh_d (__t3, __t2);        \
+} while (0)
+
+SI void strided_load4(const int* v,
+                      Vec<4,int>& a,
+                      Vec<4,int>& b,
+                      Vec<4,int>& c,
+                      Vec<4,int>& d) {
+    __m128i a_ = __lsx_vld(v, 0);
+    __m128i b_ = __lsx_vld(v, 16);
+    __m128i c_ = __lsx_vld(v, 32);
+    __m128i d_ = __lsx_vld(v, 48);
+    _LSX_TRANSPOSE4(a_, b_, c_, d_);
+    a = sk_bit_cast<Vec<4,int>>(a_);
+    b = sk_bit_cast<Vec<4,int>>(b_);
+    c = sk_bit_cast<Vec<4,int>>(c_);
+    d = sk_bit_cast<Vec<4,int>>(d_);
+}
 #endif
 
 // De-interleaving load of 2 vectors.
@@ -1040,6 +1163,10 @@ using byte16  = Vec<16, uint8_t>;
 using int2    = Vec< 2, int32_t>;
 using int4    = Vec< 4, int32_t>;
 using int8    = Vec< 8, int32_t>;
+
+using ushort2 = Vec< 2, uint16_t>;
+using ushort4 = Vec< 4, uint16_t>;
+using ushort8 = Vec< 8, uint16_t>;
 
 using uint2   = Vec< 2, uint32_t>;
 using uint4   = Vec< 4, uint32_t>;

@@ -1,4 +1,5 @@
 diagnostic(off, derivative_uniformity);
+diagnostic(off, chromium.unreachable_code);
 struct _GlobalUniforms {
   colorRed: vec4<f32>,
   colorGreen: vec4<f32>,
@@ -14,9 +15,9 @@ fn test_int_b() -> bool {
     ok = ok && all(x == vec4<i32>(7, 9, 9, 9));
     x = vec4<i32>(9, 9, 10, 10);
     ok = ok && all(x == vec4<i32>(9, 9, 10, 10));
-    x = vec4<i32>((vec3<i32>(6)), x.w).xyzw;
+    x = vec4<i32>((vec3<i32>(6)), x.w);
     ok = ok && all(x == vec4<i32>(6, 6, 6, 10));
-    x = vec4<i32>((vec2<i32>(3)), x.zw).xyzw;
+    x = vec4<i32>((vec2<i32>(3)), x.zw);
     ok = ok && all(x == vec4<i32>(3, 3, 6, 10));
     x = vec4<i32>(6);
     ok = ok && all(x == vec4<i32>(6));
@@ -26,15 +27,15 @@ fn test_int_b() -> bool {
     ok = ok && all(x == vec4<i32>(-7, -9, -9, -9));
     x = vec4<i32>(9, 9, 10, 10);
     ok = ok && all(x == vec4<i32>(9, 9, 10, 10));
-    x = vec4<i32>((vec3<i32>(6)), x.w).xyzw;
+    x = vec4<i32>((vec3<i32>(6)), x.w);
     ok = ok && all(x == vec4<i32>(6, 6, 6, 10));
-    x = vec4<i32>((vec2<i32>(8)), x.zw).xyzw;
+    x = vec4<i32>((vec2<i32>(8)), x.zw);
     ok = ok && all(x == vec4<i32>(8, 8, 6, 10));
     x = vec4<i32>(200, 100, 50, 25);
     ok = ok && all(x == vec4<i32>(200, 100, 50, 25));
     x = vec4<i32>(6);
     ok = ok && all(x == vec4<i32>(6));
-    var unknown: i32 = i32(_globalUniforms.unknownInput);
+    let unknown: i32 = i32(_globalUniforms.unknownInput);
     x = vec4<i32>(unknown);
     ok = ok && all(x == vec4<i32>(unknown));
     x = vec4<i32>(0);
@@ -87,9 +88,9 @@ fn _skslMain(coords: vec2<f32>) -> vec4<f32> {
     _0_ok = _0_ok && all(_1_x == vec4<f32>(7.0, 9.0, 9.0, 9.0));
     _1_x = vec4<f32>(9.0, 9.0, 10.0, 10.0);
     _0_ok = _0_ok && all(_1_x == vec4<f32>(9.0, 9.0, 10.0, 10.0));
-    _1_x = vec4<f32>((vec3<f32>(6.0)), _1_x.w).xyzw;
+    _1_x = vec4<f32>((vec3<f32>(6.0)), _1_x.w);
     _0_ok = _0_ok && all(_1_x == vec4<f32>(6.0, 6.0, 6.0, 10.0));
-    _1_x = vec4<f32>((vec2<f32>(3.0)), _1_x.zw).xyzw;
+    _1_x = vec4<f32>((vec2<f32>(3.0)), _1_x.zw);
     _0_ok = _0_ok && all(_1_x == vec4<f32>(3.0, 3.0, 6.0, 10.0));
     _1_x = vec4<f32>(6.0);
     _0_ok = _0_ok && all(_1_x == vec4<f32>(6.0));
@@ -99,15 +100,15 @@ fn _skslMain(coords: vec2<f32>) -> vec4<f32> {
     _0_ok = _0_ok && all(_1_x == vec4<f32>(-7.0, -9.0, -9.0, -9.0));
     _1_x = vec4<f32>(9.0, 9.0, 10.0, 10.0);
     _0_ok = _0_ok && all(_1_x == vec4<f32>(9.0, 9.0, 10.0, 10.0));
-    _1_x = vec4<f32>((vec3<f32>(6.0)), _1_x.w).xyzw;
+    _1_x = vec4<f32>((vec3<f32>(6.0)), _1_x.w);
     _0_ok = _0_ok && all(_1_x == vec4<f32>(6.0, 6.0, 6.0, 10.0));
-    _1_x = vec4<f32>((vec2<f32>(8.0)), _1_x.zw).xyzw;
+    _1_x = vec4<f32>((vec2<f32>(8.0)), _1_x.zw);
     _0_ok = _0_ok && all(_1_x == vec4<f32>(8.0, 8.0, 6.0, 10.0));
     _1_x = vec4<f32>(2.0, 1.0, 0.5, 0.25);
     _0_ok = _0_ok && all(_1_x == vec4<f32>(2.0, 1.0, 0.5, 0.25));
     _1_x = vec4<f32>(6.0);
     _0_ok = _0_ok && all(_1_x == vec4<f32>(6.0));
-    var _2_unknown: f32 = _globalUniforms.unknownInput;
+    let _2_unknown: f32 = _globalUniforms.unknownInput;
     _1_x = vec4<f32>(_2_unknown);
     _0_ok = _0_ok && all(_1_x == vec4<f32>(_2_unknown));
     _1_x = vec4<f32>(0.0);

@@ -4,11 +4,12 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
-
+#include "include/core/SkRefCnt.h"
 #include "include/private/base/SkAssert.h"
 #include "include/private/base/SkDebug.h"
 #include "include/private/base/SkTFitsIn.h"
 #include "modules/skshaper/include/SkShaper.h"
+#include "modules/skshaper/include/SkShaper_skunicode.h"
 #include "modules/skunicode/include/SkUnicode.h"
 #include "src/base/SkUTF.h"
 
@@ -71,9 +72,58 @@ private:
     SkBidiIterator::Level fLevel;
 };
 
-std::unique_ptr<SkShaper::BiDiRunIterator>
-SkShaper::MakeSkUnicodeBidiRunIterator(SkUnicode* unicode, const char* utf8, size_t utf8Bytes,
-                                       uint8_t bidiLevel) {
+#if !defined(SK_DISABLE_LEGACY_SKSHAPER_FUNCTIONS)
+
+#if defined(SK_UNICODE_ICU_IMPLEMENTATION)
+#include "modules/skunicode/include/SkUnicode_icu.h"
+#endif
+
+#if defined(SK_UNICODE_LIBGRAPHEME_IMPLEMENTATION)
+#include "modules/skunicode/include/SkUnicode_libgrapheme.h"
+#endif
+
+#if defined(SK_UNICODE_ICU4X_IMPLEMENTATION)
+#include "modules/skunicode/include/SkUnicode_icu4x.h"
+#endif
+
+sk_sp<SkUnicode> get_unicode() {
+#if defined(SK_UNICODE_ICU_IMPLEMENTATION)
+    if (auto unicode = SkUnicodes::ICU::Make()) {
+        return unicode;
+    }
+#endif  // defined(SK_UNICODE_ICU_IMPLEMENTATION)
+#if defined(SK_UNICODE_LIBGRAPHEME_IMPLEMENTATION)
+    if (auto unicode = SkUnicodes::Libgrapheme::Make()) {
+        return unicode;
+    }
+#endif
+#if defined(SK_UNICODE_ICU4X_IMPLEMENTATION)
+    if (auto unicode = SkUnicodes::ICU4X::Make()) {
+        return unicode;
+    }
+#endif
+    return nullptr;
+}
+
+std::unique_ptr<SkShaper::BiDiRunIterator> SkShaper::MakeIcuBiDiRunIterator(const char* utf8,
+                                                                            size_t utf8Bytes,
+                                                                            uint8_t bidiLevel) {
+    static auto unicode = get_unicode();
+    if (!unicode) {
+        return nullptr;
+    }
+    return SkShapers::unicode::BidiRunIterator(unicode, utf8, utf8Bytes, bidiLevel);
+}
+#endif  //  !defined(SK_DISABLE_LEGACY_SKSHAPER_FUNCTIONS)
+
+namespace SkShapers::unicode {
+std::unique_ptr<SkShaper::BiDiRunIterator> BidiRunIterator(sk_sp<SkUnicode> unicode,
+                                                           const char* utf8,
+                                                           size_t utf8Bytes,
+                                                           uint8_t bidiLevel) {
+    if (!unicode) {
+        return nullptr;
+    }
     // ubidi only accepts utf16 (though internally it basically works on utf32 chars).
     // We want an ubidi_setPara(UBiDi*, UText*, UBiDiLevel, UBiDiLevel*, UErrorCode*);
     if (!SkTFitsIn<int32_t>(utf8Bytes)) {
@@ -99,15 +149,4 @@ SkShaper::MakeSkUnicodeBidiRunIterator(SkUnicode* unicode, const char* utf8, siz
 
     return std::make_unique<SkUnicodeBidiRunIterator>(utf8, utf8 + utf8Bytes, std::move(bidi));
 }
-
-std::unique_ptr<SkShaper::BiDiRunIterator>
-SkShaper::MakeIcuBiDiRunIterator(const char* utf8, size_t utf8Bytes, uint8_t bidiLevel) {
-    auto unicode = SkUnicode::Make();
-    if (!unicode) {
-        return nullptr;
-    }
-    return SkShaper::MakeSkUnicodeBidiRunIterator(unicode.get(),
-                                                  utf8,
-                                                  utf8Bytes,
-                                                  bidiLevel);
-}
+}  // namespace SkShapers::unicode

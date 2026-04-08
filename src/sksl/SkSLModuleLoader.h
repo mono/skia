@@ -19,6 +19,10 @@ class Type;
 
 using BuiltinTypePtr = const std::unique_ptr<Type> BuiltinTypes::*;
 
+/**
+ * Documentation for modules in SkSL: http://go/modules-in-sksl
+ * https://docs.google.com/document/d/1P8LkkimNr-nPlxMimUsz3K_7qMM7-tZOxDCWZejPcWg/edit?usp=sharing
+ */
 class ModuleLoader {
 private:
     struct Impl;
@@ -46,6 +50,8 @@ public:
     const Module* loadComputeModule(SkSL::Compiler* compiler);
     const Module* loadGraphiteVertexModule(SkSL::Compiler* compiler);
     const Module* loadGraphiteFragmentModule(SkSL::Compiler* compiler);
+    const Module* loadGraphiteVertexES2Module(SkSL::Compiler* compiler);
+    const Module* loadGraphiteFragmentES2Module(SkSL::Compiler* compiler);
 
     const Module* loadPublicModule(SkSL::Compiler* compiler);
     const Module* loadPrivateRTShaderModule(SkSL::Compiler* compiler);

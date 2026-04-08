@@ -16,7 +16,6 @@ DEPS = [
   'recipe_engine/file',
   'recipe_engine/path',
   'recipe_engine/properties',
-  'recipe_engine/python',
   'recipe_engine/step',
   'run',
   'vars',
@@ -30,16 +29,16 @@ INNER_KARMA_SCRIPT = 'skia/infra/pathkit/test_pathkit.sh'
 def RunSteps(api):
   api.vars.setup()
   api.flavor.setup("dm")
-  checkout_root = api.path['start_dir']
+  checkout_root = api.path.start_dir
   out_dir = api.vars.swarming_out_dir
 
   # The karma script is configured to look in ./npm-(asmjs|wasm)/bin/test/ for
   # the test files to load, so we must copy them there (see Set up for docker).
-  copy_dest = checkout_root.join('skia', 'modules', 'pathkit',
-                                 'build', 'wasm')
+  copy_dest = checkout_root.joinpath('skia', 'modules', 'pathkit',
+                                     'build', 'wasm')
   if 'asmjs' in api.vars.builder_name:
-    copy_dest = checkout_root.join('skia', 'modules', 'pathkit',
-                                   'build', 'asmjs')
+    copy_dest = checkout_root.joinpath('skia', 'modules', 'pathkit',
+                                       'build', 'asmjs')
 
   base_dir = api.vars.build_dir
   bundle_name = 'pathkit.wasm'
@@ -52,15 +51,15 @@ def RunSteps(api):
       bundle_name = 'pathkit.js.mem'
 
   copies = [{
-    'src': base_dir.join('pathkit.js'),
-    'dst': copy_dest.join('pathkit.js'),
+    'src': base_dir.joinpath('pathkit.js'),
+    'dst': copy_dest.joinpath('pathkit.js'),
   }]
   if bundle_name:
     copies.append({
-      'src': base_dir.join(bundle_name),
-      'dst': copy_dest.join(bundle_name),
+      'src': base_dir.joinpath(bundle_name),
+      'dst': copy_dest.joinpath(bundle_name),
     })
-  recursive_read = [checkout_root.join('skia')]
+  recursive_read = [checkout_root.joinpath('skia')]
 
   docker_args = None
   if 'asmjs' in api.vars.builder_name:
@@ -87,7 +86,7 @@ def RunSteps(api):
       docker_image=DOCKER_IMAGE,
       src_dir=checkout_root,
       out_dir=out_dir,
-      script=checkout_root.join(INNER_KARMA_SCRIPT),
+      script=checkout_root.joinpath(INNER_KARMA_SCRIPT),
       args=args,
       docker_args=docker_args,
       copies=copies,

@@ -30,7 +30,7 @@ def RunSteps(api):
 
   # TODO(borenet): Detect static initializers?
 
-  skia_dir = checkout_root.join('skia')
+  skia_dir = checkout_root.joinpath('skia')
   if not api.vars.is_trybot:
     api.doxygen.generate_and_upload(skia_dir)
 
@@ -43,7 +43,7 @@ def GenTests(api):
                      revision='abc123',
                      path_config='kitchen',
                      swarm_out_dir='[SWARM_OUT_DIR]') +
-      api.path.exists(api.path['start_dir'])
+      api.path.exists(api.path.start_dir)
   )
   yield (
       api.test('Housekeeper-PerCommit-Trybot') +
@@ -57,5 +57,5 @@ def GenTests(api):
                      patch_repo='https://skia.googlesource.com/skia.git',
                      patch_storage='gerrit',
                      swarm_out_dir='[SWARM_OUT_DIR]') +
-      api.path.exists(api.path['start_dir'])
+      api.path.exists(api.path.start_dir)
   )

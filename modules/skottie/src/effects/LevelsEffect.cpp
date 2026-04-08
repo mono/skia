@@ -5,16 +5,29 @@
  * found in the LICENSE file.
  */
 
-#include "modules/skottie/src/effects/Effects.h"
-
+#include "include/core/SkColorFilter.h"
+#include "include/core/SkRefCnt.h"
+#include "include/core/SkScalar.h"
+#include "include/private/base/SkAssert.h"
+#include "include/private/base/SkFloatingPoint.h"
 #include "include/private/base/SkTPin.h"
 #include "modules/skottie/src/Adapter.h"
+#include "modules/skottie/src/SkottiePriv.h"
 #include "modules/skottie/src/SkottieValue.h"
+#include "modules/skottie/src/effects/Effects.h"
 #include "modules/sksg/include/SkSGColorFilter.h"
-#include "src/utils/SkJSON.h"
+#include "modules/sksg/include/SkSGRenderNode.h"
 
+#include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <utility>
+
+namespace skjson {
+class ArrayValue;
+}
 
 namespace skottie {
 namespace internal {
@@ -84,7 +97,7 @@ struct ChannelMapper {
 
         for (size_t i = 0; i < 256; ++i) {
             const auto out = out_0 + dOut * std::pow(std::max(t, 0.0f), g);
-            SkASSERT(!SkScalarIsNaN(out));
+            SkASSERT(!SkIsNaN(out));
 
             lut_storage[i] = static_cast<uint8_t>(std::round(SkTPin(out, clip[0], clip[1]) * 255));
 

@@ -12,15 +12,16 @@
 #include "include/core/SkScalar.h"
 #include "include/core/SkStream.h"
 #include "include/private/SkGainmapInfo.h"
-#include "include/private/base/SkFloatingPoint.h"
 #include "include/utils/SkParse.h"
 #include "src/codec/SkCodecPriv.h"
 #include "src/xml/SkDOM.h"
 
+#include <cmath>
 #include <cstdint>
 #include <cstring>
 #include <string>
 #include <vector>
+#include <utility>
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 // XMP parsing helper functions
@@ -349,12 +350,12 @@ static const SkDOM::Node* find_uri_namespaces(const SkDOM& dom,
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 // SkXmpImpl
 
-class SK_API SkXmpImpl final : public SkXmp {
+class SkXmpImpl final : public SkXmp {
 public:
     SkXmpImpl() = default;
 
-    bool getGainmapInfoHDRGM(SkGainmapInfo* info) const override;
-    bool getGainmapInfoHDRGainMap(SkGainmapInfo* info) const override;
+    bool getGainmapInfoAdobe(SkGainmapInfo* info) const override;
+    bool getGainmapInfoApple(float exifHdrHeadroom, SkGainmapInfo* info) const override;
     bool getContainerGainmapLocation(size_t* offset, size_t* size) const override;
     const char* getExtendedXmpGuid() const override;
     // Parse the given xmp data and store it into either the standard (main) DOM or the extended
@@ -515,7 +516,7 @@ bool SkXmpImpl::getContainerGainmapLocation(size_t* outOffset, size_t* outSize) 
 }
 
 // Return true if the specified XMP metadata identifies this image as an HDR gainmap.
-bool SkXmpImpl::getGainmapInfoHDRGainMap(SkGainmapInfo* info) const {
+bool SkXmpImpl::getGainmapInfoApple(float exifHdrHeadroom, SkGainmapInfo* info) const {
     // Find a node that matches the requested namespaces and URIs.
     const char* namespaces[2] = {nullptr, nullptr};
     const char* uris[2] = {"http://ns.apple.com/pixeldatainfo/1.0/",
@@ -538,31 +539,36 @@ bool SkXmpImpl::getGainmapInfoHDRGainMap(SkGainmapInfo* info) const {
         return false;
     }
 
+    // Require that the gainmap version be present, but do not require a specific version.
     int32_t version = 0;
     if (!get_attr_int32(dom, node, hdrGainMapPrefix, "HDRGainMapVersion", &version)) {
         SkCodecPrintf("Did not find HDRGainMapVersion.\n");
         return false;
     }
-    if (version != 65536) {
-        SkCodecPrintf("HDRGainMapVersion was not 65536.\n");
-        return false;
+
+    // If the XMP also specifies a HDRGainMapHeadroom parameter, then prefer that parameter to the
+    // parameter specified in the base image Exif.
+    float hdrHeadroom = exifHdrHeadroom;
+    float xmpHdrHeadroom = 0.f;
+    if (get_attr_float(dom, node, hdrGainMapPrefix, "HDRGainMapHeadroom", &xmpHdrHeadroom)) {
+        hdrHeadroom = xmpHdrHeadroom;
     }
 
     // This node will often have StoredFormat and NativeFormat children that have inner text that
     // specifies the integer 'L008' (also known as kCVPixelFormatType_OneComponent8).
-    const float kRatioMax = sk_float_exp(1.f);
     info->fGainmapRatioMin = {1.f, 1.f, 1.f, 1.f};
-    info->fGainmapRatioMax = {kRatioMax, kRatioMax, kRatioMax, 1.f};
+    info->fGainmapRatioMax = {hdrHeadroom, hdrHeadroom, hdrHeadroom, 1.f};
     info->fGainmapGamma = {1.f, 1.f, 1.f, 1.f};
     info->fEpsilonSdr = {0.f, 0.f, 0.f, 1.f};
     info->fEpsilonHdr = {0.f, 0.f, 0.f, 1.f};
     info->fDisplayRatioSdr = 1.f;
-    info->fDisplayRatioHdr = kRatioMax;
+    info->fDisplayRatioHdr = hdrHeadroom;
     info->fBaseImageType = SkGainmapInfo::BaseImageType::kSDR;
+    info->fType = SkGainmapInfo::Type::kApple;
     return true;
 }
 
-bool SkXmpImpl::getGainmapInfoHDRGM(SkGainmapInfo* outGainmapInfo) const {
+bool SkXmpImpl::getGainmapInfoAdobe(SkGainmapInfo* outGainmapInfo) const {
     // Find a node that matches the requested namespace and URI.
     const char* namespaces[1] = {nullptr};
     const char* uris[1] = {"http://ns.adobe.com/hdr-gain-map/1.0/"};
@@ -605,20 +611,23 @@ bool SkXmpImpl::getGainmapInfoHDRGM(SkGainmapInfo* outGainmapInfo) const {
     get_attr_float(dom, node, hdrgmPrefix, "HDRCapacityMax", &hdrCapacityMax);
 
     // Translate all parameters to SkGainmapInfo's expected format.
-    const float kLog2 = sk_float_log(2.f);
-    outGainmapInfo->fGainmapRatioMin = {sk_float_exp(gainMapMin.fR * kLog2),
-                                        sk_float_exp(gainMapMin.fG * kLog2),
-                                        sk_float_exp(gainMapMin.fB * kLog2),
+    if (!outGainmapInfo) {
+        return true;
+    }
+    const float kLog2 = std::log(2.f);
+    outGainmapInfo->fGainmapRatioMin = {std::exp(gainMapMin.fR * kLog2),
+                                        std::exp(gainMapMin.fG * kLog2),
+                                        std::exp(gainMapMin.fB * kLog2),
                                         1.f};
-    outGainmapInfo->fGainmapRatioMax = {sk_float_exp(gainMapMax.fR * kLog2),
-                                        sk_float_exp(gainMapMax.fG * kLog2),
-                                        sk_float_exp(gainMapMax.fB * kLog2),
+    outGainmapInfo->fGainmapRatioMax = {std::exp(gainMapMax.fR * kLog2),
+                                        std::exp(gainMapMax.fG * kLog2),
+                                        std::exp(gainMapMax.fB * kLog2),
                                         1.f};
     outGainmapInfo->fGainmapGamma = {1.f / gamma.fR, 1.f / gamma.fG, 1.f / gamma.fB, 1.f};
     outGainmapInfo->fEpsilonSdr = offsetSdr;
     outGainmapInfo->fEpsilonHdr = offsetHdr;
-    outGainmapInfo->fDisplayRatioSdr = sk_float_exp(hdrCapacityMin * kLog2);
-    outGainmapInfo->fDisplayRatioHdr = sk_float_exp(hdrCapacityMax * kLog2);
+    outGainmapInfo->fDisplayRatioSdr = std::exp(hdrCapacityMin * kLog2);
+    outGainmapInfo->fDisplayRatioHdr = std::exp(hdrCapacityMax * kLog2);
     if (baseRenditionIsHDR) {
         outGainmapInfo->fBaseImageType = SkGainmapInfo::BaseImageType::kHDR;
     } else {
@@ -629,7 +638,7 @@ bool SkXmpImpl::getGainmapInfoHDRGM(SkGainmapInfo* outGainmapInfo) const {
 
 bool SkXmpImpl::parseDom(sk_sp<SkData> xmpData, bool extended) {
     SkDOM* dom = extended ? &fExtendedDOM : &fStandardDOM;
-    auto xmpdStream = SkMemoryStream::Make(xmpData);
+    auto xmpdStream = SkMemoryStream::Make(std::move(xmpData));
     if (!dom->build(*xmpdStream)) {
         SkCodecPrintf("Failed to parse XMP %s metadata.\n", extended ? "extended" : "standard");
         return false;
@@ -642,7 +651,7 @@ bool SkXmpImpl::parseDom(sk_sp<SkData> xmpData, bool extended) {
 
 std::unique_ptr<SkXmp> SkXmp::Make(sk_sp<SkData> xmpData) {
     std::unique_ptr<SkXmpImpl> xmp(new SkXmpImpl);
-    if (!xmp->parseDom(xmpData, /*extended=*/false)) {
+    if (!xmp->parseDom(std::move(xmpData), /*extended=*/false)) {
         return nullptr;
     }
     return xmp;
@@ -650,11 +659,11 @@ std::unique_ptr<SkXmp> SkXmp::Make(sk_sp<SkData> xmpData) {
 
 std::unique_ptr<SkXmp> SkXmp::Make(sk_sp<SkData> xmpStandard, sk_sp<SkData> xmpExtended) {
     std::unique_ptr<SkXmpImpl> xmp(new SkXmpImpl);
-    if (!xmp->parseDom(xmpStandard, /*extended=*/false)) {
+    if (!xmp->parseDom(std::move(xmpStandard), /*extended=*/false)) {
         return nullptr;
     }
     // Try to parse extended xmp but ignore the return value: if parsing fails, we'll still return
     // the standard xmp.
-    (void)xmp->parseDom(xmpExtended, /*extended=*/true);
+    (void)xmp->parseDom(std::move(xmpExtended), /*extended=*/true);
     return xmp;
 }

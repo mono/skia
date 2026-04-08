@@ -20,9 +20,9 @@
 #include "include/core/SkSamplingOptions.h"
 #include "include/core/SkTypes.h"
 #include "include/gpu/GpuTypes.h"
-#include "include/gpu/GrBackendSurface.h"
-#include "include/gpu/GrDirectContext.h"
-#include "include/gpu/GrTypes.h"
+#include "include/gpu/ganesh/GrBackendSurface.h"
+#include "include/gpu/ganesh/GrDirectContext.h"
+#include "include/gpu/ganesh/GrTypes.h"
 #include "include/gpu/ganesh/gl/GrGLBackendSurface.h"
 #include "include/private/SkColorData.h"
 #include "include/private/base/SkTemplates.h"
@@ -60,7 +60,7 @@ struct GrContextOptions;
 
 // skbug.com/5932
 static void test_basic_draw_as_src(skiatest::Reporter* reporter, GrDirectContext* dContext,
-                                   GrSurfaceProxyView rectView, GrColorType colorType,
+                                   const GrSurfaceProxyView& rectView, GrColorType colorType,
                                    SkAlphaType alphaType, uint32_t expectedPixelValues[]) {
     auto sfc = dContext->priv().makeSFC(
             {colorType, kPremul_SkAlphaType, nullptr, rectView.dimensions()}, /*label=*/{});

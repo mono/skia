@@ -19,12 +19,16 @@
 #include "include/core/SkString.h"
 #include "include/core/SkTypes.h"
 #include "include/effects/SkDashPathEffect.h"
-#include "include/private/base/SkFloatBits.h"
 #include "include/utils/SkParsePath.h"
+#include "src/base/SkFloatBits.h"
 #include "src/base/SkRandom.h"
 #include "tools/ToolUtils.h"
 
 #include <string.h>
+
+#if defined(SK_GRAPHITE)
+#include "include/gpu/graphite/ContextOptions.h"
+#endif
 
 #define W   400
 #define H   400
@@ -57,6 +61,13 @@ protected:
     SkString getName() const override { return SkString("strokes_round"); }
 
     SkISize getISize() override { return SkISize::Make(W, H * 2); }
+
+#if defined(SK_GRAPHITE)
+    void modifyGraphiteContextOptions(skgpu::graphite::ContextOptions* options) const override {
+        options->fMaxPathAtlasTextureSize = 0;
+        options->fAllowMultipleAtlasTextures = false;
+    }
+#endif
 
     void onDraw(SkCanvas* canvas) override {
         SkPaint paint;
@@ -610,4 +621,33 @@ DEF_SIMPLE_GM(skbug12244, canvas, 150, 150) {
 
     canvas->translate(20.f, 20.f);
     canvas->drawPath(path, p);
+}
+
+DEF_SIMPLE_GM(b_340982297, canvas, 80, 50) {
+    SkPaint paint;
+    paint.setAntiAlias(true);
+
+    SkPath path;
+    path.moveTo(30.23983f, 48.5674667f);
+    path.lineTo(1.30884242f, 45.5222702f);
+    path.lineTo(2.97688866f, 29.6749554f);
+    path.lineTo(17.4423828f, 31.1975555f);
+    path.lineTo(2.94269657f, 30.0452003f);
+    path.lineTo(4.38597536f, 11.8849154f);
+    path.lineTo(33.3853493f, 14.1896257f);
+    path.close();
+
+    canvas->drawPath(path, paint);
+
+    path.reset();
+    path.moveTo(73.3853455f, 4.18963623f);
+    path.lineTo(69.995636f, 39.1360626f);
+    path.lineTo(42.83145142f, 21.056778f);
+    path.lineTo(42.97689819f, 19.6749573f);
+    path.lineTo(57.4423828f, 21.1975555f);
+    path.lineTo(42.94268799f, 20.0451965f);
+    path.lineTo(44.38595581f, 1.88491821f);
+    path.close();
+
+    canvas->drawPath(path, paint);
 }

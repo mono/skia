@@ -8,16 +8,32 @@
 #ifndef SkSVGTextPriv_DEFINED
 #define SkSVGTextPriv_DEFINED
 
+#include "include/core/SkContourMeasure.h"
+#include "include/core/SkFont.h"
+#include "include/core/SkMatrix.h"
+#include "include/core/SkPaint.h"
+#include "include/core/SkPoint.h"
+#include "include/core/SkRefCnt.h"
+#include "include/core/SkTypes.h"
 #include "include/private/base/SkTArray.h"
+#include "include/private/base/SkTo.h"
 #include "modules/skshaper/include/SkShaper.h"
-#include "modules/svg/include/SkSVGRenderContext.h"
-#include "modules/svg/include/SkSVGText.h"
 #include "src/base/SkTLazy.h"
 
+#include <cstddef>
+#include <cstdint>
 #include <functional>
-#include <tuple>
+#include <limits>
+#include <memory>
+#include <vector>
 
-class SkContourMeasure;
+class SkSVGLengthContext;
+class SkSVGRenderContext;
+class SkSVGTextContainer;
+class SkSVGTextPath;
+class SkString;
+class SkTextBlob;
+enum class SkSVGXmlSpace;
 struct SkRSXform;
 
 // SkSVGTextContext is responsible for sequencing input text chars into "chunks".
@@ -168,7 +184,7 @@ private:
         float                                fLength = 0; // total path length
     };
 
-    void shapePendingBuffer(const SkFont&);
+    void shapePendingBuffer(const SkSVGRenderContext&, const SkFont&);
 
     SkRSXform computeGlyphXform(SkGlyphID, const SkFont&, const SkPoint& glyph_pos,
                                 const PositionAdjustment&) const;
@@ -179,14 +195,14 @@ private:
     void commitRunInfo() override {}
     Buffer runBuffer(const RunInfo& ri) override;
     void commitRunBuffer(const RunInfo& ri) override;
-    void commitLine() override {}
+    void commitLine() override;
 
     // http://www.w3.org/TR/SVG11/text.html#TextLayout
     const SkSVGRenderContext&       fRenderContext; // original render context
     const ShapedTextCallback&       fCallback;
-    const std::unique_ptr<SkShaper> fShaper;
+    std::unique_ptr<SkShaper>       fShaper;
     std::vector<RunRec>             fRuns;
-    const ScopedPosResolver*        fPosResolver  = nullptr;
+    const ScopedPosResolver*        fPosResolver = nullptr;
     std::unique_ptr<PathData>       fPathData;
 
     // shaper state
@@ -206,6 +222,7 @@ private:
     SkTLazy<SkPaint>                fCurrentStroke;
 
     bool                            fPrevCharSpace = true; // WS filter state
+    bool                            fForcePrimitiveShaping = false;
 };
 
 #endif // SkSVGTextPriv_DEFINED

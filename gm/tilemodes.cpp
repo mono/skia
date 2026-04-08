@@ -25,8 +25,11 @@
 #include "include/core/SkTypes.h"
 #include "include/effects/SkGradientShader.h"
 #include "include/utils/SkTextUtils.h"
+#include "tools/DecodeUtils.h"
+#include "tools/GpuToolUtils.h"
 #include "tools/Resources.h"
 #include "tools/ToolUtils.h"
+#include "tools/fonts/FontToolUtils.h"
 
 #include <functional>
 
@@ -95,7 +98,7 @@ protected:
 
     void onDraw(SkCanvas* canvas) override {
         SkPaint textPaint;
-        SkFont  font(ToolUtils::create_portable_typeface());
+        SkFont  font = ToolUtils::DefaultPortableFont();
 
         int size = fPowerOfTwoSize ? kPOTSize : kNPOTSize;
 
@@ -226,7 +229,7 @@ private:
         SkScalar y = SkIntToScalar(24);
         SkScalar x = SkIntToScalar(66);
 
-        SkFont font(ToolUtils::create_portable_typeface());
+        SkFont font = ToolUtils::DefaultPortableFont();
 
         for (size_t kx = 0; kx < std::size(gModes); kx++) {
             SkString str(gModeNames[kx]);
@@ -267,7 +270,7 @@ DEF_GM( return new Tiling2GM(make_grad, "tilemode_gradient"); )
 ////////////////////
 
 DEF_SIMPLE_GM(tilemode_decal, canvas, 720, 1100) {
-    auto img = GetResourceAsImage("images/mandrill_128.png");
+    auto img = ToolUtils::GetResourceAsImage("images/mandrill_128.png");
     SkPaint bgpaint;
     bgpaint.setColor(SK_ColorYELLOW);
 

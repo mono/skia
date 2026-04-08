@@ -11,6 +11,7 @@
 
 #include "include/core/SkCanvas.h"
 #include "include/core/SkFont.h"
+#include "include/core/SkFontMgr.h"
 #include "include/private/base/SkNoncopyable.h"
 #include "include/private/base/SkTPin.h"
 #include "modules/audioplayer/SkAudioPlayer.h"
@@ -24,6 +25,7 @@
 #include "src/core/SkOSFile.h"
 #include "src/utils/SkOSPath.h"
 #include "tools/Resources.h"
+#include "tools/fonts/FontToolUtils.h"
 #include "tools/timer/TimeUtils.h"
 
 #include <cmath>
@@ -126,6 +128,7 @@ public:
                                                   const char resource_name[],
                                                   const char /*resource_id*/[]) const override {
         auto data = this->load(resource_path, resource_name);
+        // Viewer should have already registered the codecs necessary for MultiFrameImageAsset
         return skresources::MultiFrameImageAsset::Make(data);
     }
 
@@ -341,8 +344,8 @@ public:
         for(const auto& s : fTextStringSlots) {
             auto t = fSlotManager->getTextSlot(s.first);
             t->fText = SkString(s.second.source.data());
-            t->fTypeface = SkFontMgr::RefDefault()->matchFamilyStyle(s.second.font.c_str(),
-                                                                     SkFontStyle());
+            t->fTypeface = ToolUtils::TestFontMgr()->matchFamilyStyle(s.second.font.c_str(),
+                                                                      SkFontStyle());
             fSlotManager->setTextSlot(s.first, *t);
         }
         for(const auto& s : fImageSlots) {
@@ -442,7 +445,7 @@ static void draw_stats_box(SkCanvas* canvas, const skottie::Animation::Builder::
     paint.setAntiAlias(true);
     paint.setColor(0xffeeeeee);
 
-    SkFont font(nullptr, kTextSize);
+    SkFont font(ToolUtils::DefaultTypeface(), kTextSize);
 
     canvas->drawRect(kR, paint);
 
@@ -515,12 +518,14 @@ void SkottieSlide::init() {
     }
     skottie::Animation::Builder builder(flags);
 
+    // Viewer should have already registered the codecs necessary for DataURIResourceProviderProxy
+    auto predecode = skresources::ImageDecodeStrategy::kPreDecode;
     auto resource_provider =
-        sk_make_sp<AudioProviderProxy>(
-            skresources::DataURIResourceProviderProxy::Make(
-                skresources::FileResourceProvider::Make(SkOSPath::Dirname(fPath.c_str()),
-                                                        /*predecode=*/true),
-                /*predecode=*/true));
+            sk_make_sp<AudioProviderProxy>(skresources::DataURIResourceProviderProxy::Make(
+                    skresources::FileResourceProvider::Make(SkOSPath::Dirname(fPath.c_str()),
+                                                            predecode),
+                    predecode,
+                    ToolUtils::TestFontMgr()));
 
     static constexpr char kInterceptPrefix[] = "__";
     auto precomp_interceptor =
@@ -531,6 +536,7 @@ void SkottieSlide::init() {
     auto text_tracker = sk_make_sp<TextTracker>(fTransformTracker);
 
     builder.setLogger(logger)
+           .setFontManager(ToolUtils::TestFontMgr())
            .setPrecompInterceptor(std::move(precomp_interceptor))
            .setResourceProvider(resource_provider)
            .setPropertyObserver(text_tracker);
@@ -539,13 +545,14 @@ void SkottieSlide::init() {
     fAnimationStats = builder.getStats();
     fTimeBase       = 0; // force a time reset
 
-    if (!fSlotManagerInterface) {
-        fSlotManagerInterface = std::make_unique<SlotManagerInterface>(builder.getSlotManager(), resource_provider);
-    }
-
-    fSlotManagerInterface->initializeSlotManagerUI();
-
     if (fAnimation) {
+        if (!fSlotManagerInterface) {
+            fSlotManagerInterface =
+                std::make_unique<SlotManagerInterface>(builder.getSlotManager(), resource_provider);
+        }
+
+        fSlotManagerInterface->initializeSlotManagerUI();
+
         fAnimation->seek(0);
         fFrameTimes.resize(SkScalarCeilToInt(fAnimation->duration() * fAnimation->fps()));
         SkDebugf("Loaded Bodymovin animation v: %s, size: [%f %f]\n",
@@ -560,6 +567,7 @@ void SkottieSlide::init() {
             text_props.erase(text_props.cbegin());
             fTextEditor = sk_make_sp<skottie_utils::TextEditor>(std::move(editor_target),
                                                                 std::move(text_props));
+            fTextEditor->setCursorWeight(1.2f);
         }
     } else {
         SkDebugf("failed to load Bodymovin animation: %s\n", fPath.c_str());

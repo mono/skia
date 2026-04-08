@@ -18,7 +18,6 @@
 #include "src/core/SkTextBlobPriv.h"
 
 #include <cstring>
-#include <initializer_list>
 
 class SkPaint;
 
@@ -121,7 +120,7 @@ static SkRect glyphrun_source_bounds(
         const SkPaint& paint,
         SkZip<const SkGlyphID, const SkPoint> source,
         SkSpan<const SkVector> scaledRotations) {
-    SkASSERT(source.size() > 0);
+    SkASSERT(!source.empty());
     const SkRect fontBounds = SkFontPriv::GetFontBounds(font);
 
     SkSpan<const SkGlyphID> glyphIDs = source.get<0>();

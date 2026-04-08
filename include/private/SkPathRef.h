@@ -8,6 +8,7 @@
 #ifndef SkPathRef_DEFINED
 #define SkPathRef_DEFINED
 
+#include "include/core/SkArc.h"
 #include "include/core/SkPoint.h"
 #include "include/core/SkRect.h"
 #include "include/core/SkRefCnt.h"
@@ -15,6 +16,7 @@
 #include "include/core/SkTypes.h"
 #include "include/private/SkIDChangeListener.h"
 #include "include/private/base/SkDebug.h"
+#include "include/private/base/SkSpan_impl.h"
 #include "include/private/base/SkTArray.h"
 #include "include/private/base/SkTo.h"
 
@@ -22,7 +24,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <tuple>
-#include <utility>
 
 class SkMatrix;
 class SkRRect;
@@ -59,20 +60,29 @@ public:
     using VerbsArray = skia_private::STArray<4, uint8_t>;
     using ConicWeightsArray = skia_private::STArray<2, SkScalar>;
 
-    SkPathRef(PointsArray points, VerbsArray verbs, ConicWeightsArray weights,
-              unsigned segmentMask)
-        : fPoints(std::move(points))
-        , fVerbs(std::move(verbs))
-        , fConicWeights(std::move(weights))
+    enum class PathType : uint8_t {
+        kGeneral,
+        kOval,
+        kRRect,
+        kArc,
+    };
+
+    SkPathRef(SkSpan<const SkPoint> points, SkSpan<const uint8_t> verbs,
+              SkSpan<const SkScalar> weights, unsigned segmentMask)
+        : fPoints(points)
+        , fVerbs(verbs)
+        , fConicWeights(weights)
     {
         fBoundsIsDirty = true;    // this also invalidates fIsFinite
         fGenerationID = 0;        // recompute
         fSegmentMask = segmentMask;
-        fIsOval = false;
-        fIsRRect = false;
-        // The next two values don't matter unless fIsOval or fIsRRect are true.
+        fType = PathType::kGeneral;
+        // The next two values don't matter unless fType is kOval or kRRect
         fRRectOrOvalIsCCW = false;
         fRRectOrOvalStartIdx = 0xAC;
+        fArcOval.setEmpty();
+        fArcStartAngle = fArcSweepAngle = 0.0f;
+        fArcType = SkArc::Type::kArc;
         SkDEBUGCODE(fEditorsAttached.store(0);)
 
         this->computeBounds();  // do this now, before we worry about multiple owners/threads
@@ -83,7 +93,8 @@ public:
     public:
         Editor(sk_sp<SkPathRef>* pathRef,
                int incReserveVerbs = 0,
-               int incReservePoints = 0);
+               int incReservePoints = 0,
+               int incReserveConics = 0);
 
         ~Editor() { SkDEBUGCODE(fPathRef->fEditorsAttached--;) }
 
@@ -146,12 +157,16 @@ public:
          */
         SkPathRef* pathRef() { return fPathRef; }
 
-        void setIsOval(bool isOval, bool isCCW, unsigned start) {
-            fPathRef->setIsOval(isOval, isCCW, start);
+        void setIsOval(bool isCCW, unsigned start) {
+            fPathRef->setIsOval(isCCW, start);
         }
 
-        void setIsRRect(bool isRRect, bool isCCW, unsigned start) {
-            fPathRef->setIsRRect(isRRect, isCCW, start);
+        void setIsRRect(bool isCCW, unsigned start) {
+            fPathRef->setIsRRect(isCCW, start);
+        }
+
+        void setIsArc(const SkArc& arc) {
+            fPathRef->setIsArc(arc);
         }
 
         void setBounds(const SkRect& rect) { fPathRef->setBounds(rect); }
@@ -226,7 +241,7 @@ public:
      *              fact ovals can report false.
      */
     bool isOval(SkRect* rect, bool* isCCW, unsigned* start) const {
-        if (fIsOval) {
+        if (fType == PathType::kOval) {
             if (rect) {
                 *rect = this->getBounds();
             }
@@ -238,10 +253,20 @@ public:
             }
         }
 
-        return SkToBool(fIsOval);
+        return fType == PathType::kOval;
     }
 
     bool isRRect(SkRRect* rrect, bool* isCCW, unsigned* start) const;
+
+    bool isArc(SkArc* arc) const {
+        if (fType == PathType::kArc) {
+            if (arc) {
+                *arc = SkArc::Make(fArcOval, fArcStartAngle, fArcSweepAngle, fArcType);
+            }
+        }
+
+        return fType == PathType::kArc;
+    }
 
     bool hasComputedBounds() const {
         return !fBoundsIsDirty;
@@ -351,26 +376,31 @@ private:
         kSegmentMask_SerializationShift = 0                 // requires 4 bits (deprecated)
     };
 
-    SkPathRef(int numVerbs = 0, int numPoints = 0) {
+    SkPathRef(int numVerbs = 0, int numPoints = 0, int numConics = 0) {
         fBoundsIsDirty = true;    // this also invalidates fIsFinite
         fGenerationID = kEmptyGenID;
         fSegmentMask = 0;
-        fIsOval = false;
-        fIsRRect = false;
-        // The next two values don't matter unless fIsOval or fIsRRect are true.
+        fType = PathType::kGeneral;
+        // The next two values don't matter unless fType is kOval or kRRect
         fRRectOrOvalIsCCW = false;
         fRRectOrOvalStartIdx = 0xAC;
+        fArcOval.setEmpty();
+        fArcStartAngle = fArcSweepAngle = 0.0f;
+        fArcType = SkArc::Type::kArc;
         if (numPoints > 0) {
             fPoints.reserve_exact(numPoints);
         }
         if (numVerbs > 0) {
             fVerbs.reserve_exact(numVerbs);
         }
+        if (numConics > 0) {
+            fConicWeights.reserve_exact(numConics);
+        }
         SkDEBUGCODE(fEditorsAttached.store(0);)
         SkDEBUGCODE(this->validate();)
     }
 
-    void copy(const SkPathRef& ref, int additionalReserveVerbs, int additionalReservePoints);
+    void copy(const SkPathRef& ref, int additionalReserveVerbs, int additionalReservePoints, int additionalReserveConics);
 
     // Return true if the computed bounds are finite.
     static bool ComputePtBounds(SkRect* bounds, const SkPathRef& ref) {
@@ -396,14 +426,19 @@ private:
     }
 
     /** Makes additional room but does not change the counts or change the genID */
-    void incReserve(int additionalVerbs, int additionalPoints) {
+    void incReserve(int additionalVerbs, int additionalPoints, int additionalConics) {
         SkDEBUGCODE(this->validate();)
         // Use reserve() so that if there is not enough space, the array will grow with some
         // additional space. This ensures repeated calls to grow won't always allocate.
-        if (additionalPoints > 0)
+        if (additionalPoints > 0) {
             fPoints.reserve(fPoints.size() + additionalPoints);
-        if (additionalVerbs > 0)
+        }
+        if (additionalVerbs > 0) {
             fVerbs.reserve(fVerbs.size() + additionalVerbs);
+        }
+        if (additionalConics > 0) {
+            fConicWeights.reserve(fConicWeights.size() + additionalConics);
+        }
         SkDEBUGCODE(this->validate();)
     }
 
@@ -418,14 +453,14 @@ private:
         fGenerationID = 0;
 
         fSegmentMask = 0;
-        fIsOval = false;
-        fIsRRect = false;
+        fType = PathType::kGeneral;
     }
 
     /** Resets the path ref with verbCount verbs and pointCount points, all uninitialized. Also
      *  allocates space for reserveVerb additional verbs and reservePoints additional points.*/
     void resetToSize(int verbCount, int pointCount, int conicCount,
-                     int reserveVerbs = 0, int reservePoints = 0) {
+                     int reserveVerbs = 0, int reservePoints = 0,
+                     int reserveConics = 0) {
         this->commonReset();
         // Use reserve_exact() so the arrays are sized to exactly fit the data.
         fPoints.reserve_exact(pointCount + reservePoints);
@@ -434,6 +469,7 @@ private:
         fVerbs.reserve_exact(verbCount + reserveVerbs);
         fVerbs.resize_back(verbCount);
 
+        fConicWeights.reserve_exact(conicCount + reserveConics);
         fConicWeights.resize_back(conicCount);
         SkDEBUGCODE(this->validate();)
     }
@@ -471,23 +507,30 @@ private:
      */
     friend SkPathRef* sk_create_empty_pathref();
 
-    void setIsOval(bool isOval, bool isCCW, unsigned start) {
-        fIsOval = isOval;
+    void setIsOval(bool isCCW, unsigned start) {
+        fType = PathType::kOval;
         fRRectOrOvalIsCCW = isCCW;
         fRRectOrOvalStartIdx = SkToU8(start);
     }
 
-    void setIsRRect(bool isRRect, bool isCCW, unsigned start) {
-        fIsRRect = isRRect;
+    void setIsRRect(bool isCCW, unsigned start) {
+        fType = PathType::kRRect;
         fRRectOrOvalIsCCW = isCCW;
         fRRectOrOvalStartIdx = SkToU8(start);
+    }
+
+    void setIsArc(const SkArc& arc) {
+        fType = PathType::kArc;
+        fArcOval = arc.fOval;
+        fArcStartAngle = arc.fStartAngle;
+        fArcSweepAngle = arc.fSweepAngle;
+        fArcType = arc.fType;
     }
 
     // called only by the editor. Note that this is not a const function.
     SkPoint* getWritablePoints() {
         SkDEBUGCODE(this->validate();)
-        fIsOval = false;
-        fIsRRect = false;
+        fType = PathType::kGeneral;
         return fPoints.begin();
     }
 
@@ -498,34 +541,35 @@ private:
 
     void callGenIDChangeListeners();
 
-    enum {
-        kMinSize = 256,
-    };
-
     mutable SkRect   fBounds;
-
-    PointsArray fPoints;
-    VerbsArray fVerbs;
-    ConicWeightsArray fConicWeights;
 
     enum {
         kEmptyGenID = 1, // GenID reserved for path ref with zero points and zero verbs.
     };
     mutable uint32_t    fGenerationID;
-    SkDEBUGCODE(std::atomic<int> fEditorsAttached;) // assert only one editor in use at any time.
-
     SkIDChangeListener::List fGenIDChangeListeners;
+
+    PointsArray fPoints;
+    VerbsArray fVerbs;
+    ConicWeightsArray fConicWeights;
+
+    SkDEBUGCODE(std::atomic<int> fEditorsAttached;) // assert only one editor in use at any time.
 
     mutable uint8_t  fBoundsIsDirty;
     mutable bool     fIsFinite;    // only meaningful if bounds are valid
 
-    bool     fIsOval;
-    bool     fIsRRect;
+    PathType fType;
     // Both the circle and rrect special cases have a notion of direction and starting point
     // The next two variables store that information for either.
     bool     fRRectOrOvalIsCCW;
     uint8_t  fRRectOrOvalStartIdx;
     uint8_t  fSegmentMask;
+    // If the path is an arc, these four variables store that information.
+    // We should just store an SkArc, but alignment would cost us 8 more bytes.
+    SkArc::Type fArcType;
+    SkRect      fArcOval;
+    SkScalar    fArcStartAngle;
+    SkScalar    fArcSweepAngle;
 
     friend class PathRefTest_Private;
     friend class ForceIsRRect_Private; // unit test isRRect

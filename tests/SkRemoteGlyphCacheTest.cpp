@@ -29,9 +29,9 @@
 #include "include/core/SkTypeface.h"
 #include "include/core/SkTypes.h"
 #include "include/gpu/GpuTypes.h"
-#include "include/gpu/GrContextOptions.h"
-#include "include/gpu/GrDirectContext.h"
-#include "include/gpu/GrRecordingContext.h"
+#include "include/gpu/ganesh/GrContextOptions.h"
+#include "include/gpu/ganesh/GrDirectContext.h"
+#include "include/gpu/ganesh/GrRecordingContext.h"
 #include "include/gpu/ganesh/SkSurfaceGanesh.h"
 #include "include/private/base/SkMalloc.h"
 #include "include/private/base/SkMutex.h"
@@ -48,11 +48,12 @@
 #include "src/gpu/ganesh/GrDirectContextPriv.h"
 #include "src/gpu/ganesh/GrRecordingContextPriv.h"
 #include "src/gpu/ganesh/GrShaderCaps.h"
-#include "src/text/gpu/SDFTControl.h"
+#include "src/text/gpu/SubRunControl.h"
 #include "tests/CtsEnforcement.h"
 #include "tests/Test.h"
 #include "tools/Resources.h"
 #include "tools/ToolUtils.h"
+#include "tools/fonts/FontToolUtils.h"
 #include "tools/fonts/TestEmptyTypeface.h"
 
 #include <cmath>
@@ -159,6 +160,7 @@ private:
 
 sk_sp<SkTextBlob> buildTextBlob(sk_sp<SkTypeface> tf, int glyphCount, int textSize = 1) {
     SkFont font;
+    SkASSERT(tf);
     font.setTypeface(tf);
     font.setHinting(SkFontHinting::kNormal);
     font.setSize(textSize);
@@ -233,7 +235,7 @@ SkBitmap RasterBlobThroughSlug(sk_sp<SkTextBlob> blob, int width, int height, co
     }
     auto canvas = surface->getCanvas();
     auto slug = Slug::ConvertBlob(canvas, *blob, {x, height/2.0f}, paint);
-    slug->draw(canvas);
+    slug->draw(canvas, paint);
     SkBitmap bitmap;
     bitmap.allocN32Pixels(width, height);
     surface->readPixels(bitmap, 0, 0);
@@ -248,7 +250,7 @@ SkBitmap RasterSlug(sk_sp<Slug> slug, int width, int height, const SkPaint& pain
     if (matrix) {
         canvas->concat(*matrix);
     }
-    slug->draw(canvas);
+    slug->draw(canvas, paint);
     SkBitmap bitmap;
     bitmap.allocN32Pixels(width, height);
     surface->readPixels(bitmap, 0, 0);
@@ -266,7 +268,7 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(SkRemoteGlyphCache_StrikeSerialization,
     const SkPaint paint;
 
     // Server.
-    auto serverTypeface = SkTypeface::MakeFromName("monospace", SkFontStyle());
+    auto serverTypeface = ToolUtils::CreateTestTypeface("monospace", SkFontStyle());
     const SkTypefaceID serverTypefaceID = serverTypeface->uniqueID();
 
     int glyphCount = 10;
@@ -318,7 +320,7 @@ DEF_GANESH_TEST_FOR_CONTEXTS(SkRemoteGlyphCache_StrikeSerializationSlug,
     const SkPaint paint;
 
     // Server.
-    auto serverTypeface = SkTypeface::MakeFromName("monospace", SkFontStyle());
+    auto serverTypeface = ToolUtils::CreateTestTypeface("monospace", SkFontStyle());
     const SkTypefaceID serverTypefaceID = serverTypeface->uniqueID();
 
     int glyphCount = 10;
@@ -362,7 +364,7 @@ DEF_GANESH_TEST_FOR_CONTEXTS(SkRemoteGlyphCache_StrikeSerializationSlugForcePath
     const SkPaint paint;
 
     // Server.
-    auto serverTypeface = SkTypeface::MakeFromName("monospace", SkFontStyle());
+    auto serverTypeface = ToolUtils::CreateTestTypeface("monospace", SkFontStyle());
     const SkTypefaceID serverTypefaceID = serverTypeface->uniqueID();
 
     int glyphCount = 10;
@@ -406,7 +408,7 @@ DEF_GANESH_TEST_FOR_CONTEXTS(SkRemoteGlyphCache_SlugSerialization,
     const SkPaint paint;
 
     // Server.
-    auto serverTypeface = SkTypeface::MakeFromName("monospace", SkFontStyle());
+    auto serverTypeface = ToolUtils::CreateTestTypeface("monospace", SkFontStyle());
 
     int glyphCount = 10;
     auto serverBlob = buildTextBlob(serverTypeface, glyphCount);
@@ -417,7 +419,7 @@ DEF_GANESH_TEST_FOR_CONTEXTS(SkRemoteGlyphCache_SlugSerialization,
 
     // Generate strike updates.
     auto srcSlug = Slug::ConvertBlob(analysisCanvas.get(), *serverBlob, {0.3f, 0}, paint);
-    auto dstSlugData = srcSlug->serialize({});
+    auto dstSlugData = srcSlug->serialize();
 
     std::vector<uint8_t> serverStrikeData;
     server.writeStrikeData(&serverStrikeData);
@@ -427,7 +429,7 @@ DEF_GANESH_TEST_FOR_CONTEXTS(SkRemoteGlyphCache_SlugSerialization,
                     client.readStrikeData(serverStrikeData.data(), serverStrikeData.size()));
 
     SkBitmap expected = RasterSlug(srcSlug, 10, 10, paint, dContext);
-    auto dstSlug = client.deserializeSlugForTest(dstSlugData->data(), dstSlugData->size(), {});
+    auto dstSlug = client.deserializeSlugForTest(dstSlugData->data(), dstSlugData->size());
     REPORTER_ASSERT(reporter, dstSlug != nullptr);
     SkBitmap actual = RasterSlug(dstSlug, 10, 10, paint, dContext);
     compare_blobs(expected, actual, reporter);
@@ -474,7 +476,7 @@ DEF_TEST(SkRemoteGlyphCache_StrikeLockingServer, reporter) {
     SkStrikeServer server(discardableManager.get());
     SkStrikeClient client(discardableManager, false);
 
-    auto serverTypeface = SkTypeface::MakeFromName("monospace", SkFontStyle());
+    auto serverTypeface = ToolUtils::CreateTestTypeface("monospace", SkFontStyle());
     int glyphCount = 10;
     auto serverBlob = buildTextBlob(serverTypeface, glyphCount);
 
@@ -508,7 +510,7 @@ DEF_TEST(SkRemoteGlyphCache_StrikeDeletionServer, reporter) {
     SkStrikeServer server(discardableManager.get());
     SkStrikeClient client(discardableManager, false);
 
-    auto serverTypeface = SkTypeface::MakeFromName("monospace", SkFontStyle());
+    auto serverTypeface = ToolUtils::CreateTestTypeface("monospace", SkFontStyle());
     int glyphCount = 10;
     auto serverBlob = buildTextBlob(serverTypeface, glyphCount);
 
@@ -544,7 +546,7 @@ DEF_TEST(SkRemoteGlyphCache_StrikePinningClient, reporter) {
     SkStrikeClient client(discardableManager, false);
 
     // Server.
-    auto serverTypeface = SkTypeface::MakeFromName("monospace", SkFontStyle());
+    auto serverTypeface = ToolUtils::CreateTestTypeface("monospace", SkFontStyle());
     const SkTypefaceID serverTypefaceID = serverTypeface->uniqueID();
 
     int glyphCount = 10;
@@ -584,7 +586,7 @@ DEF_TEST(SkRemoteGlyphCache_ClientMemoryAccounting, reporter) {
     SkStrikeClient client(discardableManager, false);
 
     // Server.
-    auto serverTypeface = SkTypeface::MakeFromName("monospace", SkFontStyle());
+    auto serverTypeface = ToolUtils::CreateTestTypeface("monospace", SkFontStyle());
 
     int glyphCount = 10;
     auto serverBlob = buildTextBlob(serverTypeface, glyphCount);
@@ -613,7 +615,7 @@ DEF_TEST(SkRemoteGlyphCache_PurgesServerEntries, reporter) {
     SkStrikeClient client(discardableManager, false);
 
     {
-        auto serverTypeface = SkTypeface::MakeFromName("monospace", SkFontStyle());
+        auto serverTypeface = ToolUtils::CreateTestTypeface("monospace", SkFontStyle());
         int glyphCount = 10;
         auto serverBlob = buildTextBlob(serverTypeface, glyphCount);
 
@@ -635,7 +637,7 @@ DEF_TEST(SkRemoteGlyphCache_PurgesServerEntries, reporter) {
     // Use a different typeface. Creating a new strike should evict the previous
     // one.
     {
-        auto serverTypeface = SkTypeface::MakeFromName("Georgia", SkFontStyle());
+        auto serverTypeface = ToolUtils::CreateTestTypeface("Georgia", SkFontStyle());
         int glyphCount = 10;
         auto serverBlob = buildTextBlob(serverTypeface, glyphCount);
 
@@ -663,11 +665,12 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(SkRemoteGlyphCache_DrawTextAsPath,
     SkPaint paint;
     paint.setStyle(SkPaint::kStroke_Style);
     paint.setStrokeWidth(0);
+    SkFont font = ToolUtils::DefaultFont();
     REPORTER_ASSERT(reporter,
-            SkStrikeSpec::ShouldDrawAsPath(paint, SkFont(), SkMatrix::I()));
+            SkStrikeSpec::ShouldDrawAsPath(paint, font, SkMatrix::I()));
 
     // Server.
-    auto serverTypeface = SkTypeface::MakeFromName("monospace", SkFontStyle());
+    auto serverTypeface = ToolUtils::CreateTestTypeface("monospace", SkFontStyle());
     const SkTypefaceID serverTypefaceID = serverTypeface->uniqueID();
 
     int glyphCount = 10;
@@ -698,7 +701,7 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(SkRemoteGlyphCache_DrawTextAsPath,
 
 sk_sp<SkTextBlob> make_blob_causing_fallback(
         sk_sp<SkTypeface> targetTf, const SkTypeface* glyphTf, skiatest::Reporter* reporter) {
-    SkFont font;
+    SkFont font = ToolUtils::DefaultFont();
     font.setSubpixel(true);
     font.setSize(96);
     font.setHinting(SkFontHinting::kNormal);
@@ -742,7 +745,7 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(SkRemoteGlyphCache_DrawTextAsMaskWithPath
 
     SkPaint paint;
 
-    auto serverTypeface = MakeResourceAsTypeface("fonts/HangingS.ttf");
+    auto serverTypeface = ToolUtils::CreateTypefaceFromResource("fonts/HangingS.ttf");
     // TODO: when the cq bots can handle this font remove the check.
     if (serverTypeface == nullptr) {
         return;
@@ -787,7 +790,7 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(SkRemoteGlyphCache_DrawTextXY,
     paint.setAntiAlias(true);
 
     // Server.
-    auto serverTypeface = SkTypeface::MakeFromName("monospace", SkFontStyle());
+    auto serverTypeface = ToolUtils::CreateTestTypeface("monospace", SkFontStyle());
     const SkTypefaceID serverTypefaceID = serverTypeface->uniqueID();
 
     int glyphCount = 10;
@@ -829,18 +832,18 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(SkRemoteGlyphCache_DrawTextAsDFT,
     SkStrikeServer server(discardableManager.get());
     SkStrikeClient client(discardableManager, false);
     SkPaint paint;
-    SkFont font;
+    SkFont font = ToolUtils::DefaultFont();
 
     // A scale transform forces fallback to dft.
     SkMatrix matrix = SkMatrix::Scale(16, 16);
-    sktext::gpu::SDFTControl control =
-            direct->priv().asRecordingContext()->priv().getSDFTControl(true);
+    sktext::gpu::SubRunControl control =
+            direct->priv().asRecordingContext()->priv().getSubRunControl(true);
     SkScalar approximateDeviceTextSize = SkFontPriv::ApproximateTransformedTextSize(font, matrix,
                                                                                     {0, 0});
     REPORTER_ASSERT(reporter, control.isSDFT(approximateDeviceTextSize, paint, matrix));
 
     // Server.
-    auto serverTypeface = SkTypeface::MakeFromName("monospace", SkFontStyle());
+    auto serverTypeface = ToolUtils::CreateTestTypeface("monospace", SkFontStyle());
     const SkTypefaceID serverTypefaceID = serverTypeface->uniqueID();
 
     int glyphCount = 10;
@@ -879,11 +882,12 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(SkRemoteGlyphCache_CacheMissReporting,
     SkStrikeServer server(discardableManager.get());
     SkStrikeClient client(discardableManager, false);
 
-    auto serverTypeface = SkTypeface::MakeFromName("monospace", SkFontStyle());
+    auto serverTypeface = ToolUtils::CreateTestTypeface("monospace", SkFontStyle());
+    REPORTER_ASSERT(reporter, serverTypeface);
 
     // Create the clientTypeface proxy directly from the serverTypeface.
     auto clientTypeface = sk_make_sp<SkTypefaceProxy>(
-            SkTypeface::UniqueID(serverTypeface.get()),
+            serverTypeface->uniqueID(),
             serverTypeface->countGlyphs(),
             serverTypeface->fontStyle(),
             serverTypeface->isFixedPitch(),
@@ -915,11 +919,11 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(SkRemoteGlyphCache_CacheMissReporting,
 
 sk_sp<SkTextBlob> MakeEmojiBlob(sk_sp<SkTypeface> serverTf, SkScalar textSize,
                                 sk_sp<SkTypeface> clientTf = nullptr) {
-    SkFont font;
+    SkFont font = ToolUtils::DefaultFont();
     font.setTypeface(serverTf);
     font.setSize(textSize);
 
-    const char* text = ToolUtils::emoji_sample_text();
+    const char* text = ToolUtils::EmojiSample().sampleText;
     auto blob = SkTextBlob::MakeFromText(text, strlen(text), font);
     if (clientTf == nullptr) return blob;
 
@@ -946,7 +950,7 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(SkRemoteGlyphCache_TypefaceWithNoPaths,
     SkStrikeServer server(discardableManager.get());
     SkStrikeClient client(discardableManager, false);
 
-    auto serverTypeface = ToolUtils::emoji_typeface();
+    auto serverTypeface = ToolUtils::EmojiSample().typeface;
     const SkTypefaceID serverTypefaceID = serverTypeface->uniqueID();
 
     auto props = FindSurfaceProps(direct);
@@ -984,7 +988,7 @@ class SkRemoteGlyphCacheTest {
     static sk_sp<SkTextBlob> MakeNormalBlob(SkPaint* paint,
                                             sk_sp<SkTypeface> serverTf, bool asPaths, SkScalar textSize,
                                             sk_sp<SkTypeface> clientTf = nullptr) {
-        SkFont font;
+        SkFont font = ToolUtils::DefaultFont();
         font.setTypeface(serverTf);
         font.setSize(textSize);
 
@@ -1021,7 +1025,7 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(SkRemoteGlyphCache_TypefaceWithPaths_Mask
     SkStrikeServer server(discardableManager.get());
     SkStrikeClient client(discardableManager, true);
 
-    auto serverTypeface = ToolUtils::create_portable_typeface();
+    auto serverTypeface = ToolUtils::DefaultPortableTypeface();
     const SkTypefaceID serverTypefaceID = serverTypeface->uniqueID();
 
     auto props = FindSurfaceProps(direct);
@@ -1080,7 +1084,7 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(SkRemoteGlyphCache_TypefaceWithPaths_Path
     SkStrikeServer server(discardableManager.get());
     SkStrikeClient client(discardableManager, true);
 
-    auto serverTypeface = ToolUtils::create_portable_typeface();
+    auto serverTypeface = ToolUtils::DefaultPortableTypeface();
     const SkTypefaceID serverTypefaceID = serverTypeface->uniqueID();
 
     auto props = FindSurfaceProps(direct);
@@ -1131,7 +1135,7 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(SkRemoteGlyphCache_TypefaceWithPaths_Path
 }
 
 DEF_TEST(SkTypefaceProxy_Basic_Serial, reporter) {
-    auto typeface = SkTypeface::MakeFromName("monospace", SkFontStyle());
+    auto typeface = ToolUtils::CreateTestTypeface("monospace", SkFontStyle());
     sk_sp<DiscardableManager> discardableManager = sk_make_sp<DiscardableManager>();
     SkTypefaceProxyPrototype srcProto{*typeface};
 
@@ -1156,4 +1160,15 @@ DEF_TEST(SkTypefaceProxy_Basic_Serial, reporter) {
     std::optional<SkTypefaceProxyPrototype> brokenProto =
             SkTypefaceProxyPrototype::MakeFromBuffer(brokenBuffer);
     REPORTER_ASSERT(reporter, !brokenProto.has_value());
+}
+
+DEF_TEST(SkGraphics_Limits, reporter) {
+    const auto prev1 = SkGraphics::GetTypefaceCacheCountLimit();
+
+    auto prev2 = SkGraphics::SetTypefaceCacheCountLimit(prev1 + 1);
+    REPORTER_ASSERT(reporter, prev1 == prev2);
+    prev2 = SkGraphics::GetTypefaceCacheCountLimit();
+    REPORTER_ASSERT(reporter, prev2 == prev1 + 1);
+
+    SkGraphics::SetTypefaceCacheCountLimit(prev1);  // restore orig
 }

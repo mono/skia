@@ -10,8 +10,8 @@
 #include "include/core/SkColorSpace.h"
 #include "include/core/SkFont.h"
 #include "include/core/SkTypeface.h"
-#include "include/gpu/GrDirectContext.h"
-#include "include/gpu/GrRecordingContext.h"
+#include "include/gpu/ganesh/GrDirectContext.h"
+#include "include/gpu/ganesh/GrRecordingContext.h"
 #include "src/base/SkUTF.h"
 #include "src/base/SkUtils.h"
 #include "src/core/SkStrikeCache.h"
@@ -20,14 +20,16 @@
 #include "src/text/GlyphRun.h"
 #include "src/text/gpu/StrikeCache.h"
 #include "src/text/gpu/TextBlob.h"
-#include "src/utils/SkTestCanvas.h"
+#include "tools/fonts/FontToolUtils.h"
+#include "tools/gpu/TestCanvas.h"
+#include "tools/text/gpu/TextBlobTools.h"
 
 // From Project Guttenberg. This is UTF-8 text.
 static const char* gText =
         "Call me Ishmael.  Some years ago--never mind how long precisely";
 
 class FillBench {};
-template <> class SkTestCanvas<FillBench> {
+template <> class skiatest::TestCanvas<FillBench> {
 public:
     static SkDevice* GetDevice(SkCanvas* canvas) {
         return canvas->topDevice();
@@ -36,7 +38,7 @@ public:
 
 class DirectMaskGlyphVertexFillBenchmark : public Benchmark {
     bool isSuitableFor(Backend backend) override {
-        return backend == kGPU_Backend;
+        return backend == Backend::kGanesh;
     }
 
     const char* onGetName() override {
@@ -44,7 +46,7 @@ class DirectMaskGlyphVertexFillBenchmark : public Benchmark {
     }
 
     void onPerCanvasPreDraw(SkCanvas* canvas) override {
-        auto typeface = SkTypeface::MakeFromName("monospace", SkFontStyle());
+        auto typeface = ToolUtils::CreateTestTypeface("monospace", SkFontStyle());
         SkFont font(typeface);
 
         SkMatrix view = SkMatrix::I();
@@ -52,8 +54,8 @@ class DirectMaskGlyphVertexFillBenchmark : public Benchmark {
         sktext::GlyphRunBuilder builder;
         SkPaint paint;
         auto glyphRunList = builder.textToGlyphRunList(font, paint, gText, len, {100, 100});
-        SkASSERT(!glyphRunList.empty());
-        auto device = SkTestCanvas<FillBench>::GetDevice(canvas);
+        SkASSERT_RELEASE(!glyphRunList.empty());
+        auto device = skiatest::TestCanvas<FillBench>::GetDevice(canvas);
         SkMatrix drawMatrix = view;
         const SkPoint drawOrigin = glyphRunList.origin();
         drawMatrix.preTranslate(drawOrigin.x(), drawOrigin.y());
@@ -63,15 +65,17 @@ class DirectMaskGlyphVertexFillBenchmark : public Benchmark {
                                             device->strikeDeviceInfo(),
                                             SkStrikeCache::GlobalStrikeCache());
 
-        const sktext::gpu::AtlasSubRun* subRun = fBlob->testingOnlyFirstSubRun();
-        SkASSERT(subRun);
+        const sktext::gpu::AtlasSubRun* subRun =
+                sktext::gpu::TextBlobTools::FirstSubRun(fBlob.get());
+        SkASSERT_RELEASE(subRun);
         subRun->testingOnly_packedGlyphIDToGlyph(&fCache);
         fVertices.reset(new char[subRun->vertexStride(drawMatrix) * subRun->glyphCount() * 4]);
     }
 
     void onDraw(int loops, SkCanvas* canvas) override {
-        const sktext::gpu::AtlasSubRun* subRun = fBlob->testingOnlyFirstSubRun();
-        SkASSERT(subRun);
+        const sktext::gpu::AtlasSubRun* subRun =
+                sktext::gpu::TextBlobTools::FirstSubRun(fBlob.get());
+        SkASSERT_RELEASE(subRun);
 
         SkIRect clip = SkIRect::MakeEmpty();
         SkPaint paint;

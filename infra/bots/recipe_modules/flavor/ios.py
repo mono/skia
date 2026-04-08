@@ -22,7 +22,6 @@ class iOSFlavor(default.DefaultFlavor):
         lotties_dir='lotties',
         skp_dir='skps',
         svg_dir='svgs',
-        mskp_dir='mskp',
         tmp_dir='tmp',
         texttraces_dir='')
 
@@ -30,7 +29,7 @@ class iOSFlavor(default.DefaultFlavor):
   def env(self):
     return {
       'IOS_BUNDLE_ID': 'com.google.%s' % self.app_name,
-      'IOS_MOUNT_POINT': self.m.vars.workdir.join('mnt_iosdevice'),
+      'IOS_MOUNT_POINT': self.m.vars.workdir.joinpath('mnt_iosdevice'),
     }
 
   def context(self):
@@ -38,10 +37,10 @@ class iOSFlavor(default.DefaultFlavor):
 
   def _run(self, title, *cmd, **kwargs):
     def sleep(attempt):
-      self.m.python.inline('sleep before attempt %d' % attempt, """
-import time
-time.sleep(2)
-""")  # pragma: nocover
+      self.m.step(
+          'sleep before attempt %d' % attempt,
+          cmd=['sleep', '2']) # pragma: nocover
+
     return self.m.run.with_retry(self.m.step, title, 3, cmd=list(cmd),
                                  between_attempts_fn=sleep, **kwargs)
 
@@ -70,7 +69,7 @@ time.sleep(2)
 
     if 'ImageSignature' not in image_info_out:
       image_pkgs = self.m.file.glob_paths('locate ios-dev-image package',
-                                          self.m.path['start_dir'],
+                                          self.m.path.start_dir,
                                           'ios-dev-image*',
                                           test_data=['ios-dev-image-13.2'])
       if len(image_pkgs) != 1:
@@ -97,7 +96,7 @@ time.sleep(2)
 
     # Install app (necessary before copying any resources to the device).
     if self.app_name:
-      app_package = self.host_dirs.bin_dir.join('%s.app' % self.app_name)
+      app_package = self.host_dirs.bin_dir.joinpath('%s.app' % self.app_name)
 
       def uninstall_app(attempt):
         # If app ID changes, upgrade will fail, so try uninstalling.
@@ -127,13 +126,13 @@ time.sleep(2)
         success = True
       finally:
         if not success:
-          self.m.run(self.m.python, '%s with full debug output' % name,
-                     script=self.module.resource('ios_debug_cmd.py'),
-                     args=args)
+          self.m.run(
+              self.m.step, '%s with full debug output' % name,
+              cmd=['python3', self.module.resource('ios_debug_cmd.py')] + args)
 
   def _run_ios_script(self, script, first, *rest):
     with self.context():
-      full = self.m.path['start_dir'].join(
+      full = self.m.path.start_dir.joinpath(
           'skia', 'platform_tools', 'ios', 'bin', 'ios_' + script)
       self.m.run(self.m.step,
                  name = '%s %s' % (script, first),
@@ -158,7 +157,7 @@ time.sleep(2)
 
   def read_file_on_device(self, path, **kwargs):
     with self.context():
-      full = self.m.path['start_dir'].join(
+      full = self.m.path.start_dir.joinpath(
           'skia', 'platform_tools', 'ios', 'bin', 'ios_cat_file')
       rv = self.m.run(self.m.step,
                       name = 'cat_file %s' % path,

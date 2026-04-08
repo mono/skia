@@ -152,6 +152,7 @@ var CanvasKit = {
       enableEditor:          function() {},
       dispatchEditorKey:     function() {},
       dispatchEditorPointer: function() {},
+      setEditorCursorWeight: function() {},
     },
     _render: function() {},
     _seek: function() {},
@@ -321,6 +322,7 @@ var CanvasKit = {
       drawTextBlob: function() {},
       drawVertices: function() {},
       getDeviceClipBounds: function() {},
+      quickReject: function() {},
       getLocalToDevice: function() {},
       getTotalMatrix: function() {},
       readPixels: function() {},
@@ -364,6 +366,7 @@ var CanvasKit = {
     _drawTextBlob: function() {},
     _drawVertices: function() {},
     _getDeviceClipBounds: function() {},
+    _quickReject: function() {},
     _getLocalToDevice: function() {},
     _getTotalMatrix: function() {},
     _readPixels: function() {},
@@ -799,11 +802,12 @@ var CanvasKit = {
   },
 
   Typeface: {
-    MakeFreeTypeFaceFromData: function() {},
+    GetDefault: function() {},
+    MakeTypefaceFromData: function() {},
     prototype: {
       getGlyphIDs: function() {},
     },
-    _MakeFreeTypeFaceFromData: function() {},
+    _MakeTypefaceFromData: function() {},
     _getGlyphIDs: function() {},
   },
 

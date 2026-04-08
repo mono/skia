@@ -8,14 +8,29 @@
 #ifndef skgpu_tessellate_PatchWriter_DEFINED
 #define skgpu_tessellate_PatchWriter_DEFINED
 
+#include "include/core/SkAlphaType.h"
+#include "include/core/SkScalar.h"
+#include "include/core/SkTypes.h"
 #include "include/private/SkColorData.h"
+#include "include/private/base/SkDebug.h"
+#include "include/private/base/SkFloatingPoint.h"
+#include "include/private/base/SkPoint_impl.h"
+#include "include/private/base/SkTemplates.h"
+#include "src/base/SkUtils.h"
+#include "src/base/SkVx.h"
 #include "src/gpu/BufferWriter.h"
 #include "src/gpu/tessellate/LinearTolerances.h"
 #include "src/gpu/tessellate/MiddleOutPolygonTriangulator.h"
 #include "src/gpu/tessellate/Tessellation.h"
 #include "src/gpu/tessellate/WangsFormula.h"
 
+#include <algorithm>
+#include <cstdint>
+#include <cstring>
+#include <math.h>
+#include <tuple>
 #include <type_traits>
+#include <utility>
 #include <variant>
 
 namespace skgpu::tess {
@@ -227,7 +242,7 @@ class PatchWriter {
     DEF_ATTRIB_TYPE(ColorAttrib,     PatchAttribs::kColor,             Color);
     DEF_ATTRIB_TYPE(DepthAttrib,     PatchAttribs::kPaintDepth,        float);
     DEF_ATTRIB_TYPE(CurveTypeAttrib, PatchAttribs::kExplicitCurveType, float);
-    DEF_ATTRIB_TYPE(SsboIndexAttrib, PatchAttribs::kSsboIndex, int);
+    DEF_ATTRIB_TYPE(SsboIndexAttrib, PatchAttribs::kSsboIndex,         skvx::uint2);
 #undef DEF_ATTRIB_TYPE
 
     static constexpr size_t kMaxStride = 4 * sizeof(SkPoint) + // control points
@@ -237,7 +252,7 @@ class PatchWriter {
             (ColorAttrib::kEnabled     ? std::min(sizeof(Color), sizeof(SkPMColor4f)) : 0) +
             (DepthAttrib::kEnabled     ? sizeof(float)                                : 0) +
             (CurveTypeAttrib::kEnabled ? sizeof(float)                                : 0) +
-            (SsboIndexAttrib::kEnabled ? sizeof(int)                                  : 0);
+            (SsboIndexAttrib::kEnabled ? 2 * sizeof(uint32_t)                         : 0);
 
     // Types that vary depending on the activated features, but do not define the patch data.
     using DeferredPatch = std::conditional_t<kTrackJoinControlPoints,
@@ -364,7 +379,7 @@ public:
 
     // Updates the storage buffer index used to access uniforms.
     ENABLE_IF(SsboIndexAttrib::kEnabled)
-    updateSsboIndexAttrib(int ssboIndex) {
+    updateSsboIndexAttrib(skvx::uint2 ssboIndex) {
         SkASSERT(fAttribs & PatchAttribs::kSsboIndex);
         fSsboIndex = ssboIndex;
     }

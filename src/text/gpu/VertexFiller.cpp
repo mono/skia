@@ -9,26 +9,25 @@
 
 #include "include/core/SkMatrix.h"
 #include "include/core/SkPoint.h"
-#include "include/core/SkPoint3.h"
 #include "include/core/SkRect.h"
 #include "include/core/SkScalar.h"
 #include "include/core/SkTypes.h"
 #include "include/private/base/SkTLogic.h"
-#include "src/base/SkZip.h"
 #include "src/core/SkReadBuffer.h"
 #include "src/core/SkWriteBuffer.h"
 #include "src/gpu/AtlasTypes.h"
-#include "src/text/gpu/Glyph.h"
 #include "src/text/gpu/SubRunAllocator.h"
 #include "src/text/gpu/SubRunContainer.h"
 
-#if defined(SK_GANESH)
-#include "src/gpu/ganesh/ops/AtlasTextOp.h"
-#endif
-
 #include <cstdint>
-#include <initializer_list>
 #include <optional>
+
+#if defined(SK_GANESH) || defined(SK_USE_LEGACY_GANESH_TEXT_APIS)
+#include "include/core/SkPoint3.h"
+#include "src/base/SkZip.h"
+#include "src/gpu/ganesh/ops/AtlasTextOp.h"
+#include "src/text/gpu/Glyph.h"
+#endif
 
 using MaskFormat = skgpu::MaskFormat;
 
@@ -117,7 +116,7 @@ struct AtlasPt {
     uint16_t v;
 };
 
-#if defined(SK_GANESH)
+#if defined(SK_GANESH) || defined(SK_USE_LEGACY_GANESH_TEXT_APIS)
 
 // Normal text mask, SDFT, or color.
 struct Mask2DVertex {
@@ -345,7 +344,7 @@ AtlasTextOp::MaskType VertexFiller::opMaskType() const {
     }
     SkUNREACHABLE;
 }
-#endif  // defined(SK_GANESH)
+#endif  // defined(SK_GANESH) || defined(SK_USE_LEGACY_GANESH_TEXT_APIS)
 
 bool VertexFiller::isLCD() const { return fMaskType == MaskFormat::kA565; }
 

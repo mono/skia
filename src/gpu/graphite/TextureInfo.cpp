@@ -7,54 +7,39 @@
 
 #include "include/gpu/graphite/TextureInfo.h"
 
-#ifdef SK_DAWN
-#include "src/gpu/dawn/DawnUtilsPriv.h"
-#endif
+#include "src/gpu/graphite/TextureInfoPriv.h"
 
-#ifdef SK_METAL
 namespace skgpu::graphite {
-    // Including Metal types/headers here is tricky. This is defined in MtlGraphiteUtils.mm
-    size_t MtlFormatBytesPerBlock(MtlPixelFormat);
+
+TextureInfo::TextureInfo(){};
+TextureInfo::~TextureInfo() = default;
+
+static inline void assert_is_supported_backend(const BackendApi& backend) {
+    SkASSERT(backend == BackendApi::kDawn ||
+             backend == BackendApi::kMetal ||
+             backend == BackendApi::kVulkan);
 }
-#endif
 
-#ifdef SK_VULKAN
-#include "src/gpu/vk/VulkanUtilsPriv.h"
-#endif
+TextureInfo::TextureInfo(const TextureInfo& that)
+        : fBackend(that.fBackend)
+        , fValid(that.fValid)
+        , fSampleCount(that.fSampleCount)
+        , fMipmapped(that.fMipmapped)
+        , fProtected(that.fProtected) {
+    if (!fValid) {
+        return;
+    }
 
-namespace skgpu::graphite {
+    assert_is_supported_backend(fBackend);
+    fTextureInfoData.reset();
+    that.fTextureInfoData->copyTo(fTextureInfoData);
+}
 
 TextureInfo& TextureInfo::operator=(const TextureInfo& that) {
-    if (!that.isValid()) {
-        fValid = false;
-        return *this;
+    if (this != &that) {
+        this->~TextureInfo();
+        new (this) TextureInfo(that);
     }
-    fBackend = that.fBackend;
-    fSampleCount = that.fSampleCount;
-    fMipmapped = that.fMipmapped;
-    fProtected = that.fProtected;
-
-    switch (that.backend()) {
-#ifdef SK_DAWN
-        case BackendApi::kDawn:
-            fDawnSpec = that.fDawnSpec;
-            break;
-#endif
-#ifdef SK_METAL
-        case BackendApi::kMetal:
-            fMtlSpec = that.fMtlSpec;
-            break;
-#endif
-#ifdef SK_VULKAN
-        case BackendApi::kVulkan:
-            fVkSpec = that.fVkSpec;
-            break;
-#endif
-        default:
-            SK_ABORT("Unsupport Backend");
-    }
-
-    fValid = true;
     return *this;
 }
 
@@ -75,23 +60,8 @@ bool TextureInfo::operator==(const TextureInfo& that) const {
         fProtected != that.fProtected) {
         return false;
     }
-
-    switch (fBackend) {
-#ifdef SK_DAWN
-        case BackendApi::kDawn:
-            return fDawnSpec == that.fDawnSpec;
-#endif
-#ifdef SK_METAL
-        case BackendApi::kMetal:
-            return fMtlSpec == that.fMtlSpec;
-#endif
-#ifdef SK_VULKAN
-        case BackendApi::kVulkan:
-            return fVkSpec == that.fVkSpec;
-#endif
-        default:
-            return false;
-    }
+    assert_is_supported_backend(fBackend);
+    return fTextureInfoData->equal(that.fTextureInfoData.get());
 }
 
 bool TextureInfo::isCompatible(const TextureInfo& that) const {
@@ -108,65 +78,54 @@ bool TextureInfo::isCompatible(const TextureInfo& that) const {
     if (fBackend != that.fBackend) {
         return false;
     }
-
-    switch (fBackend) {
-#ifdef SK_DAWN
-        case BackendApi::kDawn:
-            return fDawnSpec.isCompatible(that.fDawnSpec);
-#endif
-#ifdef SK_METAL
-        case BackendApi::kMetal:
-            return fMtlSpec.isCompatible(that.fMtlSpec);
-#endif
-#ifdef SK_VULKAN
-        case BackendApi::kVulkan:
-            return fVkSpec.isCompatible(that.fVkSpec);
-#endif
-        default:
-            return false;
-    }
+    assert_is_supported_backend(fBackend);
+    return fTextureInfoData->isCompatible(that.fTextureInfoData.get());
 }
-
-#ifdef SK_DAWN
-bool TextureInfo::getDawnTextureInfo(DawnTextureInfo* info) const {
-    if (!this->isValid() || fBackend != BackendApi::kDawn) {
-        return false;
-    }
-    *info = DawnTextureSpecToTextureInfo(fDawnSpec, fSampleCount, fMipmapped);
-    return true;
-}
-#endif
 
 SkString TextureInfo::toString() const {
+    if (!fValid) {
+        return SkString("{}");
+    }
+
     SkString ret;
     switch (fBackend) {
-#ifdef SK_DAWN
         case BackendApi::kDawn:
-            ret.appendf("Dawn(%s,", fDawnSpec.toString().c_str());
-            break;
-#endif
-#ifdef SK_METAL
         case BackendApi::kMetal:
-            ret.appendf("Metal(%s,", fMtlSpec.toString().c_str());
-            break;
-#endif
-#ifdef SK_VULKAN
         case BackendApi::kVulkan:
-            ret.appendf("Vulkan(%s,", fVkSpec.toString().c_str());
+            ret = fTextureInfoData->toString();
             break;
-#endif
         case BackendApi::kMock:
             ret += "Mock(";
             break;
-        default:
-            ret += "Invalid(";
+        case BackendApi::kUnsupported:
+            ret += "Unsupported(";
             break;
     }
-    ret.appendf("sampleCount=%u,mipmapped=%d,protected=%d)",
+    ret.appendf("bytesPerPixel=%zu,sampleCount=%u,mipmapped=%d,protected=%d)",
+                this->bytesPerPixel(),
                 fSampleCount,
                 static_cast<int>(fMipmapped),
                 static_cast<int>(fProtected));
     return ret;
+}
+
+SkString TextureInfo::toRPAttachmentString() const {
+    if (!fValid) {
+        return SkString("{}");
+    }
+
+    // For renderpass attachments, the string will contain the view format and sample count only
+    switch (fBackend) {
+        case BackendApi::kDawn:
+        case BackendApi::kMetal:
+        case BackendApi::kVulkan:
+            return fTextureInfoData->toRPAttachmentString(fSampleCount);
+        case BackendApi::kMock:
+            return SkStringPrintf("Mock(s=%u)", fSampleCount);
+        case BackendApi::kUnsupported:
+            return SkString("Unsupported");
+    }
+    SkUNREACHABLE;
 }
 
 size_t TextureInfo::bytesPerPixel() const {
@@ -175,21 +134,45 @@ size_t TextureInfo::bytesPerPixel() const {
     }
 
     switch (fBackend) {
-#ifdef SK_DAWN
         case BackendApi::kDawn:
-            return DawnFormatBytesPerBlock(this->dawnTextureSpec().fFormat);
-#endif
-#ifdef SK_METAL
         case BackendApi::kMetal:
-            return MtlFormatBytesPerBlock(this->mtlTextureSpec().fFormat);
-#endif
-#ifdef SK_VULKAN
         case BackendApi::kVulkan:
-            return VkFormatBytesPerBlock(this->vulkanTextureSpec().fFormat);
-#endif
+            return fTextureInfoData->bytesPerPixel();
         default:
             return 0;
     }
 }
+
+SkTextureCompressionType TextureInfo::compressionType() const {
+    if (!this->isValid()) {
+        return SkTextureCompressionType::kNone;
+    }
+
+    switch (fBackend) {
+        case BackendApi::kDawn:
+        case BackendApi::kMetal:
+        case BackendApi::kVulkan:
+            return fTextureInfoData->compressionType();
+        default:
+            return SkTextureCompressionType::kNone;
+    }
+}
+
+bool TextureInfo::isMemoryless() const {
+    if (!this->isValid()) {
+        return false;
+    }
+
+    switch (fBackend) {
+        case BackendApi::kDawn:
+        case BackendApi::kMetal:
+        case BackendApi::kVulkan:
+            return fTextureInfoData->isMemoryless();
+        default:
+            return false;
+    }
+}
+
+TextureInfoData::~TextureInfoData(){};
 
 } // namespace skgpu::graphite

@@ -38,6 +38,7 @@
 #include "src/text/StrikeForGPU.h"
 #include "tests/Test.h"
 #include "tools/ToolUtils.h"
+#include "tools/fonts/FontToolUtils.h"
 
 #include <atomic>
 #include <cstddef>
@@ -80,7 +81,7 @@ prepare_for_mask_drawing(
         rejectedSize = 0;
     StrikeMutationMonitor m{strike};
     for (auto [glyphID, pos] : source) {
-        if (!SkScalarsAreFinite(pos.x(), pos.y())) {
+        if (!SkIsFinite(pos.x(), pos.y())) {
             continue;
         }
         const SkPackedGlyphID packedID{glyphID};
@@ -107,7 +108,7 @@ prepare_for_mask_drawing(
 
 DEF_TEST(SkStrikeMultiThread, Reporter) {
     sk_sp<SkTypeface> typeface =
-            ToolUtils::create_portable_typeface("serif", SkFontStyle::Italic());
+            ToolUtils::CreatePortableTypeface("serif", SkFontStyle::Italic());
     static constexpr int kThreadCount = 4;
 
     Barrier barrier{kThreadCount};
@@ -227,7 +228,7 @@ DEF_TEST(SkStrike_FlattenByType, reporter) {
     SkGlyphTestPeer::SetGlyph(&pathGlyph);
     SkPath path;
     path.addRect(pathGlyph.rect());
-    pathGlyph.setPath(&alloc, &path, false);
+    pathGlyph.setPath(&alloc, &path, false, false);
     pathsToSend.emplace_back(pathGlyph);
 
     // Make a drawable glyph and put it in the glyphs to send.
@@ -264,7 +265,7 @@ DEF_TEST(SkStrike_FlattenByType, reporter) {
 
     // Make a strike to merge into.
     SkStrikeCache strikeCache;
-    auto dstTypeface = SkTypeface::MakeFromName("monospace", SkFontStyle());
+    auto dstTypeface = ToolUtils::CreateTestTypeface("monospace", SkFontStyle());
     SkFont font{dstTypeface};
     SkStrikeSpec spec = SkStrikeSpec::MakeWithNoDevice(font);
     sk_sp<SkStrike> strike = spec.findOrCreateStrike(&strikeCache);

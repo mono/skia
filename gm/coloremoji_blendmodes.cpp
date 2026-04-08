@@ -29,6 +29,7 @@
 #include "include/utils/SkTextUtils.h"
 #include "src/base/SkUTF.h"
 #include "tools/ToolUtils.h"
+#include "tools/fonts/FontToolUtils.h"
 
 #include <string.h>
 
@@ -40,7 +41,7 @@ class ColorEmojiBlendModesGM : public skiagm::GM {
 public:
     const static int W = 64;
     const static int H = 64;
-    ColorEmojiBlendModesGM() {}
+    ColorEmojiBlendModesGM(ToolUtils::EmojiFontFormat format) : fFormat(format) {}
 
 protected:
     void onOnceBeforeDraw() override {
@@ -55,21 +56,28 @@ protected:
         paint.setShader(SkGradientShader::MakeSweep(0, 0, colors, nullptr, std::size(colors),
                                                     0, &local));
 
-        sk_sp<SkTypeface> orig(ToolUtils::create_portable_typeface("serif", SkFontStyle::Bold()));
-        if (nullptr == orig) {
-            orig = SkTypeface::MakeDefault();
-        }
-        fColorType = ToolUtils::emoji_typeface();
+        sk_sp<SkTypeface> orig(ToolUtils::CreatePortableTypeface("serif", SkFontStyle::Bold()));
+        SkASSERT(orig);
+        fColorSample = ToolUtils::EmojiSample(fFormat);
 
         fBG.installPixels(SkImageInfo::Make(2, 2, kARGB_4444_SkColorType,
                                             kOpaque_SkAlphaType), gData, 4);
     }
 
-    SkString getName() const override { return SkString("coloremoji_blendmodes"); }
+    SkString getName() const override {
+        return SkString("coloremoji_blendmodes_") += ToolUtils::NameForFontFormat(fFormat);
+    }
 
     SkISize getISize() override { return {400, 640}; }
 
-    void onDraw(SkCanvas* canvas) override {
+    DrawResult onDraw(SkCanvas* canvas, SkString* errorMsg) override {
+
+        if (!fColorSample.typeface) {
+            *errorMsg = SkStringPrintf("Unable to instantiate emoji test font of format %s.",
+                                       ToolUtils::NameForFontFormat(fFormat).c_str());
+            return DrawResult::kSkip;
+        }
+
         canvas->translate(SkIntToScalar(10), SkIntToScalar(20));
 
         const SkBlendMode gModes[] = {
@@ -111,11 +119,11 @@ protected:
         m.setScale(SkIntToScalar(6), SkIntToScalar(6));
         auto s = fBG.makeShader(SkTileMode::kRepeat, SkTileMode::kRepeat, SkSamplingOptions(), m);
 
-        SkFont labelFont(ToolUtils::create_portable_typeface());
+        SkFont labelFont(ToolUtils::DefaultPortableTypeface());
 
         SkPaint textP;
         textP.setAntiAlias(true);
-        SkFont textFont(fColorType, 70);
+        SkFont textFont(fColorSample.typeface, 70);
 
         const int kWrap = 5;
 
@@ -140,7 +148,7 @@ protected:
                 SkAutoCanvasRestore arc(canvas, true);
                 canvas->clipRect(r);
                 textP.setBlendMode(gModes[i]);
-                const char* text    = ToolUtils::emoji_sample_text();
+                const char* text    = fColorSample.sampleText;
                 SkUnichar unichar = SkUTF::NextUTF8(&text, text + strlen(text));
                 SkASSERT(unichar >= 0);
                 canvas->drawSimpleText(&unichar, 4, SkTextEncoding::kUTF32,
@@ -157,14 +165,21 @@ protected:
                 y += h + SkIntToScalar(30);
             }
         }
+
+        return DrawResult::kOk;
     }
 
 private:
-    SkBitmap            fBG;
-    sk_sp<SkTypeface>   fColorType;
+    SkBitmap fBG;
+    ToolUtils::EmojiFontFormat fFormat;
+    ToolUtils::EmojiTestSample fColorSample;
 
     using INHERITED = GM;
 };
 }  // namespace
 
-DEF_GM( return new ColorEmojiBlendModesGM; )
+DEF_GM(return new ColorEmojiBlendModesGM(ToolUtils::EmojiFontFormat::ColrV0);)
+DEF_GM(return new ColorEmojiBlendModesGM(ToolUtils::EmojiFontFormat::Sbix);)
+DEF_GM(return new ColorEmojiBlendModesGM(ToolUtils::EmojiFontFormat::Cbdt);)
+DEF_GM(return new ColorEmojiBlendModesGM(ToolUtils::EmojiFontFormat::Test);)
+DEF_GM(return new ColorEmojiBlendModesGM(ToolUtils::EmojiFontFormat::Svg);)

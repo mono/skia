@@ -19,13 +19,14 @@
 #include "include/core/SkTypeface.h"
 #include "include/utils/SkTextUtils.h"
 #include "tools/ToolUtils.h"
+#include "tools/fonts/FontToolUtils.h"
 
 #include <initializer_list>
 
-namespace skiagm {
+namespace {
 
 // This GM recreates the blend mode images from the Android documentation
-class AndroidBlendModesGM : public GM {
+class AndroidBlendModesGM : public skiagm::GM {
 public:
     AndroidBlendModesGM() {
         this->setBGColor(SK_ColorBLACK);
@@ -75,7 +76,7 @@ protected:
     }
 
     void onDraw(SkCanvas* canvas) override {
-        SkFont font(ToolUtils::create_portable_typeface());
+        SkFont font = ToolUtils::DefaultPortableFont();
 
         ToolUtils::draw_checkerboard(canvas, kWhite, kGrey, 32);
 
@@ -128,7 +129,6 @@ private:
     using INHERITED = GM;
 };
 
-//////////////////////////////////////////////////////////////////////////////
+}  // namespace
 
 DEF_GM(return new AndroidBlendModesGM;)
-}  // namespace skiagm

@@ -24,7 +24,9 @@
 #include "include/private/base/SkAssert.h"
 #include "include/private/base/SkSpan_impl.h"
 #include "include/sksl/SkSLDebugTrace.h"
+#include "tools/DecodeUtils.h"
 #include "tools/Resources.h"
+#include "tools/fonts/FontToolUtils.h"
 #include "tools/sk_app/Application.h"
 #include "tools/viewer/Viewer.h"
 
@@ -85,7 +87,8 @@ void SkSLSlide::load(SkScalar winWidth, SkScalar winHeight) {
     shader = SkGradientShader::MakeSweep(256, 256, colors, nullptr, 2);
     fShaders.push_back(std::make_pair("Sweep Gradient", shader));
 
-    shader = GetResourceAsImage("images/mandrill_256.png")->makeShader(SkSamplingOptions());
+    shader = ToolUtils::GetResourceAsImage("images/mandrill_256.png")
+                     ->makeShader(SkSamplingOptions());
     fShaders.push_back(std::make_pair("Mandrill", shader));
 
     fResolution = { winWidth, winHeight, 1.0f };
@@ -324,7 +327,7 @@ void SkSLSlide::draw(SkCanvas* canvas) {
             canvas->drawRoundRect({ 0, 224, 512, 288 }, 32, 32, p);
             break;
         case kText: {
-            SkFont font;
+            SkFont font = ToolUtils::DefaultFont();
             font.setSize(SkIntToScalar(96));
             canvas->drawSimpleText("Hello World", strlen("Hello World"), SkTextEncoding::kUTF8, 0,
                                    256, font, p);

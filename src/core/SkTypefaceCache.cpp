@@ -5,20 +5,29 @@
  * found in the LICENSE file.
  */
 
-#include "include/private/base/SkMutex.h"
 #include "src/core/SkTypefaceCache.h"
-#include <atomic>
 
-#define TYPEFACE_CACHE_LIMIT    1024
+#include "include/core/SkFontStyle.h"
+#include "include/core/SkGraphics.h"
+#include "include/core/SkString.h"
+#include "include/private/base/SkDebug.h"
+#include "include/private/base/SkMutex.h"
+
+#include <atomic>
+#include <cstdint>
+#include <utility>
 
 SkTypefaceCache::SkTypefaceCache() {}
 
 void SkTypefaceCache::add(sk_sp<SkTypeface> face) {
-    if (fTypefaces.size() >= TYPEFACE_CACHE_LIMIT) {
-        this->purge(TYPEFACE_CACHE_LIMIT >> 2);
-    }
+    const auto limit = SkGraphics::GetTypefaceCacheCountLimit();
 
-    fTypefaces.emplace_back(std::move(face));
+    if (fTypefaces.size() >= limit) {
+        this->purge(limit >> 2);
+    }
+    if (limit > 0) {
+        fTypefaces.emplace_back(std::move(face));
+    }
 }
 
 sk_sp<SkTypeface> SkTypefaceCache::findByProcAndRef(FindProc proc, void* ctx) const {
@@ -90,7 +99,7 @@ static bool DumpProc(SkTypeface* face, void* ctx) {
     face->getFamilyName(&n);
     SkFontStyle s = face->fontStyle();
     SkTypefaceID id = face->uniqueID();
-    SkDebugf("SkTypefaceCache: face %p typefaceID %d weight %d width %d style %d name %s\n",
+    SkDebugf("SkTypefaceCache: face %p typefaceID %u weight %d width %d style %d name %s\n",
              face, id, s.weight(), s.width(), s.slant(), n.c_str());
     return false;
 }

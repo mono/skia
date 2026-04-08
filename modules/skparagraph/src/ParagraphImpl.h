@@ -62,9 +62,8 @@ struct StyleBlock {
 };
 
 struct ResolvedFontDescriptor {
-
     ResolvedFontDescriptor(TextIndex index, SkFont font)
-        : fFont(font), fTextStart(index) { }
+            : fFont(std::move(font)), fTextStart(index) {}
     SkFont fFont;
     TextIndex fTextStart;
 };
@@ -95,14 +94,14 @@ public:
                   skia_private::TArray<Block, true> blocks,
                   skia_private::TArray<Placeholder, true> placeholders,
                   sk_sp<FontCollection> fonts,
-                  std::shared_ptr<SkUnicode> unicode);
+                  sk_sp<SkUnicode> unicode);
 
     ParagraphImpl(const std::u16string& utf16text,
                   ParagraphStyle style,
                   skia_private::TArray<Block, true> blocks,
                   skia_private::TArray<Placeholder, true> placeholders,
                   sk_sp<FontCollection> fonts,
-                  std::shared_ptr<SkUnicode> unicode);
+                  sk_sp<SkUnicode> unicode);
 
     ~ParagraphImpl() override;
 
@@ -245,7 +244,7 @@ public:
         return (fCodeUnitProperties[index] & property) == property;
     }
 
-    SkUnicode* getUnicode() { return fUnicode.get(); }
+    sk_sp<SkUnicode> getUnicode() { return fUnicode; }
 
 private:
     friend class ParagraphBuilder;
@@ -297,7 +296,7 @@ private:
     SkScalar fOldHeight;
     SkScalar fMaxWidthWithTrailingSpaces;
 
-    std::shared_ptr<SkUnicode> fUnicode;
+    sk_sp<SkUnicode> fUnicode;
     bool fHasLineBreaks;
     bool fHasWhitespacesInside;
     TextIndex fTrailingSpaces;

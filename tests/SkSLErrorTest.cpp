@@ -98,6 +98,7 @@ static void test_expect_fail(skiatest::Reporter* r, const char* testFile, SkSL::
         // because the resources directory isn't properly cleaned up. (b/40044088)
         "sksl/errors/InvalidBackendBindingFlagsGL.sksl",
         "sksl/errors/InvalidThreadgroupRTS.rts",
+        "sksl/errors/LastFragColorWithoutCaps.sksl",
         "sksl/errors/MeshFragmentWithShader.mfrag",
         "sksl/errors/MeshFragmentWithBlender.mfrag",
         "sksl/errors/MeshFragmentWithColorFilter.mfrag",
@@ -114,6 +115,12 @@ static void test_expect_fail(skiatest::Reporter* r, const char* testFile, SkSL::
         "sksl/errors/UnspecifiedBinding.compute",
 
         "sksl/runtime_errors/ReservedNameISampler2D.rts",
+        "sksl/runtime_errors/ProgramTooLarge_BlocklessLoops.rts",
+        "sksl/runtime_errors/ProgramTooLarge_Extreme.rts",
+        "sksl/runtime_errors/ProgramTooLarge_FlatLoop.rts",
+        "sksl/runtime_errors/ProgramTooLarge_Functions.rts",
+        "sksl/runtime_errors/ProgramTooLarge_NestedLoops.rts",
+        "sksl/runtime_errors/ProgramTooLarge_SplitLoops.rts",
 
 #ifdef SK_ENABLE_OPTIMIZE_SIZE
         "sksl/errors/ArrayInlinedIndexOutOfRange.sksl",
@@ -139,7 +146,7 @@ static void test_expect_fail(skiatest::Reporter* r, const char* testFile, SkSL::
     std::vector<std::string> expectedErrors = get_expected_errors(shaderString.c_str());
 
     // Compile the code.
-    SkSL::Compiler compiler(SkSL::ShaderCapsFactory::Standalone());
+    SkSL::Compiler compiler;
     SkSL::ProgramSettings settings;
     std::unique_ptr<SkSL::Program> program = compiler.convertProgram(kind, std::move(shaderString),
                                                                      settings);
@@ -197,6 +204,15 @@ DEF_TEST(SkSLRuntimeShaderErrorTest, r) {
     });
     iterate_dir("sksl/runtime_errors/", ".rts", [&](const char* path) {
         test_expect_fail(r, path, SkSL::ProgramKind::kRuntimeShader);
+    });
+}
+
+DEF_TEST(SkSLPrivateRuntimeShaderErrorTest, r) {
+    iterate_dir("sksl/errors/", ".privrts", [&](const char* path) {
+        test_expect_fail(r, path, SkSL::ProgramKind::kPrivateRuntimeShader);
+    });
+    iterate_dir("sksl/runtime_errors/", ".privrts", [&](const char* path) {
+        test_expect_fail(r, path, SkSL::ProgramKind::kPrivateRuntimeShader);
     });
 }
 

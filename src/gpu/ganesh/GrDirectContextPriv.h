@@ -8,42 +8,69 @@
 #ifndef GrDirectContextPriv_DEFINED
 #define GrDirectContextPriv_DEFINED
 
+#include "include/core/SkRefCnt.h"
 #include "include/core/SkSpan.h"
 #include "include/core/SkSurface.h"
-#include "include/gpu/GrDirectContext.h"
-#include "src/gpu/AtlasTypes.h"
-#include "src/gpu/ganesh/Device.h"
+#include "include/gpu/ganesh/GrContextOptions.h"
+#include "include/gpu/ganesh/GrContextThreadSafeProxy.h"
+#include "include/gpu/ganesh/GrDirectContext.h"
+#include "include/private/base/SkAssert.h"
+#include "include/private/base/SkTArray.h"
 #include "src/gpu/ganesh/GrGpu.h"
 #include "src/gpu/ganesh/GrRecordingContextPriv.h"
 
-class GrAtlasManager;
-class GrBackendFormat;
-class GrBackendRenderTarget;
-class GrImageInfo;
-class GrMemoryPool;
-class GrOnFlushCallbackObject;
-class GrRenderTargetProxy;
-class GrSemaphore;
-class GrSurfaceProxy;
+#include <cstddef>
+#include <memory>
+#include <utility>
 
+class GrAtlasManager;
+class GrClientMappedBufferManager;
 class GrDeferredDisplayList;
+class GrFragmentProcessor;
+class GrOnFlushCallbackObject;
+class GrProgramDesc;
+class GrProgramInfo;
+class GrRenderTargetProxy;
+class GrResourceCache;
+class GrResourceProvider;
+class GrSurfaceProxy;
+class SkImage;
+class SkString;
 class SkTaskGroup;
+enum class GrBackendApi : unsigned int;
+enum class GrSemaphoresSubmitted : bool;
+struct GrFlushInfo;
+
+namespace skgpu {
+class MutableTextureState;
+enum class MaskFormat : int;
+namespace ganesh {
+class SmallPathAtlasMgr;
+}
+}  // namespace skgpu
+namespace sktext {
+namespace gpu {
+class StrikeCache;
+}
+}  // namespace sktext
 
 /** Class that adds methods to GrDirectContext that are only intended for use internal to Skia.
     This class is purely a privileged window into GrDirectContext. It should never have additional
     data members or virtual methods. */
 class GrDirectContextPriv : public GrRecordingContextPriv {
 public:
-    static sk_sp<GrDirectContext> Make(GrBackendApi backend, const GrContextOptions& options) {
-        return sk_sp<GrDirectContext>(new GrDirectContext(backend, options));
+    static sk_sp<GrDirectContext> Make(GrBackendApi backend,
+                                       const GrContextOptions& options,
+                                       sk_sp<GrContextThreadSafeProxy> proxy) {
+        return sk_sp<GrDirectContext>(new GrDirectContext(backend, options, std::move(proxy)));
     }
 
-    static bool Init(sk_sp<GrDirectContext> ctx) {
+    static bool Init(const sk_sp<GrDirectContext>& ctx) {
         SkASSERT(ctx);
         return ctx->init();
     }
 
-    static void SetGpu(sk_sp<GrDirectContext> ctx, std::unique_ptr<GrGpu> gpu) {
+    static void SetGpu(const sk_sp<GrDirectContext>& ctx, std::unique_ptr<GrGpu> gpu) {
         SkASSERT(ctx);
         ctx->fGpu = std::move(gpu);
     }
@@ -137,7 +164,7 @@ public:
         }
     }
 
-#if defined(GR_TEST_UTILS)
+#if defined(GPU_TEST_UTILS)
     /** Reset GPU stats */
     void resetGpuStats() const;
 

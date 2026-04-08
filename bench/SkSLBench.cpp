@@ -16,8 +16,12 @@
 #include "src/sksl/SkSLCompiler.h"
 #include "src/sksl/SkSLModuleLoader.h"
 #include "src/sksl/SkSLParser.h"
+#include "src/sksl/codegen/SkSLGLSLCodeGenerator.h"
+#include "src/sksl/codegen/SkSLMetalCodeGenerator.h"
 #include "src/sksl/codegen/SkSLRasterPipelineBuilder.h"
 #include "src/sksl/codegen/SkSLRasterPipelineCodeGenerator.h"
+#include "src/sksl/codegen/SkSLSPIRVCodeGenerator.h"
+#include "src/sksl/codegen/SkSLWGSLCodeGenerator.h"
 #include "src/sksl/ir/SkSLFunctionDeclaration.h"
 #include "src/sksl/ir/SkSLProgram.h"
 
@@ -32,6 +36,8 @@
 #include "src/sksl/generated/sksl_vert.minified.sksl"
 #include "src/sksl/generated/sksl_graphite_frag.minified.sksl"
 #include "src/sksl/generated/sksl_graphite_vert.minified.sksl"
+#include "src/sksl/generated/sksl_graphite_frag_es2.minified.sksl"
+#include "src/sksl/generated/sksl_graphite_vert_es2.minified.sksl"
 
 class SkSLCompilerStartupBench : public Benchmark {
 protected:
@@ -40,13 +46,12 @@ protected:
     }
 
     bool isSuitableFor(Backend backend) override {
-        return backend == kNonRendering_Backend;
+        return backend == Backend::kNonRendering;
     }
 
     void onDraw(int loops, SkCanvas*) override {
-        GrShaderCaps caps;
         for (int i = 0; i < loops; i++) {
-            SkSL::Compiler compiler(&caps);
+            SkSL::Compiler compiler;
         }
     }
 };
@@ -83,7 +88,6 @@ public:
                     output_string(output) + name)
             , fSrc(src)
             , fCaps(GrContextOptions(), GrMockOptions())
-            , fCompiler(fCaps.shaderCaps())
             , fOutput(output) {
         fSettings.fOptimize = optimize;
         // The test programs we compile don't follow Vulkan rules and thus produce invalid SPIR-V.
@@ -99,7 +103,12 @@ protected:
     }
 
     bool isSuitableFor(Backend backend) override {
-        return backend == kNonRendering_Backend;
+#if !defined(SK_GRAPHITE)
+        if (this->usesGraphite()) {
+            return false;
+        }
+#endif
+        return backend == Backend::kNonRendering;
     }
 
     bool usesRuntimeShader() const {
@@ -146,13 +155,29 @@ protected:
             }
             std::string result;
             switch (fOutput) {
-                case Output::kNone:    break;
-                case Output::kGLSL:    SkAssertResult(fCompiler.toGLSL(*program,  &result)); break;
+                case Output::kNone:
+                    break;
+
+                case Output::kGLSL:
+                    SkAssertResult(SkSL::ToGLSL(*program, fCaps.shaderCaps(), &result));
+                    break;
+
                 case Output::kMetal:
-                case Output::kGrMtl:   SkAssertResult(fCompiler.toMetal(*program, &result)); break;
-                case Output::kSPIRV:   SkAssertResult(fCompiler.toSPIRV(*program, &result)); break;
-                case Output::kGrWGSL:  SkAssertResult(fCompiler.toWGSL(*program, &result)); break;
-                case Output::kSkRP:    SkAssertResult(CompileToSkRP(*program)); break;
+                case Output::kGrMtl:
+                    SkAssertResult(SkSL::ToMetal(*program, fCaps.shaderCaps(), &result));
+                    break;
+
+                case Output::kSPIRV:
+                    SkAssertResult(SkSL::ToSPIRV(*program, fCaps.shaderCaps(), &result));
+                    break;
+
+                case Output::kGrWGSL:
+                    SkAssertResult(SkSL::ToWGSL(*program, fCaps.shaderCaps(), &result));
+                    break;
+
+                case Output::kSkRP:
+                    SkAssertResult(CompileToSkRP(*program));
+                    break;
             }
         }
     }
@@ -636,8 +661,7 @@ static void bench(NanoJSONResultsWriter* log, const char* name, int bytes) {
 void RunSkSLModuleBenchmarks(NanoJSONResultsWriter* log) {
     // Heap used by a default compiler (with no modules loaded)
     int64_t before = heap_bytes_used();
-    GrShaderCaps caps;
-    SkSL::Compiler compiler(&caps);
+    SkSL::Compiler compiler;
     int baselineBytes = heap_bytes_used();
     if (baselineBytes >= 0) {
         baselineBytes = (baselineBytes - before);
@@ -661,6 +685,7 @@ void RunSkSLModuleBenchmarks(NanoJSONResultsWriter* log) {
         bench(log, "sksl_compiler_gpu", gpuBytes);
     }
 
+#if defined(SK_GRAPHITE)
     // Heap used by a compiler with the Graphite modules loaded.
     before = heap_bytes_used();
     compiler.moduleForProgramKind(SkSL::ProgramKind::kGraphiteVertex);
@@ -679,6 +704,7 @@ void RunSkSLModuleBenchmarks(NanoJSONResultsWriter* log) {
         computeBytes = (computeBytes - before) + baselineBytes;
         bench(log, "sksl_compiler_compute", computeBytes);
     }
+#endif
 
     // Report the minified module sizes.
     int compilerGPUBinarySize = std::size(SKSL_MINIFIED_sksl_shared) +
@@ -692,6 +718,10 @@ void RunSkSLModuleBenchmarks(NanoJSONResultsWriter* log) {
     int compilerGraphiteBinarySize = std::size(SKSL_MINIFIED_sksl_graphite_frag) +
                                      std::size(SKSL_MINIFIED_sksl_graphite_vert);
     bench(log, "sksl_binary_size_graphite", compilerGraphiteBinarySize);
+
+    int compilerGraphiteES2BinarySize = std::size(SKSL_MINIFIED_sksl_graphite_frag_es2) +
+                                        std::size(SKSL_MINIFIED_sksl_graphite_vert_es2);
+    bench(log, "sksl_binary_size_graphite_es2", compilerGraphiteES2BinarySize);
 
     int compilerComputeBinarySize = std::size(SKSL_MINIFIED_sksl_compute);
     bench(log, "sksl_binary_size_compute", compilerComputeBinarySize);
@@ -707,11 +737,11 @@ public:
     }
 
     bool isSuitableFor(Backend backend) override {
-        return backend == kNonRendering_Backend;
+        return backend == Backend::kNonRendering;
     }
 
-    int calculateLoops(int defaultLoops) const override {
-        return 1;
+    bool shouldLoop() const override {
+        return false;
     }
 
     void onPreDraw(SkCanvas*) override {
@@ -720,8 +750,7 @@ public:
 
     void onDraw(int loops, SkCanvas*) override {
         SkASSERT(loops == 1);
-        GrShaderCaps caps;
-        SkSL::Compiler compiler(&caps);
+        SkSL::Compiler compiler;
         for (SkSL::ProgramKind kind : fModuleList) {
             compiler.moduleForProgramKind(kind);
         }

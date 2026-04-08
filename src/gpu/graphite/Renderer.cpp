@@ -42,7 +42,7 @@ RenderStep::RenderStep(std::string_view className,
     for (auto i : this->instanceAttributes()) {
         fInstanceStride += i.sizeAlign4();
     }
-    if (variantName.size() > 0) {
+    if (!variantName.empty()) {
         fName += "[";
         fName += variantName;
         fName += "]";
@@ -53,14 +53,6 @@ Coverage RenderStep::GetCoverage(SkEnumBitMask<Flags> flags) {
     return !(flags & Flags::kEmitsCoverage) ? Coverage::kNone
            : (flags & Flags::kLCDCoverage)  ? Coverage::kLCD
                                             : Coverage::kSingleChannel;
-}
-
-float Renderer::boundsOutset(const Transform& localToDevice, const Rect& bounds) const {
-    float outset = 0.0f;
-    for (int i = 0; i < this->numRenderSteps(); ++i) {
-        outset = std::max(outset, this->step(i).boundsOutset(localToDevice, bounds));
-    }
-    return outset;
 }
 
 } // namespace skgpu::graphite

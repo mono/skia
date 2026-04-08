@@ -7,7 +7,6 @@ package common
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -21,57 +20,6 @@ import (
 	"go.skia.org/infra/task_driver/go/td"
 	"go.skia.org/skia/infra/bots/task_drivers/testutils"
 )
-
-func TestValidateLabelAndReturnOutputZipPath_ValidLabel_Success(t *testing.T) {
-	test := func(label, expected string) {
-		t.Run(label, func(t *testing.T) {
-			actual, err := ValidateLabelAndReturnOutputsZipPath("/path/to/skia", label)
-			require.NoError(t, err)
-			assert.Equal(t, expected, actual)
-		})
-	}
-
-	test("//:foo", "/path/to/skia/bazel-testlogs/foo/test.outputs/outputs.zip")
-	test("//foo:bar", "/path/to/skia/bazel-testlogs/foo/bar/test.outputs/outputs.zip")
-	test("//foo/bar:baz", "/path/to/skia/bazel-testlogs/foo/bar/baz/test.outputs/outputs.zip")
-	test("//foo/bar/baz:qux", "/path/to/skia/bazel-testlogs/foo/bar/baz/qux/test.outputs/outputs.zip")
-}
-
-func TestValidateLabelAndReturnOutputZipPath_InvalidLabel_Error(t *testing.T) {
-	test := func(label string) {
-		t.Run(label, func(t *testing.T) {
-			_, err := ValidateLabelAndReturnOutputsZipPath("/path/to/skia", label)
-			require.Error(t, err)
-			assert.Contains(t, err.Error(), fmt.Sprintf("invalid label: %q", label))
-		})
-	}
-
-	test("foo")
-	test("/foo")
-	test("//foo")
-	test(":foo")
-	test("/:foo")
-
-	test("foo/bar")
-	test("foo:bar")
-	test("/foo/bar")
-	test("/foo:bar")
-	test(":foo/bar")
-	test(":foo:bar")
-	test("//foo/bar")
-
-	test("foo/bar/baz")
-	test("foo/bar:baz")
-	test("foo:bar/baz")
-	test("foo:bar:baz")
-	test("/foo/bar/baz")
-	test("/foo/bar:baz")
-	test("/foo:bar/baz")
-	test("/foo:bar:baz")
-	test("//foo/bar/baz")
-	test("//foo:bar/baz")
-	test("//foo:bar:baz")
-}
 
 func TestUploadToGold_NoOutputsZIPOrDir_NoGoldctlInvocations(t *testing.T) {
 	test := func(name string, utgArgs UploadToGoldArgs) {
@@ -99,6 +47,7 @@ func TestUploadToGold_NoOutputsZIPOrDir_NoGoldctlInvocations(t *testing.T) {
 	test("post-submit task", UploadToGoldArgs{
 		TestOnlyAllowAnyBazelLabel: true,
 		BazelLabel:                 "//some/test:target",
+		DeviceSpecificBazelConfig:  "Pixel5",
 		GoldctlPath:                "/path/to/goldctl",
 		GitCommit:                  "ff99ff99ff99ff99ff99ff99ff99ff99ff99ff99",
 	})
@@ -106,6 +55,7 @@ func TestUploadToGold_NoOutputsZIPOrDir_NoGoldctlInvocations(t *testing.T) {
 	test("CL task", UploadToGoldArgs{
 		TestOnlyAllowAnyBazelLabel: true,
 		BazelLabel:                 "//some/test:target",
+		DeviceSpecificBazelConfig:  "Pixel5",
 		GoldctlPath:                "/path/to/goldctl",
 		GitCommit:                  "ff99ff99ff99ff99ff99ff99ff99ff99ff99ff99",
 
@@ -200,6 +150,7 @@ func TestUploadToGold_WithOutputsZIPOrDir_NoValidImages_NoGoldctlInvocations(t *
 	postSubmitTaskArgs := UploadToGoldArgs{
 		TestOnlyAllowAnyBazelLabel: true,
 		BazelLabel:                 "//some/test:target",
+		DeviceSpecificBazelConfig:  "Pixel5",
 		GoldctlPath:                "/path/to/goldctl",
 		GitCommit:                  "ff99ff99ff99ff99ff99ff99ff99ff99ff99ff99",
 	}
@@ -209,6 +160,7 @@ func TestUploadToGold_WithOutputsZIPOrDir_NoValidImages_NoGoldctlInvocations(t *
 	clTaskArgs := UploadToGoldArgs{
 		TestOnlyAllowAnyBazelLabel: true,
 		BazelLabel:                 "//some/test:target",
+		DeviceSpecificBazelConfig:  "Pixel5",
 		GoldctlPath:                "/path/to/goldctl",
 		GitCommit:                  "ff99ff99ff99ff99ff99ff99ff99ff99ff99ff99",
 
@@ -382,10 +334,11 @@ func TestUploadToGold_WithOutputsZIPOrDir_ValidImages_ImagesUploadedToGold(t *te
 	postSubmitTaskArgs := UploadToGoldArgs{
 		TestOnlyAllowAnyBazelLabel: true,
 		BazelLabel:                 "//some/test:target",
+		DeviceSpecificBazelConfig:  "Pixel5",
 		GoldctlPath:                "/path/to/goldctl",
 		GitCommit:                  "ff99ff99ff99ff99ff99ff99ff99ff99ff99ff99",
 	}
-	postSubmitTaskGoldctlImgtestInitStep := "/path/to/goldctl imgtest init --work-dir " + goldctlWorkDir + " --instance skia --url https://gold.skia.org --bucket skia-infra-gm --git_hash ff99ff99ff99ff99ff99ff99ff99ff99ff99ff99 --key os:linux"
+	postSubmitTaskGoldctlImgtestInitStep := "/path/to/goldctl imgtest init --work-dir " + goldctlWorkDir + " --instance skia --url https://gold.skia.org --bucket skia-infra-gm --git_hash ff99ff99ff99ff99ff99ff99ff99ff99ff99ff99 --key arch:arm64 --key model:Pixel5 --key os:Android"
 	postSubmitTaskGoldctlImgtestInitArgs := []string{
 		"imgtest",
 		"init",
@@ -394,7 +347,9 @@ func TestUploadToGold_WithOutputsZIPOrDir_ValidImages_ImagesUploadedToGold(t *te
 		"--url", "https://gold.skia.org",
 		"--bucket", "skia-infra-gm",
 		"--git_hash", "ff99ff99ff99ff99ff99ff99ff99ff99ff99ff99",
-		"--key", "os:linux",
+		"--key", "arch:arm64",
+		"--key", "model:Pixel5",
+		"--key", "os:Android",
 	}
 	test("post-submit task, ZIP file", true /* =zip */, postSubmitTaskArgs, goldctlWorkDir, postSubmitTaskGoldctlImgtestInitStep, postSubmitTaskGoldctlImgtestInitArgs)
 	test("post-submit task, directory", false /* =zip */, postSubmitTaskArgs, goldctlWorkDir, postSubmitTaskGoldctlImgtestInitStep, postSubmitTaskGoldctlImgtestInitArgs)
@@ -403,13 +358,14 @@ func TestUploadToGold_WithOutputsZIPOrDir_ValidImages_ImagesUploadedToGold(t *te
 	clTaskArgs := UploadToGoldArgs{
 		TestOnlyAllowAnyBazelLabel: true,
 		BazelLabel:                 "//some/test:target",
+		DeviceSpecificBazelConfig:  "Pixel5",
 		GoldctlPath:                "/path/to/goldctl",
 		GitCommit:                  "ff99ff99ff99ff99ff99ff99ff99ff99ff99ff99",
 		ChangelistID:               "changelist-id",
 		PatchsetOrder:              "1",
 		TryjobID:                   "tryjob-id",
 	}
-	clTaskGoldctlImgtestInitStep := "/path/to/goldctl imgtest init --work-dir " + goldctlWorkDir + " --instance skia --url https://gold.skia.org --bucket skia-infra-gm --git_hash ff99ff99ff99ff99ff99ff99ff99ff99ff99ff99 --crs gerrit --cis buildbucket --changelist changelist-id --patchset 1 --jobid tryjob-id --key os:linux"
+	clTaskGoldctlImgtestInitStep := "/path/to/goldctl imgtest init --work-dir " + goldctlWorkDir + " --instance skia --url https://gold.skia.org --bucket skia-infra-gm --git_hash ff99ff99ff99ff99ff99ff99ff99ff99ff99ff99 --crs gerrit --cis buildbucket --changelist changelist-id --patchset 1 --jobid tryjob-id --key arch:arm64 --key model:Pixel5 --key os:Android"
 	clTaskGoldctlImgtestInitArgs := []string{
 		"imgtest",
 		"init",
@@ -423,7 +379,9 @@ func TestUploadToGold_WithOutputsZIPOrDir_ValidImages_ImagesUploadedToGold(t *te
 		"--changelist", "changelist-id",
 		"--patchset", "1",
 		"--jobid", "tryjob-id",
-		"--key", "os:linux",
+		"--key", "arch:arm64",
+		"--key", "model:Pixel5",
+		"--key", "os:Android",
 	}
 	test("CL task, ZIP file", true /* =zip */, clTaskArgs, goldctlWorkDir, clTaskGoldctlImgtestInitStep, clTaskGoldctlImgtestInitArgs)
 	test("CL task, directory", false /* =zip */, clTaskArgs, goldctlWorkDir, clTaskGoldctlImgtestInitStep, clTaskGoldctlImgtestInitArgs)

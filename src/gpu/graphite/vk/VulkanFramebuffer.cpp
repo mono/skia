@@ -15,11 +15,10 @@ sk_sp<VulkanFramebuffer> VulkanFramebuffer::Make(const VulkanSharedContext* cont
                                                  const VkFramebufferCreateInfo& framebufferInfo) {
     VkFramebuffer framebuffer;
     VkResult result;
-    VULKAN_CALL_RESULT(context->interface(), result,
-                       CreateFramebuffer(context->device(),
-                                         &framebufferInfo,
-                                         nullptr,
-                                         &framebuffer));
+    VULKAN_CALL_RESULT(
+            context,
+            result,
+            CreateFramebuffer(context->device(), &framebufferInfo, nullptr, &framebuffer));
     if (result != VK_SUCCESS) {
         return nullptr;
     }
@@ -27,10 +26,12 @@ sk_sp<VulkanFramebuffer> VulkanFramebuffer::Make(const VulkanSharedContext* cont
 }
 
 VulkanFramebuffer::VulkanFramebuffer(const VulkanSharedContext* context, VkFramebuffer framebuffer)
-        : Resource(context, Ownership::kOwned, skgpu::Budgeted::kYes, /*gpuMemorySize=*/0)
+        : Resource(context,
+                   Ownership::kOwned,
+                   skgpu::Budgeted::kYes,
+                   /*gpuMemorySize=*/0)
         , fSharedContext(context)
-        , fFramebuffer(framebuffer) {
-}
+        , fFramebuffer(framebuffer) {}
 
 void VulkanFramebuffer::freeGpuData() {
     VULKAN_CALL(fSharedContext->interface(),

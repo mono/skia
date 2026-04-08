@@ -26,7 +26,14 @@
 #include "include/core/SkTypes.h"
 #include "include/effects/SkGradientShader.h"
 #include "include/effects/SkImageFilters.h"
+#include "include/gpu/ganesh/GrContextOptions.h"
+#include "src/core/SkFontPriv.h"
 #include "tools/ToolUtils.h"
+#include "tools/fonts/FontToolUtils.h"
+
+#if defined(SK_GRAPHITE)
+#include "include/gpu/graphite/ContextOptions.h"
+#endif
 
 #include <string.h>
 #include <initializer_list>
@@ -67,32 +74,49 @@ namespace skiagm {
 
 class ColorEmojiGM : public GM {
 public:
-    ColorEmojiGM() { }
+    ColorEmojiGM(ToolUtils::EmojiFontFormat format) : fFormat(format) {}
 
 protected:
-    struct EmojiFont {
-        sk_sp<SkTypeface> typeface;
-        const char* text;
-    } emojiFont;
+    ToolUtils::EmojiTestSample emojiFont;
     void onOnceBeforeDraw() override {
-        emojiFont.typeface = ToolUtils::emoji_typeface();
-        emojiFont.text     = ToolUtils::emoji_sample_text();
+        emojiFont = ToolUtils::EmojiSample(fFormat);
     }
 
-    SkString getName() const override { return SkString("coloremoji"); }
+    SkString getName() const override {
+        return SkString("coloremoji_") += ToolUtils::NameForFontFormat(fFormat);
+    }
 
     SkISize getISize() override { return SkISize::Make(650, 1200); }
 
-    void onDraw(SkCanvas* canvas) override {
+    void modifyGrContextOptions(GrContextOptions* ctxOptions) override {
+        // This will force multitexturing to verify that color text works with this,
+        // as well as with any additional color transformations.
+        ctxOptions->fGlyphCacheTextureMaximumBytes = 256 * 256 * 4;
+    }
 
+#if defined(SK_GRAPHITE)
+    void modifyGraphiteContextOptions(skgpu::graphite::ContextOptions* ctxOptions) const override {
+        // This will force multitexturing to verify that color text works with this,
+        // as well as with any additional color transformations.
+        ctxOptions->fGlyphCacheTextureMaximumBytes = 256 * 256 * 4;
+    }
+#endif
+
+    DrawResult onDraw(SkCanvas* canvas, SkString* errorMsg) override {
         canvas->drawColor(SK_ColorGRAY);
 
+        if (!emojiFont.typeface) {
+            *errorMsg = SkStringPrintf("Unable to instantiate emoji test font of format %s.",
+                                       ToolUtils::NameForFontFormat(fFormat).c_str());
+            return DrawResult::kSkip;
+        }
+
         SkFont font(emojiFont.typeface);
-        char const * const text = emojiFont.text;
+        char const * const text = emojiFont.sampleText;
         size_t textLen = strlen(text);
 
         // draw text at different point sizes
-        constexpr SkScalar textSizes[] = { 10, 30, 50, };
+        constexpr SkScalar textSizes[] = { 10, 30, 50 };
         SkFontMetrics metrics;
         SkScalar y = 0;
         for (const bool& fakeBold : { false, true }) {
@@ -107,6 +131,12 @@ protected:
             }
         }
 
+        // draw one more big one to max out one Plot
+        font.setSize(256);
+        font.getMetrics(&metrics);
+        canvas->drawSimpleText(text, textLen, SkTextEncoding::kUTF8,
+                               190, -metrics.fAscent, font, SkPaint());
+
         y += 20;
         SkScalar savedY = y;
         // draw with shaders and image filters
@@ -115,7 +145,7 @@ protected:
                 for (int makeGray = 0; makeGray < 2; makeGray++) {
                     for (int makeMode = 0; makeMode < 2; ++makeMode) {
                         for (int alpha = 0; alpha < 2; ++alpha) {
-                            SkFont shaderFont(font.refTypefaceOrDefault());
+                            SkFont shaderFont(font.refTypeface());
                             SkPaint shaderPaint;
                             if (SkToBool(makeLinear)) {
                                 shaderPaint.setShader(MakeLinear());
@@ -186,13 +216,20 @@ protected:
             canvas->restore();
             canvas->translate(0, SkIntToScalar(25));
         }
+
+        return DrawResult::kOk;
     }
 
+    ToolUtils::EmojiFontFormat fFormat;
     using INHERITED = GM;
 };
 
 //////////////////////////////////////////////////////////////////////////////
 
-DEF_GM(return new ColorEmojiGM;)
+DEF_GM(return new ColorEmojiGM(ToolUtils::EmojiFontFormat::ColrV0);)
+DEF_GM(return new ColorEmojiGM(ToolUtils::EmojiFontFormat::Cbdt);)
+DEF_GM(return new ColorEmojiGM(ToolUtils::EmojiFontFormat::Sbix);)
+DEF_GM(return new ColorEmojiGM(ToolUtils::EmojiFontFormat::Test);)
+DEF_GM(return new ColorEmojiGM(ToolUtils::EmojiFontFormat::Svg);)
 
 }  // namespace skiagm

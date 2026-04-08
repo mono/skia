@@ -8,43 +8,33 @@
 #ifndef SkPDFTypes_DEFINED
 #define SkPDFTypes_DEFINED
 
-#include "include/core/SkRefCnt.h"
 #include "include/core/SkScalar.h"
 #include "include/core/SkTypes.h"
-#include "include/private/base/SkTo.h"
-#include "src/core/SkTHash.h"
+#include "src/pdf/SkPDFUnion.h"
 
+#include <cstddef>
+#include <cstdint>
 #include <memory>
-#include <new>
-#include <type_traits>
 #include <utility>
 #include <vector>
-#include <memory>
 
-class SkData;
-class SkPDFArray;
-
-class SkPDFDict;
 class SkPDFDocument;
-class SkPDFObject;
-class SkPDFUnion;
 class SkStreamAsset;
 class SkString;
 class SkWStream;
-struct SkPDFObjectSerializer;
 
 struct SkPDFIndirectReference {
     int fValue = -1;
-    explicit operator bool() { return fValue != -1; }
+    explicit operator bool() const { return fValue != -1; }
+
+    bool operator==(SkPDFIndirectReference v) const {
+        return fValue == v.fValue;
+    }
+
+    bool operator!=(SkPDFIndirectReference v) const {
+        return fValue != v.fValue;
+    }
 };
-
-inline static bool operator==(SkPDFIndirectReference u, SkPDFIndirectReference v) {
-    return u.fValue == v.fValue;
-}
-
-inline static bool operator!=(SkPDFIndirectReference u, SkPDFIndirectReference v) {
-    return u.fValue != v.fValue;
-}
 
 /** \class SkPDFObject
 
@@ -186,6 +176,7 @@ public:
     void insertTextString(const char key[], const char value[]);
     void insertByteString(const char key[], SkString value);
     void insertTextString(const char key[], SkString value);
+    void insertUnion(const char key[], SkPDFUnion&&);
 
 private:
     std::vector<std::pair<SkPDFUnion, SkPDFUnion>> fRecords;

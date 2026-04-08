@@ -1,4 +1,5 @@
 diagnostic(off, derivative_uniformity);
+diagnostic(off, chromium.unreachable_code);
 struct FSOut {
   @location(0) sk_FragColor: vec4<f32>,
 };
@@ -16,7 +17,7 @@ fn test3x3_b() -> bool {
       var c: i32 = 0;
       loop {
         {
-          var vec: vec3<f32> = _globalUniforms.testMatrix3x3[c];
+          let vec: vec3<f32> = _globalUniforms.testMatrix3x3[c];
           {
             var r: i32 = 0;
             loop {
@@ -51,7 +52,7 @@ fn test4x4_b() -> bool {
       var c: i32 = 0;
       loop {
         {
-          var vec: vec4<f32> = _globalUniforms.testMatrix4x4[c];
+          let vec: vec4<f32> = _globalUniforms.testMatrix4x4[c];
           {
             var r: i32 = 0;
             loop {

@@ -22,7 +22,7 @@
 #include "include/core/SkSurfaceProps.h"
 #include "include/core/SkTypes.h"
 #include "include/gpu/GpuTypes.h"
-#include "include/gpu/GrDirectContext.h"
+#include "include/gpu/ganesh/GrDirectContext.h"
 #include "include/gpu/ganesh/SkSurfaceGanesh.h"
 #include "src/core/SkSpecialImage.h"
 #include "src/gpu/ganesh/GrColorInfo.h" // IWYU pragma: keep
@@ -84,19 +84,22 @@ static void test_image(const sk_sp<SkSpecialImage>& img, skiatest::Reporter* rep
     REPORTER_ASSERT(reporter, !img->isGraphiteBacked());
 
     //--------------
-    // Test view - as long as there is a context this should succeed
+    // Test view - only succeeds if it's Ganesh backed
     if (rContext) {
         GrSurfaceProxyView view = SkSpecialImages::AsView(rContext, img);
-        REPORTER_ASSERT(reporter, view.asTextureProxy());
+        REPORTER_ASSERT(reporter, SkToBool(view.asTextureProxy()) == isGPUBacked);
     }
 
     //--------------
-    // Test getROPixels - this only works for raster-backed special images
-    if (!img->isGaneshBacked()) {
+    // Test AsBitmap - this only works for raster-backed special images
+    if (!img->isGaneshBacked() && !img->isGraphiteBacked()) {
         SkBitmap bitmap;
-        REPORTER_ASSERT(reporter, img->getROPixels(&bitmap));
+        REPORTER_ASSERT(reporter, SkSpecialImages::AsBitmap(img.get(), &bitmap));
         REPORTER_ASSERT(reporter, kSmallerSize == bitmap.width());
         REPORTER_ASSERT(reporter, kSmallerSize == bitmap.height());
+    } else {
+        SkBitmap bitmap;
+        REPORTER_ASSERT(reporter, !SkSpecialImages::AsBitmap(img.get(), &bitmap));
     }
 
     //--------------

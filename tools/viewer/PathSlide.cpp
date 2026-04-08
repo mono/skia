@@ -21,10 +21,10 @@
 #include "include/utils/SkParsePath.h"
 #include "src/base/SkTime.h"
 #include "src/base/SkUTF.h"
+#include "src/core/SkGeometry.h"
+#include "tools/fonts/FontToolUtils.h"
 #include "tools/timer/TimeUtils.h"
 #include "tools/viewer/ClickHandlerSlide.h"
-
-#include "src/core/SkGeometry.h"
 
 #include <stdlib.h>
 
@@ -61,7 +61,7 @@ static void test_cubic2() {
         SkDebugf("[%g %g %g %g] [%x %x %x %x]\n",
                 SkScalarToDouble(r.fLeft), SkScalarToDouble(r.fTop),
                 SkScalarToDouble(r.fRight), SkScalarToDouble(r.fBottom),
-                ir.fLeft, ir.fTop, ir.fRight, ir.fBottom);
+                (uint32_t)ir.fLeft, (uint32_t)ir.fTop, (uint32_t)ir.fRight, (uint32_t)ir.fBottom);
     }
 
     SkBitmap bitmap;
@@ -611,7 +611,7 @@ public:
 
             paint.setColor(SK_ColorBLACK);
             paint.setStyle(SkPaint::kFill_Style);
-            SkFont font(nullptr, 20);
+            SkFont font(ToolUtils::DefaultTypeface(), 20);
             canvas->drawString(SkStringPrintf("t = %g", fT), 20, 20, font, paint);
         }
 

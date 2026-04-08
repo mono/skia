@@ -150,6 +150,7 @@ function canvasTests(CK: CanvasKit, canvas?: Canvas, paint?: Paint, path?: Path,
     canvas.drawVertices(verts, CK.BlendMode.DstOut, paint);
     const irect = canvas.getDeviceClipBounds(); // $ExpectType Int32Array
     const irect2 = canvas.getDeviceClipBounds(irect); // $ExpectType Int32Array
+    const isCulled = canvas.quickReject(someRect); // $ExpectType boolean
     const matrTwo = canvas.getLocalToDevice(); // $ExpectType Float32Array
     const sc = canvas.getSaveCount(); // $ExpectType number
     const matrThree = canvas.getTotalMatrix(); // $ExpectType number[]
@@ -178,6 +179,7 @@ function canvasTests(CK: CanvasKit, canvas?: Canvas, paint?: Paint, path?: Path,
     const h4 = canvas.saveLayer(paint, someRect);
     const h5 = canvas.saveLayer(paint, someRect, imgFilter, CK.SaveLayerF16ColorType);
     const h6 = canvas.saveLayer(paint, someRect, null, CK.SaveLayerInitWithPrevious);
+    const h7 = canvas.saveLayer(paint, someRect, imgFilter, CK.SaveLayerInitWithPrevious, CK.TileMode.Decal);
     canvas.scale(5, 10);
     canvas.skew(10, 5);
     canvas.translate(20, 30);
@@ -563,8 +565,8 @@ function paragraphTests(CK: CanvasKit, p?: Paragraph) {
     const q = p.getLineMetricsAt(0); // $ExpectType LineMetrics | null
     const r = p.getNumberOfLines(); // $ExpectType number
     const s = p.getLineNumberAt(0); // $ExpectType number
-    const t = p.getGlyphInfoAt(0);  //$ExpectType GlyphInfo | null
-    const u = p.getClosestGlyphInfoAtCoordinate(10, 3);  //$ExpectType GlyphInfo | null
+    const t = p.getGlyphInfoAt(0);  // $ExpectType GlyphInfo | null
+    const u = p.getClosestGlyphInfoAtCoordinate(10, 3);  // $ExpectType GlyphInfo | null
 }
 
 function paragraphBuilderTests(CK: CanvasKit, fontMgr?: FontMgr, paint?: Paint) {
@@ -1002,8 +1004,8 @@ function textBlobTests(CK: CanvasKit, font?: Font, path?: Path) {
 }
 
 function typefaceTests(CK: CanvasKit) {
-    const face = CK.Typeface.MakeFreeTypeFaceFromData(new ArrayBuffer(10));
-
+    const face = CK.Typeface.MakeTypefaceFromData(new ArrayBuffer(10));
+    const face2 = CK.Typeface.GetDefault(); // $ExpectType Typeface | null
     const ids = face!.getGlyphIDs('abcd');
     face!.getGlyphIDs('efgh', 4, ids);
 }

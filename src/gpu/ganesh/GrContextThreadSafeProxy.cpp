@@ -5,23 +5,20 @@
  * found in the LICENSE file.
  */
 
-#include "include/gpu/GrContextThreadSafeProxy.h"
+#include "include/gpu/ganesh/GrContextThreadSafeProxy.h"
 
-#include "include/core/SkTextureCompressionType.h"
+#include "include/core/SkImageInfo.h"
+#include "include/gpu/ganesh/GrBackendSurface.h"
 #include "include/private/chromium/GrSurfaceCharacterization.h"
-#include "src/gpu/ganesh/GrBaseContextPriv.h"
+#include "include/private/gpu/ganesh/GrTypesPriv.h"
 #include "src/gpu/ganesh/GrCaps.h"
 #include "src/gpu/ganesh/GrContextThreadSafeProxyPriv.h"
 #include "src/gpu/ganesh/GrThreadSafeCache.h"
 #include "src/gpu/ganesh/GrThreadSafePipelineBuilder.h"
-#include "src/gpu/ganesh/effects/GrSkSLFP.h"
-#include "src/gpu/ganesh/surface/SkSurface_Ganesh.h"
-
-#ifdef SK_VULKAN
-#include "src/gpu/ganesh/vk/GrVkCaps.h"
-#endif
+#include "src/text/gpu/TextBlobRedrawCoordinator.h"
 
 #include <memory>
+#include <utility>
 
 static uint32_t next_id() {
     static std::atomic<uint32_t> nextID{1};
@@ -49,19 +46,24 @@ void GrContextThreadSafeProxy::init(sk_sp<const GrCaps> caps,
 }
 
 GrSurfaceCharacterization GrContextThreadSafeProxy::createCharacterization(
-                                     size_t cacheMaxResourceBytes,
-                                     const SkImageInfo& ii, const GrBackendFormat& backendFormat,
-                                     int sampleCnt, GrSurfaceOrigin origin,
-                                     const SkSurfaceProps& surfaceProps,
-                                     bool isMipMapped, bool willUseGLFBO0, bool isTextureable,
-                                     GrProtected isProtected, bool vkRTSupportsInputAttachment,
-                                     bool forVulkanSecondaryCommandBuffer) {
+        size_t cacheMaxResourceBytes,
+        const SkImageInfo& ii,
+        const GrBackendFormat& backendFormat,
+        int sampleCnt,
+        GrSurfaceOrigin origin,
+        const SkSurfaceProps& surfaceProps,
+        skgpu::Mipmapped isMipmapped,
+        bool willUseGLFBO0,
+        bool isTextureable,
+        skgpu::Protected isProtected,
+        bool vkRTSupportsInputAttachment,
+        bool forVulkanSecondaryCommandBuffer) {
     SkASSERT(fCaps);
     if (!backendFormat.isValid()) {
         return {};
     }
 
-    SkASSERT(isTextureable || !isMipMapped);
+    SkASSERT(isTextureable || isMipmapped == skgpu::Mipmapped::kNo);
 
     if (GrBackendApi::kOpenGL != backendFormat.backend() && willUseGLFBO0) {
         // The willUseGLFBO0 flags can only be used for a GL backend.
@@ -76,7 +78,7 @@ GrSurfaceCharacterization GrContextThreadSafeProxy::createCharacterization(
     }
 
     if (!fCaps->mipmapSupport()) {
-        isMipMapped = false;
+        isMipmapped = skgpu::Mipmapped::kNo;
     }
 
     if (ii.width()  < 1 || ii.width()  > fCaps->maxRenderTargetSize() ||
@@ -106,37 +108,41 @@ GrSurfaceCharacterization GrContextThreadSafeProxy::createCharacterization(
         return {};
     }
 
-    if (forVulkanSecondaryCommandBuffer &&
-        (isTextureable || isMipMapped || willUseGLFBO0 || vkRTSupportsInputAttachment)) {
-        return {};
-    }
-
     if (GrBackendApi::kVulkan == backendFormat.backend()) {
-        if (GrBackendApi::kVulkan != fBackend) {
+        if (!isValidCharacterizationForVulkan(fCaps,
+                                              isTextureable,
+                                              isMipmapped,
+                                              isProtected,
+                                              vkRTSupportsInputAttachment,
+                                              forVulkanSecondaryCommandBuffer)) {
             return {};
         }
-
-#ifdef SK_VULKAN
-        const GrVkCaps* vkCaps = (const GrVkCaps*) fCaps.get();
-
-        // The protection status of the characterization and the context need to match
-        if (isProtected != GrProtected(vkCaps->supportsProtectedContent())) {
-            return {};
-        }
-#endif
     }
 
     return GrSurfaceCharacterization(
             sk_ref_sp<GrContextThreadSafeProxy>(this),
-            cacheMaxResourceBytes, ii, backendFormat,
-            origin, sampleCnt,
+            cacheMaxResourceBytes,
+            ii,
+            backendFormat,
+            origin,
+            sampleCnt,
             GrSurfaceCharacterization::Textureable(isTextureable),
-            GrSurfaceCharacterization::MipMapped(isMipMapped),
+            isMipmapped,
             GrSurfaceCharacterization::UsesGLFBO0(willUseGLFBO0),
             GrSurfaceCharacterization::VkRTSupportsInputAttachment(vkRTSupportsInputAttachment),
             GrSurfaceCharacterization::VulkanSecondaryCBCompatible(forVulkanSecondaryCommandBuffer),
             isProtected,
             surfaceProps);
+}
+
+bool GrContextThreadSafeProxy::isValidCharacterizationForVulkan(
+        sk_sp<const GrCaps>,
+        bool isTextureable,
+        skgpu::Mipmapped isMipmapped,
+        skgpu::Protected isProtected,
+        bool vkRTSupportsInputAttachment,
+        bool forVulkanSecondaryCommandBuffer) {
+    return false;  // handled by a subclass
 }
 
 GrBackendFormat GrContextThreadSafeProxy::defaultBackendFormat(SkColorType skColorType,

@@ -3,8 +3,6 @@
 
 #include "tests/Test.h"
 
-#if !defined(SK_BUILD_FOR_GOOGLE3)
-
 #include "include/core/SkData.h"
 #include "include/core/SkFont.h"
 #include "include/core/SkPoint.h"
@@ -15,14 +13,50 @@
 #include "include/core/SkTypes.h"
 #include "include/private/base/SkTo.h"
 #include "modules/skshaper/include/SkShaper.h"
+#include "modules/skshaper/include/SkShaper_harfbuzz.h"
+#include "modules/skshaper/include/SkShaper_skunicode.h"
+#include "modules/skunicode/include/SkUnicode.h"
 #include "src/base/SkZip.h"
 #include "tools/Resources.h"
+#include "tools/fonts/FontToolUtils.h"
 
 #include <cinttypes>
 #include <cstdint>
 #include <memory>
 
+#if defined(SK_UNICODE_ICU_IMPLEMENTATION)
+#include "modules/skunicode/include/SkUnicode_icu.h"
+#endif
+
+#if defined(SK_UNICODE_LIBGRAPHEME_IMPLEMENTATION)
+#include "modules/skunicode/include/SkUnicode_libgrapheme.h"
+#endif
+
+#if defined(SK_UNICODE_ICU4X_IMPLEMENTATION)
+#include "modules/skunicode/include/SkUnicode_icu4x.h"
+#endif
+
 namespace {
+
+sk_sp<SkUnicode> get_unicode() {
+#if defined(SK_UNICODE_ICU_IMPLEMENTATION)
+    if (auto unicode = SkUnicodes::ICU::Make()) {
+        return unicode;
+    }
+#endif  // defined(SK_UNICODE_ICU_IMPLEMENTATION)
+#if defined(SK_UNICODE_LIBGRAPHEME_IMPLEMENTATION)
+    if (auto unicode = SkUnicodes::Libgrapheme::Make()) {
+        return unicode;
+    }
+#endif
+#if defined(SK_UNICODE_ICU4X_IMPLEMENTATION)
+    if (auto unicode = SkUnicodes::ICU4X::Make()) {
+        return unicode;
+    }
+#endif
+    return nullptr;
+}
+
 struct RunHandler final : public SkShaper::RunHandler {
     const char* fResource;
     skiatest::Reporter* fReporter;
@@ -115,20 +149,52 @@ struct RunHandler final : public SkShaper::RunHandler {
     void commitLine() override { fCommitLine = true; }
 };
 
+#if defined(SK_SHAPER_HARFBUZZ_AVAILABLE) && defined(SK_SHAPER_UNICODE_AVAILABLE)
 void shaper_test(skiatest::Reporter* reporter, const char* name, SkData* data) {
-    auto shaper = SkShaper::Make();
+    skiatest::ReporterContext context(reporter, name);
+    auto unicode = get_unicode();
+    if (!unicode) {
+        ERRORF(reporter, "Could not create unicode.");
+        return;
+    }
+
+    auto shaper = SkShapers::HB::ShaperDrivenWrapper(unicode,
+                                                     SkFontMgr::RefEmpty());  // no fallback
     if (!shaper) {
         ERRORF(reporter, "Could not create shaper.");
         return;
     }
-
+    if (!unicode) {
+        ERRORF(reporter, "Could not create unicode.");
+        return;
+    }
     constexpr float kWidth = 400;
-    SkFont font(SkTypeface::MakeDefault());
-    RunHandler rh(name, reporter, (const char*)data->data(), data->size());
-    shaper->shape((const char*)data->data(), data->size(), font, true, kWidth, &rh);
+    SkFont font = ToolUtils::DefaultFont();
+    const char* utf8 = (const char*)data->data();
+    size_t utf8Bytes = data->size();
 
-    // Even on empty input, expect that the line is started, that the zero run infos are comitted,
-    // and the empty line is comitted. This allows the user to properly handle empy runs.
+    RunHandler rh(name, reporter, utf8, utf8Bytes);
+
+    const SkBidiIterator::Level defaultLevel = SkBidiIterator::kLTR;
+    std::unique_ptr<SkShaper::BiDiRunIterator> bidi =
+            SkShapers::unicode::BidiRunIterator(unicode, utf8, utf8Bytes, defaultLevel);
+    SkASSERT(bidi);
+
+    std::unique_ptr<SkShaper::LanguageRunIterator> language =
+            SkShaper::MakeStdLanguageRunIterator(utf8, utf8Bytes);
+    SkASSERT(language);
+
+    std::unique_ptr<SkShaper::ScriptRunIterator> script =
+            SkShapers::HB::ScriptRunIterator(utf8, utf8Bytes);
+    SkASSERT(script);
+
+    std::unique_ptr<SkShaper::FontRunIterator> fontRuns =
+            SkShaper::MakeFontMgrRunIterator(utf8, utf8Bytes, font, SkFontMgr::RefEmpty());
+    SkASSERT(fontRuns);
+    shaper->shape(utf8, utf8Bytes, *fontRuns, *bidi, *script, *language, nullptr, 0, kWidth, &rh);
+
+    // Even on empty input, expect that the line is started, that the zero run infos are committed,
+    // and the empty line is committed. This allows the user to properly handle empty runs.
     REPORTER_ASSERT(reporter, rh.fBeginLine);
     REPORTER_ASSERT(reporter, rh.fCommitRunInfo);
     REPORTER_ASSERT(reporter, rh.fCommitLine);
@@ -138,8 +204,16 @@ void shaper_test(skiatest::Reporter* reporter, const char* name, SkData* data) {
     auto bidiIterator = SkShaper::TrivialBiDiRunIterator(0, data->size());
     auto scriptIterator = SkShaper::TrivialScriptRunIterator(latn, data->size());
     auto languageIterator = SkShaper::TrivialLanguageRunIterator("en-US", data->size());
-    shaper->shape((const char*)data->data(), data->size(),
-                  fontIterator, bidiIterator, scriptIterator, languageIterator, kWidth, &rh);
+    shaper->shape((const char*)data->data(),
+                  data->size(),
+                  fontIterator,
+                  bidiIterator,
+                  scriptIterator,
+                  languageIterator,
+                  nullptr,
+                  0,
+                  kWidth,
+                  &rh);
 }
 
 void cluster_test(skiatest::Reporter* reporter, const char* resource) {
@@ -152,7 +226,11 @@ void cluster_test(skiatest::Reporter* reporter, const char* resource) {
     shaper_test(reporter, resource, data.get());
 }
 
+#endif  // defined(SK_SHAPER_HARFBUZZ_AVAILABLE) && defined(SK_SHAPER_UNICODE_AVAILABLE)
+
 }  // namespace
+
+#if defined(SK_SHAPER_HARFBUZZ_AVAILABLE) && defined(SK_SHAPER_UNICODE_AVAILABLE)
 
 DEF_TEST(Shaper_cluster_empty, r) { shaper_test(r, "empty", SkData::MakeEmpty().get()); }
 
@@ -193,4 +271,4 @@ SHAPER_TEST(taitham)
 SHAPER_TEST(tamil)
 #undef SHAPER_TEST
 
-#endif  // defined(SKSHAPER_IMPLEMENTATION) && !defined(SK_BUILD_FOR_GOOGLE3)
+#endif  // #if defined(SK_SHAPER_HARFBUZZ_AVAILABLE) && defined(SK_SHAPER_UNICODE_AVAILABLE)

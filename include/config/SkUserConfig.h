@@ -90,9 +90,13 @@
    integrate with their histogram collection backend.
 */
 //#define SK_HISTOGRAM_BOOLEAN(name, sample)
-//#define SK_HISTOGRAM_ENUMERATION(name, sample, enum_size)
-//#define SK_HISTOGRAM_EXACT_LINEAR(name, sample, value_max)
+//#define SK_HISTOGRAM_ENUMERATION(name, sampleEnum, enumSize)
+//#define SK_HISTOGRAM_EXACT_LINEAR(name, sample, valueMax)
 //#define SK_HISTOGRAM_MEMORY_KB(name, sample)
+//#define SK_HISTOGRAM_CUSTOM_MICROSECONDS_TIMES(name, sampleUSec, minUSec, maxUSec, bucketCount)
+
+// To use smaller but slower mipmap builder
+//#define SK_USE_DRAWING_MIPMAP_DOWNSAMPLER
 
 /* Skia tries to make use of some non-standard C++ language extensions.
    By default, Skia provides msvc and clang/gcc versions of these macros.
@@ -114,6 +118,5 @@
  * this file.
  */
 //#define SK_API __declspec(dllexport)
-
 
 #endif

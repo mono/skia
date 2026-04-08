@@ -12,7 +12,7 @@
 #include "include/core/SkRect.h"
 #include "include/core/SkSize.h"
 #include "include/core/SkString.h"
-#include "include/gpu/GrDirectContext.h"
+#include "include/gpu/ganesh/GrDirectContext.h"
 #include "src/base/SkRectMemcpy.h"
 #include "src/core/SkCanvasPriv.h"
 #include "src/core/SkConvertPixels.h"
@@ -191,7 +191,7 @@ protected:
 
     SkISize getISize() override { return SkISize::Make(kTotalWidth, kTotalHeight); }
 
-    DrawResult onGpuSetup(SkCanvas* canvas, SkString* errorMsg) override {
+    DrawResult onGpuSetup(SkCanvas* canvas, SkString* errorMsg, GraphiteTestContext*) override {
         auto dContext = GrAsDirectContext(canvas->recordingContext());
         if (!dContext || dContext->abandoned()) {
             return DrawResult::kSkip;

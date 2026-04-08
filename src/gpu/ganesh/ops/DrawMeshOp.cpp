@@ -4,30 +4,90 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
-
 #include "src/gpu/ganesh/ops/DrawMeshOp.h"
 
+#include "include/core/SkColor.h"
 #include "include/core/SkData.h"
+#include "include/core/SkMatrix.h"
 #include "include/core/SkMesh.h"
+#include "include/core/SkString.h"
+#include "include/core/SkVertices.h"
+#include "include/effects/SkRuntimeEffect.h"
+#include "include/private/SkColorData.h"
+#include "include/private/base/SkAssert.h"
+#include "include/private/base/SkDebug.h"
+#include "include/private/base/SkPoint_impl.h"
+#include "include/private/base/SkSpan_impl.h"
+#include "include/private/base/SkTemplates.h"
+#include "include/private/base/SkTo.h"
+#include "include/private/base/SkTypeTraits.h"
+#include "include/private/gpu/ganesh/GrTypesPriv.h"
 #include "src/base/SkArenaAlloc.h"
 #include "src/core/SkMeshPriv.h"
 #include "src/core/SkRuntimeEffectPriv.h"
+#include "src/core/SkSLTypeShared.h"
 #include "src/core/SkVerticesPriv.h"
 #include "src/gpu/BufferWriter.h"
 #include "src/gpu/KeyBuilder.h"
+#include "src/gpu/ganesh/GrAppliedClip.h"
+#include "src/gpu/ganesh/GrBuffer.h"
+#include "src/gpu/ganesh/GrCaps.h"
+#include "src/gpu/ganesh/GrColorSpaceXform.h"
+#include "src/gpu/ganesh/GrFragmentProcessor.h"
 #include "src/gpu/ganesh/GrGeometryProcessor.h"
 #include "src/gpu/ganesh/GrMeshBuffers.h"
+#include "src/gpu/ganesh/GrMeshDrawTarget.h"
 #include "src/gpu/ganesh/GrOpFlushState.h"
+#include "src/gpu/ganesh/GrPaint.h"
+#include "src/gpu/ganesh/GrProcessorAnalysis.h"
+#include "src/gpu/ganesh/GrProcessorSet.h"
 #include "src/gpu/ganesh/GrProgramInfo.h"
+#include "src/gpu/ganesh/GrShaderVar.h"
+#include "src/gpu/ganesh/GrSimpleMesh.h"
+#include "src/gpu/ganesh/GrSurfaceProxy.h"
+#include "src/gpu/ganesh/GrSurfaceProxyView.h"
+#include "src/gpu/ganesh/effects/GrTextureEffect.h"
 #include "src/gpu/ganesh/glsl/GrGLSLColorSpaceXformHelper.h"
 #include "src/gpu/ganesh/glsl/GrGLSLFragmentShaderBuilder.h"
 #include "src/gpu/ganesh/glsl/GrGLSLProgramBuilder.h"
+#include "src/gpu/ganesh/glsl/GrGLSLProgramDataManager.h"
+#include "src/gpu/ganesh/glsl/GrGLSLShaderBuilder.h"
+#include "src/gpu/ganesh/glsl/GrGLSLUniformHandler.h"
 #include "src/gpu/ganesh/glsl/GrGLSLVarying.h"
 #include "src/gpu/ganesh/glsl/GrGLSLVertexGeoBuilder.h"
+#include "src/gpu/ganesh/ops/GrDrawOp.h"
+#include "src/gpu/ganesh/ops/GrMeshDrawOp.h"
 #include "src/gpu/ganesh/ops/GrSimpleMeshDrawOpHelper.h"
+#include "src/sksl/SkSLString.h"
+#include "src/sksl/SkSLUtil.h"
 #include "src/sksl/codegen/SkSLPipelineStageCodeGenerator.h"
 #include "src/sksl/ir/SkSLProgram.h"
+#include "src/sksl/ir/SkSLType.h"
 #include "src/sksl/ir/SkSLVarDeclarations.h"
+#include "src/sksl/ir/SkSLVariable.h"
+
+#include <algorithm>
+#include <climits>
+#include <cstddef>
+#include <cstdint>
+#include <functional>
+#include <iterator>
+#include <new>
+#include <optional>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <utility>
+#include <vector>
+
+class GrDstProxyView;
+class GrGpuBuffer;
+enum class GrXferBarrierFlags;
+namespace SkSL {
+class Context;
+}
+struct GrShaderCaps;
+struct SkRect;
 
 using namespace skia_private;
 
@@ -67,8 +127,7 @@ public:
             const std::optional<SkPMColor4f>& color,
             bool needsLocalCoords,
             sk_sp<const SkData> uniforms,
-            SkSpan<std::unique_ptr<GrFragmentProcessor>> children,
-            SkSpan<std::unique_ptr<GrFragmentProcessor::ProgramImpl>> childImpls) {
+            SkSpan<std::unique_ptr<GrFragmentProcessor>> children) {
         return arena->make([&](void* ptr) {
             return new (ptr) MeshGP(std::move(spec),
                                     std::move(colorSpaceXform),
@@ -76,8 +135,7 @@ public:
                                     std::move(color),
                                     needsLocalCoords,
                                     std::move(uniforms),
-                                    children,
-                                    childImpls);
+                                    children);
         });
     }
 
@@ -89,6 +147,13 @@ public:
         if (SkMeshSpecificationPriv::GetColorType(*fSpec) !=
             SkMeshSpecificationPriv::ColorType::kNone) {
             b->add32(GrColorSpaceXform::XformKey(fColorSpaceXform.get()), "colorspace xform key");
+        }
+        for (const std::unique_ptr<GrFragmentProcessor>& fp : fChildren) {
+            if (fp) {
+                fp->addToKey(caps, b);
+            } else {
+                b->addBool(false, "null effect");
+            }
         }
     }
 
@@ -104,14 +169,30 @@ private:
                      const GrGeometryProcessor& geomProc) override {
             const auto& mgp = geomProc.cast<MeshGP>();
             SetTransform(pdman, shaderCaps, fViewMatrixUniform, mgp.fViewMatrix, &fViewMatrix);
+            // Set up uniforms for the color-space transform.
             fColorSpaceHelper.setData(pdman, mgp.fColorSpaceXform.get());
+            // Assign the paint color to a uniform.
             if (fColorUniform.isValid()) {
                 pdman.set4fv(fColorUniform, 1, mgp.fColor.vec());
             }
+            // Update uniforms associated with the mesh vertex/fragment program.
             if (mgp.fUniforms) {
                 pdman.setRuntimeEffectUniforms(mgp.fSpec->uniforms(),
                                                SkSpan(fSpecUniformHandles),
                                                mgp.fUniforms->data());
+            }
+            // Recursively update uniforms associated with the mesh child FPs.
+            for (size_t index = 0; index < mgp.fChildren.size(); ++index) {
+                if (const GrFragmentProcessor* fp = mgp.fChildren[index].get()) {
+                    GrFragmentProcessor::ProgramImpl* impl = fChildImpls[index].get();
+                    SkASSERT(impl);
+
+                    fp->visitWithImpls([&](const GrFragmentProcessor& fp,
+                                           GrFragmentProcessor::ProgramImpl& impl) {
+                                           impl.setData(pdman, fp);
+                                       },
+                                       *impl);
+                }
             }
         }
 
@@ -159,7 +240,8 @@ private:
                 });
                 SkASSERT(it != uniforms.end());
 
-                UniformHandle* handle = &fSelf->fSpecUniformHandles[it - uniforms.begin()];
+                size_t handleIdx = std::distance(uniforms.begin(), it);
+                UniformHandle* handle = &fSelf->fSpecUniformHandles[handleIdx];
                 if (handle->isValid()) {
                     const GrShaderVar& uniformVar = fUniformHandler->getUniformVariable(*handle);
                     return std::string(uniformVar.getName().c_str());
@@ -213,8 +295,13 @@ private:
                     // For a null shader, return transparent black.
                     return "half4(0)";
                 }
-                // TODO(b/40045302): add support for non-null shaders.
-                SK_ABORT("No children allowed.");
+                GrFragmentProcessor::ProgramImpl* impl = fSelf->fChildImpls[index].get();
+                SkASSERT(impl);
+                return fBuilder->getProgramBuilder()->invokeFP(*fp,
+                                                               *impl,
+                                                               /*inputColor=*/"half4(0)",
+                                                               /*destColor=*/"half4(1)",
+                                                               coords.c_str());
             }
 
             std::string sampleColorFilter(int index, std::string color) override {
@@ -223,8 +310,13 @@ private:
                     // For a null color filter, return the color as-is.
                     return color;
                 }
-                // TODO(b/40045302): add support for non-null color filters.
-                SK_ABORT("No children allowed.");
+                GrFragmentProcessor::ProgramImpl* impl = fSelf->fChildImpls[index].get();
+                SkASSERT(impl);
+                return fBuilder->getProgramBuilder()->invokeFP(*fp,
+                                                               *impl,
+                                                               color.c_str(),
+                                                               /*destColor=*/"half4(1)",
+                                                               /*coords=*/"float2(0)");
             }
 
             std::string sampleBlender(int index, std::string src, std::string dst) override {
@@ -233,8 +325,13 @@ private:
                     // For a null blend, perform src-over.
                     return SkSL::String::printf("blend_src_over(%s, %s)", src.c_str(), dst.c_str());
                 }
-                // TODO(b/40045302): add support for non-null blenders.
-                SK_ABORT("No children allowed.");
+                GrFragmentProcessor::ProgramImpl* impl = fSelf->fChildImpls[index].get();
+                SkASSERT(impl);
+                return fBuilder->getProgramBuilder()->invokeFP(*fp,
+                                                               *impl,
+                                                               src.c_str(),
+                                                               dst.c_str(),
+                                                               /*coords=*/"float2(0)");
             }
 
             std::string toLinearSrgb(std::string color) override {
@@ -259,9 +356,17 @@ private:
             GrGLSLFPFragmentBuilder* fragBuilder = args.fFragBuilder;
             GrGLSLVaryingHandler* varyingHandler = args.fVaryingHandler;
             GrGLSLUniformHandler* uniformHandler = args.fUniformHandler;
+            SkSpan<std::unique_ptr<GrFragmentProcessor>> children = mgp.fChildren;
+
+            // Create Impls for any child fragment processors.
+            fChildImpls.reserve_exact(children.size());
+            for (const std::unique_ptr<GrFragmentProcessor>& fp : children) {
+                fChildImpls.push_back(fp ? fp->makeProgramImpl() : nullptr);
+            }
 
             SkASSERT(fSpecUniformHandles.empty());
-            fSpecUniformHandles.resize(mgp.fSpec->uniforms().size());
+            fSpecUniformHandles.reserve_exact(mgp.fSpec->uniforms().size());
+            fSpecUniformHandles.push_back_n(mgp.fSpec->uniforms().size());
 
             SkMeshSpecificationPriv::ColorType meshColorType =
                     SkMeshSpecificationPriv::GetColorType(*mgp.fSpec);
@@ -368,10 +473,33 @@ private:
 
             ////// FS
 
+            int samplerIndex = 0;
+            for (size_t fpIdx = 0; fpIdx < mgp.fChildren.size(); ++fpIdx) {
+                if (const GrFragmentProcessor* fp = mgp.fChildren[fpIdx].get()) {
+                    GrFragmentProcessor::ProgramImpl* impl = fChildImpls[fpIdx].get();
+                    SkASSERT(impl);
+
+                    // Hook up sampler handles to texture effects. This code needs to keep
+                    // consistent with the code that up sampler handles (in the MeshGP ctor).
+                    fp->visitWithImpls([&](const GrFragmentProcessor& fp,
+                                           GrFragmentProcessor::ProgramImpl& impl) {
+                                if (fp.asTextureEffect()) {
+                                    static_cast<GrTextureEffect::Impl&>(impl).setSamplerHandle(
+                                            args.fTexSamplers[samplerIndex++]);
+                                }
+                            },
+                            *impl);
+
+                    // Write functions associated with this FP.
+                    args.fFragBuilder->getProgramBuilder()->advanceStage();
+                    args.fFragBuilder->getProgramBuilder()->writeFPFunction(*fp, *impl);
+                }
+            }
+
+            // Define the user's frag function.
             fragBuilder->codeAppendf("half4 %s;", args.fOutputColor);
             fragBuilder->codeAppendf("const half4 %s = half4(1);", args.fOutputCoverage);
 
-            // Define the user's frag function.
             SkString userFragName = fragBuilder->getMangledFunctionName("custom_mesh_fs");
             const SkSL::Program* customFS = SkMeshSpecificationPriv::FS(*mgp.fSpec);
             MeshCallbacks fsCallbacks(this,
@@ -450,31 +578,28 @@ private:
     private:
         SkMatrix fViewMatrix = SkMatrix::InvalidMatrix();
 
-        UniformHandle              fViewMatrixUniform;
-        UniformHandle              fColorUniform;
-        std::vector<UniformHandle> fSpecUniformHandles;
+        STArray<2, std::unique_ptr<GrFragmentProcessor::ProgramImpl>> fChildImpls;
+        UniformHandle                                                 fViewMatrixUniform;
+        UniformHandle                                                 fColorUniform;
+        STArray<8, UniformHandle>                                     fSpecUniformHandles;
 
         GrGLSLColorSpaceXformHelper fColorSpaceHelper;
     };
 
-    MeshGP(sk_sp<SkMeshSpecification>                                spec,
-           sk_sp<GrColorSpaceXform>                                  colorSpaceXform,
-           const SkMatrix&                                           viewMatrix,
-           const std::optional<SkPMColor4f>&                         color,
-           bool                                                      needsLocalCoords,
-           sk_sp<const SkData>                                       uniforms,
-           SkSpan<std::unique_ptr<GrFragmentProcessor>>              children,
-           SkSpan<std::unique_ptr<GrFragmentProcessor::ProgramImpl>> childImpls)
+    MeshGP(sk_sp<SkMeshSpecification>                   spec,
+           sk_sp<GrColorSpaceXform>                     colorSpaceXform,
+           const SkMatrix&                              viewMatrix,
+           const std::optional<SkPMColor4f>&            color,
+           bool                                         needsLocalCoords,
+           sk_sp<const SkData>                          uniforms,
+           SkSpan<std::unique_ptr<GrFragmentProcessor>> children)
             : INHERITED(kVerticesGP_ClassID)
             , fSpec(std::move(spec))
             , fUniforms(std::move(uniforms))
             , fChildren(children)
-            , fChildImpls(childImpls)
             , fViewMatrix(viewMatrix)
             , fColorSpaceXform(std::move(colorSpaceXform))
             , fNeedsLocalCoords(needsLocalCoords) {
-        SkASSERT(fChildren.size() == fChildImpls.size());
-
         fColor = color.value_or(SK_PMColor4fILLEGAL);
         for (const auto& srcAttr : fSpec->attributes()) {
             fAttributes.emplace_back(srcAttr.name.c_str(),
@@ -483,12 +608,29 @@ private:
                                      srcAttr.offset);
         }
         this->setVertexAttributes(fAttributes.data(), fAttributes.size(), fSpec->stride());
+
+        // We are relying here on the fact that `visitTextureEffects` and `visitWithImpls` walk the
+        // FP tree in the same order.
+        for (const std::unique_ptr<GrFragmentProcessor>& fp : fChildren) {
+            if (fp) {
+                fp->visitTextureEffects([&](const GrTextureEffect& te) {
+                    fTextureSamplers.push_back({te.samplerState(),
+                                                te.view().proxy()->backendFormat(),
+                                                te.view().swizzle()});
+                });
+            }
+        }
+        this->setTextureSamplerCnt(fTextureSamplers.size());
+    }
+
+    const TextureSampler& onTextureSampler(int index) const override {
+        return fTextureSamplers[index];
     }
 
     sk_sp<SkMeshSpecification> fSpec;
     sk_sp<const SkData> fUniforms;
-    SkSpan<std::unique_ptr<GrFragmentProcessor>> fChildren;  // backed by a TArray in the MeshOp
-    SkSpan<std::unique_ptr<GrFragmentProcessor::ProgramImpl>> fChildImpls; //  "   "    "    "
+    SkSpan<std::unique_ptr<GrFragmentProcessor>> fChildren; // backed by a TArray in MeshOp
+    TArray<TextureSampler> fTextureSamplers;
     std::vector<Attribute> fAttributes;
     SkMatrix fViewMatrix;
     SkPMColor4f fColor;
@@ -525,6 +667,13 @@ public:
     const char* name() const override { return "MeshOp"; }
 
     void visitProxies(const GrVisitProxyFunc& func) const override {
+        for (const std::unique_ptr<GrFragmentProcessor>& fp : fChildren) {
+            if (fp) {
+                fp->visitTextureEffects([&](const GrTextureEffect& te) {
+                    func(te.view().proxy(), te.view().mipmapped());
+                });
+            }
+        }
         if (fProgramInfo) {
             fProgramInfo->visitFPProxies(func);
         } else {
@@ -550,7 +699,7 @@ private:
 
     void onPrepareDraws(GrMeshDrawTarget*) override;
     void onExecute(GrOpFlushState*, const SkRect& chainBounds) override;
-#if defined(GR_TEST_UTILS)
+#if defined(GPU_TEST_UTILS)
     SkString onDumpInfo() const override;
 #endif
 
@@ -684,7 +833,6 @@ private:
     GrSimpleMesh*              fMesh = nullptr;
     GrProgramInfo*             fProgramInfo = nullptr;
     TArray<std::unique_ptr<GrFragmentProcessor>> fChildren;
-    TArray<std::unique_ptr<GrFragmentProcessor::ProgramImpl>> fChildImpls;
 
     using INHERITED = GrMeshDrawOp;
 };
@@ -785,20 +933,10 @@ MeshOp::MeshOp(GrProcessorSet*                              processorSet,
     fMeshes.emplace_back(mesh);
 
     fSpecification = mesh.refSpec();
-    if (fColorSpaceXform) {
-        fUniforms = SkRuntimeEffectPriv::TransformUniforms(mesh.spec()->uniforms(),
-                                                           mesh.refUniforms(),
-                                                           fColorSpaceXform->steps());
-    } else {
-        fUniforms = mesh.refUniforms();
-    }
+    fUniforms = SkRuntimeEffectPriv::TransformUniforms(
+            mesh.spec()->uniforms(), mesh.refUniforms(), mesh.spec()->colorSpace());
 
     fChildren = std::move(children);
-
-    fChildImpls.reserve_exact(fChildren.size());
-    for (const std::unique_ptr<GrFragmentProcessor>& fp : fChildren) {
-        fChildImpls.push_back(fp ? fp->makeProgramImpl() : nullptr);
-    }
 
     fVertexCount = fMeshes.back().vertexCount();
     fIndexCount  = fMeshes.back().indexCount();
@@ -917,7 +1055,7 @@ MeshOp::MeshOp(GrProcessorSet*          processorSet,
     fIndexCount  = fMeshes.back().indexCount();
 }
 
-#if defined(GR_TEST_UTILS)
+#if defined(GPU_TEST_UTILS)
 SkString MeshOp::onDumpInfo() const { return {}; }
 #endif
 
@@ -955,8 +1093,7 @@ GrGeometryProcessor* MeshOp::makeGP(SkArenaAlloc* arena) {
                         color,
                         fHelper.usesLocalCoords(),
                         fUniforms,
-                        SkSpan(fChildren),
-                        SkSpan(fChildImpls));
+                        SkSpan(fChildren));
 }
 
 void MeshOp::onCreateProgramInfo(const GrCaps* caps,
@@ -1060,8 +1197,19 @@ void MeshOp::onExecute(GrOpFlushState* flushState, const SkRect& chainBounds) {
         return;
     }
 
+    TArray<GrSurfaceProxy*> geomProcTextures;
+    for (const std::unique_ptr<GrFragmentProcessor>& fp : fChildren) {
+        if (fp) {
+            fp->visitTextureEffects([&](const GrTextureEffect& te) {
+                geomProcTextures.push_back(te.view().proxy());
+            });
+        }
+    }
+
     flushState->bindPipelineAndScissorClip(*fProgramInfo, chainBounds);
-    flushState->bindTextures(fProgramInfo->geomProc(), nullptr, fProgramInfo->pipeline());
+    flushState->bindTextures(fProgramInfo->geomProc(),
+                             geomProcTextures.data(),
+                             fProgramInfo->pipeline());
     flushState->drawMesh(*fMesh);
 }
 
@@ -1090,7 +1238,11 @@ GrOp::CombineResult MeshOp::onCombineIfPossible(GrOp* t, SkArenaAlloc*, const Gr
     if (SkToBool(fIndexCount) != SkToBool(that->fIndexCount)) {
         return CombineResult::kCannotCombine;
     }
-    if (SkToBool(fIndexCount) && fVertexCount > SkToInt(UINT16_MAX) - that->fVertexCount) {
+    if (SkToBool(fIndexCount) &&
+         // Index count would overflow
+        (fIndexCount > INT32_MAX - that->fIndexCount ||
+         // *or* combined vertex count would not be referenceable by uint16 indices
+         fVertexCount > SkToInt(UINT16_MAX) - that->fVertexCount)) {
         return CombineResult::kCannotCombine;
     }
 
@@ -1100,7 +1252,7 @@ GrOp::CombineResult MeshOp::onCombineIfPossible(GrOp* t, SkArenaAlloc*, const Gr
     }
 
     // Our specs made for vertices don't have uniforms.
-    SkASSERT(fSpecification->uniforms().size() == 0);
+    SkASSERT(fSpecification->uniforms().empty());
 
     if (!SkMeshSpecificationPriv::HasColors(*fSpecification) && fColor != that->fColor) {
         return CombineResult::kCannotCombine;

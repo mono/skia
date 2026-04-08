@@ -4,18 +4,25 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
-
-
 #include "src/gpu/ganesh/gradients/GrGradientBitmapCache.h"
 
-#include "include/private/base/SkFloatBits.h"
+#include "include/core/SkAlphaType.h"
+#include "include/core/SkBitmap.h"
+#include "include/core/SkColorSpace.h"
+#include "include/core/SkImageInfo.h"
+#include "include/core/SkMatrix.h"
+#include "include/core/SkTypes.h"
 #include "include/private/base/SkMalloc.h"
 #include "include/private/base/SkTemplates.h"
-#include "src/base/SkHalf.h"
+#include "src/base/SkArenaAlloc.h"
+#include "src/base/SkFloatBits.h"
 #include "src/core/SkRasterPipeline.h"
+#include "src/core/SkRasterPipelineOpContexts.h"
+#include "src/core/SkRasterPipelineOpList.h"
 #include "src/shaders/gradients/SkGradientBaseShader.h"
 
-#include <functional>
+#include <cstdint>
+#include <cstring>
 
 using namespace skia_private;
 
@@ -140,11 +147,11 @@ void GrGradientBitmapCache::fillGradient(const SkPMColor4f* colors,
     SkRasterPipeline_MemoryCtx ctx = { bitmap->getPixels(), 0 };
 
     p.append(SkRasterPipelineOp::seed_shader);
-    p.append_matrix(&alloc, SkMatrix::Scale(1.0f / bitmap->width(), 1.0f));
+    p.appendMatrix(&alloc, SkMatrix::Scale(1.0f / bitmap->width(), 1.0f));
     SkGradientBaseShader::AppendGradientFillStages(&p, &alloc, colors, positions, count);
     SkGradientBaseShader::AppendInterpolatedToDstStages(
             &p, &alloc, colorsAreOpaque, interpolation, intermediateColorSpace, dstColorSpace);
-    p.append_store(bitmap->colorType(), &ctx);
+    p.appendStore(bitmap->colorType(), &ctx);
     p.run(0, 0, bitmap->width(), 1);
 }
 

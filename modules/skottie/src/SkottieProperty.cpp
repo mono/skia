@@ -18,7 +18,6 @@ namespace skottie {
 bool TextPropertyValue::operator==(const TextPropertyValue& other) const {
     return fTypeface == other.fTypeface
         && fText == other.fText
-        && fLocale == other.fLocale
         && fTextSize == other.fTextSize
         && fStrokeWidth == other.fStrokeWidth
         && fLineHeight == other.fLineHeight
@@ -38,7 +37,9 @@ bool TextPropertyValue::operator==(const TextPropertyValue& other) const {
         && fStrokeJoin == other.fStrokeJoin
         && fHasFill == other.fHasFill
         && fHasStroke == other.fHasStroke
-        && fDecorator == other.fDecorator;
+        && fDecorator == other.fDecorator
+        && fLocale == other.fLocale
+        && fFontFamily == other.fFontFamily;
 }
 
 bool TextPropertyValue::operator!=(const TextPropertyValue& other) const {
@@ -56,6 +57,8 @@ bool TransformPropertyValue::operator==(const TransformPropertyValue& other) con
 bool TransformPropertyValue::operator!=(const TransformPropertyValue& other) const {
     return !(*this == other);
 }
+
+// The SK_API attributes are important here due o them being declared as a template.
 
 template <> SK_API
 ColorPropertyHandle::PropertyHandle(sk_sp<sksg::Color> node)

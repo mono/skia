@@ -8,14 +8,18 @@ import("codec.gni")
 import("core.gni")
 import("effects.gni")
 import("effects_imagefilters.gni")
+import("fuzz.gni")
 import("gpu.gni")
 import("graphite.gni")
 import("opts.gni")
 import("pdf.gni")
+import("ports.gni")
 import("sksl.gni")
 import("utils.gni")
 import("xml.gni")
 import("xps.gni")
 skia_opts = {
   hsw_sources = hsw
+  skx_sources = skx
+  lasx_sources = lasx
 }

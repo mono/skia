@@ -21,7 +21,6 @@ DEPS = [
   'recipe_engine/json',
   'recipe_engine/path',
   'recipe_engine/properties',
-  'recipe_engine/python',
   'recipe_engine/step',
   'recipe_engine/time',
   'run',
@@ -71,6 +70,8 @@ SKOTTIE_WASM_EXCLUDE = [
   'streetby_test_loading.json',
   # Times out
   'beetle.json',
+  # Too slow? Doesn't provide enough frames for analysis b/325452373
+  'Name.json',
 ]
 
 # These files work in SVG but not in Canvas.
@@ -84,9 +85,9 @@ LOTTIE_WEB_CANVAS_EXCLUDE = LOTTIE_WEB_EXCLUDE + [
 def RunSteps(api):
   api.vars.setup()
   api.flavor.setup(None)
-  checkout_root = api.path['start_dir']
+  checkout_root = api.path.start_dir
   buildername = api.properties['buildername']
-  node_path = api.path['start_dir'].join('node', 'node', 'bin', 'node')
+  node_path = api.path.start_dir.joinpath('node', 'node', 'bin', 'node')
   lottie_files = api.file.listdir(
       'list lottie files', api.flavor.host_dirs.lotties_dir,
       test_data=['lottie1.json', 'lottie2.json', 'lottie3.json', 'LICENSE'])
@@ -95,10 +96,10 @@ def RunSteps(api):
     source_type = 'skottie'
     renderer = 'skottie-wasm'
 
-    perf_app_dir = checkout_root.join('skia', 'tools', 'skottie-wasm-perf')
-    canvaskit_js_path = api.vars.build_dir.join('canvaskit.js')
-    canvaskit_wasm_path = api.vars.build_dir.join('canvaskit.wasm')
-    skottie_wasm_js_path = perf_app_dir.join('skottie-wasm-perf.js')
+    perf_app_dir = checkout_root.joinpath('skia', 'tools', 'skottie-wasm-perf')
+    canvaskit_js_path = api.vars.build_dir.joinpath('canvaskit.js')
+    canvaskit_wasm_path = api.vars.build_dir.joinpath('canvaskit.wasm')
+    skottie_wasm_js_path = perf_app_dir.joinpath('skottie-wasm-perf.js')
     perf_app_cmd = [
         node_path, skottie_wasm_js_path,
         '--canvaskit_js', canvaskit_js_path,
@@ -119,8 +120,8 @@ def RunSteps(api):
       lottie_files = [x for x in lottie_files
                       if api.path.basename(x) not in LOTTIE_WEB_EXCLUDE]
 
-    perf_app_dir = checkout_root.join('skia', 'tools', 'lottie-web-perf')
-    lottie_web_js_path = perf_app_dir.join('lottie-web-perf.js')
+    perf_app_dir = checkout_root.joinpath('skia', 'tools', 'lottie-web-perf')
+    lottie_web_js_path = perf_app_dir.joinpath('lottie-web-perf.js')
     perf_app_cmd = [
         node_path, lottie_web_js_path,
         '--backend', backend,
@@ -132,7 +133,7 @@ def RunSteps(api):
     perf_app_cmd.append('--use_gpu')
 
   # Install prerequisites.
-  env_prefixes = {'PATH': [api.path['start_dir'].join('node', 'node', 'bin')]}
+  env_prefixes = {'PATH': [api.path.start_dir.joinpath('node', 'node', 'bin')]}
   with api.context(cwd=perf_app_dir, env_prefixes=env_prefixes):
     api.step('npm install', cmd=['npm', 'install'])
 
@@ -143,7 +144,7 @@ def RunSteps(api):
     lottie_filename = api.path.basename(lottie_file)
     if not lottie_filename.endswith('.json'):
       continue
-    output_file = output_dir.join(lottie_filename)
+    output_file = output_dir.joinpath(lottie_filename)
     with api.context(cwd=perf_app_dir, env={'DISPLAY': ':0'}):
       # This is occasionally flaky due to skbug.com/9207, adding retries.
       attempts = 3
@@ -195,7 +196,7 @@ def RunSteps(api):
       api.flavor.host_dirs.perf_data_dir)
   now = api.time.utcnow()
   ts = int(calendar.timegm(now.utctimetuple()))
-  json_path = api.flavor.host_dirs.perf_data_dir.join(
+  json_path = api.flavor.host_dirs.perf_data_dir.joinpath(
       'perf_%s_%d.json' % (api.properties['revision'], ts))
   json_contents = json.dumps(
       perf_json, indent=4, sort_keys=True, separators=(',', ': '))
@@ -213,129 +214,11 @@ def parse_trace(trace_json, lottie_filename, api, renderer):
     'frame_avg_us': 95,
   }
   """
+  script = api.infra.resource('parse_lottieweb_trace.py')
   step_result = api.run(
-      api.python.inline,
+      api.step,
       'parse %s trace' % lottie_filename,
-      program="""
-  import json
-  import sys
-
-  trace_output = sys.argv[1]
-  with open(trace_output, 'r') as f:
-    trace_json = json.load(f)
-  output_json_file = sys.argv[2]
-  renderer = sys.argv[3]  # Unused for now but might be useful in the future.
-
-  # Output data about the GPU that was used.
-  print('GPU data:')
-  print(trace_json['metadata'].get('gpu-gl-renderer'))
-  print(trace_json['metadata'].get('gpu-driver'))
-  print(trace_json['metadata'].get('gpu-gl-vendor'))
-
-  erroneous_termination_statuses = [
-      'replaced_by_new_reporter_at_same_stage',
-      'did_not_produce_frame',
-  ]
-  accepted_termination_statuses = [
-      'missed_frame',
-      'submitted_frame',
-      'main_frame_aborted'
-  ]
-
-  current_frame_duration = 0
-  total_frames = 0
-  frame_id_to_start_ts = {}
-  # Will contain tuples of frame_ids and their duration and status.
-  completed_frame_id_and_duration_status = []
-  # Will contain tuples of drawn frame_ids and their duration.
-  drawn_frame_id_and_duration = []
-  for trace in trace_json['traceEvents']:
-    if 'PipelineReporter' in trace['name']:
-      frame_id = trace['id']
-      args = trace.get('args')
-      if args and args.get('step') == 'BeginImplFrameToSendBeginMainFrame':
-        frame_id_to_start_ts[frame_id] = trace['ts']
-      elif args and (args.get('termination_status') in
-                     accepted_termination_statuses):
-        if not frame_id_to_start_ts.get(frame_id):
-          print('[No start ts found for %s]' % frame_id)
-          continue
-        current_frame_duration = trace['ts'] - frame_id_to_start_ts[frame_id]
-        total_frames += 1
-        completed_frame_id_and_duration_status.append(
-            (frame_id, current_frame_duration, args['termination_status']))
-        if(args['termination_status'] == 'missed_frame' or
-         args['termination_status'] == 'submitted_frame'):
-          drawn_frame_id_and_duration.append((frame_id, current_frame_duration))
-
-        # We are done with this frame_id so remove it from the dict.
-        frame_id_to_start_ts.pop(frame_id)
-        print('%d (%s with %s): %d' % (
-            total_frames, frame_id, args['termination_status'],
-            current_frame_duration))
-      elif args and (args.get('termination_status') in
-                     erroneous_termination_statuses):
-        # Invalidate previously collected results for this frame_id.
-        if frame_id_to_start_ts.get(frame_id):
-          print('[Invalidating %s due to %s]' % (
-              frame_id, args['termination_status']))
-          frame_id_to_start_ts.pop(frame_id)
-
-  # Calculate metrics for total completed frames.
-  total_completed_frames = len(completed_frame_id_and_duration_status)
-  if total_completed_frames < 25:
-    raise Exception('Even with 3 loops found only %d frames' %
-                    total_completed_frames)
-  # Get frame avg/min/max for the middle 25 frames.
-  start = (total_completed_frames - 25) // 2
-  print('Got %d total completed frames. Using indexes [%d, %d).' % (
-      total_completed_frames, start, start+25))
-  frame_max = 0
-  frame_min = 0
-  frame_cumulative = 0
-  aborted_frames = 0
-  for frame_id, duration, status in (
-      completed_frame_id_and_duration_status[start:start+25]):
-    frame_max = max(frame_max, duration)
-    frame_min = min(frame_min, duration) if frame_min else duration
-    frame_cumulative += duration
-    if status == 'main_frame_aborted':
-      aborted_frames += 1
-
-  perf_results = {}
-  perf_results['frame_max_us'] = frame_max
-  perf_results['frame_min_us'] = frame_min
-  perf_results['frame_avg_us'] = frame_cumulative/25
-  perf_results['aborted_frames'] = aborted_frames
-
-  # Now calculate metrics for only drawn frames.
-  drawn_frame_max = 0
-  drawn_frame_min = 0
-  drawn_frame_cumulative = 0
-  total_drawn_frames = len(drawn_frame_id_and_duration)
-  if total_drawn_frames < 25:
-    raise Exception('Even with 3 loops found only %d drawn frames' %
-                    total_drawn_frames)
-  # Get drawn frame avg/min/max from the middle 25 frames.
-  start = (total_drawn_frames - 25) // 2
-  print('Got %d total drawn frames. Using indexes [%d-%d).' % (
-        total_drawn_frames, start, start+25))
-  for frame_id, duration in drawn_frame_id_and_duration[start:start+25]:
-    drawn_frame_max = max(drawn_frame_max, duration)
-    drawn_frame_min = (min(drawn_frame_min, duration)
-                       if drawn_frame_min else duration)
-    drawn_frame_cumulative += duration
-  # Add metrics to perf_results.
-  perf_results['drawn_frame_max_us'] = drawn_frame_max
-  perf_results['drawn_frame_min_us'] = drawn_frame_min
-  perf_results['drawn_frame_avg_us'] = drawn_frame_cumulative/25
-
-  print('Final perf_results dict: %s' % perf_results)
-
-  # Write perf_results to the output json.
-  with open(output_json_file, 'w') as f:
-    f.write(json.dumps(perf_results))
-  """, args=[trace_json, api.json.output(), renderer])
+      cmd=['python3', script, trace_json, api.json.output(), renderer])
 
   # Sanitize float outputs to 2 precision points.
   output = dict(step_result.json.output)

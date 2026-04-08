@@ -1,12 +1,5 @@
-/*
-
-:54:3 warning: code is unreachable
-  return vec4<f32>();
-  ^^^^^^
-
-*/
-
 diagnostic(off, derivative_uniformity);
+diagnostic(off, chromium.unreachable_code);
 struct FSOut {
   @location(0) sk_FragColor: vec4<f32>,
 };
@@ -24,7 +17,7 @@ fn _skslMain(_skParam0: vec2<f32>) -> vec4<f32> {
   {
     const kLocalFloatConstant: f32 = 3.14;
     let kLocalFloatConstantAlias: f32 = kLocalFloatConstant;
-    var integerInput: i32 = i32(_globalUniforms.colorGreen.y);
+    let integerInput: i32 = i32(_globalUniforms.colorGreen.y);
     if integerInput == kConstant {
       {
         return vec4<f32>(2.14);

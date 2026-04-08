@@ -7,7 +7,6 @@
 
 #include "gm/gm.h"
 
-#include "gm/verifiers/gmverifier.h"  // IWYU pragma: keep
 #include "include/core/SkBitmap.h"
 #include "include/core/SkBlendMode.h"
 #include "include/core/SkCanvas.h"
@@ -21,12 +20,12 @@
 #include "include/core/SkTileMode.h"
 #include "src/core/SkTraceEvent.h"
 #include "tools/ToolUtils.h"
+#include "tools/fonts/FontToolUtils.h"
 
 #if defined(SK_GANESH)
-#include "include/gpu/GrRecordingContext.h"
+#include "include/gpu/ganesh/GrRecordingContext.h"
 #endif
 
-#include <atomic>
 #include <cstdarg>
 #include <cstdint>
 
@@ -44,7 +43,7 @@ static void draw_failure_message(SkCanvas* canvas, const char format[], ...) {
 
     constexpr SkScalar kOffset = 5.0f;
     canvas->drawColor(SkColorSetRGB(200,0,0));
-    SkFont font;
+    SkFont font = ToolUtils::DefaultPortableFont();
     SkRect bounds;
     font.measureText(failureMsg.c_str(), failureMsg.size(), SkTextEncoding::kUTF8, &bounds);
     SkPaint textPaint(SkColors::kWhite);
@@ -56,7 +55,7 @@ static void draw_gpu_only_message(SkCanvas* canvas) {
     bmp.allocN32Pixels(128, 64);
     SkCanvas bmpCanvas(bmp);
     bmpCanvas.drawColor(SK_ColorWHITE);
-    SkFont  font(ToolUtils::create_portable_typeface(), 20);
+    SkFont  font(ToolUtils::DefaultPortableTypeface(), 20);
     SkPaint paint(SkColors::kRed);
     bmpCanvas.drawString("GPU Only", 20, 40, font, paint);
     SkMatrix localM;
@@ -86,15 +85,19 @@ GM::GM(SkColor bgColor) {
 
 GM::~GM() {}
 
-DrawResult GM::gpuSetup(SkCanvas* canvas, SkString* errorMsg) {
+DrawResult GM::gpuSetup(SkCanvas* canvas,
+                        SkString* errorMsg,
+                        GraphiteTestContext* graphiteTestContext) {
     TRACE_EVENT1("GM", TRACE_FUNC, "name", TRACE_STR_COPY(this->getName().c_str()));
     if (!fGpuSetup) {
         // When drawn in viewer, gpuSetup will be called multiple times with the same
-        // GrContext.
+        // GrContext or graphite::Context.
         fGpuSetup = true;
-        fGpuSetupResult = this->onGpuSetup(canvas, errorMsg);
+        fGpuSetupResult = this->onGpuSetup(canvas, errorMsg, graphiteTestContext);
     }
-    if (DrawResult::kOk != fGpuSetupResult) {
+    if (fGpuSetupResult == DrawResult::kOk) {
+        fGraphiteTestContext = graphiteTestContext;
+    } else {
         handle_gm_failure(canvas, fGpuSetupResult, *errorMsg);
     }
 
@@ -104,9 +107,10 @@ DrawResult GM::gpuSetup(SkCanvas* canvas, SkString* errorMsg) {
 void GM::gpuTeardown() {
     this->onGpuTeardown();
 
-    // After 'gpuTeardown' a GM can be reused with a different GrContext. Reset the flag
-    // so 'onGpuSetup' will be called.
+    // After 'gpuTeardown' a GM can be reused with a different GrContext or graphite::Context. Reset
+    // the flag so 'onGpuSetup' will be called.
     fGpuSetup = false;
+    fGraphiteTestContext = nullptr;
 }
 
 DrawResult GM::draw(SkCanvas* canvas, SkString* errorMsg) {
@@ -160,11 +164,6 @@ bool GM::animate(double nanos) { return this->onAnimate(nanos); }
 
 bool GM::runAsBench() const { return false; }
 
-std::unique_ptr<verifiers::VerifierList> GM::getVerifiers() const {
-    // No verifiers by default.
-    return nullptr;
-}
-
 void GM::onOnceBeforeDraw() {}
 
 bool GM::onAnimate(double /*nanos*/) { return false; }
@@ -185,10 +184,6 @@ void GM::drawSizeBounds(SkCanvas* canvas, SkColor color) {
 template GMRegistry* GMRegistry::gHead;
 
 #if defined(SK_GANESH)
-std::unique_ptr<verifiers::VerifierList> GpuGM::getVerifiers() const {
-    return nullptr;
-}
-
 DrawResult GpuGM::onDraw(GrRecordingContext* rContext, SkCanvas* canvas, SkString* errorMsg) {
     this->onDraw(rContext, canvas);
     return DrawResult::kOk;

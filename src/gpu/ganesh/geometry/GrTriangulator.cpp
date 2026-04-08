@@ -7,15 +7,26 @@
 
 #include "src/gpu/ganesh/geometry/GrTriangulator.h"
 
+#include "include/core/SkPathTypes.h"
+#include "include/core/SkRect.h"
+#include "include/private/base/SkDebug.h"
+#include "include/private/base/SkFloatingPoint.h"
+#include "include/private/base/SkMath.h"
+#include "include/private/base/SkTPin.h"
+#include "src/base/SkVx.h"
+#include "src/core/SkGeometry.h"
+#include "src/core/SkPointPriv.h"
 #include "src/gpu/BufferWriter.h"
+#include "src/gpu/ganesh/GrColor.h"
 #include "src/gpu/ganesh/GrEagerVertexAllocator.h"
 #include "src/gpu/ganesh/geometry/GrPathUtils.h"
 
-#include "src/core/SkGeometry.h"
-#include "src/core/SkPointPriv.h"
-
 #include <algorithm>
+#include <cstddef>
+#include <limits>
+#include <memory>
 #include <tuple>
+#include <utility>
 
 #if !defined(SK_ENABLE_OPTIMIZE_SIZE)
 
@@ -99,7 +110,7 @@ static skgpu::VertexWriter emit_triangle(Vertex* v0, Vertex* v1, Vertex* v2,
     TESS_LOG("emit_triangle %g (%g, %g) %d\n", v0->fID, v0->fPoint.fX, v0->fPoint.fY, v0->fAlpha);
     TESS_LOG("              %g (%g, %g) %d\n", v1->fID, v1->fPoint.fX, v1->fPoint.fY, v1->fAlpha);
     TESS_LOG("              %g (%g, %g) %d\n", v2->fID, v2->fPoint.fX, v2->fPoint.fY, v2->fAlpha);
-#if TESSELLATOR_WIREFRAME
+#if TRIANGULATOR_WIREFRAME
     data = emit_vertex(v0, emitCoverage, std::move(data));
     data = emit_vertex(v1, emitCoverage, std::move(data));
     data = emit_vertex(v1, emitCoverage, std::move(data));
@@ -125,8 +136,8 @@ void GrTriangulator::VertexList::remove(Vertex* v) {
 // Round to nearest quarter-pixel. This is used for screenspace tessellation.
 
 static inline void round(SkPoint* p) {
-    p->fX = SkScalarRoundToScalar(p->fX * SkFloatToScalar(4.0f)) * SkFloatToScalar(0.25f);
-    p->fY = SkScalarRoundToScalar(p->fY * SkFloatToScalar(4.0f)) * SkFloatToScalar(0.25f);
+    p->fX = SkScalarRoundToScalar(p->fX * 4.0f) * 0.25f;
+    p->fY = SkScalarRoundToScalar(p->fY * 4.0f) * 0.25f;
 }
 
 static inline SkScalar double_to_clamped_scalar(double d) {
@@ -305,7 +316,7 @@ bool GrTriangulator::EdgeList::remove(Edge* edge) {
 }
 
 void GrTriangulator::MonotonePoly::addEdge(Edge* edge) {
-    if (fSide == kRight_Side) {
+    if (fSide == Side::kRight) {
         SkASSERT(!edge->fUsedInRightPoly);
         list_insert<Edge, &Edge::fRightPolyPrev, &Edge::fRightPolyNext>(
             edge, fLastEdge, nullptr, &fFirstEdge, &fLastEdge);
@@ -326,7 +337,7 @@ skgpu::VertexWriter GrTriangulator::emitMonotonePoly(const MonotonePoly* monoton
     vertices.append(e->fTop);
     int count = 1;
     while (e != nullptr) {
-        if (kRight_Side == monotonePoly->fSide) {
+        if (Side::kRight == monotonePoly->fSide) {
             vertices.append(e->fBottom);
             e = e->fRightPolyNext;
         } else {
@@ -400,10 +411,13 @@ GrTriangulator::Poly::Poly(Vertex* v, int winding)
 
 Poly* GrTriangulator::Poly::addEdge(Edge* e, Side side, GrTriangulator* tri) {
     TESS_LOG("addEdge (%g -> %g) to poly %d, %s side\n",
-             e->fTop->fID, e->fBottom->fID, fID, side == kLeft_Side ? "left" : "right");
+             e->fTop->fID,
+             e->fBottom->fID,
+             fID,
+             side == Side::kLeft ? "left" : "right");
     Poly* partner = fPartner;
     Poly* poly = this;
-    if (side == kRight_Side) {
+    if (side == Side::kRight) {
         if (e->fUsedInRightPoly) {
             return this;
         }
@@ -509,8 +523,7 @@ void GrTriangulator::generateCubicPoints(const SkPoint& p0, const SkPoint& p1, c
                                          int pointsLeft) const {
     SkScalar d1 = SkPointPriv::DistanceToLineSegmentBetweenSqd(p1, p0, p3);
     SkScalar d2 = SkPointPriv::DistanceToLineSegmentBetweenSqd(p2, p0, p3);
-    if (pointsLeft < 2 || (d1 < tolSqd && d2 < tolSqd) ||
-        !SkScalarIsFinite(d1) || !SkScalarIsFinite(d2)) {
+    if (pointsLeft < 2 || (d1 < tolSqd && d2 < tolSqd) || !SkIsFinite(d1, d2)) {
         this->appendPointToContour(p3, contour);
         return;
     }
@@ -776,46 +789,50 @@ static bool rewind_if_necessary(Edge* edge, EdgeList* activeEdges, Vertex** curr
     if (edge->fLeft) {
         Vertex* leftTop = edge->fLeft->fTop;
         Vertex* leftBottom = edge->fLeft->fBottom;
-        if (c.sweep_lt(leftTop->fPoint, top->fPoint) && !edge->fLeft->isLeftOf(*top)) {
-            if (!rewind(activeEdges, current, leftTop, c)) {
-                return false;
-            }
-        } else if (c.sweep_lt(top->fPoint, leftTop->fPoint) && !edge->isRightOf(*leftTop)) {
-            if (!rewind(activeEdges, current, top, c)) {
-                return false;
-            }
-        } else if (c.sweep_lt(bottom->fPoint, leftBottom->fPoint) &&
-                   !edge->fLeft->isLeftOf(*bottom)) {
-            if (!rewind(activeEdges, current, leftTop, c)) {
-                return false;
-            }
-        } else if (c.sweep_lt(leftBottom->fPoint, bottom->fPoint) &&
-                   !edge->isRightOf(*leftBottom)) {
-            if (!rewind(activeEdges, current, top, c)) {
-                return false;
+        if (leftTop && leftBottom) {
+            if (c.sweep_lt(leftTop->fPoint, top->fPoint) && !edge->fLeft->isLeftOf(*top)) {
+                if (!rewind(activeEdges, current, leftTop, c)) {
+                    return false;
+                }
+            } else if (c.sweep_lt(top->fPoint, leftTop->fPoint) && !edge->isRightOf(*leftTop)) {
+                if (!rewind(activeEdges, current, top, c)) {
+                    return false;
+                }
+            } else if (c.sweep_lt(bottom->fPoint, leftBottom->fPoint) &&
+                       !edge->fLeft->isLeftOf(*bottom)) {
+                if (!rewind(activeEdges, current, leftTop, c)) {
+                    return false;
+                }
+            } else if (c.sweep_lt(leftBottom->fPoint, bottom->fPoint) &&
+                       !edge->isRightOf(*leftBottom)) {
+                if (!rewind(activeEdges, current, top, c)) {
+                    return false;
+                }
             }
         }
     }
     if (edge->fRight) {
         Vertex* rightTop = edge->fRight->fTop;
         Vertex* rightBottom = edge->fRight->fBottom;
-        if (c.sweep_lt(rightTop->fPoint, top->fPoint) && !edge->fRight->isRightOf(*top)) {
-            if (!rewind(activeEdges, current, rightTop, c)) {
-                return false;
-            }
-        } else if (c.sweep_lt(top->fPoint, rightTop->fPoint) && !edge->isLeftOf(*rightTop)) {
-            if (!rewind(activeEdges, current, top, c)) {
-                return false;
-            }
-        } else if (c.sweep_lt(bottom->fPoint, rightBottom->fPoint) &&
-                   !edge->fRight->isRightOf(*bottom)) {
-            if (!rewind(activeEdges, current, rightTop, c)) {
-                return false;
-            }
-        } else if (c.sweep_lt(rightBottom->fPoint, bottom->fPoint) &&
-                   !edge->isLeftOf(*rightBottom)) {
-            if (!rewind(activeEdges, current, top, c)) {
-                return false;
+        if (rightTop && rightBottom) {
+            if (c.sweep_lt(rightTop->fPoint, top->fPoint) && !edge->fRight->isRightOf(*top)) {
+                if (!rewind(activeEdges, current, rightTop, c)) {
+                    return false;
+                }
+            } else if (c.sweep_lt(top->fPoint, rightTop->fPoint) && !edge->isLeftOf(*rightTop)) {
+                if (!rewind(activeEdges, current, top, c)) {
+                    return false;
+                }
+            } else if (c.sweep_lt(bottom->fPoint, rightBottom->fPoint) &&
+                       !edge->fRight->isRightOf(*bottom)) {
+                if (!rewind(activeEdges, current, rightTop, c)) {
+                    return false;
+                }
+            } else if (c.sweep_lt(rightBottom->fPoint, bottom->fPoint) &&
+                       !edge->isLeftOf(*rightBottom)) {
+                if (!rewind(activeEdges, current, top, c)) {
+                    return false;
+                }
             }
         }
     }
@@ -1179,6 +1196,10 @@ GrTriangulator::BoolFail GrTriangulator::checkForIntersection(
     }
     SkPoint p;
     uint8_t alpha;
+    // If we are going to call intersect, then there must be tops and bottoms.
+    if (!left->fTop || !left->fBottom || !right->fTop || !right->fBottom) {
+        return BoolFail::kFail;
+    }
     if (left->intersect(*right, &p, &alpha) && p.isFinite()) {
         Vertex* v;
         TESS_LOG("found intersection, pt is %g, %g\n", p.fX, p.fY);
@@ -1422,6 +1443,7 @@ GrTriangulator::SimplifyResult GrTriangulator::simplify(VertexList* mesh,
     TESS_LOG("simplifying complex polygons\n");
 
     int initialNumEdges = fNumEdges;
+    int numSelfIntersections = 0;
 
     EdgeList activeEdges;
     auto result = SimplifyResult::kAlreadySimple;
@@ -1434,6 +1456,12 @@ GrTriangulator::SimplifyResult GrTriangulator::simplify(VertexList* mesh,
         // renderers enabled and with the triangulator's maxVerbCount set to the Chrome value is
         // 17x.
         if (fNumEdges > 170*initialNumEdges) {
+            return SimplifyResult::kFailed;
+        }
+
+        // In pathological cases, a path can intersect itself millions of times. After 500,000
+        // self-intersections are found, reject the path.
+        if (numSelfIntersections > 500000) {
             return SimplifyResult::kFailed;
         }
 
@@ -1453,12 +1481,14 @@ GrTriangulator::SimplifyResult GrTriangulator::simplify(VertexList* mesh,
                             leftEnclosingEdge, edge, &activeEdges, &v, mesh, c);
                     if (l == BoolFail::kFail) {
                         return SimplifyResult::kFailed;
-                    } else if (l == BoolFail::kFalse) {
+                    }
+                    if (l == BoolFail::kFalse) {
                         BoolFail r = this->checkForIntersection(
                                 edge, rightEnclosingEdge, &activeEdges, &v, mesh, c);
                         if (r == BoolFail::kFail) {
                             return SimplifyResult::kFailed;
-                        } else if (r == BoolFail::kFalse) {
+                        }
+                        if (r == BoolFail::kFalse) {
                             // Neither l and r are both false.
                             continue;
                         }
@@ -1467,6 +1497,7 @@ GrTriangulator::SimplifyResult GrTriangulator::simplify(VertexList* mesh,
                     // Either l or r are true.
                     result = SimplifyResult::kFoundSelfIntersection;
                     restartChecks = true;
+                    ++numSelfIntersections;
                     break;
                 }  // for
             } else {
@@ -1478,8 +1509,8 @@ GrTriangulator::SimplifyResult GrTriangulator::simplify(VertexList* mesh,
                 if (bf == BoolFail::kTrue) {
                     result = SimplifyResult::kFoundSelfIntersection;
                     restartChecks = true;
+                    ++numSelfIntersections;
                 }
-
             }
         } while (restartChecks);
 #ifdef SK_DEBUG
@@ -1543,19 +1574,19 @@ std::tuple<Poly*, bool> GrTriangulator::tessellate(const VertexList& vertices, c
 #endif
         if (v->fFirstEdgeAbove) {
             if (leftPoly) {
-                leftPoly = leftPoly->addEdge(v->fFirstEdgeAbove, kRight_Side, this);
+                leftPoly = leftPoly->addEdge(v->fFirstEdgeAbove, Side::kRight, this);
             }
             if (rightPoly) {
-                rightPoly = rightPoly->addEdge(v->fLastEdgeAbove, kLeft_Side, this);
+                rightPoly = rightPoly->addEdge(v->fLastEdgeAbove, Side::kLeft, this);
             }
             for (Edge* e = v->fFirstEdgeAbove; e != v->fLastEdgeAbove; e = e->fNextEdgeAbove) {
                 Edge* rightEdge = e->fNextEdgeAbove;
                 activeEdges.remove(e);
                 if (e->fRightPoly) {
-                    e->fRightPoly->addEdge(e, kLeft_Side, this);
+                    e->fRightPoly->addEdge(e, Side::kLeft, this);
                 }
                 if (rightEdge->fLeftPoly && rightEdge->fLeftPoly != e->fRightPoly) {
-                    rightEdge->fLeftPoly->addEdge(e, kRight_Side, this);
+                    rightEdge->fLeftPoly->addEdge(e, Side::kRight, this);
                 }
             }
             activeEdges.remove(v->fLastEdgeAbove);
@@ -1571,7 +1602,7 @@ std::tuple<Poly*, bool> GrTriangulator::tessellate(const VertexList& vertices, c
             if (!v->fFirstEdgeAbove) {
                 if (leftPoly && rightPoly) {
                     if (leftPoly == rightPoly) {
-                        if (leftPoly->fTail && leftPoly->fTail->fSide == kLeft_Side) {
+                        if (leftPoly->fTail && leftPoly->fTail->fSide == Side::kLeft) {
                             leftPoly = this->makePoly(&polys, leftPoly->lastVertex(),
                                                       leftPoly->fWinding);
                             leftEnclosingEdge->fRightPoly = leftPoly;
@@ -1582,8 +1613,8 @@ std::tuple<Poly*, bool> GrTriangulator::tessellate(const VertexList& vertices, c
                         }
                     }
                     Edge* join = this->allocateEdge(leftPoly->lastVertex(), v, 1, EdgeType::kInner);
-                    leftPoly = leftPoly->addEdge(join, kRight_Side, this);
-                    rightPoly = rightPoly->addEdge(join, kLeft_Side, this);
+                    leftPoly = leftPoly->addEdge(join, Side::kRight, this);
+                    rightPoly = rightPoly->addEdge(join, Side::kLeft, this);
                 }
             }
             Edge* leftEdge = v->fFirstEdgeBelow;

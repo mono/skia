@@ -30,30 +30,25 @@ sk_sp<VulkanDescriptorPool> VulkanDescriptorPool::Make(const VulkanSharedContext
     // highly unexpected for us to exceed this limit in practice.
     skia_private::STArray<kDescriptorTypeCount, VkDescriptorPoolSize> poolSizes;
     for (size_t i = 0; i < requestedDescCounts.size(); i++) {
-        SkASSERT(requestedDescCounts[i].count > 0);
-        if (requestedDescCounts[i].count > kMaxNumDescriptors) {
-            SkDebugf("The number of descriptors requested, %d, exceeds the maximum allowed (%d).\n",
-                     requestedDescCounts[i].count,
+        SkASSERT(requestedDescCounts[i].fCount > 0);
+        if (requestedDescCounts[i].fCount > kMaxNumDescriptors) {
+            SkDebugf("The number of descriptors requested, %u, exceeds the maximum allowed (%d).\n",
+                     requestedDescCounts[i].fCount,
                      kMaxNumDescriptors);
             return nullptr;
         }
         VkDescriptorPoolSize& poolSize = poolSizes.push_back();
         memset(&poolSize, 0, sizeof(VkDescriptorPoolSize));
         // Map each DescriptorSetType to the appropriate backend VkDescriptorType
-        poolSize.type = DsTypeEnumToVkDs(requestedDescCounts[i].type);
+        poolSize.type = DsTypeEnumToVkDs(requestedDescCounts[i].fType);
         // Create a pool large enough to accommodate the maximum possible number of descriptor sets
-        poolSize.descriptorCount = requestedDescCounts[i].count * kMaxNumSets;
+        poolSize.descriptorCount = requestedDescCounts[i].fCount * kMaxNumSets;
     }
-
-    VkDescriptorPoolInlineUniformBlockCreateInfoEXT inlineUniformInfo;
-    inlineUniformInfo.sType =
-            VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_INLINE_UNIFORM_BLOCK_CREATE_INFO_EXT;
-    inlineUniformInfo.pNext = nullptr;
 
     VkDescriptorPoolCreateInfo createInfo;
     memset(&createInfo, 0, sizeof(VkDescriptorPoolCreateInfo));
     createInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-    createInfo.pNext = &inlineUniformInfo;
+    createInfo.pNext = nullptr;
     createInfo.flags = 0;
     createInfo.maxSets = kMaxNumSets;
     createInfo.poolSizeCount = requestedDescCounts.size();
@@ -61,13 +56,15 @@ sk_sp<VulkanDescriptorPool> VulkanDescriptorPool::Make(const VulkanSharedContext
 
     VkDescriptorPool pool;
     VkResult result;
-    VULKAN_CALL_RESULT(context->interface(),
+    VULKAN_CALL_RESULT(context,
                        result,
                        CreateDescriptorPool(context->device(),
-                       &createInfo,
-                       /*const VkAllocationCallbacks*=*/nullptr,
-                       &pool));
+                                            &createInfo,
+                                            /*const VkAllocationCallbacks*=*/nullptr,
+                                            &pool));
     if (result != VK_SUCCESS) {
+        VULKAN_CALL(context->interface(),
+                    DestroyDescriptorSetLayout(context->device(), layout, nullptr));
         return nullptr;
     }
     return sk_sp<VulkanDescriptorPool>(new VulkanDescriptorPool(context, pool, layout));

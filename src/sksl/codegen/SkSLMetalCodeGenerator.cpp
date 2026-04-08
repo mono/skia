@@ -4,7 +4,6 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
-
 #include "src/sksl/codegen/SkSLMetalCodeGenerator.h"
 
 #include "include/core/SkSpan.h"
@@ -13,10 +12,13 @@
 #include "include/private/base/SkTo.h"
 #include "src/base/SkEnumBitMask.h"
 #include "src/base/SkScopeExit.h"
+#include "src/core/SkTHash.h"
+#include "src/core/SkTraceEvent.h"
 #include "src/sksl/SkSLAnalysis.h"
 #include "src/sksl/SkSLBuiltinTypes.h"
 #include "src/sksl/SkSLCompiler.h"
 #include "src/sksl/SkSLContext.h"
+#include "src/sksl/SkSLDefines.h"
 #include "src/sksl/SkSLErrorReporter.h"
 #include "src/sksl/SkSLIntrinsicList.h"
 #include "src/sksl/SkSLMemoryLayout.h"
@@ -25,8 +27,11 @@
 #include "src/sksl/SkSLPosition.h"
 #include "src/sksl/SkSLProgramSettings.h"
 #include "src/sksl/SkSLString.h"
+#include "src/sksl/SkSLStringStream.h"
 #include "src/sksl/SkSLUtil.h"
 #include "src/sksl/analysis/SkSLProgramVisitor.h"
+#include "src/sksl/codegen/SkSLCodeGenTypes.h"
+#include "src/sksl/codegen/SkSLCodeGenerator.h"
 #include "src/sksl/ir/SkSLBinaryExpression.h"
 #include "src/sksl/ir/SkSLBlock.h"
 #include "src/sksl/ir/SkSLConstructor.h"
@@ -43,6 +48,7 @@
 #include "src/sksl/ir/SkSLFunctionDeclaration.h"
 #include "src/sksl/ir/SkSLFunctionDefinition.h"
 #include "src/sksl/ir/SkSLFunctionPrototype.h"
+#include "src/sksl/ir/SkSLIRHelpers.h"
 #include "src/sksl/ir/SkSLIRNode.h"
 #include "src/sksl/ir/SkSLIfStatement.h"
 #include "src/sksl/ir/SkSLIndexExpression.h"
@@ -71,15 +77,300 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <cstdint>
 #include <functional>
+#include <initializer_list>
 #include <limits>
 #include <memory>
+#include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
 using namespace skia_private;
 
 namespace SkSL {
+
+class MetalCodeGenerator : public CodeGenerator {
+public:
+    MetalCodeGenerator(const Context* context,
+                       const ShaderCaps* caps,
+                       const Program* program,
+                       OutputStream* out,
+                       PrettyPrint pp)
+            : CodeGenerator(context, caps, program, out)
+            , fReservedWords({"atan2", "rsqrt", "rint", "dfdx", "dfdy", "vertex", "fragment"})
+            , fLineEnding("\n")
+            , fPrettyPrint(pp) {}
+
+    bool generateCode() override;
+
+protected:
+    using Precedence = OperatorPrecedence;
+
+    using Requirements =  int;
+    static constexpr Requirements kNo_Requirements          = 0;
+    static constexpr Requirements kInputs_Requirement       = 1 << 0;
+    static constexpr Requirements kOutputs_Requirement      = 1 << 1;
+    static constexpr Requirements kUniforms_Requirement     = 1 << 2;
+    static constexpr Requirements kGlobals_Requirement      = 1 << 3;
+    static constexpr Requirements kFragCoord_Requirement    = 1 << 4;
+    static constexpr Requirements kSampleMaskIn_Requirement = 1 << 5;
+    static constexpr Requirements kVertexID_Requirement     = 1 << 6;
+    static constexpr Requirements kInstanceID_Requirement   = 1 << 7;
+    static constexpr Requirements kThreadgroups_Requirement = 1 << 8;
+
+    class GlobalStructVisitor;
+    void visitGlobalStruct(GlobalStructVisitor* visitor);
+
+    class ThreadgroupStructVisitor;
+    void visitThreadgroupStruct(ThreadgroupStructVisitor* visitor);
+
+    void write(std::string_view s);
+
+    void writeLine(std::string_view s = std::string_view());
+
+    void finishLine();
+
+    void writeHeader();
+
+    void writeSampler2DPolyfill();
+
+    void writeUniformStruct();
+
+    void writeInterpolatedAttributes(const Variable& var);
+
+    void writeInputStruct();
+
+    void writeOutputStruct();
+
+    void writeInterfaceBlocks();
+
+    void writeStructDefinitions();
+
+    void writeConstantVariables();
+
+    void writeFields(SkSpan<const Field> fields, Position pos);
+
+    int size(const Type* type, bool isPacked) const;
+
+    int alignment(const Type* type, bool isPacked) const;
+
+    void writeGlobalStruct();
+
+    void writeGlobalInit();
+
+    void writeThreadgroupStruct();
+
+    void writeThreadgroupInit();
+
+    void writePrecisionModifier();
+
+    std::string typeName(const Type& type);
+
+    void writeStructDefinition(const StructDefinition& s);
+
+    void writeType(const Type& type);
+
+    void writeExtension(const Extension& ext);
+
+    void writeInterfaceBlock(const InterfaceBlock& intf);
+
+    void writeFunctionRequirementParams(const FunctionDeclaration& f,
+                                        const char*& separator);
+
+    void writeFunctionRequirementArgs(const FunctionDeclaration& f, const char*& separator);
+
+    bool writeFunctionDeclaration(const FunctionDeclaration& f);
+
+    void writeFunction(const FunctionDefinition& f);
+
+    void writeFunctionPrototype(const FunctionPrototype& f);
+
+    void writeLayout(const Layout& layout);
+
+    void writeModifiers(ModifierFlags flags);
+
+    void writeVarInitializer(const Variable& var, const Expression& value);
+
+    void writeName(std::string_view name);
+
+    void writeVarDeclaration(const VarDeclaration& decl);
+
+    void writeFragCoord();
+
+    void writeVariableReference(const VariableReference& ref);
+
+    void writeExpression(const Expression& expr, Precedence parentPrecedence);
+
+    void writeMinAbsHack(Expression& absExpr, Expression& otherExpr);
+
+    std::string getInversePolyfill(const ExpressionArray& arguments);
+
+    std::string getBitcastIntrinsic(const Type& outType);
+
+    std::string getTempVariable(const Type& varType);
+
+    void writeFunctionCall(const FunctionCall& c);
+
+    bool matrixConstructHelperIsNeeded(const ConstructorCompound& c);
+    std::string getMatrixConstructHelper(const AnyConstructor& c);
+    void assembleMatrixFromMatrix(const Type& sourceMatrix, int columns, int rows);
+    void assembleMatrixFromExpressions(const AnyConstructor& ctor, int columns, int rows);
+
+    void writeMatrixCompMult();
+
+    void writeOuterProduct();
+
+    void writeMatrixTimesEqualHelper(const Type& left, const Type& right, const Type& result);
+
+    void writeMatrixDivisionHelpers(const Type& type);
+
+    void writeMatrixEqualityHelpers(const Type& left, const Type& right);
+
+    std::string getVectorFromMat2x2ConstructorHelper(const Type& matrixType);
+
+    void writeArrayEqualityHelpers(const Type& type);
+
+    void writeStructEqualityHelpers(const Type& type);
+
+    void writeEqualityHelpers(const Type& leftType, const Type& rightType);
+
+    void writeArgumentList(const ExpressionArray& arguments);
+
+    void writeSimpleIntrinsic(const FunctionCall& c);
+
+    bool writeIntrinsicCall(const FunctionCall& c, IntrinsicKind kind);
+
+    void writeConstructorCompound(const ConstructorCompound& c, Precedence parentPrecedence);
+
+    void writeConstructorCompoundVector(const ConstructorCompound& c, Precedence parentPrecedence);
+
+    void writeConstructorCompoundMatrix(const ConstructorCompound& c, Precedence parentPrecedence);
+
+    void writeConstructorMatrixResize(const ConstructorMatrixResize& c,
+                                      Precedence parentPrecedence);
+
+    void writeAnyConstructor(const AnyConstructor& c,
+                             const char* leftBracket,
+                             const char* rightBracket,
+                             Precedence parentPrecedence);
+
+    void writeCastConstructor(const AnyConstructor& c,
+                              const char* leftBracket,
+                              const char* rightBracket,
+                              Precedence parentPrecedence);
+
+    void writeConstructorArrayCast(const ConstructorArrayCast& c, Precedence parentPrecedence);
+
+    void writeFieldAccess(const FieldAccess& f);
+
+    void writeSwizzle(const Swizzle& swizzle);
+
+    // Returns `floatCxR(1.0, 1.0, 1.0, 1.0, ...)`.
+    std::string splatMatrixOf1(const Type& type);
+
+    // Splats a scalar expression across a matrix of arbitrary size.
+    void writeNumberAsMatrix(const Expression& expr, const Type& matrixType);
+
+    void writeBinaryExpressionElement(const Expression& expr,
+                                      Operator op,
+                                      const Expression& other,
+                                      Precedence precedence);
+
+    void writeBinaryExpression(const BinaryExpression& b, Precedence parentPrecedence);
+
+    void writeTernaryExpression(const TernaryExpression& t, Precedence parentPrecedence);
+
+    void writeIndexExpression(const IndexExpression& expr);
+
+    void writeIndexInnerExpression(const Expression& expr);
+
+    void writePrefixExpression(const PrefixExpression& p, Precedence parentPrecedence);
+
+    void writePostfixExpression(const PostfixExpression& p, Precedence parentPrecedence);
+
+    void writeLiteral(const Literal& f);
+
+    void writeStatement(const Statement& s);
+
+    void writeStatements(const StatementArray& statements);
+
+    void writeBlock(const Block& b);
+
+    void writeIfStatement(const IfStatement& stmt);
+
+    void writeForStatement(const ForStatement& f);
+
+    void writeDoStatement(const DoStatement& d);
+
+    void writeExpressionStatement(const ExpressionStatement& s);
+
+    void writeSwitchStatement(const SwitchStatement& s);
+
+    void writeReturnStatementFromMain();
+
+    void writeReturnStatement(const ReturnStatement& r);
+
+    void writeProgramElement(const ProgramElement& e);
+
+    Requirements requirements(const FunctionDeclaration& f);
+
+    Requirements requirements(const Statement* s);
+
+    // For compute shader main functions, writes and initializes the _in and _out structs (the
+    // instances, not the types themselves)
+    void writeComputeMainInputs();
+
+    int getUniformBinding(const Layout& layout);
+
+    int getUniformSet(const Layout& layout);
+
+    void writeWithIndexSubstitution(const std::function<void()>& fn);
+
+    skia_private::THashSet<std::string_view> fReservedWords;
+    skia_private::THashMap<const Type*, std::string> fInterfaceBlockNameMap;
+    int fAnonInterfaceCount = 0;
+    int fPaddingCount = 0;
+    const char* fLineEnding;
+    std::string fFunctionHeader;
+    StringStream fExtraFunctions;
+    StringStream fExtraFunctionPrototypes;
+    int fVarCount = 0;
+    int fIndentation = 0;
+    bool fAtLineStart = false;
+    // true if we have run into usages of dFdx / dFdy
+    bool fFoundDerivatives = false;
+    skia_private::THashMap<const FunctionDeclaration*, Requirements> fRequirements;
+    skia_private::THashSet<std::string> fHelpers;
+    int fUniformBuffer = -1;
+    std::string fRTFlipName;
+    const FunctionDeclaration* fCurrentFunction = nullptr;
+    int fSwizzleHelperCount = 0;
+    static constexpr char kTextureSuffix[] = "_Tex";
+    static constexpr char kSamplerSuffix[] = "_Smplr";
+
+    // If we might use an index expression more than once, we need to capture the result in a
+    // temporary variable to avoid double-evaluation. This should generally only occur when emitting
+    // a function call, since we need to polyfill GLSL-style out-parameter support. (skia:14130)
+    // The map holds <index-expression, temp-variable name>.
+    using IndexSubstitutionMap = skia_private::THashMap<const Expression*, std::string>;
+
+    // When fIndexSubstitution is null (usually), index-substitution does not need to be performed.
+    struct IndexSubstitutionData {
+        IndexSubstitutionMap fMap;
+        StringStream fMainStream;
+        StringStream fPrefixStream;
+        bool fCreateSubstitutes = true;
+    };
+    std::unique_ptr<IndexSubstitutionData> fIndexSubstitutionData;
+    PrettyPrint fPrettyPrint;
+
+    // Workaround/polyfill flags
+    bool fWrittenInverse2 = false, fWrittenInverse3 = false, fWrittenInverse4 = false;
+    bool fWrittenMatrixCompMult = false;
+    bool fWrittenOuterProduct = false;
+};
 
 static const char* operator_name(Operator op) {
     switch (op.kind()) {
@@ -108,7 +399,7 @@ void MetalCodeGenerator::write(std::string_view s) {
     if (s.empty()) {
         return;
     }
-    if (fAtLineStart) {
+    if (fAtLineStart && fPrettyPrint == PrettyPrint::kYes) {
         for (int i = 0; i < fIndentation; i++) {
             fOut->writeText("    ");
         }
@@ -137,12 +428,15 @@ std::string MetalCodeGenerator::typeName(const Type& raw) {
     // we need to know the modifiers for textures
     const Type& type = raw.resolve().scalarTypeForLiteral();
     switch (type.typeKind()) {
-        case Type::TypeKind::kArray:
-            SkASSERT(!type.isUnsizedArray());
-            SkASSERTF(type.columns() > 0, "invalid array size: %s", type.description().c_str());
-            return String::printf("array<%s, %d>",
-                                  this->typeName(type.componentType()).c_str(), type.columns());
-
+        case Type::TypeKind::kArray: {
+            std::string typeName = this->typeName(type.componentType());
+            if (type.isUnsizedArray()) {
+                return String::printf("const device %s*", typeName.c_str());
+            } else {
+                SkASSERTF(type.columns() > 0, "invalid array size: %s", type.description().c_str());
+                return String::printf("array<%s, %d>", typeName.c_str(), type.columns());
+            }
+        }
         case Type::TypeKind::kVector:
             return this->typeName(type.componentType()) + std::to_string(type.columns());
 
@@ -235,7 +529,7 @@ void MetalCodeGenerator::writeExpression(const Expression& expr, Precedence pare
             this->writePostfixExpression(expr.as<PostfixExpression>(), parentPrecedence);
             break;
         case Expression::Kind::kSetting:
-            this->writeExpression(*expr.as<Setting>().toLiteral(fContext), parentPrecedence);
+            this->writeExpression(*expr.as<Setting>().toLiteral(fCaps), parentPrecedence);
             break;
         case Expression::Kind::kSwizzle:
             this->writeSwizzle(expr.as<Swizzle>());
@@ -624,6 +918,16 @@ bool MetalCodeGenerator::writeIntrinsicCall(const FunctionCall& c, IntrinsicKind
             this->write(", " + tmpY + " = ");
             this->writeExpression(*arguments[1], Precedence::kSequence);
             this->write(", " + tmpX + " - " + tmpY + " * floor(" + tmpX + " / " + tmpY + "))");
+            return true;
+        }
+        case k_pow_IntrinsicKind: {
+            // The Metal equivalent to GLSL's pow() is powr(). Metal's pow() allows negative base
+            // values, which is presumably more expensive to compute.
+            this->write("powr(");
+            this->writeExpression(*arguments[0], Precedence::kSequence);
+            this->write(", ");
+            this->writeExpression(*arguments[1], Precedence::kSequence);
+            this->write(")");
             return true;
         }
         // GLSL declares scalar versions of most geometric intrinsics, but these don't exist in MSL
@@ -1028,7 +1332,7 @@ bool MetalCodeGenerator::writeIntrinsicCall(const FunctionCall& c, IntrinsicKind
 
 // Assembles a matrix of type floatRxC by resizing another matrix named `x0`.
 // Cells that don't exist in the source matrix will be populated with identity-matrix values.
-void MetalCodeGenerator::assembleMatrixFromMatrix(const Type& sourceMatrix, int rows, int columns) {
+void MetalCodeGenerator::assembleMatrixFromMatrix(const Type& sourceMatrix, int columns, int rows) {
     SkASSERT(rows <= 4);
     SkASSERT(columns <= 4);
 
@@ -1069,7 +1373,8 @@ void MetalCodeGenerator::assembleMatrixFromMatrix(const Type& sourceMatrix, int 
 // Assembles a matrix of type floatCxR by concatenating an arbitrary mix of values, named `x0`,
 // `x1`, etc. An error is written if the expression list don't contain exactly C*R scalars.
 void MetalCodeGenerator::assembleMatrixFromExpressions(const AnyConstructor& ctor,
-                                                       int columns, int rows) {
+                                                       int columns,
+                                                       int rows) {
     SkASSERT(rows <= 4);
     SkASSERT(columns <= 4);
 
@@ -1179,7 +1484,7 @@ std::string MetalCodeGenerator::getMatrixConstructHelper(const AnyConstructor& c
         fExtraFunctions.printf(") {\n    return %s(", typeName.c_str());
 
         if (args.size() == 1 && args.front()->type().isMatrix()) {
-            this->assembleMatrixFromMatrix(args.front()->type(), rows, columns);
+            this->assembleMatrixFromMatrix(args.front()->type(), columns, rows);
         } else {
             this->assembleMatrixFromExpressions(c, columns, rows);
         }
@@ -1348,8 +1653,7 @@ void MetalCodeGenerator::writeConstructorCompoundMatrix(const ConstructorCompoun
     // returned false, we know that none of our scalars/vectors "wrap" across across a column, so we
     // can group our inputs up and synthesize a constructor for each column.
     const Type& matrixType = c.type();
-    const Type& columnType = matrixType.componentType().toCompound(
-            fContext, /*columns=*/matrixType.rows(), /*rows=*/1);
+    const Type& columnType = matrixType.columnType(fContext);
 
     this->writeType(matrixType);
     this->write("(");
@@ -1470,7 +1774,11 @@ void MetalCodeGenerator::writeVariableReference(const VariableReference& ref) {
             this->write("_out.sk_SampleMask");
             break;
         case SK_SECONDARYFRAGCOLOR_BUILTIN:
-            this->write("_out.sk_SecondaryFragColor");
+            if (fCaps.fDualSourceBlendingSupport) {
+                this->write("_out.sk_SecondaryFragColor");
+            } else {
+                fContext.fErrors->error(ref.position(), "'sk_SecondaryFragColor' not supported");
+            }
             break;
         case SK_FRAGCOORD_BUILTIN:
             this->writeFragCoord();
@@ -1494,7 +1802,11 @@ void MetalCodeGenerator::writeVariableReference(const VariableReference& ref) {
             }
             break;
         case SK_LASTFRAGCOLOR_BUILTIN:
-            this->write(fContext.fCaps->fFBFetchColorName);
+            if (fCaps.fFBFetchColorName) {
+                this->write(fCaps.fFBFetchColorName);
+            } else {
+                fContext.fErrors->error(ref.position(), "'sk_LastFragColor' not supported");
+            }
             break;
         default:
             const Variable& var = *ref.variable();
@@ -1796,23 +2108,26 @@ void MetalCodeGenerator::writeEqualityHelpers(const Type& leftType, const Type& 
     }
 }
 
+std::string MetalCodeGenerator::splatMatrixOf1(const Type& type) {
+    std::string str = this->typeName(type) + '(';
+
+    auto separator = SkSL::String::Separator();
+    for (int index = type.slotCount(); index--;) {
+        str += separator();
+        str += "1.0";
+    }
+
+    return str + ')';
+}
+
 void MetalCodeGenerator::writeNumberAsMatrix(const Expression& expr, const Type& matrixType) {
     SkASSERT(expr.type().isNumber());
     SkASSERT(matrixType.isMatrix());
 
     // Componentwise multiply the scalar against a matrix of the desired size which contains all 1s.
     this->write("(");
-    this->writeType(matrixType);
-    this->write("(");
-
-    const char* separator = "";
-    for (int index = matrixType.slotCount(); index--;) {
-        this->write(separator);
-        this->write("1.0");
-        separator = ", ";
-    }
-
-    this->write(") * ");
+    this->write(this->splatMatrixOf1(matrixType));
+    this->write(" * ");
     this->writeExpression(expr, Precedence::kMultiplicative);
     this->write(")");
 }
@@ -1927,28 +2242,48 @@ void MetalCodeGenerator::writeTernaryExpression(const TernaryExpression& t,
 
 void MetalCodeGenerator::writePrefixExpression(const PrefixExpression& p,
                                                Precedence parentPrecedence) {
-    // According to the MSL specification, the arithmetic unary operators (+ and –) do not act
-    // upon matrix type operands. We treat the unary "+" as a no-op for all operands.
     const Operator op = p.getOperator();
-    if (op.kind() == Operator::Kind::PLUS) {
-        this->writeExpression(*p.operand(), Precedence::kPrefix);
-        return;
-    }
+    switch (op.kind()) {
+        case Operator::Kind::PLUS:
+            // According to the MSL specification, the arithmetic unary operators (+ and –) do not
+            // act upon matrix-typed operands. We treat the unary "+" as a no-op for all operands.
+            this->writeExpression(*p.operand(), Precedence::kPrefix);
+            return;
 
-    if (op.kind() == Operator::Kind::MINUS && p.operand()->type().isMatrix()) {
-        // Transform the unary "-" on a matrix type to a multiplication by -1.
-        this->write(p.type().componentType().highPrecision() ? "(-1.0 * "
-                                                             : "(-1.0h * ");
-        this->writeExpression(*p.operand(), Precedence::kMultiplicative);
-        this->write(")");
-        return;
+        case Operator::Kind::MINUS:
+            // Transform the unary `-` on a matrix type to a multiplication by -1.
+            if (p.operand()->type().isMatrix()) {
+                this->write(p.type().componentType().highPrecision() ? "(-1.0 * "
+                                                                     : "(-1.0h * ");
+                this->writeExpression(*p.operand(), Precedence::kMultiplicative);
+                this->write(")");
+                return;
+            }
+            break;
+
+        case Operator::Kind::PLUSPLUS:
+        case Operator::Kind::MINUSMINUS:
+            if (p.operand()->type().isMatrix()) {
+                // Transform `++x` or `--x` on a matrix type to `mat += T(1.0, ...)` or
+                // `mat -= T(1.0, ...)`.
+                this->write("(");
+                this->writeExpression(*p.operand(), Precedence::kAssignment);
+                this->write(op.kind() == Operator::Kind::PLUSPLUS ? " += " : " -= ");
+                this->write(this->splatMatrixOf1(p.operand()->type()));
+                this->write(")");
+                return;
+            }
+            break;
+
+        default:
+            break;
     }
 
     if (Precedence::kPrefix >= parentPrecedence) {
         this->write("(");
     }
 
-    this->write(p.getOperator().tightOperatorName());
+    this->write(op.tightOperatorName());
     this->writeExpression(*p.operand(), Precedence::kPrefix);
 
     if (Precedence::kPrefix >= parentPrecedence) {
@@ -1958,11 +2293,39 @@ void MetalCodeGenerator::writePrefixExpression(const PrefixExpression& p,
 
 void MetalCodeGenerator::writePostfixExpression(const PostfixExpression& p,
                                                 Precedence parentPrecedence) {
+    const Operator op = p.getOperator();
+    switch (op.kind()) {
+        case Operator::Kind::PLUSPLUS:
+        case Operator::Kind::MINUSMINUS:
+            if (p.operand()->type().isMatrix()) {
+                // We need to transform `x++` or `x--` into `+=` and `-=` on a matrix.
+                // Unfortunately, that requires making a temporary copy of the old value and
+                // emitting a sequence expression: `((temp = mat), (mat += T(1.0, ...)), temp)`.
+                std::string tempMatrix = this->getTempVariable(p.operand()->type());
+                this->write("((");
+                this->write(tempMatrix);
+                this->write(" = ");
+                this->writeExpression(*p.operand(), Precedence::kAssignment);
+                this->write("), (");
+                this->writeExpression(*p.operand(), Precedence::kAssignment);
+                this->write(op.kind() == Operator::Kind::PLUSPLUS ? " += " : " -= ");
+                this->write(this->splatMatrixOf1(p.operand()->type()));
+                this->write("), ");
+                this->write(tempMatrix);
+                this->write(")");
+                return;
+            }
+            break;
+
+        default:
+            break;
+    }
+
     if (Precedence::kPostfix >= parentPrecedence) {
         this->write("(");
     }
     this->writeExpression(*p.operand(), Precedence::kPostfix);
-    this->write(p.getOperator().tightOperatorName());
+    this->write(op.tightOperatorName());
     if (Precedence::kPostfix >= parentPrecedence) {
         this->write(")");
     }
@@ -2104,7 +2467,7 @@ int MetalCodeGenerator::getUniformSet(const Layout& layout) {
 }
 
 bool MetalCodeGenerator::writeFunctionDeclaration(const FunctionDeclaration& f) {
-    fRTFlipName = fProgram.fInterface.fUseFlipRTUniform
+    fRTFlipName = (fProgram.fInterface.fRTFlipUniform != Program::Interface::kRTFlip_None)
                           ? "_globals._anonInterface0->" SKSL_RTFLIP_NAME
                           : "";
     const char* separator = "";
@@ -2219,7 +2582,8 @@ bool MetalCodeGenerator::writeFunctionDeclaration(const FunctionDeclaration& f) 
             }
         }
         if (ProgramConfig::IsFragment(fProgram.fConfig->fKind)) {
-            if (fProgram.fInterface.fUseFlipRTUniform && fInterfaceBlockNameMap.empty()) {
+            if (fProgram.fInterface.fRTFlipUniform != Program::Interface::kRTFlip_None &&
+                fInterfaceBlockNameMap.empty()) {
                 this->write(separator);
                 this->write("constant sksl_synthetic_uniforms& _anonInterface0 [[buffer(1)]]");
                 fRTFlipName = "_anonInterface0." SKSL_RTFLIP_NAME;
@@ -2230,8 +2594,8 @@ bool MetalCodeGenerator::writeFunctionDeclaration(const FunctionDeclaration& f) 
             if (this->requirements(f) & kSampleMaskIn_Requirement) {
                 this->write(", uint sk_SampleMaskIn [[sample_mask]]");
             }
-            if (fProgram.fInterface.fUseLastFragColor) {
-                this->write(", half4 " + std::string(fContext.fCaps->fFBFetchColorName) +
+            if (fProgram.fInterface.fUseLastFragColor && fCaps.fFBFetchColorName) {
+                this->write(", half4 " + std::string(fCaps.fFBFetchColorName) +
                             " [[color(0)]]\n");
             }
             separator = ", ";
@@ -2389,12 +2753,12 @@ void MetalCodeGenerator::writeInterfaceBlock(const InterfaceBlock& intf) {
     this->writeLine(" {");
     fIndentation++;
     this->writeFields(structType->fields(), structType->fPosition);
-    if (fProgram.fInterface.fUseFlipRTUniform) {
+    if (fProgram.fInterface.fRTFlipUniform != Program::Interface::kRTFlip_None) {
         this->writeLine("float2 " SKSL_RTFLIP_NAME ";");
     }
     fIndentation--;
     this->write("}");
-    if (intf.instanceName().size()) {
+    if (!intf.instanceName().empty()) {
         this->write(" ");
         this->write(intf.instanceName());
         if (intf.arraySize() > 0) {
@@ -2757,6 +3121,23 @@ void MetalCodeGenerator::writeUniformStruct() {
     }
 }
 
+void MetalCodeGenerator::writeInterpolatedAttributes(const Variable& var) {
+    SkASSERT((is_output(var) && ProgramConfig::IsVertex(fProgram.fConfig->fKind)) ||
+             (is_input(var) && ProgramConfig::IsFragment(fProgram.fConfig->fKind)));
+    // Always include the location
+    this->write(" [[user(locn");
+    this->write(std::to_string(var.layout().fLocation));
+    this->write(")");
+
+    if (var.modifierFlags().isFlat()) {
+        this->write(" flat");
+    } else if (var.modifierFlags().isNoPerspective()) {
+        this->write(" center_no_perspective");
+    } // else default behavior is center_perspective
+
+    this->write("]]");
+}
+
 void MetalCodeGenerator::writeInputStruct() {
     this->write("struct Inputs {\n");
     for (const ProgramElement* e : fProgram.elements()) {
@@ -2781,8 +3162,9 @@ void MetalCodeGenerator::writeInputStruct() {
                         this->write("  [[attribute(" + std::to_string(var.layout().fLocation) +
                                     ")]]");
                     } else if (ProgramConfig::IsFragment(fProgram.fConfig->fKind)) {
-                        this->write("  [[user(locn" + std::to_string(var.layout().fLocation) +
-                                    ")]]");
+                        // Write attributes for the fragment input that are consistent with
+                        // what's annotated on the vertex output.
+                        this->writeInterpolatedAttributes(var);
                     }
                 }
                 this->write(";\n");
@@ -2831,7 +3213,9 @@ void MetalCodeGenerator::writeOutputStruct() {
                     fContext.fErrors->error(var.fPosition,
                                             "Metal out variables must have 'layout(location=...)'");
                 } else if (ProgramConfig::IsVertex(fProgram.fConfig->fKind)) {
-                    this->write(" [[user(locn" + std::to_string(location) + ")]]");
+                    // Write attributes for the vertex output that are consistent with what's
+                    // annotated on the fragment input.
+                    this->writeInterpolatedAttributes(var);
                 } else if (ProgramConfig::IsFragment(fProgram.fConfig->fKind)) {
                     this->write(" [[color(" + std::to_string(location) + ")");
                     int colorIndex = var.layout().fIndex;
@@ -2858,7 +3242,8 @@ void MetalCodeGenerator::writeInterfaceBlocks() {
             wroteInterfaceBlock = true;
         }
     }
-    if (!wroteInterfaceBlock && fProgram.fInterface.fUseFlipRTUniform) {
+    if (!wroteInterfaceBlock &&
+        fProgram.fInterface.fRTFlipUniform != Program::Interface::kRTFlip_None) {
         this->writeLine("struct sksl_synthetic_uniforms {");
         this->writeLine("    float2 " SKSL_RTFLIP_NAME ";");
         this->writeLine("};");
@@ -3204,12 +3589,11 @@ MetalCodeGenerator::Requirements MetalCodeGenerator::requirements(const Statemen
                 default:
                     break;
             }
-            return INHERITED::visitExpression(e);
+            return ProgramVisitor::visitExpression(e);
         }
 
         MetalCodeGenerator* fCodeGen;
         Requirements fRequirements = kNo_Requirements;
-        using INHERITED = ProgramVisitor;
     };
 
     RequirementsVisitor visitor;
@@ -3234,6 +3618,7 @@ MetalCodeGenerator::Requirements MetalCodeGenerator::requirements(const Function
                 }
             }
         }
+
         // We never found a definition for this declared function, but it's legal to prototype a
         // function without ever giving a definition, as long as you don't call it.
         return kNo_Requirements;
@@ -3279,6 +3664,36 @@ bool MetalCodeGenerator::generateCode() {
     write_stringstream(fExtraFunctions, *fOut);
     write_stringstream(body, *fOut);
     return fContext.fErrors->errorCount() == 0;
+}
+
+bool ToMetal(Program& program, const ShaderCaps* caps, OutputStream& out, PrettyPrint pp) {
+    TRACE_EVENT0("skia.shaders", "SkSL::ToMetal");
+    SkASSERT(caps != nullptr);
+
+    program.fContext->fErrors->setSource(*program.fSource);
+    MetalCodeGenerator cg(program.fContext.get(), caps, &program, &out, pp);
+    bool result = cg.generateCode();
+    program.fContext->fErrors->setSource(std::string_view());
+
+    return result;
+}
+
+bool ToMetal(Program& program, const ShaderCaps* caps, OutputStream& out) {
+#if defined(SK_DEBUG)
+    constexpr PrettyPrint defaultPrintOpts = PrettyPrint::kYes;
+#else
+    constexpr PrettyPrint defaultPrintOpts = PrettyPrint::kNo;
+#endif
+    return ToMetal(program, caps, out, defaultPrintOpts);
+}
+
+bool ToMetal(Program& program, const ShaderCaps* caps, std::string* out) {
+    StringStream buffer;
+    if (!ToMetal(program, caps, buffer)) {
+        return false;
+    }
+    *out = buffer.str();
+    return true;
 }
 
 }  // namespace SkSL

@@ -7,21 +7,29 @@
 
 #include "src/gpu/graphite/dawn/DawnSharedContext.h"
 
+#include "include/gpu/graphite/Context.h"
 #include "include/gpu/graphite/ContextOptions.h"
 #include "include/gpu/graphite/dawn/DawnBackendContext.h"
 #include "src/gpu/graphite/Log.h"
 #include "src/gpu/graphite/dawn/DawnResourceProvider.h"
 
+#include "webgpu/webgpu_cpp.h"  // NO_G3_REWRITE
+
 namespace skgpu::graphite {
 namespace {
 
 wgpu::ShaderModule CreateNoopFragment(const wgpu::Device& device) {
+#ifdef WGPU_BREAKING_CHANGE_DROP_DESCRIPTOR
+    wgpu::ShaderSourceWGSL wgslDesc;
+#else
     wgpu::ShaderModuleWGSLDescriptor wgslDesc;
+#endif
     wgslDesc.code =
             "@fragment\n"
             "fn main() {}\n";
     wgpu::ShaderModuleDescriptor smDesc;
     smDesc.nextInChain = &wgslDesc;
+    smDesc.label = "no-op";
     auto fsModule = device.CreateShaderModule(&smDesc);
     return fsModule;
 }
@@ -39,7 +47,7 @@ sk_sp<SharedContext> DawnSharedContext::Make(const DawnBackendContext& backendCo
         return {};
     }
 
-    auto caps = std::make_unique<const DawnCaps>(backendContext.fDevice, options);
+    auto caps = std::make_unique<const DawnCaps>(backendContext, options);
 
     return sk_sp<SharedContext>(new DawnSharedContext(backendContext,
                                                       std::move(caps),
@@ -50,8 +58,10 @@ DawnSharedContext::DawnSharedContext(const DawnBackendContext& backendContext,
                                      std::unique_ptr<const DawnCaps> caps,
                                      wgpu::ShaderModule noopFragment)
         : skgpu::graphite::SharedContext(std::move(caps), BackendApi::kDawn)
+        , fInstance(backendContext.fInstance)
         , fDevice(backendContext.fDevice)
         , fQueue(backendContext.fQueue)
+        , fTick(backendContext.fTick)
         , fNoopFragment(std::move(noopFragment)) {}
 
 DawnSharedContext::~DawnSharedContext() {
@@ -62,11 +72,19 @@ DawnSharedContext::~DawnSharedContext() {
 std::unique_ptr<ResourceProvider> DawnSharedContext::makeResourceProvider(
         SingleOwner* singleOwner,
         uint32_t recorderID,
-        size_t resourceBudget) {
+        size_t resourceBudget,
+        bool /* avoidBufferAlloc */) {
     return std::unique_ptr<ResourceProvider>(new DawnResourceProvider(this,
                                                                       singleOwner,
                                                                       recorderID,
                                                                       resourceBudget));
 }
+
+void DawnSharedContext::deviceTick(Context* context) {
+#if !defined(__EMSCRIPTEN__)
+    this->device().Tick();
+#endif
+    context->checkAsyncWorkCompletion();
+};
 
 } // namespace skgpu::graphite

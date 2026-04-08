@@ -9,71 +9,73 @@
 #include "include/core/SkFontMetrics.h"
 #include "include/core/SkFontMgr.h"
 #include "include/core/SkFontStyle.h"
-#include "include/core/SkString.h"
 #include "include/core/SkTypeface.h"
 #include "include/private/base/SkTFitsIn.h"
 #include "modules/skshaper/include/SkShaper.h"
-
-#ifdef SK_SHAPER_UNICODE_AVAILABLE
-#include "modules/skunicode/include/SkUnicode.h"
-#endif
 #include "src/base/SkUTF.h"
-#include "src/core/SkTextBlobPriv.h"
-
 #include <limits.h>
-#include <string.h>
+#include <algorithm>
+#include <cstring>
 #include <locale>
 #include <string>
 #include <utility>
 
-std::unique_ptr<SkShaper> SkShaper::Make(sk_sp<SkFontMgr> fontmgr) {
-#ifdef SK_SHAPER_HARFBUZZ_AVAILABLE
-    std::unique_ptr<SkShaper> shaper = SkShaper::MakeShaperDrivenWrapper(std::move(fontmgr));
+#if !defined(SK_DISABLE_LEGACY_SKSHAPER_FUNCTIONS)
+
+#if defined(SK_SHAPER_HARFBUZZ_AVAILABLE)
+#include "modules/skshaper/include/SkShaper_harfbuzz.h"
+#endif
+
+#if defined(SK_SHAPER_CORETEXT_AVAILABLE)
+#include "modules/skshaper/include/SkShaper_coretext.h"
+#endif
+
+#endif  // !defined(SK_DISABLE_LEGACY_SKSHAPER_FUNCTIONS)
+
+#if !defined(SK_DISABLE_LEGACY_SKSHAPER_FUNCTIONS)
+std::unique_ptr<SkShaper> SkShaper::Make(sk_sp<SkFontMgr> fallback) {
+#if defined(SK_SHAPER_HARFBUZZ_AVAILABLE) && defined(SK_SHAPER_UNICODE_AVAILABLE)
+    std::unique_ptr<SkShaper> shaper = MakeShapeThenWrap(std::move(fallback));
     if (shaper) {
         return shaper;
     }
 #elif defined(SK_SHAPER_CORETEXT_AVAILABLE)
-    if (auto shaper = SkShaper::MakeCoreText()) {
+    if (auto shaper = SkShapers::CT::CoreText()) {
         return shaper;
     }
 #endif
-    return SkShaper::MakePrimitive();
+    return SkShapers::Primitive::PrimitiveText();
 }
 
 void SkShaper::PurgeCaches() {
-#ifdef SK_SHAPER_HARFBUZZ_AVAILABLE
-    PurgeHarfBuzzCache();
+#if defined(SK_SHAPER_HARFBUZZ_AVAILABLE) && defined(SK_SHAPER_UNICODE_AVAILABLE)
+    SkShapers::HB::PurgeCaches();
 #endif
 }
 
 std::unique_ptr<SkShaper::BiDiRunIterator>
 SkShaper::MakeBiDiRunIterator(const char* utf8, size_t utf8Bytes, uint8_t bidiLevel) {
-#ifdef SK_SHAPER_UNICODE_AVAILABLE
-    if (const auto unicode = SkUnicode::Make()) {
-        std::unique_ptr<SkShaper::BiDiRunIterator> bidi =
-            SkShaper::MakeSkUnicodeBidiRunIterator(unicode.get(),
-                                                   utf8,
-                                                   utf8Bytes,
-                                                   bidiLevel);
-        if (bidi) {
-            return bidi;
-        }
-    }
+#if defined(SK_SHAPER_UNICODE_AVAILABLE)
+      std::unique_ptr<SkShaper::BiDiRunIterator> bidi = MakeIcuBiDiRunIterator(utf8, utf8Bytes, bidiLevel);
+      if (bidi) {
+          return bidi;
+      }
 #endif
     return std::make_unique<SkShaper::TrivialBiDiRunIterator>(bidiLevel, utf8Bytes);
 }
 
 std::unique_ptr<SkShaper::ScriptRunIterator>
 SkShaper::MakeScriptRunIterator(const char* utf8, size_t utf8Bytes, SkFourByteTag scriptTag) {
-#if defined(SK_SHAPER_HARFBUZZ_AVAILABLE)
+#if defined(SK_SHAPER_HARFBUZZ_AVAILABLE) && defined(SK_SHAPER_UNICODE_AVAILABLE)
     std::unique_ptr<SkShaper::ScriptRunIterator> script =
-        SkShaper::MakeSkUnicodeHbScriptRunIterator(utf8, utf8Bytes, scriptTag);
+            SkShapers::HB::ScriptRunIterator(utf8, utf8Bytes, scriptTag);
     if (script) {
         return script;
     }
 #endif
     return std::make_unique<SkShaper::TrivialScriptRunIterator>(scriptTag, utf8Bytes);
 }
+#endif  // !defined(SK_DISABLE_LEGACY_SKSHAPER_FUNCTIONS)
 
 SkShaper::SkShaper() {}
 SkShaper::~SkShaper() {}
@@ -99,13 +101,15 @@ public:
         , fRequestStyle(requestStyle)
         , fLanguage(lang)
     {
-        fFont.setTypeface(font.refTypefaceOrDefault());
+        // If fallback is not wanted, clients should use TrivialFontRunIterator.
+        SkASSERT(fFallbackMgr);
+        fFont.setTypeface(font.refTypeface());
         fFallbackFont.setTypeface(nullptr);
     }
     FontMgrRunIterator(const char* utf8, size_t utf8Bytes,
                        const SkFont& font, sk_sp<SkFontMgr> fallbackMgr)
         : FontMgrRunIterator(utf8, utf8Bytes, font, std::move(fallbackMgr),
-                             nullptr, font.refTypefaceOrDefault()->fontStyle(), nullptr)
+                             nullptr, font.getTypeface()->fontStyle(), nullptr)
     {}
 
     void consume() override {
@@ -193,7 +197,7 @@ SkShaper::MakeFontMgrRunIterator(const char* utf8, size_t utf8Bytes, const SkFon
                                  const SkShaper::LanguageRunIterator* language)
 {
     return std::make_unique<FontMgrRunIterator>(utf8, utf8Bytes, font, std::move(fallback),
-                                                  requestName, requestStyle, language);
+                                                requestName, requestStyle, language);
 }
 
 std::unique_ptr<SkShaper::LanguageRunIterator>

@@ -9,14 +9,15 @@
 
 #include "include/core/SkColorSpace.h"
 #include "include/core/SkTextureCompressionType.h"
-#include "include/gpu/GrBackendSurface.h"
-#include "include/gpu/d3d/GrD3DBackendContext.h"
+#include "include/gpu/ganesh/GrBackendSurface.h"
+#include "include/gpu/ganesh/d3d/GrD3DBackendContext.h"
 #include "src/base/SkRectMemcpy.h"
 #include "src/core/SkCompressedDataUtils.h"
 #include "src/core/SkMipmap.h"
 #include "src/gpu/ganesh/GrBackendUtils.h"
 #include "src/gpu/ganesh/GrDataUtils.h"
 #include "src/gpu/ganesh/GrDirectContextPriv.h"
+#include "src/gpu/ganesh/GrImageInfo.h"
 #include "src/gpu/ganesh/GrResourceProvider.h"
 #include "src/gpu/ganesh/GrTexture.h"
 #include "src/gpu/ganesh/GrThreadSafePipelineBuilder.h"
@@ -31,7 +32,7 @@
 #include "src/gpu/ganesh/d3d/GrD3DUtil.h"
 #include "src/sksl/SkSLCompiler.h"
 
-#if defined(GR_TEST_UTILS)
+#if defined(GPU_TEST_UTILS)
 #include <DXProgrammableCapture.h>
 #endif
 
@@ -86,9 +87,9 @@ GrD3DGpu::GrD3DGpu(GrDirectContext* direct, const GrContextOptions& contextOptio
         , fStagingBufferManager(this)
         , fConstantsRingBuffer(this, 128 * 1024, kConstantAlignment, GrGpuBufferType::kVertex)
         , fOutstandingCommandLists(sizeof(OutstandingCommandList), kDefaultOutstandingAllocCnt) {
-    this->initCapsAndCompiler(sk_make_sp<GrD3DCaps>(contextOptions,
-                                                    backendContext.fAdapter.get(),
-                                                    backendContext.fDevice.get()));
+    this->initCaps(sk_make_sp<GrD3DCaps>(contextOptions,
+                                         backendContext.fAdapter.get(),
+                                         backendContext.fDevice.get()));
 
     fCurrentDirectCommandList = fResourceProvider.findOrCreateDirectCommandList();
     SkASSERT(fCurrentDirectCommandList);
@@ -97,7 +98,7 @@ GrD3DGpu::GrD3DGpu(GrDirectContext* direct, const GrContextOptions& contextOptio
     GR_D3D_CALL_ERRCHECK(fDevice->CreateFence(fCurrentFenceValue, D3D12_FENCE_FLAG_NONE,
                                               IID_PPV_ARGS(&fFence)));
 
-#if defined(GR_TEST_UTILS)
+#if defined(GPU_TEST_UTILS)
     HRESULT getAnalysis = DXGIGetDebugInterface1(0, IID_PPV_ARGS(&fGraphicsAnalysis));
     if (FAILED(getAnalysis)) {
         fGraphicsAnalysis = nullptr;
@@ -164,11 +165,11 @@ bool GrD3DGpu::submitDirectCommandList(SyncQueue sync) {
     }
     fMipmapCPUDescriptors.clear();
 
-    GrD3DDirectCommandList::SubmitResult result = fCurrentDirectCommandList->submit(fQueue.get());
-    if (result == GrD3DDirectCommandList::SubmitResult::kFailure) {
+    GrD3DDirectCommandList::SubmitResult sResult = fCurrentDirectCommandList->submit(fQueue.get());
+    if (sResult == GrD3DDirectCommandList::SubmitResult::kFailure) {
         fCurrentDirectCommandList = fResourceProvider.findOrCreateDirectCommandList();
         return false;
-    } else if (result == GrD3DDirectCommandList::SubmitResult::kNoWork) {
+    } else if (sResult == GrD3DDirectCommandList::SubmitResult::kNoWork) {
         if (sync == SyncQueue::kForce) {
             this->waitForQueueCompletion();
             this->checkForFinishedCommandLists();
@@ -180,9 +181,9 @@ bool GrD3DGpu::submitDirectCommandList(SyncQueue sync) {
     // uniform data as dirty.
     fResourceProvider.markPipelineStateUniformsDirty();
 
-    GrFence fence = this->insertFence();
+    GR_D3D_CALL_ERRCHECK(fQueue->Signal(fFence.get(), ++fCurrentFenceValue));
     new (fOutstandingCommandLists.push_back()) OutstandingCommandList(
-            std::move(fCurrentDirectCommandList), fence);
+            std::move(fCurrentDirectCommandList), fCurrentFenceValue);
 
     if (sync == SyncQueue::kForce) {
         this->waitForQueueCompletion();
@@ -1649,7 +1650,7 @@ bool GrD3DGpu::compile(const GrProgramDesc&, const GrProgramInfo&) {
     return false;
 }
 
-#if defined(GR_TEST_UTILS)
+#if defined(GPU_TEST_UTILS)
 bool GrD3DGpu::isTestingOnlyBackendTexture(const GrBackendTexture& tex) const {
     SkASSERT(GrBackendApi::kDirect3D == tex.backend());
 
@@ -1695,7 +1696,10 @@ void GrD3DGpu::deleteTestingOnlyBackendRenderTarget(const GrBackendRenderTarget&
 
     GrD3DTextureResourceInfo info;
     if (rt.getD3DTextureResourceInfo(&info)) {
-        this->submitToGpu(GrSyncCpu::kYes);
+        GrSubmitInfo submitInfo;
+        submitInfo.fSync = GrSyncCpu::kYes;
+
+        this->submitToGpu(submitInfo);
         // Nothing else to do here, will get cleaned up when the GrBackendRenderTarget
         // is deleted.
     }
@@ -1760,8 +1764,8 @@ void GrD3DGpu::takeOwnershipOfBuffer(sk_sp<GrGpuBuffer> buffer) {
     fCurrentDirectCommandList->addGrBuffer(std::move(buffer));
 }
 
-bool GrD3DGpu::onSubmitToGpu(GrSyncCpu sync) {
-    if (sync == GrSyncCpu::kYes) {
+bool GrD3DGpu::onSubmitToGpu(const GrSubmitInfo& info) {
+    if (info.fSync == GrSyncCpu::kYes) {
         return this->submitDirectCommandList(SyncQueue::kForce);
     } else {
         return this->submitDirectCommandList(SyncQueue::kSkip);
@@ -1774,7 +1778,7 @@ bool GrD3DGpu::onSubmitToGpu(GrSyncCpu sync) {
 std::unique_ptr<GrSemaphore> GrD3DGpu::wrapBackendSemaphore(const GrBackendSemaphore& semaphore,
                                                             GrSemaphoreWrapType /* wrapType */,
                                                             GrWrapOwnership /* ownership */) {
-    SkASSERT(this->caps()->semaphoreSupport());
+    SkASSERT(this->caps()->backendSemaphoreSupport());
     GrD3DFenceInfo fenceInfo;
     if (!semaphore.getD3DFenceInfo(&fenceInfo)) {
         return nullptr;
@@ -1794,15 +1798,6 @@ void GrD3DGpu::waitSemaphore(GrSemaphore* semaphore) {
     GrD3DSemaphore* d3dSem = static_cast<GrD3DSemaphore*>(semaphore);
     // TODO: Do we need to track the lifetime of this?
     fQueue->Wait(d3dSem->fence(), d3dSem->value());
-}
-
-[[nodiscard]] GrFence GrD3DGpu::insertFence() {
-    GR_D3D_CALL_ERRCHECK(fQueue->Signal(fFence.get(), ++fCurrentFenceValue));
-    return fCurrentFenceValue;
-}
-
-bool GrD3DGpu::waitFence(GrFence fence) {
-    return (fFence->GetCompletedValue() >= fence);
 }
 
 void GrD3DGpu::finishOutstandingGpuWork() {

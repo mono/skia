@@ -1,4 +1,5 @@
 diagnostic(off, derivative_uniformity);
+diagnostic(off, chromium.unreachable_code);
 struct FSOut {
   @location(0) sk_FragColor: vec4<f32>,
 };
@@ -18,19 +19,19 @@ struct S {
 };
 fn local_variable_hides_struct_b() -> bool {
   {
-    var S: bool = true;
+    const S: bool = true;
     return S;
   }
 }
 fn local_struct_variable_hides_struct_type_b() -> bool {
   {
-    var S: S = S(1);
+    const S: S = S(1);
     return S.i == 1;
   }
 }
 fn local_variable_hides_global_variable_b() -> bool {
   {
-    var glob: i32 = 1;
+    const glob: i32 = 1;
     return glob == 1;
   }
 }

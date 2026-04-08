@@ -15,8 +15,8 @@
 #include "include/core/SkScalar.h"
 #include "include/core/SkTypes.h"
 #include "include/effects/SkDashPathEffect.h"
-#include "include/private/base/SkFloatBits.h"
 #include "include/private/base/SkTArray.h"
+#include "src/base/SkFloatBits.h"
 
 #include <functional>
 
@@ -320,4 +320,26 @@ DEF_SIMPLE_GM(circular_arc_stroke_matrix, canvas, 820, 1090) {
             }
         }
     }
+}
+
+DEF_SIMPLE_GM(crbug_1472747, canvas, 400, 400) {
+    auto addCanvas2dCircleArcTo = [](float cx, float cy, float radius, SkPath* path) {
+        SkRect oval = SkRect::MakeLTRB(cx - radius, cy - radius, cx + radius, cy + radius);
+        // arcTo(oval, 0, 2pi, anticlockwise) gets split to 0->-180,-180->-360
+        path->arcTo(oval, 0.f, -180.f, false);
+        path->arcTo(oval, -180.f, -180.f, false);
+    };
+
+    // This manually stroked circle is large enough to trigger pre-chopping in the
+    // tessellation path renderers, but uses a non-default winding mode, which
+    // originally was not preserved in the chopped path.
+    static constexpr float kRadius = 31000.f;
+    SkPath strokedCircle;
+    addCanvas2dCircleArcTo(0.f, kRadius + 10.f, kRadius, &strokedCircle); // inner
+    addCanvas2dCircleArcTo(0.f, kRadius + 10.f, kRadius + 5.f, &strokedCircle); // outer
+    strokedCircle.setFillType(SkPathFillType::kEvenOdd);
+
+    SkPaint fill;
+    fill.setAntiAlias(true);
+    canvas->drawPath(strokedCircle, fill);
 }

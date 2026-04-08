@@ -24,8 +24,8 @@
 #include "include/core/SkSpan.h"
 #include "include/effects/SkRuntimeEffect.h"
 #include "include/gpu/GpuTypes.h"
-#include "include/gpu/GrRecordingContext.h"
-#include "include/gpu/GrTypes.h"
+#include "include/gpu/ganesh/GrRecordingContext.h"
+#include "include/gpu/ganesh/GrTypes.h"
 #include "include/gpu/ganesh/SkSurfaceGanesh.h"
 #include "include/private/SkColorData.h"
 #include "include/private/base/SkAssert.h"
@@ -398,11 +398,12 @@ static GrFPResult make_colorfilter_fp(GrRecordingContext*,
                                       const SkSurfaceProps&) {
     switch (filter->domain()) {
         case SkMatrixColorFilter::Domain::kRGBA:
-            return GrFPSuccess(GrFragmentProcessor::ColorMatrix(std::move(inputFP),
-                                                                filter->matrix(),
-                                                                /* unpremulInput = */ true,
-                                                                /* clampRGBOutput = */ true,
-                                                                /* premulOutput = */ true));
+            return GrFPSuccess(GrFragmentProcessor::ColorMatrix(
+                    std::move(inputFP),
+                    filter->matrix(),
+                    /* unpremulInput = */ true,
+                    /* clampRGBOutput = */ filter->clamp() == SkMatrixColorFilter::Clamp::kYes,
+                    /* premulOutput = */ true));
 
         case SkMatrixColorFilter::Domain::kHSLA: {
             auto fp = rgb_to_hsl(std::move(inputFP));
@@ -662,18 +663,13 @@ static std::unique_ptr<GrFragmentProcessor> make_shader_fp(const SkPerlinNoiseSh
     SkASSERT(args.fContext);
     SkASSERT(shader->numOctaves());
 
-    const SkMatrix& totalMatrix = mRec.totalMatrix();
-
     // Either we don't stitch tiles, or we have a valid tile size
     SkASSERT(!shader->stitchTiles() || !shader->tileSize().isEmpty());
 
-    auto paintingData = shader->getPaintingData(totalMatrix);
+    auto paintingData = shader->getPaintingData();
     paintingData->generateBitmaps();
 
-    // Like shadeSpan, we start from device space. We will account for that below with a device
-    // space effect.
-
-    auto context = args.fContext;
+    GrRecordingContext* context = args.fContext;
 
     const SkBitmap& permutationsBitmap = paintingData->getPermutationsBitmap();
     const SkBitmap& noiseBitmap = paintingData->getNoiseBitmap();
@@ -682,22 +678,30 @@ static std::unique_ptr<GrFragmentProcessor> make_shader_fp(const SkPerlinNoiseSh
             context,
             permutationsBitmap,
             /*label=*/"PerlinNoiseShader_FragmentProcessor_PermutationsView"));
+
     auto noiseView = std::get<0>(GrMakeCachedBitmapProxyView(
             context, noiseBitmap, /*label=*/"PerlinNoiseShader_FragmentProcessor_NoiseView"));
 
-    if (permutationsView && noiseView) {
-        return GrFragmentProcessor::DeviceSpace(
-                GrMatrixEffect::Make(SkMatrix::Translate(1 - totalMatrix.getTranslateX(),
-                                                         1 - totalMatrix.getTranslateY()),
-                                     GrPerlinNoise2Effect::Make(shader->noiseType(),
-                                                                shader->numOctaves(),
-                                                                shader->stitchTiles(),
-                                                                std::move(paintingData),
-                                                                std::move(permutationsView),
-                                                                std::move(noiseView),
-                                                                *context->priv().caps())));
+    if (!permutationsView || !noiseView) {
+        return nullptr;
     }
-    return nullptr;
+
+    std::unique_ptr<GrFragmentProcessor> fp =
+            GrPerlinNoise2Effect::Make(shader->noiseType(),
+                                       shader->numOctaves(),
+                                       shader->stitchTiles(),
+                                       std::move(paintingData),
+                                       std::move(permutationsView),
+                                       std::move(noiseView),
+                                       *context->priv().caps());
+    if (!fp) {
+        return nullptr;
+    }
+    auto [total, ok] = mRec.applyForFragmentProcessor({});
+    if (!ok) {
+        return nullptr;
+    }
+    return GrMatrixEffect::Make(total, std::move(fp));
 }
 
 static std::unique_ptr<GrFragmentProcessor> make_shader_fp(const SkPictureShader* shader,

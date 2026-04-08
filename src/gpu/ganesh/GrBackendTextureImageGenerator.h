@@ -7,16 +7,31 @@
 #ifndef GrBackendTextureImageGenerator_DEFINED
 #define GrBackendTextureImageGenerator_DEFINED
 
-#include "include/core/SkImageGenerator.h"
-#include "include/gpu/GrBackendSurface.h"
-#include "include/gpu/GrDirectContext.h"
+#include "include/core/SkRefCnt.h"
+#include "include/gpu/ganesh/GrBackendSurface.h"
+#include "include/gpu/ganesh/GrDirectContext.h"
+#include "include/gpu/ganesh/GrRecordingContext.h"
 #include "include/private/base/SkMutex.h"
 #include "include/private/gpu/ganesh/GrTextureGenerator.h"
 #include "src/gpu/ResourceKey.h"
 #include "src/gpu/ganesh/GrSurfaceProxyView.h"
-#include "src/gpu/ganesh/GrTexture.h"
+
+#include <memory>
 
 class GrSemaphore;
+class GrTexture;
+class SkColorInfo;
+class SkColorSpace;
+enum GrSurfaceOrigin : int;
+enum SkAlphaType : int;
+enum SkColorType : int;
+enum class GrImageTexGenPolicy : int;
+struct SkImageInfo;
+
+namespace skgpu {
+class RefCntedCallback;
+enum class Mipmapped : bool;
+}  // namespace skgpu
 
 /*
  * This ImageGenerator is used to wrap a texture in one GrContext and can then be used as a source
@@ -32,7 +47,7 @@ class GrSemaphore;
  */
 class GrBackendTextureImageGenerator : public GrTextureGenerator {
 public:
-    static std::unique_ptr<GrTextureGenerator> Make(sk_sp<GrTexture>, GrSurfaceOrigin,
+    static std::unique_ptr<GrTextureGenerator> Make(const sk_sp<GrTexture>&, GrSurfaceOrigin,
                                                     std::unique_ptr<GrSemaphore>, SkColorType,
                                                     SkAlphaType, sk_sp<SkColorSpace>);
 
@@ -54,7 +69,7 @@ protected:
 
 private:
     GrBackendTextureImageGenerator(const SkColorInfo&,
-                                   sk_sp<GrTexture>,
+                                   const sk_sp<GrTexture>&,
                                    GrSurfaceOrigin,
                                    GrDirectContext::DirectContextID owningContextID,
                                    std::unique_ptr<GrSemaphore>);

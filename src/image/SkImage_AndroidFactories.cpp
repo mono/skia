@@ -11,6 +11,7 @@
 
 #include "include/android/SkImageAndroid.h"
 
+#include "include/android/AHardwareBufferUtils.h"
 #include "include/android/GrAHardwareBufferUtils.h"
 #include "include/core/SkAlphaType.h"
 #include "include/core/SkBitmap.h"
@@ -24,11 +25,11 @@
 #include "include/core/SkSize.h"
 #include "include/core/SkSurface.h"
 #include "include/gpu/GpuTypes.h"
-#include "include/gpu/GrBackendSurface.h"
-#include "include/gpu/GrContextThreadSafeProxy.h"
-#include "include/gpu/GrDirectContext.h"
-#include "include/gpu/GrRecordingContext.h"
-#include "include/gpu/GrTypes.h"
+#include "include/gpu/ganesh/GrBackendSurface.h"
+#include "include/gpu/ganesh/GrContextThreadSafeProxy.h"
+#include "include/gpu/ganesh/GrDirectContext.h"
+#include "include/gpu/ganesh/GrRecordingContext.h"
+#include "include/gpu/ganesh/GrTypes.h"
 #include "include/gpu/ganesh/SkImageGanesh.h"
 #include "include/private/base/SkAssert.h"
 #include "include/private/gpu/ganesh/GrImageContext.h"
@@ -45,6 +46,7 @@
 #include "src/gpu/ganesh/GrColorSpaceXform.h"
 #include "src/gpu/ganesh/GrContextThreadSafeProxyPriv.h"
 #include "src/gpu/ganesh/GrDirectContextPriv.h"
+#include "src/gpu/ganesh/GrDrawingManager.h"
 #include "src/gpu/ganesh/GrFragmentProcessor.h"
 #include "src/gpu/ganesh/GrGpu.h"
 #include "src/gpu/ganesh/GrGpuResourcePriv.h"
@@ -127,7 +129,7 @@ sk_sp<SkImage> TextureFromAHardwareBufferWithData(GrDirectContext* dContext,
     auto releaseHelper = skgpu::RefCntedCallback::Make(deleteImageProc, deleteImageCtx);
 
     SkColorType colorType =
-            GrAHardwareBufferUtils::GetSkColorTypeFromBufferFormat(bufferDesc.format);
+            AHardwareBufferUtils::GetSkColorTypeFromBufferFormat(bufferDesc.format);
 
     GrColorType grColorType = SkColorTypeToGrColorType(colorType);
 

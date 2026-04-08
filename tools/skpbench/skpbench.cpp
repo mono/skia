@@ -13,8 +13,9 @@
 #include "include/core/SkStream.h"
 #include "include/core/SkSurface.h"
 #include "include/core/SkSurfaceProps.h"
+#include "include/docs/SkMultiPictureDocument.h"
 #include "include/effects/SkPerlinNoiseShader.h"
-#include "include/gpu/GrDirectContext.h"
+#include "include/gpu/ganesh/GrDirectContext.h"
 #include "include/gpu/ganesh/SkSurfaceGanesh.h"
 #include "include/private/chromium/GrDeferredDisplayList.h"
 #include "src/core/SkOSFile.h"
@@ -23,20 +24,22 @@
 #include "src/gpu/ganesh/GrDirectContextPriv.h"
 #include "src/gpu/ganesh/SkGr.h"
 #include "src/gpu/ganesh/image/GrImageUtils.h"
-#include "src/utils/SkMultiPictureDocument.h"
 #include "src/utils/SkOSPath.h"
 #include "tools/DDLPromiseImageHelper.h"
 #include "tools/DDLTileHelper.h"
+#include "tools/EncodeUtils.h"
 #include "tools/SkSharingProc.h"
-#include "tools/ToolUtils.h"
 #include "tools/flags/CommandLineFlags.h"
 #include "tools/flags/CommonFlags.h"
 #include "tools/flags/CommonFlagsConfig.h"
+#include "tools/flags/CommonFlagsGanesh.h"
+#include "tools/fonts/FontToolUtils.h"
 #include "tools/gpu/FlushFinishTracker.h"
 #include "tools/gpu/GpuTimer.h"
 #include "tools/gpu/GrContextFactory.h"
 
 #if defined(SK_ENABLE_SVG)
+#include "modules/skshaper/utils/FactoryHelpers.h"
 #include "modules/svg/include/SkSVGDOM.h"
 #include "src/xml/SkDOM.h"
 #endif
@@ -181,12 +184,12 @@ public:
 
         // The outer format of multi-frame skps is the multi-picture document, which is a
         // skp file containing subpictures separated by annotations.
-        int page_count = SkMultiPictureDocumentReadPageCount(stream.get());
+        int page_count = SkMultiPictureDocument::ReadPageCount(stream.get());
         if (!page_count) {
             return nullptr;
         }
         std::vector<SkDocumentPage> frames(page_count); // can't call reserve, why?
-        if (!SkMultiPictureDocumentRead(stream.get(), frames.data(), page_count, &procs)) {
+        if (!SkMultiPictureDocument::Read(stream.get(), frames.data(), page_count, &procs)) {
             return nullptr;
         }
 
@@ -708,7 +711,10 @@ static sk_sp<SkPicture> create_warmup_skp() {
 
 static sk_sp<SkPicture> create_skp_from_svg(SkStream* stream, const char* filename) {
 #if defined(SK_ENABLE_SVG)
-    sk_sp<SkSVGDOM> svg = SkSVGDOM::MakeFromStream(*stream);
+    sk_sp<SkSVGDOM> svg = SkSVGDOM::Builder()
+                                  .setFontManager(ToolUtils::TestFontMgr())
+                                  .setTextShapingFactory(SkShapers::BestAvailable())
+                                  .make(*stream);
     if (!svg) {
         exitf(ExitErr::kData, "failed to build svg dom from file %s", filename);
     }

@@ -13,7 +13,6 @@
 #include "src/sksl/SkSLContext.h"  // IWYU pragma: keep
 #include "src/sksl/SkSLErrorReporter.h"
 #include "src/sksl/SkSLPosition.h"
-#include "src/sksl/ir/SkSLProgramElement.h"
 
 #include <array>
 #include <cstdint>
@@ -44,21 +43,17 @@ constexpr int SK_LOCALINVOCATIONINDEX_BUILTIN =   29;
 
 namespace SkSL {
 
-class Expression;
 class Inliner;
-class OutputStream;
+struct Module;
+enum class ModuleType : int8_t;
+class Pool;
+struct ProgramConfig;
 class ProgramUsage;
-class SymbolTable;
 enum class ProgramKind : int8_t;
 struct Program;
+class ProgramElement;
 struct ProgramSettings;
-struct ShaderCaps;
-
-struct Module {
-    const Module*                                fParent = nullptr;
-    std::shared_ptr<SymbolTable>                 fSymbols;
-    std::vector<std::unique_ptr<ProgramElement>> fElements;
-};
+class SymbolTable;
 
 /**
  * Main compiler entry point. The compiler parses the SkSL text directly into a tree of IRNodes,
@@ -104,8 +99,7 @@ public:
         return result;
     }
 
-    Compiler(const ShaderCaps* caps);
-
+    Compiler();
     ~Compiler();
 
     Compiler(const Compiler&) = delete;
@@ -124,30 +118,8 @@ public:
     static void EnableInliner(OverrideFlag flag) { sInliner = flag; }
 
     std::unique_ptr<Program> convertProgram(ProgramKind kind,
-                                            std::string text,
-                                            ProgramSettings settings);
-
-    std::unique_ptr<Expression> convertIdentifier(Position pos, std::string_view name);
-
-    bool toSPIRV(Program& program, OutputStream& out);
-
-    bool toSPIRV(Program& program, std::string* out);
-
-    bool toGLSL(Program& program, OutputStream& out);
-
-    bool toGLSL(Program& program, std::string* out);
-
-    bool toHLSL(Program& program, OutputStream& out);
-
-    bool toHLSL(Program& program, std::string* out);
-
-    bool toMetal(Program& program, OutputStream& out);
-
-    bool toMetal(Program& program, std::string* out);
-
-    bool toWGSL(Program& program, OutputStream& out);
-
-    bool toWGSL(Program& program, std::string* out);
+                                            std::string programSource,
+                                            const ProgramSettings& settings);
 
     void handleError(std::string_view msg, Position pos);
 
@@ -168,14 +140,18 @@ public:
         return *fContext;
     }
 
-    std::shared_ptr<SymbolTable>& symbolTable() {
+    SymbolTable* globalSymbols() {
+        return fGlobalSymbols.get();
+    }
+
+    SymbolTable* symbolTable() {
         return fContext->fSymbolTable;
     }
 
     std::unique_ptr<Module> compileModule(ProgramKind kind,
-                                          const char* moduleName,
+                                          ModuleType moduleType,
                                           std::string moduleSource,
-                                          const Module* parent,
+                                          const Module* parentModule,
                                           bool shouldInline);
 
     /** Optimize a module at minification time, before writing it out. */
@@ -203,11 +179,23 @@ private:
     /** Updates ProgramSettings to eliminate contradictions and to honor the ProgramKind. */
     static void FinalizeSettings(ProgramSettings* settings, ProgramKind kind);
 
+    /** Prepares the Context for compilation of a program or module. */
+    void initializeContext(const SkSL::Module* module,
+                           ProgramKind kind,
+                           ProgramSettings settings,
+                           std::string_view source,
+                           ModuleType moduleType);
+
+    /** Cleans up the Context post-compilation. */
+    void cleanupContext();
+
     /**
-     * Returns all global elements (functions and global variables) as a self-contained Program. The
-     * optional source string is retained as the program's source.
+     * Returns all global elements (functions and global variables) as a self-contained Program.
+     * The optional source string is retained as the program's source.
      */
-    std::unique_ptr<SkSL::Program> releaseProgram(std::unique_ptr<std::string> source);
+    std::unique_ptr<SkSL::Program> releaseProgram(
+            std::unique_ptr<std::string> source,
+            std::vector<std::unique_ptr<SkSL::ProgramElement>> programElements);
 
     /** Optimize every function in the program. */
     bool optimize(Program& program);
@@ -221,12 +209,14 @@ private:
     /** Flattens out function calls when it is safe to do so. */
     bool runInliner(Inliner* inliner,
                     const std::vector<std::unique_ptr<ProgramElement>>& elements,
-                    std::shared_ptr<SymbolTable> symbols,
+                    SymbolTable* symbols,
                     ProgramUsage* usage);
 
     CompilerErrorReporter fErrorReporter;
     std::shared_ptr<Context> fContext;
-    const ShaderCaps* fCaps;
+    std::unique_ptr<SymbolTable> fGlobalSymbols;
+    std::unique_ptr<ProgramConfig> fConfig;
+    std::unique_ptr<Pool> fPool;
 
     std::string fErrorText;
 

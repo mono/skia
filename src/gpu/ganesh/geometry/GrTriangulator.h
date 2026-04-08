@@ -12,11 +12,18 @@
 
 #include "include/core/SkPath.h"
 #include "include/core/SkPoint.h"
-#include "include/private/SkColorData.h"
+#include "include/core/SkScalar.h"
+#include "include/private/base/SkAssert.h"
 #include "src/base/SkArenaAlloc.h"
-#include "src/gpu/ganesh/GrColor.h"
+#include "src/gpu/BufferWriter.h"
+
+#include <algorithm>
+#include <cmath>
+#include <cstdint>
+#include <tuple>
 
 class GrEagerVertexAllocator;
+enum class SkPathFillType;
 struct SkRect;
 
 #define TRIANGULATOR_LOGGING 0
@@ -45,7 +52,7 @@ public:
     }
 
     // Enums used by GrTriangulator internals.
-    typedef enum { kLeft_Side, kRight_Side } Side;
+    enum class Side { kLeft, kRight };
     enum class EdgeType { kInner, kOuter, kConnector };
 
     // Structs used by GrTriangulator internals.

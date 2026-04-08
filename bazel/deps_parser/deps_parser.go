@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -17,9 +19,12 @@ import (
 type depConfig struct {
 	bazelNameOverride string // Bazel style uses underscores not dashes, so we fix those if needed.
 	needsBazelFile    bool
+	patchCmds         []string
+	patchCmdsWin      []string
 }
 
-// These are all C++ deps used by the Bazel build. They are a subset of those listed in DEPS.
+// These are all C++ deps or Rust deps (with a compatible C++ FFI) used by the Bazel build.
+// They are a subset of those listed in DEPS.
 // The key is the name of the repo as specified in DEPS.
 var deps = map[string]depConfig{
 	"abseil-cpp":  {bazelNameOverride: "abseil_cpp"},
@@ -29,29 +34,42 @@ var deps = map[string]depConfig{
 	// This name is important because spirv_tools expects @spirv_headers to exist by that name.
 	"spirv-headers": {bazelNameOverride: "spirv_headers"},
 
-	"dawn":                  {needsBazelFile: true},
-	"dng_sdk":               {needsBazelFile: true},
-	"expat":                 {needsBazelFile: true},
-	"freetype":              {needsBazelFile: true},
-	"harfbuzz":              {needsBazelFile: true},
-	"icu":                   {needsBazelFile: true},
-	"imgui":                 {needsBazelFile: true},
-	"libavif":               {needsBazelFile: true},
-	"libgav1":               {needsBazelFile: true},
-	"libjpeg-turbo":         {bazelNameOverride: "libjpeg_turbo", needsBazelFile: true},
-	"libjxl":                {needsBazelFile: true},
-	"libpng":                {needsBazelFile: true},
-	"libwebp":               {needsBazelFile: true},
-	"libyuv":                {needsBazelFile: true},
-	"spirv-cross":           {bazelNameOverride: "spirv_cross", needsBazelFile: true},
-	"perfetto":              {needsBazelFile: true},
-	"piex":                  {needsBazelFile: true},
-	"vello":                 {needsBazelFile: true},
-	"vulkan-headers":        {bazelNameOverride: "vulkan_headers", needsBazelFile: true},
-	"vulkan-tools":          {bazelNameOverride: "vulkan_tools", needsBazelFile: true},
+	"dawn":     {needsBazelFile: true},
+	"dng_sdk":  {needsBazelFile: true},
+	"expat":    {needsBazelFile: true},
+	"freetype": {needsBazelFile: true},
+	"harfbuzz": {needsBazelFile: true},
+	"icu": {
+		needsBazelFile: true,
+		patchCmds: []string{
+			`"rm source/i18n/BUILD.bazel"`,
+			`"rm source/common/BUILD.bazel"`,
+			`"rm source/stubdata/BUILD.bazel"`,
+		},
+		patchCmdsWin: []string{
+			`"del source/i18n/BUILD.bazel"`,
+			`"del source/common/BUILD.bazel"`,
+			`"del source/stubdata/BUILD.bazel"`,
+		},
+	},
+	"icu4x":                    {needsBazelFile: true},
+	"imgui":                    {needsBazelFile: true},
+	"libavif":                  {needsBazelFile: true},
+	"libgav1":                  {needsBazelFile: true},
+	"libjpeg-turbo":            {bazelNameOverride: "libjpeg_turbo", needsBazelFile: true},
+	"libjxl":                   {needsBazelFile: true},
+	"libpng":                   {needsBazelFile: true},
+	"libwebp":                  {needsBazelFile: true},
+	"libyuv":                   {needsBazelFile: true},
+	"spirv-cross":              {bazelNameOverride: "spirv_cross", needsBazelFile: true},
+	"perfetto":                 {needsBazelFile: true},
+	"piex":                     {needsBazelFile: true},
+	"vello":                    {needsBazelFile: true},
+	"vulkan-headers":           {bazelNameOverride: "vulkan_headers", needsBazelFile: true},
+	"vulkan-tools":             {bazelNameOverride: "vulkan_tools", needsBazelFile: true},
 	"vulkan-utility-libraries": {bazelNameOverride: "vulkan_utility_libraries", needsBazelFile: true},
-	"vulkanmemoryallocator": {needsBazelFile: true},
-	"wuffs":                 {needsBazelFile: true},
+	"vulkanmemoryallocator":    {needsBazelFile: true},
+	"wuffs":                    {needsBazelFile: true},
 	// Some other dependency downloads zlib but with their own rules
 	"zlib": {bazelNameOverride: "zlib_skia", needsBazelFile: true},
 }
@@ -62,7 +80,8 @@ func main() {
 		genBzlFile    = flag.String("gen_bzl_file", "bazel/deps.bzl", "The location of the .bzl file that has the generated Bazel repository rules.")
 		workspaceFile = flag.String("workspace_file", "WORKSPACE.bazel", "The location of the WORKSPACE file that should be updated with dep names.")
 		// https://bazel.build/docs/user-manual#running-executables
-		repoDir = flag.String("repo_dir", os.Getenv("BUILD_WORKSPACE_DIRECTORY"), "The root directory of the repo. Default set by BUILD_WORKSPACE_DIRECTORY env variable.")
+		repoDir        = flag.String("repo_dir", os.Getenv("BUILD_WORKSPACE_DIRECTORY"), "The root directory of the repo. Default set by BUILD_WORKSPACE_DIRECTORY env variable.")
+		buildifierPath = flag.String("buildifier", "", "Where to find buildifier. Defaults to Bazel's location")
 	)
 	flag.Parse()
 
@@ -72,6 +91,24 @@ This is done automatically via:
     bazel run //bazel/deps_parser`)
 		os.Exit(1)
 	}
+
+	buildifier := *buildifierPath
+	if buildifier == "" {
+		// We don't know if this will be buildifier_linux_x64, buildifier_macos_arm64, etc
+		bp, err := filepath.Glob("../buildifier*/file/buildifier")
+		if err != nil || len(bp) != 1 {
+			fmt.Printf("Could not find exactly one buildifier executable %s %v\n", err, bp)
+			os.Exit(1)
+		}
+		buildifier = bp[0]
+	}
+	buildifier, err := filepath.Abs(buildifier)
+	if err != nil {
+		fmt.Printf("Abs path error %s\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Println(os.Environ())
 
 	if *depsFile == "" || *genBzlFile == "" {
 		fmt.Println("Must set --deps_file and --gen_bzl_file")
@@ -91,6 +128,14 @@ This is done automatically via:
 	contents := strings.Split(string(b), "\n")
 
 	outputFile, count, err := parseDEPSFile(contents, *workspaceFile)
+	if err != nil {
+		fmt.Printf("Parsing error %s\n", err)
+		os.Exit(1)
+	}
+	if err := exec.Command(buildifier, outputFile).Run(); err != nil {
+		fmt.Printf("Buildifier error %s\n", err)
+		os.Exit(1)
+	}
 	if err := os.Rename(outputFile, *genBzlFile); err != nil {
 		fmt.Printf("Could not write from %s to %s: %s\n", outputFile, *depsFile, err)
 		os.Exit(1)
@@ -128,7 +173,7 @@ func parseDEPSFile(contents []string, workspaceFile string) (string, int, error)
 				id = cfg.bazelNameOverride
 			}
 			if cfg.needsBazelFile {
-				if err := writeNewGitRepositoryRule(outputFile, id, repo, rev); err != nil {
+				if err := writeNewGitRepositoryRule(outputFile, id, repo, rev, cfg.patchCmds, cfg.patchCmdsWin); err != nil {
 					return "", 0, fmt.Errorf("Could not write to output file %s: %s\n", outputFile.Name(), err)
 				}
 				workspaceLine := fmt.Sprintf("# @%s - //bazel/external/%s:BUILD.bazel", id, id)
@@ -238,6 +283,7 @@ Instead, do:
 load("@bazel_tools//tools/build_defs/repo:git.bzl", "git_repository", "new_git_repository")
 load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 load("@bazel_tools//tools/build_defs/repo:utils.bzl", "maybe")
+load("//bazel:download_config_files.bzl", "download_config_files")
 load("//bazel:gcs_mirror.bzl", "gcs_mirror_url")
 
 def c_plus_plus_deps(ws = "@skia"):
@@ -274,12 +320,57 @@ def bazel_deps():
             url = "https://github.com/bazelbuild/bazel-toolchains/archive/refs/tags/v5.1.1.tar.gz",
         ),
     )
+
+def header_based_configs():
+    skia_revision = "d211141c45c9171437fa8e6e07989edb5bffa17a"
+    maybe(
+        download_config_files,
+        name = "expat_config",
+        skia_revision = skia_revision,
+        files = {
+            "BUILD.bazel": "third_party/expat/include/BUILD.bazel",
+            "expat_config/expat_config.h": "third_party/expat/include/expat_config/expat_config.h",
+        },
+    )
+    maybe(
+        download_config_files,
+        name = "freetype_config",
+        skia_revision = skia_revision,
+        files = {
+            "BUILD.bazel": "third_party/freetype2/include/BUILD.bazel",
+            "freetype-android/freetype/config/ftmodule.h": "third_party/freetype2/include/freetype-android/freetype/config/ftmodule.h",
+            "freetype-android/freetype/config/ftoption.h": "third_party/freetype2/include/freetype-android/freetype/config/ftoption.h",
+            "freetype-no-type1/freetype/config/ftmodule.h": "third_party/freetype2/include/freetype-no-type1/freetype/config/ftmodule.h",
+            "freetype-no-type1/freetype/config/ftoption.h": "third_party/freetype2/include/freetype-no-type1/freetype/config/ftoption.h",
+        },
+    )
+    maybe(
+        download_config_files,
+        name = "harfbuzz_config",
+        skia_revision = skia_revision,
+        files = {
+            "BUILD.bazel": "third_party/harfbuzz/BUILD.bazel",
+            "config-override.h": "third_party/harfbuzz/config-override.h",
+        },
+    )
+    maybe(
+        download_config_files,
+        name = "icu_utils",
+        skia_revision = skia_revision,
+        files = {
+            "BUILD.bazel": "third_party/icu/BUILD.bazel",
+            "SkLoadICU.cpp": "third_party/icu/SkLoadICU.cpp",
+            "SkLoadICU.h": "third_party/icu/SkLoadICU.h",
+            "make_data_cpp.py": "third_party/icu/make_data_cpp.py",
+        },
+    )
 `
 
-func writeNewGitRepositoryRule(w io.StringWriter, bazelName, repo, rev string) error {
-	// TODO(kjlubick) In a newer version of Bazel, new_git_repository can be replaced with just
-	// git_repository
-	_, err := w.WriteString(fmt.Sprintf(`
+func writeNewGitRepositoryRule(w io.StringWriter, bazelName, repo, rev string, patchCmds, patchCmdsWin []string) error {
+	if len(patchCmds) == 0 {
+		// TODO(kjlubick) In a newer version of Bazel, new_git_repository can be replaced with just
+		// git_repository
+		_, err := w.WriteString(fmt.Sprintf(`
     new_git_repository(
         name = "%s",
         build_file = ws + "//bazel/external/%s:BUILD.bazel",
@@ -287,6 +378,20 @@ func writeNewGitRepositoryRule(w io.StringWriter, bazelName, repo, rev string) e
         remote = "%s",
     )
 `, bazelName, bazelName, rev, repo))
+		return err
+	}
+	patches := "[" + strings.Join(patchCmds, ",\n") + "]"
+	patches_win := "[" + strings.Join(patchCmdsWin, ",\n") + "]"
+	_, err := w.WriteString(fmt.Sprintf(`
+    new_git_repository(
+        name = "%s",
+        build_file = ws + "//bazel/external/%s:BUILD.bazel",
+        commit = "%s",
+        remote = "%s",
+        patch_cmds = %s,
+		patch_cmds_win = %s,
+    )
+`, bazelName, bazelName, rev, repo, patches, patches_win))
 	return err
 }
 

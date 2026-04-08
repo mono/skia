@@ -17,10 +17,12 @@
 #include "src/gpu/GpuTypesPriv.h"
 #include "src/gpu/graphite/ResourceTypes.h"
 
-#if defined(GRAPHITE_TEST_UTILS)
+#if defined(GPU_TEST_UTILS)
 #include <functional>
 #endif
 #include <vector>
+
+class SkTraceMemoryDump;
 
 namespace skgpu {
 class SingleOwner;
@@ -32,7 +34,7 @@ class GraphiteResourceKey;
 class ProxyCache;
 class Resource;
 
-#if defined(GRAPHITE_TEST_UTILS)
+#if defined(GPU_TEST_UTILS)
 class Texture;
 #endif
 
@@ -78,7 +80,13 @@ public:
 
     size_t getMaxBudget() const { return fMaxBytes; }
 
-#if defined(GRAPHITE_TEST_UTILS)
+    size_t currentBudgetedBytes() const { return fBudgetedBytes; }
+
+    size_t currentPurgeableBytes() const { return fPurgeableBytes; }
+
+    void dumpMemoryStatistics(SkTraceMemoryDump* traceMemoryDump) const;
+
+#if defined(GPU_TEST_UTILS)
     void forceProcessReturnedResources() { this->processReturnedResources(); }
 
     void forcePurgeAsNeeded() { this->purgeAsNeeded(); }
@@ -90,8 +98,6 @@ public:
     // This will probably end up being a public function to change the current budget size, but for
     // now just making this a testing only function.
     void setMaxBudget(size_t bytes);
-
-    size_t currentBudgetedBytes() const { return fBudgetedBytes; }
 
     Resource* topOfPurgeableQueue();
 
@@ -112,7 +118,8 @@ private:
     void removeFromNonpurgeableArray(Resource* resource);
     void removeFromPurgeableQueue(Resource* resource);
 
-    void processReturnedResources();
+    // This will return true if any resources were actually returned to the cache
+    bool processReturnedResources();
     void returnResourceToCache(Resource*, LastRemovedRef);
 
     uint32_t getNextTimestamp();
@@ -167,6 +174,8 @@ private:
     // Our budget
     size_t fMaxBytes;
     size_t fBudgetedBytes = 0;
+
+    size_t fPurgeableBytes = 0;
 
     SingleOwner* fSingleOwner = nullptr;
 

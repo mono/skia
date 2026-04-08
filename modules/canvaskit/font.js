@@ -142,11 +142,11 @@ CanvasKit._extraInitializations.push(function() {
     return fm;
   };
 
-  CanvasKit.Typeface.MakeFreeTypeFaceFromData = function(fontData) {
+  CanvasKit.Typeface.MakeTypefaceFromData = function(fontData) {
     var data = new Uint8Array(fontData);
 
     var fptr = copy1dArray(data, 'HEAPU8');
-    var font = CanvasKit.Typeface._MakeFreeTypeFaceFromData(fptr, data.byteLength);
+    var font = CanvasKit.Typeface._MakeTypefaceFromData(fptr, data.byteLength);
     if (!font) {
       Debug('Could not decode font data');
       // We do not need to free the data since the C++ will do that for us
@@ -155,6 +155,9 @@ CanvasKit._extraInitializations.push(function() {
     }
     return font;
   };
+
+  // TODO(kjlubick) remove this after clients have migrated.
+  CanvasKit.Typeface["MakeFreeTypeFaceFromData"] = CanvasKit.Typeface.MakeTypefaceFromData;
 
   CanvasKit.Typeface.prototype.getGlyphIDs = function(str, numGlyphIDs, optionalOutputArray) {
     if (!numGlyphIDs) {

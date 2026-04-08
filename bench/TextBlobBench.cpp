@@ -16,8 +16,8 @@
 #include "include/private/base/SkTemplates.h"
 #include "src/base/SkRandom.h"
 #include "tools/Resources.h"
-
 #include "tools/ToolUtils.h"
+#include "tools/fonts/FontToolUtils.h"
 
 /*
  * A trivial test which benchmarks the performance of a textblob with a single run.
@@ -27,7 +27,7 @@ public:
     SkTextBlobBench() {}
 
     void onDelayedSetup() override {
-        fFont.setTypeface(ToolUtils::create_portable_typeface("serif", SkFontStyle()));
+        fFont.setTypeface(ToolUtils::CreatePortableTypeface("serif", SkFontStyle()));
         fFont.setSubpixel(true);
 
         // This text seems representative in both length and letter frequency.
@@ -97,7 +97,7 @@ class TextBlobMakeBench : public SkTextBlobBench {
     }
 
     bool isSuitableFor(Backend backend) override {
-        return backend == kNonRendering_Backend;
+        return backend == Backend::kNonRendering;
     }
 
     void onDraw(int loops, SkCanvas*) override {

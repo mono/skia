@@ -58,7 +58,6 @@ std::unique_ptr<GrXferProcessor::ProgramImpl> DisableColorXP::makeProgramImpl() 
                               const char*,
                               const char*) const override {
             // Don't write any swizzling. This makes sure the final shader does not output a color.
-            return;
         }
     };
 
@@ -71,7 +70,7 @@ sk_sp<const GrXferProcessor> GrDisableColorXPFactory::MakeXferProcessor() {
 
 GR_DEFINE_XP_FACTORY_TEST(GrDisableColorXPFactory)
 
-#if defined(GR_TEST_UTILS)
+#if defined(GPU_TEST_UTILS)
 const GrXPFactory* GrDisableColorXPFactory::TestGet(GrProcessorTestData*) {
     return GrDisableColorXPFactory::Get();
 }

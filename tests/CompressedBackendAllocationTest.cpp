@@ -23,9 +23,9 @@
 #include "include/core/SkTextureCompressionType.h"
 #include "include/core/SkTypes.h"
 #include "include/gpu/GpuTypes.h"
-#include "include/gpu/GrBackendSurface.h"
-#include "include/gpu/GrDirectContext.h"
-#include "include/gpu/GrTypes.h"
+#include "include/gpu/ganesh/GrBackendSurface.h"
+#include "include/gpu/ganesh/GrDirectContext.h"
+#include "include/gpu/ganesh/GrTypes.h"
 #include "include/gpu/ganesh/SkImageGanesh.h"
 #include "include/gpu/ganesh/SkSurfaceGanesh.h"
 #include "include/private/base/SkTArray.h"
@@ -33,6 +33,8 @@
 #include "src/core/SkAutoPixmapStorage.h"
 #include "src/core/SkCompressedDataUtils.h"
 #include "src/core/SkMipmap.h"
+#include "src/gpu/DataUtils.h"
+#include "src/gpu/GpuTypesPriv.h"
 #include "src/gpu/ganesh/GrBackendUtils.h"
 #include "src/gpu/ganesh/GrCaps.h"
 #include "src/gpu/ganesh/GrDataUtils.h"
@@ -107,7 +109,7 @@ static void check_compressed_mipmaps(GrRecordingContext* rContext,
 
     SkCanvas* canvas = surf->getCanvas();
 
-    // Given that we bias LOD selection with MIP maps, hitting a level exactly using
+    // When MIP map sampling is biased (as it is by default), hitting a level exactly using
     // SkMipmap::kLinear is difficult so we use kNearest.
     const SkSamplingOptions sampling(SkFilterMode::kLinear,
                                      SkMipmapMode::kNearest);
@@ -141,7 +143,7 @@ static void check_compressed_mipmaps(GrRecordingContext* rContext,
         str.appendf("mip-level %d", i);
 
         check_solid_pixmap(reporter, expectedColors[i], actual2,
-                           GrCompressionTypeToStr(compressionType), label, str.c_str());
+                           skgpu::CompressionTypeToStr(compressionType), label, str.c_str());
     }
 }
 
@@ -170,7 +172,7 @@ static void check_readback(GrDirectContext* dContext, sk_sp<SkImage> img,
     REPORTER_ASSERT(reporter, result);
 
     check_solid_pixmap(reporter, expectedColor, actual,
-                       GrCompressionTypeToStr(compressionType), label, "");
+                       skgpu::CompressionTypeToStr(compressionType), label, "");
 }
 
 // Test initialization of compressed GrBackendTextures to a specific color
@@ -237,11 +239,11 @@ static std::unique_ptr<const char[]> make_compressed_data(SkTextureCompressionTy
     for (int level = 0; level < numMipLevels; ++level) {
         // We have to do this a level at a time bc we might have a different color for
         // each level
-        GrFillInCompressedData(compression,
-                               dimensions,
-                               skgpu::Mipmapped::kNo,
-                               &data[mipMapOffsets[level]],
-                               levelColors[level]);
+        skgpu::FillInCompressedData(compression,
+                                    dimensions,
+                                    skgpu::Mipmapped::kNo,
+                                    &data[mipMapOffsets[level]],
+                                    levelColors[level]);
 
         dimensions = {std::max(1, dimensions.width() /2), std::max(1, dimensions.height()/2)};
     }

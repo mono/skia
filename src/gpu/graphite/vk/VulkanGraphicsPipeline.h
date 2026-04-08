@@ -11,10 +11,12 @@
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkSpan.h"
 #include "include/gpu/vk/VulkanTypes.h"
+#include "include/private/base/SkTArray.h"
 #include "src/gpu/Blend.h"
 #include "src/gpu/graphite/DrawTypes.h"
 #include "src/gpu/graphite/GraphicsPipeline.h"
 #include "src/gpu/graphite/vk/VulkanGraphiteUtilsPriv.h"
+#include "src/gpu/graphite/vk/VulkanSampler.h"
 
 namespace SkSL {
     class Compiler;
@@ -25,8 +27,10 @@ namespace skgpu::graphite {
 class Attribute;
 class GraphicsPipelineDesc;
 class RuntimeEffectDictionary;
+class VulkanResourceProvider;
 class VulkanSharedContext;
 struct RenderPassDesc;
+class TextureInfo;
 class VulkanRenderPass;
 
 class VulkanGraphicsPipeline final : public GraphicsPipeline {
@@ -34,40 +38,57 @@ public:
     inline static constexpr unsigned int kIntrinsicUniformBufferIndex = 0;
     inline static constexpr unsigned int kRenderStepUniformBufferIndex = 1;
     inline static constexpr unsigned int kPaintUniformBufferIndex = 2;
-    inline static constexpr unsigned int kNumUniformBuffers = 3;
+    inline static constexpr unsigned int kGradientBufferIndex = 3;
+    inline static constexpr unsigned int kNumUniformBuffers = 4;
 
-    inline static const DescriptorData kIntrinsicUniformDescriptor  =
-            {DescriptorType::kInlineUniform,
-             // For inline uniform descriptors, the descriptor count field is actually the number of
-             // bytes to allocate for descriptors given this type.
-             /*count=*/sizeof(float) * 4,
-             VulkanGraphicsPipeline::kIntrinsicUniformBufferIndex};
-    inline static const DescriptorData kRenderStepUniformDescriptor =
-            {DescriptorType::kUniformBuffer,
-             /*count=*/1,
-             VulkanGraphicsPipeline::kRenderStepUniformBufferIndex};
-    inline static const DescriptorData kPaintUniformDescriptor      =
-            {DescriptorType::kUniformBuffer,
-             /*count=*/1,
-             VulkanGraphicsPipeline::kPaintUniformBufferIndex};
-
-    // For now, rigidly assign all uniform buffer descriptors to be in one descriptor set in binding
-    // 0 and all texture/samplers to be in binding 1.
+    // For now, rigidly assign all uniform buffer descriptors to be in set 0 and all
+    // texture/samplers to be in set 1.
     // TODO(b/274762935): Make the bindings and descriptor set organization more flexible.
     inline static constexpr unsigned int kUniformBufferDescSetIndex = 0;
     inline static constexpr unsigned int kTextureBindDescSetIndex = 1;
+    // Currently input attachments are only used for loading MSAA from resolve, so we can use the
+    // descriptor set index normally assigned to uniform desc sets.
+    inline static constexpr unsigned int kInputAttachmentDescSetIndex = kUniformBufferDescSetIndex;
 
     inline static constexpr unsigned int kVertexBufferIndex = 0;
     inline static constexpr unsigned int kInstanceBufferIndex = 1;
     inline static constexpr unsigned int kNumInputBuffers = 2;
 
-    static sk_sp<VulkanGraphicsPipeline> Make(const VulkanSharedContext*,
-                                              SkSL::Compiler* compiler,
+    inline static const DescriptorData kIntrinsicUniformBufferDescriptor = {
+            DescriptorType::kUniformBuffer, /*count=*/1,
+            kIntrinsicUniformBufferIndex,
+            PipelineStageFlags::kVertexShader | PipelineStageFlags::kFragmentShader};
+
+    // Currently we only ever have one input attachment descriptor by itself within a set, so its
+    // binding index will always be 0.
+    inline static constexpr unsigned int kInputAttachmentBindingIndex = 0;
+    inline static const DescriptorData kInputAttachmentDescriptor = {
+            DescriptorType::kInputAttachment, /*count=*/1,
+            kInputAttachmentBindingIndex,
+            PipelineStageFlags::kFragmentShader};
+
+    static sk_sp<VulkanGraphicsPipeline> Make(VulkanResourceProvider*,
                                               const RuntimeEffectDictionary*,
                                               const GraphicsPipelineDesc&,
                                               const RenderPassDesc&,
-                                              sk_sp<VulkanRenderPass> compatibleRenderPass,
-                                              VkPipelineCache);
+                                              SkEnumBitMask<PipelineCreationFlags>);
+
+    static sk_sp<VulkanGraphicsPipeline> MakeLoadMSAAPipeline(
+            const VulkanSharedContext*,
+            VkShaderModule vsModule,
+            VkShaderModule fsModule,
+            VkPipelineShaderStageCreateInfo* pipelineShaderStages,
+            VkPipelineLayout,
+            sk_sp<VulkanRenderPass> compatibleRenderPass,
+            VkPipelineCache,
+            const TextureInfo& dstColorAttachmentTexInfo);
+
+    static bool InitializeMSAALoadPipelineStructs(
+            const VulkanSharedContext*,
+            VkShaderModule* outVertexShaderModule,
+            VkShaderModule* outFragShaderModule,
+            VkPipelineShaderStageCreateInfo* outShaderStageInfo,
+            VkPipelineLayout* outPipelineLayout);
 
     ~VulkanGraphicsPipeline() override {}
 
@@ -81,26 +102,22 @@ public:
         return fPipeline;
     }
 
-    bool hasFragment() const { return fHasFragment; }
-    bool hasStepUniforms() const { return fHasStepUniforms; }
-    int numTextureSamplers() const { return fNumTextureSamplers; }
-
 private:
-    VulkanGraphicsPipeline(const skgpu::graphite::SharedContext* sharedContext,
-                           PipelineInfo* pipelineInfo,
+    VulkanGraphicsPipeline(const VulkanSharedContext* sharedContext,
+                           const PipelineInfo& pipelineInfo,
                            VkPipelineLayout,
                            VkPipeline,
-                           bool hasFragment,
-                           bool hasStepUniforms,
-                           int numTextureSamplers);
+                           bool ownsPipelineLayout,
+                           skia_private::TArray<sk_sp<VulkanSampler>> immutableSamplers);
 
     void freeGpuData() override;
 
     VkPipelineLayout fPipelineLayout = VK_NULL_HANDLE;
     VkPipeline fPipeline = VK_NULL_HANDLE;
-    bool fHasFragment = false;
-    bool fHasStepUniforms = false;
-    int fNumTextureSamplers = 0;
+    bool fOwnsPipelineLayout = true;
+
+    // Hold a ref to immutable samplers used such that their lifetime is properly managed.
+    const skia_private::TArray<sk_sp<VulkanSampler>> fImmutableSamplers;
 };
 
 } // namespace skgpu::graphite

@@ -15,19 +15,20 @@
 namespace skgpu::graphite {
 
 class Context;
+class GraphicsPipelineDesc;
 class PaintOptions;
+struct RenderPassDesc;
+class RuntimeEffectDictionary;
 
-/**
- * Precompilation allows clients to create pipelines ahead of time based on what they expect
- * to draw. This can reduce performance hitches, due to inline compilation, during the actual
- * drawing. Graphite will always be able to perform an inline compilation if some SkPaint
- * combination was omitted from precompilation.
- *
- *   @param context        the Context to which the actual draws will be submitted
- *   @param paintOptions   captures a set of SkPaints that will be drawn
- *   @param drawTypes      communicates which primitives those paints will be drawn with
+
+/*
+ * TODO: Rather than passing in a pipelineDesc and renderPassDesc we need to add an
+ * opaque serializable object that contains the same information.
  */
-void Precompile(Context*, const PaintOptions&, DrawTypeFlags = kMostCommon);
+bool Precompile(Context*,
+                RuntimeEffectDictionary* rteDict,
+                const GraphicsPipelineDesc& pipelineDesc,
+                const RenderPassDesc& renderPassDesc);
 
 } // namespace skgpu::graphite
 

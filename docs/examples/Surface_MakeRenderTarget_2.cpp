@@ -1,11 +1,10 @@
 // Copyright 2019 Google LLC.
 // Use of this source code is governed by a BSD-style license that can be found in the LICENSE file.
 #include "tools/fiddle/examples.h"
-// HASH=640321e8ecfb3f9329f3bc6e1f02485f
 REG_FIDDLE(Surface_MakeRenderTarget_2, 256, 256, false, 0) {
 void draw(SkCanvas* canvas) {
     auto test_draw = [](SkCanvas* surfaceCanvas) -> void {
-        SkFont font(nullptr, 32);
+        SkFont font(fontMgr->matchFamilyStyle(nullptr, {}), 32);
 
         SkPaint paint;
         paint.setAntiAlias(true);

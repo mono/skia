@@ -19,11 +19,10 @@
 #include "src/sksl/SkSLProgramKind.h"
 #include "src/sksl/SkSLProgramSettings.h"
 #include "src/sksl/SkSLString.h"
-#include "src/sksl/SkSLThreadContext.h"
 #include "src/sksl/ir/SkSLLayout.h"
 #include "src/sksl/ir/SkSLModifierFlags.h"
 #include "src/sksl/ir/SkSLModifiers.h"
-#include "src/sksl/ir/SkSLSymbolTable.h"  // IWYU pragma: keep
+#include "src/sksl/ir/SkSLSymbolTable.h"
 #include "src/sksl/ir/SkSLType.h"
 
 #include <string_view>
@@ -35,11 +34,13 @@ static bool check_valid_uniform_type(Position pos,
                                      const Type* t,
                                      const Context& context,
                                      bool topLevel = true) {
-    const Type& ct = t->componentType();
+    auto reportError = [&]() {
+        context.fErrors->error(pos, "variables of type '" + t->displayName() +
+                                    "' may not be uniform");
+    };
 
-    // In RuntimeEffects we only allow a restricted set of types, namely shader/blender/colorFilter,
-    // 32-bit signed integers, 16-bit and 32-bit floats, and their composites.
-    bool error = false;
+    // In Runtime Effects we only allow a restricted set of types: shader, blender, colorFilter,
+    // 32-bit signed integers, 16-bit and 32-bit floats, and their vector/square-matrix composites.
     if (ProgramConfig::IsRuntimeEffect(context.fConfig->fKind)) {
         // `shader`, `blender`, `colorFilter`
         if (t->isEffectChild()) {
@@ -47,6 +48,7 @@ static bool check_valid_uniform_type(Position pos,
         }
 
         // `int`, `int2`, `int3`, `int4`
+        const Type& ct = t->componentType();
         if (ct.isSigned() && ct.bitWidth() == 32 && (t->isScalar() || t->isVector())) {
             return true;
         }
@@ -59,70 +61,23 @@ static bool check_valid_uniform_type(Position pos,
         }
 
         // Everything else is an error.
-        error = true;
-    } else {
-        // We don't allow samplers, textures or atomics to be marked as uniforms. This rules out
-        // any possible opaque type.
-        error = error || ct.isOpaque();
-
-        // We disallow boolean uniforms in SkSL since they are not well supported by backend
-        // platforms and drivers.
-        error = error || (ct.isBoolean() && (t->isScalar() || t->isVector()));
-    }
-
-    if (error) {
-        context.fErrors->error(pos, "variables of type '" + t->displayName() +
-                                    "' may not be uniform");
+        reportError();
         return false;
     }
 
-    // In non-RTE SkSL we allow structs and interface blocks to be uniforms but we must make sure
-    // their fields are allowed.
-    if (t->isStruct()) {
-        for (const Field& field : t->fields()) {
-            if (!check_valid_uniform_type(field.fPosition, field.fType, context,
-                                          /*topLevel=*/false)) {
-                // Emit a "caused by" line only for the top-level uniform type and not for any
-                // nested structs.
-                if (topLevel) {
-                    context.fErrors->error(pos, "caused by:");
-                }
-                return false;
-            }
+    Position errorPosition = {};
+    if (!t->isAllowedInUniform(&errorPosition)) {
+        reportError();
+        if (errorPosition.valid()) {
+            context.fErrors->error(errorPosition, "caused by:");
         }
+        return false;
     }
+
     return true;
 }
 
 }  // namespace
-
-std::unique_ptr<Statement> VarDeclaration::clone() const {
-    // Cloning a VarDeclaration is inherently problematic, as we normally expect a one-to-one
-    // mapping between Variables and VarDeclarations and a straightforward clone would violate this
-    // assumption. We could of course theoretically clone the Variable as well, but that would
-    // require additional context and tracking, since for the whole process to work we would also
-    // have to fixup any subsequent VariableReference clones to point to the newly cloned Variables
-    // instead of the originals.
-    //
-    // Since the only reason we ever clone VarDeclarations is to support tests of clone() and we do
-    // not expect to ever need to do so otherwise, a full solution to this issue is unnecessary at
-    // the moment. We instead just keep track of whether a VarDeclaration is a clone so we can
-    // handle its cleanup properly. This allows clone() to work in the simple case that a
-    // VarDeclaration's clone does not outlive the original, which is adequate for testing. Since
-    // this leaves a sharp edge in place - destroying the original could cause a use-after-free in
-    // some circumstances - we also disable cloning altogether unless the
-    // fAllowVarDeclarationCloneForTesting ProgramSetting is enabled.
-    if (ThreadContext::Context().fConfig->fSettings.fAllowVarDeclarationCloneForTesting) {
-        return std::make_unique<VarDeclaration>(this->var(),
-                                                &this->baseType(),
-                                                fArraySize,
-                                                this->value() ? this->value()->clone() : nullptr,
-                                                /*isClone=*/true);
-    } else {
-        SkDEBUGFAIL("VarDeclaration::clone() is unsupported");
-        return nullptr;
-    }
-}
 
 std::string VarDeclaration::description() const {
     std::string result = this->var()->layout().paddedDescription() +
@@ -328,6 +283,10 @@ void VarDeclaration::ErrorCheck(const Context& context,
         (modifierFlags & (ModifierFlag::kIn | ModifierFlag::kOut))) {
         permittedLayoutFlags &= ~LayoutFlag::kPushConstant;
     }
+    // The `builtin` layout flag is only allowed in modules.
+    if (!context.fConfig->isBuiltinCode()) {
+        permittedLayoutFlags &= ~LayoutFlag::kBuiltin;
+    }
 
     modifierFlags.checkPermittedFlags(context, modifiersPosition, permitted);
     layout.checkPermittedLayout(context, modifiersPosition, permittedLayoutFlags);
@@ -349,7 +308,7 @@ bool VarDeclaration::ErrorCheckAndCoerce(const Context& context,
     ErrorCheck(context, var.fPosition, var.modifiersPosition(), var.layout(), var.modifierFlags(),
                &var.type(), baseType, var.storage());
     if (value) {
-        if (var.type().isOpaque()) {
+        if (var.type().isOpaque() || var.type().isOrContainsAtomic()) {
             context.fErrors->error(value->fPosition, "opaque type '" + var.type().displayName() +
                                                      "' cannot use initializer expressions");
             return false;
@@ -462,20 +421,14 @@ std::unique_ptr<VarDeclaration> VarDeclaration::Convert(const Context& context,
 
         // `sk_RTAdjust` is special, and makes the IR generator emit position-fixup expressions.
         if (var->name() == Compiler::RTADJUST_NAME) {
-            if (ThreadContext::RTAdjustState().fVar ||
-                ThreadContext::RTAdjustState().fInterfaceBlock) {
-                context.fErrors->error(var->fPosition, "duplicate definition of 'sk_RTAdjust'");
-                return nullptr;
-            }
             if (!var->type().matches(*context.fTypes.fFloat4)) {
                 context.fErrors->error(var->fPosition, "sk_RTAdjust must have type 'float4'");
                 return nullptr;
             }
-            ThreadContext::RTAdjustState().fVar = var.get();
         }
     }
 
-    context.fSymbolTable->add(std::move(var));
+    context.fSymbolTable->add(context, std::move(var));
     return varDecl;
 }
 

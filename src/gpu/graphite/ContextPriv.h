@@ -12,6 +12,10 @@
 #include "src/gpu/graphite/QueueManager.h"
 #include "src/gpu/graphite/SharedContext.h"
 
+#if defined(GPU_TEST_UTILS)
+#include "src/gpu/graphite/ContextOptionsPriv.h"
+#endif
+
 namespace skgpu::graphite {
 
 class Caps;
@@ -45,11 +49,11 @@ public:
     ResourceProvider* resourceProvider() const {
         return fContext->fResourceProvider.get();
     }
-    PlotUploadTracker* plotUploadTracker() const {
-        return fContext->fPlotUploadTracker.get();
+    SharedContext* sharedContext() {
+        return fContext->fSharedContext.get();
     }
 
-#if defined(GRAPHITE_TEST_UTILS)
+#if defined(GPU_TEST_UTILS)
     void startCapture() {
         fContext->fQueueManager->startCapture();
     }
@@ -63,6 +67,8 @@ public:
                     const TextureProxy*,
                     const SkImageInfo& srcImageInfo,
                     int srcX, int srcY);
+
+    bool supportsPathRendererStrategy(PathRendererStrategy);
 #endif
 
 private:

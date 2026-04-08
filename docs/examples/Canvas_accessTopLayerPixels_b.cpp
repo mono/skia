@@ -1,11 +1,10 @@
 // Copyright 2019 Google LLC.
 // Use of this source code is governed by a BSD-style license that can be found in the LICENSE file.
 #include "tools/fiddle/examples.h"
-// HASH=a7ac9c21bbabcdeeca00f72a61cd0f3e
 REG_FIDDLE(Canvas_accessTopLayerPixels_b, 256, 256, false, 0) {
 void draw(SkCanvas* canvas) {
   SkPaint paint;
-  SkFont font(nullptr, 100);
+  SkFont font(fontMgr->matchFamilyStyle(nullptr, {}), 100);
   canvas->drawString("ABC", 20, 160, font, paint);
   SkRect layerBounds = SkRect::MakeXYWH(32, 32, 192, 192);
   canvas->saveLayerAlpha(&layerBounds, 128);

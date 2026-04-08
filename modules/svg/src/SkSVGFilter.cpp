@@ -5,13 +5,17 @@
  * found in the LICENSE file.
  */
 
-#include "include/core/SkColorFilter.h"
-#include "include/effects/SkImageFilters.h"
-#include "modules/svg/include/SkSVGFe.h"
 #include "modules/svg/include/SkSVGFilter.h"
+
+#include "include/core/SkColorFilter.h"
+#include "include/core/SkImageFilter.h"
+#include "include/core/SkRect.h"
+#include "include/effects/SkImageFilters.h"
+#include "include/private/base/SkTArray.h"
+#include "modules/svg/include/SkSVGAttributeParser.h"
+#include "modules/svg/include/SkSVGFe.h"
 #include "modules/svg/include/SkSVGFilterContext.h"
 #include "modules/svg/include/SkSVGRenderContext.h"
-#include "modules/svg/include/SkSVGValue.h"
 
 bool SkSVGFilter::parseAndSetAttribute(const char* name, const char* value) {
     return INHERITED::parseAndSetAttribute(name, value) ||
@@ -25,10 +29,14 @@ bool SkSVGFilter::parseAndSetAttribute(const char* name, const char* value) {
                    "primitiveUnits", name, value));
 }
 
+void SkSVGFilter::applyProperties(SkSVGRenderContext* ctx) const { this->onPrepareToRender(ctx); }
+
 sk_sp<SkImageFilter> SkSVGFilter::buildFilterDAG(const SkSVGRenderContext& ctx) const {
     sk_sp<SkImageFilter> filter;
     SkSVGFilterContext fctx(ctx.resolveOBBRect(fX, fY, fWidth, fHeight, fFilterUnits),
                             fPrimitiveUnits);
+    SkSVGRenderContext localCtx(ctx);
+    this->applyProperties(&localCtx);
     SkSVGColorspace cs = SkSVGColorspace::kSRGB;
     for (const auto& child : fChildren) {
         if (!SkSVGFe::IsFilterEffect(child)) {
@@ -42,12 +50,12 @@ sk_sp<SkImageFilter> SkSVGFilter::buildFilterDAG(const SkSVGRenderContext& ctx) 
         // color-interpolation-filters). We call this explicitly here because the SkSVGFe
         // nodes do not participate in the normal onRender path, which is when property
         // propagation currently occurs.
-        SkSVGRenderContext localCtx(ctx);
-        feNode.applyProperties(&localCtx);
+        SkSVGRenderContext localChildCtx(localCtx);
+        feNode.applyProperties(&localChildCtx);
 
-        const SkRect filterSubregion = feNode.resolveFilterSubregion(localCtx, fctx);
-        cs = feNode.resolveColorspace(ctx, fctx);
-        filter = feNode.makeImageFilter(localCtx, fctx);
+        const SkRect filterSubregion = feNode.resolveFilterSubregion(localChildCtx, fctx);
+        cs = feNode.resolveColorspace(localChildCtx, fctx);
+        filter = feNode.makeImageFilter(localChildCtx, fctx);
 
         if (!feResultType.isEmpty()) {
             fctx.registerResult(feResultType, filter, filterSubregion, cs);

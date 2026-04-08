@@ -6,15 +6,32 @@
  */
 
 #include "include/core/SkPaint.h"
+#include "include/core/SkPath.h"
+#include "include/core/SkPoint.h"
+#include "include/core/SkRect.h"
+#include "include/core/SkRegion.h"
+#include "include/core/SkScalar.h"
+#include "include/private/base/SkAssert.h"
+#include "include/private/base/SkDebug.h"
+#include "include/private/base/SkFixed.h"
+#include "include/private/base/SkFloatingPoint.h"
+#include "include/private/base/SkMath.h"
+#include "include/private/base/SkSafe32.h"
 #include "src/base/SkMathPriv.h"
+#include "src/base/SkUtils.h"
+#include "src/base/SkVx.h"
 #include "src/core/SkBlitter.h"
 #include "src/core/SkFDot6.h"
+#include "src/core/SkGeometry.h"
 #include "src/core/SkLineClipper.h"
 #include "src/core/SkPathPriv.h"
 #include "src/core/SkRasterClip.h"
 #include "src/core/SkScan.h"
 
-#include <utility>
+#include <algorithm>
+#include <array>
+#include <cstdint>
+#include <cstring>
 
 static void horiline(int x, int stopx, SkFixed fy, SkFixed dy,
                      SkBlitter* blitter) {
@@ -211,10 +228,6 @@ void SkScan::HairRect(const SkRect& rect, const SkRasterClip& clip, SkBlitter* b
 
 ///////////////////////////////////////////////////////////////////////////////
 
-#include "include/core/SkPath.h"
-#include "src/base/SkVx.h"
-#include "src/core/SkGeometry.h"
-
 #define kMaxCubicSubdivideLevel 9
 #define kMaxQuadSubdivideLevel  5
 
@@ -267,7 +280,7 @@ static void hair_quad(const SkPoint pts[3], const SkRegion* clip,
 }
 
 static SkRect compute_nocheck_quad_bounds(const SkPoint pts[3]) {
-    SkASSERT(SkScalarsAreFinite(&pts[0].fX, 6));
+    SkASSERT(SkIsFinite(&pts[0].fX, 6));
 
     float2 min = float2::Load(pts);
     float2 max = min;
@@ -400,7 +413,7 @@ static void hair_cubic(const SkPoint pts[4], const SkRegion* clip, SkBlitter* bl
 }
 
 static SkRect compute_nocheck_cubic_bounds(const SkPoint pts[4]) {
-    SkASSERT(SkScalarsAreFinite(&pts[0].fX, 8));
+    SkASSERT(SkIsFinite(&pts[0].fX, 8));
 
     float2 min = float2::Load(pts);
     float2 max = min;

@@ -34,6 +34,7 @@
 #include "src/core/SkPicturePriv.h"
 #include "src/core/SkRectPriv.h"
 #include "tests/Test.h"
+#include "tools/fonts/FontToolUtils.h"
 
 #include <cstddef>
 #include <memory>
@@ -509,7 +510,7 @@ static void test_gen_id(skiatest::Reporter* reporter) {
 static void test_typeface(skiatest::Reporter* reporter) {
     SkPictureRecorder recorder;
     SkCanvas* canvas = recorder.beginRecording(10, 10);
-    SkFont font(SkTypeface::MakeFromName("Arial", SkFontStyle::Italic()));
+    SkFont font(ToolUtils::CreateTestTypeface("Arial", SkFontStyle::Italic()));
     canvas->drawString("Q", 0, 10, font, SkPaint());
     sk_sp<SkPicture> picture(recorder.finishRecordingAsPicture());
     SkDynamicMemoryWStream stream;
@@ -530,7 +531,7 @@ DEF_TEST(Picture, reporter) {
     test_cull_rect_reset(reporter);
 }
 
-static void draw_bitmaps(const SkBitmap bitmap, SkCanvas* canvas) {
+static void draw_bitmaps(const SkBitmap& bitmap, SkCanvas* canvas) {
     const SkRect rect = { 5.0f, 5.0f, 8.0f, 8.0f };
     auto img = bitmap.asImage();
 
@@ -624,7 +625,7 @@ struct CountingBBH : public SkBBoxHierarchy {
 
 class SpoonFedBBHFactory : public SkBBHFactory {
 public:
-    explicit SpoonFedBBHFactory(sk_sp<SkBBoxHierarchy> bbh) : fBBH(bbh) {}
+    explicit SpoonFedBBHFactory(sk_sp<SkBBoxHierarchy> bbh) : fBBH(std::move(bbh)) {}
     sk_sp<SkBBoxHierarchy> operator()() const override {
         return fBBH;
     }
@@ -892,7 +893,7 @@ DEF_TEST(Picture_fillsBBH, r) {
 }
 
 DEF_TEST(Picture_nested_op_count, r) {
-    auto make_pic = [](int n, sk_sp<SkPicture> pic) {
+    auto make_pic = [](int n, const sk_sp<SkPicture>& pic) {
         SkPictureRecorder rec;
         SkCanvas* c = rec.beginRecording({0,0, 100,100});
         for (int i = 0; i < n; i++) {
@@ -905,7 +906,7 @@ DEF_TEST(Picture_nested_op_count, r) {
         return rec.finishRecordingAsPicture();
     };
 
-    auto check = [r](sk_sp<SkPicture> pic, int shallow, int nested) {
+    auto check = [r](const sk_sp<SkPicture>& pic, int shallow, int nested) {
         int s = pic->approximateOpCount(false);
         int n = pic->approximateOpCount(true);
         REPORTER_ASSERT(r, s == shallow);

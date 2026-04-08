@@ -42,15 +42,12 @@ class GrRecordingContext;
 class GrSurfaceProxy;
 class GrSurfaceProxyView;
 class SkArenaAlloc;
-class SkFont;
-class SkPaint;
 enum class GrXferBarrierFlags;
 struct GrShaderCaps;
 
 namespace sktext { namespace gpu { class AtlasSubRun; } }
 
 namespace skgpu::ganesh {
-class SurfaceDrawContext;
 
 class AtlasTextOp final : public GrMeshDrawOp {
 public:
@@ -129,24 +126,13 @@ public:
         kAliasedDistanceField,
         kGrayscaleDistanceField,
         kLCDDistanceField,
-        kLCDBGRDistanceField,
 
-        kLast = kLCDBGRDistanceField
+        kLast = kLCDDistanceField
 #else
         kLast = kColorBitmap
 #endif
     };
     inline static constexpr int kMaskTypeCount = static_cast<int>(MaskType::kLast) + 1;
-
-#if defined(GR_TEST_UTILS)
-    static GrOp::Owner CreateOpTestingOnly(skgpu::ganesh::SurfaceDrawContext*,
-                                           const SkPaint&,
-                                           const SkFont&,
-                                           const SkMatrix&,
-                                           const char* text,
-                                           int x,
-                                           int y);
-#endif
 
 private:
     friend class GrOp; // for ctor
@@ -217,7 +203,7 @@ private:
     void onPrepareDraws(GrMeshDrawTarget*) override;
     void onExecute(GrOpFlushState*, const SkRect& chainBounds) override;
 
-#if defined(GR_TEST_UTILS)
+#if defined(GPU_TEST_UTILS)
     SkString onDumpInfo() const override;
 #endif
 
@@ -232,7 +218,6 @@ private:
             case MaskType::kAliasedDistanceField:
             case MaskType::kGrayscaleDistanceField:
             case MaskType::kLCDDistanceField:
-            case MaskType::kLCDBGRDistanceField:
 #endif
                 return skgpu::MaskFormat::kA8;
         }
@@ -244,14 +229,12 @@ private:
     bool usesDistanceFields() const {
         return MaskType::kAliasedDistanceField == this->maskType() ||
                MaskType::kGrayscaleDistanceField == this->maskType() ||
-               MaskType::kLCDDistanceField == this->maskType() ||
-               MaskType::kLCDBGRDistanceField == this->maskType();
+               MaskType::kLCDDistanceField == this->maskType();
     }
 
     bool isLCD() const {
         return MaskType::kLCDCoverage == this->maskType() ||
-               MaskType::kLCDDistanceField == this->maskType() ||
-               MaskType::kLCDBGRDistanceField == this->maskType();
+               MaskType::kLCDDistanceField == this->maskType();
     }
 #else
     bool isLCD() const {

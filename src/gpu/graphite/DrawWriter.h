@@ -8,6 +8,7 @@
 #ifndef skgpu_graphite_DrawWriter_DEFINED
 #define skgpu_graphite_DrawWriter_DEFINED
 
+#include "src/base/SkAutoMalloc.h"
 #include "src/gpu/BufferWriter.h"
 #include "src/gpu/graphite/BufferManager.h"
 #include "src/gpu/graphite/DrawTypes.h"
@@ -50,6 +51,10 @@ class List;
  *        instances.append(n) << ...;
  *  - fixed vertex, index, and instance data           ->
  *        writer.drawIndexedInstanced(vertices, indices, indexCount, instances, instanceCount)
+ *
+ * NOTE: DrawWriter automatically handles failures to find or create a GPU buffer or map it to
+ * be writable. All returned VertexWriters will have a non-null pointer to write to, even if it will
+ * be discarded due to GPU failure at Recorder::snap() time.
  */
 class DrawWriter {
 public:
@@ -191,10 +196,12 @@ private:
     DrawPassCommands::List* fCommandList;
     DrawBufferManager* fManager;
 
+    SkAutoMalloc fFailureStorage; // storage address for VertexWriter when GPU buffer mapping fails
+
     // Pipeline state matching currently bound pipeline
     PrimitiveType fPrimitiveType;
-    size_t fVertexStride;
-    size_t fInstanceStride;
+    uint32_t fVertexStride;
+    uint32_t fInstanceStride;
 
     /// Draw buffer binding state for pending draws
     BindBufferInfo fVertices;
@@ -205,8 +212,8 @@ private:
     // instanced drawing, where real index count = max(-fTemplateCount-1)
     int fTemplateCount;
 
-    unsigned int fPendingCount; // # of vertices or instances (depending on mode) to be drawn
-    unsigned int fPendingBase; // vertex/instance offset (depending on mode) applied to buffer
+    uint32_t fPendingCount; // # of vertices or instances (depending on mode) to be drawn
+    uint32_t fPendingBase; // vertex/instance offset (depending on mode) applied to buffer
     bool fPendingBufferBinds; // true if {fVertices,fIndices,fInstances} has changed since last draw
 
     void setTemplate(BindBufferInfo vertices, BindBufferInfo indices, BindBufferInfo instances,
@@ -257,9 +264,9 @@ public:
 protected:
     DrawWriter&     fDrawer;
     BindBufferInfo& fTarget;
-    size_t          fStride;
+    uint32_t        fStride;
 
-    unsigned int fReservedCount; // in target stride units
+    uint32_t     fReservedCount; // in target stride units
     VertexWriter fNextWriter;    // writing to the target buffer binding
 
     virtual void onFlush() {}
@@ -269,24 +276,36 @@ protected:
             return;
         } else if (fReservedCount > 0) {
             // Have contiguous bytes that can't satisfy request, so return them in the event the
-            // DBM has additional contiguous bytes after the prior reserved range.
-            fDrawer.fManager->returnVertexBytes(fReservedCount * fStride);
+            // DBM has additional contiguous bytes after the prior reserved range. The byte count
+            // multiply should be safe here: if it would have overflowed, the original allocation
+            // should have failed and not increased fReservedCount.
+            SkASSERT(SkTFitsIn<uint32_t>((uint64_t)fReservedCount*(uint64_t)fStride));
+            const uint32_t returnedBytes = fReservedCount * fStride;
+            SkASSERT(fTarget.fSize >= returnedBytes);
+            fDrawer.fManager->returnVertexBytes(returnedBytes);
+            fTarget.fSize -= returnedBytes;
+            fReservedCount = 0;
         }
 
-        fReservedCount = count;
         // NOTE: Cannot bind tuple directly to fNextWriter, compilers don't produce the right
         // move assignment.
-        auto [writer, reservedChunk] = fDrawer.fManager->getVertexWriter(count * fStride);
-        if (reservedChunk.fBuffer != fTarget.fBuffer ||
-            reservedChunk.fOffset !=
-                    (fTarget.fOffset + (fDrawer.fPendingBase + fDrawer.fPendingCount) * fStride)) {
-            // Not contiguous, so flush and update binding to 'reservedChunk'
-            this->onFlush();
-            fDrawer.flush();
+        auto [writer, reservedChunk] = fDrawer.fManager->getVertexWriter(count, fStride);
+        if (writer) {
+            fReservedCount = count;
 
-            fTarget = reservedChunk;
-            fDrawer.fPendingBase = 0;
-            fDrawer.fPendingBufferBinds = true;
+            if (reservedChunk.fBuffer != fTarget.fBuffer ||
+                reservedChunk.fOffset !=
+                        (fTarget.fOffset + (fDrawer.fPendingBase+fDrawer.fPendingCount)*fStride)) {
+                // Not contiguous, so flush and update binding to 'reservedChunk'
+                this->onFlush();
+                fDrawer.flush();
+
+                fTarget = reservedChunk;
+                fDrawer.fPendingBase = 0;
+                fDrawer.fPendingBufferBinds = true;
+            } else {
+                fTarget.fSize += reservedChunk.fSize;
+            }
         }
         fNextWriter = std::move(writer);
     }
@@ -295,9 +314,24 @@ protected:
         SkASSERT(count > 0);
         this->reserve(count);
 
+        if (!fNextWriter) SK_UNLIKELY {
+            // If the GPU mapped buffer failed, ensure we have a sufficiently large CPU address to
+            // write to so that RenderSteps don't have to worry about error handling. The Recording
+            // will fail since the map failure is tracked by BufferManager.
+            // Since one of the reasons for GPU mapping failure is that count*stride does not fit
+            // in 32-bits, we calculate the CPU-side size carefully.
+            uint64_t size = (uint64_t)count * (uint64_t)fStride;
+            if (!SkTFitsIn<size_t>(size)) {
+                sk_report_container_overflow_and_die();
+            }
+            return VertexWriter(fDrawer.fFailureStorage.reset(size, SkAutoMalloc::kReuse_OnShrink),
+                                SkTo<size_t>(size));
+        }
+
         SkASSERT(fReservedCount >= count);
         fReservedCount -= count;
         fDrawer.fPendingCount += count;
+        // Since we have a writer, we know count*stride is valid.
         return std::exchange(fNextWriter, fNextWriter.makeOffset(count * fStride));
     }
 };

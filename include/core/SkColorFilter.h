@@ -15,6 +15,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <utility>
 
 class SkColorMatrix;
 class SkColorSpace;
@@ -48,8 +49,6 @@ public:
     // Returns true if the filter is guaranteed to never change the alpha of a color it filters.
     bool isAlphaUnchanged() const;
 
-    SkColor filterColor(SkColor) const;
-
     /**
      * Converts the src color (in src colorspace), into the dst colorspace,
      * then applies this filter to it, returning the filtered color in the dst colorspace.
@@ -82,8 +81,10 @@ private:
 
 class SK_API SkColorFilters {
 public:
-    static sk_sp<SkColorFilter> Compose(sk_sp<SkColorFilter> outer, sk_sp<SkColorFilter> inner) {
-        return outer ? outer->makeComposed(inner) : inner;
+    static sk_sp<SkColorFilter> Compose(const sk_sp<SkColorFilter>& outer,
+                                        sk_sp<SkColorFilter> inner) {
+        return outer ? outer->makeComposed(std::move(inner))
+                     : std::move(inner);
     }
 
     // Blends between the constant color (src) and input color (dst) based on the SkBlendMode.
@@ -91,8 +92,10 @@ public:
     static sk_sp<SkColorFilter> Blend(const SkColor4f& c, sk_sp<SkColorSpace>, SkBlendMode mode);
     static sk_sp<SkColorFilter> Blend(SkColor c, SkBlendMode mode);
 
-    static sk_sp<SkColorFilter> Matrix(const SkColorMatrix&);
-    static sk_sp<SkColorFilter> Matrix(const float rowMajor[20]);
+    enum class Clamp : bool { kNo, kYes };
+
+    static sk_sp<SkColorFilter> Matrix(const SkColorMatrix&, Clamp clamp = Clamp::kYes);
+    static sk_sp<SkColorFilter> Matrix(const float rowMajor[20], Clamp clamp = Clamp::kYes);
 
     // A version of Matrix which operates in HSLA space instead of RGBA.
     // I.e. HSLA-to-RGBA(Matrix(RGBA-to-HSLA(input))).

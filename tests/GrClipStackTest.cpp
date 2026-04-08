@@ -21,9 +21,9 @@
 #include "include/core/SkString.h"
 #include "include/core/SkSurfaceProps.h"
 #include "include/core/SkTypes.h"
-#include "include/gpu/GrContextOptions.h"
-#include "include/gpu/GrDirectContext.h"
-#include "include/gpu/mock/GrMockTypes.h"
+#include "include/gpu/ganesh/GrContextOptions.h"
+#include "include/gpu/ganesh/GrDirectContext.h"
+#include "include/gpu/ganesh/mock/GrMockTypes.h"
 #include "include/private/base/SkTo.h"
 #include "include/private/gpu/ganesh/GrTypesPriv.h"
 #include "src/core/SkRRectPriv.h"
@@ -108,7 +108,7 @@ private:
              ClipStack::ClipState expectedState,
              std::vector<ClipStack::Element> actual,
              std::vector<ClipStack::Element> expected)
-        : fName(name)
+        : fName(std::move(name))
         , fElements(std::move(actual))
         , fDeviceBounds(deviceBounds)
         , fExpectedElements(std::move(expected))

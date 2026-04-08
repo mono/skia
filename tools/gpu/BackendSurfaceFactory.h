@@ -12,7 +12,7 @@
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkSize.h"
 #include "include/gpu/GpuTypes.h"
-#include "include/gpu/GrTypes.h"
+#include "include/gpu/ganesh/GrTypes.h"
 #include "include/private/SkColorData.h"
 
 class GrDirectContext;
@@ -20,6 +20,12 @@ class SkSurface;
 class SkSurfaceProps;
 enum SkColorType : int;
 struct SkImageInfo;
+
+#ifdef SK_GRAPHITE
+namespace skgpu::graphite {
+    class Recorder;
+}
+#endif
 
 namespace sk_gpu_test {
 
@@ -57,6 +63,30 @@ sk_sp<SkSurface> MakeBackendRenderTargetSurface(GrDirectContext*,
                                                 sk_sp<SkColorSpace> = nullptr,
                                                 GrProtected = GrProtected::kNo,
                                                 const SkSurfaceProps* = nullptr);
+
+#ifdef SK_GRAPHITE
+/*
+ * Graphite version of MakeBackendTextureSurface
+ */
+sk_sp<SkSurface> MakeBackendTextureSurface(skgpu::graphite::Recorder*,
+                                           const SkImageInfo&,
+                                           skgpu::Mipmapped = skgpu::Mipmapped::kNo,
+                                           skgpu::Protected = skgpu::Protected::kNo,
+                                           const SkSurfaceProps* = nullptr);
+
+#if defined(SK_DAWN)
+/*
+ * Variation that wraps a WGPUTextureView. Only supported on Dawn backend.
+ */
+sk_sp<SkSurface> MakeBackendTextureViewSurface(skgpu::graphite::Recorder*,
+                                               const SkImageInfo&,
+                                               skgpu::Mipmapped = skgpu::Mipmapped::kNo,
+                                               skgpu::Protected = skgpu::Protected::kNo,
+                                               const SkSurfaceProps* = nullptr);
+#endif // SK_DAWN
+
+#endif  // SK_GRAPHITE
+
 }  // namespace sk_gpu_test
 
 #endif

@@ -4,17 +4,24 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
-
 #include "src/gpu/ganesh/GrDrawingManager.h"
 
-#include <algorithm>
-#include <memory>
-
-#include "include/gpu/GrBackendSemaphore.h"
-#include "include/gpu/GrDirectContext.h"
-#include "include/gpu/GrRecordingContext.h"
+#include "include/core/SkData.h"
+#include "include/core/SkRect.h"
+#include "include/core/SkSize.h"
+#include "include/core/SkSurface.h"
+#include "include/gpu/GpuTypes.h"
+#include "include/gpu/ganesh/GrDirectContext.h"
+#include "include/gpu/ganesh/GrRecordingContext.h"
+#include "include/gpu/ganesh/GrTypes.h"
+#include "include/private/base/SkAssert.h"
+#include "include/private/base/SkTo.h"
 #include "include/private/chromium/GrDeferredDisplayList.h"
+#include "include/private/chromium/GrSurfaceCharacterization.h"
+#include "include/private/gpu/ganesh/GrTypesPriv.h"
 #include "src/base/SkTInternalLList.h"
+#include "src/core/SkTraceEvent.h"
+#include "src/gpu/ganesh/GrAuditTrail.h"
 #include "src/gpu/ganesh/GrBufferTransferRenderTask.h"
 #include "src/gpu/ganesh/GrBufferUpdateRenderTask.h"
 #include "src/gpu/ganesh/GrClientMappedBufferManager.h"
@@ -23,7 +30,7 @@
 #include "src/gpu/ganesh/GrDeferredDisplayListPriv.h"
 #include "src/gpu/ganesh/GrDirectContextPriv.h"
 #include "src/gpu/ganesh/GrGpu.h"
-#include "src/gpu/ganesh/GrMemoryPool.h"
+#include "src/gpu/ganesh/GrGpuBuffer.h"
 #include "src/gpu/ganesh/GrNativeRect.h"
 #include "src/gpu/ganesh/GrOnFlushResourceProvider.h"
 #include "src/gpu/ganesh/GrOpFlushState.h"
@@ -32,21 +39,23 @@
 #include "src/gpu/ganesh/GrRenderTask.h"
 #include "src/gpu/ganesh/GrRenderTaskCluster.h"
 #include "src/gpu/ganesh/GrResourceAllocator.h"
-#include "src/gpu/ganesh/GrResourceProvider.h"
-#include "src/gpu/ganesh/GrSurfaceProxyPriv.h"
+#include "src/gpu/ganesh/GrResourceCache.h"
+#include "src/gpu/ganesh/GrSurfaceProxyView.h"
 #include "src/gpu/ganesh/GrTTopoSort.h"
-#include "src/gpu/ganesh/GrTexture.h"
 #include "src/gpu/ganesh/GrTextureProxy.h"
-#include "src/gpu/ganesh/GrTextureProxyPriv.h"
+#include "src/gpu/ganesh/GrTextureResolveManager.h"
 #include "src/gpu/ganesh/GrTextureResolveRenderTask.h"
 #include "src/gpu/ganesh/GrTracing.h"
 #include "src/gpu/ganesh/GrTransferFromRenderTask.h"
 #include "src/gpu/ganesh/GrWaitRenderTask.h"
 #include "src/gpu/ganesh/GrWritePixelsRenderTask.h"
+#include "src/gpu/ganesh/ops/GrOp.h"
 #include "src/gpu/ganesh/ops/OpsTask.h"
 #include "src/gpu/ganesh/ops/SoftwarePathRenderer.h"
-#include "src/gpu/ganesh/surface/SkSurface_Ganesh.h"
-#include "src/text/gpu/SDFTControl.h"
+
+#include <algorithm>
+#include <memory>
+#include <utility>
 
 using namespace skia_private;
 
@@ -214,7 +223,7 @@ bool GrDrawingManager::flush(SkSpan<GrSurfaceProxy*> proxies,
     return true;
 }
 
-bool GrDrawingManager::submitToGpu(GrSyncCpu sync) {
+bool GrDrawingManager::submitToGpu() {
     if (fFlushing || this->wasAbandoned()) {
         return false;
     }
@@ -224,7 +233,7 @@ bool GrDrawingManager::submitToGpu(GrSyncCpu sync) {
         return false; // Can't submit while DDL recording
     }
     GrGpu* gpu = direct->priv().getGpu();
-    return gpu->submitToGpu(sync);
+    return gpu->submitToGpu();
 }
 
 bool GrDrawingManager::executeRenderTasks(GrOpFlushState* flushState) {
@@ -273,7 +282,7 @@ bool GrDrawingManager::executeRenderTasks(GrOpFlushState* flushState) {
             anyRenderTasksExecuted = true;
         }
         if (++numRenderTasksExecuted >= kMaxRenderTasksBeforeFlush) {
-            flushState->gpu()->submitToGpu(GrSyncCpu::kNo);
+            flushState->gpu()->submitToGpu();
             numRenderTasksExecuted = 0;
         }
     }
@@ -316,7 +325,7 @@ void GrDrawingManager::sortTasks() {
         }));
         SkASSERT(span.end() == fDAG.end() || fDAG[end]->blocksReordering());
 
-#if defined(SK_GANESH) && defined(SK_DEBUG)
+#if defined(SK_DEBUG)
         // In order to partition the dag array like this it must be the case that each partition
         // only depends on nodes in the partition or earlier partitions.
         auto check = [&](const GrRenderTask* task, auto&& check) -> void {
@@ -477,7 +486,7 @@ static void resolve_and_mipmap(GrGpu* gpu, GrSurfaceProxy* proxy) {
         if (rtProxy->isMSAADirty()) {
             SkASSERT(rtProxy->peekRenderTarget());
             gpu->resolveRenderTarget(rtProxy->peekRenderTarget(), rtProxy->msaaDirtyRect());
-            gpu->submitToGpu(GrSyncCpu::kNo);
+            gpu->submitToGpu();
             rtProxy->markMSAAResolved();
         }
     }
@@ -525,7 +534,7 @@ GrSemaphoresSubmitted GrDrawingManager::flushSurfaces(SkSpan<GrSurfaceProxy*> pr
 
     SkDEBUGCODE(this->validate());
 
-    if (!didFlush || (!direct->priv().caps()->semaphoreSupport() && info.fNumSemaphores)) {
+    if (!didFlush || (!direct->priv().caps()->backendSemaphoreSupport() && info.fNumSemaphores)) {
         return GrSemaphoresSubmitted::kNo;
     }
     return GrSemaphoresSubmitted::kYes;
@@ -535,7 +544,7 @@ void GrDrawingManager::addOnFlushCallbackObject(GrOnFlushCallbackObject* onFlush
     fOnFlushCBObjects.push_back(onFlushCBObject);
 }
 
-#if defined(GR_TEST_UTILS)
+#if defined(GPU_TEST_UTILS)
 void GrDrawingManager::testingOnly_removeOnFlushCallbackObject(GrOnFlushCallbackObject* cb) {
     int n = std::find(fOnFlushCBObjects.begin(), fOnFlushCBObjects.end(), cb) -
             fOnFlushCBObjects.begin();
@@ -771,7 +780,7 @@ void GrDrawingManager::newTextureResolveRenderTask(sk_sp<GrSurfaceProxy> proxy,
     SkDEBUGCODE(this->validate());
 }
 
-void GrDrawingManager::newWaitRenderTask(sk_sp<GrSurfaceProxy> proxy,
+void GrDrawingManager::newWaitRenderTask(const sk_sp<GrSurfaceProxy>& proxy,
                                          std::unique_ptr<std::unique_ptr<GrSemaphore>[]> semaphores,
                                          int numSemaphores) {
     SkDEBUGCODE(this->validate());
@@ -816,7 +825,7 @@ void GrDrawingManager::newWaitRenderTask(sk_sp<GrSurfaceProxy> proxy,
     SkDEBUGCODE(this->validate());
 }
 
-void GrDrawingManager::newTransferFromRenderTask(sk_sp<GrSurfaceProxy> srcProxy,
+void GrDrawingManager::newTransferFromRenderTask(const sk_sp<GrSurfaceProxy>& srcProxy,
                                                  const SkIRect& srcRect,
                                                  GrColorType surfaceColorType,
                                                  GrColorType dstColorType,
@@ -907,7 +916,7 @@ void GrDrawingManager::newBufferUpdateTask(sk_sp<SkData> src,
 
 sk_sp<GrRenderTask> GrDrawingManager::newCopyRenderTask(sk_sp<GrSurfaceProxy> dst,
                                                         SkIRect dstRect,
-                                                        sk_sp<GrSurfaceProxy> src,
+                                                        const sk_sp<GrSurfaceProxy>& src,
                                                         SkIRect srcRect,
                                                         GrSamplerState::Filter filter,
                                                         GrSurfaceOrigin origin) {
@@ -1061,7 +1070,7 @@ void GrDrawingManager::flushIfNecessary() {
     auto resourceCache = direct->priv().getResourceCache();
     if (resourceCache && resourceCache->requestsFlush()) {
         if (this->flush({}, SkSurfaces::BackendSurfaceAccess::kNoAccess, GrFlushInfo(), nullptr)) {
-            this->submitToGpu(GrSyncCpu::kNo);
+            this->submitToGpu();
         }
         resourceCache->purgeAsNeeded();
     }

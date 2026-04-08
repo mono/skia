@@ -26,10 +26,12 @@ static inline uint32_t SkColorTypeChannelFlags(SkColorType ct) {
         case kBGRA_1010102_SkColorType:       return kRGBA_SkColorChannelFlags;
         case kBGR_101010x_SkColorType:        return kRGB_SkColorChannelFlags;
         case kBGR_101010x_XR_SkColorType:     return kRGB_SkColorChannelFlags;
+        case kBGRA_10101010_XR_SkColorType:   return kRGBA_SkColorChannelFlags;
         case kRGBA_10x6_SkColorType:          return kRGBA_SkColorChannelFlags;
         case kGray_8_SkColorType:             return kGray_SkColorChannelFlag;
         case kRGBA_F16Norm_SkColorType:       return kRGBA_SkColorChannelFlags;
         case kRGBA_F16_SkColorType:           return kRGBA_SkColorChannelFlags;
+        case kRGB_F16F16F16x_SkColorType:     return kRGB_SkColorChannelFlags;
         case kRGBA_F32_SkColorType:           return kRGBA_SkColorChannelFlags;
         case kR8G8_unorm_SkColorType:         return kRG_SkColorChannelFlags;
         case kA16_unorm_SkColorType:          return kAlpha_SkColorChannelFlag;
@@ -65,10 +67,12 @@ static int SkColorTypeShiftPerPixel(SkColorType ct) {
         case kBGRA_1010102_SkColorType:       return 2;
         case kBGR_101010x_SkColorType:        return 2;
         case kBGR_101010x_XR_SkColorType:     return 2;
+        case kBGRA_10101010_XR_SkColorType:   return 3;
         case kRGBA_10x6_SkColorType:          return 3;
         case kGray_8_SkColorType:             return 0;
         case kRGBA_F16Norm_SkColorType:       return 3;
         case kRGBA_F16_SkColorType:           return 3;
+        case kRGB_F16F16F16x_SkColorType:     return 3;
         case kRGBA_F32_SkColorType:           return 4;
         case kR8G8_unorm_SkColorType:         return 1;
         case kA16_unorm_SkColorType:          return 1;
@@ -122,7 +126,9 @@ static inline bool SkColorTypeIsNormalized(SkColorType ct) {
         case kR8_unorm_SkColorType:
             return true;
 
+        case kBGRA_10101010_XR_SkColorType:
         case kBGR_101010x_XR_SkColorType:
+        case kRGB_F16F16F16x_SkColorType:
         case kRGBA_F16_SkColorType:
         case kRGBA_F32_SkColorType:
         case kR16G16_float_SkColorType:
@@ -157,6 +163,7 @@ static inline int SkColorTypeMaxBitsPerChannel(SkColorType ct) {
         case kBGRA_1010102_SkColorType:
         case kBGR_101010x_SkColorType:
         case kBGR_101010x_XR_SkColorType:
+        case kBGRA_10101010_XR_SkColorType:
         case kRGBA_10x6_SkColorType:
             return 10;
 
@@ -166,6 +173,7 @@ static inline int SkColorTypeMaxBitsPerChannel(SkColorType ct) {
         case kR16G16_unorm_SkColorType:
         case kR16G16B16A16_unorm_SkColorType:
         case kRGBA_F16_SkColorType:
+        case kRGB_F16F16F16x_SkColorType:
         case kR16G16_float_SkColorType:
             return 16;
 

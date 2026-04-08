@@ -8,27 +8,46 @@
 #ifndef SkScalerContext_DEFINED
 #define SkScalerContext_DEFINED
 
-#include <memory>
-
-#include "include/core/SkFont.h"
-#include "include/core/SkFontTypes.h"
-#include "include/core/SkMaskFilter.h"
+#include "include/core/SkColor.h"
+#include "include/core/SkFourByteTag.h"
 #include "include/core/SkMatrix.h"
 #include "include/core/SkPaint.h"
+#include "include/core/SkRect.h"
+#include "include/core/SkRefCnt.h"
+#include "include/core/SkScalar.h"
+#include "include/core/SkString.h"
+#include "include/core/SkSurfaceProps.h"
 #include "include/core/SkTypeface.h"
+#include "include/core/SkTypes.h"
 #include "include/private/base/SkMacros.h"
+#include "include/private/base/SkPoint_impl.h"
+#include "include/private/base/SkTemplates.h"
+#include "include/private/base/SkTo.h"
 #include "src/core/SkGlyph.h"
 #include "src/core/SkMask.h"
 #include "src/core/SkMaskGamma.h"
-#include "src/core/SkSurfacePriv.h"
-#include "src/core/SkWriteBuffer.h"
 
+#include <cstddef>
+#include <cstdint>
+#include <memory>
+
+class SkArenaAlloc;
 class SkAutoDescriptor;
 class SkDescriptor;
+class SkDrawable;
+class SkFont;
 class SkMaskFilter;
+class SkPath;
 class SkPathEffect;
-class SkScalerContext;
-class SkScalerContext_DW;
+enum class SkFontHinting;
+struct SkFontMetrics;
+
+//The following typedef hides from the rest of the implementation the number of
+//most significant bits to consider when creating mask gamma tables. Two bits
+//per channel was chosen as a balance between fidelity (more bits) and cache
+//sizes (fewer bits). Three bits per channel was chosen when #303942; (used by
+//the Chrome UI) turned out too green.
+typedef SkTMaskGamma<3, 3, 3> SkMaskGamma;
 
 enum class SkScalerContextFlags : uint32_t {
     kNone                      = 0,
@@ -61,35 +80,42 @@ private:
     //These describe the parameters to create (uniquely identify) the pre-blend.
     uint32_t      fLumBits;
     uint8_t       fDeviceGamma; //2.6, (0.0, 4.0) gamma, 0.0 for sRGB
-    uint8_t       fPaintGamma;  //2.6, (0.0, 4.0) gamma, 0.0 for sRGB
+    const uint8_t fReservedAlign2{0};
     uint8_t       fContrast;    //0.8+1, [0.0, 1.0] artificial contrast
     const uint8_t fReservedAlign{0};
 
+    static constexpr SkScalar ExternalGammaFromInternal(uint8_t g) {
+        return SkIntToScalar(g) / (1 << 6);
+    }
+    static constexpr uint8_t InternalGammaFromExternal(SkScalar g) {
+        // C++23 use constexpr std::floor
+        return static_cast<uint8_t>(g * (1 << 6));
+    }
+    static constexpr SkScalar ExternalContrastFromInternal(uint8_t c) {
+        return SkIntToScalar(c) / ((1 << 8) - 1);
+    }
+    static constexpr uint8_t InternalContrastFromExternal(SkScalar c) {
+        // C++23 use constexpr std::round
+        return static_cast<uint8_t>((c * ((1 << 8) - 1)) + 0.5f);
+    }
 public:
-
-    SkScalar getDeviceGamma() const {
-        return SkIntToScalar(fDeviceGamma) / (1 << 6);
-    }
-    void setDeviceGamma(SkScalar dg) {
-        SkASSERT(0 <= dg && dg < SkIntToScalar(4));
-        fDeviceGamma = SkScalarFloorToInt(dg * (1 << 6));
+    void setDeviceGamma(SkScalar g) {
+        sk_ignore_unused_variable(fReservedAlign2);
+        SkASSERT(SkSurfaceProps::kMinGammaInclusive <= g &&
+                 g < SkIntToScalar(SkSurfaceProps::kMaxGammaExclusive));
+        fDeviceGamma = InternalGammaFromExternal(g);
     }
 
-    SkScalar getPaintGamma() const {
-        return SkIntToScalar(fPaintGamma) / (1 << 6);
-    }
-    void setPaintGamma(SkScalar pg) {
-        SkASSERT(0 <= pg && pg < SkIntToScalar(4));
-        fPaintGamma = SkScalarFloorToInt(pg * (1 << 6));
-    }
-
-    SkScalar getContrast() const {
-        sk_ignore_unused_variable(fReservedAlign);
-        return SkIntToScalar(fContrast) / ((1 << 8) - 1);
-    }
     void setContrast(SkScalar c) {
-        SkASSERT(0 <= c && c <= SK_Scalar1);
-        fContrast = SkScalarRoundToInt(c * ((1 << 8) - 1));
+        sk_ignore_unused_variable(fReservedAlign);
+        SkASSERT(SkSurfaceProps::kMinContrastInclusive <= c &&
+                 c <= SkIntToScalar(SkSurfaceProps::kMaxContrastInclusive));
+        fContrast = InternalContrastFromExternal(c);
+    }
+
+    static const SkMaskGamma& CachedMaskGamma(uint8_t contrast, uint8_t gamma);
+    const SkMaskGamma& cachedMaskGamma() const {
+        return CachedMaskGamma(fContrast, fDeviceGamma);
     }
 
     /**
@@ -98,7 +124,6 @@ public:
      */
     void ignoreGamma() {
         setLuminanceColor(SK_ColorTRANSPARENT);
-        setPaintGamma(SK_Scalar1);
         setDeviceGamma(SK_Scalar1);
     }
 
@@ -110,6 +135,9 @@ public:
         ignoreGamma();
         setContrast(0);
     }
+
+    /** If the kEmbolden_Flag is set, drop it and use stroking instead. */
+    void useStrokeForFakeBold();
 
     SkMask::Format fMaskFormat;
 
@@ -133,8 +161,8 @@ public:
                    fPost2x2[0][1], fPost2x2[1][0], fPost2x2[1][1]);
         msg.appendf("      frame %g miter %g format %d join %d cap %d flags %#hx\n",
                    fFrameWidth, fMiterLimit, fMaskFormat, fStrokeJoin, fStrokeCap, fFlags);
-        msg.appendf("      lum bits %x, device gamma %d, paint gamma %d contrast %d\n", fLumBits,
-                    fDeviceGamma, fPaintGamma, fContrast);
+        msg.appendf("      lum bits %x, device gamma %d, contrast %d\n", fLumBits,
+                    fDeviceGamma, fContrast);
         msg.appendf("      foreground color %x\n", fForegroundColor);
         return msg;
     }
@@ -224,13 +252,6 @@ struct SkScalerContextEffects {
     SkMaskFilter*   fMaskFilter;
 };
 
-//The following typedef hides from the rest of the implementation the number of
-//most significant bits to consider when creating mask gamma tables. Two bits
-//per channel was chosen as a balance between fidelity (more bits) and cache
-//sizes (fewer bits). Three bits per channel was chosen when #303942; (used by
-//the Chrome UI) turned out too green.
-typedef SkTMaskGamma<3, 3, 3> SkMaskGamma;
-
 class SkScalerContext {
 public:
     enum Flags {
@@ -294,7 +315,7 @@ public:
 
     /** Return the size in bytes of the associated gamma lookup table
      */
-    static size_t GetGammaLUTSize(SkScalar contrast, SkScalar paintGamma, SkScalar deviceGamma,
+    static size_t GetGammaLUTSize(SkScalar contrast, SkScalar deviceGamma,
                                   int* width, int* height);
 
     /** Get the associated gamma lookup table. The 'data' pointer must point to pre-allocated
@@ -302,8 +323,7 @@ public:
      *
      *  If the lookup table hasn't been initialized (e.g., it's linear), this will return false.
      */
-    static bool   GetGammaLUTData(SkScalar contrast, SkScalar paintGamma, SkScalar deviceGamma,
-                                  uint8_t* data);
+    static bool GetGammaLUTData(SkScalar contrast, SkScalar deviceGamma, uint8_t* data);
 
     static void MakeRecAndEffects(const SkFont& font, const SkPaint& paint,
                                   const SkSurfaceProps& surfaceProps,
@@ -365,7 +385,7 @@ protected:
 
     struct GlyphMetrics {
         SkVector       advance;
-        SkIRect        bounds;
+        SkRect         bounds;
         SkMask::Format maskFormat;
         uint16_t       extraBits;
         bool           neverRequestPath;
@@ -383,9 +403,12 @@ protected:
 
     virtual GlyphMetrics generateMetrics(const SkGlyph&, SkArenaAlloc*) = 0;
 
-    static bool GenerateMetricsFromPath(
+    static void GenerateMetricsFromPath(
         SkGlyph* glyph, const SkPath& path, SkMask::Format format,
         bool verticalLCD, bool a8FromLCD, bool hairline);
+
+    static void SaturateGlyphBounds(SkGlyph* glyph, SkRect&&);
+    static void SaturateGlyphBounds(SkGlyph* glyph, SkIRect const &);
 
     /** Generates the contents of glyph.fImage.
      *  When called, glyph.fImage will be pointing to a pre-allocated,
@@ -405,7 +428,7 @@ protected:
      *  Does not apply subpixel positioning to the path.
      *  @return false if this glyph does not have any path.
      */
-    [[nodiscard]] virtual bool generatePath(const SkGlyph&, SkPath*) = 0;
+    [[nodiscard]] virtual bool generatePath(const SkGlyph&, SkPath*, bool* modified) = 0;
 
     /** Returns the drawable for the glyph (if any).
      *
@@ -427,6 +450,7 @@ private:
     friend class PathText;  // For debug purposes
     friend class PathTextBench;  // For debug purposes
     friend class RandomScalerContext;  // For debug purposes
+    friend class SkScalerContext_fontconfig;
 
     static SkScalerContextRec PreprocessRec(const SkTypeface&,
                                             const SkScalerContextEffects&,

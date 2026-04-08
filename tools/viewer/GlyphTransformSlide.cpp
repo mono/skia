@@ -5,11 +5,13 @@
  * found in the LICENSE file.
  */
 #include "include/core/SkCanvas.h"
+#include "include/core/SkFont.h"
 #include "include/core/SkPath.h"
 #include "include/core/SkRRect.h"
 #include "include/core/SkTypeface.h"
 #include "src/base/SkRandom.h"
 #include "tools/ToolUtils.h"
+#include "tools/fonts/FontToolUtils.h"
 #include "tools/timer/TimeUtils.h"
 #include "tools/viewer/Slide.h"
 
@@ -24,8 +26,7 @@ public:
     GlyphTransformView() { fName = "Glyph Transform"; }
 
     void load(SkScalar w, SkScalar h) override {
-        fEmojiFont.fTypeface = ToolUtils::emoji_typeface();
-        fEmojiFont.fText     = ToolUtils::emoji_sample_text();
+        fEmojiFont = ToolUtils::EmojiSample();
         fSize = {w, h};
     }
 
@@ -34,8 +35,8 @@ public:
     void draw(SkCanvas* canvas) override {
         SkPaint paint;
 
-        SkFont font(fEmojiFont.fTypeface);
-        const char* text = fEmojiFont.fText;
+        SkFont font(fEmojiFont.typeface);
+        const char* text = fEmojiFont.sampleText;
 
         double baseline = fSize.height() / 2;
         canvas->drawLine(0, baseline, fSize.width(), baseline, paint);
@@ -65,10 +66,7 @@ public:
     }
 
 private:
-    struct EmojiFont {
-        sk_sp<SkTypeface> fTypeface;
-        const char* fText;
-    } fEmojiFont;
+    ToolUtils::EmojiTestSample fEmojiFont;
 
     SkVector fTranslate;
     SkScalar fScale;

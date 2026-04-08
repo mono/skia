@@ -19,6 +19,7 @@
 #include "include/core/SkPixmap.h"
 #include "include/core/SkRRect.h"
 #include "include/core/SkRSXform.h"
+#include "include/core/SkScalar.h"
 #include "include/core/SkShader.h"
 #include "include/core/SkSpan.h"
 #include "include/core/SkSurface.h"
@@ -27,7 +28,6 @@
 #include "include/private/base/SkFloatingPoint.h"
 #include "include/private/chromium/Slug.h"  // IWYU pragma: keep
 #include "src/core/SkEnumerate.h"
-#include "src/core/SkImageFilterCache.h"
 #include "src/core/SkImageFilterTypes.h"
 #include "src/core/SkImageFilter_Base.h"
 #include "src/core/SkLatticeIter.h"
@@ -131,12 +131,10 @@ void SkDevice::drawRegion(const SkRegion& region, const SkPaint& paint) {
     }
 }
 
-void SkDevice::drawArc(const SkRect& oval, SkScalar startAngle,
-                       SkScalar sweepAngle, bool useCenter, const SkPaint& paint) {
+void SkDevice::drawArc(const SkArc& arc, const SkPaint& paint) {
     SkPath path;
     bool isFillNoPathEffect = SkPaint::kFill_Style == paint.getStyle() && !paint.getPathEffect();
-    SkPathPriv::CreateDrawArcPath(&path, oval, startAngle, sweepAngle, useCenter,
-                                  isFillNoPathEffect);
+    SkPathPriv::CreateDrawArcPath(&path, arc, isFillNoPathEffect);
     this->drawPath(path, paint);
 }
 
@@ -304,7 +302,14 @@ void SkDevice::drawDrawable(SkCanvas* canvas, SkDrawable* drawable, const SkMatr
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
 void SkDevice::drawSpecial(SkSpecialImage*, const SkMatrix&, const SkSamplingOptions&,
-                           const SkPaint&) {}
+                           const SkPaint&, SkCanvas::SrcRectConstraint) {}
+void SkDevice::drawCoverageMask(const SkSpecialImage*, const SkMatrix& maskToDevice,
+                                const SkSamplingOptions&, const SkPaint&) {
+    // This shouldn't be reached; SkCanvas will only call this if
+    // useDrawCoverageMaskForMaskFilters() is overridden to return true.
+    SK_ABORT("Must override if useDrawCoverageMaskForMaskFilters() is true");
+}
+
 sk_sp<SkSpecialImage> SkDevice::makeSpecial(const SkBitmap&) { return nullptr; }
 sk_sp<SkSpecialImage> SkDevice::makeSpecial(const SkImage*) { return nullptr; }
 sk_sp<SkSpecialImage> SkDevice::snapSpecial(const SkIRect&, bool forceCopy) { return nullptr; }
@@ -316,8 +321,9 @@ sk_sp<SkSpecialImage> SkDevice::snapSpecial() {
     return this->snapSpecial(SkIRect::MakeWH(this->width(), this->height()));
 }
 
-skif::Context SkDevice::createContext(const skif::ContextInfo& ctxInfo) const {
-    return skif::Context::MakeRaster(ctxInfo);
+sk_sp<skif::Backend> SkDevice::createImageFilteringBackend(const SkSurfaceProps& surfaceProps,
+                                                           SkColorType colorType) const {
+    return skif::MakeRasterBackend(surfaceProps, colorType);
 }
 
 void SkDevice::drawDevice(SkDevice* device,
@@ -325,7 +331,16 @@ void SkDevice::drawDevice(SkDevice* device,
                           const SkPaint& paint) {
     sk_sp<SkSpecialImage> deviceImage = device->snapSpecial();
     if (deviceImage) {
-        this->drawSpecial(deviceImage.get(), device->getRelativeTransform(*this), sampling, paint);
+        // SkCanvas only calls drawDevice() when there are no filters (so the transform is pixel
+        // aligned). As such it can be drawn without clamping.
+        SkMatrix relativeTransform = device->getRelativeTransform(*this);
+        const bool strict = sampling != SkFilterMode::kNearest ||
+                            !relativeTransform.isTranslate() ||
+                            !SkScalarIsInt(relativeTransform.getTranslateX()) ||
+                            !SkScalarIsInt(relativeTransform.getTranslateY());
+        this->drawSpecial(deviceImage.get(), relativeTransform, sampling, paint,
+                          strict ? SkCanvas::kStrict_SrcRectConstraint
+                                 : SkCanvas::kFast_SrcRectConstraint);
     }
 }
 
@@ -344,19 +359,18 @@ void SkDevice::drawFilteredImage(const skif::Mapping& mapping,
         colorType = kRGBA_8888_SkColorType;
     }
 
-    // getImageFilterCache returns a bare image filter cache pointer that must be ref'ed until the
-    // filter's filterImage(ctx) function returns.
-    sk_sp<SkImageFilterCache> cache(this->getImageFilterCache());
-    skif::Context ctx = this->createContext({mapping,
-                                             targetOutput,
-                                             skif::FilterResult(sk_ref_sp(src)),
-                                             colorType,
-                                             this->imageInfo().colorSpace(),
-                                             src ? src->props() : this->surfaceProps(),
-                                             cache.get()});
+    skif::Stats stats;
+    skif::Context ctx{this->createImageFilteringBackend(src ? src->props() : this->surfaceProps(),
+                                                        colorType),
+                      mapping,
+                      targetOutput,
+                      skif::FilterResult(sk_ref_sp(src)),
+                      this->imageInfo().colorSpace(),
+                      &stats};
 
     SkIPoint offset;
     sk_sp<SkSpecialImage> result = as_IFB(filter)->filterImage(ctx).imageAndOffset(ctx, &offset);
+    stats.reportStats();
     if (result) {
         SkMatrix deviceMatrixWithOffset = mapping.layerToDevice();
         deviceMatrixWithOffset.preTranslate(offset.fX, offset.fY);
@@ -411,28 +425,25 @@ static sk_sp<SkShader> make_post_inverse_lm(const SkShader* shader, const SkMatr
 
 void SkDevice::drawGlyphRunList(SkCanvas* canvas,
                                 const sktext::GlyphRunList& glyphRunList,
-                                const SkPaint& initialPaint,
-                                const SkPaint& drawingPaint) {
+                                const SkPaint& paint) {
     if (!this->localToDevice().isFinite()) {
         return;
     }
 
     if (!glyphRunList.hasRSXForm()) {
-        this->onDrawGlyphRunList(canvas, glyphRunList, initialPaint, drawingPaint);
+        this->onDrawGlyphRunList(canvas, glyphRunList, paint);
     } else {
-        this->simplifyGlyphRunRSXFormAndRedraw(canvas, glyphRunList, initialPaint, drawingPaint);
+        this->simplifyGlyphRunRSXFormAndRedraw(canvas, glyphRunList, paint);
     }
 }
 
 void SkDevice::simplifyGlyphRunRSXFormAndRedraw(SkCanvas* canvas,
                                                 const sktext::GlyphRunList& glyphRunList,
-                                                const SkPaint& initialPaint,
-                                                const SkPaint& drawingPaint) {
+                                                const SkPaint& paint) {
     for (const sktext::GlyphRun& run : glyphRunList) {
         if (run.scaledRotations().empty()) {
-            auto subList = glyphRunList.builder()->makeGlyphRunList(
-                    run, drawingPaint, {0, 0});
-            this->drawGlyphRunList(canvas, subList, initialPaint, drawingPaint);
+            auto subList = glyphRunList.builder()->makeGlyphRunList(run, paint, {0, 0});
+            this->drawGlyphRunList(canvas, subList, paint);
         } else {
             SkPoint origin = glyphRunList.origin();
             SkPoint sharedPos{0, 0};    // we're at the origin
@@ -457,23 +468,20 @@ void SkDevice::simplifyGlyphRunRSXFormAndRedraw(SkCanvas* canvas,
                 // (i.e. the shader that cares about the ctm) so we have to undo our little ctm
                 // trick with a localmatrixshader so that the shader draws as if there was no
                 // change to the ctm.
-                SkPaint invertingPaint{drawingPaint};
-                invertingPaint.setShader(
-                        make_post_inverse_lm(drawingPaint.getShader(), glyphToLocal));
+                SkPaint invertingPaint{paint};
+                invertingPaint.setShader(make_post_inverse_lm(paint.getShader(), glyphToLocal));
                 SkAutoCanvasRestore acr(canvas, true);
                 canvas->concat(SkM44(glyphToLocal));
-                sktext::GlyphRunList subList = glyphRunList.builder()->makeGlyphRunList(
-                        glyphRun, drawingPaint, {0, 0});
-                this->drawGlyphRunList(canvas, subList, initialPaint, invertingPaint);
+                sktext::GlyphRunList subList =
+                        glyphRunList.builder()->makeGlyphRunList(glyphRun, paint, {0, 0});
+                this->drawGlyphRunList(canvas, subList, invertingPaint);
             }
         }
     }
 }
 
 sk_sp<sktext::gpu::Slug> SkDevice::convertGlyphRunListToSlug(
-        const sktext::GlyphRunList& glyphRunList,
-        const SkPaint& initialPaint,
-        const SkPaint& drawingPaint) {
+        const sktext::GlyphRunList& glyphRunList, const SkPaint& paint) {
     return nullptr;
 }
 

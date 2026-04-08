@@ -9,11 +9,11 @@
 
 #include "src/gpu/ganesh/d3d/GrD3DPipelineStateBuilder.h"
 
-#include "include/gpu/GrDirectContext.h"
-#include "include/gpu/d3d/GrD3DTypes.h"
+#include "include/gpu/ganesh/GrDirectContext.h"
+#include "include/gpu/ganesh/d3d/GrD3DTypes.h"
 #include "src/core/SkReadBuffer.h"
 #include "src/core/SkTraceEvent.h"
-#include "src/gpu/PipelineUtils.h"
+#include "src/gpu/SkSLToBackend.h"
 #include "src/gpu/ganesh/GrAutoLocaleSetter.h"
 #include "src/gpu/ganesh/GrDirectContextPriv.h"
 #include "src/gpu/ganesh/GrPersistentCacheUtils.h"
@@ -66,10 +66,6 @@ const GrCaps* GrD3DPipelineStateBuilder::caps() const {
     return fGpu->caps();
 }
 
-SkSL::Compiler* GrD3DPipelineStateBuilder::shaderCompiler() const {
-    return fGpu->shaderCompiler();
-}
-
 void GrD3DPipelineStateBuilder::finalizeFragmentSecondaryColor(GrShaderVar& outputColor) {
     outputColor.addLayoutQualifier("location = 0, index = 1");
 }
@@ -119,7 +115,7 @@ bool GrD3DPipelineStateBuilder::loadHLSLFromCache(SkReadBuffer* reader, gr_cp<ID
     }
 
     auto compile = [&](SkSL::ProgramKind kind, GrShaderType shaderType) {
-        if (intfs[shaderType].fUseFlipRTUniform) {
+        if (intfs[shaderType].fRTFlipUniform != SkSL::Program::Interface::kRTFlip_None) {
             this->addRTFlipUniform(SKSL_RTFLIP_NAME);
         }
         shaders[shaderType] = GrCompileHLSLShader(fGpu, hlsl[shaderType], kind);
@@ -135,7 +131,7 @@ gr_cp<ID3DBlob> GrD3DPipelineStateBuilder::compileD3DProgram(SkSL::ProgramKind k
                                                              const SkSL::ProgramSettings& settings,
                                                              SkSL::Program::Interface* outInterface,
                                                              std::string* outHLSL) {
-    if (!skgpu::SkSLToHLSL(this->shaderCompiler(),
+    if (!skgpu::SkSLToHLSL(this->caps()->shaderCaps(),
                            sksl,
                            kind,
                            settings,
@@ -145,7 +141,7 @@ gr_cp<ID3DBlob> GrD3DPipelineStateBuilder::compileD3DProgram(SkSL::ProgramKind k
         return gr_cp<ID3DBlob>();
     }
 
-    if (outInterface->fUseFlipRTUniform) {
+    if (outInterface->fRTFlipUniform != SkSL::Program::Interface::kRTFlip_None) {
         this->addRTFlipUniform(SKSL_RTFLIP_NAME);
     }
 
@@ -534,7 +530,8 @@ std::unique_ptr<GrD3DPipelineState> GrD3DPipelineStateBuilder::finalize() {
     this->finalizeShaders();
 
     SkSL::ProgramSettings settings;
-    settings.fSharpenTextures = true;
+    settings.fSharpenTextures =
+        this->gpu()->getContext()->priv().options().fSharpenMipmappedTextures;
     settings.fRTFlipOffset = fUniformHandler.getRTFlipOffset();
     settings.fRTFlipBinding = 0;
     settings.fRTFlipSet = 0;

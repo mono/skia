@@ -11,6 +11,7 @@
 #include "src/sksl/SkSLErrorReporter.h"
 #include "src/sksl/SkSLMemoryLayout.h"
 #include "src/sksl/SkSLPosition.h"
+#include "src/sksl/SkSLProgramSettings.h"
 #include "src/sksl/SkSLUtil.h"
 #include "src/sksl/ir/SkSLLayout.h"
 #include "src/sksl/ir/SkSLModifierFlags.h"
@@ -26,10 +27,11 @@ using namespace skia_private;
 
 DEF_TEST(SkSLMemoryLayoutTest_std140, r) {
     SkSL::TestingOnly_AbortErrorReporter errors;
-    SkSL::ShaderCaps caps;
     SkSL::BuiltinTypes types;
-    SkSL::Context context(types, &caps, errors);
+    SkSL::Context context(types, errors);
     SkSL::MemoryLayout layout(SkSL::MemoryLayout::Standard::k140);
+    SkSL::ProgramConfig config = {};
+    context.fConfig = &config;
 
     // basic types
     REPORTER_ASSERT(r,  4 == layout.size(*context.fTypes.fFloat));
@@ -110,13 +112,13 @@ DEF_TEST(SkSLMemoryLayoutTest_std140, r) {
 
     // arrays
     std::unique_ptr<SkSL::Type> array1 =
-            SkSL::Type::MakeArrayType(std::string("float[4]"), *context.fTypes.fFloat, 4);
+            SkSL::Type::MakeArrayType(context, std::string("float[4]"), *context.fTypes.fFloat, 4);
     REPORTER_ASSERT(r, 64 == layout.size(*array1));
     REPORTER_ASSERT(r, 16 == layout.alignment(*array1));
     REPORTER_ASSERT(r, 16 == layout.stride(*array1));
 
     std::unique_ptr<SkSL::Type> array2 =
-            SkSL::Type::MakeArrayType(std::string("float4[4]"), *context.fTypes.fFloat4, 4);
+            SkSL::Type::MakeArrayType(context, std::string("float4[4]"), *context.fTypes.fFloat4, 4);
     REPORTER_ASSERT(r, 64 == layout.size(*array2));
     REPORTER_ASSERT(r, 16 == layout.alignment(*array2));
     REPORTER_ASSERT(r, 16 == layout.stride(*array2));
@@ -124,10 +126,11 @@ DEF_TEST(SkSLMemoryLayoutTest_std140, r) {
 
 DEF_TEST(SkSLMemoryLayoutTest_std430, r) {
     SkSL::TestingOnly_AbortErrorReporter errors;
-    SkSL::ShaderCaps caps;
     SkSL::BuiltinTypes types;
-    SkSL::Context context(types, &caps, errors);
+    SkSL::Context context(types, errors);
     SkSL::MemoryLayout layout(SkSL::MemoryLayout::Standard::k430);
+    SkSL::ProgramConfig config = {};
+    context.fConfig = &config;
 
     // basic types
     REPORTER_ASSERT(r,  4 == layout.size(*context.fTypes.fFloat));
@@ -208,13 +211,13 @@ DEF_TEST(SkSLMemoryLayoutTest_std430, r) {
 
     // arrays
     std::unique_ptr<SkSL::Type> array1 =
-            SkSL::Type::MakeArrayType(std::string("float[4]"), *context.fTypes.fFloat, 4);
+            SkSL::Type::MakeArrayType(context, std::string("float[4]"), *context.fTypes.fFloat, 4);
     REPORTER_ASSERT(r, 16 == layout.size(*array1));
     REPORTER_ASSERT(r, 4 == layout.alignment(*array1));
     REPORTER_ASSERT(r, 4 == layout.stride(*array1));
 
     std::unique_ptr<SkSL::Type> array2 =
-            SkSL::Type::MakeArrayType(std::string("float4[4]"), *context.fTypes.fFloat4, 4);
+            SkSL::Type::MakeArrayType(context, std::string("float4[4]"), *context.fTypes.fFloat4, 4);
     REPORTER_ASSERT(r, 64 == layout.size(*array2));
     REPORTER_ASSERT(r, 16 == layout.alignment(*array2));
     REPORTER_ASSERT(r, 16 == layout.stride(*array2));
@@ -222,10 +225,11 @@ DEF_TEST(SkSLMemoryLayoutTest_std430, r) {
 
 DEF_TEST(SkSLMemoryLayoutTest_WGSLUniform_Base, r) {
     SkSL::TestingOnly_AbortErrorReporter errors;
-    SkSL::ShaderCaps caps;
     SkSL::BuiltinTypes types;
-    SkSL::Context context(types, &caps, errors);
+    SkSL::Context context(types, errors);
     SkSL::MemoryLayout layout(SkSL::MemoryLayout::Standard::kWGSLUniform_Base);
+    SkSL::ProgramConfig config = {};
+    context.fConfig = &config;
 
     // The values here are taken from https://www.w3.org/TR/WGSL/#alignment-and-size, table titled
     // "Alignment and size for host-shareable types". WGSL does not have an i16 type, so short and
@@ -372,42 +376,42 @@ DEF_TEST(SkSLMemoryLayoutTest_WGSLUniform_Base, r) {
     // Arrays
     // array<f32, 4>
     {
-        auto array = SkSL::Type::MakeArrayType("float[4]", *context.fTypes.fFloat, 4);
+        auto array = SkSL::Type::MakeArrayType(context, "float[4]", *context.fTypes.fFloat, 4);
         REPORTER_ASSERT(r, 64 == layout.size(*array));
         REPORTER_ASSERT(r, 16 == layout.alignment(*array));
         REPORTER_ASSERT(r, 16 == layout.stride(*array));
     }
     // array<f16, 4>
     {
-        auto array = SkSL::Type::MakeArrayType("half[4]", *context.fTypes.fHalf, 4);
+        auto array = SkSL::Type::MakeArrayType(context, "half[4]", *context.fTypes.fHalf, 4);
         REPORTER_ASSERT(r, 64 == layout.size(*array));
         REPORTER_ASSERT(r, 16 == layout.alignment(*array));
         REPORTER_ASSERT(r, 16 == layout.stride(*array));
     }
     // array<vec2<f32>, 4>
     {
-        auto array = SkSL::Type::MakeArrayType("float2[4]", *context.fTypes.fFloat2, 4);
+        auto array = SkSL::Type::MakeArrayType(context, "float2[4]", *context.fTypes.fFloat2, 4);
         REPORTER_ASSERT(r, 64 == layout.size(*array));
         REPORTER_ASSERT(r, 16 == layout.alignment(*array));
         REPORTER_ASSERT(r, 16 == layout.stride(*array));
     }
     // array<vec3<f32>, 4>
     {
-        auto array = SkSL::Type::MakeArrayType("float3[4]", *context.fTypes.fFloat3, 4);
+        auto array = SkSL::Type::MakeArrayType(context, "float3[4]", *context.fTypes.fFloat3, 4);
         REPORTER_ASSERT(r, 64 == layout.size(*array));
         REPORTER_ASSERT(r, 16 == layout.alignment(*array));
         REPORTER_ASSERT(r, 16 == layout.stride(*array));
     }
     // array<vec4<f32>, 4>
     {
-        auto array = SkSL::Type::MakeArrayType("float4[4]", *context.fTypes.fFloat4, 4);
+        auto array = SkSL::Type::MakeArrayType(context, "float4[4]", *context.fTypes.fFloat4, 4);
         REPORTER_ASSERT(r, 64 == layout.size(*array));
         REPORTER_ASSERT(r, 16 == layout.alignment(*array));
         REPORTER_ASSERT(r, 16 == layout.stride(*array));
     }
     // array<mat3x3<f32>, 4>
     {
-        auto array = SkSL::Type::MakeArrayType("mat3[4]", *context.fTypes.fFloat3x3, 4);
+        auto array = SkSL::Type::MakeArrayType(context, "mat3[4]", *context.fTypes.fFloat3x3, 4);
         REPORTER_ASSERT(r, 192 == layout.size(*array));
         REPORTER_ASSERT(r, 16 == layout.alignment(*array));
         REPORTER_ASSERT(r, 48 == layout.stride(*array));
@@ -494,7 +498,7 @@ DEF_TEST(SkSLMemoryLayoutTest_WGSLUniform_Base, r) {
                         SkSL::ModifierFlag::kNone,
                         std::string_view("f"),
                         context.fTypes.fFloat3.get());
-    auto array = SkSL::Type::MakeArrayType("A[3]", *structA, 3);
+    auto array = SkSL::Type::MakeArrayType(context, "A[3]", *structA, 3);
     fields.emplace_back(SkSL::Position(),
                         SkSL::Layout(),
                         SkSL::ModifierFlag::kNone,
@@ -513,10 +517,11 @@ DEF_TEST(SkSLMemoryLayoutTest_WGSLUniform_Base, r) {
 
 DEF_TEST(SkSLMemoryLayoutTest_WGSLUniform_EnableF16, r) {
     SkSL::TestingOnly_AbortErrorReporter errors;
-    SkSL::ShaderCaps caps;
     SkSL::BuiltinTypes types;
-    SkSL::Context context(types, &caps, errors);
+    SkSL::Context context(types, errors);
     SkSL::MemoryLayout layout(SkSL::MemoryLayout::Standard::kWGSLUniform_EnableF16);
+    SkSL::ProgramConfig config = {};
+    context.fConfig = &config;
 
     // The values here are taken from https://www.w3.org/TR/WGSL/#alignment-and-size, table titled
     // "Alignment and size for host-shareable types". WGSL does not have an i16 type, so short and
@@ -663,42 +668,42 @@ DEF_TEST(SkSLMemoryLayoutTest_WGSLUniform_EnableF16, r) {
     // Arrays
     // array<f32, 4>
     {
-        auto array = SkSL::Type::MakeArrayType("float[4]", *context.fTypes.fFloat, 4);
+        auto array = SkSL::Type::MakeArrayType(context, "float[4]", *context.fTypes.fFloat, 4);
         REPORTER_ASSERT(r, 64 == layout.size(*array));
         REPORTER_ASSERT(r, 16 == layout.alignment(*array));
         REPORTER_ASSERT(r, 16 == layout.stride(*array));
     }
     // array<f16, 4>
     {
-        auto array = SkSL::Type::MakeArrayType("half[4]", *context.fTypes.fHalf, 4);
+        auto array = SkSL::Type::MakeArrayType(context, "half[4]", *context.fTypes.fHalf, 4);
         REPORTER_ASSERT(r, 64 == layout.size(*array));
         REPORTER_ASSERT(r, 16 == layout.alignment(*array));
         REPORTER_ASSERT(r, 16 == layout.stride(*array));
     }
     // array<vec2<f32>, 4>
     {
-        auto array = SkSL::Type::MakeArrayType("float2[4]", *context.fTypes.fFloat2, 4);
+        auto array = SkSL::Type::MakeArrayType(context, "float2[4]", *context.fTypes.fFloat2, 4);
         REPORTER_ASSERT(r, 64 == layout.size(*array));
         REPORTER_ASSERT(r, 16 == layout.alignment(*array));
         REPORTER_ASSERT(r, 16 == layout.stride(*array));
     }
     // array<vec3<f32>, 4>
     {
-        auto array = SkSL::Type::MakeArrayType("float3[4]", *context.fTypes.fFloat3, 4);
+        auto array = SkSL::Type::MakeArrayType(context, "float3[4]", *context.fTypes.fFloat3, 4);
         REPORTER_ASSERT(r, 64 == layout.size(*array));
         REPORTER_ASSERT(r, 16 == layout.alignment(*array));
         REPORTER_ASSERT(r, 16 == layout.stride(*array));
     }
     // array<vec4<f32>, 4>
     {
-        auto array = SkSL::Type::MakeArrayType("float4[4]", *context.fTypes.fFloat4, 4);
+        auto array = SkSL::Type::MakeArrayType(context, "float4[4]", *context.fTypes.fFloat4, 4);
         REPORTER_ASSERT(r, 64 == layout.size(*array));
         REPORTER_ASSERT(r, 16 == layout.alignment(*array));
         REPORTER_ASSERT(r, 16 == layout.stride(*array));
     }
     // array<mat3x3<f32>, 4>
     {
-        auto array = SkSL::Type::MakeArrayType("mat3[4]", *context.fTypes.fFloat3x3, 4);
+        auto array = SkSL::Type::MakeArrayType(context, "mat3[4]", *context.fTypes.fFloat3x3, 4);
         REPORTER_ASSERT(r, 192 == layout.size(*array));
         REPORTER_ASSERT(r, 16 == layout.alignment(*array));
         REPORTER_ASSERT(r, 48 == layout.stride(*array));
@@ -785,7 +790,7 @@ DEF_TEST(SkSLMemoryLayoutTest_WGSLUniform_EnableF16, r) {
                         SkSL::ModifierFlag::kNone,
                         std::string_view("f"),
                         context.fTypes.fFloat3.get());
-    auto array = SkSL::Type::MakeArrayType("A[3]", *structA, 3);
+    auto array = SkSL::Type::MakeArrayType(context, "A[3]", *structA, 3);
     fields.emplace_back(SkSL::Position(),
                         SkSL::Layout(),
                         SkSL::ModifierFlag::kNone,
@@ -804,10 +809,11 @@ DEF_TEST(SkSLMemoryLayoutTest_WGSLUniform_EnableF16, r) {
 
 DEF_TEST(SkSLMemoryLayoutTest_WGSLStorage_Base, r) {
     SkSL::TestingOnly_AbortErrorReporter errors;
-    SkSL::ShaderCaps caps;
     SkSL::BuiltinTypes types;
-    SkSL::Context context(types, &caps, errors);
+    SkSL::Context context(types, errors);
     SkSL::MemoryLayout layout(SkSL::MemoryLayout::Standard::kWGSLStorage_Base);
+    SkSL::ProgramConfig config = {};
+    context.fConfig = &config;
 
     // The values here are taken from https://www.w3.org/TR/WGSL/#alignment-and-size, table titled
     // "Alignment and size for host-shareable types".
@@ -953,42 +959,42 @@ DEF_TEST(SkSLMemoryLayoutTest_WGSLStorage_Base, r) {
     // Arrays
     // array<f32, 4>
     {
-        auto array = SkSL::Type::MakeArrayType("float[4]", *context.fTypes.fFloat, 4);
+        auto array = SkSL::Type::MakeArrayType(context, "float[4]", *context.fTypes.fFloat, 4);
         REPORTER_ASSERT(r, 16 == layout.size(*array));
         REPORTER_ASSERT(r, 4 == layout.alignment(*array));
         REPORTER_ASSERT(r, 4 == layout.stride(*array));
     }
     // array<f16, 4>
     {
-        auto array = SkSL::Type::MakeArrayType("half[4]", *context.fTypes.fHalf, 4);
+        auto array = SkSL::Type::MakeArrayType(context, "half[4]", *context.fTypes.fHalf, 4);
         REPORTER_ASSERT(r, 16 == layout.size(*array));
         REPORTER_ASSERT(r, 4 == layout.alignment(*array));
         REPORTER_ASSERT(r, 4 == layout.stride(*array));
     }
     // array<vec2<f32>, 4>
     {
-        auto array = SkSL::Type::MakeArrayType("float2[4]", *context.fTypes.fFloat2, 4);
+        auto array = SkSL::Type::MakeArrayType(context, "float2[4]", *context.fTypes.fFloat2, 4);
         REPORTER_ASSERT(r, 32 == layout.size(*array));
         REPORTER_ASSERT(r, 8 == layout.alignment(*array));
         REPORTER_ASSERT(r, 8 == layout.stride(*array));
     }
     // array<vec3<f32>, 4>
     {
-        auto array = SkSL::Type::MakeArrayType("float3[4]", *context.fTypes.fFloat3, 4);
+        auto array = SkSL::Type::MakeArrayType(context, "float3[4]", *context.fTypes.fFloat3, 4);
         REPORTER_ASSERT(r, 64 == layout.size(*array));
         REPORTER_ASSERT(r, 16 == layout.alignment(*array));
         REPORTER_ASSERT(r, 16 == layout.stride(*array));
     }
     // array<vec4<f32>, 4>
     {
-        auto array = SkSL::Type::MakeArrayType("float4[4]", *context.fTypes.fFloat4, 4);
+        auto array = SkSL::Type::MakeArrayType(context, "float4[4]", *context.fTypes.fFloat4, 4);
         REPORTER_ASSERT(r, 64 == layout.size(*array));
         REPORTER_ASSERT(r, 16 == layout.alignment(*array));
         REPORTER_ASSERT(r, 16 == layout.stride(*array));
     }
     // array<mat3x3<f32>, 4>
     {
-        auto array = SkSL::Type::MakeArrayType("mat3[4]", *context.fTypes.fFloat3x3, 4);
+        auto array = SkSL::Type::MakeArrayType(context, "mat3[4]", *context.fTypes.fFloat3x3, 4);
         REPORTER_ASSERT(r, 192 == layout.size(*array));
         REPORTER_ASSERT(r, 16 == layout.alignment(*array));
         REPORTER_ASSERT(r, 48 == layout.stride(*array));
@@ -1074,7 +1080,7 @@ DEF_TEST(SkSLMemoryLayoutTest_WGSLStorage_Base, r) {
                         SkSL::ModifierFlag::kNone,
                         std::string_view("f"),
                         context.fTypes.fFloat3.get());
-    auto array = SkSL::Type::MakeArrayType("A[3]", *structA, 3);
+    auto array = SkSL::Type::MakeArrayType(context, "A[3]", *structA, 3);
     fields.emplace_back(SkSL::Position(),
                         SkSL::Layout(),
                         SkSL::ModifierFlag::kNone,
@@ -1093,10 +1099,11 @@ DEF_TEST(SkSLMemoryLayoutTest_WGSLStorage_Base, r) {
 
 DEF_TEST(SkSLMemoryLayoutTest_WGSLStorage_EnableF16, r) {
     SkSL::TestingOnly_AbortErrorReporter errors;
-    SkSL::ShaderCaps caps;
     SkSL::BuiltinTypes types;
-    SkSL::Context context(types, &caps, errors);
+    SkSL::Context context(types, errors);
     SkSL::MemoryLayout layout(SkSL::MemoryLayout::Standard::kWGSLStorage_EnableF16);
+    SkSL::ProgramConfig config = {};
+    context.fConfig = &config;
 
     // The values here are taken from https://www.w3.org/TR/WGSL/#alignment-and-size, table titled
     // "Alignment and size for host-shareable types".
@@ -1242,42 +1249,42 @@ DEF_TEST(SkSLMemoryLayoutTest_WGSLStorage_EnableF16, r) {
     // Arrays
     // array<f32, 4>
     {
-        auto array = SkSL::Type::MakeArrayType("float[4]", *context.fTypes.fFloat, 4);
+        auto array = SkSL::Type::MakeArrayType(context, "float[4]", *context.fTypes.fFloat, 4);
         REPORTER_ASSERT(r, 16 == layout.size(*array));
         REPORTER_ASSERT(r, 4 == layout.alignment(*array));
         REPORTER_ASSERT(r, 4 == layout.stride(*array));
     }
     // array<f16, 4>
     {
-        auto array = SkSL::Type::MakeArrayType("half[4]", *context.fTypes.fHalf, 4);
+        auto array = SkSL::Type::MakeArrayType(context, "half[4]", *context.fTypes.fHalf, 4);
         REPORTER_ASSERT(r, 8 == layout.size(*array));
         REPORTER_ASSERT(r, 2 == layout.alignment(*array));
         REPORTER_ASSERT(r, 2 == layout.stride(*array));
     }
     // array<vec2<f32>, 4>
     {
-        auto array = SkSL::Type::MakeArrayType("float2[4]", *context.fTypes.fFloat2, 4);
+        auto array = SkSL::Type::MakeArrayType(context, "float2[4]", *context.fTypes.fFloat2, 4);
         REPORTER_ASSERT(r, 32 == layout.size(*array));
         REPORTER_ASSERT(r, 8 == layout.alignment(*array));
         REPORTER_ASSERT(r, 8 == layout.stride(*array));
     }
     // array<vec3<f32>, 4>
     {
-        auto array = SkSL::Type::MakeArrayType("float3[4]", *context.fTypes.fFloat3, 4);
+        auto array = SkSL::Type::MakeArrayType(context, "float3[4]", *context.fTypes.fFloat3, 4);
         REPORTER_ASSERT(r, 64 == layout.size(*array));
         REPORTER_ASSERT(r, 16 == layout.alignment(*array));
         REPORTER_ASSERT(r, 16 == layout.stride(*array));
     }
     // array<vec4<f32>, 4>
     {
-        auto array = SkSL::Type::MakeArrayType("float4[4]", *context.fTypes.fFloat4, 4);
+        auto array = SkSL::Type::MakeArrayType(context, "float4[4]", *context.fTypes.fFloat4, 4);
         REPORTER_ASSERT(r, 64 == layout.size(*array));
         REPORTER_ASSERT(r, 16 == layout.alignment(*array));
         REPORTER_ASSERT(r, 16 == layout.stride(*array));
     }
     // array<mat3x3<f32>, 4>
     {
-        auto array = SkSL::Type::MakeArrayType("mat3[4]", *context.fTypes.fFloat3x3, 4);
+        auto array = SkSL::Type::MakeArrayType(context, "mat3[4]", *context.fTypes.fFloat3x3, 4);
         REPORTER_ASSERT(r, 192 == layout.size(*array));
         REPORTER_ASSERT(r, 16 == layout.alignment(*array));
         REPORTER_ASSERT(r, 48 == layout.stride(*array));
@@ -1363,7 +1370,7 @@ DEF_TEST(SkSLMemoryLayoutTest_WGSLStorage_EnableF16, r) {
                         SkSL::ModifierFlag::kNone,
                         std::string_view("f"),
                         context.fTypes.fFloat3.get());
-    auto array = SkSL::Type::MakeArrayType("A[3]", *structA, 3);
+    auto array = SkSL::Type::MakeArrayType(context, "A[3]", *structA, 3);
     fields.emplace_back(SkSL::Position(),
                         SkSL::Layout(),
                         SkSL::ModifierFlag::kNone,
@@ -1382,11 +1389,12 @@ DEF_TEST(SkSLMemoryLayoutTest_WGSLStorage_EnableF16, r) {
 
 DEF_TEST(SkSLMemoryLayoutTest_WGSLUnsupportedTypes, r) {
     SkSL::TestingOnly_AbortErrorReporter errors;
-    SkSL::ShaderCaps caps;
     SkSL::BuiltinTypes types;
-    SkSL::Context context(types, &caps, errors);
+    SkSL::Context context(types, errors);
+    SkSL::ProgramConfig config = {};
+    context.fConfig = &config;
 
-    auto testArray = SkSL::Type::MakeArrayType("bool[3]", *context.fTypes.fBool, 3);
+    auto testArray = SkSL::Type::MakeArrayType(context, "bool[3]", *context.fTypes.fBool, 3);
 
     TArray<SkSL::Field> fields;
     fields.emplace_back(SkSL::Position(),
@@ -1408,11 +1416,12 @@ DEF_TEST(SkSLMemoryLayoutTest_WGSLUnsupportedTypes, r) {
 
 DEF_TEST(SkSLMemoryLayoutTest_WGSLSupportedTypes, r) {
     SkSL::TestingOnly_AbortErrorReporter errors;
-    SkSL::ShaderCaps caps;
     SkSL::BuiltinTypes types;
-    SkSL::Context context(types, &caps, errors);
+    SkSL::Context context(types, errors);
+    SkSL::ProgramConfig config = {};
+    context.fConfig = &config;
 
-    auto testArray = SkSL::Type::MakeArrayType("float[3]", *context.fTypes.fFloat, 3);
+    auto testArray = SkSL::Type::MakeArrayType(context, "float[3]", *context.fTypes.fFloat, 3);
 
     TArray<SkSL::Field> fields;
     fields.emplace_back(SkSL::Position(),

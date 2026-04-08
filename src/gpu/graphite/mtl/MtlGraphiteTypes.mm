@@ -5,13 +5,13 @@
  * found in the LICENSE file.
  */
 
-#include "include/private/gpu/graphite/MtlGraphiteTypesPriv.h"
+#include "src/gpu/graphite/mtl/MtlGraphiteTypesPriv.h"
 
 #import <Metal/Metal.h>
 
 namespace skgpu::graphite {
 
-MtlTextureInfo::MtlTextureInfo(MtlHandle texture) {
+MtlTextureInfo::MtlTextureInfo(CFTypeRef texture) {
     SkASSERT(texture);
     id<MTLTexture> mtlTex = (id<MTLTexture>)texture;
 

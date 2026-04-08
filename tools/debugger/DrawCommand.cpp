@@ -35,12 +35,13 @@
 #include "include/private/base/SkDebug.h"
 #include "include/private/base/SkMalloc.h"
 #include "include/private/base/SkTo.h"
-#include "include/private/gpu/ganesh/GrImageContext.h"
 #include "include/utils/SkShadowUtils.h"
 #include "src/base/SkAutoMalloc.h"
 #include "src/core/SkCanvasPriv.h"
+#include "src/core/SkFontPriv.h"
 #include "src/core/SkMaskFilterBase.h"
 #include "src/core/SkPaintDefaults.h"
+#include "src/core/SkPathEffectBase.h"
 #include "src/core/SkRectPriv.h"
 #include "src/core/SkTextBlobPriv.h"
 #include "src/core/SkWriteBuffer.h"
@@ -57,7 +58,8 @@
 class GrDirectContext;
 
 #if defined(SK_GANESH)
-#include "include/gpu/GrRecordingContext.h"
+#include "include/gpu/ganesh/GrRecordingContext.h"
+#include "include/private/gpu/ganesh/GrImageContext.h"
 #endif
 
 #define DEBUGCANVAS_ATTRIBUTE_DUMP "dump"
@@ -646,7 +648,7 @@ void DrawCommand::flatten(const SkFlattenable* flattenable,
     sk_free(data);
 }
 
-void DrawCommand::WritePNG(SkBitmap bitmap, SkWStream& out) {
+void DrawCommand::WritePNG(const SkBitmap& bitmap, SkWStream& out) {
     SkPixmap pm;
     SkAssertResult(bitmap.peekPixels(&pm));
 
@@ -873,11 +875,11 @@ static void apply_paint_patheffect(const SkPaint&  paint,
                                    UrlDataManager& urlDataManager) {
     SkPathEffect* pathEffect = paint.getPathEffect();
     if (pathEffect != nullptr) {
-        SkPathEffect::DashInfo dashInfo;
-        SkPathEffect::DashType dashType = pathEffect->asADash(&dashInfo);
-        if (dashType == SkPathEffect::kDash_DashType) {
+        SkPathEffectBase::DashInfo dashInfo;
+        SkPathEffectBase::DashType dashType = as_PEB(pathEffect)->asADash(&dashInfo);
+        if (dashType == SkPathEffectBase::DashType::kDash) {
             dashInfo.fIntervals = (SkScalar*)sk_malloc_throw(dashInfo.fCount * sizeof(SkScalar));
-            pathEffect->asADash(&dashInfo);
+            as_PEB(pathEffect)->asADash(&dashInfo);
             writer.beginObject(DEBUGCANVAS_ATTRIBUTE_DASHING);
             writer.beginArray(DEBUGCANVAS_ATTRIBUTE_INTERVALS, false);
             for (int32_t i = 0; i < dashInfo.fCount; i++) {
@@ -898,7 +900,7 @@ static void apply_paint_patheffect(const SkPaint&  paint,
 static void apply_font_typeface(const SkFont&   font,
                                 SkJSONWriter&   writer,
                                 UrlDataManager& urlDataManager) {
-    SkTypeface* typeface = font.getTypefaceOrDefault();
+    SkTypeface* typeface = font.getTypeface();
     if (typeface != nullptr) {
         writer.beginObject(DEBUGCANVAS_ATTRIBUTE_TYPEFACE);
         SkDynamicMemoryWStream buffer;
@@ -1092,7 +1094,7 @@ void ClipRRectCommand::toJSON(SkJSONWriter& writer, UrlDataManager& urlDataManag
 
 ClipShaderCommand::ClipShaderCommand(sk_sp<SkShader> cs, SkClipOp op)
         : INHERITED(kClipShader_OpType) {
-    fShader = cs;
+    fShader = std::move(cs);
     fOp     = op;
 }
 
@@ -2035,7 +2037,8 @@ SaveLayerCommand::SaveLayerCommand(const SkCanvas::SaveLayerRec& rec)
         , fPaint(rec.fPaint)
         , fBackdrop(SkSafeRef(rec.fBackdrop))
         , fSaveLayerFlags(rec.fSaveLayerFlags)
-        , fBackdropScale(SkCanvasPriv::GetBackdropScaleFactor(rec)) {}
+        , fBackdropScale(SkCanvasPriv::GetBackdropScaleFactor(rec))
+        , fBackdropTileMode(rec.fBackdropTileMode) {}
 
 void SaveLayerCommand::execute(SkCanvas* canvas) const {
     // In the common case fBackdropScale == 1.f and then this is no different than a regular Rec
@@ -2043,6 +2046,7 @@ void SaveLayerCommand::execute(SkCanvas* canvas) const {
                                                         fPaint.getMaybeNull(),
                                                         fBackdrop.get(),
                                                         fBackdropScale,
+                                                        fBackdropTileMode,
                                                         fSaveLayerFlags));
 }
 

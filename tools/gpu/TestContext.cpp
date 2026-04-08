@@ -8,7 +8,7 @@
 
 #include "tools/gpu/TestContext.h"
 
-#include "include/gpu/GrDirectContext.h"
+#include "include/gpu/ganesh/GrDirectContext.h"
 #include "src/core/SkTraceEvent.h"
 #include "tools/gpu/FlushFinishTracker.h"
 #include "tools/gpu/GpuTimer.h"
@@ -56,6 +56,12 @@ void TestContext::flushAndWaitOnSync(GrDirectContext* context) {
     context->submit();
 
     fCurrentFlushIdx = (fCurrentFlushIdx + 1) % std::size(fFinishTrackers);
+}
+
+void TestContext::flushAndSyncCpu(GrDirectContext* context) {
+    SkASSERT(context);
+    context->flush();
+    context->submit(GrSyncCpu::kYes);
 }
 
 void TestContext::testAbandon() {

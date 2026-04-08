@@ -11,9 +11,13 @@
 #include "include/gpu/graphite/ContextOptions.h"
 #include "include/gpu/graphite/vk/VulkanGraphiteUtils.h"
 #include "include/gpu/vk/VulkanExtensions.h"
-#include "include/private/gpu/graphite/ContextOptionsPriv.h"
+#include "include/gpu/vk/VulkanMemoryAllocator.h"
+#include "src/gpu/graphite/ContextOptionsPriv.h"
 #include "tools/gpu/ContextType.h"
 #include "tools/gpu/vk/VkTestUtils.h"
+#include "tools/graphite/TestOptions.h"
+
+extern bool gCreateProtectedContext;
 
 namespace skiatest::graphite {
 
@@ -33,7 +37,9 @@ std::unique_ptr<GraphiteTestContext> VulkanTestContext::Make() {
     features = new VkPhysicalDeviceFeatures2;
     memset(features, 0, sizeof(VkPhysicalDeviceFeatures2));
     if (!sk_gpu_test::CreateVkBackendContext(instProc, &backendContext, extensions,
-                                             features, &debugCallback)) {
+                                             features, &debugCallback,
+                                             nullptr, sk_gpu_test::CanPresentFn(),
+                                             gCreateProtectedContext)) {
         sk_gpu_test::FreeVulkanFeaturesStructs(features);
         delete features;
         delete extensions;
@@ -89,16 +95,17 @@ skgpu::ContextType VulkanTestContext::contextType() {
 }
 
 std::unique_ptr<skgpu::graphite::Context> VulkanTestContext::makeContext(
-        const skgpu::graphite::ContextOptions& options) {
-    skgpu::graphite::ContextOptions revisedOptions(options);
-    skgpu::graphite::ContextOptionsPriv optionsPriv;
-    if (!options.fOptionsPriv) {
-        revisedOptions.fOptionsPriv = &optionsPriv;
+        const TestOptions& options) {
+    SkASSERT(!options.hasDawnOptions());
+    skgpu::graphite::ContextOptions revisedContextOptions(options.fContextOptions);
+    skgpu::graphite::ContextOptionsPriv contextOptionsPriv;
+    if (!options.fContextOptions.fOptionsPriv) {
+        revisedContextOptions.fOptionsPriv = &contextOptionsPriv;
     }
     // Needed to make synchronous readPixels work
-    revisedOptions.fOptionsPriv->fStoreContextRefInRecorder = true;
-
-    return skgpu::graphite::ContextFactory::MakeVulkan(fVulkan, revisedOptions);
+    revisedContextOptions.fOptionsPriv->fStoreContextRefInRecorder = true;
+    SkASSERT(fVulkan.fMemoryAllocator);
+    return skgpu::graphite::ContextFactory::MakeVulkan(fVulkan, revisedContextOptions);
 }
 
 }  // namespace skiatest::graphite

@@ -5,7 +5,8 @@
 import("../../gn/skia.gni")
 import("../../modules/skshaper/skshaper.gni")
 
-if ((skia_use_icu || skia_use_libgrapheme) && skia_enable_skshaper) {
+if ((skia_use_icu || skia_use_libgrapheme || skia_use_icu4x) &&
+    skia_enable_skshaper) {
   skia_source_set("editor_lib") {
     include_dirs = [ "../.." ]
     public = [
@@ -29,6 +30,7 @@ if ((skia_use_icu || skia_use_libgrapheme) && skia_enable_skshaper) {
     deps = [
       ":word_boundaries",
       "../../modules/skshaper",
+      "../../modules/skunicode",
     ]
   }
 
@@ -36,8 +38,7 @@ if ((skia_use_icu || skia_use_libgrapheme) && skia_enable_skshaper) {
     include_dirs = [ "../.." ]
     public = [ "src/word_boundaries.h" ]
     sources = [ "src/word_boundaries.cpp" ]
-    configs = [ "../../third_party/icu/config:no_cxx" ]
-    deps = [ "//third_party/icu" ]
+    deps = [ "../../modules/skunicode" ]
   }
 
   skia_source_set("editor_app") {

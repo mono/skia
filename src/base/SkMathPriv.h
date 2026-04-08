@@ -36,21 +36,8 @@ static inline int SkClampPos(int value) {
  */
 template <typename In, typename Out>
 inline void SkTDivMod(In numer, In denom, Out* div, Out* mod) {
-#ifdef SK_CPU_ARM32
-    // If we wrote this as in the else branch, GCC won't fuse the two into one
-    // divmod call, but rather a div call followed by a divmod.  Silly!  This
-    // version is just as fast as calling __aeabi_[u]idivmod manually, but with
-    // prettier code.
-    //
-    // This benches as around 2x faster than the code in the else branch.
-    const In d = numer/denom;
-    *div = static_cast<Out>(d);
-    *mod = static_cast<Out>(numer-d*denom);
-#else
-    // On x86 this will just be a single idiv.
     *div = static_cast<Out>(numer/denom);
     *mod = static_cast<Out>(numer%denom);
-#endif
 }
 
 /** Returns -1 if n < 0, else returns 0
@@ -184,8 +171,10 @@ static_assert( 0 == SkCLZ_portable(~0U));
             _BitScanReverse(&index, mask);
             // Suppress this bogus /analyze warning. The check for non-zero
             // guarantees that _BitScanReverse will succeed.
+            #pragma warning(push)
             #pragma warning(suppress : 6102) // Using 'index' from failed function call
-            return index ^ 0x1F;
+            return static_cast<int>(index ^ 0x1F);
+            #pragma warning(pop)
         } else {
             return 32;
         }
@@ -222,8 +211,10 @@ static_assert( 0 == SkCTZ_portable(~0U));
             _BitScanForward(&index, mask);
             // Suppress this bogus /analyze warning. The check for non-zero
             // guarantees that _BitScanReverse will succeed.
+            #pragma warning(push)
             #pragma warning(suppress : 6102) // Using 'index' from failed function call
-            return index;
+            return static_cast<int>(index);
+            #pragma warning(pop)
         } else {
             return 32;
         }
@@ -310,16 +301,9 @@ constexpr int SkPrevPow2_portable(int value) {
 ///////////////////////////////////////////////////////////////////////////////
 
 /**
- *  Return the smallest power-of-2 >= n.
- */
-static inline uint32_t GrNextPow2(uint32_t n) {
-    return n ? (1 << (32 - SkCLZ(n - 1))) : 1;
-}
-
-/**
  * Returns the next power of 2 >= n or n if the next power of 2 can't be represented by size_t.
  */
-static inline size_t GrNextSizePow2(size_t n) {
+constexpr size_t SkNextSizePow2(size_t n) {
     constexpr int kNumSizeTBits = 8 * sizeof(size_t);
     constexpr size_t kHighBitSet = size_t(1) << (kNumSizeTBits - 1);
 

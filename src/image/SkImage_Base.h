@@ -23,6 +23,7 @@ class GrImageContext;
 class SkBitmap;
 class SkColorSpace;
 class SkPixmap;
+class SkSurface;
 enum SkColorType : int;
 enum SkYUVColorSpace : int;
 struct SkIRect;
@@ -33,7 +34,9 @@ enum {
     kNeedNewImageUniqueID = 0
 };
 
-namespace skgpu { namespace graphite { class Recorder; } }
+namespace skgpu::graphite {
+class Recorder;
+}
 
 class SkImage_Base : public SkImage {
 public:
@@ -70,6 +73,17 @@ public:
                               int srcX,
                               int srcY,
                               CachingHint) const = 0;
+
+    // used by makeScaled()
+    virtual sk_sp<SkSurface> onMakeSurface(skgpu::graphite::Recorder*,
+                                           const SkImageInfo&) const = 0;
+
+    virtual bool readPixelsGraphite(skgpu::graphite::Recorder*,
+                                    const SkPixmap& dst,
+                                    int srcX,
+                                    int srcY) const {
+        return false;
+    }
 
     virtual bool onHasMipmaps() const = 0;
     virtual bool onIsProtected() const = 0;
@@ -174,6 +188,7 @@ public:
     virtual sk_sp<SkImage> onReinterpretColorSpace(sk_sp<SkColorSpace>) const = 0;
 
     // on failure, returns nullptr
+    // NOLINTNEXTLINE(performance-unnecessary-value-param)
     virtual sk_sp<SkImage> onMakeWithMipmaps(sk_sp<SkMipmap>) const {
         return nullptr;
     }
@@ -202,7 +217,7 @@ static inline const SkImage_Base* as_IB(const SkImage* image) {
     return static_cast<const SkImage_Base*>(image);
 }
 
-static inline const SkImage_Base* as_IB(sk_sp<const SkImage> image) {
+static inline const SkImage_Base* as_IB(const sk_sp<const SkImage>& image) {
     return static_cast<const SkImage_Base*>(image.get());
 }
 

@@ -8,14 +8,19 @@
 #ifndef GrGLUtil_DEFINED
 #define GrGLUtil_DEFINED
 
-#include "include/gpu/gl/GrGLInterface.h"
+#include "include/core/SkColor.h"
+#include "include/gpu/ganesh/gl/GrGLConfig.h"
+#include "include/gpu/ganesh/gl/GrGLInterface.h"
+#include "include/gpu/ganesh/gl/GrGLTypes.h"
+#include "include/private/base/SkAssert.h"
+#include "include/private/base/SkDebug.h"
 #include "include/private/gpu/ganesh/GrTypesPriv.h"
-#include "src/core/SkImageInfoPriv.h"
-#include "src/gpu/ganesh/GrDataUtils.h"
-#include "src/gpu/ganesh/GrStencilSettings.h"
 #include "src/gpu/ganesh/gl/GrGLDefines.h"
 
-class SkMatrix;
+#include <cstddef>
+#include <cstdint>
+
+enum class GrStencilTest : uint16_t;
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -142,6 +147,7 @@ enum class GrGLVendor {
     kQualcomm,
     kNVIDIA,
     kATI,
+    kApple,
 
     kOther
 };
@@ -207,6 +213,8 @@ enum class GrGLRenderer {
     kAMDRadeonPro5xxx,    // AMD Radeon Pro 5000 Series
     kAMDRadeonProVegaxx,  // AMD Radeon Pro Vega
 
+    kApple,
+
     kWebGL,
 
     kOther
@@ -221,6 +229,7 @@ enum class GrGLDriver {
     kAndroidEmulator,
     kImagination,
     kARM,
+    kApple,
     kUnknown
 };
 
@@ -229,7 +238,8 @@ enum class GrGLANGLEBackend {
     kD3D9,
     kD3D11,
     kMetal,
-    kOpenGL
+    kOpenGL,
+    kVulkan,
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -617,7 +627,7 @@ static constexpr bool GrGLFormatIsSRGB(GrGLFormat format) {
     SkUNREACHABLE;
 }
 
-#if defined(SK_DEBUG) || defined(GR_TEST_UTILS)
+#if defined(SK_DEBUG) || defined(GPU_TEST_UTILS)
 static constexpr const char* GrGLFormatToStr(GrGLenum glFormat) {
     switch (glFormat) {
         case GR_GL_RGBA8:                return "RGBA8";

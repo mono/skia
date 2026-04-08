@@ -11,6 +11,9 @@ It follows the example of:
  - https://github.com/emscripten-core/emsdk/blob/7f39d100d8cd207094decea907121df72065517e/bazel/emscripten_toolchain/crosstool.bzl
 """
 
+# https://github.com/bazelbuild/bazel/blob/master/tools/build_defs/cc/action_names.bzl
+load("@bazel_tools//tools/build_defs/cc:action_names.bzl", "ACTION_NAMES")
+
 # https://github.com/bazelbuild/bazel/blob/master/tools/cpp/cc_toolchain_config_lib.bzl
 load(
     "@bazel_tools//tools/cpp:cc_toolchain_config_lib.bzl",
@@ -21,9 +24,6 @@ load(
     "tool",
     "variable_with_value",
 )
-
-# https://github.com/bazelbuild/bazel/blob/master/tools/build_defs/cc/action_names.bzl
-load("@bazel_tools//tools/build_defs/cc:action_names.bzl", "ACTION_NAMES")
 load(":clang_layering_check.bzl", "make_layering_check_features")
 
 # The location of the created clang toolchain.
@@ -380,29 +380,12 @@ def _make_iwyu_flags():
         ],
     )
 
-    skip_linking_when_iwyu = flag_set(
-        actions = [
-            ACTION_NAMES.cpp_link_executable,
-            ACTION_NAMES.cpp_link_static_library,
-        ],
-        flag_groups = [
-            flag_group(
-                flags = [
-                    # IWYU is generally a compile-only check, so we can skip the linking step
-                    # to reduce the work needed, especially when enforcing IWYU on the executables.
-                    "-DSKIA_SKIP_LINKING",
-                ],
-            ),
-        ],
-    )
-
     return [
         feature(
             "skia_enforce_iwyu",
             enabled = False,
             flag_sets = [
                 opt_file_into_iwyu,
-                skip_linking_when_iwyu,
             ],
         ),
     ]

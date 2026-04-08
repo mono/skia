@@ -210,11 +210,13 @@ public:
     }
 
     std::unique_ptr<Recording> init(const Caps* caps) override {
+        skgpu::Protected isProtected = skgpu::Protected(caps->protectedSupport());
+
         // Note: not renderable
         TextureInfo info = caps->getDefaultSampledTextureInfo(kRGBA_8888_SkColorType,
                                                               fWithMips ? Mipmapped::kYes
                                                                         : Mipmapped::kNo,
-                                                              skgpu::Protected::kNo,
+                                                              isProtected,
                                                               skgpu::Renderable::kNo);
         REPORTER_ASSERT(fReporter, info.isValid());
 
@@ -224,11 +226,11 @@ public:
         update_backend_texture(fReporter, fRecorder, fBETexture, kRGBA_8888_SkColorType,
                                fWithMips, kInitialColor);
 
-        fMutatingImg = SkImages::AdoptTextureFrom(fRecorder,
-                                                  fBETexture,
-                                                  kRGBA_8888_SkColorType,
-                                                  kPremul_SkAlphaType,
-                                                  /* colorSpace= */ nullptr);
+        fMutatingImg = SkImages::WrapTexture(fRecorder,
+                                             fBETexture,
+                                             kRGBA_8888_SkColorType,
+                                             kPremul_SkAlphaType,
+                                             /* colorSpace= */ nullptr);
         REPORTER_ASSERT(fReporter, fMutatingImg);
 
         return fRecorder->snap();
@@ -295,11 +297,13 @@ public:
     }
 
     std::unique_ptr<Recording> init(const Caps* caps) override {
+        skgpu::Protected isProtected = skgpu::Protected(caps->protectedSupport());
+
         // Note: not renderable
         TextureInfo info = caps->getDefaultSampledTextureInfo(kRGBA_8888_SkColorType,
                                                               fWithMips ? Mipmapped::kYes
                                                                         : Mipmapped::kNo,
-                                                              skgpu::Protected::kNo,
+                                                              isProtected,
                                                               skgpu::Renderable::kNo);
         REPORTER_ASSERT(fReporter, info.isValid());
 
@@ -322,7 +326,7 @@ public:
                                                     info,
                                                     SkColorInfo(kRGBA_8888_SkColorType,
                                                                 kPremul_SkAlphaType,
-                                                                /* colorSpace= */ nullptr),
+                                                                /* cs= */ nullptr),
                                                     Volatile::kYes,
                                                     fulfill,
                                                     imageRelease,
@@ -500,7 +504,7 @@ void run_test(skiatest::Reporter* reporter,
 } // anonymous namespace
 
 DEF_GRAPHITE_TEST_FOR_RENDERING_CONTEXTS(MutableImagesTest, reporter, context,
-                                         CtsEnforcement::kNextRelease) {
+                                         CtsEnforcement::kApiLevel_V) {
 
     for (bool useTwoRecorders : { false, true }) {
         for (bool withMips : { false, true }) {

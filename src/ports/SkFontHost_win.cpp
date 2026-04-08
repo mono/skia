@@ -10,6 +10,7 @@
 
 #include "include/core/SkData.h"
 #include "include/core/SkFontMetrics.h"
+#include "include/core/SkFontTypes.h"
 #include "include/core/SkPath.h"
 #include "include/core/SkStream.h"
 #include "include/core/SkString.h"
@@ -20,7 +21,7 @@
 #include "include/private/base/SkTDArray.h"
 #include "include/private/base/SkTemplates.h"
 #include "include/private/base/SkTo.h"
-#include "include/utils/SkBase64.h"
+#include "src/base/SkBase64.h"
 #include "src/base/SkLeanWindows.h"
 #include "src/base/SkUTF.h"
 #include "src/core/SkAdvancedTypefaceMetrics.h"
@@ -466,7 +467,7 @@ public:
         fXform = xform;
     }
 
-    const void* draw(const SkGlyph&, bool isBW, size_t* srcRBPtr);
+    void* draw(const SkGlyph&, bool isBW, size_t* srcRBPtr);
 
 private:
     HDC     fDC{nullptr};
@@ -480,8 +481,7 @@ private:
     bool    fIsBW{false};
 };
 
-const void* HDCOffscreen::draw(const SkGlyph& glyph, bool isBW,
-                               size_t* srcRBPtr) {
+void* HDCOffscreen::draw(const SkGlyph& glyph, bool isBW, size_t* srcRBPtr) {
     // Can we share the scalercontext's fDDC, so we don't need to create
     // a separate fDC here?
     if (nullptr == fDC) {
@@ -554,7 +554,7 @@ const void* HDCOffscreen::draw(const SkGlyph& glyph, bool isBW,
     }
     *srcRBPtr = srcRB;
     // offset to the start of the image
-    return (const char*)fBits + (fHeight - glyph.height()) * srcRB;
+    return (char*)fBits + (fHeight - glyph.height()) * srcRB;
 }
 
 //////////////////////////////////////////////////////////////////////////////
@@ -574,7 +574,7 @@ public:
 protected:
     GlyphMetrics generateMetrics(const SkGlyph&, SkArenaAlloc*) override;
     void generateImage(const SkGlyph&, void* imageBuffer) override;
-    bool generatePath(const SkGlyph& glyph, SkPath* path) override;
+    bool generatePath(const SkGlyph& glyph, SkPath* path, bool* modified) override;
     void generateFontMetrics(SkFontMetrics*) override;
 
 private:
@@ -829,7 +829,7 @@ SkScalerContext::GlyphMetrics SkScalerContext_GDI::generateMetrics(const SkGlyph
         int left = 0;
         int top = -fTM.tmAscent;
 
-        mx.bounds = SkIRect::MakeXYWH(left, top, width, height);
+        mx.bounds = SkRect::MakeXYWH(left, top, width, height);
         mx.advance = SkVector{(float)width, 0};
 
         // Vector FON will transform nicely, but bitmap FON do not.
@@ -884,7 +884,7 @@ SkScalerContext::GlyphMetrics SkScalerContext_GDI::generateMetrics(const SkGlyph
         // For embedded bitmaps the black box should be exact.
         // For outlines we need to outset by 1 in all directions for bleed.
         // For ClearType we need to outset by 2 for bleed.
-        mx.bounds = SkIRect::MakeXYWH(x, y, gm.gmBlackBoxX, gm.gmBlackBoxY).makeOutset(2, 2);
+        mx.bounds = SkRect::MakeXYWH(x, y, gm.gmBlackBoxX, gm.gmBlackBoxY).makeOutset(2, 2);
     }
     // TODO(benjaminwagner): What is the type of gm.gmCellInc[XY]?
     mx.advance.fX = (float)((int)gm.gmCellIncX);
@@ -975,7 +975,7 @@ void SkScalerContext_GDI::generateFontMetrics(SkFontMetrics* metrics) {
 static void build_power_table(uint8_t table[], float ee) {
     for (int i = 0; i < 256; i++) {
         float x = i / 255.f;
-        x = sk_float_pow(x, ee);
+        x = std::pow(x, ee);
         int xx = SkScalarRoundToInt(x * 255);
         table[i] = SkToU8(xx);
     }
@@ -1091,7 +1091,7 @@ void SkScalerContext_GDI::generateImage(const SkGlyph& glyph, void* imageBuffer)
     const bool isAA = !isLCD(fRec);
 
     size_t srcRB;
-    const void* bits = fOffscreen.draw(glyph, isBW, &srcRB);
+    void* bits = fOffscreen.draw(glyph, isBW, &srcRB);
     if (nullptr == bits) {
         LogFontTypeface::EnsureAccessible(this->getTypeface());
         bits = fOffscreen.draw(glyph, isBW, &srcRB);
@@ -1346,7 +1346,7 @@ void SkGDIGeometrySink::process(const uint8_t* glyphbuf, DWORD total_size) {
     const uint8_t* end_glyph = glyphbuf + total_size;
 
     while (cur_glyph < end_glyph) {
-        const TTPOLYGONHEADER* th = (TTPOLYGONHEADER*)cur_glyph;
+        const TTPOLYGONHEADER* th = (const TTPOLYGONHEADER*)cur_glyph;
 
         const uint8_t* end_poly = cur_glyph + th->cb;
         const uint8_t* cur_poly = cur_glyph + sizeof(TTPOLYGONHEADER);
@@ -1416,7 +1416,7 @@ bool SkGDIGeometrySink::process(const uint8_t* glyphbuf, DWORD total_size,
     POINTFX const * hintedPoint;
 
     while (cur_glyph < end_glyph) {
-        const TTPOLYGONHEADER* th = (TTPOLYGONHEADER*)cur_glyph;
+        const TTPOLYGONHEADER* th = (const TTPOLYGONHEADER*)cur_glyph;
 
         const uint8_t* end_poly = cur_glyph + th->cb;
         const uint8_t* cur_poly = cur_glyph + sizeof(TTPOLYGONHEADER);
@@ -1527,7 +1527,7 @@ DWORD SkScalerContext_GDI::getGDIGlyphPath(SkGlyphID glyph, UINT flags,
     return total_size;
 }
 
-bool SkScalerContext_GDI::generatePath(const SkGlyph& glyph, SkPath* path) {
+bool SkScalerContext_GDI::generatePath(const SkGlyph& glyph, SkPath* path, bool* modified) {
     SkASSERT(path);
     SkASSERT(fDDC);
 
@@ -1654,7 +1654,6 @@ std::unique_ptr<SkAdvancedTypefaceMetrics> LogFontTypeface::onGetAdvancedMetrics
     glyphCount = calculateGlyphCount(hdc, fLogFont);
 
     info.reset(new SkAdvancedTypefaceMetrics);
-    tchar_to_skstring(lf.lfFaceName, &info->fFontName);
 
     SkOTTableOS2_V4::Type fsType;
     if (sizeof(fsType) == this->getTableData(SkTEndian_SwapBE32(SkOTTableOS2::TAG),
@@ -1834,8 +1833,9 @@ std::unique_ptr<SkStreamAsset> LogFontTypeface::onOpenStream(int* ttcIndex) cons
             bufferSize = GetFontData(hdc, tables[i], 0, nullptr, 0);
         }
         if (bufferSize != GDI_ERROR) {
-            stream.reset(new SkMemoryStream(bufferSize));
-            if (GetFontData(hdc, tables[i], 0, (void*)stream->getMemoryBase(), bufferSize)) {
+            sk_sp<SkData> streamData = SkData::MakeUninitialized(bufferSize);
+            if (GetFontData(hdc, tables[i], 0, streamData->writable_data(), bufferSize)) {
+                stream.reset(new SkMemoryStream(std::move(streamData)));
                 break;
             } else {
                 stream.reset();
@@ -2092,6 +2092,8 @@ std::unique_ptr<SkScalerContext> LogFontTypeface::onCreateScalerContext(
 }
 
 void LogFontTypeface::onFilterRec(SkScalerContextRec* rec) const {
+    rec->useStrokeForFakeBold();
+
     if (rec->fFlags & SkScalerContext::kLCD_BGROrder_Flag ||
         rec->fFlags & SkScalerContext::kLCD_Vertical_Flag)
     {
@@ -2169,7 +2171,7 @@ static int CALLBACK enum_family_proc(const LOGFONT* lf, const TEXTMETRIC*,
                                      DWORD fontType, LPARAM builderParam) {
     if (valid_logfont_for_enum(*lf)) {
         SkTDArray<ENUMLOGFONTEX>* array = (SkTDArray<ENUMLOGFONTEX>*)builderParam;
-        *array->append() = *(ENUMLOGFONTEX*)lf;
+        *array->append() = *(const ENUMLOGFONTEX*)lf;
     }
     return 1; // non-zero means continue
 }

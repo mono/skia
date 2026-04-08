@@ -13,9 +13,7 @@
 namespace skgpu::graphite {
 
 sk_sp<VulkanDescriptorSet> VulkanDescriptorSet::Make(const VulkanSharedContext* ctxt,
-                                                     sk_sp<VulkanDescriptorPool> pool,
-                                                     const VkDescriptorSetLayout layout) {
-    SkASSERT(layout != VK_NULL_HANDLE && pool);
+                                                     const sk_sp<VulkanDescriptorPool>& pool) {
     VkDescriptorSet descSet;
     VkDescriptorSetAllocateInfo dsAllocateInfo;
     memset(&dsAllocateInfo, 0, sizeof(VkDescriptorSetAllocateInfo));
@@ -23,14 +21,11 @@ sk_sp<VulkanDescriptorSet> VulkanDescriptorSet::Make(const VulkanSharedContext* 
     dsAllocateInfo.pNext = nullptr;
     dsAllocateInfo.descriptorPool = pool->descPool();
     dsAllocateInfo.descriptorSetCount = 1;
-    dsAllocateInfo.pSetLayouts = &layout;
+    dsAllocateInfo.pSetLayouts = pool->descSetLayout();
 
     VkResult result;
-    VULKAN_CALL_RESULT(ctxt->interface(),
-                       result,
-                       AllocateDescriptorSets(ctxt->device(),
-                                              &dsAllocateInfo,
-                                              &descSet));
+    VULKAN_CALL_RESULT(
+            ctxt, result, AllocateDescriptorSets(ctxt->device(), &dsAllocateInfo, &descSet));
     if (result != VK_SUCCESS) {
         return nullptr;
     }
@@ -40,9 +35,12 @@ sk_sp<VulkanDescriptorSet> VulkanDescriptorSet::Make(const VulkanSharedContext* 
 VulkanDescriptorSet::VulkanDescriptorSet(const VulkanSharedContext* ctxt,
                                          VkDescriptorSet set,
                                          sk_sp<VulkanDescriptorPool> pool)
-        : Resource(ctxt, Ownership::kOwned, skgpu::Budgeted::kNo, /*gpuMemorySize=*/0)
-        , fDescSet (set)
-        , fPool (pool) {
+        : Resource(ctxt,
+                   Ownership::kOwned,
+                   skgpu::Budgeted::kYes,
+                   /*gpuMemorySize=*/0)
+        , fDescSet(set)
+        , fPool(pool) {
     fPool->ref();
 }
 

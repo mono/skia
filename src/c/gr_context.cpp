@@ -10,7 +10,15 @@
 #include "include/core/SkImage.h"
 #include "include/core/SkSurface.h"
 #include "include/gpu/ganesh/gl/GrGLBackendSurface.h"
+#include "include/gpu/ganesh/gl/GrGLDirectContext.h"
+#if SK_VULKAN
 #include "include/gpu/ganesh/vk/GrVkBackendSurface.h"
+#include "include/gpu/ganesh/vk/GrVkDirectContext.h"
+#endif
+#if SK_METAL
+#include "include/gpu/ganesh/mtl/GrMtlBackendContext.h"
+#include "include/gpu/ganesh/mtl/GrMtlDirectContext.h"
+#endif
 
 #include "include/c/gr_context.h"
 
@@ -49,7 +57,7 @@ gr_direct_context_t* gr_recording_context_get_direct_context(gr_recording_contex
 // GrDirectContext
 
 gr_direct_context_t* gr_direct_context_make_gl(const gr_glinterface_t* glInterface) {
-    return SK_ONLY_GPU(ToGrDirectContext(GrDirectContext::MakeGL(sk_ref_sp(AsGrGLInterface(glInterface))).release()), nullptr);
+    return SK_ONLY_GPU(ToGrDirectContext(GrDirectContexts::MakeGL(sk_ref_sp(AsGrGLInterface(glInterface))).release()), nullptr);
 }
 
 gr_direct_context_t* gr_direct_context_make_gl_with_options(const gr_glinterface_t* glInterface, const gr_context_options_t* options) {
@@ -58,11 +66,11 @@ gr_direct_context_t* gr_direct_context_make_gl_with_options(const gr_glinterface
         if (options) {
             opts = AsGrContextOptions(options);
         })
-    return SK_ONLY_GPU(ToGrDirectContext(GrDirectContext::MakeGL(sk_ref_sp(AsGrGLInterface(glInterface)), opts).release()), nullptr);
+    return SK_ONLY_GPU(ToGrDirectContext(GrDirectContexts::MakeGL(sk_ref_sp(AsGrGLInterface(glInterface)), opts).release()), nullptr);
 }
 
 gr_direct_context_t* gr_direct_context_make_vulkan(const gr_vk_backendcontext_t vkBackendContext) {
-    return SK_ONLY_VULKAN(ToGrDirectContext(GrDirectContext::MakeVulkan(AsGrVkBackendContext(&vkBackendContext)).release()), nullptr);
+    return SK_ONLY_VULKAN(ToGrDirectContext(GrDirectContexts::MakeVulkan(AsGrVkBackendContext(&vkBackendContext)).release()), nullptr);
 }
 
 gr_direct_context_t* gr_direct_context_make_vulkan_with_options(const gr_vk_backendcontext_t vkBackendContext, const gr_context_options_t* options) {
@@ -71,20 +79,27 @@ gr_direct_context_t* gr_direct_context_make_vulkan_with_options(const gr_vk_back
         if (options) {
             opts = AsGrContextOptions(options);
         })
-    return SK_ONLY_VULKAN(ToGrDirectContext(GrDirectContext::MakeVulkan(AsGrVkBackendContext(&vkBackendContext), opts).release()), nullptr);
+    return SK_ONLY_VULKAN(ToGrDirectContext(GrDirectContexts::MakeVulkan(AsGrVkBackendContext(&vkBackendContext), opts).release()), nullptr);
 }
 
 gr_direct_context_t* gr_direct_context_make_metal(void* device, void* queue) {
-    return SK_ONLY_METAL(ToGrDirectContext(GrDirectContext::MakeMetal(device, queue).release()), nullptr);
+    SK_ONLY_METAL(
+        GrMtlBackendContext backendContext;
+        backendContext.fDevice.retain(device);
+        backendContext.fQueue.retain(queue);)
+    return SK_ONLY_METAL(ToGrDirectContext(GrDirectContexts::MakeMetal(backendContext).release()), nullptr);
 }
 
 gr_direct_context_t* gr_direct_context_make_metal_with_options(void* device, void* queue, const gr_context_options_t* options) {
     SK_ONLY_METAL(
+        GrMtlBackendContext backendContext;
+        backendContext.fDevice.retain(device);
+        backendContext.fQueue.retain(queue);
         GrContextOptions opts;
         if (options) {
             opts = AsGrContextOptions(options);
         })
-    return SK_ONLY_METAL(ToGrDirectContext(GrDirectContext::MakeMetal(device, queue, opts).release()), nullptr);
+    return SK_ONLY_METAL(ToGrDirectContext(GrDirectContexts::MakeMetal(backendContext, opts).release()), nullptr);
 }
 
 gr_direct_context_t* gr_direct_context_make_direct3d(const gr_d3d_backendcontext_t d3dBackendContext) {
@@ -234,7 +249,7 @@ bool gr_vk_extensions_has_extension(gr_vk_extensions_t* extensions, const char* 
 // GrBackendTexture
 
 gr_backendtexture_t* gr_backendtexture_new_gl(int width, int height, bool mipmapped, const gr_gl_textureinfo_t* glInfo) {
-    return SK_ONLY_GPU(ToGrBackendTexture(new GrBackendTexture(GrBackendTextures::MakeGL(width, height, (GrMipMapped)mipmapped, *AsGrGLTextureInfo(glInfo)))), nullptr);
+    return SK_ONLY_GPU(ToGrBackendTexture(new GrBackendTexture(GrBackendTextures::MakeGL(width, height, (skgpu::Mipmapped)mipmapped, *AsGrGLTextureInfo(glInfo)))), nullptr);
 }
 
 gr_backendtexture_t* gr_backendtexture_new_vulkan(int width, int height, const gr_vk_imageinfo_t* vkInfo) {
@@ -242,7 +257,7 @@ gr_backendtexture_t* gr_backendtexture_new_vulkan(int width, int height, const g
 }
 
 gr_backendtexture_t* gr_backendtexture_new_metal(int width, int height, bool mipmapped, const gr_mtl_textureinfo_t* mtlInfo) {
-    return SK_ONLY_METAL(ToGrBackendTexture(new GrBackendTexture(width, height, (GrMipMapped)mipmapped, AsGrMtlTextureInfo(mtlInfo))), nullptr);
+    return SK_ONLY_METAL(ToGrBackendTexture(new GrBackendTexture(GrBackendTextures::MakeMtl(width, height, (skgpu::Mipmapped)mipmapped, AsGrMtlTextureInfo(mtlInfo)))), nullptr);
 }
 
 gr_backendtexture_t* gr_backendtexture_new_direct3d(int width, int height, const gr_d3d_textureresourceinfo_t* d3dInfo) {
@@ -266,7 +281,7 @@ int gr_backendtexture_get_height(const gr_backendtexture_t* texture) {
 }
 
 bool gr_backendtexture_has_mipmaps(const gr_backendtexture_t* texture) {
-    return SK_ONLY_GPU(AsGrBackendTexture(texture)->hasMipMaps(), false);
+    return SK_ONLY_GPU(AsGrBackendTexture(texture)->hasMipmaps(), false);
 }
 
 gr_backend_t gr_backendtexture_get_backend(const gr_backendtexture_t* texture) {
@@ -289,7 +304,7 @@ gr_backendrendertarget_t* gr_backendrendertarget_new_vulkan(int width, int heigh
 }
 
 gr_backendrendertarget_t* gr_backendrendertarget_new_metal(int width, int height, const gr_mtl_textureinfo_t* mtlInfo) {
-    return SK_ONLY_METAL(ToGrBackendRenderTarget(new GrBackendRenderTarget(width, height, AsGrMtlTextureInfo(mtlInfo))), nullptr);
+    return SK_ONLY_METAL(ToGrBackendRenderTarget(new GrBackendRenderTarget(GrBackendRenderTargets::MakeMtl(width, height, AsGrMtlTextureInfo(mtlInfo)))), nullptr);
 }
 
 gr_backendrendertarget_t* gr_backendrendertarget_new_direct3d(int width, int height, const gr_d3d_textureresourceinfo_t* d3dInfo) {

@@ -4,15 +4,21 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
-
-
-#include "include/core/SkMatrix.h"
-#include "include/core/SkString.h"
-#include "include/private/gpu/ganesh/GrTypesPriv.h"
-#include "src/core/SkStringUtils.h"
-#include "src/gpu/ganesh/GrDataUtils.h"
 #include "src/gpu/ganesh/gl/GrGLUtil.h"
-#include <stdio.h>
+
+#include "include/core/SkString.h"
+#include "include/gpu/ganesh/gl/GrGLExtensions.h"
+#include "include/gpu/ganesh/gl/GrGLFunctions.h"
+#include "include/private/base/SkTArray.h"
+#include "src/core/SkStringUtils.h"
+#include "src/gpu/ganesh/GrStencilSettings.h"
+
+#include <ctype.h>
+#include <array>
+#include <cstdio>
+#include <cstring>
+#include <tuple>
+#include <utility>
 
 using namespace skia_private;
 
@@ -160,6 +166,9 @@ static GrGLVendor get_vendor(const char* vendorString) {
     }
     if (0 == strcmp(vendorString, "ATI Technologies Inc.")) {
         return GrGLVendor::kATI;
+    }
+    if (0 == strcmp(vendorString, "Apple")) {
+        return GrGLVendor::kApple;
     }
     return GrGLVendor::kOther;
 }
@@ -381,6 +390,11 @@ static GrGLRenderer get_renderer(const char* rendererString, const GrGLExtension
         return GrGLRenderer::kMali4xx;
     }
 
+    static const char kAppleStr[] = "Apple";
+    if (0 == strncmp(rendererString, kAppleStr, std::size(kAppleStr) - 1)) {
+        return GrGLRenderer::kApple;
+    }
+
     if (strstr(rendererString, "WebGL")) {
         return GrGLRenderer::kWebGL;
     }
@@ -555,6 +569,17 @@ static std::tuple<GrGLDriver, GrGLDriverVersion> get_driver_and_version(GrGLStan
                 driver = GrGLDriver::kARM;
                 driverVersion = GR_GL_DRIVER_VER(driverMajor, driverMinor, 0);
             }
+        } else if (vendor == GrGLVendor::kApple) {
+            // There doesn't appear to be a minor version
+            int n = sscanf(versionString,
+                           "%d.%d Metal - %d",
+                           &major,
+                           &minor,
+                           &driverMajor);
+            if (n == 3) {
+                driver = GrGLDriver::kApple;
+                driverVersion = GR_GL_DRIVER_VER(driverMajor, 0, 0);
+            }
         } else {
             static constexpr char kEmulatorPrefix[] = "Android Emulator OpenGL ES Translator";
             if (0 == strncmp(kEmulatorPrefix, rendererString, strlen(kEmulatorPrefix))) {
@@ -585,6 +610,8 @@ static std::tuple<GrGLANGLEBackend, SkString> get_angle_backend(const char* rend
             return {GrGLANGLEBackend::kMetal, std::move(innerString)};
         } else if (strstr(rendererString, "OpenGL")) {
             return {GrGLANGLEBackend::kOpenGL, std::move(innerString)};
+        } else if (strstr(rendererString, "Vulkan")) {
+            return {GrGLANGLEBackend::kVulkan, std::move(innerString)};
         }
     }
     return {GrGLANGLEBackend::kUnknown, {}};
@@ -619,6 +646,22 @@ get_angle_gl_vendor_and_renderer(
     auto angleRenderer = get_renderer(angleRendererString, extensions);
 
     return {angleVendor, angleRenderer, angleDriver, angleDriverVersion};
+}
+
+static GrGLVendor get_angle_metal_vendor(const char* innerString) {
+    if (strstr(innerString, "Intel")) {
+        return GrGLVendor::kIntel;
+    }
+
+    return GrGLVendor::kOther;
+}
+
+static GrGLVendor get_angle_vulkan_vendor(const char* innerString) {
+    if (strstr(innerString, "ARM")) {
+        return GrGLVendor::kARM;
+    }
+
+    return GrGLVendor::kOther;
 }
 
 static std::tuple<GrGLVendor, GrGLRenderer, GrGLDriver, GrGLDriverVersion>
@@ -694,6 +737,10 @@ get_webgl_vendor_and_renderer(
     GrGLVendor webglVendor = get_vendor(webglVendorString);
     GrGLRenderer webglRenderer = get_renderer(webglRendererString, interface->fExtensions);
 
+    if (webglVendor == GrGLVendor::kOther && strstr(webglRendererString, "Intel")) {
+        webglVendor = GrGLVendor::kIntel;
+    }
+
     return {webglVendor, webglRenderer};
 }
 
@@ -746,6 +793,10 @@ GrGLDriverInfo GrGLGetDriverInfo(const GrGLInterface* interface) {
                  info.fANGLEDriverVersion) =
                 get_angle_gl_vendor_and_renderer(innerAngleRendererString.c_str(),
                                                  interface->fExtensions);
+    } else if (info.fANGLEBackend == GrGLANGLEBackend::kMetal) {
+        info.fANGLEVendor = get_angle_metal_vendor(innerAngleRendererString.c_str());
+    } else if (info.fANGLEBackend == GrGLANGLEBackend::kVulkan) {
+        info.fANGLEVendor = get_angle_vulkan_vendor(innerAngleRendererString.c_str());
     }
 
     if (info.fRenderer == GrGLRenderer::kWebGL) {

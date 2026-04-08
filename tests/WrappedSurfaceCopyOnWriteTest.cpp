@@ -18,8 +18,8 @@
 #include "include/core/SkSurface.h"
 #include "include/core/SkTypes.h"
 #include "include/gpu/GpuTypes.h"
-#include "include/gpu/GrDirectContext.h"
-#include "include/gpu/GrTypes.h"
+#include "include/gpu/ganesh/GrDirectContext.h"
+#include "include/gpu/ganesh/GrTypes.h"
 #include "include/private/SkColorData.h"
 #include "include/private/chromium/GrDeferredDisplayListRecorder.h"
 #include "include/private/chromium/GrSurfaceCharacterization.h"
@@ -53,14 +53,20 @@ DEF_GANESH_TEST_FOR_ALL_CONTEXTS(WrappedSurfaceCopyOnWrite,
                                  reporter,
                                  ctxInfo,
                                  CtsEnforcement::kApiLevel_T) {
+    using namespace skgpu;
+
     GrDirectContext* dContext = ctxInfo.directContext();
+
+    Protected isProtected = Protected(dContext->priv().caps()->supportsProtectedContent());
 
     auto makeDirectBackendSurface = [&]() {
         auto info = SkImageInfo::Make({10, 10}, kRGBA_8888_SkColorType, kPremul_SkAlphaType);
         return sk_gpu_test::MakeBackendTextureSurface(dContext,
                                                       info,
                                                       kTopLeft_GrSurfaceOrigin,
-                                                      /*sample count*/ 1);
+                                                      /* sampleCnt= */ 1,
+                                                      Mipmapped::kNo,
+                                                      isProtected);
     };
 
     auto imageProxyID = [&](const sk_sp<SkImage>& img) {

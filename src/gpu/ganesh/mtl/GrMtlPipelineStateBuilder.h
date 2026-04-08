@@ -8,7 +8,7 @@
 #ifndef GrMtlPipelineStateBuilder_DEFINED
 #define GrMtlPipelineStateBuilder_DEFINED
 
-#include "include/gpu/GrContextOptions.h"
+#include "include/gpu/ganesh/GrContextOptions.h"
 #include "src/gpu/ganesh/GrPipeline.h"
 #include "src/gpu/ganesh/glsl/GrGLSLProgramBuilder.h"
 #include "src/gpu/ganesh/mtl/GrMtlUniformHandler.h"
@@ -57,8 +57,6 @@ private:
                                  const GrMtlPrecompiledLibraries* precompiledLibraries);
 
     const GrCaps* caps() const override;
-
-    SkSL::Compiler* shaderCompiler() const override;
 
     void finalizeFragmentSecondaryColor(GrShaderVar& outputColor) override;
 

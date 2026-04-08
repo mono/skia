@@ -7,9 +7,17 @@
 
 #include "modules/sksg/include/SkSGRenderNode.h"
 
+#include "include/core/SkBlendMode.h"
 #include "include/core/SkCanvas.h"
+#include "include/core/SkColor.h"
 #include "include/core/SkImageFilter.h"
 #include "include/core/SkPaint.h"
+#include "include/core/SkPoint.h"
+#include "include/core/SkRect.h"
+#include "include/effects/SkImageFilters.h"
+#include "include/private/base/SkAssert.h"
+#include "include/private/base/SkFloatingPoint.h"
+#include "include/private/base/SkTo.h"
 #include "modules/sksg/src/SkSGNodePriv.h"
 
 namespace sksg {
@@ -54,7 +62,7 @@ static SkAlpha ScaleAlpha(SkAlpha alpha, float opacity) {
    return SkToU8(sk_float_round2int(alpha * opacity));
 }
 
-static sk_sp<SkShader> LocalShader(const sk_sp<SkShader> shader,
+static sk_sp<SkShader> LocalShader(const sk_sp<SkShader>& shader,
                                    const SkMatrix& base,
                                    const SkMatrix& ctm) {
     // Mask filters / shaders are declared to operate under a specific transform, but due to the
@@ -211,7 +219,12 @@ RenderNode::ScopedRenderContext::setFilterIsolation(const SkRect& bounds, const 
     if (filter) {
         SkPaint layer_paint;
         fCtx.modulatePaint(ctm, &layer_paint);
-
+        // shaders and image filters are not composable, so we convert the shader to an
+        // image filter and blend them together
+        if (layer_paint.getShader()) {
+            filter = SkImageFilters::Blend(SkBlendMode::kSrcIn, std::move(filter),
+            SkImageFilters::Shader(layer_paint.refShader()));
+        }
         SkASSERT(!layer_paint.getImageFilter());
         layer_paint.setImageFilter(std::move(filter));
         fCanvas->saveLayer(bounds, &layer_paint);

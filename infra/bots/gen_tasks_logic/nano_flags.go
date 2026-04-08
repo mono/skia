@@ -150,8 +150,37 @@ func (b *taskBuilder) nanobenchFlags(doUpload bool) {
 		}
 
 		if b.extraConfig("Graphite") {
-			if b.extraConfig("Metal") {
-				configs = []string{"grmtl"}
+			if b.extraConfig("Dawn") {
+				if b.extraConfig("D3D11") {
+					configs = []string{"grdawn_d3d11"}
+				}
+				if b.extraConfig("D3D12") {
+					configs = []string{"grdawn_d3d12"}
+				}
+				if b.extraConfig("Metal") {
+					configs = []string{"grdawn_mtl"}
+				}
+				if b.extraConfig("Vulkan") {
+					configs = []string{"grdawn_vk"}
+				}
+				if b.extraConfig("GL") {
+					configs = []string{"grdawn_gl"}
+				}
+				if b.extraConfig("GLES") {
+					configs = []string{"grdawn_gles"}
+				}
+
+				if b.extraConfig("TintIR") {
+					args = append(args, "--useTintIR")
+				}
+			}
+			if b.extraConfig("Native") {
+				if b.extraConfig("Metal") {
+					configs = []string{"grmtl"}
+				}
+				if b.extraConfig("Vulkan") {
+					configs = []string{"grvk"}
+				}
 			}
 		}
 
@@ -236,6 +265,11 @@ func (b *taskBuilder) nanobenchFlags(doUpload bool) {
 		match = append(match, "~top25desk_ebay_com.skp_1.1")
 		match = append(match, "~top25desk_ebay.skp_1.1")
 	}
+	if b.gpu("Tegra3") {
+		// skbug.com/338376730
+		match = append(match, "~GM_matrixconvolution_bigger")
+		match = append(match, "~GM_matrixconvolution_biggest")
+	}
 	if b.extraConfig("Vulkan") && b.gpu("GTX660") {
 		// skia:8523 skia:9271
 		match = append(match, "~compositing_images")
@@ -249,8 +283,8 @@ func (b *taskBuilder) nanobenchFlags(doUpload bool) {
 		match = append(match, "~^path_text$")
 		match = append(match, "~^path_text_clipped_uncached$")
 	}
-	if b.model("Pixel3") && b.extraConfig("Vulkan") {
-		// skia:9972
+	if b.model("Pixel4XL") && b.extraConfig("Vulkan") {
+		// skia:9413?
 		match = append(match, "~^path_text_clipped_uncached$")
 	}
 
@@ -260,11 +294,18 @@ func (b *taskBuilder) nanobenchFlags(doUpload bool) {
 		match = append(match, "~^draw_coverage")
 		match = append(match, "~^compositing_images")
 	}
+	if b.extraConfig("Graphite") && b.extraConfig("Dawn") {
+		if b.matchOs("Win10") && b.matchGpu("RadeonR9M470X") {
+			// The Dawn Win10 Radeon allocates too many Vulkan resources in bulk rect tests (b/318725123)
+			match = append(match, "~bulkrect_1000_grid_uniqueimages")
+			match = append(match, "~bulkrect_1000_random_uniqueimages")
+		}
+	}
 
 	if b.model(DONT_REDUCE_OPS_TASK_SPLITTING_MODELS...) {
 		args = append(args, "--dontReduceOpsTaskSplitting", "true")
 	}
-	if (!b.isLinux() && b.extraConfig("Vulkan") && b.gpu("QuadroP400")) {
+	if !b.isLinux() && b.extraConfig("Vulkan") && b.gpu("QuadroP400") {
 		// skia:14302 (desk_carsvg.skp hangs indefinitely on Windows QuadroP400 vkdmsaa configs)
 		match = append(match, "~desk_carsvg.skp")
 	}

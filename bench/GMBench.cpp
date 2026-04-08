@@ -7,7 +7,7 @@
 
 #include "bench/GMBench.h"
 
-#include "include/gpu/GrRecordingContext.h"
+#include "include/gpu/ganesh/GrRecordingContext.h"
 #include "src/gpu/ganesh/GrRecordingContextPriv.h"
 
 GMBench::GMBench(std::unique_ptr<skiagm::GM> gm) : fGM(std::move(gm)) {
@@ -21,11 +21,12 @@ const char* GMBench::onGetName() {
 }
 
 bool GMBench::isSuitableFor(Backend backend) {
-    return kNonRendering_Backend != backend;
+    return Backend::kNonRendering != backend;
 }
 
 void GMBench::onPerCanvasPreDraw(SkCanvas* canvas) {
-    if (fGM->gpuSetup(canvas) != skiagm::DrawResult::kOk) {
+    SkString msg;
+    if (fGM->gpuSetup(canvas, &msg) != skiagm::DrawResult::kOk) {
         fGpuSetupFailed = true;
     }
 

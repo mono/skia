@@ -4,10 +4,13 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
+#include "tools/window/unix/RasterWindowContext_unix.h"
 
 #include "include/core/SkSurface.h"
 #include "tools/window/RasterWindowContext.h"
-#include "tools/window/unix/WindowContextFactory_unix.h"
+#include "tools/window/unix/XlibWindowInfo.h"
+
+#include <X11/Xlib.h>
 
 using skwindow::DisplayParams;
 using skwindow::internal::RasterWindowContext;
@@ -69,7 +72,7 @@ void RasterWindowContext_xlib::onSwapBuffers() {
     image.width = pm.width();
     image.height = pm.height();
     image.format = ZPixmap;
-    image.data = (char*) pm.addr();
+    image.data = (char*) pm.writable_addr();
     image.byte_order = LSBFirst;
     image.bitmap_unit = bitsPerPixel;
     image.bitmap_bit_order = LSBFirst;

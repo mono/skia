@@ -7,7 +7,7 @@
 
 #include "tools/gpu/FlushFinishTracker.h"
 
-#include "include/gpu/GrDirectContext.h"
+#include "include/gpu/ganesh/GrDirectContext.h"
 #include "src/core/SkTraceEvent.h"
 
 #if defined(SK_GRAPHITE)
@@ -18,11 +18,14 @@
 
 namespace sk_gpu_test {
 
-void FlushFinishTracker::waitTillFinished() {
+void FlushFinishTracker::waitTillFinished(std::function<void()> tick) {
     TRACE_EVENT0("skia.gpu", TRACE_FUNC);
     auto begin = std::chrono::steady_clock::now();
     auto end = begin;
     while (!fIsFinished && (end - begin) < std::chrono::seconds(2)) {
+        if (tick) {
+            tick();
+        }
         if (fContext) {
             fContext->checkAsyncWorkCompletion();
         } else {

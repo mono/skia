@@ -89,14 +89,14 @@ config("default") {
   if (is_fuchsia && using_fuchsia_sdk) {
     ldflags += [
       "-v",
-      "--sysroot=" + rebase_path("$fuchsia_sdk_path/arch/$target_cpu/sysroot"),
+      "--sysroot=" + rebase_path("$fuchsia_sdk_path/arch/$current_cpu/sysroot"),
     ]
     cflags += [ "--sysroot=" +
-                rebase_path("$fuchsia_sdk_path/arch/$target_cpu/sysroot") ]
-    if (target_cpu == "x64") {
-      target_triple = "--target=x86_64-${target_os}"
-    } else if (target_cpu == "arm64") {
-      target_triple = "--target=aarch64-unknown-${target_os}"
+                rebase_path("$fuchsia_sdk_path/arch/$current_cpu/sysroot") ]
+    if (current_cpu == "x64") {
+      current_cpu = "--target=x86_64-${current_os}"
+    } else if (current_cpu == "arm64") {
+      target_triple = "--target=aarch64-unknown-${current_os}"
     } else {
       print("Unknown target CPU for Fuchsia target build.")
       assert(false)
@@ -107,7 +107,7 @@ config("default") {
   }
 
   if (is_win) {
-    if (is_clang && target_cpu == "arm64") {
+    if (is_clang && current_cpu == "arm64") {
       cflags += [ "--target=arm64-windows" ]
     }
     cflags += [
@@ -115,6 +115,10 @@ config("default") {
       "/utf-8",  # Set Source and Executable character sets to UTF-8.
     ]
     cflags_cc += [ "/std:c++17" ]
+    if (!is_clang) {
+      # https://developercommunity.visualstudio.com/t/Incorrect-C4573-when-taking-address-of-m/10662923
+      cflags_cc += [ "/Zc:lambda" ]
+    }
     defines += [
       "_CRT_SECURE_NO_WARNINGS",  # Disables warnings about sscanf().
       "_HAS_EXCEPTIONS=0",  # Disables exceptions in MSVC STL.
@@ -190,6 +194,11 @@ config("default") {
       "-mfpmath=sse",
     ]
     ldflags += [ "-m32" ]
+  } else if (current_cpu == "loong64") {
+    cflags += [
+      "-mlsx",
+      "-Wno-switch-default",
+    ]
   }
 
   if (malloc != "" && !is_win) {
@@ -278,7 +287,7 @@ config("default") {
           _arch_flags += [
             "-arch",
             "arm64e",
-          ] 
+          ]
         }
       }
     } else if (target_cpu == "x86") {
@@ -286,7 +295,7 @@ config("default") {
         "-arch",
         "i386",
       ]
-    } else if (target_cpu == "x64") {
+    } else if (current_cpu == "x64") {
       _arch_flags = [
         "-arch",
         "x86_64",
@@ -294,7 +303,7 @@ config("default") {
     } else {
       _arch_flags = [
         "-arch",
-        target_cpu,
+        current_cpu,
       ]
     }
 
@@ -436,6 +445,11 @@ config("default") {
     ldflags += [ "--sysroot=$skia_emsdk_dir/upstream/emscripten/cache/sysroot" ]
   }
 
+  # sanitize only applies to the default toolchain (usually the target).
+  if (current_toolchain != default_toolchain) {
+    sanitize = ""
+  }
+
   if (is_win && !is_clang && sanitize == "ASAN") {
     sanitizers = "address"
     cflags += [ "/fsanitize=$sanitizers" ]
@@ -467,6 +481,10 @@ config("default") {
       "-fno-sanitize-recover=$sanitizers",
       "-fsanitize-blacklist=$_suppressions",
     ]
+    if (is_mac) {
+      # https://github.com/llvm/llvm-project/issues/109074
+      cflags += [ "-fno-sanitize=function" ]
+    }
 
     if (is_win) {
       cflags += [
@@ -548,6 +566,10 @@ config("warnings") {
       "/wd4275",  # non dll-interface class 'base' used as base for
                   # dll-interface class 'derived'
 
+      # This triggers incorrectly in SkColor.h. See also:
+      # https://developercommunity.visualstudio.com/t/incorrect-divide-by-0-warning-c4723/1703482
+      "/wd4723",  # potential divide by 0
+
       # It'd be nice to fix these and turn this on:
       "/wd5041",  # out-of-line definition for constexpr static data member is
                   # not needed and is deprecated in C++17
@@ -555,6 +577,7 @@ config("warnings") {
     if (is_clang) {
       cflags += [
         "-Wno-unused-parameter",  # Re-enabled for header sources
+        "-Wno-switch-default",  # Warns even when all enum values are covered
       ]
     }
   } else {
@@ -569,6 +592,7 @@ config("warnings") {
       "-Wno-deprecated-declarations",
       "-Wno-maybe-uninitialized",
       "-Wno-psabi",
+      "-Wno-switch-default",  # Warns even when all enum values are covered
       "-Wno-unused-parameter",  # Re-enabled for header sources
     ]
     cflags_cc += [
@@ -589,12 +613,21 @@ config("warnings") {
       "-Wno-weak-template-vtables",
     ]
 
-    if (target_cpu == "arm" && is_ios) {
+    # See https://crbug.com/1042470: This flag prevents implicit conversions among vector types.
+    # This also gives behavior closer to GCC's default. However:
+    #   - clang-cl doesn't recognize the flag
+    #   - The (old) Mac/iOS SDK used on the bots breaks this rule in various headers
+    #     TODO: Re-enable on Apple when we update XCode
+    if (!is_win && !is_apple && current_cpu != "loong64") {
+      cflags += [ "-fno-lax-vector-conversions" ]
+    }
+
+    if (current_cpu == "arm" && is_ios) {
       # Clang seems to think new/malloc will only be 4-byte aligned on 32-bit iOS.
       # We're pretty sure it's actually 8-byte alignment.
       cflags += [ "-Wno-over-aligned" ]
     }
-    if (target_cpu == "x86" && is_android) {
+    if (current_cpu == "x86" && is_android) {
       # Clang seems to think new/malloc will only be 4-byte aligned on 32-bit x86 Android builds.
       # We're pretty sure it's actually 8-byte alignment.  See OverAlignedTest.cpp for more info.
       cflags += [ "-Wno-over-aligned" ]
@@ -610,7 +643,6 @@ config("warnings") {
     # TODO: These would all be really great warnings to turn on.
     cflags += [
       "-Wno-cast-align",
-      "-Wno-cast-qual",
       "-Wno-conversion",  # -Wsign-conversion and -Wshorten-64-to-32,
                           # are re-enabled for header sources
       "-Wno-disabled-macro-expansion",
@@ -710,7 +742,7 @@ config("warnings") {
       "-Wdeprecated-this-capture",
       "-Wdeprecated-volatile",
       "-Wdeprecated-writable-str",
-      "-Wc++98-compat-extra-semi",
+      "-Wextra-semi",
     ]
   }
 
@@ -719,6 +751,11 @@ config("warnings") {
     cflags += [
       "-Wno-unreachable-code",  # Causes false positives in old GCC; removed
                                 # from modern GCC entirely
+    ]
+    cflags_cc += [
+      "-Wno-dangling-reference",  # Attempt at borrow checker in C++.
+                                  # Warns on temporary views, like Span.
+                                  # https://gcc.gnu.org/bugzilla/show_bug.cgi?id=107532
     ]
   }
 
@@ -736,11 +773,14 @@ config("warnings_for_public_headers") {
 }
 
 config("extra_flags") {
-  asmflags = extra_asmflags
-  cflags = extra_cflags
-  cflags_c = extra_cflags_c
-  cflags_cc = extra_cflags_cc
-  ldflags = extra_ldflags
+  # extra_flags only applies to the default toolchain (usually the target).
+  if (current_toolchain == default_toolchain) {
+    asmflags = extra_asmflags
+    cflags = extra_cflags
+    cflags_c = extra_cflags_c
+    cflags_cc = extra_cflags_cc
+    ldflags = extra_ldflags
+  }
 }
 
 config("debug_symbols") {
@@ -794,20 +834,14 @@ config("optimize") {
     ]
   } else {
     if (skia_enable_optimize_size) {
-      cflags = [
-        "-Oz",
-
-        # We currently use bloaty 1.0 on the CI. Newer versions of Bloaty do not
-        # seem to handle newer DWARF data as well.
-        "-gdwarf-4",
-      ]
+      cflags = [ "-Oz" ]
       if (!is_android) {
         cflags += [
           # Clang 15 turns PIE (Position-indendendent Executable) on by default.
           "-fno-PIE",
           "-fno-pie",
         ]
-        ldflags += [ "-nopie" ]
+        ldflags += [ "-no-pie" ]
       }
     } else {
       cflags = [ "-O3" ]

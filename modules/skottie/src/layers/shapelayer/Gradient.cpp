@@ -5,17 +5,33 @@
  * found in the LICENSE file.
  */
 
+#include "include/core/SkColor.h"
+#include "include/core/SkMatrix.h"
+#include "include/core/SkPoint.h"
+#include "include/core/SkRefCnt.h"
+#include "include/core/SkScalar.h"
+#include "include/private/base/SkAssert.h"
+#include "include/private/base/SkDebug.h"
+#include "include/private/base/SkFloatingPoint.h"
 #include "include/private/base/SkTPin.h"
-#include "modules/skottie/src/Adapter.h"
+#include "include/private/base/SkTo.h"
 #include "modules/skottie/src/SkottieJson.h"
-#include "modules/skottie/src/SkottiePriv.h"
 #include "modules/skottie/src/SkottieValue.h"
+#include "modules/skottie/src/animator/Animator.h"
 #include "modules/skottie/src/layers/shapelayer/ShapeLayer.h"
 #include "modules/sksg/include/SkSGGradient.h"
 #include "modules/sksg/include/SkSGPaint.h"
+#include "modules/sksg/include/SkSGRenderEffect.h"
+#include "src/utils/SkJSON.h"
+
+#include <algorithm>
+#include <cstddef>
+#include <utility>
+#include <vector>
 
 namespace skottie {
 namespace internal {
+class AnimationBuilder;
 
 namespace  {
 
@@ -57,9 +73,11 @@ private:
         : fGradient(std::move(gradient))
         , fType(type)
         , fStopCount(stop_count) {
-        this->bind(abuilder,  jgrad["s"], fStartPoint);
-        this->bind(abuilder,  jgrad["e"], fEndPoint  );
-        this->bind(abuilder, jstops["k"], fStops     );
+        this->bind(abuilder,  jgrad["s"], fStartPoint     );
+        this->bind(abuilder,  jgrad["e"], fEndPoint       );
+        this->bind(abuilder,  jgrad["h"], fHighlightLength);
+        this->bind(abuilder,  jgrad["a"], fHighlightAngle );
+        this->bind(abuilder, jstops["k"], fStops          );
     }
 
     void onSync() override {
@@ -75,11 +93,34 @@ private:
             break;
         }
         case Type::kRadial: {
+            // The highlight parameters control the location of the actual gradient start point
+            // (equivalent to SVG's radial gradient focal point
+            //  https://www.w3.org/TR/SVG11/pservers.html#RadialGradients)
+            //
+            //   - highlight length determines the position along the |s_point -> e_point| vector,
+            //     where 0% corresponds to s_point and 100% corresponds to e_point.
+            //   - highlight angle rotates the point around s_point
+            //
+            const SkPoint rotated_e_point =
+                    SkMatrix::RotateDeg(fHighlightAngle, s_point).mapPoint(e_point);
+
+            // The valid range for length is [-100% .. 100%], where negative values mirror the
+            // positive interval relative to s_point.
+            //
+            // Edge case: for exactly -100% and 100%, the focal point lies on the end circle and
+            // this triggers specific SVG behavior (see
+            // SkConicalGrdient::FocalData::isFocalOnCircle and friends), which does not match
+            // AE's semantics.  To avoid that, we clamp by an epsilon value.
+            const float eps = SK_ScalarNearlyZero * 2,
+                      h_len = SkTPin(fHighlightLength * 0.01f, -1 + eps, 1 - eps);
+
+            const SkPoint focal_point = s_point + (rotated_e_point - s_point) * h_len;
+
             auto* grad = static_cast<sksg::RadialGradient*>(fGradient.get());
-            grad->setStartCenter(s_point);
+            grad->setStartCenter(focal_point);
             grad->setEndCenter(s_point);
             grad->setStartRadius(0);
-            grad->setEndRadius(SkPoint::Distance(s_point, e_point));
+            grad->setEndRadius(SkPoint::Distance(s_point, rotated_e_point));
 
             break;
         }
@@ -200,6 +241,8 @@ private:
     VectorValue  fStops;
     Vec2Value    fStartPoint = {0,0},
                  fEndPoint   = {0,0};
+    float        fHighlightLength = 0,
+                 fHighlightAngle  = 0;
 };
 
 } // namespace

@@ -13,7 +13,6 @@
 #include "include/core/SkRefCnt.h"
 #include "include/private/base/SkTArray.h"
 #include "src/base/SkEnumBitMask.h"
-#include "src/gpu/graphite/AttachmentTypes.h"
 #include "src/gpu/graphite/DrawCommands.h"
 #include "src/gpu/graphite/DrawTypes.h"
 #include "src/gpu/graphite/GraphicsPipelineDesc.h"
@@ -55,6 +54,8 @@ class DrawPass {
 public:
     ~DrawPass();
 
+    // Create a DrawPass that renders the DrawList into `target` with the given load/store ops and
+    // clear color.
     static std::unique_ptr<DrawPass> Make(Recorder*,
                                           std::unique_ptr<DrawList>,
                                           sk_sp<TextureProxy> target,

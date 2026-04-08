@@ -11,20 +11,26 @@
 #include "include/core/SkColor.h"
 #include "include/core/SkTypes.h"
 #include "include/private/base/SkMacros.h"
+#include "include/private/base/SkSpan_impl.h"
+#include "include/private/base/SkTArray.h"
 #include "src/base/SkArenaAlloc.h"
 #include "src/core/SkRasterPipelineOpContexts.h"
-#include "src/core/SkRasterPipelineOpList.h"
 
 #include <cstddef>
 #include <cstdint>
 #include <functional>
 
 class SkMatrix;
+enum class SkRasterPipelineOp;
 enum SkColorType : int;
 struct SkImageInfo;
 struct skcms_TransferFunction;
 
-#if __has_cpp_attribute(clang::musttail) && !defined(__EMSCRIPTEN__) && !defined(SK_CPU_ARM32)
+#if __has_cpp_attribute(clang::musttail) && !defined(__EMSCRIPTEN__) && !defined(SK_CPU_ARM32) && \
+        !defined(SK_CPU_LOONGARCH) && !defined(SK_CPU_PPC) && \
+        !(defined(_WIN32) && defined(SK_BUILD_FOR_ANDROID_FRAMEWORK))
+    // [[clang::musttail]] is disabled for the Android version of Skia running on Windows as it
+    // causes crashes (This is probably related to http://crbug.com/1505442).
     #define SK_HAS_MUSTTAIL 1
 #else
     #define SK_HAS_MUSTTAIL 0
@@ -103,49 +109,60 @@ public:
 
     // Appends a stage for the specified matrix.
     // Tries to optimize the stage by analyzing the type of matrix.
-    void append_matrix(SkArenaAlloc*, const SkMatrix&);
+    void appendMatrix(SkArenaAlloc*, const SkMatrix&);
 
     // Appends a stage for a constant uniform color.
     // Tries to optimize the stage based on the color.
-    void append_constant_color(SkArenaAlloc*, const float rgba[4]);
+    void appendConstantColor(SkArenaAlloc*, const float rgba[4]);
 
-    void append_constant_color(SkArenaAlloc* alloc, const SkColor4f& color) {
-        this->append_constant_color(alloc, color.vec());
+    void appendConstantColor(SkArenaAlloc* alloc, const SkColor4f& color) {
+        this->appendConstantColor(alloc, color.vec());
     }
 
-    // Like append_constant_color() but only affecting r,g,b, ignoring the alpha channel.
-    void append_set_rgb(SkArenaAlloc*, const float rgb[3]);
+    // Like appendConstantColor() but only affecting r,g,b, ignoring the alpha channel.
+    void appendSetRGB(SkArenaAlloc*, const float rgb[3]);
 
-    void append_set_rgb(SkArenaAlloc* alloc, const SkColor4f& color) {
-        this->append_set_rgb(alloc, color.vec());
+    void appendSetRGB(SkArenaAlloc* alloc, const SkColor4f& color) {
+        this->appendSetRGB(alloc, color.vec());
     }
 
-    void append_load    (SkColorType, const SkRasterPipeline_MemoryCtx*);
-    void append_load_dst(SkColorType, const SkRasterPipeline_MemoryCtx*);
-    void append_store   (SkColorType, const SkRasterPipeline_MemoryCtx*);
+    void appendLoad   (SkColorType, const SkRasterPipeline_MemoryCtx*);
+    void appendLoadDst(SkColorType, const SkRasterPipeline_MemoryCtx*);
+    void appendStore  (SkColorType, const SkRasterPipeline_MemoryCtx*);
 
-    void append_clamp_if_normalized(const SkImageInfo&);
+    void appendClampIfNormalized(const SkImageInfo&);
 
-    void append_transfer_function(const skcms_TransferFunction&);
+    void appendTransferFunction(const skcms_TransferFunction&);
 
-    void append_stack_rewind();
+    void appendStackRewind();
 
     bool empty() const { return fStages == nullptr; }
 
 private:
-    bool build_lowp_pipeline(SkRasterPipelineStage* ip) const;
-    void build_highp_pipeline(SkRasterPipelineStage* ip) const;
+    bool buildLowpPipeline(SkRasterPipelineStage* ip) const;
+    void buildHighpPipeline(SkRasterPipelineStage* ip) const;
 
-    using StartPipelineFn = void(*)(size_t,size_t,size_t,size_t, SkRasterPipelineStage* program);
-    StartPipelineFn build_pipeline(SkRasterPipelineStage*) const;
+    using StartPipelineFn = void (*)(size_t, size_t, size_t, size_t,
+                                     SkRasterPipelineStage* program,
+                                     SkSpan<SkRasterPipeline_MemoryCtxPatch>,
+                                     uint8_t*);
+    StartPipelineFn buildPipeline(SkRasterPipelineStage*) const;
 
-    void unchecked_append(SkRasterPipelineOp, void*);
-    int stages_needed() const;
+    void uncheckedAppend(SkRasterPipelineOp, void*);
+    int stagesNeeded() const;
+
+    void addMemoryContext(SkRasterPipeline_MemoryCtx*, int bytesPerPixel, bool load, bool store);
+    uint8_t* tailPointer();
 
     SkArenaAlloc*               fAlloc;
     SkRasterPipeline_RewindCtx* fRewindCtx;
     StageList*                  fStages;
+    uint8_t*                    fTailPointer;
     int                         fNumStages;
+
+    // Only 1 in 2 million CPU-backend pipelines used more than two MemoryCtxs.
+    // (See the comment in SkRasterPipelineOpContexts.h for how MemoryCtx patching works)
+    skia_private::STArray<2, SkRasterPipeline_MemoryCtxInfo> fMemoryCtxInfos;
 };
 
 template <size_t bytes>

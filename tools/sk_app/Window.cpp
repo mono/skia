@@ -9,12 +9,9 @@
 
 #include "include/core/SkCanvas.h"
 #include "include/core/SkSurface.h"
+#include "include/gpu/ganesh/GrDirectContext.h"
+#include "include/gpu/ganesh/GrRecordingContext.h"
 #include "tools/window/WindowContext.h"
-
-#if defined(SK_GANESH)
-#include "include/gpu/GrDirectContext.h"
-#include "include/gpu/GrRecordingContext.h"
-#endif
 
 namespace sk_app {
 
@@ -24,7 +21,7 @@ Window::~Window() {}
 
 void Window::detach() { fWindowContext = nullptr; }
 
-void Window::visitLayers(std::function<void(Layer*)> visitor) {
+void Window::visitLayers(const std::function<void(Layer*)>& visitor) {
     for (int i = 0; i < fLayers.size(); ++i) {
         if (fLayers[i]->fActive) {
             visitor(fLayers[i]);
@@ -32,7 +29,7 @@ void Window::visitLayers(std::function<void(Layer*)> visitor) {
     }
 }
 
-bool Window::signalLayers(std::function<bool(Layer*)> visitor) {
+bool Window::signalLayers(const std::function<bool(Layer*)>& visitor) {
     for (int i = fLayers.size() - 1; i >= 0; --i) {
         if (fLayers[i]->fActive && visitor(fLayers[i])) {
             return true;
@@ -170,6 +167,25 @@ skgpu::graphite::Context* Window::graphiteContext() const {
     return fWindowContext->graphiteContext();
 #else
     return nullptr;
+#endif
+}
+
+skgpu::graphite::Recorder* Window::graphiteRecorder() const {
+#if defined(SK_GRAPHITE)
+    if (!fWindowContext) {
+        return nullptr;
+    }
+    return fWindowContext->graphiteRecorder();
+#else
+    return nullptr;
+#endif
+}
+
+void Window::snapRecordingAndSubmit() {
+#if defined(SK_GRAPHITE)
+    if (fWindowContext) {
+        fWindowContext->snapRecordingAndSubmit();
+    }
 #endif
 }
 

@@ -17,15 +17,14 @@
 #include "include/core/SkSurface.h"
 #include "include/core/SkTypes.h"
 #include "include/gpu/GpuTypes.h"
-#include "include/gpu/GrBackendSurface.h"
-#include "include/gpu/GrDirectContext.h"
-#include "include/gpu/GrTypes.h"
+#include "include/gpu/ganesh/GrBackendSurface.h"
+#include "include/gpu/ganesh/GrDirectContext.h"
+#include "include/gpu/ganesh/GrTypes.h"
 #include "include/gpu/ganesh/SkImageGanesh.h"
 #include "include/gpu/ganesh/SkSurfaceGanesh.h"
 #include "include/gpu/ganesh/vk/GrVkBackendSurface.h"
 #include "tests/CtsEnforcement.h"
 #include "tests/Test.h"
-#include "tools/gpu/vk/VkTestHelper.h"
 #include "tools/gpu/vk/VkYcbcrSamplerHelper.h"
 
 #include <vulkan/vulkan_core.h>
@@ -49,26 +48,22 @@ static int round_and_clamp(float x) {
 
 DEF_GANESH_TEST_FOR_VULKAN_CONTEXT(VkYCbcrSampler_DrawImageWithYcbcrSampler,
                                    reporter,
-                                   context_info,
+                                   ctxInfo,
                                    CtsEnforcement::kApiLevel_T) {
-    VkTestHelper testHelper(false);
-    if (!testHelper.init()) {
-        ERRORF(reporter, "VkTestHelper initialization failed.");
-        return;
-    }
+    GrDirectContext* dContext = ctxInfo.directContext();
 
-    VkYcbcrSamplerHelper ycbcrHelper(testHelper.directContext());
+    VkYcbcrSamplerHelper ycbcrHelper(dContext);
     if (!ycbcrHelper.isYCbCrSupported()) {
         return;
     }
 
-    if (!ycbcrHelper.createBackendTexture(kImageWidth, kImageHeight)) {
+    if (!ycbcrHelper.createGrBackendTexture(kImageWidth, kImageHeight)) {
         ERRORF(reporter, "Failed to create I420 backend texture");
         return;
     }
 
-    sk_sp<SkImage> srcImage = SkImages::BorrowTextureFrom(testHelper.directContext(),
-                                                          ycbcrHelper.backendTexture(),
+    sk_sp<SkImage> srcImage = SkImages::BorrowTextureFrom(dContext,
+                                                          ycbcrHelper.grBackendTexture(),
                                                           kTopLeft_GrSurfaceOrigin,
                                                           kRGB_888x_SkColorType,
                                                           kPremul_SkAlphaType,
@@ -78,7 +73,6 @@ DEF_GANESH_TEST_FOR_VULKAN_CONTEXT(VkYCbcrSampler_DrawImageWithYcbcrSampler,
         return;
     }
 
-    auto dContext = testHelper.directContext();
     sk_sp<SkSurface> surface = SkSurfaces::RenderTarget(
             dContext,
             skgpu::Budgeted::kNo,
@@ -143,20 +137,16 @@ DEF_GANESH_TEST_FOR_VULKAN_CONTEXT(VkYCbcrSampler_DrawImageWithYcbcrSampler,
 // Verifies that it's not possible to allocate Ycbcr texture directly.
 DEF_GANESH_TEST_FOR_VULKAN_CONTEXT(VkYCbcrSampler_NoYcbcrSurface,
                                    reporter,
-                                   context_info,
+                                   ctxInfo,
                                    CtsEnforcement::kApiLevel_T) {
-    VkTestHelper testHelper(false);
-    if (!testHelper.init()) {
-        ERRORF(reporter, "VkTestHelper initialization failed.");
-        return;
-    }
+    GrDirectContext* dContext = ctxInfo.directContext();
 
-    VkYcbcrSamplerHelper ycbcrHelper(testHelper.directContext());
+    VkYcbcrSamplerHelper ycbcrHelper(dContext);
     if (!ycbcrHelper.isYCbCrSupported()) {
         return;
     }
 
-    GrBackendTexture texture = testHelper.directContext()->createBackendTexture(
+    GrBackendTexture texture = dContext->createBackendTexture(
             kImageWidth,
             kImageHeight,
             GrBackendFormats::MakeVk(VK_FORMAT_G8_B8R8_2PLANE_420_UNORM),

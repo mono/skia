@@ -26,14 +26,14 @@ struct Sk4fRoundtripBench : public Benchmark {
         return "";
     }
 
-    bool isSuitableFor(Backend backend) override { return backend == kNonRendering_Backend; }
+    bool isSuitableFor(Backend backend) override { return backend == Backend::kNonRendering; }
 
     void onDraw(int loops, SkCanvas* canvas) override {
         skvx::float4 fs(1,2,3,4);
         while (loops --> 0) {
             fs = skvx::cast<float>(skvx::cast<T>(fs));
         }
-        fs.store((float*)blackhole);
+        fs.store(const_cast<float*>(blackhole));
     }
 };
 DEF_BENCH(return new Sk4fRoundtripBench<uint8_t>;)
@@ -44,21 +44,21 @@ struct Sk4fFloorBench : public Benchmark {
     Sk4fFloorBench() {}
 
     const char* onGetName() override { return "Sk4f_floor"; }
-    bool isSuitableFor(Backend backend) override { return backend == kNonRendering_Backend; }
+    bool isSuitableFor(Backend backend) override { return backend == Backend::kNonRendering; }
 
     void onDraw(int loops, SkCanvas* canvas) override {
         skvx::float4 fs(1,2,3,4);
         while (loops --> 0) {
             fs = floor(fs);
         }
-        fs.store((float*)blackhole);
+        fs.store(const_cast<float*>(blackhole));
     }
 };
 DEF_BENCH(return new Sk4fFloorBench;)
 
 struct Sk4fGradientBench : public Benchmark {
     const char* onGetName() override { return "Sk4f_gradient"; }
-    bool isSuitableFor(Backend backend) override { return backend == kNonRendering_Backend; }
+    bool isSuitableFor(Backend backend) override { return backend == Backend::kNonRendering; }
 
     SkPMColor fDevice[100];
     void onDraw(int loops, SkCanvas*) override {

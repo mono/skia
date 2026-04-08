@@ -23,7 +23,8 @@ template <typename T>
 class MockProperty final : public AnimatablePropertyContainer {
 public:
     explicit MockProperty(const char* jprop) {
-        AnimationBuilder abuilder(nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
+        AnimationBuilder abuilder(nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
+                                  nullptr, nullptr,
                                   {100, 100}, 10, 1, 0);
         skjson::DOM json_dom(jprop, strlen(jprop));
 
@@ -166,5 +167,61 @@ DEF_TEST(Skottie_Keyframe, reporter) {
         REPORTER_ASSERT(reporter, prop.isStatic());
         REPORTER_ASSERT(reporter, SkScalarNearlyEqual(prop(0).x, 4));
         REPORTER_ASSERT(reporter, SkScalarNearlyEqual(prop(0).y, 2));
+    }
+    {
+        // Spatial interpolation [100,100]->[200,200], with supernormal easing:
+        // https://cubic-bezier.com/#.5,-0.5,.5,1.5
+        MockProperty<Vec2Value> prop(R"({
+                                       "a": 1,
+                                       "k": [
+                                         { "t": 0, "s": [100,100],
+                                           "o":{"x":[0.5], "y":[-0.5]}, "i":{"x":[0.5], "y":[1.5]},
+                                          "to": [10,15], "ti": [-10,-5]
+                                         },
+                                         { "t": 1, "s": [200,200]
+                                         }
+                                       ]
+                                     })");
+        REPORTER_ASSERT(reporter, prop);
+        REPORTER_ASSERT(reporter, !prop.isStatic());
+
+        // Not linear.
+        REPORTER_ASSERT(reporter, !SkScalarNearlyEqual(prop(0.5f).x, 150.f));
+        REPORTER_ASSERT(reporter, !SkScalarNearlyEqual(prop(0.5f).y, 150.f));
+
+        // Subnormal region triggers extrapolation.
+        REPORTER_ASSERT(reporter, prop(0.15f).x < 100);
+        REPORTER_ASSERT(reporter, prop(0.15f).y < 100);
+
+        // Supernormal region triggers extrapolation.
+        REPORTER_ASSERT(reporter, prop(0.85f).x > 200);
+        REPORTER_ASSERT(reporter, prop(0.85f).y > 200);
+    }
+    {
+        // Coincident keyframes (t == 1)
+        //
+        // Effective interpolation intervals:
+        //   [0 .. 1) -> [100 .. 200)
+        //   [1 .. 2) -> [300 .. 400)
+        //
+        // When more than 2 concident keyframes are present, only the first and last one count.
+        MockProperty<ScalarValue> prop(R"({
+                                            "a": 1,
+                                            "k": [
+                                              { "t": 0, "s": [100]  },
+                                              { "t": 1, "s": [200]  },
+                                              { "t": 1, "s": [1000] },
+                                              { "t": 1, "s": [300]  },
+                                              { "t": 2, "s": [400]  }
+                                            ]
+                                          })");
+        REPORTER_ASSERT(reporter, prop);
+        REPORTER_ASSERT(reporter, !prop.isStatic());
+
+        REPORTER_ASSERT(reporter, prop(0.9999f) > 100);
+        REPORTER_ASSERT(reporter, prop(0.9999f) < 200);
+        REPORTER_ASSERT(reporter, prop(1) == 300);
+        REPORTER_ASSERT(reporter, prop(1.0001f) > 300);
+        REPORTER_ASSERT(reporter, prop(1.0001f) < 400);
     }
 }

@@ -14,11 +14,11 @@
 #include "include/core/SkColorType.h"
 #include "include/core/SkRefCnt.h"
 #include "include/gpu/GpuTypes.h"
-#include "include/gpu/GrBackendSurface.h"
-#include "include/gpu/GrDirectContext.h"
-#include "include/gpu/GrTypes.h"
+#include "include/gpu/ganesh/GrBackendSurface.h"
+#include "include/gpu/ganesh/GrDirectContext.h"
+#include "include/gpu/ganesh/GrTypes.h"
 #include "include/gpu/ganesh/vk/GrVkBackendSurface.h"
-#include "include/gpu/vk/GrVkTypes.h"
+#include "include/gpu/ganesh/vk/GrVkTypes.h"
 #include "include/gpu/vk/VulkanTypes.h"
 #include "include/private/base/SkTo.h"
 #include "include/private/gpu/ganesh/GrTypesPriv.h"
@@ -43,10 +43,15 @@ const int kH = 1024;
 const SkColorType kColorType = SkColorType::kRGBA_8888_SkColorType;
 
 void wrap_tex_test(skiatest::Reporter* reporter, GrDirectContext* dContext) {
+    using namespace skgpu;
+
     GrGpu* gpu = dContext->priv().getGpu();
 
+    Protected isProtected = Protected(dContext->priv().caps()->supportsProtectedContent());
+
     auto mbet = sk_gpu_test::ManagedBackendTexture::MakeWithoutData(
-            dContext, kW, kH, kRGBA_8888_SkColorType, skgpu::Mipmapped::kNo, GrRenderable::kNo);
+            dContext, kW, kH, kRGBA_8888_SkColorType, skgpu::Mipmapped::kNo, GrRenderable::kNo,
+            isProtected);
     if (!mbet) {
         ERRORF(reporter, "Could not create backend texture.");
         return;
@@ -104,8 +109,12 @@ void wrap_tex_test(skiatest::Reporter* reporter, GrDirectContext* dContext) {
 }
 
 void wrap_rt_test(skiatest::Reporter* reporter, GrDirectContext* dContext) {
+    using namespace skgpu;
+
     GrGpu* gpu = dContext->priv().getGpu();
     GrColorType ct = SkColorTypeToGrColorType(kColorType);
+
+    Protected isProtected = Protected(dContext->priv().caps()->supportsProtectedContent());
 
     for (int sampleCnt : {1, 4}) {
         GrBackendFormat format = gpu->caps()->getDefaultBackendFormat(ct, GrRenderable::kYes);
@@ -114,7 +123,7 @@ void wrap_rt_test(skiatest::Reporter* reporter, GrDirectContext* dContext) {
         }
 
         GrBackendRenderTarget origBackendRT =
-                gpu->createTestingOnlyBackendRenderTarget({kW, kH}, ct, sampleCnt);
+                gpu->createTestingOnlyBackendRenderTarget({kW, kH}, ct, sampleCnt, isProtected);
         if (!origBackendRT.isValid()) {
             ERRORF(reporter, "Could not create backend render target.");
         }
@@ -138,7 +147,7 @@ void wrap_rt_test(skiatest::Reporter* reporter, GrDirectContext* dContext) {
         // alloc is null
         {
             GrVkImageInfo backendCopy = imageInfo;
-            backendCopy.fAlloc = skgpu::VulkanAlloc();
+            backendCopy.fAlloc = VulkanAlloc();
             // can wrap null alloc
             GrBackendRenderTarget backendRT = GrBackendRenderTargets::MakeVk(kW, kH, backendCopy);
             rt = gpu->wrapBackendRenderTarget(backendRT);
@@ -150,10 +159,15 @@ void wrap_rt_test(skiatest::Reporter* reporter, GrDirectContext* dContext) {
 }
 
 void wrap_trt_test(skiatest::Reporter* reporter, GrDirectContext* dContext) {
+    using namespace skgpu;
+
     GrGpu* gpu = dContext->priv().getGpu();
 
+    Protected isProtected = Protected(dContext->priv().caps()->supportsProtectedContent());
+
     auto mbet = sk_gpu_test::ManagedBackendTexture::MakeWithoutData(
-            dContext, kW, kH, kRGBA_8888_SkColorType, skgpu::Mipmapped::kNo, GrRenderable::kYes);
+            dContext, kW, kH, kRGBA_8888_SkColorType, Mipmapped::kNo, GrRenderable::kYes,
+            isProtected);
     if (!mbet) {
         ERRORF(reporter, "Could not create renderable backend texture.");
         return;
@@ -183,7 +197,7 @@ void wrap_trt_test(skiatest::Reporter* reporter, GrDirectContext* dContext) {
     // alloc is null
     {
         GrVkImageInfo backendCopy = imageInfo;
-        backendCopy.fAlloc = skgpu::VulkanAlloc();
+        backendCopy.fAlloc = VulkanAlloc();
         GrBackendTexture backendTex = GrBackendTextures::MakeVk(kW, kH, backendCopy);
         tex = gpu->wrapRenderableBackendTexture(backendTex, 1, kBorrow_GrWrapOwnership,
                                                 GrWrapCacheable::kNo);

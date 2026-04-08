@@ -5,11 +5,18 @@
  * found in the LICENSE file.
  */
 
-#include <vector>
-
 #include "include/utils/SkNoDrawCanvas.h"
+#include "modules/skresources/include/SkResources.h"
+#include "modules/skshaper/utils/FactoryHelpers.h"
+#include "modules/svg/include/SkSVGIDMapper.h"
+#include "modules/svg/include/SkSVGRenderContext.h"
+#include "modules/svg/include/SkSVGText.h"
+#include "modules/svg/include/SkSVGTypes.h"
 #include "modules/svg/src/SkSVGTextPriv.h"
 #include "tests/Test.h"
+#include "tools/fonts/FontToolUtils.h"
+
+#include <vector>
 
 DEF_TEST(Svg_Text_PosProvider, r) {
     const auto L = [](float x) { return SkSVGLength(x); };
@@ -161,9 +168,17 @@ DEF_TEST(Svg_Text_PosProvider, r) {
         const SkSVGLengthContext lctx({0,0});
         const SkSVGPresentationContext pctx;
         SkNoDrawCanvas canvas(0, 0);
-        sk_sp<SkFontMgr> fmgr;
+        sk_sp<SkFontMgr> fmgr = ToolUtils::TestFontMgr();
         sk_sp<skresources::ResourceProvider> rp;
-        const SkSVGRenderContext ctx(&canvas, fmgr, rp, mapper, lctx, pctx, {nullptr, nullptr});
+        sk_sp<SkShapers::Factory> shaping = SkShapers::BestAvailable();
+        const SkSVGRenderContext ctx(&canvas,
+                                     fmgr,
+                                     rp,
+                                     mapper,
+                                     lctx,
+                                     pctx,
+                                     {nullptr, nullptr},
+                                     shaping);
 
         SkSVGTextContext tctx(ctx, mock_cb);
         SkSVGTextContext::ScopedPosResolver pa(*a, lctx, &tctx, tst.offseta);

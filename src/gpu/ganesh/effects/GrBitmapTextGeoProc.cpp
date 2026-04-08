@@ -109,7 +109,12 @@ private:
 
         fragBuilder->codeAppend("half4 texColor;");
         append_multitexture_lookup(args, btgp.numTextureSamplers(),
-                                   texIdx, uv.fsIn(), "texColor", &fColorSpaceXformHelper);
+                                   texIdx, uv.fsIn(), "texColor");
+        if (!fColorSpaceXformHelper.isNoop()) {
+            fragBuilder->codeAppend("texColor = ");
+            fragBuilder->appendColorGamutXform("texColor", &fColorSpaceXformHelper);
+            fragBuilder->codeAppend(";");
+        }
 
         if (btgp.fMaskFormat == MaskFormat::kARGB) {
             // modulate by color
@@ -222,7 +227,7 @@ std::unique_ptr<GrGeometryProcessor::ProgramImpl> GrBitmapTextGeoProc::makeProgr
 
 GR_DEFINE_GEOMETRY_PROCESSOR_TEST(GrBitmapTextGeoProc)
 
-#if defined(GR_TEST_UTILS)
+#if defined(GPU_TEST_UTILS)
 
 GrGeometryProcessor* GrBitmapTextGeoProc::TestCreate(GrProcessorTestData* d) {
     auto [view, ct, at] = d->randomView();

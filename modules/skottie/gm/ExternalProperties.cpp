@@ -7,13 +7,16 @@
 
 #include "gm/gm.h"
 #include "include/core/SkColor.h"
+#include "include/core/SkFontMgr.h"
 #include "include/core/SkStream.h"
-#include "include/utils/SkAnimCodecPlayer.h"
 #include "modules/skottie/include/Skottie.h"
 #include "modules/skottie/include/SkottieProperty.h"
 #include "modules/skottie/utils/SkottieUtils.h"
 #include "modules/skresources/include/SkResources.h"
+#include "modules/skshaper/include/SkShaper_factory.h"
+#include "modules/skshaper/utils/FactoryHelpers.h"
 #include "tools/Resources.h"
+#include "tools/fonts/FontToolUtils.h"
 
 #include <cmath>
 #include <vector>
@@ -26,8 +29,7 @@ static constexpr char kSkottieResource[] = "skottie/skottie_sample_webfont.json"
 // Mock web font loader which serves a single local font (checked in under resources/).
 class FakeWebFontProvider final : public skresources::ResourceProvider {
 public:
-    FakeWebFontProvider()
-        : fTypeface(SkTypeface::MakeFromData(GetResourceAsData(kWebFontResource))) {}
+    FakeWebFontProvider() : fTypeface(ToolUtils::CreateTypefaceFromResource(kWebFontResource)) {}
 
     sk_sp<SkTypeface> loadTypeface(const char[], const char[]) const override {
         return fTypeface;
@@ -52,8 +54,10 @@ protected:
         if (auto stream = GetResourceAsStream(kSkottieResource)) {
             fPropManager = std::make_unique<skottie_utils::CustomPropertyManager>();
             fAnimation = skottie::Animation::Builder()
+                            .setFontManager(ToolUtils::TestFontMgr())
                             .setResourceProvider(sk_make_sp<FakeWebFontProvider>())
                             .setPropertyObserver(fPropManager->getPropertyObserver())
+                            .setTextShapingFactory(SkShapers::BestAvailable())
                             .make(stream.get());
         }
     }

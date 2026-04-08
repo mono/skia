@@ -20,10 +20,10 @@
 #include "src/core/SkPaintPriv.h"
 #include "src/core/SkScalerContext.h"
 #include "src/text/GlyphRun.h"
-#include "src/text/gpu/SDFTControl.h"
 #include "src/text/gpu/SlugImpl.h"
 #include "src/text/gpu/SubRunAllocator.h"
 #include "src/text/gpu/SubRunContainer.h"
+#include "src/text/gpu/SubRunControl.h"
 
 #include <memory>
 #include <utility>
@@ -85,7 +85,7 @@ auto TextBlob::Key::Make(const GlyphRunList& glyphRunList,
                          const SkPaint& paint,
                          const SkMatrix& drawMatrix,
                          const SkStrikeDeviceInfo& strikeDevice) -> std::tuple<bool, Key> {
-    SkASSERT(strikeDevice.fSDFTControl != nullptr);
+    SkASSERT(strikeDevice.fSubRunControl != nullptr);
     SkMaskFilterBase::BlurRec blurRec;
     // It might be worth caching these things, but its not clear at this time
     // TODO for animated mask filters, this will fill up our cache.  We need a safeguard here
@@ -127,8 +127,8 @@ auto TextBlob::Key::Make(const GlyphRunList& glyphRunList,
                     SkFontPriv::ApproximateTransformedTextSize(run.font(), drawMatrix,
                                                                glyphRunListLocation);
             key.fHasSomeDirectSubRuns |=
-                    strikeDevice.fSDFTControl->isDirect(approximateDeviceTextSize, paint,
-                                                        drawMatrix);
+                    strikeDevice.fSubRunControl->isDirect(approximateDeviceTextSize, paint,
+                                                          drawMatrix);
         }
 
         if (key.fHasSomeDirectSubRuns) {
@@ -239,27 +239,8 @@ const TextBlob::Key& TextBlob::key() const { return fKey; }
 void TextBlob::draw(SkCanvas* canvas,
                     SkPoint drawOrigin,
                     const SkPaint& paint,
-                    AtlasDrawDelegate atlasDelegate) {
+                    const AtlasDrawDelegate& atlasDelegate) {
     fSubRuns->draw(canvas, drawOrigin, paint, this, atlasDelegate);
-}
-
-#if defined(GR_TEST_UTILS)
-struct SubRunContainerPeer {
-    static const AtlasSubRun* getAtlasSubRun(const SubRunContainer& subRuns) {
-        if (subRuns.isEmpty()) {
-            return nullptr;
-        }
-        return subRuns.fSubRuns.front().testingOnly_atlasSubRun();
-    }
-};
-#endif
-
-const AtlasSubRun* TextBlob::testingOnlyFirstSubRun() const {
-#if defined(GR_TEST_UTILS)
-    return SubRunContainerPeer::getAtlasSubRun(*fSubRuns);
-#else
-    return nullptr;
-#endif
 }
 
 TextBlob::TextBlob(SubRunAllocator&& alloc,
@@ -273,11 +254,9 @@ TextBlob::TextBlob(SubRunAllocator&& alloc,
 
 sk_sp<Slug> MakeSlug(const SkMatrix& drawMatrix,
                      const sktext::GlyphRunList& glyphRunList,
-                     const SkPaint& initialPaint,
-                     const SkPaint& drawingPaint,
+                     const SkPaint& paint,
                      SkStrikeDeviceInfo strikeDeviceInfo,
                      sktext::StrikeForGPUCacheInterface* strikeCache) {
-    return SlugImpl::Make(
-            drawMatrix, glyphRunList, initialPaint, drawingPaint, strikeDeviceInfo, strikeCache);
+    return SlugImpl::Make(drawMatrix, glyphRunList, paint, strikeDeviceInfo, strikeCache);
 }
 }  // namespace sktext::gpu

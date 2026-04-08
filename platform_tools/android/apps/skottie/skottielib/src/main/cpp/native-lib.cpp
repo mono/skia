@@ -6,29 +6,38 @@
  * found in the LICENSE file.
  */
 
+#include "include/codec/SkCodec.h"
+#include "include/codec/SkGifDecoder.h"
+#include "include/codec/SkJpegDecoder.h"
+#include "include/codec/SkPngDecoder.h"
 #include "include/core/SkBitmap.h"
 #include "include/core/SkCanvas.h"
 #include "include/core/SkColor.h"
 #include "include/core/SkColorSpace.h"
+#include "include/core/SkFontMgr.h"
 #include "include/core/SkStream.h"
 #include "include/core/SkSurface.h"
+#include "include/ports/SkFontMgr_empty.h"
+
+#include "include/gpu/ganesh/GrBackendSurface.h"
+#include "include/gpu/ganesh/GrContextOptions.h"
+#include "include/gpu/ganesh/GrDirectContext.h"
+#include "include/gpu/ganesh/SkSurfaceGanesh.h"
+#include "include/gpu/ganesh/gl/GrGLBackendSurface.h"
+#include "include/gpu/ganesh/gl/GrGLDirectContext.h"
+#include "include/gpu/ganesh/gl/GrGLInterface.h"
+#include "include/gpu/ganesh/gl/GrGLTypes.h"
+#include "include/gpu/ganesh/gl/egl/GrGLMakeEGLInterface.h"
+
+#include "modules/skottie/include/Skottie.h"
 #include "modules/skresources/include/SkResources.h"
+#include "modules/sksg/include/SkSGInvalidationController.h"
+#include "modules/skshaper/utils/FactoryHelpers.h"
+
 #include <jni.h>
 #include <math.h>
 #include <string>
 #include <utility>
-
-#include "include/gpu/GrBackendSurface.h"
-#include "include/gpu/GrContextOptions.h"
-#include "include/gpu/GrDirectContext.h"
-#include "include/gpu/ganesh/SkSurfaceGanesh.h"
-#include "include/gpu/ganesh/gl/GrGLBackendSurface.h"
-#include "include/gpu/ganesh/gl/GrGLDirectContext.h"
-#include "include/gpu/gl/GrGLInterface.h"
-#include "include/gpu/gl/GrGLTypes.h"
-
-#include "modules/skottie/include/Skottie.h"
-#include "modules/sksg/include/SkSGInvalidationController.h"
 
 #include <GLES2/gl2.h>
 #include <GLES2/gl2ext.h>
@@ -77,15 +86,15 @@ static void release_global_jni_ref(const void* /*data*/, void* context) {
 extern "C" JNIEXPORT jlong
 JNICALL
 Java_org_skia_skottie_SkottieRunner_nCreateProxy(JNIEnv *env, jclass clazz) {
-    sk_sp<const GrGLInterface> glInterface = GrGLMakeNativeInterface();
-    if (!glInterface.get()) {
+    sk_sp<const GrGLInterface> glInterface = GrGLInterfaces::MakeEGL();
+    if (!glInterface) {
         return 0;
     }
 
     GrContextOptions options;
     options.fDisableDistanceFieldPaths = true;
     sk_sp<GrDirectContext> dContext = GrDirectContexts::MakeGL(std::move(glInterface), options);
-    if (!dContext.get()) {
+    if (!dContext) {
         return 0;
     }
 
@@ -158,7 +167,7 @@ Java_org_skia_skottie_SkottieAnimation_nCreateProxy(JNIEnv *env,
     sk_sp<SkData> data(SkData::MakeWithProc(buffer, bufferSize, release_global_jni_ref,
                                             reinterpret_cast<void*>(bufferRef)));
     std::unique_ptr<SkStream> stream = SkMemoryStream::Make(data);
-    if (!stream.get()) {
+    if (!stream) {
         // Cannot create a stream
         return 0;
     }
@@ -167,8 +176,18 @@ Java_org_skia_skottie_SkottieAnimation_nCreateProxy(JNIEnv *env,
     skottieAnimation->mRunner = skottieRunner;
     skottieAnimation->mStream = std::move(stream);
 
+    sk_sp<SkFontMgr> freetypeMgr = SkFontMgr_New_Custom_Empty();
+
+    SkCodecs::Register(SkPngDecoder::Decoder());
+    SkCodecs::Register(SkGifDecoder::Decoder());
+    SkCodecs::Register(SkJpegDecoder::Decoder());
+
     skottieAnimation->mAnimation = skottie::Animation::Builder()
-        .setResourceProvider(skresources::DataURIResourceProviderProxy::Make(nullptr))
+        // Note, this nullptr ResourceProvider will only be able to decode base64 encoded images
+        // (using the above registered codecs) or base64 encoded FreeType typefaces.
+        .setResourceProvider(skresources::DataURIResourceProviderProxy::Make(nullptr,
+            skresources::ImageDecodeStrategy::kPreDecode, freetypeMgr))
+        .setTextShapingFactory(sk_make_sp<SkShapers::HarfbuzzFactory>())
         .make(skottieAnimation->mStream.get());
     skottieAnimation->mTimeBase  = 0.0f; // force a time reset
     skottieAnimation->mDuration = 1000 * skottieAnimation->mAnimation->duration();

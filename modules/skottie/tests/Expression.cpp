@@ -6,10 +6,12 @@
  */
 
 #include <iostream>
+#include "include/core/SkFontMgr.h"
 #include "include/core/SkStream.h"
 #include "modules/skottie/include/Skottie.h"
 #include "modules/skottie/include/SkottieProperty.h"
 #include "tests/Test.h"
+#include "tools/fonts/FontToolUtils.h"
 
 using namespace skottie;
 
@@ -249,6 +251,7 @@ DEF_TEST(Skottie_Expression, r) {
 
     auto anim = Animation::Builder()
         .setExpressionManager(em)
+        .setFontManager(ToolUtils::TestFontMgr())
         .setPropertyObserver(observer)
         .make(&stream);
 
@@ -349,6 +352,7 @@ DEF_TEST(Skottie_ExpressionText, r) {
 
     auto anim = Animation::Builder()
                         .setExpressionManager(em)
+                        .setFontManager(ToolUtils::TestFontMgr())
                         .setPropertyObserver(observer)
                         .make(&stream);
 

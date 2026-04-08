@@ -13,7 +13,9 @@
 #include "include/private/base/SkTArray.h"
 #include "src/core/SkTraceEvent.h"
 #include "tests/CtsEnforcement.h"
+#include "tests/TestType.h"
 #include "tools/Registry.h"
+#include "tools/timer/TimeUtils.h"
 
 #if defined(SK_GANESH) || defined(SK_GRAPHITE)
 namespace skgpu { enum class ContextType; }
@@ -39,6 +41,7 @@ struct ContextOptions;
 namespace skiatest {
 namespace graphite {
 class GraphiteTestContext;
+struct TestOptions;
 }
 
 SkString GetTmpDir();
@@ -70,7 +73,7 @@ public:
     void push(const SkString& message) {
         fContextStack.push_back(message);
     }
-    void push(const std::string message) {
+    void push(const std::string& message) {
         fContextStack.push_back(SkString(message));
     }
 
@@ -97,7 +100,7 @@ public:
     ReporterContext(Reporter* reporter, const SkString& message) : fReporter(reporter) {
         fReporter->push(message);
     }
-    ReporterContext(Reporter* reporter, const std::string message) : fReporter(reporter) {
+    ReporterContext(Reporter* reporter, const std::string& message) : fReporter(reporter) {
         fReporter->push(message);
     }
     ~ReporterContext() {
@@ -108,18 +111,20 @@ private:
     Reporter* fReporter;
 };
 
-using CPUTestProc                = void (*)(skiatest::Reporter*);
-using GaneshTestProc             = void (*)(skiatest::Reporter*, const GrContextOptions&);
+using CPUTestProc                = void (*)(Reporter*);
+using GaneshTestProc             = void (*)(Reporter*, const GrContextOptions&);
 using GaneshContextOptionsProc   = void (*)(GrContextOptions*);
-using GraphiteTestProc           = void (*)(skiatest::Reporter*,
-                                            const skgpu::graphite::ContextOptions&);
+using GraphiteTestProc           = void (*)(Reporter*, const graphite::TestOptions&);
 using GraphiteContextOptionsProc = void (*)(skgpu::graphite::ContextOptions*);
-
-enum class TestType : uint8_t { kCPU, kGanesh, kGraphite };
 
 struct Test {
     static Test MakeCPU(const char* name, CPUTestProc proc) {
         return Test{name, TestType::kCPU, CtsEnforcement::kNever,
+                    proc, nullptr, nullptr, nullptr, nullptr};
+    }
+
+    static Test MakeCPUSerial(const char* name, CPUTestProc proc) {
+        return Test{name, TestType::kCPUSerial, CtsEnforcement::kNever,
                     proc, nullptr, nullptr, nullptr, nullptr};
     }
 
@@ -161,7 +166,8 @@ struct Test {
     }
 
     void cpu(skiatest::Reporter* r) const {
-        SkASSERT(this->fTestType == TestType::kCPU);
+        SkASSERT(this->fTestType == TestType::kCPU ||
+                 this->fTestType == TestType::kCPUSerial);
         TRACE_EVENT1("test_cpu", TRACE_FUNC, "name", this->fName/*these are static*/);
         this->fCPUProc(r);
     }
@@ -172,7 +178,7 @@ struct Test {
         this->fGaneshProc(r, options);
     }
 
-    void graphite(skiatest::Reporter* r, const skgpu::graphite::ContextOptions& options) const {
+    void graphite(skiatest::Reporter* r, const graphite::TestOptions& options) const {
         SkASSERT(this->fTestType == TestType::kGraphite);
         TRACE_EVENT1("test_graphite", TRACE_FUNC, "name", this->fName/*these are static*/);
         this->fGraphiteProc(r, options);
@@ -233,7 +239,7 @@ using GraphiteTestFn = void(Reporter*,
 void RunWithGraphiteTestContexts(GraphiteTestFn*,
                                  ContextTypeFilterFn* filter,
                                  Reporter*,
-                                 const skgpu::graphite::ContextOptions&);
+                                 const TestOptions&);
 
 } // namespace graphite
 
@@ -250,9 +256,9 @@ public:
     double elapsedMs() const;
 
     /** Milliseconds since creation as an integer.
-        Behavior is undefined for durations longer than SK_MSecMax.
+        Behavior is undefined for durations longer than TimeUtils::MSecMax.
     */
-    SkMSec elapsedMsInt() const;
+    TimeUtils::MSec elapsedMsInt() const;
 private:
     double fStartNanos;
 };
@@ -314,10 +320,15 @@ using skiatest::Test;
     #define UNIX_ONLY_TEST DEF_TEST_DISABLED
 #endif
 
+#define DEF_SERIAL_TEST(name, reporter)                                                 \
+    static void test_##name(skiatest::Reporter*);                                       \
+    skiatest::TestRegistry name##TestRegistry(Test::MakeCPUSerial(#name, test_##name)); \
+    void test_##name(skiatest::Reporter* reporter)
+
 #define DEF_GRAPHITE_TEST(name, reporter, ctsEnforcement)                                \
     static void test_##name(skiatest::Reporter*);                                        \
     static void test_graphite_##name(skiatest::Reporter* reporter,                       \
-                                     const skgpu::graphite::ContextOptions&) {           \
+                                     const skiatest::graphite::TestOptions&) {           \
         test_##name(reporter);                                                           \
     }                                                                                    \
     skiatest::TestRegistry name##TestRegistry(Test::MakeGraphite(#name, ctsEnforcement,  \
@@ -329,9 +340,9 @@ using skiatest::Test;
     static void test_##name(skiatest::Reporter*, skgpu::graphite::Context*,                        \
                             skiatest::graphite::GraphiteTestContext*);                             \
     static void test_graphite_contexts_##name(skiatest::Reporter* _reporter,                       \
-                                              const skgpu::graphite::ContextOptions& ctxOptions) { \
+                                              const skiatest::graphite::TestOptions& options) {    \
         skiatest::graphite::RunWithGraphiteTestContexts(test_##name, context_filter,               \
-                                                        _reporter, ctxOptions);                    \
+                                                        _reporter, options);                       \
     }                                                                                              \
     skiatest::TestRegistry name##TestRegistry(                                                     \
             Test::MakeGraphite(#name, ctsEnforcement, test_graphite_contexts_##name, opt_filter),  \
@@ -372,13 +383,13 @@ using skiatest::Test;
     DEF_GRAPHITE_TEST_FOR_CONTEXTS(name, skiatest::IsVulkanContextType, reporter,              \
                                    graphite_context, /*anonymous test_ctx*/, ctsEnforcement)
 
-#define DEF_GRAPHITE_TEST_FOR_METAL_CONTEXT(name, reporter, graphite_context)                      \
+#define DEF_GRAPHITE_TEST_FOR_METAL_CONTEXT(name, reporter, graphite_context, test_context)        \
     DEF_GRAPHITE_TEST_FOR_CONTEXTS(name, skiatest::IsMetalContextType, reporter, graphite_context, \
-                                   /*anonymous test_ctx*/, CtsEnforcement::kNever)
+                                   test_context, CtsEnforcement::kNever)
 
-#define DEF_GRAPHITE_TEST_FOR_DAWN_CONTEXT(name, reporter, graphite_context) \
+#define DEF_GRAPHITE_TEST_FOR_DAWN_CONTEXT(name, reporter, graphite_context, test_context) \
     DEF_GRAPHITE_TEST_FOR_CONTEXTS(name, skiatest::IsDawnContextType, reporter, graphite_context, \
-                                   /*anonymous test_ctx*/, CtsEnforcement::kNever)
+                                   test_context, CtsEnforcement::kNever)
 
 #define DEF_GANESH_TEST(name, reporter, options, ctsEnforcement)            \
     static void test_##name(skiatest::Reporter*, const GrContextOptions&);  \

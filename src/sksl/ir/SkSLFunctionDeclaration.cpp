@@ -38,10 +38,10 @@ namespace SkSL {
 static bool check_modifiers(const Context& context, Position pos, ModifierFlags modifierFlags) {
     const ModifierFlags permitted = ModifierFlag::kInline |
                                     ModifierFlag::kNoInline |
-                                    (context.fConfig->fIsBuiltinCode ? ModifierFlag::kES3 |
-                                                                       ModifierFlag::kPure |
-                                                                       ModifierFlag::kExport
-                                                                     : ModifierFlag::kNone);
+                                    (context.fConfig->isBuiltinCode() ? ModifierFlag::kES3 |
+                                                                        ModifierFlag::kPure |
+                                                                        ModifierFlag::kExport
+                                                                      : ModifierFlag::kNone);
     modifierFlags.checkPermittedFlags(context, pos, permitted);
     if (modifierFlags.isInline() && modifierFlags.isNoInline()) {
         context.fErrors->error(pos, "functions cannot be both 'inline' and 'noinline'");
@@ -60,7 +60,7 @@ static bool check_return_type(const Context& context, Position pos, const Type& 
         errors.error(pos, "functions may not return structs containing arrays");
         return false;
     }
-    if (!context.fConfig->fIsBuiltinCode && returnType.componentType().isOpaque()) {
+    if (!context.fConfig->isBuiltinCode() && returnType.componentType().isOpaque()) {
         errors.error(pos, "functions may not return opaque type '" + returnType.displayName() +
                 "'");
         return false;
@@ -98,10 +98,12 @@ static bool check_parameters(const Context& context,
                                                    permittedFlags);
         param->layout().checkPermittedLayout(context, param->modifiersPosition(),
                                              permittedLayoutFlags);
-        // Only the (builtin) declarations of 'sample' are allowed to have shader/colorFilter or FP
-        // parameters. You can pass other opaque types to functions safely; this restriction is
+
+        // Public Runtime Effects aren't allowed to pass shader/colorFilter/blender types to
+        // function calls. You can pass other opaque types to functions safely; this restriction is
         // specific to "child" objects.
-        if (type.isEffectChild() && !context.fConfig->fIsBuiltinCode) {
+        if (!ProgramConfig::AllowsPrivateIdentifiers(context.fConfig->fKind) &&
+            type.isEffectChild()) {
             context.fErrors->error(param->fPosition, "parameters of type '" + type.displayName() +
                                                      "' not allowed");
             return false;
@@ -236,7 +238,8 @@ static bool check_main_signature(const Context& context, Position pos, const Typ
             break;
         }
         case ProgramKind::kFragment:
-        case ProgramKind::kGraphiteFragment: {
+        case ProgramKind::kGraphiteFragment:
+        case ProgramKind::kGraphiteFragmentES2: {
             bool validParams = (parameters.size() == 0) ||
                                (parameters.size() == 1 && paramIsCoords(0));
             if (!validParams) {
@@ -247,6 +250,7 @@ static bool check_main_signature(const Context& context, Position pos, const Typ
         }
         case ProgramKind::kVertex:
         case ProgramKind::kGraphiteVertex:
+        case ProgramKind::kGraphiteVertexES2:
         case ProgramKind::kCompute:
             if (!returnType.matches(*context.fTypes.fVoid)) {
                 errors.error(pos, "'main' must return 'void'");
@@ -394,9 +398,14 @@ static bool find_existing_declaration(const Context& context,
                     return false;
                 }
             }
-            if (other->definition() || other->isIntrinsic() ||
-                modifierFlags != other->modifierFlags()) {
-                errors.error(pos, "duplicate definition of '" + invalidDeclDescription() + "'");
+            if (other->isIntrinsic()) {
+                errors.error(pos, "duplicate definition of intrinsic function '" +
+                                  std::string(name) + "'");
+                return false;
+            }
+            if (modifierFlags != other->modifierFlags()) {
+                errors.error(pos, "functions '" + invalidDeclDescription() + "' and '" +
+                                  other->description() + "' differ only in modifiers");
                 return false;
             }
             *outExistingDecl = other;
@@ -423,7 +432,7 @@ FunctionDeclaration::FunctionDeclaration(const Context& context,
         , fReturnType(returnType)
         , fModifierFlags(modifierFlags)
         , fIntrinsicKind(intrinsicKind)
-        , fBuiltin(context.fConfig->fIsBuiltinCode)
+        , fModuleType(context.fConfig->fModuleType)
         , fIsMain(name == "main") {
     int builtinColorIndex = 0;
     for (const Variable* param : fParameters) {
@@ -477,8 +486,8 @@ FunctionDeclaration* FunctionDeclaration::Convert(const Context& context,
     }
 
     bool isMain = (name == "main");
-    IntrinsicKind intrinsicKind = context.fConfig->fIsBuiltinCode ? FindIntrinsicKind(name)
-                                                                  : kNotIntrinsic;
+    IntrinsicKind intrinsicKind = context.fConfig->isBuiltinCode() ? FindIntrinsicKind(name)
+                                                                   : kNotIntrinsic;
     FunctionDeclaration* decl = nullptr;
     if (!check_modifiers(context, modifiers.fPosition, modifierFlags) ||
         !check_return_type(context, returnTypePos, *returnType) ||
@@ -497,6 +506,7 @@ FunctionDeclaration* FunctionDeclaration::Convert(const Context& context,
         return decl;
     }
     return context.fSymbolTable->add(
+            context,
             std::make_unique<FunctionDeclaration>(context,
                                                   pos,
                                                   modifierFlags,
@@ -504,12 +514,6 @@ FunctionDeclaration* FunctionDeclaration::Convert(const Context& context,
                                                   std::move(finalParameters),
                                                   returnType,
                                                   intrinsicKind));
-}
-
-void FunctionDeclaration::addParametersToSymbolTable(const Context& context) {
-    for (Variable* param : fParameters) {
-        context.fSymbolTable->addWithoutOwnership(param);
-    }
 }
 
 std::string FunctionDeclaration::mangledName() const {

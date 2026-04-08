@@ -13,36 +13,33 @@
 #include "include/core/SkImage.h"
 #include "include/core/SkImageInfo.h"
 #include "include/core/SkPixmap.h"
-#include "include/core/SkPoint.h"
 #include "include/core/SkRect.h"
 #include "include/core/SkSamplingOptions.h"
 #include "include/core/SkSize.h"
 #include "include/core/SkSurface.h"
-#include "include/core/SkTileMode.h"
 #include "include/core/SkTypes.h"
 #include "include/core/SkYUVAInfo.h"
 #include "include/core/SkYUVAPixmaps.h"
 #include "include/gpu/GpuTypes.h"
-#include "include/gpu/GrBackendSurface.h"
-#include "include/gpu/GrContextOptions.h"
-#include "include/gpu/GrRecordingContext.h"
-#include "include/gpu/GrTypes.h"
+#include "include/gpu/ganesh/GrBackendSurface.h"
+#include "include/gpu/ganesh/GrContextOptions.h"
+#include "include/gpu/ganesh/GrRecordingContext.h"
+#include "include/gpu/ganesh/GrTypes.h"
 #include "include/gpu/ganesh/SkSurfaceGanesh.h"
 #include "include/private/SkIDChangeListener.h"
 #include "include/private/base/SkMutex.h"
 #include "include/private/gpu/ganesh/GrImageContext.h"
 #include "include/private/gpu/ganesh/GrTextureGenerator.h"
 #include "include/private/gpu/ganesh/GrTypesPriv.h"
+#include "src/core/SkBlurEngine.h"
 #include "src/core/SkCachedData.h"
-#include "src/core/SkDevice.h"
+#include "src/core/SkImageFilterCache.h"
 #include "src/core/SkImageFilterTypes.h"
 #include "src/core/SkSamplingPriv.h"
-#include "src/core/SkSpecialImage.h"
 #include "src/gpu/ResourceKey.h"
 #include "src/gpu/SkBackingFit.h"
 #include "src/gpu/Swizzle.h"
 #include "src/gpu/ganesh/Device.h"
-#include "src/gpu/ganesh/GrBlurUtils.h"
 #include "src/gpu/ganesh/GrCaps.h"
 #include "src/gpu/ganesh/GrColorSpaceXform.h"
 #include "src/gpu/ganesh/GrFragmentProcessor.h"
@@ -56,7 +53,6 @@
 #include "src/gpu/ganesh/GrThreadSafeCache.h"
 #include "src/gpu/ganesh/GrYUVATextureProxies.h"
 #include "src/gpu/ganesh/SkGr.h"
-#include "src/gpu/ganesh/SurfaceDrawContext.h"
 #include "src/gpu/ganesh/SurfaceFillContext.h"
 #include "src/gpu/ganesh/effects/GrBicubicEffect.h"
 #include "src/gpu/ganesh/effects/GrTextureEffect.h"
@@ -70,13 +66,23 @@
 #include "src/image/SkImage_Picture.h"
 #include "src/image/SkImage_Raster.h"
 
-#include <functional>
 #include <string_view>
 #include <utility>
 
+class SkDevice;
 class SkMatrix;
 class SkSurfaceProps;
 enum SkColorType : int;
+
+#if defined(SK_USE_LEGACY_BLUR_GANESH)
+#include "include/core/SkPoint.h"
+#include "include/core/SkScalar.h"
+#include "src/core/SkSpecialImage.h"
+#include "src/gpu/ganesh/GrBlurUtils.h"
+#include "src/gpu/ganesh/SurfaceDrawContext.h"
+#else
+class SkSpecialImage;
+#endif
 
 namespace skgpu::ganesh {
 
@@ -279,19 +285,6 @@ GrSurfaceProxyView LockTextureProxyView(GrRecordingContext* rContext,
                                         const SkImage_Lazy* img,
                                         GrImageTexGenPolicy texGenPolicy,
                                         skgpu::Mipmapped mipmapped) {
-    // Values representing the various texture lock paths we can take. Used for logging the path
-    // taken to a histogram.
-    enum LockTexturePath {
-        kFailure_LockTexturePath,
-        kPreExisting_LockTexturePath,
-        kNative_LockTexturePath,
-        kCompressed_LockTexturePath, // Deprecated
-        kYUV_LockTexturePath,
-        kRGBA_LockTexturePath,
-    };
-
-    enum { kLockTexturePathCount = kRGBA_LockTexturePath + 1 };
-
     skgpu::UniqueKey key;
     if (texGenPolicy == GrImageTexGenPolicy::kDraw) {
         GrMakeKeyFromImageID(&key, img->uniqueID(), SkIRect::MakeSize(img->dimensions()));
@@ -725,32 +718,57 @@ SkYUVAPixmapInfo::SupportedDataTypes SupportedTextureFormats(const GrImageContex
 }  // namespace skgpu::ganesh
 
 namespace skif {
-Functors MakeGaneshFunctors(GrRecordingContext* context, GrSurfaceOrigin origin) {
-    SkASSERT(context);
 
-    auto makeDeviceFunctor = [context, origin](const SkImageInfo& imageInfo,
-                                               const SkSurfaceProps& props) {
-        return context->priv().createDevice(skgpu::Budgeted::kYes,
-                                            imageInfo,
-                                            SkBackingFit::kApprox,
-                                            1,
-                                            GrMipmapped::kNo,
-                                            GrProtected::kNo,
-                                            origin,
-                                            props,
-                                            skgpu::ganesh::Device::InitContents::kUninit);
-    };
+namespace {
 
-    auto makeImageFunctor = [context](const SkIRect& subset,
-                                      sk_sp<SkImage> image,
-                                      const SkSurfaceProps& props) {
-        return SkSpecialImages::MakeFromTextureImage(context, subset, image, props);
-    };
+class GaneshBackend :
+        public Backend,
+#if defined(SK_USE_LEGACY_BLUR_GANESH)
+        private SkBlurEngine::Algorithm,
+#else
+        private SkShaderBlurAlgorithm,
+#endif
+        private SkBlurEngine {
+public:
 
-    auto makeCachedBitmapFunctor = [context](const SkBitmap& data) -> sk_sp<SkImage> {
+    GaneshBackend(sk_sp<GrRecordingContext> context,
+                  GrSurfaceOrigin origin,
+                  const SkSurfaceProps& surfaceProps,
+                  SkColorType colorType)
+            : Backend(SkImageFilterCache::Create(SkImageFilterCache::kDefaultTransientSize),
+                      surfaceProps, colorType)
+            , fContext(std::move(context))
+            , fOrigin(origin) {}
+
+    // Backend
+    sk_sp<SkDevice> makeDevice(SkISize size,
+                               sk_sp<SkColorSpace> colorSpace,
+                               const SkSurfaceProps* props) const override {
+        SkImageInfo imageInfo = SkImageInfo::Make(size,
+                                                  this->colorType(),
+                                                  kPremul_SkAlphaType,
+                                                  std::move(colorSpace));
+
+        return fContext->priv().createDevice(skgpu::Budgeted::kYes,
+                                             imageInfo,
+                                             SkBackingFit::kApprox,
+                                             1,
+                                             skgpu::Mipmapped::kNo,
+                                             GrProtected::kNo,
+                                             fOrigin,
+                                             props ? *props : this->surfaceProps(),
+                                             skgpu::ganesh::Device::InitContents::kUninit);
+    }
+
+    sk_sp<SkSpecialImage> makeImage(const SkIRect& subset, sk_sp<SkImage> image) const override {
+        return SkSpecialImages::MakeFromTextureImage(
+                fContext.get(), subset, image, this->surfaceProps());
+    }
+
+    sk_sp<SkImage> getCachedBitmap(const SkBitmap& data) const override {
         // This uses the thread safe cache (instead of GrMakeCachedBitmapProxyView) so that image
         // filters can be evaluated on other threads with DDLs.
-        auto threadSafeCache = context->priv().threadSafeCache();
+        auto threadSafeCache = fContext->priv().threadSafeCache();
 
         skgpu::UniqueKey key;
         SkIRect subset = SkIRect::MakePtSize(data.pixelRefOrigin(), data.dimensions());
@@ -758,26 +776,55 @@ Functors MakeGaneshFunctors(GrRecordingContext* context, GrSurfaceOrigin origin)
 
         auto view = threadSafeCache->find(key);
         if (!view) {
-            view = std::get<0>(GrMakeUncachedBitmapProxyView(context, data));
+            view = std::get<0>(GrMakeUncachedBitmapProxyView(fContext.get(), data));
             if (!view) {
                 return nullptr;
             }
             threadSafeCache->add(key, view);
         }
 
-        return sk_make_sp<SkImage_Ganesh>(sk_ref_sp(context),
+        return sk_make_sp<SkImage_Ganesh>(fContext,
                                           data.getGenerationID(),
                                           std::move(view),
                                           data.info().colorInfo());
-    };
+    }
 
-    auto blurImageFunctor = [context](SkSize sigma,
-                                      sk_sp<SkSpecialImage> input,
-                                      SkIRect srcRect,
-                                      SkIRect dstRect,
-                                      sk_sp<SkColorSpace> outCS,
-                                      const SkSurfaceProps& outProps) -> sk_sp<SkSpecialImage> {
-        GrSurfaceProxyView inputView = SkSpecialImages::AsView(context, input);
+    const SkBlurEngine* getBlurEngine() const override { return this; }
+
+    // SkBlurEngine
+    const SkBlurEngine::Algorithm* findAlgorithm(SkSize sigma,
+                                                 SkColorType colorType) const override {
+        // GrBlurUtils supports all tile modes and color types
+        return this;
+    }
+
+#if defined(SK_USE_LEGACY_BLUR_GANESH)
+    // NOTE: When SK_USE_LEGACY_BLUR_GANESH is defined, `useLegacyFilterResultBlur()` returns true,
+    // so FilterResult::blur() will resolve all tiling in the original image space before calling
+    // into this function that routes to GrBlurUtils::GaussianBlur to perform the rescaling and
+    // blurring. It is possible ot restore original GrBlurUtils performance by just having
+    // `useLegacyFilterResultBlur()` return false but still reporting a max sigma of infinity and
+    // advertising support for all tile modes.
+    //
+    // Since all clients are currently rebased on the intermediate "legacy" blur approach, the ideal
+    // step would be to just migrate them to the SkShaderBlurAlgorithm variant instead of first
+    // going back to pure GrBlurUtils. But if needed for cherry-picking to old releases, the
+    // original GrBlurUtils behavior can be achieved quikly.
+
+    // SkBlurEngine::Algorithm
+    float maxSigma() const override {
+        // GrBlurUtils handles resizing at the moment
+        return SK_ScalarInfinity;
+    }
+
+    bool supportsOnlyDecalTiling() const override { return false; }
+
+    sk_sp<SkSpecialImage> blur(SkSize sigma,
+                               sk_sp<SkSpecialImage> input,
+                               const SkIRect& srcRect,
+                               SkTileMode tileMode,
+                               const SkIRect& dstRect) const override {
+        GrSurfaceProxyView inputView = SkSpecialImages::AsView(fContext.get(), input);
         if (!inputView.proxy()) {
             return nullptr;
         }
@@ -785,41 +832,59 @@ Functors MakeGaneshFunctors(GrRecordingContext* context, GrSurfaceOrigin origin)
 
         // Update srcRect and dstRect to be relative to the underlying texture proxy of 'input'.
         auto proxyOffset = input->subset().topLeft() - srcRect.topLeft();
-        srcRect.offset(proxyOffset);
-        dstRect.offset(proxyOffset);
         auto sdc = GrBlurUtils::GaussianBlur(
-                context,
+                fContext.get(),
                 std::move(inputView),
                 SkColorTypeToGrColorType(input->colorType()),
                 input->alphaType(),
-                std::move(outCS),
-                dstRect,
-                srcRect,
+                sk_ref_sp(input->getColorSpace()),
+                dstRect.makeOffset(proxyOffset),
+                srcRect.makeOffset(proxyOffset),
                 sigma.width(),
                 sigma.height(),
-                SkTileMode::kDecal); // TODO: Have the blur image functor take a tile mode
+                tileMode);
         if (!sdc) {
             return nullptr;
         }
 
-        return SkSpecialImages::MakeDeferredFromGpu(context,
+        return SkSpecialImages::MakeDeferredFromGpu(fContext.get(),
                                                     SkIRect::MakeSize(dstRect.size()),
                                                     kNeedNewImageUniqueID_SpecialImage,
                                                     sdc->readSurfaceView(),
                                                     sdc->colorInfo(),
-                                                    outProps);
-    };
+                                                    this->surfaceProps());
+    }
+#else
+    bool useLegacyFilterResultBlur() const override { return false; }
 
-    return Functors(makeDeviceFunctor, makeImageFunctor, makeCachedBitmapFunctor, blurImageFunctor);
-}
+    // SkShaderBlurAlgorithm
+    sk_sp<SkDevice> makeDevice(const SkImageInfo& imageInfo) const override {
+        return fContext->priv().createDevice(skgpu::Budgeted::kYes,
+                                             imageInfo,
+                                             SkBackingFit::kApprox,
+                                             1,
+                                             skgpu::Mipmapped::kNo,
+                                             GrProtected::kNo,
+                                             fOrigin,
+                                             this->surfaceProps(),
+                                             skgpu::ganesh::Device::InitContents::kUninit);
+    }
 
-Context MakeGaneshContext(GrRecordingContext* context,
-                          GrSurfaceOrigin origin,
-                          const ContextInfo& info) {
+#endif
+
+private:
+    sk_sp<GrRecordingContext> fContext;
+    GrSurfaceOrigin fOrigin;
+};
+
+} // anonymous namespace
+
+sk_sp<Backend> MakeGaneshBackend(sk_sp<GrRecordingContext> context,
+                                 GrSurfaceOrigin origin,
+                                 const SkSurfaceProps& surfaceProps,
+                                 SkColorType colorType) {
     SkASSERT(context);
-    SkASSERT(!info.fSource.image() || info.fSource.image()->isGaneshBacked());
-
-    return Context(info, MakeGaneshFunctors(context, origin));
+    return sk_make_sp<GaneshBackend>(std::move(context), origin, surfaceProps, colorType);
 }
 
 }  // namespace skif

@@ -5,30 +5,25 @@
  * found in the LICENSE file.
  */
 
-#include "include/gpu/GrBackendSurface.h"
+#include "include/gpu/ganesh/GrBackendSurface.h"
 
 #include "include/core/SkTextureCompressionType.h"
-#include "include/gpu/GrTypes.h"
+#include "include/gpu/ganesh/GrTypes.h"
+#include "include/gpu/MutableTextureState.h"  // IWYU pragma: keep
 #include "include/private/base/SkAssert.h"
 #include "include/private/gpu/ganesh/GrTypesPriv.h"
-#include "src/gpu/MutableTextureStateRef.h"  // IWYU pragma: keep
+#include "src/gpu/GpuTypesPriv.h"
 #include "src/gpu/ganesh/GrBackendSurfacePriv.h"
-
-#ifdef SK_METAL
-#include "include/gpu/mtl/GrMtlTypes.h"
-#include "src/gpu/ganesh/mtl/GrMtlCppUtil.h"
-#endif
+#include "src/gpu/ganesh/GrUtil.h"
 
 #ifdef SK_DIRECT3D
-#include "include/gpu/d3d/GrD3DTypes.h"
+#include "include/gpu/ganesh/d3d/GrD3DTypes.h"
 #include "src/gpu/ganesh/d3d/GrD3DResourceState.h"
 #include "src/gpu/ganesh/d3d/GrD3DUtil.h"
 #endif
 
 #include <algorithm>
 #include <new>
-
-namespace skgpu { class MutableTextureState; }
 
 GrBackendFormat::GrBackendFormat() : fValid(false) {}
 GrBackendFormat::~GrBackendFormat() = default;
@@ -44,14 +39,10 @@ GrBackendFormat::GrBackendFormat(const GrBackendFormat& that)
     switch (fBackend) {
         case GrBackendApi::kOpenGL:
         case GrBackendApi::kVulkan:
+        case GrBackendApi::kMetal:
             fFormatData.reset();
             that.fFormatData->copyTo(fFormatData);
             break;  // fFormatData is sufficient
-#ifdef SK_METAL
-        case GrBackendApi::kMetal:
-            fMtlFormat = that.fMtlFormat;
-            break;
-#endif
 #ifdef SK_DIRECT3D
         case GrBackendApi::kDirect3D:
             fDxgiFormat = that.fDxgiFormat;
@@ -72,23 +63,6 @@ GrBackendFormat& GrBackendFormat::operator=(const GrBackendFormat& that) {
     }
     return *this;
 }
-
-#ifdef SK_METAL
-GrBackendFormat::GrBackendFormat(GrMTLPixelFormat mtlFormat)
-        : fBackend(GrBackendApi::kMetal)
-        , fValid(true)
-        , fMtlFormat(mtlFormat)
-        , fTextureType(GrTextureType::k2D) {
-}
-
-GrMTLPixelFormat GrBackendFormat::asMtlFormat() const {
-    if (this->isValid() && GrBackendApi::kMetal == fBackend) {
-        return fMtlFormat;
-    }
-    // MTLPixelFormatInvalid == 0
-    return GrMTLPixelFormat(0);
-}
-#endif
 
 #ifdef SK_DIRECT3D
 GrBackendFormat::GrBackendFormat(DXGI_FORMAT dxgiFormat)
@@ -125,11 +99,8 @@ uint32_t GrBackendFormat::channelMask() const {
     switch (fBackend) {
         case GrBackendApi::kOpenGL:
         case GrBackendApi::kVulkan:
-            return fFormatData->channelMask();
-#ifdef SK_METAL
         case GrBackendApi::kMetal:
-            return GrMtlFormatChannels(fMtlFormat);
-#endif
+            return fFormatData->channelMask();
 #ifdef SK_DIRECT3D
         case GrBackendApi::kDirect3D:
             return GrDxgiFormatChannels(fDxgiFormat);
@@ -149,11 +120,8 @@ GrColorFormatDesc GrBackendFormat::desc() const {
     switch (fBackend) {
         case GrBackendApi::kOpenGL:
         case GrBackendApi::kVulkan:
+        case GrBackendApi::kMetal:
             return fFormatData->desc();
-#ifdef SK_METAL
-       case GrBackendApi::kMetal:
-            return GrMtlFormatDesc(fMtlFormat);
-#endif
 #ifdef SK_DIRECT3D
         case GrBackendApi::kDirect3D:
             return GrDxgiFormatDesc(fDxgiFormat);
@@ -238,11 +206,8 @@ bool GrBackendFormat::operator==(const GrBackendFormat& that) const {
     switch (fBackend) {
         case GrBackendApi::kOpenGL:
         case GrBackendApi::kVulkan:
-            return fFormatData->equal(that.fFormatData.get());
-#ifdef SK_METAL
         case GrBackendApi::kMetal:
-            return fMtlFormat == that.fMtlFormat;
-#endif
+            return fFormatData->equal(that.fFormatData.get());
         case GrBackendApi::kMock:
             return fMock.fColorType == that.fMock.fColorType &&
                    fMock.fCompressionType == that.fMock.fCompressionType;
@@ -256,7 +221,7 @@ bool GrBackendFormat::operator==(const GrBackendFormat& that) const {
     return false;
 }
 
-#if defined(SK_DEBUG) || defined(GR_TEST_UTILS)
+#if defined(SK_DEBUG) || defined(GPU_TEST_UTILS)
 #include "include/core/SkString.h"
 
 SkString GrBackendFormat::toStr() const {
@@ -272,12 +237,8 @@ SkString GrBackendFormat::toStr() const {
     switch (fBackend) {
         case GrBackendApi::kOpenGL:
         case GrBackendApi::kVulkan:
-            str.append(fFormatData->toString());
-            break;
         case GrBackendApi::kMetal:
-#ifdef SK_METAL
-            str.append(GrMtlFormatToStr(fMtlFormat));
-#endif
+            str.append(fFormatData->toString());
             break;
         case GrBackendApi::kDirect3D:
 #ifdef SK_DIRECT3D
@@ -287,7 +248,7 @@ SkString GrBackendFormat::toStr() const {
         case GrBackendApi::kMock:
             str.append(GrColorTypeToStr(fMock.fColorType));
             str.appendf("-");
-            str.append(GrCompressionTypeToStr(fMock.fCompressionType));
+            str.append(skgpu::CompressionTypeToStr(fMock.fCompressionType));
             break;
         case GrBackendApi::kUnsupported:
             break;
@@ -299,22 +260,6 @@ SkString GrBackendFormat::toStr() const {
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 GrBackendTexture::GrBackendTexture() : fIsValid(false) {}
-
-#ifdef SK_METAL
-GrBackendTexture::GrBackendTexture(int width,
-                                   int height,
-                                   skgpu::Mipmapped mipmapped,
-                                   const GrMtlTextureInfo& mtlInfo,
-                                   std::string_view label)
-        : fIsValid(true)
-        , fWidth(width)
-        , fHeight(height)
-        , fLabel(label)
-        , fMipmapped(mipmapped)
-        , fBackend(GrBackendApi::kMetal)
-        , fTextureType(GrTextureType::k2D)
-        , fMtlInfo(mtlInfo) {}
-#endif
 
 #ifdef SK_DIRECT3D
 GrBackendTexture::GrBackendTexture(int width,
@@ -396,14 +341,10 @@ GrBackendTexture& GrBackendTexture::operator=(const GrBackendTexture& that) {
     switch (that.fBackend) {
         case GrBackendApi::kOpenGL:
         case GrBackendApi::kVulkan:
+        case GrBackendApi::kMetal:
             fTextureData.reset();
             that.fTextureData->copyTo(fTextureData);
             break;
-#ifdef SK_METAL
-        case GrBackendApi::kMetal:
-            fMtlInfo = that.fMtlInfo;
-            break;
-#endif
 #ifdef SK_DIRECT3D
         case GrBackendApi::kDirect3D:
             fD3DInfo.assign(that.fD3DInfo, this->isValid());
@@ -419,19 +360,9 @@ GrBackendTexture& GrBackendTexture::operator=(const GrBackendTexture& that) {
     return *this;
 }
 
-sk_sp<skgpu::MutableTextureStateRef> GrBackendTexture::getMutableState() const {
+sk_sp<skgpu::MutableTextureState> GrBackendTexture::getMutableState() const {
     return fTextureData->getMutableState();
 }
-
-#ifdef SK_METAL
-bool GrBackendTexture::getMtlTextureInfo(GrMtlTextureInfo* outInfo) const {
-    if (this->isValid() && GrBackendApi::kMetal == fBackend) {
-        *outInfo = fMtlInfo;
-        return true;
-    }
-    return false;
-}
-#endif
 
 #ifdef SK_DIRECT3D
 bool GrBackendTexture::getD3DTextureResourceInfo(GrD3DTextureResourceInfo* outInfo) const {
@@ -492,11 +423,8 @@ bool GrBackendTexture::isSameTexture(const GrBackendTexture& that) {
     switch (fBackend) {
         case GrBackendApi::kOpenGL:
         case GrBackendApi::kVulkan:
-            return fTextureData->isSameTexture(that.fTextureData.get());
-#ifdef SK_METAL
         case GrBackendApi::kMetal:
-            return this->fMtlInfo.fTexture == that.fMtlInfo.fTexture;
-#endif
+            return fTextureData->isSameTexture(that.fTextureData.get());
 #ifdef SK_DIRECT3D
         case GrBackendApi::kDirect3D:
             return fD3DInfo.snapTextureResourceInfo().fResource ==
@@ -516,14 +444,8 @@ GrBackendFormat GrBackendTexture::getBackendFormat() const {
     switch (fBackend) {
         case GrBackendApi::kOpenGL:
         case GrBackendApi::kVulkan:
+        case GrBackendApi::kMetal:
             return fTextureData->getBackendFormat();
-#ifdef SK_METAL
-        case GrBackendApi::kMetal: {
-            GrMtlTextureInfo mtlInfo;
-            SkAssertResult(this->getMtlTextureInfo(&mtlInfo));
-            return GrBackendFormat::MakeMtl(GrGetMTLPixelFormatFromMtlTextureInfo(mtlInfo));
-        }
-#endif
 #ifdef SK_DIRECT3D
         case GrBackendApi::kDirect3D: {
             auto d3dInfo = fD3DInfo.snapTextureResourceInfo();
@@ -537,7 +459,7 @@ GrBackendFormat GrBackendTexture::getBackendFormat() const {
     }
 }
 
-#if defined(GR_TEST_UTILS)
+#if defined(GPU_TEST_UTILS)
 bool GrBackendTexture::TestingOnly_Equals(const GrBackendTexture& t0, const GrBackendTexture& t1) {
     if (!t0.isValid() || !t1.isValid()) {
         return false; // two invalid backend textures are not considered equal
@@ -553,13 +475,10 @@ bool GrBackendTexture::TestingOnly_Equals(const GrBackendTexture& t0, const GrBa
     switch (t0.fBackend) {
         case GrBackendApi::kOpenGL:
         case GrBackendApi::kVulkan:
+        case GrBackendApi::kMetal:
             return t0.fTextureData->equal(t1.fTextureData.get());
         case GrBackendApi::kMock:
             return t0.fMockInfo == t1.fMockInfo;
-#ifdef SK_METAL
-        case GrBackendApi::kMetal:
-            return t0.fMtlInfo == t1.fMtlInfo;
-#endif
 #ifdef SK_DIRECT3D
         case GrBackendApi::kDirect3D:
             return t0.fD3DInfo == t1.fD3DInfo;
@@ -573,18 +492,6 @@ bool GrBackendTexture::TestingOnly_Equals(const GrBackendTexture& t0, const GrBa
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 GrBackendRenderTarget::GrBackendRenderTarget() : fIsValid(false) {}
-
-#ifdef SK_METAL
-GrBackendRenderTarget::GrBackendRenderTarget(int width, int height, const GrMtlTextureInfo& mtlInfo)
-        : fIsValid(true)
-        , fFramebufferOnly(false)  // TODO: set this from mtlInfo.fTexture->framebufferOnly
-        , fWidth(width)
-        , fHeight(height)
-        , fSampleCnt(std::max(1, GrMtlTextureInfoSampleCount(mtlInfo)))
-        , fStencilBits(0)
-        , fBackend(GrBackendApi::kMetal)
-        , fMtlInfo(mtlInfo) {}
-#endif
 
 #ifdef SK_DIRECT3D
 GrBackendRenderTarget::GrBackendRenderTarget(int width, int height,
@@ -659,14 +566,10 @@ GrBackendRenderTarget& GrBackendRenderTarget::operator=(const GrBackendRenderTar
     switch (that.fBackend) {
         case GrBackendApi::kOpenGL:
         case GrBackendApi::kVulkan:
+        case GrBackendApi::kMetal:
             fRTData.reset();
             that.fRTData->copyTo(fRTData);
             break;
-#ifdef SK_METAL
-        case GrBackendApi::kMetal:
-            fMtlInfo = that.fMtlInfo;
-            break;
-#endif
 #ifdef SK_DIRECT3D
         case GrBackendApi::kDirect3D:
             fD3DInfo.assign(that.fD3DInfo, this->isValid());
@@ -682,19 +585,9 @@ GrBackendRenderTarget& GrBackendRenderTarget::operator=(const GrBackendRenderTar
     return *this;
 }
 
-sk_sp<skgpu::MutableTextureStateRef> GrBackendRenderTarget::getMutableState() const {
+sk_sp<skgpu::MutableTextureState> GrBackendRenderTarget::getMutableState() const {
     return fRTData->getMutableState();
 }
-
-#ifdef SK_METAL
-bool GrBackendRenderTarget::getMtlTextureInfo(GrMtlTextureInfo* outInfo) const {
-    if (this->isValid() && GrBackendApi::kMetal == fBackend) {
-        *outInfo = fMtlInfo;
-        return true;
-    }
-    return false;
-}
-#endif
 
 #ifdef SK_DIRECT3D
 bool GrBackendRenderTarget::getD3DTextureResourceInfo(GrD3DTextureResourceInfo* outInfo) const {
@@ -726,14 +619,8 @@ GrBackendFormat GrBackendRenderTarget::getBackendFormat() const {
     switch (fBackend) {
         case GrBackendApi::kOpenGL:
         case GrBackendApi::kVulkan:
+        case GrBackendApi::kMetal:
             return fRTData->getBackendFormat();
-#ifdef SK_METAL
-        case GrBackendApi::kMetal: {
-            GrMtlTextureInfo mtlInfo;
-            SkAssertResult(this->getMtlTextureInfo(&mtlInfo));
-            return GrBackendFormat::MakeMtl(GrGetMTLPixelFormatFromMtlTextureInfo(mtlInfo));
-        }
-#endif
 #ifdef SK_DIRECT3D
         case GrBackendApi::kDirect3D: {
             auto info = fD3DInfo.snapTextureResourceInfo();
@@ -773,7 +660,7 @@ bool GrBackendRenderTarget::isProtected() const {
     return false;
 }
 
-#if defined(GR_TEST_UTILS)
+#if defined(GPU_TEST_UTILS)
 bool GrBackendRenderTarget::TestingOnly_Equals(const GrBackendRenderTarget& r0,
                                                const GrBackendRenderTarget& r1) {
     if (!r0.isValid() || !r1.isValid()) {
@@ -791,13 +678,10 @@ bool GrBackendRenderTarget::TestingOnly_Equals(const GrBackendRenderTarget& r0,
     switch (r0.fBackend) {
         case GrBackendApi::kOpenGL:
         case GrBackendApi::kVulkan:
+        case GrBackendApi::kMetal:
             return r0.fRTData->equal(r1.fRTData.get());
         case GrBackendApi::kMock:
             return r0.fMockInfo == r1.fMockInfo;
-#ifdef SK_METAL
-        case GrBackendApi::kMetal:
-            return r0.fMtlInfo == r1.fMtlInfo;
-#endif
 #ifdef SK_DIRECT3D
         case GrBackendApi::kDirect3D:
             return r0.fD3DInfo == r1.fD3DInfo;

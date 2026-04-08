@@ -5,22 +5,33 @@
  * found in the LICENSE file.
  */
 
+#include "modules/svg/include/SkSVGOpenTypeSVGDecoder.h"
+
+#include "include/codec/SkCodec.h"
+#include "include/codec/SkJpegDecoder.h"
+#include "include/codec/SkPngDecoder.h"
 #include "include/core/SkColor.h"
+#include "include/core/SkData.h"
 #include "include/core/SkOpenTypeSVGDecoder.h"
+#include "include/core/SkScalar.h"
+#include "include/core/SkSize.h"
 #include "include/core/SkSpan.h"
 #include "include/core/SkStream.h"
+#include "include/core/SkString.h"
 #include "include/core/SkTypes.h"
-#include "include/utils/SkBase64.h"
 #include "modules/skresources/include/SkResources.h"
+#include "modules/svg/include/SkSVGAttribute.h"
 #include "modules/svg/include/SkSVGDOM.h"
-#include "modules/svg/include/SkSVGNode.h"
-#include "modules/svg/include/SkSVGOpenTypeSVGDecoder.h"
 #include "modules/svg/include/SkSVGRenderContext.h"
-#include "modules/svg/include/SkSVGSVG.h"
-#include "modules/svg/include/SkSVGUse.h"
+#include "modules/svg/include/SkSVGTypes.h"
+#include "src/base/SkBase64.h"
 #include "src/core/SkEnumerate.h"
+#include "src/core/SkTHash.h"
 
+#include <array>
+#include <cstring>
 #include <memory>
+#include <utility>
 
 using namespace skia_private;
 
@@ -35,7 +46,21 @@ public:
                                                   const char rname[],
                                                   const char rid[]) const override {
         if (auto data = decode_datauri("data:image/", rname)) {
-            return skresources::MultiFrameImageAsset::Make(std::move(data));
+            std::unique_ptr<SkCodec> codec = nullptr;
+            if (SkPngDecoder::IsPng(data->bytes(), data->size())) {
+                codec = SkPngDecoder::Decode(data, nullptr);
+            } else if (SkJpegDecoder::IsJpeg(data->bytes(), data->size())) {
+                codec = SkJpegDecoder::Decode(data, nullptr);
+            } else {
+                // The spec says only JPEG or PNG should be used to encode the embedded data.
+                // https://learn.microsoft.com/en-us/typography/opentype/spec/svg#svg-capability-requirements-and-restrictions
+                SkDEBUGFAIL("Unsupported codec");
+                return nullptr;
+            }
+            if (!codec) {
+                return nullptr;
+            }
+            return skresources::MultiFrameImageAsset::Make(std::move(codec));
         }
         return nullptr;
     }
@@ -93,6 +118,8 @@ std::unique_ptr<SkOpenTypeSVGDecoder> SkSVGOpenTypeSVGDecoder::Make(const uint8_
     }
     SkSVGDOM::Builder builder;
     builder.setResourceProvider(DataResourceProvider::Make());
+    // We shouldn't need to set this builder's font manager or shaping utils because hopefully
+    // the SVG we are decoding doesn't itself have <text> tags.
     sk_sp<SkSVGDOM> skSvg = builder.make(*stream);
     if (!skSvg) {
         return nullptr;
@@ -115,7 +142,7 @@ bool SkSVGOpenTypeSVGDecoder::render(SkCanvas& canvas, int upem, SkGlyphID glyph
     pctx.fInherited.fColor.set(foregroundColor);
 
     THashMap<SkString, SkSVGColorType> namedColors;
-    if (palette.size()) {
+    if (!palette.empty()) {
         for (auto&& [i, color] : SkMakeEnumerate(palette)) {
             constexpr const size_t colorStringLen = sizeof("color") - 1;
             char colorIdString[colorStringLen + kSkStrAppendU32_MaxSize + 1] = "color";

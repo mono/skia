@@ -8,23 +8,33 @@
 #ifndef GrVkImage_DEFINED
 #define GrVkImage_DEFINED
 
+#include "include/core/SkRefCnt.h"
 #include "include/core/SkTypes.h"
-#include "include/gpu/GrBackendSurface.h"
+#include "include/gpu/GpuTypes.h"
+#include "include/gpu/ganesh/GrBackendSurface.h"
+#include "include/gpu/ganesh/GrTypes.h"
+#include "include/gpu/MutableTextureState.h"
 #include "include/gpu/ganesh/vk/GrVkBackendSurface.h"
-#include "include/gpu/vk/GrVkTypes.h"
+#include "include/gpu/ganesh/vk/GrVkTypes.h"
+#include "include/gpu/vk/VulkanMutableTextureState.h"
+#include "include/gpu/vk/VulkanTypes.h"
+#include "include/private/base/SkDebug.h"
+#include "include/private/base/SkTo.h"
 #include "include/private/gpu/ganesh/GrTypesPriv.h"
-#include "include/private/gpu/ganesh/GrVkTypesPriv.h"
-#include "src/gpu/MutableTextureStateRef.h"
+#include "include/private/gpu/vk/SkiaVulkan.h"
+#include "src/gpu/GpuRefCnt.h"
 #include "src/gpu/ganesh/GrAttachment.h"
 #include "src/gpu/ganesh/GrManagedResource.h"
-#include "src/gpu/ganesh/GrRefCnt.h"
-#include "src/gpu/ganesh/GrTexture.h"
-#include "src/gpu/ganesh/vk/GrVkDescriptorSet.h"
+#include "src/gpu/ganesh/vk/GrVkDescriptorSet.h"  // IWYU pragma: keep
+#include "src/gpu/vk/VulkanMutableTextureStatePriv.h"
 
 #include <cinttypes>
+#include <cstdint>
+#include <string_view>
 
 class GrVkGpu;
 class GrVkImageView;
+struct SkISize;
 
 class GrVkImage : public GrAttachment {
 private:
@@ -55,7 +65,7 @@ public:
     static sk_sp<GrVkImage> MakeWrapped(GrVkGpu* gpu,
                                         SkISize dimensions,
                                         const GrVkImageInfo&,
-                                        sk_sp<skgpu::MutableTextureStateRef>,
+                                        sk_sp<skgpu::MutableTextureState>,
                                         UsageFlags attachmentUsages,
                                         GrWrapOwnership,
                                         GrWrapCacheable,
@@ -89,7 +99,7 @@ public:
         return GrBackendFormats::MakeVk(this->imageFormat(), usesDRMModifier);
     }
     uint32_t mipLevels() const { return fInfo.fLevelCount; }
-    const GrVkYcbcrConversionInfo& ycbcrConversionInfo() const {
+    const skgpu::VulkanYcbcrConversionInfo& ycbcrConversionInfo() const {
         // Should only be called when we have a real fResource object, i.e. never when being used as
         // a RT in an external secondary command buffer.
         SkASSERT(fResource);
@@ -125,9 +135,11 @@ public:
     }
     bool isBorrowed() const { return fIsBorrowed; }
 
-    sk_sp<skgpu::MutableTextureStateRef> getMutableState() const { return fMutableState; }
+    sk_sp<skgpu::MutableTextureState> getMutableState() const { return fMutableState; }
 
-    VkImageLayout currentLayout() const { return fMutableState->getImageLayout(); }
+    VkImageLayout currentLayout() const {
+        return skgpu::MutableTextureStates::GetVkImageLayout(fMutableState.get());
+    }
 
     void setImageLayoutAndQueueIndex(const GrVkGpu* gpu,
                                      VkImageLayout newLayout,
@@ -145,10 +157,12 @@ public:
                                           VK_QUEUE_FAMILY_IGNORED);
     }
 
-    uint32_t currentQueueFamilyIndex() const { return fMutableState->getQueueFamilyIndex(); }
+    uint32_t currentQueueFamilyIndex() const {
+        return skgpu::MutableTextureStates::GetVkQueueFamilyIndex(fMutableState.get());
+    }
 
     void setQueueFamilyIndex(uint32_t queueFamilyIndex) {
-        fMutableState->setQueueFamilyIndex(queueFamilyIndex);
+        skgpu::MutableTextureStates::SetVkQueueFamilyIndex(fMutableState.get(), queueFamilyIndex);
     }
 
     // Returns the image to its original queue family and changes the layout to present if the queue
@@ -165,7 +179,7 @@ public:
         // Should only be called when we have a real fResource object, i.e. never when being used as
         // a RT in an external secondary command buffer.
         SkASSERT(fResource);
-        fMutableState->setImageLayout(newLayout);
+        skgpu::MutableTextureStates::SetVkImageLayout(fMutableState.get(), newLayout);
     }
 
     struct ImageDesc {
@@ -207,7 +221,7 @@ public:
     static VkPipelineStageFlags LayoutToPipelineSrcStageFlags(const VkImageLayout layout);
     static VkAccessFlags LayoutToSrcAccessMask(const VkImageLayout layout);
 
-#if defined(GR_TEST_UTILS)
+#if defined(GPU_TEST_UTILS)
     void setCurrentQueueFamilyToGraphicsQueue(GrVkGpu* gpu);
 #endif
 
@@ -227,7 +241,7 @@ private:
               SkISize dimensions,
               UsageFlags supportedUsages,
               const GrVkImageInfo&,
-              sk_sp<skgpu::MutableTextureStateRef> mutableState,
+              sk_sp<skgpu::MutableTextureState> mutableState,
               sk_sp<const GrVkImageView> framebufferView,
               sk_sp<const GrVkImageView> textureView,
               skgpu::Budgeted,
@@ -237,7 +251,7 @@ private:
               SkISize dimensions,
               UsageFlags supportedUsages,
               const GrVkImageInfo&,
-              sk_sp<skgpu::MutableTextureStateRef> mutableState,
+              sk_sp<skgpu::MutableTextureState> mutableState,
               sk_sp<const GrVkImageView> framebufferView,
               sk_sp<const GrVkImageView> textureView,
               GrBackendObjectOwnership,
@@ -257,7 +271,7 @@ private:
 
     GrVkImageInfo                        fInfo;
     uint32_t                             fInitialQueueFamily;
-    sk_sp<skgpu::MutableTextureStateRef> fMutableState;
+    sk_sp<skgpu::MutableTextureState> fMutableState;
 
     sk_sp<const GrVkImageView>           fFramebufferView;
     sk_sp<const GrVkImageView>           fTextureView;

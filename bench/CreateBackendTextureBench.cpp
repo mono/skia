@@ -7,8 +7,8 @@
 
 #include "bench/Benchmark.h"
 #include "include/core/SkCanvas.h"
-#include "include/gpu/GrBackendSurface.h"
-#include "include/gpu/GrDirectContext.h"
+#include "include/gpu/ganesh/GrBackendSurface.h"
+#include "include/gpu/ganesh/GrDirectContext.h"
 
 using namespace skia_private;
 
@@ -25,7 +25,7 @@ public:
     }
 
 private:
-    bool isSuitableFor(Backend backend) override { return kGPU_Backend == backend; }
+    bool isSuitableFor(Backend backend) override { return Backend::kGanesh == backend; }
 
     const char* onGetName() override { return fName.c_str(); }
 

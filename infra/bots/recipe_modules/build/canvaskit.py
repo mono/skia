@@ -7,8 +7,8 @@ INNER_BUILD_SCRIPT = '/SRC/skia/infra/canvaskit/build_canvaskit.sh'
 
 
 def compile_fn(api, checkout_root, _ignore):
-  skia_dir = checkout_root.join('skia')
-  out_dir = api.vars.cache_dir.join('docker', 'canvaskit')
+  skia_dir = checkout_root.joinpath('skia')
+  out_dir = api.vars.cache_dir.joinpath('docker', 'canvaskit')
   configuration = api.vars.builder_cfg.get('configuration', '')
   extra = api.vars.builder_cfg.get('extra_config', '')
 
@@ -22,8 +22,8 @@ def compile_fn(api, checkout_root, _ignore):
   # Download the emsdk binaries (we won't actually use the ones on the Docker
   # image anymore, now that we have proper GN support)
   with api.context(cwd=skia_dir):
-    api.run(api.python, 'activate-emsdk',
-            script=skia_dir.join('bin', 'activate-emsdk'),
+    api.run(api.step, 'activate-emsdk',
+            cmd=['python3', skia_dir.joinpath('bin', 'activate-emsdk')],
             infra_step=True)
 
   # This uses the emscripten sdk docker image and says "run the
@@ -39,8 +39,13 @@ def compile_fn(api, checkout_root, _ignore):
   cmd = ['docker', 'run', '--rm', '--volume', '%s:/SRC' % checkout_root,
          '--volume', '%s:/OUT' % out_dir,
          DOCKER_IMAGE, INNER_BUILD_SCRIPT]
+
+  # The compile.sh script defaults to "gpu" which means Ganesh + WebGL. The other options are
+  # "cpu" (no GPU backend) and "webgpu" (Graphite + WebGPU).
   if 'CPU' in extra:
-    cmd.append('cpu') # It defaults to gpu
+    cmd.append('cpu')
+  if 'WebGPU' in extra:
+      cmd.append('webgpu')
 
   if configuration == 'Debug':
     cmd.append('debug') # It defaults to Release
@@ -59,7 +64,7 @@ CANVASKIT_BUILD_PRODUCTS = [
 
 
 def copy_build_products(api, _ignore, dst):
-  out_dir = api.vars.cache_dir.join('docker', 'canvaskit')
+  out_dir = api.vars.cache_dir.joinpath('docker', 'canvaskit')
   # We don't use the normal copy_listed_files because it uses
   # shutil.move, which attempts to delete the previous file, which
   # doesn't work because the docker created outputs are read-only and
@@ -67,35 +72,8 @@ def copy_build_products(api, _ignore, dst):
   # the shutil.move in the original script to a non-deleting thing
   # (like copy or copyfile), but there's some subtle behavior differences
   # especially with directories, that kjlubick felt it best not to risk it.
-  api.python.inline(
+  script = api.build.resource('copy_build_products_no_delete.py')
+  api.step(
       name='copy wasm output',
-      program='''import errno
-import glob
-import os
-import shutil
-import sys
-
-src = sys.argv[1]
-dst = sys.argv[2]
-build_products = %s
-
-try:
-  os.makedirs(dst)
-except OSError as e:
-  if e.errno != errno.EEXIST:
-    raise
-
-for pattern in build_products:
-  path = os.path.join(src, pattern)
-  for f in glob.glob(path):
-    dst_path = os.path.join(dst, os.path.relpath(f, src))
-    if not os.path.isdir(os.path.dirname(dst_path)):
-      os.makedirs(os.path.dirname(dst_path))
-    print('Copying build product %%s to %%s' %% (f, dst_path))
-    # Because Docker usually has some strange permissions (like root
-    # ownership), we'd rather not keep those around. copyfile doesn't
-    # keep the metadata around, so that helps us.
-    shutil.copyfile(f, dst_path)
-''' % str(CANVASKIT_BUILD_PRODUCTS),
-      args=[out_dir, dst],
+      cmd=['python3', script, out_dir, dst, ','.join(CANVASKIT_BUILD_PRODUCTS)],
       infra_step=True)

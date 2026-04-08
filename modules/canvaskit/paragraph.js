@@ -56,7 +56,7 @@
 
     // Registers the font (provided as an arrayBuffer) with the alias `family`.
     CanvasKit.TypefaceFontProvider.prototype.registerFont = function(font, family) {
-      var typeface = CanvasKit.Typeface.MakeFreeTypeFaceFromData(font);
+      var typeface = CanvasKit.Typeface.MakeTypefaceFromData(font);
       if (!typeface) {
           Debug('Could not decode font data');
           // We do not need to free the data since the C++ will do that for us
@@ -77,7 +77,7 @@
       if (s['ellipsis']) {
         var str = s['ellipsis'];
         s['_ellipsisPtr'] = cacheOrCopyString(str);
-        s['_ellipsisLen'] = lengthBytesUTF8(str) + 1; // add 1 for the null terminator.
+        s['_ellipsisLen'] = lengthBytesUTF8(str);
       } else {
         s['_ellipsisPtr'] = nullptr;
         s['_ellipsisLen'] = 0;
@@ -232,7 +232,7 @@
       if (textStyle['locale']) {
         var str = textStyle['locale'];
         textStyle['_localePtr'] = cacheOrCopyString(str);
-        textStyle['_localeLen'] = lengthBytesUTF8(str) + 1; // add 1 for the null terminator.
+        textStyle['_localeLen'] = lengthBytesUTF8(str);
       } else {
         textStyle['_localePtr'] = nullptr;
         textStyle['_localeLen'] = 0;

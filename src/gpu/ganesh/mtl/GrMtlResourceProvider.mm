@@ -7,8 +7,8 @@
 
 #include "src/gpu/ganesh/mtl/GrMtlResourceProvider.h"
 
-#include "include/gpu/GrContextOptions.h"
-#include "include/gpu/GrDirectContext.h"
+#include "include/gpu/ganesh/GrContextOptions.h"
+#include "include/gpu/ganesh/GrDirectContext.h"
 #include "src/core/SkTraceEvent.h"
 #include "src/gpu/ganesh/GrDirectContextPriv.h"
 #include "src/gpu/ganesh/GrProgramDesc.h"
@@ -27,7 +27,7 @@ GR_NORETAIN_BEGIN
 
 GrMtlResourceProvider::GrMtlResourceProvider(GrMtlGpu* gpu)
     : fGpu(gpu) {
-    fPipelineStateCache.reset(new PipelineStateCache(gpu));
+    fPipelineStateCache = std::make_unique<PipelineStateCache>(gpu);
 }
 
 GrMtlPipelineState* GrMtlResourceProvider::findOrCreateCompatiblePipelineState(
@@ -249,7 +249,7 @@ GrMtlPipelineState* GrMtlResourceProvider::PipelineStateCache::onRefPipelineStat
            return nullptr;
         }
         fStats.incNumCompilationSuccesses();
-        entry = fMap.insert(desc, std::unique_ptr<Entry>(new Entry(pipelineState)));
+        entry = fMap.insert(desc, std::make_unique<Entry>(pipelineState));
         *stat = Stats::ProgramCacheResult::kMiss;
         return (*entry)->fPipelineState.get();
     }

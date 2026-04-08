@@ -57,6 +57,7 @@
 #include "src/utils/mac/SkCGBase.h"
 #include "src/utils/mac/SkCGGeometry.h"
 #include "src/utils/mac/SkCTFont.h"
+#include "src/utils/mac/SkCTFontCreateExactCopy.h"
 #include "src/utils/mac/SkUniqueCFRef.h"
 
 #include <dlfcn.h>
@@ -65,6 +66,19 @@
 #include <memory>
 
 using namespace skia_private;
+
+// These attributes to set the palette not publically exported as of macOS 14.5.
+// However, they appear to be available and functional back to at least macOS 10.15.7.
+static CFStringRef getCTFontPaletteAttribute() {
+    static CFStringRef* kCTFontPaletteAttributePtr =
+        static_cast<CFStringRef*>(dlsym(RTLD_DEFAULT, "kCTFontPaletteAttribute"));
+    return *kCTFontPaletteAttributePtr;
+}
+static CFStringRef getCTFontPaletteColorsAttribute() {
+    static CFStringRef* kCTFontPaletteColorsAttributePtr =
+        static_cast<CFStringRef*>(dlsym(RTLD_DEFAULT, "kCTFontPaletteColorsAttribute"));
+    return *kCTFontPaletteColorsAttributePtr;
+}
 
 /** Assumes src and dst are not nullptr. */
 void SkStringFromCFString(CFStringRef src, SkString* dst) {
@@ -88,9 +102,11 @@ SkString SkCFTypeIDDescription(CFTypeID id) {
 template<typename CF> CFTypeID SkCFGetTypeID();
 #define SK_GETCFTYPEID(cf) \
 template<> CFTypeID SkCFGetTypeID<cf##Ref>() { return cf##GetTypeID(); }
+SK_GETCFTYPEID(CFArray);
 SK_GETCFTYPEID(CFBoolean);
 SK_GETCFTYPEID(CFDictionary);
 SK_GETCFTYPEID(CFNumber);
+SK_GETCFTYPEID(CGColor);
 
 /* Checked dynamic downcast of CFTypeRef.
  *
@@ -118,7 +134,8 @@ static bool SkCFDynamicCast(CFTypeRef cf, CF* cfAsCF, char const* name) {
         }
         return false;
     }
-    *cfAsCF = static_cast<CF>(cf);
+    // CFTypeRef is `void const *` but CGColorRef is non-const `CGColor *`
+    *cfAsCF = static_cast<CF>(const_cast<void*>(cf));
     return true;
 }
 
@@ -149,72 +166,6 @@ static bool SkCFNumberDynamicCast(CFTypeRef cf, T* number, CFNumberRef* cfNumber
         *cfNumber = cfAsCFNumber;
     }
     return true;
-}
-
-// In macOS 10.12 and later any variation on the CGFont which has default axis value will be
-// dropped when creating the CTFont. Unfortunately, in macOS 10.15 the priority of setting
-// the optical size (and opsz variation) is
-// 1. the value of kCTFontOpticalSizeAttribute in the CTFontDescriptor (undocumented)
-// 2. the opsz axis default value if kCTFontOpticalSizeAttribute is 'none' (undocumented)
-// 3. the opsz variation on the nascent CTFont from the CGFont (was dropped if default)
-// 4. the opsz variation in kCTFontVariationAttribute in CTFontDescriptor (crashes 10.10)
-// 5. the size requested (can fudge in SkTypeface but not SkScalerContext)
-// The first one which is found will be used to set the opsz variation (after clamping).
-static void add_opsz_attr(CFMutableDictionaryRef attr, double opsz) {
-    SkUniqueCFRef<CFNumberRef> opszValueNumber(
-        CFNumberCreate(kCFAllocatorDefault, kCFNumberDoubleType, &opsz));
-    // Avoid using kCTFontOpticalSizeAttribute directly
-    CFStringRef SkCTFontOpticalSizeAttribute = CFSTR("NSCTFontOpticalSizeAttribute");
-    CFDictionarySetValue(attr, SkCTFontOpticalSizeAttribute, opszValueNumber.get());
-}
-
-// This turns off application of the 'trak' table to advances, but also all other tracking.
-static void add_notrak_attr(CFMutableDictionaryRef attr) {
-    int zero = 0;
-    SkUniqueCFRef<CFNumberRef> unscaledTrackingNumber(
-        CFNumberCreate(kCFAllocatorDefault, kCFNumberIntType, &zero));
-    CFStringRef SkCTFontUnscaledTrackingAttribute = CFSTR("NSCTFontUnscaledTrackingAttribute");
-    CFDictionarySetValue(attr, SkCTFontUnscaledTrackingAttribute, unscaledTrackingNumber.get());
-}
-
-SkUniqueCFRef<CTFontRef> SkCTFontCreateExactCopy(CTFontRef baseFont, CGFloat textSize,
-                                                 OpszVariation opszVariation)
-{
-    SkUniqueCFRef<CFMutableDictionaryRef> attr(
-    CFDictionaryCreateMutable(kCFAllocatorDefault, 0,
-                              &kCFTypeDictionaryKeyCallBacks,
-                              &kCFTypeDictionaryValueCallBacks));
-
-    if (opszVariation.isSet) {
-        add_opsz_attr(attr.get(), opszVariation.value);
-    } else {
-        // On (at least) 10.10 though 10.14 the default system font was SFNSText/SFNSDisplay.
-        // The CTFont is backed by both; optical size < 20 means SFNSText else SFNSDisplay.
-        // On at least 10.11 the glyph ids in these fonts became non-interchangable.
-        // To keep glyph ids stable over size changes, preserve the optical size.
-        // In 10.15 this was replaced with use of variable fonts with an opsz axis.
-        // A CTFont backed by multiple fonts picked by opsz where the multiple backing fonts are
-        // variable fonts with opsz axis and non-interchangeable glyph ids would break the
-        // opsz.isSet branch above, but hopefully that never happens.
-        // See https://crbug.com/524646 .
-        CFStringRef SkCTFontOpticalSizeAttribute = CFSTR("NSCTFontOpticalSizeAttribute");
-        SkUniqueCFRef<CFTypeRef> opsz(CTFontCopyAttribute(baseFont, SkCTFontOpticalSizeAttribute));
-        double opsz_val;
-        if (!opsz ||
-            CFGetTypeID(opsz.get()) != CFNumberGetTypeID() ||
-            !CFNumberGetValue(static_cast<CFNumberRef>(opsz.get()),kCFNumberDoubleType,&opsz_val) ||
-            opsz_val <= 0)
-        {
-            opsz_val = CTFontGetSize(baseFont);
-        }
-        add_opsz_attr(attr.get(), opsz_val);
-    }
-    add_notrak_attr(attr.get());
-
-    SkUniqueCFRef<CTFontDescriptorRef> desc(CTFontDescriptorCreateWithAttributes(attr.get()));
-
-    return SkUniqueCFRef<CTFontRef>(
-            CTFontCreateCopyWithAttributes(baseFont, textSize, nullptr, desc.get()));
 }
 
 CTFontRef SkTypeface_GetCTFontRef(const SkTypeface* face) {
@@ -564,7 +515,6 @@ std::unique_ptr<SkAdvancedTypefaceMetrics> SkTypeface_Mac::onGetAdvancedMetrics(
         SkUniqueCFRef<CFStringRef> fontName(CTFontCopyPostScriptName(ctFont.get()));
         if (fontName.get()) {
             SkStringFromCFString(fontName.get(), &info->fPostScriptName);
-            info->fFontName = info->fPostScriptName;
         }
     }
 
@@ -581,17 +531,21 @@ std::unique_ptr<SkAdvancedTypefaceMetrics> SkTypeface_Mac::onGetAdvancedMetrics(
         SkOTUtils::SetAdvancedTypefaceFlags(fsType, info.get());
     }
 
-    // If it's not a truetype font, mark it as 'other'. Assume that TrueType
-    // fonts always have both glyf and loca tables. At the least, this is what
-    // sfntly needs to subset the font. CTFontCopyAttribute() does not always
-    // succeed in determining this directly.
-    if (!this->getTableSize(SkSetFourByteTag('g','l','y','f')) ||
-        !this->getTableSize(SkSetFourByteTag('l','o','c','a')))
-    {
+    // If it's not an OpenType font, mark it as 'other'. Assume that OpenType
+    // fonts always have both glyf and loca tables or a CFF table.
+    // At the least, this is what is needed to subset the font.
+    // CTFontCopyAttribute() does not always succeed in determining this directly.
+    constexpr SkFontTableTag glyf = SkSetFourByteTag('g','l','y','f');
+    constexpr SkFontTableTag loca = SkSetFourByteTag('l','o','c','a');
+    constexpr SkFontTableTag CFF  = SkSetFourByteTag('C','F','F',' ');
+    if (this->getTableSize(glyf) && this->getTableSize(loca)) {
+        info->fType = SkAdvancedTypefaceMetrics::kTrueType_Font;
+    } else if (this->getTableSize(CFF)) {
+        info->fType = SkAdvancedTypefaceMetrics::kCFF_Font;
+    } else {
         return info;
     }
 
-    info->fType = SkAdvancedTypefaceMetrics::kTrueType_Font;
     CTFontSymbolicTraits symbolicTraits = CTFontGetSymbolicTraits(ctFont.get());
     if (symbolicTraits & kCTFontMonoSpaceTrait) {
         info->fStyle |= SkAdvancedTypefaceMetrics::kFixedPitch_Style;
@@ -734,9 +688,8 @@ std::unique_ptr<SkStreamAsset> SkTypeface_Mac::onOpenStream(int* ttcIndex) const
     }
 
     // reserve memory for stream, and zero it (tables must be zero padded)
-    fStream = std::make_unique<SkMemoryStream>(totalSize);
-    char* dataStart = (char*)fStream->getMemoryBase();
-    sk_bzero(dataStart, totalSize);
+    sk_sp<SkData> streamData = SkData::MakeZeroInitialized(totalSize);
+    char* dataStart = (char*)streamData->writable_data();
     char* dataPtr = dataStart;
 
     // compute font header entries
@@ -773,6 +726,7 @@ std::unique_ptr<SkStreamAsset> SkTypeface_Mac::onOpenStream(int* ttcIndex) const
         dataPtr += (tableSize + 3) & ~3;
         ++entry;
     }
+    fStream = std::make_unique<SkMemoryStream>(std::move(streamData));
     });
     return fStream->duplicate();
 }
@@ -791,6 +745,16 @@ bool SkTypeface_Mac::onGlyphMaskNeedsCurrentColor() const {
 
 CFArrayRef SkTypeface_Mac::getVariationAxes() const {
     fInitVariationAxes([this]{
+        // Prefer kCTFontVariationAxesAttribute, faster since it doesn't localize axis names.
+        SkUniqueCFRef<CTFontDescriptorRef> desc(CTFontCopyFontDescriptor(fFontRef.get()));
+        SkUniqueCFRef<CFTypeRef> cf(
+                CTFontDescriptorCopyAttribute(desc.get(), kCTFontVariationAxesAttribute));
+        CFArrayRef array;
+        if (cf && SkCFDynamicCast(cf.get(), &array, "Axes")) {
+            fVariationAxes.reset(array);
+            cf.release();
+            return;
+        }
         fVariationAxes.reset(CTFontCopyVariationAxes(fFontRef.get()));
     });
     return fVariationAxes.get();
@@ -946,6 +910,8 @@ std::unique_ptr<SkScalerContext> SkTypeface_Mac::onCreateScalerContext(
 }
 
 void SkTypeface_Mac::onFilterRec(SkScalerContextRec* rec) const {
+    rec->useStrokeForFakeBold();
+
     if (rec->fFlags & SkScalerContext::kLCD_BGROrder_Flag ||
         rec->fFlags & SkScalerContext::kLCD_Vertical_Flag)
     {
@@ -1079,6 +1045,68 @@ void SkTypeface_Mac::onGetFontDescriptor(SkFontDescriptor* desc,
     desc->setPostscriptName(get_str(CTFontCopyPostScriptName(fFontRef.get()), &tmpStr));
     desc->setStyle(this->fontStyle());
     desc->setFactoryId(FactoryId);
+
+    SkUniqueCFRef<CTFontDescriptorRef> ctDesc(CTFontCopyFontDescriptor(fFontRef.get()));
+    SkUniqueCFRef<CFDictionaryRef> attributes(CTFontDescriptorCopyAttributes(ctDesc.get()));
+
+    int palette;
+    CFNumberRef paletteNumber;
+    CFTypeRef paletteRef = CFDictionaryGetValue(attributes.get(), getCTFontPaletteAttribute());
+    if (!paletteRef) {
+        desc->setPaletteIndex(0);
+    } else if (SkCFNumberDynamicCast(paletteRef, &palette, &paletteNumber, "Palette index")) {
+        desc->setPaletteIndex(palette);
+    }
+
+    CFTypeRef paletteOverrides = CFDictionaryGetValue(attributes.get(),
+                                                      getCTFontPaletteColorsAttribute());
+    if (paletteOverrides) {
+        CFDictionaryRef paletteOverrideDict;
+        if (SkCFDynamicCast(paletteOverrides, &paletteOverrideDict, "Palette")) {
+            CFIndex overrideCount = CFDictionaryGetCount(paletteOverrideDict);
+
+            struct Context {
+                SkFontArguments::Palette::Override* overrides;
+                size_t currentOverride;
+            } context{ desc->setPaletteEntryOverrides(overrideCount), 0 };
+            CFDictionaryApplyFunction(paletteOverrideDict,
+            [](const void* key, const void* value, void* ctx) -> void {
+                uint16_t index;
+                int indexInt;
+                CFNumberRef indexNumber;
+                CFTypeRef indexRef = static_cast<CFTypeRef>(key);
+                if (!SkCFNumberDynamicCast(indexRef, &indexInt, &indexNumber, "Override index")) {
+                    return;
+                }
+                if (!SkTFitsIn<uint16_t>(indexInt)) {
+                    return;
+                }
+                index = SkTo<uint16_t>(indexInt);
+
+                CGColorRef cgColor;
+                CFTypeRef colorRef = static_cast<CFTypeRef>(value);
+                if (!SkCFDynamicCast(colorRef, &cgColor, "Palette color")) {
+                    return;
+                }
+                if (CGColorGetNumberOfComponents(cgColor) != 4) {
+                    return;
+                }
+                const CGFloat* components = CGColorGetComponents(cgColor);
+                SkColor4f color4f = {(float)components[0], (float)components[1],
+                                     (float)components[2], (float)components[3]};
+                SkColor color = color4f.toSkColor();
+
+                Context& context = *static_cast<Context*>(ctx);
+                context.overrides[context.currentOverride] = { index, color};
+                ++context.currentOverride;
+            }, &context);
+            // If there were any early returns, set the rest of the overrides.
+            for (size_t i = context.currentOverride; i < SkToSizeT(overrideCount); ++i) {
+                context.overrides[i] = { 0xFFFF, SK_ColorBLACK };
+            }
+        }
+    }
+
     *isLocalStream = fIsFromStream;
 }
 
@@ -1233,20 +1261,63 @@ static CTFontVariation ctvariation_from_SkFontArguments(CTFontRef ct, CFArrayRef
              opsz };
 }
 
-sk_sp<SkTypeface> SkTypeface_Mac::onMakeClone(const SkFontArguments& args) const {
-    CTFontVariation ctVariation = ctvariation_from_SkFontArguments(fFontRef.get(),
-                                                                   this->getVariationAxes(),
-                                                                   args);
+static CGColorRef CGColorForSkColor(CGColorSpaceRef rgbcs, SkColor color) {
+    SkColor4f color4f = SkColor4f::FromColor(color);
+    CGFloat components[4] = {
+        (CGFloat)color4f.fR,
+        (CGFloat)color4f.fG,
+        (CGFloat)color4f.fB,
+        (CGFloat)color4f.fA,
+    };
+    return CGColorCreate(rgbcs, components);
+}
 
-    SkUniqueCFRef<CTFontRef> ctVariant;
-    if (ctVariation.variation) {
-        SkUniqueCFRef<CFMutableDictionaryRef> attributes(
+static bool apply_palette(CFMutableDictionaryRef attributes,
+                          const SkFontArguments::Palette& palette) {
+    bool changedAttributes = false;
+    if (palette.index != 0 || palette.overrideCount) {
+        SkUniqueCFRef<CFNumberRef> paletteIndex(
+                CFNumberCreate(kCFAllocatorDefault, kCFNumberIntType, &palette.index));
+        CFDictionarySetValue(attributes, getCTFontPaletteAttribute(), paletteIndex.get());
+        changedAttributes = true;
+    }
+
+    if (palette.overrideCount) {
+        SkUniqueCFRef<CFMutableDictionaryRef> overrides(
                 CFDictionaryCreateMutable(kCFAllocatorDefault, 0,
                                           &kCFTypeDictionaryKeyCallBacks,
                                           &kCFTypeDictionaryValueCallBacks));
+        SkUniqueCFRef<CGColorSpaceRef> rgb(CGColorSpaceCreateDeviceRGB());
+        for (auto&& paletteOverride : SkSpan(palette.overrides, palette.overrideCount)) {
+            int paletteOverrideIndex = paletteOverride.index;
+            SkUniqueCFRef<CFNumberRef> index(
+                CFNumberCreate(kCFAllocatorDefault, kCFNumberSInt16Type, &paletteOverrideIndex));
+            SkUniqueCFRef<CGColorRef> color(CGColorForSkColor(rgb.get(), paletteOverride.color));
+            CFDictionarySetValue(overrides.get(), index.get(), color.get());
+        }
+        if (CFDictionaryGetCount(overrides.get())) {
+            CFDictionarySetValue(attributes, getCTFontPaletteColorsAttribute(), overrides.get());
+            changedAttributes = true;
+        }
+    }
 
-        CTFontRef ctFont = fFontRef.get();
-        SkUniqueCFRef<CTFontRef> wrongOpszFont;
+    return changedAttributes;
+}
+
+sk_sp<SkTypeface> SkTypeface_Mac::onMakeClone(const SkFontArguments& args) const {
+    SkUniqueCFRef<CFMutableDictionaryRef> attributes(
+            CFDictionaryCreateMutable(kCFAllocatorDefault, 0,
+                                      &kCFTypeDictionaryKeyCallBacks,
+                                      &kCFTypeDictionaryValueCallBacks));
+
+    bool changedAttributes = apply_palette(attributes.get(), args.getPalette());
+
+    CTFontVariation ctVariation = ctvariation_from_SkFontArguments(fFontRef.get(),
+                                                                   this->getVariationAxes(),
+                                                                   args);
+    CTFontRef ctFont = fFontRef.get();
+    SkUniqueCFRef<CTFontRef> wrongOpszFont;
+    if (ctVariation.variation) {
         if (ctVariation.wrongOpszVariation) {
             // On macOS 11 cloning a system font with an opsz axis and not changing the
             // value of the opsz axis (either by setting it to the same value or not
@@ -1261,16 +1332,20 @@ sk_sp<SkTypeface> SkTypeface_Mac::onMakeClone(const SkFontArguments& args) const
             CFDictionarySetValue(attributes.get(),
                                  kCTFontVariationAttribute, ctVariation.wrongOpszVariation.get());
             SkUniqueCFRef<CTFontDescriptorRef> varDesc(
-                CTFontDescriptorCreateWithAttributes(attributes.get()));
+                    CTFontDescriptorCreateWithAttributes(attributes.get()));
             wrongOpszFont.reset(CTFontCreateCopyWithAttributes(ctFont, 0, nullptr, varDesc.get()));
             ctFont = wrongOpszFont.get();
         }
-
         CFDictionarySetValue(attributes.get(),
                              kCTFontVariationAttribute, ctVariation.variation.get());
-        SkUniqueCFRef<CTFontDescriptorRef> varDesc(
-                CTFontDescriptorCreateWithAttributes(attributes.get()));
-        ctVariant.reset(CTFontCreateCopyWithAttributes(ctFont, 0, nullptr, varDesc.get()));
+        changedAttributes = true;
+    }
+
+    SkUniqueCFRef<CTFontRef> ctVariant;
+    if (changedAttributes) {
+        SkUniqueCFRef<CTFontDescriptorRef> desc(
+                    CTFontDescriptorCreateWithAttributes(attributes.get()));
+        ctVariant.reset(CTFontCreateCopyWithAttributes(ctFont, 0, nullptr, desc.get()));
     } else {
         ctVariant.reset((CTFontRef)CFRetain(fFontRef.get()));
     }
@@ -1350,27 +1425,31 @@ sk_sp<SkTypeface> SkTypeface_Mac::MakeFromStream(std::unique_ptr<SkStreamAsset> 
         return nullptr;
     }
 
+    SkUniqueCFRef<CFMutableDictionaryRef> attributes(
+            CFDictionaryCreateMutable(kCFAllocatorDefault, 0,
+                                      &kCFTypeDictionaryKeyCallBacks,
+                                      &kCFTypeDictionaryValueCallBacks));
+
+    bool changedAttributes = apply_palette(attributes.get(), args.getPalette());
+
     SkUniqueCFRef<CTFontRef> ctVariant;
     CTFontVariation ctVariation;
-    if (args.getVariationDesignPosition().coordinateCount == 0) {
-        ctVariant.reset(ct.release());
-    } else {
+    if (args.getVariationDesignPosition().coordinateCount != 0) {
         SkUniqueCFRef<CFArrayRef> axes(CTFontCopyVariationAxes(ct.get()));
         ctVariation = ctvariation_from_SkFontArguments(ct.get(), axes.get(), args);
 
         if (ctVariation.variation) {
-            SkUniqueCFRef<CFMutableDictionaryRef> attributes(
-                     CFDictionaryCreateMutable(kCFAllocatorDefault, 0,
-                                               &kCFTypeDictionaryKeyCallBacks,
-                                               &kCFTypeDictionaryValueCallBacks));
             CFDictionaryAddValue(attributes.get(),
                                  kCTFontVariationAttribute, ctVariation.variation.get());
-            SkUniqueCFRef<CTFontDescriptorRef> varDesc(
-                    CTFontDescriptorCreateWithAttributes(attributes.get()));
-            ctVariant.reset(CTFontCreateCopyWithAttributes(ct.get(), 0, nullptr, varDesc.get()));
-        } else {
-            ctVariant.reset(ct.release());
+            changedAttributes = true;
         }
+    }
+    if (changedAttributes) {
+        SkUniqueCFRef<CTFontDescriptorRef> desc(
+                CTFontDescriptorCreateWithAttributes(attributes.get()));
+        ctVariant.reset(CTFontCreateCopyWithAttributes(ct.get(), 0, nullptr, desc.get()));
+    } else {
+        ctVariant = std::move(ct);
     }
     if (!ctVariant) {
         return nullptr;

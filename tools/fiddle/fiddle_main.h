@@ -13,9 +13,9 @@
     #include "include/core/SkPictureRecorder.h"
     #include "include/core/SkStream.h"
     #include "include/core/SkSurface.h"
-    #include "include/gpu/GrDirectContext.h"
-    #include "include/gpu/gl/GrGLAssembleInterface.h"
-    #include "include/gpu/gl/GrGLInterface.h"
+    #include "include/gpu/ganesh/GrDirectContext.h"
+    #include "include/gpu/ganesh/gl/GrGLAssembleInterface.h"
+    #include "include/gpu/ganesh/gl/GrGLInterface.h"
 #else
     #include "skia.h"
 #endif
@@ -35,6 +35,7 @@ extern SkBitmap source;
 extern sk_sp<SkImage> image;
 extern double duration; // The total duration of the animation in seconds.
 extern double frame;    // A value in [0, 1] of where we are in the animation.
+extern sk_sp<SkFontMgr> fontMgr;  // Can load some system fonts
 
 struct DrawOptions {
     DrawOptions(int w,

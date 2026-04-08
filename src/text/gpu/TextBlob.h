@@ -115,11 +115,10 @@ public:
     void draw(SkCanvas*,
               SkPoint drawOrigin,
               const SkPaint& paint,
-              AtlasDrawDelegate);
-
-    const AtlasSubRun* testingOnlyFirstSubRun() const;
+              const AtlasDrawDelegate&);
 
 private:
+    friend class TextBlobTools;
     // The allocator must come first because it needs to be destroyed last. Other fields of this
     // structure may have pointers into it.
     SubRunAllocator fAlloc;
@@ -136,8 +135,7 @@ private:
 
 sk_sp<sktext::gpu::Slug> MakeSlug(const SkMatrix& drawMatrix,
                                   const sktext::GlyphRunList& glyphRunList,
-                                  const SkPaint& initialPaint,
-                                  const SkPaint& drawingPaint,
+                                  const SkPaint& paint,
                                   SkStrikeDeviceInfo strikeDeviceInfo,
                                   sktext::StrikeForGPUCacheInterface* strikeCache);
 }  // namespace sktext::gpu

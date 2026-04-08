@@ -22,6 +22,7 @@
 #include "include/core/SkTypeface.h"
 #include "include/utils/SkTextUtils.h"
 #include "tools/Resources.h"
+#include "tools/fonts/FontToolUtils.h"
 
 #include <stdint.h>
 
@@ -68,7 +69,10 @@ protected:
     }
 
     void onOnceBeforeDraw() override {
-        fEmFace = MakeResourceAsTypeface("fonts/Em.ttf");
+        fEmFace = ToolUtils::CreateTypefaceFromResource("fonts/Em.ttf");
+        if (!fEmFace) {
+            fEmFace = ToolUtils::DefaultPortableTypeface();
+        }
     }
 
     void onDraw(SkCanvas* canvas) override {

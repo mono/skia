@@ -31,7 +31,6 @@
 #include "include/private/base/SkTo.h"
 #include "src/base/SkTLazy.h"
 #include "src/core/SkDraw.h"
-#include "src/core/SkImageFilterCache.h"
 #include "src/core/SkImagePriv.h"
 #include "src/core/SkMatrixPriv.h"
 #include "src/core/SkRasterClip.h"
@@ -291,7 +290,8 @@ void SkBitmapDevice::replaceBitmapBackendForRasterSurface(const SkBitmap& bm) {
 }
 
 sk_sp<SkDevice> SkBitmapDevice::createDevice(const CreateInfo& cinfo, const SkPaint* layerPaint) {
-    const SkSurfaceProps surfaceProps(this->surfaceProps().flags(), cinfo.fPixelGeometry);
+    const SkSurfaceProps surfaceProps =
+        this->surfaceProps().cloneWithPixelGeometry(cinfo.fPixelGeometry);
 
     // Need to force L32 for now if we have an image filter.
     // If filters ever support other colortypes, e.g. F16, we can modify this check.
@@ -442,6 +442,7 @@ void SkBitmapDevice::drawImageRect(const SkImage* image, const SkRect* src, cons
 
     // clip the tmpSrc to the bounds of the bitmap, and recompute dstRect if
     // needed (if the src was clipped). No check needed if src==null.
+    bool srcIsSubset = false;
     if (src) {
         if (!bitmapBounds.contains(*src)) {
             if (!tmpSrc.intersect(bitmapBounds)) {
@@ -454,9 +455,10 @@ void SkBitmapDevice::drawImageRect(const SkImage* image, const SkRect* src, cons
             }
             dstPtr = &tmpDst;
         }
+        srcIsSubset = !tmpSrc.contains(bitmapBounds);
     }
 
-    if (src && !src->contains(bitmapBounds) &&
+    if (srcIsSubset &&
         SkCanvas::kFast_SrcRectConstraint == constraint &&
         sampling != SkSamplingOptions()) {
         // src is smaller than the bounds of the bitmap, and we are filtering, so we don't know
@@ -465,7 +467,7 @@ void SkBitmapDevice::drawImageRect(const SkImage* image, const SkRect* src, cons
         goto USE_SHADER;
     }
 
-    if (src) {
+    if (srcIsSubset) {
         // since we may need to clamp to the borders of the src rect within
         // the bitmap, we extract a subset.
         const SkIRect srcIR = tmpSrc.roundOut();
@@ -529,10 +531,9 @@ void SkBitmapDevice::drawImageRect(const SkImage* image, const SkRect* src, cons
 
 void SkBitmapDevice::onDrawGlyphRunList(SkCanvas* canvas,
                                         const sktext::GlyphRunList& glyphRunList,
-                                        const SkPaint& initialPaint,
-                                        const SkPaint& drawingPaint) {
+                                        const SkPaint& paint) {
     SkASSERT(!glyphRunList.hasRSXForm());
-    LOOP_TILER( drawGlyphRunList(canvas, &fGlyphPainter, glyphRunList, drawingPaint), nullptr )
+    LOOP_TILER( drawGlyphRunList(canvas, &fGlyphPainter, glyphRunList, paint), nullptr )
 }
 
 void SkBitmapDevice::drawVertices(const SkVertices* vertices,
@@ -548,7 +549,7 @@ void SkBitmapDevice::drawVertices(const SkVertices* vertices,
 }
 
 void SkBitmapDevice::drawMesh(const SkMesh&, sk_sp<SkBlender>, const SkPaint&) {
-    // TODO(brianosman): Implement, maybe with a subclass of BitmapDevice that has SkSL support.
+    // TODO: Implement, maybe with a subclass of BitmapDevice that has SkSL support.
 }
 
 void SkBitmapDevice::drawAtlas(const SkRSXform xform[],
@@ -570,14 +571,15 @@ void SkBitmapDevice::drawAtlas(const SkRSXform xform[],
 void SkBitmapDevice::drawSpecial(SkSpecialImage* src,
                                  const SkMatrix& localToDevice,
                                  const SkSamplingOptions& sampling,
-                                 const SkPaint& paint) {
+                                 const SkPaint& paint,
+                                 SkCanvas::SrcRectConstraint) {
     SkASSERT(!paint.getImageFilter());
     SkASSERT(!paint.getMaskFilter());
     SkASSERT(!src->isGaneshBacked());
     SkASSERT(!src->isGraphiteBacked());
 
     SkBitmap resultBM;
-    if (src->getROPixels(&resultBM)) {
+    if (SkSpecialImages::AsBitmap(src, &resultBM)) {
         SkDraw draw;
         if (!this->accessPixels(&draw.fDst)) {
           return; // no pixels to draw to so skip it
@@ -609,12 +611,6 @@ sk_sp<SkSpecialImage> SkBitmapDevice::snapSpecial(const SkIRect& bounds, bool fo
 
 sk_sp<SkSurface> SkBitmapDevice::makeSurface(const SkImageInfo& info, const SkSurfaceProps& props) {
     return SkSurfaces::Raster(info, &props);
-}
-
-SkImageFilterCache* SkBitmapDevice::getImageFilterCache() {
-    SkImageFilterCache* cache = SkImageFilterCache::Get();
-    cache->ref();
-    return cache;
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////

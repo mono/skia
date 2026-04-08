@@ -10,15 +10,22 @@
 #include "include/core/SkColor.h"
 #include "include/core/SkFont.h"
 #include "include/core/SkFontMetrics.h"
+#include "include/core/SkFontMgr.h"
 #include "include/core/SkGraphics.h"
 #include "include/core/SkPaint.h"
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkScalar.h"
 #include "include/core/SkSize.h"
+#include "include/core/SkStream.h"
 #include "include/core/SkString.h"
 #include "include/core/SkTypeface.h"
 #include "tools/Resources.h"
 #include "tools/ToolUtils.h"
+#include "tools/fonts/FontToolUtils.h"
+
+#if defined(SK_TYPEFACE_FACTORY_FONTATIONS)
+#include "include/ports/SkTypeface_fontations.h"
+#endif
 
 #include <string.h>
 #include <initializer_list>
@@ -31,7 +38,7 @@ const char kTestFontName[] = "fonts/test_glyphs-glyf_colr_1.ttf";
 const char kTestFontNameVariable[] = "fonts/test_glyphs-glyf_colr_1_variable.ttf";
 const SkScalar xWidth = 1200;
 const SkScalar xTranslate = 200;
-}
+}  // namespace
 
 class ColrV1GM : public GM {
 public:
@@ -41,10 +48,7 @@ public:
              SkScalar rotateDeg,
              std::initializer_list<SkFontArguments::VariationPosition::Coordinate>
                      specifiedVariations)
-            : fTestName(testName)
-            , fCodepoints(codepoints)
-            , fSkewX(skewX)
-            , fRotateDeg(rotateDeg) {
+            : fTestName(testName), fCodepoints(codepoints), fSkewX(skewX), fRotateDeg(rotateDeg) {
         fVariationPosition.coordinateCount = specifiedVariations.size();
         fCoordinates = std::make_unique<SkFontArguments::VariationPosition::Coordinate[]>(
                 specifiedVariations.size());
@@ -58,9 +62,9 @@ public:
 protected:
     void onOnceBeforeDraw() override {
         if (fVariationPosition.coordinateCount) {
-            fTypeface = MakeResourceAsTypeface(kTestFontNameVariable);
+            fTypeface = ToolUtils::CreateTypefaceFromResource(kTestFontNameVariable, 0);
         } else {
-            fTypeface = MakeResourceAsTypeface(kTestFontName);
+            fTypeface = ToolUtils::CreateTypefaceFromResource(kTestFontName, 0);
         }
         fVariationSliders = ToolUtils::VariationSliders(fTypeface.get(), fVariationPosition);
     }
@@ -123,8 +127,8 @@ protected:
         canvas->translate(xTranslate, 20);
 
         if (!fTypeface) {
-          *errorMsg = "Did not recognize COLR v1 font format.";
-          return DrawResult::kSkip;
+            *errorMsg = "Did not recognize COLR v1 font format.";
+            return DrawResult::kSkip;
         }
 
         canvas->rotate(fRotateDeg);
@@ -140,12 +144,19 @@ protected:
         for (SkScalar textSize : kTextSizes) {
             font.setSize(textSize);
             font.getMetrics(&metrics);
+            font.setHinting(SkFontHinting::kNone);
             SkScalar y_shift = -(metrics.fAscent + metrics.fDescent + metrics.fLeading) * 1.2;
             y += y_shift;
             paint.setColor(*paint_color_iterator);
             int x = 0;
             // Perform simple line breaking to fit more glyphs into the GM canvas.
             for (size_t i = 0; i < fCodepoints.size(); ++i) {
+                SkScalar glyphAdvance = font.measureText(
+                        &fCodepoints[i], sizeof(uint32_t), SkTextEncoding::kUTF32, nullptr);
+                if (0 < x && getISize().width() - xTranslate < x + glyphAdvance) {
+                    y += y_shift;
+                    x = 0;
+                }
                 canvas->drawSimpleText(&fCodepoints[i],
                                        sizeof(uint32_t),
                                        SkTextEncoding::kUTF32,
@@ -153,14 +164,7 @@ protected:
                                        y,
                                        font,
                                        paint);
-                SkScalar glyphAdvance = font.measureText(
-                        &fCodepoints[i], sizeof(uint32_t), SkTextEncoding::kUTF32, nullptr);
-                if (x + glyphAdvance < getISize().width() - xTranslate) {
-                    x += glyphAdvance + glyphAdvance * 0.05f;
-                } else {
-                    y += y_shift;
-                    x = 0;
-                }
+                x += glyphAdvance + glyphAdvance * 0.05f;
             }
             paint_color_iterator++;
         }
@@ -180,6 +184,7 @@ private:
     ToolUtils::VariationSliders fVariationSliders;
 };
 
+// clang-format off
 // Generated using test glyphs generator script from https://github.com/googlefonts/color-fonts:
 // $ python3 config/test_glyphs-glyf_colr_1.py -vvv  --generate-descriptions fonts/
 // Regenerate descriptions and paste the generated arrays here when updating the test font.
@@ -210,24 +215,36 @@ const uint32_t foreground_color[] = {
 const uint32_t clipbox[] = {0xf0c00, 0xf0c01, 0xf0c02, 0xf0c03, 0xf0c04};
 const uint32_t gradient_p2_skewed[] = {0xf0d00};
 const uint32_t variable_alpha[] = {0xf1000};
+const uint32_t paintcolrglyph_cycle[] = { 0xf1100, 0xf1101, 0xf1200 };
+const uint32_t sweep_coincident[] = { 0xf1300, 0xf1301, 0xf1302, 0xf1303, 0xf1304, 0xf1305,
+                                      0xf1306, 0xf1307, 0xf1308, 0xf1309, 0xf130a, 0xf130b,
+                                      0xf130c, 0xf130d, 0xf130e, 0xf130f, 0xf1310, 0xf1311,
+                                      0xf1312, 0xf1313, 0xf1314, 0xf1315, 0xf1316, 0xf1317};
+const uint32_t paint_glyph_nested[] = { 0xf1400, 0xf1401, 0xf1402, 0xf1403,
+                                        0xf1404, 0xf1405, 0xf1406, 0xf1407,
+                                        0xf1408, 0xf1409, 0xf140a, 0xf140b,
+                                        0xf140c, 0xf140d, 0xf140e, 0xf140f };
+// clang-format on
+
 };  // namespace ColrV1TestDefinitions
 
 namespace {
 std::unique_ptr<ColrV1GM> F(
-    const char* name,
-    SkSpan<const uint32_t> codepoints,
-    SkScalar skewX,
-    SkScalar rotateDeg,
-    std::initializer_list<SkFontArguments::VariationPosition::Coordinate> variations)
-{
+        const char* name,
+        SkSpan<const uint32_t> codepoints,
+        SkScalar skewX,
+        SkScalar rotateDeg,
+        std::initializer_list<SkFontArguments::VariationPosition::Coordinate> variations) {
     return std::make_unique<ColrV1GM>(name, codepoints, skewX, rotateDeg, variations);
 }
 
-SkFourByteTag constexpr operator "" _t(const char* tagName, size_t size) {
+SkFourByteTag constexpr operator"" _t(const char* tagName, size_t size) {
     SkASSERT(size == 4);
     return SkSetFourByteTag(tagName[0], tagName[1], tagName[2], tagName[3]);
 }
-}
+}  // namespace
+
+// clang-format off
 #define C(TEST_CATEGORY) #TEST_CATEGORY, ColrV1TestDefinitions::TEST_CATEGORY
 DEF_GM(return F(C(clipbox),                0.0f,  0.0f, {}))
 DEF_GM(return F(C(clipbox),                0.0f,  0.0f, {{"CLIO"_t, 200.f}}))
@@ -296,17 +313,12 @@ DEF_GM(return F(C(sweep_varsweep),
                  {"SWC2"_t, 0.083333333f},
                  {"SWC3"_t, 0.083333333f},
                  {"SWC4"_t, +0.25f}}))
-DEF_GM(return F(C(sweep_varsweep),
-                0.0f,
-                0.0f,
-                {{"SWPS"_t, 45.f},
-                 {"SWPE"_t, -45.f},
-                 {"SWC1"_t, -0.25f},
-                 {"SWC2"_t, -0.416687f},
-                 {"SWC3"_t, -0.583313f},
-                 {"SWC4"_t, -0.75f}}))
 DEF_GM(return F(C(variable_alpha),         0.0f,  0.0f, {}))
 DEF_GM(return F(C(variable_alpha),         0.0f,  0.0f, {{"APH1"_t, -0.7f}}))
 DEF_GM(return F(C(variable_alpha),         0.0f,  0.0f, {{"APH2"_t, -0.7f}, {"APH3"_t, -0.2f}}))
+DEF_GM(return F(C(paintcolrglyph_cycle),   0.0f,  0.0f, {}))
+DEF_GM(return F(C(sweep_coincident),       0.0f,  0.0f, {}))
+DEF_GM(return F(C(paint_glyph_nested),     0.0f,  0.0f, {}))
+// clang-format on
 
 }  // namespace skiagm

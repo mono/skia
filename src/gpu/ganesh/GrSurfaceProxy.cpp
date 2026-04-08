@@ -11,7 +11,7 @@
 #include "include/core/SkColorSpace.h"
 #include "include/core/SkPoint.h"
 #include "include/gpu/GpuTypes.h"
-#include "include/gpu/GrRecordingContext.h"
+#include "include/gpu/ganesh/GrRecordingContext.h"
 #include "src/gpu/SkBackingFit.h"
 #include "src/gpu/Swizzle.h"
 #include "src/gpu/ganesh/GrCaps.h"
@@ -32,7 +32,7 @@
 #include <memory>
 
 #ifdef SK_DEBUG
-#include "include/gpu/GrDirectContext.h"
+#include "include/gpu/ganesh/GrDirectContext.h"
 #include "src/gpu/ganesh/GrDirectContextPriv.h"
 
 static bool is_valid_lazy(const SkISize& dimensions, SkBackingFit fit) {
@@ -258,13 +258,13 @@ SkISize GrSurfaceProxy::backingStoreDimensions() const {
     if (SkBackingFit::kExact == fFit) {
         return fDimensions;
     }
-    return GrResourceProvider::MakeApprox(fDimensions);
+    return skgpu::GetApproxSize(fDimensions);
 }
 
 bool GrSurfaceProxy::isFunctionallyExact() const {
     SkASSERT(!this->isFullyLazy());
     return fFit == SkBackingFit::kExact ||
-           fDimensions == GrResourceProvider::MakeApprox(fDimensions);
+           fDimensions == skgpu::GetApproxSize(fDimensions);
 }
 
 bool GrSurfaceProxy::isFormatCompressed(const GrCaps* caps) const {
@@ -378,7 +378,7 @@ sk_sp<GrSurfaceProxy> GrSurfaceProxy::Copy(GrRecordingContext* context,
                 outTask);
 }
 
-#if defined(GR_TEST_UTILS)
+#if defined(GPU_TEST_UTILS)
 int32_t GrSurfaceProxy::testingOnly_getBackingRefCnt() const {
     if (fTarget) {
         return fTarget->testingOnly_getRefCnt();
@@ -394,7 +394,7 @@ GrInternalSurfaceFlags GrSurfaceProxy::testingOnly_getFlags() const {
 SkString GrSurfaceProxy::dump() const {
     SkString tmp;
 
-    tmp.appendf("proxyID: %d - surfaceID: %d",
+    tmp.appendf("proxyID: %u - surfaceID: %u",
                 this->uniqueID().asUInt(),
                 this->peekSurface() ? this->peekSurface()->uniqueID().asUInt()
                                     : -1);
@@ -403,42 +403,22 @@ SkString GrSurfaceProxy::dump() const {
 
 #endif
 
-void GrSurfaceProxyPriv::exactify(bool allocatedCaseOnly) {
+void GrSurfaceProxyPriv::exactify() {
     SkASSERT(!fProxy->isFullyLazy());
     if (this->isExact()) {
         return;
     }
 
+    // The kApprox case. Setting the proxy's width & height to the backing-store width & height
+    // could have side-effects going forward, since we're obliterating the area of interest
+    // information. This is only used by SkSpecialImage when it's determined that sampling will
+    // not access beyond the safe known region (the current value of fProxy->fDimensions). If
+    // the proxy is instantiated, update the proxy's dimensions to match. Otherwise update them
+    // to the backing-store dimensions.
     SkASSERT(SkBackingFit::kApprox == fProxy->fFit);
-
-    if (fProxy->fTarget) {
-        // The kApprox but already instantiated case. Setting the proxy's width & height to
-        // the instantiated width & height could have side-effects going forward, since we're
-        // obliterating the area of interest information. This call (exactify) only used
-        // when converting an SkSpecialImage to an SkImage so the proxy shouldn't be
-        // used for additional draws.
-        fProxy->fDimensions = fProxy->fTarget->dimensions();
-        return;
-    }
-
-#ifndef SK_CRIPPLE_TEXTURE_REUSE
-    // In the post-implicit-allocation world we can't convert this proxy to be exact fit
-    // at this point. With explicit allocation switching this to exact will result in a
-    // different allocation at flush time. With implicit allocation, allocation would occur
-    // at draw time (rather than flush time) so this pathway was encountered less often (if
-    // at all).
-    if (allocatedCaseOnly) {
-        return;
-    }
-#endif
-
-    // The kApprox uninstantiated case. Making this proxy be exact should be okay.
-    // It could mess things up if prior decisions were based on the approximate size.
+    fProxy->fDimensions = fProxy->fTarget ? fProxy->fTarget->dimensions()
+                                          : fProxy->backingStoreDimensions();
     fProxy->fFit = SkBackingFit::kExact;
-    // If fGpuMemorySize is used when caching specialImages for the image filter DAG. If it has
-    // already been computed we want to leave it alone so that amount will be removed when
-    // the special image goes away. If it hasn't been computed yet it might as well compute the
-    // exact amount.
 }
 
 bool GrSurfaceProxyPriv::doLazyInstantiation(GrResourceProvider* resourceProvider) {

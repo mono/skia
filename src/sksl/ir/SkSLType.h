@@ -137,8 +137,8 @@ public:
     Type(const Type& other) = delete;
 
     /** Creates an array type. `columns` may be kUnsizedArray. */
-    static std::unique_ptr<Type> MakeArrayType(std::string_view name, const Type& componentType,
-                                               int columns);
+    static std::unique_ptr<Type> MakeArrayType(const Context& context, std::string_view name,
+                                               const Type& componentType, int columns);
 
     /** Converts a component type and a size (float, 10) into an array name ("float[10]"). */
     std::string getArrayName(int arraySize) const;
@@ -219,16 +219,16 @@ public:
     }
 
     /** Creates a clone of this Type, if needed, and inserts it into a different symbol table. */
-    const Type* clone(SymbolTable* symbolTable) const;
+    const Type* clone(const Context& context, SymbolTable* symbolTable) const;
 
     /**
-     * Returns true if this type is known to come from BuiltinTypes. If this returns true, the Type
-     * will always be available in the root SymbolTable and never needs to be copied to migrate an
-     * Expression from one location to another. If it returns false, the Type might not exist in a
-     * separate SymbolTable and you'll need to consider copying it.
+     * Returns true if this type is known to come from BuiltinTypes, or is declared in a module. If
+     * this returns true, the Type will always be available in the root SymbolTable and never needs
+     * to be copied to migrate an Expression from one location to another. If it returns false, the
+     * Type might not exist in a separate SymbolTable and you'll need to consider cloning it.
      */
-    bool isInBuiltinTypes() const {
-        return !(this->isArray() || this->isStruct());
+    virtual bool isBuiltin() const {
+        return true;
     }
 
     std::string displayName() const {
@@ -247,14 +247,27 @@ public:
         return true;
     }
 
+    /**
+     * Returns true if this type is legal to use as a uniform. If false is returned, the
+     * `errorPosition` field may be populated; if it is, this position can be used to emit an extra
+     * diagnostic "caused by: <a field>" for nested types.
+     * Note that runtime effects enforce additional, much stricter rules about uniforms; these
+     * limitations are not handled here.
+     */
+    virtual bool isAllowedInUniform(Position* errorPosition = nullptr) const {
+        // We don't allow samplers, textures or atomics to be marked as uniforms.
+        // This rules out all opaque types.
+        return !this->isOpaque();
+    }
+
     /** If this is an alias, returns the underlying type, otherwise returns this. */
     virtual const Type& resolve() const {
         return *this;
     }
 
     /** Returns true if these types are equal after alias resolution. */
-    bool matches(const Type& other) const {
-        return this->resolve().name() == other.resolve().name();
+    virtual bool matches(const Type& that) const {
+        return &this->resolve() == &that.resolve();
     }
 
     /**
@@ -393,6 +406,13 @@ public:
     }
 
     /**
+     * For matrix types, returns the type of a single column (`m[n]`). Asserts for all other types.
+     */
+    const Type& columnType(const Context& context) const {
+        return this->componentType().toCompound(context, this->rows(), /*rows=*/1);
+    }
+
+    /**
      * For texture samplers, returns the type of texture it samples (e.g., sampler2D has
      * a texture type of texture2D).
      */
@@ -485,7 +505,9 @@ public:
         return fTypeKind == TypeKind::kSampler;
     }
 
-    bool isAtomic() const { return this->typeKind() == TypeKind::kAtomic; }
+    bool isAtomic() const {
+        return this->typeKind() == TypeKind::kAtomic;
+    }
 
     virtual bool isScalar() const {
         return false;
@@ -553,9 +575,21 @@ public:
         return 0;
     }
 
-    bool isOrContainsArray() const;
-    bool isOrContainsUnsizedArray() const;
-    bool isOrContainsAtomic() const;
+    virtual bool isOrContainsArray() const {
+        return false;
+    }
+
+    virtual bool isOrContainsUnsizedArray() const {
+        return false;
+    }
+
+    virtual bool isOrContainsAtomic() const {
+        return false;
+    }
+
+    virtual bool isOrContainsBool() const {
+        return false;
+    }
 
     /**
      * Returns the corresponding vector or matrix type with the specified number of columns and
@@ -620,6 +654,16 @@ protected:
     const Type* applyAccessQualifiers(const Context& context,
                                       ModifierFlags* modifierFlags,
                                       Position pos) const;
+
+    /** Only structs and arrays can be created in code; all other types exist in the root. */
+    bool isInRootSymbolTable() const {
+        return !(this->isArray() || this->isStruct());
+    }
+
+    /** If the type is a struct, returns the depth of the struct's most deeply-nested field. */
+    virtual int structNestingDepth() const {
+        return 0;
+    }
 
 private:
     using INHERITED = Symbol;

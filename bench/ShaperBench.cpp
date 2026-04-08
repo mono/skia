@@ -7,6 +7,7 @@
 
 #include "modules/skshaper/include/SkShaper.h"
 #include "tools/Resources.h"
+#include "tools/fonts/FontToolUtils.h"
 
 #include <cfloat>
 
@@ -18,14 +19,14 @@ struct ShaperBench : public Benchmark {
     const char* fResource;
     const char* fName;
     const char* onGetName() override { return fName; }
-    bool isSuitableFor(Backend backend) override { return backend == kNonRendering_Backend; }
+    bool isSuitableFor(Backend backend) override { return backend == Backend::kNonRendering; }
     void onDelayedSetup() override {
         fShaper = SkShaper::Make();
         fData = GetResourceAsData(fResource);
     }
     void onDraw(int loops, SkCanvas*) override {
         if (!fData || !fShaper) { return; }
-        SkFont font;
+        SkFont font = ToolUtils::DefaultFont();
         const char* text = (const char*)fData->data();
         size_t len = fData->size();
         while (loops-- > 0) {

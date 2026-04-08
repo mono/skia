@@ -16,14 +16,15 @@
 #include "include/core/SkSurface.h"
 #include "include/core/SkTypes.h"
 #include "include/gpu/GpuTypes.h"
-#include "include/gpu/GrBackendSurface.h"
-#include "include/gpu/GrDirectContext.h"
-#include "include/gpu/GrTypes.h"
+#include "include/gpu/ganesh/GrBackendSurface.h"
+#include "include/gpu/ganesh/GrDirectContext.h"
+#include "include/gpu/ganesh/GrTypes.h"
 #include "include/gpu/ganesh/SkImageGanesh.h"
 #include "include/gpu/ganesh/SkSurfaceGanesh.h"
 #include "include/private/base/SkTo.h"
 #include "src/core/SkAutoPixmapStorage.h"
 #include "src/core/SkImageInfoPriv.h"
+#include "src/gpu/ganesh/GrDirectContextPriv.h"
 #include "tests/CtsEnforcement.h"
 #include "tests/Test.h"
 #include "tests/TestUtils.h"
@@ -89,6 +90,7 @@ static const TestCase gTests[] = {
     { kGray_8_SkColorType,             kOpaque_SkAlphaType, kGray_SkColorChannelFlag,  true },
     { kRGBA_F16Norm_SkColorType,       kPremul_SkAlphaType, kRGBA_SkColorChannelFlags, true },
     { kRGBA_F16_SkColorType,           kPremul_SkAlphaType, kRGBA_SkColorChannelFlags, true },
+    { kRGB_F16F16F16x_SkColorType,     kOpaque_SkAlphaType, kRGB_SkColorChannelFlags,  true },
     { kRGBA_F32_SkColorType,           kPremul_SkAlphaType, kRGBA_SkColorChannelFlags, true },
     { kR8G8_unorm_SkColorType,         kOpaque_SkAlphaType, kRG_SkColorChannelFlags,   true },
     { kR16G16_unorm_SkColorType,       kOpaque_SkAlphaType, kRG_SkColorChannelFlags,   false},
@@ -197,6 +199,7 @@ static void compare_pixmaps(skiatest::Reporter* reporter,
 static void gpu_tests(GrDirectContext* dContext,
                       skiatest::Reporter* reporter,
                       const TestCase& test) {
+    using namespace skgpu;
 
     const SkImageInfo nativeII = SkImageInfo::Make(kSize, kSize, test.fColorType, test.fAlphaType);
     const SkImageInfo f32Unpremul = SkImageInfo::Make(kSize, kSize, kRGBA_F32_SkColorType,
@@ -204,13 +207,15 @@ static void gpu_tests(GrDirectContext* dContext,
 
     // We had better not be able to render to prohibited colorTypes
     if (!test.fGpuCanMakeSurfaces) {
-        auto s = SkSurfaces::RenderTarget(dContext, skgpu::Budgeted::kNo, nativeII);
+        auto s = SkSurfaces::RenderTarget(dContext, Budgeted::kNo, nativeII);
         REPORTER_ASSERT(reporter, !SkToBool(s));
     }
 
     if (!dContext->colorTypeSupportedAsImage(test.fColorType)) {
         return;
     }
+
+    Protected isProtected = Protected(dContext->priv().caps()->supportsProtectedContent());
 
     SkAutoPixmapStorage nativeExpected;
     nativeExpected.alloc(nativeII);
@@ -225,16 +230,16 @@ static void gpu_tests(GrDirectContext* dContext,
         };
         if (fullInit) {
             backendTex = dContext->createBackendTexture(nativeExpected, kTopLeft_GrSurfaceOrigin,
-                                                        GrRenderable::kNo, GrProtected::kNo,
+                                                        GrRenderable::kNo, isProtected,
                                                         markFinished, &finishedBECreate);
         } else {
             backendTex = dContext->createBackendTexture(kSize,
                                                         kSize,
                                                         test.fColorType,
                                                         SkColors::kWhite,
-                                                        skgpu::Mipmapped::kNo,
+                                                        Mipmapped::kNo,
                                                         GrRenderable::kNo,
-                                                        GrProtected::kNo,
+                                                        isProtected,
                                                         markFinished,
                                                         &finishedBECreate);
         }
@@ -265,7 +270,7 @@ static void gpu_tests(GrDirectContext* dContext,
             // SkSurface::readPixels with the same colorType as the source pixels round trips
             // (when allowed)
             if (dContext->colorTypeSupportedAsSurface(test.fColorType)) {
-                auto s = SkSurfaces::RenderTarget(dContext, skgpu::Budgeted::kNo, nativeII);
+                auto s = SkSurfaces::RenderTarget(dContext, Budgeted::kNo, nativeII);
                 REPORTER_ASSERT(reporter, SkToBool(s));
 
                 {
@@ -304,7 +309,7 @@ static void gpu_tests(GrDirectContext* dContext,
                                                                      kRGBA_8888_SkColorType,
                                                                      kPremul_SkAlphaType);
 
-                auto s = SkSurfaces::RenderTarget(dContext, skgpu::Budgeted::kNo, rgba8888Premul);
+                auto s = SkSurfaces::RenderTarget(dContext, Budgeted::kNo, rgba8888Premul);
                 REPORTER_ASSERT(reporter, SkToBool(s));
 
                 {

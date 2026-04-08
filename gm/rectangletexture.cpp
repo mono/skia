@@ -26,9 +26,9 @@
 #include "include/core/SkTileMode.h"
 #include "include/core/SkTypes.h"
 #include "include/effects/SkGradientShader.h"
-#include "include/gpu/GrBackendSurface.h"
-#include "include/gpu/GrDirectContext.h"
-#include "include/gpu/GrTypes.h"
+#include "include/gpu/ganesh/GrBackendSurface.h"
+#include "include/gpu/ganesh/GrDirectContext.h"
+#include "include/gpu/ganesh/GrTypes.h"
 #include "include/gpu/ganesh/SkImageGanesh.h"
 #include "include/gpu/ganesh/gl/GrGLBackendSurface.h"
 #include "src/core/SkAutoPixmapStorage.h"
@@ -111,7 +111,7 @@ private:
         return SkImages::AdoptTextureFrom(dContext, bet, origin, kRGBA_8888_SkColorType);
     }
 
-    DrawResult onGpuSetup(SkCanvas* canvas, SkString* errorMsg) override {
+    DrawResult onGpuSetup(SkCanvas* canvas, SkString* errorMsg, GraphiteTestContext*) override {
         auto context = GrAsDirectContext(canvas->recordingContext());
         if (!context || context->abandoned()) {
             return DrawResult::kSkip;

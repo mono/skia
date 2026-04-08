@@ -6,6 +6,7 @@
  */
 
 #include "include/core/SkCanvas.h"
+#include "include/core/SkFont.h"
 #include "include/core/SkPaint.h"
 #include "include/core/SkPath.h"
 #include "src/base/SkRandom.h"
@@ -16,6 +17,7 @@
 #include "src/core/SkStrikeSpec.h"
 #include "src/core/SkTaskGroup.h"
 #include "tools/ToolUtils.h"
+#include "tools/fonts/FontToolUtils.h"
 #include "tools/viewer/Slide.h"
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -37,7 +39,7 @@ public:
     void load(SkScalar w, SkScalar h) final {
         fSize = {w, h};
 
-        SkFont defaultFont;
+        SkFont defaultFont = ToolUtils::DefaultFont();
         SkStrikeSpec strikeSpec = SkStrikeSpec::MakeWithNoDevice(defaultFont);
         SkBulkGlyphMetricsAndPaths pathMaker{strikeSpec};
         SkPath glyphPaths[52];

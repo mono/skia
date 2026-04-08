@@ -21,9 +21,9 @@
 #include "include/core/SkSurface.h"
 #include "include/core/SkTypes.h"
 #include "include/gpu/GpuTypes.h"
-#include "include/gpu/GrBackendSurface.h"
-#include "include/gpu/GrDirectContext.h"
-#include "include/gpu/GrTypes.h"
+#include "include/gpu/ganesh/GrBackendSurface.h"
+#include "include/gpu/ganesh/GrDirectContext.h"
+#include "include/gpu/ganesh/GrTypes.h"
 #include "include/gpu/ganesh/SkSurfaceGanesh.h"
 #include "include/private/base/SkTArray.h"
 #include "include/private/chromium/GrDeferredDisplayListRecorder.h"
@@ -149,10 +149,13 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(PromiseImageTest,
                                        reporter,
                                        ctxInfo,
                                        CtsEnforcement::kNever) {
+    using namespace skgpu;
     const int kWidth = 10;
     const int kHeight = 10;
 
     auto ctx = ctxInfo.directContext();
+
+    Protected isProtected = Protected(ctx->priv().caps()->supportsProtectedContent());
 
     GrBackendTexture backendTex = ctx->createBackendTexture(kWidth,
                                                             kHeight,
@@ -160,7 +163,7 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(PromiseImageTest,
                                                             SkColors::kTransparent,
                                                             skgpu::Mipmapped::kNo,
                                                             GrRenderable::kYes,
-                                                            GrProtected::kNo);
+                                                            isProtected);
     REPORTER_ASSERT(reporter, backendTex.isValid());
 
     GrBackendFormat backendFormat = backendTex.getBackendFormat();
@@ -305,10 +308,14 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(PromiseImageTextureFullCache,
                                        reporter,
                                        ctxInfo,
                                        CtsEnforcement::kNever) {
+    using namespace skgpu;
+
     const int kWidth = 10;
     const int kHeight = 10;
 
     auto dContext = ctxInfo.directContext();
+
+    Protected isProtected = Protected(dContext->priv().caps()->supportsProtectedContent());
 
     GrBackendTexture backendTex = dContext->createBackendTexture(kWidth,
                                                                  kHeight,
@@ -316,7 +323,7 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(PromiseImageTextureFullCache,
                                                                  SkColors::kTransparent,
                                                                  skgpu::Mipmapped::kNo,
                                                                  GrRenderable::kNo,
-                                                                 GrProtected::kNo);
+                                                                 isProtected);
     REPORTER_ASSERT(reporter, backendTex.isValid());
 
     SkImageInfo info =
@@ -354,7 +361,7 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(PromiseImageTextureFullCache,
                 1,
                 skgpu::Mipmapped::kNo,
                 skgpu::Budgeted::kYes,
-                GrProtected::kNo,
+                isProtected,
                 /*label=*/"PromiseImageTextureFullCacheTest"));
         REPORTER_ASSERT(reporter, textures[i]);
     }
@@ -406,11 +413,11 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(PromiseImageNullFulfill,
         int fFulfillCount = 0;
         int fReleaseCount = 0;
     } counts;
-    auto fulfill = [](GrDeferredDisplayListRecorder::PromiseImageTextureContext ctx) {
+    auto fulfill = [](SkImages::PromiseImageTextureContext ctx) {
         ++static_cast<Counts*>(ctx)->fFulfillCount;
         return sk_sp<GrPromiseImageTexture>();
     };
-    auto release = [](GrDeferredDisplayListRecorder::PromiseImageTextureContext ctx) {
+    auto release = [](SkImages::PromiseImageTextureContext ctx) {
         ++static_cast<Counts*>(ctx)->fReleaseCount;
     };
     GrSurfaceOrigin texOrigin = kTopLeft_GrSurfaceOrigin;

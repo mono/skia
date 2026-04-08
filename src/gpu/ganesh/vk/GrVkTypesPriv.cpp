@@ -5,17 +5,17 @@
  * found in the LICENSE file.
  */
 
-#include "include/private/gpu/ganesh/GrVkTypesPriv.h"
+#include "src/gpu/ganesh/vk/GrVkTypesPriv.h"
 
-#include "src/gpu/MutableTextureStateRef.h"
-#include "src/gpu/ganesh/vk/GrVkImageLayout.h"
+#include "include/gpu/vk/VulkanMutableTextureState.h"
+#include "include/private/base/SkAssert.h"
 
 GrVkImageInfo GrVkImageInfoWithMutableState(const GrVkImageInfo& info,
-                                            const skgpu::MutableTextureStateRef* mutableState) {
+                                            const skgpu::MutableTextureState* mutableState) {
     SkASSERT(mutableState);
     GrVkImageInfo newInfo = info;
-    newInfo.fImageLayout = mutableState->getImageLayout();
-    newInfo.fCurrentQueueFamily = mutableState->getQueueFamilyIndex();
+    newInfo.fImageLayout = skgpu::MutableTextureStates::GetVkImageLayout(mutableState);
+    newInfo.fCurrentQueueFamily = skgpu::MutableTextureStates::GetVkQueueFamilyIndex(mutableState);
     return newInfo;
 }
 

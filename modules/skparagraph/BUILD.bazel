@@ -1,19 +1,26 @@
-load("//bazel:skia_rules.bzl", "exports_files_legacy", "skia_cc_library")
+load("//bazel:skia_rules.bzl", "skia_cc_library")
+
+package(
+    default_applicable_licenses = ["//:license"],
+)
 
 licenses(["notice"])
 
-exports_files_legacy()
-
 skia_cc_library(
-    name = "skparagraph",
+    name = "skparagraph_harfbuzz_skunicode",
     srcs = ["//modules/skparagraph/src:srcs"],
     hdrs = ["//modules/skparagraph/include:hdrs"],
-    visibility = ["//:__subpackages__"],
+    defines = ["SK_DISABLE_LEGACY_PARAGRAPH_UNICODE"],
+    features = ["layering_check"],
+    visibility = [
+        "//:__subpackages__",
+    ],
     deps = [
-        "//:skia_internal",
-        "//modules/skshaper",
-        "//modules/skunicode",
-        "@harfbuzz",
-        "@icu",
+        "//:core",
+        "//modules/skshaper:skshaper_harfbuzz",
+        "//modules/skshaper:skshaper_unicode",
+        "//modules/skunicode:skunicode_core",
+        "//src/base",
+        "//src/core:core_priv",
     ],
 )

@@ -5,13 +5,25 @@
  * found in the LICENSE file.
  */
 
-#include "modules/skottie/src/effects/Effects.h"
-
+#include "include/core/SkColorFilter.h"
+#include "include/core/SkRefCnt.h"
 #include "include/private/SkColorData.h"
 #include "include/private/base/SkTPin.h"
-#include "modules/skottie/src/SkottieJson.h"
+#include "modules/skottie/src/SkottiePriv.h"
 #include "modules/skottie/src/SkottieValue.h"
+#include "modules/skottie/src/animator/Animator.h"
+#include "modules/skottie/src/effects/Effects.h"
 #include "modules/sksg/include/SkSGColorFilter.h"
+#include "modules/sksg/include/SkSGRenderNode.h"
+
+#include <array>
+#include <cstddef>
+#include <cstdint>
+#include <utility>
+
+namespace skjson {
+class ArrayValue;
+}
 
 namespace skottie {
 namespace internal {
@@ -109,6 +121,12 @@ private:
         };
 
         fColorFilter->setColorFilter(SkColorFilters::Matrix(cm));
+
+        // When applied to the alpha channel, kFullOn expands the effect coverage
+        // to the content bounding box.
+        fColorFilter->setCoverage(fA == static_cast<float>(Source::kFullOn)
+                                    ? sksg::ExternalColorFilter::Coverage::kBoundingBox
+                                    : sksg::ExternalColorFilter::Coverage::kNormal);
     }
 
     const sk_sp<sksg::ExternalColorFilter> fColorFilter;

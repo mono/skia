@@ -14,9 +14,17 @@ dawn_egl_registry_dir = "//third_party/externals/egl-registry"
 dawn_jinja2_dir = "//third_party/externals/jinja2"
 dawn_opengl_registry_dir = "//third_party/externals/opengl-registry"
 dawn_spirv_tools_dir = "//third_party/externals/spirv-tools"
-dawn_spirv_cross_dir = "//third_party/externals/spirv-cross"
 dawn_tint_dir = "//third_party/externals/tint"
 dawn_vulkan_headers_dir = "//third_party/externals/vulkan-headers"
 dawn_vulkan_tools_dir = "//third_party/externals/vulkan-tools"
 dawn_vulkan_utility_libraries_dir =
     "//third_party/externals/vulkan-utility-libraries"
+
+# PartitionAlloc is an optional dependency:
+# - MSVC compiler is not fully supported at the moment.
+# - Mac 11 is currently failing an assertion.
+# TODO(351867706): Enable Mac 11.
+_is_msvc = is_win && !is_clang
+if (!_is_msvc && !is_mac) {
+  dawn_partition_alloc_dir = "//third_party/externals/partition_alloc"
+}

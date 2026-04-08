@@ -9,7 +9,7 @@
 #include "include/core/SkCanvas.h"
 #include "include/core/SkImage.h"
 #include "include/core/SkSurface.h"
-#include "include/gpu/GrDirectContext.h"
+#include "include/gpu/ganesh/GrDirectContext.h"
 #include "src/gpu/ganesh/GrDirectContextPriv.h"
 #include "src/gpu/ganesh/GrResourceCache.h"
 #include "tools/ToolUtils.h"
@@ -82,7 +82,7 @@ public:
                      (shuffle ? "_shuffle" : ""));
     }
 
-    bool isSuitableFor(Backend backend) override { return kGPU_Backend == backend; }
+    bool isSuitableFor(Backend backend) override { return Backend::kGanesh == backend; }
 
 protected:
     const char* onGetName() override {
@@ -191,7 +191,7 @@ public:
 
     ImageCacheBudgetDynamicBench(Mode mode) : fMode(mode) {}
 
-    bool isSuitableFor(Backend backend) override { return kGPU_Backend == backend; }
+    bool isSuitableFor(Backend backend) override { return Backend::kGanesh == backend; }
 
 protected:
     const char* onGetName() override {

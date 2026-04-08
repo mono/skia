@@ -10,8 +10,8 @@
 #include "include/core/SkColorSpace.h"
 #include "include/gpu/graphite/Recorder.h"
 #include "src/base/SkAutoMalloc.h"
-#include "src/codec/SkMasks.h"
 #include "src/core/SkDistanceFieldGen.h"
+#include "src/core/SkMasks.h"
 #include "src/gpu/graphite/AtlasProvider.h"
 #include "src/gpu/graphite/DrawAtlas.h"
 #include "src/gpu/graphite/RecorderPriv.h"
@@ -30,7 +30,7 @@ TextAtlasManager::TextAtlasManager(Recorder* recorder)
         , fSupportBilerpAtlas{recorder->priv().caps()->supportBilerpFromGlyphAtlas()}
         , fAtlasConfig{recorder->priv().caps()->maxTextureSize(),
                        recorder->priv().caps()->glyphCacheTextureMaximumBytes()} {
-    if (!recorder->priv().caps()->allowMultipleGlyphCacheTextures() ||
+    if (!recorder->priv().caps()->allowMultipleAtlasTextures() ||
         // multitexturing supported only if range can represent the index + texcoords fully
         !(recorder->priv().caps()->shaderCaps()->fFloatIs32Bits ||
           recorder->priv().caps()->shaderCaps()->fIntegerSupport)) {
@@ -128,20 +128,30 @@ static void get_packed_glyph_image(
         };
         constexpr int a565Bpp = MaskFormatBytesPerPixel(MaskFormat::kA565);
         constexpr int argbBpp = MaskFormatBytesPerPixel(MaskFormat::kARGB);
+        constexpr bool kBGRAIsNative = kN32_SkColorType == kBGRA_8888_SkColorType;
         char* dstRow = (char*)dst;
         for (int y = 0; y < height; y++) {
             dst = dstRow;
             for (int x = 0; x < width; x++) {
                 uint16_t color565 = 0;
                 memcpy(&color565, src, a565Bpp);
-                // TODO: create Graphite version of GrColorPackRGBA?
-                uint32_t colorRGBA = masks.getRed(color565) |
-                                     (masks.getGreen(color565) << 8) |
-                                     (masks.getBlue(color565) << 16) |
-                                     (0xFF << 24);
-                memcpy(dst, &colorRGBA, argbBpp);
-                src = (char*)src + a565Bpp;
-                dst = (char*)dst + argbBpp;
+                uint32_t color8888;
+                // On Windows (and possibly others), font data is stored as BGR.
+                // So we need to swizzle the data to reflect that.
+                if (kBGRAIsNative) {
+                    color8888 = masks.getBlue(color565) |
+                                (masks.getGreen(color565) << 8) |
+                                (masks.getRed(color565) << 16) |
+                                (0xFF << 24);
+                } else {
+                    color8888 = masks.getRed(color565) |
+                                (masks.getGreen(color565) << 8) |
+                                (masks.getBlue(color565) << 16) |
+                                (0xFF << 24);
+                }
+                memcpy(dst, &color8888, argbBpp);
+                src = (const char*)src + a565Bpp;
+                dst = (      char*)dst + argbBpp;
             }
             dstRow += dstRB;
         }
@@ -240,14 +250,13 @@ DrawAtlas::ErrorCode TextAtlasManager::addGlyphToAtlas(const SkGlyph& skGlyph,
     return errorCode;
 }
 
-bool TextAtlasManager::recordUploads(UploadList* ul, bool useCachedUploads) {
+bool TextAtlasManager::recordUploads(DrawContext* dc) {
     for (int i = 0; i < skgpu::kMaskFormatCount; i++) {
-        if (fAtlases[i] && !fAtlases[i]->recordUploads(ul, fRecorder, useCachedUploads)) {
+        if (fAtlases[i] && !fAtlases[i]->recordUploads(dc, fRecorder)) {
             return false;
         }
     }
 
-    fRecorder->priv().tokenTracker()->issueFlushToken();
     return true;
 }
 
@@ -282,15 +291,25 @@ bool TextAtlasManager::initAtlas(MaskFormat format) {
                                           SkColorTypeBytesPerPixel(colorType),
                                           atlasDimensions.width(), atlasDimensions.height(),
                                           plotDimensions.width(), plotDimensions.height(),
-                                          this,
+                                          /*generationCounter=*/this,
                                           fAllowMultitexturing,
-                                          nullptr,
+                                          DrawAtlas::UseStorageTextures::kNo,
+                                          /*evictor=*/nullptr,
                                           /*label=*/"TextAtlas");
         if (!fAtlases[index]) {
             return false;
         }
     }
     return true;
+}
+
+void TextAtlasManager::compact(bool forceCompact) {
+    auto tokenTracker = fRecorder->priv().tokenTracker();
+    for (int i = 0; i < kMaskFormatCount; ++i) {
+        if (fAtlases[i]) {
+            fAtlases[i]->compact(tokenTracker->nextFlushToken(), forceCompact);
+        }
+    }
 }
 
 }  // namespace skgpu::graphite

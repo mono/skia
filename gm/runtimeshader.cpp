@@ -17,10 +17,11 @@
 #include "include/effects/SkGradientShader.h"
 #include "include/effects/SkImageFilters.h"
 #include "include/effects/SkRuntimeEffect.h"
-#include "include/gpu/GrRecordingContext.h"
+#include "include/gpu/ganesh/GrRecordingContext.h"
 #include "src/base/SkRandom.h"
 #include "src/core/SkColorSpacePriv.h"
 #include "src/core/SkRuntimeEffectPriv.h"
+#include "tools/DecodeUtils.h"
 #include "tools/Resources.h"
 #include "tools/ToolUtils.h"
 
@@ -155,8 +156,8 @@ public:
     void onOnceBeforeDraw() override {
         const SkISize size = {256, 256};
         fThreshold = make_threshold(size);
-        fBefore = make_shader(GetResourceAsImage("images/mandrill_256.png"), size);
-        fAfter = make_shader(GetResourceAsImage("images/dog.jpg"), size);
+        fBefore = make_shader(ToolUtils::GetResourceAsImage("images/mandrill_256.png"), size);
+        fAfter = make_shader(ToolUtils::GetResourceAsImage("images/dog.jpg"), size);
 
         this->RuntimeShaderGM::onOnceBeforeDraw();
     }
@@ -245,7 +246,7 @@ public:
     sk_sp<SkImage> fMandrill;
 
     void onOnceBeforeDraw() override {
-        fMandrill      = GetResourceAsImage("images/mandrill_256.png");
+        fMandrill = ToolUtils::GetResourceAsImage("images/mandrill_256.png");
         this->RuntimeShaderGM::onOnceBeforeDraw();
     }
 
@@ -301,10 +302,10 @@ public:
     sk_sp<SkImage> fMandrill, fMandrillSepia, fIdentityCube, fSepiaCube;
 
     void onOnceBeforeDraw() override {
-        fMandrill      = GetResourceAsImage("images/mandrill_256.png");
-        fMandrillSepia = GetResourceAsImage("images/mandrill_sepia.png");
-        fIdentityCube  = GetResourceAsImage("images/lut_identity.png");
-        fSepiaCube     = GetResourceAsImage("images/lut_sepia.png");
+        fMandrill = ToolUtils::GetResourceAsImage("images/mandrill_256.png");
+        fMandrillSepia = ToolUtils::GetResourceAsImage("images/mandrill_sepia.png");
+        fIdentityCube = ToolUtils::GetResourceAsImage("images/lut_identity.png");
+        fSepiaCube = ToolUtils::GetResourceAsImage("images/lut_sepia.png");
 
         this->RuntimeShaderGM::onOnceBeforeDraw();
     }
@@ -384,10 +385,10 @@ public:
     sk_sp<SkImage> fMandrill, fMandrillSepia, fIdentityCube, fSepiaCube;
 
     void onOnceBeforeDraw() override {
-        fMandrill      = GetResourceAsImage("images/mandrill_256.png");
-        fMandrillSepia = GetResourceAsImage("images/mandrill_sepia.png");
-        fIdentityCube  = GetResourceAsImage("images/lut_identity.png");
-        fSepiaCube     = GetResourceAsImage("images/lut_sepia.png");
+        fMandrill = ToolUtils::GetResourceAsImage("images/mandrill_256.png");
+        fMandrillSepia = ToolUtils::GetResourceAsImage("images/mandrill_sepia.png");
+        fIdentityCube = ToolUtils::GetResourceAsImage("images/lut_identity.png");
+        fSepiaCube = ToolUtils::GetResourceAsImage("images/lut_sepia.png");
 
         this->RuntimeShaderGM::onOnceBeforeDraw();
     }
@@ -733,7 +734,7 @@ static sk_sp<SkShader> lit_shader(sk_sp<SkShader> normals) {
         }
     )";
     auto effect = SkRuntimeEffect::MakeForShader(SkString(kSrc)).effect;
-    return effect->makeShader(nullptr, &normals, 1);
+    return effect->makeShader(/* uniforms= */ nullptr, &normals, /* childCount= */ 1);
 }
 
 static sk_sp<SkShader> lit_shader_linear(sk_sp<SkShader> normals) {
@@ -747,7 +748,7 @@ static sk_sp<SkShader> lit_shader_linear(sk_sp<SkShader> normals) {
         }
     )";
     auto effect = SkRuntimeEffect::MakeForShader(SkString(kSrc)).effect;
-    return effect->makeShader(nullptr, &normals, 1);
+    return effect->makeShader(/* uniforms= */ nullptr, &normals, /* childCount= */ 1);
 }
 
 DEF_SIMPLE_GM(paint_alpha_normals_rt, canvas, 512,512) {
@@ -870,7 +871,7 @@ DEF_SIMPLE_GM(local_matrix_shader_rt, canvas, 256, 256) {
         return;
     }
 
-    auto image     = GetResourceAsImage("images/mandrill_128.png");
+    auto image = ToolUtils::GetResourceAsImage("images/mandrill_128.png");
     auto imgShader = image->makeShader(SkFilterMode::kNearest);
 
     auto r = SkRect::MakeWH(image->width(), image->height());
@@ -886,7 +887,7 @@ DEF_SIMPLE_GM(local_matrix_shader_rt, canvas, 256, 256) {
     // passthrough(image)
     canvas->save();
     canvas->translate(image->width(), 0);
-    paint.setShader(rte->makeShader(nullptr, &imgShader, 1));
+    paint.setShader(rte->makeShader(/* uniforms= */ nullptr, &imgShader, /* childCount= */ 1));
     canvas->drawRect(r, paint);
     canvas->restore();
 
@@ -900,7 +901,8 @@ DEF_SIMPLE_GM(local_matrix_shader_rt, canvas, 256, 256) {
     // localmatrix(passthrough(image)) This was the bug.
     canvas->save();
     canvas->translate(image->width(), image->height());
-    paint.setShader(rte->makeShader(nullptr, &imgShader, 1)->makeWithLocalMatrix(lm));
+    paint.setShader(rte->makeShader(/* uniforms= */ nullptr, &imgShader, /* childCount= */ 1)
+                            ->makeWithLocalMatrix(lm));
     canvas->drawRect(r, paint);
     canvas->restore();
 }
@@ -1101,7 +1103,7 @@ DEF_SIMPLE_GM_CAN_FAIL(alpha_image_shader_rt, canvas, errorMsg, 350, 50) {
     paint.setShader(
             SkRuntimeEffect::MakeForShader(SkString("uniform shader s;"
                                                     "half4 main(float2 p) { return s.eval(p); }"))
-                    .effect->makeShader(nullptr, children));
+                    .effect->makeShader(/* uniforms= */ nullptr, children));
     rect();
 
     // Color-filter that evaluates the "paint color" shader, with and without a shader on the paint

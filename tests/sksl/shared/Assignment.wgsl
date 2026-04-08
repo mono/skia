@@ -1,4 +1,5 @@
 diagnostic(off, derivative_uniformity);
+diagnostic(off, chromium.unreachable_code);
 struct FSOut {
   @location(0) sk_FragColor: vec4<f32>,
 };
@@ -54,7 +55,7 @@ fn _skslMain(coords: vec2<f32>) -> vec4<f32> {
     s.f = 0.0;
     s.af[1] = 0.0;
     s.h4 = vec4<f32>((vec3<f32>(9.0)), s.h4.w).yzxw;
-    s.ah4[2] = vec4<f32>((vec2<f32>(5.0)), s.ah4[2].xz).zxwy;
+    s.ah4[2] = vec4<f32>(s.ah4[2].xz, (vec2<f32>(5.0))).xzyw;
     globalVar = vec4<f32>(0.0);
     globalStruct.f = 0.0;
     var _skTemp0: f32 = f3x3[0].x;

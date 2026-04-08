@@ -24,12 +24,18 @@ public:
     static sk_sp<MtlRenderCommandEncoder> Make(const SharedContext* sharedContext,
                                                id<MTLCommandBuffer> commandBuffer,
                                                MTLRenderPassDescriptor* descriptor) {
-        // Adding a retain here to keep our own ref separate from the autorelease pool
-        sk_cfp<id<MTLRenderCommandEncoder>> encoder =
-                 sk_ret_cfp([commandBuffer renderCommandEncoderWithDescriptor:descriptor]);
-        return sk_sp<MtlRenderCommandEncoder>(new MtlRenderCommandEncoder(sharedContext,
-                                                                          std::move(encoder)));
+        // Inserting a pool here so the autorelease occurs when we return and the
+        // only remaining ref is the retain below.
+        @autoreleasepool {
+            // Adding a retain here to keep our own ref separate from the autorelease pool
+            sk_cfp<id<MTLRenderCommandEncoder>> encoder =
+                    sk_ret_cfp([commandBuffer renderCommandEncoderWithDescriptor:descriptor]);
+            return sk_sp<MtlRenderCommandEncoder>(new MtlRenderCommandEncoder(sharedContext,
+                                                                              std::move(encoder)));
+        }
     }
+
+    const char* getResourceType() const override { return "Metal Render Command Encoder"; }
 
     void setLabel(NSString* label) {
         [(*fCommandEncoder) setLabel:label];
@@ -248,12 +254,15 @@ public:
     }
 
 private:
-    inline static constexpr int kMaxExpectedBuffers = 5;
+    inline static constexpr int kMaxExpectedBuffers = 6;
     inline static constexpr int kMaxExpectedTextures = 16;
 
     MtlRenderCommandEncoder(const SharedContext* sharedContext,
                             sk_cfp<id<MTLRenderCommandEncoder>> encoder)
-            : Resource(sharedContext, Ownership::kOwned, skgpu::Budgeted::kYes, /*gpuMemorySize=*/0)
+            : Resource(sharedContext,
+                       Ownership::kOwned,
+                       skgpu::Budgeted::kYes,
+                       /*gpuMemorySize=*/0)
             , fCommandEncoder(std::move(encoder)) {
         for (int i = 0; i < kMaxExpectedBuffers; i++) {
             fCurrentVertexBuffer[i] = nil;

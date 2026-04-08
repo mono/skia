@@ -28,10 +28,12 @@
 #include "include/core/SkTypeface.h"
 #include "include/core/SkTypes.h"
 #include "include/effects/SkGradientShader.h"
-#include "include/gpu/GrDirectContext.h"
+#include "include/gpu/ganesh/GrDirectContext.h"
 #include "src/base/SkMathPriv.h"
 #include "src/core/SkBlurMask.h"
+#include "tools/GpuToolUtils.h"
 #include "tools/ToolUtils.h"
+#include "tools/fonts/FontToolUtils.h"
 
 static SkBitmap make_chessbm(int w, int h) {
     SkBitmap bm;
@@ -208,7 +210,7 @@ protected:
         blackPaint.setColor(SK_ColorBLACK);
         blackPaint.setAntiAlias(true);
 
-        SkFont font(ToolUtils::create_portable_typeface(), titleHeight);
+        SkFont font(ToolUtils::DefaultPortableTypeface(), titleHeight);
 
         SkString title;
         title.printf("Bitmap size: %d x %d", gBmpSize, gBmpSize);

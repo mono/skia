@@ -9,10 +9,14 @@
 
 #include "include/core/SkFontMgr.h"
 #include "include/core/SkFontStyle.h"
+#include "include/core/SkStream.h"
 #include "modules/skottie/include/Skottie.h"
 #include "modules/skottie/include/SkottieProperty.h"
+#include "modules/skshaper/include/SkShaper_factory.h"
+#include "modules/skshaper/utils/FactoryHelpers.h"
 #include "tests/Test.h"
 #include "tools/ToolUtils.h"
+#include "tools/fonts/FontToolUtils.h"
 
 using namespace skottie;
 
@@ -34,14 +38,13 @@ private:
 
     sk_sp<SkTypeface> onMatchFamilyStyle(const char family[],
                                          const SkFontStyle& style) const override {
-        SkASSERT(fStyleRequestedWhenMatchingFamily.find(family) ==
-                 fStyleRequestedWhenMatchingFamily.end());
         fStyleRequestedWhenMatchingFamily[family] = style;
         return nullptr;
     }
-    sk_sp<SkTypeface> onMatchFamilyStyleCharacter(const char familyName[], const SkFontStyle&,
+    sk_sp<SkTypeface> onMatchFamilyStyleCharacter(const char familyName[], const SkFontStyle& style,
                                                   const char* bcp47[], int bcp47Count,
                                                   SkUnichar character) const override {
+        fStyleRequestedWhenMatchingFamily[familyName] = style;
         return nullptr;
     }
 
@@ -108,6 +111,7 @@ DEF_TEST(Skottie_Text_Style, r) {
 
     auto anim = Animation::Builder()
                     .setFontManager(fmgr)
+                    .setTextShapingFactory(SkShapers::BestAvailable())
                     .make(&stream);
 
     REPORTER_ASSERT(r, anim);
@@ -207,7 +211,7 @@ DEF_TEST(Skottie_Text_LayoutError, r) {
     class PortableRP final : public skresources::ResourceProvider {
     private:
         sk_sp<SkTypeface> loadTypeface(const char[], const char[]) const override {
-            return ToolUtils::create_portable_typeface("Serif", SkFontStyle());
+            return ToolUtils::CreatePortableTypeface("Serif", SkFontStyle());
         }
     };
 
@@ -222,4 +226,82 @@ DEF_TEST(Skottie_Text_LayoutError, r) {
     REPORTER_ASSERT(r, anim);
     REPORTER_ASSERT(r, logger->errors().size() == 1);
     REPORTER_ASSERT(r, logger->errors()[0].startsWith("Text layout failed"));
+}
+
+DEF_TEST(Skottie_Text_FontFamily, r) {
+    static constexpr char json[] =
+        R"({
+             "v": "5.2.1",
+             "w": 100,
+             "h": 100,
+             "fr": 10,
+             "ip": 0,
+             "op": 100,
+             "fonts": {
+               "list": [{
+                 "fFamily": "family_1",
+                 "fName": "Font1",
+                 "fStyle": "Bold"
+               }]
+             },
+             "layers": [{
+               "ty": 5,
+               "t": {
+                 "d": {
+                   "k": [{
+                     "t": 0,
+                     "s": {
+                       "f": "Font1",
+                       "t": "Foo Bar Baz",
+                       "s": 24,
+                       "fc": [1,1,1,1],
+                       "lh": 70,
+                       "ps": [0, 0],
+                       "sz": [100, 100],
+                       "mf": 70,
+                       "rs": 0
+                     }
+                   }]
+                 }
+               }
+             }]
+           })";
+
+    class TextObserver final : public PropertyObserver {
+    public:
+        const std::unique_ptr<TextPropertyHandle>& text() const { return fText; }
+
+    private:
+        void onTextProperty(const char node_name[],
+                            const LazyHandle<TextPropertyHandle>& lh) override {
+            SkASSERT(!fText); // only one text prop in test
+            fText = lh();
+        }
+        std::unique_ptr<TextPropertyHandle> fText;
+    };
+
+    auto fmgr = sk_make_sp<RecordMatchFamilyStyleSkFontMgr>();
+    auto prop_observer = sk_make_sp<TextObserver>();
+
+    SkMemoryStream stream(json, strlen(json));
+    auto anim = Animation::Builder()
+                    .setFontManager(fmgr)
+                    .setPropertyObserver(prop_observer)
+                    .setTextShapingFactory(SkShapers::BestAvailable())
+                    .make(&stream);
+    REPORTER_ASSERT(r, anim);
+
+    // Original family name was passed to fontmgr.
+    const auto* style1 = fmgr->styleRequestedWhenMatchingFamily("family_1");
+    REPORTER_ASSERT(r, style1);
+
+    const auto& text_handle = prop_observer->text();
+    REPORTER_ASSERT(r, text_handle);
+    auto txt = (*text_handle).get();
+    txt.fFontFamily = "family_2";
+    (*text_handle).set(txt);
+
+    // Updated family name was passed to fontmgr.
+    const auto* style2 = fmgr->styleRequestedWhenMatchingFamily("family_2");
+    REPORTER_ASSERT(r, style2);
 }

@@ -8,25 +8,41 @@
 #ifndef SkottieTextAdapter_DEFINED
 #define SkottieTextAdapter_DEFINED
 
+#include "include/core/SkM44.h"
+#include "include/core/SkPoint.h"
+#include "include/core/SkRefCnt.h"
 #include "modules/skottie/include/TextShaper.h"
+#include "modules/skottie/src/SkottieValue.h"
 #include "modules/skottie/src/animator/Animator.h"
 #include "modules/skottie/src/text/Font.h"
 #include "modules/skottie/src/text/TextAnimator.h"
 #include "modules/skottie/src/text/TextValue.h"
+#include "modules/sksg/include/SkSGPaint.h"
+#include "modules/sksg/include/SkSGRenderEffect.h"
+#include "modules/sksg/include/SkSGTransform.h"
 
+#include <cstdint>
+#include <memory>
 #include <vector>
 
 class SkFontMgr;
 
+namespace skjson {
+class ObjectValue;
+}
+namespace skottie {
+class Logger;
+}
 namespace sksg {
-class BlurImageFilter;
 class Group;
-template <typename T>
-class Matrix;
-} // namespace sksg
+class RenderNode;
+}  // namespace sksg
+
+namespace SkShapers { class Factory; }
 
 namespace skottie {
 namespace internal {
+class AnimationBuilder;
 
 class TextAdapter final : public AnimatablePropertyContainer {
 public:
@@ -34,7 +50,8 @@ public:
                                    const AnimationBuilder*,
                                    sk_sp<SkFontMgr>,
                                    sk_sp<CustomFont::GlyphCompMapper>,
-                                   sk_sp<Logger>);
+                                   sk_sp<Logger>,
+                                   sk_sp<::SkShapers::Factory>);
 
     ~TextAdapter() override;
 
@@ -59,6 +76,7 @@ private:
     TextAdapter(sk_sp<SkFontMgr>,
                 sk_sp<CustomFont::GlyphCompMapper>,
                 sk_sp<Logger>,
+                sk_sp<SkShapers::Factory>,
                 AnchorPointGrouping);
 
     struct FragmentRec {
@@ -93,6 +111,7 @@ private:
     const sk_sp<SkFontMgr>                   fFontMgr;
     const sk_sp<CustomFont::GlyphCompMapper> fCustomGlyphMapper;
     sk_sp<Logger>                            fLogger;
+    sk_sp<SkShapers::Factory>                fShapingFactory;
     const AnchorPointGrouping                fAnchorPointGrouping;
 
     std::vector<sk_sp<TextAnimator>>         fAnimators;

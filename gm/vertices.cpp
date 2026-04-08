@@ -28,6 +28,7 @@
 #include "src/core/SkVerticesPriv.h"
 #include "src/shaders/SkLocalMatrixShader.h"
 #include "src/utils/SkPatchUtils.h"
+#include "tools/DecodeUtils.h"
 #include "tools/Resources.h"
 #include "tools/ToolUtils.h"
 
@@ -48,11 +49,9 @@ static sk_sp<SkShader> make_shader1(SkScalar shaderScale) {
                                                         SkTileMode::kMirror, 0,
                                                         &localMatrix);
     // Throw in a couple of local matrix wrappers for good measure.
-    return shaderScale == 1
-        ? grad
-        : sk_make_sp<SkLocalMatrixShader>(
-              sk_make_sp<SkLocalMatrixShader>(std::move(grad), SkMatrix::Translate(-10, 0)),
-              SkMatrix::Translate(10, 0));
+    return shaderScale == 1 ? grad
+                            : grad->makeWithLocalMatrix(SkMatrix::Translate(-10, 0))
+                                       ->makeWithLocalMatrix(SkMatrix::Translate(10, 0));
 }
 
 static sk_sp<SkShader> make_shader2() {
@@ -309,7 +308,7 @@ DEF_SIMPLE_GM(vertices_perspective, canvas, 256, 256) {
 }
 
 DEF_SIMPLE_GM(skbug_13047, canvas, 200, 200) {
-    auto image = GetResourceAsImage("images/mandrill_128.png");
+    auto image = ToolUtils::GetResourceAsImage("images/mandrill_128.png");
 
     const float w = image->width();
     const float h = image->height();
@@ -328,4 +327,23 @@ DEF_SIMPLE_GM(skbug_13047, canvas, 200, 200) {
     p.setShader(s);
 
     canvas->drawVertices(v, SkBlendMode::kModulate, p);
+}
+
+// Makes sure that drawVertices allows for triangles with "collapsed" UVs, where all three vertices
+// have the same texture coordinate. b/40044794
+DEF_SIMPLE_GM_BG(vertices_collapsed, canvas, 50, 50, SK_ColorWHITE) {
+    SkPoint verts[] = {{5, 5}, {45, 5}, {45, 45}, {5, 45}};
+    SkPoint texs[] = {{0, 0}, {0, 0}, {0, 0}, {0, 0}};
+    uint16_t indices[] = {0, 1, 2, 2, 3, 0};
+
+    sk_sp<SkVertices> v = SkVertices::MakeCopy(
+            SkVertices::kTriangles_VertexMode, 4, verts, texs, nullptr, 6, indices);
+
+    sk_sp<SkSurface> surf = SkSurfaces::Raster(SkImageInfo::MakeN32Premul(1, 1));
+    surf->getCanvas()->clear(SK_ColorGREEN);
+    sk_sp<SkShader> shader = surf->makeImageSnapshot()->makeShader(SkSamplingOptions{});
+    SkPaint paint;
+    paint.setShader(shader);
+
+    canvas->drawVertices(v, SkBlendMode::kDst, paint);
 }

@@ -15,7 +15,9 @@
 #include "include/core/SkString.h"
 #include "include/core/SkTextBlob.h"
 #include "include/core/SkTypeface.h"
+#include "src/core/SkFontPriv.h"
 #include "tools/Resources.h"
+#include "tools/fonts/FontToolUtils.h"
 
 #include <string.h>
 
@@ -35,12 +37,13 @@ static void excercise_draw_pos_text(SkCanvas* canvas,
 DEF_SIMPLE_GM_CAN_FAIL(pdf_never_embed, canvas, errorMsg, 512, 512) {
     SkPaint p;
 
-    SkFont font(MakeResourceAsTypeface("fonts/Roboto2-Regular_NoEmbed.ttf"), 60);
-    if (!font.getTypefaceOrDefault()) {
-        *errorMsg = "Could not load fonts/Roboto2-Regular_NoEmbed.ttf. "
-                    "Did you forget to set the resourcePath?";
-        return skiagm::DrawResult::kFail;
+    sk_sp<SkTypeface> tf =
+            ToolUtils::CreateTypefaceFromResource("fonts/Roboto2-Regular_NoEmbed.ttf");
+    if (!tf) {
+        tf = ToolUtils::DefaultPortableTypeface();
     }
+    SkASSERT(tf);
+    SkFont font(tf, 60);
 
     const char text[] = "HELLO, WORLD!";
 

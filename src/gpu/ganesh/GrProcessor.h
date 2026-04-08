@@ -56,13 +56,6 @@ public:
         kGrDistanceFieldA8TextGeoProc_ClassID,
         kGrDistanceFieldLCDTextGeoProc_ClassID,
         kGrDistanceFieldPathGeoProc_ClassID,
-        kGrDSLFPTest_DoStatement_ClassID,
-        kGrDSLFPTest_ForStatement_ClassID,
-        kGrDSLFPTest_IfStatement_ClassID,
-        kGrDSLFPTest_SwitchStatement_ClassID,
-        kGrDSLFPTest_Swizzle_ClassID,
-        kGrDSLFPTest_Ternary_ClassID,
-        kGrDSLFPTest_WhileStatement_ClassID,
         kGrFillRRectOp_Processor_ClassID,
         kGrGaussianConvolutionFragmentProcessor_ClassID,
         kGrMatrixConvolutionEffect_ClassID,
@@ -109,7 +102,7 @@ public:
     virtual const char* name() const = 0;
 
     /** Human-readable dump of all information */
-#if defined(GR_TEST_UTILS)
+#if defined(GPU_TEST_UTILS)
     virtual SkString onDumpInfo() const { return SkString(); }
 
     SkString dumpInfo() const {

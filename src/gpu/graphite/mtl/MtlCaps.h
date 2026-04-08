@@ -30,6 +30,10 @@ public:
     TextureInfo getTextureInfoForSampledCopy(const TextureInfo& textureInfo,
                                              Mipmapped mipmapped) const override;
 
+    TextureInfo getDefaultCompressedTextureInfo(SkTextureCompressionType,
+                                                Mipmapped mipmapped,
+                                                Protected) const override;
+
     TextureInfo getDefaultMSAATextureInfo(const TextureInfo& singleSampledInfo,
                                           Discardable discardable) const override;
 
@@ -42,6 +46,11 @@ public:
     UniqueKey makeGraphicsPipelineKey(const GraphicsPipelineDesc&,
                                       const RenderPassDesc&) const override;
     UniqueKey makeComputePipelineKey(const ComputePipelineDesc&) const override;
+
+    bool extractGraphicsDescs(const UniqueKey&,
+                              GraphicsPipelineDesc*,
+                              RenderPassDesc*,
+                              const RendererProvider*) const override;
 
     // Get a sufficiently unique bit representation for the RenderPassDesc to be embedded in other
     // UniqueKeys (e.g. makeGraphicsPipelineKey).
@@ -66,20 +75,19 @@ private:
 
     void initCaps(const id<MTLDevice>);
     void initShaderCaps();
-    void initFormatTable();
+    void initFormatTable(const id<MTLDevice>);
 
     enum class GPUFamily {
         kMac,
         kApple,
     };
     static bool GetGPUFamily(id<MTLDevice> device, GPUFamily* gpuFamily, int* group);
-    static bool GetGPUFamilyFromFeatureSet(id<MTLDevice> device, GPUFamily* gpuFamily,
-                                           int* group);
 
     MTLPixelFormat getFormatFromColorType(SkColorType colorType) const {
         int idx = static_cast<int>(colorType);
         return fColorTypeToFormatTable[idx];
     }
+    MTLPixelFormat getFormatFromDepthStencilFlags(SkEnumBitMask<DepthStencilFlags>) const;
 
     const ColorTypeInfo* getColorTypeInfo(SkColorType, const TextureInfo&) const override;
 
@@ -91,12 +99,14 @@ private:
     bool supportsWritePixels(const TextureInfo&) const override;
     bool supportsReadPixels(const TextureInfo&) const override;
 
-    SkColorType supportedWritePixelsColorType(SkColorType dstColorType,
-                                              const TextureInfo& dstTextureInfo,
-                                              SkColorType srcColorType) const override;
-    SkColorType supportedReadPixelsColorType(SkColorType srcColorType,
-                                             const TextureInfo& srcTextureInfo,
-                                             SkColorType dstColorType) const override;
+    std::pair<SkColorType, bool /*isRGBFormat*/> supportedWritePixelsColorType(
+            SkColorType dstColorType,
+            const TextureInfo& dstTextureInfo,
+            SkColorType srcColorType) const override;
+    std::pair<SkColorType, bool /*isRGBFormat*/> supportedReadPixelsColorType(
+            SkColorType srcColorType,
+            const TextureInfo& srcTextureInfo,
+            SkColorType dstColorType) const override;
 
     MTLStorageMode getDefaultMSAAStorageMode(Discardable discardable) const;
 
@@ -125,7 +135,11 @@ private:
         std::unique_ptr<ColorTypeInfo[]> fColorTypeInfos;
         int fColorTypeInfoCount = 0;
     };
-    inline static constexpr size_t kNumMtlFormats = 19;
+#ifdef SK_BUILD_FOR_MAC
+    inline static constexpr size_t kNumMtlFormats = 23;
+#else
+    inline static constexpr size_t kNumMtlFormats = 21;
+#endif
 
     static size_t GetFormatIndex(MTLPixelFormat);
     FormatInfo fFormatTable[kNumMtlFormats];

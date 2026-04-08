@@ -20,6 +20,7 @@
 #include "include/private/base/SkMath.h"
 #include "modules/skcms/skcms.h"
 #include "src/base/SkArenaAlloc.h"
+#include "src/core/SkBitmapProcState.h"
 #include "src/core/SkColorSpaceXformSteps.h"
 #include "src/core/SkEffectPriv.h"
 #include "src/core/SkImageInfoPriv.h"
@@ -33,7 +34,6 @@
 #include "src/core/SkSamplingPriv.h"
 #include "src/core/SkWriteBuffer.h"
 #include "src/image/SkImage_Base.h"
-#include "src/shaders/SkLocalMatrixShader.h"
 
 #ifdef SK_ENABLE_LEGACY_SHADERCONTEXT
 #include "src/shaders/SkBitmapProcShader.h"
@@ -192,8 +192,8 @@ bool SkImageShader::isOpaque() const {
 static bool legacy_shader_can_handle(const SkMatrix& inv) {
     SkASSERT(!inv.hasPerspective());
 
-    // We only have methods for scale+translate
-    if (!inv.isScaleTranslate()) {
+    // Scale+translate methods are always present, but affine might not be.
+    if (!SkOpts::S32_alpha_D32_filter_DXDY && !inv.isScaleTranslate()) {
         return false;
     }
 
@@ -311,13 +311,14 @@ sk_sp<SkShader> SkImageShader::MakeRaw(sk_sp<SkImage> image,
         return SkShaders::Empty();
     }
     auto subset = SkRect::Make(image->dimensions());
-    return SkLocalMatrixShader::MakeWrapped<SkImageShader>(localMatrix,
-                                                           image,
-                                                           subset,
-                                                           tmx, tmy,
-                                                           options,
-                                                           /*raw=*/true,
-                                                           /*clampAsIfUnpremul=*/false);
+
+    sk_sp<SkShader> s = sk_make_sp<SkImageShader>(image,
+                                                  subset,
+                                                  tmx, tmy,
+                                                  options,
+                                                  /*raw=*/true,
+                                                  /*clampAsIfUnpremul=*/false);
+    return s->makeWithLocalMatrix(localMatrix ? *localMatrix : SkMatrix::I());
 }
 
 sk_sp<SkShader> SkImageShader::MakeSubset(sk_sp<SkImage> image,
@@ -342,15 +343,14 @@ sk_sp<SkShader> SkImageShader::MakeSubset(sk_sp<SkImage> image,
     if (!SkRect::Make(image->bounds()).contains(subset)) {
         return nullptr;
     }
-    // TODO(skbug.com/12784): GPU-only for now since it's only supported in onAsFragmentProcessor()
-    SkASSERT(!needs_subset(image.get(), subset) || image->isTextureBacked());
-    return SkLocalMatrixShader::MakeWrapped<SkImageShader>(localMatrix,
-                                                           std::move(image),
-                                                           subset,
-                                                           tmx, tmy,
-                                                           options,
-                                                           /*raw=*/false,
-                                                           clampAsIfUnpremul);
+
+    sk_sp<SkShader> s = sk_make_sp<SkImageShader>(std::move(image),
+                                                  subset,
+                                                  tmx, tmy,
+                                                  options,
+                                                  /*raw=*/false,
+                                                  clampAsIfUnpremul);
+    return s->makeWithLocalMatrix(localMatrix ? *localMatrix : SkMatrix::I());
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
@@ -371,6 +371,55 @@ sk_sp<SkShader> SkMakeBitmapShaderForPaint(const SkPaint& paint, const SkBitmap&
         s = SkShaders::Blend(SkBlendMode::kDstIn, paint.refShader(), std::move(s));
     }
     return s;
+}
+
+SkRect SkModifyPaintAndDstForDrawImageRect(const SkImage* image,
+                                           const SkSamplingOptions& sampling,
+                                           SkRect src,
+                                           SkRect dst,
+                                           bool strictSrcSubset,
+                                           SkPaint* paint) {
+    // The paint should have already been cleaned for a regular drawImageRect, e.g. no path
+    // effect and is a fill.
+    SkASSERT(paint);
+    SkASSERT(paint->getStyle() == SkPaint::kFill_Style && !paint->getPathEffect());
+
+    SkASSERT(image);
+    SkRect imgBounds = SkRect::Make(image->bounds());
+
+    SkASSERT(src.isFinite() && dst.isFinite() && dst.isSorted());
+    SkMatrix localMatrix = SkMatrix::RectToRect(src, dst);
+    if (!imgBounds.contains(src)) {
+        if (!src.intersect(imgBounds)) {
+            return SkRect::MakeEmpty(); // Nothing to draw for this entry
+        }
+        // Update dst to match smaller src
+        dst = localMatrix.mapRect(src);
+    }
+
+    bool imageIsAlphaOnly = SkColorTypeIsAlphaOnly(image->colorType());
+
+    sk_sp<SkShader> imgShader;
+    if (strictSrcSubset) {
+        imgShader = SkImageShader::MakeSubset(sk_ref_sp(image), src,
+                                              SkTileMode::kClamp, SkTileMode::kClamp,
+                                              sampling, &localMatrix);
+    } else {
+        imgShader = image->makeShader(SkTileMode::kClamp, SkTileMode::kClamp,
+                                      sampling, &localMatrix);
+    }
+    if (!imgShader) {
+        return SkRect::MakeEmpty();
+    }
+    if (imageIsAlphaOnly && paint->getShader()) {
+        // Compose the image shader with the paint's shader. Alpha images+shaders should output the
+        // texture's alpha multiplied by the shader's color. DstIn (d*sa) will achieve this with
+        // the source image and dst shader (MakeBlend takes dst first, src second).
+        imgShader = SkShaders::Blend(SkBlendMode::kDstIn, paint->refShader(), std::move(imgShader));
+    }
+
+    paint->setShader(std::move(imgShader));
+    return dst;
 }
 
 void SkShaderBase::RegisterFlattenables() { SK_REGISTER_FLATTENABLE(SkImageShader); }
@@ -572,6 +621,10 @@ bool SkImageShader::appendStages(const SkStageRec& rec, const SkShaders::MatrixR
             case kRGBA_F16Norm_SkColorType:
             case kRGBA_F16_SkColorType:     p->append(SkRasterPipelineOp::gather_f16,   ctx); break;
             case kRGBA_F32_SkColorType:     p->append(SkRasterPipelineOp::gather_f32,   ctx); break;
+            case kBGRA_10101010_XR_SkColorType:
+                p->append(SkRasterPipelineOp::gather_10101010_xr,  ctx);
+                p->append(SkRasterPipelineOp::swap_rb);
+                break;
             case kRGBA_10x6_SkColorType:    p->append(SkRasterPipelineOp::gather_10x6,  ctx); break;
 
             case kGray_8_SkColorType:       p->append(SkRasterPipelineOp::gather_a8,    ctx);
@@ -582,7 +635,10 @@ bool SkImageShader::appendStages(const SkStageRec& rec, const SkShaders::MatrixR
 
             case kRGB_888x_SkColorType:     p->append(SkRasterPipelineOp::gather_8888,  ctx);
                                             p->append(SkRasterPipelineOp::force_opaque     ); break;
-
+            case kRGB_F16F16F16x_SkColorType:
+                p->append(SkRasterPipelineOp::gather_f16,  ctx);
+                p->append(SkRasterPipelineOp::force_opaque);
+                break;
             case kBGRA_1010102_SkColorType:
                 p->append(SkRasterPipelineOp::gather_1010102, ctx);
                 p->append(SkRasterPipelineOp::swap_rb);
@@ -612,7 +668,7 @@ bool SkImageShader::appendStages(const SkStageRec& rec, const SkShaders::MatrixR
 
             case kSRGBA_8888_SkColorType:
                 p->append(SkRasterPipelineOp::gather_8888, ctx);
-                p->append_transfer_function(*skcms_sRGB_TransferFunction());
+                p->appendTransferFunction(*skcms_sRGB_TransferFunction());
                 break;
 
             case kUnknown_SkColorType: SkASSERT(false);
@@ -630,7 +686,7 @@ bool SkImageShader::appendStages(const SkStageRec& rec, const SkShaders::MatrixR
         // If we were sampled by a runtime effect, the paint color was replaced with transparent
         // black, so this tinting is effectively suppressed. See also: RuntimeEffectRPCallbacks
         if (SkColorTypeIsAlphaOnly(upper.pm.colorType()) && !fRaw) {
-            p->append_set_rgb(alloc, rec.fPaintColor);
+            p->appendSetRGB(alloc, rec.fPaintColor);
 
             cs = rec.fDstCS;
             at = kUnpremul_SkAlphaType;
@@ -741,3 +797,21 @@ bool SkImageShader::appendStages(const SkStageRec& rec, const SkShaders::MatrixR
 
     return append_misc();
 }
+
+namespace SkShaders {
+
+sk_sp<SkShader> Image(sk_sp<SkImage> image,
+                      SkTileMode tmx, SkTileMode tmy,
+                      const SkSamplingOptions& options,
+                      const SkMatrix* localMatrix) {
+    return SkImageShader::Make(std::move(image), tmx, tmy, options, localMatrix);
+}
+
+sk_sp<SkShader> RawImage(sk_sp<SkImage> image,
+                         SkTileMode tmx, SkTileMode tmy,
+                         const SkSamplingOptions& options,
+                         const SkMatrix* localMatrix) {
+    return SkImageShader::MakeRaw(std::move(image), tmx, tmy, options, localMatrix);
+}
+
+}  // namespace SkShaders

@@ -36,8 +36,8 @@
 
 #if defined(SK_GANESH)
 #include "include/gpu/GpuTypes.h"
-#include "include/gpu/GrTypes.h"
-#include "include/gpu/GrContextOptions.h"
+#include "include/gpu/ganesh/GrTypes.h"
+#include "include/gpu/ganesh/GrContextOptions.h"
 #endif
 
 #if __cplusplus >= 199711L
@@ -146,10 +146,12 @@ static_assert ((int)SkColorType::kBGRA_1010102_SkColorType         == (int)BGRA_
 static_assert ((int)SkColorType::kRGB_101010x_SkColorType          == (int)RGB_101010X_SK_COLORTYPE,          ASSERT_MSG(SkColorType, sk_colortype_t));
 static_assert ((int)SkColorType::kBGR_101010x_SkColorType          == (int)BGR_101010X_SK_COLORTYPE,          ASSERT_MSG(SkColorType, sk_colortype_t));
 static_assert ((int)SkColorType::kBGR_101010x_XR_SkColorType       == (int)BGR_101010X_XR_SK_COLORTYPE,       ASSERT_MSG(SkColorType, sk_colortype_t));
+static_assert ((int)SkColorType::kBGRA_10101010_XR_SkColorType     == (int)BGRA_10101010_XR_SK_COLORTYPE,     ASSERT_MSG(SkColorType, sk_colortype_t));
 static_assert ((int)SkColorType::kRGBA_10x6_SkColorType            == (int)RGBA_10X6_SK_COLORTYPE,            ASSERT_MSG(SkColorType, sk_colortype_t));
 static_assert ((int)SkColorType::kGray_8_SkColorType               == (int)GRAY_8_SK_COLORTYPE,               ASSERT_MSG(SkColorType, sk_colortype_t));
 static_assert ((int)SkColorType::kRGBA_F16Norm_SkColorType         == (int)RGBA_F16_NORM_SK_COLORTYPE,        ASSERT_MSG(SkColorType, sk_colortype_t));
 static_assert ((int)SkColorType::kRGBA_F16_SkColorType             == (int)RGBA_F16_SK_COLORTYPE,             ASSERT_MSG(SkColorType, sk_colortype_t));
+static_assert ((int)SkColorType::kRGB_F16F16F16x_SkColorType       == (int)RGB_F16F16F16X_SK_COLORTYPE,       ASSERT_MSG(SkColorType, sk_colortype_t));
 static_assert ((int)SkColorType::kRGBA_F32_SkColorType             == (int)RGBA_F32_SK_COLORTYPE,             ASSERT_MSG(SkColorType, sk_colortype_t));
 static_assert ((int)SkColorType::kR8G8_unorm_SkColorType           == (int)R8G8_UNORM_SK_COLORTYPE,           ASSERT_MSG(SkColorType, sk_colortype_t));
 static_assert ((int)SkColorType::kA16_unorm_SkColorType            == (int)A16_UNORM_SK_COLORTYPE,            ASSERT_MSG(SkColorType, sk_colortype_t));

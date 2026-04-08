@@ -4,22 +4,34 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
-
 #include "src/gpu/ganesh/glsl/GrGLSLProgramBuilder.h"
 
-#include <memory>
-
-#include "src/gpu/ganesh/GrCaps.h"
+#include "include/core/SkSpan.h"
+#include "include/core/SkString.h"
+#include "include/gpu/ganesh/GrTypes.h"
+#include "include/private/base/SkAssert.h"
+#include "include/private/base/SkTemplates.h"
+#include "src/core/SkSLTypeShared.h"
 #include "src/gpu/ganesh/GrFragmentProcessor.h"
 #include "src/gpu/ganesh/GrGeometryProcessor.h"
 #include "src/gpu/ganesh/GrPipeline.h"
-#include "src/gpu/ganesh/GrRenderTarget.h"
+#include "src/gpu/ganesh/GrResourceHandle.h"
 #include "src/gpu/ganesh/GrShaderCaps.h"
-#include "src/gpu/ganesh/GrTexture.h"
+#include "src/gpu/ganesh/GrSurfaceProxy.h"
+#include "src/gpu/ganesh/GrSurfaceProxyView.h"
+#include "src/gpu/ganesh/GrTextureProxy.h"
 #include "src/gpu/ganesh/GrXferProcessor.h"
 #include "src/gpu/ganesh/effects/GrTextureEffect.h"
 #include "src/gpu/ganesh/glsl/GrGLSLVarying.h"
 #include "src/sksl/SkSLCompiler.h"
+#include "src/sksl/SkSLString.h"
+
+#include <functional>
+#include <memory>
+#include <tuple>
+#include <unordered_map>
+#include <utility>
+
 
 using namespace skia_private;
 
@@ -91,7 +103,7 @@ bool GrGLSLProgramBuilder::emitAndInstallPrimProc(SkString* outputColor, SkStrin
         SkString name;
         name.printf("TextureSampler_%d", i);
         const auto& sampler = geomProc.textureSampler(i);
-        texSamplers[i] = this->emitSampler(geomProc.textureSampler(i).backendFormat(),
+        texSamplers[i] = this->emitSampler(sampler.backendFormat(),
                                            sampler.samplerState(),
                                            sampler.swizzle(),
                                            name.c_str());
@@ -248,14 +260,22 @@ void GrGLSLProgramBuilder::writeFPFunction(const GrFragmentProcessor& fp,
         params[numParams++] = GrShaderVar(kDstColor, SkSLType::kHalf4);
     }
 
-    if (this->fragmentProcessorHasCoordsParam(&fp)) {
+    auto fpCoordsIter = fFPCoordsMap.find(&fp);
+    if (fpCoordsIter == fFPCoordsMap.end()) {
+        // This FP isn't in our coords map at all, so its coords (if any) couldn't have been lifted
+        // to a varying.
+        if (fp.usesSampleCoords()) {
+            params[numParams++] = GrShaderVar(sampleCoords, SkSLType::kFloat2);
+        }
+    } else if (fpCoordsIter->second.hasCoordsParam) {
+        // This FP is in our map, and it takes an explicit coords param.
         params[numParams++] = GrShaderVar(sampleCoords, SkSLType::kFloat2);
     } else {
         // Either doesn't use coords at all or sampled through a chain of passthrough/matrix
         // samples usages. In the latter case the coords are emitted in the vertex shader as a
         // varying, so this only has to access it. Add a float2 _coords variable that maps to the
         // associated varying and replaces the absent 2nd argument to the fp's function.
-        GrShaderVar varying = fFPCoordsMap[&fp].coordsVarying;
+        GrShaderVar varying = fpCoordsIter->second.coordsVarying;
 
         switch (varying.getType()) {
             case SkSLType::kVoid:

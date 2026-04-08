@@ -35,9 +35,9 @@
 #include "include/core/SkTypes.h"
 #include "include/effects/SkColorMatrix.h"
 #include "include/gpu/GpuTypes.h"
-#include "include/gpu/GrBackendSurface.h"
-#include "include/gpu/GrDirectContext.h"
-#include "include/gpu/GrTypes.h"
+#include "include/gpu/ganesh/GrBackendSurface.h"
+#include "include/gpu/ganesh/GrDirectContext.h"
+#include "include/gpu/ganesh/GrTypes.h"
 #include "include/gpu/ganesh/SkImageGanesh.h"
 #include "include/gpu/ganesh/SkSurfaceGanesh.h"
 #include "include/private/SkColorData.h"
@@ -68,6 +68,7 @@
 #include "tests/TestHarness.h"
 #include "tools/RuntimeBlendUtils.h"
 #include "tools/ToolUtils.h"
+#include "tools/fonts/FontToolUtils.h"
 #include "tools/gpu/BackendSurfaceFactory.h"
 #include "tools/gpu/ManagedBackendTexture.h"
 #include "tools/gpu/ProxyUtils.h"
@@ -142,7 +143,11 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(GrContext_colorTypeSupportedAsSurface,
                                        reporter,
                                        ctxInfo,
                                        CtsEnforcement::kApiLevel_T) {
+    using namespace skgpu;
+
     auto context = ctxInfo.directContext();
+
+    Protected isProtected = Protected(context->priv().caps()->supportsProtectedContent());
 
     for (int ct = 0; ct < kLastEnum_SkColorType; ++ct) {
         static constexpr int kSize = 10;
@@ -152,7 +157,7 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(GrContext_colorTypeSupportedAsSurface,
 
         {
             bool can = context->colorTypeSupportedAsSurface(colorType);
-            auto surf = SkSurfaces::RenderTarget(context, skgpu::Budgeted::kYes, info, 1, nullptr);
+            auto surf = SkSurfaces::RenderTarget(context, Budgeted::kYes, info, 1, nullptr);
             REPORTER_ASSERT(reporter, can == SkToBool(surf), "ct: %d, can: %d, surf: %d",
                             colorType, can, SkToBool(surf));
 
@@ -160,7 +165,10 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(GrContext_colorTypeSupportedAsSurface,
                                                           {kSize, kSize},
                                                           kTopLeft_GrSurfaceOrigin,
                                                           /*sample cnt*/ 1,
-                                                          colorType);
+                                                          colorType,
+                                                          /* colorSpace= */ nullptr,
+                                                          Mipmapped::kNo,
+                                                          isProtected);
             REPORTER_ASSERT(reporter, can == SkToBool(surf), "ct: %d, can: %d, surf: %d",
                             colorType, can, SkToBool(surf));
         }
@@ -171,12 +179,13 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(GrContext_colorTypeSupportedAsSurface,
 
             bool can = context->maxSurfaceSampleCountForColorType(colorType) >= kSampleCnt;
             auto surf = SkSurfaces::RenderTarget(
-                    context, skgpu::Budgeted::kYes, info, kSampleCnt, nullptr);
+                    context, Budgeted::kYes, info, kSampleCnt, nullptr);
             REPORTER_ASSERT(reporter, can == SkToBool(surf), "ct: %d, can: %d, surf: %d",
                             colorType, can, SkToBool(surf));
 
             surf = sk_gpu_test::MakeBackendTextureSurface(
-                    context, {kSize, kSize}, kTopLeft_GrSurfaceOrigin, kSampleCnt, colorType);
+                    context, {kSize, kSize}, kTopLeft_GrSurfaceOrigin, kSampleCnt, colorType,
+                    /* colorSpace= */ nullptr, Mipmapped::kNo, isProtected);
             REPORTER_ASSERT(reporter, can == SkToBool(surf),
                             "colorTypeSupportedAsSurface:%d, surf:%d, ct:%d", can, SkToBool(surf),
                             colorType);
@@ -198,7 +207,9 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(GrContext_colorTypeSupportedAsSurface,
                                                                     {16, 16},
                                                                     kTopLeft_GrSurfaceOrigin,
                                                                     sampleCnt,
-                                                                    colorType);
+                                                                    colorType,
+                                                                    /* colorSpace= */ nullptr,
+                                                                    isProtected);
             bool can = context->colorTypeSupportedAsSurface(colorType) &&
                        context->maxSurfaceSampleCountForColorType(colorType) >= sampleCnt;
             if (!surf && can && colorType == kBGRA_8888_SkColorType && sampleCnt > 1 &&
@@ -232,7 +243,11 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(GrContext_maxSurfaceSamplesForColorType,
                                        reporter,
                                        ctxInfo,
                                        CtsEnforcement::kApiLevel_T) {
+    using namespace skgpu;
+
     auto context = ctxInfo.directContext();
+
+    Protected isProtected = Protected(context->priv().caps()->supportsProtectedContent());
 
     static constexpr int kSize = 10;
 
@@ -249,7 +264,7 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(GrContext_maxSurfaceSamplesForColorType,
 
         auto info = SkImageInfo::Make(kSize, kSize, colorType, kOpaque_SkAlphaType, nullptr);
         auto surf = sk_gpu_test::MakeBackendTextureSurface(
-                context, info, kTopLeft_GrSurfaceOrigin, maxSampleCnt);
+                context, info, kTopLeft_GrSurfaceOrigin, maxSampleCnt, Mipmapped::kNo, isProtected);
         if (!surf) {
             ERRORF(reporter, "Could not make surface of color type %d.", colorType);
             continue;
@@ -532,7 +547,7 @@ static void test_copy_on_write(skiatest::Reporter* reporter, SkSurface* surface)
     EXPECT_COPY_ON_WRITE(drawPath(testPath, testPaint))
     EXPECT_COPY_ON_WRITE(drawImage(testBitmap.asImage(), 0, 0))
     EXPECT_COPY_ON_WRITE(drawImageRect(testBitmap.asImage(), testRect, SkSamplingOptions()))
-    EXPECT_COPY_ON_WRITE(drawString(testText, 0, 1, SkFont(), testPaint))
+    EXPECT_COPY_ON_WRITE(drawString(testText, 0, 1, ToolUtils::DefaultPortableFont(), testPaint))
 }
 DEF_TEST(SurfaceCopyOnWrite, reporter) {
     test_copy_on_write(reporter, create_surface().get());
@@ -863,7 +878,7 @@ static void test_surface_context_clear(skiatest::Reporter* reporter,
                     msg = "SkSurface should have cleared the render target";
                 }
                 ERRORF(reporter,
-                       "%s but read 0x%08x (instead of 0x%08x) at %x,%d", msg.c_str(), pixel,
+                       "%s but read 0x%08X (instead of 0x%08X) at %d,%d", msg.c_str(), pixel,
                        expectedValue, x, y);
                 return;
             }
@@ -1268,8 +1283,8 @@ DEF_TEST(surface_image_unity, reporter) {
             if ((false)) { // change to true to document the differences
                 if (!img) {
                     SkDebugf("image failed: [%08X %08X] %14s %s\n",
-                             info.width(),
-                             info.height(),
+                             (uint32_t)info.width(),
+                             (uint32_t)info.height(),
                              ToolUtils::colortype_name(info.colorType()),
                              ToolUtils::alphatype_name(info.alphaType()));
                     return;

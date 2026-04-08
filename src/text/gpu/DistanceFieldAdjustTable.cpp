@@ -22,7 +22,7 @@ namespace sktext::gpu {
 
 SkDEBUGCODE(static const int kExpectedDistanceAdjustTableSize = 8;)
 
-SkScalar* build_distance_adjust_table(SkScalar paintGamma, SkScalar deviceGamma) {
+SkScalar* build_distance_adjust_table(SkScalar deviceGamma) {
     // This is used for an approximation of the mask gamma hack, used by raster and bitmap
     // text. The mask gamma hack is based off of guessing what the blend color is going to
     // be, and adjusting the mask so that when run through the linear blend will
@@ -60,21 +60,16 @@ SkScalar* build_distance_adjust_table(SkScalar paintGamma, SkScalar deviceGamma)
 
     int width, height;
     size_t size;
-
-#ifdef SK_GAMMA_CONTRAST
     SkScalar contrast = SK_GAMMA_CONTRAST;
-#else
-    SkScalar contrast = 0.5f;
-#endif
 
-    size = SkScalerContext::GetGammaLUTSize(contrast, paintGamma, deviceGamma,
+    size = SkScalerContext::GetGammaLUTSize(contrast, deviceGamma,
         &width, &height);
 
     SkASSERT(kExpectedDistanceAdjustTableSize == height);
     SkScalar* table = new SkScalar[height];
 
     AutoTArray<uint8_t> data((int)size);
-    if (!SkScalerContext::GetGammaLUTData(contrast, paintGamma, deviceGamma, data.get())) {
+    if (!SkScalerContext::GetGammaLUTData(contrast, deviceGamma, data.get())) {
         // if no valid data is available simply do no adjustment
         for (int row = 0; row < height; ++row) {
             table[row] = 0;
@@ -115,8 +110,8 @@ const DistanceFieldAdjustTable* DistanceFieldAdjustTable::Get() {
 }
 
 DistanceFieldAdjustTable::DistanceFieldAdjustTable() {
-    fTable = build_distance_adjust_table(SK_GAMMA_EXPONENT, SK_GAMMA_EXPONENT);
-    fGammaCorrectTable = build_distance_adjust_table(SK_Scalar1, SK_Scalar1);
+    fTable = build_distance_adjust_table(SK_GAMMA_EXPONENT);
+    fGammaCorrectTable = build_distance_adjust_table(SK_Scalar1);
 }
 
 }  // namespace sktext::gpu

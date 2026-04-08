@@ -40,7 +40,7 @@ public:
      * around filterImage that prepares the skif::Context to filter the 'src' image directly,
      * for implementing the SkImages::MakeWithFilter API calls.
      */
-    sk_sp<SkImage> makeImageWithFilter(const skif::Functors& functors,
+    sk_sp<SkImage> makeImageWithFilter(sk_sp<skif::Backend> backend,
                                        sk_sp<SkImage> src,
                                        const SkIRect& subset,
                                        const SkIRect& clipBounds,
@@ -122,15 +122,9 @@ public:
     bool usesSource() const { return fUsesSrcInput; }
 
     /**
-     *  Most ImageFilters can natively handle scaling and translate components in the CTM. Only
-     *  some of them can handle affine (or more complex) matrices. Some may only handle translation.
      *  This call returns the maximum "kind" of CTM for a filter and all of its (non-null) inputs.
      */
-    enum class MatrixCapability {
-        kTranslate,
-        kScaleTranslate,
-        kComplex,
-    };
+    using MatrixCapability = skif::MatrixCapability;
     MatrixCapability getCTMCapability() const;
 
     uint32_t uniqueID() const { return fUniqueID; }

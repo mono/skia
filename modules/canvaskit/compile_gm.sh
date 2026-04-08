@@ -26,7 +26,7 @@ EMCXX=`which em++`
 if [[ $@ == *debug* ]]; then
   echo "Building a Debug build"
   DEBUG=true
-  EXTRA_CFLAGS="\"-DSK_DEBUG\", \"-DGR_TEST_UTILS\", "
+  EXTRA_CFLAGS="\"-DSK_DEBUG\", \"-DGPU_TEST_UTILS\", "
   RELEASE_CONF="-O1 --js-opts 0 -sDEMANGLE_SUPPORT=1 -frtti -sASSERTIONS=1 -sGL_ASSERTIONS=1 -g \
                 -DSK_DEBUG --pre-js $BASE_DIR/debug.js"
   BUILD_DIR=${BUILD_DIR:="out/wasm_gm_tests_debug"}
@@ -35,8 +35,8 @@ else
   DEBUG=false
   BUILD_DIR=${BUILD_DIR:="out/wasm_gm_tests"}
   RELEASE_CONF="-O3 -DSK_RELEASE --pre-js $BASE_DIR/release.js \
-              -DGR_TEST_UTILS"
-  EXTRA_CFLAGS="\"-DSK_RELEASE\", \"-DGR_TEST_UTILS\", "
+              -DGPU_TEST_UTILS"
+  EXTRA_CFLAGS="\"-DSK_RELEASE\", \"-DGPU_TEST_UTILS\", "
 fi
 
 IS_OFFICIAL_BUILD="false"
@@ -129,7 +129,7 @@ parse_targets() {
     basename $LIBPATH
   done
 }
-${NINJA} -C ${BUILD_DIR} libskia.a libskshaper.a libskunicode.a \
+${NINJA} -C ${BUILD_DIR} libskia.a libskshaper.a libskunicode_core.a libskunicode_icu.a \
   $(parse_targets $GM_LIB)
 
 echo "Generating final wasm"
@@ -146,6 +146,7 @@ SKIA_DEFINES="
 -DSK_CODEC_DECODES_JPEG \
 -DSK_SHAPER_HARFBUZZ_AVAILABLE \
 -DSK_UNICODE_AVAILABLE \
+-DSK_UNICODE_ICU_IMPLEMENTATION \
 -DSK_ENABLE_SVG \
 -DSK_TRIVIAL_ABI=[[clang::trivial_abi]]"
 
@@ -161,6 +162,7 @@ fi
 
 # These gms do not compile or link with the WASM code. Thus, we omit them.
 GLOBIGNORE="gm/compressed_textures.cpp:"\
+"gm/animated_gif.cpp:"\
 "gm/fiddle.cpp:"\
 "gm/fontations.cpp:"\
 "gm/fontations_ft_compare.cpp:"\
@@ -168,6 +170,7 @@ GLOBIGNORE="gm/compressed_textures.cpp:"\
 
 # These tests do not compile with the WASM code (require other deps).
 GLOBIGNORE+="tests/CodecTest.cpp:"\
+"tests/CodecAnimTest.cpp:"\
 "tests/ColorSpaceTest.cpp:"\
 "tests/DrawOpAtlasTest.cpp:"\
 "tests/EncodeTest.cpp:"\
@@ -175,8 +178,11 @@ GLOBIGNORE+="tests/CodecTest.cpp:"\
 "tests/FontMgrFontConfigTest.cpp:"\
 "tests/FontationsTest.cpp:"\
 "tests/FontationsFtCompTest.cpp:"\
+"tests/FontScanner_FontationsTest.cpp:"\
+"tests/FontScanner_FreeTypeTest.cpp:"\
 "tests/FCITest.cpp:"\
 "tests/JpegGainmapTest.cpp:"\
+"tests/SkPngRustDecoderTest.cpp:"\
 "tests/TypefaceMacTest.cpp:"
 
 # These tests do complex things with TestContexts, which is not easily supported for the WASM
@@ -189,14 +195,10 @@ GLOBIGNORE+="tests/BackendAllocationTest.cpp:"\
 "tests/VkHardwareBufferTest.cpp:"
 
 # All the tests in these files crash.
-GLOBIGNORE+="tests/GrThreadSafeCacheTest.cpp"
+GLOBIGNORE+="tests/GrThreadSafeCacheTest.cpp:"
 
 # Bazel-related ignores (test runners, incompatible GMs, etc.).
-GLOBIGNORE+="tests/BazelNoopRunner.cpp:"\
-"tests/BazelTestRunner.cpp:"\
-"gm/BazelGMRunner.cpp:"\
-"gm/BazelNoopRunner.cpp:"\
-"gm/png_codec.cpp"
+GLOBIGNORE+="gm/png_codec.cpp"
 
 # Emscripten prefers that the .a files go last in order, otherwise, it
 # may drop symbols that it incorrectly thinks aren't used. One day,
@@ -204,7 +206,7 @@ GLOBIGNORE+="tests/BazelNoopRunner.cpp:"\
 EMCC_DEBUG=1 ${EMCXX} \
     $RELEASE_CONF \
     -I. \
-    -DGR_TEST_UTILS \
+    -DGPU_TEST_UTILS \
     $SKIA_DEFINES \
     $WASM_GPU \
     -std=c++17 \
@@ -219,7 +221,8 @@ EMCC_DEBUG=1 ${EMCXX} \
     $TESTS_TO_BUILD \
     $GM_LIB \
     $BUILD_DIR/libskshaper.a \
-    $BUILD_DIR/libskunicode.a \
+    $BUILD_DIR/libskunicode_core.a \
+    $BUILD_DIR/libskunicode_icu.a \
     $BUILD_DIR/libsvg.a \
     $BUILD_DIR/libskia.a \
     $BUILTIN_FONT \

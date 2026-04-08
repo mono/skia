@@ -24,6 +24,7 @@
 #include "include/effects/SkGradientShader.h"
 #include "include/private/base/SkTDArray.h"
 #include "tools/ToolUtils.h"
+#include "tools/fonts/FontToolUtils.h"
 
 #include <math.h>
 #include <string.h>
@@ -36,18 +37,17 @@ public:
 private:
     void onOnceBeforeDraw() override {
         {
-            SkFont      font(ToolUtils::create_portable_typeface());
+            SkFont      font = ToolUtils::DefaultPortableFont();
             const char* txt = "Blobber";
             size_t txtLen = strlen(txt);
             fGlyphs.append(font.countText(txt, txtLen, SkTextEncoding::kUTF8));
             font.textToGlyphs(txt, txtLen, SkTextEncoding::kUTF8, fGlyphs.begin(), fGlyphs.size());
         }
 
-        SkFont font;
+        SkFont font = ToolUtils::DefaultPortableFont();
         font.setSubpixel(true);
         font.setEdging(SkFont::Edging::kAntiAlias);
         font.setSize(30);
-        font.setTypeface(ToolUtils::create_portable_typeface());
 
         SkTextBlobBuilder builder;
         int glyphCount = fGlyphs.size();

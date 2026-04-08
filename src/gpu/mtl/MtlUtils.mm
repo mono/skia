@@ -9,46 +9,58 @@
 
 #include "include/gpu/ShaderErrorHandler.h"
 #include "src/core/SkImageInfoPriv.h"
-#include "src/gpu/PipelineUtils.h"
 #include "src/sksl/SkSLCompiler.h"
 #include "src/sksl/SkSLProgramSettings.h"
 #include "src/utils/SkShaderUtils.h"
-
-#ifdef SK_BUILD_FOR_IOS
-#import <UIKit/UIApplication.h>
-#endif
 
 namespace skgpu {
 
 bool MtlFormatIsDepthOrStencil(MTLPixelFormat format) {
     switch (format) {
-        case MTLPixelFormatStencil8: // fallthrough
+        case MTLPixelFormatStencil8:                [[fallthrough]];
+        case MTLPixelFormatDepth16Unorm:
         case MTLPixelFormatDepth32Float:
+#if defined(SK_BUILD_FOR_MAC)
+        case MTLPixelFormatDepth24Unorm_Stencil8:
+#endif
         case MTLPixelFormatDepth32Float_Stencil8:
             return true;
         default:
             return false;
     }
+
+    SkUNREACHABLE;
 }
 
 bool MtlFormatIsDepth(MTLPixelFormat format) {
     switch (format) {
+        case MTLPixelFormatDepth16Unorm:            [[fallthrough]];
         case MTLPixelFormatDepth32Float:
+#if defined(SK_BUILD_FOR_MAC)
+        case MTLPixelFormatDepth24Unorm_Stencil8:
+#endif
         case MTLPixelFormatDepth32Float_Stencil8:
             return true;
         default:
             return false;
     }
+
+    SkUNREACHABLE;
 }
 
 bool MtlFormatIsStencil(MTLPixelFormat format) {
     switch (format) {
-        case MTLPixelFormatStencil8: // fallthrough
+        case MTLPixelFormatStencil8:                [[fallthrough]];
+#if defined(SK_BUILD_FOR_MAC)
+        case MTLPixelFormatDepth24Unorm_Stencil8:
+#endif
         case MTLPixelFormatDepth32Float_Stencil8:
             return true;
         default:
             return false;
     }
+
+    SkUNREACHABLE;
 }
 
 bool MtlFormatIsCompressed(MTLPixelFormat mtlFormat) {
@@ -62,6 +74,8 @@ bool MtlFormatIsCompressed(MTLPixelFormat mtlFormat) {
         default:
             return false;
     }
+
+    SkUNREACHABLE;
 }
 
 const char* MtlFormatToString(MTLPixelFormat mtlFormat) {
@@ -91,6 +105,8 @@ const char* MtlFormatToString(MTLPixelFormat mtlFormat) {
 
         default:                            return "Unknown";
     }
+
+    SkUNREACHABLE;
 }
 
 uint32_t MtlFormatChannels(MTLPixelFormat mtlFormat) {
@@ -119,6 +135,8 @@ uint32_t MtlFormatChannels(MTLPixelFormat mtlFormat) {
 
         default:                            return 0;
     }
+
+    SkUNREACHABLE;
 }
 
 size_t MtlFormatBytesPerBlock(MTLPixelFormat mtlFormat) {
@@ -148,12 +166,20 @@ size_t MtlFormatBytesPerBlock(MTLPixelFormat mtlFormat) {
 
         default:                            return 0;
     }
+
+    SkUNREACHABLE;
 }
 
-#ifdef SK_BUILD_FOR_IOS
-bool MtlIsAppInBackground() {
-    return [NSThread isMainThread] &&
-           ([UIApplication sharedApplication].applicationState == UIApplicationStateBackground);
-}
+SkTextureCompressionType MtlFormatToCompressionType(MTLPixelFormat mtlFormat) {
+    switch (mtlFormat) {
+        case MTLPixelFormatETC2_RGB8: return SkTextureCompressionType::kETC2_RGB8_UNORM;
+#ifdef SK_BUILD_FOR_MAC
+        case MTLPixelFormatBC1_RGBA:  return SkTextureCompressionType::kBC1_RGBA8_UNORM;
 #endif
+        default:                      return SkTextureCompressionType::kNone;
+    }
+
+    SkUNREACHABLE;
+}
+
 } // namespace skgpu

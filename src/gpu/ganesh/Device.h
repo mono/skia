@@ -16,18 +16,17 @@
 #include "include/core/SkRect.h"
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkSamplingOptions.h"
-#include "include/core/SkScalar.h"
 #include "include/core/SkShader.h"
 #include "include/core/SkSurface.h"
-#include "include/gpu/GrTypes.h"
+#include "include/gpu/ganesh/GrTypes.h"
 #include "include/private/base/SkAssert.h"
+#include "include/private/base/SkMacros.h"
 #include "src/core/SkDevice.h"
-#include "src/core/SkImageFilterTypes.h"
 #include "src/core/SkMatrixPriv.h"
 #include "src/gpu/ganesh/ClipStack.h"
 #include "src/gpu/ganesh/GrColorInfo.h"
 #include "src/gpu/ganesh/GrSurfaceProxyView.h"
-#include "src/text/gpu/SDFTControl.h"
+#include "src/text/gpu/SubRunControl.h"
 
 #include <cstddef>
 #include <memory>
@@ -42,7 +41,6 @@ class SkBitmap;
 class SkBlender;
 class SkColorSpace;
 class SkDrawable;
-class SkImageFilterCache;
 class SkLatticeIter;
 class SkMatrix;
 class SkMesh;
@@ -56,11 +54,13 @@ class SkSurfaceProps;
 class SkSurface_Ganesh;
 class SkVertices;
 enum SkAlphaType : int;
+enum SkColorType : int;
 enum class GrAA : bool;
 enum class GrColorType;
 enum class SkBackingFit;
 enum class SkBlendMode;
 enum class SkTileMode;
+struct SkArc;
 struct SkDrawShadowRec;
 struct SkISize;
 struct SkPoint;
@@ -69,6 +69,9 @@ namespace skgpu {
 enum class Budgeted : bool;
 enum class Mipmapped : bool;
 class TiledTextureUtils;
+}
+namespace skif {
+class Backend;
 }
 namespace sktext {
 class GlyphRunList;
@@ -183,8 +186,7 @@ public:
     void drawDRRect(const SkRRect& outer, const SkRRect& inner, const SkPaint& paint) override;
     void drawRegion(const SkRegion& r, const SkPaint& paint) override;
     void drawOval(const SkRect& oval, const SkPaint& paint) override;
-    void drawArc(const SkRect& oval, SkScalar startAngle, SkScalar sweepAngle,
-                 bool useCenter, const SkPaint& paint) override;
+    void drawArc(const SkArc& arc, const SkPaint& paint) override;
     void drawPath(const SkPath& path, const SkPaint& paint, bool pathIsMutable) override;
 
     void drawVertices(const SkVertices*, sk_sp<SkBlender>, const SkPaint&, bool) override;
@@ -198,6 +200,7 @@ public:
     void drawImageRect(const SkImage*, const SkRect* src, const SkRect& dst,
                        const SkSamplingOptions&, const SkPaint&,
                        SkCanvas::SrcRectConstraint) override;
+    bool shouldDrawAsTiledImageRect() const override { return true; }
     bool drawAsTiledImageRect(SkCanvas*,
                               const SkImage*,
                               const SkRect* src,
@@ -212,7 +215,7 @@ public:
 
     void drawDevice(SkDevice*, const SkSamplingOptions&, const SkPaint&) override;
     void drawSpecial(SkSpecialImage*, const SkMatrix& localToDevice, const SkSamplingOptions&,
-                     const SkPaint&) override;
+                     const SkPaint&, SkCanvas::SrcRectConstraint) override;
 
     void drawEdgeAAQuad(const SkRect& rect, const SkPoint clip[4], SkCanvas::QuadAAFlags aaFlags,
                         const SkColor4f& color, SkBlendMode mode) override;
@@ -239,12 +242,10 @@ public:
                          const SkMatrix& srcToDst,
                          SkTileMode);
 
-    sk_sp<sktext::gpu::Slug> convertGlyphRunListToSlug(
-            const sktext::GlyphRunList& glyphRunList,
-            const SkPaint& initialPaint,
-            const SkPaint& drawingPaint) override;
+    sk_sp<sktext::gpu::Slug> convertGlyphRunListToSlug(const sktext::GlyphRunList& glyphRunList,
+                                                       const SkPaint& paint) override;
 
-    void drawSlug(SkCanvas*, const sktext::gpu::Slug* slug, const SkPaint& drawingPaint) override;
+    void drawSlug(SkCanvas*, const sktext::gpu::Slug* slug, const SkPaint& paint) override;
 
     sk_sp<SkSpecialImage> makeSpecial(const SkBitmap&) override;
     sk_sp<SkSpecialImage> makeSpecial(const SkImage*) override;
@@ -304,14 +305,14 @@ private:
         kIsOpaque  = 1 << 1,  //!< Hint from client that rendering to this device will be
         //   opaque even if the config supports alpha.
     };
-    GR_DECL_BITFIELD_CLASS_OPS_FRIENDS(DeviceFlags);
+    SK_DECL_BITFIELD_CLASS_OPS_FRIENDS(DeviceFlags);
 
     static SkImageInfo MakeInfo(SurfaceContext*,  DeviceFlags);
     static bool CheckAlphaTypeAndGetFlags(SkAlphaType, InitContents, DeviceFlags*);
 
     sk_sp<GrRecordingContext> fContext;
 
-    const sktext::gpu::SDFTControl fSDFTControl;
+    const sktext::gpu::SubRunControl fSubRunControl;
 
     std::unique_ptr<SurfaceDrawContext> fSurfaceDrawContext;
 
@@ -323,18 +324,14 @@ private:
 
     Device(std::unique_ptr<SurfaceDrawContext>, DeviceFlags);
 
-    void onDrawGlyphRunList(SkCanvas*,
-                            const sktext::GlyphRunList&,
-                            const SkPaint& initialPaint,
-                            const SkPaint& drawingPaint) override;
+    void onDrawGlyphRunList(SkCanvas*, const sktext::GlyphRunList&, const SkPaint& paint) override;
 
     bool onReadPixels(const SkPixmap&, int, int) override;
     bool onWritePixels(const SkPixmap&, int, int) override;
     bool onAccessPixels(SkPixmap*) override;
 
-    skif::Context createContext(const skif::ContextInfo& ctxInfo) const override;
-
-    SkImageFilterCache* getImageFilterCache() override;
+    sk_sp<skif::Backend> createImageFilteringBackend(const SkSurfaceProps& surfaceProps,
+                                                     SkColorType colorType) const override;
 
     void onClipShader(sk_sp<SkShader> shader) override {
         fClip.clipShader(std::move(shader));
@@ -367,7 +364,7 @@ private:
     friend class skgpu::TiledTextureUtils;   // for access to clip()
 };
 
-GR_MAKE_BITFIELD_CLASS_OPS(Device::DeviceFlags)
+SK_MAKE_BITFIELD_CLASS_OPS(Device::DeviceFlags)
 
 }  // namespace skgpu::ganesh
 

@@ -73,6 +73,7 @@ tests_sources = [
   "$_tests/EncodedInfoTest.cpp",
   "$_tests/ExifTest.cpp",
   "$_tests/ExtendedSkColorTypeTests.cpp",
+  "$_tests/F16DrawTest.cpp",
   "$_tests/F16StagesTest.cpp",
   "$_tests/FakeStreams.h",
   "$_tests/FillPathTest.cpp",
@@ -96,7 +97,6 @@ tests_sources = [
   "$_tests/GainmapShaderTest.cpp",
   "$_tests/GeometryTest.cpp",
   "$_tests/GifTest.cpp",
-  "$_tests/GlyphRunTest.cpp",
   "$_tests/GpuDrawPathTest.cpp",
   "$_tests/GpuRectanizerTest.cpp",
   "$_tests/GrAHardwareBufferTest.cpp",
@@ -129,6 +129,7 @@ tests_sources = [
   "$_tests/ImageFilterCacheTest.cpp",
   "$_tests/ImageFilterTest.cpp",
   "$_tests/ImageFrom565Bitmap.cpp",
+  "$_tests/ImageGeneratorOrientationTest.cpp",
   "$_tests/ImageGeneratorTest.cpp",
   "$_tests/ImageIsOpaqueTest.cpp",
   "$_tests/ImageNewShaderTest.cpp",
@@ -173,7 +174,6 @@ tests_sources = [
   "$_tests/PDFOpaqueSrcModeToSrcOverTest.cpp",
   "$_tests/PDFPrimitivesTest.cpp",
   "$_tests/PDFTaggedLinkTest.cpp",
-  "$_tests/PDFTaggedPruningTest.cpp",
   "$_tests/PDFTaggedTableTest.cpp",
   "$_tests/PDFTaggedTest.cpp",
   "$_tests/PaintTest.cpp",
@@ -263,6 +263,7 @@ tests_sources = [
   "$_tests/SkSLGLSLTestbed.cpp",
   "$_tests/SkSLMemoryLayoutTest.cpp",
   "$_tests/SkSLMetalTestbed.cpp",
+  "$_tests/SkSLPipelineStageTestbed.cpp",
   "$_tests/SkSLSPIRVTestbed.cpp",
   "$_tests/SkSLTest.cpp",
   "$_tests/SkSLTypeTest.cpp",
@@ -344,18 +345,22 @@ metal_tests_sources = [
 ]
 
 graphite_tests_sources = [
+  "$_tests/graphite/AHardwareBufferTest.cpp",
   "$_tests/graphite/BackendTextureTest.cpp",
   "$_tests/graphite/BoundsManagerTest.cpp",
   "$_tests/graphite/BufferManagerTest.cpp",
+  "$_tests/graphite/CacheBudgetTest.cpp",
   "$_tests/graphite/CacheKeyTest.cpp",
   "$_tests/graphite/ComputeTest.cpp",
   "$_tests/graphite/DeviceTest.cpp",
+  "$_tests/graphite/DrawAtlasTest.cpp",
   "$_tests/graphite/GraphitePromiseImageTest.cpp",
   "$_tests/graphite/GraphiteResourceCacheTest.cpp",
   "$_tests/graphite/GraphiteYUVAPromiseImageTest.cpp",
   "$_tests/graphite/ImageOriginTest.cpp",
   "$_tests/graphite/ImageProviderTest.cpp",
   "$_tests/graphite/ImageShaderTest.cpp",
+  "$_tests/graphite/ImageWrapTextureMipmapsTest.cpp",
   "$_tests/graphite/IntersectionTreeTest.cpp",
   "$_tests/graphite/KeyTest.cpp",
   "$_tests/graphite/MultisampleTest.cpp",
@@ -378,8 +383,10 @@ graphite_tests_sources = [
 ]
 
 precompile_tests_sources = [
-  "$_tests/graphite/CombinationBuilderTest.cpp",
-  "$_tests/graphite/PaintParamsKeyTest.cpp",
+  "$_tests/graphite/precompile/ChromePrecompileTest.cpp",
+  "$_tests/graphite/precompile/CombinationBuilderTest.cpp",
+  "$_tests/graphite/precompile/PaintParamsKeyTest.cpp",
+  "$_tests/graphite/precompile/ThreadedPrecompileTest.cpp",
 ]
 
 graphite_dawn_tests_sources = [ "$_tests/graphite/DawnBackendTextureTest.cpp" ]
@@ -457,6 +464,7 @@ ganesh_tests_sources = [
   "$_tests/BulkRectTest.cpp",
   "$_tests/ClearTest.cpp",
   "$_tests/DMSAATest.cpp",
+  "$_tests/DashPathEffectTestGanesh.cpp",
   "$_tests/DefaultPathRendererTest.cpp",
   "$_tests/DrawOpAtlasTest.cpp",
   "$_tests/GrClipStackTest.cpp",

@@ -12,6 +12,7 @@
 #include "include/core/SkColor.h"
 #include "include/core/SkData.h"
 #include "include/core/SkImage.h"
+#include "include/core/SkImageFilter.h"
 #include "include/core/SkMatrix.h"
 #include "include/core/SkPaint.h"
 #include "include/core/SkPoint.h"
@@ -23,6 +24,7 @@
 #include "include/core/SkSamplingOptions.h"
 #include "include/core/SkScalar.h"
 #include "include/core/SkString.h"
+#include "include/core/SkTileMode.h"
 #include "include/core/SkTypes.h"
 #include "include/private/base/SkAlign.h"
 #include "include/private/base/SkTArray.h"
@@ -333,9 +335,9 @@ void SkPicturePlayback::handleOp(SkReadBuffer* reader,
             SkBlendMode blend = reader->read32LE(SkBlendMode::kLastMode);
             BREAK_ON_READ_ERROR(reader);
             bool hasClip = reader->readInt();
-            SkPoint* clip = nullptr;
+            const SkPoint* clip = nullptr;
             if (hasClip) {
-                clip = (SkPoint*) reader->skip(4, sizeof(SkPoint));
+                clip = (const SkPoint*) reader->skip(4, sizeof(SkPoint));
             }
             BREAK_ON_READ_ERROR(reader);
             canvas->experimental_DrawEdgeAAQuad(rect, clip, aaFlags, color, blend);
@@ -369,7 +371,7 @@ void SkPicturePlayback::handleOp(SkReadBuffer* reader,
 
             // Track minimum necessary clip points and matrices that must be provided to satisfy
             // the entries.
-            int expectedClips = 0;
+            int expectedClipPointCount = 0;
             int maxMatrixIndex = -1;
             AutoTArray<SkCanvas::ImageSetEntry> set(cnt);
             for (int i = 0; i < cnt && reader->isValid(); ++i) {
@@ -381,20 +383,22 @@ void SkPicturePlayback::handleOp(SkReadBuffer* reader,
                 set[i].fAAFlags = reader->readUInt();
                 set[i].fHasClip = reader->readInt();
 
-                expectedClips += set[i].fHasClip ? 1 : 0;
+                expectedClipPointCount += set[i].fHasClip ? 4 : 0; // 4 points per clip quad
                 if (set[i].fMatrixIndex > maxMatrixIndex) {
                     maxMatrixIndex = set[i].fMatrixIndex;
                 }
             }
 
-            int dstClipCount = reader->readInt();
-            SkPoint* dstClips = nullptr;
-            if (!reader->validate(dstClipCount >= 0) ||
-                !reader->validate(expectedClips <= dstClipCount)) {
+            int dstClipPointCount = reader->readInt();
+            const SkPoint* dstClips = nullptr;
+            if (!reader->validate(dstClipPointCount >= 0) ||
+                !reader->validate(expectedClipPointCount == dstClipPointCount)) {
                 // A bad dstClipCount (either negative, or not enough to satisfy entries).
+                // Use exact comparison; the serialized SKP should only have included the exact
+                // amount used by the recorded draw, even if the original array was larger.
                 break;
-            } else if (dstClipCount > 0) {
-                dstClips = (SkPoint*) reader->skip(dstClipCount, sizeof(SkPoint));
+            } else if (dstClipPointCount > 0) {
+                dstClips = (const SkPoint*) reader->skip(dstClipPointCount, sizeof(SkPoint));
                 if (dstClips == nullptr) {
                     // Not enough bytes remaining so the reader has been invalidated
                     break;
@@ -402,7 +406,7 @@ void SkPicturePlayback::handleOp(SkReadBuffer* reader,
             }
             int matrixCount = reader->readInt();
             if (!reader->validate(matrixCount >= 0) ||
-                !reader->validate(maxMatrixIndex <= (matrixCount - 1)) ||
+                !reader->validate(maxMatrixIndex == (matrixCount - 1)) ||
                 !reader->validate(
                     SkSafeMath::Mul(matrixCount, kMatrixSize) <= reader->available())) {
                 // Entries access out-of-bound matrix indices, given provided matrices or
@@ -630,10 +634,11 @@ void SkPicturePlayback::handleOp(SkReadBuffer* reader,
             canvas->drawTextBlob(blob, x, y, paint);
         } break;
         case DRAW_SLUG: {
+            const SkPaint& paint = fPictureData->requiredPaint(reader);
             const sktext::gpu::Slug* slug = fPictureData->getSlug(reader);
             BREAK_ON_READ_ERROR(reader);
 
-            canvas->drawSlug(slug);
+            canvas->drawSlug(slug, paint);
         } break;
         case DRAW_VERTICES_OBJECT: {
             const SkPaint& paint = fPictureData->requiredPaint(reader);
@@ -671,6 +676,7 @@ void SkPicturePlayback::handleOp(SkReadBuffer* reader,
             SkCanvas::SaveLayerRec rec(nullptr, nullptr, nullptr, 0);
             const uint32_t flatFlags = reader->readInt();
             SkRect bounds;
+            skia_private::AutoSTArray<2, sk_sp<SkImageFilter>> filters;
             if (flatFlags & SAVELAYERREC_HAS_BOUNDS) {
                 reader->readRect(&bounds);
                 rec.fBounds = &bounds;
@@ -695,6 +701,22 @@ void SkPicturePlayback::handleOp(SkReadBuffer* reader,
             if (!reader->isVersionLT(SkPicturePriv::Version::kBackdropScaleFactor) &&
                 (flatFlags & SAVELAYERREC_HAS_BACKDROP_SCALE)) {
                 SkCanvasPriv::SetBackdropScaleFactor(&rec, reader->readScalar());
+            }
+            if (!reader->isVersionLT(SkPicturePriv::Version::kMultipleFiltersOnSaveLayer) &&
+                (flatFlags & SAVELAYERREC_HAS_MULTIPLE_FILTERS)) {
+                int filterCount = reader->readUInt();
+                reader->validate(filterCount > 0 && filterCount <= SkCanvas::kMaxFiltersPerLayer);
+                BREAK_ON_READ_ERROR(reader);
+                filters.reset(filterCount);
+                for (int i = 0; i < filterCount; ++i) {
+                    const SkPaint& paint = fPictureData->requiredPaint(reader);
+                    filters[i] = paint.refImageFilter();
+                }
+                rec.fFilters = filters;
+            }
+            if (!reader->isVersionLT(SkPicturePriv::Version::kSaveLayerBackdropTileMode) &&
+                (flatFlags & SAVELAYERREC_HAS_BACKDROP_TILEMODE)) {
+                rec.fBackdropTileMode = reader->read32LE(SkTileMode::kLastTileMode);
             }
             BREAK_ON_READ_ERROR(reader);
 

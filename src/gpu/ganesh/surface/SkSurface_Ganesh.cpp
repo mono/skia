@@ -16,11 +16,11 @@
 #include "include/core/SkSurface.h"
 #include "include/core/SkSurfaceProps.h"
 #include "include/gpu/GpuTypes.h"
-#include "include/gpu/GrBackendSurface.h"
-#include "include/gpu/GrContextThreadSafeProxy.h"
-#include "include/gpu/GrDirectContext.h"
-#include "include/gpu/GrRecordingContext.h"
-#include "include/gpu/GrTypes.h"
+#include "include/gpu/ganesh/GrBackendSurface.h"
+#include "include/gpu/ganesh/GrContextThreadSafeProxy.h"
+#include "include/gpu/ganesh/GrDirectContext.h"
+#include "include/gpu/ganesh/GrRecordingContext.h"
+#include "include/gpu/ganesh/GrTypes.h"
 #include "include/gpu/ganesh/SkSurfaceGanesh.h"
 #include "include/private/base/SkTo.h"
 #include "include/private/chromium/GrDeferredDisplayList.h"
@@ -50,7 +50,7 @@
 
 #ifdef SK_IN_RENDERENGINE
 #include "include/gpu/ganesh/gl/GrGLBackendSurface.h"
-#include "include/gpu/gl/GrGLTypes.h"
+#include "include/gpu/ganesh/gl/GrGLTypes.h"
 #endif
 
 #include <algorithm>
@@ -267,10 +267,9 @@ bool SkSurface_Ganesh::onCharacterize(GrSurfaceCharacterization* characterizatio
     GrSurfaceProxyView readSurfaceView = fDevice->readSurfaceView();
     size_t maxResourceBytes = direct->getResourceCacheLimit();
 
-    bool mipmapped =
-            readSurfaceView.asTextureProxy()
-                    ? skgpu::Mipmapped::kYes == readSurfaceView.asTextureProxy()->mipmapped()
-                    : false;
+    skgpu::Mipmapped mipmapped = readSurfaceView.asTextureProxy()
+                                         ? readSurfaceView.asTextureProxy()->mipmapped()
+                                         : skgpu::Mipmapped::kNo;
 
     bool usesGLFBO0 = readSurfaceView.asRenderTargetProxy()->glRTFBOIDIs0();
     // We should never get in the situation where we have a texture render target that is also
@@ -292,7 +291,7 @@ bool SkSurface_Ganesh::onCharacterize(GrSurfaceCharacterization* characterizatio
             readSurfaceView.origin(),
             numSamples,
             GrSurfaceCharacterization::Textureable(SkToBool(readSurfaceView.asTextureProxy())),
-            GrSurfaceCharacterization::MipMapped(mipmapped),
+            mipmapped,
             GrSurfaceCharacterization::UsesGLFBO0(usesGLFBO0),
             GrSurfaceCharacterization::VkRTSupportsInputAttachment(vkRTSupportsInputAttachment),
             GrSurfaceCharacterization::VulkanSecondaryCBCompatible(false),
@@ -505,7 +504,8 @@ bool SkSurface_Ganesh::replaceBackendTexture(const GrBackendTexture& backendText
     int sampleCnt = oldTexture->asRenderTarget()->numSamples();
     GrColorType grColorType = SkColorTypeToGrColorType(this->getCanvas()->imageInfo().colorType());
     if (!validate_backend_texture(
-                rContext->priv().caps(), backendTexture, sampleCnt, grColorType, true)) {
+                rContext->priv().caps(), backendTexture, sampleCnt, grColorType,
+                /* texturable= */ true)) {
         return false;
     }
 
@@ -706,7 +706,7 @@ sk_sp<SkSurface> WrapBackendRenderTarget(GrRecordingContext* rContext,
                                          ReleaseContext releaseContext) {
     auto releaseHelper = skgpu::RefCntedCallback::Make(relProc, releaseContext);
 
-    if (!rContext) {
+    if (!rContext || !rt.isValid()) {
         return nullptr;
     }
 

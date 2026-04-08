@@ -8,10 +8,12 @@
 #include "include/core/SkContourMeasure.h"
 #include "include/core/SkPath.h"
 #include "include/core/SkPathMeasure.h"
+#include "include/core/SkPathTypes.h"
 #include "include/core/SkPoint.h"
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkScalar.h"
 #include "include/core/SkTypes.h"
+#include "src/core/SkPathMeasurePriv.h"
 #include "src/core/SkPathPriv.h"
 #include "tests/Test.h"
 
@@ -20,7 +22,7 @@
 #include <initializer_list>
 #include <utility>
 
-static void test_small_segment3() {
+static void test_small_segment3(skiatest::Reporter* reporter) {
     SkPath path;
     const SkPoint pts[] = {
         { 0, 0 },
@@ -35,6 +37,21 @@ static void test_small_segment3() {
 
     SkPathMeasure meas(path, false);
     meas.getLength();
+
+    // Now check that we cap the segment size even with very large resolution scales.
+    // Earlier versions allowed the pathmeasure to recurse without limit in the face
+    // of a very large scale.
+    //
+    //  Before this limit, the above meas had 15K segments, and when built with
+    // a resScale of 100, it had 184K segments -- for 1 cubic!
+    {
+        auto n = SkPathMeasurePriv::CountSegments(meas);
+        REPORTER_ASSERT(reporter, n < 300);
+
+        constexpr float resScale = 1000;
+        n = SkPathMeasurePriv::CountSegments(SkPathMeasure(path, false, resScale));
+        REPORTER_ASSERT(reporter, n < 300);
+    }
 }
 
 static void test_small_segment2() {
@@ -211,7 +228,7 @@ DEF_TEST(PathMeasure, reporter) {
 
     test_small_segment();
     test_small_segment2();
-    test_small_segment3();
+    test_small_segment3(reporter);
 
     // SkPathMeasure isn't copyable, but it should be move-able
     SkPathMeasure meas2(std::move(meas));
@@ -244,7 +261,7 @@ DEF_TEST(PathMeasure_nextctr, reporter) {
     REPORTER_ASSERT(reporter, !meas.nextContour());
 }
 
-static void test_90_degrees(sk_sp<SkContourMeasure> cm, SkScalar radius,
+static void test_90_degrees(const sk_sp<SkContourMeasure>& cm, SkScalar radius,
                             skiatest::Reporter* reporter) {
     SkPoint pos;
     SkVector tan;
@@ -339,4 +356,97 @@ DEF_TEST(contour_measure, reporter) {
     test_MLM_contours(reporter);
 
     test_shrink(reporter);
+}
+
+DEF_TEST(contour_measure_verbs, reporter) {
+    SkPath path;
+    path.moveTo(10, 10);
+    path.lineTo(10, 30);
+    path.lineTo(30, 30);
+    path.quadTo({40, 30}, {40, 40});
+    path.cubicTo({50, 40}, {50, 50}, {40, 50});
+    path.conicTo({50, 50}, {50, 60}, 1.2f);
+
+    SkContourMeasureIter measure(path, false);
+
+    sk_sp<SkContourMeasure> cmeasure = measure.next();
+    REPORTER_ASSERT(reporter, cmeasure);
+
+    SkContourMeasure::ForwardVerbIterator viter = cmeasure->begin();
+    {
+        REPORTER_ASSERT(reporter, viter != cmeasure->end());
+        const auto vmeasure = *viter;
+        REPORTER_ASSERT(reporter, vmeasure.fVerb == SkPathVerb::kLine);
+        REPORTER_ASSERT(reporter, SkScalarNearlyEqual(vmeasure.fDistance, 20));
+        REPORTER_ASSERT(reporter, vmeasure.fPts.size() == 2);
+        REPORTER_ASSERT(reporter, vmeasure.fPts[0] == SkPoint::Make(10, 10));
+        REPORTER_ASSERT(reporter, vmeasure.fPts[1] == SkPoint::Make(10, 30));
+    }
+
+    ++viter;
+    {
+        REPORTER_ASSERT(reporter, viter != cmeasure->end());
+        const auto vmeasure = *viter;
+        REPORTER_ASSERT(reporter, vmeasure.fVerb == SkPathVerb::kLine);
+        REPORTER_ASSERT(reporter, SkScalarNearlyEqual(vmeasure.fDistance, 40));
+        REPORTER_ASSERT(reporter, vmeasure.fPts.size() == 2);
+        REPORTER_ASSERT(reporter, vmeasure.fPts[0] == SkPoint::Make(10, 30));
+        REPORTER_ASSERT(reporter, vmeasure.fPts[1] == SkPoint::Make(30, 30));
+    }
+
+    ++viter;
+    {
+        REPORTER_ASSERT(reporter, viter != cmeasure->end());
+        const auto vmeasure = *viter;
+        REPORTER_ASSERT(reporter, vmeasure.fVerb == SkPathVerb::kQuad);
+        REPORTER_ASSERT(reporter, SkScalarNearlyEqual(vmeasure.fDistance, 56.127525f));
+        REPORTER_ASSERT(reporter, vmeasure.fPts.size() == 3);
+        REPORTER_ASSERT(reporter, vmeasure.fPts[0] == SkPoint::Make(30, 30));
+        REPORTER_ASSERT(reporter, vmeasure.fPts[1] == SkPoint::Make(40, 30));
+        REPORTER_ASSERT(reporter, vmeasure.fPts[2] == SkPoint::Make(40, 40));
+    }
+
+    ++viter;
+    {
+        REPORTER_ASSERT(reporter, viter != cmeasure->end());
+        const auto vmeasure = *viter;
+        REPORTER_ASSERT(reporter, vmeasure.fVerb == SkPathVerb::kCubic);
+        REPORTER_ASSERT(reporter, SkScalarNearlyEqual(vmeasure.fDistance, 76.004692f));
+        REPORTER_ASSERT(reporter, vmeasure.fPts.size() == 4);
+        REPORTER_ASSERT(reporter, vmeasure.fPts[0] == SkPoint::Make(40, 40));
+        REPORTER_ASSERT(reporter, vmeasure.fPts[1] == SkPoint::Make(50, 40));
+        REPORTER_ASSERT(reporter, vmeasure.fPts[2] == SkPoint::Make(50, 50));
+        REPORTER_ASSERT(reporter, vmeasure.fPts[3] == SkPoint::Make(40, 50));
+    }
+
+    ++viter;
+    {
+        REPORTER_ASSERT(reporter, viter != cmeasure->end());
+        const auto vmeasure = *viter;
+        REPORTER_ASSERT(reporter, vmeasure.fVerb == SkPathVerb::kConic);
+        REPORTER_ASSERT(reporter, SkScalarNearlyEqual(vmeasure.fDistance, 92.428185f));
+        REPORTER_ASSERT(reporter, vmeasure.fPts.size() == 4);
+        REPORTER_ASSERT(reporter, vmeasure.fPts[0] == SkPoint::Make(40, 50));
+        REPORTER_ASSERT(reporter, vmeasure.fPts[1] == SkPoint::Make(1.2f, 0));
+        REPORTER_ASSERT(reporter, vmeasure.fPts[2] == SkPoint::Make(50, 50));
+        REPORTER_ASSERT(reporter, vmeasure.fPts[3] == SkPoint::Make(50, 60));
+
+        // The last verb distance should also match the contour length.
+        REPORTER_ASSERT(reporter, SkScalarNearlyEqual(vmeasure.fDistance, cmeasure->length()));
+    }
+
+    ++viter;
+    {
+        REPORTER_ASSERT(reporter, viter == cmeasure->end());
+    }
+
+    // Exercise the range iterator form.
+    float current_distance = 0;
+    size_t verb_count = 0;
+    for (const auto vmeasure : *cmeasure) {
+        REPORTER_ASSERT(reporter, vmeasure.fDistance > current_distance);
+        current_distance = vmeasure.fDistance;
+        verb_count++;
+    }
+    REPORTER_ASSERT(reporter, verb_count == 5);
 }

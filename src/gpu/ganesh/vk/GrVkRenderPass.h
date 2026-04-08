@@ -8,12 +8,14 @@
 #ifndef GrVkRenderPass_DEFINED
 #define GrVkRenderPass_DEFINED
 
-#include "include/gpu/GrTypes.h"
-#include "include/gpu/vk/GrVkTypes.h"
+#include "include/private/base/SkDebug.h"
 #include "include/private/base/SkMacros.h"
+#include "include/private/gpu/vk/SkiaVulkan.h"
+#include "src/gpu/ganesh/GrManagedResource.h"
 #include "src/gpu/ganesh/vk/GrVkManagedResource.h"
 
 #include <cinttypes>
+#include <cstdint>
 
 class GrVkGpu;
 class GrVkRenderTarget;
@@ -90,14 +92,14 @@ public:
         // at least have a color attachment.
         kExternal_AttachmentFlag = 0x8,
     };
-    SK_DECL_BITFIELD_OPS_FRIENDS(AttachmentFlags);
+    SK_DECL_BITFIELD_OPS_FRIENDS(AttachmentFlags)
 
     enum class SelfDependencyFlags {
         kNone =                   0,
         kForInputAttachment =     1 << 0,
         kForNonCoherentAdvBlend = 1 << 1,
     };
-    GR_DECL_BITFIELD_CLASS_OPS_FRIENDS(SelfDependencyFlags);
+    SK_DECL_BITFIELD_CLASS_OPS_FRIENDS(SelfDependencyFlags);
 
     enum class LoadFromResolve {
         kNo,
@@ -204,6 +206,6 @@ private:
 };
 
 SK_MAKE_BITFIELD_OPS(GrVkRenderPass::AttachmentFlags)
-GR_MAKE_BITFIELD_CLASS_OPS(GrVkRenderPass::SelfDependencyFlags)
+SK_MAKE_BITFIELD_CLASS_OPS(GrVkRenderPass::SelfDependencyFlags)
 
 #endif

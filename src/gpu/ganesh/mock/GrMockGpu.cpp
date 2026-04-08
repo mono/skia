@@ -4,10 +4,16 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
-
 #include "src/gpu/ganesh/mock/GrMockGpu.h"
 
-#include "src/gpu/ganesh/GrThreadSafePipelineBuilder.h"
+#include "include/gpu/GpuTypes.h"
+#include "include/private/base/SkDebug.h"
+#include "include/private/base/SkMath.h"
+#include "src/gpu/ganesh/GrCaps.h"
+#include "src/gpu/ganesh/GrGpuBuffer.h"
+#include "src/gpu/ganesh/GrRenderTarget.h"
+#include "src/gpu/ganesh/GrTexture.h"
+#include "src/gpu/ganesh/GrThreadSafePipelineBuilder.h"  // IWYU pragma: keep
 #include "src/gpu/ganesh/mock/GrMockAttachment.h"
 #include "src/gpu/ganesh/mock/GrMockBuffer.h"
 #include "src/gpu/ganesh/mock/GrMockCaps.h"
@@ -81,7 +87,7 @@ GrMockGpu::GrMockGpu(GrDirectContext* direct, const GrMockOptions& options,
                      const GrContextOptions& contextOptions)
         : INHERITED(direct)
         , fMockOptions(options) {
-    this->initCapsAndCompiler(sk_make_sp<GrMockCaps>(contextOptions, options));
+    this->initCaps(sk_make_sp<GrMockCaps>(contextOptions, options));
 }
 
 GrMockGpu::~GrMockGpu() {}
@@ -299,7 +305,7 @@ void GrMockGpu::deleteBackendTexture(const GrBackendTexture& tex) {
     }
 }
 
-#if defined(GR_TEST_UTILS)
+#if defined(GPU_TEST_UTILS)
 bool GrMockGpu::isTestingOnlyBackendTexture(const GrBackendTexture& tex) const {
     SkASSERT(GrBackendApi::kMock == tex.backend());
 

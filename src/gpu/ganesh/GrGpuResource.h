@@ -8,20 +8,29 @@
 #ifndef GrGpuResource_DEFINED
 #define GrGpuResource_DEFINED
 
-#include "include/gpu/GpuTypes.h"
+#include "include/core/SkString.h"
+#include "include/core/SkTypes.h"
 #include "include/private/base/SkNoncopyable.h"
+#include "include/private/base/SkTo.h"
 #include "include/private/gpu/ganesh/GrTypesPriv.h"
 #include "src/gpu/GpuTypesPriv.h"
 #include "src/gpu/ResourceKey.h"
 
+#include <atomic>
+#include <cstddef>
+#include <cstdint>
+#include <string>
+#include <string_view>
+
 class GrDirectContext;
 class GrGpu;
 class GrResourceCache;
+class GrSurface;
 class SkTraceMemoryDump;
 
-#if defined(GR_TEST_UTILS)
-class GrSurface;
-#endif
+namespace skgpu {
+enum class Budgeted : bool;
+}
 
 /**
  * Base class for GrGpuResource. Provides the hooks for resources to interact with the cache.
@@ -57,19 +66,19 @@ public:
         }
     }
 
-    void addCommandBufferUsage() const {
+    void refCommandBuffer() const {
         // No barrier required.
         (void)fCommandBufferUsageCnt.fetch_add(+1, std::memory_order_relaxed);
     }
 
-    void removeCommandBufferUsage() const {
+    void unrefCommandBuffer() const {
         SkASSERT(!this->hasNoCommandBufferUsages());
         if (1 == fCommandBufferUsageCnt.fetch_add(-1, std::memory_order_acq_rel)) {
             this->notifyWillBeZero(LastRemovedRef::kCommandBufferUsage);
         }
     }
 
-#if defined(GR_TEST_UTILS)
+#if defined(GPU_TEST_UTILS)
     int32_t testingOnly_getRefCnt() const { return this->getRefCnt(); }
 #endif
 
@@ -226,7 +235,7 @@ public:
 
     static uint32_t CreateUniqueID();
 
-#if defined(GR_TEST_UTILS)
+#if defined(GPU_TEST_UTILS)
     virtual const GrSurface* asSurface() const { return nullptr; }
 #endif
 

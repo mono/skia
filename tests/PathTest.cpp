@@ -33,7 +33,6 @@
 #include "include/pathops/SkPathOps.h"
 #include "include/private/SkIDChangeListener.h"
 #include "include/private/SkPathRef.h"
-#include "include/private/base/SkFloatBits.h"
 #include "include/private/base/SkFloatingPoint.h"
 #include "include/private/base/SkMalloc.h"
 #include "include/private/base/SkTo.h"
@@ -41,6 +40,7 @@
 #include "include/utils/SkParse.h"
 #include "include/utils/SkParsePath.h"
 #include "src/base/SkAutoMalloc.h"
+#include "src/base/SkFloatBits.h"
 #include "src/base/SkRandom.h"
 #include "src/core/SkGeometry.h"
 #include "src/core/SkPathEnums.h"
@@ -48,6 +48,7 @@
 #include "src/core/SkReadBuffer.h"
 #include "src/core/SkWriteBuffer.h"
 #include "tests/Test.h"
+#include "tools/fonts/FontToolUtils.h"
 
 #include <algorithm>
 #include <cfloat>
@@ -1562,6 +1563,45 @@ static void test_convexity_doubleback(skiatest::Reporter* reporter) {
     check_convexity(reporter, doubleback, true);
     doubleback.quadTo(1, 0, 0, 0);
     check_convexity(reporter, doubleback, true);
+
+    doubleback.reset();
+    doubleback.lineTo(1, 0);
+    doubleback.lineTo(1, 0);
+    doubleback.lineTo(1, 1);
+    doubleback.lineTo(1, 1);
+    doubleback.lineTo(1, 0);
+    check_convexity(reporter, doubleback, false);
+
+    doubleback.reset();
+    doubleback.lineTo(-1, 0);
+    doubleback.lineTo(-1, 1);
+    doubleback.lineTo(-1, 0);
+    check_convexity(reporter, doubleback, false);
+
+    for (int i = 0; i < 4; ++i) {
+        doubleback.reset();
+        doubleback.moveTo(0, 0);
+        if (i == 0) {
+            doubleback.lineTo(-1, -1);
+            doubleback.lineTo(0, 0);
+        }
+        doubleback.lineTo(0, 1);
+        if (i == 1) {
+            doubleback.lineTo(0, 2);
+            doubleback.lineTo(0, 1);
+        }
+        doubleback.lineTo(1, 1);
+        if (i == 2) {
+            doubleback.lineTo(2, 2);
+            doubleback.lineTo(1, 1);
+        }
+        doubleback.lineTo(0, 0);
+        if (i == 3) {
+            doubleback.lineTo(-1, -1);
+            doubleback.lineTo(0, 0);
+        }
+        check_convexity(reporter, doubleback, false);
+    }
 }
 
 static void check_convex_bounds(skiatest::Reporter* reporter, const SkPath& p,
@@ -2057,6 +2097,20 @@ static void test_conservativelyContains(skiatest::Reporter* reporter) {
     path.reset();
     REPORTER_ASSERT(reporter, !path.conservativelyContainsRect(SkRect::MakeWH(1,1)));
     REPORTER_ASSERT(reporter, !path.conservativelyContainsRect(SkRect::MakeWH(0,0)));
+
+    path.reset();
+    path.moveTo(50, 50);
+    path.cubicTo(0, 0, 100, 0, 50, 50);
+    REPORTER_ASSERT(reporter, !path.conservativelyContainsRect(SkRect::MakeWH(100, 100)));
+    REPORTER_ASSERT(reporter, !path.conservativelyContainsRect(SkRect::MakeWH(30, 30)));
+    REPORTER_ASSERT(reporter, !path.conservativelyContainsRect(SkRect::MakeWH(1,1)));
+    REPORTER_ASSERT(reporter, !path.conservativelyContainsRect(SkRect::MakeWH(0,0)));
+
+    path.reset();
+    path.moveTo(50, 50);
+    path.quadTo(100, 100, 50, 50);
+    REPORTER_ASSERT(reporter, !path.conservativelyContainsRect(SkRect::MakeWH(1,1)));
+    REPORTER_ASSERT(reporter, !path.conservativelyContainsRect(SkRect::MakeWH(0,0)));
 }
 
 static void test_isRect_open_close(skiatest::Reporter* reporter) {
@@ -2396,6 +2450,84 @@ static void test_is_closed_rect(skiatest::Reporter* reporter) {
     REPORTER_ASSERT(reporter, !SkPathPriv::IsSimpleRect(path, false, &rect, &dir, &start));
     REPORTER_ASSERT(reporter, !SkPathPriv::IsSimpleRect(path, true, &rect, &dir, &start));
 
+}
+
+static void test_isArc(skiatest::Reporter* reporter) {
+    SkPath path;
+    REPORTER_ASSERT(reporter, !path.isArc(nullptr));
+
+    // One circle, one oval:
+    const SkRect kOvals[] = { SkRect::MakeWH(100, 100), SkRect::MakeWH(100, 200)};
+
+    // Various start and sweep angles. Note that we can't test with more than a full revolution,
+    // those cases are automatically converted to ovals by SkPath.
+    const SkScalar kStartAngles[] = { -270, -135, -45, 0, 10, 70, 180, 350 };
+    const SkScalar kSweepAngles[] = { -350, -190, -90, -5, 5, 89, 180, 270, 350 };
+
+    int mutator = 0;
+
+    for (SkRect oval : kOvals) {
+        for (SkScalar startAngle : kStartAngles) {
+            for (SkScalar sweepAngle : kSweepAngles) {
+                // For now, isArc only works for arcs where useCenter is false!
+                // TODO: When that's fixed, add more tests cases here.
+                path.rewind();
+                // Include an extra moveTo at the start - this should not interfere with isArc
+                path.moveTo(oval.center());
+                path.addArc(oval, startAngle, sweepAngle);
+
+                SkArc arc;
+                REPORTER_ASSERT(reporter, path.isArc(&arc));
+                REPORTER_ASSERT(reporter,
+                                oval == arc.fOval &&
+                                startAngle == arc.fStartAngle &&
+                                sweepAngle == arc.fSweepAngle &&
+                                !arc.isWedge());
+
+                // Apply some mutation. All of these should cause the path to no longer be an arc:
+                switch (mutator) {
+                    case 0:
+                        path.addArc(oval, startAngle, sweepAngle);
+                        break;
+                    case 1:
+                        path.lineTo(oval.center());
+                        break;
+                    case 2:
+                        path.lineTo(path.getPoint(0));
+                        break;
+                    case 3:
+                        path.close();
+                        break;
+                    case 4:
+                        path.moveTo(oval.center());
+                        break;
+                    default:
+                        SkUNREACHABLE;
+                }
+                mutator = (mutator + 1) % 5;
+                REPORTER_ASSERT(reporter, !path.isArc(nullptr));
+            }
+        }
+    }
+
+    // Having any non-move verb before the arc should cause isArc to return false:
+    path.rewind();
+    path.lineTo(kOvals[0].center());
+    path.addArc(kOvals[0], kStartAngles[0], kSweepAngles[0]);
+    REPORTER_ASSERT(reporter, !path.isArc(nullptr));
+
+    // Finally, transforming an arc path by a non-identity should always result in a non-arc path:
+    // TODO: We could clearly preserve arcs for translation, and for scale/rotation with extra work.
+    for (SkMatrix m :
+         {SkMatrix::Translate(10, 10), SkMatrix::RotateDeg(90), SkMatrix::Scale(2, 2)}) {
+        path.rewind();
+        path.addArc(kOvals[0], kStartAngles[0], kSweepAngles[0]);
+        REPORTER_ASSERT(reporter, path.isArc(nullptr));
+        path.transform(SkMatrix::I());
+        REPORTER_ASSERT(reporter, path.isArc(nullptr));
+        path.transform(m);
+        REPORTER_ASSERT(reporter, !path.isArc(nullptr));
+    }
 }
 
 static void test_isNestedFillRects(skiatest::Reporter* reporter) {
@@ -4974,6 +5106,7 @@ DEF_TEST(Paths, reporter) {
     test_isRect(reporter);
     test_is_closed_rect(reporter);
     test_isNestedFillRects(reporter);
+    test_isArc(reporter);
     test_zero_length_paths(reporter);
     test_direction(reporter);
     test_convexity(reporter);
@@ -5660,11 +5793,11 @@ DEF_TEST(path_last_move_to_index, r) {
     constexpr size_t len = sizeof(text) - 1;
     SkGlyphID glyphs[len];
 
-    SkFont font;
+    SkFont font = ToolUtils::DefaultFont();
     font.textToGlyphs(text, len, SkTextEncoding::kUTF8, glyphs, len);
 
     SkPath copyPath;
-    SkFont().getPaths(glyphs, len, [](const SkPath* src, const SkMatrix& mx, void* ctx) {
+    font.getPaths(glyphs, len, [](const SkPath* src, const SkMatrix& mx, void* ctx) {
         if (src) {
             ((SkPath*)ctx)->addPath(*src, mx);
         }

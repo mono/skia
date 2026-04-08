@@ -14,7 +14,6 @@ import (
 	"strings"
 
 	"go.skia.org/infra/go/skerr"
-	"go.skia.org/infra/go/util"
 	"go.skia.org/skia/bazel/exporter/build_proto/build"
 	"go.skia.org/skia/bazel/exporter/interfaces"
 	"google.golang.org/protobuf/proto"
@@ -22,11 +21,12 @@ import (
 
 // The contents (or partial contents) of a GNI file.
 type gniFileContents struct {
-	hasSrcs     bool            // Has at least one file in $_src/ dir?
-	hasIncludes bool            // Has at least one file in $_include/ dir?
-	hasModules  bool            // Has at least one file in $_module/ dir?
-	bazelFiles  map[string]bool // Set of Bazel files generating GNI contents.
-	data        []byte          // The file contents to be written.
+	hasExperimental bool            // Has at least one file in $_experimental/ dir?
+	hasIncludes     bool            // Has at least one file in $_include/ dir?
+	hasModules      bool            // Has at least one file in $_module/ dir?
+	hasSrcs         bool            // Has at least one file in $_src/ dir?
+	bazelFiles      map[string]bool // Set of Bazel files generating GNI contents.
+	data            []byte          // The file contents to be written.
 }
 
 // GNIFileListExportDesc contains a description of the data that
@@ -64,15 +64,10 @@ type GNIExporter struct {
 	exportGNIDescs []GNIExportDesc       // The rules to export.
 }
 
-// Skia source files which are deprecated. These are omitted from
-// *.gni files during export because the skia.h file is a generated
-// file and it cannot include deprecated files without breaking
-// clients that include it.
-var deprecatedFiles = []string{
-	"include/core/SkDrawLooper.h",
-	"include/effects/SkBlurDrawLooper.h",
-	"include/effects/SkLayerDrawLooper.h",
-}
+// The footer written to gn/codec.gni.
+const codecGNIFooter = `
+skia_codec_rust_png_ffi_crate_root = "$_experimental/rust_png/ffi/FFI.rs"
+`
 
 // The footer written to gn/core.gni.
 const coreGNIFooter = `skia_core_sources += skia_pathops_sources
@@ -115,9 +110,23 @@ declare_args() {
   skia_enable_skshaper_tests = skia_enable_skshaper
 }`
 
+const portsFooter = `
+skia_fontations_path_bridge_sources = [
+  "$_src/ports/fontations/src/skpath_bridge.h"
+]
+
+skia_fontations_bridge_sources = [
+  "$_src/ports/fontations/src/ffi.rs"
+]
+
+skia_fontations_bridge_root = "$_src/ports/fontations/src/ffi.rs"
+`
+
 // Map of GNI file names to footer text to be appended to the end of the file.
 var footerMap = map[string]string{
+	"gn/codec.gni":                  codecGNIFooter,
 	"gn/core.gni":                   coreGNIFooter,
+	"gn/ports.gni":                  portsFooter,
 	"gn/sksl_tests.gni":             skslTestsFooter,
 	"modules/skshaper/skshaper.gni": skshaperFooter,
 }
@@ -212,6 +221,9 @@ func makeRelativeFilePathForGNI(path string) (string, error) {
 	if strings.HasPrefix(path, "modules/") {
 		return "$_modules/" + strings.TrimPrefix(path, "modules/"), nil
 	}
+	if strings.HasPrefix(path, "experimental/") {
+		return "$_experimental/" + strings.TrimPrefix(path, "experimental/"), nil
+	}
 	// These sksl tests are purposely listed as a relative path underneath resources/sksl because
 	// that relative path is re-used by the GN logic to put stuff under //tests/sksl as well.
 	if strings.HasPrefix(path, "resources/sksl/") {
@@ -254,38 +266,41 @@ func fileListContainsOnlyCppHeaderFiles(files []string) bool {
 
 // Write the *.gni file header.
 func writeGNFileHeader(writer interfaces.Writer, gniFile *gniFileContents, pathToWorkspace string) {
-	fmt.Fprintln(writer, "# DO NOT EDIT: This is a generated file.")
-	fmt.Fprintln(writer, "# See //bazel/exporter_tool/README.md for more information.")
+	_, _ = fmt.Fprintln(writer, "# DO NOT EDIT: This is a generated file.")
+	_, _ = fmt.Fprintln(writer, "# See //bazel/exporter_tool/README.md for more information.")
 
-	fmt.Fprintln(writer, "#")
+	_, _ = fmt.Fprintln(writer, "#")
 	if len(gniFile.bazelFiles) > 1 {
 		keys := make([]string, 0, len(gniFile.bazelFiles))
-		fmt.Fprintln(writer, "# The sources of truth are:")
-		for bazelPath, _ := range gniFile.bazelFiles {
+		_, _ = fmt.Fprintln(writer, "# The sources of truth are:")
+		for bazelPath := range gniFile.bazelFiles {
 			keys = append(keys, bazelPath)
 		}
 		sort.Strings(keys)
 		for _, wsPath := range keys {
-			fmt.Fprintf(writer, "#   //%s\n", wsPath)
+			_, _ = fmt.Fprintf(writer, "#   //%s\n", wsPath)
 		}
 	} else {
-		for bazelPath, _ := range gniFile.bazelFiles {
-			fmt.Fprintf(writer, "# The source of truth is //%s\n", bazelPath)
+		for bazelPath := range gniFile.bazelFiles {
+			_, _ = fmt.Fprintf(writer, "# The source of truth is //%s\n", bazelPath)
 		}
 	}
 
-	writer.WriteString("\n")
-	fmt.Fprintln(writer, "# To update this file, run make -C bazel generate_gni")
+	_, _ = writer.WriteString("\n")
+	_, _ = fmt.Fprintln(writer, "# To update this file, run make -C bazel generate_gni")
 
-	writer.WriteString("\n")
+	_, _ = writer.WriteString("\n")
 	if gniFile.hasSrcs {
-		fmt.Fprintf(writer, "_src = get_path_info(\"%s/src\", \"abspath\")\n", pathToWorkspace)
+		_, _ = fmt.Fprintf(writer, "_src = get_path_info(\"%s/src\", \"abspath\")\n", pathToWorkspace)
+	}
+	if gniFile.hasExperimental {
+		_, _ = fmt.Fprintf(writer, "_experimental = get_path_info(\"%s/experimental\", \"abspath\")\n", pathToWorkspace)
 	}
 	if gniFile.hasIncludes {
-		fmt.Fprintf(writer, "_include = get_path_info(\"%s/include\", \"abspath\")\n", pathToWorkspace)
+		_, _ = fmt.Fprintf(writer, "_include = get_path_info(\"%s/include\", \"abspath\")\n", pathToWorkspace)
 	}
 	if gniFile.hasModules {
-		fmt.Fprintf(writer, "_modules = get_path_info(\"%s/modules\", \"abspath\")\n", pathToWorkspace)
+		_, _ = fmt.Fprintf(writer, "_modules = get_path_info(\"%s/modules\", \"abspath\")\n", pathToWorkspace)
 	}
 }
 
@@ -344,25 +359,6 @@ func convertTargetsToFilePaths(targets []string) ([]string, error) {
 	return paths, nil
 }
 
-// Is the source file deprecated? i.e. should the file be exported to projects
-// generated by this package?
-func isSourceFileDeprecated(workspacePath string) bool {
-	return util.In(workspacePath, deprecatedFiles)
-}
-
-// Filter all deprecated files from the |files| slice, returning a new slice
-// containing no deprecated files. All paths in |files| must be workspace-relative
-// paths.
-func filterDeprecatedFiles(files []string) []string {
-	filtered := make([]string, 0, len(files))
-	for _, path := range files {
-		if !isSourceFileDeprecated(path) {
-			filtered = append(filtered, path)
-		}
-	}
-	return filtered
-}
-
 // Return the top-level component (directory or file) of a relative file path.
 // The paths are assumed to be delimited by forward slash (/) characters (even on Windows).
 // An empty string is returned if no top level folder can be found.
@@ -418,6 +414,9 @@ func (e *GNIExporter) absToWorkspacePath(absPath string) (string, error) {
 
 // Merge the another file contents object into this one.
 func (c *gniFileContents) merge(other gniFileContents) {
+	if other.hasExperimental {
+		c.hasExperimental = true
+	}
 	if other.hasIncludes {
 		c.hasIncludes = true
 	}
@@ -427,7 +426,7 @@ func (c *gniFileContents) merge(other gniFileContents) {
 	if other.hasSrcs {
 		c.hasSrcs = true
 	}
-	for path, _ := range other.bazelFiles {
+	for path := range other.bazelFiles {
 		c.bazelFiles[path] = true
 	}
 	c.data = append(c.data, other.data...)
@@ -468,8 +467,6 @@ func (e *GNIExporter) convertGNIFileList(desc GNIFileListExportDesc, qr *build.Q
 		return gniFileContents{}, skerr.Wrap(err)
 	}
 
-	files = filterDeprecatedFiles(files)
-
 	files, err = addGNIVariablesToWorkspacePaths(files)
 	if err != nil {
 		return gniFileContents{}, skerr.Wrap(err)
@@ -480,6 +477,8 @@ func (e *GNIExporter) convertGNIFileList(desc GNIFileListExportDesc, qr *build.Q
 	for i := range files {
 		if strings.HasPrefix(files[i], "$_src/") {
 			fileContents.hasSrcs = true
+		} else if strings.HasPrefix(files[i], "$_experimental/") {
+			fileContents.hasExperimental = true
 		} else if strings.HasPrefix(files[i], "$_include/") {
 			fileContents.hasIncludes = true
 		} else if strings.HasPrefix(files[i], "$_modules/") {
@@ -490,20 +489,20 @@ func (e *GNIExporter) convertGNIFileList(desc GNIFileListExportDesc, qr *build.Q
 	var contents bytes.Buffer
 
 	if len(rules) > 1 {
-		fmt.Fprintln(&contents, "# List generated by Bazel rules:")
+		_, _ = fmt.Fprintln(&contents, "# List generated by Bazel rules:")
 		for _, bazelFile := range rules {
-			fmt.Fprintf(&contents, "#  %s\n", bazelFile)
+			_, _ = fmt.Fprintf(&contents, "#  %s\n", bazelFile)
 		}
 	} else if len(rules) > 0 {
-		fmt.Fprintf(&contents, "# Generated by Bazel rule %s\n", rules[0])
+		_, _ = fmt.Fprintf(&contents, "# Generated by Bazel rule %s\n", rules[0])
 	}
-	fmt.Fprintf(&contents, "%s = [\n", desc.Var)
+	_, _ = fmt.Fprintf(&contents, "%s = [\n", desc.Var)
 
 	for _, target := range files {
-		fmt.Fprintf(&contents, "  %q,\n", target)
+		_, _ = fmt.Fprintf(&contents, "  %q,\n", target)
 	}
-	fmt.Fprintln(&contents, "]")
-	fmt.Fprintln(&contents)
+	_, _ = fmt.Fprintln(&contents, "]")
+	_, _ = fmt.Fprintln(&contents)
 	fileContents.data = contents.Bytes()
 
 	return fileContents, nil
@@ -530,7 +529,7 @@ func (e *GNIExporter) exportGNIFile(gniExportDesc GNIExportDesc, qr *build.Query
 
 	pathToWorkspace := getPathToTopDir(gniExportDesc.GNI)
 	writeGNFileHeader(writer, &gniFileContents, pathToWorkspace)
-	writer.WriteString("\n")
+	_, _ = writer.WriteString("\n")
 
 	_, err = writer.Write(gniFileContents.data)
 	if err != nil {
@@ -539,7 +538,7 @@ func (e *GNIExporter) exportGNIFile(gniExportDesc GNIExportDesc, qr *build.Query
 
 	for gniPath, footer := range footerMap {
 		if gniExportDesc.GNI == gniPath {
-			fmt.Fprintln(writer, footer)
+			_, _ = fmt.Fprintln(writer, footer)
 			break
 		}
 	}

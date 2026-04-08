@@ -9,10 +9,11 @@
 #include "include/core/SkCanvas.h"
 #include "include/core/SkImage.h"
 #include "include/effects/SkImageFilters.h"
+#include "tools/DecodeUtils.h"
 #include "tools/Resources.h"
 
 #if defined(SK_GANESH)
-#include "include/gpu/GrRecordingContext.h"
+#include "include/gpu/ganesh/GrRecordingContext.h"
 #include "include/gpu/ganesh/SkImageGanesh.h"
 #endif
 
@@ -72,7 +73,7 @@ protected:
     }
 
     void onDelayedSetup() override {
-        fImage = GetResourceAsImage("images/mandrill_512.png");
+        fImage = ToolUtils::GetResourceAsImage("images/mandrill_512.png");
     }
 
     void onDraw(int loops, SkCanvas* canvas) override {
@@ -108,7 +109,6 @@ protected:
                 image = SkImages::MakeWithFilter(fImage, mergeFilter.get(),
                                                  subset, subset, &discardSubset, &offset);
             }
-            SkASSERT(image && image->dimensions() == fImage->dimensions());
         }
     }
 

@@ -7,8 +7,13 @@
 
 #include "src/gpu/ganesh/GrRenderTaskCluster.h"
 
+#include "include/core/SkRefCnt.h"
+#include "include/core/SkString.h"
+#include "include/core/SkTypes.h"
+#include "src/base/SkTInternalLList.h"
 #include "src/core/SkTHash.h"
 #include "src/gpu/ganesh/GrRenderTask.h"
+#include "src/gpu/ganesh/GrSurfaceProxy.h"
 
 using namespace skia_private;
 
@@ -20,9 +25,9 @@ static GrSurfaceProxy* first_target(GrRenderTask* task) { return task->target(0)
 #ifdef SK_DEBUG
 [[maybe_unused]] static SkString describe_task(GrRenderTask* t) {
     if (GrSurfaceProxy* target = first_target(t)) {
-        return SkStringPrintf("%s(%d)", target->getDebugName().c_str(), t->uniqueID());
+        return SkStringPrintf("%s(%u)", target->getDebugName().c_str(), t->uniqueID());
     } else {
-        return SkStringPrintf("%d", t->uniqueID());
+        return SkStringPrintf("%u", t->uniqueID());
     }
 }
 

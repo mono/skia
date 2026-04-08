@@ -26,7 +26,8 @@
 #include "include/core/SkTileMode.h"
 #include "include/core/SkTypes.h"
 #include "include/effects/SkGradientShader.h"
-#include "include/gpu/GrDirectContext.h"
+#include "include/gpu/ganesh/GrDirectContext.h"
+#include "tools/GpuToolUtils.h"
 #include "tools/ToolUtils.h"
 
 #include <algorithm>
@@ -297,7 +298,7 @@ private:
     SkString getName() const override { return SkString("draw_image_set_alpha_only"); }
     SkISize getISize() override { return {kM * kTileW, 2 * kN * kTileH}; }
 
-    DrawResult onGpuSetup(SkCanvas* canvas, SkString*) override {
+    DrawResult onGpuSetup(SkCanvas* canvas, SkString*, GraphiteTestContext*) override {
         auto direct = GrAsDirectContext(canvas->recordingContext());
 #if defined(SK_GRAPHITE)
         auto recorder = canvas->recorder();

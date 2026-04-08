@@ -5,18 +5,17 @@
  * found in the LICENSE file.
  */
 
+#include "src/gpu/ganesh/GrSurface.h"
+
 #include "include/core/SkTextureCompressionType.h"
-#include "include/gpu/GrBackendSurface.h"
+#include "include/gpu/ganesh/GrBackendSurface.h"
+#include "include/gpu/ganesh/GrDirectContext.h"
 #include "src/core/SkCompressedDataUtils.h"
+#include "src/gpu/SkBackingFit.h"
 #include "src/gpu/ganesh/GrBackendUtils.h"
 #include "src/gpu/ganesh/GrDirectContextPriv.h"
-#include "src/gpu/ganesh/GrRenderTarget.h"
-#include "src/gpu/ganesh/GrResourceProvider.h"
-#include "src/gpu/ganesh/GrSurface.h"
-#include "src/gpu/ganesh/GrTexture.h"
 
-#include "src/base/SkMathPriv.h"
-#include "src/gpu/ganesh/SkGr.h"
+#include <utility>
 
 size_t GrSurface::ComputeSize(const GrBackendFormat& format,
                               SkISize dimensions,
@@ -32,7 +31,7 @@ size_t GrSurface::ComputeSize(const GrBackendFormat& format,
     size_t colorSize;
 
     if (binSize) {
-        dimensions = GrResourceProvider::MakeApprox(dimensions);
+        dimensions = skgpu::GetApproxSize(dimensions);
     }
 
     SkTextureCompressionType compressionType = GrBackendFormatToCompressionType(format);

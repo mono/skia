@@ -8,7 +8,8 @@
 #include "src/gpu/ganesh/mtl/GrMtlAttachment.h"
 
 #include "include/gpu/GpuTypes.h"
-#include "include/gpu/GrBackendSurface.h"
+#include "include/gpu/ganesh/GrBackendSurface.h"
+#include "include/gpu/ganesh/mtl/GrMtlBackendSurface.h"
 #include "src/gpu/ganesh/mtl/GrMtlGpu.h"
 #include "src/gpu/ganesh/mtl/GrMtlUtil.h"
 
@@ -176,7 +177,7 @@ GrMtlAttachment::~GrMtlAttachment() {
 }
 
 GrBackendFormat GrMtlAttachment::backendFormat() const {
-    return GrBackendFormat::MakeMtl(SkToU32(fTexture.pixelFormat));
+    return GrBackendFormats::MakeMtl(SkToU32(fTexture.pixelFormat));
 }
 
 void GrMtlAttachment::onRelease() {

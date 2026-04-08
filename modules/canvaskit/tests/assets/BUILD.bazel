@@ -1,8 +1,10 @@
-load("//bazel:skia_rules.bzl", "exports_files_legacy", "skia_filegroup")
+load("//bazel:skia_rules.bzl", "skia_filegroup")
+
+package(
+    default_applicable_licenses = ["//:license"],
+)
 
 licenses(["notice"])
-
-exports_files_legacy()
 
 skia_filegroup(
     name = "test_assets",
@@ -29,6 +31,7 @@ skia_filegroup(
         "map-shield.json",
         "red_line.skp",
         "skottie_basic_slots.json",
+        "skottie_inline_font.json",
         "test.ttc",
         "test_glyphs-glyf_colr_1.ttf",
         "text_edit.json",

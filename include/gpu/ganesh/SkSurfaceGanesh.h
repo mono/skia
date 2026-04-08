@@ -11,7 +11,7 @@
 #include "include/core/SkImageInfo.h"
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkSurface.h"
-#include "include/gpu/GrTypes.h"
+#include "include/gpu/ganesh/GrTypes.h"
 #include "include/private/base/SkAPI.h"
 
 class GrBackendRenderTarget;
@@ -199,7 +199,7 @@ SK_API GrBackendRenderTarget GetBackendRenderTarget(SkSurface*, BackendHandleAcc
     GrDirectContext::flush.
  */
 SK_API void ResolveMSAA(SkSurface* surface);
-inline void ResolveMSAA(sk_sp<SkSurface> surface) {
+inline void ResolveMSAA(const sk_sp<SkSurface>& surface) {
     return ResolveMSAA(surface.get());
 }
 

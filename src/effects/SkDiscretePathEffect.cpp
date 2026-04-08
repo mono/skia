@@ -17,6 +17,7 @@
 #include "include/core/SkTypes.h"
 #include "include/effects/SkDiscretePathEffect.h"
 #include "include/private/base/SkFixed.h"
+#include "include/private/base/SkFloatingPoint.h"
 #include "src/core/SkPathEffectBase.h"
 #include "src/core/SkPointPriv.h"
 #include "src/core/SkReadBuffer.h"
@@ -75,13 +76,13 @@ static void Perterb(SkPoint* p, const SkVector& tangent, SkScalar scale) {
     *p += normal;
 }
 
-class SK_API SkDiscretePathEffectImpl : public SkPathEffectBase {
+class SkDiscretePathEffectImpl : public SkPathEffectBase {
 public:
     SkDiscretePathEffectImpl(SkScalar segLength, SkScalar deviation, uint32_t seedAssist)
         : fSegLength(segLength), fPerterb(deviation), fSeedAssist(seedAssist)
     {
-        SkASSERT(SkScalarIsFinite(segLength));
-        SkASSERT(SkScalarIsFinite(deviation));
+        SkASSERT(SkIsFinite(segLength));
+        SkASSERT(SkIsFinite(deviation));
         SkASSERT(segLength > SK_ScalarNearlyZero);
     }
 
@@ -177,7 +178,7 @@ private:
 
 sk_sp<SkPathEffect> SkDiscretePathEffect::Make(SkScalar segLength, SkScalar deviation,
                                                uint32_t seedAssist) {
-    if (!SkScalarIsFinite(segLength) || !SkScalarIsFinite(deviation)) {
+    if (!SkIsFinite(segLength, deviation)) {
         return nullptr;
     }
     if (segLength <= SK_ScalarNearlyZero) {

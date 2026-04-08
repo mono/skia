@@ -11,22 +11,84 @@
 #include "include/core/SkRefCnt.h"
 #include "include/private/base/SkTArray.h"
 #include "src/gpu/BufferWriter.h"
+#include "src/gpu/graphite/Buffer.h"
 #include "src/gpu/graphite/DrawTypes.h"
 #include "src/gpu/graphite/ResourceTypes.h"
+#include "src/gpu/graphite/UploadBufferManager.h"
 
 #include <array>
 #include <tuple>
-#include <vector>
 
 namespace skgpu::graphite {
 
-class Buffer;
 class Caps;
 class Context;
+class DrawBufferManager;
 class GlobalCache;
 class QueueManager;
 class Recording;
 class ResourceProvider;
+
+/**
+ * ScratchBuffer represents a GPU buffer object that is allowed to be reused across strictly
+ * sequential tasks within a Recording. It can be used to sub-allocate multiple bindings.
+ * When a ScratchBuffer gets deallocated, the underlying GPU buffer gets returned to the
+ * originating DrawBufferManager for reuse.
+ */
+class ScratchBuffer final {
+public:
+    // The default constructor creates an invalid ScratchBuffer that cannot be used for
+    // suballocations.
+    ScratchBuffer() = default;
+
+    // The destructor returns the underlying buffer back to the reuse pool, if the ScratchBuffer is
+    // valid.
+    ~ScratchBuffer();
+
+    // Disallow copy
+    ScratchBuffer(const ScratchBuffer&) = delete;
+    ScratchBuffer& operator=(const ScratchBuffer&) = delete;
+
+    // Allow move
+    ScratchBuffer(ScratchBuffer&&) = default;
+    ScratchBuffer& operator=(ScratchBuffer&&) = default;
+
+    // Returns false if the underlying buffer has been returned to the reuse pool.
+    bool isValid() const { return static_cast<bool>(fBuffer); }
+
+    // Convenience wrapper for checking the validity of a buffer.
+    explicit operator bool() { return this->isValid(); }
+
+    // Logical size of the initially requested allocation.
+    //
+    // NOTE: This number may be different from the size of the underlying GPU buffer but it is
+    // guaranteed to be less than or equal to it.
+    uint32_t size() const { return fSize; }
+
+    // Sub-allocate a slice within the scratch buffer object. Fails and returns a NULL pointer if
+    // the buffer doesn't have enough space remaining for `requiredBytes`.
+    // TODO(b/330743233): Currently the suballocations use the alignment for the BufferInfo that was
+    // assigned by the DrawBufferManager based on the ScratchBuffer's buffer type. One way to
+    // generalize this across different buffer usages/types is to have this function accept an
+    // additional alignment parameter. That should happen after we loosen the coupling between
+    // DrawBufferManager's BufferInfos and ScratchBuffer reuse pools.
+    BindBufferInfo suballocate(size_t requiredBytes);
+
+    // Returns the underlying buffer object back to the pool and invalidates this ScratchBuffer.
+    void returnToPool();
+
+private:
+    friend class DrawBufferManager;
+
+    ScratchBuffer(uint32_t size, uint32_t alignment, sk_sp<Buffer>, DrawBufferManager*);
+
+    uint32_t fSize;
+    uint32_t fAlignment;
+    sk_sp<Buffer> fBuffer;
+    uint32_t fOffset = 0;
+
+    DrawBufferManager* fOwner = nullptr;
+};
 
 /**
  * DrawBufferManager controls writing to buffer data ranges within larger, cacheable Buffers and
@@ -36,62 +98,114 @@ class ResourceProvider;
 */
 class DrawBufferManager {
 public:
-    DrawBufferManager(ResourceProvider*, const Caps*);
+    DrawBufferManager(ResourceProvider*, const Caps*, UploadBufferManager*);
     ~DrawBufferManager();
 
-    std::tuple<VertexWriter, BindBufferInfo> getVertexWriter(size_t requiredBytes);
-    std::tuple<IndexWriter, BindBufferInfo> getIndexWriter(size_t requiredBytes);
-    std::tuple<UniformWriter, BindBufferInfo> getUniformWriter(size_t requiredBytes);
-    std::tuple<UniformWriter, BindBufferInfo> getSsboWriter(size_t requiredBytes);
+    // Let possible users check if the manager is already in a bad mapping state and skip any extra
+    // work that will be wasted because the next Recording snap will fail.
+    bool hasMappingFailed() const { return fMappingFailed; }
+
+    // These writers automatically calculate the required bytes based on count and stride. If a
+    // valid writer is returned, the byte count will fit in a uint32_t.
+    std::pair<VertexWriter, BindBufferInfo> getVertexWriter(size_t count, size_t stride);
+    std::pair<IndexWriter, BindBufferInfo> getIndexWriter(size_t count, size_t stride);
+    std::pair<UniformWriter, BindBufferInfo> getUniformWriter(size_t count, size_t stride);
+
+    // Return an SSBO writer that is aligned for binding, per the requirements in fCurrentBuffers.
+    std::pair<UniformWriter, BindBufferInfo> getSsboWriter(size_t count, size_t stride);
+    // Return an SSBO writer that is aligned for indexing from the shader, per the provided stride.
+    std::pair<UniformWriter, BindBufferInfo> getAlignedSsboWriter(size_t count, size_t stride);
+
+    // The remaining writers and buffer allocator functions assume that byte counts are safely
+    // calculated by the caller (e.g. Vello or ).
 
     // Return a pointer to a mapped storage buffer suballocation without a specific data writer.
-    std::tuple<void*, BindBufferInfo> getUniformPointer(size_t requiredBytes);
-    std::tuple<void*, BindBufferInfo> getStoragePointer(size_t requiredBytes);
+    std::pair<void* /* mappedPtr */, BindBufferInfo> getUniformPointer(size_t requiredBytes);
+    std::pair<void* /* mappedPtr */, BindBufferInfo> getStoragePointer(size_t requiredBytes);
 
     // Utilities that return an unmapped buffer suballocation for a particular usage. These buffers
     // are intended to be only accessed by the GPU and are not intended for CPU data uploads.
     BindBufferInfo getStorage(size_t requiredBytes, ClearBuffer cleared = ClearBuffer::kNo);
     BindBufferInfo getVertexStorage(size_t requiredBytes);
     BindBufferInfo getIndexStorage(size_t requiredBytes);
-    BindBufferInfo getIndirectStorage(size_t requiredBytes);
+    BindBufferInfo getIndirectStorage(size_t requiredBytes, ClearBuffer cleared = ClearBuffer::kNo);
+
+    // Returns an entire storage buffer object that is large enough to fit `requiredBytes`. The
+    // returned ScratchBuffer can be used to sub-allocate one or more storage buffer bindings that
+    // reference the same buffer object.
+    //
+    // When the ScratchBuffer goes out of scope, the buffer object gets added to an internal pool
+    // and is available for immediate reuse. getScratchStorage() returns buffers from this pool if
+    // possible. A ScratchBuffer can be explicitly returned to the pool by calling `returnToPool()`.
+    //
+    // Returning a ScratchBuffer back to the buffer too early can result in validation failures
+    // and/or data races. It is the callers responsibility to manage reuse within a Recording and
+    // guarantee synchronized access to buffer bindings.
+    //
+    // This type of usage is currently limited to GPU-only storage buffers.
+    //
+    // TODO(b/330743233): Generalize the underlying pool to other buffer types, including mapped
+    //                    ones.
+    ScratchBuffer getScratchStorage(size_t requiredBytes);
 
     // Returns the last 'unusedBytes' from the last call to getVertexWriter(). Assumes that
-    // 'unusedBytes' is less than the 'requiredBytes' to the original allocation.
+    // 'unusedBytes' is less than the 'count*stride' to the original allocation.
     void returnVertexBytes(size_t unusedBytes);
 
-    size_t alignUniformBlockSize(size_t dataSize) {
-        return SkAlignTo(dataSize, fCurrentBuffers[kUniformBufferIndex].fStartAlignment);
-    }
-
-    // Finalizes all buffers and transfers ownership of them to a Recording.
-    void transferToRecording(Recording*);
+    // Finalizes all buffers and transfers ownership of them to a Recording. Returns true on success
+    // and false if a mapping had previously failed.
+    //
+    // Regardless of success or failure, the DrawBufferManager is reset to a valid initial state
+    // for recording buffer data for the next Recording.
+    [[nodiscard]] bool transferToRecording(Recording*);
 
 private:
+    friend class ScratchBuffer;
+
     struct BufferInfo {
-        BufferInfo(BufferType type, size_t blockSize, const Caps* caps);
+        BufferInfo(BufferType type, uint32_t minBlockSize, uint32_t maxBlockSize, const Caps* caps);
 
         const BufferType fType;
-        const size_t fStartAlignment;
-        const size_t fBlockSize;
-        sk_sp<Buffer> fBuffer{};
+        const uint32_t fStartAlignment;
+        const uint32_t fMinBlockSize;
+        const uint32_t fMaxBlockSize;
+        sk_sp<Buffer> fBuffer;
         // The fTransferBuffer can be null, if draw buffer cannot be mapped,
         // see Caps::drawBufferCanBeMapped() for detail.
-        sk_sp<Buffer> fTransferBuffer{};
-        size_t fOffset = 0;
+        BindBufferInfo fTransferBuffer{};
+        void* fTransferMapPtr = nullptr;
+        uint32_t fOffset = 0;
 
-        Buffer* getMappableBuffer() {
-            return fTransferBuffer ? fTransferBuffer.get() : fBuffer.get();
-        }
+        // Block size to use when creating new buffers; between fMinBlockSize and fMaxBlockSize.
+        uint32_t fCurBlockSize = 0;
+        // How many bytes have been used for for this buffer type since the last Recording snap.
+        uint32_t fUsedSize = 0;
     };
-    std::pair<void*, BindBufferInfo> prepareMappedBindBuffer(BufferInfo* info,
-                                                             size_t requiredBytes);
+    std::pair<void* /*mappedPtr*/, BindBufferInfo> prepareMappedBindBuffer(
+            BufferInfo* info,
+            std::string_view label,
+            uint32_t requiredBytes,
+            uint32_t requiredAlignment = 0);
     BindBufferInfo prepareBindBuffer(BufferInfo* info,
-                                     size_t requiredBytes,
+                                     std::string_view label,
+                                     uint32_t requiredBytes,
+                                     uint32_t requiredAlignment = 0,
                                      bool supportCpuUpload = false,
                                      ClearBuffer cleared = ClearBuffer::kNo);
 
+    // Helper method for public getSsboWriter methods.
+    std::pair<UniformWriter, BindBufferInfo> getSsboWriter(size_t count,
+                                                           size_t stride,
+                                                           size_t alignment);
+
+    sk_sp<Buffer> findReusableSbo(size_t bufferSize);
+
+    // Marks manager in a failed state, unmaps any previously collected buffers.
+    void onFailedBuffer();
+
     ResourceProvider* const fResourceProvider;
     const Caps* const fCaps;
+    UploadBufferManager* fUploadManager;
 
     static constexpr size_t kVertexBufferIndex          = 0;
     static constexpr size_t kIndexBufferIndex           = 1;
@@ -104,10 +218,22 @@ private:
     std::array<BufferInfo, 8> fCurrentBuffers;
 
     // Vector of buffer and transfer buffer pairs.
-    std::vector<std::pair<sk_sp<Buffer>, sk_sp<Buffer>>> fUsedBuffers;
+    skia_private::TArray<std::pair<sk_sp<Buffer>, BindBufferInfo>> fUsedBuffers;
 
     // List of buffer regions that were requested to be cleared at the time of allocation.
-    skia_private::TArray<ClearBufferInfo> fClearList;
+    skia_private::TArray<BindBufferInfo> fClearList;
+
+    // TODO(b/330744081): These should probably be maintained in a sorted data structure that
+    // supports fast insertion and lookup doesn't waste buffers (e.g. by vending out large buffers
+    // for small buffer sizes).
+    // TODO(b/330743233): We may want this pool to contain buffers with mixed usages (such as
+    // VERTEX|INDEX|UNIFORM|STORAGE) to reduce buffer usage on platforms like Dawn where
+    // host-written data always go through a copy via transfer buffer.
+    skia_private::TArray<sk_sp<Buffer>> fReusableScratchStorageBuffers;
+
+    // If mapping failed on Buffers created/managed by this DrawBufferManager or by the mapped
+    // transfer buffers from the UploadManager, remember so that the next Recording will fail.
+    bool fMappingFailed = false;
 };
 
 /**
@@ -148,7 +274,6 @@ private:
     struct CopyRange {
         BindBufferInfo  fSource; // The CPU-to-GPU buffer and offset for the source of the copy
         BindBufferInfo* fTarget; // The late-assigned destination of the copy
-        size_t          fSize;   // The number of bytes to copy
     };
     struct BufferInfo {
         BufferInfo(BufferType type, const Caps* caps);
@@ -156,31 +281,33 @@ private:
         bool createAndUpdateBindings(ResourceProvider*,
                                      Context*,
                                      QueueManager*,
-                                     GlobalCache*) const;
+                                     GlobalCache*,
+                                     std::string_view label) const;
         void reset() {
             fData.clear();
             fTotalRequiredBytes = 0;
         }
 
         const BufferType fBufferType;
-        const size_t     fAlignment;
+        const uint32_t   fAlignment;
 
-        std::vector<CopyRange> fData;
-        size_t fTotalRequiredBytes;
+        skia_private::TArray<CopyRange> fData;
+        uint32_t fTotalRequiredBytes;
     };
 
     void* prepareStaticData(BufferInfo* info, size_t requiredBytes, BindBufferInfo* target);
 
     ResourceProvider* const fResourceProvider;
+    UploadBufferManager fUploadManager;
+    const uint32_t fRequiredTransferAlignment;
 
     // The source data that's copied into a final GPU-private buffer
     BufferInfo fVertexBufferInfo;
     BufferInfo fIndexBufferInfo;
 
-    std::vector<sk_sp<Buffer>> fUsedBuffers;
-
-    sk_sp<Buffer> fCurrentTransferBuffer;
-    size_t        fCurrentOffset;
+    // If mapping failed on Buffers created/managed by this StaticBufferManager or by the mapped
+    // transfer buffers from the UploadManager, remember so that finalize() will fail.
+    bool fMappingFailed = false;
 };
 
 } // namespace skgpu::graphite

@@ -7,15 +7,21 @@
 
 #include "src/gpu/ganesh/vk/GrVkUtil.h"
 
-#include "include/gpu/GrDirectContext.h"
+#include "include/gpu/ganesh/GrDirectContext.h"
 #include "src/core/SkTraceEvent.h"
-#include "src/gpu/PipelineUtils.h"
-#include "src/gpu/ganesh/GrDataUtils.h"
 #include "src/gpu/ganesh/GrDirectContextPriv.h"
+#include "src/gpu/ganesh/GrShaderCaps.h"
+#include "src/gpu/ganesh/vk/GrVkCaps.h"
 #include "src/gpu/ganesh/vk/GrVkGpu.h"
-#include "src/sksl/SkSLCompiler.h"
+#include "src/gpu/vk/VulkanUtilsPriv.h"
 #include "src/sksl/SkSLProgramKind.h"
-#include "src/sksl/SkSLProgramSettings.h"
+
+#include <string.h>
+#include <cstdint>
+
+namespace skgpu {
+class ShaderErrorHandler;
+}
 
 bool GrVkFormatIsSupported(VkFormat format) {
     switch (format) {
@@ -27,6 +33,7 @@ bool GrVkFormatIsSupported(VkFormat format) {
         case VK_FORMAT_A2B10G10R10_UNORM_PACK32:
         case VK_FORMAT_A2R10G10B10_UNORM_PACK32:
         case VK_FORMAT_R5G6B5_UNORM_PACK16:
+        case VK_FORMAT_B5G6R5_UNORM_PACK16:
         case VK_FORMAT_B4G4R4A4_UNORM_PACK16:
         case VK_FORMAT_R4G4B4A4_UNORM_PACK16:
         case VK_FORMAT_R8_UNORM:
@@ -39,6 +46,7 @@ bool GrVkFormatIsSupported(VkFormat format) {
         case VK_FORMAT_R16G16_UNORM:
         case VK_FORMAT_G8_B8_R8_3PLANE_420_UNORM:
         case VK_FORMAT_G8_B8R8_2PLANE_420_UNORM:
+        case VK_FORMAT_G10X6_B10X6R10X6_2PLANE_420_UNORM_3PACK16:
         case VK_FORMAT_R16G16B16A16_UNORM:
         case VK_FORMAT_R16G16_SFLOAT:
         case VK_FORMAT_S8_UINT:
@@ -68,7 +76,7 @@ bool GrCompileVkShaderModule(GrVkGpu* gpu,
                              SkSL::Program::Interface* outInterface) {
     TRACE_EVENT0("skia.shaders", "CompileVkShaderModule");
     skgpu::ShaderErrorHandler* errorHandler = gpu->getContext()->priv().getShaderErrorHandler();
-    if (!skgpu::SkSLToSPIRV(gpu->shaderCompiler(),
+    if (!skgpu::SkSLToSPIRV(gpu->vkCaps().shaderCaps(),
                             shaderString,
                             vk_shader_stage_to_skiasl_kind(stage),
                             settings,

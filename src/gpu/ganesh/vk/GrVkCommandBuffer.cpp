@@ -8,18 +8,25 @@
 #include "src/gpu/ganesh/vk/GrVkCommandBuffer.h"
 
 #include "include/core/SkRect.h"
+#include "include/gpu/GpuTypes.h"
+#include "include/gpu/ganesh/GrTypes.h"
+#include "include/private/base/SkDebug.h"
 #include "src/core/SkTraceEvent.h"
+#include "src/gpu/ganesh/GrGpuBuffer.h"
 #include "src/gpu/ganesh/vk/GrVkBuffer.h"
+#include "src/gpu/ganesh/vk/GrVkCaps.h"
 #include "src/gpu/ganesh/vk/GrVkCommandPool.h"
 #include "src/gpu/ganesh/vk/GrVkFramebuffer.h"
 #include "src/gpu/ganesh/vk/GrVkGpu.h"
 #include "src/gpu/ganesh/vk/GrVkImage.h"
-#include "src/gpu/ganesh/vk/GrVkImageView.h"
 #include "src/gpu/ganesh/vk/GrVkPipeline.h"
-#include "src/gpu/ganesh/vk/GrVkPipelineState.h"
 #include "src/gpu/ganesh/vk/GrVkRenderPass.h"
-#include "src/gpu/ganesh/vk/GrVkRenderTarget.h"
 #include "src/gpu/ganesh/vk/GrVkUtil.h"
+
+#include <algorithm>
+#include <cstring>
+
+class GrGpu;
 
 using namespace skia_private;
 
@@ -50,7 +57,7 @@ void GrVkCommandBuffer::freeGPUData(const GrGpu* gpu, VkCommandPool cmdPool) con
     SkASSERT(cmdPool != VK_NULL_HANDLE);
     SkASSERT(!this->isWrapped());
 
-    GrVkGpu* vkGpu = (GrVkGpu*)gpu;
+    const GrVkGpu* vkGpu = (const GrVkGpu*)gpu;
     GR_VK_CALL(vkGpu->vkInterface(), FreeCommandBuffers(vkGpu->device(), cmdPool, 1, &fCmdBuffer));
 
     this->onFreeGPUData(vkGpu);
@@ -148,7 +155,7 @@ void GrVkCommandBuffer::submitPipelineBarriers(const GrVkGpu* gpu, bool forSelfD
     SkASSERT(fIsActive);
 
     // Currently we never submit a pipeline barrier without at least one memory barrier.
-    if (fBufferBarriers.size() > 0 || fImageBarriers.size() > 0) {
+    if (!fBufferBarriers.empty() || !fImageBarriers.empty()) {
         // For images we can have barriers inside of render passes but they require us to add more
         // support in subpasses which need self dependencies to have barriers inside them. Also, we
         // can never have buffer barriers inside of a render pass. For now we will just assert that
@@ -162,10 +169,10 @@ void GrVkCommandBuffer::submitPipelineBarriers(const GrVkGpu* gpu, bool forSelfD
         // counts >= 0, and in the case of >0, that the buffers are non-null. Evaluate whether this
         // change leads to a reduction in crash instances. If not, the issue may lie within the
         // driver itself and these checks can be removed.
-        if (fBufferBarriers.size() > 0 && fBufferBarriers.begin() == nullptr) {
+        if (!fBufferBarriers.empty() && fBufferBarriers.begin() == nullptr) {
             fBufferBarriers.clear(); // Sets the size to 0
         }
-        if (fImageBarriers.size() > 0 && fImageBarriers.begin() == nullptr) {
+        if (!fImageBarriers.empty() && fImageBarriers.begin() == nullptr) {
             fImageBarriers.clear(); // Sets the size to 0
         }
 
@@ -180,8 +187,8 @@ void GrVkCommandBuffer::submitPipelineBarriers(const GrVkGpu* gpu, bool forSelfD
         fSrcStageMask = 0;
         fDstStageMask = 0;
     }
-    SkASSERT(!fBufferBarriers.size());
-    SkASSERT(!fImageBarriers.size());
+    SkASSERT(fBufferBarriers.empty());
+    SkASSERT(fImageBarriers.empty());
     SkASSERT(!fBarriersByRegion);
     SkASSERT(!fSrcStageMask);
     SkASSERT(!fDstStageMask);
@@ -539,29 +546,46 @@ void GrVkPrimaryCommandBuffer::executeCommands(const GrVkGpu* gpu,
     this->invalidateState();
 }
 
-static bool submit_to_queue(GrVkGpu* gpu,
-                            VkQueue queue,
-                            VkFence fence,
-                            uint32_t waitCount,
-                            const VkSemaphore* waitSemaphores,
-                            const VkPipelineStageFlags* waitStages,
-                            uint32_t commandBufferCount,
-                            const VkCommandBuffer* commandBuffers,
-                            uint32_t signalCount,
-                            const VkSemaphore* signalSemaphores,
-                            GrProtected protectedContext) {
+static VkResult submit_to_queue(GrVkGpu* gpu,
+                                VkQueue queue,
+                                VkFence fence,
+                                uint32_t waitCount,
+                                const VkSemaphore* waitSemaphores,
+                                const VkPipelineStageFlags* waitStages,
+                                uint32_t commandBufferCount,
+                                const VkCommandBuffer* commandBuffers,
+                                uint32_t signalCount,
+                                const VkSemaphore* signalSemaphores,
+                                GrProtected protectedContext,
+                                const GrSubmitInfo& info) {
+    void* pNext = nullptr;
+
     VkProtectedSubmitInfo protectedSubmitInfo;
     if (protectedContext == GrProtected::kYes) {
         memset(&protectedSubmitInfo, 0, sizeof(VkProtectedSubmitInfo));
         protectedSubmitInfo.sType = VK_STRUCTURE_TYPE_PROTECTED_SUBMIT_INFO;
-        protectedSubmitInfo.pNext = nullptr;
+        protectedSubmitInfo.pNext = pNext;
         protectedSubmitInfo.protectedSubmit = VK_TRUE;
+
+        pNext = &protectedSubmitInfo;
+    }
+
+    VkFrameBoundaryEXT frameBoundary;
+    if (info.fMarkBoundary == GrMarkFrameBoundary::kYes &&
+        gpu->vkCaps().supportsFrameBoundary()) {
+        memset(&frameBoundary, 0, sizeof(VkFrameBoundaryEXT));
+        frameBoundary.sType = VK_STRUCTURE_TYPE_FRAME_BOUNDARY_EXT;
+        frameBoundary.pNext = pNext;
+        frameBoundary.flags = VK_FRAME_BOUNDARY_FRAME_END_BIT_EXT;
+        frameBoundary.frameID = info.fFrameID;
+
+        pNext = &frameBoundary;
     }
 
     VkSubmitInfo submitInfo;
     memset(&submitInfo, 0, sizeof(VkSubmitInfo));
     submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-    submitInfo.pNext = protectedContext == GrProtected::kYes ? &protectedSubmitInfo : nullptr;
+    submitInfo.pNext = pNext;
     submitInfo.waitSemaphoreCount = waitCount;
     submitInfo.pWaitSemaphores = waitSemaphores;
     submitInfo.pWaitDstStageMask = waitStages;
@@ -571,14 +595,15 @@ static bool submit_to_queue(GrVkGpu* gpu,
     submitInfo.pSignalSemaphores = signalSemaphores;
     VkResult result;
     GR_VK_CALL_RESULT(gpu, result, QueueSubmit(queue, 1, &submitInfo, fence));
-    return result == VK_SUCCESS;
+    return result;
 }
 
 bool GrVkPrimaryCommandBuffer::submitToQueue(
         GrVkGpu* gpu,
         VkQueue queue,
         TArray<GrVkSemaphore::Resource*>& signalSemaphores,
-        TArray<GrVkSemaphore::Resource*>& waitSemaphores) {
+        TArray<GrVkSemaphore::Resource*>& waitSemaphores,
+        const GrSubmitInfo& submitInfo) {
     SkASSERT(!fIsActive);
 
     VkResult err;
@@ -601,14 +626,14 @@ bool GrVkPrimaryCommandBuffer::submitToQueue(
     int signalCount = signalSemaphores.size();
     int waitCount = waitSemaphores.size();
 
-    bool submitted = false;
+    VkResult submitResult;
 
     if (0 == signalCount && 0 == waitCount) {
         // This command buffer has no dependent semaphores so we can simply just submit it to the
         // queue with no worries.
-        submitted = submit_to_queue(
+        submitResult = submit_to_queue(
                 gpu, queue, fSubmitFence, 0, nullptr, nullptr, 1, &fCmdBuffer, 0, nullptr,
-                gpu->protectedContext() ? GrProtected::kYes : GrProtected::kNo);
+                GrProtected(gpu->protectedContext()), submitInfo);
     } else {
         TArray<VkSemaphore> vkSignalSems(signalCount);
         for (int i = 0; i < signalCount; ++i) {
@@ -624,14 +649,19 @@ bool GrVkPrimaryCommandBuffer::submitToQueue(
             if (waitSemaphores[i]->shouldWait()) {
                 this->addResource(waitSemaphores[i]);
                 vkWaitSems.push_back(waitSemaphores[i]->semaphore());
-                vkWaitStages.push_back(VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
+                // We only block the fragment stage since client provided resources are not used
+                // before the fragment stage. This allows the driver to begin vertex work while
+                // waiting on the semaphore. We also add in the transfer stage for uses of clients
+                // calling read or write pixels.
+                vkWaitStages.push_back(VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT |
+                                       VK_PIPELINE_STAGE_TRANSFER_BIT);
             }
         }
-        submitted = submit_to_queue(gpu, queue, fSubmitFence, vkWaitSems.size(),
-                                    vkWaitSems.begin(), vkWaitStages.begin(), 1, &fCmdBuffer,
-                                    vkSignalSems.size(), vkSignalSems.begin(),
-                                    gpu->protectedContext() ? GrProtected::kYes : GrProtected::kNo);
-        if (submitted) {
+        submitResult = submit_to_queue(gpu, queue, fSubmitFence, vkWaitSems.size(),
+                                       vkWaitSems.begin(), vkWaitStages.begin(), 1, &fCmdBuffer,
+                                       vkSignalSems.size(), vkSignalSems.begin(),
+                                       GrProtected(gpu->protectedContext()), submitInfo);
+        if (submitResult == VK_SUCCESS) {
             for (int i = 0; i < signalCount; ++i) {
                 signalSemaphores[i]->markAsSignaled();
             }
@@ -641,8 +671,19 @@ bool GrVkPrimaryCommandBuffer::submitToQueue(
         }
     }
 
-    if (!submitted) {
-        // Destroy the fence or else we will try to wait forever for it to finish.
+    if (submitResult != VK_SUCCESS) {
+        // If we failed to submit because of a device lost, we still need to wait for the fence to
+        // signal before deleting. However, there is an ARM bug (b/359822580) where the driver early
+        // outs on the fence wait if in a device lost state and thus we can't wait on it. Instead,
+        // we just wait on the queue to finish. We're already in a state that's going to cause us to
+        // restart the whole device, so waiting on the queue shouldn't have any performance impact.
+        if (submitResult == VK_ERROR_DEVICE_LOST) {
+            GR_VK_CALL(gpu->vkInterface(), QueueWaitIdle(queue));
+        } else {
+            SkASSERT(submitResult == VK_ERROR_OUT_OF_HOST_MEMORY ||
+                     submitResult == VK_ERROR_OUT_OF_DEVICE_MEMORY);
+        }
+
         GR_VK_CALL(gpu->vkInterface(), DestroyFence(gpu->device(), fSubmitFence, nullptr));
         fSubmitFence = VK_NULL_HANDLE;
         return false;
@@ -932,7 +973,7 @@ void GrVkPrimaryCommandBuffer::onFreeGPUData(const GrVkGpu* gpu) const {
     if (VK_NULL_HANDLE != fSubmitFence) {
         GR_VK_CALL(gpu->vkInterface(), DestroyFence(gpu->device(), fSubmitFence, nullptr));
     }
-    SkASSERT(!fSecondaryCommandBuffers.size());
+    SkASSERT(fSecondaryCommandBuffers.empty());
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1011,4 +1052,3 @@ void GrVkSecondaryCommandBuffer::recycle(GrVkCommandPool* cmdPool) {
         cmdPool->recycleSecondaryCommandBuffer(this);
     }
 }
-

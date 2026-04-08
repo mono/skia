@@ -19,9 +19,10 @@
 
 namespace SkOpts {
     DEFINE_DEFAULT(S32_alpha_D32_filter_DX);
+    DEFINE_DEFAULT(S32_alpha_D32_filter_DXDY);
 
     void Init_BitmapProcState_ssse3();
-    void Init_BitmapProcState_hsw();
+    void Init_BitmapProcState_lasx();
 
     static bool init() {
     #if defined(SK_ENABLE_OPTIMIZE_SIZE)
@@ -30,9 +31,9 @@ namespace SkOpts {
         #if SK_CPU_SSE_LEVEL < SK_CPU_SSE_LEVEL_SSSE3
             if (SkCpu::Supports(SkCpu::SSSE3)) { Init_BitmapProcState_ssse3(); }
         #endif
-
-        #if SK_CPU_SSE_LEVEL < SK_CPU_SSE_LEVEL_AVX2
-            if (SkCpu::Supports(SkCpu::HSW)) { Init_BitmapProcState_hsw();   }
+    #elif defined(SK_CPU_LOONGARCH)
+        #if SK_CPU_LSX_LEVEL < SK_CPU_LSX_LEVEL_LASX
+            if (SkCpu::Supports(SkCpu::LOONGARCH_ASX)) { Init_BitmapProcState_lasx(); }
         #endif
     #endif
       return true;

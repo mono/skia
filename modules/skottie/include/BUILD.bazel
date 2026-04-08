@@ -1,8 +1,10 @@
-load("//bazel:skia_rules.bzl", "exports_files_legacy", "skia_filegroup")
+load("//bazel:skia_rules.bzl", "skia_filegroup")
+
+package(
+    default_applicable_licenses = ["//:license"],
+)
 
 licenses(["notice"])
-
-exports_files_legacy()
 
 skia_filegroup(
     name = "hdrs",
@@ -11,7 +13,15 @@ skia_filegroup(
         "Skottie.h",
         "SkottieProperty.h",
         "SlotManager.h",
-        "TextShaper.h"
+        "TextShaper.h",
+    ],
+    visibility = ["//modules/skottie:__pkg__"],
+)
+
+skia_filegroup(
+    name = "text_shaper_hdrs",
+    srcs = [
+        "TextShaper.h",
     ],
     visibility = ["//modules/skottie:__pkg__"],
 )

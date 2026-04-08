@@ -11,7 +11,7 @@
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkSize.h"
 #include "include/core/SkTypes.h"
-#include "include/gpu/GrTypes.h"
+#include "include/gpu/ganesh/GrTypes.h"
 #include "include/private/base/SkTo.h"
 #include "include/private/base/SkTypeTraits.h"
 #include "src/gpu/Swizzle.h"
@@ -79,7 +79,7 @@ public:
 
     void reset();
 
-    // Helper that copies a rect of a src view'' proxy and then creates a view for the copy with
+    // Helper that copies a rect of a src view's proxy and then creates a view for the copy with
     // the same origin and swizzle as the src view.
     static GrSurfaceProxyView Copy(GrRecordingContext* context,
                                    GrSurfaceProxyView src,

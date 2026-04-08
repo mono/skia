@@ -11,14 +11,16 @@
  * found in the LICENSE file.
  */
 
+#include "include/codec/SkCodec.h"
+#include "include/core/SkImage.h"
 #include "include/core/SkPicture.h"
 #include "include/core/SkString.h"
 #include "include/core/SkSurface.h"
+#include "include/docs/SkMultiPictureDocument.h"
 #include "include/encode/SkPngEncoder.h"
-#include "include/utils/SkBase64.h"
+#include "src/base/SkBase64.h"
 #include "src/core/SkPicturePriv.h"
 #include "src/utils/SkJSONWriter.h"
-#include "src/utils/SkMultiPictureDocument.h"
 #include "tools/SkSharingProc.h"
 #include "tools/UrlDataManager.h"
 #include "tools/debugger/DebugCanvas.h"
@@ -34,11 +36,11 @@
 #include <emscripten/bind.h>
 
 #ifdef CK_ENABLE_WEBGL
-#include "include/gpu/GrBackendSurface.h"
-#include "include/gpu/GrDirectContext.h"
+#include "include/gpu/ganesh/GrBackendSurface.h"
+#include "include/gpu/ganesh/GrDirectContext.h"
 #include "include/gpu/ganesh/SkSurfaceGanesh.h"
-#include "include/gpu/gl/GrGLInterface.h"
-#include "include/gpu/gl/GrGLTypes.h"
+#include "include/gpu/ganesh/gl/GrGLInterface.h"
+#include "include/gpu/ganesh/gl/GrGLTypes.h"
 
 #include <GL/gl.h>
 #include <emscripten/html5.h>
@@ -62,6 +64,20 @@ struct ImageInfoNoColorspace {
 // TODO(kjlubick) Should this handle colorspace
 ImageInfoNoColorspace toImageInfoNoColorspace(const SkImageInfo& ii) {
   return (ImageInfoNoColorspace){ii.width(), ii.height(), ii.colorType(), ii.alphaType()};
+}
+
+static sk_sp<SkImage> deserializeImage(sk_sp<SkData> data, std::optional<SkAlphaType>, void*) {
+  std::unique_ptr<SkCodec> codec = DecodeImageData(std::move(data));
+  if (!codec) {
+    SkDebugf("Could not decode an image\n");
+    return nullptr;
+  }
+  sk_sp<SkImage> img = std::get<0>(codec->getImage());
+  if (!img) {
+    SkDebugf("Could not make an image from a codec\n");
+    return nullptr;
+  }
+  return img;
 }
 
 
@@ -266,7 +282,7 @@ class SkpDebugPlayer {
     // Return type is the PNG data as a base64 encoded string with prepended URI.
     std::string getImageResource(int index) {
       sk_sp<SkData> pngData = SkPngEncoder::Encode(nullptr, fImages[index].get(), {});
-      size_t len = SkBase64::Encode(pngData->data(), pngData->size(), nullptr);
+      size_t len = SkBase64::EncodedSize(pngData->size());
       SkString dst;
       dst.resize(len);
       SkBase64::Encode(pngData->data(), pngData->size(), dst.data());
@@ -376,8 +392,10 @@ class SkpDebugPlayer {
       // Loads a single frame (traditional) skp file from the provided data stream and returns
       // a newly allocated DebugCanvas initialized with the SkPicture that was in the file.
       std::unique_ptr<DebugCanvas> loadSingleFrame(SkMemoryStream* stream) {
+        SkDeserialProcs procs;
+        procs.fImageDataProc = deserializeImage;
         // note overloaded = operator that actually does a move
-        sk_sp<SkPicture> picture = SkPicture::MakeFromStream(stream);
+        sk_sp<SkPicture> picture = SkPicture::MakeFromStream(stream, &procs);
         if (!picture) {
           SkDebugf("Unable to deserialze frame.\n");
           return nullptr;
@@ -399,7 +417,7 @@ class SkpDebugPlayer {
         procs.fImageProc = SkSharingDeserialContext::deserializeImage;
         procs.fImageCtx = deserialContext.get();
 
-        int page_count = SkMultiPictureDocumentReadPageCount(stream);
+        int page_count = SkMultiPictureDocument::ReadPageCount(stream);
         if (!page_count) {
           // MSKP's have a version separate from the SKP subpictures they contain.
           return "Not a MultiPictureDocument, MultiPictureDocument file version too old, or MultiPictureDocument contained 0 frames.";
@@ -407,7 +425,7 @@ class SkpDebugPlayer {
         SkDebugf("Expecting %d frames\n", page_count);
 
         std::vector<SkDocumentPage> pages(page_count);
-        if (!SkMultiPictureDocumentRead(stream, pages.data(), page_count, &procs)) {
+        if (!SkMultiPictureDocument::Read(stream, pages.data(), page_count, &procs)) {
           return "Reading frames from MultiPictureDocument failed";
         }
 

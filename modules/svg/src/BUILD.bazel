@@ -1,13 +1,19 @@
-load("//bazel:skia_rules.bzl", "exports_files_legacy", "skia_filegroup")
+load("//bazel:skia_rules.bzl", "generate_cpp_files_for_headers", "skia_filegroup")
+
+package(
+    default_applicable_licenses = ["//:license"],
+)
 
 licenses(["notice"])
-
-exports_files_legacy()
 
 # This group is exported as //modules/svg/svg.gni:skia_svg_sources.
 skia_filegroup(
     name = "private_hdrs",
-    srcs = ["SkSVGTextPriv.h"],
+    srcs = [
+        "SkSVGRectPriv.h",
+        "SkSVGTextPriv.h",
+    ],
+    visibility = ["//modules/svg:__pkg__"],
 )
 
 # This group is exported as //modules/svg/svg.gni:skia_svg_sources.
@@ -24,6 +30,7 @@ skia_filegroup(
         "SkSVGFe.cpp",
         "SkSVGFeBlend.cpp",
         "SkSVGFeColorMatrix.cpp",
+        "SkSVGFeComponentTransfer.cpp",
         "SkSVGFeComposite.cpp",
         "SkSVGFeDisplacementMap.cpp",
         "SkSVGFeFlood.cpp",
@@ -31,6 +38,7 @@ skia_filegroup(
         "SkSVGFeImage.cpp",
         "SkSVGFeLightSource.cpp",
         "SkSVGFeLighting.cpp",
+        "SkSVGFeMerge.cpp",
         "SkSVGFeMorphology.cpp",
         "SkSVGFeOffset.cpp",
         "SkSVGFeTurbulence.cpp",
@@ -56,5 +64,14 @@ skia_filegroup(
         "SkSVGTransformableNode.cpp",
         "SkSVGUse.cpp",
         "SkSVGValue.cpp",
+    ],
+    visibility = ["//modules/svg:__pkg__"],
+)
+
+generate_cpp_files_for_headers(
+    name = "headers_to_compile",
+    headers = [
+        "SkSVGRectPriv.h",
+        "SkSVGTextPriv.h",
     ],
 )

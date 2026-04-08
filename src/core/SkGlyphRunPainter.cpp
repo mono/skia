@@ -22,6 +22,7 @@
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkScalar.h"
 #include "include/core/SkTypes.h"
+#include "include/private/base/SkFloatingPoint.h"
 #include "include/private/base/SkSpan_impl.h"
 #include "include/private/base/SkTArray.h"
 #include "src/core/SkGlyph.h"
@@ -32,7 +33,6 @@
 #include "src/text/GlyphRun.h"
 
 #include <algorithm>
-#include <initializer_list>
 #include <tuple>
 #include <vector>
 
@@ -64,7 +64,7 @@ prepare_for_path_drawing(SkStrike* strike,
     int rejectedSize = 0;
     strike->lock();
     for (auto [glyphID, pos] : source) {
-        if (!SkScalarsAreFinite(pos.x(), pos.y())) {
+        if (!SkIsFinite(pos.x(), pos.y())) {
             continue;
         }
         const SkPackedGlyphID packedID{glyphID};
@@ -95,7 +95,7 @@ prepare_for_drawable_drawing(SkStrike* strike,
     int rejectedSize = 0;
     strike->lock();
     for (auto [glyphID, pos] : source) {
-        if (!SkScalarsAreFinite(pos.x(), pos.y())) {
+        if (!SkIsFinite(pos.x(), pos.y())) {
             continue;
         }
         const SkPackedGlyphID packedID{glyphID};
@@ -133,7 +133,7 @@ prepare_for_direct_mask_drawing(SkStrike* strike,
     int rejectedSize = 0;
     strike->lock();
     for (auto [glyphID, pos] : source) {
-        if (!SkScalarsAreFinite(pos.x(), pos.y())) {
+        if (!SkIsFinite(pos.x(), pos.y())) {
             continue;
         }
 
@@ -166,7 +166,7 @@ SkGlyphRunListPainterCPU::SkGlyphRunListPainterCPU(const SkSurfaceProps& props,
                                                    SkColorType colorType,
                                                    SkColorSpace* cs)
         : fDeviceProps{props}
-        , fBitmapFallbackProps{SkSurfaceProps{props.flags(), kUnknown_SkPixelGeometry}}
+        , fBitmapFallbackProps{props.cloneWithPixelGeometry(kUnknown_SkPixelGeometry)}
         , fColorType{colorType}
         , fScalerContextFlags{compute_scaler_context_flags(cs)} {}
 
@@ -303,6 +303,9 @@ void SkGlyphRunListPainterCPU::drawForBitmapDevice(SkCanvas* canvas,
 
             // Calculate the scale that makes the longest edge 1:1 with its side in the cache.
             for (auto [glyph, pos] : SkMakeZip(glyphs, positions)) {
+                if (glyph->isEmpty()) {
+                    continue;
+                }
                 SkPoint corners[4];
                 SkPoint srcPos = pos + drawOrigin;
                 // Store off the positions in device space to position the glyphs during drawing.

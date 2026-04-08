@@ -35,11 +35,12 @@
 #include "modules/skparagraph/src/Run.h"
 #include "modules/skparagraph/src/TextLine.h"
 #include "modules/skparagraph/utils/TestFontCollection.h"
+#include "modules/skshaper/utils/FactoryHelpers.h"
 #include "src/core/SkOSFile.h"
 #include "src/utils/SkOSPath.h"
 #include "tests/Test.h"
 #include "tools/Resources.h"
-
+#include "tools/fonts/FontToolUtils.h"
 
 #include <string.h>
 #include <algorithm>
@@ -69,6 +70,7 @@ public:
         SkOSFile::Iter iter(fResourceDir.c_str());
 
         SkString path;
+        sk_sp<SkFontMgr> mgr = ToolUtils::TestFontMgr();
         while (iter.next(&path)) {
             if (path.endsWith("Roboto-Italic.ttf")) {
                 fFontsFound = true;
@@ -84,7 +86,7 @@ public:
         for (auto& font : fonts) {
             SkString file_path;
             file_path.printf("%s/%s", fResourceDir.c_str(), font.c_str());
-            fFontProvider->registerTypeface(SkTypeface::MakeFromFile(file_path.c_str()));
+            fFontProvider->registerTypeface(mgr->makeFromFile(file_path.c_str(), 0));
         }
 
         if (testOnly) {
@@ -250,12 +252,17 @@ ParagraphStyle BuildParagraphStyle(Fuzz* fuzz) {
     return ps;
 }
 
+static sk_sp<SkUnicode> get_unicode() {
+    auto factory = SkShapers::BestAvailable();
+    return sk_ref_sp<SkUnicode>(factory->getUnicode());
+}
+
 }  // namespace
 
 DEF_FUZZ(SkParagraph, fuzz) {
     static sk_sp<ResourceFontCollection> fontCollection = sk_make_sp<ResourceFontCollection>();
     ParagraphStyle paragraph_style = BuildParagraphStyle(fuzz);
-    ParagraphBuilderImpl builder(paragraph_style, fontCollection);
+    ParagraphBuilderImpl builder(paragraph_style, fontCollection, get_unicode());
 
     uint8_t iterations;
     fuzz->nextRange(&iterations, 1, MAX_TEXT_ADDITIONS);

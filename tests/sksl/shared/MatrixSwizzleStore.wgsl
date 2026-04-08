@@ -1,4 +1,5 @@
 diagnostic(off, derivative_uniformity);
+diagnostic(off, chromium.unreachable_code);
 struct FSOut {
   @location(0) sk_FragColor: vec4<f32>,
 };
@@ -18,7 +19,7 @@ fn test4x4_b() -> bool {
       loop {
         {
           matrix[index] = vec4<f32>((values.xw), matrix[index].yz).yzwx;
-          matrix[index] = vec4<f32>((values.yz), matrix[index].xw).zyxw;
+          matrix[index] = vec4<f32>(matrix[index].xw, (values.yz)).xwzy;
           values = values + 4.0;
         }
         continuing {

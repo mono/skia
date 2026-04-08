@@ -7,11 +7,22 @@
 
 #include "modules/sksg/include/SkSGColorFilter.h"
 
+#include "include/core/SkCanvas.h"
+#include "include/core/SkColor.h"
 #include "include/core/SkColorFilter.h"
+#include "include/core/SkMatrix.h"
 #include "include/private/SkColorData.h"
+#include "include/private/base/SkAssert.h"
 #include "modules/sksg/include/SkSGPaint.h"
+#include "modules/sksg/include/SkSGRenderNode.h"
 
 #include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <utility>
+
+enum class SkBlendMode;
+struct SkPoint;
 
 namespace sksg {
 
@@ -47,7 +58,14 @@ ExternalColorFilter::ExternalColorFilter(sk_sp<RenderNode> child) : INHERITED(st
 ExternalColorFilter::~ExternalColorFilter() = default;
 
 void ExternalColorFilter::onRender(SkCanvas* canvas, const RenderContext* ctx) const {
-    const auto local_ctx = ScopedRenderContext(canvas, ctx).modulateColorFilter(fColorFilter);
+    auto local_ctx = ScopedRenderContext(canvas, ctx).modulateColorFilter(fColorFilter);
+
+    if (fCoverage == Coverage::kBoundingBox) {
+        // For bounding box coverage, use a layer clipped to the content bounding box.
+        canvas->save();
+        canvas->clipRect(this->bounds(), /*doAntiAlias=*/ true);
+        local_ctx.setIsolation(this->bounds(), canvas->getTotalMatrix(), /*do_isolate=*/ true);
+    }
 
     this->INHERITED::onRender(canvas, local_ctx);
 }

@@ -8,24 +8,30 @@
 #ifndef GrDrawingManager_DEFINED
 #define GrDrawingManager_DEFINED
 
+#include "include/core/SkRefCnt.h"
 #include "include/core/SkSpan.h"
-#include "include/core/SkSurface.h"
+#include "include/private/base/SkDebug.h"
 #include "include/private/base/SkTArray.h"
-#include "src/core/SkTHash.h"
+#include "src/gpu/AtlasTypes.h"
 #include "src/gpu/ganesh/GrBufferAllocPool.h"
-#include "src/gpu/ganesh/GrDeferredUpload.h"
+#include "src/gpu/ganesh/GrCaps.h"
 #include "src/gpu/ganesh/GrHashMapWithCache.h"
-#include "src/gpu/ganesh/GrResourceCache.h"
 #include "src/gpu/ganesh/GrSamplerState.h"
 #include "src/gpu/ganesh/GrSurfaceProxy.h"
 #include "src/gpu/ganesh/PathRenderer.h"
 #include "src/gpu/ganesh/PathRendererChain.h"
+
+#include <cstddef>
+#include <cstdint>
+#include <memory>
+#include <vector>
 
 // Enabling this will print out which path renderers are being chosen
 #define GR_PATH_RENDERER_SPEW 0
 
 class GrArenas;
 class GrDeferredDisplayList;
+class GrDirectContext;
 class GrGpuBuffer;
 class GrOnFlushCallbackObject;
 class GrOpFlushState;
@@ -36,8 +42,21 @@ class GrResourceAllocator;
 class GrSemaphore;
 class GrSurfaceProxyView;
 class GrTextureResolveRenderTask;
+class SkData;
+enum GrSurfaceOrigin : int;
+enum class GrColorType;
+enum class GrSemaphoresSubmitted : bool;
+struct GrFlushInfo;
+struct GrMipLevel;
+struct SkIRect;
+
+namespace SkSurfaces {
+enum class BackendSurfaceAccess;
+}
 namespace skgpu {
+class MutableTextureState;
 namespace ganesh {
+class AtlasPathRenderer;
 class OpsTask;
 class SoftwarePathRenderer;
 }  // namespace ganesh
@@ -74,7 +93,7 @@ public:
     // work (even to other proxies) that has already been recorded or will be recorded later. The
     // only guarantee is that future work to the passed in proxy will wait on the semaphores to be
     // signaled.
-    void newWaitRenderTask(sk_sp<GrSurfaceProxy> proxy,
+    void newWaitRenderTask(const sk_sp<GrSurfaceProxy>& proxy,
                            std::unique_ptr<std::unique_ptr<GrSemaphore>[]>,
                            int numSemaphores);
 
@@ -83,7 +102,7 @@ public:
     // to be copied. The surfaceColorType says how we should interpret the data when reading back
     // from the source. DstColorType describes how the data should be stored in the dstBuffer.
     // DstOffset is the offset into the dstBuffer where we will start writing data.
-    void newTransferFromRenderTask(sk_sp<GrSurfaceProxy> srcProxy, const SkIRect& srcRect,
+    void newTransferFromRenderTask(const sk_sp<GrSurfaceProxy>& srcProxy, const SkIRect& srcRect,
                                    GrColorType surfaceColorType, GrColorType dstColorType,
                                    sk_sp<GrGpuBuffer> dstBuffer, size_t dstOffset);
 
@@ -98,7 +117,7 @@ public:
     // it skippable if the copy is later deemed unnecessary.
     sk_sp<GrRenderTask> newCopyRenderTask(sk_sp<GrSurfaceProxy> dst,
                                           SkIRect dstRect,
-                                          sk_sp<GrSurfaceProxy> src,
+                                          const sk_sp<GrSurfaceProxy>& src,
                                           SkIRect srcRect,
                                           GrSamplerState::Filter filter,
                                           GrSurfaceOrigin);
@@ -163,7 +182,7 @@ public:
 
     void addOnFlushCallbackObject(GrOnFlushCallbackObject*);
 
-#if defined(GR_TEST_UTILS)
+#if defined(GPU_TEST_UTILS)
     void testingOnly_removeOnFlushCallbackObject(GrOnFlushCallbackObject*);
     PathRendererChain::Options testingOnly_getOptionsForPathRendererChain() {
         return fOptionsForPathRendererChain;
@@ -211,9 +230,9 @@ private:
     GrRenderTask* appendTask(sk_sp<GrRenderTask>);
     GrRenderTask* insertTaskBeforeLast(sk_sp<GrRenderTask>);
 
-    bool submitToGpu(GrSyncCpu sync);
+    bool submitToGpu();
 
-    SkDEBUGCODE(void validate() const);
+    SkDEBUGCODE(void validate() const;)
 
     friend class GrDirectContext; // access to: flush & cleanup
     friend class GrOnFlushResourceProvider; // this is just a shallow wrapper around this class

@@ -16,7 +16,7 @@
 #include "include/core/SkStream.h"
 #include "include/core/SkString.h"
 #include "include/core/SkTypes.h"
-#include "include/utils/SkAnimCodecPlayer.h"
+#include "modules/skresources/src/SkAnimCodecPlayer.h"
 #include "src/core/SkOSFile.h"
 #include "tools/Resources.h"
 #include "tools/ToolUtils.h"
@@ -26,6 +26,8 @@
 #include <memory>
 #include <utility>
 #include <vector>
+
+#if defined(SK_ENABLE_SKOTTIE)
 
 static DEFINE_string(animatedGif, "images/test640x479.gif", "Animated gif in resources folder");
 
@@ -174,55 +176,6 @@ private:
 };
 DEF_GM(return new AnimatedGifGM;)
 
-static std::unique_ptr<SkCodec> load_codec(const char filename[]) {
-    return SkCodec::MakeFromData(SkData::MakeFromFileName(filename));
-}
-
-class AnimCodecPlayerGM : public skiagm::GM {
-private:
-    std::vector<std::unique_ptr<SkAnimCodecPlayer> > fPlayers;
-    uint32_t          fBaseMSec = 0;
-
-public:
-    AnimCodecPlayerGM() {
-        const char* root = "/skia/anim/";
-        SkOSFile::Iter iter(root);
-        SkString path;
-        while (iter.next(&path)) {
-            SkString completepath;
-            completepath.printf("%s%s", root, path.c_str());
-            auto codec = load_codec(completepath.c_str());
-            if (codec) {
-                fPlayers.push_back(std::make_unique<SkAnimCodecPlayer>(std::move(codec)));
-            }
-        }
-    }
-
-private:
-    SkString getName() const override { return SkString("AnimCodecPlayer"); }
-
-    SkISize getISize() override { return {1024, 768}; }
-
-    void onDraw(SkCanvas* canvas) override {
-        canvas->scale(0.25f, 0.25f);
-        for (auto& p : fPlayers) {
-            canvas->drawImage(p->getFrame(), 0, 0);
-            canvas->translate(p->dimensions().width(), 0);
-        }
-    }
-
-    bool onAnimate(double nanos) override {
-        if (fBaseMSec == 0) {
-            fBaseMSec = TimeUtils::NanosToMSec(nanos);
-        }
-        for (auto& p : fPlayers) {
-            (void)p->seek(TimeUtils::NanosToMSec(nanos) - fBaseMSec);
-        }
-        return true;
-    }
-};
-DEF_GM(return new AnimCodecPlayerGM;)
-
 class AnimCodecPlayerExifGM : public skiagm::GM {
     const char* fPath;
     SkISize fSize = SkISize::MakeEmpty();
@@ -294,3 +247,5 @@ public:
 DEF_GM(return new AnimCodecPlayerExifGM("images/required.webp");)
 DEF_GM(return new AnimCodecPlayerExifGM("images/required.gif");)
 DEF_GM(return new AnimCodecPlayerExifGM("images/stoplight_h.webp");)
+
+#endif

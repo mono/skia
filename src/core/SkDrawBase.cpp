@@ -20,6 +20,7 @@
 #include "include/private/base/SkAssert.h"
 #include "include/private/base/SkCPUTypes.h"
 #include "include/private/base/SkDebug.h"
+#include "include/private/base/SkFloatingPoint.h"
 #include "include/private/base/SkTemplates.h"
 #include "src/base/SkTLazy.h"
 #include "src/base/SkZip.h"
@@ -390,7 +391,7 @@ void SkDrawBase::drawPath(const SkPath& origSrcPath, const SkPaint& origPaint,
         return;
     }
 
-    SkPath*         pathPtr = (SkPath*)&origSrcPath;
+    SkPath*         pathPtr = const_cast<SkPath*>(&origSrcPath);
     bool            doFill = true;
     SkPath          tmpPathStorage;
     SkPath*         tmpPath = &tmpPathStorage;
@@ -610,7 +611,7 @@ void SkDrawBase::drawDevicePoints(SkCanvas::PointMode mode, size_t count,
     }
 
     // needed?
-    if (!SkScalarsAreFinite(&pts[0].fX, count * 2)) {
+    if (!SkIsFinite(&pts[0].fX, count * 2)) {
         return;
     }
 

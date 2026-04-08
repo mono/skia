@@ -19,6 +19,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <optional>
 
 class SkArenaAlloc;
 class SkRasterPipeline;
@@ -176,7 +177,7 @@ private:
         SkSpan<float> stack;
         SkSpan<float> immutable;
     };
-    SlotData allocateSlotData(SkArenaAlloc* alloc) const;
+    std::optional<SlotData> allocateSlotData(SkArenaAlloc* alloc) const;
 
     struct Stage {
         ProgramOp op;
@@ -186,18 +187,19 @@ private:
                     SkArenaAlloc* alloc,
                     SkSpan<const float> uniforms,
                     const SlotData& slots) const;
-    void optimize();
     StackDepths tempStackMaxDepths() const;
 
     // These methods are used to split up multi-slot copies into multiple ops as needed.
     void appendCopy(skia_private::TArray<Stage>* pipeline,
                     SkArenaAlloc* alloc,
+                    std::byte* basePtr,
                     ProgramOp baseStage,
                     SkRPOffset dst, int dstStride,
                     SkRPOffset src, int srcStride,
                     int numSlots) const;
     void appendCopyImmutableUnmasked(skia_private::TArray<Stage>* pipeline,
                                      SkArenaAlloc* alloc,
+                                     std::byte* basePtr,
                                      SkRPOffset dst,
                                      SkRPOffset src,
                                      int numSlots) const;
@@ -235,7 +237,7 @@ private:
     // case, the multi-slot ops can be absent, but numSlots must be 1.
     void appendImmediateBinaryOp(skia_private::TArray<Stage>* pipeline, SkArenaAlloc* alloc,
                                  ProgramOp baseStage,
-                                 SkRPOffset dst, float value, int numSlots) const;
+                                 SkRPOffset dst, int32_t value, int numSlots) const;
 
     // Appends a two-input math operation to the pipeline. `src` must be _immediately_ after `dst`
     // in memory. `baseStage` must refer to an unbounded "apply_to_n_slots" stage. A BinaryOpCtx
@@ -273,6 +275,9 @@ private:
                                      SkRPOffset src0, SkRPOffset src1, int numSlots) const;
 
     // Appends a stack_rewind op on platforms where it is needed (when SK_HAS_MUSTTAIL is not set).
+    void appendStackRewindForNonTailcallers(skia_private::TArray<Stage>* pipeline) const;
+
+    // Appends a stack_rewind op unilaterally.
     void appendStackRewind(skia_private::TArray<Stage>* pipeline) const;
 
     class Dumper;
@@ -291,7 +296,7 @@ private:
 
 class Builder {
 public:
-    /** Finalizes and optimizes the program. */
+    /** Finalizes and returns a completed program. */
     std::unique_ptr<Program> finish(int numValueSlots,
                                     int numUniformSlots,
                                     int numImmutableSlots,
@@ -593,10 +598,7 @@ public:
     // Multiplies a CxR matrix/vector against an adjacent CxR matrix/vector on the stack.
     void matrix_multiply(int leftColumns, int leftRows, int rightColumns, int rightRows);
 
-    void push_condition_mask() {
-        SkASSERT(this->executionMaskWritesAreEnabled());
-        this->appendInstruction(BuilderOp::push_condition_mask, {});
-    }
+    void push_condition_mask();
 
     void pop_condition_mask() {
         SkASSERT(this->executionMaskWritesAreEnabled());
@@ -674,33 +676,11 @@ public:
         this->appendInstruction(BuilderOp::mask_off_return_mask, {});
     }
 
-    void invoke_shader(int childIdx) {
-        this->appendInstruction(BuilderOp::invoke_shader, {}, childIdx);
-    }
-
-    void invoke_color_filter(int childIdx) {
-        this->appendInstruction(BuilderOp::invoke_color_filter, {}, childIdx);
-    }
-
-    void invoke_blender(int childIdx) {
-        this->appendInstruction(BuilderOp::invoke_blender, {}, childIdx);
-    }
-
-    void invoke_to_linear_srgb() {
-        // The intrinsics accept a three-component value; add a fourth padding element (which
-        // will be ignored) since our RP ops deal in RGBA colors.
-        this->pad_stack(1);
-        this->appendInstruction(BuilderOp::invoke_to_linear_srgb, {});
-        this->discard_stack(1);
-    }
-
-    void invoke_from_linear_srgb() {
-        // The intrinsics accept a three-component value; add a fourth padding element (which
-        // will be ignored) since our RP ops deal in RGBA colors.
-        this->pad_stack(1);
-        this->appendInstruction(BuilderOp::invoke_from_linear_srgb, {});
-        this->discard_stack(1);
-    }
+    void invoke_shader(int childIdx);
+    void invoke_color_filter(int childIdx);
+    void invoke_blender(int childIdx);
+    void invoke_to_linear_srgb();
+    void invoke_from_linear_srgb();
 
     // Writes the current line number to the debug trace.
     void trace_line(int traceMaskStackID, int line) {

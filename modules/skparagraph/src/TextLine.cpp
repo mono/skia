@@ -1,5 +1,7 @@
 // Copyright 2019 Google LLC.
 
+#include "modules/skparagraph/src/TextLine.h"
+
 #include "include/core/SkBlurTypes.h"
 #include "include/core/SkFont.h"
 #include "include/core/SkFontMetrics.h"
@@ -20,8 +22,9 @@
 #include "modules/skparagraph/src/Decorations.h"
 #include "modules/skparagraph/src/ParagraphImpl.h"
 #include "modules/skparagraph/src/ParagraphPainterImpl.h"
-#include "modules/skparagraph/src/TextLine.h"
 #include "modules/skshaper/include/SkShaper.h"
+#include "modules/skshaper/include/SkShaper_harfbuzz.h"
+#include "modules/skshaper/include/SkShaper_skunicode.h"
 
 #include <algorithm>
 #include <iterator>
@@ -484,6 +487,10 @@ void TextLine::justify(SkScalar maxWidth) {
         --whitespacePatches;
     }
     if (whitespacePatches == 0) {
+        if (fOwner->paragraphStyle().getTextDirection() == TextDirection::kRtl) {
+            // Justify -> Right align
+            fShift = maxWidth - textLen;
+        }
         return;
     }
 
@@ -624,11 +631,6 @@ void TextLine::createEllipsis(SkScalar maxWidth, const SkString& ellipsis, bool)
     }
 }
 
-static inline SkUnichar nextUtf8Unit(const char** ptr, const char* end) {
-    SkUnichar val = SkUTF::NextUTF8(ptr, end);
-    return val < 0 ? 0xFFFD : val;
-}
-
 std::unique_ptr<Run> TextLine::shapeEllipsis(const SkString& ellipsis, const Cluster* cluster) {
 
     class ShapeHandler final : public SkShaper::RunHandler {
@@ -679,20 +681,44 @@ std::unique_ptr<Run> TextLine::shapeEllipsis(const SkString& ellipsis, const Clu
         }
     }
 
-    auto shaped = [&](sk_sp<SkTypeface> typeface, bool fallback) -> std::unique_ptr<Run> {
+    auto shaped = [&](sk_sp<SkTypeface> typeface, sk_sp<SkFontMgr> fallback) -> std::unique_ptr<Run> {
         ShapeHandler handler(run.heightMultiplier(), run.useHalfLeading(), run.baselineShift(), ellipsis);
-        SkFont font(typeface, textStyle.getFontSize());
+        SkFont font(std::move(typeface), textStyle.getFontSize());
         font.setEdging(SkFont::Edging::kAntiAlias);
         font.setHinting(SkFontHinting::kSlight);
         font.setSubpixel(true);
 
-        std::unique_ptr<SkShaper> shaper = SkShaper::MakeShapeDontWrapOrReorder(
-                            fOwner->getUnicode()->copy(),
-                            fallback ? SkFontMgr::RefDefault() : SkFontMgr::RefEmpty());
-        shaper->shape(ellipsis.c_str(),
-                      ellipsis.size(),
-                      font,
-                      true,
+        std::unique_ptr<SkShaper> shaper = SkShapers::HB::ShapeDontWrapOrReorder(
+                fOwner->getUnicode(), fallback ? fallback : SkFontMgr::RefEmpty());
+
+        const SkBidiIterator::Level defaultLevel = SkBidiIterator::kLTR;
+        const char* utf8 = ellipsis.c_str();
+        size_t utf8Bytes = ellipsis.size();
+
+        std::unique_ptr<SkShaper::BiDiRunIterator> bidi = SkShapers::unicode::BidiRunIterator(
+                fOwner->getUnicode(), utf8, utf8Bytes, defaultLevel);
+        SkASSERT(bidi);
+
+        std::unique_ptr<SkShaper::LanguageRunIterator> language =
+                SkShaper::MakeStdLanguageRunIterator(utf8, utf8Bytes);
+        SkASSERT(language);
+
+        std::unique_ptr<SkShaper::ScriptRunIterator> script =
+                SkShapers::HB::ScriptRunIterator(utf8, utf8Bytes);
+        SkASSERT(script);
+
+        std::unique_ptr<SkShaper::FontRunIterator> fontRuns = SkShaper::MakeFontMgrRunIterator(
+                utf8, utf8Bytes, font, fallback ? fallback : SkFontMgr::RefEmpty());
+        SkASSERT(fontRuns);
+
+        shaper->shape(utf8,
+                      utf8Bytes,
+                      *fontRuns,
+                      *bidi,
+                      *script,
+                      *language,
+                      nullptr,
+                      0,
                       std::numeric_limits<SkScalar>::max(),
                       &handler);
         auto ellipsisRun = handler.run();
@@ -702,7 +728,7 @@ std::unique_ptr<Run> TextLine::shapeEllipsis(const SkString& ellipsis, const Clu
     };
 
     // Check the current font
-    auto ellipsisRun = shaped(run.fFont.refTypeface(), false);
+    auto ellipsisRun = shaped(run.fFont.refTypeface(), nullptr);
     if (ellipsisRun->isResolved()) {
         return ellipsisRun;
     }
@@ -711,7 +737,7 @@ std::unique_ptr<Run> TextLine::shapeEllipsis(const SkString& ellipsis, const Clu
     std::vector<sk_sp<SkTypeface>> typefaces = fOwner->fontCollection()->findTypefaces(
             textStyle.getFontFamilies(), textStyle.getFontStyle(), textStyle.getFontArguments());
     for (const auto& typeface : typefaces) {
-        ellipsisRun = shaped(typeface, false);
+        ellipsisRun = shaped(typeface, nullptr);
         if (ellipsisRun->isResolved()) {
             return ellipsisRun;
         }
@@ -720,12 +746,17 @@ std::unique_ptr<Run> TextLine::shapeEllipsis(const SkString& ellipsis, const Clu
     // Try the fallback
     if (fOwner->fontCollection()->fontFallbackEnabled()) {
         const char* ch = ellipsis.c_str();
-        SkUnichar unicode = nextUtf8Unit(&ch, ellipsis.c_str() + ellipsis.size());
-
-       auto typeface = fOwner->fontCollection()->defaultFallback(
-                    unicode, textStyle.getFontStyle(), textStyle.getLocale());
+      SkUnichar unicode = SkUTF::NextUTF8WithReplacement(&ch,
+                                                         ellipsis.c_str()
+                                                             + ellipsis.size());
+        // We do not expect emojis in ellipsis so if they appeat there
+        // they will not be resolved with the pretiest color emoji font
+        auto typeface = fOwner->fontCollection()->defaultFallback(
+                                            unicode,
+                                            textStyle.getFontStyle(),
+                                            textStyle.getLocale());
         if (typeface) {
-            ellipsisRun = shaped(typeface, true);
+            ellipsisRun = shaped(typeface, fOwner->fontCollection()->getFallbackManager());
             if (ellipsisRun->isResolved()) {
                 return ellipsisRun;
             }
@@ -752,7 +783,7 @@ TextLine::ClipContext TextLine::measureTextInsideOneRun(TextRange textRange,
         return result;
     } else if (run->isPlaceholder()) {
         result.fTextShift = runOffsetInLine;
-        if (SkScalarIsFinite(run->fFontMetrics.fAscent)) {
+        if (SkIsFinite(run->fFontMetrics.fAscent)) {
           result.clip = SkRect::MakeXYWH(runOffsetInLine,
                                          sizes().runTop(run, this->fAscentStyle),
                                          run->advance().fX,
@@ -945,7 +976,8 @@ SkScalar TextLine::iterateThroughSingleRunByStyles(TextAdjustment textAdjustment
 
     if (styleType == StyleType::kNone) {
         ClipContext clipContext = correctContext(textRange, 0.0f);
-        if (clipContext.clip.height() > 0) {
+        // The placehoder can have height=0 or (exclusively) width=0 and still be a thing
+        if (clipContext.clip.height() > 0.0f || clipContext.clip.width() > 0.0f) {
             visitor(textRange, TextStyle(), clipContext);
             return clipContext.clip.width();
         } else {

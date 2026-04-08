@@ -1,20 +1,5 @@
-/*
-
-:31:3 warning: code is unreachable
-  return bool();
-  ^^^^^^
-
-:54:3 warning: code is unreachable
-  return bool();
-  ^^^^^^
-
-:77:3 warning: code is unreachable
-  return bool();
-  ^^^^^^
-
-*/
-
 diagnostic(off, derivative_uniformity);
+diagnostic(off, chromium.unreachable_code);
 struct FSOut {
   @location(0) sk_FragColor: vec4<f32>,
 };
@@ -25,7 +10,7 @@ struct _GlobalUniforms {
 @binding(0) @group(0) var<uniform> _globalUniforms: _GlobalUniforms;
 fn TrueFalse_b() -> bool {
   {
-    var x: i32 = 1;
+    const x: i32 = 1;
     var y: i32 = 1;
     var _skTemp0: bool;
     if x == 1 {
@@ -48,7 +33,7 @@ fn TrueFalse_b() -> bool {
 }
 fn FalseTrue_b() -> bool {
   {
-    var x: i32 = 1;
+    const x: i32 = 1;
     var y: i32 = 1;
     var _skTemp1: bool;
     if x == 2 {
@@ -71,7 +56,7 @@ fn FalseTrue_b() -> bool {
 }
 fn FalseFalse_b() -> bool {
   {
-    var x: i32 = 1;
+    const x: i32 = 1;
     var y: i32 = 1;
     var _skTemp2: bool;
     if x == 2 {

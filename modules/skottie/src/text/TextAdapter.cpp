@@ -4,16 +4,30 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
-
 #include "modules/skottie/src/text/TextAdapter.h"
 
 #include "include/core/SkCanvas.h"
+#include "include/core/SkColor.h"
 #include "include/core/SkContourMeasure.h"
+#include "include/core/SkFont.h"
 #include "include/core/SkFontMgr.h"
 #include "include/core/SkM44.h"
+#include "include/core/SkMatrix.h"
+#include "include/core/SkPaint.h"
+#include "include/core/SkPath.h"
+#include "include/core/SkRect.h"
+#include "include/core/SkScalar.h"
+#include "include/core/SkSpan.h"
+#include "include/core/SkString.h"
+#include "include/core/SkTypes.h"
 #include "include/private/base/SkTPin.h"
+#include "include/private/base/SkTo.h"
+#include "include/utils/SkTextUtils.h"
+#include "modules/skottie/include/Skottie.h"
+#include "modules/skottie/include/SkottieProperty.h"
 #include "modules/skottie/src/SkottieJson.h"
-#include "modules/skottie/src/text/RangeSelector.h"
+#include "modules/skottie/src/SkottiePriv.h"
+#include "modules/skottie/src/text/RangeSelector.h"  // IWYU pragma: keep
 #include "modules/skottie/src/text/TextAnimator.h"
 #include "modules/sksg/include/SkSGDraw.h"
 #include "modules/sksg/include/SkSGGeometryNode.h"
@@ -25,6 +39,19 @@
 #include "modules/sksg/include/SkSGRenderNode.h"
 #include "modules/sksg/include/SkSGTransform.h"
 #include "modules/sksg/src/SkSGTransformPriv.h"
+#include "modules/skshaper/include/SkShaper_factory.h"
+#include "src/utils/SkJSON.h"
+
+#include <algorithm>
+#include <cmath>
+#include <cstddef>
+#include <limits>
+#include <tuple>
+#include <utility>
+
+namespace sksg {
+class InvalidationController;
+}
 
 // Enable for text layout debugging.
 #define SHOW_LAYOUT_BOXES 0
@@ -43,7 +70,7 @@ public:
 
 protected:
     SkRect onRevalidate(sksg::InvalidationController*, const SkMatrix&) override {
-        return fGlyphs.computeBounds(Shaper::ShapedGlyphs::BoundsType::kConservative);
+        return fGlyphs.computeBounds(Shaper::ShapedGlyphs::BoundsType::kTight);
     }
 
     void onDraw(SkCanvas* canvas, const SkPaint& paint) const override {
@@ -271,7 +298,8 @@ sk_sp<TextAdapter> TextAdapter::Make(const skjson::ObjectValue& jlayer,
                                      const AnimationBuilder* abuilder,
                                      sk_sp<SkFontMgr> fontmgr,
                                      sk_sp<CustomFont::GlyphCompMapper> custom_glyph_mapper,
-                                     sk_sp<Logger> logger) {
+                                     sk_sp<Logger> logger,
+                                     sk_sp<::SkShapers::Factory> factory) {
     // General text node format:
     // "t": {
     //    "a": [], // animators (see TextAnimator)
@@ -335,6 +363,7 @@ sk_sp<TextAdapter> TextAdapter::Make(const skjson::ObjectValue& jlayer,
     auto adapter = sk_sp<TextAdapter>(new TextAdapter(std::move(fontmgr),
                                                       std::move(custom_glyph_mapper),
                                                       std::move(logger),
+                                                      std::move(factory),
                                                       gGroupingMap[SkToSizeT(apg - 1)]));
 
     adapter->bind(*abuilder, jd, adapter->fText.fCurrentValue);
@@ -405,11 +434,13 @@ sk_sp<TextAdapter> TextAdapter::Make(const skjson::ObjectValue& jlayer,
 TextAdapter::TextAdapter(sk_sp<SkFontMgr> fontmgr,
                          sk_sp<CustomFont::GlyphCompMapper> custom_glyph_mapper,
                          sk_sp<Logger> logger,
+                         sk_sp<SkShapers::Factory> factory,
                          AnchorPointGrouping apg)
     : fRoot(sksg::Group::Make())
     , fFontMgr(std::move(fontmgr))
     , fCustomGlyphMapper(std::move(custom_glyph_mapper))
     , fLogger(std::move(logger))
+    , fShapingFactory(std::move(factory))
     , fAnchorPointGrouping(apg)
     , fHasBlurAnimator(false)
     , fRequiresAnchorPoint(false)
@@ -562,13 +593,17 @@ void TextAdapter::buildDomainMaps(const Shaper::Result& shape_result) {
     // TODO: use ICU for building the word map?
     for (; i  < shape_result.fFragments.size(); ++i) {
         const auto& frag = shape_result.fFragments[i];
+        const bool is_new_line = frag.fLineIndex != line;
 
-        if (frag.fIsWhitespace) {
+        if (frag.fIsWhitespace || is_new_line) {
+            // Both whitespace and new lines break words.
             if (in_word) {
                 in_word = false;
                 fMaps.fWordsMap.push_back({word_start, i - word_start, word_advance, word_ascent});
             }
-        } else {
+        }
+
+        if (!frag.fIsWhitespace) {
             fMaps.fNonWhitespaceMap.push_back({i, 1, 0, 0});
 
             if (!in_word) {
@@ -581,7 +616,7 @@ void TextAdapter::buildDomainMaps(const Shaper::Result& shape_result) {
             word_ascent   = std::min(word_ascent, frag.fAscent); // negative ascent
         }
 
-        if (frag.fLineIndex != line) {
+        if (is_new_line) {
             SkASSERT(frag.fLineIndex == line + 1);
             fMaps.fLinesMap.push_back({line_start, i - line_start, line_advance, line_ascent});
             line = frag.fLineIndex;
@@ -637,7 +672,6 @@ void TextAdapter::reshape() {
                            kMaxSize = 1296.0f;
     const Shaper::TextDesc text_desc = {
         fText->fTypeface,
-        fText->fLocale.size() ? fText->fLocale.c_str() : nullptr,
         SkTPin(fText->fTextSize,    kMinSize, kMaxSize),
         SkTPin(fText->fMinTextSize, kMinSize, kMaxSize),
         SkTPin(fText->fMaxTextSize, kMinSize, kMaxSize),
@@ -652,8 +686,11 @@ void TextAdapter::reshape() {
         fText->fCapitalization,
         fText->fMaxLines,
         this->shaperFlags(),
+        fText->fLocale.isEmpty()     ? nullptr : fText->fLocale.c_str(),
+        fText->fFontFamily.isEmpty() ? nullptr : fText->fFontFamily.c_str(),
     };
-    auto shape_result = Shaper::Shape(fText->fText, text_desc, fText->fBox, fFontMgr);
+    auto shape_result = Shaper::Shape(fText->fText, text_desc, fText->fBox, fFontMgr,
+        fShapingFactory);
 
     if (fLogger) {
         if (shape_result.fFragments.empty() && fText->fText.size() > 0) {

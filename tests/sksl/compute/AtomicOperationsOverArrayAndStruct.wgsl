@@ -1,4 +1,5 @@
 diagnostic(off, derivative_uniformity);
+diagnostic(off, chromium.unreachable_code);
 struct CSIn {
   @builtin(local_invocation_id) sk_LocalInvocationID: vec3<u32>,
 };
@@ -20,7 +21,7 @@ fn _skslMain(_stageIn: CSIn) {
       }
     }
     workgroupBarrier();
-    var idx: u32 = u32(select(1, 0, _stageIn.sk_LocalInvocationID.x < 128u));
+    let idx: u32 = u32(select(1, 0, _stageIn.sk_LocalInvocationID.x < 128u));
     let _skTemp1 = atomicAdd(&localCounts[idx], 1u);
     workgroupBarrier();
     if _stageIn.sk_LocalInvocationID.x == 0u {

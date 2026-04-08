@@ -15,17 +15,18 @@
 #include "include/core/SkSurface.h"
 #include "include/core/SkTypes.h"
 #include "include/gpu/GpuTypes.h"
-#include "include/gpu/GrDirectContext.h"
+#include "include/gpu/ganesh/GrDirectContext.h"
 #include "include/gpu/ganesh/SkSurfaceGanesh.h"
 #include "tests/CtsEnforcement.h"
 #include "tests/Test.h"
+#include "tools/fonts/FontToolUtils.h"
 
 struct GrContextOptions;
 
 // This passes by not crashing.
 static void test(SkCanvas* canvas) {
     canvas->scale(63, 0);
-    canvas->drawString("A", 50, 50, SkFont(), SkPaint());
+    canvas->drawString("A", 50, 50, ToolUtils::DefaultFont(), SkPaint());
 }
 
 DEF_TEST(skbug5221, r) {

@@ -16,14 +16,14 @@
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkTypes.h"
 #include "include/gpu/GpuTypes.h"
-#include "include/gpu/GrBackendSurface.h"
-#include "include/gpu/GrDirectContext.h"
-#include "include/gpu/GrTypes.h"
+#include "include/gpu/ganesh/GrBackendSurface.h"
+#include "include/gpu/ganesh/GrDirectContext.h"
+#include "include/gpu/ganesh/GrTypes.h"
 #include "include/gpu/ganesh/gl/GrGLBackendSurface.h"
 #include "include/gpu/ganesh/gl/GrGLDirectContext.h"
-#include "include/gpu/gl/GrGLFunctions.h"
-#include "include/gpu/gl/GrGLInterface.h"
-#include "include/gpu/gl/GrGLTypes.h"
+#include "include/gpu/ganesh/gl/GrGLFunctions.h"
+#include "include/gpu/ganesh/gl/GrGLInterface.h"
+#include "include/gpu/ganesh/gl/GrGLTypes.h"
 #include "include/private/base/SkDebug.h"
 #include "include/private/base/SkTemplates.h"
 #include "include/private/gpu/ganesh/GrTypesPriv.h"
@@ -62,7 +62,7 @@ using sk_gpu_test::GLTestContext;
 static void cleanup(GLTestContext* glctx0,
                     GrGLuint texID0,
                     GLTestContext* glctx1,
-                    sk_sp<GrDirectContext> dContext,
+                    const sk_sp<GrDirectContext>& dContext,
                     GrEGLImage image1) {
     if (glctx1) {
         glctx1->makeCurrent();
@@ -236,7 +236,6 @@ DEF_GANESH_TEST_FOR_GL_CONTEXT(EGLImageTest, reporter, ctxInfo, CtsEnforcement::
 
     //TestReadPixels(reporter, context0, surfaceContext.get(), pixels.get(), "EGLImageTest-read");
 
-    SkDebugf("type: %d\n", (int)surfaceContext->asTextureProxy()->textureType());
     // We should not be able to write to an EXTERNAL texture
     TestWritePixels(reporter, context0, surfaceContext.get(), false, "EGLImageTest-write");
 

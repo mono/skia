@@ -5,41 +5,83 @@
  * found in the LICENSE file.
  */
 
+#include "include/codec/SkCodec.h"
+#include "include/codec/SkJpegDecoder.h"
+#include "include/codec/SkPngDecoder.h"
+#include "include/codec/SkWebpDecoder.h"
 #include "include/core/SkCanvas.h"
+#include "include/core/SkColor.h"
+#include "include/core/SkData.h"
+#include "include/core/SkFontMgr.h"
 #include "include/core/SkGraphics.h"
-#include "include/core/SkPicture.h"
-#include "include/core/SkPictureRecorder.h"
-#include "include/core/SkSerialProcs.h"
+#include "include/core/SkImage.h"
+#include "include/core/SkImageInfo.h"
+#include "include/core/SkMatrix.h"
+#include "include/core/SkPixmap.h"
+#include "include/core/SkRect.h"
+#include "include/core/SkRefCnt.h"
 #include "include/core/SkStream.h"
+#include "include/core/SkString.h"
 #include "include/core/SkSurface.h"
+#include "include/core/SkTypes.h"
 #include "include/encode/SkPngEncoder.h"
-#include "include/gpu/ganesh/SkSurfaceGanesh.h"
+#include "include/private/base/SkDebug.h"
 #include "include/private/base/SkTPin.h"
+#include "include/private/base/SkTo.h"
+#include "modules/skottie/include/ExternalLayer.h"
 #include "modules/skottie/include/Skottie.h"
 #include "modules/skottie/utils/SkottieUtils.h"
 #include "modules/skresources/include/SkResources.h"
+#include "modules/skshaper/utils/FactoryHelpers.h"
 #include "src/core/SkOSFile.h"
 #include "src/core/SkTaskGroup.h"
-#include "src/image/SkImage_Base.h"
 #include "src/utils/SkOSPath.h"
 #include "tools/flags/CommandLineFlags.h"
 
-#include <algorithm>
-#include <chrono>
-#include <future>
-#include <numeric>
-#include <vector>
-
 #if !defined(CPU_ONLY)
-#include "include/gpu/GrContextOptions.h"
+#include "include/gpu/GpuTypes.h"
+#include "include/gpu/ganesh/GrDirectContext.h"
+#include "include/gpu/ganesh/GrTypes.h"
+#include "include/gpu/ganesh/SkSurfaceGanesh.h"
+#include "tools/gpu/ContextType.h"
 #include "tools/gpu/GrContextFactory.h"
 #endif
 
+#if !defined(CPU_ONLY) && !defined(GPU_ONLY)
+#include "include/core/SkPicture.h"
+#include "include/core/SkPictureRecorder.h"
+#include "include/core/SkSerialProcs.h"
+#include "src/image/SkImage_Base.h"
+#endif
+
+#include <algorithm>
+#include <chrono>
+#include <cstdio>
+#include <cstring>
+#include <functional>
+#include <memory>
+#include <numeric>
+#include <utility>
+#include <vector>
+
 #if defined(HAVE_VIDEO_ENCODER)
+    #include <future>
     #include "experimental/ffmpeg/SkVideoEncoder.h"
     const char* formats_help = "Output format (png, skp, mp4, or null)";
 #else
     const char* formats_help = "Output format (png, skp, or null)";
+#endif
+
+#if defined(SK_BUILD_FOR_MAC) && defined(SK_FONTMGR_CORETEXT_AVAILABLE)
+#include "include/ports/SkFontMgr_mac_ct.h"
+#elif defined(SK_BUILD_FOR_ANDROID) && defined(SK_FONTMGR_ANDROID_AVAILABLE)
+#include "include/ports/SkFontMgr_android.h"
+#include "include/ports/SkFontScanner_FreeType.h"
+#elif defined(SK_BUILD_FOR_UNIX) && defined(SK_FONTMGR_FONTCONFIG_AVAILABLE) && defined(SK_TYPEFACE_FACTORY_FREETYPE)
+#include "include/ports/SkFontMgr_fontconfig.h"
+#include "include/ports/SkFontScanner_FreeType.h"
+#else
+#include "include/ports/SkFontMgr_empty.h"
 #endif
 
 static DEFINE_string2(input    , i, nullptr, "Input .json file.");
@@ -439,14 +481,14 @@ int main(int argc, char** argv) {
     }
 
     OutputFormat fmt;
-    if (0 == strcmp(FLAGS_format[0],  "png")) {
+    if (0 == std::strcmp(FLAGS_format[0], "png")) {
         fmt = OutputFormat::kPNG;
-    } else if (0 == strcmp(FLAGS_format[0],  "skp")) {
+    } else if (0 == std::strcmp(FLAGS_format[0], "skp")) {
         fmt = OutputFormat::kSKP;
-    }  else if (0 == strcmp(FLAGS_format[0], "null")) {
+    } else if (0 == std::strcmp(FLAGS_format[0], "null")) {
         fmt = OutputFormat::kNull;
 #if defined(HAVE_VIDEO_ENCODER)
-    } else if (0 == strcmp(FLAGS_format[0],  "mp4")) {
+    } else if (0 == std::strcmp(FLAGS_format[0], "mp4")) {
         fmt = OutputFormat::kMP4;
 #endif
     } else {
@@ -458,12 +500,29 @@ int main(int argc, char** argv) {
         return 1;
     }
 
+    SkCodecs::Register(SkPngDecoder::Decoder());
+    SkCodecs::Register(SkJpegDecoder::Decoder());
+    SkCodecs::Register(SkWebpDecoder::Decoder());
+
+    // If necessary, clients should use a font manager that would load fonts from the system.
+#if defined(SK_BUILD_FOR_MAC) && defined(SK_FONTMGR_CORETEXT_AVAILABLE)
+    sk_sp<SkFontMgr> fontMgr = SkFontMgr_New_CoreText(nullptr);
+#elif defined(SK_BUILD_FOR_ANDROID) && defined(SK_FONTMGR_ANDROID_AVAILABLE) && defined(SK_TYPEFACE_FACTORY_FREETYPE)
+    sk_sp<SkFontMgr> fontMgr = SkFontMgr_New_Android(nullptr, SkFontScanner_Make_FreeType());
+#elif defined(SK_BUILD_FOR_UNIX) && defined(SK_FONTMGR_FONTCONFIG_AVAILABLE) && defined(SK_TYPEFACE_FACTORY_FREETYPE)
+    sk_sp<SkFontMgr> fontMgr = SkFontMgr_New_FontConfig(nullptr, SkFontScanner_Make_FreeType());
+#else
+    sk_sp<SkFontMgr> fontMgr = SkFontMgr_New_Custom_Empty();
+#endif
+
+    auto predecode = skresources::ImageDecodeStrategy::kPreDecode;
     auto logger = sk_make_sp<Logger>();
-    auto     rp = skresources::CachingResourceProvider::Make(
-                    skresources::DataURIResourceProviderProxy::Make(
-                      skresources::FileResourceProvider::Make(SkOSPath::Dirname(FLAGS_input[0]),
-                                                                /*predecode=*/true),
-                      /*predecode=*/true));
+    auto rp = skresources::CachingResourceProvider::Make(
+            skresources::DataURIResourceProviderProxy::Make(
+                    skresources::FileResourceProvider::Make(SkOSPath::Dirname(FLAGS_input[0]),
+                                                            predecode),
+                    predecode,
+                    fontMgr));
     auto data   = SkData::MakeFromFileName(FLAGS_input[0]);
     auto precomp_interceptor =
             sk_make_sp<skottie_utils::ExternalAnimationPrecompInterceptor>(rp, "__");
@@ -473,13 +532,22 @@ int main(int argc, char** argv) {
         return 1;
     }
 
+    const auto build_animation = [&fontMgr, &rp, &data](
+            const sk_sp<Logger>& logger,
+            const sk_sp<skottie::PrecompInterceptor>& pint) {
+        return skottie::Animation::Builder()
+            .setFontManager(fontMgr)
+            .setLogger(logger)
+            .setPrecompInterceptor(pint)
+            .setResourceProvider(rp)
+            .setTextShapingFactory(SkShapers::BestAvailable())
+            .make(static_cast<const char*>(data->data()), data->size());
+    };
+
     // Instantiate an animation on the main thread for two reasons:
     //   - we need to know its duration upfront
     //   - we want to only report parsing errors once
-    auto anim = skottie::Animation::Builder()
-            .setLogger(logger)
-            .setResourceProvider(rp)
-            .make(static_cast<const char*>(data->data()), data->size());
+    const auto anim = build_animation(logger, nullptr);
     if (!anim) {
         SkDebugf("Could not parse animation: '%s'.\n", FLAGS_input[0]);
         return 1;
@@ -537,11 +605,7 @@ int main(int argc, char** argv) {
 
             const auto start = std::chrono::steady_clock::now();
             thread_local static auto* anim =
-                    skottie::Animation::Builder()
-                        .setResourceProvider(rp)
-                        .setPrecompInterceptor(precomp_interceptor)
-                        .make(static_cast<const char*>(data->data()), data->size())
-                        .release();
+                    build_animation(nullptr, precomp_interceptor).release();
             thread_local static auto* gen = singleton_generator
                     ? singleton_generator.get()
                     : FrameGenerator::Make(sink.get(), fmt, scale_matrix).release();

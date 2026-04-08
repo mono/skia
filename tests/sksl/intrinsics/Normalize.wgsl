@@ -1,4 +1,5 @@
 diagnostic(off, derivative_uniformity);
+diagnostic(off, chromium.unreachable_code);
 struct FSOut {
   @location(0) sk_FragColor: vec4<f32>,
 };
@@ -10,7 +11,7 @@ struct _GlobalUniforms {
 @binding(0) @group(0) var<uniform> _globalUniforms: _GlobalUniforms;
 fn _skslMain(coords: vec2<f32>) -> vec4<f32> {
   {
-    var expectedVec: vec4<f32> = vec4<f32>(1.0, 0.0, 0.0, 0.0);
+    const expectedVec: vec4<f32> = vec4<f32>(1.0, 0.0, 0.0, 0.0);
     let _skTemp0 = sign(_globalUniforms.inputVal.x);
     let _skTemp1 = normalize(_globalUniforms.inputVal.xy);
     let _skTemp2 = normalize(_globalUniforms.inputVal.xyz);

@@ -4,10 +4,12 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
+#include "include/gpu/ganesh/gl/glx/GrGLMakeGLXInterface.h"
 
-#include "include/gpu/gl/GrGLAssembleInterface.h"
-#include "include/gpu/gl/GrGLInterface.h"
-#include "src/gpu/ganesh/gl/GrGLUtil.h"
+#include "include/core/SkRefCnt.h"
+#include "include/gpu/ganesh/gl/GrGLAssembleInterface.h"
+#include "include/gpu/ganesh/gl/GrGLInterface.h"
+#include "include/private/base/SkAssert.h"
 
 #include <dlfcn.h>
 
@@ -66,7 +68,8 @@ static GrGLFuncPtr glx_get(void* ctx, const char name[]) {
     return getter->getProc(name);
 }
 
-sk_sp<const GrGLInterface> GrGLMakeGLXInterface() {
+namespace GrGLInterfaces {
+sk_sp<const GrGLInterface> MakeGLX() {
     GLXProcGetter getter;
 
     if (nullptr == getter.getCurrentContext()) {
@@ -75,3 +78,8 @@ sk_sp<const GrGLInterface> GrGLMakeGLXInterface() {
 
     return GrGLMakeAssembledInterface(&getter, glx_get);
 }
+}  // namespace GrGLInterfaces
+
+#if !defined(SK_DISABLE_LEGACY_GLXINTERFACE_FACTORY)
+sk_sp<const GrGLInterface> GrGLMakeGLXInterface() { return GrGLInterfaces::MakeGLX(); }
+#endif

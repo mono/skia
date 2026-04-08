@@ -12,14 +12,14 @@
 
 struct ControlBench : public Benchmark {
     const char* onGetName() override { return "control"; }
-    bool isSuitableFor(Backend backend) override { return backend == kNonRendering_Backend; }
+    bool isSuitableFor(Backend backend) override { return backend == Backend::kNonRendering; }
 
     void onDraw(int loops, SkCanvas*) override {
         // Nothing terribly useful: force a memory read, a memory write, and some math.
         [[maybe_unused]] volatile uint32_t rand = 0;
         for (int i = 0; i < 1000*loops; i++) {
-            rand *= 1664525;
-            rand += 1013904223;
+            uint32_t val = rand * 1664525 + 1013904223;
+            rand = val;
         }
     }
 };

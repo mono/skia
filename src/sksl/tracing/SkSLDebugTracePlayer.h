@@ -4,6 +4,8 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
+#ifndef SkSLDebugTracePlayer_DEFINED
+#define SkSLDebugTracePlayer_DEFINED
 
 #include "src/sksl/tracing/SkSLDebugTracePriv.h"
 
@@ -17,8 +19,6 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
-
-#ifdef SKSL_ENABLE_TRACING
 
 namespace SkSL {
 
@@ -137,4 +137,4 @@ private:
 
 }  // namespace SkSL
 
-#endif  // SKSL_ENABLE_TRACING
+#endif  // SkSLDebugTracePlayer_DEFINED

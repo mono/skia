@@ -5,14 +5,17 @@
  * found in the LICENSE file.
  */
 
+#include "tools/fonts/RandomScalerContext.h"
+
 #include "include/core/SkBitmap.h"
 #include "include/core/SkCanvas.h"
 #include "include/core/SkDrawable.h"
 #include "include/core/SkPath.h"
+#include "include/core/SkStream.h"
 #include "src/core/SkAdvancedTypefaceMetrics.h"
 #include "src/core/SkGlyph.h"
 #include "src/core/SkRectPriv.h"
-#include "tools/fonts/RandomScalerContext.h"
+#include "src/core/SkTHash.h"
 
 using namespace skia_private;
 
@@ -28,7 +31,7 @@ public:
 protected:
     GlyphMetrics generateMetrics(const SkGlyph&, SkArenaAlloc*) override;
     void     generateImage(const SkGlyph&, void*) override;
-    bool     generatePath(const SkGlyph&, SkPath*) override;
+    bool     generatePath(const SkGlyph&, SkPath*, bool*) override;
     sk_sp<SkDrawable> generateDrawable(const SkGlyph&) override;
     void     generateFontMetrics(SkFontMetrics*) override;
 
@@ -69,7 +72,7 @@ SkScalerContext::GlyphMetrics RandomScalerContext::generateMetrics(const SkGlyph
 
     GlyphMetrics mx(SkMask::kA8_Format);
     mx.advance = glyph.advanceVector();
-    mx.bounds = glyph.iRect();
+    mx.bounds = glyph.rect();
     mx.maskFormat = glyph.maskFormat();
     mx.extraBits = glyph.extraBits();
 
@@ -136,13 +139,13 @@ void RandomScalerContext::generateImage(const SkGlyph& glyph, void* imageBuffer)
     canvas.drawPath(path, paint); //Need to modify the paint if the devPath is hairline
 }
 
-bool RandomScalerContext::generatePath(const SkGlyph& glyph, SkPath* path) {
+bool RandomScalerContext::generatePath(const SkGlyph& glyph, SkPath* path, bool* modified) {
     SkGlyph* shadowProxyGlyph = fProxyGlyphs.find(glyph.getPackedID());
     if (shadowProxyGlyph && shadowProxyGlyph->path()) {
         path->reset();
         return false;
     }
-    return fProxy->generatePath(glyph, path);
+    return fProxy->generatePath(glyph, path, modified);
 }
 
 sk_sp<SkDrawable> RandomScalerContext::generateDrawable(const SkGlyph& glyph) {

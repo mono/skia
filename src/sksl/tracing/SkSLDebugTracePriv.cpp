@@ -7,8 +7,6 @@
 
 #include "src/sksl/tracing/SkSLDebugTracePriv.h"
 
-#ifdef SKSL_ENABLE_TRACING
-
 #include "include/core/SkData.h"
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkStream.h"
@@ -23,7 +21,6 @@
 #include <sstream>
 #include <string>
 #include <string_view>
-#include <utility>
 
 static constexpr char kTraceVersion[] = "20220209";
 
@@ -94,9 +91,9 @@ void DebugTracePriv::setTraceCoord(const SkIPoint& coord) {
     fTraceCoord = coord;
 }
 
-void DebugTracePriv::setSource(std::string source) {
+void DebugTracePriv::setSource(const std::string& source) {
     fSource.clear();
-    std::stringstream stream{std::move(source)};
+    std::stringstream stream{source};
     while (stream.good()) {
         fSource.push_back({});
         std::getline(stream, fSource.back(), '\n');
@@ -390,28 +387,3 @@ bool DebugTracePriv::readTrace(SkStream* r) {
 }
 
 }  // namespace SkSL
-
-#else // SKSL_ENABLE_TRACING
-
-#include <string>
-
-namespace SkSL {
-    void DebugTracePriv::setTraceCoord(const SkIPoint &coord) {}
-
-    void DebugTracePriv::setSource(std::string source) {}
-
-    bool DebugTracePriv::readTrace(SkStream *r) { return false; }
-
-    void DebugTracePriv::writeTrace(SkWStream *w) const {}
-
-    void DebugTracePriv::dump(SkWStream *o) const {}
-
-    std::string DebugTracePriv::getSlotComponentSuffix(int slotIndex) const { return ""; }
-
-    std::string DebugTracePriv::getSlotValue(int slotIndex, int32_t value) const { return ""; }
-
-    double DebugTracePriv::interpretValueBits(int slotIndex, int32_t valueBits) const { return 0; }
-
-    std::string DebugTracePriv::slotValueToString(int slotIndex, double value) const { return ""; }
-}
-#endif

@@ -14,11 +14,9 @@
 #include "include/gpu/graphite/ContextOptions.h"
 #include "include/gpu/graphite/TextureInfo.h"
 #include "src/core/SkBlenderBase.h"
+#include "src/gpu/graphite/GraphiteResourceKey.h"
+#include "src/gpu/graphite/ResourceTypes.h"
 #include "src/sksl/SkSLUtil.h"
-
-#if defined(GRAPHITE_TEST_UTILS)
-#include "include/private/gpu/graphite/ContextOptionsPriv.h"
-#endif
 
 namespace skgpu::graphite {
 
@@ -39,30 +37,49 @@ void Caps::finishInitialization(const ContextOptions& options) {
         fShaderErrorHandler = DefaultShaderErrorHandler();
     }
 
-#if defined(GRAPHITE_TEST_UTILS)
+#if defined(GPU_TEST_UTILS)
     if (options.fOptionsPriv) {
         fMaxTextureSize = std::min(fMaxTextureSize, options.fOptionsPriv->fMaxTextureSizeOverride);
         fMaxTextureAtlasSize = options.fOptionsPriv->fMaxTextureAtlasSize;
+        fRequestedPathRendererStrategy = options.fOptionsPriv->fPathRendererStrategy;
     }
 #endif
     fGlyphCacheTextureMaximumBytes = options.fGlyphCacheTextureMaximumBytes;
     fMinDistanceFieldFontSize = options.fMinDistanceFieldFontSize;
     fGlyphsAsPathsFontSize = options.fGlyphsAsPathsFontSize;
-    fAllowMultipleGlyphCacheTextures = options.fAllowMultipleGlyphCacheTextures;
+    fMaxPathAtlasTextureSize = options.fMaxPathAtlasTextureSize;
+    fAllowMultipleAtlasTextures = options.fAllowMultipleAtlasTextures;
     fSupportBilerpFromGlyphAtlas = options.fSupportBilerpFromGlyphAtlas;
-    fDisableCachedGlyphUploads = options.fDisableCachedGlyphUploads;
-    if (fDisableCachedGlyphUploads) {
+    if (options.fDisableCachedGlyphUploads) {
         fRequireOrderedRecordings = true;
     }
+    fSetBackendLabels = options.fSetBackendLabels;
 }
 
 sk_sp<SkCapabilities> Caps::capabilities() const { return fCapabilities; }
+
+SkISize Caps::getDepthAttachmentDimensions(const TextureInfo& textureInfo,
+                                           const SkISize colorAttachmentDimensions) const {
+    return colorAttachmentDimensions;
+}
 
 bool Caps::isTexturable(const TextureInfo& info) const {
     if (info.numSamples() > 1) {
         return false;
     }
     return this->onIsTexturable(info);
+}
+
+GraphiteResourceKey Caps::makeSamplerKey(const SamplerDesc& samplerDesc) const {
+    GraphiteResourceKey samplerKey;
+    static const ResourceType kType = GraphiteResourceKey::GenerateResourceType();
+    GraphiteResourceKey::Builder builder(&samplerKey, kType, /*data32Count=*/1, Shareable::kYes);
+
+    // The default impl. of this method adds no additional backend information to the key.
+    builder[0] = samplerDesc.desc();
+
+    builder.finish();
+    return samplerKey;
 }
 
 bool Caps::areColorTypeAndTextureInfoCompatible(SkColorType ct, const TextureInfo& info) const {
@@ -88,6 +105,8 @@ static inline SkColorType color_type_fallback(SkColorType ct) {
         case kA16_float_SkColorType:
             return kRGBA_F16_SkColorType;
         case kGray_8_SkColorType:
+        case kRGB_F16F16F16x_SkColorType:
+        case kRGB_101010x_SkColorType:
             return kRGB_888x_SkColorType;
         default:
             return kUnknown_SkColorType;
@@ -141,16 +160,17 @@ DstReadRequirement Caps::getDstReadRequirement() const {
     }
 }
 
-sktext::gpu::SDFTControl Caps::getSDFTControl(bool useSDFTForSmallText) const {
+sktext::gpu::SubRunControl Caps::getSubRunControl(bool useSDFTForSmallText) const {
 #if !defined(SK_DISABLE_SDF_TEXT)
-    return sktext::gpu::SDFTControl{
+    return sktext::gpu::SubRunControl{
             this->shaderCaps()->supportsDistanceFieldText(),
             useSDFTForSmallText,
             true, /*ableToUsePerspectiveSDFT*/
             this->minDistanceFieldFontSize(),
-            this->glyphsAsPathsFontSize()};
+            this->glyphsAsPathsFontSize(),
+            true /*forcePathAA*/};
 #else
-    return sktext::gpu::SDFTControl{};
+    return sktext::gpu::SubRunControl{/*forcePathAA=*/true};
 #endif
 }
 

@@ -8,15 +8,19 @@
 #include "bench/Benchmark.h"
 
 #include "include/core/SkString.h"
-#include "include/gpu/GrDirectContext.h"
+#include "include/gpu/ganesh/GrDirectContext.h"
 #include "src/base/SkHalf.h"
+#include "src/base/SkRandom.h"
 #include "src/core/SkColorSpacePriv.h"
 #include "src/gpu/KeyBuilder.h"
 #include "src/gpu/ganesh/GrCaps.h"
 #include "src/gpu/ganesh/GrDirectContextPriv.h"
 #include "src/gpu/ganesh/GrGeometryProcessor.h"
 #include "src/gpu/ganesh/GrMemoryPool.h"
+#include "src/gpu/ganesh/GrMeshDrawTarget.h"
+#include "src/gpu/ganesh/GrOpFlushState.h"
 #include "src/gpu/ganesh/GrProgramInfo.h"
+#include "src/gpu/ganesh/GrSimpleMesh.h"
 #include "src/gpu/ganesh/SkGr.h"
 #include "src/gpu/ganesh/SurfaceDrawContext.h"
 #include "src/gpu/ganesh/glsl/GrGLSLColorSpaceXformHelper.h"
@@ -233,7 +237,7 @@ private:
             };
             SkASSERT(sizeof(V) == vertexStride);
             uint64_t color;
-            SkFloatToHalf_finite_ftz(skvx::float4::Load(&fColor4f)).store(&color);
+            to_half(skvx::float4::Load(&fColor4f)).store(&color);
             V* v = (V*)verts;
             for (int i = 0; i < kVertexCount; i += 2) {
                 v[i + 0].fPos.set(dx * i, 0.0f);
@@ -289,7 +293,7 @@ public:
         fName.appendf("_%s", name);
     }
 
-    bool isSuitableFor(Backend backend) override { return kGPU_Backend == backend; }
+    bool isSuitableFor(Backend backend) override { return Backend::kGanesh == backend; }
     const char* onGetName() override { return fName.c_str(); }
 
     void onDraw(int loops, SkCanvas* canvas) override {

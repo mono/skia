@@ -17,6 +17,7 @@
 #include "include/core/SkRect.h"
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkSize.h"
+#include "include/core/SkSurface.h"
 #include "include/core/SkTypes.h"
 #include "src/base/SkRectMemcpy.h"
 #include "src/core/SkImageInfoPriv.h"
@@ -28,6 +29,7 @@
 #include <utility>
 
 class GrDirectContext;
+class SkSurfaceProps;
 
 // fixes https://bug.skia.org/5096
 static bool is_not_subset(const SkBitmap& bm) {
@@ -80,6 +82,13 @@ bool SkImage_Raster::getROPixels(GrDirectContext*, SkBitmap* dst, CachingHint) c
     return true;
 }
 
+sk_sp<SkSurface> SkImage_Raster::onMakeSurface(skgpu::graphite::Recorder*,
+                                               const SkImageInfo& info) const {
+    const SkSurfaceProps* props = nullptr;
+    const size_t rowBytes = 0;
+    return SkSurfaces::Raster(info, rowBytes, props);
+}
+
 static SkBitmap copy_bitmap_subset(const SkBitmap& orig, const SkIRect& subset) {
     SkImageInfo info = orig.info().makeDimensions(subset.size());
     SkBitmap bitmap;
@@ -116,7 +125,12 @@ static sk_sp<SkMipmap> copy_mipmaps(const SkBitmap& src, SkMipmap* srcMips) {
     }
 
     sk_sp<SkMipmap> dst;
-    dst.reset(SkMipmap::Build(src.pixmap(), nullptr, /* computeContents= */ false));
+    dst.reset(SkMipmap::Build(src.pixmap(),
+                              /* factoryProc= */ nullptr,
+                              /* computeContents= */ false));
+    if (!dst) {
+        return nullptr;
+    }
     for (int i = 0; i < dst->countLevels(); ++i) {
         SkMipmap::Level srcLevel, dstLevel;
         srcMips->getLevel(i, &srcLevel);

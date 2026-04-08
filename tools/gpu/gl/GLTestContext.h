@@ -8,7 +8,7 @@
 #ifndef GLTestContext_DEFINED
 #define GLTestContext_DEFINED
 
-#include "include/gpu/gl/GrGLInterface.h"
+#include "include/gpu/ganesh/gl/GrGLInterface.h"
 #include "src/gpu/ganesh/gl/GrGLUtil.h"
 #include "tools/gpu/TestContext.h"
 
@@ -41,9 +41,6 @@ public:
     virtual GrGLuint eglImageToExternalTexture(GrEGLImage) const { return 0; }
 
     void testAbandon() override;
-
-    /** Wait until all GPU work is finished. */
-    void finish() override;
 
     void overrideVersion(const char* version, const char* shadingLanguageVersion);
 

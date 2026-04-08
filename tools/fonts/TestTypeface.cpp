@@ -143,6 +143,7 @@ SkPath TestTypeface::getPath(SkGlyphID glyphID) {
 }
 
 void TestTypeface::onFilterRec(SkScalerContextRec* rec) const {
+    rec->useStrokeForFakeBold();
     rec->setHinting(SkFontHinting::kNone);
 }
 
@@ -155,7 +156,7 @@ void TestTypeface::getGlyphToUnicodeMap(SkUnichar* glyphToUnicode) const {
 
 std::unique_ptr<SkAdvancedTypefaceMetrics> TestTypeface::onGetAdvancedMetrics() const {  // pdf only
     std::unique_ptr<SkAdvancedTypefaceMetrics>info(new SkAdvancedTypefaceMetrics);
-    info->fFontName.set(fTestFont->fName);
+    info->fPostScriptName.set(fTestFont->fName);
     return info;
 }
 
@@ -274,7 +275,7 @@ protected:
         SK_ABORT("Should have generated from path.");
     }
 
-    bool generatePath(const SkGlyph& glyph, SkPath* path) override {
+    bool generatePath(const SkGlyph& glyph, SkPath* path, bool* modified) override {
         *path = this->getTestTypeface()->getPath(glyph.getGlyphID()).makeTransform(fMatrix);
         return true;
     }

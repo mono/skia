@@ -24,10 +24,10 @@
 #include "include/core/SkSurfaceProps.h"
 #include "include/core/SkTypes.h"
 #include "include/gpu/GpuTypes.h"
-#include "include/gpu/GrBackendSurface.h"
-#include "include/gpu/GrDirectContext.h"
-#include "include/gpu/GrRecordingContext.h"
-#include "include/gpu/GrTypes.h"
+#include "include/gpu/ganesh/GrBackendSurface.h"
+#include "include/gpu/ganesh/GrDirectContext.h"
+#include "include/gpu/ganesh/GrRecordingContext.h"
+#include "include/gpu/ganesh/GrTypes.h"
 #include "include/gpu/ganesh/SkSurfaceGanesh.h"
 #include "include/private/SkColorData.h"
 #include "include/private/base/SkDebug.h"
@@ -400,7 +400,7 @@ public:
         return true;
     }
 
-    bool checkImage(skiatest::Reporter* reporter, sk_sp<SkSurface> s) {
+    bool checkImage(skiatest::Reporter* reporter, const sk_sp<SkSurface>& s) {
         SkBitmap actual;
 
         actual.allocPixels(default_ii(kImageWH));

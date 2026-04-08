@@ -4,9 +4,13 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
+#include "src/gpu/vk/VulkanInterface.h"
 
 #include "include/gpu/vk/VulkanExtensions.h"
-#include "src/gpu/vk/VulkanInterface.h"
+#include "include/private/base/SkAssert.h"
+#include "include/private/base/SkDebug.h"
+
+#include <functional>
 
 namespace skgpu {
 
@@ -26,6 +30,8 @@ VulkanInterface::VulkanInterface(VulkanGetProc getProc,
     if (getProc == nullptr) {
         return;
     }
+    SkASSERT(extensions);
+
     // Global/Loader Procs.
     ACQUIRE_PROC(CreateInstance, VK_NULL_HANDLE, VK_NULL_HANDLE);
     ACQUIRE_PROC(EnumerateInstanceExtensionProperties, VK_NULL_HANDLE, VK_NULL_HANDLE);
@@ -239,10 +245,9 @@ VulkanInterface::VulkanInterface(VulkanGetProc getProc,
         ACQUIRE_PROC_SUFFIX(DestroySamplerYcbcrConversion, KHR, VK_NULL_HANDLE, device);
     }
 
-    // Functions for VK_KHR_dynamic_rendering
-    if (extensions->hasExtension(VK_KHR_DYNAMIC_RENDERING_EXTENSION_NAME, 1)) {
-        ACQUIRE_PROC_SUFFIX(CmdBeginRendering, KHR, VK_NULL_HANDLE, device);
-        ACQUIRE_PROC_SUFFIX(CmdEndRendering, KHR, VK_NULL_HANDLE, device);
+    // Functions for VK_EXT_device_fault
+    if (extensions->hasExtension(VK_EXT_DEVICE_FAULT_EXTENSION_NAME, 1)) {
+        ACQUIRE_PROC_SUFFIX(GetDeviceFaultInfo, EXT, VK_NULL_HANDLE, device);
     }
 
 #ifdef SK_BUILD_FOR_ANDROID

@@ -16,19 +16,20 @@
 
 #include <utility>
 
-namespace skgpu { class MutableTextureStateRef; }
+namespace skgpu { class MutableTextureState; }
 
 namespace skgpu::graphite {
 
 class VulkanSharedContext;
 class VulkanCommandBuffer;
+class VulkanResourceProvider;
 
 class VulkanTexture : public Texture {
 public:
     struct CreatedImageInfo {
         VkImage fImage = VK_NULL_HANDLE;
         VulkanAlloc fMemoryAlloc;
-        sk_sp<MutableTextureStateRef> fMutableState;
+        sk_sp<MutableTextureState> fMutableState;
     };
 
     static bool MakeVkImage(const VulkanSharedContext*,
@@ -39,14 +40,16 @@ public:
     static sk_sp<Texture> Make(const VulkanSharedContext*,
                                SkISize dimensions,
                                const TextureInfo&,
-                               skgpu::Budgeted);
+                               skgpu::Budgeted,
+                               sk_sp<VulkanYcbcrConversion>);
 
     static sk_sp<Texture> MakeWrapped(const VulkanSharedContext*,
                                       SkISize dimensions,
                                       const TextureInfo&,
-                                      sk_sp<MutableTextureStateRef>,
+                                      sk_sp<MutableTextureState>,
                                       VkImage,
-                                      const VulkanAlloc&);
+                                      const VulkanAlloc&,
+                                      sk_sp<VulkanYcbcrConversion>);
 
     ~VulkanTexture() override {}
 
@@ -68,6 +71,10 @@ public:
                                      bool byRegion,
                                      uint32_t newQueueFamilyIndex) const;
 
+    // This simply updates our internal tracking of the image layout and does not actually perform
+    // any gpu work.
+    void updateImageLayout(VkImageLayout);
+
     VkImageLayout currentLayout() const;
     uint32_t currentQueueFamilyIndex() const;
 
@@ -77,20 +84,24 @@ public:
     static VkPipelineStageFlags LayoutToPipelineSrcStageFlags(const VkImageLayout layout);
     static VkAccessFlags LayoutToSrcAccessMask(const VkImageLayout layout);
 
+    bool supportsInputAttachmentUsage() const;
+
 private:
     VulkanTexture(const VulkanSharedContext* sharedContext,
                   SkISize dimensions,
                   const TextureInfo& info,
-                  sk_sp<MutableTextureStateRef>,
+                  sk_sp<MutableTextureState>,
                   VkImage,
                   const VulkanAlloc&,
                   Ownership,
-                  skgpu::Budgeted);
+                  skgpu::Budgeted,
+                  sk_sp<VulkanYcbcrConversion>);
 
     void freeGpuData() override;
 
     VkImage fImage;
     VulkanAlloc fMemoryAlloc;
+    sk_sp<VulkanYcbcrConversion> fYcbcrConversion;
 
     mutable skia_private::STArray<2, std::unique_ptr<const VulkanImageView>> fImageViews;
 };

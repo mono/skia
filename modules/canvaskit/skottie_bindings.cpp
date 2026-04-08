@@ -5,19 +5,27 @@
  * found in the LICENSE file.
  */
 
+#include "include/codec/SkCodec.h"
 #include "include/core/SkCanvas.h"
+#include "include/core/SkFontMgr.h"
 #include "include/core/SkImage.h"
+#include "include/core/SkStream.h"
 #include "include/core/SkString.h"
 #include "include/core/SkTypes.h"
+#include "include/private/base/SkOnce.h"
 #include "modules/canvaskit/WasmCommon.h"
 #include "modules/skottie/include/Skottie.h"
 #include "modules/skottie/include/SkottieProperty.h"
+#include "modules/skottie/include/SlotManager.h"
 #include "modules/skottie/utils/SkottieUtils.h"
 #include "modules/skottie/utils/TextEditor.h"
 #include "modules/skparagraph/include/Paragraph.h"
 #include "modules/skresources/include/SkResources.h"
 #include "modules/sksg/include/SkSGInvalidationController.h"
+#include "modules/skshaper/utils/FactoryHelpers.h"
 #include "modules/skunicode/include/SkUnicode.h"
+#include "src/base/SkUTF.h"
+#include "src/ports/SkTypeface_FreeType.h"
 #include "tools/skui/InputState.h"
 #include "tools/skui/ModifierKey.h"
 
@@ -25,6 +33,23 @@
 #include <vector>
 #include <emscripten.h>
 #include <emscripten/bind.h>
+
+#if defined(SK_CODEC_DECODES_GIF)
+#include "include/codec/SkGifDecoder.h"
+#endif
+#if defined(SK_CODEC_DECODES_JPEG)
+#include "include/codec/SkJpegDecoder.h"
+#endif
+#if defined(SK_CODEC_DECODES_PNG)
+#include "include/codec/SkPngDecoder.h"
+#endif
+#if defined(SK_CODEC_DECODES_WEBP)
+#include "include/codec/SkWebpDecoder.h"
+#endif
+
+#if !defined(CK_NO_FONTS)
+#include "include/ports/SkFontMgr_empty.h"
+#endif
 
 using namespace emscripten;
 namespace para = skia::textlayout;
@@ -142,7 +167,11 @@ public:
                                               const char[] /* id */) const override {
         // For CK/Skottie we ignore paths & IDs, and identify images based solely on name.
         if (auto data = this->findAsset(name)) {
-            return skresources::MultiFrameImageAsset::Make(std::move(data));
+            auto codec = DecodeImageData(data);
+            if (!codec) {
+                return nullptr;
+            }
+            return skresources::MultiFrameImageAsset::Make(std::move(codec));
         }
 
         return nullptr;
@@ -159,9 +188,13 @@ public:
         return nullptr;
     }
 
-    sk_sp<SkData> loadFont(const char name[], const char[] /* url */) const override {
-        // Same as images paths, we ignore font URLs.
-        return this->findAsset(name);
+    sk_sp<SkTypeface> loadTypeface(const char name[], const char[] /* url */) const override {
+        sk_sp<SkData> faceData = this->findAsset(name);
+        if (!faceData) {
+            return nullptr;
+        }
+        auto stream = std::make_unique<SkMemoryStream>(faceData);
+        return SkTypeface_FreeType::MakeFromStream(std::move(stream), SkFontArguments());
     }
 
     sk_sp<SkData> load(const char[]/*path*/, const char name[]) const override {
@@ -241,6 +274,7 @@ public:
                .setPropertyObserver(mgr->getPropertyObserver())
                .setResourceProvider(rp)
                .setPrecompInterceptor(std::move(pinterceptor))
+               .setTextShapingFactory(SkShapers::BestAvailable())
                .setLogger(JSLogger::Make(std::move(logger)));
         auto animation = builder.make(json.c_str(), json.size());
         auto slotManager = builder.getSlotManager();
@@ -564,22 +598,34 @@ public:
             if (key == "ArrowRight") return ']';
             if (key == "Backspace")  return '\\';
 
-            // Passthrough regular keys.
-            if (key.size() == 1) return key[0];
+            const char* str = key.c_str();
+            const char* end = str + key.size();
+            const SkUnichar uch = SkUTF::NextUTF8(&str, end);
 
-            // Ignored.
-            return '\0';
+            // Pass through single code points, ignore everything else.
+            return str == end ? uch : -1;
         };
 
-        return fTextEditor
-                ? fTextEditor->onCharInput(key2char(key))
-                : false;
+        if (fTextEditor) {
+            const auto uch = key2char(key);
+            if (uch != -1) {
+                return fTextEditor->onCharInput(uch);
+            }
+        }
+
+        return false;
     }
 
     bool dispatchEditorPointer(float x, float y, skui::InputState state, skui::ModifierKey mod) {
         return fTextEditor
                 ? fTextEditor->onMouseInput(x, y, state, mod)
                 : false;
+    }
+
+    void setEditorCursorWeight(float w) {
+        if (fTextEditor) {
+            fTextEditor->setCursorWeight(w);
+        }
     }
 
     bool setTextSlot(const std::string& slotID, SimpleSlottableTextProperty t) {
@@ -703,6 +749,7 @@ EMSCRIPTEN_BINDINGS(Skottie) {
         .function("enableEditor"         , &ManagedAnimation::enableEditor)
         .function("dispatchEditorKey"    , &ManagedAnimation::dispatchEditorKey)
         .function("dispatchEditorPointer", &ManagedAnimation::dispatchEditorPointer)
+        .function("setEditorCursorWeight", &ManagedAnimation::setEditorCursorWeight)
         .function("getTextSlot"      , &ManagedAnimation::getTextSlot)
         .function("_setTextSlot"     , &ManagedAnimation::setTextSlot)
         .function("setImageSlot"     , &ManagedAnimation::setImageSlot);
@@ -729,10 +776,35 @@ EMSCRIPTEN_BINDINGS(Skottie) {
             assets.push_back(std::make_pair(std::move(name), std::move(bytes)));
         }
 
+        // DataURIResourceProviderProxy needs codecs registered to try to process Base64 encoded
+        // images.
+        static SkOnce once;
+        once([] {
+#if defined(SK_CODEC_DECODES_PNG)
+            SkCodecs::Register(SkPngDecoder::Decoder());
+#endif
+#if defined(SK_CODEC_DECODES_JPEG)
+            SkCodecs::Register(SkJpegDecoder::Decoder());
+#endif
+#if defined(SK_CODEC_DECODES_GIF)
+            SkCodecs::Register(SkGifDecoder::Decoder());
+#endif
+#if defined(SK_CODEC_DECODES_WEBP)
+            SkCodecs::Register(SkWebpDecoder::Decoder());
+#endif
+        });
+
+        sk_sp<SkFontMgr> fontmgr;
+#if !defined(CK_NO_FONTS)
+        fontmgr = SkFontMgr_New_Custom_Empty();
+#endif
+
         return ManagedAnimation::Make(json,
                                       skresources::DataURIResourceProviderProxy::Make(
                                           SkottieAssetProvider::Make(std::move(assets),
-                                                                     std::move(soundMap))),
+                                                                     std::move(soundMap)),
+                                          skresources::ImageDecodeStrategy::kPreDecode,
+                                          std::move(fontmgr)),
                                       prop_prefix, std::move(logger));
     }));
 

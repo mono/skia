@@ -149,7 +149,7 @@ static const char* set_scalar(SkString* storage, float value, SkScalarAsStringTy
     return storage->c_str();
 }
 
-void SkRect::dump(bool asHex) const {
+SkString SkRect::dumpToString(bool asHex) const {
     SkScalarAsStringType asType = asHex ? kHex_SkScalarAsStringType : kDec_SkScalarAsStringType;
 
     SkString line;
@@ -168,7 +168,11 @@ void SkRect::dump(bool asHex) const {
         line.printf("SkRect::MakeLTRB(%s, %s, %s, %s);",
                     strL.c_str(), strT.c_str(), strR.c_str(), strB.c_str());
     }
-    SkDebugf("%s\n", line.c_str());
+    return line;
+}
+
+void SkRect::dump(bool asHex) const {
+    SkDebugf("%s\n", this->dumpToString(asHex).c_str());
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////
@@ -258,11 +262,21 @@ bool SkRectPriv::Subtract(const SkIRect& a, const SkIRect& b, SkIRect* out) {
 }
 
 
-bool SkRectPriv::QuadContainsRect(const SkMatrix& m, const SkIRect& a, const SkIRect& b) {
-    return QuadContainsRect(SkM44(m), SkRect::Make(a), SkRect::Make(b));
+bool SkRectPriv::QuadContainsRect(const SkMatrix& m,
+                                  const SkIRect& a,
+                                  const SkIRect& b,
+                                  float tol) {
+    return QuadContainsRect(SkM44(m), SkRect::Make(a), SkRect::Make(b), tol);
 }
 
-bool SkRectPriv::QuadContainsRect(const SkM44& m, const SkRect& a, const SkRect& b) {
+bool SkRectPriv::QuadContainsRect(const SkM44& m, const SkRect& a, const SkRect& b, float tol) {
+    return all(QuadContainsRectMask(m, a, b, tol));
+}
+
+skvx::int4 SkRectPriv::QuadContainsRectMask(const SkM44& m,
+                                            const SkRect& a,
+                                            const SkRect& b,
+                                            float tol) {
     SkDEBUGCODE(SkM44 inverse;)
     SkASSERT(m.invert(&inverse));
     // With empty rectangles, the calculated edges could give surprising results. If 'a' were not
@@ -270,7 +284,7 @@ bool SkRectPriv::QuadContainsRect(const SkM44& m, const SkRect& a, const SkRect&
     // would be seen as "contained". If 'a' is all 0s, its edge equations are also (0,0,0) so every
     // point has a distance of 0, and would be interpreted as inside.
     if (a.isEmpty()) {
-        return false;
+        return skvx::int4(0); // all "false"
     }
     // However, 'b' is only used to define its 4 corners to check against the transformed edges.
     // This is valid regardless of b's emptiness or sortedness.
@@ -286,7 +300,7 @@ bool SkRectPriv::QuadContainsRect(const SkM44& m, const SkRect& a, const SkRect&
     if (all(maw < 0.f)) {
         // If all points of A are mapped to w < 0, then the edge equations end up representing the
         // convex hull of projected points when A should in fact be considered empty.
-        return false;
+        return skvx::int4(0); // all "false"
     }
 
     // Cross product of adjacent vertices provides homogenous lines for the 4 sides of the quad
@@ -300,13 +314,14 @@ bool SkRectPriv::QuadContainsRect(const SkM44& m, const SkRect& a, const SkRect&
 
     // Calculate distance from 'b' to each edge. Since 'b' has presumably been transformed by 'm'
     // *and* projected, this assumes W = 1.
-    auto d0 = sign * (lA*b.fLeft  + lB*b.fTop    + lC);
-    auto d1 = sign * (lA*b.fRight + lB*b.fTop    + lC);
-    auto d2 = sign * (lA*b.fRight + lB*b.fBottom + lC);
-    auto d3 = sign * (lA*b.fLeft  + lB*b.fBottom + lC);
+    SkRect bInset = b.makeInset(tol, tol);
+    auto d0 = sign * (lA*bInset.fLeft  + lB*bInset.fTop    + lC);
+    auto d1 = sign * (lA*bInset.fRight + lB*bInset.fTop    + lC);
+    auto d2 = sign * (lA*bInset.fRight + lB*bInset.fBottom + lC);
+    auto d3 = sign * (lA*bInset.fLeft  + lB*bInset.fBottom + lC);
 
     // 'b' is contained in the mapped rectangle if all distances are >= 0
-    return all((d0 >= 0.f) & (d1 >= 0.f) & (d2 >= 0.f) & (d3 >= 0.f));
+    return (d0 >= 0.f) & (d1 >= 0.f) & (d2 >= 0.f) & (d3 >= 0.f);
 }
 
 SkIRect SkRectPriv::ClosestDisjointEdge(const SkIRect& src, const SkIRect& dst) {

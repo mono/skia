@@ -106,7 +106,8 @@ std::unique_ptr<Variable> Variable::Convert(const Context& context,
         context.fErrors->error(modifiersPos,
                                "out location=0, index=0 is reserved for sk_FragColor");
     }
-    if (type->isUnsizedArray() && storage != Variable::Storage::kInterfaceBlock) {
+    if (type->isUnsizedArray() && storage != Variable::Storage::kInterfaceBlock
+                               && storage != Variable::Storage::kParameter) {
         context.fErrors->error(pos, "unsized arrays are not permitted here");
     }
     if (ProgramConfig::IsCompute(context.fConfig->fKind) && layout.fBuiltin == -1) {
@@ -135,11 +136,11 @@ std::unique_ptr<Variable> Variable::Convert(const Context& context,
         // Having a variable name overlap an intrinsic name will prevent us from calling the
         // intrinsic, but it's not illegal for user names to shadow a global symbol.
         // Mangle the name to avoid a possible collision.
-        mangledName = Mangler{}.uniqueName(name, context.fSymbolTable.get());
+        mangledName = Mangler{}.uniqueName(name, context.fSymbolTable);
     }
 
     return Make(pos, modifiersPos, layout, flags, type, name, std::move(mangledName),
-                context.fConfig->fIsBuiltinCode, storage);
+                context.fConfig->isBuiltinCode(), storage);
 }
 
 std::unique_ptr<Variable> Variable::Make(Position pos,
@@ -181,7 +182,6 @@ Variable::ScratchVariable Variable::MakeScratchVariable(const Context& context,
                                                         Mangler& mangler,
                                                         std::string_view baseName,
                                                         const Type* type,
-                                                        ModifierFlags modifierFlags,
                                                         SymbolTable* symbolTable,
                                                         std::unique_ptr<Expression> initialValue) {
     // $floatLiteral or $intLiteral aren't real types that we can use for scratch variables, so
@@ -191,9 +191,6 @@ Variable::ScratchVariable Variable::MakeScratchVariable(const Context& context,
         SkDEBUGFAIL("found a $literal type in MakeScratchVariable");
         type = &type->scalarTypeForLiteral();
     }
-
-    // Out-parameters aren't supported.
-    SkASSERT(!(modifierFlags & ModifierFlag::kOut));
 
     // Provide our new variable with a unique name, and add it to our symbol table.
     const std::string* name =
@@ -218,7 +215,7 @@ Variable::ScratchVariable Variable::MakeScratchVariable(const Context& context,
     // Create our variable declaration.
     result.fVarDecl = VarDeclaration::Make(context, var.get(), type, arraySize,
                                            std::move(initialValue));
-    result.fVarSymbol = symbolTable->add(std::move(var));
+    result.fVarSymbol = symbolTable->add(context, std::move(var));
     return result;
 }
 

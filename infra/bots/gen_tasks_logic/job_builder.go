@@ -115,9 +115,6 @@ func (b *jobBuilder) genTasksForJob() {
 	if b.extraConfig("PushAppsFromSkiaDockerImage") {
 		b.createPushAppsFromSkiaDockerImage()
 		return
-	} else if b.extraConfig("PushBazelAppsFromWASMDockerImage") {
-		b.createPushBazelAppsFromWASMDockerImage()
-		return
 	}
 
 	// Infra tests.
@@ -135,7 +132,10 @@ func (b *jobBuilder) genTasksForJob() {
 		b.checkGeneratedFiles()
 		return
 	}
-
+	if b.Name == "Housekeeper-PerCommit-GoLinters" {
+		b.goLinters()
+		return
+	}
 	if b.Name == "Housekeeper-PerCommit-RunGnToBp" {
 		b.checkGnToBp()
 		return

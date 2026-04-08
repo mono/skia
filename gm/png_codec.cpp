@@ -6,7 +6,6 @@
  */
 
 #include "gm/gm.h"
-#include "include/codec/SkAndroidCodec.h"
 #include "include/codec/SkCodec.h"
 #include "include/codec/SkEncodedImageFormat.h"
 #include "include/codec/SkPngDecoder.h"
@@ -77,6 +76,8 @@ static constexpr const char* sk_color_type_to_str(SkColorType colorType) {
             return "kRGBA_F16Norm_SkColorType";
         case kRGBA_F16_SkColorType:
             return "kRGBA_F16_SkColorType";
+        case kRGB_F16F16F16x_SkColorType:
+            return "kRGB_F16F16F16x_SkColorType";
         case kRGBA_F32_SkColorType:
             return "kRGBA_F32_SkColorType";
         case kR8G8_unorm_SkColorType:
@@ -97,6 +98,8 @@ static constexpr const char* sk_color_type_to_str(SkColorType colorType) {
             return "kR8_unorm_SkColorType";
         case kRGBA_10x6_SkColorType:
             return "kRGBA_10x6_SkColorType";
+        case kBGRA_10101010_XR_SkColorType:
+            return "kBGRA_10101010_XR_SkColorType";
     }
     SkUNREACHABLE;
 }

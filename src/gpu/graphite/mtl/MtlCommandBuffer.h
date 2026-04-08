@@ -11,6 +11,7 @@
 #include "src/gpu/graphite/CommandBuffer.h"
 #include "src/gpu/graphite/DrawPass.h"
 #include "src/gpu/graphite/Log.h"
+#include "src/gpu/graphite/mtl/MtlResourceProvider.h"
 
 #include <memory>
 
@@ -24,7 +25,6 @@ class ComputePipeline;
 class MtlBlitCommandEncoder;
 class MtlComputeCommandEncoder;
 class MtlRenderCommandEncoder;
-class MtlResourceProvider;
 class MtlSharedContext;
 struct WorkgroupSize;
 
@@ -66,17 +66,20 @@ private:
                      const MtlSharedContext* sharedContext,
                      MtlResourceProvider* resourceProvider);
 
+    ResourceProvider* resourceProvider() const override { return fResourceProvider; }
+
     bool createNewMTLCommandBuffer();
 
     void onResetCommandBuffer() override;
 
     bool onAddRenderPass(const RenderPassDesc&,
+                         SkIRect renderPassBounds,
                          const Texture* colorTexture,
                          const Texture* resolveTexture,
                          const Texture* depthStencilTexture,
-                         SkRect viewport,
+                         SkIRect viewport,
                          const DrawPassList&) override;
-    bool onAddComputePass(const DispatchGroupList&) override;
+    bool onAddComputePass(DispatchGroupSpan) override;
 
     // Methods for populating a MTLRenderCommandEncoder:
     bool beginRenderPass(const RenderPassDesc&,
@@ -86,6 +89,8 @@ private:
     void endRenderPass();
 
     void addDrawPass(const DrawPass*);
+
+    void updateIntrinsicUniforms(SkIRect viewport);
 
     void bindGraphicsPipeline(const GraphicsPipeline*);
     void setBlendConstants(float* blendConstants);
@@ -126,6 +131,9 @@ private:
     void bindTexture(const Texture* texture, unsigned int index);
     void bindSampler(const Sampler* sampler, unsigned int index);
     void dispatchThreadgroups(const WorkgroupSize& globalSize, const WorkgroupSize& localSize);
+    void dispatchThreadgroupsIndirect(const WorkgroupSize& localSize,
+                                      const Buffer* indirectBuffer,
+                                      size_t indirectBufferOffset);
     void endComputePass();
 
     // Methods for populating a MTLBlitCommandEncoder:

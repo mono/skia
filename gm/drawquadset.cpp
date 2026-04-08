@@ -22,7 +22,7 @@
 #include "include/core/SkTypeface.h"
 #include "include/core/SkTypes.h"
 #include "include/effects/SkGradientShader.h"
-#include "include/gpu/GrRecordingContext.h"
+#include "include/gpu/ganesh/GrRecordingContext.h"
 #include "include/private/gpu/ganesh/GrTypesPriv.h"
 #include "src/core/SkCanvasPriv.h"
 #include "src/gpu/ganesh/GrCanvas.h"
@@ -30,6 +30,7 @@
 #include "src/gpu/ganesh/SkGr.h"
 #include "src/gpu/ganesh/SurfaceDrawContext.h"
 #include "tools/ToolUtils.h"
+#include "tools/fonts/FontToolUtils.h"
 
 #include <utility>
 
@@ -40,7 +41,7 @@ static constexpr int kRowCount = 4;
 static constexpr int kColCount = 3;
 
 static void draw_text(SkCanvas* canvas, const char* text) {
-    SkFont font(ToolUtils::create_portable_typeface(), 12);
+    SkFont font(ToolUtils::DefaultPortableTypeface(), 12);
     canvas->drawString(text, 0, 0, font, SkPaint());
 }
 

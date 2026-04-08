@@ -11,9 +11,11 @@
 #include "include/core/SkRefCnt.h"
 #include "modules/skottie/include/Skottie.h"
 
+#include "include/core/SkFontMgr.h"
 #include "include/core/SkFontStyle.h"
 #include "include/core/SkString.h"
 #include "include/core/SkTypeface.h"
+#include "modules/skottie/include/ExternalLayer.h"
 #include "modules/skottie/include/SkottieProperty.h"
 #include "modules/skottie/include/SlotManager.h"
 #include "modules/skottie/src/animator/Animator.h"
@@ -21,9 +23,9 @@
 #include "src/base/SkUTF.h"
 #include "src/core/SkTHash.h"
 
-#include <vector>
+#include "modules/skshaper/include/SkShaper_factory.h"
 
-class SkFontMgr;
+#include <vector>
 
 namespace skjson {
 class ArrayValue;
@@ -65,7 +67,7 @@ class AnimationBuilder final : public SkNoncopyable {
 public:
     AnimationBuilder(sk_sp<ResourceProvider>, sk_sp<SkFontMgr>, sk_sp<PropertyObserver>,
                      sk_sp<Logger>, sk_sp<MarkerObserver>, sk_sp<PrecompInterceptor>,
-                     sk_sp<ExpressionManager>,
+                     sk_sp<ExpressionManager>, sk_sp<SkShapers::Factory>,
                      Animation::Builder::Stats*, const SkSize& comp_size,
                      float duration, float framerate, uint32_t flags);
 
@@ -196,11 +198,14 @@ public:
         return fSlotsRoot;
     }
 
+    void parseFonts (const skjson::ObjectValue* jfonts, const skjson::ArrayValue* jchars);
+
 private:
     friend class CompositionBuilder;
     friend class CustomFont;
     friend class LayerBuilder;
     friend class AnimatablePropertyContainer;
+    friend class SkSLEffectBase;
 
     struct AttachLayerContext;
     struct AttachShapeContext;
@@ -208,8 +213,6 @@ private:
     struct LayerInfo;
 
     void parseAssets(const skjson::ArrayValue*);
-    void parseFonts (const skjson::ObjectValue* jfonts,
-                     const skjson::ArrayValue* jchars);
 
     // Return true iff all fonts were resolved.
     bool resolveNativeTypefaces();
@@ -236,31 +239,14 @@ private:
     sk_sp<sksg::RenderNode> attachTextLayer   (const skjson::ObjectValue&, LayerInfo*) const;
     sk_sp<sksg::RenderNode> attachAudioLayer  (const skjson::ObjectValue&, LayerInfo*) const;
 
-    // Delay resolving the fontmgr until it is actually needed.
-    struct LazyResolveFontMgr {
-        LazyResolveFontMgr(sk_sp<SkFontMgr> fontMgr) : fFontMgr(std::move(fontMgr)) {}
-
-        const sk_sp<SkFontMgr>& get() {
-            if (!fFontMgr) {
-                fFontMgr = SkFontMgr::RefDefault();
-                SkASSERT(fFontMgr);
-            }
-            return fFontMgr;
-        }
-
-        const sk_sp<SkFontMgr>& getMaybeNull() const { return fFontMgr; }
-
-    private:
-        sk_sp<SkFontMgr> fFontMgr;
-    };
-
     sk_sp<ResourceProvider>      fResourceProvider;
-    LazyResolveFontMgr           fLazyFontMgr;
+    sk_sp<SkFontMgr>             fFontMgr;
     sk_sp<PropertyObserver>      fPropertyObserver;
     sk_sp<Logger>                fLogger;
     sk_sp<MarkerObserver>        fMarkerObserver;
     sk_sp<PrecompInterceptor>    fPrecompInterceptor;
     sk_sp<ExpressionManager>     fExpressionManager;
+    sk_sp<SkShapers::Factory>    fShapingFactory;
     sk_sp<SceneGraphRevalidator> fRevalidator;
     sk_sp<SlotManager>           fSlotManager;
     Animation::Builder::Stats*   fStats;

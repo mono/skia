@@ -188,7 +188,7 @@ DEF_TEST(GainmapShader_rects, r) {
 }
 
 DEF_TEST(GainmapShader_baseImageIsHdr, r) {
-SkColor4f hdrColors[4][2] = {
+    SkColor4f hdrColors[4][2] = {
             {{1.0f, 1.0f, 1.0f, 1.0f}, {1.0f, 1.0f, 0.5f, 1.0f}},
             {{1.0f, 0.5f, 1.0f, 1.0f}, {1.0f, 0.5f, 0.5f, 1.0f}},
             {{0.5f, 1.0f, 1.0f, 1.0f}, {0.5f, 1.0f, 0.5f, 1.0f}},
@@ -278,7 +278,7 @@ SkColor4f hdrColors[4][2] = {
 }
 
 // Verify that the gainmap shader isn't affected by the color spaces of the base, gainmap, or
-// destination.
+// destination. But the fGainmapMathColorSpace is taken into account.
 DEF_TEST(GainmapShader_colorSpace, r) {
     auto sdrColorSpace =
             SkColorSpace::MakeRGB(SkNamedTransferFn::k2Dot2, SkNamedGamut::kSRGB)->makeColorSpin();
@@ -288,7 +288,7 @@ DEF_TEST(GainmapShader_colorSpace, r) {
     constexpr SkColor4f kSdrColor = {0.25f, 0.5f, 1.f, 1.f};
     constexpr SkColor4f kGainmapColor = {
             0.0f,  // The sRGB G channel will have a exp2(0.0)=1.000 gain.
-            0.5f,  // The sRGB B channel will have a exp2(0.5)=0.707 gain.
+            0.5f,  // The sRGB B channel will have a exp2(0.5)=1.414 gain.
             1.0f,  // The sRGB R channel will have a exp2(1.0)=2.000 gain.
             1.f};
     constexpr SkColor4f kExpectedColor = {0.5f, 0.5f, 1.414f, 1.f};
@@ -300,5 +300,47 @@ DEF_TEST(GainmapShader_colorSpace, r) {
 
     auto color = draw_1x1_gainmap(
             sdrImage, gainmapImage, gainmapInfo, gainmapInfo.fDisplayRatioHdr, dstColorSpace);
+    REPORTER_ASSERT(r, approx_equal(color, kExpectedColor));
+
+    // Setting fGainmapMathColorSpace to the base image's color space does not change the result.
+    gainmapInfo.fGainmapMathColorSpace = sdrColorSpace;
+    color = draw_1x1_gainmap(
+            sdrImage, gainmapImage, gainmapInfo, gainmapInfo.fDisplayRatioHdr, dstColorSpace);
+    REPORTER_ASSERT(r, approx_equal(color, kExpectedColor));
+
+    // Setting fGainmapMathColorSpace ot a different color space does change the result.
+    gainmapInfo.fGainmapMathColorSpace =
+            SkColorSpace::MakeRGB(SkNamedTransferFn::kPQ, SkNamedGamut::kRec2020);
+    color = draw_1x1_gainmap(
+            sdrImage, gainmapImage, gainmapInfo, gainmapInfo.fDisplayRatioHdr, dstColorSpace);
+    REPORTER_ASSERT(r, !approx_equal(color, kExpectedColor));
+}
+
+// Verify that a fully applied Apple gainmap maps the specification.
+DEF_TEST(GainmapShader_apple, r) {
+    constexpr SkColor4f kSdrColor = {0.25f, 0.5f, 1.f, 1.f};
+    const SkColor4f kGainmapColor = {0.0f,       // The R channel will have a linear value of 0.0.
+                                     0.702250f,  // The G channel will have a linear value of 0.5.
+                                     1.0f,       // The B channel will have a linear value 0f 1.0.
+                                     1.f};
+
+    // Set the HDR headroom to 5.0.
+    const float kH = 5.f;
+
+    const SkColor4f kExpectedColor = {0.25f * (1 + (kH - 1) * 0.0f),  // 0.25,
+                                      0.50f * (1 + (kH - 1) * 0.5f),  // 0.5,
+                                      1.00f * (1 + (kH - 1) * 1.0f),  // 5.0,
+                                      1.f};
+
+    auto sdrImage = make_1x1_image(SkColorSpace::MakeSRGB(), kOpaque_SkAlphaType, kSdrColor);
+    auto gainmapImage = make_1x1_image(nullptr, kOpaque_SkAlphaType, kGainmapColor);
+    SkGainmapInfo gainmapInfo = simple_gainmap_info(kH);
+    gainmapInfo.fType = SkGainmapInfo::Type::kApple;
+
+    auto color = draw_1x1_gainmap(
+            sdrImage, gainmapImage, gainmapInfo, kH, SkColorSpace::MakeSRGBLinear());
+
+    // Note that (0.250, 1.548, 5.000) is *not* an acceptable answer here (even though it's sort-of
+    // close). That number is the result of not using the the Apple-compatible math.
     REPORTER_ASSERT(r, approx_equal(color, kExpectedColor));
 }

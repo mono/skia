@@ -21,14 +21,15 @@
 #include "include/core/SkTextureCompressionType.h"
 #include "include/core/SkTypes.h"
 #include "include/gpu/GpuTypes.h"
-#include "include/gpu/GrBackendSurface.h"
-#include "include/gpu/GrContextOptions.h"
-#include "include/gpu/GrDirectContext.h"
-#include "include/gpu/GrTypes.h"
+#include "include/gpu/ganesh/GrBackendSurface.h"
+#include "include/gpu/ganesh/GrContextOptions.h"
+#include "include/gpu/ganesh/GrDirectContext.h"
+#include "include/gpu/ganesh/GrTypes.h"
 #include "include/private/base/SkTo.h"
 #include "include/private/gpu/ganesh/GrTypesPriv.h"
 #include "src/core/SkAutoPixmapStorage.h"
 #include "src/core/SkCompressedDataUtils.h"
+#include "src/gpu/DataUtils.h"
 #include "src/gpu/SkBackingFit.h"
 #include "src/gpu/Swizzle.h"
 #include "src/gpu/ganesh/GrBackendUtils.h"
@@ -48,6 +49,7 @@
 #include "src/gpu/ganesh/GrSurfaceProxyView.h"
 #include "src/gpu/ganesh/GrTexture.h"
 #include "src/gpu/ganesh/GrTextureProxy.h"
+#include "src/gpu/ganesh/GrUtil.h"
 #include "src/gpu/ganesh/SkGr.h"
 #include "src/gpu/ganesh/SurfaceContext.h"
 #include "src/gpu/ganesh/TestFormatColorTypeCombination.h"
@@ -152,11 +154,11 @@ DEF_GANESH_TEST_FOR_ALL_CONTEXTS(GrSurfaceRenderability,
             auto size = SkCompressedDataSize(compression, dimensions, nullptr, false);
             auto data = SkData::MakeUninitialized(size);
             SkColor4f color = {0, 0, 0, 0};
-            GrFillInCompressedData(compression,
-                                   dimensions,
-                                   skgpu::Mipmapped::kNo,
-                                   (char*)data->writable_data(),
-                                   color);
+            skgpu::FillInCompressedData(compression,
+                                        dimensions,
+                                        skgpu::Mipmapped::kNo,
+                                        (char*)data->writable_data(),
+                                        color);
             return rp->createCompressedTexture(dimensions,
                                                format,
                                                skgpu::Budgeted::kNo,
@@ -417,6 +419,8 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(ReadOnlyTexture,
                                        reporter,
                                        context_info,
                                        CtsEnforcement::kApiLevel_T) {
+    using namespace skgpu;
+
     auto fillPixels = [](SkPixmap* p, const std::function<uint32_t(int x, int y)>& f) {
         for (int y = 0; y < p->height(); ++y) {
             for (int x = 0; x < p->width(); ++x) {
@@ -449,6 +453,8 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(ReadOnlyTexture,
     auto dContext = context_info.directContext();
     GrProxyProvider* proxyProvider = dContext->priv().proxyProvider();
 
+    Protected isProtected = Protected(dContext->priv().caps()->supportsProtectedContent());
+
     // We test both kRW in addition to kRead mostly to ensure that the calls are structured such
     // that they'd succeed if the texture wasn't kRead. We want to be sure we're failing with
     // kRead for the right reason.
@@ -457,7 +463,7 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(ReadOnlyTexture,
                                                                      srcPixmap,
                                                                      kTopLeft_GrSurfaceOrigin,
                                                                      GrRenderable::kNo,
-                                                                     GrProtected::kNo);
+                                                                     isProtected);
         if (!mbet) {
             ERRORF(reporter, "Could not make texture.");
             return;
@@ -465,8 +471,8 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(ReadOnlyTexture,
         auto proxy = proxyProvider->wrapBackendTexture(mbet->texture(), kBorrow_GrWrapOwnership,
                                                        GrWrapCacheable::kNo, ioType,
                                                        mbet->refCountedCallback());
-        skgpu::Swizzle swizzle = dContext->priv().caps()->getReadSwizzle(proxy->backendFormat(),
-                                                                         GrColorType::kRGBA_8888);
+        Swizzle swizzle = dContext->priv().caps()->getReadSwizzle(proxy->backendFormat(),
+                                                                  GrColorType::kRGBA_8888);
         GrSurfaceProxyView view(proxy, kTopLeft_GrSurfaceOrigin, swizzle);
         auto surfContext = dContext->priv().makeSC(std::move(view), ii.colorInfo());
         // Read pixels should work with a read-only texture.
@@ -522,9 +528,9 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(ReadOnlyTexture,
                                                                        kSize,
                                                                        kSize,
                                                                        kRGBA_8888_SkColorType,
-                                                                       skgpu::Mipmapped::kYes,
+                                                                       Mipmapped::kYes,
                                                                        GrRenderable::kNo,
-                                                                       GrProtected::kNo);
+                                                                       isProtected);
             proxy = proxyProvider->wrapBackendTexture(mbet->texture(), kBorrow_GrWrapOwnership,
                                                       GrWrapCacheable::kNo, ioType,
                                                       mbet->refCountedCallback());

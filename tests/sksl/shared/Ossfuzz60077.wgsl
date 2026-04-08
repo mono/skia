@@ -1,10 +1,11 @@
 diagnostic(off, derivative_uniformity);
+diagnostic(off, chromium.unreachable_code);
 struct FSOut {
   @location(0) sk_FragColor: vec4<f32>,
 };
 fn d_vi(_skParam0: i32) {
   {
-    var b: i32 = 4;
+    const b: i32 = 4;
   }
 }
 fn c_vi(i: i32) {

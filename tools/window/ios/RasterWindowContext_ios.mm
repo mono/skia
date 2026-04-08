@@ -8,12 +8,13 @@
 
 #include "include/core/SkCanvas.h"
 #include "include/core/SkColorFilter.h"
-#include "include/gpu/GrDirectContext.h"
-#include "include/gpu/GrRecordingContext.h"
-#include "include/gpu/gl/GrGLInterface.h"
+#include "include/gpu/ganesh/GrDirectContext.h"
+#include "include/gpu/ganesh/GrRecordingContext.h"
+#include "include/gpu/ganesh/gl/GrGLInterface.h"
 #include "tools/ToolUtils.h"
 #include "tools/window/GLWindowContext.h"
 #include "tools/window/ios/WindowContextFactory_ios.h"
+#include "include/gpu/ganesh/gl/ios/GrGLMakeIOSInterface.h"
 
 #import <OpenGLES/ES3/gl.h>
 #import <UIKit/UIKit.h>
@@ -143,7 +144,7 @@ sk_sp<const GrGLInterface> RasterWindowContext_ios::onInitializeContext() {
     SkImageInfo info = SkImageInfo::Make(fWidth, fHeight, fDisplayParams.fColorType,
                                          kPremul_SkAlphaType, fDisplayParams.fColorSpace);
     fBackbufferSurface = SkSurfaces::Raster(info);
-    return GrGLMakeNativeInterface();
+    return GrGLInterfaces::MakeIOS();
 }
 
 void RasterWindowContext_ios::onDestroyContext() {

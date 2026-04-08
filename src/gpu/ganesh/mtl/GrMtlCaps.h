@@ -84,7 +84,7 @@ public:
     GrProgramDesc makeDesc(GrRenderTarget*,
                            const GrProgramInfo&,
                            ProgramDescOverrideFlags) const override;
-    MTLPixelFormat getStencilPixelFormat(const GrProgramDesc& desc);
+    MTLPixelFormat getStencilPixelFormat(const GrProgramDesc& desc) const;
 
     bool isMac() const { return fGPUFamily == GPUFamily::kMac; }
     bool isApple() const { return fGPUFamily == GPUFamily::kApple; }
@@ -96,7 +96,7 @@ public:
 
     bool renderTargetSupportsDiscardableMSAA(const GrMtlRenderTarget*) const;
 
-#if defined(GR_TEST_UTILS)
+#if defined(GPU_TEST_UTILS)
     std::vector<GrTest::TestFormatColorTypeCombination> getTestingCombinations() const override;
 #endif
     void onDumpJSON(SkJSONWriter*) const override;

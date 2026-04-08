@@ -4,28 +4,67 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
-
 #include "src/gpu/ganesh/gradients/GrGradientShader.h"
 
+#include "include/core/SkAlphaType.h"
+#include "include/core/SkBitmap.h"
 #include "include/core/SkColorSpace.h"
-#include "include/gpu/GrRecordingContext.h"
+#include "include/core/SkColorType.h"
+#include "include/core/SkMatrix.h"
+#include "include/core/SkRect.h"
+#include "include/core/SkSamplingOptions.h"
+#include "include/core/SkString.h"
+#include "include/core/SkTileMode.h"
+#include "include/effects/SkGradientShader.h"
+#include "include/effects/SkRuntimeEffect.h"
+#include "include/gpu/GpuTypes.h"
+#include "include/gpu/ganesh/GrBackendSurface.h"
+#include "include/gpu/ganesh/GrRecordingContext.h"
+#include "include/gpu/ganesh/GrTypes.h"
 #include "include/private/SkColorData.h"
+#include "include/private/base/SkAssert.h"
+#include "include/private/base/SkDebug.h"
+#include "include/private/base/SkMath.h"
+#include "include/private/base/SkOnce.h"
+#include "include/private/base/SkSpan_impl.h"
+#include "include/private/base/SkTemplates.h"
+#include "include/private/gpu/ganesh/GrTypesPriv.h"
+#include "src/base/SkArenaAlloc.h"
 #include "src/base/SkMathPriv.h"
+#include "src/base/SkVx.h"
 #include "src/core/SkColorSpacePriv.h"
 #include "src/core/SkRasterPipeline.h"
+#include "src/core/SkRasterPipelineOpContexts.h"
 #include "src/core/SkRasterPipelineOpList.h"
 #include "src/core/SkRuntimeEffectPriv.h"
 #include "src/gpu/ganesh/GrCaps.h"
-#include "src/gpu/ganesh/GrColor.h"
 #include "src/gpu/ganesh/GrColorInfo.h"
 #include "src/gpu/ganesh/GrColorSpaceXform.h"
+#include "src/gpu/ganesh/GrFPArgs.h"
+#include "src/gpu/ganesh/GrFragmentProcessor.h"
 #include "src/gpu/ganesh/GrRecordingContextPriv.h"
+#include "src/gpu/ganesh/GrSamplerState.h"
+#include "src/gpu/ganesh/GrShaderCaps.h"
 #include "src/gpu/ganesh/SkGr.h"
 #include "src/gpu/ganesh/effects/GrMatrixEffect.h"
 #include "src/gpu/ganesh/effects/GrSkSLFP.h"
 #include "src/gpu/ganesh/effects/GrTextureEffect.h"
 #include "src/gpu/ganesh/gradients/GrGradientBitmapCache.h"
+#include "src/shaders/SkShaderBase.h"
 #include "src/shaders/gradients/SkGradientBaseShader.h"
+
+#include <algorithm>
+#include <array>
+#include <cstddef>
+#include <tuple>
+#include <utility>
+
+struct SkV4;
+
+#if defined(GPU_TEST_UTILS)
+#include "src/base/SkRandom.h"
+#include "src/gpu/ganesh/GrTestUtils.h"
+#endif
 
 using namespace skia_private;
 
@@ -689,15 +728,17 @@ static std::unique_ptr<GrFragmentProcessor> make_interpolated_to_dst(
     using ColorSpace = SkGradientShader::Interpolation::ColorSpace;
 
     // If these values change, you will need to edit sksl_shared
-    static_assert(static_cast<int>(ColorSpace::kDestination) == 0);
-    static_assert(static_cast<int>(ColorSpace::kSRGBLinear)  == 1);
-    static_assert(static_cast<int>(ColorSpace::kLab)         == 2);
-    static_assert(static_cast<int>(ColorSpace::kOKLab)       == 3);
-    static_assert(static_cast<int>(ColorSpace::kLCH)         == 4);
-    static_assert(static_cast<int>(ColorSpace::kOKLCH)       == 5);
-    static_assert(static_cast<int>(ColorSpace::kSRGB)        == 6);
-    static_assert(static_cast<int>(ColorSpace::kHSL)         == 7);
-    static_assert(static_cast<int>(ColorSpace::kHWB)         == 8);
+    static_assert(static_cast<int>(ColorSpace::kDestination)   == 0);
+    static_assert(static_cast<int>(ColorSpace::kSRGBLinear)    == 1);
+    static_assert(static_cast<int>(ColorSpace::kLab)           == 2);
+    static_assert(static_cast<int>(ColorSpace::kOKLab)         == 3);
+    static_assert(static_cast<int>(ColorSpace::kOKLabGamutMap) == 4);
+    static_assert(static_cast<int>(ColorSpace::kLCH)           == 5);
+    static_assert(static_cast<int>(ColorSpace::kOKLCH)         == 6);
+    static_assert(static_cast<int>(ColorSpace::kOKLCHGamutMap) == 7);
+    static_assert(static_cast<int>(ColorSpace::kSRGB)          == 8);
+    static_assert(static_cast<int>(ColorSpace::kHSL)           == 9);
+    static_assert(static_cast<int>(ColorSpace::kHWB)           == 10);
 
     static const SkRuntimeEffect* effect = SkMakeRuntimeEffect(SkRuntimeEffect::MakeForColorFilter,
         "uniform int colorSpace;"    // specialized
@@ -715,8 +756,10 @@ static std::unique_ptr<GrFragmentProcessor> make_interpolated_to_dst(
     switch (interpolation.fColorSpace) {
         case ColorSpace::kLab:
         case ColorSpace::kOKLab:
+        case ColorSpace::kOKLabGamutMap:
         case ColorSpace::kLCH:
         case ColorSpace::kOKLCH:
+        case ColorSpace::kOKLCHGamutMap:
         case ColorSpace::kHSL:
         case ColorSpace::kHWB:
             // In these exotic spaces, unpremul the colors if necessary (no need to do this if
@@ -810,37 +853,28 @@ std::unique_ptr<GrFragmentProcessor> MakeGradientFP(const SkGradientBaseShader& 
     }
 
     // Convert all colors into destination space and into SkPMColor4fs, and handle
-    // premul issues depending on the interpolation mode
-    bool inputPremul = shader.interpolateInPremul();
-    bool allOpaque = true;
-    SkColor4fXformer xformedColors(&shader, args.fDstColorInfo->colorSpace());
+    // premul issues depending on the interpolation mode.
+    //
+    // SkGradientShader stores positions implicitly when they are evenly spaced, but the getPos()
+    // implementation performs a branch for every position index. Since the shader conversion
+    // requires lots of position tests, instruct the xformer to calculate all of the positions up
+    // front if needed.
+    SkColor4fXformer xformedColors(
+            &shader, args.fDstColorInfo->colorSpace(), /*forceExplicitPositions=*/true);
     const SkPMColor4f* colors = xformedColors.fColors.begin();
+    const SkScalar* positions = xformedColors.fPositions;
+    const int colorCount = xformedColors.fColors.size();
 
-    for (int i = 0; i < shader.fColorCount; i++) {
+    bool allOpaque = true;
+    for (int i = 0; i < colorCount; i++) {
         if (allOpaque && !SkScalarNearlyEqual(colors[i].fA, 1.0)) {
             allOpaque = false;
         }
     }
 
-    // SkGradientShader stores positions implicitly when they are evenly spaced, but the getPos()
-    // implementation performs a branch for every position index. Since the shader conversion
-    // requires lots of position tests, calculate all of the positions up front if needed.
-    TArray<SkScalar, true> implicitPos;
-    SkScalar* positions;
-    if (shader.fPositions) {
-        positions = shader.fPositions;
-    } else {
-        implicitPos.reserve_exact(shader.fColorCount);
-        SkScalar posScale = SK_Scalar1 / (shader.fColorCount - 1);
-        for (int i = 0 ; i < shader.fColorCount; i++) {
-            implicitPos.push_back(SkIntToScalar(i) * posScale);
-        }
-        positions = implicitPos.begin();
-    }
-
     // All gradients are colorized the same way, regardless of layout
-    std::unique_ptr<GrFragmentProcessor> colorizer =
-            make_uniform_colorizer(colors, positions, shader.fColorCount, inputPremul, args);
+    std::unique_ptr<GrFragmentProcessor> colorizer = make_uniform_colorizer(
+            colors, positions, colorCount, shader.interpolateInPremul(), args);
 
     if (colorizer) {
         // If we made a uniform colorizer, wrap it in a conversion from interpolated space to
@@ -859,7 +893,7 @@ std::unique_ptr<GrFragmentProcessor> MakeGradientFP(const SkGradientBaseShader& 
         // hard-stops.)
         colorizer = make_textured_colorizer(colors,
                                             positions,
-                                            shader.fColorCount,
+                                            colorCount,
                                             allOpaque,
                                             shader.fInterpolation,
                                             xformedColors.fIntermediateColorSpace.get(),
@@ -893,7 +927,7 @@ std::unique_ptr<GrFragmentProcessor> MakeGradientFP(const SkGradientBaseShader& 
 
             // However, we need to finish converting to destination color space. (These are still
             // in the interpolated color space).
-            SkPMColor4f borderColors[2] = { colors[0], colors[shader.fColorCount - 1] };
+            SkPMColor4f borderColors[2] = { colors[0], colors[colorCount - 1] };
             SkArenaAlloc alloc(/*firstHeapAllocation=*/0);
             SkRasterPipeline p(&alloc);
             SkRasterPipeline_MemoryCtx ctx = { borderColors, 0 };
@@ -946,7 +980,7 @@ std::unique_ptr<GrFragmentProcessor> MakeLinear(const SkLinearGradient& shader,
     return MakeGradientFP(shader, args, mRec, std::move(fp));
 }
 
-#if defined(GR_TEST_UTILS)
+#if defined(GPU_TEST_UTILS)
 RandomParams::RandomParams(SkRandom* random) {
     // Set color count to min of 2 so that we don't trigger the const color optimization and make
     // a non-gradient processor.

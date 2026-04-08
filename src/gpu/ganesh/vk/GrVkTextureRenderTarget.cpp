@@ -7,18 +7,21 @@
 
 #include "src/gpu/ganesh/vk/GrVkTextureRenderTarget.h"
 
+#include "include/core/SkSize.h"
+#include "include/core/SkTypes.h"
+#include "include/gpu/GpuTypes.h"
+#include "include/gpu/ganesh/GrDirectContext.h"
+#include "include/gpu/MutableTextureState.h"
+#include "include/gpu/ganesh/vk/GrVkBackendSurface.h"
+#include "include/gpu/ganesh/vk/GrVkTypes.h"
+#include "include/gpu/vk/VulkanTypes.h"
+#include "src/gpu/ganesh/GrAttachment.h"
 #include "src/gpu/ganesh/GrDirectContextPriv.h"
 #include "src/gpu/ganesh/GrResourceProvider.h"
-#include "src/gpu/ganesh/GrTexture.h"
+#include "src/gpu/ganesh/GrSurface.h"
 #include "src/gpu/ganesh/vk/GrVkGpu.h"
 #include "src/gpu/ganesh/vk/GrVkImage.h"
-#include "src/gpu/ganesh/vk/GrVkImageView.h"
 #include "src/gpu/ganesh/vk/GrVkUtil.h"
-
-#include "src/core/SkMipmap.h"
-
-#include "include/gpu/ganesh/vk/GrVkBackendSurface.h"
-#include "include/gpu/vk/GrVkTypes.h"
 
 #define VK_CALL(GPU, X) GR_VK_CALL(GPU->vkInterface(), X)
 
@@ -131,7 +134,7 @@ sk_sp<GrVkTextureRenderTarget> GrVkTextureRenderTarget::MakeWrappedTextureRender
         GrWrapOwnership wrapOwnership,
         GrWrapCacheable cacheable,
         const GrVkImageInfo& info,
-        sk_sp<skgpu::MutableTextureStateRef> mutableState) {
+        sk_sp<skgpu::MutableTextureState> mutableState) {
     // Adopted textures require both image and allocation because we're responsible for freeing
     SkASSERT(VK_NULL_HANDLE != info.fImage &&
              (kBorrow_GrWrapOwnership == wrapOwnership || VK_NULL_HANDLE != info.fAlloc.fMemory));

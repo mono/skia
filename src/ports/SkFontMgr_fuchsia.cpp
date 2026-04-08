@@ -15,6 +15,8 @@
 
 #include "src/core/SkFontDescriptor.h"
 #include "src/ports/SkFontMgr_custom.h"
+#include "src/ports/SkFontScanner_FreeType_priv.h"
+#include "src/ports/SkTypeface_FreeType.h"
 
 #include "include/core/SkFontMgr.h"
 #include "include/core/SkStream.h"
@@ -221,7 +223,7 @@ struct TypefaceId {
     uint32_t bufferId;
     uint32_t ttcIndex;
 
-    bool operator==(TypefaceId& other) {
+    bool operator==(TypefaceId& other) const {
         return std::tie(bufferId, ttcIndex) == std::tie(other.bufferId, other.ttcIndex);
     }
 }
@@ -243,20 +245,28 @@ private:
 
 sk_sp<SkTypeface> CreateTypefaceFromSkStream(std::unique_ptr<SkStreamAsset> stream,
                                              const SkFontArguments& args, TypefaceId id) {
-    using Scanner = SkTypeface_FreeType::Scanner;
-    Scanner scanner;
+    SkFontScanner_FreeType fontScanner;
+    int numInstances;
+    if (!fontScanner.scanFace(stream.get(), args.getCollectionIndex(), &numInstances)) {
+        return nullptr;
+    }
     bool isFixedPitch;
     SkFontStyle style;
     SkString name;
-    Scanner::AxisDefinitions axisDefinitions;
-    if (!scanner.scanFont(stream.get(), args.getCollectionIndex(), &name, &style, &isFixedPitch,
-                          &axisDefinitions)) {
+    SkFontScanner::AxisDefinitions axisDefinitions;
+    if (!fontScanner.scanInstance(stream.get(),
+                                  args.getCollectionIndex(),
+                                  0,
+                                  &name,
+                                  &style,
+                                  &isFixedPitch,
+                                  &axisDefinitions)) {
         return nullptr;
     }
 
     const SkFontArguments::VariationPosition position = args.getVariationDesignPosition();
     AutoSTMalloc<4, SkFixed> axisValues(axisDefinitions.size());
-    Scanner::computeAxisValues(axisDefinitions, position, axisValues, name);
+    SkFontScanner_FreeType::computeAxisValues(axisDefinitions, position, axisValues, name, &style);
 
     auto fontData = std::make_unique<SkFontData>(
         std::move(stream), args.getCollectionIndex(), args.getPalette().index,
@@ -509,6 +519,6 @@ sk_sp<SkTypeface> SkFontMgr_Fuchsia::GetOrCreateTypeface(TypefaceId id,
     return result;
 }
 
-SK_API sk_sp<SkFontMgr> SkFontMgr_New_Fuchsia(fuchsia::fonts::ProviderSyncPtr provider) {
+sk_sp<SkFontMgr> SkFontMgr_New_Fuchsia(fuchsia::fonts::ProviderSyncPtr provider) {
     return sk_make_sp<SkFontMgr_Fuchsia>(std::move(provider));
 }

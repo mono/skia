@@ -4,6 +4,7 @@
 #include "modules/skparagraph/include/FontArguments.h"
 #include "modules/skparagraph/include/ParagraphCache.h"
 #include "modules/skparagraph/src/ParagraphImpl.h"
+#include "src/base/SkFloatBits.h"
 
 using namespace skia_private;
 
@@ -13,7 +14,7 @@ namespace textlayout {
 namespace {
     int32_t relax(SkScalar a) {
         // This rounding is done to match Flutter tests. Must be removed..
-        if (SkScalarIsFinite(a)) {
+        if (SkIsFinite(a)) {
           auto threshold = SkIntToScalar(1 << 12);
           return SkFloat2Bits(SkScalarRoundToScalar(a * threshold)/threshold);
         } else {
@@ -103,7 +104,7 @@ uint32_t ParagraphCacheKey::mix(uint32_t hash, uint32_t data) {
 }
 
 uint32_t ParagraphCacheKey::computeHash() const {
-uint32_t hash = 0;
+    uint32_t hash = 0;
     for (auto& ph : fPlaceholders) {
         if (ph.fRange.width() == 0) {
             continue;

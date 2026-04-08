@@ -9,7 +9,7 @@
 
 #ifdef SK_DIRECT3D
 
-#include "include/gpu/GrDirectContext.h"
+#include "include/gpu/ganesh/GrDirectContext.h"
 #include "tools/gpu/d3d/D3DTestUtils.h"
 
 namespace {
@@ -37,8 +37,6 @@ public:
     ~D3DTestContextImpl() override { this->teardown(); }
 
     void testAbandon() override {}
-
-    void finish() override {}
 
     sk_sp<GrDirectContext> makeContext(const GrContextOptions& options) override {
         return GrDirectContext::MakeDirect3D(fD3D, options);

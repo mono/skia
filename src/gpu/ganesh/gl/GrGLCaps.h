@@ -9,17 +9,17 @@
 #ifndef GrGLCaps_DEFINED
 #define GrGLCaps_DEFINED
 
-#include "include/gpu/GrBackendSurface.h"
+#include "include/gpu/ganesh/GrBackendSurface.h"
 #include "include/gpu/ganesh/gl/GrGLBackendSurface.h"
-#include "include/gpu/gl/GrGLTypes.h"
+#include "include/gpu/ganesh/gl/GrGLTypes.h"
 #include "include/private/base/SkAssert.h"
 #include "include/private/base/SkTArray.h"
 #include "include/private/base/SkTDArray.h"
-#include "include/private/gpu/ganesh/GrGLTypesPriv.h"
 #include "include/private/gpu/ganesh/GrTypesPriv.h"
 #include "src/gpu/Swizzle.h"
 #include "src/gpu/ganesh/GrCaps.h"
 #include "src/gpu/ganesh/GrProgramDesc.h"
+#include "src/gpu/ganesh/gl/GrGLTypesPriv.h"
 
 #include <cstdint>
 #include <memory>
@@ -328,7 +328,10 @@ public:
     /// What type of transfer buffer is supported?
     TransferBufferType transferBufferType() const { return fTransferBufferType; }
 
-    /// How are GrFences implemented?
+    /** Supports using GrGLsync. */
+    bool fenceSyncSupport() const { return fFenceSyncSupport; }
+
+    /// How is GrGLsync implemented?
     FenceType fenceType() const { return fFenceType; }
 
     /// How are multi draws implemented (if at all)?
@@ -357,6 +360,9 @@ public:
 
     /// Is there support for ES2 compatability?
     bool ES2CompatibilitySupport() const { return fES2CompatibilitySupport; }
+
+    // Should OpenGL Protectedness handling be Vulkan-like
+    bool strictProtectedness() const { return fStrictProtectedness; }
 
     /// Is there support for glDrawRangeElements?
     bool drawRangeElementsSupport() const { return fDrawRangeElementsSupport; }
@@ -522,7 +528,7 @@ public:
                            const GrProgramInfo&,
                            ProgramDescOverrideFlags) const override;
 
-#if defined(GR_TEST_UTILS)
+#if defined(GPU_TEST_UTILS)
     GrGLStandard standard() const { return fStandard; }
 
     std::vector<GrTest::TestFormatColorTypeCombination> getTestingCombinations() const override;
@@ -607,6 +613,7 @@ private:
     bool fVertexArrayObjectSupport : 1;
     bool fDebugSupport : 1;
     bool fES2CompatibilitySupport : 1;
+    bool fStrictProtectedness     : 1;
     bool fDrawRangeElementsSupport : 1;
     bool fBaseVertexBaseInstanceSupport : 1;
     bool fIsCoreProfile : 1;
@@ -622,6 +629,7 @@ private:
     bool fUseSamplerObjects : 1;
     bool fTextureSwizzleSupport : 1;
     bool fTiledRenderingSupport : 1;
+    bool fFenceSyncSupport : 1;
     bool fFBFetchRequiresEnablePerSample : 1;
     bool fSRGBWriteControl : 1;
     bool fSkipErrorChecks : 1;
@@ -645,6 +653,7 @@ private:
     bool fRebindColorAttachmentAfterCheckFramebufferStatus : 1;
     bool fFlushBeforeWritePixels : 1;
     bool fDisableScalingCopyAsDraws : 1;
+    bool fPadRG88TransferAlignment : 1;
     int fMaxInstancesPerDrawWithoutCrashing = 0;
 
     uint32_t fBlitFramebufferFlags = kNoSupport_BlitFramebufferFlag;
@@ -797,12 +806,10 @@ private:
 
         bool fHaveQueriedImplementationReadSupport = false;
 
-        enum {
-            // This indicates that a stencil format has not yet been determined for the config.
-            kUnknown_StencilIndex = -1,
-            // This indicates that there is no supported stencil format for the config.
-            kUnsupported_StencilFormatIndex = -2
-        };
+        // This indicates that a stencil format has not yet been determined for the config.
+        static constexpr int kUnknown_StencilIndex = -1;
+        // This indicates that there is no supported stencil format for the config.
+        static constexpr int kUnsupported_StencilFormatIndex = -2;
 
         // Index fStencilFormats.
         int fStencilFormatIndex = kUnknown_StencilIndex;

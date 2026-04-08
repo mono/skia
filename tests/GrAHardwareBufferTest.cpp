@@ -18,7 +18,7 @@
 #include "include/core/SkColorSpace.h"
 #include "include/core/SkImage.h"
 #include "include/core/SkSurface.h"
-#include "include/gpu/GrDirectContext.h"
+#include "include/gpu/ganesh/GrDirectContext.h"
 #include "include/gpu/ganesh/SkSurfaceGanesh.h"
 #include "src/gpu/ganesh/GrAHardwareBufferImageGenerator.h"
 #include "src/gpu/ganesh/GrDirectContextPriv.h"
@@ -228,6 +228,8 @@ static void surface_draw_test_helper(skiatest::Reporter* reporter,
         return;
     }
 
+    bool isProtected = context->priv().caps()->supportsProtectedContent();
+
     ///////////////////////////////////////////////////////////////////////////
     // Setup SkBitmaps
     ///////////////////////////////////////////////////////////////////////////
@@ -247,7 +249,8 @@ static void surface_draw_test_helper(skiatest::Reporter* reporter,
     hwbDesc.usage = AHARDWAREBUFFER_USAGE_CPU_READ_NEVER |
                     AHARDWAREBUFFER_USAGE_CPU_WRITE_NEVER |
                     AHARDWAREBUFFER_USAGE_GPU_SAMPLED_IMAGE |
-                    AHARDWAREBUFFER_USAGE_GPU_COLOR_OUTPUT;
+                    AHARDWAREBUFFER_USAGE_GPU_COLOR_OUTPUT |
+                    (isProtected ? AHARDWAREBUFFER_USAGE_PROTECTED_CONTENT : 0);
 
     hwbDesc.format = AHARDWAREBUFFER_FORMAT_R8G8B8A8_UNORM;
     // The following three are not used in the allocate
@@ -271,11 +274,15 @@ static void surface_draw_test_helper(skiatest::Reporter* reporter,
 
     surface->getCanvas()->drawImage(srcBitmap.asImage(), 0, 0);
 
-    SkBitmap readbackBitmap;
-    readbackBitmap.allocN32Pixels(DEV_W, DEV_H);
+    if (!isProtected) {
+        // In Protected mode we can't readback so we just test that we can wrap the AHB and
+        // draw it w/o errors
+        SkBitmap readbackBitmap;
+        readbackBitmap.allocN32Pixels(DEV_W, DEV_H);
 
-    REPORTER_ASSERT(reporter, surface->readPixels(readbackBitmap, 0, 0));
-    REPORTER_ASSERT(reporter, check_read(reporter, srcBitmap, readbackBitmap));
+        REPORTER_ASSERT(reporter, surface->readPixels(readbackBitmap, 0, 0));
+        REPORTER_ASSERT(reporter, check_read(reporter, srcBitmap, readbackBitmap));
+    }
 
     cleanup_resources(buffer);
 }

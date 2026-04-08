@@ -7,8 +7,10 @@
 
 #include "include/core/SkFontMgr.h"
 #include "modules/skottie/include/TextShaper.h"
+#include "modules/skshaper/utils/FactoryHelpers.h"
 #include "tests/Test.h"
 #include "tools/ToolUtils.h"
+#include "tools/fonts/FontToolUtils.h"
 
 using namespace skottie;
 
@@ -18,8 +20,7 @@ DEF_TEST(Skottie_Shaper_Clusters, r) {
     auto check_clusters = [](skiatest::Reporter* r, const SkString& text, Shaper::Flags flags,
                              const std::vector<size_t>& expected_clusters) {
         const Shaper::TextDesc desc = {
-            ToolUtils::create_portable_typeface("Serif", SkFontStyle()),
-            nullptr,
+            ToolUtils::CreatePortableTypeface("Serif", SkFontStyle()),
             18,
             0, 18,
             18,
@@ -32,10 +33,12 @@ DEF_TEST(Skottie_Shaper_Clusters, r) {
             Shaper::Direction::kLTR,
             Shaper::Capitalization::kNone,
             0,
-            flags
+            flags,
+            nullptr,
         };
-        const auto result = Shaper::Shape(text, desc, SkRect::MakeWH(1000, 1000),
-                                          SkFontMgr::RefDefault());
+        const auto result =
+                Shaper::Shape(text, desc, SkRect::MakeWH(1000, 1000), ToolUtils::TestFontMgr(),
+                    SkShapers::BestAvailable());
         REPORTER_ASSERT(r, !result.fFragments.empty());
 
         size_t i = 0;
@@ -64,7 +67,7 @@ DEF_TEST(Skottie_Shaper_Clusters, r) {
 }
 
 DEF_TEST(Skottie_Shaper_HAlign, reporter) {
-    auto typeface = SkTypeface::MakeDefault();
+    sk_sp<SkTypeface> typeface = ToolUtils::DefaultTypeface();
     REPORTER_ASSERT(reporter, typeface);
 
     static constexpr struct {
@@ -96,7 +99,6 @@ DEF_TEST(Skottie_Shaper_HAlign, reporter) {
         for (const auto& talign : kTestAligns) {
             const skottie::Shaper::TextDesc desc = {
                 typeface,
-                nullptr,
                 tsize.text_size,
                 0, tsize.text_size,
                 tsize.text_size,
@@ -108,10 +110,13 @@ DEF_TEST(Skottie_Shaper_HAlign, reporter) {
                 Shaper::LinebreakPolicy::kExplicit,
                 Shaper::Direction::kLTR,
                 Shaper::Capitalization::kNone,
+                0,
+                0,
+                nullptr
             };
 
-            const auto shape_result = Shaper::Shape(text, desc, text_point,
-                                                    SkFontMgr::RefDefault());
+            const auto shape_result =
+                    Shaper::Shape(text, desc, text_point, ToolUtils::TestFontMgr(), SkShapers::BestAvailable());
             REPORTER_ASSERT(reporter, shape_result.fFragments.size() == 1ul);
             REPORTER_ASSERT(reporter, !shape_result.fFragments[0].fGlyphs.fRuns.empty());
 
@@ -135,7 +140,7 @@ DEF_TEST(Skottie_Shaper_HAlign, reporter) {
 }
 
 DEF_TEST(Skottie_Shaper_VAlign, reporter) {
-    auto typeface = SkTypeface::MakeDefault();
+    sk_sp<SkTypeface> typeface = ToolUtils::DefaultTypeface();
     REPORTER_ASSERT(reporter, typeface);
 
     static constexpr struct {
@@ -167,7 +172,6 @@ DEF_TEST(Skottie_Shaper_VAlign, reporter) {
         for (const auto& talign : kTestAligns) {
             const skottie::Shaper::TextDesc desc = {
                 typeface,
-                nullptr,
                 tsize.text_size,
                 0, tsize.text_size,
                 tsize.text_size,
@@ -179,9 +183,12 @@ DEF_TEST(Skottie_Shaper_VAlign, reporter) {
                 Shaper::LinebreakPolicy::kParagraph,
                 Shaper::Direction::kLTR,
                 Shaper::Capitalization::kNone,
+                0,
+                0,
+                nullptr
             };
 
-            const auto shape_result = Shaper::Shape(text, desc, text_box, SkFontMgr::RefDefault());
+            const auto shape_result = Shaper::Shape(text, desc, text_box, ToolUtils::TestFontMgr(), SkShapers::BestAvailable());
             REPORTER_ASSERT(reporter, shape_result.fFragments.size() == 1ul);
             REPORTER_ASSERT(reporter, !shape_result.fFragments[0].fGlyphs.fRuns.empty());
 
@@ -193,13 +200,13 @@ DEF_TEST(Skottie_Shaper_VAlign, reporter) {
             const auto expected_t = text_box.top() + v_diff * talign.topFactor;
             REPORTER_ASSERT(reporter,
                             std::fabs(shape_bounds.top() - expected_t) < tsize.tolerance,
-                            "%f %f %f %f %d", shape_bounds.top(), expected_t, tsize.tolerance,
+                            "%f %f %f %f %u", shape_bounds.top(), expected_t, tsize.tolerance,
                                               tsize.text_size, SkToU32(talign.align));
 
             const auto expected_b = text_box.bottom() - v_diff * (1 - talign.topFactor);
             REPORTER_ASSERT(reporter,
                             std::fabs(shape_bounds.bottom() - expected_b) < tsize.tolerance,
-                            "%f %f %f %f %d", shape_bounds.bottom(), expected_b, tsize.tolerance,
+                            "%f %f %f %f %u", shape_bounds.bottom(), expected_b, tsize.tolerance,
                                               tsize.text_size, SkToU32(talign.align));
         }
     }
@@ -207,8 +214,7 @@ DEF_TEST(Skottie_Shaper_VAlign, reporter) {
 
 DEF_TEST(Skottie_Shaper_FragmentGlyphs, reporter) {
     skottie::Shaper::TextDesc desc = {
-        SkTypeface::MakeDefault(),
-        nullptr,
+        ToolUtils::DefaultTypeface(),
         18,
         0, 18,
         18,
@@ -220,25 +226,30 @@ DEF_TEST(Skottie_Shaper_FragmentGlyphs, reporter) {
         Shaper::LinebreakPolicy::kParagraph,
         Shaper::Direction::kLTR,
         Shaper::Capitalization::kNone,
+        0,
+        0,
+        nullptr
     };
 
     const SkString text("Foo bar baz");
     const auto text_box = SkRect::MakeWH(100, 100);
 
     {
-        const auto shape_result = Shaper::Shape(text, desc, text_box, SkFontMgr::RefDefault());
+        const auto shape_result = Shaper::Shape(text, desc, text_box, ToolUtils::TestFontMgr(), SkShapers::BestAvailable());
         // Default/consolidated mode => single blob result.
         REPORTER_ASSERT(reporter, shape_result.fFragments.size() == 1ul);
+        SkASSERT(!shape_result.fFragments.empty());
         REPORTER_ASSERT(reporter, !shape_result.fFragments[0].fGlyphs.fRuns.empty());
     }
 
     {
         desc.fFlags = Shaper::Flags::kFragmentGlyphs;
-        const auto shape_result = skottie::Shaper::Shape(text, desc, text_box,
-                                                         SkFontMgr::RefDefault());
+        const auto shape_result =
+                skottie::Shaper::Shape(text, desc, text_box, ToolUtils::TestFontMgr(), SkShapers::BestAvailable());
         // Fragmented mode => one blob per glyph.
         const size_t expectedSize = text.size();
         REPORTER_ASSERT(reporter, shape_result.fFragments.size() == expectedSize);
+        SkASSERT(!shape_result.fFragments.empty());
         for (size_t i = 0; i < expectedSize; ++i) {
             REPORTER_ASSERT(reporter, !shape_result.fFragments[i].fGlyphs.fRuns.empty());
         }
@@ -300,8 +311,7 @@ DEF_TEST(Skottie_Shaper_ExplicitFontMgr, reporter) {
     auto fontmgr = sk_make_sp<CountingFontMgr>();
 
     skottie::Shaper::TextDesc desc = {
-        ToolUtils::create_portable_typeface(),
-        nullptr,
+        ToolUtils::DefaultPortableTypeface(),
         18,
         0, 18,
         18,
@@ -313,12 +323,15 @@ DEF_TEST(Skottie_Shaper_ExplicitFontMgr, reporter) {
         Shaper::LinebreakPolicy::kParagraph,
         Shaper::Direction::kLTR,
         Shaper::Capitalization::kNone,
+        0,
+        0,
+        nullptr
     };
 
     const auto text_box = SkRect::MakeWH(100, 100);
 
     {
-        const auto shape_result = Shaper::Shape(SkString("foo bar"), desc, text_box, fontmgr);
+        const auto shape_result = Shaper::Shape(SkString("foo bar"), desc, text_box, fontmgr, SkShapers::BestAvailable());
 
         REPORTER_ASSERT(reporter, shape_result.fFragments.size() == 1ul);
         REPORTER_ASSERT(reporter, !shape_result.fFragments[0].fGlyphs.fRuns.empty());
@@ -329,7 +342,7 @@ DEF_TEST(Skottie_Shaper_ExplicitFontMgr, reporter) {
     {
         // An unassigned codepoint should trigger fallback.
         const auto shape_result = skottie::Shaper::Shape(SkString("foo\U000DFFFFbar"),
-                                                         desc, text_box, fontmgr);
+                                                         desc, text_box, fontmgr, SkShapers::BestAvailable());
 
         REPORTER_ASSERT(reporter, shape_result.fFragments.size() == 1ul);
         REPORTER_ASSERT(reporter, !shape_result.fFragments[0].fGlyphs.fRuns.empty());

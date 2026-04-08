@@ -8,7 +8,9 @@
 #ifndef GrAtlasedShaderHelpers_DEFINED
 #define GrAtlasedShaderHelpers_DEFINED
 
-#include "src/gpu/ganesh/GrDrawOpAtlas.h"
+#include "include/private/base/SkAssert.h"
+#include "src/core/SkSLTypeShared.h"
+#include "src/gpu/ganesh/GrGeometryProcessor.h"
 #include "src/gpu/ganesh/GrShaderCaps.h"
 #include "src/gpu/ganesh/glsl/GrGLSLFragmentShaderBuilder.h"
 #include "src/gpu/ganesh/glsl/GrGLSLVarying.h"
@@ -79,12 +81,11 @@ static inline void append_multitexture_lookup(GrGeometryProcessor::ProgramImpl::
                                               int numTextureSamplers,
                                               const GrGLSLVarying& texIdx,
                                               const char* coordName,
-                                              const char* colorName,
-                                              GrGLSLColorSpaceXformHelper* cxh = nullptr) {
+                                              const char* colorName) {
     SkASSERT(numTextureSamplers > 0);
     // This shouldn't happen, but will avoid a crash if it does
     if (numTextureSamplers <= 0) {
-        args.fFragBuilder->codeAppendf("%s = float4(1, 1, 1, 1);", colorName);
+        args.fFragBuilder->codeAppendf("%s = float4(1);", colorName);
         return;
     }
 
@@ -92,15 +93,57 @@ static inline void append_multitexture_lookup(GrGeometryProcessor::ProgramImpl::
     for (int i = 0; i < numTextureSamplers-1; ++i) {
         args.fFragBuilder->codeAppendf("if (%s == %d) { %s = ", texIdx.fsIn(), i, colorName);
         args.fFragBuilder->appendTextureLookup(args.fTexSamplers[i],
-                                               coordName,
-                                               cxh);
+                                               coordName);
         args.fFragBuilder->codeAppend("; } else ");
     }
     args.fFragBuilder->codeAppendf("{ %s = ", colorName);
     args.fFragBuilder->appendTextureLookup(args.fTexSamplers[numTextureSamplers - 1],
-                                           coordName,
-                                           cxh);
+                                           coordName);
     args.fFragBuilder->codeAppend("; }");
+}
+
+// Special lookup function for sdf lcd -- avoids duplicating conditional logic three times
+static inline void append_multitexture_lookup_lcd(GrGeometryProcessor::ProgramImpl::EmitArgs& args,
+                                                  int numTextureSamplers,
+                                                  const GrGLSLVarying& texIdx,
+                                                  const char* coordName,
+                                                  const char* offsetName,
+                                                  const char* distanceName) {
+    SkASSERT(numTextureSamplers > 0);
+    // This shouldn't happen, but will avoid a crash if it does
+    if (numTextureSamplers <= 0) {
+        args.fFragBuilder->codeAppendf("%s = half3(1);", distanceName);
+        return;
+    }
+
+    // conditionally load from the indexed texture sampler
+    for (int i = 0; i < numTextureSamplers; ++i) {
+        args.fFragBuilder->codeAppendf("if (%s == %d) {", texIdx.fsIn(), i);
+
+        // green is distance to uv center
+        args.fFragBuilder->codeAppendf("%s.y = ", distanceName);
+        args.fFragBuilder->appendTextureLookup(args.fTexSamplers[i], coordName);
+        args.fFragBuilder->codeAppend(".r;");
+
+        // red is distance to left offset
+        args.fFragBuilder->codeAppendf("half2 uv_adjusted = half2(%s) - %s;",
+                                       coordName, offsetName);
+        args.fFragBuilder->codeAppendf("%s.x = ", distanceName);
+        args.fFragBuilder->appendTextureLookup(args.fTexSamplers[i], "uv_adjusted");
+        args.fFragBuilder->codeAppend(".r;");
+
+        // blue is distance to right offset
+        args.fFragBuilder->codeAppendf("uv_adjusted = half2(%s) + %s;", coordName, offsetName);
+        args.fFragBuilder->codeAppendf("%s.z = ", distanceName);
+        args.fFragBuilder->appendTextureLookup(args.fTexSamplers[i], "uv_adjusted");
+        args.fFragBuilder->codeAppend(".r;");
+
+        if (i < numTextureSamplers-1) {
+            args.fFragBuilder->codeAppend("} else ");
+        } else {
+            args.fFragBuilder->codeAppend("}");
+        }
+    }
 }
 
 #endif

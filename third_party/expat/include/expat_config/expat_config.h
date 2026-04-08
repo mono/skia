@@ -100,7 +100,7 @@
 #define STDC_HEADERS 1
 
 /* Version number of package */
-#define VERSION "2.5.0"
+#define VERSION "2.6.3"
 
 /* Define WORDS_BIGENDIAN to 1 if your processor stores words with the most
    significant byte first (like Motorola and SPARC, unlike Intel). */
@@ -119,7 +119,7 @@
 /* #undef XML_ATTR_INFO */
 
 /* Define to specify how much context to retain around the current parse
-   point. */
+   point, 0 to disable. */
 #define XML_CONTEXT_BYTES 1024
 
 /* Define to include code reading entropy from `/dev/urandom'. */
@@ -128,7 +128,7 @@
 /* Define to make parameter entity parsing functionality available. */
 #define XML_DTD 1
 
-/* Define to make general entity parsing functionality available. */
+/* Define as 1/0 to enable/disable support for general entities. */
 #define XML_GE 1
 
 /* Define to make XML Namespaces functionality available. */
@@ -139,8 +139,5 @@
 
 /* Define to `long int' if <sys/types.h> does not define. */
 /* #undef off_t */
-
-/* Define to `unsigned int' if <sys/types.h> does not define. */
-/* #undef size_t */
 
 #endif // ndef EXPAT_CONFIG_H

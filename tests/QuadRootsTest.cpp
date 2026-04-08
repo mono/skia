@@ -22,7 +22,7 @@
 #include <limits>
 #include <string>
 
-static void testQuadRootsReal(skiatest::Reporter* reporter, std::string name,
+static void testQuadRootsReal(skiatest::Reporter* reporter, const std::string& name,
                                double A, double B, double C,
                                SkSpan<const double> expectedRoots) {
     skiatest::ReporterContext subtest(reporter, name);
@@ -364,7 +364,7 @@ DEF_TEST(QuadRoots_Hard, reporter) {
                C = testCase.C,
                answerLo = testCase.answerLo,
                answerHi = testCase.answerHi;
-        if (std::isfinite(answerLo) && std::isfinite(answerHi)) {
+        if (SkIsFinite(answerLo, answerHi)) {
             SkASSERT(answerLo <= answerHi);
         }
         auto [discriminate, r0, r1] = SkQuads::Roots(A, -0.5*B, C);

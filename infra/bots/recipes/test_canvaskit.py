@@ -15,7 +15,6 @@ DEPS = [
   'recipe_engine/file',
   'recipe_engine/path',
   'recipe_engine/properties',
-  'recipe_engine/python',
   'recipe_engine/step',
   'gold_upload',
   'run',
@@ -29,26 +28,26 @@ INNER_KARMA_SCRIPT = 'skia/infra/canvaskit/test_canvaskit.sh'
 def RunSteps(api):
   api.vars.setup()
   api.flavor.setup('dm')
-  checkout_root = api.path['start_dir']
+  checkout_root = api.path.start_dir
   out_dir = api.vars.swarming_out_dir
 
   # The karma script is configured to look in ./build/ for
   # the test files to load, so we must copy them there (see Set up for docker).
-  copy_dest = checkout_root.join('skia', 'modules', 'canvaskit',
-                                 'build')
+  copy_dest = checkout_root.joinpath('skia', 'modules', 'canvaskit',
+                                     'build')
   api.file.ensure_directory('mkdirs copy_dest', copy_dest, mode=0o777)
   base_dir = api.vars.build_dir
   copies = [
     {
-      'src': base_dir.join('canvaskit.js'),
-      'dst': copy_dest.join('canvaskit.js'),
+      'src': base_dir.joinpath('canvaskit.js'),
+      'dst': copy_dest.joinpath('canvaskit.js'),
     },
     {
-      'src': base_dir.join('canvaskit.wasm'),
-      'dst': copy_dest.join('canvaskit.wasm'),
+      'src': base_dir.joinpath('canvaskit.wasm'),
+      'dst': copy_dest.joinpath('canvaskit.wasm'),
     },
   ]
-  recursive_read = [checkout_root.join('skia')]
+  recursive_read = [checkout_root.joinpath('skia')]
 
   args = [
     '--builder',              api.vars.builder_name,
@@ -69,7 +68,7 @@ def RunSteps(api):
       docker_image=DOCKER_IMAGE,
       src_dir=checkout_root,
       out_dir=out_dir,
-      script=checkout_root.join(INNER_KARMA_SCRIPT),
+      script=checkout_root.joinpath(INNER_KARMA_SCRIPT),
       args=args,
       docker_args=None,
       copies=copies,

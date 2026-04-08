@@ -4,39 +4,46 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
-
 #include "src/gpu/ganesh/GrProxyProvider.h"
 
 #include "include/core/SkBitmap.h"
-#include "include/core/SkImage.h"
-#include "include/core/SkTextureCompressionType.h"
-#include "include/gpu/GrDirectContext.h"
+#include "include/core/SkData.h"
+#include "include/core/SkPixmap.h"
+#include "include/core/SkSize.h"
+#include "include/core/SkTypes.h"
+#include "include/gpu/GpuTypes.h"
+#include "include/gpu/ganesh/GrBackendSurface.h"
+#include "include/gpu/ganesh/GrContextThreadSafeProxy.h"
+#include "include/gpu/ganesh/GrDirectContext.h"
 #include "include/private/base/SingleOwner.h"
 #include "include/private/gpu/ganesh/GrImageContext.h"
-#include "src/core/SkAutoPixmapStorage.h"
-#include "src/core/SkCompressedDataUtils.h"
 #include "src/core/SkImageInfoPriv.h"
-#include "src/core/SkImagePriv.h"
 #include "src/core/SkMipmap.h"
 #include "src/core/SkTraceEvent.h"
+#include "src/gpu/SkBackingFit.h"
+#include "src/gpu/Swizzle.h"
 #include "src/gpu/ganesh/GrCaps.h"
 #include "src/gpu/ganesh/GrContextThreadSafeProxyPriv.h"
 #include "src/gpu/ganesh/GrDirectContextPriv.h"
+#include "src/gpu/ganesh/GrGpuResource.h"
+#include "src/gpu/ganesh/GrGpuResourcePriv.h"
 #include "src/gpu/ganesh/GrImageContextPriv.h"
 #include "src/gpu/ganesh/GrRenderTarget.h"
+#include "src/gpu/ganesh/GrRenderTargetProxy.h"
+#include "src/gpu/ganesh/GrResourceCache.h"
 #include "src/gpu/ganesh/GrResourceProvider.h"
+#include "src/gpu/ganesh/GrSurface.h"
 #include "src/gpu/ganesh/GrSurfaceProxy.h"
 #include "src/gpu/ganesh/GrSurfaceProxyPriv.h"
+#include "src/gpu/ganesh/GrSurfaceProxyView.h"
 #include "src/gpu/ganesh/GrTexture.h"
 #include "src/gpu/ganesh/GrTextureProxyCacheAccess.h"
 #include "src/gpu/ganesh/GrTextureRenderTargetProxy.h"
-#include "src/gpu/ganesh/SkGr.h"
-#include "src/image/SkImage_Base.h"
 
-#ifdef SK_VULKAN
-#include "include/gpu/ganesh/vk/GrVkBackendSurface.h"
-#include "include/gpu/vk/GrVkTypes.h"
-#endif
+#include <functional>
+#include <memory>
+#include <tuple>
+#include <utility>
 
 #define ASSERT_SINGLE_OWNER SKGPU_ASSERT_SINGLE_OWNER(fImageContext->priv().singleOwner())
 
@@ -119,7 +126,7 @@ sk_sp<GrTextureProxy> GrProxyProvider::findProxyByUniqueKey(const skgpu::UniqueK
 
 ///////////////////////////////////////////////////////////////////////////////
 
-#if defined(GR_TEST_UTILS)
+#if defined(GPU_TEST_UTILS)
 sk_sp<GrTextureProxy> GrProxyProvider::testingOnly_createInstantiatedProxy(
         SkISize dimensions,
         const GrBackendFormat& format,
@@ -288,7 +295,7 @@ sk_sp<GrTextureProxy> GrProxyProvider::createProxyFromBitmap(const SkBitmap& bit
         return nullptr;
     }
 
-    ATRACE_ANDROID_FRAMEWORK("Upload %sTexture [%ux%u]",
+    ATRACE_ANDROID_FRAMEWORK("Upload %sTexture [%dx%d]",
                              skgpu::Mipmapped::kYes == mipmapped ? "MipMap " : "",
                              bitmap.width(),
                              bitmap.height());
@@ -304,13 +311,15 @@ sk_sp<GrTextureProxy> GrProxyProvider::createProxyFromBitmap(const SkBitmap& bit
         }
         if (mipmapped == skgpu::Mipmapped::kYes && bitmap.fMips) {
             copyBitmap.fMips = sk_sp<SkMipmap>(SkMipmap::Build(copyBitmap.pixmap(),
-                                                               nullptr,
-                                                               false));
-            for (int i = 0; i < copyBitmap.fMips->countLevels(); ++i) {
-                SkMipmap::Level src, dst;
-                bitmap.fMips->getLevel(i, &src);
-                copyBitmap.fMips->getLevel(i, &dst);
-                src.fPixmap.readPixels(dst.fPixmap);
+                                                               /* factoryProc= */ nullptr,
+                                                               /* computeContents= */ false));
+            if (copyBitmap.fMips) {
+                for (int i = 0; i < copyBitmap.fMips->countLevels(); ++i) {
+                    SkMipmap::Level src, dst;
+                    bitmap.fMips->getLevel(i, &src);
+                    copyBitmap.fMips->getLevel(i, &dst);
+                    src.fPixmap.readPixels(dst.fPixmap);
+                }
             }
         }
         copyBitmap.setImmutable();
@@ -399,7 +408,7 @@ sk_sp<GrTextureProxy> GrProxyProvider::createMippedProxyFromBitmap(const SkBitma
 
     sk_sp<SkMipmap> mipmaps = bitmap.fMips;
     if (!mipmaps) {
-        mipmaps.reset(SkMipmap::Build(bitmap.pixmap(), nullptr));
+        mipmaps.reset(SkMipmap::Build(bitmap.pixmap(), /* factoryProc= */ nullptr));
         if (!mipmaps) {
             return nullptr;
         }
@@ -706,6 +715,15 @@ sk_sp<GrTextureProxy> GrProxyProvider::wrapRenderableBackendTexture(
             std::move(tex), UseAllocator::kNo, this->isDDLProvider()));
 }
 
+GrResourceProvider* GrProxyProvider::resourceProvider() const {
+    GrDirectContext* direct = fImageContext->asDirectContext();
+    if (!direct) {
+        return nullptr;
+    }
+
+    return direct->priv().resourceProvider();
+}
+
 sk_sp<GrSurfaceProxy> GrProxyProvider::wrapBackendRenderTarget(
         const GrBackendRenderTarget& backendRT,
         sk_sp<skgpu::RefCntedCallback> releaseHelper) {
@@ -738,51 +756,6 @@ sk_sp<GrSurfaceProxy> GrProxyProvider::wrapBackendRenderTarget(
     return sk_sp<GrRenderTargetProxy>(
             new GrRenderTargetProxy(std::move(rt), UseAllocator::kNo, {}));
 }
-
-#ifdef SK_VULKAN
-sk_sp<GrRenderTargetProxy> GrProxyProvider::wrapVulkanSecondaryCBAsRenderTarget(
-        const SkImageInfo& imageInfo, const GrVkDrawableInfo& vkInfo) {
-    if (this->isAbandoned()) {
-        return nullptr;
-    }
-
-    // This is only supported on a direct GrContext.
-    auto direct = fImageContext->asDirectContext();
-    if (!direct) {
-        return nullptr;
-    }
-
-    GrResourceProvider* resourceProvider = direct->priv().resourceProvider();
-
-    sk_sp<GrRenderTarget> rt = resourceProvider->wrapVulkanSecondaryCBAsRenderTarget(imageInfo,
-                                                                                     vkInfo);
-    if (!rt) {
-        return nullptr;
-    }
-
-    SkASSERT(!rt->asTexture());  // A GrRenderTarget that's not textureable
-    SkASSERT(!rt->getUniqueKey().isValid());
-    // This proxy should be unbudgeted because we're just wrapping an external resource
-    SkASSERT(GrBudgetedType::kBudgeted != rt->resourcePriv().budgetedType());
-
-    GrColorType colorType = SkColorTypeToGrColorType(imageInfo.colorType());
-
-    if (!this->caps()->isFormatAsColorTypeRenderable(
-            colorType, GrBackendFormats::MakeVk(vkInfo.fFormat), /*sampleCount=*/1)) {
-        return nullptr;
-    }
-
-    return sk_sp<GrRenderTargetProxy>(
-            new GrRenderTargetProxy(std::move(rt),
-                                    UseAllocator::kNo,
-                                    GrRenderTargetProxy::WrapsVkSecondaryCB::kYes));
-}
-#else
-sk_sp<GrRenderTargetProxy> GrProxyProvider::wrapVulkanSecondaryCBAsRenderTarget(
-        const SkImageInfo&, const GrVkDrawableInfo&) {
-    return nullptr;
-}
-#endif
 
 sk_sp<GrTextureProxy> GrProxyProvider::CreatePromiseProxy(GrContextThreadSafeProxy* threadSafeProxy,
                                                           LazyInstantiateCallback&& callback,

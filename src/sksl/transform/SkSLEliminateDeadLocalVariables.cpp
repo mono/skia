@@ -9,7 +9,7 @@
 #include "include/core/SkTypes.h"
 #include "src/core/SkTHash.h"
 #include "src/sksl/SkSLAnalysis.h"
-#include "src/sksl/SkSLCompiler.h"
+#include "src/sksl/SkSLModule.h"
 #include "src/sksl/SkSLProgramSettings.h"
 #include "src/sksl/analysis/SkSLProgramUsage.h"
 #include "src/sksl/ir/SkSLBinaryExpression.h"
@@ -54,8 +54,9 @@ static bool eliminate_dead_local_variables(const Context& context,
                 if (VariableReference* assignedVar = binary.isAssignmentIntoVariable()) {
                     if (fDeadVariables.contains(assignedVar->variable())) {
                         // Replace `deadVar = anyExpression` with `anyExpression`.
-                        fUsage->remove(binary.left().get());
+                        fUsage->remove(expr.get());
                         expr = std::move(binary.right());
+                        fUsage->add(expr.get());
 
                         // If `anyExpression` is now a lone ExpressionStatement, it's highly likely
                         // that we can eliminate it entirely. This flag will let us know to check.

@@ -10,7 +10,7 @@
 #include "bench/Benchmark.h"
 
 #include "include/core/SkCanvas.h"
-#include "include/gpu/GrDirectContext.h"
+#include "include/gpu/ganesh/GrDirectContext.h"
 #include "include/private/chromium/GrDeferredDisplayListRecorder.h"
 #include "include/private/chromium/GrSurfaceCharacterization.h"
 
@@ -32,9 +32,14 @@ static GrSurfaceCharacterization create_characterization(GrDirectContext* direct
 
     SkSurfaceProps props(0x0, kUnknown_SkPixelGeometry);
 
-    GrSurfaceCharacterization c = direct->threadSafeProxy()->createCharacterization(
-                                                        maxResourceBytes, ii, backendFormat, 1,
-                                                        kTopLeft_GrSurfaceOrigin, props, false);
+    GrSurfaceCharacterization c =
+            direct->threadSafeProxy()->createCharacterization(maxResourceBytes,
+                                                              ii,
+                                                              backendFormat,
+                                                              1,
+                                                              kTopLeft_GrSurfaceOrigin,
+                                                              props,
+                                                              skgpu::Mipmapped::kNo);
     return c;
 }
 
@@ -46,7 +51,7 @@ public:
     DDLRecorderBench() { }
 
 protected:
-    bool isSuitableFor(Backend backend) override { return kGPU_Backend == backend; }
+    bool isSuitableFor(Backend backend) override { return Backend::kGanesh == backend; }
 
     const char* onGetName() override { return "DDLRecorder"; }
 

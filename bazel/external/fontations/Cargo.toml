@@ -2,15 +2,17 @@
 # declared dependencies, actual build rules are in BUILD.bazel.
 
 [package]
-name = "fontations_bridge"
+name = "fontations"
 edition = "2021"
 version = "0.1.0"
 
 [dependencies]
-read-fonts = "0.11"
-font-types = "0.4"
-skrifa = "0.10"
+read-fonts = "0.22.3"
+font-types = "0.7"
+skrifa = "0.22.3"
+bytemuck = "1.16"
+cxx = "1.0"
 
-[[bin]]
-name = "ports_test_bin"
-path = "src/main.rs"
+[lib]
+name = "fontations_ffi"
+path = "src/ffi.rs"

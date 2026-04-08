@@ -16,14 +16,17 @@
 
 #include "src/c/sk_types_priv.h"
 
+// DEPRECATED: SkTableMaskFilter is deprecated in Skia and will be removed in a future release.
 sk_maskfilter_t* sk_maskfilter_new_table(const uint8_t table[256]) {
     return ToMaskFilter(SkTableMaskFilter::Create(table));
 }
 
+// DEPRECATED: SkTableMaskFilter is deprecated in Skia and will be removed in a future release.
 sk_maskfilter_t* sk_maskfilter_new_gamma(float gamma) {
     return ToMaskFilter(SkTableMaskFilter::CreateGamma(gamma));
 }
 
+// DEPRECATED: SkTableMaskFilter is deprecated in Skia and will be removed in a future release.
 sk_maskfilter_t* sk_maskfilter_new_clip(uint8_t min, uint8_t max) {
     return ToMaskFilter(SkTableMaskFilter::CreateClip(min, max));
 }
@@ -44,6 +47,7 @@ sk_maskfilter_t* sk_maskfilter_new_blur_with_flags(sk_blurstyle_t cstyle, float 
     return ToMaskFilter(SkMaskFilter::MakeBlur((SkBlurStyle)cstyle, sigma, respectCTM).release());
 }
 
+// DEPRECATED: SkShaderMaskFilter is deprecated in Skia and will be removed in a future release.
 sk_maskfilter_t* sk_maskfilter_new_shader(sk_shader_t* cshader) {
     return ToMaskFilter(SkShaderMaskFilter::Make(sk_ref_sp(AsShader(cshader))).release());
 }

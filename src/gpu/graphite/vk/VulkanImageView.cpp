@@ -8,17 +8,28 @@
 #include "src/gpu/graphite/vk/VulkanImageView.h"
 
 #include "src/gpu/graphite/vk/VulkanGraphiteUtilsPriv.h"
+#include "src/gpu/graphite/vk/VulkanResourceProvider.h"
 #include "src/gpu/graphite/vk/VulkanSharedContext.h"
+#include "src/gpu/graphite/vk/VulkanYcbcrConversion.h"
 
 namespace skgpu::graphite {
 
-std::unique_ptr<const VulkanImageView> VulkanImageView::Make(const VulkanSharedContext* sharedCtx,
-                                                             VkImage image,
-                                                             VkFormat format,
-                                                             Usage usage,
-                                                             uint32_t miplevels) {
+std::unique_ptr<const VulkanImageView> VulkanImageView::Make(
+        const VulkanSharedContext* sharedCtx,
+        VkImage image,
+        VkFormat format,
+        Usage usage,
+        uint32_t miplevels,
+        sk_sp<VulkanYcbcrConversion> ycbcrConversion) {
+
     void* pNext = nullptr;
-    // TODO: add SamplerYcbcrConversion setup
+    VkSamplerYcbcrConversionInfo conversionInfo;
+    if (ycbcrConversion) {
+        conversionInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_YCBCR_CONVERSION_INFO;
+        conversionInfo.pNext = nullptr;
+        conversionInfo.conversion = ycbcrConversion->ycbcrConversion();
+        pNext = &conversionInfo;
+    }
 
     VkImageView imageView;
     // Create the VkImageView
@@ -27,6 +38,10 @@ std::unique_ptr<const VulkanImageView> VulkanImageView::Make(const VulkanSharedC
         switch (format) {
         case VK_FORMAT_S8_UINT:
             aspectFlags = VK_IMAGE_ASPECT_STENCIL_BIT;
+            break;
+        case VK_FORMAT_D16_UNORM:
+        case VK_FORMAT_D32_SFLOAT:
+            aspectFlags = VK_IMAGE_ASPECT_DEPTH_BIT;
             break;
         case VK_FORMAT_D24_UNORM_S8_UINT:
         case VK_FORMAT_D32_SFLOAT_S8_UINT:
@@ -56,27 +71,29 @@ std::unique_ptr<const VulkanImageView> VulkanImageView::Make(const VulkanSharedC
     };
 
     VkResult result;
-    VULKAN_CALL_RESULT(sharedCtx->interface(), result,
+    VULKAN_CALL_RESULT(sharedCtx,
+                       result,
                        CreateImageView(sharedCtx->device(), &viewInfo, nullptr, &imageView));
     if (result != VK_SUCCESS) {
         return nullptr;
     }
 
-    return std::unique_ptr<VulkanImageView>(new VulkanImageView(sharedCtx, imageView, usage));
+    return std::unique_ptr<VulkanImageView>(new VulkanImageView(sharedCtx, imageView, usage,
+                                                                ycbcrConversion));
 }
 
 VulkanImageView::VulkanImageView(const VulkanSharedContext* sharedContext,
                                  VkImageView imageView,
-                                 Usage usage)
+                                 Usage usage,
+                                 sk_sp<VulkanYcbcrConversion> ycbcrConversion)
     : fSharedContext(sharedContext)
     , fImageView(imageView)
-    , fUsage(usage) {}
+    , fUsage(usage)
+    , fYcbcrConversion(std::move(ycbcrConversion)) {}
 
 VulkanImageView::~VulkanImageView() {
     VULKAN_CALL(fSharedContext->interface(),
                 DestroyImageView(fSharedContext->device(), fImageView, nullptr));
-
-    // TODO: unref SamplerYcbcrConversion
 }
 
 }  // namespace skgpu::graphite

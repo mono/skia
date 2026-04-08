@@ -10,7 +10,7 @@
 
 #include "tools/gpu/mock/MockTestContext.h"
 
-#include "include/gpu/GrDirectContext.h"
+#include "include/gpu/ganesh/GrDirectContext.h"
 
 namespace {
 
@@ -22,7 +22,6 @@ public:
     GrBackendApi backend() override { return GrBackendApi::kMock; }
 
     void testAbandon() override {}
-    void finish() override {}
 
     sk_sp<GrDirectContext> makeContext(const GrContextOptions& options) override {
         return GrDirectContext::MakeMock(nullptr, options);

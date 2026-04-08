@@ -44,7 +44,7 @@
 #include "include/private/base/SkTemplates.h"
 #include "include/private/base/SkTo.h"
 #include "include/svg/SkSVGCanvas.h"
-#include "include/utils/SkBase64.h"
+#include "src/base/SkBase64.h"
 #include "src/base/SkTLazy.h"
 #include "src/core/SkAnnotationKeys.h"
 #include "src/core/SkClipStack.h"
@@ -64,10 +64,8 @@
 
 using namespace skia_private;
 
-#if defined(SK_GANESH)
-class SkMesh;
-#endif
 class SkBlender;
+class SkMesh;
 class SkVertices;
 struct SkSamplingOptions;
 
@@ -246,21 +244,21 @@ public:
             , fColorFilterCount(0) {}
 
     SkString addLinearGradient() {
-        return SkStringPrintf("gradient_%d", fGradientCount++);
+        return SkStringPrintf("gradient_%u", fGradientCount++);
     }
 
     SkString addPath() {
-        return SkStringPrintf("path_%d", fPathCount++);
+        return SkStringPrintf("path_%u", fPathCount++);
     }
 
     SkString addImage() {
-        return SkStringPrintf("img_%d", fImageCount++);
+        return SkStringPrintf("img_%u", fImageCount++);
     }
 
-    SkString addColorFilter() { return SkStringPrintf("cfilter_%d", fColorFilterCount++); }
+    SkString addColorFilter() { return SkStringPrintf("cfilter_%u", fColorFilterCount++); }
 
     SkString addPattern() {
-      return SkStringPrintf("pattern_%d", fPatternCount++);
+      return SkStringPrintf("pattern_%u", fPatternCount++);
     }
 
 private:
@@ -369,10 +367,9 @@ void SkSVGDevice::AutoElement::addPaint(const SkPaint& paint, const Resources& r
         static constexpr char kDefaultFill[] = "black";
         if (!resources.fPaintServer.equals(kDefaultFill)) {
             this->addAttribute("fill", resources.fPaintServer);
-
-            if (SK_AlphaOPAQUE != SkColorGetA(paint.getColor())) {
-                this->addAttribute("fill-opacity", svg_opacity(paint.getColor()));
-            }
+        }
+        if (SK_AlphaOPAQUE != SkColorGetA(paint.getColor())) {
+            this->addAttribute("fill-opacity", svg_opacity(paint.getColor()));
         }
     } else {
         SkASSERT(style == SkPaint::kStroke_Style);
@@ -549,7 +546,7 @@ sk_sp<SkData> AsDataUri(SkImage* image) {
         }
     }
 
-    size_t b64Size = SkBase64::Encode(imageData->data(), imageData->size(), nullptr);
+    size_t b64Size = SkBase64::EncodedSize(imageData->size());
     sk_sp<SkData> dataUri = SkData::MakeUninitialized(selectedPrefixLength + b64Size);
     char* dest = (char*)dataUri->writable_data();
     memcpy(dest, selectedPrefix, selectedPrefixLength);
@@ -687,7 +684,7 @@ void SkSVGDevice::AutoElement::addTextAttributes(const SkFont& font) {
 
     SkString familyName;
     THashSet<SkString> familySet;
-    sk_sp<SkTypeface> tface = font.refTypefaceOrDefault();
+    sk_sp<SkTypeface> tface = font.refTypeface();
 
     SkASSERT(tface);
     SkFontStyle style = tface->fontStyle();
@@ -737,11 +734,12 @@ sk_sp<SkDevice> SkSVGDevice::Make(const SkISize& size,
 }
 
 SkSVGDevice::SkSVGDevice(const SkISize& size, std::unique_ptr<SkXMLWriter> writer, uint32_t flags)
-    : SkClipStackDevice(SkImageInfo::MakeUnknown(size.fWidth, size.fHeight),
-                        SkSurfaceProps(0, kUnknown_SkPixelGeometry))
-    , fWriter(std::move(writer))
-    , fResourceBucket(new ResourceBucket)
-    , fFlags(flags)
+        : SkClipStackDevice(
+            SkImageInfo::MakeUnknown(size.fWidth, size.fHeight),
+            SkSurfaceProps())
+        , fWriter(std::move(writer))
+        , fResourceBucket(new ResourceBucket)
+        , fFlags(flags)
 {
     SkASSERT(fWriter);
 
@@ -883,7 +881,10 @@ void SkSVGDevice::drawPoints(SkCanvas::PointMode mode, size_t count,
     switch (mode) {
             // todo
         case SkCanvas::kPoints_PointMode:
-            // TODO?
+            for (size_t i = 0; i < count; ++i) {
+                path.moveTo(pts[i]);
+                path.lineTo(pts[i]);
+            }
             break;
         case SkCanvas::kLines_PointMode:
             count -= 1;
@@ -903,6 +904,11 @@ void SkSVGDevice::drawPoints(SkCanvas::PointMode mode, size_t count,
 }
 
 void SkSVGDevice::drawRect(const SkRect& r, const SkPaint& paint) {
+    if (paint.getPathEffect()) {
+        this->drawPath(SkPath::Rect(r), paint, true);
+        return;
+    }
+
     std::unique_ptr<AutoElement> svg;
     if (RequiresViewportReset(paint)) {
       svg = std::make_unique<AutoElement>("svg", this, fResourceBucket.get(), MxCp(this), paint);
@@ -922,6 +928,11 @@ void SkSVGDevice::drawRect(const SkRect& r, const SkPaint& paint) {
 }
 
 void SkSVGDevice::drawOval(const SkRect& oval, const SkPaint& paint) {
+    if (paint.getPathEffect()) {
+        this->drawPath(SkPath::Oval(oval), paint, true);
+        return;
+    }
+
     AutoElement ellipse("ellipse", this, fResourceBucket.get(), MxCp(this), paint);
     ellipse.addAttribute("cx", oval.centerX());
     ellipse.addAttribute("cy", oval.centerY());
@@ -930,6 +941,11 @@ void SkSVGDevice::drawOval(const SkRect& oval, const SkPaint& paint) {
 }
 
 void SkSVGDevice::drawRRect(const SkRRect& rr, const SkPaint& paint) {
+    if (paint.getPathEffect()) {
+        this->drawPath(SkPath::RRect(rr), paint, true);
+        return;
+    }
+
     AutoElement elem("path", this, fResourceBucket.get(), MxCp(this), paint);
     elem.addPathAttributes(SkPath::RRect(rr), this->pathEncoding());
 }
@@ -983,7 +999,7 @@ void SkSVGDevice::drawBitmapCommon(const MxCp& mc, const SkBitmap& bm, const SkP
         return;
     }
 
-    size_t b64Size = SkBase64::Encode(pngData->data(), pngData->size(), nullptr);
+    size_t b64Size = SkBase64::EncodedSize(pngData->size());
     AutoTMalloc<char> b64Data(b64Size);
     SkBase64::Encode(pngData->data(), pngData->size(), b64Data.get());
 
@@ -1121,11 +1137,10 @@ private:
 
 void SkSVGDevice::onDrawGlyphRunList(SkCanvas* canvas,
                                      const sktext::GlyphRunList& glyphRunList,
-                                     const SkPaint& initialPaint,
-                                     const SkPaint& drawingPaint)  {
+                                     const SkPaint& paint) {
     SkASSERT(!glyphRunList.hasRSXForm());
-    const auto draw_as_path = (fFlags & SkSVGCanvas::kConvertTextToPaths_Flag) ||
-                              drawingPaint.getPathEffect();
+    const auto draw_as_path =
+            (fFlags & SkSVGCanvas::kConvertTextToPaths_Flag) || paint.getPathEffect();
 
     if (draw_as_path) {
         // Emit a single <path> element.
@@ -1134,14 +1149,14 @@ void SkSVGDevice::onDrawGlyphRunList(SkCanvas* canvas,
             AddPath(glyphRun, glyphRunList.origin(), &path);
         }
 
-        this->drawPath(path, drawingPaint);
+        this->drawPath(path, paint);
 
         return;
     }
 
     // Emit one <text> element for each run.
     for (auto& glyphRun : glyphRunList) {
-        AutoElement elem("text", this, fResourceBucket.get(), MxCp(this), drawingPaint);
+        AutoElement elem("text", this, fResourceBucket.get(), MxCp(this), paint);
         elem.addTextAttributes(glyphRun.font());
 
         SVGTextBuilder builder(glyphRunList.origin(), glyphRun);

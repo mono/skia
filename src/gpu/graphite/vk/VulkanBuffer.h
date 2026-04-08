@@ -25,8 +25,7 @@ public:
 
     void setBufferAccess(VulkanCommandBuffer* buffer,
                          VkAccessFlags dstAccessMask,
-                         VkPipelineStageFlags dstStageMask,
-                         bool byRegion) const;
+                         VkPipelineStageFlags dstStageMask) const;
 
 private:
     VulkanBuffer(const VulkanSharedContext*,
@@ -35,7 +34,8 @@ private:
                  AccessPattern,
                  VkBuffer,
                  const skgpu::VulkanAlloc&,
-                 VkBufferUsageFlags);
+                 VkBufferUsageFlags,
+                 Protected isProtected);
 
     void onMap() override;
     void onUnmap() override;

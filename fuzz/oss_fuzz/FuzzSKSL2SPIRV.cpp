@@ -9,12 +9,13 @@
 #include "src/sksl/SkSLCompiler.h"
 #include "src/sksl/SkSLProgramKind.h"
 #include "src/sksl/SkSLProgramSettings.h"
+#include "src/sksl/codegen/SkSLSPIRVCodeGenerator.h"
 #include "src/sksl/ir/SkSLProgram.h"
 
 #include "fuzz/Fuzz.h"
 
-bool FuzzSKSL2SPIRV(sk_sp<SkData> bytes) {
-    SkSL::Compiler compiler(SkSL::ShaderCapsFactory::Default());
+bool FuzzSKSL2SPIRV(const uint8_t *data, size_t size) {
+    SkSL::Compiler compiler;
     SkSL::ProgramSettings settings;
 
     // This tells the compiler where the rt-flip uniform will live should it be required. For
@@ -24,13 +25,12 @@ bool FuzzSKSL2SPIRV(sk_sp<SkData> bytes) {
     settings.fRTFlipSet     = 0;
     settings.fRTFlipBinding = 0;
 
-    std::unique_ptr<SkSL::Program> program = compiler.convertProgram(
-                                                    SkSL::ProgramKind::kFragment,
-                                                    std::string((const char*) bytes->data(),
-                                                                bytes->size()),
-                                                    settings);
+    std::unique_ptr<SkSL::Program> program =
+            compiler.convertProgram(SkSL::ProgramKind::kFragment,
+                                    std::string(reinterpret_cast<const char*>(data), size),
+                                    settings);
     std::string output;
-    if (!program || !compiler.toSPIRV(*program, &output)) {
+    if (!program || !SkSL::ToSPIRV(*program, SkSL::ShaderCapsFactory::Default(), &output)) {
         return false;
     }
     return true;
@@ -41,8 +41,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
     if (size > 3000) {
         return 0;
     }
-    auto bytes = SkData::MakeWithoutCopy(data, size);
-    FuzzSKSL2SPIRV(bytes);
+    FuzzSKSL2SPIRV(data, size);
     return 0;
 }
 #endif

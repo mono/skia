@@ -10,9 +10,10 @@
 
 #include "include/core/SkRefCnt.h"
 #include "include/effects/SkRuntimeEffect.h"
-#include "include/gpu/GrTypes.h"
 #include "include/private/SkColorData.h"
 #include "include/private/base/SkAssert.h"
+#include "include/private/base/SkDebug.h"
+#include "include/private/base/SkMacros.h"
 #include "include/private/base/SkSpan_impl.h"
 #include "src/base/SkVx.h" // IWYU pragma: keep
 #include "src/gpu/ganesh/GrFragmentProcessor.h"
@@ -123,7 +124,7 @@ public:
             sk_sp<SkColorSpace> dstColorSpace,
             std::unique_ptr<GrFragmentProcessor> inputFP,
             std::unique_ptr<GrFragmentProcessor> destColorFP,
-            sk_sp<const SkData> uniforms,
+            const sk_sp<const SkData>& uniforms,
             SkSpan<std::unique_ptr<GrFragmentProcessor>> childFPs);
 
     /*
@@ -196,7 +197,7 @@ private:
     void addChild(std::unique_ptr<GrFragmentProcessor> child, bool mergeOptFlags);
     void setInput(std::unique_ptr<GrFragmentProcessor> input);
     void setDestColorFP(std::unique_ptr<GrFragmentProcessor> destColorFP);
-    void addColorTransformChildren(sk_sp<SkColorSpace> dstColorSpace);
+    void addColorTransformChildren(SkColorSpace* dstColorSpace);
 
     std::unique_ptr<ProgramImpl> onMakeProgramImpl() const override;
 
@@ -444,6 +445,6 @@ private:
     friend class GrSkSLFPFactory;
 };
 
-GR_MAKE_BITFIELD_CLASS_OPS(GrSkSLFP::OptFlags)
+SK_MAKE_BITFIELD_CLASS_OPS(GrSkSLFP::OptFlags)
 
 #endif

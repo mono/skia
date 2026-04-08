@@ -98,7 +98,7 @@ DEF_TEST(Recorder_drawImage_takeReference, reporter) {
         Tally tally;
         tally.apply(record);
 
-        REPORTER_ASSERT(reporter, 1 == tally.count<SkRecords::DrawImage>());
+        REPORTER_ASSERT(reporter, 1 == tally.count<SkRecords::DrawImageRect>());
     }
     REPORTER_ASSERT(reporter, image->unique());
 

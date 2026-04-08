@@ -20,18 +20,12 @@
 #include "include/core/SkString.h"
 #include "include/core/SkTextBlob.h"
 #include "include/core/SkVertices.h"
-#include "include/gpu/GrDirectContext.h"
-#include "include/gpu/GrRecordingContext.h"
 #include "include/private/base/SkTArray.h"
 #include "include/private/base/SkTo.h"
 #include "include/utils/SkPaintFilterCanvas.h"
 #include "src/core/SkCanvasPriv.h"
 #include "src/core/SkRectPriv.h"
 #include "src/core/SkStringUtils.h"
-#include "src/gpu/ganesh/GrCanvas.h"
-#include "src/gpu/ganesh/GrRecordingContextPriv.h"
-#include "src/gpu/ganesh/GrRenderTargetProxy.h"
-#include "src/gpu/ganesh/GrSurfaceProxy.h"
 #include "src/utils/SkJSONWriter.h"
 #include "tools/debugger/DebugLayerManager.h"
 #include "tools/debugger/DrawCommand.h"
@@ -48,7 +42,13 @@ class UrlDataManager;
 struct SkDrawShadowRec;
 
 #if defined(SK_GANESH)
+#include "include/gpu/ganesh/GrDirectContext.h"
+#include "include/gpu/ganesh/GrRecordingContext.h"
 #include "src/gpu/ganesh/GrAuditTrail.h"
+#include "src/gpu/ganesh/GrCanvas.h"
+#include "src/gpu/ganesh/GrRecordingContextPriv.h"
+#include "src/gpu/ganesh/GrRenderTargetProxy.h"
+#include "src/gpu/ganesh/GrSurfaceProxy.h"
 #endif
 
 using namespace skia_private;

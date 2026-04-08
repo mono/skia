@@ -5,20 +5,24 @@
  * found in the LICENSE file.
  */
 
-#include "include/core/SkData.h"
 #include "include/core/SkStream.h"
 #include "include/core/SkSurface.h"
+#include "modules/skshaper/utils/FactoryHelpers.h"
 #include "modules/svg/include/SkSVGDOM.h"
 #include "modules/svg/include/SkSVGNode.h"
+#include "tools/fonts/TestFontMgr.h"
 
 #if defined(SK_ENABLE_SVG)
 
-void FuzzSVG(sk_sp<SkData> bytes) {
+void FuzzSVG(const uint8_t *data, size_t size) {
     uint8_t w = 100;
     uint8_t h = 200;
 
-    SkMemoryStream stream(bytes);
-    sk_sp<SkSVGDOM> dom = SkSVGDOM::MakeFromStream(stream);
+    SkMemoryStream stream(data, size);
+    sk_sp<SkSVGDOM> dom = SkSVGDOM::Builder()
+                                  .setFontManager(ToolUtils::MakePortableFontMgr())
+                                  .setTextShapingFactory(SkShapers::BestAvailable())
+                                  .make(stream);
     if (!dom) {
         return;
     }
@@ -31,7 +35,6 @@ void FuzzSVG(sk_sp<SkData> bytes) {
     dom->setContainerSize(winSize);
     dom->containerSize();
     dom->render(s->getCanvas());
-
 }
 
 #if defined(SK_BUILD_FOR_LIBFUZZER)
@@ -39,8 +42,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
     if (size > 30000) {
         return 0;
     }
-    auto bytes = SkData::MakeWithoutCopy(data, size);
-    FuzzSVG(bytes);
+    FuzzSVG(data, size);
     return 0;
 }
 #endif

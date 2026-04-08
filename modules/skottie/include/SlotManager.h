@@ -9,24 +9,22 @@
 #define SlotManager_DEFINED
 
 #include "include/core/SkColor.h"
+#include "include/core/SkRefCnt.h"
 #include "include/core/SkString.h"
+#include "include/private/base/SkAPI.h"
 #include "include/private/base/SkTArray.h"
 #include "modules/skottie/src/SkottieValue.h"
+#include "modules/skottie/src/text/TextAdapter.h"
 #include "src/core/SkTHash.h"
 
 #include <optional>
 
-namespace skjson {
-class ObjectValue;
-}
+struct SkV2;
 
 namespace skresources {
 class ImageAsset;
 }
 
-namespace sksg {
-class Node;
-}
 namespace skottie {
 
 struct TextPropertyValue;
@@ -35,7 +33,6 @@ namespace internal {
 class AnimationBuilder;
 class SceneGraphRevalidator;
 class AnimatablePropertyContainer;
-class TextAdapter;
 } // namespace internal
 
 using namespace skia_private;
@@ -48,17 +45,17 @@ public:
     SlotManager(sk_sp<skottie::internal::SceneGraphRevalidator>);
     ~SlotManager() override;
 
-    bool setColorSlot(SlotID, SkColor);
-    bool setImageSlot(SlotID, sk_sp<skresources::ImageAsset>);
-    bool setScalarSlot(SlotID, float);
-    bool setVec2Slot(SlotID, SkV2);
-    bool setTextSlot(SlotID, const TextPropertyValue&);
+    bool setColorSlot(const SlotID&, SkColor);
+    bool setImageSlot(const SlotID&, const sk_sp<skresources::ImageAsset>&);
+    bool setScalarSlot(const SlotID&, float);
+    bool setVec2Slot(const SlotID&, SkV2);
+    bool setTextSlot(const SlotID&, const TextPropertyValue&);
 
-    std::optional<SkColor>               getColorSlot(SlotID) const;
-    sk_sp<const skresources::ImageAsset> getImageSlot(SlotID) const;
-    std::optional<float>                 getScalarSlot(SlotID) const;
-    std::optional<SkV2>                  getVec2Slot(SlotID) const;
-    std::optional<TextPropertyValue>     getTextSlot(SlotID) const;
+    std::optional<SkColor>               getColorSlot(const SlotID&) const;
+    sk_sp<const skresources::ImageAsset> getImageSlot(const SlotID&) const;
+    std::optional<float>                 getScalarSlot(const SlotID&) const;
+    std::optional<SkV2>                  getVec2Slot(const SlotID&) const;
+    std::optional<TextPropertyValue>     getTextSlot(const SlotID&) const;
 
     struct SlotInfo {
         TArray<SlotID> fColorSlotIDs;
@@ -74,11 +71,14 @@ public:
 private:
 
     // pass value to the SlotManager for manipulation and node for invalidation
-    void trackColorValue(SlotID, ColorValue*, sk_sp<skottie::internal::AnimatablePropertyContainer>);
-    sk_sp<skresources::ImageAsset> trackImageValue(SlotID, sk_sp<skresources::ImageAsset>);
-    void trackScalarValue(SlotID, ScalarValue*, sk_sp<skottie::internal::AnimatablePropertyContainer>);
-    void trackVec2Value(SlotID, Vec2Value*, sk_sp<skottie::internal::AnimatablePropertyContainer>);
-    void trackTextValue(SlotID, sk_sp<skottie::internal::TextAdapter>);
+    void trackColorValue(const SlotID&, ColorValue*,
+                         sk_sp<skottie::internal::AnimatablePropertyContainer>);
+    sk_sp<skresources::ImageAsset> trackImageValue(const SlotID&, sk_sp<skresources::ImageAsset>);
+    void trackScalarValue(const SlotID&, ScalarValue*,
+                          sk_sp<skottie::internal::AnimatablePropertyContainer>);
+    void trackVec2Value(const SlotID&, Vec2Value*,
+                        sk_sp<skottie::internal::AnimatablePropertyContainer>);
+    void trackTextValue(const SlotID&, sk_sp<skottie::internal::TextAdapter>);
 
     // ValuePair tracks a pointer to a value to change, and a means to invalidate the render tree.
     // For the latter, we can take either a node in the scene graph that directly the scene graph,

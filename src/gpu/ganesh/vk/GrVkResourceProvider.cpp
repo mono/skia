@@ -7,18 +7,33 @@
 
 #include "src/gpu/ganesh/vk/GrVkResourceProvider.h"
 
-#include "include/gpu/GrDirectContext.h"
+#include "include/core/SkData.h"
+#include "include/core/SkString.h"
+#include "include/gpu/ganesh/GrDirectContext.h"
+#include "include/gpu/ganesh/GrTypes.h"
+#include "include/private/base/SkDebug.h"
+#include "include/private/gpu/ganesh/GrTypesPriv.h"
 #include "src/core/SkTaskGroup.h"
 #include "src/core/SkTraceEvent.h"
+#include "src/gpu/Blend.h"
+#include "src/gpu/RefCntedCallback.h"
 #include "src/gpu/ganesh/GrDirectContextPriv.h"
+#include "src/gpu/ganesh/GrGeometryProcessor.h"
 #include "src/gpu/ganesh/GrSamplerState.h"
 #include "src/gpu/ganesh/GrStencilSettings.h"
 #include "src/gpu/ganesh/vk/GrVkCommandBuffer.h"
 #include "src/gpu/ganesh/vk/GrVkCommandPool.h"
+#include "src/gpu/ganesh/vk/GrVkDescriptorPool.h"
 #include "src/gpu/ganesh/vk/GrVkGpu.h"
 #include "src/gpu/ganesh/vk/GrVkPipeline.h"
 #include "src/gpu/ganesh/vk/GrVkRenderTarget.h"
 #include "src/gpu/ganesh/vk/GrVkUtil.h"
+
+#include <cstring>
+
+class GrProgramInfo;
+class GrRenderTarget;
+class GrVkDescriptorSet;
 
 GrVkResourceProvider::GrVkResourceProvider(GrVkGpu* gpu)
     : fGpu(gpu)
@@ -27,14 +42,15 @@ GrVkResourceProvider::GrVkResourceProvider(GrVkGpu* gpu)
 }
 
 GrVkResourceProvider::~GrVkResourceProvider() {
-    SkASSERT(0 == fRenderPassArray.size());
-    SkASSERT(0 == fExternalRenderPasses.size());
-    SkASSERT(0 == fMSAALoadPipelines.size());
+    SkASSERT(fRenderPassArray.empty());
+    SkASSERT(fExternalRenderPasses.empty());
+    SkASSERT(fMSAALoadPipelines.empty());
     SkASSERT(VK_NULL_HANDLE == fPipelineCache);
 }
 
 VkPipelineCache GrVkResourceProvider::pipelineCache() {
     if (fPipelineCache == VK_NULL_HANDLE) {
+        TRACE_EVENT0("skia.shaders", "CreatePipelineCache-GrVkResourceProvider");
         VkPipelineCacheCreateInfo createInfo;
         memset(&createInfo, 0, sizeof(VkPipelineCacheCreateInfo));
         createInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO;
@@ -50,7 +66,7 @@ VkPipelineCache GrVkResourceProvider::pipelineCache() {
         }
         bool usedCached = false;
         if (cached) {
-            uint32_t* cacheHeader = (uint32_t*)cached->data();
+            const uint32_t* cacheHeader = (const uint32_t*)cached->data();
             if (cacheHeader[1] == VK_PIPELINE_CACHE_HEADER_VERSION_ONE) {
                 // For version one of the header, the total header size is 16 bytes plus
                 // VK_UUID_SIZE bytes. See Section 9.6 (Pipeline Cache) in the vulkan spec to see
@@ -225,7 +241,7 @@ GrVkDescriptorPool* GrVkResourceProvider::findOrCreateCompatibleDescriptorPool(
 }
 
 GrVkSampler* GrVkResourceProvider::findOrCreateCompatibleSampler(
-        GrSamplerState params, const GrVkYcbcrConversionInfo& ycbcrInfo) {
+        GrSamplerState params, const skgpu::VulkanYcbcrConversionInfo& ycbcrInfo) {
     GrVkSampler* sampler = fSamplers.find(GrVkSampler::GenerateKey(params, ycbcrInfo));
     if (!sampler) {
         sampler = GrVkSampler::Create(fGpu, params, ycbcrInfo);
@@ -240,7 +256,7 @@ GrVkSampler* GrVkResourceProvider::findOrCreateCompatibleSampler(
 }
 
 GrVkSamplerYcbcrConversion* GrVkResourceProvider::findOrCreateCompatibleSamplerYcbcrConversion(
-        const GrVkYcbcrConversionInfo& ycbcrInfo) {
+        const skgpu::VulkanYcbcrConversionInfo& ycbcrInfo) {
     GrVkSamplerYcbcrConversion* ycbcrConversion =
             fYcbcrConversions.find(GrVkSamplerYcbcrConversion::GenerateKey(ycbcrInfo));
     if (!ycbcrConversion) {
@@ -402,7 +418,7 @@ void GrVkResourceProvider::recycleDescriptorSet(const GrVkDescriptorSet* descSet
 
 GrVkCommandPool* GrVkResourceProvider::findOrCreateCommandPool() {
     GrVkCommandPool* result;
-    if (fAvailableCommandPools.size()) {
+    if (!fAvailableCommandPools.empty()) {
         result = fAvailableCommandPools.back();
         fAvailableCommandPools.pop_back();
     } else {
@@ -436,7 +452,7 @@ void GrVkResourceProvider::checkCommandBuffers() {
     // TODO: We really need to have a more robust way to protect us from client proc calls that
     // happen in the middle of us doing work. This may be just one of many potential pitfalls that
     // could happen from the client triggering GrDirectContext changes during a proc call.
-    for (int i = fActiveCommandPools.size() - 1; fActiveCommandPools.size() && i >= 0; --i) {
+    for (int i = fActiveCommandPools.size() - 1; !fActiveCommandPools.empty() && i >= 0; --i) {
         GrVkCommandPool* pool = fActiveCommandPools[i];
         if (!pool->isOpen()) {
             GrVkPrimaryCommandBuffer* buffer = pool->getPrimaryCommandBuffer();
@@ -459,7 +475,7 @@ void GrVkResourceProvider::checkCommandBuffers() {
 }
 
 void GrVkResourceProvider::forceSyncAllCommandBuffers() {
-    for (int i = fActiveCommandPools.size() - 1; fActiveCommandPools.size() && i >= 0; --i) {
+    for (int i = fActiveCommandPools.size() - 1; !fActiveCommandPools.empty() && i >= 0; --i) {
         GrVkCommandPool* pool = fActiveCommandPools[i];
         if (!pool->isOpen()) {
             GrVkPrimaryCommandBuffer* buffer = pool->getPrimaryCommandBuffer();

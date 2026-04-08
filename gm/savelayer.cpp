@@ -38,8 +38,10 @@
 #include "include/effects/SkShaderMaskFilter.h"
 #include "src/base/SkRandom.h"
 #include "src/core/SkCanvasPriv.h"
+#include "tools/DecodeUtils.h"
 #include "tools/Resources.h"
 #include "tools/ToolUtils.h"
+#include "tools/fonts/FontToolUtils.h"
 
 #include <string.h>
 #include <initializer_list>
@@ -49,7 +51,7 @@
 // restore with kPlus mode, which should show the mandrill super-bright on the outside, but
 // normal where we punched the hole.
 DEF_SIMPLE_GM(savelayer_initfromprev, canvas, 256, 256) {
-    canvas->drawImage(GetResourceAsImage("images/mandrill_256.png"), 0, 0);
+    canvas->drawImage(ToolUtils::GetResourceAsImage("images/mandrill_256.png"), 0, 0);
 
     SkCanvas::SaveLayerRec rec;
     SkPaint paint;
@@ -124,8 +126,7 @@ static void draw_list(SkCanvas* canvas, sk_sp<SkTextBlob> blob, bool useDrawBehi
 }
 
 DEF_SIMPLE_GM(save_behind, canvas, 830, 670) {
-    SkFont font;
-    font.setTypeface(ToolUtils::create_portable_typeface());
+    SkFont font = ToolUtils::DefaultPortableFont();
     font.setSize(30);
 
     const char text[] = "This is a very long line of text";
@@ -232,7 +233,7 @@ static void draw_image_set(SkCanvas* canvas, SkImage* image) {
   repeated, independent draws. This GM tests this with several operations.
   */
 DEF_SIMPLE_GM(skbug_14554, canvas, 310, 630) {
-    sk_sp<SkImage> image = GetResourceAsImage("images/mandrill_128.png");
+    sk_sp<SkImage> image = ToolUtils::GetResourceAsImage("images/mandrill_128.png");
     SkPictureRecorder rec;
 
     using DrawProc = void(*)(SkCanvas*, SkImage*);

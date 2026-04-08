@@ -16,9 +16,12 @@
 #include "include/core/SkSize.h"
 #include "include/core/SkString.h"
 #include "include/core/SkSurface.h"
+#include "src/codec/SkCodecImageGenerator.h"
+#include "tools/DecodeUtils.h"
+#include "tools/EncodeUtils.h"
 #include "tools/Resources.h"
 #include "tools/ToolUtils.h"
-
+#include "tools/fonts/FontToolUtils.h"
 
 static constexpr int kImgW = 100;
 static constexpr int kImgH =  80;
@@ -70,7 +73,7 @@ static void make_images() {
         canvas->drawRect(SkRect::MakeXYWH(1, midY, w, h), paint);
         paint.setColor(SK_ColorYELLOW);
         canvas->drawRect(SkRect::MakeXYWH(midX, midY, w, h), paint);
-        SkFont font(ToolUtils::create_portable_typeface(), kImgH / 4.f);
+        SkFont font(ToolUtils::DefaultPortableTypeface(), kImgH / 4.f);
 
         SkPaint blurPaint;
         blurPaint.setMaskFilter(SkMaskFilter::MakeBlur(kNormal_SkBlurStyle, .75f));
@@ -132,7 +135,7 @@ static void draw(SkCanvas* canvas, const char* suffix) {
     canvas->save();
     for (char i = '1'; i <= '8'; i++) {
         SkString path = SkStringPrintf("images/orientation/%c%s.jpg", i, suffix);
-        auto image = GetResourceAsImage(path.c_str());
+        auto image = ToolUtils::GetResourceAsImage(path.c_str());
         if (!image) {
             continue;
         }
@@ -156,3 +159,25 @@ MAKE_GM(420)
 MAKE_GM(422)
 MAKE_GM(440)
 MAKE_GM(444)
+
+// This GM demonstrates that the default SkImageGenerator respects the orientation flag.
+DEF_SIMPLE_GM(respect_orientation_jpeg, canvas, 4*kImgW, 2*kImgH) {
+   canvas->save();
+    for (char i = '1'; i <= '8'; i++) {
+        SkString path = SkStringPrintf("images/orientation/%c_444.jpg", i);
+        // Get the image as data
+        sk_sp<SkData> data(GetResourceAsData(path.c_str()));
+        sk_sp<SkImage> image = SkImages::DeferredFromGenerator(
+            SkCodecImageGenerator::MakeFromEncodedCodec(data));
+        if (!image) {
+            continue;
+        }
+        canvas->drawImage(image, 0, 0);
+        if ('4' == i || '8' == i) {
+            canvas->restore();
+            canvas->translate(0, image->height());
+        } else {
+            canvas->translate(image->width(), 0);
+        }
+    }
+}

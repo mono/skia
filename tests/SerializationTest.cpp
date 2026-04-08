@@ -58,6 +58,7 @@
 #include "tests/Test.h"
 #include "tools/Resources.h"
 #include "tools/ToolUtils.h"
+#include "tools/fonts/FontToolUtils.h"
 
 #include <algorithm>
 #include <array>
@@ -399,7 +400,7 @@ static sk_sp<SkTypeface> deserialize_typeface_proc(const void* data, size_t leng
         return nullptr;
     }
 
-    sk_sp<SkTypeface> typeface = SkTypeface::MakeDeserialize(stream);
+    sk_sp<SkTypeface> typeface = SkTypeface::MakeDeserialize(stream, ToolUtils::TestFontMgr());
     return typeface;
 }
 
@@ -447,7 +448,7 @@ static sk_sp<SkTypeface> makeDistortableWithNonDefaultAxes(skiatest::Reporter* r
     SkFontArguments params;
     params.setVariationDesignPosition({position, std::size(position)});
 
-    sk_sp<SkFontMgr> fm = SkFontMgr::RefDefault();
+    sk_sp<SkFontMgr> fm = ToolUtils::TestFontMgr();
 
     sk_sp<SkTypeface> typeface = fm->makeFromStream(std::move(distortable), params);
     if (!typeface) {
@@ -462,14 +463,37 @@ static sk_sp<SkTypeface> makeDistortableWithNonDefaultAxes(skiatest::Reporter* r
     return typeface;
 }
 
+static sk_sp<SkTypeface> makeColrWithNonDefaultPalette(skiatest::Reporter* reporter) {
+    std::unique_ptr<SkStreamAsset> colr(GetResourceAsStream("fonts/colr.ttf"));
+    if (!colr) {
+        REPORT_FAILURE(reporter, "colr", SkString());
+        return nullptr;
+    }
+
+    const SkFontArguments::Palette::Override paletteOverride[] = {
+        { 1, SK_ColorGRAY },
+    };
+    SkFontArguments params;
+    params.setPalette({0, paletteOverride, std::size(paletteOverride)});
+
+    sk_sp<SkFontMgr> fm = ToolUtils::TestFontMgr();
+
+    sk_sp<SkTypeface> typeface = fm->makeFromStream(std::move(colr), params);
+    if (!typeface) {
+        return nullptr;  // Not all SkFontMgr can makeFromStream().
+    }
+
+    return typeface;
+}
+
 static void TestPictureTypefaceSerialization(const SkSerialProcs* serial_procs,
                                              const SkDeserialProcs* deserial_procs,
                                              skiatest::Reporter* reporter) {
     {
         // Load typeface from file to test CreateFromFile with index.
-        auto typeface = MakeResourceAsTypeface("fonts/test.ttc", 1);
+        auto typeface = ToolUtils::CreateTypefaceFromResource("fonts/test.ttc", 1);
         if (!typeface) {
-            INFOF(reporter, "Could not run fontstream test because test.ttc not found.");
+            INFOF(reporter, "Could not run test because test.ttc not found.");
         } else {
             serialize_and_compare_typeface(std::move(typeface), "A!", serial_procs, deserial_procs,
                                            reporter);
@@ -480,9 +504,20 @@ static void TestPictureTypefaceSerialization(const SkSerialProcs* serial_procs,
         // Load typeface as stream to create with axis settings.
         auto typeface = makeDistortableWithNonDefaultAxes(reporter);
         if (!typeface) {
-            INFOF(reporter, "Could not run fontstream test because Distortable.ttf not created.");
+            INFOF(reporter, "Could not run test because Distortable.ttf not created.");
         } else {
             serialize_and_compare_typeface(std::move(typeface), "ab", serial_procs,
+                                            deserial_procs, reporter);
+        }
+    }
+
+    {
+        // Load typeface as stream to create with palette settings.
+        auto typeface = makeColrWithNonDefaultPalette(reporter);
+        if (!typeface) {
+            INFOF(reporter, "Could not run test because colr.ttf not created.");
+        } else {
+            serialize_and_compare_typeface(std::move(typeface), "😀♢", serial_procs,
                                             deserial_procs, reporter);
         }
     }
@@ -541,12 +576,14 @@ SkString DumpFontMetrics(const SkFontMetrics& metrics) {
     m.appendf("StrikeoutPosition: %f\n", metrics.fStrikeoutPosition);
     return m;
 }
-static void TestTypefaceSerialization(skiatest::Reporter* reporter, sk_sp<SkTypeface> typeface) {
+static void TestTypefaceSerialization(skiatest::Reporter* reporter,
+                                      const sk_sp<SkTypeface>& typeface) {
     SkDynamicMemoryWStream typefaceWStream;
     typeface->serialize(&typefaceWStream);
 
     std::unique_ptr<SkStream> typefaceStream = typefaceWStream.detachAsStream();
-    sk_sp<SkTypeface> cloneTypeface = SkTypeface::MakeDeserialize(typefaceStream.get());
+    sk_sp<SkTypeface> cloneTypeface =
+            SkTypeface::MakeDeserialize(typefaceStream.get(), ToolUtils::TestFontMgr());
     SkASSERT(cloneTypeface);
 
     SkString name, cloneName;
@@ -574,9 +611,8 @@ static void TestTypefaceSerialization(skiatest::Reporter* reporter, sk_sp<SkType
         DumpTypeface(*cloneTypeface).c_str());
 }
 DEF_TEST(Serialization_Typeface, reporter) {
-    SkFont font;
-    TestTypefaceSerialization(reporter, font.refTypefaceOrDefault());
-    TestTypefaceSerialization(reporter, ToolUtils::sample_user_typeface());
+    TestTypefaceSerialization(reporter, ToolUtils::DefaultTypeface());
+    TestTypefaceSerialization(reporter, ToolUtils::SampleUserTypeface());
 }
 
 static void setup_bitmap_for_canvas(SkBitmap* bitmap) {
@@ -621,7 +657,7 @@ static void draw_something(SkCanvas* canvas) {
     canvas->drawCircle(SkIntToScalar(kBitmapSize/2), SkIntToScalar(kBitmapSize/2), SkIntToScalar(kBitmapSize/3), paint);
     paint.setColor(SK_ColorBLACK);
 
-    SkFont font;
+    SkFont font = ToolUtils::DefaultFont();
     font.setSize(kBitmapSize/3);
     canvas->drawString("Picture", SkIntToScalar(kBitmapSize/2), SkIntToScalar(kBitmapSize/4), font, paint);
 }
@@ -792,32 +828,40 @@ DEF_TEST(Serialization, reporter) {
 
     // Test simple SkPicture serialization
     {
+        skiatest::ReporterContext subtest(reporter, "simple SkPicture");
         SkPictureRecorder recorder;
         draw_something(recorder.beginRecording(SkIntToScalar(kBitmapSize),
                                                SkIntToScalar(kBitmapSize)));
         sk_sp<SkPicture> pict(recorder.finishRecordingAsPicture());
 
-        // Serialize picture
+        // Serialize picture. The default typeface proc should result in a non-empty
+        // typeface when deserializing.
         SkSerialProcs sProcs;
         sProcs.fImageProc = [](SkImage* img, void*) -> sk_sp<SkData> {
             return SkPngEncoder::Encode(nullptr, img, SkPngEncoder::Options{});
         };
-        SkBinaryWriteBuffer writer(sProcs);
+        sk_sp<SkData> data = pict->serialize(&sProcs);
+        REPORTER_ASSERT(reporter, data);
 
-        SkPicturePriv::Flatten(pict, writer);
-        size_t size = writer.bytesWritten();
-        AutoTMalloc<unsigned char> data(size);
-        writer.writeToMemory(static_cast<void*>(data.get()));
-
-        // Deserialize picture
-        SkReadBuffer reader(static_cast<void*>(data.get()), size);
-        sk_sp<SkPicture> readPict(SkPicturePriv::MakeFromBuffer(reader));
-        REPORTER_ASSERT(reporter, reader.isValid());
-        REPORTER_ASSERT(reporter, readPict.get());
+        // Deserialize picture using the default procs.
+        // TODO(kjlubick) Specify a proc for decoding image data.
+        sk_sp<SkPicture> readPict = SkPicture::MakeFromData(data.get());
+        REPORTER_ASSERT(reporter, readPict);
         sk_sp<SkImage> img0 = render(*pict);
         sk_sp<SkImage> img1 = render(*readPict);
         if (img0 && img1) {
-            REPORTER_ASSERT(reporter, ToolUtils::equal_pixels(img0.get(), img1.get()));
+            bool ok = ToolUtils::equal_pixels(img0.get(), img1.get());
+            REPORTER_ASSERT(reporter, ok, "before and after image did not match");
+            if (!ok) {
+                auto left = SkFILEWStream("before_serialize.png");
+                sk_sp<SkData> d = SkPngEncoder::Encode(nullptr, img0.get(), {});
+                left.write(d->data(), d->size());
+                left.fsync();
+                auto right = SkFILEWStream("after_serialize.png");
+                d = SkPngEncoder::Encode(nullptr, img1.get(), {});
+                right.write(d->data(), d->size());
+                right.fsync();
+            }
         }
     }
 
@@ -940,8 +984,7 @@ DEF_TEST(WriteBuffer_storage, reporter) {
 }
 
 DEF_TEST(WriteBuffer_external_memory_textblob, reporter) {
-    SkFont font;
-    font.setTypeface(SkTypeface::MakeDefault());
+    SkFont font = ToolUtils::DefaultFont();
 
     SkTextBlobBuilder builder;
     int glyph_count = 5;

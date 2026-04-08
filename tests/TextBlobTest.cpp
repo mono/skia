@@ -26,9 +26,11 @@
 #include "include/private/base/SkTArray.h"
 #include "include/private/base/SkTemplates.h"
 #include "include/private/base/SkTo.h"
+#include "src/core/SkFontPriv.h"
 #include "src/core/SkTextBlobPriv.h"
 #include "tests/Test.h"
 #include "tools/ToolUtils.h"
+#include "tools/fonts/FontToolUtils.h"
 
 #include <algorithm>
 #include <cstdint>
@@ -124,7 +126,7 @@ public:
     // This unit test verifies blob bounds computation.
     static void TestBounds(skiatest::Reporter* reporter) {
         SkTextBlobBuilder builder;
-        SkFont font;
+        SkFont font = ToolUtils::DefaultFont();
 
         // Explicit bounds.
         {
@@ -197,7 +199,7 @@ public:
         // Kitchen sink font.
         font.setSize(42);
         font.setScaleX(4.2f);
-        font.setTypeface(ToolUtils::create_portable_typeface(nullptr, SkFontStyle::Bold()));
+        font.setTypeface(ToolUtils::CreatePortableTypeface("Sans", SkFontStyle::Bold()));
         font.setSkewX(0.42f);
         font.setHinting(SkFontHinting::kFull);
         font.setEdging(SkFont::Edging::kSubpixelAntiAlias);
@@ -208,10 +210,10 @@ public:
         font.setForceAutoHinting(true);
 
         // Ensure we didn't pick default values by mistake.
-        SkFont defaultFont;
+        SkFont defaultFont = ToolUtils::DefaultFont();
         REPORTER_ASSERT(reporter, defaultFont.getSize() != font.getSize());
         REPORTER_ASSERT(reporter, defaultFont.getScaleX() != font.getScaleX());
-        REPORTER_ASSERT(reporter, defaultFont.getTypefaceOrDefault() != font.getTypefaceOrDefault());
+        REPORTER_ASSERT(reporter, defaultFont.getTypeface() != font.getTypeface());
         REPORTER_ASSERT(reporter, defaultFont.getSkewX() != font.getSkewX());
         REPORTER_ASSERT(reporter, defaultFont.getHinting() != font.getHinting());
         REPORTER_ASSERT(reporter, defaultFont.getEdging() != font.getEdging());
@@ -247,7 +249,7 @@ private:
     static void RunBuilderTest(skiatest::Reporter* reporter, SkTextBlobBuilder& builder,
                                const RunDef in[], unsigned inCount,
                                const RunDef out[], unsigned outCount) {
-        SkFont font;
+        SkFont font = ToolUtils::DefaultFont();
 
         for (unsigned i = 0; i < inCount; ++i) {
             AddRun(font, in[i].count, in[i].pos, SkPoint::Make(in[i].x, in[i].y), builder);
@@ -331,7 +333,7 @@ DEF_TEST(TextBlob_paint, reporter) {
 
 DEF_TEST(TextBlob_extended, reporter) {
     SkTextBlobBuilder textBlobBuilder;
-    SkFont font;
+    SkFont font = ToolUtils::DefaultFont();
     const char text1[] = "Foo";
     const char text2[] = "Bar";
 
@@ -381,6 +383,7 @@ static void add_run(SkTextBlobBuilder* builder, const char text[], SkScalar x, S
 }
 
 static sk_sp<SkImage> render(const SkTextBlob* blob) {
+    SkASSERT(blob);
     auto surf = SkSurfaces::Raster(
             SkImageInfo::MakeN32Premul(SkScalarRoundToInt(blob->bounds().width()),
                                        SkScalarRoundToInt(blob->bounds().height())));
@@ -393,6 +396,10 @@ static sk_sp<SkImage> render(const SkTextBlob* blob) {
 }
 
 static sk_sp<SkData> SerializeTypeface(SkTypeface* tf, void* ctx) {
+    // Do not serialize the empty font.
+    if (!tf || (tf->countGlyphs() == 0 && tf->getBounds().isEmpty())) {
+        return nullptr;
+    }
     auto array = (TArray<sk_sp<SkTypeface>>*)ctx;
     const size_t idx = array->size();
     array->emplace_back(sk_ref_sp(tf));
@@ -403,12 +410,16 @@ static sk_sp<SkData> SerializeTypeface(SkTypeface* tf, void* ctx) {
 static sk_sp<SkTypeface> DeserializeTypeface(const void* data, size_t length, void* ctx) {
     auto array = (TArray<sk_sp<SkTypeface>>*)ctx;
     if (length != sizeof(size_t)) {
-        SkASSERT(false);
+        SkDEBUGFAIL("Did not serialize an index");
         return nullptr;
     }
-    size_t idx = *reinterpret_cast<const size_t*>(data);
+    if (!data) {
+        return nullptr;
+    }
+    size_t idx = 0;
+    std::memcpy(&idx, data, sizeof(size_t));
     if (idx >= SkToSizeT(array->size())) {
-        SkASSERT(false);
+        SkDEBUGFAIL("Index too big");
         return nullptr;
     }
     return (*array)[idx];
@@ -421,8 +432,10 @@ static sk_sp<SkTypeface> DeserializeTypeface(const void* data, size_t length, vo
  *  Then draw the new instance and assert it draws the same as the original.
  */
 DEF_TEST(TextBlob_serialize, reporter) {
-    sk_sp<SkTextBlob> blob0 = []() {
-        sk_sp<SkTypeface> tf = SkTypeface::MakeFromName(nullptr, SkFontStyle::BoldItalic());
+    sk_sp<SkTextBlob> blob0 = [reporter]() {
+        sk_sp<SkTypeface> tf = ToolUtils::CreateTestTypeface(nullptr, SkFontStyle::BoldItalic());
+        REPORTER_ASSERT(reporter, tf, "Test typeface was nullptr");
+        REPORTER_ASSERT(reporter, tf->countGlyphs() > 0, "Test typeface had no glyphs");
 
         SkTextBlobBuilder builder;
         add_run(&builder, "Hello", 10, 20, nullptr);    // don't flatten a typeface
@@ -435,11 +448,14 @@ DEF_TEST(TextBlob_serialize, reporter) {
     serializeProcs.fTypefaceProc = &SerializeTypeface;
     serializeProcs.fTypefaceCtx = (void*) &array;
     sk_sp<SkData> data = blob0->serialize(serializeProcs);
-    REPORTER_ASSERT(reporter, array.size() == 1);
+    REPORTER_ASSERT(reporter, array.size() == 1,
+        "Did not serialize exactly one non-empty font, instead %d", array.size());
+    REPORTER_ASSERT(reporter, array[0]->countGlyphs() > 0, "Serialized typeface had no glyphs");
     SkDeserialProcs deserializeProcs;
     deserializeProcs.fTypefaceProc = &DeserializeTypeface;
     deserializeProcs.fTypefaceCtx = (void*) &array;
     sk_sp<SkTextBlob> blob1 = SkTextBlob::Deserialize(data->data(), data->size(), deserializeProcs);
+    REPORTER_ASSERT(reporter, blob1);
 
     sk_sp<SkImage> img0 = render(blob0.get());
     sk_sp<SkImage> img1 = render(blob1.get());
@@ -450,7 +466,7 @@ DEF_TEST(TextBlob_serialize, reporter) {
 
 DEF_TEST(TextBlob_MakeAsDrawText, reporter) {
     const char text[] = "Hello";
-    auto blob = SkTextBlob::MakeFromString(text, SkFont(), SkTextEncoding::kUTF8);
+    auto blob = SkTextBlob::MakeFromString(text, ToolUtils::DefaultFont(), SkTextEncoding::kUTF8);
 
     int runs = 0;
     for(SkTextBlobRunIterator it(blob.get()); !it.done(); it.next()) {
@@ -463,16 +479,16 @@ DEF_TEST(TextBlob_MakeAsDrawText, reporter) {
 }
 
 DEF_TEST(TextBlob_iter, reporter) {
-    sk_sp<SkTypeface> tf = SkTypeface::MakeFromName(nullptr, SkFontStyle::BoldItalic());
+    sk_sp<SkTypeface> tf = ToolUtils::CreateTestTypeface(nullptr, SkFontStyle::BoldItalic());
 
     SkTextBlobBuilder builder;
-    add_run(&builder, "Hello", 10, 20, nullptr);
-    add_run(&builder, "World", 10, 40, tf);
+    add_run(&builder, "Hello", 10, 20, tf);
+    add_run(&builder, "World!", 10, 40, tf);
     auto blob = builder.make();
 
     SkTextBlob::Iter::Run expected[] = {
-        { nullptr, 5, nullptr },
         { tf.get(), 5, nullptr },
+        { tf.get(), 6, nullptr },
     };
 
     SkTextBlob::Iter iter(*blob);
@@ -482,7 +498,8 @@ DEF_TEST(TextBlob_iter, reporter) {
         REPORTER_ASSERT(reporter, run.fTypeface == exp.fTypeface);
         REPORTER_ASSERT(reporter, run.fGlyphCount == exp.fGlyphCount);
         for (int i = 0; i < run.fGlyphCount; ++i) {
-            REPORTER_ASSERT(reporter, run.fGlyphIndices[i] != 0);
+            REPORTER_ASSERT(reporter, run.fGlyphIndices[i] != 0,
+                            "Glyph Index %d is unexpectedly 0", i);
         }
     }
     REPORTER_ASSERT(reporter, !iter.next(&run));    // we're done
@@ -494,7 +511,7 @@ DEF_TEST(TextBlob_iter, reporter) {
 }
 
 DEF_TEST(TextBlob_getIntercepts, reporter) {
-    SkFont font;
+    SkFont font = ToolUtils::DefaultFont();
     font.setSize(16);
 
     SkPoint lowPos[1] = { SkPoint::Make(0, 5) };

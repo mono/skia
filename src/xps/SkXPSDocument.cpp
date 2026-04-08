@@ -76,20 +76,6 @@ void SkXPSDocument::onAbort() {}
 ///////////////////////////////////////////////////////////////////////////////
 
 sk_sp<SkDocument> SkXPS::MakeDocument(SkWStream* stream,
-                                      SkScalar dpi) {
-    IXpsOMObjectFactory* factory = nullptr;
-    auto hr = CoCreateInstance(
-        CLSID_XpsOMObjectFactory,
-        nullptr,
-        CLSCTX_INPROC_SERVER,
-        IID_PPV_ARGS(&factory));
-    if (!SUCCEEDED(hr)) {
-        return nullptr;
-    }
-    return SkXPS::MakeDocument (stream, factory, dpi);
-}
-
-sk_sp<SkDocument> SkXPS::MakeDocument(SkWStream* stream,
                                       IXpsOMObjectFactory* factoryPtr,
                                       SkScalar dpi) {
     SkTScopedComPtr<IXpsOMObjectFactory> factory(SkSafeRefComPtr(factoryPtr));

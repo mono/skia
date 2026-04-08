@@ -16,6 +16,7 @@ PYTHON_VERSION_COMPATIBILITY = "PY3"
 
 DEPS = [
   'flavor',
+  'infra',
   'recipe_engine/context',
   'recipe_engine/file',
   'recipe_engine/json',
@@ -23,7 +24,6 @@ DEPS = [
   'recipe_engine/step',
   'recipe_engine/time',
   'recipe_engine/properties',
-  'recipe_engine/python',
   'recipe_engine/raw_io',
   'run',
   'vars',
@@ -38,8 +38,8 @@ def perf_steps(api):
   """Run DM on lottie files with tracing turned on and then parse the output."""
   api.flavor.create_clean_device_dir(
         api.flavor.device_dirs.dm_dir)
-  lotties_host = api.path['start_dir'].join('lotties_with_assets')
-  lotties_device = api.path['start_dir'].join('lotties_with_assets')
+  lotties_host = api.path.start_dir.joinpath('lotties_with_assets')
+  lotties_device = api.path.start_dir.joinpath('lotties_with_assets')
   if 'Android' in api.vars.builder_cfg.get('extra_config'):
     # Due to http://b/72366966 and the fact that CIPD symlinks files in by default, we ran into
     # a strange "Function not implemented" error when trying to copy folders that contained
@@ -50,7 +50,7 @@ def perf_steps(api):
     api.flavor.create_clean_device_dir(lotties_device)
 
     # Make a temp directory and then copy to a *non-existing* subfolder (otherwise copytree crashes).
-    lotties_no_symlinks = api.path.mkdtemp('lwa').join('nosymlinks')
+    lotties_no_symlinks = api.path.mkdtemp('lwa').joinpath('nosymlinks')
     api.file.copytree('Copying files on host to remove symlinks', lotties_host, lotties_no_symlinks)
     lotties_host = lotties_no_symlinks
     api.flavor.copy_directory_contents_to_device(lotties_host, lotties_device)
@@ -137,7 +137,7 @@ def perf_steps(api):
       api.flavor.host_dirs.perf_data_dir)
   now = api.time.utcnow()
   ts = int(calendar.timegm(now.utctimetuple()))
-  json_path = api.flavor.host_dirs.perf_data_dir.join(
+  json_path = api.flavor.host_dirs.perf_data_dir.joinpath(
       'perf_%s_%d.json' % (api.properties['revision'], ts))
   json_contents = json.dumps(
       perf_json, indent=4, sort_keys=True, separators=(',', ': '))
@@ -173,59 +173,12 @@ def parse_trace(trace_json, lottie_filename, api):
     'frame_avg_us': 95,
   }
   """
+  script = api.infra.resource('parse_skottie_trace.py')
   step_result = api.run(
-      api.python.inline,
+      api.step,
       'parse %s trace' % lottie_filename,
-      program="""
-  import json
-  import sys
-
-  trace_output = sys.argv[1]
-  trace_json = json.loads(trace_output)
-  lottie_filename = sys.argv[2]
-  output_json_file = sys.argv[3]
-
-  perf_results = {}
-  frame_max = 0
-  frame_min = 0
-  frame_cumulative = 0
-  current_frame_duration = 0
-  total_frames = 0
-  frame_start = False
-  for trace in trace_json:
-    if '%s' in trace['name']:
-      if frame_start:
-        raise Exception('We got consecutive Animation::seek without a ' +
-                        'render. Something is wrong.')
-      frame_start = True
-      current_frame_duration = trace['dur']
-    elif '%s' in trace['name']:
-      if not frame_start:
-        raise Exception('We got an Animation::render without a seek first. ' +
-                        'Something is wrong.')
-
-      current_frame_duration += trace['dur']
-      frame_start = False
-      total_frames += 1
-      frame_max = max(frame_max, current_frame_duration)
-      frame_min = (min(frame_min, current_frame_duration)
-                   if frame_min else current_frame_duration)
-      frame_cumulative += current_frame_duration
-
-  expected_dm_frames = %d
-  if total_frames != expected_dm_frames:
-    raise Exception(
-        'Got ' + str(total_frames) + ' frames instead of ' +
-        str(expected_dm_frames))
-  perf_results['frame_max_us'] = frame_max
-  perf_results['frame_min_us'] = frame_min
-  perf_results['frame_avg_us'] = frame_cumulative/total_frames
-
-  # Write perf_results to the output json.
-  with open(output_json_file, 'w') as f:
-    f.write(json.dumps(perf_results))
-  """ % (SEEK_TRACE_NAME, RENDER_TRACE_NAME, EXPECTED_DM_FRAMES),
-  args=[trace_json, lottie_filename, api.json.output()])
+      cmd=['python3', script, trace_json, lottie_filename, api.json.output(),
+           SEEK_TRACE_NAME, RENDER_TRACE_NAME, EXPECTED_DM_FRAMES])
 
   # Sanitize float outputs to 2 precision points.
   output = dict(step_result.json.output)

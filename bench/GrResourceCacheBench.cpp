@@ -8,7 +8,7 @@
 #include "bench/Benchmark.h"
 
 #include "include/core/SkCanvas.h"
-#include "include/gpu/GrDirectContext.h"
+#include "include/gpu/ganesh/GrDirectContext.h"
 #include "src/gpu/ganesh/GrDirectContextPriv.h"
 #include "src/gpu/ganesh/GrGpu.h"
 #include "src/gpu/ganesh/GrGpuResource.h"
@@ -62,7 +62,7 @@ public:
     }
 
     bool isSuitableFor(Backend backend) override {
-        return backend == kNonRendering_Backend;
+        return backend == Backend::kNonRendering;
     }
 protected:
     const char* onGetName() override {
@@ -108,7 +108,7 @@ public:
     }
 
     bool isSuitableFor(Backend backend) override {
-        return backend == kNonRendering_Backend;
+        return backend == Backend::kNonRendering;
     }
 protected:
     const char* onGetName() override {

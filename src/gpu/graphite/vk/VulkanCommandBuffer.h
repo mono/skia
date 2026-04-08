@@ -13,17 +13,21 @@
 #include "include/gpu/vk/VulkanTypes.h"
 #include "src/gpu/graphite/DrawPass.h"
 #include "src/gpu/graphite/vk/VulkanGraphicsPipeline.h"
+#include "src/gpu/graphite/vk/VulkanResourceProvider.h"
 
 namespace skgpu::graphite {
 
-class VulkanResourceProvider;
+class VulkanBuffer;
+class VulkanDescriptorSet;
 class VulkanSharedContext;
+class VulkanTexture;
 class Buffer;
 
 class VulkanCommandBuffer final : public CommandBuffer {
 public:
     static std::unique_ptr<VulkanCommandBuffer> Make(const VulkanSharedContext*,
-                                                     VulkanResourceProvider*);
+                                                     VulkanResourceProvider*,
+                                                     Protected);
     ~VulkanCommandBuffer() override;
 
     bool setNewCommandBufferResources() override;
@@ -37,11 +41,9 @@ public:
     void addBufferMemoryBarrier(const Resource* resource,
                                 VkPipelineStageFlags srcStageMask,
                                 VkPipelineStageFlags dstStageMask,
-                                bool byRegion,
                                 VkBufferMemoryBarrier* barrier);
     void addBufferMemoryBarrier(VkPipelineStageFlags srcStageMask,
                                 VkPipelineStageFlags dstStageMask,
-                                bool byRegion,
                                 VkBufferMemoryBarrier* barrier);
     void addImageMemoryBarrier(const Resource*,
                                VkPipelineStageFlags srcStageMask,
@@ -53,7 +55,10 @@ private:
     VulkanCommandBuffer(VkCommandPool pool,
                         VkCommandBuffer primaryCommandBuffer,
                         const VulkanSharedContext* sharedContext,
-                        VulkanResourceProvider* resourceProvider);
+                        VulkanResourceProvider* resourceProvider,
+                        Protected);
+
+    ResourceProvider* resourceProvider() const override { return fResourceProvider; }
 
     void onResetCommandBuffer() override;
 
@@ -68,13 +73,15 @@ private:
                                       const MutableTextureState* newState) override;
 
     bool onAddRenderPass(const RenderPassDesc&,
-                        const Texture* colorTexture,
-                        const Texture* resolveTexture,
-                        const Texture* depthStencilTexture,
-                        SkRect viewport,
-                        const DrawPassList&) override;
+                         SkIRect renderPassBounds,
+                         const Texture* colorTexture,
+                         const Texture* resolveTexture,
+                         const Texture* depthStencilTexture,
+                         SkIRect viewport,
+                         const DrawPassList&) override;
 
     bool beginRenderPass(const RenderPassDesc&,
+                         SkIRect renderPassBounds,
                          const Texture* colorTexture,
                          const Texture* resolveTexture,
                          const Texture* depthStencilTexture);
@@ -84,14 +91,15 @@ private:
 
     // Track descriptor changes for binding prior to draw calls
     void recordBufferBindingInfo(const BindBufferInfo& info, UniformSlot);
+    // Either both arguments are non-null, or both must be null (to reset or handle just the
+    // dstCopy intrinsic w/o requiring a DrawPass command).
     void recordTextureAndSamplerDescSet(
-            const DrawPass&, const DrawPassCommands::BindTexturesAndSamplers&);
+            const DrawPass*, const DrawPassCommands::BindTexturesAndSamplers*);
 
     void bindTextureSamplers();
     void bindUniformBuffers();
     void syncDescriptorSets();
 
-    // TODO: Populate the following methods to handle the possible commands in a draw pass.
     void bindGraphicsPipeline(const GraphicsPipeline*);
     void setBlendConstants(float* blendConstants);
     void bindDrawBuffers(const BindBufferInfo& vertices,
@@ -120,7 +128,7 @@ private:
 
     // TODO: The virtuals in this class have not yet been implemented as we still haven't
     // implemented the objects they use.
-    bool onAddComputePass(const DispatchGroupList&) override;
+    bool onAddComputePass(DispatchGroupSpan) override;
 
     bool onCopyBufferToBuffer(const Buffer* srcBuffer,
                               size_t srcOffset,
@@ -142,6 +150,11 @@ private:
                                 SkIPoint dstPoint,
                                 int mipLevel) override;
 
+    bool pushConstants(VkShaderStageFlags stageFlags,
+                       uint32_t offset,
+                       uint32_t size,
+                       const void* values);
+
     bool onSynchronizeBufferToCpu(const Buffer*, bool* outDidResultInWork) override;
     bool onClearBuffer(const Buffer*, size_t offset, size_t size) override;
 
@@ -156,6 +169,22 @@ private:
                          BarrierType barrierType,
                          void* barrier);
     void submitPipelineBarriers(bool forSelfDependency = false);
+
+    // Update the intrinsic constant uniform buffer and binding to reflect the updated viewport.
+    // The resource provider is responsible for finding a suitable buffer and managing its lifetime.
+    bool updateIntrinsicUniforms(SkIRect viewport);
+
+    bool loadMSAAFromResolve(const RenderPassDesc&,
+                             VulkanTexture& resolveTexture,
+                             SkISize dstDimensions,
+                             SkIRect nativeBounds);
+    bool updateAndBindLoadMSAAInputAttachment(const VulkanTexture& resolveTexture);
+    void updateBuffer(const VulkanBuffer* buffer,
+                      const void* data,
+                      size_t dataSize,
+                      size_t dstOffset = 0);
+    void nextSubpass();
+    void setViewport(SkIRect viewport);
 
     VkCommandPool fPool;
     VkCommandBuffer fPrimaryCommandBuffer;
@@ -187,15 +216,10 @@ private:
     bool fBindUniformBuffers = false;
     bool fBindTextureSamplers = false;
 
-    sk_sp<Buffer> fIntrinsicUniformBuffer;
-    std::array<BindBufferInfo, VulkanGraphicsPipeline::kNumUniformBuffers> fUniformBuffersToBind
-            = {{{nullptr, 0}}};
+    std::array<BindBufferInfo, VulkanGraphicsPipeline::kNumUniformBuffers> fUniformBuffersToBind;
     VkDescriptorSet fTextureSamplerDescSetToBind = VK_NULL_HANDLE;
 
     int fNumTextureSamplers = 0;
-    // Store the current viewport so we can calculate rtAdjust when it is time to populate / bind
-    // the intrinsic uniform buffer.
-    SkRect fCurrentViewport;
 
     VkBuffer fBoundInputBuffers[VulkanGraphicsPipeline::kNumInputBuffers];
     size_t fBoundInputBufferOffsets[VulkanGraphicsPipeline::kNumInputBuffers];
@@ -206,9 +230,11 @@ private:
     size_t fBoundIndirectBufferOffset = 0;
 
     float fCachedBlendConstant[4];
+
+    class IntrinsicConstantsManager;
+    std::unique_ptr<IntrinsicConstantsManager> fIntrinsicConstants;
 };
 
 } // namespace skgpu::graphite
 
 #endif // skgpu_graphite_VulkanCommandBuffer_DEFINED
-

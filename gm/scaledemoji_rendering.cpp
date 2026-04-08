@@ -21,6 +21,7 @@
 #include "src/core/SkEnumerate.h"
 #include "tools/Resources.h"
 #include "tools/ToolUtils.h"
+#include "tools/fonts/FontToolUtils.h"
 
 #include <string.h>
 #include <initializer_list>
@@ -31,29 +32,19 @@ public:
     ScaledEmojiRenderingGM() {}
 
 protected:
-    struct Test {
-        enum class Source { Resource, Portable };
-        Source const fontSource;
-        char const * const fontName;
-        char const * const text;
+    static constexpr ToolUtils::EmojiFontFormat formatsToTest[] = {
+            ToolUtils::EmojiFontFormat::ColrV0,
+            ToolUtils::EmojiFontFormat::Sbix,
+            ToolUtils::EmojiFontFormat::Cbdt,
+            ToolUtils::EmojiFontFormat::Test,
+            ToolUtils::EmojiFontFormat::Svg,
     };
-    static constexpr char const * const sampleText = ToolUtils::emoji_sample_text();
-    static constexpr const Test tests[] = {
-        { Test::Source::Resource, "fonts/colr.ttf"     , sampleText  },
-        { Test::Source::Resource, "fonts/sbix.ttf"     , sampleText  },
-        { Test::Source::Resource, "fonts/cbdt.ttf"     , sampleText  },
-        { Test::Source::Portable, "Emoji"              , sampleText  },
-        { Test::Source::Resource, "fonts/SampleSVG.ttf", "abcdefghij" },
-    };
-    sk_sp<SkTypeface> typefaces[std::size(tests)];
+    ToolUtils::EmojiTestSample fontSamples[std::size(formatsToTest)];
     void onOnceBeforeDraw() override {
-        for (auto&& [i, test] : SkMakeEnumerate(tests)) {
-            if (test.fontSource == Test::Source::Resource) {
-                typefaces[i] = MakeResourceAsTypeface(test.fontName);
-            } else if (test.fontSource == Test::Source::Portable) {
-                typefaces[i] = ToolUtils::create_portable_typeface(test.fontName, SkFontStyle());
-            } else {
-                SK_ABORT("Unknown test type");
+        for (auto&& [i, format] : SkMakeEnumerate(formatsToTest)) {
+            fontSamples[i] = ToolUtils::EmojiSample(format);
+            if (!fontSamples[i].typeface) {
+                fontSamples[i].typeface = ToolUtils::DefaultTypeface();
             }
         }
     }
@@ -77,11 +68,11 @@ protected:
         advancePaint.setColor(SK_ColorRED);
 
         SkScalar y = 0;
-        for (auto&& [i, test] : SkMakeEnumerate(tests)) {
-            SkFont font(typefaces[i]);
+        for (auto& sample : fontSamples) {
+            SkFont font(sample.typeface);
             font.setEdging(SkFont::Edging::kAlias);
 
-            const char* text = test.text;
+            const char* text = sample.sampleText;
             SkFontMetrics metrics;
 
             for (SkScalar textSize : { 70, 150 }) {

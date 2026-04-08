@@ -1,12 +1,5 @@
-/*
-
-:34:3 warning: code is unreachable
-  return f32();
-  ^^^^^^
-
-*/
-
 diagnostic(off, derivative_uniformity);
+diagnostic(off, chromium.unreachable_code);
 struct FSOut {
   @location(0) sk_FragColor: vec4<f32>,
 };
@@ -25,10 +18,10 @@ fn soft_light_component_Qhh2h2(s: vec2<f32>, d: vec2<f32>) -> f32 {
     } else {
       if (4.0 * d.x) <= d.y {
         {
-          var DSqd: f32 = d.x * d.x;
-          var DCub: f32 = DSqd * d.x;
-          var DaSqd: f32 = d.y * d.y;
-          var DaCub: f32 = DaSqd * d.y;
+          let DSqd: f32 = d.x * d.x;
+          let DCub: f32 = DSqd * d.x;
+          let DaSqd: f32 = d.y * d.y;
+          let DaCub: f32 = DaSqd * d.y;
           return (((DaSqd * (s.x - d.x * ((3.0 * s.y - 6.0 * s.x) - 1.0)) + ((12.0 * d.y) * DSqd) * (s.y - 2.0 * s.x)) - (16.0 * DCub) * (s.y - 2.0 * s.x)) - DaCub * s.x) / (DaSqd + sk_PrivkGuardedDivideEpsilon);
         }
       } else {
@@ -43,10 +36,16 @@ fn soft_light_component_Qhh2h2(s: vec2<f32>, d: vec2<f32>) -> f32 {
 }
 fn _skslMain(_stageOut: ptr<function, FSOut>) {
   {
-    let _skTemp1 = soft_light_component_Qhh2h2(_globalUniforms.src.xw, _globalUniforms.dst.xw);
-    let _skTemp2 = soft_light_component_Qhh2h2(_globalUniforms.src.yw, _globalUniforms.dst.yw);
-    let _skTemp3 = soft_light_component_Qhh2h2(_globalUniforms.src.zw, _globalUniforms.dst.zw);
-    (*_stageOut).sk_FragColor = select(vec4<f32>(_skTemp1, _skTemp2, _skTemp3, _globalUniforms.src.w + (1.0 - _globalUniforms.src.w) * _globalUniforms.dst.w), _globalUniforms.src, vec4<bool>(_globalUniforms.dst.w == 0.0));
+    var _skTemp1: vec4<f32>;
+    if _globalUniforms.dst.w == 0.0 {
+      _skTemp1 = _globalUniforms.src;
+    } else {
+      let _skTemp2 = soft_light_component_Qhh2h2(_globalUniforms.src.xw, _globalUniforms.dst.xw);
+      let _skTemp3 = soft_light_component_Qhh2h2(_globalUniforms.src.yw, _globalUniforms.dst.yw);
+      let _skTemp4 = soft_light_component_Qhh2h2(_globalUniforms.src.zw, _globalUniforms.dst.zw);
+      _skTemp1 = vec4<f32>(_skTemp2, _skTemp3, _skTemp4, _globalUniforms.src.w + (1.0 - _globalUniforms.src.w) * _globalUniforms.dst.w);
+    }
+    (*_stageOut).sk_FragColor = _skTemp1;
   }
 }
 @fragment fn main() -> FSOut {

@@ -8,20 +8,27 @@
 #ifndef GrDrawOpAtlas_DEFINED
 #define GrDrawOpAtlas_DEFINED
 
-#include <cmath>
-#include <vector>
-
-#include "include/gpu/GrBackendSurface.h"
-#include "src/core/SkIPoint16.h"
+#include "include/core/SkRefCnt.h"
+#include "include/core/SkSize.h"
+#include "include/gpu/ganesh/GrBackendSurface.h"
+#include "include/private/base/SkAssert.h"
+#include "include/private/base/SkDebug.h"
 #include "src/gpu/AtlasTypes.h"
-#include "src/gpu/RectanizerSkyline.h"
 #include "src/gpu/ganesh/GrDeferredUpload.h"
 #include "src/gpu/ganesh/GrSurfaceProxyView.h"
+
+#include <cstddef>
+#include <cstdint>
+#include <memory>
+#include <string>
+#include <string_view>
+#include <vector>
 
 class GrOnFlushResourceProvider;
 class GrProxyProvider;
 class GrResourceProvider;
 class GrTextureProxy;
+enum SkColorType : int;
 
 /**
  * This class manages one or more atlas textures on behalf of GrDrawOps. The draw ops that use the
@@ -162,10 +169,9 @@ public:
         return fMaxPages;
     }
 
-    int numAllocated_TestingOnly() const;
-    void setMaxPages_TestingOnly(uint32_t maxPages);
-
 private:
+    friend class GrDrawOpAtlasTools;
+
     GrDrawOpAtlas(GrProxyProvider*, const GrBackendFormat& format, SkColorType, size_t bpp,
                   int width, int height, int plotWidth, int plotHeight,
                   skgpu::AtlasGenerationCounter* generationCounter,
@@ -173,7 +179,7 @@ private:
 
     inline bool updatePlot(GrDeferredUploadTarget*, skgpu::AtlasLocator*, skgpu::Plot*);
 
-    inline void makeMRU(skgpu::Plot* plot, int pageIdx) {
+    inline void makeMRU(skgpu::Plot* plot, uint32_t pageIdx) {
         if (fPages[pageIdx].fPlotList.head() == plot) {
             return;
         }

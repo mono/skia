@@ -8,31 +8,41 @@
 #ifndef skgpu_graphite_DawnBuffer_DEFINED
 #define skgpu_graphite_DawnBuffer_DEFINED
 
-#include "webgpu/webgpu_cpp.h"
+#include "webgpu/webgpu_cpp.h"  // NO_G3_REWRITE
 
 #include "include/core/SkRefCnt.h"
 #include "include/gpu/graphite/dawn/DawnTypes.h"
+#include "include/private/base/SkTArray.h"
+#include "src/gpu/RefCntedCallback.h"
 #include "src/gpu/graphite/Buffer.h"
+#include "src/gpu/graphite/dawn/DawnAsyncWait.h"
 #include "src/gpu/graphite/dawn/DawnSharedContext.h"
 
 namespace skgpu::graphite {
 
 class DawnBuffer : public Buffer {
 public:
-    static sk_sp<Buffer> Make(const DawnSharedContext*,
-                              size_t size,
-                              BufferType type,
-                              AccessPattern);
+    static sk_sp<DawnBuffer> Make(const DawnSharedContext*,
+                                  size_t size,
+                                  BufferType type,
+                                  AccessPattern);
+
+    bool isUnmappable() const override;
 
     const wgpu::Buffer& dawnBuffer() const { return fBuffer; }
 
 private:
-    DawnBuffer(const DawnSharedContext*,
-               size_t size,
-               wgpu::Buffer);
+    DawnBuffer(const DawnSharedContext*, size_t size, wgpu::Buffer, void* mapAtCreationPtr);
 
+#if defined(__EMSCRIPTEN__)
+    void prepareForReturnToCache(const std::function<void()>& takeRef) override;
+    void onAsyncMap(GpuFinishedProc, GpuFinishedContext) override;
+#endif
     void onMap() override;
     void onUnmap() override;
+
+    template <typename StatusT>
+    void mapCallback(StatusT status, const char* message);
 
     void freeGpuData() override;
 
@@ -40,7 +50,11 @@ private:
         return static_cast<const DawnSharedContext*>(this->sharedContext());
     }
 
+    void setBackendLabel(char const* label) override;
+
     wgpu::Buffer fBuffer;
+    SkMutex fAsyncMutex;
+    skia_private::TArray<sk_sp<RefCntedCallback>> fAsyncMapCallbacks SK_GUARDED_BY(fAsyncMutex);
 };
 
 } // namespace skgpu::graphite

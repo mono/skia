@@ -26,6 +26,7 @@
 #include "include/gpu/ganesh/SkSurfaceGanesh.h"
 #include "include/private/base/SkTArray.h"
 #include "tools/ToolUtils.h"
+#include "tools/fonts/FontToolUtils.h"
 
 #include <initializer_list>
 
@@ -47,7 +48,7 @@ protected:
 
     void onOnceBeforeDraw() override {
         for (int i = 0; i < 3; ++i) {
-            SkFont font;
+            SkFont font = ToolUtils::DefaultPortableFont();
             font.setSize(32);
             font.setEdging(i == 0 ? SkFont::Edging::kAlias :
                            (i == 1 ? SkFont::Edging::kAntiAlias :
@@ -82,7 +83,7 @@ protected:
             for (auto pm : {PerspMode::kNone, PerspMode::kX, PerspMode::kY, PerspMode::kXY}) {
                 for (auto& blob : fBlobs) {
                     for (bool clip : {false, true}) {
-                        canvas->save();
+                        SkAutoCanvasRestore acr(canvas, true);
                         SkScalar w = blob->bounds().width();
                         SkScalar h = blob->bounds().height();
                         if (clip) {
@@ -93,7 +94,6 @@ protected:
                         this->drawBlob(canvas, blob.get(), SK_ColorBLACK, x, y + h, pm, twm);
                         x += w + 20.f;
                         maxH = std::max(h, maxH);
-                        canvas->restore();
                     }
                 }
                 x = 0;

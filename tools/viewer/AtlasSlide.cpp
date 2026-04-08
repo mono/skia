@@ -14,6 +14,7 @@
 #include "include/utils/SkTextUtils.h"
 #include "src/base/SkRandom.h"
 #include "src/core/SkPaintPriv.h"
+#include "tools/fonts/FontToolUtils.h"
 #include "tools/viewer/Slide.h"
 
 typedef void (*DrawAtlasProc)(SkCanvas*, SkImage*, const SkRSXform[], const SkRect[],
@@ -52,7 +53,7 @@ static sk_sp<SkImage> make_atlas(int atlasSize, int cellSize) {
 
     const SkScalar half = cellSize * SK_ScalarHalf;
     const char* s = "01234567890!@#$%^&*=+<>?abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
-    SkFont font(nullptr, 28);
+    SkFont font(ToolUtils::DefaultTypeface(), 28);
 
     int i = 0;
     for (int y = 0; y < atlasSize; y += cellSize) {
@@ -70,11 +71,9 @@ static sk_sp<SkImage> make_atlas(int atlasSize, int cellSize) {
 }
 
 class DrawAtlasDrawable : public SkDrawable {
-    enum {
-        kMaxScale = 2,
-        kCellSize = 32,
-        kAtlasSize = 512,
-    };
+    static constexpr int kMaxScale = 2;
+    static constexpr int kCellSize = 32;
+    static constexpr int kAtlasSize = 512;
 
     struct Rec {
         SkPoint     fCenter;

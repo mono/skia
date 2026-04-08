@@ -86,7 +86,9 @@ private:
     // Calculates the required input to fill the crop rect, given the desired output that it will
     // be tiled across.
     skif::LayerSpace<SkIRect> requiredInput(const skif::Mapping& mapping,
-                                            const skif::LayerSpace<SkIRect>& outputBounds) const;
+                                            const skif::LayerSpace<SkIRect>& outputBounds) const {
+        return  this->cropRect(mapping).relevantSubset(outputBounds, fTileMode);
+    }
 
     skif::ParameterSpace<SkRect> fCropRect;
     SkTileMode fTileMode;
@@ -157,33 +159,6 @@ void SkCropImageFilter::flatten(SkWriteBuffer& buffer) const {
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
-skif::LayerSpace<SkIRect> SkCropImageFilter::requiredInput(
-        const skif::Mapping& mapping,
-        const skif::LayerSpace<SkIRect>& outputBounds) const {
-    skif::LayerSpace<SkIRect> crop = this->cropRect(mapping);
-
-    if (fTileMode == SkTileMode::kRepeat || fTileMode == SkTileMode::kMirror) {
-        // For simplicity, try and fill the full crop rect for periodic tile modes. Hypothetically
-        // if the output would only show one period of the image, we could calculate the optimal
-        // subset similar to decal/clamp tiles, but that would require exposing more internals of
-        // FilterResult::applyCrop to the rest of the SkImageFilter system.
-        return crop;
-    } else {
-        // Both clamp and decal won't show content inside cropRect that's beyond 'outputBounds'
-        if (!crop.intersect(outputBounds)) {
-            if (fTileMode == SkTileMode::kClamp) {
-                // Except for clamping when there's no intersection; in that case the closest
-                // row/column/corner covers the entire output bounds.
-                crop = skif::LayerSpace<SkIRect>(
-                        SkRectPriv::ClosestDisjointEdge(SkIRect(crop), SkIRect(outputBounds)));
-            } else {
-                crop = skif::LayerSpace<SkIRect>::Empty();
-            }
-        }
-        return crop;
-    }
-}
-
 skif::FilterResult SkCropImageFilter::onFilterImage(const skif::Context& context) const {
     skif::LayerSpace<SkIRect> cropInput = this->requiredInput(context.mapping(),
                                                               context.desiredOutput());
@@ -242,23 +217,9 @@ SkRect SkCropImageFilter::computeFastBounds(const SkRect& bounds) const {
     // TODO(michaelludwig) - This is conceptually very similar to calling onGetOutputLayerBounds()
     // with an identity skif::Mapping (hence why fCropRect can be used directly), but it also does
     // not involve any rounding to pixels for both the content bounds or the output.
-    // FIXME(michaelludwig) - There is a limitation in the current system for "fast bounds", since
-    // there's no way for the crop image filter to hide the fact that a child affects transparent
-    // black, so the entire DAG still is treated as if it cannot compute fast bounds. If we migrate
-    // getOutputLayerBounds() to operate on float rects, and to report infinite bounds for
-    // nodes that affect transparent black, then fastBounds() and onAffectsTransparentBlack() impls
-    // can go away entirely. That's not feasible until everything else is migrated onto the new crop
-    // rect filter and the new APIs.
-    SkRect inputBounds = bounds;
-    if (this->getInput(0)) {
-        if (this->getInput(0)->canComputeFastBounds()) {
-            inputBounds = this->getInput(0)->computeFastBounds(bounds);
-        } else {
-            // The input bounds to the crop are effectively infinite
-            inputBounds = SkRectPriv::MakeLargeS32();
-        }
-    }
-
+    // NOTE: This relies on all image filters returning an infinite bounds when they affect
+    // transparent black.
+    SkRect inputBounds = this->getInput(0) ? this->getInput(0)->computeFastBounds(bounds) : bounds;
     if (!inputBounds.intersect(SkRect(fCropRect))) {
         return SkRect::MakeEmpty();
     }

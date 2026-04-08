@@ -9,15 +9,17 @@
 #include "include/core/SkColorFilter.h"
 #include "include/core/SkColorPriv.h"
 #include "include/core/SkFont.h"
+#include "include/core/SkFontMgr.h"
 #include "include/core/SkImage.h"
 #include "include/core/SkTypeface.h"
 #include "src/base/SkRandom.h"
 #include "src/base/SkTime.h"
 #include "src/base/SkUTF.h"
+#include "tools/fonts/FontToolUtils.h"
 #include "tools/viewer/Slide.h"
 
 #if defined(SK_GANESH)
-#include "include/gpu/GrDirectContext.h"
+#include "include/gpu/ganesh/GrDirectContext.h"
 #include "src/gpu/ganesh/GrDirectContextPriv.h"
 
 using MaskFormat = skgpu::MaskFormat;
@@ -62,7 +64,7 @@ public:
     }
 
     void draw(SkCanvas* canvas) override {
-        SkFont font(SkTypeface::MakeFromFile("/skimages/samplefont.ttf"));
+        SkFont font(ToolUtils::TestFontMgr()->makeFromFile("/skimages/samplefont.ttf"));
 
         SkPaint paint;
         paint.setAntiAlias(true);

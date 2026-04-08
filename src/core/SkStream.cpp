@@ -334,19 +334,15 @@ void SkMemoryStream::setData(sk_sp<SkData> data) {
     fOffset = 0;
 }
 
-void SkMemoryStream::skipToAlign4() {
-    // cast to remove unary-minus warning
-    fOffset += -(int)fOffset & 0x03;
-}
-
 size_t SkMemoryStream::read(void* buffer, size_t size) {
     size_t dataSize = fData->size();
 
+    SkASSERT(fOffset <= dataSize);
     if (size > dataSize - fOffset) {
         size = dataSize - fOffset;
     }
     if (buffer) {
-        memcpy(buffer, fData->bytes() + fOffset, size);
+        sk_careful_memcpy(buffer, fData->bytes() + fOffset, size);
     }
     fOffset += size;
     return size;
@@ -541,28 +537,29 @@ bool SkDynamicMemoryWStream::write(const void* buffer, size_t count) {
         SkASSERT(buffer);
         size_t size;
 
-        if (fTail) {
-            if (fTail->avail() > 0) {
-                size = std::min(fTail->avail(), count);
-                buffer = fTail->append(buffer, size);
-                SkASSERT(count >= size);
-                count -= size;
-                if (count == 0) {
-                    return true;
-                }
+        if (fTail && fTail->avail() > 0) {
+            size = std::min(fTail->avail(), count);
+            buffer = fTail->append(buffer, size);
+            SkASSERT(count >= size);
+            count -= size;
+            if (count == 0) {
+                return true;
             }
-            // If we get here, we've just exhausted fTail, so update our tracker
-            fBytesWrittenBeforeTail += fTail->written();
         }
 
         size = std::max<size_t>(count, SkDynamicMemoryWStream_MinBlockSize - sizeof(Block));
         size = SkAlign4(size);  // ensure we're always a multiple of 4 (see padToAlign4())
 
-        Block* block = (Block*)sk_malloc_throw(sizeof(Block) + size);
+        Block* block = (Block*)sk_malloc_canfail(sizeof(Block) + size);
+        if (!block) {
+            this->validate();
+            return false;
+        }
         block->init(size);
         block->append(buffer, count);
 
-        if (fTail != nullptr) {
+        if (fTail) {
+            fBytesWrittenBeforeTail += fTail->written();
             fTail->fNext = block;
         } else {
             fHead = fTail = block;
@@ -606,7 +603,6 @@ void SkDynamicMemoryWStream::prependToAndReset(SkDynamicMemoryWStream* dst) {
     dst->fBytesWrittenBeforeTail += fBytesWrittenBeforeTail + fTail->written();
     fHead = fTail = nullptr;
     fBytesWrittenBeforeTail = 0;
-    return;
 }
 
 

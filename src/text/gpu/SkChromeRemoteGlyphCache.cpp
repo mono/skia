@@ -42,12 +42,11 @@
 #include "src/core/SkWriteBuffer.h"
 #include "src/text/GlyphRun.h"
 #include "src/text/StrikeForGPU.h"
-#include "src/text/gpu/SDFTControl.h"
 #include "src/text/gpu/SubRunAllocator.h"
 #include "src/text/gpu/SubRunContainer.h"
+#include "src/text/gpu/SubRunControl.h"
 #include "src/text/gpu/TextBlob.h"
 
-#include <atomic>
 #include <cstring>
 #include <memory>
 #include <optional>
@@ -132,6 +131,7 @@ private:
 
     // The context built using fDescriptor
     std::unique_ptr<SkScalerContext> fContext;
+    SkTypefaceID fStrikeSpecTypefaceId;
 
     // fStrikeSpec is set every time getOrCreateCache is called. This allows the code to maintain
     // the fContext as lazy as possible.
@@ -161,7 +161,8 @@ RemoteStrike::RemoteStrike(
         , fDiscardableHandleId(discardableHandleId)
         , fRoundingSpec{context->isSubpixel(), context->computeAxisAlignmentForHText()}
         // N.B. context must come last because it is used above.
-        , fContext{std::move(context)} {
+        , fContext{std::move(context)}
+        , fStrikeSpecTypefaceId(strikeSpec.typeface().uniqueID()) {
     SkASSERT(fDescriptor.getDesc() != nullptr);
     SkASSERT(fContext != nullptr);
 }
@@ -169,7 +170,9 @@ RemoteStrike::RemoteStrike(
 void RemoteStrike::writePendingGlyphs(SkWriteBuffer& buffer) {
     SkASSERT(this->hasPendingGlyphs());
 
-    buffer.writeUInt(fContext->getTypeface()->uniqueID());
+    // ScalerContext should not hold to the typeface, so we should not use its ID.
+    // We should use StrikeSpec typeface and its ID instead.
+    buffer.writeUInt(fStrikeSpecTypefaceId);
     buffer.writeUInt(fDiscardableHandleId);
     fDescriptor.getDesc()->flatten(buffer);
 
@@ -449,31 +452,32 @@ class GlyphTrackingDevice final : public SkNoPixelsDevice {
 public:
     GlyphTrackingDevice(
             const SkISize& dimensions, const SkSurfaceProps& props, SkStrikeServerImpl* server,
-            sk_sp<SkColorSpace> colorSpace, sktext::gpu::SDFTControl SDFTControl)
+            sk_sp<SkColorSpace> colorSpace, sktext::gpu::SubRunControl SubRunControl)
             : SkNoPixelsDevice(SkIRect::MakeSize(dimensions), props, std::move(colorSpace))
             , fStrikeServerImpl(server)
-            , fSDFTControl(SDFTControl) {
+            , fSubRunControl(SubRunControl) {
         SkASSERT(fStrikeServerImpl != nullptr);
     }
 
     sk_sp<SkDevice> createDevice(const CreateInfo& cinfo, const SkPaint*) override {
-        const SkSurfaceProps surfaceProps(this->surfaceProps().flags(), cinfo.fPixelGeometry);
+        const SkSurfaceProps surfaceProps =
+            this->surfaceProps().cloneWithPixelGeometry(cinfo.fPixelGeometry);
+
         return sk_make_sp<GlyphTrackingDevice>(cinfo.fInfo.dimensions(),
                                                surfaceProps,
                                                fStrikeServerImpl,
                                                cinfo.fInfo.refColorSpace(),
-                                               fSDFTControl);
+                                               fSubRunControl);
     }
 
     SkStrikeDeviceInfo strikeDeviceInfo() const override {
-        return {this->surfaceProps(), this->scalerContextFlags(), &fSDFTControl};
+        return {this->surfaceProps(), this->scalerContextFlags(), &fSubRunControl};
     }
 
 protected:
     void onDrawGlyphRunList(SkCanvas*,
                             const sktext::GlyphRunList& glyphRunList,
-                            const SkPaint& initialPaint,
-                            const SkPaint& drawingPaint) override {
+                            const SkPaint& paint) override {
         SkMatrix drawMatrix = this->localToDevice();
         drawMatrix.preTranslate(glyphRunList.origin().x(), glyphRunList.origin().y());
 
@@ -482,7 +486,7 @@ protected:
         STSubRunAllocator<sizeof(SubRunContainer), alignof(SubRunContainer)> tempAlloc;
         auto container = SubRunContainer::MakeInAlloc(glyphRunList,
                                                       drawMatrix,
-                                                      drawingPaint,
+                                                      paint,
                                                       this->strikeDeviceInfo(),
                                                       fStrikeServerImpl,
                                                       &tempAlloc,
@@ -493,8 +497,7 @@ protected:
     }
 
     sk_sp<sktext::gpu::Slug> convertGlyphRunListToSlug(const sktext::GlyphRunList& glyphRunList,
-                                                       const SkPaint& initialPaint,
-                                                       const SkPaint& drawingPaint) override {
+                                                       const SkPaint& paint) override {
         // Full matrix for placing glyphs.
         SkMatrix positionMatrix = this->localToDevice();
         positionMatrix.preTranslate(glyphRunList.origin().x(), glyphRunList.origin().y());
@@ -502,15 +505,14 @@ protected:
         // Use the SkStrikeServer's strike cache to generate the Slug.
         return sktext::gpu::MakeSlug(this->localToDevice(),
                                      glyphRunList,
-                                     initialPaint,
-                                     drawingPaint,
+                                     paint,
                                      this->strikeDeviceInfo(),
                                      fStrikeServerImpl);
     }
 
 private:
     SkStrikeServerImpl* const fStrikeServerImpl;
-    const sktext::gpu::SDFTControl fSDFTControl;
+    const sktext::gpu::SubRunControl fSubRunControl;
 };
 
 // -- SkStrikeServer -------------------------------------------------------------------------------
@@ -537,13 +539,15 @@ std::unique_ptr<SkCanvas> SkStrikeServer::makeAnalysisCanvas(int width, int heig
 #else
     constexpr float kGlyphsAsPathsFontSize = 324.f;
 #endif
-    auto control = sktext::gpu::SDFTControl{DFTSupport,
+    // There is no need to set forcePathAA for the remote glyph cache as that control impacts
+    // *how* the glyphs are rendered as paths, not *when* they are rendered as paths.
+    auto control = sktext::gpu::SubRunControl{DFTSupport,
                                             props.isUseDeviceIndependentFonts(),
                                             DFTPerspSupport,
                                             kMinDistanceFieldFontSize,
                                             kGlyphsAsPathsFontSize};
 #else
-    auto control = sktext::gpu::SDFTControl{};
+    auto control = sktext::gpu::SubRunControl{};
 #endif
 
     sk_sp<SkDevice> trackingDevice = sk_make_sp<GlyphTrackingDevice>(
@@ -817,7 +821,6 @@ bool SkStrikeClient::translateTypefaceID(SkAutoDescriptor* descriptor) const {
 }
 
 sk_sp<sktext::gpu::Slug> SkStrikeClient::deserializeSlugForTest(const void* data,
-                                                                size_t size,
-                                                                const SkDeserialProcs& p) const {
-    return sktext::gpu::Slug::Deserialize(data, size, this, p);
+                                                                size_t size) const {
+    return sktext::gpu::Slug::Deserialize(data, size, this);
 }

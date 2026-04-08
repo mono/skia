@@ -23,27 +23,29 @@
 #define SK_FIRST_ARG(...) SK_FIRST_ARG_((__VA_ARGS__, ))
 
 #if defined(SK_GANESH)
-#    include "include/gpu/GrDirectContext.h"
-#    include "include/gpu/GrBackendSurface.h"
-#    include "include/gpu/gl/GrGLInterface.h"
-#    include "include/gpu/gl/GrGLAssembleInterface.h"
+#    include "include/gpu/ganesh/GrDirectContext.h"
+#    include "include/gpu/ganesh/GrBackendSurface.h"
+#    include "include/gpu/ganesh/gl/GrGLInterface.h"
+#    include "include/gpu/ganesh/gl/GrGLAssembleInterface.h"
 #    define SK_ONLY_GPU(...) SK_FIRST_ARG(__VA_ARGS__)
 #    if SK_VULKAN
-#        include "include/gpu/vk/GrVkTypes.h"
-#        include "include/gpu/vk/GrVkBackendContext.h"
+#        include "include/gpu/ganesh/vk/GrVkTypes.h"
+#        include "include/gpu/vk/VulkanBackendContext.h"
 #        include "include/gpu/vk/VulkanExtensions.h"
 #        define SK_ONLY_VULKAN(...) SK_FIRST_ARG(__VA_ARGS__)
 #    else
 #        define SK_ONLY_VULKAN(...) SK_SKIP_ARG(__VA_ARGS__)
 #    endif
 #    if SK_METAL
+#        include "include/gpu/ganesh/mtl/GrMtlTypes.h"
+#        include "include/gpu/ganesh/mtl/GrMtlBackendSurface.h"
 #        define SK_ONLY_METAL(...) SK_FIRST_ARG(__VA_ARGS__)
 #    else
 #        define SK_ONLY_METAL(...) SK_SKIP_ARG(__VA_ARGS__)
 #    endif
 #    if SK_DIRECT3D
-#        include "include/gpu/d3d/GrD3DBackendContext.h"
-#        include "include/gpu/d3d/GrD3DTypes.h"
+#        include "include/gpu/ganesh/d3d/GrD3DBackendContext.h"
+#        include "include/gpu/ganesh/d3d/GrD3DTypes.h"
 #        define SK_ONLY_DIRECT3D(...) SK_FIRST_ARG(__VA_ARGS__)
 #    else
 #        define SK_ONLY_DIRECT3D(...) SK_SKIP_ARG(__VA_ARGS__)
@@ -178,15 +180,21 @@ DEF_STRUCT_MAP(SkSize, sk_size_t, Size)
 DEF_STRUCT_MAP(SkCubicResampler, sk_cubic_resampler_t, CubicResampler)
 DEF_STRUCT_MAP(SkSamplingOptions, sk_sampling_options_t, SamplingOptions)
 
+#if defined(SK_GANESH)
 DEF_STRUCT_MAP(GrGLTextureInfo, gr_gl_textureinfo_t, GrGLTextureInfo)
 DEF_STRUCT_MAP(GrGLFramebufferInfo, gr_gl_framebufferinfo_t, GrGLFramebufferInfo)
 DEF_STRUCT_MAP(GrGLInterface, gr_glinterface_t, GrGLInterface)
 
-DEF_STRUCT_MAP(GrVkYcbcrConversionInfo, gr_vk_ycbcrconversioninfo_t, GrVkYcbcrConversionInfo)
+#if defined(SK_VULKAN)
+DEF_MAP_WITH_NS(skgpu, VulkanYcbcrConversionInfo, gr_vk_ycbcrconversioninfo_t, GrVkYcbcrConversionInfo)
 DEF_STRUCT_MAP(GrVkImageInfo, gr_vk_imageinfo_t, GrVkImageInfo)
+#endif // SK_VULKAN
 
+#if defined(SK_DIRECT3D)
 DEF_STRUCT_MAP(GrD3DBackendContext, gr_d3d_backendcontext_t, GrD3DBackendContext)
 DEF_STRUCT_MAP(GrD3DTextureResourceInfo, gr_d3d_textureresourceinfo_t, GrD3DTextureResourceInfo)
+#endif // SK_DIRECT3D
+#endif // SK_GANESH
 
 #include "include/effects/SkRuntimeEffect.h"
 DEF_MAP(SkRuntimeEffect::Uniform, sk_runtimeeffect_uniform_t, RuntimeEffectUniform)
@@ -211,7 +219,20 @@ DEF_MAP(SkCodec::Options, sk_codec_options_t, CodecOptions)
 DEF_MAP(SkColor4f, sk_color4f_t, Color4f)
 
 #include "include/encode/SkJpegEncoder.h"
-DEF_MAP(SkJpegEncoder::Options, sk_jpegencoder_options_t, JpegEncoderOptions)
+#include "include/codec/SkEncodedOrigin.h"
+static inline SkJpegEncoder::Options AsJpegEncoderOptions(const sk_jpegencoder_options_t* options) {
+    SkJpegEncoder::Options opts;
+    opts.fQuality = options->fQuality;
+    opts.fDownsample = (SkJpegEncoder::Downsample)options->fDownsample;
+    opts.fAlphaOption = (SkJpegEncoder::AlphaOption)options->fAlphaOption;
+    opts.xmpMetadata = AsData(options->xmpMetadata);
+    opts.fICCProfile = AsColorSpaceIccProfile(options->fICCProfile);
+    opts.fICCProfileDescription = options->fICCProfileDescription;
+    if (options->fHasOrigin) {
+        opts.fOrigin = (SkEncodedOrigin)options->fOrigin;
+    }
+    return opts;
+}
 
 #include "include/core/SkFontMetrics.h"
 DEF_MAP(SkFontMetrics, sk_fontmetrics_t, FontMetrics)
@@ -391,19 +412,15 @@ DEF_MAP(VkPhysicalDeviceFeatures2, vk_physical_device_features_2_t, VkPhysicalDe
 DEF_MAP_WITH_NS(skgpu, VulkanMemoryAllocator, gr_vk_memory_allocator_t, GrVkMemoryAllocator);
 DEF_MAP_WITH_NS(skgpu, VulkanExtensions, gr_vk_extensions_t, GrVkExtensions)
 
-static inline GrVkBackendContext AsGrVkBackendContext(const gr_vk_backendcontext_t* context) {
-    GrVkBackendContext ctx;
+static inline skgpu::VulkanBackendContext AsGrVkBackendContext(const gr_vk_backendcontext_t* context) {
+    skgpu::VulkanBackendContext ctx;
     ctx.fInstance = AsVkInstance(context->fInstance);
     ctx.fPhysicalDevice = AsVkPhysicalDevice(context->fPhysicalDevice);
     ctx.fDevice = AsVkDevice(context->fDevice);
     ctx.fQueue = AsVkQueue(context->fQueue);
     ctx.fGraphicsQueueIndex = context->fGraphicsQueueIndex;
-    ctx.fMinAPIVersion = context->fMinAPIVersion;
-    ctx.fInstanceVersion = context->fInstanceVersion;
     ctx.fMaxAPIVersion = context->fMaxAPIVersion;
-    ctx.fExtensions = context->fExtensions;
     ctx.fVkExtensions = AsGrVkExtensions(context->fVkExtensions);
-    ctx.fFeatures = context->fFeatures;
     ctx.fDeviceFeatures = AsVkPhysicalDeviceFeatures(context->fDeviceFeatures);
     ctx.fDeviceFeatures2 = AsVkPhysicalDeviceFeatures2(context->fDeviceFeatures2);
     ctx.fMemoryAllocator = sk_ref_sp(AsGrVkMemoryAllocator(context->fMemoryAllocator));
@@ -412,8 +429,7 @@ static inline GrVkBackendContext AsGrVkBackendContext(const gr_vk_backendcontext
             return context->fGetProc(context->fGetProcUserData, name, ToVkInstance(instance), ToVkDevice(device));
         };
     }
-    ctx.fOwnsInstanceAndDevice = context->fOwnsInstanceAndDevice;
-    ctx.fProtectedContext = context->fProtectedContext ? GrProtected::kYes : GrProtected::kNo;
+    ctx.fProtectedContext = context->fProtectedContext ? skgpu::Protected::kYes : skgpu::Protected::kNo;
     return ctx;
 }
 

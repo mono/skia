@@ -8,8 +8,9 @@
 #ifndef GrMtlFramebuffer_DEFINED
 #define GrMtlFramebuffer_DEFINED
 
-#include "include/gpu/GrTypes.h"
-#include "include/gpu/mtl/GrMtlTypes.h"
+#include "include/core/SkRefCnt.h"
+#include "include/gpu/ganesh/GrTypes.h"
+#include "include/gpu/ganesh/mtl/GrMtlTypes.h"
 #include "include/private/gpu/ganesh/GrTypesPriv.h"
 
 class GrMtlAttachment;
@@ -29,7 +30,7 @@ private:
                      sk_sp<GrMtlAttachment> resolveAttachment,
                      sk_sp<GrMtlAttachment> stencilAttachment);
 
-    ~GrMtlFramebuffer() override {}
+    ~GrMtlFramebuffer() override;
 
     sk_sp<GrMtlAttachment> fColorAttachment;
     sk_sp<GrMtlAttachment> fResolveAttachment;

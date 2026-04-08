@@ -11,7 +11,7 @@
 #include "modules/skunicode/include/SkUnicode.h"
 #include "src/base/SkUTF.h"
 
-class SkUnicodeHardCodedCharProperties : public SkUnicode {
+class SKUNICODE_API SkUnicodeHardCodedCharProperties : public SkUnicode {
 public:
     bool isControl(SkUnichar utf8) override;
     bool isWhitespace(SkUnichar utf8) override;
@@ -19,6 +19,10 @@ public:
     bool isTabulation(SkUnichar utf8) override;
     bool isHardBreak(SkUnichar utf8) override;
     bool isEmoji(SkUnichar utf8) override;
+    bool isEmojiComponent(SkUnichar utf8) override;
+    bool isEmojiModifierBase(SkUnichar utf8) override;
+    bool isEmojiModifier(SkUnichar utf8) override;
+    bool isRegionalIndicator(SkUnichar utf8) override;
     bool isIdeographic(SkUnichar utf8) override;
 };
 

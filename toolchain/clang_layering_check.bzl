@@ -6,6 +6,9 @@ See also https://maskray.me/blog/2022-09-25-layering-check-with-clang and go/lay
 
 """
 
+# https://github.com/bazelbuild/bazel/blob/master/tools/build_defs/cc/action_names.bzl
+load("@bazel_tools//tools/build_defs/cc:action_names.bzl", "ACTION_NAMES")
+
 # https://github.com/bazelbuild/bazel/blob/master/tools/cpp/cc_toolchain_config_lib.bzl
 load(
     "@bazel_tools//tools/cpp:cc_toolchain_config_lib.bzl",
@@ -14,9 +17,6 @@ load(
     "flag_group",
     "flag_set",
 )
-
-# https://github.com/bazelbuild/bazel/blob/master/tools/build_defs/cc/action_names.bzl
-load("@bazel_tools//tools/build_defs/cc:action_names.bzl", "ACTION_NAMES")
 
 def make_layering_check_features():
     """Returns a list of features which enforce "layering checks".
@@ -64,8 +64,8 @@ def make_layering_check_features():
         feature(
             name = "layering_check",
             # This is currently disabled by default (although we aim to enable it by default)
-            # because our current skia_public build does not pass the fmodules-strict-decluse
-            # options with its current deps implementation (which was designed to pass these along).
+            # because a previous build didn't support passing a flag along.
+            # TODO(kjlubick): enable this by default.
             enabled = False,
             implies = ["use_module_maps"],
             flag_sets = [

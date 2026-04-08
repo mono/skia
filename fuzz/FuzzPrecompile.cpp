@@ -18,22 +18,22 @@
 #include "include/effects/SkColorMatrix.h"
 #include "include/gpu/graphite/Context.h"
 #include "include/gpu/graphite/Surface.h"
+#include "include/gpu/graphite/precompile/Precompile.h"
+#include "include/gpu/graphite/precompile/PrecompileColorFilter.h"
 #include "modules/skcms/skcms.h"
 #include "src/core/SkBlenderBase.h"
 #include "src/gpu/graphite/ContextPriv.h"
 #include "src/gpu/graphite/ContextUtils.h"
-#include "src/gpu/graphite/FactoryFunctions.h"
 #include "src/gpu/graphite/KeyContext.h"
-#include "src/gpu/graphite/PaintOptionsPriv.h"
 #include "src/gpu/graphite/PaintParams.h"
 #include "src/gpu/graphite/PaintParamsKey.h"
 #include "src/gpu/graphite/PipelineData.h"
-#include "src/gpu/graphite/Precompile.h"
-#include "src/gpu/graphite/PublicPrecompile.h"
 #include "src/gpu/graphite/RecorderPriv.h"
+#include "src/gpu/graphite/RenderPassDesc.h"
 #include "src/gpu/graphite/Renderer.h"
 #include "src/gpu/graphite/RuntimeEffectDictionary.h"
-#include "tools/ToolUtils.h"
+#include "src/gpu/graphite/geom/Geometry.h"
+#include "src/gpu/graphite/precompile/PaintOptionsPriv.h"
 #include "tools/gpu/GrContextFactory.h"
 #include "tools/graphite/ContextFactory.h"
 
@@ -83,12 +83,6 @@ SkPath make_path() {
     path.close();
     return path.detach();
 }
-
-#ifdef SK_DEBUG
-void dump(ShaderCodeDictionary* dict, UniquePaintParamsID id) {
-    dict->lookup(id).dump(dict);
-}
-#endif
 
 //--------------------------------------------------------------------------------------------------
 // color spaces
@@ -282,8 +276,10 @@ void check_draw(Context* context,
         SkCanvas* canvas = surf->getCanvas();
 
         switch (dt) {
-            case DrawTypeFlags::kShape:
+            case DrawTypeFlags::kSimpleShape:
                 canvas->drawRect(SkRect::MakeWH(16, 16), paint);
+                break;
+            case DrawTypeFlags::kNonSimpleShape:
                 canvas->drawPath(path, paint);
                 break;
             default:
@@ -311,23 +307,9 @@ void fuzz_graphite(Fuzz* fuzz, Context* context, int depth = 9) {
                                  SkColorSpace::MakeSRGB());
 
     std::unique_ptr<RuntimeEffectDictionary> rtDict = std::make_unique<RuntimeEffectDictionary>();
-    KeyContext precompileKeyContext(recorder->priv().caps(),
-                                    dict,
-                                    rtDict.get(),
-                                    ci,
-                                    /* dstTexture= */ nullptr,
-                                    /* dstOffset= */ {0, 0});
+    KeyContext precompileKeyContext(recorder->priv().caps(), dict, rtDict.get(), ci);
 
-    sk_sp<TextureProxy> fakeDstTexture = TextureProxy::Make(recorder->priv().caps(),
-                                                            SkISize::Make(1, 1),
-                                                            kRGBA_8888_SkColorType,
-                                                            skgpu::Mipmapped::kNo,
-                                                            skgpu::Protected::kNo,
-                                                            skgpu::Renderable::kYes,
-                                                            skgpu::Budgeted::kNo);
-    constexpr SkIPoint fakeDstOffset = SkIPoint::Make(0, 0);
-
-    DrawTypeFlags kDrawType = DrawTypeFlags::kShape;
+    DrawTypeFlags kDrawType = DrawTypeFlags::kSimpleShape;
     SkPath path = make_path();
 
     Layout layout = context->backend() == skgpu::BackendApi::kMetal ? Layout::kMetal
@@ -335,7 +317,6 @@ void fuzz_graphite(Fuzz* fuzz, Context* context, int depth = 9) {
 
     PaintParamsKeyBuilder builder(dict);
     PipelineDataGatherer gatherer(layout);
-
 
     auto [paint, paintOptions] = create_random_paint(fuzz, depth);
 
@@ -352,24 +333,36 @@ void fuzz_graphite(Fuzz* fuzz, Context* context, int depth = 9) {
                                            blender->asBlendMode(),
                                            coverage);
     }
-    bool needsDstSample = dstReadReq == DstReadRequirement::kTextureCopy ||
-                          dstReadReq == DstReadRequirement::kTextureSample;
-    sk_sp<TextureProxy> curDst = needsDstSample ? fakeDstTexture : nullptr;
 
-    auto [paintID, uData, tData] = ExtractPaintData(
-            recorder.get(), &gatherer, &builder, layout, {},
-            PaintParams(paint,
-                        /* primitiveBlender= */ nullptr,
-                        dstReadReq,
-                        /* skipColorXform= */ false),
-            curDst, fakeDstOffset, ci);
+    UniquePaintParamsID paintID = ExtractPaintData(recorder.get(),
+                                                   &gatherer,
+                                                   &builder,
+                                                   layout,
+                                                   {},
+                                                   PaintParams(paint,
+                                                               /* primitiveBlender= */ nullptr,
+                                                               /* analyticClip= */ {},
+                                                               /* clipShader= */ nullptr,
+                                                               dstReadReq,
+                                                               /* skipColorXform= */ false),
+                                                   {},
+                                                   ci);
+
+    RenderPassDesc unusedRenderPassDesc;
 
     std::vector<UniquePaintParamsID> precompileIDs;
     paintOptions.priv().buildCombinations(precompileKeyContext,
-                                          /* addPrimitiveBlender= */ false,
+                                          &gatherer,
+                                          DrawTypeFlags::kNone,
+                                          /* withPrimitiveBlender= */ false,
                                           coverage,
-                                          [&](UniquePaintParamsID id) {
-                                              precompileIDs.push_back(id);
+                                          unusedRenderPassDesc,
+                                          [&](UniquePaintParamsID id,
+                                              DrawTypeFlags,
+                                              bool /* withPrimitiveBlender */,
+                                              Coverage,
+                                              const RenderPassDesc&) {
+                                                  precompileIDs.push_back(id);
                                           });
 
     // The specific key generated by ExtractPaintData should be one of the
@@ -379,11 +372,11 @@ void fuzz_graphite(Fuzz* fuzz, Context* context, int depth = 9) {
 #ifdef SK_DEBUG
     if (result == precompileIDs.end()) {
         SkDebugf("From paint: ");
-        dump(dict, paintID);
+        dict->dump(paintID);
 
         SkDebugf("From combination builder:");
         for (auto iter : precompileIDs) {
-            dump(dict, iter);
+            dict->dump(iter);
         }
     }
 #endif
@@ -391,10 +384,12 @@ void fuzz_graphite(Fuzz* fuzz, Context* context, int depth = 9) {
     SkASSERT_RELEASE(result != precompileIDs.end());
 
     {
+        static const RenderPassProperties kDefaultRenderPassProperties;
+
         context->priv().globalCache()->resetGraphicsPipelines();
 
         int before = context->priv().globalCache()->numGraphicsPipelines();
-        Precompile(context, paintOptions, kDrawType);
+        Precompile(context, paintOptions, kDrawType, { kDefaultRenderPassProperties });
         int after = context->priv().globalCache()->numGraphicsPipelines();
 
         SkASSERT_RELEASE(before == 0);

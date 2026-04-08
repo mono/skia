@@ -15,6 +15,7 @@
 #include "include/private/base/SkMalloc.h"
 #include "include/private/base/SkTo.h"
 #include "include/utils/SkParse.h"
+#include "src/base/SkArenaAlloc.h"
 #include "src/base/SkUTF.h"
 
 #include <cmath>
@@ -88,19 +89,24 @@ NumberValue::NumberValue(float f) {
 // Long strings use extra_alloc_size == 1 to store the \0 terminator.
 //
 template <typename T, size_t extra_alloc_size = 0>
-static void* MakeVector(const void* src, size_t size, SkArenaAlloc& alloc) {
+static void* MakeVector(size_t vec_size, const void* src, size_t src_size, SkArenaAlloc& alloc) {
     // The Ts are already in memory, so their size should be safe.
-    const auto total_size = sizeof(size_t) + size * sizeof(T) + extra_alloc_size;
+    const auto total_size = sizeof(size_t) + vec_size * sizeof(T) + extra_alloc_size;
     auto* size_ptr = reinterpret_cast<size_t*>(alloc.makeBytesAlignedTo(total_size, kRecAlign));
 
-    *size_ptr = size;
-    sk_careful_memcpy(size_ptr + 1, src, size * sizeof(T));
+    *size_ptr = vec_size;
+    sk_careful_memcpy(size_ptr + 1, src, src_size * sizeof(T));
 
     return size_ptr;
 }
 
+template <typename T, size_t extra_alloc_size = 0>
+static void* MakeVector(size_t vec_size, const void* src, SkArenaAlloc& alloc) {
+    return MakeVector<T, extra_alloc_size>(vec_size, src, vec_size, alloc);
+}
+
 ArrayValue::ArrayValue(const Value* src, size_t size, SkArenaAlloc& alloc) {
-    this->init_tagged_pointer(Tag::kArray, MakeVector<Value>(src, size, alloc));
+    this->init_tagged_pointer(Tag::kArray, MakeVector<Value>(size, src, alloc));
     SkASSERT(this->getTag() == Tag::kArray);
 }
 
@@ -150,7 +156,7 @@ private:
     void initLongString(const char* src, size_t size, SkArenaAlloc& alloc) {
         SkASSERT(size > kMaxInlineStringSize);
 
-        this->init_tagged_pointer(Tag::kString, MakeVector<char, 1>(src, size, alloc));
+        this->init_tagged_pointer(Tag::kString, MakeVector<char, 1>(size, src, alloc));
 
         auto* data = this->cast<VectorValue<char, Value::Type::kString>>()->begin();
         const_cast<char*>(data)[size] = '\0';
@@ -192,12 +198,15 @@ private:
 
 } // namespace
 
+StringValue::StringValue(const char* src, SkArenaAlloc& alloc)
+    : StringValue(src, strlen(src), alloc) {}
+
 StringValue::StringValue(const char* src, size_t size, SkArenaAlloc& alloc) {
     new (this) FastString(src, size, src, alloc);
 }
 
 ObjectValue::ObjectValue(const Member* src, size_t size, SkArenaAlloc& alloc) {
-    this->init_tagged_pointer(Tag::kObject, MakeVector<Member>(src, size, alloc));
+    this->init_tagged_pointer(Tag::kObject, MakeVector<Member>(size, src, alloc));
     SkASSERT(this->getTag() == Tag::kObject);
 }
 
@@ -217,7 +226,7 @@ static int inline_strcmp(const char a[], const char b[]) {
     return *b != 0;
 }
 
-const Value& ObjectValue::operator[](const char* key) const {
+const Member* ObjectValue::find(const char* key) const {
     // Reverse search for duplicates resolution (policy: return last).
     const auto* begin  = this->begin();
     const auto* member = this->end();
@@ -225,12 +234,29 @@ const Value& ObjectValue::operator[](const char* key) const {
     while (member > begin) {
         --member;
         if (0 == inline_strcmp(key, member->fKey.as<StringValue>().begin())) {
-            return member->fValue;
+            return member;
         }
     }
 
-    static const Value g_null = NullValue();
-    return g_null;
+    return nullptr;
+}
+
+Value& ObjectValue::writable(const char* key, SkArenaAlloc& alloc) const {
+    Member* writable_member = const_cast<Member*>(this->find(key));
+
+    if (!writable_member) {
+        ObjectValue* writable_obj = const_cast<ObjectValue*>(this);
+        writable_obj->init_tagged_pointer(Tag::kObject, MakeVector<Member>(this->size() + 1,
+                                                                           this->begin(),
+                                                                           this->size(),
+                                                                           alloc));
+        writable_member         = const_cast<Member*>(writable_obj->end() - 1);
+        writable_member->fKey   = StringValue(key, strlen(key), alloc);
+        writable_member->fValue = NullValue();
+    }
+
+
+    return writable_member->fValue;
 }
 
 namespace {
@@ -863,48 +889,85 @@ private:
 };
 
 void Write(const Value& v, SkWStream* stream) {
-    switch (v.getType()) {
-    case Value::Type::kNull:
-        stream->writeText("null");
-        break;
-    case Value::Type::kBool:
-        stream->writeText(*v.as<BoolValue>() ? "true" : "false");
-        break;
-    case Value::Type::kNumber:
-        stream->writeScalarAsText(*v.as<NumberValue>());
-        break;
-    case Value::Type::kString:
-        stream->writeText("\"");
-        stream->writeText(v.as<StringValue>().begin());
-        stream->writeText("\"");
-        break;
-    case Value::Type::kArray: {
-        const auto& array = v.as<ArrayValue>();
-        stream->writeText("[");
-        bool first_value = true;
-        for (const auto& entry : array) {
-            if (!first_value) stream->writeText(",");
-            Write(entry, stream);
-            first_value = false;
+    // We use the address of these as special tags in the pending list.
+    static const NullValue kArrayCloseTag,    // ]
+                           kObjectCloseTag,   // }
+                           kListSeparatorTag, // ,
+                           kKeySeparatorTag;  // :
+
+    std::vector<const Value*> pending{&v};
+
+    do {
+        const Value* val = pending.back();
+        pending.pop_back();
+
+        if (val == &kArrayCloseTag) {
+            stream->writeText("]");
+            continue;
         }
-        stream->writeText("]");
-        break;
-    }
-    case Value::Type::kObject:
-        const auto& object = v.as<ObjectValue>();
-        stream->writeText("{");
-        bool first_member = true;
-        for (const auto& member : object) {
-            SkASSERT(member.fKey.getType() == Value::Type::kString);
-            if (!first_member) stream->writeText(",");
-            Write(member.fKey, stream);
+
+        if (val == &kObjectCloseTag) {
+            stream->writeText("}");
+            continue;
+        }
+
+        if (val == &kListSeparatorTag) {
+            stream->writeText(",");
+            continue;
+        }
+
+        if (val == &kKeySeparatorTag) {
             stream->writeText(":");
-            Write(member.fValue, stream);
-            first_member = false;
+            continue;
         }
-        stream->writeText("}");
-        break;
-    }
+
+        switch (val->getType()) {
+        case Value::Type::kNull:
+            stream->writeText("null");
+            break;
+        case Value::Type::kBool:
+            stream->writeText(*val->as<BoolValue>() ? "true" : "false");
+            break;
+        case Value::Type::kNumber:
+            stream->writeScalarAsText(*val->as<NumberValue>());
+            break;
+        case Value::Type::kString:
+            stream->writeText("\"");
+            stream->writeText(val->as<StringValue>().begin());
+            stream->writeText("\"");
+            break;
+        case Value::Type::kArray: {
+            const auto& array = val->as<ArrayValue>();
+            stream->writeText("[");
+            // "val, val, .. ]" in reverse order
+            pending.push_back(&kArrayCloseTag);
+            if (array.size() > 0) {
+                bool last_value = true;
+                for (const Value* it = array.end() - 1; it >= array.begin(); --it) {
+                    if (!last_value) pending.push_back(&kListSeparatorTag);
+                    pending.push_back(it);
+                    last_value = false;
+                }
+            }
+        } break;
+        case Value::Type::kObject: {
+            const auto& object = val->as<ObjectValue>();
+            stream->writeText("{");
+            // "key: val, key: val, .. }" in reverse order
+            pending.push_back(&kObjectCloseTag);
+            if (object.size() > 0) {
+                bool last_member = true;
+                for (const Member* it = object.end() - 1; it >= object.begin(); --it) {
+                    if (!last_member) pending.push_back(&kListSeparatorTag);
+                    pending.push_back(&it->fValue);
+                    pending.push_back(&kKeySeparatorTag);
+                    pending.push_back(&it->fKey);
+                    last_member = false;
+                }
+            }
+        } break;
+        }
+    } while (!pending.empty());
 }
 
 } // namespace

@@ -1,7 +1,6 @@
 // Copyright 2019 Google LLC.
 // Use of this source code is governed by a BSD-style license that can be found in the LICENSE file.
 #include "tools/fiddle/examples.h"
-// HASH=0cc2c6a0dffa61a88711534bd3d43b40
 REG_FIDDLE(Bitmap_peekPixels, 256, 256, true, 0) {
 void draw(SkCanvas* canvas) {
     SkBitmap bitmap;
@@ -9,7 +8,7 @@ void draw(SkCanvas* canvas) {
     SkCanvas offscreen(bitmap);
     offscreen.clear(SK_ColorWHITE);
     SkPaint paint;
-    SkFont font;
+    SkFont font = SkFont(fontMgr->matchFamilyStyle(nullptr, {}));
     offscreen.drawString("?", 0, 10, font, paint);
     SkPixmap pixmap;
     if (bitmap.peekPixels(&pixmap)) {

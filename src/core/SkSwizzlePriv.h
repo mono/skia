@@ -5,6 +5,9 @@
  * found in the LICENSE file.
  */
 
+#ifndef SkSwizzlePriv_DEFINED
+#define SkSwizzlePriv_DEFINED
+
 #include "include/private/SkColorData.h"
 #include "src/base/SkVx.h"
 
@@ -16,6 +19,8 @@ namespace SkOpts {
     extern Swizzle_8888_u32 RGBA_to_BGRA,          // i.e. just swap RB
                             RGBA_to_rgbA,          // i.e. just premultiply
                             RGBA_to_bgrA,          // i.e. swap RB and premultiply
+                            rgbA_to_RGBA,          // i.e. just unpremultiply
+                            rgbA_to_BGRA,          // i.e. swap RB and unpremultiply
                             inverted_CMYK_to_RGB1, // i.e. convert color space
                             inverted_CMYK_to_BGR1; // i.e. convert color space
 
@@ -53,3 +58,4 @@ static inline uint32_t Sk4f_toL32(const skvx::float4& px) {
                        .store(&l32);
     return l32;
 }
+#endif  // SkSwizzlePriv_DEFINED

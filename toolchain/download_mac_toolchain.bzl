@@ -28,14 +28,14 @@ clang_url_amd64 = "https://github.com/llvm/llvm-project/releases/download/llvmor
 
 def _get_system_xcode_path(ctx):
     # https://developer.apple.com/library/archive/technotes/tn2339/_index.html
-    res = ctx.execute(["xcode-select", "-p"])
+    res = ctx.execute(["xcode-select", "--print-path"])
     if res.return_code != 0:
         fail("Error Getting XCode path: " + res.stderr)
     return res.stdout.rstrip()
 
 def _delete_macos_sdk_symlinks(ctx):
     ctx.delete("./symlinks/xcode/MacSDK/usr")
-    ctx.delete("./symlinks/xcode/MacSDK/Frameworks")
+    ctx.delete("./symlinks/xcode/MacSDK/System/Library/Frameworks")
 
 def _create_macos_sdk_symlinks(ctx):
     system_xcode_path = _get_system_xcode_path(ctx)
@@ -47,11 +47,17 @@ def _create_macos_sdk_symlinks(ctx):
         # to =
         "./symlinks/xcode/MacSDK/usr",
     )
+
+    # It is very important to symlink the frameworks directory to [sysroot]/System/Library/Frameworks
+    # because some Frameworks "re-export" other frameworks. These framework paths are relative to
+    # the sysroot (which on a typical machine is /), and it is difficult to change these paths.
+    # By making the symlinks emulate the original path structure, we can keep those re-exports
+    # from breaking.
     ctx.symlink(
         # from =
         system_xcode_path + "/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/System/Library/Frameworks",
         # to =
-        "./symlinks/xcode/MacSDK/Frameworks",
+        "./symlinks/xcode/MacSDK/System/Library/Frameworks",
     )
 
 def _download_mac_toolchain_impl(ctx):
@@ -90,7 +96,7 @@ def _download_mac_toolchain_impl(ctx):
     builtin_include_directories = [
         "include/c++/v1",
         "lib/clang/15.0.1/include",
-        "symlinks/xcode/MacSDK/Frameworks",
+        "symlinks/xcode/MacSDK/System/Library/Frameworks",
         "symlinks/xcode/MacSDK/usr/include",
     ]
 
@@ -125,6 +131,35 @@ filegroup(
     visibility = ["//visibility:public"],
 )
 
+# Any framework that Skia depends on directly or indirectly needs to be listed here.
+FRAMEWORK_GLOB = [
+    "symlinks/xcode/MacSDK/System/Library/Frameworks/AppKit.Framework/**",
+    "symlinks/xcode/MacSDK/System/Library/Frameworks/ApplicationServices.Framework/**",
+    "symlinks/xcode/MacSDK/System/Library/Frameworks/Carbon.Framework/**",
+    "symlinks/xcode/MacSDK/System/Library/Frameworks/CFNetwork.Framework/**",
+    "symlinks/xcode/MacSDK/System/Library/Frameworks/CloudKit.Framework/**",
+    "symlinks/xcode/MacSDK/System/Library/Frameworks/Cocoa.Framework/**",
+    "symlinks/xcode/MacSDK/System/Library/Frameworks/ColorSync.Framework/**",
+    "symlinks/xcode/MacSDK/System/Library/Frameworks/CoreData.Framework/**",
+    "symlinks/xcode/MacSDK/System/Library/Frameworks/CoreFoundation.Framework/**",
+    "symlinks/xcode/MacSDK/System/Library/Frameworks/CoreGraphics.Framework/**",
+    "symlinks/xcode/MacSDK/System/Library/Frameworks/CoreImage.Framework/**",
+    "symlinks/xcode/MacSDK/System/Library/Frameworks/CoreLocation.Framework/**",
+    "symlinks/xcode/MacSDK/System/Library/Frameworks/CoreServices.Framework/**",
+    "symlinks/xcode/MacSDK/System/Library/Frameworks/CoreText.Framework/**",
+    "symlinks/xcode/MacSDK/System/Library/Frameworks/CoreVideo.Framework/**",
+    "symlinks/xcode/MacSDK/System/Library/Frameworks/DiskArbitration.Framework/**",
+    "symlinks/xcode/MacSDK/System/Library/Frameworks/Foundation.Framework/**",
+    "symlinks/xcode/MacSDK/System/Library/Frameworks/ImageIO.Framework/**",
+    "symlinks/xcode/MacSDK/System/Library/Frameworks/IOKit.Framework/**",
+    "symlinks/xcode/MacSDK/System/Library/Frameworks/IOSurface.Framework/**",
+    "symlinks/xcode/MacSDK/System/Library/Frameworks/Metal.Framework/**",
+    "symlinks/xcode/MacSDK/System/Library/Frameworks/MetalKit.Framework/**",
+    "symlinks/xcode/MacSDK/System/Library/Frameworks/OpenGL.Framework/**",
+    "symlinks/xcode/MacSDK/System/Library/Frameworks/QuartzCore.Framework/**",
+    "symlinks/xcode/MacSDK/System/Library/Frameworks/Security.Framework/**",
+]
+
 filegroup(
     name = "compile_files",
     srcs = [
@@ -133,32 +168,8 @@ filegroup(
         include = [
             "include/c++/v1/**",
             "lib/clang/15.0.1/include/**",
-            "symlinks/xcode/MacSDK/Frameworks/AppKit.Framework/**",
-            "symlinks/xcode/MacSDK/Frameworks/ApplicationServices.Framework/**",
-            "symlinks/xcode/MacSDK/Frameworks/Carbon.Framework/**",
-            "symlinks/xcode/MacSDK/Frameworks/CFNetwork.Framework/**",
-            "symlinks/xcode/MacSDK/Frameworks/CloudKit.Framework/**",
-            "symlinks/xcode/MacSDK/Frameworks/Cocoa.Framework/**",
-            "symlinks/xcode/MacSDK/Frameworks/ColorSync.Framework/**",
-            "symlinks/xcode/MacSDK/Frameworks/CoreData.Framework/**",
-            "symlinks/xcode/MacSDK/Frameworks/CoreFoundation.Framework/**",
-            "symlinks/xcode/MacSDK/Frameworks/CoreGraphics.Framework/**",
-            "symlinks/xcode/MacSDK/Frameworks/CoreImage.Framework/**",
-            "symlinks/xcode/MacSDK/Frameworks/CoreLocation.Framework/**",
-            "symlinks/xcode/MacSDK/Frameworks/CoreServices.Framework/**",
-            "symlinks/xcode/MacSDK/Frameworks/CoreText.Framework/**",
-            "symlinks/xcode/MacSDK/Frameworks/CoreVideo.Framework/**",
-            "symlinks/xcode/MacSDK/Frameworks/DiskArbitration.Framework/**",
-            "symlinks/xcode/MacSDK/Frameworks/Foundation.Framework/**",
-            "symlinks/xcode/MacSDK/Frameworks/ImageIO.Framework/**",
-            "symlinks/xcode/MacSDK/Frameworks/IOKit.Framework/**",
-            "symlinks/xcode/MacSDK/Frameworks/IOSurface.Framework/**",
-            "symlinks/xcode/MacSDK/Frameworks/Metal.Framework/**",
-            "symlinks/xcode/MacSDK/Frameworks/OpenGL.Framework/**",
-            "symlinks/xcode/MacSDK/Frameworks/QuartzCore.Framework/**",
-            "symlinks/xcode/MacSDK/Frameworks/Security.Framework/**",
             "symlinks/xcode/MacSDK/usr/include/**",
-        ],
+        ] + FRAMEWORK_GLOB,
         allow_empty = False,
     ),
     visibility = ["//visibility:public"],
@@ -177,7 +188,7 @@ filegroup(
         include = [
             # libc++.tbd and libSystem.tbd live here.
             "symlinks/xcode/MacSDK/usr/lib/*",
-        ],
+        ] + FRAMEWORK_GLOB,
         allow_empty = False,
     ),
     visibility = ["//visibility:public"],
