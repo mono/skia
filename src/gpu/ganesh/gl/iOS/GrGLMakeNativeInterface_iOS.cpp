@@ -7,19 +7,21 @@
 #include "include/core/SkTypes.h"
 #ifdef SK_BUILD_FOR_IOS
 
-#include "include/gpu/ganesh/gl/ios/GrGLMakeIOSInterface.h"
 #include "include/gpu/ganesh/gl/GrGLAssembleInterface.h"
 #include "include/gpu/ganesh/gl/GrGLInterface.h"
+#include "include/gpu/ganesh/gl/ios/GrGLMakeIOSInterface.h"
+#include "include/private/base/SkTemplates.h"
 
 #include <dlfcn.h>
-
-static GrGLFuncPtr ios_get_gl_proc(void* ctx, const char name[]) {
-    return (GrGLFuncPtr) dlsym(RTLD_DEFAULT, name);
-}
+#include <memory>
 
 namespace GrGLInterfaces {
 sk_sp<const GrGLInterface> MakeIOS() {
-    return GrGLMakeAssembledGLESInterface(nullptr, ios_get_gl_proc);
+    static const char kPath[] =
+        "/System/Library/Frameworks/OpenGL.framework/Versions/A/Libraries/libGL.dylib";
+    std::unique_ptr<void, SkFunctionObject<dlclose>> lib(dlopen(kPath, RTLD_LAZY));
+    return GrGLMakeAssembledGLESInterface(lib.get(), [](void* ctx, const char* name) {
+            return (GrGLFuncPtr)dlsym(ctx ? ctx : RTLD_DEFAULT, name); });
 }
 
 }  // namespace GrGLInterfaces

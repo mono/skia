@@ -28,6 +28,10 @@
 #include "src/gpu/graphite/dawn/DawnUtilsPriv.h"
 #include "src/sksl/SkSLUtil.h"
 
+#if defined(__EMSCRIPTEN__)
+#include <emscripten/version.h>
+#endif
+
 namespace {
 
 skgpu::UniqueKey::Domain get_pipeline_domain() {
@@ -429,6 +433,10 @@ void DawnCaps::initCaps(const DawnBackendContext& backendContext, const ContextO
     SkASSERT(limitsSucceeded);
 #endif
 #else
+    wgpu::DawnTexelCopyBufferRowAlignmentLimits alignmentLimits{};
+    if (backendContext.fDevice.HasFeature(wgpu::FeatureName::DawnTexelCopyBufferRowAlignment)) {
+        limits.nextInChain = &alignmentLimits;
+    }
     [[maybe_unused]] wgpu::Status status = backendContext.fDevice.GetLimits(&limits);
     SkASSERT(status == wgpu::Status::Success);
 #endif
@@ -441,6 +449,13 @@ void DawnCaps::initCaps(const DawnBackendContext& backendContext, const ContextO
 
     // Dawn requires 256 bytes per row alignment for buffer texture copies.
     fTextureDataRowBytesAlignment = 256;
+#if !defined(__EMSCRIPTEN__)
+    // If the device supports the DawnTexelCopyBufferRowAlignment feature, the alignment can be
+    // queried from its limits.
+    if (backendContext.fDevice.HasFeature(wgpu::FeatureName::DawnTexelCopyBufferRowAlignment)) {
+        fTextureDataRowBytesAlignment = alignmentLimits.minTexelCopyBufferRowAlignment;
+    }
+#endif
 
     fResourceBindingReqs.fUniformBufferLayout = Layout::kStd140;
     // The WGSL generator assumes tightly packed std430 layout for SSBOs which is also the default
@@ -456,18 +471,21 @@ void DawnCaps::initCaps(const DawnBackendContext& backendContext, const ContextO
     fResourceBindingReqs.fGradientBufferBinding = DawnGraphicsPipeline::kGradientBufferIndex;
 
 #if !defined(__EMSCRIPTEN__)
-    // TODO(b/318817249): In D3D11, SSBOs trigger FXC compiler failures when attempting to unroll
-    // loops.
     // TODO(b/344963958): SSBOs contribute to OOB shader memory access and dawn device loss on
     // Android. Once the problem is fixed SSBOs can be enabled again.
-    fStorageBufferSupport = info.backendType != wgpu::BackendType::D3D11 &&
-                            info.backendType != wgpu::BackendType::OpenGL &&
+    // TODO(dawn:388028942): In compat mode, the number of storage buffers in vertex stage could be
+    // zero on some devices. We currently use SSBO in vertex shaders so disabling it entirely in
+    // this case. There is a bug in D3D11's backend where it sets number of SSBOs in vertex shader
+    // to non-zero in compat mode. Once that bug is fixed, and a new limit is used for readonly
+    // SSBOs, we can enable this again.
+    fStorageBufferSupport = info.backendType != wgpu::BackendType::OpenGL &&
                             info.backendType != wgpu::BackendType::OpenGLES &&
-                            info.backendType != wgpu::BackendType::Vulkan;
+                            info.backendType != wgpu::BackendType::Vulkan &&
+                            info.compatibilityMode == false;
 #else
-    // WASM doesn't provide a way to query the backend, so can't tell if we are on d3d11 or not.
-    // Pessimistically assume we could be. Once b/318817249 is fixed, this can go away and SSBOs
-    // can always be enabled.
+    // WASM doesn't provide a way to query the backend, so can't tell if we are on a backend that
+    // needs to have SSBOs disabled. Pessimistically assume we could be. Once the above conditions
+    // go away in Dawn-native, then we can assume SSBOs are always supported in pure WebGPU too.
     fStorageBufferSupport = false;
 #endif
 
@@ -503,6 +521,29 @@ void DawnCaps::initCaps(const DawnBackendContext& backendContext, const ContextO
     fSupportsPartialLoadResolve =
             backendContext.fDevice.HasFeature(wgpu::FeatureName::DawnPartialLoadResolveTexture);
 #endif
+
+    if (backendContext.fDevice.HasFeature(wgpu::FeatureName::TimestampQuery)) {
+        // Native Dawn has an API for writing timestamps on command buffers. WebGPU only supports
+        // begin and end timestamps on render and compute passes.
+#if !defined(__EMSCRIPTEN__)
+        // TODO(b/42240559): On Apple silicon, the timer queries don't have the correct dependencies
+        // to measure all the encoders that the start/end commands encapsulate in the commandbuffer.
+        // We would prefer to keep this API as it lets us measure our texture uploads. If either
+        // this is fixed in Dawn, we can unconditionally take this approach for dawn-native; or
+        // the WebGPU API can hopefully be extended to capture blit passes.
+        fSupportsCommandBufferTimestamps = info.backendType != wgpu::BackendType::Metal;
+#endif
+
+        // The emscripten C/C++ interface before 3.1.48 for timestamp query writes on render and
+        // compute passes is different than on current emsdk. The older API isn't correctly
+        // translated to the current JS WebGPU API in emsdk. So we require 3.1.48+.
+#if !defined(__EMSCRIPTEN__)                                                                   \
+        || (__EMSCRIPTEN_major__ > 3)                                                          \
+        || (__EMSCRIPTEN_major__ == 3 && __EMSCRIPTEN_minor__ > 1)                             \
+        || (__EMSCRIPTEN_major__ == 3 && __EMSCRIPTEN_minor__ == 1 && __EMSCRIPTEN_tiny__ >= 48)
+        fSupportedGpuStats |= GpuStatsFlags::kElapsedTime;
+#endif
+    }
 
     if (!backendContext.fTick) {
         fAllowCpuSync = false;
