@@ -61,6 +61,10 @@ struct ResourceBindingRequirements {
     // Whether buffer, texture, and sampler resource bindings use distinct index ranges.
     bool fDistinctIndexRanges = false;
 
+    // Whether intrinsic constant information is stored as push constants (rather than normal UBO).
+    // Currently only relevant or possibly true for Vulkan.
+    bool fUseVulkanPushConstantsForIntrinsicConstants = false;
+
     int fIntrinsicBufferBinding = -1;
     int fRenderStepBufferBinding = -1;
     int fPaintParamsBufferBinding = -1;
@@ -322,6 +326,8 @@ public:
 
     bool setBackendLabels() const { return fSetBackendLabels; }
 
+    GpuStatsFlags supportedGpuStats() const { return fSupportedGpuStats; }
+
 protected:
     Caps();
 
@@ -408,6 +414,8 @@ protected:
 
     ResourceBindingRequirements fResourceBindingReqs;
 
+    GpuStatsFlags fSupportedGpuStats = GpuStatsFlags::kNone;
+
     //////////////////////////////////////////////////////////////////////////////////////////
     // Client-provided Caps
 
@@ -432,7 +440,6 @@ protected:
     bool fAllowMultipleAtlasTextures = true;
     bool fSupportBilerpFromGlyphAtlas = false;
 
-    // Set based on client options
     bool fRequireOrderedRecordings = false;
 
     bool fSetBackendLabels = false;
