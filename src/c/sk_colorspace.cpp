@@ -36,6 +36,12 @@ sk_colorspace_t* sk_colorspace_new_rgb(const sk_colorspace_transfer_fn_t* transf
     return ToColorSpace(SkColorSpace::MakeRGB(*AsColorSpaceTransferFn(transferFn), *AsColorSpaceXyz(toXYZD50)).release());
 }
 
+sk_colorspace_t* sk_colorspace_new_cicp(sk_colorspace_primaries_cicp_t colorPrimaries, sk_colorspace_transfer_fn_cicp_t transferCharacteristics) {
+    return ToColorSpace(SkColorSpace::MakeCICP(
+        static_cast<SkNamedPrimaries::CicpId>(colorPrimaries),
+        static_cast<SkNamedTransferFn::CicpId>(transferCharacteristics)).release());
+}
+
 sk_colorspace_t* sk_colorspace_new_icc(const sk_colorspace_icc_profile_t* profile) {
     return ToColorSpace(SkColorSpace::Make(*AsColorSpaceIccProfile(profile)).release());
 }
