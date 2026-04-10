@@ -23,6 +23,7 @@ SK_C_API void sk_colorspace_unref(sk_colorspace_t* colorspace);
 SK_C_API sk_colorspace_t* sk_colorspace_new_srgb(void);
 SK_C_API sk_colorspace_t* sk_colorspace_new_srgb_linear(void);
 SK_C_API sk_colorspace_t* sk_colorspace_new_rgb(const sk_colorspace_transfer_fn_t* transferFn, const sk_colorspace_xyz_t* toXYZD50);
+SK_C_API sk_colorspace_t* sk_colorspace_new_cicp(sk_colorspace_primaries_cicp_t colorPrimaries, sk_colorspace_transfer_fn_cicp_t transferCharacteristics);
 SK_C_API sk_colorspace_t* sk_colorspace_new_icc(const sk_colorspace_icc_profile_t* profile);
 SK_C_API void sk_colorspace_to_profile(const sk_colorspace_t* colorspace, sk_colorspace_icc_profile_t* profile);
 SK_C_API bool sk_colorspace_gamma_close_to_srgb(const sk_colorspace_t* colorspace);
