@@ -941,6 +941,8 @@ typedef struct {
     void* fComments;
     const sk_colorspace_icc_profile_t* fICCProfile;
     const char* fICCProfileDescription;
+    const void* fGainmap;
+    const void* fGainmapInfo;
 } sk_pngencoder_options_t;
 
 typedef enum {
