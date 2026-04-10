@@ -4,7 +4,7 @@
 
 #include "include/core/SkCubicMap.h"
 
-#include "src/utils/SkJSON.h"
+#include "modules/jsonreader/SkJSONReader.h"
 #include "src/utils/SkOSPath.h"
 
 void sk_linker_keep_alive(void) {
