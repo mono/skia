@@ -169,7 +169,6 @@ config("default") {
     if (use_PIC) {
       cflags += [ "-fPIC" ]
     }
-    cflags += [ "-fstrict-aliasing" ]
     cflags_cc += [ "-std=c++17" ]
 
     if (visibility_hidden) {
@@ -874,6 +873,17 @@ config("NDEBUG") {
 config("trivial_abi") {
   if (is_clang) {
     defines = [ "SK_TRIVIAL_ABI=[[clang::trivial_abi]]" ]
+  }
+}
+
+config("strict_aliasing") {
+  if (!is_win) {
+    cflags = [ "-fstrict-aliasing" ]
+  }
+}
+config("no_strict_aliasing") {
+  if (!is_win) {
+    cflags = [ "-fno-strict-aliasing" ]
   }
 }
 
