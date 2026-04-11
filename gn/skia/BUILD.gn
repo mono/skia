@@ -169,7 +169,6 @@ config("default") {
     if (use_PIC) {
       cflags += [ "-fPIC" ]
     }
-    cflags += [ "-fstrict-aliasing" ]
     cflags_cc += [ "-std=c++17" ]
 
     if (visibility_hidden) {
