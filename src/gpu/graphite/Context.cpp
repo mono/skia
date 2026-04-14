@@ -12,6 +12,7 @@
 #include "include/core/SkTraceMemoryDump.h"
 #include "include/effects/SkRuntimeEffect.h"
 #include "include/gpu/graphite/BackendTexture.h"
+#include "include/gpu/graphite/PrecompileContext.h"
 #include "include/gpu/graphite/Recorder.h"
 #include "include/gpu/graphite/Recording.h"
 #include "include/gpu/graphite/Surface.h"
@@ -90,8 +91,7 @@ Context::Context(sk_sp<SharedContext> sharedContext,
     // SingleOwner object and it is declared last
     fResourceProvider = fSharedContext->makeResourceProvider(&fSingleOwner,
                                                              SK_InvalidGenID,
-                                                             options.fGpuBudgetInBytes,
-                                                             /* avoidBufferAlloc= */ false);
+                                                             options.fGpuBudgetInBytes);
     fMappedBufferManager = std::make_unique<ClientMappedBufferManager>(this->contextID());
 #if defined(GPU_TEST_UTILS)
     if (options.fOptionsPriv) {
@@ -102,7 +102,7 @@ Context::Context(sk_sp<SharedContext> sharedContext,
 
 Context::~Context() {
 #if defined(GPU_TEST_UTILS)
-    ASSERT_SINGLE_OWNER
+    SkAutoMutexExclusive lock(fTestingLock);
     for (auto& recorder : fTrackedRecorders) {
         recorder->priv().setContext(nullptr);
     }
@@ -144,6 +144,12 @@ std::unique_ptr<Recorder> Context::makeRecorder(const RecorderOptions& options) 
     }
 #endif
     return recorder;
+}
+
+std::unique_ptr<PrecompileContext> Context::makePrecompileContext() {
+    ASSERT_SINGLE_OWNER
+
+    return std::unique_ptr<PrecompileContext>(new PrecompileContext(fSharedContext));
 }
 
 std::unique_ptr<Recorder> Context::makeInternalRecorder() const {
@@ -799,6 +805,11 @@ size_t Context::maxBudgetedBytes() const {
     return fResourceProvider->getResourceCacheLimit();
 }
 
+void Context::setMaxBudgetedBytes(size_t bytes) {
+    ASSERT_SINGLE_OWNER
+    return fResourceProvider->setResourceCacheLimit(bytes);
+}
+
 void Context::dumpMemoryStatistics(SkTraceMemoryDump* traceMemoryDump) const {
     ASSERT_SINGLE_OWNER
     fResourceProvider->dumpMemoryStatistics(traceMemoryDump);
@@ -818,9 +829,25 @@ bool Context::supportsProtectedContent() const {
     return fSharedContext->isProtected() == Protected::kYes;
 }
 
+GpuStatsFlags Context::supportedGpuStats() const {
+    return fSharedContext->caps()->supportedGpuStats();
+}
+
 ///////////////////////////////////////////////////////////////////////////////////
 
 #if defined(GPU_TEST_UTILS)
+void Context::deregisterRecorder(const Recorder* recorder) {
+    SkAutoMutexExclusive lock(fTestingLock);
+    for (auto it = fTrackedRecorders.begin();
+         it != fTrackedRecorders.end();
+         it++) {
+        if (*it == recorder) {
+            fTrackedRecorders.erase(it);
+            return;
+        }
+    }
+}
+
 bool ContextPriv::readPixels(const SkPixmap& pm,
                              const TextureProxy* textureProxy,
                              const SkImageInfo& srcImageInfo,
@@ -882,18 +909,6 @@ bool ContextPriv::readPixels(const SkPixmap& pm,
     return true;
 }
 
-void ContextPriv::deregisterRecorder(const Recorder* recorder) {
-    SKGPU_ASSERT_SINGLE_OWNER(fContext->singleOwner())
-    for (auto it = fContext->fTrackedRecorders.begin();
-         it != fContext->fTrackedRecorders.end();
-         it++) {
-        if (*it == recorder) {
-            fContext->fTrackedRecorders.erase(it);
-            return;
-        }
-    }
-}
-
 bool ContextPriv::supportsPathRendererStrategy(PathRendererStrategy strategy) {
     AtlasProvider::PathAtlasFlagsBitMask pathAtlasFlags =
             AtlasProvider::QueryPathAtlasSupport(this->caps());
@@ -913,7 +928,7 @@ bool ContextPriv::supportsPathRendererStrategy(PathRendererStrategy strategy) {
     return false;
 }
 
-#endif
+#endif // GPU_TEST_UTILS
 
 ///////////////////////////////////////////////////////////////////////////////////
 
