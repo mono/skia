@@ -22,6 +22,7 @@ extern sk_sp<SkFontMgr> SkFontMgr_New_Custom_Embedded(const SkEmbeddedResourceHe
 #include "include/ports/SkTypeface_win.h"
 #elif defined(SK_FONTMGR_FONTCONFIG_AVAILABLE)
 #include "include/ports/SkFontMgr_fontconfig.h"
+#include "include/ports/SkFontScanner_FreeType.h"
 #else
 #include "include/ports/SkFontMgr_empty.h"
 #endif
@@ -36,7 +37,7 @@ static sk_sp<SkFontMgr> create_platform_fontmgr() {
 #elif defined(SK_BUILD_FOR_WIN)
     return SkFontMgr_New_DirectWrite();
 #elif defined(SK_FONTMGR_FONTCONFIG_AVAILABLE)
-    return SkFontMgr_New_FontConfig(nullptr);
+    return SkFontMgr_New_FontConfig(nullptr, SkFontScanner_Make_FreeType());
 #else
     return SkFontMgr_New_Custom_Empty();
 #endif

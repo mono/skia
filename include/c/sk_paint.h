@@ -50,7 +50,7 @@ SK_C_API sk_blendmode_t sk_paint_get_blendmode(sk_paint_t*);
 SK_C_API sk_blender_t* sk_paint_get_blender(sk_paint_t* cpaint);
 SK_C_API sk_path_effect_t* sk_paint_get_path_effect(sk_paint_t* cpaint);
 SK_C_API void sk_paint_set_path_effect(sk_paint_t* cpaint, sk_path_effect_t* effect);  
-SK_C_API bool sk_paint_get_fill_path(const sk_paint_t* cpaint, const sk_path_t* src, sk_path_t* dst, const sk_rect_t* cullRect, const sk_matrix_t* cmatrix);
+SK_C_API bool sk_paint_get_fill_path(const sk_paint_t* cpaint, const sk_path_t* src, sk_pathbuilder_t* dst, const sk_rect_t* cullRect, const sk_matrix_t* cmatrix);
 
 SK_C_PLUS_PLUS_END_GUARD
 

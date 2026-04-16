@@ -42,7 +42,11 @@ void sk_region_get_bounds(const sk_region_t* r, sk_irect_t* rect) {
 }
 
 bool sk_region_get_boundary_path(const sk_region_t* r, sk_path_t* path) {
-    return AsRegion(r)->getBoundaryPath(AsPath(path));
+    SkPath result = AsRegion(r)->getBoundaryPath();
+    if (path) {
+        *AsPath(path) = std::move(result);
+    }
+    return !result.isEmpty();
 }
 
 bool sk_region_set_empty(sk_region_t* r) {

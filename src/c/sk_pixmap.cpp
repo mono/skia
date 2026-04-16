@@ -105,7 +105,7 @@ bool sk_pixmap_erase_color4f(const sk_pixmap_t* cpixmap, const sk_color4f_t* col
 // Sk*Encoder
 
 bool sk_webpencoder_encode(sk_wstream_t* dst, const sk_pixmap_t* src, const sk_webpencoder_options_t* options) {
-    return SkWebpEncoder::Encode(AsWStream(dst), *AsPixmap(src), *AsWebpEncoderOptions(options));
+    return SkWebpEncoder::Encode(AsWStream(dst), *AsPixmap(src), AsWebpEncoderOptions(options));
 }
 
 bool sk_jpegencoder_encode(sk_wstream_t* dst, const sk_pixmap_t* src, const sk_jpegencoder_options_t* options) {
@@ -113,7 +113,7 @@ bool sk_jpegencoder_encode(sk_wstream_t* dst, const sk_pixmap_t* src, const sk_j
 }
 
 bool sk_pngencoder_encode(sk_wstream_t* dst, const sk_pixmap_t* src, const sk_pngencoder_options_t* options) {
-    return SkPngEncoder::Encode(AsWStream(dst), *AsPixmap(src), *AsPngEncoderOptions(options));
+    return SkPngEncoder::Encode(AsWStream(dst), *AsPixmap(src), AsPngEncoderOptions(options));
 }
 
 

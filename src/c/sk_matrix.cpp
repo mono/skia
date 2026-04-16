@@ -9,6 +9,7 @@
 
 #include "include/core/SkMatrix.h"
 #include "include/core/SkM44.h"
+#include "include/core/SkSpan.h"
 #include "include/utils/SkCamera.h"
 
 #include "include/c/sk_matrix.h"
@@ -49,22 +50,20 @@ void sk_matrix_map_rect(sk_matrix_t *matrix, sk_rect_t *dest, sk_rect_t *source)
 }
 
 void sk_matrix_map_points(sk_matrix_t *matrix, sk_point_t *dst, sk_point_t *src, int count) {
-    AsMatrix(matrix).mapPoints(AsPoint(dst), AsPoint(src), count);
+    AsMatrix(matrix).mapPoints(SkSpan<SkPoint>(AsPoint(dst), count), SkSpan<const SkPoint>(AsPoint(src), count));
 }
 
 void sk_matrix_map_vectors(sk_matrix_t *matrix, sk_point_t *dst, sk_point_t *src, int count) {
-    AsMatrix(matrix).mapVectors(AsPoint(dst), AsPoint(src), count);
+    AsMatrix(matrix).mapVectors(SkSpan<SkVector>(AsPoint(dst), count), SkSpan<const SkVector>(AsPoint(src), count));
 }
 
 void sk_matrix_map_xy(sk_matrix_t *matrix, float x, float y, sk_point_t* cresult) {
-    SkPoint result;
-    AsMatrix(matrix).mapXY(x, y, &result);
+    SkPoint result = AsMatrix(matrix).mapPoint(SkPoint::Make(x, y));
     *cresult = *ToPoint(&result);
 }
 
 void sk_matrix_map_vector(sk_matrix_t *matrix, float x, float y, sk_point_t* cresult) {
-    SkPoint result;
-    AsMatrix(matrix).mapVector(x, y, &result);
+    SkVector result = AsMatrix(matrix).mapVector(x, y);
     *cresult = *ToPoint(&result);
 }
 

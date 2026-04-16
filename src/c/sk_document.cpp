@@ -9,6 +9,7 @@
 
 #include "include/core/SkDocument.h"
 #include "include/docs/SkPDFDocument.h"
+#include "include/docs/SkPDFJpegHelpers.h"
 #ifdef SK_BUILD_FOR_WIN
 #include "include/docs/SkXPSDocument.h"
 #include <XpsObjectModel.h>
@@ -23,11 +24,17 @@ void sk_document_unref(sk_document_t* document) {
 }
 
 sk_document_t* sk_document_create_pdf_from_stream(sk_wstream_t* stream) {
-    return ToDocument(SkPDF::MakeDocument(AsWStream(stream)).release());
+    SkPDF::Metadata metadata;
+    metadata.jpegDecoder = SkPDF::JPEG::Decode;
+    metadata.jpegEncoder = SkPDF::JPEG::Encode;
+    return ToDocument(SkPDF::MakeDocument(AsWStream(stream), metadata).release());
 }
 
 sk_document_t* sk_document_create_pdf_from_stream_with_metadata(sk_wstream_t* stream, const sk_document_pdf_metadata_t* cmetadata) {
-    return ToDocument(SkPDF::MakeDocument(AsWStream(stream), AsDocumentPDFMetadata(cmetadata)).release());
+    SkPDF::Metadata metadata = AsDocumentPDFMetadata(cmetadata);
+    metadata.jpegDecoder = SkPDF::JPEG::Decode;
+    metadata.jpegEncoder = SkPDF::JPEG::Encode;
+    return ToDocument(SkPDF::MakeDocument(AsWStream(stream), metadata).release());
 }
 
 sk_document_t* sk_document_create_xps_from_stream(sk_wstream_t* stream, float dpi) {

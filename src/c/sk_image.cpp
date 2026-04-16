@@ -120,7 +120,9 @@ bool sk_image_is_lazy_generated(const sk_image_t* image) {
 }
 
 bool sk_image_is_valid(const sk_image_t* image, gr_recording_context_t* context) {
-    return AsImage(image)->isValid(AsGrRecordingContext(context));
+    // In m147, isValid() takes SkRecorder* instead of GrRecordingContext*.
+    // Pass nullptr which works for both raster and GPU-backed images.
+    return AsImage(image)->isValid(nullptr);
 }
 
 bool sk_image_read_pixels(const sk_image_t* image, const sk_imageinfo_t* dstInfo, void* dstPixels, size_t dstRowBytes, int srcX, int srcY, sk_image_caching_hint_t cachingHint) {
@@ -136,15 +138,19 @@ bool sk_image_scale_pixels(const sk_image_t* image, const sk_pixmap_t* dst, cons
 }
 
 sk_data_t* sk_image_ref_encoded(const sk_image_t* cimage) {
-    return ToData(AsImage(cimage)->refEncodedData().release());
+    // refEncodedData() returns sk_sp<const SkData> in m147
+    sk_sp<const SkData> data = AsImage(cimage)->refEncodedData();
+    // const_cast is safe here since SkData is immutable and ref-counted
+    return ToData(const_cast<SkData*>(data.release()));
 }
 
 sk_image_t* sk_image_make_subset_raster(const sk_image_t* cimage, const sk_irect_t* subset) {
-    return ToImage(AsImage(cimage)->makeSubset(nullptr, *AsIRect(subset)).release());
+    return ToImage(AsImage(cimage)->makeSubset(nullptr, *AsIRect(subset), {}).release());
 }
 
 sk_image_t* sk_image_make_subset(const sk_image_t* cimage, gr_direct_context_t* context, const sk_irect_t* subset) {
-    return ToImage(AsImage(cimage)->makeSubset(AsGrDirectContext(context), *AsIRect(subset)).release());
+    // In m147, makeSubset takes SkRecorder* instead of GrDirectContext*.
+    return ToImage(AsImage(cimage)->makeSubset(nullptr, *AsIRect(subset), {}).release());
 }
 
 sk_image_t* sk_image_make_texture_image(const sk_image_t* cimage, gr_direct_context_t* context, bool mipmapped, bool budgeted) {

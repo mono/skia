@@ -11,6 +11,7 @@
 #include "include/core/SkFontStyle.h"
 #include "include/core/SkTypeface.h"
 #include "include/core/SkStream.h"
+#include "include/core/SkSpan.h"
 
 #include <memory>
 
@@ -75,7 +76,7 @@ sk_typeface_t* sk_typeface_create_from_data(sk_data_t* data, int index) {
 }
 
 void sk_typeface_unichars_to_glyphs(const sk_typeface_t* typeface, const int32_t unichars[], int count, uint16_t glyphs[]) {
-    AsTypeface(typeface)->unicharsToGlyphs(unichars, count, glyphs);
+    AsTypeface(typeface)->unicharsToGlyphs(SkSpan<const SkUnichar>(unichars, count), SkSpan<SkGlyphID>(glyphs, count));
 }
 
 uint16_t sk_typeface_unichar_to_glyph(const sk_typeface_t* typeface, const int32_t unichar) {
@@ -91,7 +92,11 @@ int sk_typeface_count_tables(const sk_typeface_t* typeface) {
 }
 
 int sk_typeface_get_table_tags(const sk_typeface_t* typeface, sk_font_table_tag_t tags[]) {
-    return AsTypeface(typeface)->getTableTags(tags);
+    if (tags) {
+        int count = AsTypeface(typeface)->countTables();
+        return AsTypeface(typeface)->readTableTags(SkSpan<SkFontTableTag>(tags, count));
+    }
+    return AsTypeface(typeface)->countTables();
 }
 
 size_t sk_typeface_get_table_size(const sk_typeface_t* typeface, sk_font_table_tag_t tag) {
@@ -111,7 +116,9 @@ int sk_typeface_get_units_per_em(const sk_typeface_t* typeface) {
 }
 
 bool sk_typeface_get_kerning_pair_adjustments(const sk_typeface_t* typeface, const uint16_t glyphs[], int count, int32_t adjustments[]) {
-    return AsTypeface(typeface)->getKerningPairAdjustments(glyphs, count, adjustments);
+    return AsTypeface(typeface)->getKerningPairAdjustments(
+        SkSpan<const SkGlyphID>(glyphs, count),
+        SkSpan<int32_t>(adjustments, count - 1));
 }
 
 sk_string_t* sk_typeface_get_family_name(const sk_typeface_t* typeface) {
