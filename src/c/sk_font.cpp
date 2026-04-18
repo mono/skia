@@ -10,9 +10,13 @@
 #include "include/core/SkFont.h"
 #include "include/core/SkFontMgr.h"
 #include "include/core/SkFontStyle.h"
+#include "include/core/SkMatrix.h"
+#include "include/core/SkPath.h"
+#include "include/core/SkPathBuilder.h"
 #include "include/core/SkSpan.h"
 #include "include/core/SkTypeface.h"
 #include "include/utils/SkTextUtils.h"
+#include "include/private/base/SkTemplates.h"
 
 #include "include/c/sk_font.h"
 
@@ -238,4 +242,32 @@ void sk_text_utils_get_path(const void* text, size_t length, sk_text_encoding_t 
     SkTextUtils::GetPath(text, length, (SkTextEncoding)encoding, x, y, *AsFont(font), AsPath(path));
 }
 
-// sk_text_utils_get_pos_path removed: SkTextUtils::GetPosPath no longer exists in m147
+void sk_text_utils_get_pos_path(const void* text, size_t length, sk_text_encoding_t encoding, const sk_point_t pos[], const sk_font_t* font, sk_path_t* path) {
+    if (!sk_validate_text(text, length, encoding)) return;
+
+    const SkFont& skFont = *AsFont(font);
+    int glyphCount = skFont.countText(text, length, (SkTextEncoding)encoding);
+    if (glyphCount <= 0) {
+        *AsPath(path) = SkPath();
+        return;
+    }
+
+    skia_private::AutoTArray<SkGlyphID> glyphs(glyphCount);
+    skFont.textToGlyphs(text, length, (SkTextEncoding)encoding, glyphs);
+
+    struct Rec {
+        SkPathBuilder fDst;
+        const SkPoint* fPos;
+    } rec = { {}, AsPoint(pos) };
+
+    skFont.getPaths(glyphs, [](const SkPath* src, const SkMatrix& mx, void* ctx) {
+        Rec* rec = (Rec*)ctx;
+        if (src) {
+            SkMatrix m(mx);
+            m.postTranslate(rec->fPos->fX, rec->fPos->fY);
+            rec->fDst.addPath(*src, m);
+        }
+        rec->fPos += 1;
+    }, &rec);
+    *AsPath(path) = rec.fDst.detach();
+}
