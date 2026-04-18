@@ -3879,6 +3879,12 @@ skiasharp_build("SkiaSharp") {
 
   deps = [
     ":skia",
+    # mono/skia: upstream made pathops optional in m147 — :skia no longer
+    # includes it, only :pdf and :xps pull it in indirectly. SkiaSharp's
+    # C API exposes pathops as first-class public functions (sk_pathop_op,
+    # sk_pathop_simplify, sk_pathop_tight_bounds, sk_pathop_as_winding,
+    # SkOpBuilder) so we need it linked into libSkiaSharp.so directly.
+    ":pathops",
     "modules/skottie",
   ]
 
