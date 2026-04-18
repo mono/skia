@@ -24,9 +24,50 @@ class Buffer;
 // DepthStencilFlags as bit fields but, externally (i.e., from the GraphiteTypes view), we want
 // it to appear as just an enum class.
 SK_MAKE_BITMASK_OPS(DepthStencilFlags)
+// The same goes for SampleCount
+SK_MAKE_BITMASK_OPS(SampleCount)
 
 /**
- * This enum is used to specify the load operation to be used when a RenderPass begins execution
+ * There are only a few possible valid sample counts (1, 2, 4, 8, 16). So we can key on those 5
+ * options instead of the actual sample value. The resulting key value only requires 3 bits of space
+ */
+static constexpr uint32_t SamplesToKey(SampleCount numSamples) {
+    switch (numSamples) {
+        case SampleCount::k1:
+            return 0;
+        case SampleCount::k2:
+            return 1;
+        case SampleCount::k4:
+            return 2;
+        case SampleCount::k8:
+            return 3;
+        case SampleCount::k16:
+            return 4;
+    }
+    SkUNREACHABLE;
+}
+static constexpr SampleCount KeyToSamples(uint32_t keyBits) {
+    SkASSERT(keyBits <= 4);
+    return static_cast<SampleCount>(1 << keyBits);
+}
+static constexpr int kNumSampleKeyBits = 3;
+
+/**
+ * The strategy that a renderpass and/or pipeline use to access the current dst pixel when blending.
+ */
+enum class DstReadStrategy : uint8_t {
+    kNoneRequired,
+    kTextureCopy,
+    kTextureSample,  // TODO(b/238756862): To be used once direct texture sampling is implemented
+    kReadFromInput,
+    kFramebufferFetch,
+
+    kLast = kFramebufferFetch
+};
+inline static constexpr int kDstReadStrategyCount = (int)(DstReadStrategy::kLast) + 1;
+
+/**
+ * This enum is used to specify the load operation to be used when a RenderPass begins execution.
  */
 enum class LoadOp : uint8_t {
     kLoad,
@@ -72,19 +113,23 @@ static const int kBufferTypeCount = static_cast<int>(BufferType::kLast) + 1;
 /**
  * Data layout requirements on host-shareable buffer contents.
  */
-enum class Layout {
+enum class Layout : uint8_t {
     kInvalid = 0,
     kStd140,
+    kStd140_F16,
     kStd430,
+    kStd430_F16,
     kMetal,
 };
 
 static constexpr const char* LayoutString(Layout layout) {
     switch(layout) {
-        case Layout::kStd140:  return "std140";
-        case Layout::kStd430:  return "std430";
-        case Layout::kMetal:   return "metal";
-        case Layout::kInvalid: return "invalid";
+        case Layout::kStd140:     return "std140";
+        case Layout::kStd140_F16: return "std140-f16";
+        case Layout::kStd430:     return "std430";
+        case Layout::kStd430_F16: return "std430-f16";
+        case Layout::kMetal:      return "metal";
+        case Layout::kInvalid:    return "invalid";
     }
     SkUNREACHABLE;
 }
@@ -96,13 +141,16 @@ static constexpr const char* LayoutString(Layout layout) {
  * This is only a hint and the actual memory type will be determined based on the resource type and
  * backend capabilities.
  */
-enum class AccessPattern : int {
+enum class AccessPattern : uint8_t {
     // GPU-only memory does not need to support reads/writes from the CPU. GPU-private memory will
     // be preferred if the backend supports an efficient private memory type.
     kGpuOnly,
 
     // The resource needs to be CPU visible, e.g. for read-back or as a copy/upload source.
     kHostVisible,
+
+    // Use to debug GPU only buffers.
+    kGpuOnlyCopySrc,
 };
 
 /**
@@ -123,7 +171,7 @@ enum class Discardable : bool {
     kYes = true
 };
 
-enum class Ownership {
+enum class Ownership : uint8_t {
     kOwned,
     kWrapped,
 };
@@ -135,19 +183,10 @@ using ResourceType = uint32_t;
  * Can the resource be held by multiple users at the same time?
  * For example, stencil buffers, pipelines, etc.
  */
-enum class Shareable : bool {
-    kNo = false,
-    kYes = true,
-};
-
-/**
- * This enum is used to notify the ResourceCache which type of ref just dropped to zero on a
- * Resource.
- */
-enum class LastRemovedRef {
-    kUsage,
-    kCommandBuffer,
-    kCache,
+enum class Shareable : uint8_t {
+    kNo,      // The resource is visible in the ResourceCache once all its usage refs are dropped
+    kScratch, // The resource is visible to other Recorders, but acts like kNo within a Recording
+    kYes,     // The resource is always visible in the ResourceCache
 };
 
 /*
@@ -160,13 +199,32 @@ struct BindBufferInfo {
     uint32_t fOffset = 0;
     uint32_t fSize = 0;
 
-    operator bool() const { return SkToBool(fBuffer); }
+    explicit operator bool() const { return SkToBool(fBuffer); }
 
     bool operator==(const BindBufferInfo& o) const {
         return fBuffer == o.fBuffer && (!fBuffer || (fOffset == o.fOffset && fSize == o.fSize));
     }
     bool operator!=(const BindBufferInfo& o) const { return !(*this == o); }
 };
+
+// How texture memory is arranged on the GPU, which can impact what operations are supported.
+enum class Tiling : uint8_t {
+    kOptimal,
+    kLinear
+};
+
+// Coarse ways in which a specific texture can be used, or the theoretic set of usages a texture
+// format supports.
+enum class TextureUsage : uint8_t {
+    kRender   = 0x01, // Can be used as a rendering attachment
+    kMSRTSS   = 0x02, // Can be rendered with MSAA-render-to-single-sampled functionality
+    kSample   = 0x04, // Can be sampled within a shader
+    kCopySrc  = 0x08, // Can be copied into another texture or buffer
+    kCopyDst  = 0x10, // Can be the copy target of another texture or buffer
+    kStorage  = 0x20, // Can be read and written to in a compute pipeline
+    kHostCopy = 0x40, // Can be written to directly from host memory
+};
+SK_MAKE_BITMASK_OPS(TextureUsage)
 
 struct ImmutableSamplerInfo {
     // If the sampler requires YCbCr conversion, backends can place that information here.
@@ -176,7 +234,6 @@ struct ImmutableSamplerInfo {
     // fFormat represents known OR external format numerical representation.
     uint64_t fFormat = 0;
 };
-
 
 /**
  * Struct used to describe how a Texture/TextureProxy/TextureProxyView is sampled.
@@ -188,8 +245,8 @@ struct SamplerDesc {
             : SamplerDesc(samplingOptions, {tileMode, tileMode}) {}
 
     constexpr SamplerDesc(const SkSamplingOptions& samplingOptions,
-                const std::pair<SkTileMode, SkTileMode> tileModes,
-                const ImmutableSamplerInfo info = {})
+                          const std::pair<SkTileMode, SkTileMode> tileModes,
+                          const ImmutableSamplerInfo info = {})
             : fDesc((static_cast<int>(tileModes.first)            << kTileModeXShift           ) |
                     (static_cast<int>(tileModes.second)           << kTileModeYShift           ) |
                     (static_cast<int>(samplingOptions.filter)     << kFilterModeShift          ) |
@@ -212,6 +269,12 @@ struct SamplerDesc {
     }
     constexpr SamplerDesc() = default;
     constexpr SamplerDesc(const SamplerDesc&) = default;
+    constexpr SamplerDesc& operator=(const SamplerDesc&) = default;
+
+    constexpr SamplerDesc(uint32_t desc, uint32_t format, uint32_t extFormatMSB)
+            : fDesc(desc)
+            , fFormat(format)
+            , fExternalFormatMostSignificantBits(extFormatMSB) {}
 
     bool operator==(const SamplerDesc& o) const {
         return o.fDesc == fDesc && o.fFormat == fFormat &&
@@ -220,8 +283,18 @@ struct SamplerDesc {
 
     bool operator!=(const SamplerDesc& o) const { return !(*this == o); }
 
-    SkTileMode tileModeX()          const { return static_cast<SkTileMode>((fDesc >> 0) & 0b11); }
-    SkTileMode tileModeY()          const { return static_cast<SkTileMode>((fDesc >> 2) & 0b11); }
+    SkTileMode tileModeX()          const {
+        return static_cast<SkTileMode>((fDesc >> kTileModeXShift) & 0b11);
+    }
+    SkTileMode tileModeY()          const {
+        return static_cast<SkTileMode>((fDesc >> kTileModeYShift) & 0b11);
+    }
+    SkFilterMode filterMode()       const {
+        return static_cast<SkFilterMode>((fDesc >> kFilterModeShift) & 0b01);
+    }
+    SkMipmapMode mipmap()           const {
+        return static_cast<SkMipmapMode>((fDesc >> kMipmapModeShift) & 0b11);
+    }
     uint32_t   desc()               const { return fDesc;                                        }
     uint32_t   format()             const { return fFormat;                                      }
     uint32_t   externalFormatMSBs() const { return fExternalFormatMostSignificantBits;           }
@@ -232,21 +305,26 @@ struct SamplerDesc {
     // nearest-neighbor sampling in HW.
     SkSamplingOptions samplingOptions() const {
         // TODO: Add support for anisotropic filtering
-        SkFilterMode filter = static_cast<SkFilterMode>((fDesc >> 4) & 0b01);
-        SkMipmapMode mipmap = static_cast<SkMipmapMode>((fDesc >> 5) & 0b11);
+        SkFilterMode filter = static_cast<SkFilterMode>((fDesc >> kFilterModeShift) & 0b01);
+        SkMipmapMode mipmap = static_cast<SkMipmapMode>((fDesc >> kMipmapModeShift) & 0b11);
         return SkSamplingOptions(filter, mipmap);
+    }
+
+    ImmutableSamplerInfo immutableSamplerInfo() const {
+        return {this->desc() >> kImmutableSamplerInfoShift,
+                ((uint64_t) this->externalFormatMSBs() << 32) | (uint64_t) this->format()};
     }
 
     SkSpan<const uint32_t> asSpan() const {
         // Span length depends upon whether the sampler is immutable and if it uses a known format
-        return {&fDesc, 1 + this->isImmutable() + this->usesExternalFormat()};
+        return {&fDesc, 1u + this->isImmutable() + this->usesExternalFormat()};
     }
 
     // These are public such that backends can bitshift data in order to determine whatever
     // sampler qualities they need from fDesc.
-    static constexpr int kNumTileModeBits   = SkNextLog2_portable(int(SkTileMode::kLastTileMode)+1);
-    static constexpr int kNumFilterModeBits = SkNextLog2_portable(int(SkFilterMode::kLast)+1);
-    static constexpr int kNumMipmapModeBits = SkNextLog2_portable(int(SkMipmapMode::kLast)+1);
+    static constexpr int kNumTileModeBits   = SkNextLog2(int(SkTileMode::kLastTileMode)+1);
+    static constexpr int kNumFilterModeBits = SkNextLog2(int(SkFilterMode::kLast)+1);
+    static constexpr int kNumMipmapModeBits = SkNextLog2(int(SkMipmapMode::kLast)+1);
     static constexpr int kMaxNumConversionInfoBits =
             32 - kNumFilterModeBits - kNumMipmapModeBits - kNumTileModeBits;
 
@@ -277,6 +355,6 @@ private:
     uint32_t fExternalFormatMostSignificantBits = 0;
 };
 
-};  // namespace skgpu::graphite
+}  // namespace skgpu::graphite
 
 #endif // skgpu_graphite_ResourceTypes_DEFINED

@@ -12,6 +12,8 @@
 
 #include "src/gpu/graphite/TextureProxyView.h"
 
+#include <optional>
+
 namespace skgpu {
     class RefCntedCallback;
 }
@@ -20,6 +22,7 @@ namespace skgpu::graphite {
 
 class Context;
 class Device;
+class DrawContext;
 class Recorder;
 
 class Image final : public Image_Base {
@@ -29,11 +32,16 @@ public:
 
     // Create an Image that wraps the Device and automatically flushes or references the Device's
     // pending tasks when the Image is used in a draw to another canvas.
-    static sk_sp<Image> WrapDevice(sk_sp<Device> device);
+    static sk_sp<Image> WrapDevice(sk_sp<Device> device,
+                                   std::optional<SkColorInfo> overrideInfo = std::nullopt);
 
     // Create an Image by copying the provided texture proxy view into a new texturable proxy.
     // The source texture does not have to be texturable if it is blittable.
+    //
+    // If provided with a drawContext (e.g. not nullptr), the tasks from this function call will be
+    // added to the drawContext's task list. Otherwise, they will be added to the root task list.
     static sk_sp<Image> Copy(Recorder*,
+                             DrawContext* drawContext,
                              const TextureProxyView& srcView,
                              const SkColorInfo&,
                              const SkIRect& subset,
@@ -51,7 +59,7 @@ public:
     }
 
     bool onIsProtected() const override {
-        return fTextureProxyView.proxy()->isProtected();
+        return fTextureProxyView.proxy()->isProtected() == Protected::kYes;
     }
 
     size_t textureSize() const override;
@@ -66,7 +74,7 @@ public:
     sk_sp<SkImage> onReinterpretColorSpace(sk_sp<SkColorSpace>) const override;
 
 #if defined(GPU_TEST_UTILS)
-    bool readPixelsGraphite(Recorder*, const SkPixmap& dst, int srcX, int srcY) const override;
+    bool readPixelsGraphite(SkRecorder*, const SkPixmap& dst, int srcX, int srcY) const override;
 #endif
 
 private:

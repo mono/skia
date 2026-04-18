@@ -66,10 +66,6 @@
 #include <memory>
 #include <utility>
 
-#ifdef SK_DIRECT3D
-#include "src/gpu/ganesh/d3d/GrD3DGpu.h"
-#endif
-
 using namespace skia_private;
 
 #define ASSERT_SINGLE_OWNER SKGPU_ASSERT_SINGLE_OWNER(this->singleOwner())
@@ -547,9 +543,29 @@ void GrDirectContext::syncAllOutstandingGpuWork(bool shouldExecuteWhileAbandoned
 
 ////////////////////////////////////////////////////////////////////////////////
 
+bool GrDirectContext::canDetectNewVkPipelineCacheData() const {
+    if (!fGpu) {
+        return false;
+    }
+
+    return fGpu->canDetectNewVkPipelineCacheData();
+}
+
+bool GrDirectContext::hasNewVkPipelineCacheData() const {
+    if (!fGpu) {
+        return false;
+    }
+
+    return fGpu->hasNewVkPipelineCacheData();
+}
+
 void GrDirectContext::storeVkPipelineCacheData() {
+    this->storeVkPipelineCacheData(SIZE_MAX);
+}
+
+void GrDirectContext::storeVkPipelineCacheData(size_t maxSize) {
     if (fGpu) {
-        fGpu->storeVkPipelineCacheData();
+        fGpu->storeVkPipelineCacheData(maxSize);
     }
 }
 
@@ -1186,26 +1202,3 @@ sk_sp<GrDirectContext> GrDirectContext::MakeMock(const GrMockOptions* mockOption
 
     return direct;
 }
-
-#ifdef SK_DIRECT3D
-/*************************************************************************************************/
-sk_sp<GrDirectContext> GrDirectContext::MakeDirect3D(const GrD3DBackendContext& backendContext) {
-    GrContextOptions defaultOptions;
-    return MakeDirect3D(backendContext, defaultOptions);
-}
-
-sk_sp<GrDirectContext> GrDirectContext::MakeDirect3D(const GrD3DBackendContext& backendContext,
-                                                     const GrContextOptions& options) {
-    sk_sp<GrDirectContext> direct(new GrDirectContext(
-            GrBackendApi::kDirect3D,
-            options,
-            GrContextThreadSafeProxyPriv::Make(GrBackendApi::kDirect3D, options)));
-
-    direct->fGpu = GrD3DGpu::Make(backendContext, options, direct.get());
-    if (!direct->init()) {
-        return nullptr;
-    }
-
-    return direct;
-}
-#endif

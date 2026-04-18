@@ -13,7 +13,7 @@
 #include "include/gpu/graphite/vk/VulkanGraphiteTypes.h"
 #include "src/gpu/graphite/Caps.h"
 #include "src/gpu/graphite/ContextPriv.h"
-#include "src/gpu/graphite/vk/VulkanGraphiteTypesPriv.h"
+#include "src/gpu/graphite/vk/VulkanGraphiteUtils.h"
 
 using namespace skgpu::graphite;
 
@@ -22,13 +22,13 @@ const SkISize kSize = {16, 16};
 }
 
 DEF_GRAPHITE_TEST_FOR_VULKAN_CONTEXT(VulkanBackendTextureSimpleCreationTest, reporter, context,
-                                     CtsEnforcement::kApiLevel_V) {
+                                     CtsEnforcement::kApiLevel_202404) {
     auto recorder = context->makeRecorder();
 
     bool isProtected = context->priv().caps()->protectedSupport();
 
     VulkanTextureInfo textureInfo;
-    textureInfo.fSampleCount = 1;
+    textureInfo.fSampleCount = SampleCount::k1;
     textureInfo.fMipmapped = skgpu::Mipmapped::kNo;
     textureInfo.fFlags = isProtected ? VK_IMAGE_CREATE_PROTECTED_BIT : 0;
     textureInfo.fFormat = VK_FORMAT_R8G8B8A8_UNORM;
@@ -49,13 +49,13 @@ DEF_GRAPHITE_TEST_FOR_VULKAN_CONTEXT(VulkanBackendTextureSimpleCreationTest, rep
 
 // Test that copying BackendTexture variables works.
 DEF_GRAPHITE_TEST_FOR_VULKAN_CONTEXT(VulkanBackendTextureCopyVariableTest, reporter, context,
-                                     CtsEnforcement::kApiLevel_V) {
+                                     CtsEnforcement::kApiLevel_202404) {
     auto recorder = context->makeRecorder();
 
     bool isProtected = context->priv().caps()->protectedSupport();
 
     VulkanTextureInfo textureInfo;
-    textureInfo.fSampleCount = 1;
+    textureInfo.fSampleCount = SampleCount::k1;
     textureInfo.fMipmapped = skgpu::Mipmapped::kNo;
     textureInfo.fFlags = isProtected ? VK_IMAGE_CREATE_PROTECTED_BIT : 0;
     textureInfo.fFormat = VK_FORMAT_R8G8B8A8_UNORM;

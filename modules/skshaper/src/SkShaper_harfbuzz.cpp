@@ -112,7 +112,7 @@ unsigned skhb_nominal_glyphs(hb_font_t *hb_font, void *font_data,
     }
     AutoSTMalloc<256, SkGlyphID> glyph(count);
     font.textToGlyphs(unicode.get(), count * sizeof(SkUnichar), SkTextEncoding::kUTF32,
-                        glyph.get(), count);
+                      {glyph.get(), count});
 
     // Copy the results back to the sparse array.
     unsigned int done;
@@ -130,10 +130,8 @@ hb_position_t skhb_glyph_h_advance(hb_font_t* hb_font,
                                    void* user_data) {
     SkFont& font = *reinterpret_cast<SkFont*>(font_data);
 
-    SkScalar advance;
-    SkGlyphID skGlyph = SkTo<SkGlyphID>(hbGlyph);
+    SkScalar advance = font.getWidth(SkTo<SkGlyphID>(hbGlyph));
 
-    font.getWidths(&skGlyph, 1, &advance);
     if (!font.isSubpixel()) {
         advance = SkScalarRoundToInt(advance);
     }
@@ -158,7 +156,7 @@ void skhb_glyph_h_advances(hb_font_t* hb_font,
         glyphs = SkTAddOffset<const hb_codepoint_t>(glyphs, glyph_stride);
     }
     AutoSTMalloc<256, SkScalar> advance(count);
-    font.getWidths(glyph.get(), count, advance.get());
+    font.getWidths({glyph.data(), count}, {advance.data(), count});
 
     if (!font.isSubpixel()) {
         for (unsigned i = 0; i < count; i++) {
@@ -190,7 +188,7 @@ hb_bool_t skhb_glyph_extents(hb_font_t* hb_font,
     SkRect sk_bounds;
     SkGlyphID skGlyph = SkTo<SkGlyphID>(hbGlyph);
 
-    font.getWidths(&skGlyph, 1, nullptr, &sk_bounds);
+    font.getBounds({&skGlyph, 1}, {&sk_bounds, 1}, nullptr);
     if (!font.isSubpixel()) {
         sk_bounds.set(sk_bounds.roundOut());
     }
@@ -319,10 +317,11 @@ HBFont create_typeface_hb_font(const SkTypeface& typeface) {
         return nullptr;
     }
     hb_ot_font_set_funcs(otFont.get());
-    int axis_count = typeface.getVariationDesignPosition(nullptr, 0);
+    int axis_count = typeface.getVariationDesignPosition({});
     if (axis_count > 0) {
         AutoSTMalloc<4, SkFontArguments::VariationPosition::Coordinate> axis_values(axis_count);
-        if (typeface.getVariationDesignPosition(axis_values, axis_count) == axis_count) {
+        if (typeface.getVariationDesignPosition({axis_values.get(),
+                                                 (size_t)axis_count}) == axis_count) {
             hb_font_set_variations(otFont.get(),
                                    reinterpret_cast<hb_variation_t*>(axis_values.get()),
                                    axis_count);
@@ -473,15 +472,22 @@ struct ShapedGlyph {
     bool fUnsafeToBreak;
 };
 struct ShapedRun {
-    ShapedRun(SkShaper::RunHandler::Range utf8Range, const SkFont& font, SkBidiIterator::Level level,
-              std::unique_ptr<ShapedGlyph[]> glyphs, size_t numGlyphs, SkVector advance = {0, 0})
-        : fUtf8Range(utf8Range), fFont(font), fLevel(level)
+    ShapedRun(SkShaper::RunHandler::Range utf8Range,
+              const SkFont& font,
+              SkBidiIterator::Level level,
+              SkFourByteTag script,
+              const char* language,
+              std::unique_ptr<ShapedGlyph[]> glyphs, size_t numGlyphs,
+              SkVector advance = {0, 0})
+        : fUtf8Range(utf8Range), fFont(font), fLevel(level), fScript(script), fLanguage(language)
         , fGlyphs(std::move(glyphs)), fNumGlyphs(numGlyphs), fAdvance(advance)
     {}
 
     SkShaper::RunHandler::Range fUtf8Range;
     SkFont fFont;
     SkBidiIterator::Level fLevel;
+    SkFourByteTag fScript;
+    const char* fLanguage;
     std::unique_ptr<ShapedGlyph[]> fGlyphs;
     size_t fNumGlyphs;
     SkVector fAdvance;
@@ -551,6 +557,8 @@ void emit(SkUnicode* unicode, const ShapedLine& line, SkShaper::RunHandler* hand
         const SkShaper::RunHandler::RunInfo info = {
             run.fFont,
             run.fLevel,
+            run.fScript,
+            run.fLanguage,
             run.fAdvance,
             run.fNumGlyphs,
             run.fUtf8Range
@@ -565,6 +573,8 @@ void emit(SkUnicode* unicode, const ShapedLine& line, SkShaper::RunHandler* hand
         const SkShaper::RunHandler::RunInfo info = {
             run.fFont,
             run.fLevel,
+            run.fScript,
+            run.fLanguage,
             run.fAdvance,
             run.fNumGlyphs,
             run.fUtf8Range
@@ -669,7 +679,7 @@ private:
                SkScalar width,
                RunHandler*) const override;
 
-    virtual void wrap(char const * const utf8, size_t utf8Bytes,
+    virtual void wrap(char const * utf8, size_t utf8Bytes,
                       const BiDiRunIterator&,
                       const LanguageRunIterator&,
                       const ScriptRunIterator&,
@@ -684,7 +694,7 @@ class ShaperDrivenWrapper : public ShaperHarfBuzz {
 public:
     using ShaperHarfBuzz::ShaperHarfBuzz;
 private:
-    void wrap(char const * const utf8, size_t utf8Bytes,
+    void wrap(char const * utf8, size_t utf8Bytes,
               const BiDiRunIterator&,
               const LanguageRunIterator&,
               const ScriptRunIterator&,
@@ -699,7 +709,7 @@ class ShapeThenWrap : public ShaperHarfBuzz {
 public:
     using ShaperHarfBuzz::ShaperHarfBuzz;
 private:
-    void wrap(char const * const utf8, size_t utf8Bytes,
+    void wrap(char const * utf8, size_t utf8Bytes,
               const BiDiRunIterator&,
               const LanguageRunIterator&,
               const ScriptRunIterator&,
@@ -714,7 +724,7 @@ class ShapeDontWrapOrReorder : public ShaperHarfBuzz {
 public:
     using ShaperHarfBuzz::ShaperHarfBuzz;
 private:
-    void wrap(char const * const utf8, size_t utf8Bytes,
+    void wrap(char const * utf8, size_t utf8Bytes,
               const BiDiRunIterator&,
               const LanguageRunIterator&,
               const ScriptRunIterator&,
@@ -824,7 +834,7 @@ void ShaperDrivenWrapper::wrap(char const * const utf8, size_t utf8Bytes,
         utf8Start = utf8End;
         utf8End = utf8 + runSegmenter.endOfCurrentRun();
 
-        ShapedRun model(RunHandler::Range(), SkFont(), 0, nullptr, 0);
+        ShapedRun model(RunHandler::Range(), SkFont(), 0, 0, {}, nullptr, 0);
         bool modelNeedsRegenerated = true;
         int modelGlyphOffset = 0;
 
@@ -887,7 +897,7 @@ void ShaperDrivenWrapper::wrap(char const * const utf8, size_t utf8Bytes,
             }
             SkBreakIterator& breakIterator = *lineBreakIterator;
 
-            ShapedRun best(RunHandler::Range(), SkFont(), 0, nullptr, 0,
+            ShapedRun best(RunHandler::Range(), SkFont(), 0, 0, {}, nullptr, 0,
                            { SK_ScalarNegativeInfinity, SK_ScalarNegativeInfinity });
             bool bestIsInvalid = true;
             bool bestUsesModelForGlyphs = false;
@@ -906,6 +916,7 @@ void ShaperDrivenWrapper::wrap(char const * const utf8, size_t utf8Bytes,
                         candidateUsesModelForGlyphs = true;
                         return ShapedRun(RunHandler::Range(utf8Start - utf8, breakIteratorCurrent),
                                          font.currentFont(), bidi.currentLevel(),
+                                         script.currentScript(), language.currentLanguage(),
                                          std::unique_ptr<ShapedGlyph[]>(),
                                          props.glyphLen - modelGlyphOffset,
                                          props.advance - modelAdvanceOffset);
@@ -1168,6 +1179,8 @@ void ShapeThenWrap::wrap(char const * const utf8, size_t utf8Bytes,
             return RunHandler::RunInfo{
                 sub.run.fFont,
                 sub.run.fLevel,
+                sub.run.fScript,
+                sub.run.fLanguage,
                 advance,
                 sub.endGlyphIndex - sub.startGlyphIndex,
                 RunHandler::Range(startUtf8, endUtf8 - startUtf8)
@@ -1221,6 +1234,8 @@ void ShapeDontWrapOrReorder::wrap(char const * const utf8, size_t utf8Bytes,
         const RunHandler::RunInfo info = {
             run.fFont,
             run.fLevel,
+            run.fScript,
+            run.fLanguage,
             run.fAdvance,
             run.fNumGlyphs,
             run.fUtf8Range
@@ -1232,6 +1247,8 @@ void ShapeDontWrapOrReorder::wrap(char const * const utf8, size_t utf8Bytes,
         const RunHandler::RunInfo info = {
             run.fFont,
             run.fLevel,
+            run.fScript,
+            run.fLanguage,
             run.fAdvance,
             run.fNumGlyphs,
             run.fUtf8Range
@@ -1287,7 +1304,9 @@ ShapedRun ShaperHarfBuzz::shape(char const * const utf8,
 {
     size_t utf8runLength = utf8End - utf8Start;
     ShapedRun run(RunHandler::Range(utf8Start - utf8, utf8runLength),
-                  font.currentFont(), bidi.currentLevel(), nullptr, 0);
+                  font.currentFont(), bidi.currentLevel(),
+                  script.currentScript(), language.currentLanguage(),
+                  nullptr, 0);
 
     hb_buffer_t* buffer = fBuffer.get();
     SkAutoTCallVProc<hb_buffer_t, hb_buffer_clear_contents> autoClearBuffer(buffer);
@@ -1296,7 +1315,7 @@ ShapedRun ShaperHarfBuzz::shape(char const * const utf8,
 
     // Documentation for HB_BUFFER_FLAG_BOT/EOT at 763e5466c0a03a7c27020e1e2598e488612529a7.
     // Currently BOT forces a dotted circle when first codepoint is a mark; EOT has no effect.
-    // Avoid adding dotted circle, re-evaluate if BOT/EOT change. See https://skbug.com/9618.
+    // Avoid adding dotted circle, re-evaluate if BOT/EOT change. See https://skbug.com/40040947.
     // hb_buffer_set_flags(buffer, HB_BUFFER_FLAG_BOT | HB_BUFFER_FLAG_EOT);
 
     // Add precontext.
@@ -1380,6 +1399,7 @@ ShapedRun ShaperHarfBuzz::shape(char const * const utf8,
 
     run = ShapedRun(RunHandler::Range(utf8Start - utf8, utf8runLength),
                     font.currentFont(), bidi.currentLevel(),
+                    script.currentScript(), language.currentLanguage(),
                     std::unique_ptr<ShapedGlyph[]>(new ShapedGlyph[len]), len);
 
     // Undo skhb_position with (1.0/(1<<16)) and scale as needed.
@@ -1389,7 +1409,7 @@ ShapedRun ShaperHarfBuzz::shape(char const * const utf8,
     }
     AutoSTArray<32, SkRect> glyphBounds(len);
     SkPaint p;
-    run.fFont.getBounds(glyphIDs.get(), len, glyphBounds.get(), &p);
+    run.fFont.getBounds(glyphIDs, glyphBounds, &p);
 
     double SkScalarFromHBPosX = +(1.52587890625e-5) * run.fFont.getScaleX();
     double SkScalarFromHBPosY = -(1.52587890625e-5);  // HarfBuzz y-up, Skia y-down

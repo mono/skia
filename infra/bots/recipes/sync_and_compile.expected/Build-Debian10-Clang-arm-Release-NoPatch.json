@@ -168,6 +168,7 @@
       "--download_topics"
     ],
     "env": {
+      "CHROME_HEADLESS": "1",
       "DEPOT_TOOLS_COLLECT_METRICS": "0",
       "GIT_BACKENDINFO": "1",
       "GIT_DAPPER_TRACE": "1",
@@ -319,7 +320,7 @@
       "CCACHE_MAXFILES": "0",
       "CCACHE_MAXSIZE": "75G",
       "CHROME_HEADLESS": "1",
-      "PATH": "<PATH>:RECIPE_REPO[depot_tools]"
+      "PATH": "<PATH>:RECIPE_REPO[depot_tools]:[START_DIR]/skia/third_party/ninja"
     },
     "name": "ccache stats-start"
   },
@@ -328,7 +329,7 @@
       "[START_DIR]/skia/bin/gn",
       "gen",
       "[START_DIR]/cache/work/skia/out/Build-Debian10-Clang-arm-Release-NoPatch/Release",
-      "--args=cc=\"[START_DIR]/clang_linux/bin/clang\" cc_wrapper=\"[START_DIR]/ccache_linux/bin/ccache\" cxx=\"[START_DIR]/clang_linux/bin/clang++\" extra_cflags=[\"-B[START_DIR]/clang_linux/bin\", \"-DPLACEHOLDER_clang_linux_version=42\"] extra_ldflags=[\"-B[START_DIR]/clang_linux/bin\", \"-fuse-ld=lld\", \"-L[START_DIR]/clang_linux/lib\"] is_debug=false link_pool_depth=2 skia_use_client_icu=true skia_use_libgrapheme=true target_cpu=\"arm\" werror=true"
+      "--args=cc=\"[START_DIR]/clang_linux/bin/clang\" cc_wrapper=\"[START_DIR]/ccache_linux/bin/ccache\" cxx=\"[START_DIR]/clang_linux/bin/clang++\" extra_cflags=[\"-B[START_DIR]/clang_linux/bin\", \"-DPLACEHOLDER_clang_linux_version=42\"] extra_ldflags=[\"-B[START_DIR]/clang_linux/bin\", \"-fuse-ld=lld\", \"-L[START_DIR]/clang_linux/lib\"] is_debug=false is_trivial_abi=true link_pool_depth=2 skia_use_client_icu=true skia_use_libgrapheme=true target_cpu=\"arm\" werror=true"
     ],
     "cwd": "[START_DIR]/skia",
     "env": {
@@ -337,7 +338,7 @@
       "CCACHE_MAXFILES": "0",
       "CCACHE_MAXSIZE": "75G",
       "CHROME_HEADLESS": "1",
-      "PATH": "<PATH>:RECIPE_REPO[depot_tools]"
+      "PATH": "<PATH>:RECIPE_REPO[depot_tools]:[START_DIR]/skia/third_party/ninja"
     },
     "name": "gn gen"
   },
@@ -354,7 +355,7 @@
       "CCACHE_MAXFILES": "0",
       "CCACHE_MAXSIZE": "75G",
       "CHROME_HEADLESS": "1",
-      "PATH": "<PATH>:RECIPE_REPO[depot_tools]"
+      "PATH": "<PATH>:RECIPE_REPO[depot_tools]:[START_DIR]/skia/third_party/ninja"
     },
     "name": "ninja"
   },
@@ -370,7 +371,7 @@
       "CCACHE_MAXFILES": "0",
       "CCACHE_MAXSIZE": "75G",
       "CHROME_HEADLESS": "1",
-      "PATH": "<PATH>:RECIPE_REPO[depot_tools]"
+      "PATH": "<PATH>:RECIPE_REPO[depot_tools]:[START_DIR]/skia/third_party/ninja"
     },
     "name": "ccache stats-end"
   },

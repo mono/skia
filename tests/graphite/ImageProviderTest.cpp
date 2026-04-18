@@ -23,7 +23,7 @@
 #include "src/gpu/graphite/RecorderPriv.h"
 #include "src/gpu/graphite/Surface_Graphite.h"
 #include "src/image/SkImage_Base.h"
-#include "tests/TestUtils.h"
+#include "tests/ComparePixels.h"
 #include "tools/ToolUtils.h"
 #include "tools/graphite/GraphiteToolUtils.h"
 
@@ -165,6 +165,7 @@ bool check_img(skiatest::Reporter* reporter,
                Context* context,
                Recorder* recorder,
                SkImage* imageToDraw,
+               bool useShader,
                Mipmapped mipmapped,
                const char* testcase,
                const SkColor4f& expectedColor) {
@@ -191,9 +192,16 @@ bool check_img(skiatest::Reporter* reporter,
                 ? SkSamplingOptions(SkFilterMode::kLinear, SkMipmapMode::kNearest)
                 : SkSamplingOptions(SkFilterMode::kLinear);
 
-        canvas->drawImageRect(imageToDraw,
-                              SkRect::MakeWH(kSurfaceSize.width(), kSurfaceSize.height()),
-                              sampling);
+        SkRect rectToDraw = SkRect::MakeWH(kSurfaceSize.width(), kSurfaceSize.height());
+        if (useShader) {
+            SkPaint imagePaint;
+            SkMatrix localMatrix = SkMatrix::RectToRect(SkRect::Make(imageToDraw->bounds()),
+                                                        rectToDraw);
+            imagePaint.setShader(imageToDraw->makeShader(sampling, &localMatrix));
+            canvas->drawRect(rectToDraw, imagePaint);
+        } else {
+            canvas->drawImageRect(imageToDraw, rectToDraw, sampling);
+        }
 
         if (!surface->readPixels(pm, 0, 0)) {
             ERRORF(reporter, "readPixels failed");
@@ -204,9 +212,10 @@ bool check_img(skiatest::Reporter* reporter,
     auto error = std::function<ComparePixmapsErrorReporter>(
             [&](int x, int y, const float diffs[4]) {
                 ERRORF(reporter,
-                       "case %s %s: expected (%.1f %.1f %.1f %.1f) got (%.1f, %.1f, %.1f, %.1f)",
+                       "case %s %s %s: expected (%.1f %.1f %.1f %.1f) got (%.1f, %.1f, %.1f, %.1f)",
                        testcase,
                        (mipmapped == Mipmapped::kYes) ? "w/ mipmaps" : "w/o mipmaps",
+                       useShader ? "imageShader" : "drawImageRect",
                        expectedColor.fR, expectedColor.fG, expectedColor.fB, expectedColor.fA,
                        expectedColor.fR-diffs[0], expectedColor.fG-diffs[1],
                        expectedColor.fB-diffs[2], expectedColor.fA-diffs[3]);
@@ -232,10 +241,12 @@ void run_test(skiatest::Reporter* reporter,
 
     for (auto t : testcases) {
         for (auto mm : { Mipmapped::kNo, Mipmapped::kYes }) {
-            sk_sp<SkImage> image = t.fFactory(recorder);
+            for (bool useShader : { false, true }) {
+                sk_sp<SkImage> image = t.fFactory(recorder);
 
-            check_img(reporter, context, recorder, image.get(), mm,
-                      t.fTestCase, t.fExpectedColors[static_cast<int>(mm)]);
+                check_img(reporter, context, recorder, image.get(), useShader, mm,
+                        t.fTestCase, t.fExpectedColors[static_cast<int>(mm)]);
+            }
         }
     }
 }
@@ -274,7 +285,7 @@ void run_test(skiatest::Reporter* reporter,
 //                    drawn w/ mipmapping     --> dropped draw (blue)
 //
 DEF_GRAPHITE_TEST_FOR_RENDERING_CONTEXTS(ImageProviderTest_Graphite_Default, reporter, context,
-                                         CtsEnforcement::kApiLevel_V) {
+                                         CtsEnforcement::kApiLevel_202404) {
     TestCase testcases[] = {
         { "0", create_raster_backed_image_no_mipmaps,   { kBackgroundColor, kBackgroundColor } },
         { "1", create_raster_backed_image_with_mipmaps, { kBackgroundColor, kBackgroundColor } },
@@ -316,7 +327,7 @@ DEF_GRAPHITE_TEST_FOR_RENDERING_CONTEXTS(ImageProviderTest_Graphite_Default, rep
 //                    drawn w/ mipmapping     --> drawn (yellow) - auto-converted
 //
 DEF_GRAPHITE_TEST_FOR_RENDERING_CONTEXTS(ImageProviderTest_Graphite_Testing, reporter, context,
-                                         CtsEnforcement::kApiLevel_V) {
+                                         CtsEnforcement::kApiLevel_202404) {
     static const TestCase testcases[] = {
         { "0", create_raster_backed_image_no_mipmaps,   { kBaseImageColor, kBaseImageColor } },
         { "1", create_raster_backed_image_with_mipmaps, { kBaseImageColor, kFirstMipLevelColor } },
@@ -335,7 +346,7 @@ DEF_GRAPHITE_TEST_FOR_RENDERING_CONTEXTS(ImageProviderTest_Graphite_Testing, rep
 // Here we're testing that the RequiredProperties parameter to makeTextureImage and makeSubset
 // works as expected.
 DEF_GRAPHITE_TEST_FOR_RENDERING_CONTEXTS(Make_TextureImage_Subset_Test, reporter, context,
-                                         CtsEnforcement::kApiLevel_V) {
+                                         CtsEnforcement::kApiLevel_202404) {
     static const struct {
         std::string name;
         FactoryT fFactory;
@@ -451,7 +462,7 @@ SkColorType pick_colortype(const Caps* caps, bool mipmapped) {
 //    SkImage::makeColorTypeAndColorSpace
 // works as expected.
 DEF_GRAPHITE_TEST_FOR_RENDERING_CONTEXTS(MakeColorSpace_Test, reporter, context,
-                                         CtsEnforcement::kApiLevel_V) {
+                                         CtsEnforcement::kApiLevel_202404) {
     static const struct {
         std::string name;
         FactoryT fFactory;

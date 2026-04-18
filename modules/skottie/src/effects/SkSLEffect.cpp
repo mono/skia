@@ -169,6 +169,10 @@ protected:
                 container->bind(abuilder, (*jprop)["v"], std::get<1>(fUniforms.back()).get());
             } else if (type == kSkSLProp_image) {
                 const skjson::ObjectValue* jimageRef = (*jprop)["v"];
+                if (!jimageRef) {
+                    continue;
+                }
+
                 const AnimationBuilder::ScopedAssetRef footageAsset(&abuilder, *jimageRef);
                 const auto* asset_info = abuilder.loadFootageAsset(*footageAsset);
                 if (asset_info && asset_info->fAsset) {
@@ -242,7 +246,7 @@ private:
             return;
         }
         sk_sp<SkShader> shader =
-                fEffect->makeShader(buildUniformData(), SkSpan(buildChildrenData(this->node())));
+                fEffect->makeShader(buildUniformData(), buildChildrenData(this->node()));
         this->node()->setShader(std::move(shader));
     }
 };

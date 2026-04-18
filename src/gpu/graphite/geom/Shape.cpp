@@ -117,9 +117,8 @@ SkPath Shape::asPath() const {
     }
 
     if (fType == Type::kArc) {
-        SkPath out;
         // Filled ovals are already culled out so we assume no simple fills
-        SkPathPriv::CreateDrawArcPath(&out, fArc, /*isFillNoPathEffect=*/false);
+        SkPath out = SkPathPriv::CreateDrawArcPath(fArc, /*isFillNoPathEffect=*/false);
         // CreateDrawArcPath resets the output path and configures its fill
         // type, so we just have to ensure invertedness is correct.
         if (fInverted) {
@@ -147,8 +146,8 @@ int path_key_from_data_size(const SkPath& path) {
     if (verbCnt > kMaxKeyFromDataVerbCnt) {
         return -1;
     }
-    const int pointCnt = path.countPoints();
-    const int conicWeightCnt = SkPathPriv::ConicWeightCnt(path);
+    const size_t pointCnt = path.points().size();
+    const size_t conicWeightCnt = path.conicWeights().size();
 
     static_assert(sizeof(SkPoint) == 2 * sizeof(uint32_t));
     static_assert(sizeof(SkScalar) == sizeof(uint32_t));
@@ -161,31 +160,31 @@ int path_key_from_data_size(const SkPath& path) {
 void write_path_key_from_data(const SkPath& path, uint32_t* origKey) {
     uint32_t* key = origKey;
     // The check below should take care of negative values casted positive.
-    const int verbCnt = path.countVerbs();
-    const int pointCnt = path.countPoints();
-    const int conicWeightCnt = SkPathPriv::ConicWeightCnt(path);
-    SkASSERT(verbCnt <= kMaxKeyFromDataVerbCnt);
-    SkASSERT(pointCnt && verbCnt);
-    *key++ = verbCnt;
-    memcpy(key, SkPathPriv::VerbData(path), verbCnt * sizeof(uint8_t));
-    int verbKeySize = SkAlign4(verbCnt);
+    SkSpan<const SkPathVerb> verbs = path.verbs();
+    SkSpan<const SkPoint> points = path.points();
+    SkSpan<const float> conics = path.conicWeights();
+    SkASSERT(verbs.size() <= kMaxKeyFromDataVerbCnt);
+    SkASSERT(points.size() && verbs.size());
+    *key++ = SkToInt(verbs.size());
+    memcpy(key, verbs.data(), verbs.size_bytes());
+    const size_t verbKeySize = SkAlign4(verbs.size());
     // pad out to uint32_t alignment using value that will stand out when debugging.
-    uint8_t* pad = reinterpret_cast<uint8_t*>(key)+ verbCnt;
-    memset(pad, 0xDE, verbKeySize - verbCnt);
+    uint8_t* pad = reinterpret_cast<uint8_t*>(key)+ verbs.size();
+    memset(pad, 0xDE, verbKeySize - verbs.size());
     key += verbKeySize >> 2;
 
-    memcpy(key, SkPathPriv::PointData(path), sizeof(SkPoint) * pointCnt);
+    memcpy(key, points.data(), points.size_bytes());
     static_assert(sizeof(SkPoint) == 2 * sizeof(uint32_t));
-    key += 2 * pointCnt;
-    sk_careful_memcpy(key, SkPathPriv::ConicWeightData(path), sizeof(SkScalar) * conicWeightCnt);
+    key += 2 * points.size();
+    sk_careful_memcpy(key, conics.data(), conics.size_bytes());
     static_assert(sizeof(SkScalar) == sizeof(uint32_t));
-    SkDEBUGCODE(key += conicWeightCnt);
+    SkDEBUGCODE(key += conics.size());
     SkASSERT(key - origKey == path_key_from_data_size(path));
 }
 } // anonymous namespace
 
-int Shape::keySize() const {
-    int count = 1; // Every key has the state flags from the Shape
+uint16_t Shape::keySize() const {
+    uint16_t count = 1; // Every key has the state flags from the Shape
     switch(this->type()) {
         case Type::kLine:
             static_assert(0 == sizeof(skvx::float4) % sizeof(uint32_t));
@@ -204,17 +203,14 @@ int Shape::keySize() const {
             count += sizeof(SkArc) / sizeof(uint32_t);
             break;
         case Type::kPath: {
-            if (this->path().isVolatile()) {
-                return -1; // volatile, so won't be keyed
-            }
-            if (this->path().isEmpty()) {
-                return -1; // empty, so won't be keyed
-            }
-            int dataKeySize = path_key_from_data_size(this->path());
-            if (dataKeySize >= 0) {
-                count += dataKeySize;
-            } else {
-                count++; // Just adds the gen ID.
+            // An empty path is the same as an empty shape -- only needs the state flags
+            if (!this->path().isEmpty()) {
+                int dataKeySize = path_key_from_data_size(this->path());
+                if (dataKeySize >= 0) {
+                    count += SkTo<uint16_t>(dataKeySize);
+                } else {
+                    count++; // Just adds the gen ID.
+                }
             }
             break;
         }
@@ -235,17 +231,20 @@ void Shape::writeKey(uint32_t* key, bool includeInverted) const {
 
     switch(this->type()) {
         case Type::kPath: {
-            SkASSERT(!this->path().isVolatile());
-            SkASSERT(!this->path().isEmpty());
-            // Ensure that the path's inversion matches our state so that the path's key suffices.
-            SkASSERT(this->inverted() == this->path().isInverseFillType());
+            // An empty path is the same as an empty shape -- only needs the state flags
+            if (!this->path().isEmpty()) {
+                // The path's inversion must match our state in order for the path's key to suffice.
+                SkASSERT(this->inverted() == this->path().isInverseFillType());
 
-            int dataKeySize = path_key_from_data_size(this->path());
-            if (dataKeySize >= 0) {
-                write_path_key_from_data(this->path(), key);
-                return;
-            } else {
-                *key++ = this->path().getGenerationID();
+                int dataKeySize = path_key_from_data_size(this->path());
+                if (dataKeySize >= 0) {
+                    // We check the rest of the size in write_path_key_from_data
+                    SkASSERT(key - origKey == 1);
+                    write_path_key_from_data(this->path(), key);
+                    return;
+                } else {
+                    *key++ = this->path().getGenerationID();
+                }
             }
             break;
         }

@@ -8,7 +8,10 @@
 #include "src/gpu/vk/VulkanUtilsPriv.h"
 
 #include "include/gpu/vk/VulkanBackendContext.h"
+#include "include/private/base/SkAssert.h"
 #include "include/private/base/SkDebug.h"
+#include "include/private/base/SkTFitsIn.h"
+#include "include/private/base/SkTo.h"
 #include "src/gpu/vk/VulkanInterface.h"
 
 #include <algorithm>
@@ -23,57 +26,47 @@ namespace skgpu {
 #define SHARED_GR_VULKAN_CALL(IFACE, X) (IFACE)->fFunctions.f##X
 
 /**
- * Returns a populated VkSamplerYcbcrConversionCreateInfo object based on VulkanYcbcrConversionInfo
-*/
-void SetupSamplerYcbcrConversionInfo(VkSamplerYcbcrConversionCreateInfo* outInfo,
-                                     const VulkanYcbcrConversionInfo& conversionInfo) {
-#ifdef SK_DEBUG
-    const VkFormatFeatureFlags& featureFlags = conversionInfo.fFormatFeatures;
+ * Parse the driver version number in VkPhysicalDeviceProperties::driverVersion according to the
+ * driver ID.
+ */
+DriverVersion ParseVulkanDriverVersion(VkDriverId driverId, uint32_t driverVersion) {
+    // Most drivers follow the VK_MAKE_API_VERSION convention.  The exceptions are documented in the
+    // switch cases below.
+    switch (driverId) {
+        case VK_DRIVER_ID_INTEL_PROPRIETARY_WINDOWS:
+            // Windows Intel driver versions are built in the following format:
+            //
+            //     Major (18 bits) | Minor (14 bits)
+            //
+            return DriverVersion(driverVersion >> 14, driverVersion & 0x3FFF);
+        case VK_DRIVER_ID_NVIDIA_PROPRIETARY:
+            // Nvidia proprietary driver version is in the following format:
+            //
+            //     Major (10 bits) | Minor (8 bits) | SubMinor (8 bits) | Patch (6 bits)
+            //
+            return DriverVersion(driverVersion >> 22, driverVersion >> 14 & 0xFF);
+        case VK_DRIVER_ID_QUALCOMM_PROPRIETARY:
+            // Qualcomm proprietary driver version has changed over time.  In the new format, it's
+            // almost following the VK_MAKE_API_VERSION convention, except the top bit is set.  With
+            // VK_API_VERSION_MAJOR, this bit is masked out (corresponding to a value of 512), which
+            // is typically expected to be visible in the version, i.e. the version is 512.NNNN. The
+            // old format is unknown, and is considered 0.NNNN.
+            if ((driverVersion & 0x80000000) != 0) {
+                return DriverVersion(VK_API_VERSION_MAJOR(driverVersion) | 512,
+                                     VK_API_VERSION_MINOR(driverVersion));
+            }
 
-    // Format feature flags are only representative of an external format's capabilities, so skip
-    // these checks in the case of using a known format.
-    if (conversionInfo.fFormat == VK_FORMAT_UNDEFINED) {
-        if (conversionInfo.fXChromaOffset == VK_CHROMA_LOCATION_MIDPOINT ||
-            conversionInfo.fYChromaOffset == VK_CHROMA_LOCATION_MIDPOINT) {
-            SkASSERT(featureFlags & VK_FORMAT_FEATURE_MIDPOINT_CHROMA_SAMPLES_BIT);
-        }
-        if (conversionInfo.fXChromaOffset == VK_CHROMA_LOCATION_COSITED_EVEN ||
-            conversionInfo.fYChromaOffset == VK_CHROMA_LOCATION_COSITED_EVEN) {
-            SkASSERT(featureFlags & VK_FORMAT_FEATURE_COSITED_CHROMA_SAMPLES_BIT);
-        }
-        if (conversionInfo.fChromaFilter == VK_FILTER_LINEAR) {
-            SkASSERT(featureFlags & VK_FORMAT_FEATURE_SAMPLED_IMAGE_YCBCR_CONVERSION_LINEAR_FILTER_BIT);
-        }
-        if (conversionInfo.fForceExplicitReconstruction) {
-            SkASSERT(featureFlags &
-                    VK_FORMAT_FEATURE_SAMPLED_IMAGE_YCBCR_CONVERSION_CHROMA_RECONSTRUCTION_EXPLICIT_FORCEABLE_BIT);
-        }
+            return DriverVersion(0, driverVersion);
+        case VK_DRIVER_ID_MOLTENVK:
+            // MoltenVK driver version is in the following format:
+            //
+            //     Major * 10000 + Minor * 100 + patch
+            //
+            return DriverVersion(driverVersion / 10000, (driverVersion / 100) % 100);
+        default:
+            return DriverVersion(VK_API_VERSION_MAJOR(driverVersion),
+                                 VK_API_VERSION_MINOR(driverVersion));
     }
-#endif
-
-    VkFilter chromaFilter = conversionInfo.fChromaFilter;
-    if (!(conversionInfo.fFormatFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT)) {
-        if (!(conversionInfo.fFormatFeatures &
-              VK_FORMAT_FEATURE_SAMPLED_IMAGE_YCBCR_CONVERSION_SEPARATE_RECONSTRUCTION_FILTER_BIT)) {
-            // Because we don't have have separate reconstruction filter, the min, mag and
-            // chroma filter must all match. However, we also don't support linear sampling so
-            // the min/mag filter have to be nearest. Therefore, we force the chrome filter to
-            // be nearest regardless of support for the feature
-            // VK_FORMAT_FEATURE_SAMPLED_IMAGE_YCBCR_CONVERSION_LINEAR_FILTER_BIT.
-            chromaFilter = VK_FILTER_NEAREST;
-        }
-    }
-
-    outInfo->sType = VK_STRUCTURE_TYPE_SAMPLER_YCBCR_CONVERSION_CREATE_INFO;
-    outInfo->pNext = nullptr;
-    outInfo->format = conversionInfo.fFormat;
-    outInfo->ycbcrModel = conversionInfo.fYcbcrModel;
-    outInfo->ycbcrRange = conversionInfo.fYcbcrRange;
-    outInfo->components = conversionInfo.fComponents;
-    outInfo->xChromaOffset = conversionInfo.fXChromaOffset;
-    outInfo->yChromaOffset = conversionInfo.fYChromaOffset;
-    outInfo->chromaFilter = chromaFilter;
-    outInfo->forceExplicitReconstruction = conversionInfo.fForceExplicitReconstruction;
 }
 
 #ifdef SK_BUILD_FOR_ANDROID
@@ -84,20 +77,23 @@ void SetupSamplerYcbcrConversionInfo(VkSamplerYcbcrConversionCreateInfo* outInfo
 void GetYcbcrConversionInfoFromFormatProps(
         VulkanYcbcrConversionInfo* outConversionInfo,
         const VkAndroidHardwareBufferFormatPropertiesANDROID& formatProps) {
-    outConversionInfo->fYcbcrModel = formatProps.suggestedYcbcrModel;
-    outConversionInfo->fYcbcrRange = formatProps.suggestedYcbcrRange;
-    outConversionInfo->fComponents = formatProps.samplerYcbcrConversionComponents;
-    outConversionInfo->fXChromaOffset = formatProps.suggestedXChromaOffset;
-    outConversionInfo->fYChromaOffset = formatProps.suggestedYChromaOffset;
-    outConversionInfo->fForceExplicitReconstruction = VK_FALSE;
-    outConversionInfo->fExternalFormat = formatProps.externalFormat;
-    outConversionInfo->fFormatFeatures = formatProps.formatFeatures;
+    VkFilter chromaFilter;
     if (VK_FORMAT_FEATURE_SAMPLED_IMAGE_YCBCR_CONVERSION_LINEAR_FILTER_BIT &
         formatProps.formatFeatures) {
-        outConversionInfo->fChromaFilter = VK_FILTER_LINEAR;
+        chromaFilter = VK_FILTER_LINEAR;
     } else {
-        outConversionInfo->fChromaFilter = VK_FILTER_NEAREST;
+        chromaFilter = VK_FILTER_NEAREST;
     }
+
+    *outConversionInfo = VulkanYcbcrConversionInfo(formatProps.externalFormat,
+                                                   formatProps.suggestedYcbcrModel,
+                                                   formatProps.suggestedYcbcrRange,
+                                                   formatProps.suggestedXChromaOffset,
+                                                   formatProps.suggestedYChromaOffset,
+                                                   chromaFilter,
+                                                   /*forceExplicitReconstruction=*/VK_FALSE,
+                                                   formatProps.samplerYcbcrConversionComponents,
+                                                   formatProps.formatFeatures);
 }
 
 bool GetAHardwareBufferProperties(
@@ -308,22 +304,18 @@ sk_sp<skgpu::VulkanInterface> MakeInterface(const skgpu::VulkanBackendContext& c
             reinterpret_cast<PFN_vkEnumerateInstanceVersion>(
                     context.fGetProc("vkEnumerateInstanceVersion", VK_NULL_HANDLE, VK_NULL_HANDLE));
     uint32_t instanceVersion = 0;
-    if (!localEnumerateInstanceVersion) {
-        instanceVersion = VK_MAKE_VERSION(1, 0, 0);
-    } else {
-        VkResult err = localEnumerateInstanceVersion(&instanceVersion);
-        if (err) {
-            return nullptr;
-        }
+    // Vulkan 1.1 is required, so vkEnumerateInstanceVersion should always be available.
+    SkASSERT(localEnumerateInstanceVersion != nullptr);
+    VkResult err = localEnumerateInstanceVersion(&instanceVersion);
+    if (err) {
+        return nullptr;
     }
 
     PFN_vkGetPhysicalDeviceProperties localGetPhysicalDeviceProperties =
             reinterpret_cast<PFN_vkGetPhysicalDeviceProperties>(context.fGetProc(
                     "vkGetPhysicalDeviceProperties", context.fInstance, VK_NULL_HANDLE));
+    SkASSERT(localGetPhysicalDeviceProperties != nullptr);
 
-    if (!localGetPhysicalDeviceProperties) {
-        return nullptr;
-    }
     VkPhysicalDeviceProperties physDeviceProperties;
     localGetPhysicalDeviceProperties(context.fPhysicalDevice, &physDeviceProperties);
     uint32_t physDevVersion = physDeviceProperties.apiVersion;
@@ -332,6 +324,12 @@ sk_sp<skgpu::VulkanInterface> MakeInterface(const skgpu::VulkanBackendContext& c
 
     instanceVersion = std::min(instanceVersion, apiVersion);
     physDevVersion = std::min(physDevVersion, apiVersion);
+
+    if (instanceVersion < VK_API_VERSION_1_1 || physDevVersion < VK_API_VERSION_1_1) {
+        SK_ABORT("Vulkan 1.1 is required but not available. "
+                 "Instance version: %#08X, Device version: %#08X",
+                 instanceVersion, physDevVersion);
+    }
 
     sk_sp<skgpu::VulkanInterface> interface(new skgpu::VulkanInterface(context.fGetProc,
                                                                        context.fInstance,
@@ -349,6 +347,89 @@ sk_sp<skgpu::VulkanInterface> MakeInterface(const skgpu::VulkanBackendContext& c
         *instanceVersionOut = instanceVersion;
     }
     return interface;
+}
+
+VulkanYcbcrConversionInfo::VulkanYcbcrConversionInfo(VkFormat format,
+                                                     uint64_t externalFormat,
+                                                     VkSamplerYcbcrModelConversion ycbcrModel,
+                                                     VkSamplerYcbcrRange ycbcrRange,
+                                                     VkChromaLocation xChromaOffset,
+                                                     VkChromaLocation yChromaOffset,
+                                                     VkFilter chromaFilter,
+                                                     VkBool32 forceExplicitReconstruction,
+                                                     VkComponentMapping components,
+                                                     VkFormatFeatureFlags formatFeatures)
+        : fFormat(format)
+        , fExternalFormat(externalFormat)
+        , fYcbcrModel(ycbcrModel)
+        , fYcbcrRange(ycbcrRange)
+        , fXChromaOffset(xChromaOffset)
+        , fYChromaOffset(yChromaOffset)
+        , fChromaFilter(chromaFilter)
+        , fForceExplicitReconstruction(forceExplicitReconstruction)
+        , fComponents(components) {
+#ifdef SK_DEBUG
+    // Graphite can recreate these two flags so they don't reflect actual settings
+    constexpr VkFormatFeatureFlags kIgnoredFlags =
+        VK_FORMAT_FEATURE_SAMPLED_IMAGE_YCBCR_CONVERSION_SEPARATE_RECONSTRUCTION_FILTER_BIT |
+        VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT;
+
+    // Format feature flags are only representative of an external format's capabilities, so
+    // skip these checks in the case of using a known format or if the featureFlags were clearly
+    // not filled in.
+    if (fFormat == VK_FORMAT_UNDEFINED && (formatFeatures & ~kIgnoredFlags)) {
+        if (fXChromaOffset == VK_CHROMA_LOCATION_MIDPOINT ||
+            fYChromaOffset == VK_CHROMA_LOCATION_MIDPOINT) {
+            SkASSERT(formatFeatures & VK_FORMAT_FEATURE_MIDPOINT_CHROMA_SAMPLES_BIT);
+        }
+        if (fXChromaOffset == VK_CHROMA_LOCATION_COSITED_EVEN ||
+            fYChromaOffset == VK_CHROMA_LOCATION_COSITED_EVEN) {
+            SkASSERT(formatFeatures & VK_FORMAT_FEATURE_COSITED_CHROMA_SAMPLES_BIT);
+        }
+        if (fChromaFilter == VK_FILTER_LINEAR) {
+            SkASSERT(formatFeatures &
+                     VK_FORMAT_FEATURE_SAMPLED_IMAGE_YCBCR_CONVERSION_LINEAR_FILTER_BIT);
+        }
+        if (fForceExplicitReconstruction) {
+            SkASSERT(formatFeatures &
+                     VK_FORMAT_FEATURE_SAMPLED_IMAGE_YCBCR_CONVERSION_CHROMA_RECONSTRUCTION_EXPLICIT_FORCEABLE_BIT);
+        }
+    }
+#endif
+    fSamplerFilterMustMatchChromaFilter = !SkToBool(
+        formatFeatures &
+        VK_FORMAT_FEATURE_SAMPLED_IMAGE_YCBCR_CONVERSION_SEPARATE_RECONSTRUCTION_FILTER_BIT);
+    fSupportsLinearFilter = SkToBool(formatFeatures &
+                                     VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT);
+    if (fSamplerFilterMustMatchChromaFilter && !fSupportsLinearFilter) {
+        // Because we don't have separate reconstruction filter, the min, mag and  filter must
+        // all match. However, we also don't support linear sampling so the min/mag filter have to
+        // be nearest. Therefore, we force the chroma filter to be nearest regardless of support for
+        // the feature VK_FORMAT_FEATURE_SAMPLED_IMAGE_YCBCR_CONVERSION_LINEAR_FILTER_BIT.
+        fChromaFilter = VK_FILTER_NEAREST;
+    }
+}
+
+
+void VulkanYcbcrConversionInfo::toVkSamplerYcbcrConversionCreateInfo(
+        VkSamplerYcbcrConversionCreateInfo* outInfo,
+        std::optional<VkFilter>* requiredSamplerFilter) const {
+    outInfo->sType = VK_STRUCTURE_TYPE_SAMPLER_YCBCR_CONVERSION_CREATE_INFO;
+    outInfo->pNext = nullptr;
+    outInfo->format = fFormat;
+    outInfo->ycbcrModel = fYcbcrModel;
+    outInfo->ycbcrRange = fYcbcrRange;
+    outInfo->components = fComponents;
+    outInfo->xChromaOffset = fXChromaOffset;
+    outInfo->yChromaOffset = fYChromaOffset;
+    outInfo->chromaFilter = fChromaFilter;
+    outInfo->forceExplicitReconstruction = fForceExplicitReconstruction;
+
+    if (fSamplerFilterMustMatchChromaFilter) {
+        *requiredSamplerFilter = fChromaFilter;
+    } else if (!fSupportsLinearFilter) {
+        *requiredSamplerFilter = VK_FILTER_NEAREST;
+    }
 }
 
 } // namespace skgpu

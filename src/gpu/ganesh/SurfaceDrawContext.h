@@ -15,14 +15,15 @@
 #include "include/core/SkRect.h"
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkRegion.h"
+#include "include/core/SkSpan.h"
 #include "include/core/SkStrokeRec.h"
 #include "include/core/SkSurfaceProps.h"
 #include "include/gpu/GpuTypes.h"
 #include "include/gpu/ganesh/GrTypes.h"
-#include "include/private/SkColorData.h"
 #include "include/private/base/SkPoint_impl.h"
 #include "include/private/base/SkTArray.h"
 #include "include/private/gpu/ganesh/GrTypesPriv.h"
+#include "src/core/SkColorData.h"
 #include "src/gpu/ganesh/GrColorSpaceXform.h"
 #include "src/gpu/ganesh/GrPaint.h"
 #include "src/gpu/ganesh/GrRenderTargetProxy.h"
@@ -428,10 +429,9 @@ public:
     void drawAtlas(const GrClip*,
                    GrPaint&& paint,
                    const SkMatrix& viewMatrix,
-                   int spriteCount,
-                   const SkRSXform xform[],
-                   const SkRect texRect[],
-                   const SkColor colors[]);
+                   SkSpan<const SkRSXform> xform,
+                   SkSpan<const SkRect> texRect,
+                   SkSpan<const SkColor> colors);
 
     /**
      * Draws a region.

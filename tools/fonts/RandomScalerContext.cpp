@@ -23,7 +23,7 @@ class SkDescriptor;
 
 class RandomScalerContext : public SkScalerContext {
 public:
-    RandomScalerContext(sk_sp<SkRandomTypeface>,
+    RandomScalerContext(SkRandomTypeface&,
                         const SkScalerContextEffects&,
                         const SkDescriptor*,
                         bool fFakeIt);
@@ -31,7 +31,7 @@ public:
 protected:
     GlyphMetrics generateMetrics(const SkGlyph&, SkArenaAlloc*) override;
     void     generateImage(const SkGlyph&, void*) override;
-    bool     generatePath(const SkGlyph&, SkPath*, bool*) override;
+    std::optional<GeneratedPath> generatePath(const SkGlyph&) override;
     sk_sp<SkDrawable> generateDrawable(const SkGlyph&) override;
     void     generateFontMetrics(SkFontMetrics*) override;
 
@@ -46,15 +46,13 @@ private:
     bool                               fFakeIt;
 };
 
-RandomScalerContext::RandomScalerContext(sk_sp<SkRandomTypeface>       face,
+RandomScalerContext::RandomScalerContext(SkRandomTypeface& face,
                                          const SkScalerContextEffects& effects,
-                                         const SkDescriptor*           desc,
-                                         bool                          fakeIt)
-        : SkScalerContext(std::move(face), effects, desc)
+                                         const SkDescriptor* desc,
+                                         bool fakeIt)
+        : SkScalerContext(face, effects, desc)
         , fProxy(getRandomTypeface()->proxy()->createScalerContext(SkScalerContextEffects(), desc))
-        , fFakeIt(fakeIt) {
-    fProxy->forceGenerateImageFromPath();
-}
+        , fFakeIt(fakeIt) {}
 
 SkScalerContext::GlyphMetrics RandomScalerContext::generateMetrics(const SkGlyph& origGlyph,
                                                                    SkArenaAlloc* alloc) {
@@ -139,13 +137,13 @@ void RandomScalerContext::generateImage(const SkGlyph& glyph, void* imageBuffer)
     canvas.drawPath(path, paint); //Need to modify the paint if the devPath is hairline
 }
 
-bool RandomScalerContext::generatePath(const SkGlyph& glyph, SkPath* path, bool* modified) {
+std::optional<SkScalerContext::GeneratedPath>
+RandomScalerContext::generatePath(const SkGlyph& glyph) {
     SkGlyph* shadowProxyGlyph = fProxyGlyphs.find(glyph.getPackedID());
     if (shadowProxyGlyph && shadowProxyGlyph->path()) {
-        path->reset();
-        return false;
+        return {};
     }
-    return fProxy->generatePath(glyph, path, modified);
+    return fProxy->generatePath(glyph);
 }
 
 sk_sp<SkDrawable> RandomScalerContext::generateDrawable(const SkGlyph& glyph) {
@@ -172,7 +170,7 @@ std::unique_ptr<SkScalerContext> SkRandomTypeface::onCreateScalerContext(
     const SkScalerContextEffects& effects, const SkDescriptor* desc) const
 {
     return std::make_unique<RandomScalerContext>(
-            sk_ref_sp(const_cast<SkRandomTypeface*>(this)), effects, desc, fFakeIt);
+            *const_cast<SkRandomTypeface*>(this), effects, desc, fFakeIt);
 }
 
 void SkRandomTypeface::onFilterRec(SkScalerContextRec* rec) const {
@@ -181,7 +179,7 @@ void SkRandomTypeface::onFilterRec(SkScalerContextRec* rec) const {
     rec->fMaskFormat = SkMask::kARGB32_Format;
 }
 
-void SkRandomTypeface::getGlyphToUnicodeMap(SkUnichar* glyphToUnicode) const {
+void SkRandomTypeface::getGlyphToUnicodeMap(SkSpan<SkUnichar> glyphToUnicode) const {
     fProxy->getGlyphToUnicodeMap(glyphToUnicode);
 }
 
@@ -207,8 +205,9 @@ void SkRandomTypeface::onGetFontDescriptor(SkFontDescriptor* desc, bool* isLocal
     fProxy->getFontDescriptor(desc, isLocal);
 }
 
-void SkRandomTypeface::onCharsToGlyphs(const SkUnichar* uni, int count, SkGlyphID glyphs[]) const {
-    fProxy->unicharsToGlyphs(uni, count, glyphs);
+void SkRandomTypeface::onCharsToGlyphs(SkSpan<const SkUnichar> uni,
+                                       SkSpan<SkGlyphID> glyphs) const {
+    fProxy->unicharsToGlyphs(uni, glyphs);
 }
 
 int SkRandomTypeface::onCountGlyphs() const { return fProxy->countGlyphs(); }
@@ -236,18 +235,17 @@ bool SkRandomTypeface::onGlyphMaskNeedsCurrentColor() const {
 }
 
 int SkRandomTypeface::onGetVariationDesignPosition(
-        SkFontArguments::VariationPosition::Coordinate coordinates[],
-        int                                            coordinateCount) const {
-    return fProxy->onGetVariationDesignPosition(coordinates, coordinateCount);
+                       SkSpan<SkFontArguments::VariationPosition::Coordinate> coordinates) const {
+    return fProxy->onGetVariationDesignPosition(coordinates);
 }
 
-int SkRandomTypeface::onGetVariationDesignParameters(SkFontParameters::Variation::Axis parameters[],
-                                                     int parameterCount) const {
-    return fProxy->onGetVariationDesignParameters(parameters, parameterCount);
+int SkRandomTypeface::onGetVariationDesignParameters(
+                                     SkSpan<SkFontParameters::Variation::Axis> parameters) const {
+    return fProxy->onGetVariationDesignParameters(parameters);
 }
 
-int SkRandomTypeface::onGetTableTags(SkFontTableTag tags[]) const {
-    return fProxy->getTableTags(tags);
+int SkRandomTypeface::onGetTableTags(SkSpan<SkFontTableTag> tags) const {
+    return fProxy->readTableTags(tags);
 }
 
 size_t SkRandomTypeface::onGetTableData(SkFontTableTag tag,

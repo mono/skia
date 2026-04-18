@@ -27,7 +27,7 @@ struct ResourceBindingRequirements;
 
 class BitmapTextRenderStep final : public RenderStep {
 public:
-    BitmapTextRenderStep(skgpu::MaskFormat variant);
+    BitmapTextRenderStep(Layout, skgpu::MaskFormat variant);
 
     ~BitmapTextRenderStep() override;
 
@@ -39,8 +39,9 @@ public:
     // or fragmentCoverageSKSL() (for grayscale and LCD masks), never both.
     const char* fragmentColorSkSL() const override;
     const char* fragmentCoverageSkSL() const override;
+    bool usesUniformsInFragmentSkSL() const override;
 
-    void writeVertices(DrawWriter*, const DrawParams&, skvx::uint2 ssboIndices) const override;
+    void writeVertices(DrawWriter*, const DrawParams&, uint32_t ssboIndex) const override;
     void writeUniformsAndTextures(const DrawParams&, PipelineDataGatherer*) const override;
 
 private:

@@ -8,14 +8,12 @@
 #ifndef skgpu_graphite_ComputePathAtlas_DEFINED
 #define skgpu_graphite_ComputePathAtlas_DEFINED
 
-#include "src/gpu/graphite/PathAtlas.h"
-
-#include "src/base/SkTInternalLList.h"
-#include "src/core/SkTHash.h"
-#include "src/gpu/AtlasTypes.h"
+#include "include/core/SkRefCnt.h"
+#include "src/base/SkVx.h"
 #include "src/gpu/RectanizerSkyline.h"
-#include "src/gpu/ResourceKey.h"
-#include "src/gpu/graphite/DrawAtlas.h"
+#include "src/gpu/graphite/PathAtlas.h"
+#include "src/gpu/graphite/TextureProxy.h"
+#include "src/gpu/graphite/geom/Rect.h"
 #include "src/gpu/graphite/task/ComputeTask.h"
 
 #ifdef SK_ENABLE_VELLO_SHADERS
@@ -24,9 +22,11 @@
 
 #include <memory>
 
+struct SkIPoint16;
+
 namespace skgpu::graphite {
 
-class DispatchGroup;
+class Recorder;
 
 /**
  * Base class for PathAtlas implementations that rasterize coverage masks on the GPU using compute
@@ -56,7 +56,7 @@ protected:
     explicit ComputePathAtlas(Recorder*);
 
     const TextureProxy* texture() const { return fTexture.get(); }
-    const TextureProxy* addRect(skvx::half2 maskSize,
+    sk_sp<TextureProxy> addRect(skvx::half2 maskSize,
                                 SkIPoint16* outPos);
     bool isSuitableForAtlasing(const Rect& transformedShapeBounds,
                                const Rect& clipBounds) const override;

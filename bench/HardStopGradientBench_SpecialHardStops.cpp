@@ -12,7 +12,7 @@
 #include "include/core/SkPaint.h"
 #include "include/core/SkShader.h"
 #include "include/core/SkString.h"
-#include "include/effects/SkGradientShader.h"
+#include "include/effects/SkGradient.h"
 
 enum class Kind {
     k001,
@@ -57,11 +57,11 @@ public:
             SkPoint::Make(fW+2.0f, fH/2.0f),
         };
 
-        SkColor colors[4] = {
-            SK_ColorRED,
-            SK_ColorGREEN,
-            SK_ColorBLUE,
-            SK_ColorYELLOW,
+        SkColor4f colors[4] = {
+            SkColors::kRed,
+            SkColors::kGreen,
+            SkColors::kBlue,
+            SkColors::kYellow,
         };
 
         SkScalar pos_001[3] = {
@@ -87,15 +87,10 @@ public:
                               fKind == Kind::k011 ? pos_011 :
                                                     pos_centered;
 
-        int count = fKind == Kind::kCentered ? 4 : 3;
+        size_t N = fKind == Kind::kCentered ? 4 : 3;
 
-        fPaint.setShader(SkGradientShader::MakeLinear(points,
-                                                      colors,
-                                                      positions,
-                                                      count,
-                                                      SkTileMode::kClamp,
-                                                      0,
-                                                      nullptr));
+        fPaint.setShader(SkShaders::LinearGradient(points,
+                {{{colors, N}, {positions, N}, SkTileMode::kClamp}, {}}));
     }
 
     void onDraw(int loops, SkCanvas* canvas) override {
@@ -112,20 +107,20 @@ private:
     SkPaint  fPaint;
 };
 
-DEF_BENCH(return new HardStopGradientBench_SpecialHardStops(100, 100, Kind::k001););
-DEF_BENCH(return new HardStopGradientBench_SpecialHardStops(200, 200, Kind::k001););
-DEF_BENCH(return new HardStopGradientBench_SpecialHardStops(300, 300, Kind::k001););
-DEF_BENCH(return new HardStopGradientBench_SpecialHardStops(400, 400, Kind::k001););
-DEF_BENCH(return new HardStopGradientBench_SpecialHardStops(500, 500, Kind::k001););
+DEF_BENCH(return new HardStopGradientBench_SpecialHardStops(100, 100, Kind::k001);)
+DEF_BENCH(return new HardStopGradientBench_SpecialHardStops(200, 200, Kind::k001);)
+DEF_BENCH(return new HardStopGradientBench_SpecialHardStops(300, 300, Kind::k001);)
+DEF_BENCH(return new HardStopGradientBench_SpecialHardStops(400, 400, Kind::k001);)
+DEF_BENCH(return new HardStopGradientBench_SpecialHardStops(500, 500, Kind::k001);)
 
-DEF_BENCH(return new HardStopGradientBench_SpecialHardStops(100, 100, Kind::k011););
-DEF_BENCH(return new HardStopGradientBench_SpecialHardStops(200, 200, Kind::k011););
-DEF_BENCH(return new HardStopGradientBench_SpecialHardStops(300, 300, Kind::k011););
-DEF_BENCH(return new HardStopGradientBench_SpecialHardStops(400, 400, Kind::k011););
-DEF_BENCH(return new HardStopGradientBench_SpecialHardStops(500, 500, Kind::k011););
+DEF_BENCH(return new HardStopGradientBench_SpecialHardStops(100, 100, Kind::k011);)
+DEF_BENCH(return new HardStopGradientBench_SpecialHardStops(200, 200, Kind::k011);)
+DEF_BENCH(return new HardStopGradientBench_SpecialHardStops(300, 300, Kind::k011);)
+DEF_BENCH(return new HardStopGradientBench_SpecialHardStops(400, 400, Kind::k011);)
+DEF_BENCH(return new HardStopGradientBench_SpecialHardStops(500, 500, Kind::k011);)
 
-DEF_BENCH(return new HardStopGradientBench_SpecialHardStops(100, 100, Kind::kCentered););
-DEF_BENCH(return new HardStopGradientBench_SpecialHardStops(200, 200, Kind::kCentered););
-DEF_BENCH(return new HardStopGradientBench_SpecialHardStops(300, 300, Kind::kCentered););
-DEF_BENCH(return new HardStopGradientBench_SpecialHardStops(400, 400, Kind::kCentered););
-DEF_BENCH(return new HardStopGradientBench_SpecialHardStops(500, 500, Kind::kCentered););
+DEF_BENCH(return new HardStopGradientBench_SpecialHardStops(100, 100, Kind::kCentered);)
+DEF_BENCH(return new HardStopGradientBench_SpecialHardStops(200, 200, Kind::kCentered);)
+DEF_BENCH(return new HardStopGradientBench_SpecialHardStops(300, 300, Kind::kCentered);)
+DEF_BENCH(return new HardStopGradientBench_SpecialHardStops(400, 400, Kind::kCentered);)
+DEF_BENCH(return new HardStopGradientBench_SpecialHardStops(500, 500, Kind::kCentered);)

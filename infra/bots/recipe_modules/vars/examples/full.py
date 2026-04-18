@@ -2,7 +2,6 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-PYTHON_VERSION_COMPATIBILITY = "PY3"
 
 DEPS = [
   'recipe_engine/path',
@@ -43,7 +42,7 @@ def RunSteps(api):
 
 
 TEST_BUILDERS = [
-  'Build-Debian10-Clang-x86_64-Release-SKNX_NO_SIMD',
+  'Build-Debian10-Clang-x86_64-Release-SKVX_DISABLE_SIMD',
   'Housekeeper-Weekly-RecreateSKPs',
 ]
 

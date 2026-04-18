@@ -83,8 +83,8 @@ bool Window_mac::initWindow() {
     constexpr int initialHeight = 960;
     NSRect windowRect = NSMakeRect(100, 100, initialWidth, initialHeight);
 
-    NSUInteger windowStyle = (NSTitledWindowMask | NSClosableWindowMask | NSResizableWindowMask |
-                              NSMiniaturizableWindowMask);
+    NSUInteger windowStyle = (NSWindowStyleMaskTitled | NSWindowStyleMaskClosable |
+                              NSWindowStyleMaskResizable | NSWindowStyleMaskMiniaturizable);
 
     fWindow = [[NSWindow alloc] initWithContentRect:windowRect styleMask:windowStyle
                                 backing:NSBackingStoreBuffered defer:NO];
@@ -147,31 +147,31 @@ bool Window_mac::attach(BackendType attachType) {
     info.fMainView = [fWindow contentView];
     switch (attachType) {
 #if defined(SK_GANESH) && defined(SK_ANGLE)
-        case kANGLE_BackendType:
+        case BackendType::kANGLE:
             fWindowContext =
                     skwindow::MakeGaneshANGLEForMac(info, fRequestedDisplayParams->clone());
             break;
 #endif
 #if defined(SK_GRAPHITE) && defined(SK_DAWN)
-        case kGraphiteDawn_BackendType:
+        case BackendType::kGraphiteDawnMetal:
             fWindowContext = MakeGraphiteDawnMetalForMac(info, fRequestedDisplayParams->clone());
             break;
 #endif
 #if defined(SK_GANESH) && defined(SK_METAL)
-        case kMetal_BackendType:
+        case BackendType::kMetal:
             fWindowContext = MakeGaneshMetalForMac(info, fRequestedDisplayParams->clone());
             break;
 #endif
 #if defined(SK_GRAPHITE) && defined(SK_METAL)
-        case kGraphiteMetal_BackendType:
+        case BackendType::kGraphiteMetal:
             fWindowContext = MakeGraphiteNativeMetalForMac(info, fRequestedDisplayParams->clone());
             break;
 #endif
 #if defined(SK_GANESH) && defined(SK_GL)
-        case kNativeGL_BackendType:
+        case BackendType::kNativeGL:
             fWindowContext = MakeGaneshGLForMac(info, fRequestedDisplayParams->clone());
             break;
-        case kRaster_BackendType:
+        case BackendType::kRaster:
             // The Raster IMPL requires GL
             fWindowContext = MakeRasterForMac(info, fRequestedDisplayParams->clone());
             break;
@@ -296,7 +296,9 @@ static skui::ModifierKey get_modifiers(const NSEvent* event) {
         modifiers |= skui::ModifierKey::kOption;
     }
 
-    if ((NSKeyDown == [event type] || NSKeyUp == [event type]) && ![event isARepeat]) {
+    if ((NSEventTypeKeyDown == [event type] || NSEventTypeKeyUp == [event type]) &&
+        ![event isARepeat])
+    {
         modifiers |= skui::ModifierKey::kFirstPress;
     }
 

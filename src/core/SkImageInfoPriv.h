@@ -35,12 +35,30 @@ static inline uint32_t SkColorTypeChannelFlags(SkColorType ct) {
         case kRGBA_F32_SkColorType:           return kRGBA_SkColorChannelFlags;
         case kR8G8_unorm_SkColorType:         return kRG_SkColorChannelFlags;
         case kA16_unorm_SkColorType:          return kAlpha_SkColorChannelFlag;
+        case kR16_unorm_SkColorType:          return kRed_SkColorChannelFlag;
         case kR16G16_unorm_SkColorType:       return kRG_SkColorChannelFlags;
         case kA16_float_SkColorType:          return kAlpha_SkColorChannelFlag;
         case kR16G16_float_SkColorType:       return kRG_SkColorChannelFlags;
         case kR16G16B16A16_unorm_SkColorType: return kRGBA_SkColorChannelFlags;
         case kSRGBA_8888_SkColorType:         return kRGBA_SkColorChannelFlags;
         case kR8_unorm_SkColorType:           return kRed_SkColorChannelFlag;
+    }
+    SkUNREACHABLE;
+}
+
+static inline int SkColorTypeNumChannels(SkColorType ct) {
+    switch (SkColorTypeChannelFlags(ct)) {
+        case kRed_SkColorChannelFlag        : return 1;
+        case kAlpha_SkColorChannelFlag      : return 1;
+        case kGray_SkColorChannelFlag       : return 1;
+        case kGrayAlpha_SkColorChannelFlags : return 2;
+        case kRG_SkColorChannelFlags        : return 2;
+        case kRGB_SkColorChannelFlags       : return 3;
+        case kRGBA_SkColorChannelFlags      : return 4;
+        case 0                              : return 0;
+        default:
+           SkDEBUGFAIL("unexpected color channel flags");
+           return 0;
     }
     SkUNREACHABLE;
 }
@@ -76,6 +94,7 @@ static int SkColorTypeShiftPerPixel(SkColorType ct) {
         case kRGBA_F32_SkColorType:           return 4;
         case kR8G8_unorm_SkColorType:         return 1;
         case kA16_unorm_SkColorType:          return 1;
+        case kR16_unorm_SkColorType:          return 1;
         case kR16G16_unorm_SkColorType:       return 2;
         case kA16_float_SkColorType:          return 1;
         case kR16G16_float_SkColorType:       return 2;
@@ -95,6 +114,8 @@ static inline bool SkColorTypeIsValid(unsigned value) {
 }
 
 static inline size_t SkColorTypeComputeOffset(SkColorType ct, int x, int y, size_t rowBytes) {
+    SkASSERT(x >= 0);
+    SkASSERT(y >= 0);
     if (kUnknown_SkColorType == ct) {
         return 0;
     }
@@ -120,6 +141,7 @@ static inline bool SkColorTypeIsNormalized(SkColorType ct) {
         case kR8G8_unorm_SkColorType:
         case kA16_unorm_SkColorType:
         case kA16_float_SkColorType:          /*subtle... alpha is always [0,1]*/
+        case kR16_unorm_SkColorType:
         case kR16G16_unorm_SkColorType:
         case kR16G16B16A16_unorm_SkColorType:
         case kSRGBA_8888_SkColorType:
@@ -170,6 +192,7 @@ static inline int SkColorTypeMaxBitsPerChannel(SkColorType ct) {
         case kRGBA_F16Norm_SkColorType:
         case kA16_unorm_SkColorType:
         case kA16_float_SkColorType:
+        case kR16_unorm_SkColorType:
         case kR16G16_unorm_SkColorType:
         case kR16G16B16A16_unorm_SkColorType:
         case kRGBA_F16_SkColorType:

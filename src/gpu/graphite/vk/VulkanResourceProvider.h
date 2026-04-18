@@ -15,6 +15,7 @@
 #include "src/core/SkLRUCache.h"
 #include "src/core/SkTHash.h"
 #include "src/gpu/graphite/DescriptorData.h"
+#include "src/gpu/graphite/vk/VulkanRenderPass.h"
 
 #ifdef  SK_BUILD_FOR_ANDROID
 extern "C" {
@@ -28,8 +29,8 @@ class VulkanCommandBuffer;
 class VulkanDescriptorSet;
 class VulkanFramebuffer;
 class VulkanGraphicsPipeline;
-class VulkanRenderPass;
 class VulkanSharedContext;
+class VulkanTexture;
 class VulkanYcbcrConversion;
 
 class VulkanResourceProvider final : public ResourceProvider {
@@ -57,41 +58,6 @@ public:
     sk_sp<VulkanYcbcrConversion> findOrCreateCompatibleYcbcrConversion(
             const VulkanYcbcrConversionInfo& ycbcrInfo) const;
 
-private:
-    const VulkanSharedContext* vulkanSharedContext() const;
-
-    sk_sp<GraphicsPipeline> createGraphicsPipeline(const RuntimeEffectDictionary*,
-                                                   const UniqueKey&,
-                                                   const GraphicsPipelineDesc&,
-                                                   const RenderPassDesc&,
-                                                   SkEnumBitMask<PipelineCreationFlags>,
-                                                   uint32_t compilationID) override;
-    sk_sp<ComputePipeline> createComputePipeline(const ComputePipelineDesc&) override;
-
-    sk_sp<Texture> createTexture(SkISize,
-                                 const TextureInfo&,
-                                 skgpu::Budgeted) override;
-    sk_sp<Texture> onCreateWrappedTexture(const BackendTexture&) override;
-    sk_sp<Buffer> createBuffer(size_t size, BufferType type, AccessPattern) override;
-    sk_sp<Sampler> createSampler(const SamplerDesc&) override;
-
-    sk_sp<VulkanFramebuffer> createFramebuffer(
-            const VulkanSharedContext*,
-            const skia_private::TArray<VkImageView>& attachmentViews,
-            const VulkanRenderPass&,
-            const int width,
-            const int height);
-
-    BackendTexture onCreateBackendTexture(SkISize dimensions, const TextureInfo&) override;
-#ifdef SK_BUILD_FOR_ANDROID
-    BackendTexture onCreateBackendTexture(AHardwareBuffer*,
-                                          bool isRenderable,
-                                          bool isProtectedContent,
-                                          SkISize dimensions,
-                                          bool fromAndroidWindow) const override;
-#endif
-    void onDeleteBackendTexture(const BackendTexture&) override;
-
     sk_sp<VulkanDescriptorSet> findOrCreateDescriptorSet(SkSpan<DescriptorData>);
 
     sk_sp<VulkanDescriptorSet> findOrCreateUniformBuffersDescriptorSet(
@@ -104,36 +70,58 @@ private:
     // full (needed when beginning a render pass from the command buffer) RenderPass.
     sk_sp<VulkanRenderPass> findOrCreateRenderPass(const RenderPassDesc&, bool compatibleOnly);
 
-    // Use a predetermined RenderPass key for finding/creating a RenderPass to avoid recreating it
-    sk_sp<VulkanRenderPass> findOrCreateRenderPassWithKnownKey(
-            const RenderPassDesc&, bool compatibleOnly, const GraphiteResourceKey& rpKey);
+    VkPipelineLayout mockPipelineLayout() const { return fMockPipelineLayout; }
 
-    VkPipelineCache pipelineCache();
-    VkPipelineLayout mockPushConstantPipelineLayout() const {
-        return fMockPushConstantPipelineLayout;
-    }
+    sk_sp<VulkanFramebuffer> findOrCreateFramebuffer(const VulkanSharedContext*,
+                                                     VulkanTexture* colorTexture,
+                                                     VulkanTexture* resolveTexture,
+                                                     VulkanTexture* depthStencilTexture,
+                                                     const RenderPassDesc&,
+                                                     const VulkanRenderPass&,
+                                                     const int width,
+                                                     const int height);
 
-    friend class VulkanCommandBuffer;
-    friend class VulkanGraphicsPipeline;
-    VkPipelineCache fPipelineCache = VK_NULL_HANDLE;
+private:
+    const VulkanSharedContext* vulkanSharedContext() const;
+    // VulkanSharedContext::pipelineCompileWasRequired() - which drives PipelineCache persistence
+    // - modifies the SharedContext so, when creating Pipelines, the ResourceProvider must
+    // provide a non-const SharedContext.
+    VulkanSharedContext* nonConstVulkanSharedContext();
 
-    // Create and store a pipeline layout that has compatible push constant parameters with other
-    // real pipeline layouts that can be reused across command buffers.
-    VkPipelineLayout fMockPushConstantPipelineLayout;
+    sk_sp<ComputePipeline> createComputePipeline(const ComputePipelineDesc&) override;
 
-    // The first value of the pair is a renderpass key. Graphics pipeline keys contain extra
-    // information that we do not need for identifying unique pipelines.
-    skia_private::TArray<std::pair<GraphiteResourceKey,
-                         sk_sp<VulkanGraphicsPipeline>>> fLoadMSAAPipelines;
-    // All of the following attributes are the same between all msaa load pipelines, so they only
-    // need to be created once and can then be stored.
-    VkShaderModule fMSAALoadVertShaderModule = VK_NULL_HANDLE;
-    VkShaderModule fMSAALoadFragShaderModule = VK_NULL_HANDLE;
-    VkPipelineShaderStageCreateInfo fMSAALoadShaderStageInfo[2];
-    VkPipelineLayout fMSAALoadPipelineLayout = VK_NULL_HANDLE;
+    sk_sp<Texture> createTexture(SkISize, const TextureInfo&, std::string_view label) override;
+    sk_sp<Texture> onCreateWrappedTexture(const BackendTexture&, std::string_view label) override;
+    sk_sp<Buffer> createBuffer(size_t, BufferType, AccessPattern, std::string_view label) override;
+    sk_sp<Sampler> createSampler(const SamplerDesc&) override;
+
+    BackendTexture onCreateBackendTexture(SkISize dimensions, const TextureInfo&) override;
+#ifdef SK_BUILD_FOR_ANDROID
+    BackendTexture onCreateBackendTexture(AHardwareBuffer*,
+                                          bool isRenderable,
+                                          bool isProtectedContent,
+                                          SkISize dimensions,
+                                          bool fromAndroidWindow) const override;
+#endif
+    void onDeleteBackendTexture(const BackendTexture&) override;
+
+    // Certain operations only need to occur once per renderpass (updating push constants and, if
+    // necessary, binding the dst texture as an input attachment). It is useful to have a
+    // mock pipeline layout that has compatible push constant parameters and input attachment
+    // descriptor set with all other real pipeline layouts such that it can be reused across command
+    // buffers to perform these operations even before we bind any pipelines.
+    VkPipelineLayout fMockPipelineLayout;
+
+    // The first value of the pair is a hash of the render pass excluding state that make the render
+    // pass compatible, as calcualted by VulkanCaps::GetRenderPassDescKeyForPipeline.
+    skia_private::TArray<std::pair<uint32_t, sk_sp<VulkanGraphicsPipeline>>> fLoadMSAAPipelines;
+    // The shader modules and pipeline layout can be shared for all loadMSAA pipelines.
+    std::unique_ptr<VulkanProgramInfo> fLoadMSAAProgram;
 
     SkLRUCache<UniformBindGroupKey, sk_sp<VulkanDescriptorSet>,
                UniformBindGroupKey::Hash> fUniformBufferDescSetCache;
+
+    skia_private::TArray<std::pair<GraphiteResourceKey, uint32_t>> fCurrentPoolSizes;
 };
 
 } // namespace skgpu::graphite

@@ -29,6 +29,7 @@
 #include "include/c/sk_matrix.h"
 #include "include/c/sk_paint.h"
 #include "include/c/sk_path.h"
+#include "include/c/sk_pathbuilder.h"
 #include "include/c/sk_patheffect.h"
 #include "include/c/sk_picture.h"
 #include "include/c/sk_pixmap.h"
@@ -81,6 +82,7 @@ void** KeepSkiaCSymbols (void)
         (void*)sk_matrix_concat,
         (void*)sk_paint_new,
         (void*)sk_path_new,
+        (void*)sk_pathbuilder_new,
         (void*)sk_path_effect_unref,
         (void*)sk_picture_recorder_new,
         (void*)sk_pixmap_destructor,

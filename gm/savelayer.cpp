@@ -33,7 +33,7 @@
 #include "include/core/SkTypeface.h"
 #include "include/core/SkTypes.h"
 #include "include/core/SkVertices.h"
-#include "include/effects/SkGradientShader.h"
+#include "include/effects/SkGradient.h"
 #include "include/effects/SkImageFilters.h"
 #include "include/effects/SkShaderMaskFilter.h"
 #include "src/base/SkRandom.h"
@@ -62,7 +62,7 @@ DEF_SIMPLE_GM(savelayer_initfromprev, canvas, 256, 256) {
     paint.setBlendMode(SkBlendMode::kClear);
     canvas->drawCircle(128, 128, 96, paint);
     canvas->restore();
-};
+}
 
 static void draw_cell(SkCanvas* canvas, sk_sp<SkTextBlob> blob, SkColor c, SkScalar w, SkScalar h,
                       bool useDrawBehind) {
@@ -89,8 +89,8 @@ static void draw_cell(SkCanvas* canvas, sk_sp<SkTextBlob> blob, SkColor c, SkSca
 
     // draw the treatment
     const SkPoint pts[] = { {r.fLeft,0}, {r.fRight, 0} };
-    const SkColor colors[] = { 0x88000000, 0x0 };
-    auto sh = SkGradientShader::MakeLinear(pts, colors, nullptr, 2, SkTileMode::kClamp);
+    const SkColor4f colors[] = { {0,0,0,0x88/255.f}, {0,0,0,0} };
+    auto sh = SkShaders::LinearGradient(pts, {{colors, {}, SkTileMode::kClamp}, {}});
     p.setShader(sh);
     p.setBlendMode(SkBlendMode::kDstIn);
 
@@ -146,16 +146,15 @@ DEF_SIMPLE_GM(save_behind, canvas, 830, 670) {
     }
 }
 
-#include "include/effects/SkGradientShader.h"
+#include "include/effects/SkGradient.h"
 
 DEF_SIMPLE_GM(savelayer_f16, canvas, 900, 300) {
     int n = 15;
     SkRect r{0, 0, 300, 300};
     SkPaint paint;
 
-    const SkColor colors[] = { SK_ColorRED, SK_ColorGREEN, SK_ColorBLUE, SK_ColorRED };
-    paint.setShader(SkGradientShader::MakeSweep(r.centerX(), r.centerY(),
-                                                colors, nullptr, std::size(colors)));
+    const SkColor4f colors[] = {SkColors::kRed, SkColors::kGreen, SkColors::kBlue, SkColors::kRed};
+    paint.setShader(SkShaders::SweepGradient(r.center(), {{colors, {}, SkTileMode::kClamp}, {}}));
 
     canvas->drawOval(r, paint);
 
@@ -185,7 +184,6 @@ static void draw_atlas(SkCanvas* canvas, SkImage* image) {
                       xforms,
                       tex,
                       colors,
-                      2,
                       SkBlendMode::kSrcIn,
                       SkFilterMode::kNearest,
                       nullptr,
@@ -210,7 +208,7 @@ static void draw_points(SkCanvas* canvas, SkImage* image) {
     paint.setStrokeWidth(100);
     paint.setStrokeCap(SkPaint::kSquare_Cap);
 
-    canvas->drawPoints(SkCanvas::kPoints_PointMode, 2, pts, paint);
+    canvas->drawPoints(SkCanvas::kPoints_PointMode, pts, paint);
 }
 
 static void draw_image_set(SkCanvas* canvas, SkImage* image) {

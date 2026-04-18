@@ -7,7 +7,6 @@
 
 #include "include/core/SkCanvas.h"
 #include "include/core/SkColorFilter.h"
-#include "include/core/SkColorPriv.h"
 #include "include/core/SkFont.h"
 #include "include/core/SkFontMgr.h"
 #include "include/core/SkImage.h"
@@ -15,15 +14,17 @@
 #include "src/base/SkRandom.h"
 #include "src/base/SkTime.h"
 #include "src/base/SkUTF.h"
+#include "src/core/SkColorPriv.h"
+#include "src/gpu/MaskFormat.h"
 #include "tools/fonts/FontToolUtils.h"
 #include "tools/viewer/Slide.h"
 
 #if defined(SK_GANESH)
 #include "include/gpu/ganesh/GrDirectContext.h"
 #include "src/gpu/ganesh/GrDirectContextPriv.h"
+#endif
 
 using MaskFormat = skgpu::MaskFormat;
-#endif
 
 SkRandom gRand;
 

@@ -24,10 +24,11 @@ load(
     "tool",
     "variable_with_value",
 )
+load("@rules_cc//cc/common:cc_common.bzl", "cc_common")
 load(":clang_layering_check.bzl", "make_layering_check_features")
 
 # The location of the created clang toolchain.
-EXTERNAL_TOOLCHAIN = "external/clang_ios"
+EXTERNAL_TOOLCHAIN = "external/+_repo_rules+clang_ios"
 
 # Root of our symlinks. These symlinks are created in download_ios_toolchain.bzl
 XCODE_IOSSDK_SYMLINK = EXTERNAL_TOOLCHAIN + "/symlinks/xcode/iOSSDK"
@@ -318,7 +319,7 @@ def _make_default_flags():
         flag_groups = [
             flag_group(
                 flags = [
-                    "-std=c++17",
+                    "-std=c++20",
                     "-fno-aligned-allocation",
                 ],
             ),
@@ -366,7 +367,7 @@ def _make_default_flags():
                     # Frameworks symlink that was created in download_ios_toolchain.bzl.
                     "-F/System/Library/Frameworks",
                     "-fuse-ld=lld",
-                    "-std=c++17",
+                    "-std=c++20",
                     EXTERNAL_TOOLCHAIN + "/lib/libc++.a",
                     EXTERNAL_TOOLCHAIN + "/lib/libc++abi.a",
                     EXTERNAL_TOOLCHAIN + "/lib/libunwind.a",

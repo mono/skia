@@ -7,11 +7,15 @@
 
 #include "src/gpu/graphite/task/CopyTask.h"
 
+#include "include/private/base/SkAssert.h"
 #include "src/gpu/graphite/Buffer.h"
 #include "src/gpu/graphite/CommandBuffer.h"
 #include "src/gpu/graphite/Log.h"
-#include "src/gpu/graphite/Texture.h"
+#include "src/gpu/graphite/Texture.h"  // IWYU pragma: keep
+#include "src/gpu/graphite/TextureInfoPriv.h"
 #include "src/gpu/graphite/TextureProxy.h"
+
+#include <utility>
 
 namespace skgpu::graphite {
 
@@ -46,7 +50,7 @@ CopyBufferToBufferTask::~CopyBufferToBufferTask() = default;
 
 Task::Status CopyBufferToBufferTask::prepareResources(ResourceProvider*,
                                                       ScratchResourceManager*,
-                                                      const RuntimeEffectDictionary*) {
+                                                      sk_sp<const RuntimeEffectDictionary>) {
     return Status::kSuccess;
 }
 
@@ -91,7 +95,7 @@ CopyTextureToBufferTask::~CopyTextureToBufferTask() {}
 
 Task::Status CopyTextureToBufferTask::prepareResources(ResourceProvider* resourceProvider,
                                                        ScratchResourceManager*,
-                                                       const RuntimeEffectDictionary*) {
+                                                       sk_sp<const RuntimeEffectDictionary>) {
     // If the source texture hasn't been instantiated yet, it means there was no prior task that
     // could have initialized its contents so a readback to a buffer does not make sense.
     SkASSERT(fTextureProxy->isInstantiated() || fTextureProxy->isLazy());
@@ -128,6 +132,14 @@ sk_sp<CopyTextureToTextureTask> CopyTextureToTextureTask::Make(sk_sp<TextureProx
     if (!srcProxy || !dstProxy) {
         return nullptr;
     }
+    // Texture-to-texture copies do not do format conversions
+    TextureFormat srcFormat = TextureInfoPriv::ViewFormat(srcProxy->textureInfo());
+    TextureFormat dstFormat = TextureInfoPriv::ViewFormat(dstProxy->textureInfo());
+    if (srcFormat != dstFormat) {
+        SKGPU_LOG_E("Unable to copy between textures of different formats, src = %s, dst = %s",
+                    TextureFormatName(srcFormat), TextureFormatName(dstFormat));
+        return nullptr;
+    }
     return sk_sp<CopyTextureToTextureTask>(new CopyTextureToTextureTask(std::move(srcProxy),
                                                                         srcRect,
                                                                         std::move(dstProxy),
@@ -150,7 +162,7 @@ CopyTextureToTextureTask::~CopyTextureToTextureTask() {}
 
 Task::Status CopyTextureToTextureTask::prepareResources(ResourceProvider* resourceProvider,
                                                         ScratchResourceManager*,
-                                                        const RuntimeEffectDictionary*) {
+                                                        sk_sp<const RuntimeEffectDictionary>) {
     // Do not instantiate the src proxy. If the source texture hasn't been instantiated yet, it
     // means there was no prior task that could have initialized its contents so propagating the
     // undefined contents to the dst does not make sense.

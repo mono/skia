@@ -154,8 +154,9 @@ protected:
             if (!info) {
                 return;
             }
-            canvas->drawGlyphs(info->count, info->glyphs, info->positions, info->origin,
-                               info->font, p);
+            canvas->drawGlyphs({info->glyphs, (size_t)info->count},
+                               {info->positions, (size_t)info->count},
+                               info->origin, info->font, p);
 
             if (fFlags & kUseUnderline) {
                 // Need to modify positions to roll-in the orign
@@ -168,8 +169,8 @@ protected:
                 const SkScalar X0 = pos[0].fX;
                 const SkScalar X1 = X0 + info->advanceX;
                 const SkScalar Y  = pos[0].fY;
-                auto sects = info->font.getIntercepts(info->glyphs, info->count, pos.data(),
-                                                      Y+1, Y+3);
+                auto sects = info->font.getIntercepts({info->glyphs, (size_t)info->count},
+                                                      pos, Y+1, Y+3);
 
                 SkScalar x0 = X0;
                 for (size_t i = 0; i < sects.size(); i += 2) {

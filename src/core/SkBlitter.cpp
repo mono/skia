@@ -27,6 +27,7 @@
 #include "src/core/SkBlendModePriv.h"
 #include "src/core/SkBlitter_A8.h"
 #include "src/core/SkCoreBlitters.h"
+#include "src/core/SkDrawTypes.h"
 #include "src/core/SkMask.h"
 #include "src/core/SkMaskFilterBase.h"
 #include "src/core/SkMemset.h"
@@ -45,21 +46,7 @@ bool gSkForceRasterPipelineBlitter{false};
 
 SkBlitter::~SkBlitter() {}
 
-bool SkBlitter::isNullBlitter() const { return false; }
-
-/*
-void SkBlitter::blitH(int x, int y, int width) {
-    SkDEBUGFAIL("unimplemented");
-}
-
-
-void SkBlitter::blitAntiH(int x, int y, const SkAlpha antialias[],
-                          const int16_t runs[]) {
-    SkDEBUGFAIL("unimplemented");
-}
- */
-
-inline static SkAlpha ScalarToAlpha(SkScalar a) {
+inline static SkAlpha scalar_to_alpha(SkScalar a) {
     SkAlpha alpha = (SkAlpha)(a * 255);
     return alpha > 247 ? 0xFF : alpha < 8 ? 0 : alpha;
 }
@@ -68,7 +55,7 @@ void SkBlitter::blitFatAntiRect(const SkRect& rect) {
     SkIRect bounds = rect.roundOut();
     SkASSERT(bounds.width() >= 3);
 
-    // skbug.com/7813
+    // skbug.com/40039068
     // To ensure consistency of the threaded backend (a rect that's considered fat in the init-once
     // phase must also be considered fat in the draw phase), we have to deal with rects with small
     // heights because the horizontal tiling in the threaded backend may change the height.
@@ -98,20 +85,20 @@ void SkBlitter::blitFatAntiRect(const SkRect& rect) {
         partialT = rect.fBottom - rect.fTop;
     }
 
-    alphas[0] = ScalarToAlpha(partialL * partialT);
-    alphas[1] = ScalarToAlpha(partialT);
-    alphas[bounds.width() - 1] = ScalarToAlpha(partialR * partialT);
+    alphas[0] = scalar_to_alpha(partialL * partialT);
+    alphas[1] = scalar_to_alpha(partialT);
+    alphas[bounds.width() - 1] = scalar_to_alpha(partialR * partialT);
     this->blitAntiH(bounds.fLeft, bounds.fTop, alphas, runs);
 
     if (bounds.height() > 2) {
         this->blitAntiRect(bounds.fLeft, bounds.fTop + 1, bounds.width() - 2, bounds.height() - 2,
-                           ScalarToAlpha(partialL), ScalarToAlpha(partialR));
+                           scalar_to_alpha(partialL), scalar_to_alpha(partialR));
     }
 
     if (bounds.height() > 1) {
-        alphas[0] = ScalarToAlpha(partialL * partialB);
-        alphas[1] = ScalarToAlpha(partialB);
-        alphas[bounds.width() - 1] = ScalarToAlpha(partialR * partialB);
+        alphas[0] = scalar_to_alpha(partialL * partialB);
+        alphas[1] = scalar_to_alpha(partialB);
+        alphas[bounds.width() - 1] = scalar_to_alpha(partialR * partialB);
         this->blitAntiH(bounds.fLeft, bounds.fBottom - 1, alphas, runs);
     }
 }
@@ -280,8 +267,6 @@ void SkBlitter::blitMask(const SkMask& mask, const SkIRect& clip) {
 }
 
 /////////////////////// these are not virtual, just helpers
-
-#if defined(SK_SUPPORT_LEGACY_ALPHA_BITMAP_AS_COVERAGE)
 void SkBlitter::blitMaskRegion(const SkMask& mask, const SkRegion& clip) {
     if (clip.quickReject(mask.fBounds)) {
         return;
@@ -295,7 +280,6 @@ void SkBlitter::blitMaskRegion(const SkMask& mask, const SkRegion& clip) {
         clipper.next();
     }
 }
-#endif
 
 void SkBlitter::blitRectRegion(const SkIRect& rect, const SkRegion& clip) {
     SkRegion::Cliperator clipper(clip, rect);
@@ -312,21 +296,6 @@ void SkBlitter::blitRegion(const SkRegion& clip) {
         this->blitRect(r.left(), r.top(), r.width(), r.height());
     });
 }
-
-///////////////////////////////////////////////////////////////////////////////
-
-void SkNullBlitter::blitH(int x, int y, int width) {}
-
-void SkNullBlitter::blitAntiH(int x, int y, const SkAlpha antialias[],
-                              const int16_t runs[]) {}
-
-void SkNullBlitter::blitV(int x, int y, int height, SkAlpha alpha) {}
-
-void SkNullBlitter::blitRect(int x, int y, int width, int height) {}
-
-void SkNullBlitter::blitMask(const SkMask& mask, const SkIRect& clip) {}
-
-bool SkNullBlitter::isNullBlitter() const { return true; }
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -686,9 +655,10 @@ SkBlitter* SkBlitter::Choose(const SkPixmap& device,
                              const SkMatrix& ctm,
                              const SkPaint& origPaint,
                              SkArenaAlloc* alloc,
-                             bool drawCoverage,
+                             SkDrawCoverage drawCoverage,
                              sk_sp<SkShader> clipShader,
-                             const SkSurfaceProps& props) {
+                             const SkSurfaceProps& props,
+                             const SkRect& devBounds) {
     SkASSERT(alloc);
 
     if (kUnknown_SkColorType == device.colorType()) {
@@ -727,7 +697,7 @@ SkBlitter* SkBlitter::Choose(const SkPixmap& device,
     }
     SkASSERT(!paint->getColorFilter());
 
-    if (drawCoverage) {
+    if (drawCoverage == SkDrawCoverage::kYes) {
         if (device.colorType() == kAlpha_8_SkColorType) {
             SkASSERT(!paint->getShader());
             SkASSERT(paint->isSrcOver());
@@ -741,7 +711,8 @@ SkBlitter* SkBlitter::Choose(const SkPixmap& device,
     }
 
     auto CreateSkRPBlitter = [&]() -> SkBlitter* {
-        auto blitter = SkCreateRasterPipelineBlitter(device, *paint, ctm, alloc, clipShader, props);
+        auto blitter = SkCreateRasterPipelineBlitter(
+                device, *paint, ctm, alloc, clipShader, props, devBounds);
         return blitter ? blitter
                        : alloc->make<SkNullBlitter>();
     };
@@ -787,11 +758,10 @@ SkBlitter* SkBlitter::Choose(const SkPixmap& device,
 
 ///////////////////////////////////////////////////////////////////////////////
 
-SkShaderBlitter::SkShaderBlitter(const SkPixmap& device, const SkPaint& paint,
+SkShaderBlitter::SkShaderBlitter(const SkPixmap& device,
+                                 const SkPaint& paint,
                                  SkShaderBase::Context* shaderContext)
-        : INHERITED(device)
-        , fShader(paint.refShader())
-        , fShaderContext(shaderContext) {
+        : SkRasterBlitter(device), fShader(paint.refShader()), fShaderContext(shaderContext) {
     SkASSERT(fShader);
     SkASSERT(fShaderContext);
 }

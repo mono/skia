@@ -10,22 +10,23 @@
 #include "include/core/SkTypeface.h"
 #include "include/ports/SkTypeface_mac.h"
 #include "src/base/SkZip.h"
+#include "src/utils/SkFloatUtils.h"
 #include "tests/Test.h"
 
 #include <stdarg.h>
 #include <string>
 #include <vector>
 
-#if 0
-static void SkMaybeDebugf(const char format[], ...) {
-    va_list args;
-    va_start(args, format);
-    vprintf(format, args);
-    va_end(args);
+static void SkMaybeDebugf(const char* fmt, ...) SK_PRINTF_LIKE(1, 2);
+
+static void SkMaybeDebugf(const char* format, ...) {
+    if ((false)) {
+        va_list args;
+        va_start(args, format);
+        vprintf(format, args);
+        va_end(args);
+    }
 }
-#else
-static void SkMaybeDebugf(const char format[], ...) { }
-#endif
 
 DEF_TEST(TypefaceMacVariation, reporter) {
     auto makeSystemFont = [](float size) -> CTFontRef {
@@ -66,10 +67,10 @@ DEF_TEST(TypefaceMacVariation, reporter) {
     using Coordinate = SkFontArguments::VariationPosition::Coordinate;
     using Axis = SkFontParameters::Variation::Axis;
 
-    const int originalPositionCount = typeface->getVariationDesignPosition(nullptr, 0);
+    const int originalPositionCount = typeface->getVariationDesignPosition({});
     std::vector<Coordinate> originalPosition(originalPositionCount);
     const int retrievedOriginalPositionCount =
-        typeface->getVariationDesignPosition(originalPosition.data(), originalPosition.size());
+        typeface->getVariationDesignPosition(originalPosition);
     if (!(retrievedOriginalPositionCount == originalPositionCount)) {
         REPORTER_ASSERT(reporter, retrievedOriginalPositionCount == originalPositionCount);
         return;
@@ -87,10 +88,10 @@ DEF_TEST(TypefaceMacVariation, reporter) {
     }
     SkMaybeDebugf("\n\n");
 
-    const int originalAxisCount = typeface->getVariationDesignParameters(nullptr, 0);
+    const int originalAxisCount = typeface->getVariationDesignParameters({});
     std::vector<Axis> originalAxes(originalAxisCount);
     const int returnedOriginalAxisCount =
-        typeface->getVariationDesignParameters(originalAxes.data(), originalAxes.size());
+        typeface->getVariationDesignParameters(originalAxes);
     if (!(returnedOriginalAxisCount == originalAxisCount)) {
         REPORTER_ASSERT(reporter, returnedOriginalAxisCount == originalAxisCount);
         return;
@@ -111,6 +112,7 @@ DEF_TEST(TypefaceMacVariation, reporter) {
                 if (originalCoordinate.axis == axisToBump) {
                     // CoreText floats for the variation coordinates have limited precision.
                     // 'opsz' sems to have more precision since it is set somewhat independently.
+                    // Though in mocOS 14 this seems to have changed and it can be more rounded.
                     //requestValue = nextafter(requestValue, HUGE_VALF); // Does not work.
                     requestValue += requestValue / 1024.0f; // Expect at least 10 bits.
                 }
@@ -145,10 +147,10 @@ DEF_TEST(TypefaceMacVariation, reporter) {
         sk_sp<SkTypeface> cloneTypeface(
             typeface->makeClone(SkFontArguments().setVariationDesignPosition(variationPosition)));
 
-        const int cloneAxisCount = cloneTypeface->getVariationDesignPosition(nullptr, 0);
+        const int cloneAxisCount = cloneTypeface->getVariationDesignPosition({});
         std::vector<Coordinate> clonePosition(cloneAxisCount);
         const int retrievedCloneAxisCount =
-            cloneTypeface->getVariationDesignPosition(clonePosition.data(), clonePosition.size());
+            cloneTypeface->getVariationDesignPosition(clonePosition);
         if (!(retrievedCloneAxisCount == cloneAxisCount)) {
             REPORTER_ASSERT(reporter, retrievedCloneAxisCount == cloneAxisCount);
             continue;
@@ -172,8 +174,15 @@ DEF_TEST(TypefaceMacVariation, reporter) {
         std::sort(clonePosition.begin(), clonePosition.end(), compareCoordinate);
         std::sort(expectedPosition.begin(), expectedPosition.end(), compareCoordinate);
         for (const auto&& [clone, expected] : SkMakeZip(clonePosition, expectedPosition)) {
-            REPORTER_ASSERT(reporter, clone.axis == expected.axis);
-            REPORTER_ASSERT(reporter, clone.value == expected.value);
+            REPORTER_ASSERT(reporter, clone.axis == expected.axis, "%s == %s",
+                            tagToString(clone.axis).c_str(), tagToString(expected.axis).c_str());
+
+            // Allow a lot of slop here, ignoring the bottom 6 of the 23 bits.
+            // CoreText appears to round `opsz` a lot starting in macOS 14.
+            const SkFloatingPoint<float, 64> cloneValue(clone.value), expectedValue(expected.value);
+            REPORTER_ASSERT(reporter, cloneValue.AlmostEquals(expectedValue), "%s:%f == %s:%f",
+                            tagToString(clone.axis).c_str(), clone.value,
+                            tagToString(expected.axis).c_str(), expected.value);
         }
 
         SkMaybeDebugf("\n");

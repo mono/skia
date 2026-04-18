@@ -13,7 +13,6 @@
 #include "include/core/SkString.h"
 #include "include/core/SkVertices.h"
 #include "include/effects/SkRuntimeEffect.h"
-#include "include/private/SkColorData.h"
 #include "include/private/base/SkAssert.h"
 #include "include/private/base/SkDebug.h"
 #include "include/private/base/SkPoint_impl.h"
@@ -23,6 +22,7 @@
 #include "include/private/base/SkTypeTraits.h"
 #include "include/private/gpu/ganesh/GrTypesPriv.h"
 #include "src/base/SkArenaAlloc.h"
+#include "src/core/SkColorData.h"
 #include "src/core/SkMeshPriv.h"
 #include "src/core/SkRuntimeEffectPriv.h"
 #include "src/core/SkSLTypeShared.h"
@@ -897,7 +897,7 @@ void MeshOp::Mesh::writeVertices(skgpu::VertexWriter& writer,
             SkPoint pos = fVertices->priv().positions()[i];
             if (transform) {
                 SkASSERT(!fViewMatrix.hasPerspective());
-                fViewMatrix.mapPoints(&pos, 1);
+                pos = fViewMatrix.mapPoint(pos);
             }
             writer << pos;
             if (SkMeshSpecificationPriv::HasColors(spec)) {
@@ -962,7 +962,7 @@ static SkMeshSpecification* make_vertices_spec(bool hasColors, bool hasTex) {
         attributes.push_back({Attribute::Type::kUByte4_unorm, size, SkString{"color"}});
         varyings.push_back({Varying::Type::kHalf4, SkString{"color"}});
         vs += "v.color = a.color;\n";
-        // Using float4 for the output color to work around skbug.com/12761
+        // Using float4 for the output color to work around skbug.com/40043854
         fs += "main(const Varyings v, out float4 color) {\n"
               "color = float4(v.color.bgr*v.color.a, v.color.a);\n";
         size += 4;
@@ -1127,7 +1127,7 @@ void MeshOp::onPrepareDraws(GrMeshDrawTarget* target) {
                                                              fVertexCount,
                                                              &vertexBuffer,
                                                              &firstVertex);
-        if (!verts) {
+        if (!verts) SK_UNLIKELY {
             SkDebugf("Could not allocate vertices.\n");
             return;
         }
@@ -1149,7 +1149,7 @@ void MeshOp::onPrepareDraws(GrMeshDrawTarget* target) {
     if (fIndexCount && !indexBuffer) {
         uint16_t* indices = nullptr;
         indices = target->makeIndexSpace(fIndexCount, &indexBuffer, &firstIndex);
-        if (!indices) {
+        if (!indices) SK_UNLIKELY {
             SkDebugf("Could not allocate indices.\n");
             return;
         }

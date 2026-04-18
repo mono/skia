@@ -16,7 +16,6 @@
 #include "include/core/SkString.h"
 #include "include/core/SkStrokeRec.h"
 #include "include/gpu/ganesh/GrRecordingContext.h"
-#include "include/private/SkColorData.h"
 #include "include/private/base/SkAssert.h"
 #include "include/private/base/SkDebug.h"
 #include "include/private/base/SkMalloc.h"
@@ -24,6 +23,7 @@
 #include "include/private/base/SkTArray.h"
 #include "include/private/base/SkTDArray.h"
 #include "include/private/gpu/ganesh/GrTypesPriv.h"
+#include "src/core/SkColorData.h"
 #include "src/gpu/BufferWriter.h"
 #include "src/gpu/ganesh/GrAppliedClip.h"
 #include "src/gpu/ganesh/GrAuditTrail.h"
@@ -88,7 +88,7 @@ void extract_verts(const GrAAConvexTessellator& tess,
     for (int i = 0; i < tess.numPts(); ++i) {
         SkPoint lc;
         if (localCoordsMatrix) {
-            localCoordsMatrix->mapPoints(&lc, &tess.point(i), 1);
+            lc = localCoordsMatrix->mapPoint(tess.point(i));
         }
         verts << tess.point(i) << color << VertexWriter::If(localCoordsMatrix, lc)
               << tess.coverage(i);
@@ -298,8 +298,8 @@ private:
             const SkMatrix* localCoordsMatrix = nullptr;
             SkMatrix ivm;
             if (fHelper.usesLocalCoords()) {
-                if (!args.fViewMatrix.invert(&ivm)) {
-                    ivm = SkMatrix::I();
+                if (auto inv = args.fViewMatrix.invert()) {
+                    ivm = *inv;
                 }
                 localCoordsMatrix = &ivm;
             }
@@ -433,8 +433,7 @@ bool AALinearizingConvexPathRenderer::onDrawPath(const DrawPathArgs& args) {
     SkASSERT(!args.fShape->isEmpty());
     SkASSERT(!args.fShape->style().pathEffect());
 
-    SkPath path;
-    args.fShape->asPath(&path);
+    SkPath path = args.fShape->asPath();
     bool fill = args.fShape->style().isSimpleFill();
     const SkStrokeRec& stroke = args.fShape->style().strokeRec();
     SkScalar strokeWidth = fill ? -1.0f : stroke.getWidth();

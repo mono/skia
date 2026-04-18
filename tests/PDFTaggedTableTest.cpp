@@ -19,6 +19,7 @@
 #include "include/core/SkString.h"
 #include "include/core/SkTypeface.h"
 #include "include/docs/SkPDFDocument.h"
+#include "include/docs/SkPDFJpegHelpers.h"
 #include "src/pdf/SkPDFUtils.h"
 #include "tools/fonts/FontToolUtils.h"
 
@@ -48,11 +49,13 @@ DEF_TEST(SkPDF_tagged_table, r) {
     SkPDFUtils::GetDateTime(&now);
     metadata.fCreation = now;
     metadata.fModified = now;
+    metadata.jpegDecoder = SkPDF::JPEG::Decode;
+    metadata.jpegEncoder = SkPDF::JPEG::Encode;
 
     constexpr int kRowCount = 5;
     constexpr int kColCount = 4;
     const char* cellData[kRowCount * kColCount] = {
-        "Car",                  "Engine",   "City MPG", "Highway MPG",
+        "Car Make and Model",   "Engine",   "City MPG", "Highway MPG",
         "Mitsubishi Mirage ES", "Gas",      "28",       "47",
         "Toyota Prius Three",   "Hybrid",   "43",       "59",
         "Nissan Leaf SL",       "Electric", "N/A",      nullptr,
@@ -78,6 +81,7 @@ DEF_TEST(SkPDF_tagged_table, r) {
     table->fTypeString = "Table";
     auto& rows = table->fChildVector;
     table->fAttributes.appendFloatArray("Layout", "BBox", {72, 72, 360, 360});
+    table->fAttributes.appendTextString("Table", "Summary", "Fuel efficiency");
 
     for (int rowIndex = 0; rowIndex < kRowCount; rowIndex++) {
         auto row = std::make_unique<PDFTag>();
@@ -92,6 +96,7 @@ DEF_TEST(SkPDF_tagged_table, r) {
                 cell->fTypeString = "NonStruct";
             } else if (rowIndex == 0 || colIndex == 0) {
                 cell->fTypeString = "TH";
+                cell->fAttributes.appendTextString("Table", "Short", SkString("Car"));
             } else {
                 cell->fTypeString = "TD";
                 std::vector<int> headerIds;

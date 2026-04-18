@@ -12,14 +12,18 @@
  */
 
 #include "include/codec/SkCodec.h"
+#include "include/core/SkFontMgr.h"
 #include "include/core/SkImage.h"
 #include "include/core/SkPicture.h"
+#include "include/core/SkStream.h"
 #include "include/core/SkString.h"
 #include "include/core/SkSurface.h"
 #include "include/docs/SkMultiPictureDocument.h"
 #include "include/encode/SkPngEncoder.h"
+#include "include/ports/SkFontMgr_empty.h"
 #include "src/base/SkBase64.h"
 #include "src/core/SkPicturePriv.h"
+#include "src/ports/SkTypeface_FreeType.h"
 #include "src/utils/SkJSONWriter.h"
 #include "tools/SkSharingProc.h"
 #include "tools/UrlDataManager.h"
@@ -66,20 +70,27 @@ ImageInfoNoColorspace toImageInfoNoColorspace(const SkImageInfo& ii) {
   return (ImageInfoNoColorspace){ii.width(), ii.height(), ii.colorType(), ii.alphaType()};
 }
 
-static sk_sp<SkImage> deserializeImage(sk_sp<SkData> data, std::optional<SkAlphaType>, void*) {
+static sk_sp<SkImage> deserializeImage(sk_sp<SkData> data, std::optional<SkAlphaType> at, void*) {
   std::unique_ptr<SkCodec> codec = DecodeImageData(std::move(data));
   if (!codec) {
     SkDebugf("Could not decode an image\n");
     return nullptr;
   }
-  sk_sp<SkImage> img = std::get<0>(codec->getImage());
-  if (!img) {
-    SkDebugf("Could not make an image from a codec\n");
-    return nullptr;
-  }
-  return img;
+  // Force the decode to happen instead of returning a lazy image.
+  return SkCodecs::DeferredImage(std::move(codec), at)->makeRasterImage(nullptr);
 }
 
+static sk_sp<SkTypeface> deserializeTypeface(SkStream& stream, void* ctx) {
+    return SkTypeface::MakeDeserialize(&stream, *static_cast<sk_sp<SkFontMgr>*>(ctx));
+}
+
+static void register_typeface() {
+  static SkOnce once;
+  once([] {
+    SkTypeface::Register(SkTypeface_FreeType::FactoryId,
+                         SkTypeface_FreeType::MakeFromStream );
+  });
+}
 
 class SkpDebugPlayer {
   public:
@@ -159,12 +170,12 @@ class SkpDebugPlayer {
 
     // Gets the bounds for the given frame
     // (or layer update, assuming there is one at that frame for fInspectedLayer)
-    const SkIRect getBoundsForFrame(int32_t frame) {
-      if (fInspectedLayer < 0) {
-        return fBoundsArray[frame];
-      }
-      auto summary = fLayerManager->event(fInspectedLayer, fp);
-      return SkIRect::MakeWH(summary.layerWidth, summary.layerHeight);
+    SkIRect getBoundsForFrame(int32_t frame) {
+        if (fInspectedLayer < 0) {
+            return fBoundsArray[frame];
+        }
+        auto summary = fLayerManager->event(fInspectedLayer, fp);
+        return SkIRect::MakeWH(summary.layerWidth, summary.layerHeight);
     }
 
     // Gets the bounds for the current frame
@@ -392,9 +403,12 @@ class SkpDebugPlayer {
       // Loads a single frame (traditional) skp file from the provided data stream and returns
       // a newly allocated DebugCanvas initialized with the SkPicture that was in the file.
       std::unique_ptr<DebugCanvas> loadSingleFrame(SkMemoryStream* stream) {
+        register_typeface();
         SkDeserialProcs procs;
         procs.fImageDataProc = deserializeImage;
-        // note overloaded = operator that actually does a move
+        sk_sp<SkFontMgr> fallback = SkFontMgr_New_Custom_Empty();
+        procs.fTypefaceCtx = &fallback;
+        procs.fTypefaceStreamProc = deserializeTypeface;
         sk_sp<SkPicture> picture = SkPicture::MakeFromStream(stream, &procs);
         if (!picture) {
           SkDebugf("Unable to deserialze frame.\n");
@@ -411,11 +425,15 @@ class SkpDebugPlayer {
       }
 
       std::string loadMultiFrame(SkMemoryStream* stream) {
+        register_typeface();
         // Attempt to deserialize with an image sharing serial proc.
         auto deserialContext = std::make_unique<SkSharingDeserialContext>();
         SkDeserialProcs procs;
         procs.fImageProc = SkSharingDeserialContext::deserializeImage;
         procs.fImageCtx = deserialContext.get();
+        sk_sp<SkFontMgr> fallback = SkFontMgr_New_Custom_Empty();
+        procs.fTypefaceCtx = &fallback;
+        procs.fTypefaceStreamProc = deserializeTypeface;
 
         int page_count = SkMultiPictureDocument::ReadPageCount(stream);
         if (!page_count) {

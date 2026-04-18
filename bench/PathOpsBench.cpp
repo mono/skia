@@ -7,6 +7,7 @@
 
 #include "bench/Benchmark.h"
 #include "include/core/SkPath.h"
+#include "include/core/SkPathBuilder.h"
 #include "include/core/SkShader.h"
 #include "include/core/SkString.h"
 #include "include/pathops/SkPathOps.h"
@@ -22,8 +23,8 @@ public:
     PathOpsBench(const char suffix[], SkPathOp op) : fOp(op) {
         fName.printf("pathops_%s", suffix);
 
-        fPath1.addOval({-10, -20, 10, 20});
-        fPath2.addOval({-20, -10, 20, 10});
+        fPath1 = SkPath::Oval({-10, -20, 10, 20});
+        fPath2 = SkPath::Oval({-20, -10, 20, 10});
     }
 
     bool isSuitableFor(Backend backend) override {
@@ -38,8 +39,7 @@ protected:
     void onDraw(int loops, SkCanvas* canvas) override {
         for (int i = 0; i < loops; i++) {
             for (int j = 0; j < 1000; ++j) {
-                SkPath result;
-                Op(fPath1, fPath2, fOp, &result);
+                std::ignore = Op(fPath1, fPath2, fOp);
             }
         }
     }
@@ -69,8 +69,7 @@ protected:
     void onDraw(int loops, SkCanvas* canvas) override {
         for (int i = 0; i < loops; i++) {
             for (int j = 0; j < 100; ++j) {
-                SkPath result;
-                Simplify(fPath, &result);
+                std::ignore = Simplify(fPath);
             }
         }
     }
@@ -83,14 +82,14 @@ DEF_BENCH( return new PathOpsBench("join", kUnion_SkPathOp); )
 
 static SkPath makerects() {
     SkRandom rand;
-    SkPath path;
+    SkPathBuilder builder;
     SkScalar scale = 100;
     for (int i = 0; i < 20; ++i) {
         SkScalar x = rand.nextUScalar1() * scale;
         SkScalar y = rand.nextUScalar1() * scale;
-        path.addRect({x, y, x + scale, y + scale});
+        builder.addRect({x, y, x + scale, y + scale});
     }
-    return path;
+    return builder.detach();
 }
 DEF_BENCH( return new PathOpsSimplifyBench("rects", makerects()); )
 
@@ -98,24 +97,24 @@ DEF_BENCH( return new PathOpsSimplifyBench("rects", makerects()); )
 
 template <size_t N> struct ArrayPath {
     SkPoint fPts[N];
-    uint8_t fVbs[N];
+    SkPathVerb fVbs[N];
     int fPIndex = 0, fVIndex = 0;
 
     void moveTo(float x, float y) {
-        fVbs[fVIndex++] = (uint8_t)SkPathVerb::kMove;
+        fVbs[fVIndex++] = SkPathVerb::kMove;
         fPts[fPIndex++] = {x, y};
     }
     void lineTo(float x, float y) {
-        fVbs[fVIndex++] = (uint8_t)SkPathVerb::kLine;
+        fVbs[fVIndex++] = SkPathVerb::kLine;
         fPts[fPIndex++] = {x, y};
     }
     void quadTo(float x, float y, float x1, float y1) {
-        fVbs[fVIndex++] = (uint8_t)SkPathVerb::kQuad;
+        fVbs[fVIndex++] = SkPathVerb::kQuad;
         fPts[fPIndex++] = {x, y};
         fPts[fPIndex++] = {x1, y1};
     }
     void cubicTo(float x, float y, float x1, float y1, float x2, float y2) {
-        fVbs[fVIndex++] = (uint8_t)SkPathVerb::kCubic;
+        fVbs[fVIndex++] = SkPathVerb::kCubic;
         fPts[fPIndex++] = {x, y};
         fPts[fPIndex++] = {x1, y1};
         fPts[fPIndex++] = {x2, y2};
@@ -138,7 +137,6 @@ template <typename T> void run_builder(T& b, bool useReserve, int N) {
 }
 
 enum class MakeType {
-    kPath,
     kSnapshot,
     kDetach,
     kArray,
@@ -180,17 +178,12 @@ protected:
                 run_builder(b, fUseReserve, N);
                 return MakeType::kSnapshot == fMakeType ? b.snapshot() : b.detach();
             }
-            case MakeType::kPath: {
-                SkPath p;
-                run_builder(p, fUseReserve, N);
-                return p;
-            }
             case MakeType::kArray: {
             //    ArrayPath<N*12> arrays;
             //    run_builder(arrays, false, N);
-                return SkPath::Make(fArrays.fPts, fArrays.fPIndex,
-                                    fArrays.fVbs, fArrays.fVIndex,
-                                    nullptr, 0, SkPathFillType::kWinding);
+                return SkPath::Raw({fArrays.fPts, (size_t)fArrays.fPIndex},
+                                   {fArrays.fVbs, (size_t)fArrays.fVIndex},
+                                   {}, SkPathFillType::kWinding);
             }
         }
         return SkPath();
@@ -212,10 +205,8 @@ protected:
 private:
     using INHERITED = Benchmark;
 };
-DEF_BENCH( return new PathBuilderBench(MakeType::kPath, false); )
 DEF_BENCH( return new PathBuilderBench(MakeType::kSnapshot, false); )
 DEF_BENCH( return new PathBuilderBench(MakeType::kDetach, false); )
-DEF_BENCH( return new PathBuilderBench(MakeType::kPath, true); )
 DEF_BENCH( return new PathBuilderBench(MakeType::kSnapshot, true); )
 DEF_BENCH( return new PathBuilderBench(MakeType::kDetach, true); )
 

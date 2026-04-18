@@ -66,7 +66,7 @@ protected:
     SkISize getISize() override { return SkISize::Make(760, 800); }
 
     void onDraw(SkCanvas* canvas) override {
-        if (!fImage || !fImage->isValid(canvas->recordingContext())) {
+        if (!fImage || !fImage->isValid(canvas->baseRecorder())) {
             fImage = make_image(canvas, &fCenter);
         }
 

@@ -7,30 +7,37 @@
 
 #include "src/gpu/graphite/RasterPathAtlas.h"
 
+#include "include/core/SkBitmap.h"
 #include "include/core/SkColorSpace.h"
 #include "include/gpu/graphite/Recorder.h"
-#include "src/core/SkIPoint16.h"
 #include "src/gpu/graphite/AtlasProvider.h"
 #include "src/gpu/graphite/DrawContext.h"
 #include "src/gpu/graphite/Log.h"
+#include "src/gpu/graphite/ProxyCache.h"
 #include "src/gpu/graphite/RasterPathUtils.h"
 #include "src/gpu/graphite/RecorderPriv.h"
 
 namespace skgpu::graphite {
 
-static constexpr uint32_t kDefaultAtlasDim = 4096;
+static constexpr uint32_t kDefaultAtlasDim = 2048;
 
 static constexpr uint32_t kSmallPathPlotWidth = 512;
 static constexpr uint32_t kSmallPathPlotHeight = 256;
 
+static constexpr uint32_t kUncachedAtlasDim = 2048;
+
 RasterPathAtlas::RasterPathAtlas(Recorder* recorder)
         : PathAtlas(recorder, kDefaultAtlasDim, kDefaultAtlasDim)
-        , fCachedAtlasMgr(fWidth, fHeight, fWidth, fHeight, recorder->priv().caps())
-        , fSmallPathAtlasMgr(std::max(fWidth/2, kSmallPathPlotWidth),
-                             std::max(fHeight/2, kSmallPathPlotHeight),
+        , fCachedAtlasMgr(fWidth, fHeight,
+                          /*plotWidth=*/fWidth/2, /*plotHeight=*/fHeight/2,
+                          recorder->priv().caps())
+        , fSmallPathAtlasMgr(std::max(fWidth, kSmallPathPlotWidth),
+                             std::max(fHeight, kSmallPathPlotHeight),
                              kSmallPathPlotWidth, kSmallPathPlotHeight,
                              recorder->priv().caps())
-        , fUncachedAtlasMgr(fWidth, fHeight, fWidth, fHeight, recorder->priv().caps()) {
+        , fUncachedAtlasMgr(kUncachedAtlasDim, kUncachedAtlasDim,
+                            /*plotWidth=*/kUncachedAtlasDim/2, /*plotHeight=*/kUncachedAtlasDim/2,
+                            recorder->priv().caps()) {
     SkASSERT(recorder);
 }
 
@@ -40,73 +47,98 @@ void RasterPathAtlas::recordUploads(DrawContext* dc) {
     fUncachedAtlasMgr.recordUploads(dc, fRecorder);
 }
 
-const TextureProxy* RasterPathAtlas::onAddShape(const Shape& shape,
-                                                const Transform& transform,
+sk_sp<TextureProxy> RasterPathAtlas::onAddShape(const Shape& shape,
+                                                const Transform& localToDevice,
                                                 const SkStrokeRec& strokeRec,
                                                 skvx::half2 maskOrigin,
                                                 skvx::half2 maskSize,
+                                                SkIVector transformedMaskOffset,
                                                 skvx::half2* outPos) {
-    skgpu::UniqueKey maskKey;
-    bool hasKey = shape.hasKey();
-    if (hasKey) {
+    sk_sp<TextureProxy> proxy;
+
+    if (!shape.isVolatilePath()) {
         constexpr int kMaxSmallPathSize = 162;
         // Try to locate or add to cached DrawAtlas
-        const TextureProxy* proxy = nullptr;
         if (maskSize.x() <= kMaxSmallPathSize && maskSize.y() <= kMaxSmallPathSize) {
             proxy = fSmallPathAtlasMgr.findOrCreateEntry(fRecorder,
                                                          shape,
-                                                         transform,
+                                                         localToDevice,
                                                          strokeRec,
                                                          maskOrigin,
                                                          maskSize,
+                                                         transformedMaskOffset,
                                                          outPos);
         }
         if (!proxy) {
             proxy = fCachedAtlasMgr.findOrCreateEntry(fRecorder,
                                                       shape,
-                                                      transform,
+                                                      localToDevice,
                                                       strokeRec,
                                                       maskOrigin,
                                                       maskSize,
+                                                      transformedMaskOffset,
                                                       outPos);
-        }
-        if (proxy) {
-            return proxy;
         }
     }
 
-    // try to add to uncached DrawAtlas
-    AtlasLocator loc;
-    return fUncachedAtlasMgr.addToAtlas(fRecorder,
-                                        shape,
-                                        transform,
-                                        strokeRec,
-                                        maskSize,
-                                        outPos,
-                                        &loc);
+    // Try to add to uncached DrawAtlas
+    if (!proxy) {
+        DrawAtlas::AtlasLocator loc;
+        proxy = fUncachedAtlasMgr.addToAtlas(fRecorder,
+                                             shape,
+                                             localToDevice,
+                                             strokeRec,
+                                             maskSize,
+                                             transformedMaskOffset,
+                                             outPos,
+                                             &loc);
+    }
+    if (proxy) {
+        return proxy;
+    }
+
+    // Failed to add to atlases, try to add to ProxyCache
+    skgpu::UniqueKey maskKey = GeneratePathMaskKey(shape, localToDevice, strokeRec,
+                                                   maskOrigin, maskSize);
+    struct PathDrawContext {
+        const Shape& fShape;
+        const Transform& fLocalToDevice;
+        const SkStrokeRec& fStrokeRec;
+        SkIRect fShapeBounds;
+        SkIVector fTransformedMaskOffset;
+    } context = { shape, localToDevice, strokeRec,
+                  SkIRect::MakeSize({maskSize.x(), maskSize.y()}).makeOffset(kEntryPadding,
+                                                                             kEntryPadding),
+                  transformedMaskOffset };
+    sk_sp<TextureProxy> cachedProxy = fRecorder->priv().proxyCache()->findOrCreateCachedProxy(
+            fRecorder, maskKey, &context,
+            [](const void* ctx) {
+                const PathDrawContext* pdc = static_cast<const PathDrawContext*>(ctx);
+                auto [bm, helper] = RasterMaskHelper::Allocate(
+                        pdc->fShapeBounds.size(),
+                        -pdc->fTransformedMaskOffset,
+                        kEntryPadding);
+                helper.drawShape(pdc->fShape, pdc->fLocalToDevice, pdc->fStrokeRec);
+                bm.setImmutable();
+                return bm;
+            });
+
+    *outPos = { kEntryPadding, kEntryPadding };
+    return cachedProxy;
 }
 
 /////////////////////////////////////////////////////////////////////////////////////////
 
 bool RasterPathAtlas::RasterAtlasMgr::onAddToAtlas(const Shape& shape,
-                                                   const Transform& transform,
+                                                   const Transform& localToDevice,
                                                    const SkStrokeRec& strokeRec,
                                                    SkIRect shapeBounds,
-                                                   const AtlasLocator& locator) {
-    // Rasterize path to backing pixmap.
-    // This pixmap will be the size of the Plot that contains the given rect, not the entire atlas,
-    // and hence the position we render at will be relative to that Plot.
-    // The value of outPos is relative to the entire texture, to be used for texture coords.
-    SkAutoPixmapStorage dst;
-    SkIPoint renderPos = fDrawAtlas->prepForRender(locator, &dst);
+                                                   SkIVector transformedMaskOffset,
+                                                   const DrawAtlas::AtlasLocator& locator) {
+    SkPixmap pixmap = fDrawAtlas->prepForRender(locator, kEntryPadding);
 
-    RasterMaskHelper helper(&dst);
-    if (!helper.init(fDrawAtlas->plotSize())) {
-        return false;
-    }
-    // Offset to plot location and draw
-    shapeBounds.offset(renderPos.x()+kEntryPadding, renderPos.y()+kEntryPadding);
-    helper.drawShape(shape, transform, strokeRec, shapeBounds);
+    RasterMaskHelper helper(pixmap, -transformedMaskOffset);
+    helper.drawShape(shape, localToDevice, strokeRec);
 
     return true;
 }

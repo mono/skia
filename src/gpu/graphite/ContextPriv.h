@@ -8,21 +8,29 @@
 #ifndef skgpu_graphite_ContextPriv_DEFINED
 #define skgpu_graphite_ContextPriv_DEFINED
 
+#include "include/core/SkRefCnt.h"
 #include "include/gpu/graphite/Context.h"
 #include "src/gpu/graphite/QueueManager.h"
 #include "src/gpu/graphite/SharedContext.h"
 
-#if defined(GPU_TEST_UTILS)
-#include "src/gpu/graphite/ContextOptionsPriv.h"
-#endif
+#include <memory>
+
+class SkPixmap;
+struct SkImageInfo;
+
+namespace skcpu { class ContextImpl; }
 
 namespace skgpu::graphite {
 
 class Caps;
 class GlobalCache;
+class Recorder;
 class RendererProvider;
 class ResourceProvider;
 class ShaderCodeDictionary;
+class TextureProxy;
+enum class PathRendererStrategy;
+struct ContextOptions;
 
 /** Class that adds methods to Context that are only intended for use internal to Skia.
     This class is purely a privileged window into Context. It should never have additional
@@ -54,6 +62,7 @@ public:
     SharedContext* sharedContext() {
         return fContext->fSharedContext.get();
     }
+    const skcpu::ContextImpl* cpuContext() const { return fContext->fCPUContext.get(); }
 
 #if defined(GPU_TEST_UTILS)
     void startCapture() {
@@ -71,8 +80,6 @@ public:
                     const TextureProxy*,
                     const SkImageInfo& srcImageInfo,
                     int srcX, int srcY);
-
-    bool supportsPathRendererStrategy(PathRendererStrategy);
 #endif
 
 private:

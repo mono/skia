@@ -16,10 +16,10 @@
 #include "src/base/SkSafeMath.h"
 #include "src/core/SkCanvasPriv.h"
 #include "src/core/SkDevice.h"
-#include "src/core/SkImagePriv.h"
 #include "src/core/SkSamplingPriv.h"
 #include "src/image/SkImage_Base.h"
 #include "src/image/SkImage_Picture.h"
+#include "src/image/SkImage_Raster.h"
 
 #include <functional>
 
@@ -66,7 +66,9 @@ SkIRect determine_clipped_src_rect(SkIRect clippedSrcIRect,
                                    const SkISize& imageDimensions,
                                    const SkRect* srcRectPtr) {
     SkMatrix inv = SkMatrix::Concat(viewMatrix, srcToDstRect);
-    if (!inv.invert(&inv)) {
+    if (auto inverse = inv.invert()) {
+        inv = *inverse;
+    } else {
         return SkIRect::MakeEmpty();
     }
     SkRect clippedSrcRect = SkRect::Make(clippedSrcIRect);
@@ -111,8 +113,12 @@ int draw_tiled_image(SkCanvas* canvas,
     for (int x = 0; x <= nx; x++) {
         for (int y = 0; y <= ny; y++) {
             SkRect tileR;
-            tileR.setLTRB(SkIntToScalar(x * tileSize),       SkIntToScalar(y * tileSize),
-                          SkIntToScalar((x + 1) * tileSize), SkIntToScalar((y + 1) * tileSize));
+            // TODO: this will prevent int overflow, however at sizes > 2^24 the float can't
+            // represent all the bits in the int
+            int tileRight = (x == nx) ? originalSize.width() : (x + 1) * tileSize;
+            int tileBottom = (y == ny) ? originalSize.height() : (y + 1) * tileSize;
+            tileR.setLTRB(SkIntToScalar(x * tileSize), SkIntToScalar(y * tileSize),
+                          SkIntToScalar(tileRight),    SkIntToScalar(tileBottom));
 
             if (!SkRect::Intersects(tileR, clippedSrcRect)) {
                 continue;
@@ -269,7 +275,7 @@ TiledTextureUtils::ImageDrawMode TiledTextureUtils::OptimizeSampleArea(const SkI
         return ImageDrawMode::kSkip;
     }
 
-    *outSrcToDst = SkMatrix::RectToRect(origSrcRect, origDstRect);
+    *outSrcToDst = SkMatrix::RectToRectOrIdentity(origSrcRect, origDstRect);
 
     SkRect src = origSrcRect;
     SkRect dst = origDstRect;
@@ -365,7 +371,8 @@ std::tuple<bool, size_t> TiledTextureUtils::DrawAsTiledImageRect(
         SkCanvas::SrcRectConstraint constraint,
         bool sharpenMM,
         size_t cacheSize,
-        size_t maxTextureSize) {
+        size_t maxTextureSize,
+        bool renderLazyPictureTilesOnGPU) {
     if (canvas->isClipEmpty()) {
         return {true, 0};
     }
@@ -423,9 +430,15 @@ std::tuple<bool, size_t> TiledTextureUtils::DrawAsTiledImageRect(
             // If it's a Picture-backed image we should subset the SkPicture directly rather than
             // converting to a Bitmap and then subsetting. Rendering to a bitmap will use a Raster
             // surface, and the SkPicture could have GPU data.
-            if (as_IB(image)->type() == SkImage_Base::Type::kLazyPicture) {
+            //
+            // If we render a subset of a very large SkPicture into a GPU texture "tile", it'll
+            // require intermediate coordinates that need high precision. If we don't have that,
+            // bite the bullet and render the lazy picture tiles on the CPU and upload the data
+            // instead.
+            if (renderLazyPictureTilesOnGPU &&
+                as_IB(image)->type() == SkImage_Base::Type::kLazyPicture) {
                 auto imageProc = [&](SkIRect iTileR) {
-                    return image->makeSubset(nullptr, iTileR);
+                    return image->makeSubset(nullptr, iTileR, {});
                 };
 
                 size_t tiles = draw_tiled_image(canvas,
@@ -445,14 +458,14 @@ std::tuple<bool, size_t> TiledTextureUtils::DrawAsTiledImageRect(
             // Extract pixels on the CPU, since we have to split into separate textures before
             // sending to the GPU if tiling.
             if (SkBitmap bm; as_IB(image)->getROPixels(nullptr, &bm)) {
-                auto imageProc = [&](SkIRect iTileR) {
+                auto imageProc = [&](SkIRect iTileR) -> sk_sp<SkImage> {
                     // We must subset as a bitmap and then turn it into an SkImage if we want
                     // caching to work. Image subsets always make a copy of the pixels and lose
                     // the association with the original's SkPixelRef.
                     if (SkBitmap subsetBmp; bm.extractSubset(&subsetBmp, iTileR)) {
-                        return SkMakeImageFromRasterBitmap(subsetBmp, kNever_SkCopyPixelsMode);
+                        return SkImage_Raster::MakeFromBitmap(subsetBmp, SkCopyPixelsMode::kNever);
                     }
-                    return sk_sp<SkImage>(nullptr);
+                    return nullptr;
                 };
 
                 size_t tiles = draw_tiled_image(canvas,

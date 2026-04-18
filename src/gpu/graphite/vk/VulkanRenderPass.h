@@ -10,47 +10,20 @@
 
 #include "src/gpu/graphite/Resource.h"
 
+#include "include/gpu/vk/VulkanTypes.h"
 #include "include/private/base/SkTArray.h"
-#include "src/gpu/graphite/vk/VulkanCommandBuffer.h"
+#include "src/gpu/graphite/RenderPassDesc.h"
 
 namespace skgpu::graphite {
 
-struct AttachmentDesc;
-struct RenderPassDesc;
 class VulkanCommandBuffer;
 class VulkanSharedContext;
-
-const static VkAttachmentStoreOp vkStoreOp[] {
-    VK_ATTACHMENT_STORE_OP_STORE,
-    VK_ATTACHMENT_STORE_OP_DONT_CARE
-};
-const static VkAttachmentLoadOp vkLoadOp[] {
-    VK_ATTACHMENT_LOAD_OP_LOAD,
-    VK_ATTACHMENT_LOAD_OP_CLEAR,
-    VK_ATTACHMENT_LOAD_OP_DONT_CARE
-};
 
 /**
  * Wrapper around VkRenderPass.
 */
 class VulkanRenderPass : public Resource {
 public:
-    // Statically assign attachment indices until such information can be fetched from
-    // graphite-level structures (likely RenderPassDesc)
-    static constexpr int kColorAttachmentIdx = 0;
-    static constexpr int kColorResolveAttachmentIdx = 1;
-    static constexpr int kDepthStencilAttachmentIdx = 2;
-
-    static constexpr int kMaxExpectedAttachmentCount = kDepthStencilAttachmentIdx + 1;
-
-    // Methods to create compatible (needed when creating a framebuffer and graphics pipeline) or
-    // full (needed when beginning a render pass from the command buffer) render passes and keys.
-    static GraphiteResourceKey MakeRenderPassKey(const RenderPassDesc&, bool compatibleOnly);
-
-    static sk_sp<VulkanRenderPass> MakeRenderPass(const VulkanSharedContext*,
-                                                  const RenderPassDesc&,
-                                                  bool compatibleOnly);
-
     VkRenderPass renderPass() const {
         SkASSERT(fRenderPass != VK_NULL_HANDLE);
         return fRenderPass;
@@ -60,30 +33,20 @@ public:
 
     const char* getResourceType() const override { return "Vulkan RenderPass"; }
 
-    // Struct to store Vulkan information surrounding a RenderPassDesc
-    struct VulkanRenderPassMetaData {
-        VulkanRenderPassMetaData(const RenderPassDesc& renderPassDesc);
+    // The relevant information in RenderPassDesc to identify a VkRenderPass fits in one uint32. If
+    // compatibleForPipelineKey, the load/store ops do not contribute to the key (with the exception
+    // of load-from-resolve info if necessary).
+    static uint32_t GetRenderPassKey(const RenderPassDesc& renderPassDesc,
+                                     bool compatibleForPipelineKey);
+    // A way back from the render pass key to RenderPassDesc. The write swizzle and dst read
+    // strategy is not part of the key as calculated by GetRenderPassKey and so must be passed in to
+    // reconstruct RenderPassDesc fully.
+    static void ExtractRenderPassDesc(uint32_t key,
+                                      Swizzle writeSwizzle,
+                                      DstReadStrategy dstReadStrategy,
+                                      RenderPassDesc* renderPassDesc);
 
-        bool fLoadMSAAFromResolve;
-        bool fHasColorAttachment;
-        bool fHasColorResolveAttachment;
-        bool fHasDepthStencilAttachment;
-
-        int fNumColorAttachments;
-        int fNumResolveAttachments;
-        int fNumDepthStencilAttachments;
-        int fSubpassCount;
-        int fSubpassDependencyCount;
-        int fUint32DataCnt;
-
-        // Accumulate attachments into a container to mimic future structure in RenderPassDesc
-        skia_private::TArray<const AttachmentDesc*> fAttachments;
-    };
-
-    static void AddRenderPassInfoToKey(VulkanRenderPassMetaData& rpMetaData,
-                                       ResourceKey::Builder& builder,
-                                       int& builderIdx,
-                                       bool compatibleOnly);
+    static sk_sp<VulkanRenderPass> Make(const VulkanSharedContext*, const RenderPassDesc&);
 
 private:
     void freeGpuData() override;

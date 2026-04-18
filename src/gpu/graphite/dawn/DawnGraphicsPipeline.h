@@ -46,17 +46,17 @@ public:
     inline static constexpr unsigned int kBindGroupCount = 2;
 
     inline static constexpr unsigned int kIntrinsicUniformBufferIndex = 0;
-    inline static constexpr unsigned int kRenderStepUniformBufferIndex = 1;
-    inline static constexpr unsigned int kPaintUniformBufferIndex = 2;
-    inline static constexpr unsigned int kGradientBufferIndex = 3;
-    inline static constexpr unsigned int kNumUniformBuffers = 4;
+    inline static constexpr unsigned int kCombinedUniformIndex = 1;
+    inline static constexpr unsigned int kGradientBufferIndex = 2;
+    inline static constexpr unsigned int kNumUniformBuffers = 3;
 
-    inline static constexpr unsigned int kVertexBufferIndex = 0;
-    inline static constexpr unsigned int kInstanceBufferIndex = 1;
+    inline static constexpr unsigned int kIntrinsicUniformSize = 32;
+
+    inline static constexpr unsigned int kStaticDataBufferIndex = 0;
+    inline static constexpr unsigned int kAppendDataBufferIndex = 1;
     inline static constexpr unsigned int kNumVertexBuffers = 2;
 
     static sk_sp<DawnGraphicsPipeline> Make(const DawnSharedContext* sharedContext,
-                                            DawnResourceProvider* resourceProvider,
                                             const RuntimeEffectDictionary* runtimeDict,
                                             const UniqueKey& pipelineKey,
                                             const GraphicsPipelineDesc& pipelineDesc,
@@ -66,6 +66,8 @@ public:
 
     ~DawnGraphicsPipeline() override;
 
+    std::optional<std::string> didAsyncCompilationFail() const override;
+
     uint32_t stencilReferenceValue() const { return fStencilReferenceValue; }
     PrimitiveType primitiveType() const { return fPrimitiveType; }
 
@@ -74,11 +76,17 @@ public:
     using BindGroupLayouts = std::array<wgpu::BindGroupLayout, kBindGroupCount>;
     const BindGroupLayouts& dawnGroupLayouts() const { return fGroupLayouts; }
 
+    // Returns null if the ith sampler is not an immutable sampler.
+    const DawnSampler* immutableSampler(int32_t index) const {
+        return fImmutableSamplers[index].get();
+    }
+
 private:
     struct AsyncPipelineCreation;
 
     DawnGraphicsPipeline(const skgpu::graphite::SharedContext* sharedContext,
                          const PipelineInfo& pipelineInfo,
+                         std::string_view pipelineLabel,
                          std::unique_ptr<AsyncPipelineCreation> pipelineCreationInfo,
                          BindGroupLayouts groupLayouts,
                          PrimitiveType primitiveType,

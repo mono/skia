@@ -20,7 +20,7 @@
 DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(DashPathEffectTest_2PiInterval,
                                        reporter,
                                        contextInfo,
-                                       CtsEnforcement::kApiLevel_V) {
+                                       CtsEnforcement::kApiLevel_202404) {
     const float r = 50.0f / SK_ScalarPI;
     const float centerX = ceilf(0.5f * r);
     const float centerY = ceilf(r);
@@ -40,7 +40,7 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(DashPathEffectTest_2PiInterval,
     paint.setStrokeWidth(dashWidth);
 
     constexpr float intervals[2] = {90.0f, 10.0f};
-    paint.setPathEffect(SkDashPathEffect::Make(intervals, 2, 25.0f));
+    paint.setPathEffect(SkDashPathEffect::Make(intervals, 25.0f));
     canvas->drawCircle(centerX, centerY, r, paint);
 
     // Check that we drew the second dash, which starts at the top of the circle.

@@ -22,7 +22,7 @@
 #include "src/gpu/graphite/Surface_Graphite.h"
 #include "src/gpu/graphite/Texture.h"
 #include "src/gpu/graphite/TextureProxy.h"
-#include "tests/TestUtils.h"
+#include "tests/ComparePixels.h"
 #include "tools/ToolUtils.h"
 
 using namespace skgpu::graphite;
@@ -504,7 +504,7 @@ void run_test(skiatest::Reporter* reporter,
 } // anonymous namespace
 
 DEF_GRAPHITE_TEST_FOR_RENDERING_CONTEXTS(MutableImagesTest, reporter, context,
-                                         CtsEnforcement::kApiLevel_V) {
+                                         CtsEnforcement::kApiLevel_202404) {
 
     for (bool useTwoRecorders : { false, true }) {
         for (bool withMips : { false, true }) {

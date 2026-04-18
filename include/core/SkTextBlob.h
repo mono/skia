@@ -10,9 +10,12 @@
 
 #include "include/core/SkFont.h"
 #include "include/core/SkFontTypes.h"
+#include "include/core/SkPoint.h"
+#include "include/core/SkRSXform.h"
 #include "include/core/SkRect.h"
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkScalar.h"
+#include "include/core/SkSpan.h"
 #include "include/core/SkTypes.h"
 #include "include/private/base/SkDebug.h"
 #include "include/private/base/SkTemplates.h"
@@ -25,8 +28,6 @@ class SkData;
 class SkPaint;
 class SkTypeface;
 struct SkDeserialProcs;
-struct SkPoint;
-struct SkRSXform;
 struct SkSerialProcs;
 
 namespace sktext {
@@ -133,8 +134,9 @@ public:
         @return        new textblob or nullptr
      */
     static sk_sp<SkTextBlob> MakeFromPosTextH(const void* text, size_t byteLength,
-                                      const SkScalar xpos[], SkScalar constY, const SkFont& font,
-                                      SkTextEncoding encoding = SkTextEncoding::kUTF8);
+                                              SkSpan<const SkScalar> xpos, SkScalar constY,
+                                              const SkFont& font,
+                                              SkTextEncoding encoding = SkTextEncoding::kUTF8);
 
     /** Returns a textblob built from a single run of text with positions.
         This is equivalent to using SkTextBlobBuilder and calling allocRunPos().
@@ -148,12 +150,32 @@ public:
         @return        new textblob or nullptr
      */
     static sk_sp<SkTextBlob> MakeFromPosText(const void* text, size_t byteLength,
-                                             const SkPoint pos[], const SkFont& font,
+                                             SkSpan<const SkPoint> pos, const SkFont& font,
                                              SkTextEncoding encoding = SkTextEncoding::kUTF8);
 
     static sk_sp<SkTextBlob> MakeFromRSXform(const void* text, size_t byteLength,
-                                             const SkRSXform xform[], const SkFont& font,
+                                             SkSpan<const SkRSXform> xform, const SkFont& font,
                                              SkTextEncoding encoding = SkTextEncoding::kUTF8);
+
+    // Helpers for glyphs
+
+    static sk_sp<SkTextBlob> MakeFromPosHGlyphs(SkSpan<const SkGlyphID> glyphs,
+                                                SkSpan<const SkScalar> xpos, SkScalar constY,
+                                                const SkFont& font) {
+        return MakeFromPosTextH(glyphs.data(), glyphs.size() * sizeof(SkGlyphID), xpos, constY,
+                                font, SkTextEncoding::kGlyphID);
+    }
+    static sk_sp<SkTextBlob> MakeFromPosGlyphs(SkSpan<const SkGlyphID> glyphs,
+                                               SkSpan<const SkPoint> pos, const SkFont& font) {
+        return MakeFromPosText(glyphs.data(), glyphs.size() * sizeof(SkGlyphID), pos, font,
+                               SkTextEncoding::kGlyphID);
+    }
+    static sk_sp<SkTextBlob> MakeFromRSXformGlyphs(SkSpan<const SkGlyphID> glyphs,
+                                                   SkSpan<const SkRSXform> xform,
+                                                   const SkFont& font) {
+        return MakeFromRSXform(glyphs.data(), glyphs.size() * sizeof(SkGlyphID), xform, font,
+                               SkTextEncoding::kGlyphID);
+    }
 
     /** Writes data to allow later reconstruction of SkTextBlob. memory points to storage
         to receive the encoded data, and memory_size describes the size of storage.
@@ -209,13 +231,13 @@ public:
     class SK_API Iter {
     public:
         struct Run {
-            SkTypeface*     fTypeface;
-            int             fGlyphCount;
-            const uint16_t* fGlyphIndices;
+            SkTypeface* fTypeface;
+            int fGlyphCount;
+            const SkGlyphID* fGlyphIndices;
 #ifdef SK_UNTIL_CRBUG_1187654_IS_FIXED
             const uint32_t* fClusterIndex_forTest;
-            int             fUtf8Size_forTest;
-            const char*     fUtf8_forTest;
+            int fUtf8Size_forTest;
+            const char* fUtf8_forTest;
 #endif
         };
 
@@ -229,10 +251,10 @@ public:
 
         // Experimental, DO NO USE, will change/go-away
         struct ExperimentalRun {
-            SkFont          font;
-            int             count;
-            const uint16_t* glyphs;
-            const SkPoint*  positions;
+            SkFont font;
+            int count;
+            const SkGlyphID* glyphs;
+            const SkPoint* positions;
         };
         bool experimentalNext(ExperimentalRun*);
 

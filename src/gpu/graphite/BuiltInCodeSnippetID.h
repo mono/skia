@@ -14,8 +14,8 @@ namespace skgpu::graphite {
 
 enum class BuiltInCodeSnippetID : int32_t {
     // This isn't just a signal for a failure during paintparams key creation. It also actually
-    // implements the default behavior for an erroneous draw. Currently it just draws solid
-    // magenta.
+    // implements the default behavior for an erroneous draw. That said, Device discards draws that
+    // have a PaintParamsKey referencing an error ID so this behavior is mostly academic.
     kError,
 
     // Snippet that passes through prior stage output
@@ -45,28 +45,37 @@ enum class BuiltInCodeSnippetID : int32_t {
     kLocalMatrixShader,
     kLocalMatrixShaderPersp,
     kImageShader,
+    kImageShaderClamp,
     kCubicImageShader,
     kHWImageShader,
     kYUVImageShader,
     kCubicYUVImageShader,
     kHWYUVImageShader,
     kHWYUVNoSwizzleImageShader,
+    kCoordNormalizeShader,
     kCoordClampShader,
     kDitherShader,
     kPerlinNoiseShader,
 
     // SkColorFilter code snippets
     kMatrixColorFilter,
+    kHSLMatrixColorFilter,
     kTableColorFilter,
     kGaussianColorFilter,
+
+    // Color space transform snippet and its specializations
     kColorSpaceXformColorFilter,
-    kPremulAlphaColorFilter,
+    kColorSpaceXformPremul,
+    kColorSpaceXformSRGB,
 
     // Emits special variable holding the primitiveColor emitted by a RenderStep
     kPrimitiveColor,
 
     // Analytic clip for circular roundrect and AA rect shapes
-    kCircularRRectClip,
+    kAnalyticClip,
+
+    // Analytic plus atlas-based clip
+    kAnalyticAndAtlasClip,
 
     kCompose, // compose 2 children together: outer_1(inner_0(...))
     kBlendCompose, // compose 3 children together: outer_2(inner_0(...), inner_1(...))

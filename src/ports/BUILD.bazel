@@ -3,6 +3,7 @@ load(
     "skia_cc_library",
     "skia_filegroup",
     "skia_objc_library",
+    "supports_platforms",
 )
 
 package(
@@ -68,9 +69,9 @@ skia_filegroup(
 skia_filegroup(
     name = "skdebug",
     srcs = select({
-        "@platforms//os:windows": ["SkDebug_win.cpp"],
-        "@platforms//os:android": ["SkDebug_android.cpp"],
-        "//conditions:default": ["SkDebug_stdio.cpp"],
+        "@platforms//os:windows": ["SkLog_win.cpp"],
+        "@platforms//os:android": ["SkLog_android.cpp"],
+        "//conditions:default": ["SkLog_stdio.cpp"],
     }),
 )
 
@@ -119,6 +120,7 @@ skia_cc_library(
         "SkTypeface_FreeType.h",
         "//include/ports:typeface_freetype_hdrs",
     ],
+    defines = ["SK_TYPEFACE_FACTORY_FREETYPE"],
     implementation_deps = [
         "//:pathops",
         "@freetype",
@@ -143,7 +145,6 @@ skia_cc_library(
     ],
     defines = ["SK_TYPEFACE_FACTORY_FONTATIONS"],
     implementation_deps = [
-        "//:pathops",
         "//src/ports/fontations:deps",
     ],
     visibility = [
@@ -152,25 +153,21 @@ skia_cc_library(
     ],
     deps = [
         "//:core",
+        "//src/codec:any_decoder",
         "//src/utils:char_to_glyphcache",
     ],
 )
 
 skia_cc_library(
-    name = "fontmgr_android_freetype",
+    name = "fontmgr_android_parser",
     srcs = [
-        "SkFontMgr_android.cpp",
         "SkFontMgr_android_parser.cpp",
     ],
     hdrs = [
         "SkFontMgr_android_parser.h",
-        "//include/ports:android_fontmgr_hdrs",
     ],
-    defines = ["SK_FONTMGR_ANDROID_AVAILABLE"],
     visibility = ["//:__pkg__"],
     deps = [
-        ":freetype_support",
-        ":typeface_proxy",
         "//:core",
         "//src/base",
         "//src/core:core_priv",
@@ -179,7 +176,26 @@ skia_cc_library(
 )
 
 skia_cc_library(
-    name = "fontmgr_android_ndk_freetype",
+    name = "fontmgr_android",
+    srcs = [
+        "SkFontMgr_android.cpp",
+    ],
+    hdrs = [
+        "//include/ports:android_fontmgr_hdrs",
+    ],
+    defines = ["SK_FONTMGR_ANDROID_AVAILABLE"],
+    visibility = ["//:__pkg__"],
+    deps = [
+        ":fontmgr_android_parser",
+        ":typeface_proxy",
+        "//:core",
+        "//src/base",
+        "//src/core:core_priv",
+    ],
+)
+
+skia_cc_library(
+    name = "fontmgr_android_ndk",
     srcs = [
         "SkFontMgr_android_ndk.cpp",
     ],
@@ -189,7 +205,7 @@ skia_cc_library(
     defines = ["SK_FONTMGR_ANDROID_NDK_AVAILABLE"],
     visibility = ["//:__pkg__"],
     deps = [
-        ":freetype_support",
+        ":fontmgr_android_parser",
         ":typeface_proxy",
         "//:core",
         "//src/base",
@@ -205,9 +221,11 @@ skia_objc_library(
     hdrs = [
         "//include/ports:coretext_fontmgr_hdrs",
     ],
-    defines = ["SK_FONTMGR_CORETEXT_AVAILABLE"],
-    # TODO: frameworks are not module-mapped.
-    # features = ["layering_check"],
+    defines = [
+        "SK_FONTMGR_CORETEXT_AVAILABLE",
+        "SK_TYPEFACE_FACTORY_CORETEXT",
+    ],
+    features = ["layering_check"],
     ios_frameworks = [
         "CoreText",
         "CoreGraphics",
@@ -218,12 +236,17 @@ skia_objc_library(
         "CoreFoundation",
         "CoreText",
     ],
+    target_compatible_with = supports_platforms(
+        "@platforms//os:macos",
+        "@platforms//os:ios",
+    ),
     visibility = ["//:__pkg__"],
     deps = [
         ":coretext_typeface",
         "//:core",
         "//src/base",
         "//src/core:core_priv",
+        "//src/utils/mac:mac_utils_priv",
     ],
 )
 
@@ -290,8 +313,7 @@ skia_cc_library(
 skia_filegroup(
     name = "typeface_fontations_hdrs",
     srcs = [
-        "SkFontScanner_fontations_priv.h",
-        "SkTypeface_fontations_priv.h",
+        "SkTypeface_fontations_factory.h",
     ],
 )
 
@@ -299,7 +321,9 @@ skia_filegroup(
     name = "typeface_fontations_srcs",
     srcs = [
         "SkFontScanner_fontations.cpp",
+        "SkFontScanner_fontations_priv.h",
         "SkTypeface_fontations.cpp",
+        "SkTypeface_fontations_priv.h",
     ],
 )
 
@@ -341,7 +365,7 @@ skia_cc_library(
 )
 
 skia_cc_library(
-    name = "fontmgr_fontconfig_freetype",
+    name = "fontmgr_fontconfig",
     srcs = [
         "SkFontMgr_fontconfig.cpp",
     ],
@@ -349,35 +373,15 @@ skia_cc_library(
         "//include/ports:fontconfig_fontmgr_hdrs",
     ],
     defines = ["SK_FONTMGR_FONTCONFIG_AVAILABLE"],
+    target_compatible_with = supports_platforms(
+        "@platforms//os:linux",
+    ),
     visibility = [
         "//:__pkg__",
         "//tools/fonts:__pkg__",
     ],
     deps = [
-        ":freetype_support",
         ":typeface_proxy",
-        "//:core",
-        "//bazel/external/fontconfig",
-        "//src/base",
-        "//src/core:core_priv",
-    ],
-)
-
-skia_cc_library(
-    name = "fontmgr_fontconfig_fontations",
-    srcs = [
-        "SkFontMgr_fontconfig.cpp",
-    ],
-    hdrs = [
-        "//include/ports:fontconfig_fontmgr_hdrs",
-    ],
-    defines = ["SK_FONTMGR_FONTCONFIG_AVAILABLE"],
-    visibility = [
-        "//:__pkg__",
-        "//tools/fonts:__pkg__",
-    ],
-    deps = [
-        ":fontations_support",
         "//:core",
         "//bazel/external/fontconfig",
         "//src/base",
@@ -419,8 +423,7 @@ skia_objc_library(
         ":typeface_mac_hdrs",
         "//include/ports:mac_typeface",
     ],
-    # TODO: frameworks are not module-mapped.
-    # features = ["layering_check"],
+    features = ["layering_check"],
     ios_frameworks = [
         "CoreFoundation",
         "CoreGraphics",

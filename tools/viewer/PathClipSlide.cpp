@@ -7,16 +7,16 @@
 
 #include "include/core/SkCanvas.h"
 #include "include/core/SkColorFilter.h"
-#include "include/core/SkColorPriv.h"
 #include "include/core/SkGraphics.h"
 #include "include/core/SkPath.h"
 #include "include/core/SkRegion.h"
 #include "include/core/SkShader.h"
 #include "include/core/SkTypeface.h"
-#include "include/effects/SkGradientShader.h"
+#include "include/effects/SkGradient.h"
 #include "include/private/base/SkTo.h"
 #include "src/base/SkTime.h"
 #include "src/base/SkUTF.h"
+#include "src/core/SkColorPriv.h"
 #include "tools/viewer/ClickHandlerSlide.h"
 
 #include <utility>
@@ -133,10 +133,9 @@ static int clip_line(const SkRect& bounds, SkPoint p0, SkPoint p1, SkPoint edges
 static void draw_clipped_line(SkCanvas* canvas, const SkRect& bounds,
                               SkPoint p0, SkPoint p1, const SkPaint& paint) {
     SkPoint verts[6];
-    int count = clip_line(bounds, p0, p1, verts);
+    size_t count = clip_line(bounds, p0, p1, verts);
 
-    SkPath path;
-    path.addPoly(verts, count, false);
+    SkPath path = SkPath::Polygon({verts, count}, false);
     canvas->drawPath(path, paint);
 }
 
@@ -175,8 +174,7 @@ public:
     }
 
     void draw(SkCanvas* canvas) override {
-        SkPath path;
-        path.addPoly(fPoly, N, true);
+        SkPath path = SkPath::Polygon(fPoly, true);
 
         // Draw the full triangle, stroked and filled
         SkPaint p;
@@ -280,8 +278,7 @@ protected:
             }
         }
 
-        SkPath path;
-        path.addPoly(fPoly, N, true);
+        SkPath path = SkPath::Polygon(fPoly, true);
         if (path.contains(x, y)) {
             return new DragPolyClick(fPoly, N);
         }

@@ -97,6 +97,9 @@ static bool read_header(SkStream* stream, SkISize* size) {
 }
 
 bool SkWbmpCodec::onRewind() {
+    if (!this->rewindStream()) {
+        return false;
+    }
     return read_header(this->stream(), nullptr);
 }
 
@@ -223,7 +226,7 @@ std::unique_ptr<SkCodec> Decode(std::unique_ptr<SkStream> stream,
     return SkWbmpCodec::MakeFromStream(std::move(stream), outResult);
 }
 
-std::unique_ptr<SkCodec> Decode(sk_sp<SkData> data,
+std::unique_ptr<SkCodec> Decode(sk_sp<const SkData> data,
                                 SkCodec::Result* outResult,
                                 SkCodecs::DecodeContext) {
     if (!data) {

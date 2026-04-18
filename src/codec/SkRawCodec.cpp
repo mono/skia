@@ -60,6 +60,16 @@
 #include "src/piex.h"  // NO_G3_REWRITE
 #include "src/piex_types.h"  // NO_G3_REWRITE
 
+#ifndef SK_DNG_VERSION
+#define SK_DNG_VERSION 0x01040000
+#endif
+
+#if SK_DNG_VERSION <= 0x01040000
+#define OPT_PROGRESS_ARG
+#else
+#define OPT_PROGRESS_ARG ,dng_area_task_progress*
+#endif
+
 using namespace skia_private;
 
 template <typename T> struct sk_is_trivially_relocatable;
@@ -124,7 +134,7 @@ class SkDngHost : public dng_host {
 public:
     explicit SkDngHost(dng_memory_allocator* allocater) : dng_host(allocater) {}
 
-    void PerformAreaTask(dng_area_task& task, const dng_rect& area) override {
+    void PerformAreaTask(dng_area_task& task, const dng_rect& area OPT_PROGRESS_ARG) override {
         SkTaskGroup taskGroup;
 
         // tileSize is typically 256x256
@@ -135,11 +145,19 @@ public:
 
         SkMutex mutex;
         TArray<dng_exception> exceptions;
+#if SK_DNG_VERSION <= 0x01040000
         task.Start(numTasks, tileSize, &Allocator(), Sniffer());
+#else
+        task.Start(numTasks, area, tileSize, &Allocator(), Sniffer());
+#endif
         for (int taskIndex = 0; taskIndex < numTasks; ++taskIndex) {
             taskGroup.add([&mutex, &exceptions, &task, this, taskIndex, taskAreas, tileSize] {
                 try {
+#if SK_DNG_VERSION <= 0x01040000
                     task.ProcessOnThread(taskIndex, taskAreas[taskIndex], tileSize, this->Sniffer());
+#else
+                    task.ProcessOnThread(taskIndex, taskAreas[taskIndex], tileSize, this->Sniffer(), nullptr);
+#endif
                 } catch (dng_exception& exception) {
                     SkAutoMutexExclusive lock(mutex);
                     exceptions.push_back(exception);
@@ -317,7 +335,7 @@ private:
             }
 
             // TODO: optimize for the special case when the input is SkMemoryStream.
-            return SkStreamCopy(&fStreamBuffer, fStream.get());
+            return SkStreamPriv::Copy(&fStreamBuffer, fStream.get());
         }
 
         if (newSize <= fStreamBuffer.bytesWritten()) {  // already buffered to newSize
@@ -435,7 +453,13 @@ private:
 class SkDngStream : public dng_stream {
 public:
     // Will NOT take the ownership of the stream.
-    SkDngStream(SkRawStream* stream) : fStream(stream) {}
+    SkDngStream(SkRawStream* stream)
+        // The default constructor sets offsetInOriginalFile to invalid (-1), however
+        // this results in dng_negative hitting a bug path that causes a crash due to
+        // unsigned overflow occuring. This offset doesn't seem to serve any purpose,
+        // so just pretend we're always at the start of the file to avoid the crash
+        : dng_stream((dng_abort_sniffer*) nullptr, dng_stream::kDefaultBufferSize, 0)
+        , fStream(stream) {}
 
     ~SkDngStream() override {}
 
@@ -670,13 +694,10 @@ std::unique_ptr<SkCodec> SkRawCodec::MakeFromStream(std::unique_ptr<SkStream> st
             return nullptr;
         }
 
-        std::unique_ptr<SkEncodedInfo::ICCProfile> profile;
+        std::unique_ptr<SkCodecs::ColorProfile> profile;
         if (imageData.color_space == ::piex::PreviewImageData::kAdobeRgb) {
-            skcms_ICCProfile skcmsProfile;
-            skcms_Init(&skcmsProfile);
-            skcms_SetTransferFunction(&skcmsProfile, &SkNamedTransferFn::k2Dot2);
-            skcms_SetXYZD50(&skcmsProfile, &SkNamedGamut::kAdobeRGB);
-            profile = SkEncodedInfo::ICCProfile::Make(skcmsProfile);
+            profile = SkCodecs::ColorProfile::Make(
+                SkNamedTransferFn::k2Dot2, SkNamedGamut::kAdobeRGB);
         }
 
         //  Theoretically PIEX can return JPEG compressed image or uncompressed RGB image. We only
@@ -842,7 +863,7 @@ std::unique_ptr<SkCodec> Decode(std::unique_ptr<SkStream> stream,
     return SkRawCodec::MakeFromStream(std::move(stream), outResult);
 }
 
-std::unique_ptr<SkCodec> Decode(sk_sp<SkData> data,
+std::unique_ptr<SkCodec> Decode(sk_sp<const SkData> data,
                                 SkCodec::Result* outResult,
                                 SkCodecs::DecodeContext) {
     if (!data) {

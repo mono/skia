@@ -20,9 +20,10 @@
 
 class GrDirectContext;
 class SkCanvas;
+class SkRecorder;
+class SkString;
 class SkSurface;
 class SkSurfaceProps;
-class SkString;
 
 namespace skgpu::graphite {
 class Context;
@@ -57,16 +58,20 @@ public:
 
     virtual bool scaleContentToFit() const { return false; }
 
-    enum BackendType {
-        kNativeGL_BackendType,
-        kANGLE_BackendType,
-        kGraphiteDawn_BackendType,
-        kVulkan_BackendType,
-        kGraphiteVulkan_BackendType,
-        kMetal_BackendType,
-        kGraphiteMetal_BackendType,
-        kDirect3D_BackendType,
-        kRaster_BackendType,
+    enum class BackendType {
+        kNativeGL,
+        kANGLE,
+        kGraphiteDawnD3D11,
+        kGraphiteDawnD3D12,
+        kGraphiteDawnMetal,
+        kGraphiteDawnOpenGLES,
+        kGraphiteDawnVulkan,
+        kVulkan,
+        kGraphiteVulkan,
+        kMetal,
+        kGraphiteMetal,
+        kDirect3D,
+        kRaster,
     };
 
     virtual bool attach(BackendType) = 0;
@@ -140,6 +145,7 @@ public:
     GrDirectContext* directContext() const;
     skgpu::graphite::Context* graphiteContext() const;
     skgpu::graphite::Recorder* graphiteRecorder() const;
+    SkRecorder* baseRecorder() const;
 
     using GpuTimerCallback = std::function<void(uint64_t ns)>;
 

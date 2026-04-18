@@ -43,8 +43,8 @@ public:
     }
 #endif
 
-    bool startTimerQuery() override;
-    void endTimerQuery() override;
+    bool startStatsQuery(GpuStatsFlags) override;
+    void endStatsQuery(GpuStatsFlags) override;
     std::optional<GpuStats> gpuStats() override;
 
 private:
@@ -52,6 +52,9 @@ private:
                       DawnResourceProvider* resourceProvider);
 
     ResourceProvider* resourceProvider() const override { return fResourceProvider; }
+
+    const DawnSampler* getSampler(const DrawPassCommands::BindTexturesAndSamplers& command,
+                                  int32_t index);
 
     void onResetCommandBuffer() override;
     bool setNewCommandBufferResources() override;
@@ -61,43 +64,49 @@ private:
                          const Texture* colorTexture,
                          const Texture* resolveTexture,
                          const Texture* depthStencilTexture,
+                         SkIPoint resolveOffset,
                          SkIRect viewport,
                          const DrawPassList&) override;
     bool onAddComputePass(DispatchGroupSpan) override;
 
     // Methods for populating a Dawn RenderPassEncoder:
     bool beginRenderPass(const RenderPassDesc&,
+                         const SkIPoint& resolveOffset,
                          SkIRect renderPassBounds,
                          const Texture* colorTexture,
                          const Texture* resolveTexture,
                          const Texture* depthStencilTexture);
-    bool loadMSAAFromResolveAndBeginRenderPassEncoder(
-            const RenderPassDesc& frontendRenderPassDesc,
-            const wgpu::RenderPassDescriptor& wgpuRenderPassDesc,
-            const DawnTexture* msaaTexture);
+    bool emulateLoadMSAAFromResolveAndBeginRenderPassEncoder(
+            const RenderPassDesc& intendedRenderPassDesc,
+            const wgpu::RenderPassDescriptor& intendedDawnRenderPassDesc,
+            const SkIPoint& resolveOffset,
+            const SkIRect& renderPassBounds,
+            const DawnTexture* msaaTexture,
+            const DawnTexture* resolveTexture);
     bool doBlitWithDraw(const wgpu::RenderPassEncoder& renderEncoder,
-                        const RenderPassDesc& frontendRenderPassDesc,
-                        const wgpu::TextureView& sourceTextureView,
-                        int width,
-                        int height);
-    void endRenderPass();
+                        const RenderPassDesc& frontendRenderPassDescKey,
+                        const wgpu::TextureView& srcTextureView,
+                        SampleCount srcSampleCount,
+                        const SkIPoint& srcOffset,
+                        const SkIRect& dstBounds);
+    bool endRenderPass();
 
-    bool addDrawPass(const DrawPass*);
+    [[nodiscard]] bool addDrawPass(DrawPass*);
 
     bool bindGraphicsPipeline(const GraphicsPipeline*);
-    void setBlendConstants(float* blendConstants);
+    void setBlendConstants(std::array<float, 4> blendConstants);
 
     void bindUniformBuffer(const BindBufferInfo& info, UniformSlot);
-    void bindDrawBuffers(const BindBufferInfo& vertices,
-                         const BindBufferInfo& instances,
-                         const BindBufferInfo& indices,
-                         const BindBufferInfo& indirect);
+    void bindInputBuffer(const Buffer* buffer, size_t offset, uint32_t bindingIndex);
+    void bindIndexBuffer(const Buffer* indexBuffer, size_t offset);
+    void bindIndirectBuffer(const Buffer* indirectBuffer, size_t offset);
 
     void bindTextureAndSamplers(const DrawPass& drawPass,
                                 const DrawPassCommands::BindTexturesAndSamplers& command);
 
     void setScissor(const Scissor&);
-    bool updateIntrinsicUniforms(SkIRect viewport);
+    bool updateIntrinsicUniformsAsUBO(UniformDataBlock dataBlock);
+    bool updateIntrinsicUniformsAsPushConstant(UniformDataBlock dataBlock);
     void setViewport(SkIRect viewport);
 
     void draw(PrimitiveType type, unsigned int baseVertex, unsigned int vertexCount);
@@ -161,10 +170,19 @@ private:
     wgpu::RenderPassEncoder fActiveRenderPassEncoder;
     wgpu::ComputePassEncoder fActiveComputePassEncoder;
 
+    struct ResolveStepEmulationInfo {
+        const DawnTexture* fMSAATexture;
+        const DawnTexture* fResolveTexture;
+        SkIPoint fMSAAAOffset;
+        SkIRect fResolveArea;
+    };
+    std::optional<ResolveStepEmulationInfo> fResolveStepEmulationInfo;
+
     wgpu::Buffer fCurrentIndirectBuffer;
     size_t fCurrentIndirectBufferOffset = 0;
 
     bool fWroteFirstPassTimestamps = false;
+    bool fHasStatsQuery = false;
     wgpu::QuerySet fTimestampQuerySet;
     sk_sp<DawnBuffer> fTimestampQueryBuffer;
     sk_sp<DawnBuffer> fTimestampQueryXferBuffer;

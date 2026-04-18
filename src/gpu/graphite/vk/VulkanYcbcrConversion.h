@@ -14,6 +14,7 @@
 #include "src/core/SkChecksum.h"
 
 #include <cinttypes>
+#include <optional>
 
 namespace skgpu {
 struct VulkanYcbcrConversionInfo;
@@ -28,29 +29,33 @@ public:
     static sk_sp<VulkanYcbcrConversion> Make(const VulkanSharedContext*,
                                              const VulkanYcbcrConversionInfo&);
 
-    static sk_sp<VulkanYcbcrConversion> Make(const VulkanSharedContext*,
-                                             uint32_t nonFormatInfo,
-                                             uint64_t format);
+    const VkSamplerYcbcrConversion& ycbcrConversion() const { return fYcbcrConversion; }
 
-    static GraphiteResourceKey MakeYcbcrConversionKey(const VulkanSharedContext*,
-                                                      const VulkanYcbcrConversionInfo&);
-
-    // Return a fully-formed GraphiteResourceKey that represents a YCbCr conversion by extracting
-    // relevant information from a SamplerDesc.
-    static GraphiteResourceKey GetKeyFromSamplerDesc(const SamplerDesc& samplerDesc);
-
-    VkSamplerYcbcrConversion ycbcrConversion() const { return fYcbcrConversion; }
+    // If the format does not support
+    // VK_FORMAT_FEATURE_SAMPLED_IMAGE_YCBCR_CONVERSION_SEPARATE_RECONSTRUCTION_FILTER_BIT,
+    // sampler's minFilter and magFilter must match the conversion's chromaFilter, which can be
+    // found in fRequiredFilter. If not set, minFilter and magFilter can be independently set.
+    std::optional<VkFilter> requiredFilter() const { return fRequiredFilter; }
 
     const char* getResourceType() const override { return "Vulkan YCbCr Conversion"; }
 
+    // Static utilities for working with VulkanYcbcrConversionInfo and ImmutableSamplerInfo, both of
+    // which pack the necessary information to create a VulkanYcbcrConversion resource. These are
+    // not on VulkanYcbcrConversionInfo because that is a public type for use with
+    // VulkanTextureInfo.
+    static ImmutableSamplerInfo ToImmutableSamplerInfo(const VulkanYcbcrConversionInfo&);
+    static VulkanYcbcrConversionInfo FromImmutableSamplerInfo(ImmutableSamplerInfo);
+
 private:
-    VulkanYcbcrConversion(const VulkanSharedContext*, VkSamplerYcbcrConversion);
+    VulkanYcbcrConversion(const VulkanSharedContext*,
+                          VkSamplerYcbcrConversion,
+                          std::optional<VkFilter>);
 
     void freeGpuData() override;
 
     VkSamplerYcbcrConversion fYcbcrConversion;
+    std::optional<VkFilter> fRequiredFilter;
 };
 } // namespace skgpu::graphite
 
 #endif // skgpu_graphite_VulkanYcbcrConversion_DEFINED
-

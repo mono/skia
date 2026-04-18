@@ -4,25 +4,33 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
-
 #ifndef skgpu_graphite_DrawList_DEFINED
 #define skgpu_graphite_DrawList_DEFINED
 
-#include "include/core/SkPaint.h"
-#include "src/base/SkTBlockList.h"
+#include "src/gpu/graphite/DrawListBase.h"
 
+#include "include/private/base/SkDebug.h"
+#include "src/base/SkBlockAllocator.h"
+#include "src/base/SkEnumBitMask.h"
+#include "src/base/SkTBlockList.h"
+#include "src/gpu/graphite/ContextUtils.h"
+#include "src/gpu/graphite/DrawCommands.h"
+#include "src/gpu/graphite/DrawListTypes.h"
 #include "src/gpu/graphite/DrawOrder.h"
 #include "src/gpu/graphite/DrawParams.h"
 #include "src/gpu/graphite/PaintParams.h"
-#include "src/gpu/graphite/geom/Geometry.h"
+#include "src/gpu/graphite/PipelineData.h"
 #include "src/gpu/graphite/geom/Rect.h"
-#include "src/gpu/graphite/geom/Transform_graphite.h"
+#include "src/gpu/graphite/geom/Transform.h"
 
+#include <cstdint>
 #include <limits>
 #include <optional>
 
 namespace skgpu::graphite {
 
+class DrawPass;
+class Geometry;
 class Renderer;
 
 /**
@@ -54,71 +62,168 @@ class Renderer;
  * it to. Draw-specific simplification, style application, and advanced clipping should be handled
  * at a higher layer.
  */
-class DrawList {
+class DrawList : public DrawListBase {
 public:
-    // The maximum number of render steps that can be recorded into a DrawList before it must be
-    // converted to a DrawPass. The true fundamental limit is imposed by the limits of the depth
-    // attachment and precision of CompressedPaintersOrder and PaintDepth. These values can be
-    // shared by multiple draw calls so it's more difficult to reason about how much room is left
-    // in a DrawList. Limiting it to this keeps tracking simple and ensures that the sequences in
-    // DrawOrder cannot overflow since they are always less than or equal to the number of draws.
-    // TODO(b/322840221): The theoretic max for this value is 16-bit, but we see markedly better
-    // performance with smaller values. This should be understood and fixed directly rather than as
-    // a magic side-effect, but for now, let it go fast.
-    static constexpr int kMaxRenderSteps = 4096;
-    static_assert(kMaxRenderSteps <= std::numeric_limits<uint16_t>::max());
+    // Add a constructor to prevent default zero initialization of SkTBlockList members' storage.
+    DrawList() {}
 
     // DrawList requires that all Transforms be valid and asserts as much; invalid transforms should
     // be detected at the Device level or similar. The provided Renderer must be compatible with the
     // 'shape' and 'stroke' parameters. If the renderer uses coverage AA, 'ordering' must have a
     // compressed painters order that reflects that. If the renderer uses stencil, the 'ordering'
     // must have a valid stencil index as well.
-    void recordDraw(const Renderer* renderer,
-                    const Transform& localToDevice,
-                    const Geometry& geometry,
-                    const Clip& clip,
-                    DrawOrder ordering,
-                    const PaintParams* paint,
-                    const StrokeStyle* stroke);
+    std::pair<DrawParams*, Layer*> recordDraw(
+            const Renderer* renderer,
+            const Transform& localToDevice,
+            const Geometry& geometry,
+            const Clip& clip,
+            DrawOrder ordering,
+            UniquePaintParamsID paintID,
+            SkEnumBitMask<DstUsage> dstUsage,
+            BarrierType barrierBeforeDraws,
+            PipelineDataGatherer* gatherer,
+            const StrokeStyle* stroke,
+            const Layer* latestDepthLayer) override;
 
-    int renderStepCount() const { return fRenderStepCount; }
+    std::unique_ptr<DrawPass> snapDrawPass(Recorder* recorder,
+                                           sk_sp<TextureProxy> target,
+                                           const SkImageInfo& targetInfo,
+                                           DstReadStrategy dstReadStrategy) override;
 
-    // Bounds for a dst copy required by this DrawList.
-    const Rect& dstCopyBounds() const { return fDstCopyBounds; }
-
-    SkDEBUGCODE(bool hasCoverageMaskDraws() const { return fCoverageMaskShapeDrawCount > 0; })
+    // Discard all previously recorded draws and set to the requested load op (with optional clear
+    // color).
+    void reset(LoadOp op, SkColor4f clearColor = {0.f, 0.f, 0.f, 0.f}) override;
 
 private:
-    friend class DrawPass;
-
     struct Draw {
-        const Renderer* fRenderer; // Owned by SharedContext of Recorder that recorded the draw
-        DrawParams fDrawParams; // The DrawParam's transform is owned by fTransforms of the DrawList
-        std::optional<PaintParams> fPaintParams; // Not present implies depth-only draw
-
+    public:
         Draw(const Renderer* renderer, const Transform& transform, const Geometry& geometry,
-             const Clip& clip, DrawOrder order, const PaintParams* paint,
+             const Clip& clip, DrawOrder order, BarrierType barrierBeforeDraws,
              const StrokeStyle* stroke)
                 : fRenderer(renderer)
-                , fDrawParams(transform, geometry, clip, order, stroke)
-                , fPaintParams(paint ? std::optional<PaintParams>(*paint) : std::nullopt) {}
+                , fDrawParams(transform, geometry, clip, order, stroke, barrierBeforeDraws) {}
+
+        const Renderer* renderer()              const { return fRenderer;   }
+        const DrawParams& drawParams()          const { return fDrawParams; }
+
+    private:
+        const Renderer* fRenderer;
+        DrawParams fDrawParams;
     };
 
-    // The returned Transform reference remains valid for the lifetime of the DrawList.
-    const Transform& deduplicateTransform(const Transform&);
+    template <uint64_t Bits, uint64_t Offset>
+    struct Bitfield {
+        static constexpr uint64_t kMask = ((uint64_t) 1 << Bits) - 1;
+        static constexpr uint64_t kOffset = Offset;
+        static constexpr uint64_t kBits = Bits;
 
-    SkTBlockList<Transform, 16> fTransforms{SkBlockAllocator::GrowthPolicy::kFibonacci};
-    SkTBlockList<Draw, 16>      fDraws{SkBlockAllocator::GrowthPolicy::kFibonacci};
+        static uint32_t get(uint64_t v) { return static_cast<uint32_t>((v >> kOffset) & kMask); }
+        static uint64_t set(uint32_t v) { return (v & kMask) << kOffset; }
+    };
 
-    // Running total of RenderSteps for all draws, assuming nothing is culled
-    int fRenderStepCount = 0;
+    /**
+     * Each Draw in a DrawList might be processed by multiple RenderSteps (determined by the Draw's
+     * Renderer), which can be sorted independently. Each (step, draw) pair produces its own
+     * SortKey.
+     *
+     * The goal of sorting draws for the DrawPass is to minimize pipeline transitions and dynamic
+     * binds within a pipeline, while still respecting the overall painter's order. This decreases
+     * the number of low-level draw commands in a command buffer and increases the size of those,
+     * allowing the GPU to operate more efficiently and have fewer bubbles within its own
+     * instruction stream.
+     *
+     * The Draw's CompresssedPaintersOrder and DisjointStencilIndex represent the most significant
+     * bits of the key, and are shared by all SortKeys produced by the same draw. Next, the pipeline
+     * description is encoded in two steps:
+     *  1. The index of the RenderStep packed in the high bits to ensure each step for a draw is
+     *     ordered correctly.
+     *  2. An index into a cache of pipeline descriptions is used to encode the identity of the
+     *     pipeline (SortKeys that differ in the bits from #1 necessarily would have different
+     *     descriptions, but then the specific ordering of the RenderSteps isn't enforced). Last,
+     *     the SortKey encodes an index into the set of uniform bindings accumulated for a DrawPass.
+     *     This allows the SortKey to cluster draw steps that have both a compatible pipeline and do
+     *     not require rebinding uniform data or other state (e.g. scissor). Since the uniform data
+     *     index and the pipeline description index are packed into indices and not actual pointers,
+     *     a given SortKey is only valid for the a specific DrawList->DrawPass conversion.
+     */
+    class SortKey {
+    public:
+        SortKey(const Draw* draw, int renderStep,
+                GraphicsPipelineCache::Index pipelineIndex,
+                UniformDataCache::Index uniformIndex,
+                TextureDataCache::Index textureBindingIndex)
+                : fPipelineKey(
+                          ColorDepthOrderField::set(draw->drawParams().order().paintOrder().bits())
+                          | StencilIndexField::set(draw->drawParams().order().stencilIndex().bits())
+                          | RenderStepField::set(static_cast<uint32_t>(renderStep))
+                          | PipelineField::set(pipelineIndex))
+                , fUniformKey(UniformField::set(uniformIndex) |
+                              TextureBindingsField::set(textureBindingIndex))
+                , fDraw(draw) {
+            SkASSERT(pipelineIndex < GraphicsPipelineCache::kInvalidIndex);
+            SkASSERT(renderStep <= draw->renderer()->numRenderSteps());
+        }
 
-#if defined(SK_DEBUG)
-    // The number of CoverageMask draws that have been recorded. Used in debugging.
-    int fCoverageMaskShapeDrawCount = 0;
+        bool operator<(const SortKey& k) const {
+            return fPipelineKey < k.fPipelineKey ||
+                (fPipelineKey == k.fPipelineKey && fUniformKey < k.fUniformKey);
+        }
+
+        const RenderStep& renderStep() const {
+            return fDraw->renderer()->step(RenderStepField::get(fPipelineKey));
+        }
+
+        const Draw& draw() const { return *fDraw; }
+
+        GraphicsPipelineCache::Index pipelineIndex() const {
+            return PipelineField::get(fPipelineKey);
+        }
+        UniformDataCache::Index uniformIndex() const {
+            return UniformField::get(fUniformKey);
+        }
+        TextureDataCache::Index textureBindingIndex() const {
+            return TextureBindingsField::get(fUniformKey);
+        }
+
+    private:
+        // Fields are ordered from most-significant to least when sorting by 128-bit value.
+        // NOTE: We don't use C++ bit fields because field ordering is implementation defined and we
+        // need to sort consistently.
+        using ColorDepthOrderField = Bitfield<16, 48>; // sizeof(CompressedPaintersOrder)
+        using StencilIndexField    = Bitfield<16, 32>; // sizeof(DisjointStencilIndex)
+        using RenderStepField      = Bitfield<2,  30>; // bits >= log2(Renderer::kMaxRenderSteps)
+        using PipelineField        = Bitfield<30, 0>;  // bits >= log2(max total steps in draw list)
+        uint64_t fPipelineKey;
+
+        // The uniform/texture index fields need 1 extra bit to encode "no-data". Values that are
+        // greater than or equal to 2^(bits-1) represent "no-data", while values between
+        // [0, 2^(bits-1)-1] can access data arrays without extra logic.
+        using UniformField         = Bitfield<34, 30>; // bits >= 1+log2(max total steps)
+        using TextureBindingsField = Bitfield<30, 0>;  // bits >= 1+log2(max total steps)
+        uint64_t fUniformKey;
+
+        // Backpointer to the draw that produced the sort key
+        const Draw* fDraw;
+
+// https://issues.skia.org/issues/485303056
+#if defined(__clang__)
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wtautological-value-range-compare"
 #endif
+        static_assert(ColorDepthOrderField::kBits >= sizeof(CompressedPaintersOrder));
+        static_assert(StencilIndexField::kBits    >= sizeof(DisjointStencilIndex));
+        static_assert(RenderStepField::kBits      >= SkNextLog2(Renderer::kMaxRenderSteps));
+        static_assert(PipelineField::kBits        >= SkNextLog2(DrawListBase::kMaxRenderSteps));
+        static_assert(UniformField::kBits         >= 1+SkNextLog2(DrawListBase::kMaxRenderSteps));
+        static_assert(TextureBindingsField::kBits >= 1+SkNextLog2(DrawListBase::kMaxRenderSteps));
+#if defined(__clang__)
+#pragma clang diagnostic pop
+#endif
+    };
 
-    Rect fDstCopyBounds = Rect::InfiniteInverted();
+    SkTBlockList<Draw, 4> fDraws{SkBlockAllocator::GrowthPolicy::kFibonacci};
+
+    std::vector<SortKey> fSortKeys;
 };
 
 } // namespace skgpu::graphite

@@ -1,5 +1,7 @@
-# This file will be copied into //third_party/externals/imgui via the new_git_repository
-# rule in //bazel/deps.bzl, so all files should be relative to that path.
+# This file will be copied into //third_party/externals/imgui, so all files should be
+# relative to that path.
+
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
 cc_library(
     name = "imgui",
@@ -19,6 +21,7 @@ cc_library(
         "misc/cpp/imgui_stdlib.h",
     ],
     hdrs = ["imgui.h"],
+    copts = ["-Wno-nontrivial-memcall"],
     defines = ["IMGUI_ENABLE_OSX_DEFAULT_CLIPBOARD_FUNCTIONS"],
     visibility = ["//visibility:public"],
 )

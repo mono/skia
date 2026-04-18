@@ -9,10 +9,11 @@
 #define GrColor_DEFINED
 
 #include "include/core/SkColor.h"
-#include "include/core/SkColorPriv.h"
 #include "include/gpu/ganesh/GrTypes.h"
-#include "include/private/SkColorData.h"
 #include "src/base/SkHalf.h"
+#include "src/base/SkVx.h"
+#include "src/core/SkColorData.h"
+#include "src/core/SkColorPriv.h"
 #include "src/gpu/BufferWriter.h"
 
 /**

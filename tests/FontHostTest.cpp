@@ -85,10 +85,10 @@ static void test_countGlyphs(skiatest::Reporter* reporter, const sk_sp<SkTypefac
 }
 
 static void test_fontstream(skiatest::Reporter* reporter, SkStream* stream, int ttcIndex) {
-    int n = SkFontStream::GetTableTags(stream, ttcIndex, nullptr);
+    int n = SkFontStream::GetTableTags(stream, ttcIndex, {});
     AutoTArray<SkFontTableTag> array(n);
 
-    int n2 = SkFontStream::GetTableTags(stream, ttcIndex, array.get());
+    int n2 = SkFontStream::GetTableTags(stream, ttcIndex, array);
     REPORTER_ASSERT(reporter, n == n2);
 
     for (int i = 0; i < n; ++i) {
@@ -131,7 +131,7 @@ static void test_symbolfont(skiatest::Reporter* reporter) {
     auto tf = ToolUtils::CreateTypefaceFromResource("fonts/SpiderSymbol.ttf");
     if (tf) {
         SkUnichar c = 0xf021;
-        uint16_t g = SkFont(tf).unicharToGlyph(c);
+        SkGlyphID g = SkFont(tf).unicharToGlyph(c);
         REPORTER_ASSERT(reporter, g == 3);
     } else {
         // not all platforms support data fonts, so we just note that failure
@@ -147,10 +147,8 @@ static void test_tables(skiatest::Reporter* reporter, const sk_sp<SkTypeface>& f
 
     int count = face->countTables();
 
-    AutoTMalloc<SkFontTableTag> storage(count);
-    SkFontTableTag* tags = storage.get();
-
-    int count2 = face->getTableTags(tags);
+    std::vector<SkFontTableTag> tags(count);
+    int count2 = face->readTableTags(tags);
     REPORTER_ASSERT(reporter, count2 == count);
 
     for (int i = 0; i < count; ++i) {

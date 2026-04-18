@@ -18,14 +18,21 @@ class VulkanCommandBuffer;
 
 class VulkanBuffer final : public Buffer {
 public:
-    static sk_sp<Buffer> Make(const VulkanSharedContext*, size_t, BufferType, AccessPattern);
+    static sk_sp<Buffer> Make(const VulkanSharedContext*,
+                              size_t,
+                              BufferType,
+                              AccessPattern,
+                              std::string_view label);
+
     void freeGpuData() override;
     VkBuffer vkBuffer() const { return fBuffer; }
     VkBufferUsageFlags bufferUsageFlags() const { return fBufferUsageFlags; }
 
     void setBufferAccess(VulkanCommandBuffer* buffer,
-                         VkAccessFlags dstAccessMask,
+                         VkAccessFlags dstAccess,
                          VkPipelineStageFlags dstStageMask) const;
+
+    bool bufferUsedForCpuRead() const { return fBufferUsedForCPURead; }
 
 private:
     VulkanBuffer(const VulkanSharedContext*,
@@ -35,7 +42,8 @@ private:
                  VkBuffer,
                  const skgpu::VulkanAlloc&,
                  VkBufferUsageFlags,
-                 Protected isProtected);
+                 Protected isProtected,
+                 std::string_view label);
 
     void onMap() override;
     void onUnmap() override;
@@ -49,12 +57,10 @@ private:
         return static_cast<const VulkanSharedContext*>(this->sharedContext());
     }
 
-    static VkPipelineStageFlags AccessMaskToPipelineSrcStageFlags(const VkAccessFlags accessFlags);
-
     VkBuffer fBuffer;
     skgpu::VulkanAlloc fAlloc;
     const VkBufferUsageFlags fBufferUsageFlags;
-    mutable VkAccessFlags fCurrentAccessMask = 0;
+    mutable VkAccessFlags fCurrentAccess = 0;
 
     /**
      * Buffers can either be mapped for:

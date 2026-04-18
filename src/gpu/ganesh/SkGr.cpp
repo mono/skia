@@ -46,6 +46,7 @@
 #include "src/gpu/ganesh/GrSurfaceProxyView.h"
 #include "src/gpu/ganesh/GrTextureProxy.h"
 #include "src/gpu/ganesh/GrXferProcessor.h"
+#include "src/gpu/ganesh/SurfaceDrawContext.h"
 #include "src/gpu/ganesh/effects/GrSkSLFP.h"
 #include "src/gpu/ganesh/effects/GrTextureEffect.h"
 #include "src/shaders/SkShaderBase.h"
@@ -236,7 +237,7 @@ std::tuple<GrSurfaceProxyView, GrColorType> GrMakeCachedBitmapProxyView(
     if (!mippedProxy) {
         // We failed to make a mipped proxy with the base copied into it. This could have
         // been from failure to make the proxy or failure to do the copy. Thus we will fall
-        // back to just using the non mipped proxy; See skbug.com/7094.
+        // back to just using the non mipped proxy; See skbug.com/40038328.
         return {{std::move(proxy), kTopLeft_GrSurfaceOrigin, swizzle}, ct};
     }
     // In this case we are stealing the key from the original proxy which should only happen
@@ -360,18 +361,18 @@ static std::unique_ptr<GrFragmentProcessor> make_dither_effect(
 #endif
 
 static inline bool skpaint_to_grpaint_impl(
-        GrRecordingContext* context,
-        const GrColorInfo& dstColorInfo,
+        skgpu::ganesh::SurfaceDrawContext* sdc,
         const SkPaint& skPaint,
         const SkMatrix& ctm,
         std::optional<std::unique_ptr<GrFragmentProcessor>> shaderFP,
         SkBlender* primColorBlender,
-        const SkSurfaceProps& surfaceProps,
         GrPaint* grPaint) {
+    const GrColorInfo& dstColorInfo = sdc->colorInfo();
+    const SkSurfaceProps& surfaceProps = sdc->surfaceProps();
     // Convert SkPaint color to 4f format in the destination color space
     SkColor4f origColor = SkColor4fPrepForDst(skPaint.getColor4f(), dstColorInfo);
 
-    GrFPArgs fpArgs(context, &dstColorInfo, surfaceProps, GrFPArgs::Scope::kDefault);
+    GrFPArgs fpArgs(sdc, &dstColorInfo, surfaceProps, GrFPArgs::Scope::kDefault);
 
     // Setup the initial color considering the shader, the SkPaint color, and the presence or not
     // of per-vertex colors.
@@ -435,7 +436,7 @@ static inline bool skpaint_to_grpaint_impl(
                 grPaint->setColor4f({origColor.fR, origColor.fG, origColor.fB, origColor.fA});
             } else {
                 // paintFP will ignore its input color, so we must disable coverage-as-alpha.
-                // TODO(skbug:11942): The alternative would be to always use ApplyPaintAlpha, but
+                // TODO(skbug.com/40043035): The alternative would be to always use ApplyPaintAlpha, but
                 // we'd need to measure the cost of that shader math against the CAA benefit.
                 paintFP = GrFragmentProcessor::DisableCoverageAsAlpha(std::move(paintFP));
                 grPaint->setColor4f(origColor.premul());
@@ -484,7 +485,7 @@ static inline bool skpaint_to_grpaint_impl(
             grPaint->setColor4f(colorFilter->filterColor4f(origColor, dstCS, dstCS).premul());
         } else {
             auto [success, fp] = GrFragmentProcessors::Make(
-                    context, colorFilter, std::move(paintFP), dstColorInfo, surfaceProps);
+                    sdc, colorFilter, std::move(paintFP), dstColorInfo, surfaceProps);
             if (!success) {
                 return false;
             }
@@ -503,6 +504,7 @@ static inline bool skpaint_to_grpaint_impl(
     if (paintFP != nullptr && (
             surfaceProps.isAlwaysDither() || SkPaintPriv::ShouldDither(skPaint, ct))) {
         float ditherRange = skgpu::DitherRangeForConfig(ct);
+        GrRecordingContext* context = sdc->recordingContext();
         paintFP = make_dither_effect(
                 context, std::move(paintFP), ditherRange, context->priv().caps());
     }
@@ -550,55 +552,43 @@ static inline bool skpaint_to_grpaint_impl(
     return true;
 }
 
-bool SkPaintToGrPaint(GrRecordingContext* context,
-                      const GrColorInfo& dstColorInfo,
+bool SkPaintToGrPaint(skgpu::ganesh::SurfaceDrawContext* sdc,
                       const SkPaint& skPaint,
                       const SkMatrix& ctm,
-                      const SkSurfaceProps& surfaceProps,
                       GrPaint* grPaint) {
-    return skpaint_to_grpaint_impl(context,
-                                   dstColorInfo,
+    return skpaint_to_grpaint_impl(sdc,
                                    skPaint,
                                    ctm,
                                    /*shaderFP=*/std::nullopt,
                                    /*primColorBlender=*/nullptr,
-                                   surfaceProps,
                                    grPaint);
 }
 
 /** Replaces the SkShader (if any) on skPaint with the passed in GrFragmentProcessor. */
-bool SkPaintToGrPaintReplaceShader(GrRecordingContext* context,
-                                   const GrColorInfo& dstColorInfo,
+bool SkPaintToGrPaintReplaceShader(skgpu::ganesh::SurfaceDrawContext* sdc,
                                    const SkPaint& skPaint,
                                    const SkMatrix& ctm,
                                    std::unique_ptr<GrFragmentProcessor> shaderFP,
-                                   const SkSurfaceProps& surfaceProps,
                                    GrPaint* grPaint) {
-    return skpaint_to_grpaint_impl(context,
-                                   dstColorInfo,
+    return skpaint_to_grpaint_impl(sdc,
                                    skPaint,
                                    ctm,
                                    std::move(shaderFP),
                                    /*primColorBlender=*/nullptr,
-                                   surfaceProps,
                                    grPaint);
 }
 
 /** Blends the SkPaint's shader (or color if no shader) with a per-primitive color which must
     be setup as a vertex attribute using the specified SkBlender. */
-bool SkPaintToGrPaintWithBlend(GrRecordingContext* context,
-                               const GrColorInfo& dstColorInfo,
+bool SkPaintToGrPaintWithBlend(skgpu::ganesh::SurfaceDrawContext* sdc,
                                const SkPaint& skPaint,
                                const SkMatrix& ctm,
                                SkBlender* primColorBlender,
-                               const SkSurfaceProps& surfaceProps,
                                GrPaint* grPaint) {
-    return skpaint_to_grpaint_impl(context,
-                                   dstColorInfo,
+    return skpaint_to_grpaint_impl(sdc,
                                    skPaint,
                                    ctm,
                                    /*shaderFP=*/std::nullopt,
                                    primColorBlender,
-                                   surfaceProps,
                                    grPaint);
 }

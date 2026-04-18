@@ -17,10 +17,11 @@ namespace skgpu::graphite {
  * to Graphite.
  */
 enum InternalDrawTypeFlags : uint16_t {
+    // Corresponds to the CoverageMaskRenderStep. Used when creating precompile Pipelines for
+    // blur-filtering and raster/compute path atlasing.
     kCoverageMask  = DrawTypeFlags::kLast << 1,
-    kAnalyticRRect = DrawTypeFlags::kLast << 2,
 
-    kLastInternal = kAnalyticRRect,
+    kLastInternal = kCoverageMask,
 };
 static_assert(kLastInternal <= (1 << 15), "DrawTypeFlags do not fit in 16 bits");
 

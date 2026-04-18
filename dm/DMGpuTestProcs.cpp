@@ -8,17 +8,22 @@
  * test runners (such as DM) to support GPU backends.
  */
 
+#include "include/gpu/GpuTypes.h"
 #include "tests/Test.h"
 
+#if defined(SK_GANESH)
 #include "include/gpu/ganesh/GrDirectContext.h"
+#endif
 
 #if defined(SK_GRAPHITE)
 #include "include/gpu/graphite/Context.h"
 #include "tools/graphite/ContextFactory.h"
 #endif
 
+#if defined(SK_GANESH)
 using sk_gpu_test::GrContextFactory;
 using sk_gpu_test::ContextInfo;
+#endif
 
 #ifdef SK_GL
 using sk_gpu_test::GLTestContext;
@@ -38,7 +43,7 @@ bool IsVulkanContextType(skgpu::ContextType type) {
 #if defined(SK_GANESH)
     return skgpu::ganesh::ContextTypeBackend(type) == GrBackendApi::kVulkan;
 #elif defined(SK_GRAPHITE)
-    return skgpu::graphite::ContextTypeBackend(type) == BackendApi::kVulkan;
+    return skgpu::graphite::ContextTypeBackend(type) == skgpu::BackendApi::kVulkan;
 #else
     return false;
 #endif
@@ -48,7 +53,7 @@ bool IsMetalContextType(skgpu::ContextType type) {
 #if defined(SK_GANESH)
     return skgpu::ganesh::ContextTypeBackend(type) == GrBackendApi::kMetal;
 #elif defined(SK_GRAPHITE)
-    return skgpu::graphite::ContextTypeBackend(type) == BackendApi::kMetal;
+    return skgpu::graphite::ContextTypeBackend(type) == skgpu::BackendApi::kMetal;
 #else
     return false;
 #endif
@@ -74,6 +79,7 @@ bool IsMockContextType(skgpu::ContextType type) {
     return type == skgpu::ContextType::kMock;
 }
 
+#if defined(SK_GANESH)
 void RunWithGaneshTestContexts(GrContextTestFn* testFn, ContextTypeFilterFn* filter,
                                Reporter* reporter, const GrContextOptions& options) {
 #if defined(SK_BUILD_FOR_UNIX) || defined(SK_BUILD_FOR_WIN) || defined(SK_BUILD_FOR_MAC)
@@ -85,7 +91,7 @@ void RunWithGaneshTestContexts(GrContextTestFn* testFn, ContextTypeFilterFn* fil
     for (int typeInt = 0; typeInt < skgpu::kContextTypeCount; ++typeInt) {
         skgpu::ContextType contextType = static_cast<skgpu::ContextType>(typeInt);
         // Use "native" instead of explicitly trying OpenGL and OpenGL ES. Do not use GLES on
-        // desktop since tests do not account for not fixing http://skbug.com/2809
+        // desktop since tests do not account for not fixing skbug.com/40033921
         if (contextType == skgpu::ContextType::kGL ||
             contextType == skgpu::ContextType::kGLES) {
             if (contextType != kNativeGLType) {
@@ -113,6 +119,7 @@ void RunWithGaneshTestContexts(GrContextTestFn* testFn, ContextTypeFilterFn* fil
         }
     }
 }
+#endif
 
 #if defined(SK_GRAPHITE)
 
@@ -135,7 +142,7 @@ void RunWithGraphiteTestContexts(GraphiteTestFn* test,
         }
 
         ReporterContext ctx(reporter, SkString(skgpu::ContextTypeName(contextType)));
-        (*test)(reporter, ctxInfo.fContext, ctxInfo.fTestContext);
+        (*test)(reporter, ctxInfo.fContext, ctxInfo.fTestContext, options);
     }
 }
 

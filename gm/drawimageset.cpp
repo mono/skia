@@ -25,8 +25,7 @@
 #include "include/core/SkSurface.h"
 #include "include/core/SkTileMode.h"
 #include "include/core/SkTypes.h"
-#include "include/effects/SkGradientShader.h"
-#include "include/gpu/ganesh/GrDirectContext.h"
+#include "include/effects/SkGradient.h"
 #include "tools/GpuToolUtils.h"
 #include "tools/ToolUtils.h"
 
@@ -35,8 +34,9 @@
 #include <utility>
 
 // Makes a set of m x n tiled images to be drawn with SkCanvas::experimental_drawImageSetV1().
-static void make_image_tiles(int tileW, int tileH, int m, int n, const SkColor colors[4],
+static void make_image_tiles(int tileW, int tileH, int m, int n, SkSpan<const SkColor4f> colors,
                              SkCanvas::ImageSetEntry set[], const SkColor bgColor=SK_ColorLTGRAY) {
+    SkASSERT(colors.size() == 4);
     const int w = tileW * m;
     const int h = tileH * n;
     auto surf = SkSurfaces::Raster(
@@ -48,26 +48,27 @@ static void make_image_tiles(int tileW, int tileH, int m, int n, const SkColor c
     SkPaint paint;
 
     SkPoint pts1[] = {{0.f, 0.f}, {(SkScalar)w, (SkScalar)h}};
-    auto grad = SkGradientShader::MakeLinear(pts1, colors, nullptr, 2, SkTileMode::kClamp);
+    auto grad = SkShaders::LinearGradient(pts1,
+                                          {{colors.subspan(0, 2), {}, SkTileMode::kClamp}, {}});
     paint.setShader(std::move(grad));
     paint.setAntiAlias(true);
     paint.setStyle(SkPaint::kStroke_Style);
     paint.setStrokeWidth(kStripeW);
     SkPoint stripePts[] = {{-w - kStripeW, -kStripeW}, {kStripeW, h + kStripeW}};
     while (stripePts[0].fX <= w) {
-        surf->getCanvas()->drawPoints(SkCanvas::kLines_PointMode, 2, stripePts, paint);
+        surf->getCanvas()->drawPoints(SkCanvas::kLines_PointMode, stripePts, paint);
         stripePts[0].fX += kStripeSpacing;
         stripePts[1].fX += kStripeSpacing;
     }
 
     SkPoint pts2[] = {{0.f, (SkScalar)h}, {(SkScalar)w, 0.f}};
-    grad = SkGradientShader::MakeLinear(pts2, colors + 2, nullptr, 2, SkTileMode::kClamp);
+    grad = SkShaders::LinearGradient(pts2, {{colors.subspan(2, 2), {}, SkTileMode::kClamp}, {}});
     paint.setShader(std::move(grad));
     paint.setBlendMode(SkBlendMode::kMultiply);
     stripePts[0] = {-w - kStripeW, h + kStripeW};
     stripePts[1] = {kStripeW, -kStripeW};
     while (stripePts[0].fX <= w) {
-        surf->getCanvas()->drawPoints(SkCanvas::kLines_PointMode, 2, stripePts, paint);
+        surf->getCanvas()->drawPoints(SkCanvas::kLines_PointMode, stripePts, paint);
         stripePts[0].fX += kStripeSpacing;
         stripePts[1].fX += kStripeSpacing;
     }
@@ -93,7 +94,7 @@ static void make_image_tiles(int tileW, int tileH, int m, int n, const SkColor c
                 subset.fBottom = h;
                 set[y * m + x].fAAFlags |= SkCanvas::kBottom_QuadAAFlag;
             }
-            set[y * m + x].fImage = fullImage->makeSubset(nullptr, subset);
+            set[y * m + x].fImage = fullImage->makeSubset(nullptr, subset, {});
             set[y * m + x].fSrcRect =
                     SkRect::MakeXYWH(x == 0 ? 0 : 1, y == 0 ? 0 : 1, tileW, tileH);
             set[y * m + x].fDstRect = SkRect::MakeXYWH(x * tileW, y * tileH, tileW, tileH);
@@ -110,8 +111,8 @@ private:
     SkString getName() const override { return SkString("draw_image_set"); }
     SkISize getISize() override { return {1000, 725}; }
     void onOnceBeforeDraw() override {
-        static constexpr SkColor kColors[] = {SK_ColorCYAN,    SK_ColorBLACK,
-                                              SK_ColorMAGENTA, SK_ColorBLACK};
+        static constexpr SkColor4f kColors[] = {SkColors::kCyan, SkColors::kBlack,
+                                                SkColors::kMagenta, SkColors::kBlack};
         make_image_tiles(kTileW, kTileH, kM, kN, kColors, fSet);
     }
 
@@ -122,14 +123,14 @@ private:
         matrices[0].setRotate(30);
         matrices[0].postTranslate(d / 3, 0);
         // perespective
-        SkPoint src[4];
-        SkRect::MakeWH(kM * kTileW, kN * kTileH).toQuad(src);
+        const std::array<SkPoint, 4> src = SkRect::MakeWH(kM * kTileW, kN * kTileH).toQuad();
         SkPoint dst[4] = {{0, 0},
                           {kM * kTileW + 10.f, -5.f},
                           {kM * kTileW - 28.f, kN * kTileH + 40.f},
                           {45.f, kN * kTileH - 25.f}};
-        SkAssertResult(matrices[1].setPolyToPoly(src, dst, 4));
+        SkAssertResult(matrices[1].setPolyToPoly(src, dst));
         matrices[1].postTranslate(d, 50.f);
+
         // skew
         matrices[2].setRotate(-60.f);
         matrices[2].postSkew(0.5f, -1.15f);
@@ -140,7 +141,7 @@ private:
         dst[0] = {5.f / 4.f * kM * kTileW, 0};
         dst[3] = {2.f / 3.f * kM * kTileW, 1 / 2.f * kN * kTileH};
         dst[2] = {1.f / 3.f * kM * kTileW, 1 / 2.f * kN * kTileH - 0.1f * kTileH};
-        SkAssertResult(matrices[3].setPolyToPoly(src, dst, 4));
+        SkAssertResult(matrices[3].setPolyToPoly(src, dst));
         matrices[3].postTranslate(100.f, d);
         for (auto fm : {SkFilterMode::kNearest, SkFilterMode::kLinear}) {
             SkPaint setPaint;
@@ -157,14 +158,14 @@ private:
                 paint.setStrokeWidth(0.f);
                 for (int x = 1; x < kM; ++x) {
                     SkPoint pts[] = {{x * kTileW, 0}, {x * kTileW, kN * kTileH}};
-                    matrices[m].mapPoints(pts, 2);
+                    matrices[m].mapPoints(pts);
                     SkVector v = pts[1] - pts[0];
                     v.setLength(v.length() + kLineOutset);
                     canvas->drawLine(pts[1] - v, pts[0] + v, paint);
                 }
                 for (int y = 1; y < kN; ++y) {
                     SkPoint pts[] = {{0, y * kTileH}, {kTileW * kM, y * kTileH}};
-                    matrices[m].mapPoints(pts, 2);
+                    matrices[m].mapPoints(pts);
                     SkVector v = pts[1] - pts[0];
                     v.setLength(v.length() + kLineOutset);
                     canvas->drawLine(pts[1] - v, pts[0] + v, paint);
@@ -213,8 +214,8 @@ private:
     SkString getName() const override { return SkString("draw_image_set_rect_to_rect"); }
     SkISize getISize() override { return {1250, 850}; }
     void onOnceBeforeDraw() override {
-        static constexpr SkColor kColors[] = {SK_ColorBLUE, SK_ColorWHITE,
-                                              SK_ColorRED,  SK_ColorWHITE};
+        static constexpr SkColor4f kColors[] = {SkColors::kBlue, SkColors::kWhite,
+                                              SkColors::kRed,  SkColors::kWhite};
         make_image_tiles(kTileW, kTileH, kM, kN, kColors, fSet);
     }
 
@@ -299,12 +300,9 @@ private:
     SkISize getISize() override { return {kM * kTileW, 2 * kN * kTileH}; }
 
     DrawResult onGpuSetup(SkCanvas* canvas, SkString*, GraphiteTestContext*) override {
-        auto direct = GrAsDirectContext(canvas->recordingContext());
-#if defined(SK_GRAPHITE)
-        auto recorder = canvas->recorder();
-#endif
-        static constexpr SkColor kColors[] = {SK_ColorBLUE, SK_ColorTRANSPARENT,
-                                              SK_ColorRED,  SK_ColorTRANSPARENT};
+        auto recorder = canvas->baseRecorder();
+        static constexpr SkColor4f kColors[] = {SkColors::kBlue, SkColors::kTransparent,
+                                              SkColors::kRed,  SkColors::kTransparent};
         static constexpr SkColor kBGColor = SkColorSetARGB(128, 128, 128, 128);
         make_image_tiles(kTileW, kTileH, kM, kN, kColors, fSet, kBGColor);
 
@@ -316,16 +314,8 @@ private:
                 int i = y * kM + x;
                 fSet[i].fAlpha = (kM - x) / (float) kM;
                 if (y % 2 == 0) {
-#if defined(SK_GRAPHITE)
-                    if (recorder) {
-                        fSet[i].fImage = fSet[i].fImage->makeColorTypeAndColorSpace(
-                                recorder, kAlpha_8_SkColorType, alphaSpace, {});
-                    } else
-#endif
-                    {
-                        fSet[i].fImage = fSet[i].fImage->makeColorTypeAndColorSpace(
-                                direct, kAlpha_8_SkColorType, alphaSpace);
-                    }
+                    fSet[i].fImage = fSet[i].fImage->makeColorTypeAndColorSpace(
+                            recorder, kAlpha_8_SkColorType, alphaSpace, {});
                 }
             }
         }

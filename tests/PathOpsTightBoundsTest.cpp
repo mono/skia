@@ -9,10 +9,12 @@
 #include "include/core/SkColor.h"
 #include "include/core/SkPaint.h"
 #include "include/core/SkPath.h"
+#include "include/core/SkPathBuilder.h"
 #include "include/core/SkRect.h"
 #include "include/pathops/SkPathOps.h"
 #include "include/private/base/SkTDArray.h"
 #include "src/base/SkRandom.h"
+#include "src/pathops/SkPathOpsCommon.h"
 #include "tests/PathOpsExtendedTest.h"
 #include "tests/PathOpsThreadedCommon.h"
 #include "tests/Test.h"
@@ -23,21 +25,22 @@
 static void testTightBoundsLines(PathOpsThreadState* data) {
     SkRandom ran;
     for (int index = 0; index < 1000; ++index) {
-        SkPath path;
+        SkPathBuilder builder;
         int contourCount = ran.nextRangeU(1, 10);
         for (int cIndex = 0; cIndex < contourCount; ++cIndex) {
             int lineCount = ran.nextRangeU(1, 10);
-            path.moveTo(ran.nextRangeF(-1000, 1000), ran.nextRangeF(-1000, 1000));
+            builder.moveTo(ran.nextRangeF(-1000, 1000), ran.nextRangeF(-1000, 1000));
             for (int lIndex = 0; lIndex < lineCount; ++lIndex) {
-                path.lineTo(ran.nextRangeF(-1000, 1000), ran.nextRangeF(-1000, 1000));
+                builder.lineTo(ran.nextRangeF(-1000, 1000), ran.nextRangeF(-1000, 1000));
             }
             if (ran.nextBool()) {
-                path.close();
+                builder.close();
             }
         }
+        SkPath path = builder.detach();
         SkRect classicBounds = path.getBounds();
         SkRect tightBounds;
-        REPORTER_ASSERT(data->fReporter, TightBounds(path, &tightBounds));
+        REPORTER_ASSERT(data->fReporter, ComputeTightBounds(path, &tightBounds));
         REPORTER_ASSERT(data->fReporter, classicBounds == tightBounds);
     }
 }
@@ -68,26 +71,27 @@ static void testTightBoundsQuads(PathOpsThreadState* data) {
     SkCanvas canvas(bits);
     SkPaint paint;
     for (int index = 0; index < 100; ++index) {
-        SkPath path;
+        SkPathBuilder bu;
         int contourCount = ran.nextRangeU(1, 10);
         for (int cIndex = 0; cIndex < contourCount; ++cIndex) {
             int lineCount = ran.nextRangeU(1, 10);
-            path.moveTo(ran.nextRangeF(1, pathMax), ran.nextRangeF(pathMin, pathMax));
+            bu.moveTo(ran.nextRangeF(1, pathMax), ran.nextRangeF(pathMin, pathMax));
             for (int lIndex = 0; lIndex < lineCount; ++lIndex) {
                 if (ran.nextBool()) {
-                    path.lineTo(ran.nextRangeF(pathMin, pathMax), ran.nextRangeF(pathMin, pathMax));
+                    bu.lineTo(ran.nextRangeF(pathMin, pathMax), ran.nextRangeF(pathMin, pathMax));
                 } else {
-                    path.quadTo(ran.nextRangeF(pathMin, pathMax), ran.nextRangeF(pathMin, pathMax),
-                            ran.nextRangeF(pathMin, pathMax), ran.nextRangeF(pathMin, pathMax));
+                    bu.quadTo(ran.nextRangeF(pathMin, pathMax), ran.nextRangeF(pathMin, pathMax),
+                              ran.nextRangeF(pathMin, pathMax), ran.nextRangeF(pathMin, pathMax));
                 }
             }
             if (ran.nextBool()) {
-                path.close();
+                bu.close();
             }
         }
+        SkPath path = bu.detach();
         SkRect classicBounds = path.getBounds();
         SkRect tightBounds;
-        REPORTER_ASSERT(data->fReporter, TightBounds(path, &tightBounds));
+        REPORTER_ASSERT(data->fReporter, ComputeTightBounds(path, &tightBounds));
         REPORTER_ASSERT(data->fReporter, classicBounds.contains(tightBounds));
         canvas.drawColor(SK_ColorWHITE);
         canvas.drawPath(path, paint);
@@ -131,79 +135,86 @@ DEF_TEST(PathOpsTightBoundsQuads, reporter) {
 }
 
 DEF_TEST(PathOpsTightBoundsMove, reporter) {
-    SkPath path;
-    path.moveTo(10, 10);
-    path.close();
-    path.moveTo(20, 20);
-    path.lineTo(20, 20);
-    path.close();
-    path.moveTo(15, 15);
-    path.lineTo(15, 15);
-    path.close();
+    SkPath path = SkPathBuilder()
+                  .moveTo(10, 10)
+                  .close()
+                  .moveTo(20, 20)
+                  .lineTo(20, 20)
+                  .close()
+                  .moveTo(15, 15)
+                  .lineTo(15, 15)
+                  .close()
+                  .detach();
     const SkRect& bounds = path.getBounds();
     SkRect tight;
-    REPORTER_ASSERT(reporter, TightBounds(path, &tight));
+    REPORTER_ASSERT(reporter, ComputeTightBounds(path, &tight));
     REPORTER_ASSERT(reporter, bounds == tight);
 }
 
 DEF_TEST(PathOpsTightBoundsMoveOne, reporter) {
-    SkPath path;
-    path.moveTo(20, 20);
+    SkPath path = SkPathBuilder()
+                  .moveTo(20, 20)
+                  .detach();
     const SkRect& bounds = path.getBounds();
     SkRect tight;
-    REPORTER_ASSERT(reporter, TightBounds(path, &tight));
+    REPORTER_ASSERT(reporter, ComputeTightBounds(path, &tight));
     REPORTER_ASSERT(reporter, bounds == tight);
 }
 
 DEF_TEST(PathOpsTightBoundsMoveTwo, reporter) {
-    SkPath path;
-    path.moveTo(20, 20);
-    path.moveTo(40, 40);
+    SkPath path = SkPathBuilder()
+                  .moveTo(20, 20)
+                  .moveTo(40, 40)
+                  .detach();
     const SkRect& bounds = path.getBounds();
     SkRect tight;
-    REPORTER_ASSERT(reporter, TightBounds(path, &tight));
+    REPORTER_ASSERT(reporter, ComputeTightBounds(path, &tight));
     REPORTER_ASSERT(reporter, bounds == tight);
 }
 
 DEF_TEST(PathOpsTightBoundsTiny, reporter) {
-    SkPath path;
-    path.moveTo(1, 1);
-    path.quadTo(1.000001f, 1, 1, 1);
+    SkPath path = SkPathBuilder()
+                  .moveTo(1, 1)
+                  .quadTo(1.000001f, 1, 1, 1)
+                  .detach();
     const SkRect& bounds = path.getBounds();
     SkRect tight;
-    REPORTER_ASSERT(reporter, TightBounds(path, &tight));
+    REPORTER_ASSERT(reporter, ComputeTightBounds(path, &tight));
     SkRect moveBounds = {1, 1, 1, 1};
     REPORTER_ASSERT(reporter, bounds != tight);
     REPORTER_ASSERT(reporter, moveBounds == tight);
 }
 
 DEF_TEST(PathOpsTightBoundsWellBehaved, reporter) {
-    SkPath path;
-    path.moveTo(1, 1);
-    path.quadTo(2, 3, 4, 5);
+    SkPath path = SkPathBuilder()
+                  .moveTo(1, 1)
+                  .quadTo(2, 3, 4, 5)
+                  .detach();
     const SkRect& bounds = path.getBounds();
     SkRect tight;
-    REPORTER_ASSERT(reporter, TightBounds(path, &tight));
+    REPORTER_ASSERT(reporter, ComputeTightBounds(path, &tight));
     REPORTER_ASSERT(reporter, bounds == tight);
 }
 
 DEF_TEST(PathOpsTightBoundsIllBehaved, reporter) {
-    SkPath path;
-    path.moveTo(1, 1);
-    path.quadTo(4, 3, 2, 2);
+    SkPath path = SkPathBuilder()
+                  .moveTo(1, 1)
+                  .quadTo(4, 3, 2, 2)
+                  .detach();
     const SkRect& bounds = path.getBounds();
     SkRect tight;
-    REPORTER_ASSERT(reporter, TightBounds(path, &tight));
+    REPORTER_ASSERT(reporter, ComputeTightBounds(path, &tight));
     REPORTER_ASSERT(reporter, bounds != tight);
 }
 
 DEF_TEST(PathOpsTightBoundsIllBehavedScaled, reporter) {
-    SkPath path;
-    path.moveTo(0, 0);
-    path.quadTo(1048578, 1048577, 1048576, 1048576);
+    SkPath path = SkPathBuilder()
+                  .moveTo(0, 0)
+                  .quadTo(1048578, 1048577, 1048576, 1048576)
+                  .detach();
     const SkRect& bounds = path.getBounds();
     SkRect tight;
-    REPORTER_ASSERT(reporter, TightBounds(path, &tight));
+    REPORTER_ASSERT(reporter, ComputeTightBounds(path, &tight));
     REPORTER_ASSERT(reporter, bounds != tight);
     REPORTER_ASSERT(reporter, tight.right() == 1048576);
     REPORTER_ASSERT(reporter, tight.bottom() == 1048576);

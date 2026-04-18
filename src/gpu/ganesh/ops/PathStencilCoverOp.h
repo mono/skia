@@ -8,12 +8,13 @@
 #define PathStencilCoverOp_DEFINED
 
 #include "include/core/SkPath.h"
+#include "include/core/SkPathTypes.h"
 #include "include/core/SkRect.h"
 #include "include/core/SkRefCnt.h"
-#include "include/private/SkColorData.h"
 #include "include/private/base/SkDebug.h"
 #include "include/private/gpu/ganesh/GrTypesPriv.h"
 #include "src/base/SkArenaAlloc.h"
+#include "src/core/SkColorData.h"
 #include "src/gpu/ganesh/GrBuffer.h"
 #include "src/gpu/ganesh/GrCaps.h"
 #include "src/gpu/ganesh/GrGpuBuffer.h"
@@ -34,7 +35,6 @@ class GrRecordingContext;
 class GrSurfaceProxyView;
 class SkMatrix;
 enum class GrXferBarrierFlags;
-enum class SkPathFillType;
 
 namespace skgpu::ganesh {
 

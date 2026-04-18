@@ -22,15 +22,16 @@ struct ResourceBindingRequirements;
 
 class CoverageMaskRenderStep final : public RenderStep {
 public:
-    CoverageMaskRenderStep();
+    CoverageMaskRenderStep(Layout);
     ~CoverageMaskRenderStep() override = default;
 
     std::string vertexSkSL() const override;
     std::string texturesAndSamplersSkSL(const ResourceBindingRequirements&,
                                         int* nextBindingIndex) const override;
     const char* fragmentCoverageSkSL() const override;
+    bool usesUniformsInFragmentSkSL() const override;
 
-    void writeVertices(DrawWriter*, const DrawParams&, skvx::uint2 ssboIndices) const override;
+    void writeVertices(DrawWriter*, const DrawParams&, uint32_t ssboIndex) const override;
     void writeUniformsAndTextures(const DrawParams&, PipelineDataGatherer*) const override;
 };
 

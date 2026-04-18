@@ -3,7 +3,7 @@ THIS IS THE EXTERNAL-ONLY VERSION OF THIS FILE. G3 HAS ITS OWN.
 
 This file contains flags for the C++ compiler, referred to by Bazel as copts.
 
-The copts in a cc_library to not flow to the children (dependencies) nor the parents
+The copts in a cc_library do not flow to the children (dependencies) nor the parents
 (dependents), so we use skia_cc_library to inject them in every library along the chain.
 
 Now that we have a modular build, this file could maybe go away and folded into our toolchains.
@@ -83,6 +83,7 @@ WARNINGS = [
     "-Wno-return-std-move-in-c++11",
     "-Wno-shadow-field-in-constructor",
     "-Wno-shadow-uncaptured-local",
+    "-Wno-switch-default",  # Warns even when all values are covered
     "-Wno-undefined-func-template",
     "-Wno-unused-parameter",  # It is common to have unused parameters in src/
     "-Wno-zero-as-null-pointer-constant",  # VK_NULL_HANDLE is defined as 0
@@ -103,6 +104,7 @@ WARNINGS = [
     "-Wno-global-constructors",  # TODO: OK outside libskia
     "-Wno-missing-prototypes",
     "-Wno-missing-variable-declarations",
+    "-Wno-nrvo",
     "-Wno-pedantic",
     "-Wno-reserved-id-macro",
     "-Wno-reserved-identifier",
@@ -148,11 +150,13 @@ WARNINGS = [
     "-Wdeprecated-this-capture",
     "-Wdeprecated-volatile",
     "-Wdeprecated-writable-strings",
+    # Shows up in imgui's public headers a bunch
+    "-Wno-nontrivial-memcall",
     # A catch-all for when the version of clang we are using does not have the prior options
     "-Wno-unknown-warning-option",
 ] + select({
     "@platforms//os:windows": [
-        # skbug.com/14203
+        # skbug.com/40045281
         "-Wno-nonportable-system-include-path",
         "-Wno-unknown-argument",
         # Clang warns even when all enum values are covered.

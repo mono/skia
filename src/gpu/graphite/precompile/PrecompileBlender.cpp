@@ -11,6 +11,7 @@
 #include "include/gpu/graphite/precompile/PrecompileRuntimeEffect.h"
 #include "src/core/SkKnownRuntimeEffects.h"
 #include "src/gpu/Blend.h"
+#include "src/gpu/graphite/KeyHelpers.h"
 #include "src/gpu/graphite/PaintParams.h"
 #include "src/gpu/graphite/precompile/PrecompileBaseComplete.h"
 #include "src/gpu/graphite/precompile/PrecompileBlenderPriv.h"
@@ -27,13 +28,9 @@ public:
 protected:
     std::optional<SkBlendMode> asBlendMode() const final { return fBlendMode; }
 
-    void addToKey(const KeyContext& keyContext,
-                  PaintParamsKeyBuilder* builder,
-                  PipelineDataGatherer* gatherer,
-                  int desiredCombination) const final {
+    void addToKey(const KeyContext& keyContext, int desiredCombination) const final {
         SkASSERT(desiredCombination == 0); // The blend mode blender only ever has one combination
-
-        AddBlendMode(keyContext, builder, gatherer, fBlendMode);
+        AddBlendMode(keyContext, fBlendMode);
     }
 
 private:

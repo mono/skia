@@ -9,7 +9,6 @@
 #include "include/core/SkBitmap.h"
 #include "include/core/SkCanvas.h"
 #include "include/core/SkColor.h"
-#include "include/core/SkColorPriv.h"
 #include "include/core/SkColorType.h"
 #include "include/core/SkImageInfo.h"
 #include "include/core/SkMallocPixelRef.h"
@@ -23,18 +22,19 @@
 #include "include/gpu/ganesh/GrBackendSurface.h"
 #include "include/gpu/ganesh/GrDirectContext.h"
 #include "include/gpu/ganesh/GrTypes.h"
+#include "src/core/SkColorPriv.h"
 #if defined(SK_GRAPHITE)
 #include "include/gpu/graphite/Context.h"
 #include "include/gpu/graphite/Surface.h"
 #endif
 #include "include/gpu/ganesh/SkSurfaceGanesh.h"
-#include "include/private/SkColorData.h"
 #include "include/private/base/SkCPUTypes.h"
 #include "include/private/base/SkMalloc.h"
 #include "include/private/base/SkSafe32.h"
 #include "include/private/base/SkTo.h"
 #include "include/private/gpu/ganesh/GrTypesPriv.h"
 #include "src/base/SkMathPriv.h"
+#include "src/core/SkColorData.h"
 #include "src/core/SkImageInfoPriv.h"
 #include "src/gpu/SkBackingFit.h"
 #include "src/gpu/ganesh/GrCaps.h"
@@ -461,6 +461,7 @@ DEF_TEST(WritePixels, reporter) {
     }
 }
 
+#if defined(SK_GANESH)
 static void test_write_pixels(skiatest::Reporter* reporter,
                               GrRecordingContext* rContext,
                               int sampleCnt) {
@@ -487,6 +488,7 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(WritePixelsMSAA_Gpu,
                                        CtsEnforcement::kApiLevel_T) {
     test_write_pixels(reporter, ctxInfo.directContext(), 1);
 }
+#endif
 
 #if defined(SK_GRAPHITE)
 static void test_write_pixels(skiatest::Reporter* reporter,
@@ -502,12 +504,13 @@ static void test_write_pixels(skiatest::Reporter* reporter,
 DEF_GRAPHITE_TEST_FOR_RENDERING_CONTEXTS(WritePixels_Graphite,
                                          reporter,
                                          context,
-                                         CtsEnforcement::kApiLevel_V) {
+                                         CtsEnforcement::kApiLevel_202404) {
     std::unique_ptr<skgpu::graphite::Recorder> recorder = context->makeRecorder();
     test_write_pixels(reporter, recorder.get(), 1);
 }
 #endif
 
+#if defined(SK_GANESH)
 static void test_write_pixels_non_texture(skiatest::Reporter* reporter,
                                           GrDirectContext* dContext,
                                           int sampleCnt) {
@@ -564,7 +567,7 @@ static sk_sp<SkImage> upload(const sk_sp<SkSurface>& surf, SkColor color) {
 // in between uses of the shared backing resource).
 // The unit test fails on Nexus 6P/Android M with driver 129.0 without the
 // "DisallowTexSubImageForUnormConfigTexturesEverBoundToFBO" workaround enabled.
-// skbug.com/11834
+// skbug.com/40042902
 DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(WritePixelsPendingIO,
                                        reporter,
                                        ctxInfo,
@@ -639,6 +642,7 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(WritePixelsPendingIO,
 
     REPORTER_ASSERT(reporter, isCorrect);
 }
+#endif
 
 DEF_TEST(WritePixels_InvalidRowBytes, reporter) {
     auto dstII = SkImageInfo::Make({10, 10}, kRGBA_8888_SkColorType, kPremul_SkAlphaType);

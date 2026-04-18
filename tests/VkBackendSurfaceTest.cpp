@@ -33,8 +33,8 @@
 #include "src/gpu/ganesh/vk/GrVkTexture.h"
 #include "tests/CtsEnforcement.h"
 #include "tests/Test.h"
+#include "tools/ganesh/ProxyUtils.h"
 #include "tools/gpu/ManagedBackendTexture.h"
-#include "tools/gpu/ProxyUtils.h"
 
 #include <vulkan/vulkan_core.h>
 
@@ -88,7 +88,8 @@ DEF_GANESH_TEST_FOR_VULKAN_CONTEXT(VkDRMModifierTest, reporter, ctxInfo, CtsEnfo
     REPORTER_ASSERT(reporter, ok);
     REPORTER_ASSERT(reporter, GrBackendTexture::TestingOnly_Equals(actual, drmBETex));
 
-    auto [view, _] = skgpu::ganesh::AsView(dContext, drmImage, Mipmapped::kNo);
+    auto [view, _] = skgpu::ganesh::AsView(dContext, drmImage, Mipmapped::kNo,
+                                           /*targetSurface=*/nullptr);
     REPORTER_ASSERT(reporter, view);
     const GrSurfaceProxy* proxy = view.proxy();
     REPORTER_ASSERT(reporter, proxy);
@@ -208,7 +209,7 @@ DEF_GANESH_TEST_FOR_VULKAN_CONTEXT(VkImageLayoutTest, reporter, ctxInfo, CtsEnfo
 
 // This test is disabled because it executes illegal vulkan calls which cause the validations layers
 // to fail and makes us assert. Once fixed to use a valid vulkan call sequence it should be
-// renenabled, see skbug.com/8936.
+// renenabled, see skbug.com/40040216.
 #if 0
 // Test to make sure we transition from the EXTERNAL queue even when no layout transition is needed.
 DEF_GANESH_TEST_FOR_VULKAN_CONTEXT(VkTransitionExternalQueueTest, reporter, ctxInfo,
@@ -216,9 +217,6 @@ DEF_GANESH_TEST_FOR_VULKAN_CONTEXT(VkTransitionExternalQueueTest, reporter, ctxI
     auto dContext = ctxInfo.directContext();
     GrGpu* gpu = dContext->priv().getGpu();
     GrVkGpu* vkGpu = static_cast<GrVkGpu*>(gpu);
-    if (!vkGpu->vkCaps().supportsExternalMemory()) {
-        return;
-    }
 
     GrBackendTexture backendTex = dContext->createBackendTexture(
             1, 1, kRGBA_8888_SkColorType,

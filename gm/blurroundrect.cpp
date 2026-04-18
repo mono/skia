@@ -24,7 +24,8 @@
 #include "include/core/SkString.h"
 #include "include/core/SkTileMode.h"
 #include "include/core/SkTypes.h"
-#include "include/effects/SkGradientShader.h"
+#include "include/effects/SkGradient.h"
+#include "include/private/base/SkFloatingPoint.h"
 #include "src/core/SkBlurMask.h"
 
 /*
@@ -36,20 +37,19 @@ static sk_sp<SkShader> MakeRadial() {
         { SkIntToScalar(100), SkIntToScalar(100) }
     };
     SkTileMode tm = SkTileMode::kClamp;
-    const SkColor colors[] = { SK_ColorRED, SK_ColorGREEN, };
+    const SkColor4f colors[] = { SkColors::kRed, SkColors::kGreen, };
     const SkScalar pos[] = { SK_Scalar1/4, SK_Scalar1*3/4 };
     SkMatrix scale;
     scale.setScale(0.5f, 0.5f);
     scale.postTranslate(5.f, 5.f);
     SkPoint center0, center1;
-    center0.set(SkScalarAve(pts[0].fX, pts[1].fX),
-                SkScalarAve(pts[0].fY, pts[1].fY));
+    center0.set(sk_float_midpoint(pts[0].fX, pts[1].fX),
+                sk_float_midpoint(pts[0].fY, pts[1].fY));
     center1.set(SkScalarInterp(pts[0].fX, pts[1].fX, SkIntToScalar(3)/5),
                 SkScalarInterp(pts[0].fY, pts[1].fY, SkIntToScalar(1)/4));
-    return SkGradientShader::MakeTwoPointConical(center1, (pts[1].fX - pts[0].fX) / 7,
-                                                 center0, (pts[1].fX - pts[0].fX) / 2,
-                                                 colors, pos, std::size(colors), tm,
-                                                 0, &scale);
+    return SkShaders::TwoPointConicalGradient(center1, (pts[1].fX - pts[0].fX) / 7,
+                                              center0, (pts[1].fX - pts[0].fX) / 2,
+                                              {{colors, pos, tm}, {}}, &scale);
 }
 
 // Simpler blurred RR test cases where all the radii are the same.
@@ -64,41 +64,32 @@ class SimpleBlurRoundRectGM : public skiagm::GM {
         canvas->scale(1.5f, 1.5f);
         canvas->translate(50,50);
 
-        const float blurRadii[] = { 1,5,10,20 };
-        const int cornerRadii[] = { 1,5,10,20 };
-        const SkRect r = SkRect::MakeWH(SkIntToScalar(25), SkIntToScalar(25));
-        for (size_t i = 0; i < std::size(blurRadii); ++i) {
+        const float blurRadii[] = {1.f, 5.f, 10.f, 20.f};
+        const float cornerRadii[] = {1.f, 5.f, 10.f, 20.f};
+        const SkRect r = SkRect::MakeWH(25.f, 25.f);
+        for (size_t row = 0; row < std::size(blurRadii); ++row) {
             SkAutoCanvasRestore autoRestore(canvas, true);
-            canvas->translate(0, (r.height() + SkIntToScalar(50)) * i);
-            for (size_t j = 0; j < std::size(cornerRadii); ++j) {
-                for (int k = 0; k <= 1; k++) {
-                    SkPaint paint;
-                    paint.setColor(SK_ColorBLACK);
-                    paint.setMaskFilter(SkMaskFilter::MakeBlur(kNormal_SkBlurStyle,
-                                   SkBlurMask::ConvertRadiusToSigma(SkIntToScalar(blurRadii[i]))));
+            canvas->translate(0, (r.height() + 50.f) * row);
+            for (size_t pair = 0; pair < std::size(cornerRadii); ++pair) {
+                SkPaint paint;
+                paint.setColor(SK_ColorBLACK);
+                paint.setMaskFilter(SkMaskFilter::MakeBlur(
+                        kNormal_SkBlurStyle, SkBlurMask::ConvertRadiusToSigma(blurRadii[row])));
+                SkRRect rrect;
+                rrect.setRectXY(r, cornerRadii[pair], cornerRadii[pair]);
 
-                    bool useRadial = SkToBool(k);
-                    if (useRadial) {
-                        paint.setShader(MakeRadial());
-                    }
+                // Even-indexed columns are without a gradient
+                canvas->drawRRect(rrect, paint);
+                canvas->translate(r.width() + 50.f, 0);
 
-                    SkRRect rrect;
-                    rrect.setRectXY(r, SkIntToScalar(cornerRadii[j]),
-                                    SkIntToScalar(cornerRadii[j]));
-                    canvas->drawRRect(rrect, paint);
-                    canvas->translate(r.width() + SkIntToScalar(50), 0);
-                }
+                // Odd-indexed columns have a gradient
+                paint.setShader(MakeRadial());
+                canvas->drawRRect(rrect, paint);
+                canvas->translate(r.width() + 50.f, 0);
             }
         }
     }
 };
-
-// Create one with dimensions/rounded corners based on the skp
-//
-// TODO(scroggo): Disabled in an attempt to rememdy
-// https://code.google.com/p/skia/issues/detail?id=1801 ('Win7 Test bots all failing GenerateGMs:
-// ran wrong number of tests')
-//DEF_GM(return new BlurRoundRectGM(600, 5514, 6);)
 
 DEF_GM(return new SimpleBlurRoundRectGM();)
 

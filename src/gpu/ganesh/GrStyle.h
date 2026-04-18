@@ -74,6 +74,8 @@ public:
      * into a key. This occurs when there is a path effect that is not a dash. The key can
      * either reflect just the path effect (if one) or the path effect and the strokerec. Note
      * that a simple fill has a zero sized key.
+     *
+     * If a positive value is returned, it will fit in a uint16_t.
      */
     static int KeySize(const GrStyle&, Apply, uint32_t flags = 0);
 
@@ -135,7 +137,7 @@ public:
 
     bool hasNonDashPathEffect() const { return fPathEffect.get() && !this->isDashed(); }
 
-    bool isDashed() const { return SkPathEffectBase::DashType::kDash == fDashInfo.fType; }
+    bool isDashed() const { return DashType::kDash == fDashInfo.fType; }
     SkScalar dashPhase() const {
         SkASSERT(this->isDashed());
         return fDashInfo.fPhase;
@@ -190,7 +192,7 @@ public:
             *dst = src;
         }
 
-        // This may not be the correct SkStrokeRec to use if there's a path effect: skbug.com/5299
+        // This may not be the correct SkStrokeRec to use if there's a path effect: skbug.com/40036474
         // It happens to work for dashing.
         SkScalar radius = fStrokeRec.getInflationRadius();
         dst->outset(radius, radius);
@@ -199,8 +201,13 @@ public:
 private:
     void initPathEffect(sk_sp<SkPathEffect> pe);
 
+    enum class DashType {
+        kNone,
+        kDash,
+    };
+
     struct DashInfo {
-        DashInfo() : fType(SkPathEffectBase::DashType::kNone) {}
+        DashInfo() : fType(DashType::kNone) {}
         DashInfo(const DashInfo& that) { *this = that; }
         DashInfo& operator=(const DashInfo& that) {
             fType = that.fType;
@@ -211,11 +218,11 @@ private:
             return *this;
         }
         void reset() {
-            fType = SkPathEffectBase::DashType::kNone;
+            fType = DashType::kNone;
             fIntervals.reset(0);
         }
-        SkPathEffectBase::DashType      fType;
-        SkScalar                    fPhase{0};
+        DashType      fType;
+        SkScalar      fPhase{0};
         skia_private::AutoSTArray<4, SkScalar>  fIntervals;
     };
 

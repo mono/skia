@@ -14,6 +14,7 @@
 #include "include/core/SkRect.h"
 #include "include/core/SkSize.h"
 #include "include/core/SkString.h"
+#include "include/core/SkSurface.h"
 #include "include/core/SkTextureCompressionType.h"
 #include "include/core/SkTypes.h"
 #include "include/gpu/GpuTypes.h"
@@ -48,11 +49,13 @@
 #include "src/gpu/ganesh/GrPipeline.h"
 #include "src/gpu/ganesh/GrProgramInfo.h"
 #include "src/gpu/ganesh/GrRenderTarget.h"
+#include "src/gpu/ganesh/GrRenderTargetProxy.h"
 #include "src/gpu/ganesh/GrSemaphore.h"
 #include "src/gpu/ganesh/GrShaderCaps.h"
 #include "src/gpu/ganesh/GrShaderVar.h"
 #include "src/gpu/ganesh/GrStagingBufferManager.h"
 #include "src/gpu/ganesh/GrSurface.h"
+#include "src/gpu/ganesh/GrSurfaceProxy.h"
 #include "src/gpu/ganesh/GrTexture.h"
 #include "src/gpu/ganesh/GrUtil.h"
 #include "src/gpu/ganesh/GrWindowRectangles.h"
@@ -66,6 +69,7 @@
 #include "src/gpu/ganesh/gl/builders/GrGLShaderStringBuilder.h"
 #include "src/sksl/SkSLProgramKind.h"
 #include "src/sksl/SkSLProgramSettings.h"
+#include "src/sksl/codegen/SkSLNativeShader.h"
 #include "src/sksl/ir/SkSLProgram.h"
 
 #include <algorithm>
@@ -74,6 +78,12 @@
 #include <memory>
 #include <string>
 #include <utility>
+
+#if defined(__EMSCRIPTEN__)
+#include <emscripten/version.h>
+#endif
+
+namespace skgpu { class MutableTextureState; }
 
 using namespace skia_private;
 
@@ -346,7 +356,7 @@ public:
     }
 
     void abandon() {
-        fSamplers.foreach([](uint32_t* key, Sampler* sampler) { sampler->abandon(); });
+        fSamplers.foreach([](const uint32_t* key, Sampler* sampler) { sampler->abandon(); });
         fTextureUnitStates.reset();
         fNumTextureUnits = 0;
     }
@@ -1257,7 +1267,7 @@ bool GrGLGpu::uploadCompressedTexData(SkTextureCompressionType compressionType,
 
     int numMipLevels = 1;
     if (mipmapped == skgpu::Mipmapped::kYes) {
-        numMipLevels = SkMipmap::ComputeLevelCount(dimensions.width(), dimensions.height())+1;
+        numMipLevels = SkMipmap::ComputeLevelCount(dimensions)+1;
     }
 
     this->unbindXferBuffer(GrGpuBufferType::kXferCpuToGpu);
@@ -1426,7 +1436,7 @@ bool GrGLGpu::createRenderTargetObjects(const GrGLTexture::Desc& desc,
                                         GR_GL_COLOR_ATTACHMENT0,
                                         GR_GL_RENDERBUFFER,
                                         rtIDs->fMSColorRenderbufferID));
-// See skbug.com/12644
+// See skbug.com/40043725
 #if !IS_TSAN
         if (!this->glCaps().skipErrorChecks()) {
             GrGLenum status;
@@ -1454,7 +1464,7 @@ bool GrGLGpu::createRenderTargetObjects(const GrGLTexture::Desc& desc,
                                  desc.fTarget,
                                  desc.fID,
                                  0));
-// See skbug.com/12644
+// See skbug.com/40043725
 #if !IS_TSAN
     if (!this->glCaps().skipErrorChecks()) {
         GrGLenum status;
@@ -3367,7 +3377,7 @@ bool GrGLGpu::createCopyProgram(GrTexture* srcTex) {
     std::string fragmentSkSL{fshaderTxt.c_str(), fshaderTxt.size()};
 
     auto errorHandler = this->getContext()->priv().getShaderErrorHandler();
-    std::string glsl[kGrShaderTypeCount];
+    SkSL::NativeShader glsl[kGrShaderTypeCount];
     SkSL::ProgramSettings settings;
     SkSL::Program::Interface interface;
     skgpu::SkSLToGLSL(shaderCaps, vertexSkSL, SkSL::ProgramKind::kVertex, settings,
@@ -3551,7 +3561,7 @@ bool GrGLGpu::createMipmapProgram(int progIdx) {
     std::string fragmentSkSL{fshaderTxt.c_str(), fshaderTxt.size()};
 
     auto errorHandler = this->getContext()->priv().getShaderErrorHandler();
-    std::string glsl[kGrShaderTypeCount];
+    SkSL::NativeShader glsl[kGrShaderTypeCount];
     SkSL::ProgramSettings settings;
     SkSL::Program::Interface interface;
 
@@ -3937,7 +3947,7 @@ GrBackendTexture GrGLGpu::onCreateBackendTexture(SkISize dimensions,
 
     int numMipLevels = 1;
     if (mipmapped == skgpu::Mipmapped::kYes) {
-        numMipLevels = SkMipmap::ComputeLevelCount(dimensions.width(), dimensions.height()) + 1;
+        numMipLevels = SkMipmap::ComputeLevelCount(dimensions) + 1;
     }
 
     // Compressed formats go through onCreateCompressedBackendTexture
@@ -4304,6 +4314,21 @@ void GrGLGpu::flush(FlushType flushType) {
     }
 }
 
+void GrGLGpu::prepareSurfacesForBackendAccessAndStateUpdates(
+        SkSpan<GrSurfaceProxy*> proxies,
+        SkSurfaces::BackendSurfaceAccess access,
+        const skgpu::MutableTextureState* newState) {
+    // For reasons not fully understood, some platforms require binding to framebuffer 0 when
+    // presenting to a display; see skbug.com/398631003.
+    SkASSERT(!newState);
+    if (proxies.size() == 1 && proxies[0]->asRenderTargetProxy() &&
+        proxies[0]->asRenderTargetProxy()->glRTFBOIDIs0() &&
+        access == SkSurfaces::BackendSurfaceAccess::kPresent &&
+        this->glCaps().bindDefaultFramebufferOnPresent()) {
+        this->bindFramebuffer(GR_GL_DRAW_FRAMEBUFFER, 0);
+    }
+}
+
 bool GrGLGpu::onSubmitToGpu(const GrSubmitInfo& info) {
     if (info.fSync == GrSyncCpu::kYes ||
         (!fFinishCallbacks.empty() && !this->glCaps().fenceSyncSupport())) {
@@ -4370,7 +4395,7 @@ bool GrGLGpu::testSync(GrGLsync sync) {
         case GrGLCaps::FenceType::kSyncObject: {
             constexpr GrGLbitfield kFlags = 0;
             GrGLenum result;
-#if defined(__EMSCRIPTEN__)
+#if defined(__EMSCRIPTEN__) && __EMSCRIPTEN_major__ < 5
             GL_CALL_RET(result, ClientWaitSync(sync, kFlags, 0, 0));
 #else
             GL_CALL_RET(result, ClientWaitSync(sync, kFlags, 0));
@@ -4422,7 +4447,7 @@ void GrGLGpu::waitSemaphore(GrSemaphore* semaphore) {
     SkASSERT(semaphore);
     GrGLSemaphore* glSem = static_cast<GrGLSemaphore*>(semaphore);
 
-#if defined(__EMSCRIPTEN__)
+#if defined(__EMSCRIPTEN__) && __EMSCRIPTEN_major__ < 5
     constexpr auto kLo = SkTo<GrGLuint>(GR_GL_TIMEOUT_IGNORED & 0xFFFFFFFFull);
     constexpr auto kHi = SkTo<GrGLuint>(GR_GL_TIMEOUT_IGNORED >> 32);
     GL_CALL(WaitSync(glSem->sync(), 0, kLo, kHi));

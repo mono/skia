@@ -9,7 +9,7 @@
 
 #include "include/gpu/graphite/Context.h"
 #include "include/gpu/graphite/ContextOptions.h"
-#include "include/gpu/graphite/mtl/MtlGraphiteUtils.h"
+#include "include/gpu/graphite/mtl/MtlBackendContext.h"
 #include "src/gpu/graphite/ContextOptionsPriv.h"
 #include "tools/gpu/ContextType.h"
 #include "tools/graphite/TestOptions.h"
@@ -55,15 +55,11 @@ skgpu::ContextType MtlTestContext::contextType() {
 
 std::unique_ptr<skgpu::graphite::Context> MtlTestContext::makeContext(const TestOptions& options) {
     SkASSERT(!options.hasDawnOptions());
-    skgpu::graphite::ContextOptions revisedContextOptions(options.fContextOptions);
-    skgpu::graphite::ContextOptionsPriv contextOptionsPriv;
-    if (!options.fContextOptions.fOptionsPriv) {
-        revisedContextOptions.fOptionsPriv = &contextOptionsPriv;
-    }
+    skiatest::graphite::TestOptions revisedOptions = options;
     // Needed to make synchronous readPixels work
-    revisedContextOptions.fOptionsPriv->fStoreContextRefInRecorder = true;
+    revisedOptions.fOptionsPriv.fStoreContextRefInRecorder = true;
 
-    return skgpu::graphite::ContextFactory::MakeMetal(fMtl, revisedContextOptions);
+    return skgpu::graphite::ContextFactory::MakeMetal(fMtl, revisedOptions.fContextOptions);
 }
 
 }  // namespace skiatest::graphite

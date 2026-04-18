@@ -24,6 +24,7 @@ type gniFileContents struct {
 	hasExperimental bool            // Has at least one file in $_experimental/ dir?
 	hasIncludes     bool            // Has at least one file in $_include/ dir?
 	hasModules      bool            // Has at least one file in $_module/ dir?
+	hasRust         bool            // Has at least one file in $_rust/ dir?
 	hasSrcs         bool            // Has at least one file in $_src/ dir?
 	bazelFiles      map[string]bool // Set of Bazel files generating GNI contents.
 	data            []byte          // The file contents to be written.
@@ -66,13 +67,14 @@ type GNIExporter struct {
 
 // The footer written to gn/codec.gni.
 const codecGNIFooter = `
-skia_codec_rust_png_ffi_crate_root = "$_experimental/rust_png/ffi/FFI.rs"
+skia_codec_rust_bmp_ffi_crate_root = "$_experimental/rust_bmp/ffi/FFI.rs"
+skia_codec_rust_png_ffi_crate_root = "$_rust/png/FFI.rs"
 `
 
-// The footer written to gn/core.gni.
-const coreGNIFooter = `skia_core_sources += skia_pathops_sources
-
-skia_core_public += skia_pathops_public
+// The footer written to gn/rust.gni.
+const rustGNIFooter = `
+skia_rust_common_ffi_crate_root = "$_rust/common/io_traits_ffi.rs"
+skia_rust_icc_ffi_crate_root = "$_rust/icc/FFI.rs"
 `
 
 // The footer written to gn/sksl_tests.gni.
@@ -115,18 +117,14 @@ skia_fontations_path_bridge_sources = [
   "$_src/ports/fontations/src/skpath_bridge.h"
 ]
 
-skia_fontations_bridge_sources = [
-  "$_src/ports/fontations/src/ffi.rs"
-]
-
 skia_fontations_bridge_root = "$_src/ports/fontations/src/ffi.rs"
 `
 
 // Map of GNI file names to footer text to be appended to the end of the file.
 var footerMap = map[string]string{
 	"gn/codec.gni":                  codecGNIFooter,
-	"gn/core.gni":                   coreGNIFooter,
 	"gn/ports.gni":                  portsFooter,
+	"gn/rust.gni":                   rustGNIFooter,
 	"gn/sksl_tests.gni":             skslTestsFooter,
 	"modules/skshaper/skshaper.gni": skshaperFooter,
 }
@@ -221,6 +219,9 @@ func makeRelativeFilePathForGNI(path string) (string, error) {
 	if strings.HasPrefix(path, "modules/") {
 		return "$_modules/" + strings.TrimPrefix(path, "modules/"), nil
 	}
+	if strings.HasPrefix(path, "rust/") {
+		return "$_rust/" + strings.TrimPrefix(path, "rust/"), nil
+	}
 	if strings.HasPrefix(path, "experimental/") {
 		return "$_experimental/" + strings.TrimPrefix(path, "experimental/"), nil
 	}
@@ -290,17 +291,20 @@ func writeGNFileHeader(writer interfaces.Writer, gniFile *gniFileContents, pathT
 	_, _ = fmt.Fprintln(writer, "# To update this file, run make -C bazel generate_gni")
 
 	_, _ = writer.WriteString("\n")
-	if gniFile.hasSrcs {
-		_, _ = fmt.Fprintf(writer, "_src = get_path_info(\"%s/src\", \"abspath\")\n", pathToWorkspace)
-	}
 	if gniFile.hasExperimental {
 		_, _ = fmt.Fprintf(writer, "_experimental = get_path_info(\"%s/experimental\", \"abspath\")\n", pathToWorkspace)
+	}
+	if gniFile.hasSrcs {
+		_, _ = fmt.Fprintf(writer, "_src = get_path_info(\"%s/src\", \"abspath\")\n", pathToWorkspace)
 	}
 	if gniFile.hasIncludes {
 		_, _ = fmt.Fprintf(writer, "_include = get_path_info(\"%s/include\", \"abspath\")\n", pathToWorkspace)
 	}
 	if gniFile.hasModules {
 		_, _ = fmt.Fprintf(writer, "_modules = get_path_info(\"%s/modules\", \"abspath\")\n", pathToWorkspace)
+	}
+	if gniFile.hasRust {
+		_, _ = fmt.Fprintf(writer, "_rust = get_path_info(\"%s/rust\", \"abspath\")\n", pathToWorkspace)
 	}
 }
 
@@ -423,6 +427,9 @@ func (c *gniFileContents) merge(other gniFileContents) {
 	if other.hasModules {
 		c.hasModules = true
 	}
+	if other.hasRust {
+		c.hasRust = true
+	}
 	if other.hasSrcs {
 		c.hasSrcs = true
 	}
@@ -475,14 +482,16 @@ func (e *GNIExporter) convertGNIFileList(desc GNIFileListExportDesc, qr *build.Q
 	files = removeDuplicates(files)
 
 	for i := range files {
-		if strings.HasPrefix(files[i], "$_src/") {
-			fileContents.hasSrcs = true
-		} else if strings.HasPrefix(files[i], "$_experimental/") {
+		if strings.HasPrefix(files[i], "$_experimental/") {
 			fileContents.hasExperimental = true
+		} else if strings.HasPrefix(files[i], "$_src/") {
+			fileContents.hasSrcs = true
 		} else if strings.HasPrefix(files[i], "$_include/") {
 			fileContents.hasIncludes = true
 		} else if strings.HasPrefix(files[i], "$_modules/") {
 			fileContents.hasModules = true
+		} else if strings.HasPrefix(files[i], "$_rust/") {
+			fileContents.hasRust = true
 		}
 	}
 

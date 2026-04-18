@@ -29,10 +29,6 @@
 #include "include/core/SkTypeface.h"
 #include "include/core/SkTypes.h"
 #include "include/gpu/GpuTypes.h"
-#include "include/gpu/ganesh/GrContextOptions.h"
-#include "include/gpu/ganesh/GrDirectContext.h"
-#include "include/gpu/ganesh/GrRecordingContext.h"
-#include "include/gpu/ganesh/SkSurfaceGanesh.h"
 #include "include/private/base/SkMalloc.h"
 #include "include/private/base/SkMutex.h"
 #include "include/private/chromium/SkChromeRemoteGlyphCache.h"
@@ -44,10 +40,6 @@
 #include "src/core/SkTHash.h"
 #include "src/core/SkTypeface_remote.h"
 #include "src/core/SkWriteBuffer.h"
-#include "src/gpu/ganesh/GrCaps.h"
-#include "src/gpu/ganesh/GrDirectContextPriv.h"
-#include "src/gpu/ganesh/GrRecordingContextPriv.h"
-#include "src/gpu/ganesh/GrShaderCaps.h"
 #include "src/text/gpu/SubRunControl.h"
 #include "tests/CtsEnforcement.h"
 #include "tests/Test.h"
@@ -55,6 +47,17 @@
 #include "tools/ToolUtils.h"
 #include "tools/fonts/FontToolUtils.h"
 #include "tools/fonts/TestEmptyTypeface.h"
+
+#if defined(SK_GANESH)
+#include "include/gpu/ganesh/GrContextOptions.h"
+#include "include/gpu/ganesh/GrDirectContext.h"
+#include "include/gpu/ganesh/GrRecordingContext.h"
+#include "include/gpu/ganesh/SkSurfaceGanesh.h"
+#include "src/gpu/ganesh/GrCaps.h"
+#include "src/gpu/ganesh/GrDirectContextPriv.h"
+#include "src/gpu/ganesh/GrRecordingContextPriv.h"
+#include "src/gpu/ganesh/GrShaderCaps.h"
+#endif
 
 #include <cmath>
 #include <cstdint>
@@ -180,6 +183,7 @@ sk_sp<SkTextBlob> buildTextBlob(sk_sp<SkTypeface> tf, int glyphCount, int textSi
     return builder.make();
 }
 
+#if defined(SK_GANESH)
 static void compare_blobs(const SkBitmap& expected, const SkBitmap& actual,
                           skiatest::Reporter* reporter, int tolerance = 0) {
     SkASSERT(expected.width() == actual.width());
@@ -299,7 +303,7 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(SkRemoteGlyphCache_StrikeSerialization,
     compare_blobs(expected, actual, reporter);
     REPORTER_ASSERT(reporter, !discardableManager->hasCacheMiss());
 
-    // Must unlock everything on termination, otherwise valgrind complains about memory leaks.
+    // Must unlock everything on termination, otherwise memory leaks can be reported.
     discardableManager->unlockAndDeleteAll();
 }
 
@@ -347,7 +351,7 @@ DEF_GANESH_TEST_FOR_CONTEXTS(SkRemoteGlyphCache_StrikeSerializationSlug,
     compare_blobs(expected, actual, reporter);
     REPORTER_ASSERT(reporter, !discardableManager->hasCacheMiss());
 
-    // Must unlock everything on termination, otherwise valgrind complains about memory leaks.
+    // Must unlock everything on termination, otherwise memory leaks can be reported.
     discardableManager->unlockAndDeleteAll();
 }
 
@@ -391,7 +395,7 @@ DEF_GANESH_TEST_FOR_CONTEXTS(SkRemoteGlyphCache_StrikeSerializationSlugForcePath
     compare_blobs(expected, actual, reporter);
     REPORTER_ASSERT(reporter, !discardableManager->hasCacheMiss());
 
-    // Must unlock everything on termination, otherwise valgrind complains about memory leaks.
+    // Must unlock everything on termination, otherwise memory leaks can be reported.
     discardableManager->unlockAndDeleteAll();
 }
 
@@ -435,7 +439,7 @@ DEF_GANESH_TEST_FOR_CONTEXTS(SkRemoteGlyphCache_SlugSerialization,
     compare_blobs(expected, actual, reporter);
     REPORTER_ASSERT(reporter, !discardableManager->hasCacheMiss());
 
-    // Must unlock everything on termination, otherwise valgrind complains about memory leaks.
+    // Must unlock everything on termination, otherwise memory leaks can be reported.
     discardableManager->unlockAndDeleteAll();
 }
 
@@ -467,9 +471,10 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(SkRemoteGlyphCache_ReleaseTypeFace,
     }
     REPORTER_ASSERT(reporter, serverTypeface->unique());
 
-    // Must unlock everything on termination, otherwise valgrind complains about memory leaks.
+    // Must unlock everything on termination, otherwise memory leaks can be reported.
     discardableManager->unlockAndDeleteAll();
 }
+#endif
 
 DEF_TEST(SkRemoteGlyphCache_StrikeLockingServer, reporter) {
     sk_sp<DiscardableManager> discardableManager = sk_make_sp<DiscardableManager>();
@@ -501,7 +506,7 @@ DEF_TEST(SkRemoteGlyphCache_StrikeLockingServer, reporter) {
     REPORTER_ASSERT(reporter, discardableManager->handleCount() == 1u);
     REPORTER_ASSERT(reporter, discardableManager->lockedHandles().count() == 1u);
 
-    // Must unlock everything on termination, otherwise valgrind complains about memory leaks.
+    // Must unlock everything on termination, otherwise memory leaks can be reported.
     discardableManager->unlockAndDeleteAll();
 }
 
@@ -536,7 +541,7 @@ DEF_TEST(SkRemoteGlyphCache_StrikeDeletionServer, reporter) {
     cache_diff_canvas->drawTextBlob(serverBlob.get(), 0, 0, paint);
     REPORTER_ASSERT(reporter, discardableManager->handleCount() == 2u);
 
-    // Must unlock everything on termination, otherwise valgrind complains about memory leaks.
+    // Must unlock everything on termination, otherwise memory leaks can be reported.
     discardableManager->unlockAndDeleteAll();
 }
 
@@ -576,7 +581,7 @@ DEF_TEST(SkRemoteGlyphCache_StrikePinningClient, reporter) {
     SkGraphics::PurgeFontCache();
     REPORTER_ASSERT(reporter, clientTypeface->unique());
 
-    // Must unlock everything on termination, otherwise valgrind complains about memory leaks.
+    // Must unlock everything on termination, otherwise memory leaks can be reported.
     discardableManager->unlockAndDeleteAll();
 }
 
@@ -604,7 +609,7 @@ DEF_TEST(SkRemoteGlyphCache_ClientMemoryAccounting, reporter) {
     REPORTER_ASSERT(reporter,
                     client.readStrikeData(serverStrikeData.data(), serverStrikeData.size()));
 
-    // Must unlock everything on termination, otherwise valgrind complains about memory leaks.
+    // Must unlock everything on termination, otherwise memory leaks can be reported.
     discardableManager->unlockAndDeleteAll();
 }
 
@@ -650,10 +655,11 @@ DEF_TEST(SkRemoteGlyphCache_PurgesServerEntries, reporter) {
         REPORTER_ASSERT(reporter, server.remoteStrikeMapSizeForTesting() == 1u);
     }
 
-    // Must unlock everything on termination, otherwise valgrind complains about memory leaks.
+    // Must unlock everything on termination, otherwise memory leaks can be reported.
     discardableManager->unlockAndDeleteAll();
 }
 
+#if defined(SK_GANESH)
 DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(SkRemoteGlyphCache_DrawTextAsPath,
                                        reporter,
                                        ctxInfo,
@@ -695,7 +701,7 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(SkRemoteGlyphCache_DrawTextAsPath,
     compare_blobs(expected, actual, reporter, 1);
     REPORTER_ASSERT(reporter, !discardableManager->hasCacheMiss());
 
-    // Must unlock everything on termination, otherwise valgrind complains about memory leaks.
+    // Must unlock everything on termination, otherwise memory leaks can be reported.
     discardableManager->unlockAndDeleteAll();
 }
 
@@ -711,7 +717,7 @@ sk_sp<SkTextBlob> make_blob_causing_fallback(
             !SkStrikeSpec::ShouldDrawAsPath(SkPaint(), font, SkMatrix::I()));
 
     char s[] = "Skia";
-    int runSize = strlen(s);
+    size_t runSize = strlen(s);
 
     SkTextBlobBuilder builder;
     SkRect bounds = SkRect::MakeIWH(100, 100);
@@ -720,14 +726,13 @@ sk_sp<SkTextBlob> make_blob_causing_fallback(
     SkASSERT(runBuffer.clusters == nullptr);
 
     SkFont(sk_ref_sp(glyphTf)).textToGlyphs(s, strlen(s), SkTextEncoding::kUTF8,
-                                            runBuffer.glyphs, runSize);
+                                            {runBuffer.glyphs, runSize});
 
-    SkRect glyphBounds;
-    font.getWidths(runBuffer.glyphs, 1, nullptr, &glyphBounds);
+    SkRect glyphBounds = font.getBounds(runBuffer.glyphs[0], nullptr);
 
     REPORTER_ASSERT(reporter, glyphBounds.width() > SkGlyphDigest::kSkSideTooBigForAtlas);
 
-    for (int i = 0; i < runSize; i++) {
+    for (size_t i = 0; i < runSize; i++) {
         runBuffer.pos[i] = i * 10;
     }
 
@@ -774,7 +779,7 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(SkRemoteGlyphCache_DrawTextAsMaskWithPath
     compare_blobs(expected, actual, reporter);
     REPORTER_ASSERT(reporter, !discardableManager->hasCacheMiss());
 
-    // Must unlock everything on termination, otherwise valgrind complains about memory leaks.
+    // Must unlock everything on termination, otherwise memory leaks can be reported.
     discardableManager->unlockAndDeleteAll();
 }
 
@@ -815,7 +820,7 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(SkRemoteGlyphCache_DrawTextXY,
     compare_blobs(expected, actual, reporter);
     REPORTER_ASSERT(reporter, !discardableManager->hasCacheMiss());
 
-    // Must unlock everything on termination, otherwise valgrind complains about memory leaks.
+    // Must unlock everything on termination, otherwise memory leaks can be reported.
     discardableManager->unlockAndDeleteAll();
 }
 
@@ -869,7 +874,7 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(SkRemoteGlyphCache_DrawTextAsDFT,
     compare_blobs(expected, actual, reporter);
     REPORTER_ASSERT(reporter, !discardableManager->hasCacheMiss());
 
-    // Must unlock everything on termination, otherwise valgrind complains about memory leaks.
+    // Must unlock everything on termination, otherwise memory leaks can be reported.
     discardableManager->unlockAndDeleteAll();
 }
 #endif // !defined(SK_DISABLE_SDF_TEXT)
@@ -913,7 +918,7 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(SkRemoteGlyphCache_CacheMissReporting,
     REPORTER_ASSERT(reporter, discardableManager->cacheMissCount(SkStrikeClient::kGlyphImage) == 0);
     REPORTER_ASSERT(reporter, discardableManager->cacheMissCount(SkStrikeClient::kGlyphPath) == 0);
 
-    // Must unlock everything on termination, otherwise valgrind complains about memory leaks.
+    // Must unlock everything on termination, otherwise memory leaks can be reported.
     discardableManager->unlockAndDeleteAll();
 }
 
@@ -928,14 +933,18 @@ sk_sp<SkTextBlob> MakeEmojiBlob(sk_sp<SkTypeface> serverTf, SkScalar textSize,
     if (clientTf == nullptr) return blob;
 
     SkSerialProcs s_procs;
-    s_procs.fTypefaceProc = [](SkTypeface*, void* ctx) -> sk_sp<SkData> {
+    s_procs.fTypefaceProc = [](SkTypeface*, void* ctx) -> sk_sp<const SkData> {
         return SkData::MakeUninitialized(1u);
     };
     auto serialized = blob->serialize(s_procs);
 
     SkDeserialProcs d_procs;
     d_procs.fTypefaceCtx = &clientTf;
-    d_procs.fTypefaceProc = [](const void* data, size_t length, void* ctx) -> sk_sp<SkTypeface> {
+    d_procs.fTypefaceStreamProc = [](SkStream& stream, void* ctx) -> sk_sp<SkTypeface> {
+        char u;
+        if (stream.read(&u, 1) != 1) {
+            return nullptr;
+        }
         return *(static_cast<sk_sp<SkTypeface>*>(ctx));
     };
     return SkTextBlob::Deserialize(serialized->data(), serialized->size(), d_procs);
@@ -979,7 +988,7 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(SkRemoteGlyphCache_TypefaceWithNoPaths,
         discardableManager->resetCacheMissCounts();
     }
 
-    // Must unlock everything on termination, otherwise valgrind complains about memory leaks.
+    // Must unlock everything on termination, otherwise memory leaks can be reported.
     discardableManager->unlockAndDeleteAll();
 }
 
@@ -1003,14 +1012,18 @@ class SkRemoteGlyphCacheTest {
         if (clientTf == nullptr) return blob;
 
         SkSerialProcs s_procs;
-        s_procs.fTypefaceProc = [](SkTypeface*, void* ctx) -> sk_sp<SkData> {
+        s_procs.fTypefaceProc = [](SkTypeface*, void* ctx) -> sk_sp<const SkData> {
             return SkData::MakeUninitialized(1u);
         };
         auto serialized = blob->serialize(s_procs);
 
         SkDeserialProcs d_procs;
         d_procs.fTypefaceCtx = &clientTf;
-        d_procs.fTypefaceProc = [](const void* data, size_t length, void* ctx) -> sk_sp<SkTypeface> {
+        d_procs.fTypefaceStreamProc = [](SkStream& stream, void* ctx) -> sk_sp<SkTypeface> {
+            char u;
+            if (stream.read(&u, 1) != 1) {
+                return nullptr;
+            }
             return *(static_cast<sk_sp<SkTypeface>*>(ctx));
         };
         return SkTextBlob::Deserialize(serialized->data(), serialized->size(), d_procs);
@@ -1071,7 +1084,7 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(SkRemoteGlyphCache_TypefaceWithPaths_Mask
         REPORTER_ASSERT(reporter, !discardableManager->hasCacheMiss());
         discardableManager->resetCacheMissCounts();
     }
-    // Must unlock everything on termination, otherwise valgrind complains about memory leaks.
+    // Must unlock everything on termination, otherwise memory leaks can be reported.
     discardableManager->unlockAndDeleteAll();
 }
 
@@ -1130,9 +1143,10 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(SkRemoteGlyphCache_TypefaceWithPaths_Path
         REPORTER_ASSERT(reporter, !discardableManager->hasCacheMiss());
         discardableManager->resetCacheMissCounts();
     }
-    // Must unlock everything on termination, otherwise valgrind complains about memory leaks.
+    // Must unlock everything on termination, otherwise memory leaks can be reported.
     discardableManager->unlockAndDeleteAll();
 }
+#endif
 
 DEF_TEST(SkTypefaceProxy_Basic_Serial, reporter) {
     auto typeface = ToolUtils::CreateTestTypeface("monospace", SkFontStyle());

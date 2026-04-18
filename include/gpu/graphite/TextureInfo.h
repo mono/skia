@@ -9,7 +9,6 @@
 #define skgpu_graphite_TextureInfo_DEFINED
 
 #include "include/core/SkString.h"
-#include "include/core/SkTextureCompressionType.h"
 #include "include/gpu/graphite/GraphiteTypes.h"
 #include "include/private/base/SkAPI.h"
 #include "include/private/base/SkAnySubclass.h"
@@ -18,70 +17,117 @@ struct SkISize;
 
 namespace skgpu::graphite {
 
-class TextureInfoData;
+enum class TextureFormat : uint8_t;
 
+/**
+ * TextureInfo is a backend-agnostic wrapper around the properties of a texture, sans dimensions.
+ * It is designed this way to be compilable w/o bringing in a specific backend's build files, and
+ * without requiring heap allocations of virtual types.
+ */
 class SK_API TextureInfo {
+private:
+    class Data;
+    friend class MtlTextureInfo;
+    friend class DawnTextureInfo;
+    friend class VulkanTextureInfo;
+
+    // Size is the largest of the Data subclasses assuming a 64-bit compiler.
+    inline constexpr static size_t kMaxSubclassSize = 112;
+    using AnyTextureInfoData = SkAnySubclass<Data, kMaxSubclassSize>;
+
+    // Base properties for all backend-specific properties. Clients managing textures directly
+    // should use the public subclasses of Data directly, e.g. MtlTextureInfo/DawnTextureInfo.
+    //
+    // Each backend subclass must expose to TextureInfo[Priv]:
+    //   static constexpr BackendApi kBackend;
+    //   Protected isProtected() const;
+    //   TextureFormat viewFormat() const;
+    class Data {
+    public:
+        virtual ~Data() = default;
+
+        Data(SampleCount sampleCount, skgpu::Mipmapped mipmapped)
+                : fSampleCount(sampleCount)
+                , fMipmapped(mipmapped) {}
+
+        Data() = default;
+        Data(const Data&) = default;
+
+        Data& operator=(const Data&) = default;
+
+        // NOTE: These fields are accessible via the backend-specific subclasses.
+        SampleCount fSampleCount = SampleCount::k1;
+        Mipmapped fMipmapped = Mipmapped::kNo;
+
+    private:
+        friend class TextureInfo;
+        friend class TextureInfoPriv;
+
+        virtual SkString toBackendString() const = 0;
+
+        virtual void copyTo(AnyTextureInfoData&) const = 0;
+        // Passed in TextureInfo will have data of the same backend type and subclass, and
+        // base properties of Data have already been checked for equality/compatibility.
+        virtual bool isCompatible(const TextureInfo& that, bool requireExact) const = 0;
+    };
+
 public:
-    TextureInfo();
-    ~TextureInfo();
+    TextureInfo() = default;
+    ~TextureInfo() = default;
+
     TextureInfo(const TextureInfo&);
     TextureInfo& operator=(const TextureInfo&);
 
-    bool operator==(const TextureInfo&) const;
+    bool operator==(const TextureInfo& that) const {
+        return this->isCompatible(that, /*requireExact=*/true);
+    }
     bool operator!=(const TextureInfo& that) const { return !(*this == that); }
 
-    bool isValid() const { return fValid; }
-    BackendApi backend() const { return fBackend; }
-
-    uint32_t numSamples() const { return fSampleCount; }
-    Mipmapped mipmapped() const { return fMipmapped; }
-    Protected isProtected() const { return fProtected; }
-    SkTextureCompressionType compressionType() const;
-    bool isMemoryless() const;
-
-    bool isCompatible(const TextureInfo& that) const;
-    // Return a string containing the full description of this TextureInfo.
-    SkString toString() const;
-    // Return a string containing only the info relevant for its use as a RenderPass attachment.
-    SkString toRPAttachmentString() const;
-
-private:
-    friend class TextureInfoData;
-    friend class TextureInfoPriv;
-
-    // Size determined by looking at the TextureInfoData subclasses, then guessing-and-checking.
-    // Compiler will complain if this is too small - in that case, just increase the number.
-    inline constexpr static size_t kMaxSubclassSize = 112;
-    using AnyTextureInfoData = SkAnySubclass<TextureInfoData, kMaxSubclassSize>;
-
-    template <typename SomeTextureInfoData>
-    TextureInfo(BackendApi backend,
-                uint32_t sampleCount,
-                skgpu::Mipmapped mipped,
-                skgpu::Protected isProtected,
-                const SomeTextureInfoData& textureInfoData)
-            : fBackend(backend)
-            , fValid(true)
-            , fSampleCount(sampleCount)
-            , fMipmapped(mipped)
-            , fProtected(isProtected) {
-        fTextureInfoData.emplace<SomeTextureInfoData>(textureInfoData);
+    bool isValid() const { return fData.has_value(); }
+    BackendApi backend() const {
+        SkASSERT(fData.has_value() || fBackend == BackendApi::kUnsupported);
+        return fBackend;
     }
 
-    friend size_t ComputeSize(SkISize dimensions, const TextureInfo&);  // for bytesPerPixel
+    Protected isProtected() const { return fProtected; }
+    SampleCount sampleCount() const {
+        return fData.has_value() ? fData->fSampleCount : SampleCount::k1;
+    }
+    Mipmapped mipmapped() const {
+        return fData.has_value() ? fData->fMipmapped   : Mipmapped::kNo;
+    }
 
-    size_t bytesPerPixel() const;
+    // Return true if `that` describes a texture that is compatible with this info and can validly
+    // be used to fulfill a promise image that was created with this TextureInfo.
+    bool canBeFulfilledBy(const TextureInfo& that) const {
+        return this->isCompatible(that, /*requireExact=*/false);
+    }
 
-    BackendApi fBackend = BackendApi::kMock;
-    bool fValid = false;
+    // Return a string containing the full description of this TextureInfo.
+    SkString toString() const;
 
-    uint32_t fSampleCount = 1;
-    Mipmapped fMipmapped = Mipmapped::kNo;
+private:
+    friend class TextureInfoPriv;
+
+    template <typename BackendTextureData,
+              std::enable_if_t<std::is_base_of_v<Data, BackendTextureData>, bool> = true>
+    explicit TextureInfo(const BackendTextureData& data)
+            : fBackend(BackendTextureData::kBackend)
+            , fViewFormat(data.viewFormat())
+            , fProtected(data.isProtected()) {
+        fData.emplace<BackendTextureData>(data);
+    }
+
+    bool isCompatible(const TextureInfo& that, bool requireExact) const;
+
+    skgpu::BackendApi  fBackend = BackendApi::kUnsupported;
+    AnyTextureInfoData fData;
+
+    // Derived properties from the backend data, cached to avoid a virtual function call
+    TextureFormat fViewFormat;
     Protected fProtected = Protected::kNo;
-
-    AnyTextureInfoData fTextureInfoData;
 };
 
-}  // namespace skgpu::graphite
+} // namespace skgpu::graphite
 
-#endif  //skgpu_graphite_TextureInfo_DEFINED
+#endif // skgpu_graphite_TextureInfo_DEFINED

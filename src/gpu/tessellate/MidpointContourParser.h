@@ -30,17 +30,17 @@ class MidpointContourParser {
 public:
     MidpointContourParser(const SkPath& path)
             : fPath(path)
-            , fVerbs(SkPathPriv::VerbData(fPath))
+            , fVerbs(fPath.verbs().data())
             , fNumRemainingVerbs(fPath.countVerbs())
-            , fPoints(SkPathPriv::PointData(fPath))
-            , fWeights(SkPathPriv::ConicWeightData(fPath)) {}
+            , fPoints(fPath.points().data())
+            , fWeights(fPath.conicWeights().data()) {}
     // Advances the internal state to the next contour in the path. Returns false if there are no
     // more contours.
     bool parseNextContour() {
         bool hasGeometry = false;
         for (; fVerbsIdx < fNumRemainingVerbs; ++fVerbsIdx) {
             switch (fVerbs[fVerbsIdx]) {
-                case SkPath::kMove_Verb:
+                case SkPathVerb::kMove:
                     if (!hasGeometry) {
                         fMidpoint = {0,0};
                         fMidpointWeight = 0;
@@ -56,16 +56,16 @@ public:
                     return true;
                 default:
                     continue;
-                case SkPath::kLine_Verb:
+                case SkPathVerb::kLine:
                     ++fPtsIdx;
                     break;
-                case SkPath::kConic_Verb:
+                case SkPathVerb::kConic:
                     ++fWtsIdx;
                     [[fallthrough]];
-                case SkPath::kQuad_Verb:
+                case SkPathVerb::kQuad:
                     fPtsIdx += 2;
                     break;
-                case SkPath::kCubic_Verb:
+                case SkPathVerb::kCubic:
                     fPtsIdx += 3;
                     break;
             }
@@ -83,7 +83,7 @@ public:
 
     // Allows for iterating the current contour using a range-for loop.
     SkPathPriv::Iterate currentContour() {
-        return SkPathPriv::Iterate(fVerbs, fVerbs + fVerbsIdx, fPoints, fWeights);
+        return SkPathPriv::Iterate({fVerbs, (size_t)fVerbsIdx}, fPoints, fWeights);
     }
 
     SkPoint currentMidpoint() { return fMidpoint * (1.f / fMidpointWeight); }
@@ -101,7 +101,7 @@ private:
 
     const SkPath& fPath;
 
-    const uint8_t* fVerbs;
+    const SkPathVerb* fVerbs;
     int fNumRemainingVerbs = 0;
     int fVerbsIdx = 0;
 

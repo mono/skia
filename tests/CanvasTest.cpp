@@ -18,6 +18,7 @@
 #include "include/core/SkMatrix.h"
 #include "include/core/SkPaint.h"
 #include "include/core/SkPath.h"
+#include "include/core/SkPathBuilder.h"
 #include "include/core/SkPictureRecorder.h"
 #include "include/core/SkPixmap.h"
 #include "include/core/SkPoint.h"
@@ -54,11 +55,12 @@ class SkPicture;
 
 #ifdef SK_BUILD_FOR_ANDROID_FRAMEWORK
 #include "include/core/SkColorSpace.h"
-#include "include/private/SkColorData.h"
+#include "src/core/SkColorData.h"
 #endif
 
-#ifdef SK_SUPPORT_PDF
+#if defined(SK_SUPPORT_PDF)
 #include "include/docs/SkPDFDocument.h"
+#include "include/docs/SkPDFJpegHelpers.h"
 #endif
 
 #if defined(SK_GANESH)
@@ -150,7 +152,7 @@ template <typename F> static void multi_canvas_driver(int w, int h, F proc) {
     proc(SkPictureRecorder().beginRecording(SkRect::MakeIWH(w, h)));
 
     SkNullWStream stream;
-    if (auto doc = SkPDF::MakeDocument(&stream)) {
+    if (auto doc = SkPDF::MakeDocument(&stream, SkPDF::JPEG::MetadataWithCallbacks())) {
         proc(doc->beginPage(SkIntToScalar(w), SkIntToScalar(h)));
     }
 
@@ -242,9 +244,7 @@ DEF_TEST(CanvasNewRasterTest, reporter) {
 }
 
 static SkPath make_path_from_rect(SkRect r) {
-    SkPath path;
-    path.addRect(r);
-    return path;
+    return SkPath::Rect(r);
 }
 
 static SkRegion make_region_from_irect(SkIRect r) {
@@ -342,13 +342,13 @@ static CanvasTest kCanvasTests[] = {
         SkPaint paint;
         paint.setStrokeWidth(SkIntToScalar(1));
         paint.setStyle(SkPaint::kStroke_Style);
-        SkPath path;
-        path.moveTo(SkPoint{ 0, 0 });
-        path.lineTo(SkPoint{ 0, SK_ScalarNearlyZero });
-        path.lineTo(SkPoint{ SkIntToScalar(1), 0 });
-        path.lineTo(SkPoint{ SkIntToScalar(1), SK_ScalarNearlyZero/2 });
+        SkPathBuilder builder;
+        builder.moveTo(SkPoint{ 0, 0 });
+        builder.lineTo(SkPoint{ 0, SK_ScalarNearlyZero });
+        builder.lineTo(SkPoint{ SkIntToScalar(1), 0 });
+        builder.lineTo(SkPoint{ SkIntToScalar(1), SK_ScalarNearlyZero/2 });
         // test nearly zero length path
-        c->drawPath(path, paint);
+        c->drawPath(builder.detach(), paint);
     },
     [](SkCanvas* c, skiatest::Reporter* r) {
         SkPictureRecorder recorder;
@@ -418,7 +418,7 @@ DEF_TEST(Canvas_bitmap, reporter) {
 DEF_TEST(Canvas_pdf, reporter) {
     for (const CanvasTest& test : kCanvasTests) {
         SkNullWStream outStream;
-        if (auto doc = SkPDF::MakeDocument(&outStream)) {
+        if (auto doc = SkPDF::MakeDocument(&outStream, SkPDF::JPEG::MetadataWithCallbacks())) {
             SkCanvas* canvas = doc->beginPage(SkIntToScalar(kWidth),
                                               SkIntToScalar(kHeight));
             REPORTER_ASSERT(reporter, canvas);
@@ -452,13 +452,16 @@ DEF_TEST(Canvas_ClipEmptyPath, reporter) {
     SkPath path;
     canvas.clipPath(path);
     canvas.restore();
+
     canvas.save();
-    path.moveTo(5, 5);
-    canvas.clipPath(path);
+    SkPathBuilder builder;
+    builder.moveTo(5, 5);
+    canvas.clipPath(builder.snapshot());
     canvas.restore();
+
     canvas.save();
-    path.moveTo(7, 7);
-    canvas.clipPath(path);  // should not assert here
+    builder.moveTo(7, 7);
+    canvas.clipPath(builder.detach());  // should not assert here
     canvas.restore();
 }
 
@@ -596,7 +599,7 @@ DEF_TEST(CanvasClipType, r) {
 #ifdef SK_SUPPORT_PDF
     // test clipstack backend
     SkDynamicMemoryWStream stream;
-    if (auto doc = SkPDF::MakeDocument(&stream)) {
+    if (auto doc = SkPDF::MakeDocument(&stream, SkPDF::JPEG::MetadataWithCallbacks())) {
         test_cliptype(doc->beginPage(100, 100), r);
     }
 #endif
@@ -766,7 +769,7 @@ void test_many_draws(skiatest::Reporter* reporter, SkSurface* surface) {
 DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(TestManyDrawsGanesh,
                                        reporter,
                                        contextInfo,
-                                       CtsEnforcement::kApiLevel_V) {
+                                       CtsEnforcement::kApiLevel_202404) {
     SkImageInfo ii = SkImageInfo::Make(SkISize::Make(1, 1),
                                        SkColorType::kRGBA_8888_SkColorType,
                                        SkAlphaType::kPremul_SkAlphaType);
@@ -778,7 +781,7 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(TestManyDrawsGanesh,
 
 #if defined(SK_GRAPHITE)
 DEF_GRAPHITE_TEST_FOR_RENDERING_CONTEXTS(TestManyDrawsGraphite, reporter, context,
-                                         CtsEnforcement::kApiLevel_V) {
+                                         CtsEnforcement::kApiLevel_202404) {
     using namespace skgpu::graphite;
     SkImageInfo ii = SkImageInfo::Make(SkISize::Make(1, 1),
                                        SkColorType::kRGBA_8888_SkColorType,

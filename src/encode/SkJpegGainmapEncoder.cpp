@@ -24,7 +24,7 @@
 
 #include <vector>
 
-static bool is_single_channel(SkColor4f c) { return c.fR == c.fG && c.fG == c.fB; };
+static bool is_single_channel(SkColor4f c) { return c.fR == c.fG && c.fG == c.fB; }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 // HDRGM encoding
@@ -177,40 +177,40 @@ static sk_sp<SkData> get_exif_params() {
     s.write8(0);
 
     s.write(SkTiff::kEndianBig, sizeof(SkTiff::kEndianBig));
-    SkWStreamWriteU32BE(&s, 8);  // Offset of index IFD
+    SkStreamPriv::WriteU32BE(&s, 8);  // Offset of index IFD
 
     // Write the index IFD.
     {
         constexpr uint16_t kIndexIfdNumberOfTags = 1;
-        SkWStreamWriteU16BE(&s, kIndexIfdNumberOfTags);
+        SkStreamPriv::WriteU16BE(&s, kIndexIfdNumberOfTags);
 
         constexpr uint16_t kSubIFDOffsetTag = 0x8769;
         constexpr uint32_t kSubIfdCount = 1;
         constexpr uint32_t kSubIfdOffset = 26;
-        SkWStreamWriteU16BE(&s, kSubIFDOffsetTag);
-        SkWStreamWriteU16BE(&s, SkTiff::kTypeUnsignedLong);
-        SkWStreamWriteU32BE(&s, kSubIfdCount);
-        SkWStreamWriteU32BE(&s, kSubIfdOffset);
+        SkStreamPriv::WriteU16BE(&s, kSubIFDOffsetTag);
+        SkStreamPriv::WriteU16BE(&s, SkTiff::kTypeUnsignedLong);
+        SkStreamPriv::WriteU32BE(&s, kSubIfdCount);
+        SkStreamPriv::WriteU32BE(&s, kSubIfdOffset);
 
         constexpr uint32_t kIndexIfdNextIfdOffset = 0;
-        SkWStreamWriteU32BE(&s, kIndexIfdNextIfdOffset);
+        SkStreamPriv::WriteU32BE(&s, kIndexIfdNextIfdOffset);
     }
 
     // Write the sub-IFD.
     {
         constexpr uint16_t kSubIfdNumberOfTags = 1;
-        SkWStreamWriteU16BE(&s, kSubIfdNumberOfTags);
+        SkStreamPriv::WriteU16BE(&s, kSubIfdNumberOfTags);
 
         constexpr uint16_t kVersionTag = 0x9000;
         constexpr uint32_t kVersionCount = 4;
         constexpr uint8_t kVersion[kVersionCount] = {'0', '2', '3', '2'};
-        SkWStreamWriteU16BE(&s, kVersionTag);
-        SkWStreamWriteU16BE(&s, SkTiff::kTypeUndefined);
-        SkWStreamWriteU32BE(&s, kVersionCount);
+        SkStreamPriv::WriteU16BE(&s, kVersionTag);
+        SkStreamPriv::WriteU16BE(&s, SkTiff::kTypeUndefined);
+        SkStreamPriv::WriteU32BE(&s, kVersionCount);
         s.write(kVersion, sizeof(kVersion));
 
         constexpr uint32_t kSubIfdNextIfdOffset = 0;
-        SkWStreamWriteU32BE(&s, kSubIfdNextIfdOffset);
+        SkStreamPriv::WriteU32BE(&s, kSubIfdNextIfdOffset);
     }
 
     return s.detachAsData();
@@ -337,23 +337,11 @@ static size_t mp_segment_offset(const SkData* image) {
     }
     const auto& segments = scan.getSegments();
 
-    // Search for the Exif segment and place the MP parameters immediately after. See 5.1.
-    // Basic MP File Structure, which indicates "The MP Extensions are specified in the APP2
-    // marker segment which follows immediately after the Exif Attributes in the APP1 marker
-    // segment except as specified in section 7".
-    for (size_t segmentIndex = 0; segmentIndex < segments.size() - 1; ++segmentIndex) {
-        const auto& segment = segments[segmentIndex];
-        if (segment.marker != kExifMarker) {
-            continue;
-        }
-        auto params = SkJpegSegmentScanner::GetParameters(image, segment);
-        if (params->size() < sizeof(kExifSig) ||
-            memcmp(params->data(), kExifSig, sizeof(kExifSig)) != 0) {
-            continue;
-        }
-        // Insert the MPF segment at the offset of the next segment.
-        return segments[segmentIndex + 1].offset;
-    }
+    // According to CIPA DC-007 section 5.1, "Basic MP File Structure", "The MP Extensions are
+    // specified in the APP2 marker segment which follows immediately after the Exif Attributes in
+    // the APP1 marker segment except as specified in section 7". In practice, this is rarely
+    // obeyed, and further, makes the file dangerous for use by less robust editors (see
+    // b/355642172). Instead, place the MP segment just before the StartOfScan marker.
 
     // If there is no Exif segment, then insert the MPF segment just before the StartOfScan.
     return segments.back().offset;

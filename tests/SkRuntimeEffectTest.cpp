@@ -6,6 +6,7 @@
  */
 
 #include "include/core/SkAlphaType.h"
+#include "include/core/SkBitmap.h"
 #include "include/core/SkBlendMode.h"
 #include "include/core/SkBlender.h"
 #include "include/core/SkCanvas.h"
@@ -27,22 +28,27 @@
 #include "include/core/SkSurface.h"
 #include "include/core/SkTypes.h"
 #include "include/effects/SkBlenders.h"
-#include "include/effects/SkGradientShader.h"
+#include "include/effects/SkGradient.h"
 #include "include/effects/SkRuntimeEffect.h"
 #include "include/gpu/GpuTypes.h"
-#include "include/gpu/ganesh/GrDirectContext.h"
-#include "include/gpu/ganesh/SkSurfaceGanesh.h"
-#include "include/private/SkColorData.h"
 #include "include/private/SkSLSampleUsage.h"
 #include "include/private/base/SkTArray.h"
 #include "include/sksl/SkSLDebugTrace.h"
 #include "include/sksl/SkSLVersion.h"
 #include "src/base/SkStringView.h"
-#include "src/base/SkTLazy.h"
+#include "src/core/SkColorData.h"
 #include "src/core/SkColorSpacePriv.h"
 #include "src/core/SkRuntimeEffectPriv.h"
 #include "src/gpu/KeyBuilder.h"
 #include "src/gpu/SkBackingFit.h"
+#include "src/sksl/SkSLString.h"
+#include "tests/CtsEnforcement.h"
+#include "tests/Test.h"
+#include "tools/GpuToolUtils.h"
+
+#if defined(SK_GANESH)
+#include "include/gpu/ganesh/GrDirectContext.h"
+#include "include/gpu/ganesh/SkSurfaceGanesh.h"
 #include "src/gpu/ganesh/GrCaps.h"
 #include "src/gpu/ganesh/GrColor.h"
 #include "src/gpu/ganesh/GrDirectContextPriv.h"
@@ -51,9 +57,7 @@
 #include "src/gpu/ganesh/GrPixmap.h"
 #include "src/gpu/ganesh/SurfaceFillContext.h"
 #include "src/gpu/ganesh/effects/GrSkSLFP.h"
-#include "src/sksl/SkSLString.h"
-#include "tests/CtsEnforcement.h"
-#include "tests/Test.h"
+#endif
 
 #include <array>
 #include <cstdint>
@@ -396,7 +400,7 @@ void paint_canvas(SkCanvas* canvas, SkPaint* paint, const PreTestFn& preTestCall
 }
 
 static bool read_pixels(SkSurface* surface,
-                        GrColor* pixels) {
+                        uint32_t* pixels) {
     SkImageInfo info = surface->imageInfo();
     SkPixmap dest{info, pixels, info.minRowBytes()};
     return surface->readPixels(dest, /*srcX=*/0, /*srcY=*/0);
@@ -405,8 +409,8 @@ static bool read_pixels(SkSurface* surface,
 static void verify_2x2_surface_results(skiatest::Reporter* r,
                                        const SkRuntimeEffect* effect,
                                        SkSurface* surface,
-                                       std::array<GrColor, 4> expected) {
-    std::array<GrColor, 4> actual;
+                                       std::array<uint32_t, 4> expected) {
+    std::array<uint32_t, 4> actual;
     SkImageInfo info = surface->imageInfo();
     if (!read_pixels(surface, actual.data())) {
         REPORT_FAILURE(r, "readPixels", SkString("readPixels failed"));
@@ -435,7 +439,9 @@ static sk_sp<SkSurface> make_surface(GrRecordingContext* grContext,
         surface = SkSurfaces::RenderTarget(graphite->recorder, info);
 #endif
     } else if (grContext) {
+#if defined(SK_GANESH)
         surface = SkSurfaces::RenderTarget(grContext, skgpu::Budgeted::kNo, info);
+#endif
     } else {
         surface = SkSurfaces::Raster(info);
     }
@@ -461,7 +467,7 @@ public:
             ERRORF(fReporter, "Effect didn't compile: %s", errorText.c_str());
             return;
         }
-        fBuilder.init(std::move(effect));
+        fBuilder.emplace(std::move(effect));
     }
 
     SkRuntimeShaderBuilder::BuilderUniform uniform(const char* name) {
@@ -472,7 +478,7 @@ public:
         return fBuilder->child(name);
     }
 
-    void test(std::array<GrColor, 4> expected, PreTestFn preTestCallback = nullptr) {
+    void test(std::array<uint32_t, 4> expected, PreTestFn preTestCallback = nullptr) {
         auto shader = fBuilder->makeShader();
         if (!shader) {
             ERRORF(fReporter, "Effect didn't produce a shader");
@@ -485,7 +491,7 @@ public:
         // with a `source` blend mode. However, there are a few devices where the background can
         // leak through when we paint with MSAA on. (This seems to be a driver/hardware bug.)
         // Graphite, at present, uses MSAA to do `drawPaint`. To avoid flakiness in this test on
-        // those devices, we explicitly clear the canvas here. (skia:13761)
+        // those devices, we explicitly clear the canvas here. (skbug.com/40044848)
         canvas->clear(SK_ColorBLACK);
 
         SkPaint paint;
@@ -519,7 +525,7 @@ public:
         return std::string(static_cast<const char*>(streamData->data()), streamData->size());
     }
 
-    void test(GrColor expected, PreTestFn preTestCallback = nullptr) {
+    void test(uint32_t expected, PreTestFn preTestCallback = nullptr) {
         this->test({expected, expected, expected, expected}, preTestCallback);
     }
 
@@ -529,7 +535,7 @@ private:
     GrRecordingContext*             fGrContext;
     const GraphiteInfo*             fGraphite;
     SkISize                         fSize;
-    SkTLazy<SkRuntimeShaderBuilder> fBuilder;
+    std::optional<SkRuntimeShaderBuilder> fBuilder;
 };
 
 class TestBlend {
@@ -549,7 +555,7 @@ public:
             ERRORF(fReporter, "Effect didn't compile: %s", errorText.c_str());
             return;
         }
-        fBuilder.init(std::move(effect));
+        fBuilder.emplace(std::move(effect));
     }
 
     SkSurface* surface() {
@@ -564,7 +570,7 @@ public:
         return fBuilder->child(name);
     }
 
-    void test(std::array<GrColor, 4> expected, PreTestFn preTestCallback = nullptr) {
+    void test(std::array<uint32_t, 4> expected, PreTestFn preTestCallback = nullptr) {
         auto blender = fBuilder->makeBlender();
         if (!blender) {
             ERRORF(fReporter, "Effect didn't produce a blender");
@@ -581,7 +587,7 @@ public:
         verify_2x2_surface_results(fReporter, fBuilder->effect(), fSurface.get(), expected);
     }
 
-    void test(GrColor expected, PreTestFn preTestCallback = nullptr) {
+    void test(uint32_t expected, PreTestFn preTestCallback = nullptr) {
         this->test({expected, expected, expected, expected}, preTestCallback);
     }
 
@@ -590,20 +596,20 @@ private:
     sk_sp<SkSurface>               fSurface;
     GrRecordingContext*            fGrContext;
     const GraphiteInfo*            fGraphite;
-    SkTLazy<SkRuntimeBlendBuilder> fBuilder;
+    std::optional<SkRuntimeBlendBuilder> fBuilder;
 };
 
 // Produces a shader which will paint these opaque colors in a 2x2 rectangle:
 // [  Red, Green ]
 // [ Blue, White ]
 static sk_sp<SkShader> make_RGBW_shader() {
-    static constexpr SkColor colors[] = {SK_ColorWHITE, SK_ColorWHITE,
-                                         SK_ColorBLUE, SK_ColorBLUE,
-                                         SK_ColorRED, SK_ColorRED,
-                                         SK_ColorGREEN, SK_ColorGREEN};
-    static constexpr SkScalar   pos[] = { 0, .25f, .25f, .50f, .50f, .75, .75, 1 };
+    static constexpr SkColor4f colors[] = {SkColors::kWhite, SkColors::kWhite,
+                                           SkColors::kBlue, SkColors::kBlue,
+                                           SkColors::kRed, SkColors::kRed,
+                                           SkColors::kGreen, SkColors::kGreen};
+    static constexpr float pos[] = { 0, .25f, .25f, .50f, .50f, .75, .75, 1 };
     static_assert(std::size(colors) == std::size(pos), "size mismatch");
-    return SkGradientShader::MakeSweep(1, 1, colors, pos, std::size(colors));
+    return SkShaders::SweepGradient({1, 1}, {{colors, pos, SkTileMode::kClamp}, {}});
 }
 
 static void test_RuntimeEffect_Shaders(skiatest::Reporter* r,
@@ -649,7 +655,7 @@ static void test_RuntimeEffect_Shaders(skiatest::Reporter* r,
     effect.build("vec4 main(float2 p) { return float4(p - 0.5, 0, 1); }");
     effect.test({0xFF000000, 0xFF0000FF, 0xFF00FF00, 0xFF00FFFF});
 
-    // Mutating coords should work. (skbug.com/10918)
+    // Mutating coords should work. (skbug.com/40042292)
     effect.build("vec4 main(vec2 p) { p -= 0.5; return vec4(p, 0, 1); }");
     effect.test({0xFF000000, 0xFF0000FF, 0xFF00FF00, 0xFF00FFFF});
     effect.build("void moveCoords(inout vec2 p) { p -= 0.5; }"
@@ -700,7 +706,7 @@ static void test_RuntimeEffect_Shaders(skiatest::Reporter* r,
     effect.test({0xFF0000FF, 0xFFFF0000, 0xFF00FF00, 0xFFFFFFFF});
 
     // Bind an image shader, but don't use it - ensure that we don't assert or generate bad shaders.
-    // (skbug.com/12429)
+    // (skbug.com/40043510)
     effect.build("uniform shader child;"
                  "half4 main(float2 p) { return half4(0, 1, 0, 1); }");
     effect.child("child") = rgbwShader;
@@ -710,7 +716,7 @@ static void test_RuntimeEffect_Shaders(skiatest::Reporter* r,
     // Helper functions
     //
 
-    // Test case for inlining in the pipeline-stage and fragment-shader passes (skbug.com/10526):
+    // Test case for inlining in the pipeline-stage and fragment-shader passes (skbug.com/40041860):
     effect.build("float2 helper(float2 x) { return x + 1; }"
                  "half4 main(float2 p) { float2 v = helper(p); return half4(half2(v), 0, 1); }");
     effect.test(0xFF00FFFF);
@@ -729,19 +735,21 @@ DEF_TEST(SkRuntimeEffectSimple, r) {
 
 #if defined(SK_GRAPHITE)
 DEF_GRAPHITE_TEST_FOR_RENDERING_CONTEXTS(SkRuntimeEffectSimple_Graphite, r, context,
-                                         CtsEnforcement::kApiLevel_V) {
+                                         CtsEnforcement::kApiLevel_202404) {
     std::unique_ptr<skgpu::graphite::Recorder> recorder = context->makeRecorder();
     GraphiteInfo graphite = {context, recorder.get()};
     test_RuntimeEffect_Shaders(r, /*grContext=*/nullptr, &graphite);
 }
 #endif
 
+#if defined(SK_GANESH)
 DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(SkRuntimeEffectSimple_GPU,
                                        r,
                                        ctxInfo,
                                        CtsEnforcement::kApiLevel_T) {
     test_RuntimeEffect_Shaders(r, ctxInfo.directContext(), /*graphite=*/nullptr);
 }
+#endif
 
 static void verify_draw_obeys_capabilities(skiatest::Reporter* r,
                                            const SkRuntimeEffect* effect,
@@ -750,9 +758,9 @@ static void verify_draw_obeys_capabilities(skiatest::Reporter* r,
     // We expect the draw to do something if-and-only-if expectSuccess is true:
     const bool expectSuccess = surface->capabilities()->skslVersion() >= SkSL::Version::k300;
 
-    constexpr GrColor kGreen = 0xFF00FF00;
-    constexpr GrColor kRed   = 0xFF0000FF;
-    const GrColor kExpected = expectSuccess ? kGreen : kRed;
+    constexpr uint32_t kGreen = 0xFF00FF00;
+    constexpr uint32_t kRed   = 0xFF0000FF;
+    const uint32_t kExpected = expectSuccess ? kGreen : kRed;
 
     surface->getCanvas()->clear(SK_ColorRED);
     surface->getCanvas()->drawPaint(paint);
@@ -849,6 +857,7 @@ DEF_TEST(SkRuntimeEffectObeysCapabilities_CPU, r) {
     test_RuntimeEffectObeysCapabilities(r, surface.get());
 }
 
+#if defined(SK_GANESH)
 DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(SkRuntimeEffectObeysCapabilities_GPU,
                                        r,
                                        ctxInfo,
@@ -878,6 +887,7 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(SkRuntimeColorFilterReturningInvalidAlpha
     REPORTER_ASSERT(r, paint.getColorFilter());
     surface->getCanvas()->drawPaint(paint);
 }
+#endif
 
 DEF_TEST(SkRuntimeColorFilterLimitedToES2, r) {
     // Verify that SkSL requesting #version 300 can't be used to create a color-filter effect.
@@ -1202,12 +1212,14 @@ DEF_TEST(SkRuntimeEffect_Blender_CPU, r) {
     test_RuntimeEffect_Blenders(r, /*grContext=*/nullptr, /*graphite=*/nullptr);
 }
 
+#if defined(SK_GANESH)
 DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(SkRuntimeEffect_Blender_GPU,
                                        r,
                                        ctxInfo,
                                        CtsEnforcement::kApiLevel_T) {
     test_RuntimeEffect_Blenders(r, ctxInfo.directContext(), /*graphite=*/nullptr);
 }
+#endif
 
 DEF_TEST(SkRuntimeShaderBuilderReuse, r) {
     const char* kSource = R"(
@@ -1218,7 +1230,7 @@ DEF_TEST(SkRuntimeShaderBuilderReuse, r) {
     sk_sp<SkRuntimeEffect> effect = SkRuntimeEffect::MakeForShader(SkString(kSource)).effect;
     REPORTER_ASSERT(r, effect);
 
-    // Test passes if this sequence doesn't assert.  skbug.com/10667
+    // Test passes if this sequence doesn't assert.  skbug.com/40042013
     SkRuntimeShaderBuilder b(std::move(effect));
     b.uniform("x") = 0.0f;
     auto shader_0 = b.makeShader();
@@ -1275,7 +1287,7 @@ DEF_TEST(SkRuntimeShaderBuilderSetUniforms, r) {
 DEF_TEST(SkRuntimeEffectThreaded, r) {
     // This tests that we can safely use SkRuntimeEffect::MakeForShader from more than one thread,
     // and also that programs don't refer to shared structures owned by the compiler.
-    // skbug.com/10589
+    // skbug.com/40041933
     static constexpr char kSource[] = "half4 main(float2 p) { return sk_FragCoord.xyxy; }";
 
     std::thread threads[16];
@@ -1363,7 +1375,7 @@ static void test_RuntimeEffectStructNameReuse(skiatest::Reporter* r, GrRecording
     ));
     REPORTER_ASSERT(r, childEffect, "%s\n", err.c_str());
     sk_sp<SkShader> sourceColor = SkShaders::Color({0.99608f, 0.50196f, 0.0f, 1.0f}, nullptr);
-    const GrColor kExpected = 0xFF00407F;
+    const uint32_t kExpected = 0xFF00407F;
     sk_sp<SkShader> child = childEffect->makeShader(/*uniforms=*/nullptr,
                                                     &sourceColor,
                                                     /*childCount=*/1);
@@ -1383,12 +1395,14 @@ DEF_TEST(SkRuntimeStructNameReuse, r) {
     test_RuntimeEffectStructNameReuse(r, nullptr);
 }
 
+#if defined(SK_GANESH)
 DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(SkRuntimeStructNameReuse_GPU,
                                        r,
                                        ctxInfo,
                                        CtsEnforcement::kApiLevel_T) {
     test_RuntimeEffectStructNameReuse(r, ctxInfo.directContext());
 }
+#endif
 
 DEF_TEST(SkRuntimeColorFilterFlags, r) {
     auto expectAlphaUnchanged = [&](const char* shader) {
@@ -1455,6 +1469,7 @@ DEF_TEST(SkRuntimeColorFilterFlags, r) {
                        "}");
 }
 
+#if defined(SK_GANESH)
 DEF_TEST(SkRuntimeShaderSampleCoords, r) {
     // This test verifies that we detect calls to sample where the coords are the same as those
     // passed to main. In those cases, it's safe to turn the "explicit" sampling into "passthrough"
@@ -1508,6 +1523,7 @@ DEF_TEST(SkRuntimeShaderSampleCoords, r) {
     test("half4 helper(float2 xy) { return child.eval(xy); }"
          "half4 main(float2 xy) { return helper(xy); }", true, true);
 }
+#endif
 
 DEF_TEST(SkRuntimeShaderIsOpaque, r) {
     // This test verifies that we detect certain simple patterns in runtime shaders, and can deduce
@@ -1594,6 +1610,108 @@ DEF_TEST(SkRuntimeShaderIsOpaque, r) {
     test("return cOnes.eval(xy);", false);
 }
 
+// This test verifies that when a runtime shader's input coordinates are previously transformed
+// by a local matrix (which may be lifted to the vertex shader on GPU backends), the coordinates
+// resolve correctly for the runtime shader and any child shaders.
+void test_using_transformed_coords(skiatest::Reporter* reporter,
+                                   GrDirectContext* ganeshContext,
+                                   GraphiteInfo* graphiteInfo) {
+    const SkImageInfo surfaceImageInfo = SkImageInfo::Make(SkISize::Make(12, 1),
+                                                           SkColorType::kRGBA_8888_SkColorType,
+                                                           SkAlphaType::kPremul_SkAlphaType);
+    sk_sp<SkSurface> surface;
+    if (ganeshContext) {
+#if defined(SK_GANESH)
+        surface = SkSurfaces::RenderTarget(ganeshContext, skgpu::Budgeted::kNo, surfaceImageInfo);
+#endif
+    } else if (graphiteInfo) {
+#if defined(SK_GRAPHITE)
+        surface = SkSurfaces::RenderTarget(graphiteInfo->recorder, surfaceImageInfo);
+#endif
+    }
+    REPORTER_ASSERT(reporter, surface);
+    if (!surface) {
+        return;
+    }
+
+    SkCanvas* canvas = surface->getCanvas();
+
+    // Make a 1x12 pixel image with left 1/4 red and right 3/4 green.
+    SkBitmap bitmap;
+    bitmap.allocN32Pixels(12, 1, true);
+    SkCanvas bitmapCanvas(bitmap);
+    bitmapCanvas.drawIRect(SkIRect::MakeXYWH(0, 0, 3, 1), SkPaint(SkColors::kRed));
+    bitmapCanvas.drawIRect(SkIRect::MakeXYWH(3, 0, 9, 1), SkPaint(SkColors::kGreen));
+
+    sk_sp<SkShader> imageShader = ToolUtils::MakeTextureImage(canvas, bitmap.asImage())
+                                          ->makeShader(SkFilterMode::kNearest);
+
+    // Runtime effect that sets the blue channel to 1 in the right half of its child.
+    SkString src(
+            "uniform shader s;"
+            "half4 main(float2 p) {"
+                // round() doesn't seem to be legal in runtime shaders for some reason.
+                "return half4(s.eval(p).rg, max(0.0, sign(p.x / 12.0 - 0.5)), 1.0);"
+            "}");
+    SkRuntimeEffect::Result runtimeEffectResult = SkRuntimeEffect::MakeForShader(src);
+    auto [effect, errorText] = SkRuntimeEffect::MakeForShader(SkString(src));
+    REPORTER_ASSERT(reporter, effect);
+    if (!effect) {
+        return;
+    }
+
+    // Nest the image shader under the runtime shader, all under a local matrix transformation that
+    // translates the draw right 1/4 of the way.
+    SkPaint paint;
+    paint.setShader(runtimeEffectResult.effect->makeShader(nullptr, &imageShader, 1)
+                            ->makeWithLocalMatrix(SkMatrix::Translate(3.0f, 0.0f)));
+
+    canvas->drawPaint(paint);
+
+    // Read pixels.
+    SkBitmap readBitmap;
+    SkPixmap pixmap;
+    readBitmap.allocPixels(surfaceImageInfo);
+    SkAssertResult(readBitmap.peekPixels(&pixmap));
+    if (!surface->readPixels(pixmap, 0, 0)) {
+        ERRORF(reporter, "readPixels failed");
+        return;
+    }
+
+    // The first half of the canvas should be red, since the image was drawn shifted to the right
+    // with clamp tiling.
+    REPORTER_ASSERT(reporter, pixmap.getColor4f(1, 0) == SkColors::kRed);
+    REPORTER_ASSERT(reporter, pixmap.getColor4f(4, 0) == SkColors::kRed);
+
+    // The third quarter of the canvas should be green. This is the second quarter of the image,
+    // translated right, and not affected by the runtime shader which should only touch the right
+    // half of the image.
+    REPORTER_ASSERT(reporter, pixmap.getColor4f(7, 0) == SkColors::kGreen);
+
+    // The last quarter of the canvas should be cyan, since the green in the image has its blue
+    // channel set to 1 by the runtime shader.
+    REPORTER_ASSERT(reporter, pixmap.getColor4f(10, 0) == SkColors::kCyan);
+}
+
+#if defined(SK_GRAPHITE)
+DEF_GRAPHITE_TEST_FOR_RENDERING_CONTEXTS(SkRuntimeShader_TransformedCoords_Graphite,
+                                         reporter,
+                                         context,
+                                         CtsEnforcement::kNextRelease) {
+    std::unique_ptr<skgpu::graphite::Recorder> recorder = context->makeRecorder();
+    GraphiteInfo graphiteInfo = {context, recorder.get()};
+    test_using_transformed_coords(reporter, /*ganeshContext=*/nullptr, &graphiteInfo);
+}
+#endif
+
+#if defined(SK_GANESH)
+DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(SkRuntimeShader_TransformedCoords_Ganesh,
+                                       reporter,
+                                       contextInfo,
+                                       CtsEnforcement::kNextRelease) {
+    test_using_transformed_coords(reporter, contextInfo.directContext(), /*graphiteInfo=*/nullptr);
+}
+
 DEF_GANESH_TEST_FOR_ALL_CONTEXTS(GrSkSLFP_Specialized, r, ctxInfo, CtsEnforcement::kApiLevel_T) {
     struct FpAndKey {
         std::unique_ptr<GrFragmentProcessor> fp;
@@ -1676,3 +1794,4 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(GrSkSLFP_UniformArray,
         }
     }
 }
+#endif

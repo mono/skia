@@ -7,7 +7,6 @@
 
 #include "include/core/SkCanvas.h"
 #include "include/core/SkColorFilter.h"
-#include "include/core/SkColorPriv.h"
 #include "include/core/SkGraphics.h"
 #include "include/core/SkPath.h"
 #include "include/core/SkRegion.h"
@@ -15,13 +14,14 @@
 #include "include/core/SkStream.h"
 #include "include/core/SkTextBlob.h"
 #include "include/core/SkTypeface.h"
-#include "include/effects/SkGradientShader.h"
+#include "include/effects/SkGradient.h"
 #include "modules/skshaper/include/SkShaper.h"
 #include "modules/skshaper/include/SkShaper_skunicode.h"
 #include "modules/skunicode/include/SkUnicode.h"
 #include "src/base/SkRandom.h"
 #include "src/base/SkTime.h"
 #include "src/base/SkUTF.h"
+#include "src/core/SkColorPriv.h"
 #include "src/core/SkOSFile.h"
 #include "tools/fonts/FontToolUtils.h"
 #include "tools/viewer/Slide.h"
@@ -226,13 +226,13 @@ private:
 DEF_SLIDE(return new TextBoxSlide(SkShapers::Primitive::PrimitiveText,
                                   make_trivial_bidi,
                                   make_trivial_script_runner,
-                                  "primitive"););
+                                  "primitive");)
 
 #if defined(SK_SHAPER_CORETEXT_AVAILABLE)
 DEF_SLIDE(return new TextBoxSlide(SkShapers::CT::CoreText,
                                   make_trivial_bidi,
                                   make_trivial_script_runner,
-                                  "coretext"););
+                                  "coretext");)
 #endif
 
 #if defined(SK_SHAPER_HARFBUZZ_AVAILABLE) && defined(SK_SHAPER_UNICODE_AVAILABLE)
@@ -243,7 +243,7 @@ DEF_SLIDE(return new TextBoxSlide(
                          },
                          make_unicode_bidi,
                          make_harfbuzz_script_runner,
-                         "harfbuzz"););
+                         "harfbuzz");)
 #endif
 
 class ShaperSlide : public Slide {
@@ -341,4 +341,4 @@ private:
     }
 };
 
-DEF_SLIDE( return new ShaperSlide; );
+DEF_SLIDE( return new ShaperSlide; )

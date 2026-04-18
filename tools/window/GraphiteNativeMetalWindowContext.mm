@@ -15,8 +15,7 @@
 #include "include/gpu/graphite/Recording.h"
 #include "include/gpu/graphite/Surface.h"
 #include "include/gpu/graphite/mtl/MtlBackendContext.h"
-#include "include/gpu/graphite/mtl/MtlGraphiteTypesUtils.h"
-#include "include/gpu/graphite/mtl/MtlGraphiteUtils.h"
+#include "include/gpu/graphite/mtl/MtlGraphiteTypes.h"
 #include "src/base/SkMathPriv.h"
 #include "src/gpu/graphite/ContextOptionsPriv.h"
 #include "tools/graphite/GraphiteToolUtils.h"
@@ -29,12 +28,14 @@ using skwindow::internal::GraphiteMetalWindowContext;
 namespace skwindow::internal {
 
 GraphiteMetalWindowContext::GraphiteMetalWindowContext(std::unique_ptr<const DisplayParams> params)
-        : WindowContext(DisplayParamsBuilder(params.get()).roundUpMSAA().build())
+        : WindowContext(DisplayParamsBuilder(params.get()).roundUpMSAA().detach())
         , fValid(false)
         , fDrawableHandle(nil) {}
 
 void GraphiteMetalWindowContext::initializeContext() {
+#if defined(SK_GANESH)
     SkASSERT(!fContext);
+#endif
     SkASSERT(!fGraphiteContext);
 
     fDevice.reset(MTLCreateSystemDefaultDevice());
@@ -59,15 +60,15 @@ void GraphiteMetalWindowContext::initializeContext() {
     backendContext.fQueue.retain((CFTypeRef)fQueue.get());
 
     SkASSERT(fDisplayParams->graphiteTestOptions());
-    skwindow::GraphiteTestOptions opts = *fDisplayParams->graphiteTestOptions();
+    skiatest::graphite::TestOptions opts = *fDisplayParams->graphiteTestOptions();
 
-    opts.fTestOptions.fContextOptions.fRequireOrderedRecordings = true;
+    opts.fContextOptions.fRequireOrderedRecordings = true;
     // Needed to make synchronous readPixels work:
-    opts.fPriv.fStoreContextRefInRecorder = true;
+    opts.fOptionsPriv.fStoreContextRefInRecorder = true;
     fDisplayParams =
-            GraphiteDisplayParamsBuilder(fDisplayParams.get()).graphiteTestOptions(opts).build();
+            GraphiteDisplayParamsBuilder(fDisplayParams.get()).graphiteTestOptions(opts).detach();
     fGraphiteContext = skgpu::graphite::ContextFactory::MakeMetal(
-            backendContext, fDisplayParams->graphiteTestOptions()->fTestOptions.fContextOptions);
+            backendContext, fDisplayParams->graphiteTestOptions()->fContextOptions);
     fGraphiteRecorder = fGraphiteContext->makeRecorder(ToolUtils::CreateTestingRecorderOptions());
     // TODO
     //    if (!fGraphiteContext && fDisplayParams->msaaSampleCount() > 1) {
@@ -104,7 +105,6 @@ sk_sp<SkSurface> GraphiteMetalWindowContext::getBackbufferSurface() {
 
     surface = SkSurfaces::WrapBackendTexture(this->graphiteRecorder(),
                                              backendTex,
-                                             kBGRA_8888_SkColorType,
                                              fDisplayParams->colorSpace(),
                                              &fDisplayParams->surfaceProps());
     fDrawableHandle = CFRetain((CFTypeRef)currentDrawable);

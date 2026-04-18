@@ -21,10 +21,8 @@
 #include "include/core/SkTileMode.h"
 #include "include/core/SkTypes.h"
 #include "include/effects/SkColorMatrix.h" // IWYU pragma: keep
-#include "include/effects/SkGradientShader.h"
+#include "include/effects/SkGradient.h"
 #include "include/gpu/GpuTypes.h"
-#include "include/gpu/ganesh/GrDirectContext.h"
-#include "include/gpu/ganesh/SkSurfaceGanesh.h"
 #include "src/base/SkAutoMalloc.h"
 #include "src/base/SkRandom.h"
 #include "src/core/SkColorFilterPriv.h"
@@ -33,6 +31,11 @@
 #include "src/effects/colorfilters/SkColorFilterBase.h"
 #include "tests/CtsEnforcement.h"
 #include "tests/Test.h"
+
+#if defined(SK_GANESH)
+#include "include/gpu/ganesh/GrDirectContext.h"
+#include "include/gpu/ganesh/SkSurfaceGanesh.h"
+#endif
 
 #include <cstddef>
 #include <utility>
@@ -159,6 +162,7 @@ struct FailureColorFilter final : public SkColorFilterBase {
     const char* getTypeName() const override { return "FailureColorFilter"; }
 };
 
+#if defined(SK_GANESH)
 DEF_GANESH_TEST_FOR_ALL_CONTEXTS(ComposeFailureWithInputElision,
                                  r,
                                  ctxInfo,
@@ -169,8 +173,8 @@ DEF_GANESH_TEST_FOR_ALL_CONTEXTS(ComposeFailureWithInputElision,
 
     // Install a non-trivial shader, so the color filter isn't just applied to the paint color:
     const SkPoint pts[] = {{0, 0}, {100, 100}};
-    const SkColor colors[] = {SK_ColorWHITE, SK_ColorBLACK};
-    paint.setShader(SkGradientShader::MakeLinear(pts, colors, nullptr, 2, SkTileMode::kClamp));
+    const SkColor4f colors[] = {SkColors::kWhite, SkColors::kBlack};
+    paint.setShader(SkShaders::LinearGradient(pts, {{colors, {}, SkTileMode::kClamp}, {}}));
 
     // Our inner (first) color filter does a "blend" (kSrc) against green, *discarding* the input:
     auto inner = SkColorFilters::Blend(SK_ColorGREEN, SkBlendMode::kSrc);
@@ -184,9 +188,10 @@ DEF_GANESH_TEST_FOR_ALL_CONTEXTS(ComposeFailureWithInputElision,
     // At one time, this would trigger a use-after-free / crash, when converting the paint to FPs:
     surface->getCanvas()->drawPaint(paint);
 }
+#endif
 
 DEF_TEST(ColorFilter_OpaqueShaderPaintAlpha, r) {
-    // skbug.com/14627: Prior to the fix, CPU backend would produce gray, not white. (It told the
+    // skbug.com/40045529: Prior to the fix, CPU backend would produce gray, not white. (It told the
     // color filter that the shader output was opaque, ignoring the effect of paint alpha).
     SkPaint paint;
     paint.setShader(SkShaders::Color(SK_ColorWHITE));

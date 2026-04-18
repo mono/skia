@@ -30,33 +30,20 @@ public:
 
     sk_sp<MtlGraphicsPipeline> findOrCreateLoadMSAAPipeline(const RenderPassDesc&);
 
-    sk_cfp<id<MTLDepthStencilState>> findOrCreateCompatibleDepthStencilState(
-            const DepthStencilSettings&);
-
 private:
     const MtlSharedContext* mtlSharedContext();
 
-    sk_sp<GraphicsPipeline> createGraphicsPipeline(const RuntimeEffectDictionary*,
-                                                   const UniqueKey&,
-                                                   const GraphicsPipelineDesc&,
-                                                   const RenderPassDesc&,
-                                                   SkEnumBitMask<PipelineCreationFlags>,
-                                                   uint32_t compilationID) override;
     sk_sp<ComputePipeline> createComputePipeline(const ComputePipelineDesc&) override;
 
-    sk_sp<Texture> createTexture(SkISize,
-                                 const TextureInfo&,
-                                 skgpu::Budgeted) override;
-    sk_sp<Texture> onCreateWrappedTexture(const BackendTexture&) override;
-    sk_sp<Buffer> createBuffer(size_t size, BufferType type, AccessPattern) override;
+    sk_sp<Texture> createTexture(SkISize, const TextureInfo&, std::string_view label) override;
+    sk_sp<Texture> onCreateWrappedTexture(const BackendTexture&, std::string_view label) override;
+    sk_sp<Buffer> createBuffer(size_t, BufferType, AccessPattern, std::string_view label) override;
     sk_sp<Sampler> createSampler(const SamplerDesc&) override;
 
     BackendTexture onCreateBackendTexture(SkISize dimensions, const TextureInfo&) override;
     void onDeleteBackendTexture(const BackendTexture&) override;
 
-    skia_private::THashMap<DepthStencilSettings, sk_cfp<id<MTLDepthStencilState>>>
-            fDepthStencilStates;
-    skia_private::THashMap<uint64_t, sk_sp<MtlGraphicsPipeline>> fLoadMSAAPipelines;
+    skia_private::THashMap<uint32_t, sk_sp<MtlGraphicsPipeline>> fLoadMSAAPipelines;
 };
 
 } // namespace skgpu::graphite

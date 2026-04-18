@@ -9,7 +9,6 @@
 
 #include "include/core/SkBitmap.h"
 #include "include/core/SkCanvas.h"
-#include "include/core/SkColorPriv.h"
 #include "include/core/SkData.h"
 #include "include/core/SkImage.h"
 #include "include/core/SkRefCnt.h"
@@ -19,6 +18,7 @@
 #include "include/core/SkTypes.h"
 #include "include/encode/SkJpegEncoder.h"
 #include "include/private/base/SkTPin.h"
+#include "src/core/SkColorPriv.h"
 
 #include <utility>
 
@@ -52,9 +52,9 @@ protected:
                 bY += 64;
             }
         }
-        SkDynamicMemoryWStream stream;
-        SkASSERT_RELEASE(SkJpegEncoder::Encode(&stream, bmp.pixmap(), {}));
-        fImage = SkImages::DeferredFromEncodedData(stream.detachAsData());
+        sk_sp<SkData> data = SkJpegEncoder::Encode(bmp.pixmap(), {});
+        SkASSERT_RELEASE(data);
+        fImage = SkImages::DeferredFromEncodedData(data);
     }
 
     void onDraw(SkCanvas* canvas) override {

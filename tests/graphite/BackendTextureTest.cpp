@@ -21,7 +21,7 @@
 #include "src/gpu/graphite/Caps.h"
 #include "src/gpu/graphite/ContextPriv.h"
 #include "src/gpu/graphite/ResourceTypes.h"
-#include "src/gpu/graphite/vk/VulkanGraphiteTypesPriv.h"
+#include "src/gpu/graphite/vk/VulkanGraphiteUtils.h"
 
 using namespace skgpu;
 using namespace skgpu::graphite;
@@ -31,19 +31,15 @@ namespace {
 }
 
 DEF_GRAPHITE_TEST_FOR_ALL_CONTEXTS(BackendTextureTest, reporter, context,
-                                   CtsEnforcement::kNextRelease) {
-    // TODO: Remove this check once Vulkan supports creating default TexutreInfo from caps and we
-    // implement createBackendTexture.
-    if (context->backend() == BackendApi::kVulkan) {
-        return;
-    }
-
+                                   CtsEnforcement::kApiLevel_202504) {
     auto caps = context->priv().caps();
     auto recorder = context->makeRecorder();
 
+    Protected isProtected = Protected(context->supportsProtectedContent());
+
     TextureInfo info = caps->getDefaultSampledTextureInfo(kRGBA_8888_SkColorType,
                                                           /*mipmapped=*/Mipmapped::kNo,
-                                                          Protected::kNo,
+                                                          isProtected,
                                                           Renderable::kNo);
     REPORTER_ASSERT(reporter, info.isValid());
 
@@ -95,12 +91,6 @@ DEF_GRAPHITE_TEST_FOR_ALL_CONTEXTS(SurfaceBackendTextureTest, reporter, context,
     // to cover a much broader set of things once we add more support in Graphite for different
     // formats, color types, etc.
 
-    // TODO: Remove this check once Vulkan supports creating default TexutreInfo from caps and we
-    // implement createBackendTexture.
-    if (context->backend() == BackendApi::kVulkan) {
-        return;
-    }
-
     auto caps = context->priv().caps();
     std::unique_ptr<Recorder> recorder = context->makeRecorder();
 
@@ -114,21 +104,11 @@ DEF_GRAPHITE_TEST_FOR_ALL_CONTEXTS(SurfaceBackendTextureTest, reporter, context,
 
     sk_sp<SkSurface> surface = SkSurfaces::WrapBackendTexture(recorder.get(),
                                                               texture,
-                                                              kRGBA_8888_SkColorType,
                                                               /*colorSpace=*/nullptr,
                                                               /*props=*/nullptr);
     REPORTER_ASSERT(reporter, surface);
 
     surface.reset();
-
-    // We should fail when trying to wrap the same texture in a surface with a non-compatible
-    // color type.
-    surface = SkSurfaces::WrapBackendTexture(recorder.get(),
-                                             texture,
-                                             kAlpha_8_SkColorType,
-                                             /*colorSpace=*/nullptr,
-                                             /*props=*/nullptr);
-    REPORTER_ASSERT(reporter, !surface);
 
     recorder->deleteBackendTexture(texture);
 
@@ -142,7 +122,6 @@ DEF_GRAPHITE_TEST_FOR_ALL_CONTEXTS(SurfaceBackendTextureTest, reporter, context,
 
     surface = SkSurfaces::WrapBackendTexture(recorder.get(),
                                              texture,
-                                             kRGBA_8888_SkColorType,
                                              /*colorSpace=*/nullptr,
                                              /*props=*/nullptr);
 
@@ -156,12 +135,6 @@ DEF_GRAPHITE_TEST_FOR_ALL_CONTEXTS(ImageBackendTextureTest, reporter, context,
     // TODO: Right now this just tests very basic combinations of images. This should be expanded
     // to cover a much broader set of things once we add more support in Graphite for different
     // formats, color types, etc.
-
-    // TODO: Remove this check once Vulkan supports creating default TexutreInfo from caps and we
-    // implement createBackendTexture.
-    if (context->backend() == BackendApi::kVulkan) {
-        return;
-    }
 
     const Caps* caps = context->priv().caps();
     std::unique_ptr<Recorder> recorder = context->makeRecorder();
@@ -203,8 +176,8 @@ DEF_GRAPHITE_TEST_FOR_ALL_CONTEXTS(ImageBackendTextureTest, reporter, context,
 
 #ifdef SK_VULKAN
 DEF_GRAPHITE_TEST_FOR_VULKAN_CONTEXT(VulkanBackendTextureMutableStateTest, reporter, context,
-                                     CtsEnforcement::kApiLevel_V) {
-    VulkanTextureInfo info(/*sampleCount=*/1,
+                                     CtsEnforcement::kApiLevel_202404) {
+    VulkanTextureInfo info(VK_SAMPLE_COUNT_1_BIT,
                            /*mipmapped=*/Mipmapped::kNo,
                            /*flags=*/0,
                            VK_FORMAT_R8G8B8A8_UNORM,

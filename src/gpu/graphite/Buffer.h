@@ -8,11 +8,18 @@
 #ifndef skgpu_graphite_Buffer_DEFINED
 #define skgpu_graphite_Buffer_DEFINED
 
-#include "include/gpu/GpuTypes.h"
+#include "include/gpu/graphite/GraphiteTypes.h"
 #include "src/gpu/graphite/Resource.h"
 #include "src/gpu/graphite/ResourceTypes.h"
 
+#include <cstddef>
+
+namespace skgpu {
+enum class Protected : bool;
+}
+
 namespace skgpu::graphite {
+class SharedContext;
 
 class Buffer : public Resource {
 public:
@@ -39,14 +46,20 @@ protected:
     Buffer(const SharedContext* sharedContext,
            size_t size,
            Protected isProtected,
-           bool commandBufferRefsAsUsageRefs = false)
+           std::string_view label,
+           bool reusableRequiresPurgeable = false,
+           bool requiresPrepareForReturnToCache = false)
             : Resource(sharedContext,
                        Ownership::kOwned,
-                       skgpu::Budgeted::kYes,
                        size,
-                       /*commandBufferRefsAsUsageRefs=*/commandBufferRefsAsUsageRefs)
+                       reusableRequiresPurgeable,
+                       requiresPrepareForReturnToCache)
             , fSize(size)
-            , fIsProtected(isProtected) {}
+            , fIsProtected(isProtected) {
+        // TODO(b/387505250): Remove this once Resource is modified to accept a label upon
+        // construction.
+        this->setLabel(label);
+    }
 
     void* fMapPtr = nullptr;
 

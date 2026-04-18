@@ -21,7 +21,7 @@
 #include "include/core/SkTileMode.h"
 #include "include/core/SkTypes.h"
 #include "include/core/SkVertices.h"
-#include "include/effects/SkGradientShader.h"
+#include "include/effects/SkGradient.h"
 #include "include/effects/SkRuntimeEffect.h"
 #include "include/private/base/SkTDArray.h"
 #include "src/base/SkRandom.h"
@@ -37,17 +37,15 @@
 
 static constexpr SkScalar kShaderSize = 40;
 static sk_sp<SkShader> make_shader1(SkScalar shaderScale) {
-    const SkColor colors[] = {
-        SK_ColorRED, SK_ColorCYAN, SK_ColorGREEN, SK_ColorWHITE,
-        SK_ColorMAGENTA, SK_ColorBLUE, SK_ColorYELLOW,
+    const SkColor4f colors[] = {
+        SkColors::kRed, SkColors::kCyan, SkColors::kGreen, SkColors::kWhite,
+        SkColors::kMagenta, SkColors::kBlue, SkColors::kYellow,
     };
     const SkPoint pts[] = {{kShaderSize / 4, 0}, {3 * kShaderSize / 4, kShaderSize}};
     const SkMatrix localMatrix = SkMatrix::Scale(shaderScale, shaderScale);
 
-    sk_sp<SkShader> grad = SkGradientShader::MakeLinear(pts, colors, nullptr,
-                                                        std::size(colors),
-                                                        SkTileMode::kMirror, 0,
-                                                        &localMatrix);
+    sk_sp<SkShader> grad = SkShaders::LinearGradient(pts, {{colors, {}, SkTileMode::kMirror}, {}},
+                                                     &localMatrix);
     // Throw in a couple of local matrix wrappers for good measure.
     return shaderScale == 1 ? grad
                             : grad->makeWithLocalMatrix(SkMatrix::Translate(-10, 0))
@@ -268,7 +266,7 @@ DEF_SIMPLE_GM(vertices_batching, canvas, 100, 500) {
     draw_batching(canvas);
 }
 
-// Test case for skbug.com/10069. We need to draw the vertices twice (with different matrices) to
+// Test case for skbug.com/40041407. We need to draw the vertices twice (with different matrices) to
 // trigger the bug.
 DEF_SIMPLE_GM(vertices_perspective, canvas, 256, 256) {
     SkPaint paint;
@@ -276,9 +274,9 @@ DEF_SIMPLE_GM(vertices_perspective, canvas, 256, 256) {
 
     SkRect r = SkRect::MakeWH(128, 128);
 
-    SkPoint pos[4];
-    r.toQuad(pos);
-    auto verts = SkVertices::MakeCopy(SkVertices::kTriangleFan_VertexMode, 4, pos, pos, nullptr);
+    const std::array<SkPoint, 4> pos = r.toQuad();
+    auto verts = SkVertices::MakeCopy(SkVertices::kTriangleFan_VertexMode, 4,
+                                      pos.data(), pos.data(), nullptr);
 
     SkMatrix persp;
     persp.setPerspY(SK_Scalar1 / 100);

@@ -188,7 +188,7 @@ sk_sp<const SkData> SkRuntimeEffectPriv::TransformUniforms(
     for (const auto& u : uniforms) {
         if (u.flags & Flags::kColor_Flag) {
             SkASSERT(u.type == Type::kFloat3 || u.type == Type::kFloat4);
-            if (steps.flags.mask()) {
+            if (steps.fFlags.mask()) {
                 float* color = SkTAddOffset<float>(writableData(), u.offset);
                 if (u.type == Type::kFloat4) {
                     // RGBA, easy case
@@ -251,7 +251,7 @@ const SkSL::RP::Program* SkRuntimeEffect::getRPProgram(SkSL::DebugTracePriv* deb
         if (kRPEnableLiveTrace) {
             if (fRPProgram) {
                 SkDebugf("-----\n\n");
-                SkDebugfStream stream;
+                SkStreamPriv::DebugfStream stream;
                 fRPProgram->dump(&stream, /*writeInstructionCount=*/true);
                 SkDebugf("\n-----\n\n");
             } else {
@@ -276,11 +276,11 @@ SkSpan<const float> SkRuntimeEffectPriv::UniformsAsSpan(
     if (alwaysCopyIntoAlloc || originalData != transformedData) {
         // The transformed uniform data's lifetime is not long enough to reuse; instead, we copy the
         // uniform data directly into the alloc.
-        int numBytes = transformedData->size();
-        int numFloats = numBytes / sizeof(float);
+        size_t numBytes = transformedData->size();
+        size_t numFloats = numBytes / sizeof(float);
         float* uniformsInAlloc = alloc->makeArrayDefault<float>(numFloats);
         memcpy(uniformsInAlloc, transformedData->data(), numBytes);
-        return SkSpan{uniformsInAlloc, numFloats};
+        return {uniformsInAlloc, numFloats};
     }
     // It's safe to return a pointer into existing data.
     return SkSpan{static_cast<const float*>(originalData->data()),
@@ -324,7 +324,7 @@ void RuntimeEffectRPCallbacks::toLinearSrgb(const void* color) {
     if (fStage.fDstCS) {
         SkColorSpaceXformSteps xform{fStage.fDstCS,              kUnpremul_SkAlphaType,
                                      sk_srgb_linear_singleton(), kUnpremul_SkAlphaType};
-        if (xform.flags.mask()) {
+        if (xform.fFlags.mask()) {
             // We have a non-identity colorspace transform; apply it.
             this->applyColorSpaceXform(xform, color);
         }
@@ -335,7 +335,7 @@ void RuntimeEffectRPCallbacks::fromLinearSrgb(const void* color) {
     if (fStage.fDstCS) {
         SkColorSpaceXformSteps xform{sk_srgb_linear_singleton(), kUnpremul_SkAlphaType,
                                      fStage.fDstCS,              kUnpremul_SkAlphaType};
-        if (xform.flags.mask()) {
+        if (xform.fFlags.mask()) {
             // We have a non-identity colorspace transform; apply it.
             this->applyColorSpaceXform(xform, color);
         }
@@ -494,7 +494,7 @@ SkRuntimeEffect::Result SkRuntimeEffect::MakeInternal(std::unique_ptr<SkSL::Prog
     switch (kind) {
         case SkSL::ProgramKind::kPrivateRuntimeColorFilter:
         case SkSL::ProgramKind::kRuntimeColorFilter:
-            // TODO(skia:11209): Figure out a way to run ES3+ color filters on the CPU. This doesn't
+            // TODO(skbug.com/40042585): Figure out a way to run ES3+ color filters on the CPU. This doesn't
             // need to be fast - it could just be direct IR evaluation. But without it, there's no
             // way for us to fully implement the SkColorFilter API (eg, `filterColor4f`)
             if (!SkRuntimeEffectPriv::CanDraw(SkCapabilities::RasterBackend().get(),
@@ -589,7 +589,7 @@ SkRuntimeEffect::Result SkRuntimeEffect::MakeInternal(std::unique_ptr<SkSL::Prog
                 // If the child is never sampled, we pretend that it's actually in PassThrough mode.
                 // Otherwise, the GP code for collecting transforms and emitting transform code gets
                 // very confused, leading to asserts and bad (backend) shaders. There's an implicit
-                // assumption that every FP is used by its parent. (skbug.com/12429)
+                // assumption that every FP is used by its parent. (skbug.com/40043510)
                 sampleUsages.push_back(usage.isSampled() ? usage
                                                          : SkSL::SampleUsage::PassThrough());
             }
@@ -747,6 +747,7 @@ SkRuntimeEffect::SkRuntimeEffect(std::unique_ptr<SkSL::Program> baseProgram,
                                  uint32_t flags)
         : fHash(SkChecksum::Hash32(baseProgram->fSource->c_str(), baseProgram->fSource->size()))
         , fStableKey(options.fStableKey)
+        , fName(options.fName)
         , fBaseProgram(std::move(baseProgram))
         , fMain(main)
         , fUniforms(std::move(uniforms))
@@ -761,7 +762,9 @@ SkRuntimeEffect::SkRuntimeEffect(std::unique_ptr<SkSL::Program> baseProgram,
     // assert below to trigger, please incorporate your field into `fHash` and update KnownOptions
     // to match the layout of Options.
     struct KnownOptions {
-        bool forceUnoptimized, allowPrivateAccess;
+        bool forceUnoptimized;
+        std::string_view fName;
+        bool allowPrivateAccess;
         uint32_t fStableKey;
         SkSL::Version maxVersionAllowed;
     };

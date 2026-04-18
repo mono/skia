@@ -9,12 +9,13 @@
 
 #include "include/gpu/graphite/Context.h"
 #include "include/gpu/graphite/ContextOptions.h"
-#include "include/gpu/graphite/dawn/DawnTypes.h"
-#include "include/gpu/graphite/dawn/DawnUtils.h"
+#include "include/gpu/graphite/dawn/DawnBackendContext.h"
+#include "include/gpu/graphite/dawn/DawnGraphiteTypes.h"
 #include "include/private/base/SkOnce.h"
 #include "src/gpu/graphite/ContextOptionsPriv.h"
 #include "tools/gpu/ContextType.h"
 #include "tools/graphite/TestOptions.h"
+#include "tools/graphite/dawn/GraphiteDawnToggles.h"
 
 #include "dawn/dawn_proc.h"
 
@@ -30,33 +31,23 @@ DawnTestContext::~DawnTestContext() {
     tick();
 }
 
-std::unique_ptr<GraphiteTestContext> DawnTestContext::Make(wgpu::BackendType backend,
-                                                           bool useTintIR) {
+std::unique_ptr<GraphiteTestContext> DawnTestContext::Make(wgpu::BackendType backend) {
     static std::unique_ptr<dawn::native::Instance> sInstance;
     static SkOnce sOnce;
-
-    static constexpr const char* kToggles[] = {
-        "allow_unsafe_apis",  // Needed for dual-source blending.
-        "use_user_defined_labels_in_backend",
-        // Robustness impacts performance and is always disabled when running Graphite in Chrome,
-        // so this keeps Skia's tests operating closer to real-use behavior.
-        "disable_robustness",
-        // Must be last to correctly respond to `useTintIR` parameter.
-        "use_tint_ir",
-    };
-    wgpu::DawnTogglesDescriptor togglesDesc;
-    togglesDesc.enabledToggleCount  = std::size(kToggles) - (useTintIR ? 0 : 1);
-    togglesDesc.enabledToggles      = kToggles;
 
     // Creation of Instance is cheap but calling EnumerateAdapters can be expensive the first time,
     // but then the results are cached on the Instance object. So save the Instance here so we can
     // avoid the overhead of EnumerateAdapters on every test.
-    sOnce([&]{
+    sOnce([&] {
         DawnProcTable backendProcs = dawn::native::GetProcs();
         dawnProcSetProcs(&backendProcs);
-        WGPUInstanceDescriptor desc{};
+        wgpu::InstanceDescriptor desc{};
         // need for WaitAny with timeout > 0
-        desc.features.timedWaitAnyEnable = true;
+        static const auto kTimedWaitAny = wgpu::InstanceFeatureName::TimedWaitAny;
+        desc.requiredFeatureCount = 1;
+        desc.requiredFeatures = &kTimedWaitAny;
+        wgpu::DawnTogglesDescriptor togglesDesc = GetInstanceToggles();
+        desc.nextInChain = &togglesDesc;
         sInstance = std::make_unique<dawn::native::Instance>(&desc);
     });
 
@@ -67,6 +58,7 @@ std::unique_ptr<GraphiteTestContext> DawnTestContext::Make(wgpu::BackendType bac
             backend == wgpu::BackendType::OpenGL || backend == wgpu::BackendType::OpenGLES
                     ? wgpu::FeatureLevel::Compatibility
                     : wgpu::FeatureLevel::Core;
+    wgpu::DawnTogglesDescriptor togglesDesc = GetAdapterToggles();
     options.nextInChain = &togglesDesc;
     std::vector<dawn::native::Adapter> adapters = sInstance->EnumerateAdapters(&options);
     SkASSERT(!adapters.empty());
@@ -99,69 +91,40 @@ std::unique_ptr<GraphiteTestContext> DawnTestContext::Make(wgpu::BackendType bac
     }
 
 #if LOG_ADAPTER
-    wgpu::AdapterInfo info;
-    sAdapter.GetInfo(&info);
-    SkDebugf("GPU: %s\nDriver: %s\n", info.device, info.description);
+{
+    wgpu::AdapterInfo debugInfo;
+    wgpu::Adapter debugAdapter = matchedAdaptor.Get();
+    debugAdapter.GetInfo(&debugInfo);
+    SkDebugf("GPU: %s\nDriver: %s\n", debugInfo.device.data, debugInfo.description.data);
+}
 #endif
 
     std::vector<wgpu::FeatureName> features;
     wgpu::Adapter adapter = matchedAdaptor.Get();
-    if (adapter.HasFeature(wgpu::FeatureName::MSAARenderToSingleSampled)) {
-        features.push_back(wgpu::FeatureName::MSAARenderToSingleSampled);
-    }
-    if (adapter.HasFeature(wgpu::FeatureName::TransientAttachments)) {
-        features.push_back(wgpu::FeatureName::TransientAttachments);
-    }
-    if (adapter.HasFeature(wgpu::FeatureName::Unorm16TextureFormats)) {
-        features.push_back(wgpu::FeatureName::Unorm16TextureFormats);
-    }
-    if (adapter.HasFeature(wgpu::FeatureName::DualSourceBlending)) {
-        features.push_back(wgpu::FeatureName::DualSourceBlending);
-    }
-    if (adapter.HasFeature(wgpu::FeatureName::FramebufferFetch)) {
-        features.push_back(wgpu::FeatureName::FramebufferFetch);
-    }
-    if (adapter.HasFeature(wgpu::FeatureName::BufferMapExtendedUsages)) {
-        features.push_back(wgpu::FeatureName::BufferMapExtendedUsages);
-    }
-    if (adapter.HasFeature(wgpu::FeatureName::TextureCompressionETC2)) {
-        features.push_back(wgpu::FeatureName::TextureCompressionETC2);
-    }
-    if (adapter.HasFeature(wgpu::FeatureName::TextureCompressionBC)) {
-        features.push_back(wgpu::FeatureName::TextureCompressionBC);
-    }
-    if (adapter.HasFeature(wgpu::FeatureName::R8UnormStorage)) {
-        features.push_back(wgpu::FeatureName::R8UnormStorage);
-    }
-    if (adapter.HasFeature(wgpu::FeatureName::DawnLoadResolveTexture)) {
-        features.push_back(wgpu::FeatureName::DawnLoadResolveTexture);
-    }
-    if (adapter.HasFeature(wgpu::FeatureName::DawnPartialLoadResolveTexture)) {
-        features.push_back(wgpu::FeatureName::DawnPartialLoadResolveTexture);
-    }
-    if (adapter.HasFeature(wgpu::FeatureName::TimestampQuery)) {
-        features.push_back(wgpu::FeatureName::TimestampQuery);
-    }
-    if (adapter.HasFeature(wgpu::FeatureName::DawnTexelCopyBufferRowAlignment)) {
-        features.push_back(wgpu::FeatureName::DawnTexelCopyBufferRowAlignment);
-    }
+    skiatest::graphite::AddPreferredFeatures(adapter, features);
 
     wgpu::DeviceDescriptor desc;
     desc.requiredFeatureCount  = features.size();
     desc.requiredFeatures      = features.data();
     desc.nextInChain           = &togglesDesc;
+
+    wgpu::Limits limits = {};
+    adapter.GetLimits(&limits);
+    desc.requiredLimits = &limits;
+
     desc.SetDeviceLostCallback(
             wgpu::CallbackMode::AllowSpontaneous,
-            [](const wgpu::Device&, wgpu::DeviceLostReason reason, const char* message) {
+            [](const wgpu::Device&, wgpu::DeviceLostReason reason, wgpu::StringView message) {
                 if (reason != wgpu::DeviceLostReason::Destroyed) {
-                    SK_ABORT("Device lost: %s\n", message);
+                    SK_ABORT("Device lost: %.*s\n", static_cast<int>(message.length), message.data);
                 }
             });
-    desc.SetUncapturedErrorCallback([](const wgpu::Device&, wgpu::ErrorType, const char* message) {
-        SkDebugf("Device error: %s\n", message);
+    desc.SetUncapturedErrorCallback([](const wgpu::Device&, wgpu::ErrorType,
+                                       wgpu::StringView message) {
+        SkDebugf("Device error: %.*s\n", static_cast<int>(message.length), message.data);
     });
 
-    wgpu::Device device = wgpu::Device::Acquire(matchedAdaptor.CreateDevice(&desc));
+    wgpu::Device device = adapter.CreateDevice(&desc);
     SkASSERT(device);
 
     skgpu::graphite::DawnBackendContext backendContext;
@@ -199,20 +162,18 @@ skgpu::ContextType DawnTestContext::contextType() {
 }
 
 std::unique_ptr<skgpu::graphite::Context> DawnTestContext::makeContext(const TestOptions& options) {
-    skgpu::graphite::ContextOptions revisedContextOptions(options.fContextOptions);
-    skgpu::graphite::ContextOptionsPriv contextOptionsPriv;
-    if (!options.fContextOptions.fOptionsPriv) {
-        revisedContextOptions.fOptionsPriv = &contextOptionsPriv;
-    }
+    skiatest::graphite::TestOptions revisedOptions = options;
+
     // Needed to make synchronous readPixels work
-    revisedContextOptions.fOptionsPriv->fStoreContextRefInRecorder = true;
+    revisedOptions.fOptionsPriv.fStoreContextRefInRecorder = true;
 
     auto backendContext = fBackendContext;
     if (options.fNeverYieldToWebGPU) {
         backendContext.fTick = nullptr;
     }
 
-    return skgpu::graphite::ContextFactory::MakeDawn(backendContext, revisedContextOptions);
+    return skgpu::graphite::ContextFactory::MakeDawn(
+            backendContext, revisedOptions.fContextOptions);
 }
 
 void DawnTestContext::tick() { fBackendContext.fTick(fBackendContext.fInstance); }

@@ -9,6 +9,7 @@
 #define SkSVGPoly_DEFINED
 
 #include "include/core/SkPath.h"
+#include "include/core/SkPathTypes.h"
 #include "include/core/SkRect.h"
 #include "include/core/SkRefCnt.h"
 #include "include/private/base/SkAPI.h"
@@ -20,7 +21,6 @@ class SkCanvas;
 class SkPaint;
 class SkSVGLengthContext;
 class SkSVGRenderContext;
-enum class SkPathFillType;
 
 // Handles <polygon> and <polyline> elements.
 class SK_API SkSVGPoly final : public SkSVGShape {
@@ -46,7 +46,7 @@ protected:
     SkRect onTransformableObjectBoundingBox(const SkSVGRenderContext&) const override;
 
 private:
-    SkSVGPoly(SkSVGTag);
+    explicit SkSVGPoly(SkSVGTag);
 
     mutable SkPath fPath;  // mutated in onDraw(), to apply inherited fill types.
 

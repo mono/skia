@@ -12,6 +12,7 @@
 #include "include/encode/SkPngEncoder.h"
 #include "include/gpu/ganesh/GrBackendSurface.h"
 #include "include/gpu/ganesh/SkSurfaceGanesh.h"
+#include "include/private/base/SkLog.h"
 #include "src/core/SkAutoPixmapStorage.h"
 #include "src/core/SkMemset.h"
 #include "src/core/SkMipmap.h"
@@ -22,20 +23,24 @@
 #include "src/gpu/ganesh/GrTexture.h"
 
 #include "tools/flags/CommandLineFlags.h"
+#include "tools/ganesh/gl/GLTestContext.h"
 #include "tools/gpu/ManagedBackendTexture.h"
-#include "tools/gpu/gl/GLTestContext.h"
 
 #if defined(SK_CODEC_DECODES_PNG_WITH_LIBPNG)
 #include "include/codec/SkPngDecoder.h"
 #endif
 
+#if defined(SK_SUPPORT_PDF)
+#if !defined(SK_CODEC_DECODES_JPEG) || !defined(SK_CODEC_ENCODES_JPEG)
+#error "Need jpeg for PDF backend"
+#endif
+#include "include/docs/SkPDFDocument.h"
+#include "include/docs/SkPDFJpegHelpers.h"
+#endif
+
 #if defined(SK_FONTMGR_FONTCONFIG_AVAILABLE)
 #include "include/ports/SkFontMgr_fontconfig.h"
 #include "include/ports/SkFontScanner_FreeType.h"
-#endif
-
-#if defined(SK_SUPPORT_PDF)
-#include "include/docs/SkPDFDocument.h"
 #endif
 
 #include <cstdio>
@@ -65,7 +70,7 @@ double duration; // The total duration of the animation in seconds.
 double frame;    // A value in [0, 1] of where we are in the animation.
 sk_sp<SkFontMgr> fontMgr;
 
-// Global used by the local impl of SkDebugf.
+// Global used by the local impl of SkLogVAList.
 std::ostringstream gTextOutput;
 
 // Global to record the GL driver info via create_direct_context().
@@ -75,12 +80,9 @@ sk_sp<sk_gpu_test::ManagedBackendTexture> managedBackendTextureRenderTarget;
 sk_sp<sk_gpu_test::ManagedBackendTexture> managedBackendTexture;
 sk_sp<GrRenderTarget> backingRenderTarget;
 
-void SkDebugf(const char * fmt, ...) {
-    va_list args;
-    va_start(args, fmt);
+void SkLogVAList(SkLogPriority priority, const char format[], va_list args) {
     char formatbuffer[1024];
-    int n = vsnprintf(formatbuffer, sizeof(formatbuffer), fmt, args);
-    va_end(args);
+    int n = vsnprintf(formatbuffer, sizeof(formatbuffer), format, args);
     if (n>=0 && n<=int(sizeof(formatbuffer))) {
         gTextOutput.write(formatbuffer, n);
     }
@@ -341,10 +343,10 @@ int main(int argc, char** argv) {
     }
 #endif
 
-#ifdef SK_SUPPORT_PDF
+#if defined(SK_SUPPORT_PDF)
     if (options.pdf) {
         SkDynamicMemoryWStream pdfStream;
-        auto document = SkPDF::MakeDocument(&pdfStream);
+        auto document = SkPDF::MakeDocument(&pdfStream, SkPDF::JPEG::MetadataWithCallbacks());
         if (document) {
             srand(0);
             draw(prepare_canvas(document->beginPage(options.size.width(), options.size.height())));

@@ -16,7 +16,7 @@
 #include "include/core/SkRect.h"
 #include "include/core/SkSurface.h"
 #include "include/effects/SkDashPathEffect.h"
-#include "include/effects/SkGradientShader.h"
+#include "include/effects/SkGradient.h"
 #include "include/effects/SkImageFilters.h"
 #include "tools/GpuToolUtils.h"
 #include "tools/Resources.h"
@@ -169,9 +169,10 @@ sk_sp<SkImage> make_cropped_image(sk_sp<SkImage> image,
     auto surface = SkSurfaces::Raster(
             image->imageInfo().makeWH(SkScalarCeilToInt(cropRect.width()),
                                       SkScalarCeilToInt(cropRect.height())));
-    auto content = image->makeSubset(nullptr,
-                                     contentTile == SkTileMode::kDecal ? contentBounds.roundOut()
-                                                                       : contentBounds.roundIn());
+    auto content = image->makeSubset(
+            nullptr,
+            contentTile == SkTileMode::kDecal ? contentBounds.roundOut() : contentBounds.roundIn(),
+            {});
     if (!content || !surface) {
         return nullptr;
     }
@@ -316,7 +317,7 @@ void draw_example_grid(
     dashedLine.setStyle(SkPaint::kStroke_Style);
     dashedLine.setStrokeCap(SkPaint::kSquare_Cap);
     static const float kDashes[2] = {5.f, 15.f};
-    dashedLine.setPathEffect(SkDashPathEffect::Make(kDashes, 2, 0.f));
+    dashedLine.setPathEffect(SkDashPathEffect::Make(kDashes, 0.f));
 
     for (int y = 1; y < kNumRows; ++y) {
         canvas->drawLine({0.5f, y * (kExampleBounds.fBottom+1.f) - 0.5f},

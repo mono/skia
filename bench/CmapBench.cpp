@@ -32,21 +32,21 @@ struct Rec {
 typedef void (*TypefaceProc)(const Rec& r);
 
 static void textToGlyphs_proc(const Rec& r) {
-    uint16_t glyphs[NGLYPHS];
+    SkGlyphID glyphs[NGLYPHS];
     SkASSERT(r.fCount <= NGLYPHS);
 
     for (int i = 0; i < r.fLoops; ++i) {
-        r.fFont.textToGlyphs(r.fText, r.fCount*4, SkTextEncoding::kUTF32, glyphs, NGLYPHS);
+        r.fFont.textToGlyphs(r.fText, r.fCount*4, SkTextEncoding::kUTF32, glyphs);
     }
 }
 
 static void charsToGlyphs_proc(const Rec& r) {
-    uint16_t glyphs[NGLYPHS];
+    SkGlyphID glyphs[NGLYPHS];
     SkASSERT(r.fCount <= NGLYPHS);
 
     SkTypeface* face = r.fFont.getTypeface();
     for (int i = 0; i < r.fLoops; ++i) {
-        face->unicharsToGlyphs(r.fText, r.fCount, glyphs);
+        face->unicharsToGlyphs({r.fText, (size_t)r.fCount}, glyphs);
     }
 }
 
@@ -88,7 +88,7 @@ public:
             fText[i] = rand.nextU() & 0xFFFF;
             fCache.addCharAndGlyph(fText[i], i);
         }
-        fFont.setTypeface(ToolUtils::DefaultPortableTypeface());
+        fFont.setTypeface(ToolUtils::DefaultTypeface());
     }
 
     bool isSuitableFor(Backend backend) override {

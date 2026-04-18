@@ -15,8 +15,6 @@
 #include <algorithm>
 #include <cmath>
 
-static constexpr double PI = 3.141592653589793;
-
 static bool nearly_equal(double x, double y) {
     if (sk_double_nearly_zero(x)) {
         return sk_double_nearly_zero(y);
@@ -92,11 +90,11 @@ int SkCubics::RootsReal(double A, double B, double C, double D, double solution[
         r = neg2RootQ * cos(theta / 3) - adiv3;
         *roots++ = r;
 
-        r = neg2RootQ * cos((theta + 2 * PI) / 3) - adiv3;
+        r = neg2RootQ * cos((theta + 2 * SK_DoublePI) / 3) - adiv3;
         if (!nearly_equal(solution[0], r)) {
             *roots++ = r;
         }
-        r = neg2RootQ * cos((theta - 2 * PI) / 3) - adiv3;
+        r = neg2RootQ * cos((theta - 2 * SK_DoublePI) / 3) - adiv3;
         if (!nearly_equal(solution[0], r) &&
             (roots - solution == 1 || !nearly_equal(solution[1], r))) {
             *roots++ = r;
@@ -131,7 +129,7 @@ int SkCubics::RootsValidT(double A, double B, double C, double D,
     int foundRoots = 0;
     for (int index = 0; index < realRoots; ++index) {
         double tValue = allRoots[index];
-        if (tValue >= 1.0 && tValue <= 1.00005) {
+        if (tValue <= 1.00005 && (tValue >= 1.0 || sk_doubles_nearly_equal_ulps(tValue, 1.0))) {
             // Make sure we do not already have 1 (or something very close) in the list of roots.
             if ((foundRoots < 1 || !sk_doubles_nearly_equal_ulps(solution[0], 1)) &&
                 (foundRoots < 2 || !sk_doubles_nearly_equal_ulps(solution[1], 1))) {

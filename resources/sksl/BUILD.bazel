@@ -1,5 +1,11 @@
 load("//bazel:skia_rules.bzl", "skia_filegroup")
 
+package(
+    default_applicable_licenses = ["//:license"],
+)
+
+licenses(["notice"])
+
 # Necessary to give the //resources:resources skia_filegroup visibility to files in this directory.
 skia_filegroup(
     name = "sksl",
@@ -172,9 +178,9 @@ skia_filegroup(
     name = "sksl_compute_tests",
     srcs = [
         "compute/ArrayAdd.compute",
-        "compute/AtomicDeclarations.compute",
+        #"compute/AtomicDeclarations.compute",
         "compute/AtomicOperations.compute",
-        "compute/AtomicOperationsOverArrayAndStruct.compute",
+        #"compute/AtomicOperationsOverArrayAndStruct.compute",
         "compute/Barrier.compute",
         "compute/BuiltinStageInputs.compute",
         "compute/Desaturate.compute",
@@ -187,7 +193,7 @@ skia_filegroup(
         "compute/ModuleStructInVariable.compute",
         "compute/Raytrace.compute",
         "compute/Uniforms.compute",
-        "compute/Workgroup.compute",
+        #"compute/Workgroup.compute",
     ],
 )
 
@@ -291,6 +297,7 @@ skia_filegroup(
         "errors/IncompleteExpression.rts",
         "errors/IncompleteFunctionCall.rts",
         "errors/InterfaceBlockMemberReservedName.sksl",
+        "errors/InterfaceBlockMixedCommasAndSemicolons.sksl",
         "errors/InterfaceBlockPrivateType.sksl",
         "errors/InterfaceBlockReservedName.sksl",
         "errors/InterfaceBlockScope.sksl",
@@ -370,6 +377,7 @@ skia_filegroup(
         "errors/Ossfuzz38108.sksl",
         "errors/Ossfuzz38140.sksl",
         "errors/Ossfuzz38560.sksl",
+        "errors/Ossfuzz38831.sksl",
         "errors/Ossfuzz38865.sksl",
         "errors/Ossfuzz38944.sksl",
         "errors/Ossfuzz39000.sksl",
@@ -1173,6 +1181,7 @@ skia_filegroup(
         "wgsl/CastVec4ToMat2x2.sksl",
         "wgsl/EntrypointIsWrittenLast.sksl",
         "wgsl/Equality.sksl",
+        "wgsl/ForLoopComplexCondAndNext.sksl",
         "wgsl/FunctionCallDependencies.sksl",
         "wgsl/GlobalUniforms.sksl",
         "wgsl/IfStatement.sksl",
@@ -1181,8 +1190,10 @@ skia_filegroup(
         "wgsl/MainDoesNotHaveFragCoordParameter.sksl",
         "wgsl/MainHasVoidReturn.sksl",
         "wgsl/MatrixConstructorDiagonal.sksl",
+        "wgsl/NoF16Support.sksl",
         "wgsl/OutParams.sksl",
         "wgsl/PixelLocalStorage.sksl",
+        "wgsl/PolyfillIntrinsics.sksl",
         "wgsl/Sample.sksl",
         "wgsl/SubpassInput.sksl",
         "wgsl/TextureIntrinsics.compute",
@@ -1191,5 +1202,6 @@ skia_filegroup(
         "wgsl/UserDefinedPipelineIO.sksl",
         "wgsl/VertexPositionOutputIsAlwaysDeclared.vert",
         "wgsl/WorkgroupSize.compute",
+        "workarounds/LastFragColor.sksl",
     ],
 )

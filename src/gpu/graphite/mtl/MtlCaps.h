@@ -22,27 +22,6 @@ public:
     MtlCaps(const id<MTLDevice>, const ContextOptions&);
     ~MtlCaps() override {}
 
-    TextureInfo getDefaultSampledTextureInfo(SkColorType,
-                                             Mipmapped mipmapped,
-                                             Protected,
-                                             Renderable) const override;
-
-    TextureInfo getTextureInfoForSampledCopy(const TextureInfo& textureInfo,
-                                             Mipmapped mipmapped) const override;
-
-    TextureInfo getDefaultCompressedTextureInfo(SkTextureCompressionType,
-                                                Mipmapped mipmapped,
-                                                Protected) const override;
-
-    TextureInfo getDefaultMSAATextureInfo(const TextureInfo& singleSampledInfo,
-                                          Discardable discardable) const override;
-
-    TextureInfo getDefaultDepthStencilTextureInfo(SkEnumBitMask<DepthStencilFlags>,
-                                                  uint32_t sampleCount,
-                                                  Protected) const override;
-
-    TextureInfo getDefaultStorageTextureInfo(SkColorType) const override;
-
     UniqueKey makeGraphicsPipelineKey(const GraphicsPipelineDesc&,
                                       const RenderPassDesc&) const override;
     UniqueKey makeComputePipelineKey(const ComputePipelineDesc&) const override;
@@ -54,20 +33,16 @@ public:
 
     // Get a sufficiently unique bit representation for the RenderPassDesc to be embedded in other
     // UniqueKeys (e.g. makeGraphicsPipelineKey).
-    uint64_t getRenderPassDescKey(const RenderPassDesc&) const;
+    uint32_t getRenderPassDescKey(const RenderPassDesc&) const;
 
-    bool isMac() const { return fGPUFamily == GPUFamily::kMac; }
-    bool isApple() const { return fGPUFamily == GPUFamily::kApple; }
-
-    uint32_t channelMask(const TextureInfo&) const override;
-
-    bool isRenderable(const TextureInfo&) const override;
-    bool isStorage(const TextureInfo&) const override;
+    bool isMac() const   { return fGPUFamily == GPUFamily::kMac ||
+                                  fGPUFamily == GPUFamily::kMacIntel; }
+    bool isApple() const { return fGPUFamily == GPUFamily::kApple;    }
+    bool isIntel() const { return fGPUFamily == GPUFamily::kMacIntel; }
 
     void buildKeyForTexture(SkISize dimensions,
                             const TextureInfo&,
                             ResourceType,
-                            Shareable,
                             GraphiteResourceKey*) const override;
 
 private:
@@ -78,37 +53,23 @@ private:
     void initFormatTable(const id<MTLDevice>);
 
     enum class GPUFamily {
-        kMac,
         kApple,
+        kMac,
+        kMacIntel,
     };
-    static bool GetGPUFamily(id<MTLDevice> device, GPUFamily* gpuFamily, int* group);
+    static bool GetGPUFamily(id<MTLDevice>, GPUFamily*, int* group);
 
-    MTLPixelFormat getFormatFromColorType(SkColorType colorType) const {
-        int idx = static_cast<int>(colorType);
-        return fColorTypeToFormatTable[idx];
-    }
-    MTLPixelFormat getFormatFromDepthStencilFlags(SkEnumBitMask<DepthStencilFlags>) const;
-
-    const ColorTypeInfo* getColorTypeInfo(SkColorType, const TextureInfo&) const override;
-
-    bool onIsTexturable(const TextureInfo&) const override;
-    bool isTexturable(MTLPixelFormat) const;
-    bool isRenderable(MTLPixelFormat, uint32_t numSamples) const;
-    uint32_t maxRenderTargetSampleCount(MTLPixelFormat) const;
-
-    bool supportsWritePixels(const TextureInfo&) const override;
-    bool supportsReadPixels(const TextureInfo&) const override;
-
-    std::pair<SkColorType, bool /*isRGBFormat*/> supportedWritePixelsColorType(
-            SkColorType dstColorType,
-            const TextureInfo& dstTextureInfo,
-            SkColorType srcColorType) const override;
-    std::pair<SkColorType, bool /*isRGBFormat*/> supportedReadPixelsColorType(
-            SkColorType srcColorType,
-            const TextureInfo& srcTextureInfo,
-            SkColorType dstColorType) const override;
-
-    MTLStorageMode getDefaultMSAAStorageMode(Discardable discardable) const;
+    SkSpan<const ColorTypeInfo> getColorTypeInfos(const TextureInfo&) const override;
+    TextureInfo onGetDefaultTextureInfo(SkEnumBitMask<TextureUsage> usage,
+                                        TextureFormat,
+                                        SampleCount,
+                                        Mipmapped,
+                                        Protected,
+                                        Discardable) const override;
+    std::pair<SkEnumBitMask<TextureUsage>, SkEnumBitMask<SampleCount>> getTextureSupport(
+            TextureFormat format, Tiling) const override;
+    std::pair<SkEnumBitMask<TextureUsage>, Tiling> getTextureUsage(
+            const TextureInfo&) const override;
 
     struct FormatInfo {
         uint32_t colorTypeFlags(SkColorType colorType) const {
@@ -122,7 +83,7 @@ private:
 
         enum {
             kTexturable_Flag  = 0x01,
-            kRenderable_Flag  = 0x02, // Color attachment and blendable
+            kRenderable_Flag  = 0x02, // Render attachment (color or depth/stencil)
             kMSAA_Flag        = 0x04,
             kResolve_Flag     = 0x08,
             kStorage_Flag     = 0x10,
@@ -136,9 +97,9 @@ private:
         int fColorTypeInfoCount = 0;
     };
 #ifdef SK_BUILD_FOR_MAC
-    inline static constexpr size_t kNumMtlFormats = 23;
+    inline static constexpr int kNumMtlFormats = 23;
 #else
-    inline static constexpr size_t kNumMtlFormats = 21;
+    inline static constexpr int kNumMtlFormats = 21;
 #endif
 
     static size_t GetFormatIndex(MTLPixelFormat);
@@ -149,11 +110,7 @@ private:
         return fFormatTable[index];
     }
 
-    MTLPixelFormat fColorTypeToFormatTable[kSkColorTypeCnt];
-    void setColorType(SkColorType, std::initializer_list<MTLPixelFormat> formats);
-
-    // A vector of the viable sample counts (e.g., { 1, 2, 4, 8 }).
-    std::vector<uint32_t> fColorSampleCounts;
+    SkEnumBitMask<SampleCount> fSupportedSampleCounts;
 
     GPUFamily fGPUFamily;
     int fFamilyGroup;

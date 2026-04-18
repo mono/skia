@@ -25,7 +25,7 @@
 #include "include/core/SkTileMode.h"
 #include "include/core/SkTypes.h"
 #include "include/effects/SkDashPathEffect.h"
-#include "include/effects/SkGradientShader.h"
+#include "include/effects/SkGradient.h"
 #include "include/private/base/SkTArray.h"
 #include "include/private/base/SkTemplates.h"
 #include "tools/ToolUtils.h"
@@ -152,21 +152,20 @@ protected:
         }
         {
             // gradient
-            SkColor colors[] = { SK_ColorRED, SK_ColorGREEN };
+            SkColor4f colors[] = { SkColors::kRed, SkColors::kGreen };
             SkPoint pts[] = { {-kRadius-kPad, -kRadius-kPad }, { kRadius+kPad, kRadius+kPad } };
 
             SkPaint p;
-            p.setShader(SkGradientShader::MakeLinear(pts, colors, nullptr, 2, SkTileMode::kClamp));
+            p.setShader(SkShaders::LinearGradient(pts, {{colors, {}, SkTileMode::kClamp}, {}}));
 
             fPaints.push_back(p);
         }
         {
             // dashing
             SkScalar intervals[] = { kStrokeWidth, kStrokeWidth };
-            int intervalCount = (int) std::size(intervals);
             SkPaint p;
             p.setColor(SK_ColorWHITE);
-            p.setPathEffect(SkDashPathEffect::Make(intervals, intervalCount, kStrokeWidth));
+            p.setPathEffect(SkDashPathEffect::Make(intervals, kStrokeWidth));
 
             fPaints.push_back(p);
         }
@@ -264,10 +263,10 @@ static void draw_path(SkCanvas* canvas, const SkPoint& p0, const SkPoint& p1, Sk
     // Add a gradient *not* aligned with the line's points to show local coords are tracked properly
     constexpr SkRect kRect {-kStrokeWidth, -kStrokeWidth, 2*kStrokeWidth, 4*kStrokeWidth};
     constexpr SkPoint kPts[] {{kRect.fLeft, kRect.fTop}, {kRect.fRight, kRect.fBottom}};
-    constexpr SkColor kColors[] {SK_ColorRED, SK_ColorGREEN, SK_ColorBLUE};
+    constexpr SkColor4f kColors[] {SkColors::kRed, SkColors::kGreen, SkColors::kBlue};
     constexpr SkScalar kStops[] {0.f, 0.75f, 1.f};
-    sk_sp<SkShader> shader = SkGradientShader::MakeLinear(kPts, kColors, kStops, 3,
-                                                          SkTileMode::kClamp);
+    sk_sp<SkShader> shader = SkShaders::LinearGradient(kPts,
+                                                       {{kColors, kStops, SkTileMode::kClamp}, {}});
 
     SkPaint paint;
     paint.setAntiAlias(true);
@@ -279,9 +278,7 @@ static void draw_path(SkCanvas* canvas, const SkPoint& p0, const SkPoint& p1, Sk
     canvas->drawLine(p0, p1, paint);
 
     // Show outline and control points
-    SkPath fillPath;
-    SkPath path = SkPath::Line(p0, p1);
-    skpathutils::FillPathWithPaint(path, paint, &fillPath);
+    SkPath fillPath = skpathutils::FillPathWithPaint(SkPath::Line(p0, p1), paint);
 
     paint.setStyle(SkPaint::kStroke_Style);
     paint.setStrokeWidth(0);
@@ -291,10 +288,7 @@ static void draw_path(SkCanvas* canvas, const SkPoint& p0, const SkPoint& p1, Sk
 
     paint.setStrokeWidth(3);
     paint.setStrokeCap(SkPaint::kSquare_Cap);
-    int n = fillPath.countPoints();
-    AutoTArray<SkPoint> points(n);
-    fillPath.getPoints(points.get(), n);
-    canvas->drawPoints(SkCanvas::kPoints_PointMode, n, points.get(), paint);
+    canvas->drawPoints(SkCanvas::kPoints_PointMode, fillPath.points(), paint);
 }
 
 DEF_SIMPLE_GM(strokedline_caps, canvas, 1400, 740) {

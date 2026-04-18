@@ -31,7 +31,7 @@ public:
 
     ~TextureProxy() override;
 
-    int numSamples() const { return fInfo.numSamples(); }
+    SampleCount sampleCount() const { return fInfo.sampleCount(); }
     Mipmapped mipmapped() const { return fInfo.mipmapped(); }
 
     SkISize dimensions() const;
@@ -42,7 +42,8 @@ public:
     bool isLazy() const;
     bool isFullyLazy() const;
     bool isVolatile() const;
-    bool isProtected() const;
+
+    Protected isProtected() const { return fInfo.isProtected(); }
 
     size_t uninstantiatedGpuMemorySize() const;
 

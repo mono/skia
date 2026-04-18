@@ -14,7 +14,6 @@
 #include "include/core/SkString.h"
 #include "include/core/SkStrokeRec.h"
 #include "include/gpu/ganesh/GrRecordingContext.h"
-#include "include/private/SkColorData.h"
 #include "include/private/base/SkAlignedStorage.h"
 #include "include/private/base/SkAssert.h"
 #include "include/private/base/SkDebug.h"
@@ -23,6 +22,7 @@
 #include "include/private/base/SkTArray.h"
 #include "include/private/gpu/ganesh/GrTypesPriv.h"
 #include "src/base/SkRandom.h"
+#include "src/core/SkColorData.h"
 #include "src/core/SkMatrixPriv.h"
 #include "src/gpu/BufferWriter.h"
 #include "src/gpu/ResourceKey.h"
@@ -350,8 +350,7 @@ bool compute_aa_rects(const GrCaps& caps,
                       SkVector* devHalfStrokeSize) {
     SkVector devStrokeSize;
     if (strokeWidth > 0) {
-        devStrokeSize.set(strokeWidth, strokeWidth);
-        viewMatrix.mapVectors(&devStrokeSize, 1);
+        devStrokeSize = viewMatrix.mapVector({strokeWidth, strokeWidth});
         devStrokeSize.setAbs(devStrokeSize);
     } else {
         devStrokeSize.set(SK_Scalar1, SK_Scalar1);

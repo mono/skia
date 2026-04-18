@@ -11,11 +11,12 @@
 #include "include/core/SkFont.h"
 #include "include/core/SkPaint.h"
 #include "include/core/SkPath.h"
+#include "include/core/SkPathBuilder.h"
 #include "include/core/SkPathEffect.h"
 #include "include/core/SkPoint.h"
 #include "include/core/SkRect.h"
 #include "include/effects/SkDashPathEffect.h"
-#include "include/effects/SkGradientShader.h"
+#include "include/effects/SkGradient.h"
 #include "include/effects/SkImageFilters.h"
 #include "src/core/SkImageFilterTypes.h"
 #include "src/core/SkImageFilter_Base.h"
@@ -90,13 +91,13 @@ static SkPaint line_paint(SkColor color, bool dashed = false) {
     paint.setAntiAlias(true);
     if (dashed) {
         SkScalar dash[2] = {10.f, 10.f};
-        paint.setPathEffect(SkDashPathEffect::Make(dash, 2, 0.f));
+        paint.setPathEffect(SkDashPathEffect::Make(dash, 0.f));
     }
     return paint;
 }
 
 static SkPath create_axis_path(const SkRect& rect, float axisSpace) {
-    SkPath localSpace;
+    SkPathBuilder localSpace;
     for (float y = rect.fTop + axisSpace; y <= rect.fBottom; y += axisSpace) {
         localSpace.moveTo(rect.fLeft, y);
         localSpace.lineTo(rect.fRight, y);
@@ -105,7 +106,7 @@ static SkPath create_axis_path(const SkRect& rect, float axisSpace) {
         localSpace.moveTo(x, rect.fTop);
         localSpace.lineTo(x, rect.fBottom);
     }
-    return localSpace;
+    return localSpace.detach();
 }
 
 static const SkColor4f kScaleGradientColors[] =
@@ -121,9 +122,9 @@ static const int kStopCount = (int) std::size(kScaleGradientColors);
 static void draw_scale_key(SkCanvas* canvas, float y) {
     SkRect key = SkRect::MakeXYWH(15.f, y + 30.f, 15.f, 100.f);
     SkPoint pts[] = {{key.centerX(), key.fTop}, {key.centerX(), key.fBottom}};
-    sk_sp<SkShader> gradient = SkGradientShader::MakeLinear(
-            pts, kScaleGradientColors, nullptr, kGradientStops, kStopCount, SkTileMode::kClamp,
-            SkGradientShader::kInterpolateColorsInPremul_Flag, nullptr);
+    sk_sp<SkShader> gradient = SkShaders::LinearGradient(
+            pts, {{kScaleGradientColors, kGradientStops, SkTileMode::kClamp},
+                  {SkGradient::Interpolation::InPremul::kYes}});
     SkPaint keyPaint;
     keyPaint.setShader(gradient);
     canvas->drawRect(key, keyPaint);
@@ -136,10 +137,10 @@ static void draw_scale_key(SkCanvas* canvas, float y) {
 static void draw_scale_factors(SkCanvas* canvas, const skif::Mapping& mapping, const SkRect& rect) {
     SkPoint testPoints[5];
     testPoints[0] = {rect.centerX(), rect.centerY()};
-    rect.toQuad(testPoints + 1);
+    rect.copyToQuad({&testPoints[1], 4});
     for (int i = 0; i < 5; ++i) {
         float scale = SkMatrixPriv::DifferentialAreaScale(
-                mapping.layerToDevice(),
+                mapping.layerToDevice().asM33(),
                 SkPoint(mapping.paramToLayer(skif::ParameterSpace<SkPoint>(testPoints[i]))));
         SkColor4f color = {0.f, 0.f, 0.f, 1.f};
 
@@ -186,7 +187,7 @@ public:
     void draw(SkCanvas* canvas) override {
         // The local content, e.g. what would be submitted to drawRect or the bounds to saveLayer
         const SkRect localContentRect = SkRect::MakeLTRB(100.f, 20.f, 180.f, 140.f);
-        SkMatrix ctm = canvas->getLocalToDeviceAs3x3();
+        SkM44 ctm = canvas->getLocalToDevice();
 
         // Base rendering of a filter
         SkPaint blurPaint;
@@ -198,7 +199,7 @@ public:
         canvas->restore();
 
         // Now visualize the underlying bounds calculations used to determine the layer for the blur
-        SkIRect target = ctm.mapRect(localContentRect).roundOut();
+        SkIRect target = SkMatrixPriv::MapRect(ctm, localContentRect).roundOut();
         if (!target.intersect(SkIRect::MakeWH(canvas->imageInfo().width(),
                                               canvas->imageInfo().height()))) {
             return;
@@ -224,7 +225,7 @@ public:
         // before the draw or saveLayer, representing what the filter must cover if it affects
         // transparent black or doesn't have a local content hint.
         canvas->setMatrix(SkMatrix::I());
-        canvas->drawRect(ctm.mapRect(localContentRect), line_paint(SK_ColorDKGRAY));
+        canvas->drawRect(SkMatrixPriv::MapRect(ctm, localContentRect), line_paint(SK_ColorDKGRAY));
 
         // Layer bounds for the filter, in the layer space compatible with the filter's matrix
         // type requirements.

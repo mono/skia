@@ -46,11 +46,11 @@ static void exercise_draw_pos_text(SkCanvas* canvas,
                                    const char* text,
                                    SkScalar x, SkScalar y,
                                    const SkFont& font, const SkPaint& paint) {
-    const int count = font.countText(text, strlen(text), SkTextEncoding::kUTF8);
+    const size_t count = font.countText(text, strlen(text), SkTextEncoding::kUTF8);
     SkTextBlobBuilder builder;
     auto rec = builder.allocRunPos(font, count);
-    font.textToGlyphs(text, strlen(text), SkTextEncoding::kUTF8, rec.glyphs, count);
-    font.getPos(rec.glyphs, count, rec.points(), {x, y});
+    font.textToGlyphs(text, strlen(text), SkTextEncoding::kUTF8, {rec.glyphs, count});
+    font.getPos({rec.glyphs, count}, {rec.points(), count}, {x, y});
     canvas->drawTextBlob(builder.make(), 0, 0, paint);
 }
 
@@ -58,11 +58,11 @@ static void exercise_draw_pos_text_h(SkCanvas* canvas,
                                      const char* text,
                                      SkScalar x, SkScalar y,
                                      const SkFont& font, const SkPaint& paint) {
-    const int count = font.countText(text, strlen(text), SkTextEncoding::kUTF8);
+    const size_t count = font.countText(text, strlen(text), SkTextEncoding::kUTF8);
     SkTextBlobBuilder builder;
     auto rec = builder.allocRunPosH(font, count, 0);
-    font.textToGlyphs(text, strlen(text), SkTextEncoding::kUTF8, rec.glyphs, count);
-    font.getXPos(rec.glyphs, count, rec.pos);
+    font.textToGlyphs(text, strlen(text), SkTextEncoding::kUTF8, {rec.glyphs, count});
+    font.getXPos({rec.glyphs, count}, {rec.pos, count});
     canvas->drawTextBlob(builder.make(), x, y, paint);
 }
 
@@ -124,7 +124,7 @@ DEF_SIMPLE_GM(skbug_257, canvas, 512, 512) {
         checker.setStyle(SkPaint::kStroke_Style);
         checker.setStrokeWidth(8);
         checker.setStrokeCap(SkPaint::kRound_Cap);
-        canvas->drawPoints(SkCanvas::kLines_PointMode, 8, points, checker);
+        canvas->drawPoints(SkCanvas::kLines_PointMode, points, checker);
 
         // Test Text
         canvas->translate(size, 0);

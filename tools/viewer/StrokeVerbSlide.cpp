@@ -13,6 +13,7 @@
 #include "include/core/SkFont.h"
 #include "include/core/SkPaint.h"
 #include "include/core/SkPath.h"
+#include "include/core/SkPathBuilder.h"
 #include "src/core/SkGeometry.h"
 #include "tools/fonts/FontToolUtils.h"
 #include "tools/viewer/ClickHandlerSlide.h"
@@ -32,7 +33,7 @@ static const char* verb_type_name(VerbType verbType) {
         case VerbType::kConics: return "kConics";
     }
     SkUNREACHABLE;
-};
+}
 
 /**
  * This sample visualizes simple strokes.
@@ -101,10 +102,10 @@ void StrokeVerbSlide::draw(SkCanvas* canvas) {
     pointsPaint.setAntiAlias(true);
 
     if (VerbType::kCubics == fVerbType) {
-        canvas->drawPoints(SkCanvas::kPoints_PointMode, 4, fPoints, pointsPaint);
+        canvas->drawPoints(SkCanvas::kPoints_PointMode, {fPoints, 4}, pointsPaint);
     } else {
-        canvas->drawPoints(SkCanvas::kPoints_PointMode, 2, fPoints, pointsPaint);
-        canvas->drawPoints(SkCanvas::kPoints_PointMode, 1, fPoints + 3, pointsPaint);
+        canvas->drawPoints(SkCanvas::kPoints_PointMode, {fPoints, 2}, pointsPaint);
+        canvas->drawPoints(SkCanvas::kPoints_PointMode, {fPoints + 3, 1}, pointsPaint);
     }
 
     SkFont font(ToolUtils::DefaultTypeface(), 20);
@@ -114,24 +115,25 @@ void StrokeVerbSlide::draw(SkCanvas* canvas) {
 }
 
 void StrokeVerbSlide::updatePath() {
-    fPath.reset();
-    fPath.moveTo(fPoints[0]);
+    SkPathBuilder builder;
+    builder.moveTo(fPoints[0]);
     switch (fVerbType) {
         case VerbType::kCubics:
-            fPath.cubicTo(fPoints[1], fPoints[2], fPoints[3]);
+            builder.cubicTo(fPoints[1], fPoints[2], fPoints[3]);
             break;
         case VerbType::kQuadratics:
-            fPath.quadTo(fPoints[1], fPoints[3]);
+            builder.quadTo(fPoints[1], fPoints[3]);
             break;
         case VerbType::kConics:
-            fPath.conicTo(fPoints[1], fPoints[3], fConicWeight);
+            builder.conicTo(fPoints[1], fPoints[3], fConicWeight);
             break;
         case VerbType::kTriangles:
-            fPath.lineTo(fPoints[1]);
-            fPath.lineTo(fPoints[3]);
-            fPath.close();
+            builder.lineTo(fPoints[1]);
+            builder.lineTo(fPoints[3]);
+            builder.close();
             break;
     }
+    fPath = builder.detach();
 }
 
 class StrokeVerbSlide::Click : public ClickHandlerSlide::Click {
