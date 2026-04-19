@@ -48,9 +48,11 @@ struct GrD3DBackendSurfaceInfo {
     GrD3DTextureResourceInfo snapTextureResourceInfo() const;
 
     bool isProtected() const;
-#if defined(GPU_TEST_UTILS)
+    // mono/skia: upstream gated operator== behind GPU_TEST_UTILS in m147, but
+    // GrD3DBackendSurface.cpp::equal() — a production virtual override — still
+    // calls it. Builds with is_official_build=true (our release config) don't
+    // define GPU_TEST_UTILS, so keep the declaration unconditional.
     bool operator==(const GrD3DBackendSurfaceInfo& that) const;
-#endif
 
 private:
     std::unique_ptr<GrD3DTextureResourceInfo> fTextureResourceInfo;
