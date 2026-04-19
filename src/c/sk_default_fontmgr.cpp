@@ -16,6 +16,7 @@ extern "C" const SkEmbeddedResourceHeader SK_EMBEDDED_FONTS;
 extern sk_sp<SkFontMgr> SkFontMgr_New_Custom_Embedded(const SkEmbeddedResourceHeader*);
 #elif defined(SK_BUILD_FOR_ANDROID)
 #include "include/ports/SkFontMgr_android.h"
+#include "include/ports/SkFontScanner_FreeType.h"
 #elif defined(SK_BUILD_FOR_MAC) || defined(SK_BUILD_FOR_IOS)
 #include "include/ports/SkFontMgr_mac_ct.h"
 #elif defined(SK_BUILD_FOR_WIN)
@@ -31,7 +32,7 @@ static sk_sp<SkFontMgr> create_platform_fontmgr() {
 #if defined(__EMSCRIPTEN__)
     return SkFontMgr_New_Custom_Embedded(&SK_EMBEDDED_FONTS);
 #elif defined(SK_BUILD_FOR_ANDROID)
-    return SkFontMgr_New_Android(nullptr);
+    return SkFontMgr_New_Android(nullptr, SkFontScanner_Make_FreeType());
 #elif defined(SK_BUILD_FOR_MAC) || defined(SK_BUILD_FOR_IOS)
     return SkFontMgr_New_CoreText(nullptr);
 #elif defined(SK_BUILD_FOR_WIN)
