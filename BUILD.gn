@@ -914,6 +914,11 @@ optional("gpu_shared") {
     }
     if (skia_use_vma) {
       sources += skia_vma_sources
+      # Upstream removed SK_USE_VMA from the GN build in m147 (moved to Bazel
+      # only). SkiaSharp still uses GN and needs this define so that GrVkGpu.cpp
+      # compiles the VMA fallback that auto-creates a memory allocator when
+      # fMemoryAllocator is null.
+      public_defines += [ "SK_USE_VMA" ]
       public_deps += [ "src/gpu/vk/vulkanmemoryallocator" ]
     }
   }
