@@ -839,6 +839,11 @@ typedef struct {
 } sk_document_pdf_metadata_t;
 
 typedef struct {
+    float fDPI;
+    bool  fAllowNoPngs;
+} sk_document_xps_options_t;
+
+typedef struct {
     sk_colorspace_t* colorspace;
     int32_t          width;
     int32_t          height;
