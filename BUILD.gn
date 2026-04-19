@@ -1800,6 +1800,26 @@ skia_source_set("core") {
   public = skia_core_public
   sources = skia_core_sources
 
+  # mono/skia: SkiaSharp's C API shims (src/c/gr_context.cpp et al.) are
+  # compiled into :core via gn/core.gni, but Skia's backend defines live on
+  # :gpu's all_dependent_configs and therefore don't reach :core. Without
+  # them, SK_ONLY_DIRECT3D / SK_ONLY_VULKAN / SK_ONLY_METAL collapse to
+  # stub returns, GPU context factory C entry points never reference
+  # backend symbols, and the linker strips d3d12/vulkan/metal imports
+  # from libSkiaSharp. :core's own compile needs the defines; its
+  # dependents already inherit them from :gpu's chain.
+  defines = []
+  if (skia_use_direct3d) {
+    defines += [ "SK_DIRECT3D" ]
+  }
+  if (skia_use_vulkan) {
+    defines += [ "SK_VULKAN" ]
+    configs += [ ":use_skia_vulkan_headers" ]
+  }
+  if (skia_use_metal) {
+    defines += [ "SK_METAL" ]
+  }
+
   # These deps don't belong to :core, but they are currently needed to support (de)serialization.
   public_deps = [
     ":fontmgr_FontConfigInterface",
