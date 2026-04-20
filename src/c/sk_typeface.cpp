@@ -135,8 +135,19 @@ sk_stream_asset_t* sk_typeface_open_stream(const sk_typeface_t* typeface, int* t
 // variable fonts
 
 int sk_typeface_get_variation_design_position(const sk_typeface_t* typeface, sk_fontarguments_variation_position_coordinate_t* coordinates, int coordinateCount) {
-    SkFontArguments::VariationPosition::Coordinate* coords = reinterpret_cast<SkFontArguments::VariationPosition::Coordinate*>(coordinates);
-    return AsTypeface(typeface)->getVariationDesignPosition(coords, coordinateCount);
+    static_assert(sizeof(sk_fontarguments_variation_position_coordinate_t) == sizeof(SkFontArguments::VariationPosition::Coordinate), "struct size mismatch");
+    if (coordinates == nullptr) {
+        return AsTypeface(typeface)->getVariationDesignPosition(nullptr, 0);
+    }
+    SkFontArguments::VariationPosition::Coordinate* coords = new SkFontArguments::VariationPosition::Coordinate[coordinateCount];
+    int result = AsTypeface(typeface)->getVariationDesignPosition(coords, coordinateCount);
+    int count = result < coordinateCount ? result : coordinateCount;
+    for (int i = 0; i < count; i++) {
+        coordinates[i].axis = coords[i].axis;
+        coordinates[i].value = coords[i].value;
+    }
+    delete[] coords;
+    return result;
 }
 
 int sk_typeface_get_variation_design_parameters(const sk_typeface_t* typeface, sk_fontarguments_variation_axis_t* parameters, int parameterCount) {
@@ -161,13 +172,19 @@ int sk_typeface_get_variation_design_parameters(const sk_typeface_t* typeface, s
 }
 
 sk_typeface_t* sk_typeface_clone_with_arguments(const sk_typeface_t* typeface, const sk_fontarguments_variation_position_coordinate_t* coordinates, int coordinateCount, int collectionIndex) {
-    const SkFontArguments::VariationPosition::Coordinate* coords = reinterpret_cast<const SkFontArguments::VariationPosition::Coordinate*>(coordinates);
+    SkFontArguments::VariationPosition::Coordinate* coords = new SkFontArguments::VariationPosition::Coordinate[coordinateCount];
+    for (int i = 0; i < coordinateCount; i++) {
+        coords[i].axis = coordinates[i].axis;
+        coords[i].value = coordinates[i].value;
+    }
 
     SkFontArguments args;
     args.setCollectionIndex(collectionIndex);
     args.setVariationDesignPosition({coords, coordinateCount});
 
-    return ToTypeface(AsTypeface(typeface)->makeClone(args).release());
+    auto result = ToTypeface(AsTypeface(typeface)->makeClone(args).release());
+    delete[] coords;
+    return result;
 }
 
 
