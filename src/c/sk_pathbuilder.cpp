@@ -12,6 +12,7 @@
 #include "include/c/sk_pathbuilder.h"
 
 #include "src/c/sk_types_priv.h"
+#include "src/core/SkPathPriv.h"
 
 sk_pathbuilder_t* sk_pathbuilder_new(void) {
     return ToPathBuilder(new SkPathBuilder());
@@ -133,6 +134,10 @@ void sk_pathbuilder_add_path_matrix(sk_pathbuilder_t* builder, const sk_path_t* 
 
 void sk_pathbuilder_add_path(sk_pathbuilder_t* builder, const sk_path_t* other, sk_path_add_mode_t add_mode) {
     AsPathBuilder(builder)->addPath(*AsPath(other), (SkPath::AddPathMode)add_mode);
+}
+
+void sk_pathbuilder_reverse_add_path(sk_pathbuilder_t* builder, const sk_path_t* other) {
+    SkPathPriv::ReverseAddPath(AsPathBuilder(builder), *AsPath(other));
 }
 
 void sk_pathbuilder_set_filltype(sk_pathbuilder_t* builder, sk_path_filltype_t filltype) {

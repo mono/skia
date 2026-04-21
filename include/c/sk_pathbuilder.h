@@ -46,6 +46,7 @@ SK_C_API void sk_pathbuilder_add_poly(sk_pathbuilder_t* builder, const sk_point_
 SK_C_API void sk_pathbuilder_add_path_offset(sk_pathbuilder_t* builder, const sk_path_t* other, float dx, float dy, sk_path_add_mode_t add_mode);
 SK_C_API void sk_pathbuilder_add_path_matrix(sk_pathbuilder_t* builder, const sk_path_t* other, sk_matrix_t* matrix, sk_path_add_mode_t add_mode);
 SK_C_API void sk_pathbuilder_add_path(sk_pathbuilder_t* builder, const sk_path_t* other, sk_path_add_mode_t add_mode);
+SK_C_API void sk_pathbuilder_reverse_add_path(sk_pathbuilder_t* builder, const sk_path_t* other);
 
 SK_C_API void sk_pathbuilder_set_filltype(sk_pathbuilder_t* builder, sk_path_filltype_t filltype);
 SK_C_API sk_path_filltype_t sk_pathbuilder_get_filltype(const sk_pathbuilder_t* builder);
