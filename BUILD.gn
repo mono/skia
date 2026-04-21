@@ -3944,6 +3944,15 @@ skiasharp_build("HarfBuzzSharp") {
     # "HB_NO_WIN1256",
   ]
 
+  # Skia base config applies -fvisibility=hidden. HarfBuzz's HB_EXTERN
+  # macro is plain `extern` and has no visibility attribute, so hb_*
+  # symbols end up local and libHarfBuzzSharp.so exports nothing
+  # (only ~155 KB instead of ~4 MB). On Windows we override HB_EXTERN
+  # with __declspec(dllexport); do the equivalent on non-Windows.
+  if (!is_win) {
+    defines += [ "HB_EXTERN=extern __attribute__((visibility(\"default\")))" ]
+  }
+
   include_dirs = [
     "third_party/harfbuzz"
   ]
