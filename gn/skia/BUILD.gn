@@ -894,9 +894,16 @@ if (is_wasm) {
     }
   } else {
     config("wasm") {
+      # mono/skia: upstream (standalone-wasm commit e979274a45) adds
+      # `-pthread` unconditionally here. That enables the wasm `atomics`
+      # target feature and makes `__atomic_*` builtins lower to real
+      # `i32.atomic.*` instructions, which later break the single-threaded
+      # Blazor/dotnet wasm-opt pass (it runs without `--enable-threads`).
+      # SkiaSharp's build.cake opts `-pthread` in via `extra_cflags_cc`
+      # only for the `mt` variant, so we drop it from the default config
+      # here and let build.cake control per-variant threading.
       common = [
         "--sysroot=$skia_emsdk_dir/upstream/emscripten/cache/sysroot",
-        "-pthread",
       ]
       cflags = common
       ldflags = common
