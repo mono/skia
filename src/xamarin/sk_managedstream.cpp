@@ -108,7 +108,7 @@ bool dSeek(SkManagedStream* stream, void* context, size_t position) {
     if (!gProcs.fSeek) return false;
     return gProcs.fSeek(ToManagedStream(stream), context, position);
 }
-bool dMove(SkManagedStream* stream, void* context, long offset) {
+bool dMove(SkManagedStream* stream, void* context, int32_t offset) {
     if (!gProcs.fMove) return false;
     return gProcs.fMove(ToManagedStream(stream), context, offset);
 }
