@@ -58,7 +58,10 @@ bool SkManagedStream::seek(size_t position) {
 }
 bool SkManagedStream::move(long offset) {
     if (!fProcs.fMove) return false;
-    return fProcs.fMove(this, fContext, offset);
+    // The managed-side MoveProc takes int32_t; fail loud on overflow rather
+    // than silently truncating the upper bits (only reachable on LP64).
+    if (offset > INT32_MAX || offset < INT32_MIN) return false;
+    return fProcs.fMove(this, fContext, static_cast<int32_t>(offset));
 }
 size_t SkManagedStream::getLength() const {
     if (!fProcs.fGetLength) return 0;
