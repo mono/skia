@@ -74,7 +74,7 @@ void** KeepSkiaCSymbols (void)
         (void*)sk_data_new_empty,
         (void*)sk_document_unref,
         (void*)sk_drawable_unref,
-        (void*)sk_font_new,
+        (void*)sk_font_new_with_values,
         (void*)sk_image_ref,
         (void*)sk_imagefilter_unref,
         (void*)sk_maskfilter_ref,

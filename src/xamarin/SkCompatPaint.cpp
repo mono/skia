@@ -8,12 +8,12 @@
 
 #include "include/core/SkPaint.h"
 #include "include/core/SkFont.h"
+#include "include/core/SkTypeface.h"
 #include "include/utils/SkTextUtils.h"
 #include "include/xamarin/SkCompatPaint.h"
-#include "src/c/sk_default_fontmgr.h"
 
 SkCompatPaint::SkCompatPaint()
-    : fFont(SkFont(sk_get_default_typeface()))
+    : fFont(SkFont(SkTypeface::MakeEmpty()))
     , fTextAlign(SkTextUtils::Align::kLeft_Align)
     , fTextEncoding(SkTextEncoding::kUTF8)
     , fFilterQuality(SkFilterQuality::None)
