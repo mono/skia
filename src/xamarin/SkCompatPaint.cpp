@@ -8,20 +8,8 @@
 
 #include "include/core/SkPaint.h"
 #include "include/core/SkFont.h"
-#include "include/core/SkTypeface.h"
 #include "include/utils/SkTextUtils.h"
 #include "include/xamarin/SkCompatPaint.h"
-
-SkCompatPaint::SkCompatPaint()
-    : fFont(SkFont(SkTypeface::MakeEmpty()))
-    , fTextAlign(SkTextUtils::Align::kLeft_Align)
-    , fTextEncoding(SkTextEncoding::kUTF8)
-    , fFilterQuality(SkFilterQuality::None)
-    , fLcdRenderText(false)
-{
-    fFont.setLinearMetrics(true);
-    fFont.setEdging(SkFont::Edging::kAlias);
-}
 
 SkCompatPaint::SkCompatPaint(const SkCompatPaint& paint) = default;
 
@@ -37,8 +25,8 @@ SkCompatPaint::SkCompatPaint(const SkFont* font)
 
 SkCompatPaint::~SkCompatPaint() = default;
 
-void SkCompatPaint::reset() {
-    *this = SkCompatPaint();
+void SkCompatPaint::reset(const SkFont* font) {
+    *this = SkCompatPaint(font);
 }
 
 SkFont* SkCompatPaint::makeFont() {
