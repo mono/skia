@@ -155,30 +155,6 @@ DEF_CLASS_MAP(SkTextBlob, sk_textblob_t, TextBlob)
 DEF_CLASS_MAP(SkTextBlobBuilder, sk_textblob_builder_t, TextBlobBuilder)
 DEF_CLASS_MAP(SkTraceMemoryDump, sk_tracememorydump_t, TraceMemoryDump)
 DEF_CLASS_MAP(SkTypeface, sk_typeface_t, Typeface)
-
-// Variable font conversions
-#include "include/core/SkFontArguments.h"
-#include "include/core/SkFontParameters.h"
-
-static inline const SkFontArguments::VariationPosition::Coordinate* AsVariationPositionCoordinate(const sk_fontarguments_variation_position_coordinate_t* coord) {
-    static_assert(sizeof(sk_fontarguments_variation_position_coordinate_t) == sizeof(SkFontArguments::VariationPosition::Coordinate), "struct size mismatch");
-    return reinterpret_cast<const SkFontArguments::VariationPosition::Coordinate*>(coord);
-}
-
-static inline sk_fontarguments_variation_position_coordinate_t* ToVariationPositionCoordinate(SkFontArguments::VariationPosition::Coordinate* coord) {
-    return reinterpret_cast<sk_fontarguments_variation_position_coordinate_t*>(coord);
-}
-
-static inline sk_fontarguments_variation_axis_t ToVariationAxis(const SkFontParameters::Variation::Axis& axis) {
-    return { axis.tag, axis.min, axis.def, axis.max, axis.isHidden() };
-}
-
-static inline SkFontArguments AsSkFontArguments(const sk_fontarguments_variation_position_coordinate_t* coordinates, int coordinateCount, int collectionIndex) {
-    SkFontArguments args;
-    args.setCollectionIndex(collectionIndex);
-    args.setVariationDesignPosition({AsVariationPositionCoordinate(coordinates), coordinateCount});
-    return args;
-}
 DEF_CLASS_MAP(SkVertices, sk_vertices_t, Vertices)
 DEF_CLASS_MAP(SkWStream, sk_wstream_t, WStream)
 DEF_CLASS_MAP(SkM44, sk_matrix44_t, M44)
@@ -403,6 +379,23 @@ DEF_CLASS_MAP_WITH_NS(skresources, ResourceProvider, skresources_resource_provid
 DEF_CLASS_MAP_WITH_NS(skresources, ImageAsset, skresources_image_asset_t, SkResourcesImageAsset)
 DEF_CLASS_MAP_WITH_NS(skresources, MultiFrameImageAsset, skresources_multi_frame_image_asset_t, SkResourcesMultiFrameImageAsset)
 DEF_CLASS_MAP_WITH_NS(skresources, ExternalTrackAsset, skresources_external_track_asset_t, SkResourcesExternalTrackAsset)
+
+// Variable font conversions
+#include "include/core/SkFontArguments.h"
+#include "include/core/SkFontParameters.h"
+
+DEF_MAP(SkFontArguments::VariationPosition::Coordinate, sk_fontarguments_variation_position_coordinate_t, VariationPositionCoordinate)
+
+static inline sk_fontarguments_variation_axis_t ToVariationAxis(const SkFontParameters::Variation::Axis& axis) {
+    return { axis.tag, axis.min, axis.def, axis.max, axis.isHidden() };
+}
+
+static inline SkFontArguments AsSkFontArguments(const sk_fontarguments_variation_position_coordinate_t* coordinates, int coordinateCount, int collectionIndex) {
+    SkFontArguments args;
+    args.setCollectionIndex(collectionIndex);
+    args.setVariationDesignPosition({AsVariationPositionCoordinate(coordinates), coordinateCount});
+    return args;
+}
 
 #if defined(SK_GANESH)
 // GPU specific

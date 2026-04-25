@@ -138,8 +138,7 @@ int sk_typeface_get_variation_design_position(const sk_typeface_t* typeface, sk_
     if (coordinates == nullptr) {
         return AsTypeface(typeface)->getVariationDesignPosition(nullptr, 0);
     }
-    auto* coords = reinterpret_cast<SkFontArguments::VariationPosition::Coordinate*>(coordinates);
-    return AsTypeface(typeface)->getVariationDesignPosition(coords, coordinateCount);
+    return AsTypeface(typeface)->getVariationDesignPosition(AsVariationPositionCoordinate(coordinates), coordinateCount);
 }
 
 int sk_typeface_get_variation_design_parameters(const sk_typeface_t* typeface, sk_fontarguments_variation_axis_t* parameters, int parameterCount) {
