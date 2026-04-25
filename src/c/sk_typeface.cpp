@@ -217,6 +217,10 @@ sk_typeface_t* sk_fontmgr_create_from_file(sk_fontmgr_t* fontmgr, const char* pa
     return ToTypeface(AsFontMgr(fontmgr)->makeFromFile(path, index).release());
 }
 
+sk_typeface_t* sk_fontmgr_legacy_create_typeface(sk_fontmgr_t* fontmgr, const char* familyName, sk_fontstyle_t* style) {
+    return ToTypeface(AsFontMgr(fontmgr)->legacyMakeTypeface(familyName, *AsFontStyle(style)).release());
+}
+
 
 // font style
 
