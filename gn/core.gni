@@ -913,8 +913,6 @@ skia_core_sources += [
   "$_src/c/sk_surface.cpp",
   "$_src/c/sk_svg.cpp",
   "$_src/c/sk_textblob.cpp",
-  "$_src/c/sk_default_fontmgr.cpp",
-  "$_src/c/sk_default_fontmgr.h",
   "$_src/c/sk_typeface.cpp",
   "$_src/c/sk_types_priv.h",
   "$_src/c/sk_vertices.cpp",
