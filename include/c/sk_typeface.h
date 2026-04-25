@@ -60,9 +60,14 @@ typedef struct {
     bool isHidden;
 } sk_fontarguments_variation_axis_t;
 
+typedef struct {
+    uint16_t index;
+    sk_color_t color;
+} sk_fontarguments_palette_override_t;
+
 SK_C_API int sk_typeface_get_variation_design_position(const sk_typeface_t* typeface, sk_fontarguments_variation_position_coordinate_t* coordinates, int coordinateCount);
 SK_C_API int sk_typeface_get_variation_design_parameters(const sk_typeface_t* typeface, sk_fontarguments_variation_axis_t* parameters, int parameterCount);
-SK_C_API sk_typeface_t* sk_typeface_clone_with_arguments(const sk_typeface_t* typeface, const sk_fontarguments_variation_position_coordinate_t* coordinates, int coordinateCount, int collectionIndex);
+SK_C_API sk_typeface_t* sk_typeface_clone_with_arguments(const sk_typeface_t* typeface, const sk_fontarguments_variation_position_coordinate_t* coordinates, int coordinateCount, int collectionIndex, int paletteIndex, const sk_fontarguments_palette_override_t* paletteOverrides, int paletteOverrideCount);
 
 
 // font manager

@@ -158,8 +158,8 @@ int sk_typeface_get_variation_design_parameters(const sk_typeface_t* typeface, s
     return result;
 }
 
-sk_typeface_t* sk_typeface_clone_with_arguments(const sk_typeface_t* typeface, const sk_fontarguments_variation_position_coordinate_t* coordinates, int coordinateCount, int collectionIndex) {
-    auto args = AsSkFontArguments(coordinates, coordinateCount, collectionIndex);
+sk_typeface_t* sk_typeface_clone_with_arguments(const sk_typeface_t* typeface, const sk_fontarguments_variation_position_coordinate_t* coordinates, int coordinateCount, int collectionIndex, int paletteIndex, const sk_fontarguments_palette_override_t* paletteOverrides, int paletteOverrideCount) {
+    auto args = AsSkFontArguments(coordinates, coordinateCount, collectionIndex, paletteIndex, paletteOverrides, paletteOverrideCount);
     return ToTypeface(AsTypeface(typeface)->makeClone(args).release());
 }
 
