@@ -45,13 +45,15 @@ SK_C_API sk_stream_asset_t* sk_typeface_open_stream(const sk_typeface_t* typefac
 
 // variable fonts
 
+typedef uint32_t sk_fourbytetag_t;
+
 typedef struct {
-    uint32_t axis;
+    sk_fourbytetag_t axis;
     float value;
 } sk_fontarguments_variation_position_coordinate_t;
 
 typedef struct {
-    uint32_t tag;
+    sk_fourbytetag_t tag;
     float min;
     float def;
     float max;
