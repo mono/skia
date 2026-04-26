@@ -80,7 +80,13 @@
 #include <utility>
 
 #if defined(__EMSCRIPTEN__)
-#include <emscripten/version.h>
+// mono/skia: see GrGLFunctions.h — guard with __has_include so old
+// Emscripten (2.0.6 / 2.0.23 in SkiaSharp's WASM matrix) still
+// builds. Those toolchains pass __EMSCRIPTEN_major__ via -D and
+// ship no <emscripten/version.h>.
+#  if __has_include(<emscripten/version.h>)
+#    include <emscripten/version.h>
+#  endif
 #endif
 
 namespace skgpu { class MutableTextureState; }

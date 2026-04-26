@@ -13,7 +13,16 @@
 #include "include/private/base/SkTLogic.h"
 
 #if defined(__EMSCRIPTEN__)
-#include <emscripten/version.h>
+// mono/skia: <emscripten/version.h> was introduced by Emscripten
+// PR #25933 and only ships on emcc that defines the version macros
+// inside the header. Older Emscripten (e.g. the 2.0.6 / 2.0.23
+// toolchains SkiaSharp keeps in its WASM matrix for .NET 6/7
+// compat) still passes -D__EMSCRIPTEN_major__/_minor__/_tiny__ on
+// the command line and ships no such header. Probe with
+// __has_include so both eras compile.
+#  if __has_include(<emscripten/version.h>)
+#    include <emscripten/version.h>
+#  endif
 #endif
 
 extern "C" {
