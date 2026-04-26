@@ -18,6 +18,7 @@
 #include <cstdint>
 #include <functional>
 #include <optional>
+#include <type_traits>
 
 class SkReadBuffer;
 class SkStrikeClient;
@@ -68,7 +69,12 @@ concept GlyphType = requires(const T& t) {
 
     std::is_trivially_destructible_v<T>;
 
-    { t.packedID() } -> std::convertible_to<SkPackedGlyphID>;
+    // mono/skia: replace std::convertible_to (libstdc++ <concepts>, GCC 10.1+ /
+    // libc++ 13+) with std::is_convertible_v from <type_traits>. SkiaSharp ships
+    // builds against Tizen Studio's gcc-9.2 stdlib and Emscripten 2.0.6's libc++
+    // (LLVM 11), neither of which has <concepts>.
+    { t.packedID() };
+    requires std::is_convertible_v<decltype(t.packedID()), SkPackedGlyphID>;
 };
 
 template <typename T, template <typename...> class Template>
@@ -88,7 +94,10 @@ concept BackendData = requires(T& t,
 
     T::FindStrike(cache, spec);
     requires is_specialization_of_v<decltype(T::FindStrike(cache, spec)), sk_sp>;
-    requires std::derived_from<typename decltype(T::FindStrike(cache, spec))::element_type, TextStrikeBase>;
+    // mono/skia: std::derived_from (libstdc++ <concepts>, GCC 10.1+ /
+    // libc++ 13+) -> std::is_base_of_v from <type_traits>, with arg order
+    // swapped (derived_from<D,B> == is_base_of_v<B,D>).
+    requires std::is_base_of_v<TextStrikeBase, typename decltype(T::FindStrike(cache, spec))::element_type>;
 
     // Must have a makeGlyphFromID that returns a GlyphType
     { t.makeGlyphFromID(id, maskFormat) } -> GlyphType;
