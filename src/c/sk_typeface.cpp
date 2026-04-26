@@ -7,7 +7,9 @@
  * found in the LICENSE file.
  */
 
+#include "include/core/SkFontArguments.h"
 #include "include/core/SkFontMgr.h"
+#include "include/core/SkFontParameters.h"
 #include "include/core/SkFontStyle.h"
 #include "include/core/SkTypeface.h"
 #include "include/core/SkStream.h"
@@ -122,6 +124,37 @@ sk_string_t* sk_typeface_get_post_script_name(const sk_typeface_t* typeface) {
 
 sk_stream_asset_t* sk_typeface_open_stream(const sk_typeface_t* typeface, int* ttcIndex) {
     return ToStreamAsset(AsTypeface(typeface)->openStream(ttcIndex).release());
+}
+
+// variable fonts
+
+int sk_typeface_get_variation_design_position(const sk_typeface_t* typeface, sk_fontarguments_variation_position_coordinate_t* coordinates, int coordinateCount) {
+    if (coordinates == nullptr) {
+        return AsTypeface(typeface)->getVariationDesignPosition(nullptr, 0);
+    }
+    return AsTypeface(typeface)->getVariationDesignPosition(AsVariationPositionCoordinate(coordinates), coordinateCount);
+}
+
+int sk_typeface_get_variation_design_parameters(const sk_typeface_t* typeface, sk_fontarguments_variation_axis_t* parameters, int parameterCount) {
+    if (parameters == nullptr) {
+        return AsTypeface(typeface)->getVariationDesignParameters(nullptr, 0);
+    }
+
+    SkFontParameters::Variation::Axis* skAxes = new SkFontParameters::Variation::Axis[parameterCount];
+    int result = AsTypeface(typeface)->getVariationDesignParameters(skAxes, parameterCount);
+
+    int count = result < parameterCount ? result : parameterCount;
+    for (int i = 0; i < count; i++) {
+        parameters[i] = ToVariationAxis(skAxes[i]);
+    }
+
+    delete[] skAxes;
+    return result;
+}
+
+sk_typeface_t* sk_typeface_clone_with_arguments(const sk_typeface_t* typeface, const sk_fontarguments_variation_position_coordinate_t* coordinates, int coordinateCount, int collectionIndex) {
+    auto args = AsSkFontArguments(coordinates, coordinateCount, collectionIndex);
+    return ToTypeface(AsTypeface(typeface)->makeClone(args).release());
 }
 
 

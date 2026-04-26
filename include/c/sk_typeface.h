@@ -38,6 +38,27 @@ SK_C_API sk_string_t* sk_typeface_get_family_name(const sk_typeface_t* typeface)
 SK_C_API sk_string_t* sk_typeface_get_post_script_name(const sk_typeface_t* typeface);
 SK_C_API sk_stream_asset_t* sk_typeface_open_stream(const sk_typeface_t* typeface, int* ttcIndex);
 
+// variable fonts
+
+typedef uint32_t sk_fourbytetag_t;
+
+typedef struct {
+    sk_fourbytetag_t axis;
+    float value;
+} sk_fontarguments_variation_position_coordinate_t;
+
+typedef struct {
+    sk_fourbytetag_t tag;
+    float min;
+    float def;
+    float max;
+    bool isHidden;
+} sk_fontarguments_variation_axis_t;
+
+SK_C_API int sk_typeface_get_variation_design_position(const sk_typeface_t* typeface, sk_fontarguments_variation_position_coordinate_t* coordinates, int coordinateCount);
+SK_C_API int sk_typeface_get_variation_design_parameters(const sk_typeface_t* typeface, sk_fontarguments_variation_axis_t* parameters, int parameterCount);
+SK_C_API sk_typeface_t* sk_typeface_clone_with_arguments(const sk_typeface_t* typeface, const sk_fontarguments_variation_position_coordinate_t* coordinates, int coordinateCount, int collectionIndex);
+
 
 // font manager
 

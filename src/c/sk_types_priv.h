@@ -380,6 +380,24 @@ DEF_CLASS_MAP_WITH_NS(skresources, ImageAsset, skresources_image_asset_t, SkReso
 DEF_CLASS_MAP_WITH_NS(skresources, MultiFrameImageAsset, skresources_multi_frame_image_asset_t, SkResourcesMultiFrameImageAsset)
 DEF_CLASS_MAP_WITH_NS(skresources, ExternalTrackAsset, skresources_external_track_asset_t, SkResourcesExternalTrackAsset)
 
+// Variable font conversions
+#include "include/c/sk_typeface.h"
+#include "include/core/SkFontArguments.h"
+#include "include/core/SkFontParameters.h"
+
+DEF_MAP(SkFontArguments::VariationPosition::Coordinate, sk_fontarguments_variation_position_coordinate_t, VariationPositionCoordinate)
+
+static inline sk_fontarguments_variation_axis_t ToVariationAxis(const SkFontParameters::Variation::Axis& axis) {
+    return { axis.tag, axis.min, axis.def, axis.max, axis.isHidden() };
+}
+
+static inline SkFontArguments AsSkFontArguments(const sk_fontarguments_variation_position_coordinate_t* coordinates, int coordinateCount, int collectionIndex) {
+    SkFontArguments args;
+    args.setCollectionIndex(collectionIndex);
+    args.setVariationDesignPosition({AsVariationPositionCoordinate(coordinates), coordinateCount});
+    return args;
+}
+
 #if defined(SK_GANESH)
 // GPU specific
 
