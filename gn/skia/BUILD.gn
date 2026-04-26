@@ -146,7 +146,16 @@ config("default") {
       "-fvisibility=hidden",
     ]
     cflags_cc += [ "-fvisibility-inlines-hidden" ]
-    cflags_cc += [ "-std=c++20" ]
+    # mono/skia: Tizen Studio bundles clang-10, which only recognises the
+    # C++20 working-draft spelling `c++2a`. The final `c++20` value was
+    # added in clang 12. Substitute the older spelling for Tizen builds
+    # so Skia post-m143 (which made C++20 the default) keeps building
+    # against the Tizen NDK toolchain.
+    if (is_tizen) {
+      cflags_cc += [ "-std=c++2a" ]
+    } else {
+      cflags_cc += [ "-std=c++20" ]
+    }
   }
 
   if (current_cpu == "arm" && !is_win) {
