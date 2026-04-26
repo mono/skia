@@ -20,27 +20,7 @@
 
 #include "include/c/sk_font.h"
 
-#include "src/base/SkUTF.h"
-
 #include "src/c/sk_types_priv.h"
-
-// Validate that text is well-formed for the given encoding.
-// Returns false for malformed UTF (e.g., unpaired surrogates).
-// Skia m147 changed CountTextElements return from int to size_t, which
-// converts the -1 error code to ~0ULL, causing massive allocations.
-static bool sk_validate_text(const void* text, size_t byteLength, sk_text_encoding_t encoding) {
-    if (!text || byteLength == 0) return false;
-    switch ((SkTextEncoding)encoding) {
-        case SkTextEncoding::kUTF8:
-            return SkUTF::CountUTF8((const char*)text, byteLength) >= 0;
-        case SkTextEncoding::kUTF16:
-            return SkUTF::CountUTF16((const uint16_t*)text, byteLength) >= 0;
-        case SkTextEncoding::kUTF32:
-        case SkTextEncoding::kGlyphID:
-            return true;
-    }
-    return false;
-}
 
 // sk_font_t
 
@@ -149,7 +129,6 @@ void sk_font_set_skew_x(sk_font_t* font, float value) {
 }
 
 int sk_font_text_to_glyphs(const sk_font_t* font, const void* text, size_t byteLength, sk_text_encoding_t encoding, uint16_t glyphs[], int maxGlyphCount) {
-    if (!sk_validate_text(text, byteLength, encoding)) return 0;
     return AsFont(font)->textToGlyphs(text, byteLength, (SkTextEncoding)encoding, SkSpan<SkGlyphID>(glyphs, maxGlyphCount));
 }
 
@@ -162,10 +141,6 @@ void sk_font_unichars_to_glyphs(const sk_font_t* font, const int32_t uni[], int 
 }
 
 float sk_font_measure_text(const sk_font_t* font, const void* text, size_t byteLength, sk_text_encoding_t encoding, sk_rect_t* bounds, const sk_paint_t* paint) {
-    if (!sk_validate_text(text, byteLength, encoding)) {
-        if (bounds) { memset(bounds, 0, sizeof(sk_rect_t)); }
-        return 0;
-    }
     return AsFont(font)->measureText(text, byteLength, (SkTextEncoding)encoding, AsRect(bounds), AsPaint(paint));
 }
 
@@ -174,10 +149,6 @@ void sk_font_measure_text_no_return(const sk_font_t* font, const void* text, siz
 }
 
 size_t sk_font_break_text(const sk_font_t* font, const void* text, size_t byteLength, sk_text_encoding_t encoding, float maxWidth, float* measuredWidth, const sk_paint_t* paint) {
-    if (!sk_validate_text(text, byteLength, encoding)) {
-        if (measuredWidth) { *measuredWidth = 0; }
-        return 0;
-    }
     return AsFont(font)->breakText(text, byteLength, (SkTextEncoding)encoding, maxWidth, measuredWidth, AsPaint(paint));
 }
 
@@ -230,13 +201,10 @@ float sk_font_get_metrics(const sk_font_t* font, sk_fontmetrics_t* metrics) {
 // sk_text_utils
 
 void sk_text_utils_get_path(const void* text, size_t length, sk_text_encoding_t encoding, float x, float y, const sk_font_t* font, sk_path_t* path) {
-    if (!sk_validate_text(text, length, encoding)) return;
     SkTextUtils::GetPath(text, length, (SkTextEncoding)encoding, x, y, *AsFont(font), AsPath(path));
 }
 
 void sk_text_utils_get_pos_path(const void* text, size_t length, sk_text_encoding_t encoding, const sk_point_t pos[], const sk_font_t* font, sk_path_t* path) {
-    if (!sk_validate_text(text, length, encoding)) return;
-
     const SkFont& skFont = *AsFont(font);
     int glyphCount = skFont.countText(text, length, (SkTextEncoding)encoding);
     if (glyphCount <= 0) {
