@@ -47,7 +47,7 @@ public:
     typedef bool              (*RewindProc)      (      SkManagedStream* s, void* context);
     typedef size_t            (*GetPositionProc) (const SkManagedStream* s, void* context);
     typedef bool              (*SeekProc)        (      SkManagedStream* s, void* context, size_t position);
-    typedef bool              (*MoveProc)        (      SkManagedStream* s, void* context, long offset);
+    typedef bool              (*MoveProc)        (      SkManagedStream* s, void* context, int32_t offset);
     typedef size_t            (*GetLengthProc)   (const SkManagedStream* s, void* context);
     typedef SkManagedStream*  (*DuplicateProc)   (const SkManagedStream* s, void* context);
     typedef SkManagedStream*  (*ForkProc)        (const SkManagedStream* s, void* context);

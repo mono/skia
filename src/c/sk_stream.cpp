@@ -125,7 +125,7 @@ bool sk_stream_seek (sk_stream_t* cstream, size_t position) {
     return AsStream(cstream)->seek(position);
 }
 
-bool sk_stream_move (sk_stream_t* cstream, long offset) {
+bool sk_stream_move (sk_stream_t* cstream, int32_t offset) {
     return AsStream(cstream)->move(offset);
 }
 

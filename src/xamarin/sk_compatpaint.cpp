@@ -23,10 +23,6 @@ static inline sk_compatpaint_t* ToCompatPaint(SkCompatPaint* c) {
 }
 
 
-sk_compatpaint_t* sk_compatpaint_new(void) {
-    return ToCompatPaint(new SkCompatPaint());
-}
-
 sk_compatpaint_t* sk_compatpaint_new_with_font(const sk_font_t* font) {
     return ToCompatPaint(new SkCompatPaint(AsFont(font)));
 }
@@ -39,8 +35,8 @@ sk_compatpaint_t* sk_compatpaint_clone(const sk_compatpaint_t* paint) {
     return ToCompatPaint(new SkCompatPaint(*AsCompatPaint(paint)));
 }
 
-void sk_compatpaint_reset(sk_compatpaint_t* paint) {
-    AsCompatPaint(paint)->reset();
+void sk_compatpaint_reset(sk_compatpaint_t* paint, const sk_font_t* font) {
+    AsCompatPaint(paint)->reset(AsFont(font));
 }
 
 sk_font_t* sk_compatpaint_make_font(sk_compatpaint_t* paint) {

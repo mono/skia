@@ -49,7 +49,7 @@ typedef bool                       (*sk_managedstream_hasLength_proc)    (const 
 typedef bool                       (*sk_managedstream_rewind_proc)       (      sk_stream_managedstream_t* s, void* context);
 typedef size_t                     (*sk_managedstream_getPosition_proc)  (const sk_stream_managedstream_t* s, void* context);
 typedef bool                       (*sk_managedstream_seek_proc)         (      sk_stream_managedstream_t* s, void* context, size_t position);
-typedef bool                       (*sk_managedstream_move_proc)         (      sk_stream_managedstream_t* s, void* context, long offset);
+typedef bool                       (*sk_managedstream_move_proc)         (      sk_stream_managedstream_t* s, void* context, int32_t offset);
 typedef size_t                     (*sk_managedstream_getLength_proc)    (const sk_stream_managedstream_t* s, void* context);
 typedef sk_stream_managedstream_t* (*sk_managedstream_duplicate_proc)    (const sk_stream_managedstream_t* s, void* context);
 typedef sk_stream_managedstream_t* (*sk_managedstream_fork_proc)         (const sk_stream_managedstream_t* s, void* context);
