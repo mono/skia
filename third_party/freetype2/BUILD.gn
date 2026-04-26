@@ -24,10 +24,18 @@ import("../third_party.gni")
 
 if (skia_use_system_freetype2) {
   system("freetype2") {
-    include_dirs = [ skia_system_freetype2_include_path ]
     libs = [ skia_system_freetype2_lib ]
     if (is_tizen) {
+      # mono/skia: emit only the sysroot-relative include path on Tizen so
+      # the cross-compile picks up the rootstrap's freetype headers, not
+      # whatever happens to be in the build host's /usr/include/freetype2.
+      # (Upstream's bare include_dirs= line is host-absolute and shadows
+      # the cflags `-I=` form; we drop it for is_tizen to avoid the
+      # version-skew that causes COLRv1 link failures when the host's
+      # libfreetype-dev is newer than the rootstrap's libfreetype.so.)
       cflags = [ "-I=$skia_system_freetype2_include_path" ]
+    } else {
+      include_dirs = [ skia_system_freetype2_include_path ]
     }
   }
 } else {
