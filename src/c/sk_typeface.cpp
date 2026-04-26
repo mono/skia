@@ -139,18 +139,19 @@ sk_stream_asset_t* sk_typeface_open_stream(const sk_typeface_t* typeface, int* t
 
 int sk_typeface_get_variation_design_position(const sk_typeface_t* typeface, sk_fontarguments_variation_position_coordinate_t* coordinates, int coordinateCount) {
     if (coordinates == nullptr) {
-        return AsTypeface(typeface)->getVariationDesignPosition(nullptr, 0);
+        return AsTypeface(typeface)->getVariationDesignPosition({});
     }
-    return AsTypeface(typeface)->getVariationDesignPosition(AsVariationPositionCoordinate(coordinates), coordinateCount);
+    return AsTypeface(typeface)->getVariationDesignPosition(
+        SkSpan(AsVariationPositionCoordinate(coordinates), coordinateCount));
 }
 
 int sk_typeface_get_variation_design_parameters(const sk_typeface_t* typeface, sk_fontarguments_variation_axis_t* parameters, int parameterCount) {
     if (parameters == nullptr) {
-        return AsTypeface(typeface)->getVariationDesignParameters(nullptr, 0);
+        return AsTypeface(typeface)->getVariationDesignParameters({});
     }
 
     SkFontParameters::Variation::Axis* skAxes = new SkFontParameters::Variation::Axis[parameterCount];
-    int result = AsTypeface(typeface)->getVariationDesignParameters(skAxes, parameterCount);
+    int result = AsTypeface(typeface)->getVariationDesignParameters(SkSpan(skAxes, parameterCount));
 
     int count = result < parameterCount ? result : parameterCount;
     for (int i = 0; i < count; i++) {
