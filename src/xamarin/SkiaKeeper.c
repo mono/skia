@@ -74,7 +74,7 @@ void** KeepSkiaCSymbols (void)
         (void*)sk_data_new_empty,
         (void*)sk_document_unref,
         (void*)sk_drawable_unref,
-        (void*)sk_font_new,
+        (void*)sk_font_new_with_values,
         (void*)sk_image_ref,
         (void*)sk_imagefilter_unref,
         (void*)sk_maskfilter_ref,
@@ -103,7 +103,7 @@ void** KeepSkiaCSymbols (void)
         (void*)skresources_resource_provider_ref,
 
         // Xamarin
-        (void*)sk_compatpaint_new,
+        (void*)sk_compatpaint_new_with_font,
         (void*)sk_managedstream_new,
         (void*)sk_manageddrawable_new,
         (void*)sk_managedtracememorydump_new,

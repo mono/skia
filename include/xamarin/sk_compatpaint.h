@@ -17,11 +17,10 @@ SK_C_PLUS_PLUS_BEGIN_GUARD
 
 typedef struct sk_compatpaint_t sk_compatpaint_t;
 
-SK_X_API sk_compatpaint_t* sk_compatpaint_new(void);
 SK_X_API sk_compatpaint_t* sk_compatpaint_new_with_font(const sk_font_t* font);
 SK_X_API void sk_compatpaint_delete(sk_compatpaint_t* paint);
 SK_X_API sk_compatpaint_t* sk_compatpaint_clone(const sk_compatpaint_t* paint);
-SK_X_API void sk_compatpaint_reset(sk_compatpaint_t* paint);
+SK_X_API void sk_compatpaint_reset(sk_compatpaint_t* paint, const sk_font_t* font);
 SK_X_API sk_font_t* sk_compatpaint_make_font(sk_compatpaint_t* paint);
 SK_X_API sk_font_t* sk_compatpaint_get_font(sk_compatpaint_t* paint);
 SK_X_API void sk_compatpaint_set_text_align(sk_compatpaint_t* paint, sk_text_align_t align);

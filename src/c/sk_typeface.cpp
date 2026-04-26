@@ -16,10 +16,28 @@
 
 #include <memory>
 
+// Platform-specific font manager includes (m132: SkFontMgr::MakeDefault removed)
+#if defined(__EMSCRIPTEN__)
+#include "include/ports/SkFontMgr_data.h"
+struct SkEmbeddedResource { const uint8_t* data; size_t size; };
+struct SkEmbeddedResourceHeader { const SkEmbeddedResource* entries; int count; };
+extern "C" const SkEmbeddedResourceHeader SK_EMBEDDED_FONTS;
+extern sk_sp<SkFontMgr> SkFontMgr_New_Custom_Embedded(const SkEmbeddedResourceHeader*);
+#elif defined(SK_BUILD_FOR_ANDROID)
+#include "include/ports/SkFontMgr_android.h"
+#elif defined(SK_BUILD_FOR_MAC) || defined(SK_BUILD_FOR_IOS)
+#include "include/ports/SkFontMgr_mac_ct.h"
+#elif defined(SK_BUILD_FOR_WIN)
+#include "include/ports/SkTypeface_win.h"
+#elif defined(SK_FONTMGR_FONTCONFIG_AVAILABLE)
+#include "include/ports/SkFontMgr_fontconfig.h"
+#else
+#include "include/ports/SkFontMgr_empty.h"
+#endif
+
 #include "include/c/sk_typeface.h"
 
 #include "src/c/sk_types_priv.h"
-#include "src/c/sk_default_fontmgr.h"
 
 // typeface
 
@@ -48,32 +66,8 @@ bool sk_typeface_is_fixed_pitch(const sk_typeface_t* typeface) {
     return AsTypeface(typeface)->isFixedPitch();
 }
 
-sk_typeface_t* sk_typeface_create_default(void) {
-    return ToTypeface(sk_get_default_typeface().release());
-}
-
-sk_typeface_t* sk_typeface_ref_default(void) {
-    // Cache a default typeface to preserve the singleton behavior of the old RefDefault()
-    static sk_sp<SkTypeface> defaultTf = sk_get_default_typeface();
-    defaultTf->ref();
-    return ToTypeface(defaultTf.get());
-}
-
-sk_typeface_t* sk_typeface_create_from_name(const char* familyName, const sk_fontstyle_t* style) {
-    return ToTypeface(sk_get_default_fontmgr()->legacyMakeTypeface(familyName, *AsFontStyle(style)).release());
-}
-
-sk_typeface_t* sk_typeface_create_from_file(const char* path, int index) {
-    return ToTypeface(sk_get_default_fontmgr()->makeFromFile(path, index).release());
-}
-
-sk_typeface_t* sk_typeface_create_from_stream(sk_stream_asset_t* stream, int index) {
-    std::unique_ptr<SkStreamAsset> skstream(AsStreamAsset(stream));
-    return ToTypeface(sk_get_default_fontmgr()->makeFromStream(std::move(skstream), index).release());
-}
-
-sk_typeface_t* sk_typeface_create_from_data(sk_data_t* data, int index) {
-    return ToTypeface(sk_get_default_fontmgr()->makeFromData(sk_ref_sp(AsData(data)), index).release());
+sk_typeface_t* sk_typeface_create_empty(void) {
+    return ToTypeface(SkTypeface::MakeEmpty().release());
 }
 
 void sk_typeface_unichars_to_glyphs(const sk_typeface_t* typeface, const int32_t unichars[], int count, uint16_t glyphs[]) {
@@ -167,12 +161,19 @@ sk_typeface_t* sk_typeface_clone_with_arguments(const sk_typeface_t* typeface, c
 // font manager
 
 sk_fontmgr_t* sk_fontmgr_create_default(void) {
-    return ToFontMgr(sk_create_default_fontmgr().release());
-}
-
-sk_fontmgr_t* sk_fontmgr_ref_default(void) {
-    sk_sp<SkFontMgr> mgr = sk_get_default_fontmgr();
-    return ToFontMgr(mgr.release());
+#if defined(__EMSCRIPTEN__)
+    return ToFontMgr(SkFontMgr_New_Custom_Embedded(&SK_EMBEDDED_FONTS).release());
+#elif defined(SK_BUILD_FOR_ANDROID)
+    return ToFontMgr(SkFontMgr_New_Android(nullptr).release());
+#elif defined(SK_BUILD_FOR_MAC) || defined(SK_BUILD_FOR_IOS)
+    return ToFontMgr(SkFontMgr_New_CoreText(nullptr).release());
+#elif defined(SK_BUILD_FOR_WIN)
+    return ToFontMgr(SkFontMgr_New_DirectWrite().release());
+#elif defined(SK_FONTMGR_FONTCONFIG_AVAILABLE)
+    return ToFontMgr(SkFontMgr_New_FontConfig(nullptr).release());
+#else
+    return ToFontMgr(SkFontMgr_New_Custom_Empty().release());
+#endif
 }
 
 void sk_fontmgr_unref(sk_fontmgr_t* fontmgr) {
@@ -214,6 +215,10 @@ sk_typeface_t* sk_fontmgr_create_from_stream(sk_fontmgr_t* fontmgr, sk_stream_as
 
 sk_typeface_t* sk_fontmgr_create_from_file(sk_fontmgr_t* fontmgr, const char* path, int index) {
     return ToTypeface(AsFontMgr(fontmgr)->makeFromFile(path, index).release());
+}
+
+sk_typeface_t* sk_fontmgr_legacy_create_typeface(sk_fontmgr_t* fontmgr, const char* familyName, sk_fontstyle_t* style) {
+    return ToTypeface(AsFontMgr(fontmgr)->legacyMakeTypeface(familyName, *AsFontStyle(style)).release());
 }
 
 

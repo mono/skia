@@ -22,12 +22,7 @@ SK_C_API int sk_typeface_get_font_weight(const sk_typeface_t* typeface);
 SK_C_API int sk_typeface_get_font_width(const sk_typeface_t* typeface);
 SK_C_API sk_font_style_slant_t sk_typeface_get_font_slant(const sk_typeface_t* typeface);
 SK_C_API bool sk_typeface_is_fixed_pitch(const sk_typeface_t* typeface);
-SK_C_API sk_typeface_t* sk_typeface_create_default(void);
-SK_C_API sk_typeface_t* sk_typeface_ref_default(void);
-SK_C_API sk_typeface_t* sk_typeface_create_from_name(const char* familyName, const sk_fontstyle_t* style);
-SK_C_API sk_typeface_t* sk_typeface_create_from_file(const char* path, int index);
-SK_C_API sk_typeface_t* sk_typeface_create_from_stream(sk_stream_asset_t* stream, int index);
-SK_C_API sk_typeface_t* sk_typeface_create_from_data(sk_data_t* data, int index);
+SK_C_API sk_typeface_t* sk_typeface_create_empty(void);
 SK_C_API void sk_typeface_unichars_to_glyphs(const sk_typeface_t* typeface, const int32_t unichars[], int count, uint16_t glyphs[]);
 SK_C_API uint16_t sk_typeface_unichar_to_glyph(const sk_typeface_t* typeface, const int32_t unichar);
 SK_C_API int sk_typeface_count_glyphs(const sk_typeface_t* typeface);
@@ -73,7 +68,6 @@ SK_C_API sk_typeface_t* sk_typeface_clone_with_arguments(const sk_typeface_t* ty
 // font manager
 
 SK_C_API sk_fontmgr_t* sk_fontmgr_create_default(void);
-SK_C_API sk_fontmgr_t* sk_fontmgr_ref_default(void);
 SK_C_API void sk_fontmgr_unref(sk_fontmgr_t*);
 SK_C_API int sk_fontmgr_count_families(sk_fontmgr_t*);
 SK_C_API void sk_fontmgr_get_family_name(sk_fontmgr_t*, int index, sk_string_t* familyName);
@@ -84,6 +78,7 @@ SK_C_API sk_typeface_t* sk_fontmgr_match_family_style_character(sk_fontmgr_t*, c
 SK_C_API sk_typeface_t* sk_fontmgr_create_from_data(sk_fontmgr_t*, sk_data_t* data, int index);
 SK_C_API sk_typeface_t* sk_fontmgr_create_from_stream(sk_fontmgr_t*, sk_stream_asset_t* stream, int index);
 SK_C_API sk_typeface_t* sk_fontmgr_create_from_file(sk_fontmgr_t*, const char* path, int index);
+SK_C_API sk_typeface_t* sk_fontmgr_legacy_create_typeface(sk_fontmgr_t*, const char* familyName, sk_fontstyle_t* style);
 
 // font style
 

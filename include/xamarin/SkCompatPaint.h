@@ -24,13 +24,12 @@ enum class SkFilterQuality
 
 class SkCompatPaint : public SkPaint {
 public:
-    SkCompatPaint();
     SkCompatPaint(const SkCompatPaint& paint);
     SkCompatPaint(const SkFont* font);
     ~SkCompatPaint();
 
 public:
-    void reset();
+    void reset(const SkFont* font);
 
     SkFont* makeFont();
 
