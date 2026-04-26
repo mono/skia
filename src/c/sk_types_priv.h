@@ -386,15 +386,17 @@ DEF_CLASS_MAP_WITH_NS(skresources, ExternalTrackAsset, skresources_external_trac
 #include "include/core/SkFontParameters.h"
 
 DEF_MAP(SkFontArguments::VariationPosition::Coordinate, sk_fontarguments_variation_position_coordinate_t, VariationPositionCoordinate)
+DEF_MAP(SkFontArguments::Palette::Override, sk_fontarguments_palette_override_t, PaletteOverride)
 
 static inline sk_fontarguments_variation_axis_t ToVariationAxis(const SkFontParameters::Variation::Axis& axis) {
     return { axis.tag, axis.min, axis.def, axis.max, axis.isHidden() };
 }
 
-static inline SkFontArguments AsSkFontArguments(const sk_fontarguments_variation_position_coordinate_t* coordinates, int coordinateCount, int collectionIndex) {
+static inline SkFontArguments AsSkFontArguments(const sk_fontarguments_variation_position_coordinate_t* coordinates, int coordinateCount, int collectionIndex, int paletteIndex, const sk_fontarguments_palette_override_t* paletteOverrides, int paletteOverrideCount) {
     SkFontArguments args;
     args.setCollectionIndex(collectionIndex);
     args.setVariationDesignPosition({AsVariationPositionCoordinate(coordinates), coordinateCount});
+    args.setPalette({paletteIndex, AsPaletteOverride(paletteOverrides), paletteOverrideCount});
     return args;
 }
 
