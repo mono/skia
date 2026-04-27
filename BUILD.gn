@@ -3918,6 +3918,7 @@ skiasharp_build("SkiaSharp") {
     "src/xamarin/sk_manageddrawable.cpp",
     "src/xamarin/sk_managedstream.cpp",
     "src/xamarin/sk_managedtracememorydump.cpp",
+    "src/xamarin/sk_mulodi4.c",
     "src/xamarin/sk_xamarin.cpp",
     "src/xamarin/SkiaKeeper.c",
     "src/xamarin/SkCompatPaint.cpp",
