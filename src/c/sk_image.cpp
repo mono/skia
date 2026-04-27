@@ -121,8 +121,11 @@ bool sk_image_is_lazy_generated(const sk_image_t* image) {
 
 bool sk_image_is_valid(const sk_image_t* image, gr_recording_context_t* context) {
     // In m147, isValid() takes SkRecorder* instead of GrRecordingContext*.
-    // Pass nullptr which works for both raster and GPU-backed images.
-    return AsImage(image)->isValid(nullptr);
+    // Convert via GrRecordingContext::asRecorder() so GPU-backed images can
+    // be validated against their owning context. Passing nullptr only tests
+    // raster validity, which always returns false for texture-backed images.
+    SkRecorder* recorder = context ? AsGrRecordingContext(context)->asRecorder() : nullptr;
+    return AsImage(image)->isValid(recorder);
 }
 
 bool sk_image_read_pixels(const sk_image_t* image, const sk_imageinfo_t* dstInfo, void* dstPixels, size_t dstRowBytes, int srcX, int srcY, sk_image_caching_hint_t cachingHint) {
