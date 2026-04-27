@@ -27,6 +27,7 @@
 #include "include/c/sk_linker.h"
 #include "include/c/sk_maskfilter.h"
 #include "include/c/sk_matrix.h"
+#include "include/c/sk_mesh.h"
 #include "include/c/sk_paint.h"
 #include "include/c/sk_path.h"
 #include "include/c/sk_pathbuilder.h"
@@ -102,6 +103,7 @@ void** KeepSkiaCSymbols (void)
         (void*)sk_typeface_unref,
         (void*)sk_textblob_ref,
         (void*)sk_vertices_unref,
+        (void*)sk_mesh_new,
         (void*)sk_graphics_init,
 
         // Animation
