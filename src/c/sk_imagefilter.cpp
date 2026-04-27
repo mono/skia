@@ -12,6 +12,7 @@
 #include "include/core/SkPicture.h"
 #include "include/core/SkRegion.h"
 #include "include/effects/SkImageFilters.h"
+#include "include/effects/SkRuntimeEffect.h"
 
 #include "include/c/sk_imagefilter.h"
 
@@ -142,4 +143,37 @@ sk_imagefilter_t* sk_imagefilter_new_point_lit_specular(const sk_point3_t* locat
 
 sk_imagefilter_t* sk_imagefilter_new_spot_lit_specular(const sk_point3_t* location, const sk_point3_t* target, float specularExponent, float cutoffAngle, sk_color_t lightColor, float surfaceScale, float ks, float shininess, const sk_imagefilter_t* input, const sk_rect_t* cropRect) {
     return ToImageFilter(SkImageFilters::SpotLitSpecular(*AsPoint3(location), *AsPoint3(target), specularExponent, cutoffAngle, lightColor, surfaceScale, ks, shininess, sk_ref_sp(AsImageFilter(input)), AsRect(cropRect)).release());
+}
+
+sk_imagefilter_t* sk_imagefilter_new_runtime_shader(sk_runtimeeffect_t* effect, sk_data_t* uniforms, sk_flattenable_t** children, size_t childCount, const char* childShaderName, const sk_imagefilter_t* input) {
+    SkRuntimeShaderBuilder builder(sk_ref_sp(AsRuntimeEffect(effect)), sk_ref_sp(AsData(uniforms)));
+
+    auto effectChildren = AsRuntimeEffect(effect)->children();
+    for (size_t i = 0; i < childCount && i < effectChildren.size(); i++) {
+        builder.child(effectChildren[i].name) = sk_ref_sp(AsFlattenable(children[i]));
+    }
+
+    std::string_view name = childShaderName ? std::string_view(childShaderName) : std::string_view();
+    return ToImageFilter(SkImageFilters::RuntimeShader(builder, name, sk_ref_sp(AsImageFilter(input))).release());
+}
+
+sk_imagefilter_t* sk_imagefilter_new_runtime_shader_with_children(sk_runtimeeffect_t* effect, sk_data_t* uniforms, sk_flattenable_t** children, size_t childCount, float maxSampleRadius, const char** childShaderNames, const sk_imagefilter_t** inputs, int inputCount) {
+    SkRuntimeShaderBuilder builder(sk_ref_sp(AsRuntimeEffect(effect)), sk_ref_sp(AsData(uniforms)));
+
+    auto effectChildren = AsRuntimeEffect(effect)->children();
+    for (size_t i = 0; i < childCount && i < effectChildren.size(); i++) {
+        builder.child(effectChildren[i].name) = sk_ref_sp(AsFlattenable(children[i]));
+    }
+
+    std::vector<std::string_view> names(inputCount);
+    for (int i = 0; i < inputCount; i++) {
+        names[i] = std::string_view(childShaderNames[i]);
+    }
+
+    std::vector<sk_sp<SkImageFilter>> skInputs(inputCount);
+    for (int i = 0; i < inputCount; i++) {
+        skInputs[i] = sk_ref_sp(AsImageFilter(inputs[i]));
+    }
+
+    return ToImageFilter(SkImageFilters::RuntimeShader(builder, maxSampleRadius, names.data(), skInputs.data(), inputCount).release());
 }
