@@ -153,7 +153,11 @@ sk_image_t* sk_image_make_subset_raster(const sk_image_t* cimage, const sk_irect
 
 sk_image_t* sk_image_make_subset(const sk_image_t* cimage, gr_direct_context_t* context, const sk_irect_t* subset) {
     // In m147, makeSubset takes SkRecorder* instead of GrDirectContext*.
-    return ToImage(AsImage(cimage)->makeSubset(nullptr, *AsIRect(subset), {}).release());
+    // Convert via GrRecordingContext::asRecorder() so GPU-backed images can
+    // be subsetted on their owning context — passing nullptr makes the GPU
+    // override return null because it can't access a direct context.
+    SkRecorder* recorder = context ? AsGrDirectContext(context)->asRecorder() : nullptr;
+    return ToImage(AsImage(cimage)->makeSubset(recorder, *AsIRect(subset), {}).release());
 }
 
 sk_image_t* sk_image_make_texture_image(const sk_image_t* cimage, gr_direct_context_t* context, bool mipmapped, bool budgeted) {
