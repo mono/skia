@@ -158,6 +158,65 @@ DEF_CLASS_MAP(SkTraceMemoryDump, sk_tracememorydump_t, TraceMemoryDump)
 DEF_CLASS_MAP(SkTypeface, sk_typeface_t, Typeface)
 DEF_CLASS_MAP(SkVertices, sk_vertices_t, Vertices)
 DEF_CLASS_MAP(SkWStream, sk_wstream_t, WStream)
+
+#include "include/core/SkMesh.h"
+DEF_CLASS_MAP(SkMeshSpecification, sk_meshspecification_t, MeshSpecification)
+
+// sk_mesh_t maps to SkMeshBuilder (a builder that accumulates state
+// and calls SkMesh::Make/MakeIndexed on validation)
+struct SkMeshBuilder {
+    sk_sp<SkMeshSpecification> fSpec;
+    SkMesh::Mode fMode = SkMesh::Mode::kTriangles;
+    sk_sp<SkMesh::VertexBuffer> fVB;
+    size_t fVCount = 0;
+    size_t fVOffset = 0;
+    sk_sp<SkMesh::IndexBuffer> fIB;
+    size_t fICount = 0;
+    size_t fIOffset = 0;
+    sk_sp<const SkData> fUniforms;
+    std::vector<SkRuntimeEffect::ChildPtr> fChildren;
+    SkRect fBounds = SkRect::MakeEmpty();
+    SkMesh fMesh;
+    bool fValidated = false;
+};
+
+static inline SkMeshBuilder* AsMeshBuilder(sk_mesh_t* t) {
+    return reinterpret_cast<SkMeshBuilder*>(t);
+}
+static inline const SkMeshBuilder* AsMeshBuilder(const sk_mesh_t* t) {
+    return reinterpret_cast<const SkMeshBuilder*>(t);
+}
+static inline sk_mesh_t* ToMeshBuilder(SkMeshBuilder* t) {
+    return reinterpret_cast<sk_mesh_t*>(t);
+}
+
+// SkMesh::VertexBuffer and IndexBuffer need special As*/To* functions
+// since they are nested classes
+static inline const SkMesh::VertexBuffer* AsMeshVertexBuffer(const sk_mesh_vertex_buffer_t* t) {
+    return reinterpret_cast<const SkMesh::VertexBuffer*>(t);
+}
+static inline SkMesh::VertexBuffer* AsMeshVertexBuffer(sk_mesh_vertex_buffer_t* t) {
+    return reinterpret_cast<SkMesh::VertexBuffer*>(t);
+}
+static inline const sk_mesh_vertex_buffer_t* ToMeshVertexBuffer(const SkMesh::VertexBuffer* t) {
+    return reinterpret_cast<const sk_mesh_vertex_buffer_t*>(t);
+}
+static inline sk_mesh_vertex_buffer_t* ToMeshVertexBuffer(SkMesh::VertexBuffer* t) {
+    return reinterpret_cast<sk_mesh_vertex_buffer_t*>(t);
+}
+
+static inline const SkMesh::IndexBuffer* AsMeshIndexBuffer(const sk_mesh_index_buffer_t* t) {
+    return reinterpret_cast<const SkMesh::IndexBuffer*>(t);
+}
+static inline SkMesh::IndexBuffer* AsMeshIndexBuffer(sk_mesh_index_buffer_t* t) {
+    return reinterpret_cast<SkMesh::IndexBuffer*>(t);
+}
+static inline const sk_mesh_index_buffer_t* ToMeshIndexBuffer(const SkMesh::IndexBuffer* t) {
+    return reinterpret_cast<const sk_mesh_index_buffer_t*>(t);
+}
+static inline sk_mesh_index_buffer_t* ToMeshIndexBuffer(SkMesh::IndexBuffer* t) {
+    return reinterpret_cast<sk_mesh_index_buffer_t*>(t);
+}
 DEF_CLASS_MAP(SkM44, sk_matrix44_t, M44)
 
 DEF_CLASS_MAP(GrDirectContext, gr_direct_context_t, GrDirectContext)
