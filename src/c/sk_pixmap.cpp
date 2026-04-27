@@ -10,9 +10,12 @@
 #include "include/core/SkPixmap.h"
 #include "include/core/SkSwizzle.h"
 #include "include/core/SkUnPreMultiply.h"
+#include "include/encode/SkEncoder.h"
 #include "include/encode/SkJpegEncoder.h"
 #include "include/encode/SkPngEncoder.h"
 #include "include/encode/SkWebpEncoder.h"
+
+#include <vector>
 
 #include "include/c/sk_pixmap.h"
 
@@ -106,6 +109,15 @@ bool sk_pixmap_erase_color4f(const sk_pixmap_t* cpixmap, const sk_color4f_t* col
 
 bool sk_webpencoder_encode(sk_wstream_t* dst, const sk_pixmap_t* src, const sk_webpencoder_options_t* options) {
     return SkWebpEncoder::Encode(AsWStream(dst), *AsPixmap(src), AsWebpEncoderOptions(options));
+}
+
+bool sk_webpencoder_encode_animated(sk_wstream_t* dst, const sk_webpencoder_frame_t* src, int count, const sk_webpencoder_options_t* options) {
+    std::vector<SkEncoder::Frame> frames(count);
+    for (int i = 0; i < count; i++) {
+        frames[i].pixmap = *AsPixmap(src[i].pixmap);
+        frames[i].duration = src[i].duration;
+    }
+    return SkWebpEncoder::EncodeAnimated(AsWStream(dst), frames, AsWebpEncoderOptions(options));
 }
 
 bool sk_jpegencoder_encode(sk_wstream_t* dst, const sk_pixmap_t* src, const sk_jpegencoder_options_t* options) {

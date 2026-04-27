@@ -1014,6 +1014,11 @@ typedef struct {
     float fQuality;
 } sk_webpencoder_options_t;
 
+typedef struct {
+    const sk_pixmap_t* pixmap;
+    int duration;
+} sk_webpencoder_frame_t;
+
 typedef struct sk_rrect_t sk_rrect_t;
 
 typedef enum {
