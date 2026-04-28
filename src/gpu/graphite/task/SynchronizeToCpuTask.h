@@ -8,12 +8,18 @@
 #ifndef skgpu_graphite_task_SynchronizeToCpuTask_DEFINED
 #define skgpu_graphite_task_SynchronizeToCpuTask_DEFINED
 
-#include "src/gpu/graphite/Buffer.h"
+#include "include/core/SkRefCnt.h"
 #include "src/gpu/graphite/task/Task.h"
+#include <utility>
 
 namespace skgpu::graphite {
 
 class Buffer;
+class CommandBuffer;
+class Context;
+class ResourceProvider;
+class RuntimeEffectDictionary;
+class ScratchResourceManager;
 
 /**
  * Task that synchronizes the contents of a buffer from the GPU to the CPU. This task ensures that
@@ -28,11 +34,13 @@ public:
 
     Status prepareResources(ResourceProvider*,
                             ScratchResourceManager*,
-                            const RuntimeEffectDictionary*) override {
+                            sk_sp<const RuntimeEffectDictionary>) override {
         return Status::kSuccess;
     }
 
     Status addCommands(Context*, CommandBuffer*, ReplayTargetData) override;
+
+    SK_DUMP_TASKS_CODE(const char* getTaskName() const override { return "Sync to CPU Task"; })
 
 private:
     explicit SynchronizeToCpuTask(sk_sp<Buffer> buffer) : fBuffer(std::move(buffer)) {}

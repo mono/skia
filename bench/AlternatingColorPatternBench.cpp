@@ -10,8 +10,9 @@
 #include "include/core/SkCanvas.h"
 #include "include/core/SkPaint.h"
 #include "include/core/SkPath.h"
+#include "include/core/SkPathBuilder.h"
 #include "include/core/SkString.h"
-#include "include/effects/SkGradientShader.h"
+#include "include/effects/SkGradient.h"
 
 enum ColorPattern {
     kWhite_ColorPattern,
@@ -46,17 +47,19 @@ static void makebm(SkBitmap* bm, int w, int h) {
     static const SkPoint     kPts0[] = { { 0, 0 }, { s, s } };
     static const SkPoint     kPts1[] = { { s/2, 0 }, { s/2, s } };
     static const SkScalar    kPos[] = { 0, SK_Scalar1/2, SK_Scalar1 };
-    static const SkColor kColors0[] = {0x80F00080, 0xF0F08000, 0x800080F0 };
-    static const SkColor kColors1[] = {0xF08000F0, 0x8080F000, 0xF000F080 };
+    static const SkColor4f kColors0[] = { SkColor4f::FromColor(0x80F00080),
+                                          SkColor4f::FromColor(0xF0F08000),
+                                          SkColor4f::FromColor(0x800080F0) };
+    static const SkColor4f kColors1[] = { SkColor4f::FromColor(0xF08000F0),
+                                          SkColor4f::FromColor(0x8080F000),
+                                          SkColor4f::FromColor(0xF000F080) };
 
 
     SkPaint     paint;
 
-    paint.setShader(SkGradientShader::MakeLinear(kPts0, kColors0, kPos, std::size(kColors0),
-                                                 SkTileMode::kClamp));
+    paint.setShader(SkShaders::LinearGradient(kPts0, {{kColors0, kPos, SkTileMode::kClamp}, {}}));
     canvas.drawPaint(paint);
-    paint.setShader(SkGradientShader::MakeLinear(kPts1, kColors1, kPos, std::size(kColors1),
-                                                 SkTileMode::kClamp));
+    paint.setShader(SkShaders::LinearGradient(kPts1, {{kColors1, kPos, SkTileMode::kClamp}, {}}));
     canvas.drawPaint(paint);
 }
 
@@ -125,10 +128,12 @@ protected:
                     fRects[count].setXYWH(SkIntToScalar(x), SkIntToScalar(y),
                                           SkIntToScalar(w), SkIntToScalar(h));
                 } else {
-                    fPaths[count].moveTo(SkIntToScalar(x), SkIntToScalar(y));
-                    fPaths[count].rLineTo(SkIntToScalar(w), 0);
-                    fPaths[count].rLineTo(0, SkIntToScalar(h));
-                    fPaths[count].rLineTo(SkIntToScalar(-w + 1), 0);
+                    SkPathBuilder builder;
+                    builder.moveTo(SkIntToScalar(x), SkIntToScalar(y));
+                    builder.rLineTo(SkIntToScalar(w), 0);
+                    builder.rLineTo(0, SkIntToScalar(h));
+                    builder.rLineTo(SkIntToScalar(-w + 1), 0);
+                    fPaths[count] = builder.detach();
                 }
                 if (0 == count % 2) {
                     fColors[count]  = fPattern1.fColor;

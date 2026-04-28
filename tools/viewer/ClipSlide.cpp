@@ -6,13 +6,13 @@
  */
 
 #include "include/core/SkCanvas.h"
-#include "include/core/SkColorPriv.h"
 #include "include/core/SkFont.h"
 #include "include/core/SkPaint.h"
 #include "include/core/SkPathBuilder.h"
 #include "include/core/SkRRect.h"
 #include "include/core/SkShader.h"
 #include "src/base/SkRandom.h"
+#include "src/core/SkColorPriv.h"
 #include "src/core/SkPathPriv.h"
 #include "tools/DecodeUtils.h"
 #include "tools/Resources.h"
@@ -221,8 +221,7 @@ static SkPath clip(const SkPath& path, SkPoint p0, SkPoint p1) {
                  0,     0,     1);
     SkAssertResult(mx.invert(&inv));
 
-    SkPath rotated;
-    path.transform(inv, &rotated);
+    SkPath rotated = path.makeTransform(inv);
 
     SkScalar big = 1e28f;
     SkRect clip = {-big, 0, big, big };
@@ -232,14 +231,13 @@ static SkPath clip(const SkPath& path, SkPoint p0, SkPoint p1) {
         SkPoint         fPrev = {0, 0};
     } rec;
 
-    SkEdgeClipper::ClipPath(rotated, clip, false,
+    SkEdgeClipper::ClipPath(SkPathPriv::Raw(rotated, SkResolveConvexity::kNo).value(), clip, false,
                             [](SkEdgeClipper* clipper, bool newCtr, void* ctx) {
         Rec* rec = (Rec*)ctx;
 
         bool addLineTo = false;
         SkPoint      pts[4];
-        SkPath::Verb verb;
-        while ((verb = clipper->next(pts)) != SkPath::kDone_Verb) {
+        while (auto verb = clipper->next(pts)) {
             if (newCtr) {
                 rec->fResult.moveTo(pts[0]);
                 rec->fPrev = pts[0];
@@ -250,16 +248,16 @@ static SkPath clip(const SkPath& path, SkPoint p0, SkPoint p1) {
                 rec->fResult.lineTo(pts[0]);
             }
 
-            switch (verb) {
-                case SkPath::kLine_Verb:
+            switch (*verb) {
+                case SkPathVerb::kLine:
                     rec->fResult.lineTo(pts[1]);
                     rec->fPrev = pts[1];
                     break;
-                case SkPath::kQuad_Verb:
+                case SkPathVerb::kQuad:
                     rec->fResult.quadTo(pts[1], pts[2]);
                     rec->fPrev = pts[2];
                     break;
-                case SkPath::kCubic_Verb:
+                case SkPathVerb::kCubic:
                     rec->fResult.cubicTo(pts[1], pts[2], pts[3]);
                     rec->fPrev = pts[3];
                     break;
@@ -358,7 +356,7 @@ static void compute_half_planes(const SkMatrix& mx, SkScalar width, SkScalar hei
 }
 
 class HalfPlaneSlide2 : public ClickHandlerSlide {
-    SkPoint fPts[4];
+    std::array<SkPoint, 4> fPts;
     SkPath fPath;
 
 public:
@@ -366,17 +364,14 @@ public:
 
     void load(SkScalar w, SkScalar h) override {
         fPath = make_path();
-        SkRect r = fPath.getBounds();
-        r.toQuad(fPts);
+        fPts = fPath.getBounds().toQuad();
     }
 
     void draw(SkCanvas* canvas) override {
         SkMatrix mx;
         {
-            SkRect r = fPath.getBounds();
-            SkPoint src[4];
-            r.toQuad(src);
-            mx.setPolyToPoly(src, fPts, 4);
+            const std::array<SkPoint, 4> src = fPath.getBounds().toQuad();
+            mx.setPolyToPoly(src, fPts);
         }
 
         SkPaint paint;
@@ -391,7 +386,7 @@ public:
         // draw the frame
         paint.setStrokeWidth(10);
         paint.setColor(SK_ColorGREEN);
-        canvas->drawPoints(SkCanvas::kPoints_PointMode, 4, fPts, paint);
+        canvas->drawPoints(SkCanvas::kPoints_PointMode, fPts, paint);
 
         // draw the half-planes
         SkHalfPlane planes[4];
@@ -613,10 +608,10 @@ public:
             paint.setAntiAlias(true);
             paint.setStrokeCap(SkPaint::kRound_Cap);
             paint.setStrokeWidth(8);
-            canvas->drawPoints(SkCanvas::kPoints_PointMode, 12, fPatch, paint);
+            canvas->drawPoints(SkCanvas::kPoints_PointMode, fPatch, paint);
             paint.setColor(SK_ColorWHITE);
             paint.setStrokeWidth(6);
-            canvas->drawPoints(SkCanvas::kPoints_PointMode, 12, fPatch, paint);
+            canvas->drawPoints(SkCanvas::kPoints_PointMode, fPatch, paint);
         }
 
         canvas->restore();

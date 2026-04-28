@@ -7,17 +7,19 @@
 
 #include "src/gpu/graphite/mtl/MtlComputePipeline.h"
 
+#include "include/gpu/GpuTypes.h"
 #include "include/gpu/ShaderErrorHandler.h"
 #include "src/gpu/graphite/ComputePipelineDesc.h"
 #include "src/gpu/graphite/ContextUtils.h"
 #include "src/gpu/graphite/Log.h"
 #include "src/gpu/graphite/ResourceProvider.h"
-#include "src/gpu/graphite/mtl/MtlGraphiteUtilsPriv.h"
+#include "src/gpu/graphite/mtl/MtlGraphiteUtils.h"
 #include "src/gpu/graphite/mtl/MtlSharedContext.h"
 #include "src/gpu/mtl/MtlUtilsPriv.h"
 #include "src/sksl/SkSLCompiler.h"
 #include "src/sksl/SkSLProgramKind.h"
 #include "src/sksl/SkSLProgramSettings.h"
+#include "src/sksl/codegen/SkSLNativeShader.h"
 #include "src/sksl/ir/SkSLProgram.h"
 
 namespace skgpu::graphite {
@@ -40,12 +42,14 @@ sk_sp<MtlComputePipeline> MtlComputePipeline::Make(const MtlSharedContext* share
         }
         entryPointName = std::move(nativeShader.fEntryPoint);
     } else {
-        std::string msl;
+        SkSL::NativeShader msl;
         SkSL::Program::Interface interface;
         SkSL::ProgramSettings settings;
 
         SkSL::Compiler skslCompiler;
-        std::string sksl = BuildComputeSkSL(sharedContext->caps(), pipelineDesc.computeStep());
+        std::string sksl = BuildComputeSkSL(sharedContext->caps(),
+                                            pipelineDesc.computeStep(),
+                                            BackendApi::kMetal);
         if (!SkSLToMSL(sharedContext->caps()->shaderCaps(),
                        sksl,
                        SkSL::ProgramKind::kCompute,
@@ -55,10 +59,8 @@ sk_sp<MtlComputePipeline> MtlComputePipeline::Make(const MtlSharedContext* share
                        errorHandler)) {
             return nullptr;
         }
-        library = MtlCompileShaderLibrary(sharedContext,
-                                          pipelineDesc.computeStep()->name(),
-                                          msl,
-                                          errorHandler);
+        library = MtlCompileShaderLibrary(
+                sharedContext, pipelineDesc.computeStep()->name(), msl.fText, errorHandler);
         if (library == nil) {
             return nullptr;
         }

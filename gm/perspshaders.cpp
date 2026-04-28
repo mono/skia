@@ -14,6 +14,7 @@
 #include "include/core/SkMatrix.h"
 #include "include/core/SkPaint.h"
 #include "include/core/SkPath.h"
+#include "include/core/SkPathBuilder.h"
 #include "include/core/SkPoint.h"
 #include "include/core/SkRect.h"
 #include "include/core/SkRefCnt.h"
@@ -24,7 +25,7 @@
 #include "include/core/SkSurface.h"
 #include "include/core/SkTileMode.h"
 #include "include/core/SkTypes.h"
-#include "include/effects/SkGradientShader.h"
+#include "include/effects/SkGradient.h"
 #include "tools/DecodeUtils.h"
 #include "tools/ToolUtils.h"
 
@@ -67,25 +68,25 @@ protected:
             { 0, 0 },
             { 0, SkIntToScalar(kCellSize) }
         };
-        constexpr SkColor colors[] = {
-            SK_ColorRED, SK_ColorGREEN, SK_ColorRED, SK_ColorGREEN, SK_ColorRED
+        constexpr SkColor4f colors[] = {
+            SkColors::kRed, SkColors::kGreen, SkColors::kRed, SkColors::kGreen, SkColors::kRed
         };
         constexpr SkScalar pos[] = { 0, 0.25f, 0.5f, 0.75f, SK_Scalar1 };
 
-        fLinearGrad1 = SkGradientShader::MakeLinear(pts1, colors, pos, std::size(colors),
-                                                    SkTileMode::kClamp);
-        fLinearGrad2 = SkGradientShader::MakeLinear(pts2, colors, pos, std::size(colors),
-                                                    SkTileMode::kClamp);
+        fLinearGrad1 = SkShaders::LinearGradient(pts1, {{colors, pos, SkTileMode::kClamp}, {}});
+        fLinearGrad2 = SkShaders::LinearGradient(pts2, {{colors, pos, SkTileMode::kClamp}, {}});
 
         fPerspMatrix.reset();
         fPerspMatrix.setPerspY(SK_Scalar1 / 50);
 
-        fPath.moveTo(0, 0);
-        fPath.lineTo(0, SkIntToScalar(kCellSize));
-        fPath.lineTo(kCellSize/2.0f, kCellSize/2.0f);
-        fPath.lineTo(SkIntToScalar(kCellSize), SkIntToScalar(kCellSize));
-        fPath.lineTo(SkIntToScalar(kCellSize), 0);
-        fPath.close();
+        fPath = SkPathBuilder()
+                .moveTo(0, 0)
+                .lineTo(0, SkIntToScalar(kCellSize))
+                .lineTo(kCellSize/2.0f, kCellSize/2.0f)
+                .lineTo(SkIntToScalar(kCellSize), SkIntToScalar(kCellSize))
+                .lineTo(SkIntToScalar(kCellSize), 0)
+                .close()
+                .detach();
     }
 
     void drawRow(SkCanvas* canvas, const SkSamplingOptions& sampling) {
@@ -146,7 +147,7 @@ protected:
     }
 
     void onDraw(SkCanvas* canvas) override {
-        if (!fImage || !fImage->isValid(canvas->recordingContext())) {
+        if (!fImage || !fImage->isValid(canvas->baseRecorder())) {
             fImage = make_image(canvas, kCellSize, kCellSize);
         }
 
@@ -193,15 +194,17 @@ static SkPath make_path() {
         return SkPoint{x * 400, y * 400};
     };
 
-    SkPath path;
+    SkPathBuilder builder;
     for (int i = 0; i < 4; ++i) {
         SkPoint pts[6];
         for (auto& p : pts) {
             p = rand_pt();
         }
-        path.moveTo(pts[0]).quadTo(pts[1], pts[2]).quadTo(pts[3], pts[4]).lineTo(pts[5]);
+        builder.moveTo(pts[0])
+               .quadTo(pts[1], pts[2])
+               .quadTo(pts[3], pts[4]).lineTo(pts[5]);
     }
-    return path;
+    return builder.detach();
 }
 
 DEF_SIMPLE_GM(perspective_clip, canvas, 800, 800) {

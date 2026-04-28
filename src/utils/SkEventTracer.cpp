@@ -7,7 +7,7 @@
 
 #include "include/utils/SkEventTracer.h"
 
-#include "include/private/base/SkOnce.h"
+#include "include/private/base/SkMacros.h"
 
 #include <stdlib.h>
 #include <atomic>
@@ -46,17 +46,14 @@ class SkDefaultEventTracer : public SkEventTracer {
 // We prefer gUserTracer if it's been set, otherwise we fall back on a default tracer;
 static std::atomic<SkEventTracer*> gUserTracer{nullptr};
 
-bool SkEventTracer::SetInstance(SkEventTracer* tracer, bool leakTracer) {
+bool SkEventTracer::SetInstance(SkEventTracer* tracer) {
     SkEventTracer* expected = nullptr;
     if (!gUserTracer.compare_exchange_strong(expected, tracer)) {
         delete tracer;
         return false;
     }
-    // If leaking the tracer is accepted then there is no need to install
-    // the atexit.
-    if (!leakTracer) {
-        atexit([]() { delete gUserTracer.load(); });
-    }
+    // Once set, `tracer` remains alive until the process is destroyed.
+    SK_INTENTIONALLY_LEAKED(tracer);
     return true;
 }
 
@@ -64,8 +61,6 @@ SkEventTracer* SkEventTracer::GetInstance() {
     if (auto tracer = gUserTracer.load(std::memory_order_acquire)) {
         return tracer;
     }
-    static SkOnce once;
-    static SkDefaultEventTracer* defaultTracer;
-    once([] { defaultTracer = new SkDefaultEventTracer; });
+    static SkDefaultEventTracer* defaultTracer = new SkDefaultEventTracer;
     return defaultTracer;
 }

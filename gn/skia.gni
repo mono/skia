@@ -9,19 +9,23 @@ if (!defined(is_skia_standalone)) {
 is_skia_dev_build = is_skia_standalone && !is_official_build
 
 declare_args() {
+  is_canvaskit = false
+}
+
+declare_args() {
   skia_android_serial = ""
   skia_compile_modules = false
   skia_compile_sksl_tests = false
   skia_dwritecore_sdk = ""
+  skia_dump_tasks = false
   skia_enable_api_available_macro = true
   skia_enable_android_utils = is_skia_dev_build
   skia_enable_discrete_gpu = true
   skia_enable_fontmgr_empty = false
-  skia_enable_fontmgr_fuchsia = is_fuchsia
   skia_enable_fontmgr_win = is_win
   skia_enable_gpu_debug_layers = is_skia_dev_build && is_debug
   skia_enable_optimize_size = false
-  skia_enable_pdf = !is_wasm
+  skia_enable_pdf = !is_canvaskit
   skia_enable_precompile = true
   skia_enable_skottie = !is_component_build
   skia_enable_svg = !is_component_build
@@ -36,29 +40,28 @@ declare_args() {
   skia_print_sksl_shaders = false
   skia_print_native_shaders = false
   skia_tools_require_resources = false
-  skia_update_fuchsia_sdk = false
   skia_use_angle = false
   skia_use_client_icu = false
+  skia_use_bidi = false
   skia_use_crabbyavif = false
   skia_use_dawn = false
   skia_use_direct3d = false
   skia_use_egl = false
   skia_use_epoxy_egl = false
-  skia_use_expat = !is_wasm
+  skia_use_expat = !is_canvaskit
   skia_use_ffmpeg = false
   skia_use_fixed_gamma_text = is_android
   skia_use_fontconfig = is_linux
   skia_use_fontations = false
   skia_use_fonthost_mac = is_mac || is_ios
-  skia_use_freetype = is_android || is_fuchsia || is_linux || is_wasm
+  skia_use_freetype = is_android || is_linux || is_canvaskit
   skia_use_harfbuzz = true
-  skia_use_gl = !is_fuchsia
-  skia_use_icu = !is_fuchsia
+  skia_use_gl = true
+  skia_use_icu = true
   skia_use_icu4x = false
   skia_use_jpeg_gainmaps = is_skia_dev_build
   skia_use_libavif = false
   skia_use_libgrapheme = false
-  skia_use_libheif = is_skia_dev_build
   skia_use_libjpeg_turbo_decode = true
   skia_use_libjpeg_turbo_encode = true
   skia_use_no_jpeg_encode = false
@@ -67,18 +70,21 @@ declare_args() {
   skia_use_libpng_encode = true
   skia_use_no_png_encode = false
   skia_use_libwebp_decode = true
-  skia_use_libwebp_encode = !is_wasm
+  skia_use_libwebp_encode = !is_canvaskit
   skia_use_no_webp_encode = false
   skia_use_lua = is_skia_dev_build && !is_ios
   skia_use_metal = false
   skia_use_ndk_images = is_android && defined(ndk_api) && ndk_api >= 30
   skia_use_perfetto = is_linux || is_mac || is_android
+  skia_enable_pipeline_label_tracing = false
 
   # Currently only supported in Android framework
   skia_android_framework_use_perfetto = false
-  skia_use_piex = !is_win && !is_wasm
+  skia_use_piex = !is_win && !is_canvaskit
+  skia_use_rust_icc = false
   skia_use_rust_png_decode = false
   skia_use_rust_png_encode = false
+  skia_use_rust_bmp_decode = false
   skia_use_sfml = false
   skia_use_webgl = is_wasm
   skia_use_webgpu = is_wasm
@@ -90,8 +96,7 @@ declare_args() {
   # See: https://libcxx.llvm.org/UsingLibcxx.html#enabling-the-safe-libc-mode
   skia_use_safe_libcxx = false
 
-  # deprecated, we will eventually use just skia_enable_ganesh
-  skia_enable_gpu = true
+  skia_enable_ganesh = true
   skia_enable_graphite = false
   skia_use_zlib = true
 
@@ -104,15 +109,20 @@ declare_args() {
   }
 
   skia_build_rust_targets = false
-}
 
-declare_args() {
-  skia_enable_ganesh = skia_enable_gpu
-}
-
-declare_args() {
-  # This is now a no-op. TODO(kjlubick) remove after Flutter stops using this.
-  skia_enable_sksl_tracing = false
+  # PartitionAlloc is Chrome's memory allocator.
+  #
+  # This is useful to:
+  # - Align Skia benchmark results closer with in-browser behavior.
+  # - Expand UAFs vulnerabilities protection to Skia's internal pointers.
+  #
+  # While GCC is supported, it lacks CI coverage to catch regressions.
+  # Therefore, we disable it by default on GCC builds.
+  #
+  # TODO(b/351867706): Re-enable. One Android test reaches PA_NOTREACHED() at
+  # the moment.
+  skia_use_partition_alloc = false
+  skia_partition_alloc_dir = "//third_party/externals/partition_alloc"
 }
 
 declare_args() {
@@ -126,19 +136,15 @@ declare_args() {
     skia_gl_standard = ""
   }
 
-  if (is_fuchsia) {
-    skia_use_vulkan = true
-  } else {
-    skia_use_vulkan = false
-  }
-
-  skia_build_fuzzers = is_clang && is_linux && target_cpu == "x64"
-  skia_use_libfuzzer_defaults = true
+  skia_use_vulkan = false
+  skia_build_fuzzers = false
+  skia_provide_default_fuzz_engine = true
 }
 
 declare_args() {
-  skia_enable_skunicode = skia_use_icu || skia_use_client_icu ||
-                          skia_use_libgrapheme || skia_use_icu4x
+  skia_enable_skunicode =
+      skia_use_icu || skia_use_client_icu || skia_use_bidi ||
+      skia_use_libgrapheme || skia_use_icu4x
 }
 
 if (skia_use_angle && skia_gl_standard != "gles") {
@@ -152,17 +158,15 @@ declare_args() {
 declare_args() {
   skia_enable_fontmgr_android = skia_use_expat && skia_use_freetype
   skia_enable_fontmgr_android_ndk = is_android && skia_use_freetype
-  skia_enable_fontmgr_custom_directory =
-      skia_use_freetype && !is_fuchsia && !is_wasm
-  skia_enable_fontmgr_custom_embedded = skia_use_freetype && !is_fuchsia
-  skia_enable_fontmgr_custom_empty = skia_use_freetype && !is_wasm
+  skia_enable_fontmgr_custom_directory = skia_use_freetype && !is_canvaskit
+  skia_enable_fontmgr_custom_embedded = skia_use_freetype
+  skia_enable_fontmgr_custom_empty = skia_use_freetype && !is_canvaskit
   skia_enable_fontmgr_fontconfig = skia_use_freetype && skia_use_fontconfig
   skia_enable_fontmgr_win_gdi = is_win && !skia_enable_winuwp
   skia_enable_fontmgr_FontConfigInterface =
       skia_use_freetype && skia_use_fontconfig
   skia_enable_spirv_validation = is_skia_dev_build && is_debug && !skia_use_dawn
-  skia_use_dng_sdk =
-      !is_fuchsia && !is_wasm && skia_use_libjpeg_turbo_decode && skia_use_zlib
+  skia_use_dng_sdk = !is_wasm && skia_use_libjpeg_turbo_decode && skia_use_zlib
   skia_enable_vulkan_debug_layers = skia_enable_gpu_debug_layers
   skia_enable_direct3d_debug_layer = skia_enable_gpu_debug_layers
   skia_enable_metal_debug_info = skia_enable_gpu_debug_layers
@@ -180,9 +184,21 @@ declare_args() {
 
 assert(!skia_use_dawn || skia_enable_graphite)  # Dawn is Graphite-only
 
-# Our tools require static linking (they use non-exported symbols), and the Ganesh backend.
-skia_enable_tools =
-    skia_enable_tools && !is_component_build && skia_enable_ganesh
+#  We only have a GL backend for Ganesh. We make it so we can assume that if skia_use_gl is true
+# then skia_enable_ganesh is true.
+skia_use_gl = skia_use_gl && skia_enable_ganesh
+
+# Ditto for D3D (no D3D Graphite backend)
+skia_use_direct3d = skia_use_direct3d && skia_enable_ganesh
+
+# Our tools require static linking (they use non-exported symbols)
+skia_enable_tools = skia_enable_tools && !is_component_build
+
+# We used to not build any of the tools without Ganesh. Then we enabled building
+# viewer with Graphite but not Ganesh. The remaining tools and supporting libs have
+# not been audited for building without Ganesh
+skia_enable_tools_that_might_need_ganesh =
+    skia_enable_tools && skia_enable_ganesh
 
 if (skia_enable_optimize_size) {
   assert(

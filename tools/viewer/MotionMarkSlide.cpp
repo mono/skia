@@ -8,7 +8,8 @@
 
 #include "include/core/SkCanvas.h"
 #include "include/core/SkPath.h"
-#include "include/effects/SkGradientShader.h"
+#include "include/core/SkPathBuilder.h"
+#include "include/effects/SkGradient.h"
 #include "src/base/SkRandom.h"
 #include "tools/Resources.h"
 #include "tools/gpu/YUVUtils.h"
@@ -240,7 +241,7 @@ public:
     ~CanvasLineSegmentStage() override = default;
 
     void draw(SkCanvas* canvas) override {
-        canvas->clear(SK_ColorWHITE);
+        canvas->clear(SkColors::kWhite);
 
         float dx = fTwoFifthsSizeX * std::cos(fCurrentAngle);
         float dy = fTwoFifthsSizeX * std::sin(fCurrentAngle);
@@ -248,32 +249,32 @@ public:
         float colorStopStep = SkScalarInterp(-.1f, .1f, fCurrentGradientStep);
         int brightnessStep = SkScalarRoundToInt(SkScalarInterp(32, 64, fCurrentGradientStep));
 
-        SkColor color1Step = SkColorSetARGB(brightnessStep,
-                                            brightnessStep,
-                                            (brightnessStep << 1),
-                                            102);
-        SkColor color2Step = SkColorSetARGB((brightnessStep << 1),
-                                            (brightnessStep << 1),
-                                            brightnessStep,
-                                            102);
+        SkColor4f color1Step = SkColor4f::FromColor(SkColorSetARGB(brightnessStep,
+                                                                   brightnessStep,
+                                                                   (brightnessStep << 1),
+                                                                   102)),
+                  color2Step = SkColor4f::FromColor(SkColorSetARGB((brightnessStep << 1),
+                                                                   (brightnessStep << 1),
+                                                                   brightnessStep,
+                                                                   102));
         SkPoint pts[2] = {
             {fHalfSize.fWidth + dx, fHalfSize.fHeight + dy},
             {fHalfSize.fWidth - dx, fHalfSize.fHeight - dy}
         };
-        SkColor colors[] = {
+        const SkColor4f colors[] = {
             color1Step,
             color1Step,
             color2Step,
             color2Step
         };
-        float pos[] = {
+        const float pos[] = {
             0,
             0.2f + colorStopStep,
             0.8f - colorStopStep,
             1
         };
-        sk_sp<SkShader> gradientShader = SkGradientShader::MakeLinear(pts, colors, pos, 4,
-                                                                      SkTileMode::kClamp, 0);
+        sk_sp<SkShader> gradientShader = SkShaders::LinearGradient(pts,
+                                                        {{colors, pos, SkTileMode::kClamp}, {}});
 
         SkPaint paint;
         paint.setAntiAlias(true);
@@ -471,7 +472,7 @@ public:
 
     ~CanvasLinePoint() override = default;
 
-    virtual void append(SkPath* path) {
+    virtual void append(SkPathBuilder* path) {
         path->lineTo(fPoint);
     }
 
@@ -507,7 +508,7 @@ public:
         this->setEndPoint(random, size, prev);
     }
 
-    void append(SkPath* path) override {
+    void append(SkPathBuilder* path) override {
         path->quadTo(fPoint2, this->getPoint());
     }
 
@@ -532,7 +533,7 @@ public:
         this->setEndPoint(random, size, prev);
     }
 
-    void append(SkPath* path) override {
+    void append(SkPathBuilder* path) override {
         path->cubicTo(fPoint2, fPoint3, this->getPoint());
     }
 
@@ -545,18 +546,13 @@ private:
 std::unique_ptr<CanvasLinePoint> make_line_path(SkRandom* random, SkSize size, SkPoint* prev) {
     int choice = random->nextRangeU(0, 3);
     switch (choice) {
-        case 0:
-            return std::make_unique<CanvasQuadraticSegment>(random, size, prev);
-            break;
-        case 1:
-            return std::make_unique<CanvasBezierSegment>(random, size, prev);
-            break;
-        case 2:
-        case 3:
-        default:
-            return std::make_unique<CanvasLinePoint>(random, size, prev);
-            break;
+        case 0:  return std::make_unique<CanvasQuadraticSegment>(random, size, prev);
+        case 1:  return std::make_unique<CanvasBezierSegment>(random, size, prev);
+        case 2:  [[fallthrough]];
+        case 3:  [[fallthrough]];
+        default: return std::make_unique<CanvasLinePoint>(random, size, prev);
     }
+    SkUNREACHABLE;
 }
 
 class CanvasLinePathStage : public Stage {
@@ -571,7 +567,7 @@ public:
     void draw(SkCanvas* canvas) override {
         canvas->clear(SK_ColorWHITE);
 
-        SkPath currentPath;
+        SkPathBuilder currentPath;
         SkPaint paint;
         paint.setAntiAlias(true);
         paint.setStyle(SkPaint::kStroke_Style);
@@ -585,11 +581,10 @@ public:
                 object->append(&currentPath);
 
                 if (object->isSplit()) {
-                    canvas->drawPath(currentPath, paint);
+                    canvas->drawPath(currentPath.detach(), paint);
 
                     paint.setStrokeWidth(object->getWidth());
                     paint.setColor(object->getColor());
-                    currentPath.reset();
                     currentPath.moveTo(object->getPoint());
                 }
 
@@ -598,7 +593,7 @@ public:
                 }
             }
         }
-        canvas->drawPath(currentPath, paint);
+        canvas->drawPath(currentPath.detach(), paint);
     }
 
     bool animate(double /*nanos*/) override {
@@ -810,7 +805,6 @@ public:
             "images/flutter_logo.jpg",
         };
 
-        auto rContext = canvas->recordingContext();
 #if defined(SK_GRAPHITE)
         skgpu::graphite::Recorder* recorder = nullptr;
         recorder = canvas->recorder();
@@ -823,12 +817,14 @@ public:
             if (recorder) {
                 fImages[i] = lazyYUV->refImage(recorder,
                                                sk_gpu_test::LazyYUVImage::Type::kFromPixmaps);
-            } else
+            }
 #endif
-            {
+#if defined(SK_GANESH)
+            if (auto rContext = canvas->recordingContext()) {
                 fImages[i] = lazyYUV->refImage(rContext,
                                                sk_gpu_test::LazyYUVImage::Type::kFromPixmaps);
             }
+#endif
         }
     }
 

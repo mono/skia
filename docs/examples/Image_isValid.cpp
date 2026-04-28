@@ -18,12 +18,12 @@ void draw(SkCanvas* canvas) {
         canvas->drawImage(image, 0, 0);
         canvas->drawString(label, image->width() / 2, image->height() / 4, font, paint);
         if (dContext) {
-            const char* msg = image->isValid(dContext) ? "is valid on GPU"
-                                                       : "not valid on GPU";
+            const char* msg =
+                    image->isValid(dContext->asRecorder()) ? "is valid on GPU" : "not valid on GPU";
             canvas->drawString(msg, 20, image->height() * 5 / 8, font, paint);
         }
 
-        const char* msg = image->isValid(nullptr) ? "is valid on CPU" : "not valid on CPU";
+        const char* msg = image->isTextureBacked() ? "is not valid on CPU" : "valid on CPU";
 
         canvas->drawString(msg, 20, image->height() * 7 / 8, font, paint);
     };

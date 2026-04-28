@@ -23,6 +23,7 @@
 class GrCaps;
 class GrImageContext;
 class GrRecordingContext;
+class GrRenderTargetProxy;
 class SkImage;
 class SkImage_Lazy;
 class SkImage_Raster;
@@ -34,25 +35,32 @@ enum SkColorType : int;
 enum class GrColorType;
 enum class SkTileMode;
 namespace skgpu { enum class Mipmapped : bool; }
+namespace skgpu::ganesh { class SurfaceDrawContext; }
 struct SkRect;
 
 namespace skgpu::ganesh {
 // Returns a GrSurfaceProxyView representation of the image, if possible. This also returns
 // a color type. This may be different than the image's color type when the image is not
 // texture-backed and the capabilities of the GPU require a data type conversion to put
-// the data in a texture.
+// the data in a texture. If the GrSurfaceProxyView is meant to be used as a source image into a
+// draw into another surface, the targetSurface proxy can be passed in to make sure the returned
+// GrSurfaceProxyView is valid to be drawn into that surface (i.e. this may trigger copies if
+// needed). Nullptr can be passed in as the targetSurface if there isn't a specific surface this
+// view is being drawn into or if there is no risk of needing to make a copy of the image.
 std::tuple<GrSurfaceProxyView, GrColorType> AsView(
         GrRecordingContext*,
         const SkImage*,
         skgpu::Mipmapped,
+        GrRenderTargetProxy* targetSurface,
         GrImageTexGenPolicy = GrImageTexGenPolicy::kDraw);
 
 inline std::tuple<GrSurfaceProxyView, GrColorType> AsView(
         GrRecordingContext* ctx,
         const sk_sp<const SkImage>& img,
         skgpu::Mipmapped mm,
+        GrRenderTargetProxy* targetSurface,
         GrImageTexGenPolicy policy = GrImageTexGenPolicy::kDraw) {
-    return AsView(ctx, img.get(), mm, policy);
+    return AsView(ctx, img.get(), mm, targetSurface, policy);
 }
 
 std::tuple<GrSurfaceProxyView, GrColorType> RasterAsView(
@@ -89,7 +97,7 @@ GrColorType ColorTypeOfLockTextureProxy(const GrCaps*, SkColorType);
  * Optional 'domain' is a bound on the coordinates of the image that will be required and can be
  * used to optimize the shader if 'subset' is also specified.
  */
-std::unique_ptr<GrFragmentProcessor> AsFragmentProcessor(GrRecordingContext*,
+std::unique_ptr<GrFragmentProcessor> AsFragmentProcessor(SurfaceDrawContext*,
                                                          const SkImage*,
                                                          SkSamplingOptions,
                                                          const SkTileMode[2],
@@ -97,14 +105,14 @@ std::unique_ptr<GrFragmentProcessor> AsFragmentProcessor(GrRecordingContext*,
                                                          const SkRect* subset = nullptr,
                                                          const SkRect* domain = nullptr);
 
-inline std::unique_ptr<GrFragmentProcessor> AsFragmentProcessor(GrRecordingContext* ctx,
+inline std::unique_ptr<GrFragmentProcessor> AsFragmentProcessor(SurfaceDrawContext* sdc,
                                                                 const sk_sp<const SkImage>& img,
                                                                 SkSamplingOptions opt,
                                                                 const SkTileMode tm[2],
                                                                 const SkMatrix& m,
                                                                 const SkRect* subset = nullptr,
                                                                 const SkRect* domain = nullptr) {
-    return AsFragmentProcessor(ctx, img.get(), opt, tm, m, subset, domain);
+    return AsFragmentProcessor(sdc, img.get(), opt, tm, m, subset, domain);
 }
 
 std::unique_ptr<GrFragmentProcessor> MakeFragmentProcessorFromView(GrRecordingContext*,

@@ -16,7 +16,6 @@
 #include "include/core/SkString.h"
 #include "include/core/SkStrokeRec.h"
 #include "include/gpu/ganesh/GrRecordingContext.h"
-#include "include/private/SkColorData.h"
 #include "include/private/base/SkAlignedStorage.h"
 #include "include/private/base/SkDebug.h"
 #include "include/private/base/SkFloatingPoint.h"
@@ -25,6 +24,7 @@
 #include "include/private/base/SkTo.h"
 #include "include/private/gpu/ganesh/GrTypesPriv.h"
 #include "src/base/SkArenaAlloc.h"
+#include "src/core/SkColorData.h"
 #include "src/core/SkMatrixPriv.h"
 #include "src/core/SkRRectPriv.h"
 #include "src/core/SkSLTypeShared.h"
@@ -163,7 +163,6 @@ private:
             fInUnionPlane = {"inUnionPlane", kFloat3_GrVertexAttribType, SkSLType::kHalf3};
         }
         if (roundCaps) {
-            SkASSERT(stroke);
             SkASSERT(clipPlane);
             fInRoundCapCenters =
                     {"inRoundCapCenters", kFloat4_GrVertexAttribType, SkSLType::kFloat4};
@@ -1091,7 +1090,7 @@ public:
 
         fRoundCaps = false;
 
-        viewMatrix.mapPoints(&center, 1);
+        center = viewMatrix.mapPoint(center);
         radius = viewMatrix.mapRadius(radius);
         SkScalar strokeWidth = viewMatrix.mapRadius(stroke.getWidth());
 
@@ -1142,8 +1141,8 @@ public:
             stopPoint.fX = SkScalarCos(endAngle);
 
             // Adjust the start and end points based on the view matrix (to handle rotated arcs)
-            startPoint = viewMatrix.mapVector(startPoint.fX, startPoint.fY);
-            stopPoint = viewMatrix.mapVector(stopPoint.fX, stopPoint.fY);
+            startPoint = viewMatrix.mapVector(startPoint);
+            stopPoint = viewMatrix.mapVector(stopPoint);
             startPoint.normalize();
             stopPoint.normalize();
 
@@ -1156,7 +1155,7 @@ public:
                 std::swap(startPoint, stopPoint);
             }
 
-            fRoundCaps = stroked &&
+            fRoundCaps = hasStroke &&
                          style.strokeRec().getWidth() > 0 &&
                          style.strokeRec().getCap() == SkPaint::kRound_Cap;
             SkPoint roundCaps[2];
@@ -1334,7 +1333,7 @@ private:
         int firstVertex;
         VertexWriter vertices = target->makeVertexWriter(fProgramInfo->geomProc().vertexStride(),
                                                          fVertCount, &vertexBuffer, &firstVertex);
-        if (!vertices) {
+        if (!vertices) SK_UNLIKELY {
             SkDebugf("Could not allocate vertices\n");
             return;
         }
@@ -1342,7 +1341,7 @@ private:
         sk_sp<const GrBuffer> indexBuffer = nullptr;
         int firstIndex = 0;
         uint16_t* indices = target->makeIndexSpace(fIndexCount, &indexBuffer, &firstIndex);
-        if (!indices) {
+        if (!indices) SK_UNLIKELY {
             SkDebugf("Could not allocate indices\n");
             return;
         }
@@ -1572,7 +1571,7 @@ public:
             : GrMeshDrawOp(ClassID())
             , fHelper(processorSet, GrAAType::kCoverage) {
         SkASSERT(circle_stays_circle(viewMatrix));
-        viewMatrix.mapPoints(&center, 1);
+        center = viewMatrix.mapPoint(center);
         radius = viewMatrix.mapRadius(radius);
         strokeWidth = viewMatrix.mapRadius(strokeWidth);
 
@@ -1586,7 +1585,7 @@ public:
             start.fY = SkScalarSin(startAngle);
             start.fX = SkScalarCos(startAngle);
         }
-        viewMatrix.mapVectors(&start, 1);
+        start = viewMatrix.mapVector(start);
         startAngle = SkScalarATan2(start.fY, start.fX);
         reflection = (viewMatrix.getScaleX() * viewMatrix.getScaleY() -
                       viewMatrix.getSkewX() * viewMatrix.getSkewY()) < 0;
@@ -1706,7 +1705,7 @@ private:
         int firstVertex;
         VertexWriter vertices = target->makeVertexWriter(fProgramInfo->geomProc().vertexStride(),
                                                          fVertCount, &vertexBuffer, &firstVertex);
-        if (!vertices) {
+        if (!vertices) SK_UNLIKELY {
             SkDebugf("Could not allocate vertices\n");
             return;
         }
@@ -1714,7 +1713,7 @@ private:
         sk_sp<const GrBuffer> indexBuffer;
         int firstIndex = 0;
         uint16_t* indices = target->makeIndexSpace(fIndexCount, &indexBuffer, &firstIndex);
-        if (!indices) {
+        if (!indices) SK_UNLIKELY {
             SkDebugf("Could not allocate indices\n");
             return;
         }
@@ -1884,8 +1883,7 @@ public:
                             const SkStrokeRec& stroke) {
         DeviceSpaceParams params;
         // do any matrix crunching before we reset the draw state for device coords
-        params.fCenter = SkPoint::Make(ellipse.centerX(), ellipse.centerY());
-        viewMatrix.mapPoints(&params.fCenter, 1);
+        params.fCenter = viewMatrix.mapPoint(ellipse.center());
         SkScalar ellipseXRadius = SkScalarHalf(ellipse.width());
         SkScalar ellipseYRadius = SkScalarHalf(ellipse.height());
         params.fXRadius = SkScalarAbs(viewMatrix[SkMatrix::kMScaleX] * ellipseXRadius +
@@ -1923,7 +1921,7 @@ public:
             }
 
             // we don't handle it if curvature of the stroke is less than curvature of the ellipse
-            if (scaledStroke.fX * (params.fXRadius * params.fYRadius) <
+            if (scaledStroke.fX * (params.fYRadius * params.fYRadius) <
                         (scaledStroke.fY * scaledStroke.fY) * params.fXRadius ||
                 scaledStroke.fY * (params.fXRadius * params.fXRadius) <
                         (scaledStroke.fX * scaledStroke.fX) * params.fYRadius) {
@@ -2737,7 +2735,7 @@ private:
 
         VertexWriter verts = target->makeVertexWriter(fProgramInfo->geomProc().vertexStride(),
                                                       fVertCount, &vertexBuffer, &firstVertex);
-        if (!verts) {
+        if (!verts) SK_UNLIKELY {
             SkDebugf("Could not allocate vertices\n");
             return;
         }
@@ -2745,7 +2743,7 @@ private:
         sk_sp<const GrBuffer> indexBuffer;
         int firstIndex = 0;
         uint16_t* indices = target->makeIndexSpace(fIndexCount, &indexBuffer, &firstIndex);
-        if (!indices) {
+        if (!indices) SK_UNLIKELY {
             SkDebugf("Could not allocate indices\n");
             return;
         }

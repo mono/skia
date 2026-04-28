@@ -135,6 +135,7 @@ DEF_CLASS_MAP(SkOverdrawCanvas, sk_overdraw_canvas_t, OverdrawCanvas)
 DEF_CLASS_MAP(SkOpBuilder, sk_opbuilder_t, OpBuilder)
 DEF_CLASS_MAP(SkPaint, sk_paint_t, Paint)
 DEF_CLASS_MAP(SkPath, sk_path_t, Path)
+DEF_CLASS_MAP(SkPathBuilder, sk_pathbuilder_t, PathBuilder)
 DEF_CLASS_MAP(SkPathEffect, sk_path_effect_t, PathEffect)
 DEF_CLASS_MAP(SkPathMeasure, sk_pathmeasure_t, PathMeasure)
 DEF_CLASS_MAP(SkPicture, sk_picture_t, Picture)
@@ -226,8 +227,6 @@ static inline SkJpegEncoder::Options AsJpegEncoderOptions(const sk_jpegencoder_o
     opts.fDownsample = (SkJpegEncoder::Downsample)options->fDownsample;
     opts.fAlphaOption = (SkJpegEncoder::AlphaOption)options->fAlphaOption;
     opts.xmpMetadata = AsData(options->xmpMetadata);
-    opts.fICCProfile = AsColorSpaceIccProfile(options->fICCProfile);
-    opts.fICCProfileDescription = options->fICCProfileDescription;
     if (options->fHasOrigin) {
         opts.fOrigin = (SkEncodedOrigin)options->fOrigin;
     }
@@ -242,7 +241,12 @@ DEF_MAP(SkPath::Iter, sk_path_iterator_t, PathIter)
 DEF_MAP(SkPath::RawIter, sk_path_rawiterator_t, PathRawIter)
 
 #include "include/encode/SkPngEncoder.h"
-DEF_MAP(SkPngEncoder::Options, sk_pngencoder_options_t, PngEncoderOptions)
+static inline SkPngEncoder::Options AsPngEncoderOptions(const sk_pngencoder_options_t* options) {
+    SkPngEncoder::Options opts;
+    opts.fFilterFlags = (SkPngEncoder::FilterFlag)options->fFilterFlags;
+    opts.fZLibLevel = options->fZLibLevel;
+    return opts;
+}
 
 #include "include/core/SkRegion.h"
 DEF_MAP(SkRegion::Iterator, sk_region_iterator_t, RegionIterator)
@@ -250,7 +254,12 @@ DEF_MAP(SkRegion::Cliperator, sk_region_cliperator_t, RegionCliperator)
 DEF_MAP(SkRegion::Spanerator, sk_region_spanerator_t, RegionSpanerator)
 
 #include "include/encode/SkWebpEncoder.h"
-DEF_MAP(SkWebpEncoder::Options, sk_webpencoder_options_t, WebpEncoderOptions)
+static inline SkWebpEncoder::Options AsWebpEncoderOptions(const sk_webpencoder_options_t* options) {
+    SkWebpEncoder::Options opts;
+    opts.fCompression = (SkWebpEncoder::Compression)options->fCompression;
+    opts.fQuality = options->fQuality;
+    return opts;
+}
 
 #include "include/core/SkMatrix.h"
 static inline SkMatrix AsMatrix(const sk_matrix_t* matrix) {

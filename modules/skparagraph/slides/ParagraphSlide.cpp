@@ -1,16 +1,16 @@
 // Copyright 2019 Google LLC.
 #include "include/core/SkCanvas.h"
 #include "include/core/SkColorFilter.h"
-#include "include/core/SkColorPriv.h"
 #include "include/core/SkFontMgr.h"
 #include "include/core/SkGraphics.h"
 #include "include/core/SkPath.h"
+#include "include/core/SkPathBuilder.h"
 #include "include/core/SkRegion.h"
 #include "include/core/SkShader.h"
 #include "include/core/SkStream.h"
 #include "include/core/SkTextBlob.h"
 #include "include/core/SkTypeface.h"
-#include "include/effects/SkGradientShader.h"
+#include "include/effects/SkGradient.h"
 #include "modules/skparagraph/include/Paragraph.h"
 #include "modules/skparagraph/include/TypefaceFontProvider.h"
 #include "modules/skparagraph/src/ParagraphBuilderImpl.h"
@@ -21,6 +21,7 @@
 #include "src/base/SkRandom.h"
 #include "src/base/SkTime.h"
 #include "src/base/SkUTF.h"
+#include "src/core/SkColorPriv.h"
 #include "src/core/SkOSFile.h"
 #include "src/utils/SkOSPath.h"
 #include "tools/Resources.h"
@@ -70,9 +71,9 @@ private:
 };
 
 sk_sp<SkShader> setgrad(const SkRect& r, SkColor c0, SkColor c1) {
-    SkColor colors[] = {c0, c1};
+    SkColor4f colors[] = {SkColor4f::FromColor(c0), SkColor4f::FromColor(c1)};
     SkPoint pts[] = {{r.fLeft, r.fTop}, {r.fRight, r.fTop}};
-    return SkGradientShader::MakeLinear(pts, colors, nullptr, 2, SkTileMode::kClamp);
+    return SkShaders::LinearGradient(pts, {{colors, {}, SkTileMode::kClamp}, {}});
 }
 /*
 void writeHtml(const char* name, Paragraph* paragraph) {
@@ -1907,7 +1908,7 @@ public:
             auto impl = static_cast<ParagraphImpl*>(paragraph.get());
             for (auto& line : impl->lines()) {
                 if (this->isVerbose()) {
-                    SkDebugf("line[%d]: %f\n", (int)(&line - impl->lines().begin()),
+                    SkDebugf("line[%d]: %f\n", (int)(&line - impl->lines().data()),
                                                     line.offset().fX);
                 }
                 line.iterateThroughVisualRuns(true,
@@ -4077,21 +4078,20 @@ public:
         paragraph->layout(this->size().width());
 
         auto impl = static_cast<ParagraphImpl*>(paragraph.get());
-        SkPath fullPath;
+        SkPathBuilder fullPath;
         SkScalar height = 0;
         for (auto& line : impl->lines()) {
             line.ensureTextBlobCachePopulated();
             for (auto& rec : line.fTextBlobCache) {
                 auto paths = Paragraph::GetPath(rec.fBlob.get());
-                paths.offset(0, height);
-                fullPath.addPath(paths);
+                fullPath.addPath(paths, 0, height);
                 height += line.height();
             }
         }
         SkRect rect = SkRect::MakeXYWH(100, 100 + paragraph->getHeight(), this->size().width(), paragraph->getHeight());
         SkPaint paint;
         paint.setShader(setgrad(rect, SK_ColorBLUE, SK_ColorLTGRAY));
-        canvas->drawPath(fullPath, paint);
+        canvas->drawPath(fullPath.detach(), paint);
     }
 };
 
@@ -4362,6 +4362,46 @@ public:
     }
 };
 
+class ParagraphHangingWhitespaces : public ParagraphSlide_Base {
+public:
+    ParagraphHangingWhitespaces() { fName = "ParagraphHangingWhitespaces"; }
+    void draw(SkCanvas* canvas) override {
+
+        SkPaint cursor;
+        cursor.setColor(SK_ColorRED);
+        cursor.setStyle(SkPaint::kStroke_Style);
+        cursor.setAntiAlias(true);
+        cursor.setStrokeWidth(2);
+
+        canvas->drawColor(SK_ColorWHITE);
+        auto fontCollection = sk_make_sp<FontCollection>();
+        fontCollection->setDefaultFontManager(ToolUtils::TestFontMgr(), std::vector<SkString>());
+        fontCollection->enableFontFallback();
+        TextStyle text_style;
+        text_style.setFontFamilies({SkString("Roboto")});
+        text_style.setFontSize(20);
+        text_style.setColor(SK_ColorBLACK);
+        text_style.setBackgroundColor(SkPaint(SkColors::kLtGray));
+        ParagraphStyle paragraph_style;
+        paragraph_style.setTextStyle(text_style);
+
+        ParagraphBuilderImpl builder(paragraph_style, fontCollection, get_unicode());
+        builder.pushStyle(text_style);
+        builder.addText("Text with 3 'hanging' whitespaces at the end.   ");
+        auto paragraph = builder.Build();
+        paragraph->layout(this->size().width());
+        paragraph->paint(canvas, 0, 0);
+        canvas->drawLine(paragraph->getLongestLine(), 0, paragraph->getLongestLine(), paragraph->getHeight(), cursor);
+
+        canvas->translate(0, paragraph->getHeight() + 50);
+
+        auto impl = static_cast<ParagraphImpl*>(paragraph.get());
+        auto extraWidth = impl->widthWithTrailingSpaces() - paragraph->getLongestLine();
+        paragraph->paint(canvas, 0, 0);
+        canvas->drawLine(paragraph->getLongestLine() + extraWidth, 0, paragraph->getLongestLine() + extraWidth, paragraph->getHeight(), cursor);
+    }
+};
+
 class ParagraphSlideLast : public ParagraphSlide_Base {
 public:
     ParagraphSlideLast() { fName = "ParagraphSlideLast"; }
@@ -4479,4 +4519,5 @@ DEF_SLIDE(return new ParagraphSlideGlyphs();)
 DEF_SLIDE(return new ParagraphSlideEllipsisInRTL();)
 DEF_SLIDE(return new ParagraphSlideEmojiSequence();)
 DEF_SLIDE(return new ParagraphSlideWordSpacing();)
+DEF_SLIDE(return new ParagraphHangingWhitespaces();)
 DEF_SLIDE(return new ParagraphSlideLast();)

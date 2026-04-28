@@ -6,6 +6,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Breaking
+ - `Path` objects are now immutable.
+ - `PathBuilder` has been exposed to allow clients to create `Path` objects incrementally.
+
+### Fixed
+ - Fix compilation setting to keep up with [emsdk#24079](https://github.com/emscripten-core/emscripten/pull/24079)
+
+## [0.40.0] - 2025-03-31
+
 ### Changed
  - `Typeface.MakeFreeTypeFaceFromData` is now `Typeface.MakeTypefaceFromData` to be consistent
    with the rest of the Skia library in the capitalization of the f in Typeface.
@@ -102,12 +111,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.37.2] - 2022-11-15
 
 ### Fixed
- - Images made from textures correctly invalidate internal state, reducing flicker (skbug.com/13903)
+ - Images made from textures correctly invalidate internal state, reducing flicker (skbug.com/40044991)
 
 ## [0.37.1] - 2022-11-08
 
 ### Fixed
- - Font resolution algorithm for ellipsis in SkParagraph (skbug.com/11797)
+ - Font resolution algorithm for ellipsis in SkParagraph (skbug.com/40042867)
  - GrContexts will properly target the correct WebGL context
  - CanvasKit built with no_embedded_font will properly link and be able to load fonts from passed-in
    bytes.
@@ -176,7 +185,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.34.1] - 2022-06-02
 
 ### Added
- - `Canvas.getDeviceClipBounds` (skbug.com/13347)
+ - `Canvas.getDeviceClipBounds` (skbug.com/40044431)
 
 ### Fixed
  - `RuntimeEffect.makeShader` and `RuntimeEffect.makeShaderWithChildren` can properly accept
@@ -202,14 +211,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
  - SkParagraph objects no longer have their glyphs garbled when stored to an SkPicture.
-   (skbug.com/13247)
+   (skbug.com/40044329)
 
 ## [0.33.0] - 2022-02-03
 
 ### Added
  - `Surface.updateTextureFromSource` prevents flickering on some platforms by re-using the texture
    for a given `Image` instead of needing to always create a new one via
-   `Surface.makeImageFromTextureSource`. (skbug.com/12723)
+   `Surface.makeImageFromTextureSource`. (skbug.com/40043812)
  - `ParagraphBuilder.reset` allows re-use of the underlying memory.
  - `PathEffect.MakePath2D`, `PathEffect.MakePath1D` and `PathEffect.MakeLine2D`.
 
@@ -218,12 +227,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
    `CanvasKit.MakeWebGLCanvasSurface` or calling any factory that does not take a color space
    will now create a surface with a color space of `CanvasKit.ColorSpace.SRGB`.
  - We now build/ship with emscripten 3.1.3.
- - Internal calls no longer use dynamic dispatch (skbug.com/12795).
+ - Internal calls no longer use dynamic dispatch (skbug.com/40043887).
  - JPEG and WEBP encoding are turned on by default in full version (in /bin/full/).
 
 ### Fixed
  - Supplying textures via `Surface.makeImageFromTextureSource` should not cause issues with
-   Mipmaps or other places where Skia needs to create textures (skbug.com/12797)
+   Mipmaps or other places where Skia needs to create textures (skbug.com/40043889)
  - `CanvasKit.MakeRenderTarget` correctly takes 2 or 3 params, as per the documentation.
  - `CanvasKit.MakeOnScreenGLSurface` and other gpu surface constructors correctly adjust the
    underlying WebGL context, avoiding corruption and mismatched textures
@@ -243,7 +252,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
  - Drawing images created from MakeLazyImageFromTextureSource should no longer cause a draw to only
-   partially show up on some frames <https://crbug.com/skia/12740>.
+   partially show up on some frames <skbug.com/40043831>.
 
 ## [0.31.0] - 2021-11-16
 
@@ -311,7 +320,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
  - Freetype has been updated from f9350be to ff40776.
 
 ### Fixed
- - We should no longer have to decode the same font multiple times (skbug.com/12112)
+ - We should no longer have to decode the same font multiple times (skbug.com/40043207)
  - `Font.getGlyphIDs` had the wrong type for the third argument. It is now correctly a Uint16Array.
 
 ### Deprecated
@@ -339,7 +348,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Known Bugs
  - On legacy (non-ANGLE) SwiftShader, certain paths that require tessellation may not be drawn
-   correctly when using a WebGL-backed surface. (skbug.com/11965)
+   correctly when using a WebGL-backed surface. (skbug.com/40043054)
 
 ## [0.27.0] - 2021-05-20
 
@@ -347,7 +356,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
  - `Font.getGlyphIntercepts()`
 
 ### Fixed
- - Bug with images using certain exif metadata. (skbug.com/11968)
+ - Bug with images using certain exif metadata. (skbug.com/40043056)
 
 ### Removed
  - `Canvas.flush`, which had been previously deprecated. `Surface.flush` is the preferred method.
@@ -812,7 +821,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
  - Memory leak in paragraph binding code (https://github.com/flutter/flutter/issues/56938)
- - Safari now properly uses WebGL1 instead of WebGL2 when WebGL2 is not available (skbug.com/10171).
+ - Safari now properly uses WebGL1 instead of WebGL2 when WebGL2 is not available (skbug.com/40041519).
 
 ## [0.14.0] - 2020-03-18
 
@@ -892,8 +901,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
  - Bug that sometimes resulted in 'Cannot perform Construct on a neutered ArrayBuffer'
- - Bug with SkImage.readPixels (skbug.com/9788)
- - Bug with transparent colors in Canvas2d mode (skbug.com/9800)
+ - Bug with SkImage.readPixels (skbug.com/40041118)
+ - Bug with transparent colors in Canvas2d mode (skbug.com/40041129)
 
 ## [0.11.0] - 2020-01-10
 
@@ -989,10 +998,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
  - and `no_embedded_font` option now allows creating a `SkFontMgr.FromData` instead of
    always having an empty one.
  - Updated to emscripten 1.38.47
- - Switch to WebGL 2.0, but fall back to 1.0 when unavailable - bug.skia.org/9052
+ - Switch to WebGL 2.0, but fall back to 1.0 when unavailable - skbug.com/40040335
 
 ### Fixed
- - Null terminator bug in draw text - skbug.com/9314
+ - Null terminator bug in draw text - skbug.com/40040633
 
 ## [0.7.0] - 2019-09-18
 
@@ -1057,7 +1066,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
  - Fallback to CPU now properly refreshes the canvas to get access to the
    CanvasRenderingContext2D.
  - Compile flags for better WebGL1 support for some graphics cards.
- - Antialias bug on large oval paths <https://crbug.com/skia/8873>
+ - Antialias bug on large oval paths <skbug.com/40040155>
 
 ### Deprecated
  - `SkCanvas.flush` will be removed soon - client should only call `SkSurface.flush`

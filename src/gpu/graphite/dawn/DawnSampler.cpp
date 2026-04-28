@@ -9,7 +9,7 @@
 
 #include "include/core/SkSamplingOptions.h"
 #include "src/gpu/graphite/dawn/DawnCaps.h"
-#include "src/gpu/graphite/dawn/DawnGraphiteUtilsPriv.h"
+#include "src/gpu/graphite/dawn/DawnGraphiteUtils.h"
 #include "src/gpu/graphite/dawn/DawnSharedContext.h"
 
 #include <cfloat>
@@ -43,66 +43,42 @@ wgpu::MipmapFilterMode mipmap_mode_to_dawn_filter_mode(SkMipmapMode mode) {
 }
 
 DawnSampler::DawnSampler(const DawnSharedContext* sharedContext,
+                         SamplerDesc samplerDesc,
                          wgpu::Sampler sampler)
         : Sampler(sharedContext)
-        , fSampler(std::move(sampler)) {}
+        , fSampler(std::move(sampler))
+        , fSamplerDesc(samplerDesc) {}
 
-static inline wgpu::AddressMode tile_mode_to_dawn_address_mode(SkTileMode tileMode) {
-    switch (tileMode) {
-        case SkTileMode::kClamp:
-            return wgpu::AddressMode::ClampToEdge;
-        case SkTileMode::kRepeat:
-            return wgpu::AddressMode::Repeat;
-        case SkTileMode::kMirror:
-            return wgpu::AddressMode::MirrorRepeat;
-        case SkTileMode::kDecal:
-            // Dawn doesn't support this mode.
-            return wgpu::AddressMode::ClampToEdge;
-    }
-    SkUNREACHABLE;
+static inline std::pair<wgpu::AddressMode, wgpu::AddressMode>
+tile_modes_to_dawn_address_modes(const SamplerDesc& samplerDesc) {
+    auto to_dawn_mode = [](SkTileMode tm) -> wgpu::AddressMode {
+        switch (tm) {
+            case SkTileMode::kClamp:
+                return wgpu::AddressMode::ClampToEdge;
+            case SkTileMode::kRepeat:
+                return wgpu::AddressMode::Repeat;
+            case SkTileMode::kMirror:
+                return wgpu::AddressMode::MirrorRepeat;
+            case SkTileMode::kDecal:
+                // Dawn doesn't support kDecal; considered an error if we reach this point.
+                SkASSERT(false);
+                return {};
+        }
+        SkUNREACHABLE;
+    };
+
+    return {to_dawn_mode(samplerDesc.tileModeX()), to_dawn_mode(samplerDesc.tileModeY())};
 }
 
-#if !defined(__EMSCRIPTEN__)
-namespace {
-using namespace ycbcrUtils;
-wgpu::YCbCrVkDescriptor get_descriptor_from_sampler_desc(const SamplerDesc& samplerDesc) {
-    wgpu::YCbCrVkDescriptor desc;
-    if (samplerDesc.isImmutable()) {
-        uint32_t nonFormatInfo =
-                (uint32_t)(samplerDesc.desc() >> SamplerDesc::kImmutableSamplerInfoShift);
-
-        desc.vkFormat = samplerDesc.usesExternalFormat() ? 0 : samplerDesc.format();
-        desc.vkYCbCrModel = (nonFormatInfo & ycbcrUtils::kYcbcrModelMask) >> kYcbcrModelShift;
-        desc.vkYCbCrRange = (nonFormatInfo & kYcbcrRangeMask) >> kYcbcrRangeShift;
-        desc.vkComponentSwizzleRed = (nonFormatInfo & kComponentRMask) >> kComponentRShift;
-        desc.vkComponentSwizzleGreen = (nonFormatInfo & kComponentGMask) >> kComponentGShift;
-        desc.vkComponentSwizzleBlue = (nonFormatInfo & kComponentBMask) >> kComponentBShift;
-        desc.vkComponentSwizzleAlpha = (nonFormatInfo & kComponentAMask) >> kComponentAShift;
-        desc.vkXChromaOffset = (nonFormatInfo & kXChromaOffsetMask) >> kXChromaOffsetShift;
-        desc.vkYChromaOffset = (nonFormatInfo & kYChromaOffsetMask) >> kYChromaOffsetShift;
-        desc.vkChromaFilter =
-                (wgpu::FilterMode)((nonFormatInfo & kChromaFilterMask) >> kChromaFilterShift);
-        desc.forceExplicitReconstruction =
-                (nonFormatInfo & kForceExplicitReconMask) >> kForceExplicitReconShift;
-        desc.externalFormat =
-                samplerDesc.usesExternalFormat()
-                        ? (uint64_t)(samplerDesc.externalFormatMSBs()) << 32 | samplerDesc.format()
-                        : 0;
-    }
-    return desc;
-}
-}  // namespace
-#endif
 sk_sp<DawnSampler> DawnSampler::Make(const DawnSharedContext* sharedContext,
-                                     const SamplerDesc& samplerDesc) {
+                                     SamplerDesc samplerDesc) {
     wgpu::SamplerDescriptor desc;
     const SkSamplingOptions& samplingOptions = samplerDesc.samplingOptions();
-    desc.addressModeU = tile_mode_to_dawn_address_mode(samplerDesc.tileModeX());
-    desc.addressModeV = tile_mode_to_dawn_address_mode(samplerDesc.tileModeY());
-    desc.magFilter     = filter_mode_to_dawn_filter_mode(samplingOptions.filter);
-    desc.minFilter     = desc.magFilter;
-    desc.mipmapFilter  = mipmap_mode_to_dawn_filter_mode(samplingOptions.mipmap);
-    desc.lodMinClamp   = 0.0f;
+    std::tie(desc.addressModeU, desc.addressModeV) = tile_modes_to_dawn_address_modes(samplerDesc);
+    desc.magFilter    = filter_mode_to_dawn_filter_mode(samplingOptions.filter);
+    desc.minFilter    = desc.magFilter;
+    desc.mipmapFilter = mipmap_mode_to_dawn_filter_mode(samplingOptions.mipmap);
+    desc.lodMinClamp  = 0.0f;
     if (samplingOptions.mipmap == SkMipmapMode::kNone) {
         // Disabling mipmap by clamping max lod to first level only.
         desc.lodMaxClamp = 0.0f;
@@ -113,8 +89,10 @@ sk_sp<DawnSampler> DawnSampler::Make(const DawnSharedContext* sharedContext,
     desc.compare       = wgpu::CompareFunction::Undefined;
 
 #if !defined(__EMSCRIPTEN__)
-    wgpu::YCbCrVkDescriptor ycbcrDescriptor = get_descriptor_from_sampler_desc(samplerDesc);
+    wgpu::YCbCrVkDescriptor ycbcrDescriptor;
     if (samplerDesc.isImmutable()) {
+        ycbcrDescriptor =
+                DawnDescriptorFromImmutableSamplerInfo(samplerDesc.immutableSamplerInfo());
         desc.nextInChain = &ycbcrDescriptor;
     }
 #endif
@@ -129,10 +107,10 @@ sk_sp<DawnSampler> DawnSampler::Make(const DawnSharedContext* sharedContext,
         label.append(minMagFilterLabels[static_cast<int>(samplingOptions.filter)]);
         label.append(mipFilterLabels[static_cast<int>(samplingOptions.mipmap)]);
 #if !defined(__EMSCRIPTEN__)
-        if (ycbcrUtils::DawnDescriptorIsValid(ycbcrDescriptor)) {
+        if (DawnDescriptorIsValid(ycbcrDescriptor)) {
             label.append("YCbCr");
 
-            if (ycbcrUtils::DawnDescriptorUsesExternalFormat(ycbcrDescriptor)) {
+            if (DawnDescriptorUsesExternalFormat(ycbcrDescriptor)) {
                 label.append("ExternalFormat");
                 label.append(std::to_string(ycbcrDescriptor.externalFormat));
             } else {
@@ -168,7 +146,7 @@ sk_sp<DawnSampler> DawnSampler::Make(const DawnSharedContext* sharedContext,
     if (!sampler) {
         return {};
     }
-    return sk_sp<DawnSampler>(new DawnSampler(sharedContext, std::move(sampler)));
+    return sk_sp<DawnSampler>(new DawnSampler(sharedContext, samplerDesc, std::move(sampler)));
 }
 
 void DawnSampler::freeGpuData() {
@@ -176,4 +154,3 @@ void DawnSampler::freeGpuData() {
 }
 
 } // namespace skgpu::graphite
-

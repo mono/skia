@@ -32,6 +32,7 @@
 #include "src/sksl/analysis/SkSLProgramVisitor.h"
 #include "src/sksl/codegen/SkSLCodeGenTypes.h"
 #include "src/sksl/codegen/SkSLCodeGenerator.h"
+#include "src/sksl/codegen/SkSLNativeShader.h"
 #include "src/sksl/ir/SkSLBinaryExpression.h"
 #include "src/sksl/ir/SkSLBlock.h"
 #include "src/sksl/ir/SkSLConstructor.h"
@@ -240,6 +241,8 @@ protected:
 
     void writeSimpleIntrinsic(const FunctionCall& c);
 
+    void writeScalarizedIntrinsicCall(const FunctionCall& c);
+
     bool writeIntrinsicCall(const FunctionCall& c, IntrinsicKind kind);
 
     void writeConstructorCompound(const ConstructorCompound& c, Precedence parentPrecedence);
@@ -352,7 +355,7 @@ protected:
 
     // If we might use an index expression more than once, we need to capture the result in a
     // temporary variable to avoid double-evaluation. This should generally only occur when emitting
-    // a function call, since we need to polyfill GLSL-style out-parameter support. (skia:14130)
+    // a function call, since we need to polyfill GLSL-style out-parameter support. (skbug.com/40045204)
     // The map holds <index-expression, temp-variable name>.
     using IndexSubstitutionMap = skia_private::THashMap<const Expression*, std::string>;
 
@@ -732,71 +735,68 @@ void MetalCodeGenerator::writeFunctionCall(const FunctionCall& c) {
     }
 }
 
-static constexpr char kInverse2x2[] = R"(
-template <typename T>
-matrix<T, 2, 2> mat2_inverse(matrix<T, 2, 2> m) {
-return matrix<T, 2, 2>(m[1].y, -m[0].y, -m[1].x, m[0].x) * (1/determinant(m));
-}
-)";
+static constexpr char kInverse2x2[] =
+"template <typename T>"
+"matrix<T, 2, 2> mat2_inverse(matrix<T, 2, 2> m) {"
+  "return matrix<T, 2, 2>(m[1].y, -m[0].y, -m[1].x, m[0].x) * (1/determinant(m));"
+"}";
 
-static constexpr char kInverse3x3[] = R"(
-template <typename T>
-matrix<T, 3, 3> mat3_inverse(matrix<T, 3, 3> m) {
-T
- a00 = m[0].x, a01 = m[0].y, a02 = m[0].z,
- a10 = m[1].x, a11 = m[1].y, a12 = m[1].z,
- a20 = m[2].x, a21 = m[2].y, a22 = m[2].z,
- b01 =  a22*a11 - a12*a21,
- b11 = -a22*a10 + a12*a20,
- b21 =  a21*a10 - a11*a20,
- det = a00*b01 + a01*b11 + a02*b21;
-return matrix<T, 3, 3>(
- b01, (-a22*a01 + a02*a21), ( a12*a01 - a02*a11),
- b11, ( a22*a00 - a02*a20), (-a12*a00 + a02*a10),
- b21, (-a21*a00 + a01*a20), ( a11*a00 - a01*a10)) * (1/det);
-}
-)";
+static constexpr char kInverse3x3[] =
+"template <typename T>"
+"matrix<T, 3, 3> mat3_inverse(matrix<T, 3, 3> m) {"
+  "T "
+    "a00 = m[0].x, a01 = m[0].y, a02 = m[0].z,"
+    "a10 = m[1].x, a11 = m[1].y, a12 = m[1].z,"
+    "a20 = m[2].x, a21 = m[2].y, a22 = m[2].z,"
+    "b01 =  a22*a11 - a12*a21,"
+    "b11 = -a22*a10 + a12*a20,"
+    "b21 =  a21*a10 - a11*a20,"
+    "det = a00*b01 + a01*b11 + a02*b21;"
+  "return matrix<T, 3, 3>("
+    "b01, (-a22*a01 + a02*a21), ( a12*a01 - a02*a11),"
+    "b11, ( a22*a00 - a02*a20), (-a12*a00 + a02*a10),"
+    "b21, (-a21*a00 + a01*a20), ( a11*a00 - a01*a10)) * (1/det);"
+"}";
 
-static constexpr char kInverse4x4[] = R"(
-template <typename T>
-matrix<T, 4, 4> mat4_inverse(matrix<T, 4, 4> m) {
-T
- a00 = m[0].x, a01 = m[0].y, a02 = m[0].z, a03 = m[0].w,
- a10 = m[1].x, a11 = m[1].y, a12 = m[1].z, a13 = m[1].w,
- a20 = m[2].x, a21 = m[2].y, a22 = m[2].z, a23 = m[2].w,
- a30 = m[3].x, a31 = m[3].y, a32 = m[3].z, a33 = m[3].w,
- b00 = a00*a11 - a01*a10,
- b01 = a00*a12 - a02*a10,
- b02 = a00*a13 - a03*a10,
- b03 = a01*a12 - a02*a11,
- b04 = a01*a13 - a03*a11,
- b05 = a02*a13 - a03*a12,
- b06 = a20*a31 - a21*a30,
- b07 = a20*a32 - a22*a30,
- b08 = a20*a33 - a23*a30,
- b09 = a21*a32 - a22*a31,
- b10 = a21*a33 - a23*a31,
- b11 = a22*a33 - a23*a32,
- det = b00*b11 - b01*b10 + b02*b09 + b03*b08 - b04*b07 + b05*b06;
-return matrix<T, 4, 4>(
- a11*b11 - a12*b10 + a13*b09,
- a02*b10 - a01*b11 - a03*b09,
- a31*b05 - a32*b04 + a33*b03,
- a22*b04 - a21*b05 - a23*b03,
- a12*b08 - a10*b11 - a13*b07,
- a00*b11 - a02*b08 + a03*b07,
- a32*b02 - a30*b05 - a33*b01,
- a20*b05 - a22*b02 + a23*b01,
- a10*b10 - a11*b08 + a13*b06,
- a01*b08 - a00*b10 - a03*b06,
- a30*b04 - a31*b02 + a33*b00,
- a21*b02 - a20*b04 - a23*b00,
- a11*b07 - a10*b09 - a12*b06,
- a00*b09 - a01*b07 + a02*b06,
- a31*b01 - a30*b03 - a32*b00,
- a20*b03 - a21*b01 + a22*b00) * (1/det);
-}
-)";
+static constexpr char kInverse4x4[] =
+"template <typename T>"
+"matrix<T, 4, 4> mat4_inverse(matrix<T, 4, 4> m) {"
+  "T "
+    "a00 = m[0].x, a01 = m[0].y, a02 = m[0].z, a03 = m[0].w,"
+    "a10 = m[1].x, a11 = m[1].y, a12 = m[1].z, a13 = m[1].w,"
+    "a20 = m[2].x, a21 = m[2].y, a22 = m[2].z, a23 = m[2].w,"
+    "a30 = m[3].x, a31 = m[3].y, a32 = m[3].z, a33 = m[3].w,"
+    "b00 = a00*a11 - a01*a10,"
+    "b01 = a00*a12 - a02*a10,"
+    "b02 = a00*a13 - a03*a10,"
+    "b03 = a01*a12 - a02*a11,"
+    "b04 = a01*a13 - a03*a11,"
+    "b05 = a02*a13 - a03*a12,"
+    "b06 = a20*a31 - a21*a30,"
+    "b07 = a20*a32 - a22*a30,"
+    "b08 = a20*a33 - a23*a30,"
+    "b09 = a21*a32 - a22*a31,"
+    "b10 = a21*a33 - a23*a31,"
+    "b11 = a22*a33 - a23*a32,"
+    "det = b00*b11 - b01*b10 + b02*b09 + b03*b08 - b04*b07 + b05*b06;"
+  "return matrix<T, 4, 4>("
+    "a11*b11 - a12*b10 + a13*b09,"
+    "a02*b10 - a01*b11 - a03*b09,"
+    "a31*b05 - a32*b04 + a33*b03,"
+    "a22*b04 - a21*b05 - a23*b03,"
+    "a12*b08 - a10*b11 - a13*b07,"
+    "a00*b11 - a02*b08 + a03*b07,"
+    "a32*b02 - a30*b05 - a33*b01,"
+    "a20*b05 - a22*b02 + a23*b01,"
+    "a10*b10 - a11*b08 + a13*b06,"
+    "a01*b08 - a00*b10 - a03*b06,"
+    "a30*b04 - a31*b02 + a33*b00,"
+    "a21*b02 - a20*b04 - a23*b00,"
+    "a11*b07 - a10*b09 - a12*b06,"
+    "a00*b09 - a01*b07 + a02*b06,"
+    "a31*b01 - a30*b03 - a32*b00,"
+    "a20*b03 - a21*b01 + a22*b00) * (1/det);"
+"}";
 
 std::string MetalCodeGenerator::getInversePolyfill(const ExpressionArray& arguments) {
     // Only use polyfills for a function taking a single-argument square matrix.
@@ -829,13 +829,12 @@ std::string MetalCodeGenerator::getInversePolyfill(const ExpressionArray& argume
 }
 
 void MetalCodeGenerator::writeMatrixCompMult() {
-    static constexpr char kMatrixCompMult[] = R"(
-template <typename T, int C, int R>
-matrix<T, C, R> matrixCompMult(matrix<T, C, R> a, const matrix<T, C, R> b) {
- for (int c = 0; c < C; ++c) { a[c] *= b[c]; }
- return a;
-}
-)";
+    static constexpr char kMatrixCompMult[] =
+"template <typename T, int C, int R>"
+"matrix<T, C, R> matrixCompMult(matrix<T, C, R> a, const matrix<T, C, R> b) {"
+  "for (int c = 0; c < C; ++c) { a[c] *= b[c]; }"
+  "return a;"
+"}";
     if (!fWrittenMatrixCompMult) {
         fWrittenMatrixCompMult = true;
         fExtraFunctions.writeText(kMatrixCompMult);
@@ -843,14 +842,13 @@ matrix<T, C, R> matrixCompMult(matrix<T, C, R> a, const matrix<T, C, R> b) {
 }
 
 void MetalCodeGenerator::writeOuterProduct() {
-    static constexpr char kOuterProduct[] = R"(
-template <typename T, int C, int R>
-matrix<T, C, R> outerProduct(const vec<T, R> a, const vec<T, C> b) {
- matrix<T, C, R> m;
- for (int c = 0; c < C; ++c) { m[c] = a * b[c]; }
- return m;
-}
-)";
+    static constexpr char kOuterProduct[] =
+"template <typename T, int C, int R>"
+"matrix<T, C, R> outerProduct(const vec<T, R> a, const vec<T, C> b) {"
+  "matrix<T, C, R> m;"
+  "for (int c = 0; c < C; ++c) { m[c] = a * b[c]; }"
+  "return m;"
+"}";
     if (!fWrittenOuterProduct) {
         fWrittenOuterProduct = true;
         fExtraFunctions.writeText(kOuterProduct);
@@ -878,6 +876,36 @@ void MetalCodeGenerator::writeArgumentList(const ExpressionArray& arguments) {
         this->writeExpression(*arg, Precedence::kSequence);
     }
     this->write(")");
+}
+
+void MetalCodeGenerator::writeScalarizedIntrinsicCall(const FunctionCall& c){
+    SkASSERT(!c.arguments().empty());
+    const ExpressionArray& arguments = c.arguments();
+    const Expression& primaryArg = *arguments[0];
+    int columns = primaryArg.type().columns();
+
+    static constexpr std::array<const char*, 4> kSwizzleChars = { "x", "y", "z", "w" };
+    this->writeWithIndexSubstitution([&]() {
+        this->writeType(primaryArg.type());
+        this->write("(");
+        for (int i = 0; i < columns; ++i) {
+            if (i) { this->write(", "); }
+            this->write(c.function().mangledName());
+            this->write("(");
+            for (int32_t j = 0; j < arguments.size(); ++j) {
+                if (j) { this->write(", "); }
+                if (arguments[j]->type().isScalar()) {
+                    this->writeExpression(*arguments[j], Precedence::kSequence);
+                } else {
+                    this->writeIndexInnerExpression(*arguments[j]);
+                    this->write(".");
+                    this->write(kSwizzleChars[i]);
+                }
+            }
+            this->write(")");
+        }
+        this->write(")");
+    });
 }
 
 bool MetalCodeGenerator::writeIntrinsicCall(const FunctionCall& c, IntrinsicKind kind) {
@@ -1137,28 +1165,38 @@ bool MetalCodeGenerator::writeIntrinsicCall(const FunctionCall& c, IntrinsicKind
             return true;
         }
         case k_bitCount_IntrinsicKind: {
-            this->write("popcount(");
+            // Cast to the signed return type required in SkSL
+            if (!c.arguments()[0]->type().componentType().isSigned()) {
+                this->write(this->typeName(c.type()));
+            }
+            this->write("(popcount(");
             this->writeExpression(*arguments[0], Precedence::kSequence);
-            this->write(")");
+            this->write("))");
             return true;
         }
         case k_findLSB_IntrinsicKind: {
             // Create a temp variable to store the expression, to avoid double-evaluating it.
             std::string skTemp = this->getTempVariable(arguments[0]->type());
+            std::string signedType = this->typeName(c.type()); // The return type is always signed
             std::string exprType = this->typeName(arguments[0]->type());
 
             // ctz returns numbits(type) on zero inputs; GLSL documents it as generating -1 instead.
-            // Use select to detect zero inputs and force a -1 result.
+            // - Use select to detect zero inputs and force a -1 result.
+            // - ctz returns an unsigned value for unsigned inputs, so we have to cast back to int
 
-            // (_skTemp1 = (.....), select(ctz(_skTemp1), int4(-1), _skTemp1 == int4(0)))
+            // (_skTemp1 = (.....), select(int4(ctz(_skTemp1)), int4(-1), _skTemp1 == int4(0)))
             this->write("(");
             this->write(skTemp);
             this->write(" = (");
             this->writeExpression(*arguments[0], Precedence::kSequence);
-            this->write("), select(ctz(");
+            this->write("), select(");
+            if (!c.arguments()[0]->type().componentType().isSigned()) {
+                this->write(signedType);
+            }
+            this->write("(ctz(");
             this->write(skTemp);
-            this->write("), ");
-            this->write(exprType);
+            this->write(")), ");
+            this->write(signedType);
             this->write("(-1), ");
             this->write(skTemp);
             this->write(" == ");
@@ -1169,11 +1207,14 @@ bool MetalCodeGenerator::writeIntrinsicCall(const FunctionCall& c, IntrinsicKind
         case k_findMSB_IntrinsicKind: {
             // Create a temp variable to store the expression, to avoid double-evaluating it.
             std::string skTemp1 = this->getTempVariable(arguments[0]->type());
+            std::string signedType = this->typeName(c.type()); // The return type is always signed
             std::string exprType = this->typeName(arguments[0]->type());
 
             // GLSL findMSB is actually quite different from Metal's clz:
             // - For signed negative numbers, it returns the first zero bit, not the first one bit!
             // - For an empty input (0/~0 depending on sign), findMSB gives -1; clz is numbits(type)
+            // - clz is relative to the MSB whereas findMSB returns a 0-based bit number
+            // - clz returns an unsigned value for unsigned inputs, so we have to cast back to int
 
             // (_skTemp1 = (.....),
             this->write("(");
@@ -1200,13 +1241,15 @@ bool MetalCodeGenerator::writeIntrinsicCall(const FunctionCall& c, IntrinsicKind
                 skTemp2 = skTemp1;
             }
 
-            // ... select(int4(clz(_skTemp2)), int4(-1), _skTemp2 == int4(0)))
-            this->write("select(");
-            this->write(this->typeName(c.type()));
+            // ... select(int4(31) - int4(clz(_skTemp2)), int4(-1), _skTemp2 == int4(0)))
+            this->write("select(31 - "); // Assuming 32-bit integer types
+            if (!c.arguments()[0]->type().componentType().isSigned()) {
+                this->write(signedType);
+            }
             this->write("(clz(");
             this->write(skTemp2);
             this->write(")), ");
-            this->write(this->typeName(c.type()));
+            this->write(signedType);
             this->write("(-1), ");
             this->write(skTemp2);
             this->write(" == ");
@@ -1325,6 +1368,21 @@ bool MetalCodeGenerator::writeIntrinsicCall(const FunctionCall& c, IntrinsicKind
             this->writeExpression(*c.arguments()[1], Precedence::kSequence);
             this->write(", memory_order_relaxed)");
             return true;
+        case k_min_IntrinsicKind:
+            [[fallthrough]];
+        case k_max_IntrinsicKind:
+            [[fallthrough]];
+        case k_clamp_IntrinsicKind: {
+            SkASSERT(c.function().mangledName() == "min" || c.function().mangledName() == "max" ||
+                     c.function().mangledName() == "clamp");
+            SkASSERT(!c.type().isMatrix());
+            if (fCaps.fVectorClampMinMaxSupport || !c.type().isVector()) {
+                this->writeSimpleIntrinsic(c);
+            } else {
+                this->writeScalarizedIntrinsicCall(c);
+            }
+            return true;
+        }
         default:
             return false;
     }
@@ -1569,16 +1627,15 @@ void MetalCodeGenerator::writeConstructorArrayCast(const ConstructorArrayCast& c
     std::string name = "array_of_" + outTypeName + "_from_" + inTypeName;
     if (!fHelpers.contains(name)) {
         fHelpers.add(name);
-        fExtraFunctions.printf(R"(
-template <size_t N>
-array<%s, N> %s(thread const array<%s, N>& x) {
-    array<%s, N> result;
-    for (int i = 0; i < N; ++i) {
-        result[i] = %s(x[i]);
-    }
-    return result;
-}
-)",
+        fExtraFunctions.printf(
+"template <size_t N>"
+"array<%s, N> %s(thread const array<%s, N>& x) {"
+    "array<%s, N> result;"
+    "for (int i = 0; i < N; ++i) {"
+        "result[i] = %s(x[i]);"
+    "}"
+    "return result;"
+"}",
                                outTypeName.c_str(), name.c_str(), inTypeName.c_str(),
                                outTypeName.c_str(),
                                outTypeName.c_str());
@@ -1600,11 +1657,10 @@ std::string MetalCodeGenerator::getVectorFromMat2x2ConstructorHelper(const Type&
     if (!fHelpers.contains(name)) {
         fHelpers.add(name);
 
-        fExtraFunctions.printf(R"(
-%s4 %s(%s2x2 x) {
-    return %s4(x[0].xy, x[1].xy);
-}
-)", baseType.c_str(), name.c_str(), baseType.c_str(), baseType.c_str());
+        fExtraFunctions.printf(
+"%s4 %s(%s2x2 x) {"
+    "return %s4(x[0].xy, x[1].xy);"
+"}", baseType.c_str(), name.c_str(), baseType.c_str(), baseType.c_str());
     }
 
     return name;
@@ -1941,32 +1997,31 @@ void MetalCodeGenerator::writeMatrixEqualityHelpers(const Type& left, const Type
 
     if (!fHelpers.contains(key)) {
         fHelpers.add(key);
-        fExtraFunctionPrototypes.printf(R"(
-thread bool operator==(const %s left, const %s right);
-thread bool operator!=(const %s left, const %s right);
-)",
+        fExtraFunctionPrototypes.printf(
+"thread bool operator==(const %s left, const %s right);"
+"thread bool operator!=(const %s left, const %s right);",
                                         this->typeName(left).c_str(),
                                         this->typeName(right).c_str(),
                                         this->typeName(left).c_str(),
                                         this->typeName(right).c_str());
 
         fExtraFunctions.printf(
-                "thread bool operator==(const %s left, const %s right) {\n"
-                "    return ",
+                "thread bool operator==(const %s left, const %s right) {"
+                  "return ",
                 this->typeName(left).c_str(), this->typeName(right).c_str());
 
         const char* separator = "";
         for (int index=0; index<left.columns(); ++index) {
             fExtraFunctions.printf("%sall(left[%d] == right[%d])", separator, index, index);
-            separator = " &&\n           ";
+            separator = " && ";
         }
 
         fExtraFunctions.printf(
-                ";\n"
-                "}\n"
-                "thread bool operator!=(const %s left, const %s right) {\n"
-                "    return !(left == right);\n"
-                "}\n",
+                ";"
+                "}"
+                "thread bool operator!=(const %s left, const %s right) {"
+                  "return !(left == right);"
+                "}",
                 this->typeName(left).c_str(), this->typeName(right).c_str());
     }
 }
@@ -2010,31 +2065,29 @@ void MetalCodeGenerator::writeArrayEqualityHelpers(const Type& type) {
     std::string key = "ArrayEquality []";
     if (!fHelpers.contains(key)) {
         fHelpers.add(key);
-        fExtraFunctionPrototypes.writeText(R"(
-template <typename T1, typename T2>
-bool operator==(const array_ref<T1> left, const array_ref<T2> right);
-template <typename T1, typename T2>
-bool operator!=(const array_ref<T1> left, const array_ref<T2> right);
-)");
-        fExtraFunctions.writeText(R"(
-template <typename T1, typename T2>
-bool operator==(const array_ref<T1> left, const array_ref<T2> right) {
-    if (left.size() != right.size()) {
-        return false;
-    }
-    for (size_t index = 0; index < left.size(); ++index) {
-        if (!all(left[index] == right[index])) {
-            return false;
-        }
-    }
-    return true;
-}
+        fExtraFunctionPrototypes.writeText(
+"template <typename T1, typename T2>"
+"bool operator==(const array_ref<T1> left, const array_ref<T2> right);"
+"template <typename T1, typename T2>"
+"bool operator!=(const array_ref<T1> left, const array_ref<T2> right);");
+        fExtraFunctions.writeText(
+"template <typename T1, typename T2>"
+"bool operator==(const array_ref<T1> left, const array_ref<T2> right) {"
+    "if (left.size() != right.size()) {"
+        "return false;"
+    "}"
+    "for (size_t index = 0; index < left.size(); ++index) {"
+        "if (!all(left[index] == right[index])) {"
+            "return false;"
+        "}"
+    "}"
+    "return true;"
+"}"
 
-template <typename T1, typename T2>
-bool operator!=(const array_ref<T1> left, const array_ref<T2> right) {
-    return !(left == right);
-}
-)");
+"template <typename T1, typename T2>"
+"bool operator!=(const array_ref<T1> left, const array_ref<T2> right) {"
+    "return !(left == right);"
+"}");
     }
 }
 
@@ -2051,18 +2104,17 @@ void MetalCodeGenerator::writeStructEqualityHelpers(const Type& type) {
 
         // Write operator== and operator!= for this struct, since those are assumed to exist in SkSL
         // and GLSL but do not exist by default in Metal.
-        fExtraFunctionPrototypes.printf(R"(
-thread bool operator==(thread const %s& left, thread const %s& right);
-thread bool operator!=(thread const %s& left, thread const %s& right);
-)",
+        fExtraFunctionPrototypes.printf(
+"thread bool operator==(thread const %s& left, thread const %s& right);"
+"thread bool operator!=(thread const %s& left, thread const %s& right);",
                                         this->typeName(type).c_str(),
                                         this->typeName(type).c_str(),
                                         this->typeName(type).c_str(),
                                         this->typeName(type).c_str());
 
         fExtraFunctions.printf(
-                "thread bool operator==(thread const %s& left, thread const %s& right) {\n"
-                "    return ",
+                "thread bool operator==(thread const %s& left, thread const %s& right) {"
+                  "return ",
                 this->typeName(type).c_str(),
                 this->typeName(type).c_str());
 
@@ -2080,14 +2132,14 @@ thread bool operator!=(thread const %s& left, thread const %s& right);
                                        (int)field.fName.size(), field.fName.data(),
                                        (int)field.fName.size(), field.fName.data());
             }
-            separator = " &&\n           ";
+            separator = " && ";
         }
         fExtraFunctions.printf(
-                ";\n"
-                "}\n"
-                "thread bool operator!=(thread const %s& left, thread const %s& right) {\n"
-                "    return !(left == right);\n"
-                "}\n",
+                ";"
+                "}"
+                "thread bool operator!=(thread const %s& left, thread const %s& right) {"
+                  "return !(left == right);"
+                "}",
                 this->typeName(type).c_str(),
                 this->typeName(type).c_str());
     }
@@ -3058,22 +3110,20 @@ void MetalCodeGenerator::writeSampler2DPolyfill() {
             }
             fWrotePolyfill = true;
 
-            std::string polyfill = SkSL::String::printf(R"(
-struct sampler2D {
-    texture2d<half> tex;
-    sampler smp;
-};
-half4 sample(sampler2D i, float2 p, float b=%g) { return i.tex.sample(i.smp, p, bias(b)); }
-half4 sample(sampler2D i, float3 p, float b=%g) { return i.tex.sample(i.smp, p.xy / p.z, bias(b)); }
-half4 sampleLod(sampler2D i, float2 p, float lod) { return i.tex.sample(i.smp, p, level(lod)); }
-half4 sampleLod(sampler2D i, float3 p, float lod) {
-    return i.tex.sample(i.smp, p.xy / p.z, level(lod));
-}
-half4 sampleGrad(sampler2D i, float2 p, float2 dPdx, float2 dPdy) {
-    return i.tex.sample(i.smp, p, gradient2d(dPdx, dPdy));
-}
-
-)",
+            std::string polyfill = SkSL::String::printf(
+"struct sampler2D {"
+    "texture2d<half> tex;"
+    "sampler smp;"
+"};"
+"half4 sample(sampler2D i, float2 p, float b=%g) { return i.tex.sample(i.smp, p, bias(b)); }"
+"half4 sample(sampler2D i, float3 p, float b=%g) { return i.tex.sample(i.smp, p.xy / p.z, bias(b)); }"
+"half4 sampleLod(sampler2D i, float2 p, float lod) { return i.tex.sample(i.smp, p, level(lod)); }"
+"half4 sampleLod(sampler2D i, float3 p, float lod) {"
+    "return i.tex.sample(i.smp, p.xy / p.z, level(lod));"
+"}"
+"half4 sampleGrad(sampler2D i, float2 p, float2 dPdx, float2 dPdy) {"
+    "return i.tex.sample(i.smp, p, gradient2d(dPdx, dPdy));"
+"}",
                                                         fTextureBias,
                                                         fTextureBias);
             fCodeGen->write(polyfill.c_str());
@@ -3244,9 +3294,9 @@ void MetalCodeGenerator::writeInterfaceBlocks() {
     }
     if (!wroteInterfaceBlock &&
         fProgram.fInterface.fRTFlipUniform != Program::Interface::kRTFlip_None) {
-        this->writeLine("struct sksl_synthetic_uniforms {");
-        this->writeLine("    float2 " SKSL_RTFLIP_NAME ";");
-        this->writeLine("};");
+        this->writeLine("struct sksl_synthetic_uniforms {"
+                        "float2 " SKSL_RTFLIP_NAME ";"
+                        "};");
     }
 }
 
@@ -3687,12 +3737,12 @@ bool ToMetal(Program& program, const ShaderCaps* caps, OutputStream& out) {
     return ToMetal(program, caps, out, defaultPrintOpts);
 }
 
-bool ToMetal(Program& program, const ShaderCaps* caps, std::string* out) {
+bool ToMetal(Program& program, const ShaderCaps* caps, NativeShader* out) {
     StringStream buffer;
     if (!ToMetal(program, caps, buffer)) {
         return false;
     }
-    *out = buffer.str();
+    out->fText = buffer.str();
     return true;
 }
 

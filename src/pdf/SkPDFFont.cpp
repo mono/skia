@@ -8,7 +8,6 @@
 #include "src/pdf/SkPDFFont.h"
 
 #include "include/codec/SkCodec.h"
-#include "include/codec/SkJpegDecoder.h"
 #include "include/core/SkAlphaType.h"
 #include "include/core/SkBitmap.h"
 #include "include/core/SkCanvas.h"
@@ -32,11 +31,12 @@
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkScalar.h"
 #include "include/core/SkSize.h"
+#include "include/core/SkSpan.h"
 #include "include/core/SkStream.h"
 #include "include/core/SkString.h"
 #include "include/core/SkTypeface.h"
+#include "include/docs/SkPDFDocument.h"
 #include "include/effects/SkDashPathEffect.h"
-#include "include/encode/SkJpegEncoder.h"
 #include "include/private/base/SkDebug.h"
 #include "include/private/base/SkTPin.h"
 #include "include/private/base/SkTemplates.h"
@@ -67,6 +67,7 @@
 #include <cstddef>
 #include <initializer_list>
 #include <memory>
+#include <optional>
 #include <utility>
 
 using namespace skia_private;
@@ -122,26 +123,19 @@ static bool scale_paint(SkPaint& paint, SkScalar fontToEMScale) {
         }
     }
     if (SkPathEffectBase* peb = as_PEB(paint.getPathEffect())) {
-        AutoSTMalloc<4, SkScalar> intervals;
-        SkPathEffectBase::DashInfo dashInfo(intervals, 4, 0);
-        if (peb->asADash(&dashInfo) == SkPathEffectBase::DashType::kDash) {
-            if (dashInfo.fCount > 4) {
-                intervals.realloc(dashInfo.fCount);
-                peb->asADash(&dashInfo);
+        if (auto dashInfo = peb->asADash()) {
+            SkSpan<const SkScalar> src = dashInfo->fIntervals;
+            AutoSTArray<4, SkScalar> dst(src.size());
+            for (size_t i = 0; i < src.size(); ++i) {
+                dst[i] = src[i] * fontToEMScale;
             }
-            for (int32_t i = 0; i < dashInfo.fCount; ++i) {
-                dashInfo.fIntervals[i] *= fontToEMScale;
-            }
-            dashInfo.fPhase *= fontToEMScale;
-            paint.setPathEffect(
-                SkDashPathEffect::Make(dashInfo.fIntervals, dashInfo.fCount, dashInfo.fPhase));
+            paint.setPathEffect(SkDashPathEffect::Make(dst, dashInfo->fPhase * fontToEMScale));
         } else {
             return false;
         }
     }
 
     if (paint.getStyle() != SkPaint::kFill_Style && paint.getStrokeWidth() > 0) {
-        paint.setStrokeMiter(paint.getStrokeMiter() * fontToEMScale);
         paint.setStrokeWidth(paint.getStrokeWidth() * fontToEMScale);
     }
 
@@ -185,7 +179,8 @@ sk_sp<SkPDFStrike> SkPDFStrike::Make(SkPDFDocument* doc, const SkFont& font, con
         canonFont.setSize(font.getSize());
     }
     SkScalar pathStrikeEM = canonFont.getSize();
-    SkStrikeSpec pathStrikeSpec = SkStrikeSpec::MakeWithNoDevice(canonFont, &pathPaint);
+    SkStrikeSpec pathStrikeSpec = SkStrikeSpec::MakeWithNoDevice(canonFont, &pathPaint,
+                                                                 SkScalerContextFlags::kNone);
 
     if (sk_sp<SkPDFStrike>* strike = doc->fStrikes.find(pathStrikeSpec.descriptor())) {
         return *strike;
@@ -207,7 +202,8 @@ sk_sp<SkPDFStrike> SkPDFStrike::Make(SkPDFDocument* doc, const SkFont& font, con
         canonFont.setSize(font.getSize());
     }
     SkScalar imageStrikeEM = canonFont.getSize();
-    SkStrikeSpec imageStrikeSpec = SkStrikeSpec::MakeWithNoDevice(canonFont, &imagePaint);
+    SkStrikeSpec imageStrikeSpec = SkStrikeSpec::MakeWithNoDevice(canonFont, &imagePaint,
+                                                                  SkScalerContextFlags::kNone);
 
     sk_sp<SkPDFStrike> strike(new SkPDFStrike(SkPDFStrikeSpec(pathStrikeSpec, pathStrikeEM),
                                               SkPDFStrikeSpec(imageStrikeSpec, imageStrikeEM),
@@ -283,9 +279,9 @@ const SkAdvancedTypefaceMetrics* SkPDFFont::GetMetrics(const SkTypeface& typefac
             // This probably isn't very good with an italic font.
             int16_t stemV = SHRT_MAX;
             for (char c : {'i', 'I', '!', '1'}) {
-                uint16_t g = font.unicharToGlyph(c);
+                SkGlyphID g = font.unicharToGlyph(c);
                 SkRect bounds;
-                font.getBounds(&g, 1, &bounds, nullptr);
+                font.getBounds({&g, 1}, {&bounds, 1}, nullptr);
                 stemV = std::min(stemV, SkToS16(SkScalarRoundToInt(bounds.width())));
             }
             metrics->fStemV = stemV;
@@ -294,9 +290,9 @@ const SkAdvancedTypefaceMetrics* SkPDFFont::GetMetrics(const SkTypeface& typefac
             // Figure out a good guess for CapHeight: average the height of M and X.
             SkScalar capHeight = 0;
             for (char c : {'M', 'X'}) {
-                uint16_t g = font.unicharToGlyph(c);
+                SkGlyphID g = font.unicharToGlyph(c);
                 SkRect bounds;
-                font.getBounds(&g, 1, &bounds, nullptr);
+                font.getBounds({&g, 1}, {&bounds, 1}, nullptr);
                 capHeight += bounds.height();
             }
             metrics->fCapHeight = SkToS16(SkScalarRoundToInt(capHeight / 2));
@@ -315,7 +311,7 @@ const std::vector<SkUnichar>& SkPDFFont::GetUnicodeMap(const SkTypeface& typefac
         return *ptr;
     }
     std::vector<SkUnichar> buffer(typeface.countGlyphs());
-    typeface.getGlyphToUnicodeMap(buffer.data());
+    typeface.getGlyphToUnicodeMap(buffer);
     return *canon->fToUnicodeMap.set(id, std::move(buffer));
 }
 
@@ -334,10 +330,9 @@ SkAdvancedTypefaceMetrics::FontType SkPDFFont::FontType(const SkPDFStrike& pdfSt
     if (SkToBool(metrics.fFlags & SkAdvancedTypefaceMetrics::kVariable_FontFlag) ||
         // PDF is actually interested in the encoding of the data, not just the logical format.
         // If the TrueType is actually wOFF or wOF2 then it should not be directly embedded in PDF.
-        // For now export these as Type3 until the subsetter can handle table based fonts.
-        // See https://github.com/harfbuzz/harfbuzz/issues/3609 and
-        // https://skia-review.googlesource.com/c/skia/+/543485
-        SkToBool(metrics.fFlags & SkAdvancedTypefaceMetrics::kAltDataFormat_FontFlag) ||
+        // Export these as Type3 if the subsetter cannot handle table based fonts.
+        (SkToBool(metrics.fFlags & SkAdvancedTypefaceMetrics::kAltDataFormat_FontFlag)
+            && !SkPDFCanSubsetTableBasedFonts()) ||
         SkToBool(metrics.fFlags & SkAdvancedTypefaceMetrics::kNotEmbeddable_FontFlag) ||
         // Something like 45eeeddb00741493 and 7c86e7641b348ca7b0 to output OpenType should work,
         // but requires PDF 1.6 which is still not supported by all printers. One could fix this by
@@ -785,8 +780,12 @@ static void emit_subset_type3(const SkPDFFont& pdfFont, SkPDFDocument* doc) {
             setGlyphWidthAndBoundingBox(pathGlyph->advanceX(), glyphBBox, &content);
             SkPaint::Style style = pathGlyph->pathIsHairline() ? SkPaint::kStroke_Style
                                                                : SkPaint::kFill_Style;
-            SkPDFUtils::EmitPath(*path, style, &content);
-            SkPDFUtils::PaintPath(style, path->getFillType(), &content);
+            using SkPDFUtils::EmptyPath, SkPDFUtils::EmptyVerb;
+            if (SkPDFUtils::EmitPath(*path, style, EmptyPath::Discard, EmptyVerb::Discard,
+                                     &content))
+            {
+                SkPDFUtils::PaintPath(style, path->getFillType(), &content);
+            }
         } else if (auto pimg = to_image(gID, &smallGlyphs); pimg.fImage) {
             using SkPDFUtils::AppendScalar;
             if (pimg.fImage->colorType() != kGray_8_SkColorType) {
@@ -803,7 +802,7 @@ static void emit_subset_type3(const SkPDFFont& pdfFont, SkPDFDocument* doc) {
                 content.writeText("/X");
                 content.write(characterName.c_str(), characterName.size());
                 content.writeText(" Do\n");
-                SkPDFIndirectReference image = SkPDFSerializeImage(pimg.fImage.get(), doc);
+                SkPDFIndirectReference image = SkPDFSerializeImage(pimg.fImage.get(), doc, 101);
                 xobjects->insertRef(SkStringPrintf("Xg%X", gID), image);
             } else {
                 // TODO: For A1, put ImageMask on the PDF image and draw the image?
@@ -828,21 +827,22 @@ static void emit_subset_type3(const SkPDFFont& pdfFont, SkPDFDocument* doc) {
 
                 // Convert Grey image to deferred jpeg image to emit as jpeg
                 if (pdfStrike.fHasMaskFilter) {
-                    SkJpegEncoder::Options jpegOptions;
-                    jpegOptions.fQuality = SK_PDF_MASK_QUALITY;
-                    SkImage* image = pimg.fImage.get();
-                    SkPixmap pm;
-                    SkAssertResult(image->peekPixels(&pm));
-                    SkDynamicMemoryWStream buffer;
-                    // By encoding this into jpeg, it be embedded efficiently during drawImage.
-                    if (SkJpegEncoder::Encode(&buffer, pm, jpegOptions)) {
-                        std::unique_ptr<SkCodec> codec =
-                                SkJpegDecoder::Decode(buffer.detachAsData(), nullptr);
-                        SkASSERT(codec);
-                        sk_sp<SkImage> jpegImage = SkCodecs::DeferredImage(std::move(codec));
-                        SkASSERT(jpegImage);
-                        if (jpegImage) {
-                            pimg.fImage = jpegImage;
+                    SkPDF::EncodeJpegCallback encodeJPEG = doc->metadata().jpegEncoder;
+                    SkPDF::DecodeJpegCallback decodeJPEG = doc->metadata().jpegDecoder;
+                    if (encodeJPEG && decodeJPEG) {
+                        SkImage* image = pimg.fImage.get();
+                        SkPixmap pm;
+                        SkAssertResult(image->peekPixels(&pm));
+                        SkDynamicMemoryWStream buffer;
+                        if (encodeJPEG(&buffer, pm, SK_PDF_MASK_QUALITY)) {
+                            std::unique_ptr<SkCodec> codec =
+                                    decodeJPEG(buffer.detachAsData());
+                            SkASSERT(codec);
+                            sk_sp<SkImage> jpegImage = SkCodecs::DeferredImage(std::move(codec));
+                            SkASSERT(jpegImage);
+                            if (jpegImage) {
+                                pimg.fImage = jpegImage;
+                            }
                         }
                     }
                 }

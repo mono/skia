@@ -9,6 +9,7 @@
 
 #include "include/core/SkPathEffect.h"
 #include "include/core/SkPath.h"
+#include "include/core/SkSpan.h"
 #include "include/effects/SkDiscretePathEffect.h"
 #include "include/effects/SkCornerPathEffect.h"
 #include "include/effects/Sk1DPathEffect.h"
@@ -53,7 +54,7 @@ sk_path_effect_t* sk_path_effect_create_2d_path(const sk_matrix_t* cmatrix, cons
 }
 
 sk_path_effect_t* sk_path_effect_create_dash(const float intervals[], int count, float phase) {
-    return ToPathEffect(SkDashPathEffect::Make(intervals, count, phase).release());
+    return ToPathEffect(SkDashPathEffect::Make(SkSpan<const SkScalar>(intervals, count), phase).release());
 }
 
 sk_path_effect_t* sk_path_effect_create_trim(float start, float stop, sk_path_effect_trim_mode_t mode) {

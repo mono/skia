@@ -17,13 +17,14 @@
 #include "include/gpu/ganesh/gl/GrGLFunctions.h"
 #include "include/gpu/ganesh/gl/GrGLInterface.h"
 #include "include/gpu/ganesh/gl/GrGLTypes.h"
-#include "include/private/SkColorData.h"
 #include "include/private/base/SkDebug.h"
+#include "include/private/base/SkSpan_impl.h"
 #include "include/private/base/SkTArray.h"
 #include "include/private/base/SkTemplates.h"
 #include "include/private/base/SkTo.h"
 #include "include/private/gpu/ganesh/GrTypesPriv.h"
 #include "src/core/SkChecksum.h"
+#include "src/core/SkColorData.h"
 #include "src/core/SkLRUCache.h"
 #include "src/gpu/Blend.h"
 #include "src/gpu/ganesh/GrCaps.h"
@@ -80,8 +81,11 @@ struct SkISize;
 
 namespace SkSL { enum class GLSLGeneration; }
 
+namespace SkSurfaces { enum class BackendSurfaceAccess; }
+
 namespace skgpu {
 class AutoCallback;
+class MutableTextureState;
 class RefCntedCallback;
 class Swizzle;
 enum class Budgeted : bool;
@@ -455,6 +459,11 @@ private:
             const skia_private::TArray<GrSurfaceProxy*, true>& sampledProxies,
             GrXferBarrierFlags renderPassXferBarriers) override;
 
+    void prepareSurfacesForBackendAccessAndStateUpdates(
+            SkSpan<GrSurfaceProxy*> proxies,
+            SkSurfaces::BackendSurfaceAccess access,
+            const skgpu::MutableTextureState* newState) override;
+
     bool onSubmitToGpu(const GrSubmitInfo& info) override;
 
     bool copySurfaceAsDraw(GrSurface* dst, bool drawToMultisampleFBO, GrSurface* src,
@@ -466,7 +475,7 @@ private:
 
     class ProgramCache : public GrThreadSafePipelineBuilder {
     public:
-        ProgramCache(int runtimeProgramCacheSize);
+        explicit ProgramCache(int runtimeProgramCacheSize);
         ~ProgramCache() override;
 
         void abandon();

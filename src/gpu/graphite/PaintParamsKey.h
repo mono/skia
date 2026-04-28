@@ -71,6 +71,8 @@ public:
     // data from a Builder-owned key, but they can be passed around by value after that.
     constexpr PaintParamsKey(const PaintParamsKey&) = default;
 
+    constexpr PaintParamsKey(SkSpan<const uint32_t> span) : fData(span) {}
+
     ~PaintParamsKey() = default;
     PaintParamsKey& operator=(const PaintParamsKey&) = default;
 
@@ -90,14 +92,20 @@ public:
     // source color is computed. The second node defines the final blender between the calculated
     // source color and the current pixel's dst color. If provided, the third node calculates an
     // additional analytic coverage value to combine with the geometry's coverage.
-    SkSpan<const ShaderNode*> getRootNodes(const ShaderCodeDictionary*, SkArenaAlloc*) const;
+    //
+    // Before returning the ShaderNode trees, this method decides which ShaderNode expressions to
+    // lift to the vertex shader, depending on how many varyings are available.
+    SkSpan<const ShaderNode*> getRootNodes(const Caps*,
+                                           const ShaderCodeDictionary*,
+                                           SkArenaAlloc*,
+                                           int availableVaryings) const;
 
     // Converts the key to a structured list of snippet information for debugging or labeling
     // purposes.
-    SkString toString(const ShaderCodeDictionary* dict, bool includeData) const;
+    SkString toString(const Caps*, const ShaderCodeDictionary*) const;
 
 #ifdef SK_DEBUG
-    void dump(const ShaderCodeDictionary*, UniquePaintParamsID) const;
+    void dump(const Caps*, const ShaderCodeDictionary*, UniquePaintParamsID) const;
 #endif
 
     bool operator==(const PaintParamsKey& that) const {
@@ -112,17 +120,22 @@ public:
         }
     };
 
+    SkSpan<const uint32_t> data() const { return fData; }
+
+    // Checks that a given key is viable for serialization and, also, that a deserialized
+    // key is, at least, correctly formed. Other than that all the sizes make sense, this method
+    // also checks that only Skia-internal shader code snippets appear in the key.
+    [[nodiscard]] bool isSerializable(const ShaderCodeDictionary*) const;
+
 private:
     friend class PaintParamsKeyBuilder;   // for the parented-data ctor
-
-    constexpr PaintParamsKey(SkSpan<const uint32_t> span) : fData(span) {}
 
     // Returns null if the node or any of its children have an invalid snippet ID. Recursively
     // creates a node and all of its children, incrementing 'currentIndex' by the total number of
     // nodes created.
-    const ShaderNode* createNode(const ShaderCodeDictionary*,
-                                 int* currentIndex,
-                                 SkArenaAlloc* arena) const;
+    ShaderNode* createNode(const ShaderCodeDictionary*,
+                           int* currentIndex,
+                           SkArenaAlloc* arena) const;
 
     // The memory referenced in 'fData' is always owned by someone else. It either shares the span
     // from the Builder, or clone() puts the span in an arena.
@@ -141,6 +154,12 @@ private:
 // into the dictionary to be prohibitive since that should be infrequent.
 class PaintParamsKeyBuilder {
 public:
+    PaintParamsKeyBuilder(const PaintParamsKeyBuilder&) = delete;
+    PaintParamsKeyBuilder& operator=(const PaintParamsKeyBuilder&) = delete;
+
+    PaintParamsKeyBuilder(PaintParamsKeyBuilder&&) = default;
+    PaintParamsKeyBuilder& operator=(PaintParamsKeyBuilder&&) = default;
+
     PaintParamsKeyBuilder(const ShaderCodeDictionary* dict) {
         SkDEBUGCODE(fDict = dict;)
     }
@@ -175,7 +194,23 @@ public:
         // First push the data size followed by the actual data.
         SkDEBUGCODE(this->validateData(data.size()));
         fData.push_back(data.size());
-        fData.push_back_n(data.size(), data.begin());
+        fData.push_back_n(data.size(), data.data());
+    }
+
+    void addErrorBlock() {
+        fHasError = true;
+        // Preserve the structure of parent stack, but since fHasError is true, the builder won't
+        // produce a valid PaintParamsKey.
+        this->addBlock(BuiltInCodeSnippetID::kError);
+    }
+
+    void tryShrinkCapacity() {
+        int halfCapacity = fData.capacity() / 2;
+        if (fDataHighWaterMark < halfCapacity) {
+            fDataHighWaterMark = 0;
+            SkASSERT(fData.empty());
+            fData.reserve_exact(halfCapacity);
+        }
     }
 
 private:
@@ -188,13 +223,15 @@ private:
         SkASSERT(fStack.empty()); // All beginBlocks() had a matching endBlock()
 
         SkDEBUGCODE(fLocked = true;)
-        return PaintParamsKey({fData.data(), fData.size()});
+        fDataHighWaterMark = std::max(fDataHighWaterMark, fData.size());
+        return fHasError ? PaintParamsKey::Invalid() : PaintParamsKey(fData);
     }
 
     // Invalidates any PaintParamsKey returned by lockAsKey() unless it has been cloned.
     void unlock() {
         SkASSERT(fLocked);
         fData.clear();
+        fHasError = false;
 
         SkDEBUGCODE(fLocked = false;)
         SkDEBUGCODE(fStack.clear();)
@@ -204,6 +241,8 @@ private:
     // The data array uses clear() on unlock so that it's underlying storage and repeated use of the
     // builder will hit a high-water mark and avoid lots of allocations when recording draws.
     skia_private::TArray<uint32_t> fData;
+    bool fHasError = false; // if true, fData may not encode a valid/complete ShaderNode tree.
+    int fDataHighWaterMark = 0;
 
 #ifdef SK_DEBUG
     void pushStack(int32_t codeSnippetID);

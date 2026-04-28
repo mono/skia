@@ -39,17 +39,6 @@ bool SkPathOpsDebug::gVerifyOp;  // set to true to compare result against region
 bool SkPathOpsDebug::gRunFail;  // set to true to check for success on tests known to fail
 bool SkPathOpsDebug::gVeryVerbose;  // set to true to run extensive checking tests
 
-#define FAIL_IF_COIN(cond, coin) \
-         do { if (cond) log->record(SkPathOpsDebug::kFail_Glitch, coin); } while (false)
-
-#undef FAIL_WITH_NULL_IF
-#define FAIL_WITH_NULL_IF(cond, span) \
-         do { if (cond) log->record(SkPathOpsDebug::kFail_Glitch, span); } while (false)
-
-#define RETURN_FALSE_IF(cond, span) \
-         do { if (cond) log->record(SkPathOpsDebug::kReturnFalse_Glitch, span); \
-         } while (false)
-
 #if DEBUG_SORT
 int SkPathOpsDebug::gSortCountDefault = SK_MaxS32;
 int SkPathOpsDebug::gSortCount;
@@ -3016,7 +3005,7 @@ static int debug_paths_draw_the_same(const SkPath& one, const SkPath& two, SkBit
 }
 
 void ReportOpFail(const SkPath& one, const SkPath& two, SkPathOp op) {
-    SkDebugf("// Op did not expect failure\n");
+    SkDEBUGF("// Op did not expect failure\n");
     DumpOp(stderr, one, two, op, "opTest");
     fflush(stderr);
 }
@@ -3056,7 +3045,7 @@ void VerifyOp(const SkPath& one, const SkPath& two, SkPathOp op,
 }
 
 void ReportSimplifyFail(const SkPath& path) {
-    SkDebugf("// Simplify did not expect failure\n");
+    SkDEBUGF("// Simplify did not expect failure\n");
     DumpSimplify(stderr, path, "simplifyTest");
     fflush(stderr);
 }

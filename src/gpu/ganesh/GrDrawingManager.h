@@ -12,7 +12,7 @@
 #include "include/core/SkSpan.h"
 #include "include/private/base/SkDebug.h"
 #include "include/private/base/SkTArray.h"
-#include "src/gpu/AtlasTypes.h"
+#include "src/gpu/ganesh/GrAtlasTypes.h"
 #include "src/gpu/ganesh/GrBufferAllocPool.h"
 #include "src/gpu/ganesh/GrCaps.h"
 #include "src/gpu/ganesh/GrHashMapWithCache.h"
@@ -170,8 +170,6 @@ public:
     // Returns a direct pointer to the tessellation path renderer, or null if it is not supported
     // and turned on.
     PathRenderer* getTessellationPathRenderer();
-
-    void flushIfNecessary();
 
     static bool ProgramUnitTest(GrDirectContext*, int maxStages, int maxLevels);
 

@@ -12,6 +12,18 @@
 #include "include/gpu/ganesh/gl/GrGLTypes.h"
 #include "include/private/base/SkTLogic.h"
 
+#if defined(__EMSCRIPTEN__)
+// mono/skia: <emscripten/version.h> was introduced by Emscripten
+// PR #25933 and only ships on emcc that defines the version macros
+// inside the header. Older Emscripten (e.g. the 2.0.6 / 2.0.23
+// toolchains SkiaSharp keeps in its WASM matrix for .NET 6/7
+// compat) still passes -D__EMSCRIPTEN_major__/_minor__/_tiny__ on
+// the command line and ships no such header. Probe with
+// __has_include so both eras compile.
+#  if __has_include(<emscripten/version.h>)
+#    include <emscripten/version.h>
+#  endif
+#endif
 
 extern "C" {
 
@@ -218,7 +230,7 @@ using GrGLMultiDrawElementsInstancedBaseVertexBaseInstanceFn = GrGLvoid GR_GL_FU
 /* ARB_sync */
 using GrGLFenceSyncFn = GrGLsync GR_GL_FUNCTION_TYPE(GrGLenum condition, GrGLbitfield flags);
 using GrGLIsSyncFn = GrGLboolean GR_GL_FUNCTION_TYPE(GrGLsync sync);
-#if defined(__EMSCRIPTEN__)
+#if defined(__EMSCRIPTEN__) && (__EMSCRIPTEN_major__ < 5)
 using GrGLClientWaitSyncFn = GrGLenum GR_GL_FUNCTION_TYPE(GrGLsync sync, GrGLbitfield flags, GrGLint timeoutLo, GrGLint timeoutHi);
 using GrGLWaitSyncFn = GrGLvoid GR_GL_FUNCTION_TYPE(GrGLsync sync, GrGLbitfield flags, GrGLuint timeoutLo, GrGLuint timeoutHi);
 #else

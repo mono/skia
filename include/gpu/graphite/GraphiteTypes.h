@@ -14,6 +14,7 @@
 #include "include/gpu/GpuTypes.h"
 
 #include <memory>
+#include <string>
 
 class SkSurface;
 
@@ -33,6 +34,56 @@ using GpuFinishedProc = void (*)(GpuFinishedContext finishedContext, CallbackRes
 using GpuFinishedWithStatsProc = void (*)(GpuFinishedContext finishedContext,
                                           CallbackResult,
                                           const GpuStats&);
+
+// NOTE: This can be converted to just an `enum class InsertStatus {}` once clients are migrated
+// off of assuming `Context::insertRecording()` returns a boolean.
+class InsertStatus {
+public:
+    // Do not refer to V directly; use these constants as if InsertStatus were a class enum, e.g.
+    // InsertStatus::kSuccess.
+    enum V {
+        // Everything successfully added to underlying CommandBuffer
+        kSuccess,
+        // Recording or InsertRecordingInfo invalid, no CB changes
+        kInvalidRecording,
+        // Promise image instantiation failed, no CB changes
+        kPromiseImageInstantiationFailed,
+        // Internal failure, CB partially modified, state unrecoverable or unknown (e.g. dependent
+        // texture uploads for future Recordings may or may not get executed)
+        kAddCommandsFailed,
+        // Internal failure, shader pipeline compilation failed (driver issue, or disk corruption),
+        // state unrecoverable.
+        kAsyncShaderCompilesFailed,
+        // The inserted Recording is out of order from what the Context expects (when
+        // `[Context|Recorder]Options::fRequireOrderedRecordings` is true), which can either
+        // represent a client synchronization error or an internal failure when a prior dependent
+        // Recording failed for some reason, no CB changes but state likely unrecoverable.
+        kOutOfOrderRecording,
+    };
+
+    InsertStatus() : fValue(kSuccess) {}
+    /*implicit*/ InsertStatus(V v) : fValue(v) {}
+    InsertStatus(V v, std::string message) : fValue(v), fMessage(std::move(message)) {}
+
+    operator InsertStatus::V() const {
+        return fValue;
+    }
+
+    const std::string& message() const { return fMessage; }
+
+    // Assist migration from old bool return value of insertRecording; kSuccess is true,
+    // all other error statuses are false.
+    // NOTE: This is intentionally not explicit so that InsertStatus can be assigned correctly to
+    // a bool or returned as a bool, since these are not boolean contexts that automatically apply
+    // explicit bool operators (e.g. inside an if condition).
+    operator bool() const {
+        return fValue == kSuccess;
+    }
+
+private:
+    V fValue;
+    std::string fMessage;
+};
 
 /**
  * The fFinishedProc is called when the Recording has been submitted and finished on the GPU, or
@@ -88,6 +139,17 @@ struct InsertRecordingInfo {
     GpuFinishedContext fFinishedContext = nullptr;
     GpuFinishedProc fFinishedProc = nullptr;
     GpuFinishedWithStatsProc fFinishedWithStatsProc = nullptr;
+
+    // For unit testing purposes, this can be used to induce a known failure status from
+    // Context::insertRecording(). When this set to anything other than kSuccess, insertRecording()
+    // will operate as normal until the first condition that would normally return the simulated
+    // status is encountered. At that point, operations are treated as if that condition had failed.
+    // This leaves the Context in a state consistent with encountering the InsertStatus in a normal
+    // application.
+    //
+    // NOTE: If the simulated failure status is one of the later error codes but the inserted
+    // Recording would fail with an earlier error code normally, that error is still returned.
+    InsertStatus fSimulatedStatus = InsertStatus::kSuccess;
 };
 
 /**
@@ -96,7 +158,7 @@ struct InsertRecordingInfo {
  * and the caller can use the callback to know it is safe to free any resources associated with
  * the Recording that they may be holding onto. If the Recording is successfully submitted to the
  * GPU the callback will be called with CallbackResult::kSuccess once the GPU has finished. All
- * other cases where some failure occured it will be called with CallbackResult::kFailed.
+ * other cases where some failure occurred it will be called with CallbackResult::kFailed.
  */
 struct InsertFinishInfo {
     InsertFinishInfo() = default;
@@ -118,6 +180,29 @@ enum class SyncToCpu : bool {
     kNo = false
 };
 
+enum class MarkFrameBoundary : bool {
+    kYes = true,
+    kNo = false
+};
+
+struct SubmitInfo {
+    SyncToCpu fSync = SyncToCpu::kNo;
+    MarkFrameBoundary fMarkBoundary = MarkFrameBoundary::kNo;
+    uint64_t fFrameID = 0;
+
+    constexpr SubmitInfo() = default;
+
+    constexpr SubmitInfo(SyncToCpu sync)
+        : fSync(sync)
+        , fMarkBoundary(MarkFrameBoundary::kNo)
+        , fFrameID(0) {}
+
+    constexpr SubmitInfo(SyncToCpu sync, uint64_t frameID)
+        : fSync(sync)
+        , fMarkBoundary(MarkFrameBoundary::kYes)
+        , fFrameID(frameID) {}
+};
+
 /*
  * For Promise Images - should the Promise Image be fulfilled every time a Recording that references
  * it is inserted into the Context.
@@ -134,50 +219,90 @@ enum class DepthStencilFlags : int {
     kDepthStencil = kDepth | kStencil,
 };
 
+enum class SampleCount : uint8_t {
+    k1  = 1,
+    k2  = 2,
+    k4  = 4,
+    k8  = 8,
+    k16 = 16
+};
+
+/**
+ * Convert an integer value to a strictly typed SampleCount value, rounding down to the lowest
+ * valid sample count if needed if `sampleCount` is not already equivalent.
+ */
+constexpr SampleCount ToSampleCount(uint32_t sampleCount) {
+    return sampleCount >= 16 ? SampleCount::k16 :
+           sampleCount >= 8  ? SampleCount::k8  :
+           sampleCount >= 4  ? SampleCount::k4  :
+           sampleCount >= 2  ? SampleCount::k2  :
+                               SampleCount::k1;
+}
+
 /*
  * This enum allows mapping from a set of observed RenderSteps (e.g., from a GraphicsPipeline
  * printout) to the correct 'drawTypes' parameter needed by the Precompilation API.
  */
 enum DrawTypeFlags : uint16_t {
 
-    kNone             = 0b000000000,
+    kNone             = 0,
 
     // kBitmapText_Mask should be used for the BitmapTextRenderStep[mask] RenderStep
-    kBitmapText_Mask  = 0b00000001,
+    kBitmapText_Mask  = 1 << 0,
     // kBitmapText_LCD should be used for the BitmapTextRenderStep[LCD] RenderStep
-    kBitmapText_LCD   = 0b00000010,
+    kBitmapText_LCD   = 1 << 1,
     // kBitmapText_Color should be used for the BitmapTextRenderStep[color] RenderStep
-    kBitmapText_Color = 0b00000100,
+    kBitmapText_Color = 1 << 2,
     // kSDFText should be used for the SDFTextRenderStep RenderStep
-    kSDFText          = 0b00001000,
+    kSDFText          = 1 << 3,
     // kSDFText_LCD should be used for the SDFTextLCDRenderStep RenderStep
-    kSDFText_LCD      = 0b00010000,
+    kSDFText_LCD      = 1 << 4,
 
     // kDrawVertices should be used to generate Pipelines that use the following RenderSteps:
     //    VerticesRenderStep[*] for:
-    //        [tris], [tris-texCoords], [tris-color], [tris-color-texCoords],
-    //        [tristrips], [tristrips-texCoords], [tristrips-color], [tristrips-color-texCoords]
-    kDrawVertices     = 0b00100000,
+    //        [Tris], [TrisTexCoords], [TrisColor], [TrisColorTexCoords],
+    //        [Tristrips], [TristripsTexCoords], [TristripsColor], [TristripsColorTexCoords]
+    kDrawVertices     = 1 << 5,
+
+    // kCircularArc renders filled circular arcs, with or without the center included, and
+    // stroked circular arcs with butt or round caps that don't include the center point.
+    // It corresponds to the CircularArcRenderStep.
+    kCircularArc      = 1 << 6,
 
     // kSimpleShape should be used to generate Pipelines that use the following RenderSteps:
-    //    AnalyticBlurRenderStep
     //    AnalyticRRectRenderStep
     //    PerEdgeAAQuadRenderStep
-    //    CoverBoundsRenderStep[non-aa-fill]
-    kSimpleShape      = 0b01000000,
+    //    CoverBoundsRenderStep[NonAAFill]
+    kAnalyticRRect    = 1 << 7,
+    kPerEdgeAAQuad    = 1 << 8,
+    kNonAAFillRect    = 1 << 9,
+
+    kSimpleShape      = kAnalyticRRect | kPerEdgeAAQuad | kNonAAFillRect,
 
     // kNonSimpleShape should be used to generate Pipelines that use the following RenderSteps:
     //    CoverageMaskRenderStep
-    //    CoverBoundsRenderStep[*] for [inverse-cover], [regular-cover]
+    //    CoverBoundsRenderStep[*] for [InverseCover], [RegularCover]
     //    TessellateStrokeRenderStep
-    //    TessellateWedgesRenderStep[*] for [convex], [evenodd], [winding]
-    //    TessellateCurvesRenderStep[*] for [even-odd], [winding]
-    //    MiddleOutFanRenderStep[*] for [even-odd], [winding]
-    kNonSimpleShape   = 0b10000000,
+    //    TessellateWedgesRenderStep[*] for [Convex], [EvenOdd], [Winding]
+    //    TessellateCurvesRenderStep[*] for [EvenOdd], [Winding]
+    //    MiddleOutFanRenderStep[*] for [EvenOdd], [Winding]
+    kNonSimpleShape   = 1 << 10,
 
-    kLast = kNonSimpleShape,
+    // This draw type covers all the methods Skia uses to draw drop shadows. It can be used to
+    // generate Pipelines which, as part of their labels, have:
+    //     the AnalyticBlurRenderStep
+    //     VerticesRenderStep[TrisColor] with a GaussianColorFilter
+    // For this draw type the PaintOptions parameter to Precompile() will be ignored.
+    kDropShadows      = 1 << 11,
+
+    // kAnalyticClip should be combined with the primary drawType for Pipelines that contain
+    // either of the following sub-strings:
+    //    AnalyticClip
+    //    AnalyticAndAtlasClip
+    kAnalyticClip     = 1 << 12,
+
+    kLast = kAnalyticClip,
 };
-static constexpr int kDrawTypeFlagsCnt = static_cast<int>(DrawTypeFlags::kLast) + 1;
 
 } // namespace skgpu::graphite
 

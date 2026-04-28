@@ -13,6 +13,7 @@
 #include "include/codec/SkCodecAnimation.h"
 #include "include/core/SkBitmap.h"
 #include "include/core/SkClipOp.h"
+#include "include/core/SkPathBuilder.h"
 #include "include/core/SkColorSpace.h"
 #include "include/core/SkImage.h"
 #include "include/core/SkM44.h"
@@ -66,9 +67,9 @@ static_assert ((int)SkPath::AddPathMode::kExtend_AddPathMode   == (int)EXTEND_SK
 static_assert ((int)SkPathDirection::kCCW   == (int)CCW_SK_PATH_DIRECTION,   ASSERT_MSG(SkPathDirection, sk_path_direction_t));
 static_assert ((int)SkPathDirection::kCW    == (int)CW_SK_PATH_DIRECTION,    ASSERT_MSG(SkPathDirection, sk_path_direction_t));
 
-// sk_path_arc_size_t
-static_assert ((int)SkPath::ArcSize::kLarge_ArcSize   == (int)LARGE_SK_PATH_ARC_SIZE,   ASSERT_MSG(SkPath::ArcSize, sk_path_arc_size_t));
-static_assert ((int)SkPath::ArcSize::kSmall_ArcSize   == (int)SMALL_SK_PATH_ARC_SIZE,   ASSERT_MSG(SkPath::ArcSize, sk_path_arc_size_t));
+// sk_path_arc_size_t (ArcSize moved from SkPath to SkPathBuilder in m147)
+static_assert ((int)SkPathBuilder::ArcSize::kLarge_ArcSize   == (int)LARGE_SK_PATH_ARC_SIZE,   ASSERT_MSG(SkPathBuilder::ArcSize, sk_path_arc_size_t));
+static_assert ((int)SkPathBuilder::ArcSize::kSmall_ArcSize   == (int)SMALL_SK_PATH_ARC_SIZE,   ASSERT_MSG(SkPathBuilder::ArcSize, sk_path_arc_size_t));
 
 // sk_path_filltype_t
 static_assert ((int)SkPathFillType::kWinding          == (int)WINDING_SK_PATH_FILLTYPE,           ASSERT_MSG(SkPathFillType, sk_path_filltype_t));
@@ -155,6 +156,7 @@ static_assert ((int)SkColorType::kRGB_F16F16F16x_SkColorType       == (int)RGB_F
 static_assert ((int)SkColorType::kRGBA_F32_SkColorType             == (int)RGBA_F32_SK_COLORTYPE,             ASSERT_MSG(SkColorType, sk_colortype_t));
 static_assert ((int)SkColorType::kR8G8_unorm_SkColorType           == (int)R8G8_UNORM_SK_COLORTYPE,           ASSERT_MSG(SkColorType, sk_colortype_t));
 static_assert ((int)SkColorType::kA16_unorm_SkColorType            == (int)A16_UNORM_SK_COLORTYPE,            ASSERT_MSG(SkColorType, sk_colortype_t));
+static_assert ((int)SkColorType::kR16_unorm_SkColorType            == (int)R16_UNORM_SK_COLORTYPE,            ASSERT_MSG(SkColorType, sk_colortype_t));
 static_assert ((int)SkColorType::kR16G16_unorm_SkColorType         == (int)R16G16_UNORM_SK_COLORTYPE,         ASSERT_MSG(SkColorType, sk_colortype_t));
 static_assert ((int)SkColorType::kA16_float_SkColorType            == (int)A16_FLOAT_SK_COLORTYPE,            ASSERT_MSG(SkColorType, sk_colortype_t));
 static_assert ((int)SkColorType::kR16G16_float_SkColorType         == (int)R16G16_FLOAT_SK_COLORTYPE,         ASSERT_MSG(SkColorType, sk_colortype_t));

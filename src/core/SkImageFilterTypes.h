@@ -10,6 +10,7 @@
 
 #include "include/core/SkColorFilter.h"
 #include "include/core/SkColorSpace.h"
+#include "include/core/SkM44.h"
 #include "include/core/SkMatrix.h"
 #include "include/core/SkPoint.h"
 #include "include/core/SkRect.h"
@@ -496,7 +497,7 @@ public:
 
     static LayerSpace<SkMatrix> RectToRect(const LayerSpace<SkRect>& from,
                                            const LayerSpace<SkRect>& to) {
-        return LayerSpace<SkMatrix>(SkMatrix::RectToRect(SkRect(from), SkRect(to)));
+        return LayerSpace<SkMatrix>(SkMatrix::RectToRectOrIdentity(SkRect(from), SkRect(to)));
     }
 
     // Parrot a limited selection of the SkMatrix API while preserving coordinate space.
@@ -523,7 +524,13 @@ public:
     }
 
     bool invert(LayerSpace<SkMatrix>* inverse) const {
-        return fData.invert(&inverse->fData);
+        if (auto inv = fData.invert()) {
+            if (inverse) {
+                inverse->fData = *inv;
+            }
+            return true;
+        }
+        return false;
     }
 
     // Transforms 'r' by the inverse of this matrix if it is invertible and stores it in 'out'.
@@ -559,14 +566,14 @@ public:
     Mapping() = default;
 
     // Helper constructor that equates device and layer space to the same coordinate space.
-    explicit Mapping(const SkMatrix& paramToLayer)
-            : fLayerToDevMatrix(SkMatrix::I())
+    explicit Mapping(const SkM44& paramToLayer)
+            : fLayerToDevMatrix(SkM44())
             , fParamToLayerMatrix(paramToLayer)
-            , fDevToLayerMatrix(SkMatrix::I()) {}
+            , fDevToLayerMatrix(SkM44()) {}
 
     // This constructor allows the decomposition to be explicitly provided, assumes that
     // 'layerToDev's inverse has already been calculated in 'devToLayer'
-    Mapping(const SkMatrix& layerToDev, const SkMatrix& devToLayer, const SkMatrix& paramToLayer)
+    Mapping(const SkM44& layerToDev, const SkM44& devToLayer, const SkM44& paramToLayer)
             : fLayerToDevMatrix(layerToDev)
             , fParamToLayerMatrix(paramToLayer)
             , fDevToLayerMatrix(devToLayer) {}
@@ -574,10 +581,10 @@ public:
     // Sets this Mapping to the default decomposition of the canvas's total transform, given the
     // requirements of the 'filter'. Returns false if the decomposition failed or would produce an
     // invalid device matrix. Assumes 'ctm' is invertible.
-    [[nodiscard]] bool decomposeCTM(const SkMatrix& ctm,
+    [[nodiscard]] bool decomposeCTM(const SkM44& ctm,
                                     const SkImageFilter* filter,
                                     const skif::ParameterSpace<SkPoint>& representativePt);
-    [[nodiscard]] bool decomposeCTM(const SkMatrix& ctm,
+    [[nodiscard]] bool decomposeCTM(const SkM44& ctm,
                                     MatrixCapability,
                                     const skif::ParameterSpace<SkPoint>& representativePt);
 
@@ -593,34 +600,44 @@ public:
     // coordinate systems are changed, but skif::LayerSpace is adjusted.
     //
     // Returns false if the layer matrix cannot be inverted, and this mapping is left unmodified.
-    bool adjustLayerSpace(const SkMatrix& layer);
+    bool adjustLayerSpace(const SkM44& layer);
 
     // Update the mapping's layer space so that the point 'origin' in the current layer coordinate
     // space maps to (0, 0) in the adjusted coordinate space.
     void applyOrigin(const LayerSpace<SkIPoint>& origin) {
-        SkAssertResult(this->adjustLayerSpace(SkMatrix::Translate(-origin.x(), -origin.y())));
+        SkAssertResult(this->adjustLayerSpace(SkM44::Translate(-origin.x(), -origin.y())));
     }
 
-    const SkMatrix& layerToDevice() const { return fLayerToDevMatrix; }
-    const SkMatrix& deviceToLayer() const { return fDevToLayerMatrix; }
-    const SkMatrix& layerMatrix() const { return fParamToLayerMatrix; }
-    SkMatrix totalMatrix() const {
-        return SkMatrix::Concat(fLayerToDevMatrix, fParamToLayerMatrix);
+    const SkM44& layerToDevice() const { return fLayerToDevMatrix; }
+    const SkM44& deviceToLayer() const { return fDevToLayerMatrix; }
+    const SkM44& layerMatrix() const { return fParamToLayerMatrix; }
+    SkM44 totalMatrix() const {
+        return fLayerToDevMatrix * fParamToLayerMatrix;
     }
 
     template<typename T>
     LayerSpace<T> paramToLayer(const ParameterSpace<T>& paramGeometry) const {
-        return LayerSpace<T>(map(static_cast<const T&>(paramGeometry), fParamToLayerMatrix));
+        return LayerSpace<T>(map(static_cast<const T&>(paramGeometry),
+                                 fParamToLayerMatrix.asM33()));
     }
 
     template<typename T>
     LayerSpace<T> deviceToLayer(const DeviceSpace<T>& devGeometry) const {
-        return LayerSpace<T>(map(static_cast<const T&>(devGeometry), fDevToLayerMatrix));
+        // For inverse mapping back to layer space, we may be undoing perspective projection.
+        // Using fDevToLayerMatrix for this would require knowing the device-space Z values,
+        // which are discarded. fDevToLayerMatrix.asM33() would operate as if all those
+        // Z values were 0 (this is true for local 2D geometry, not device space). Instead,
+        // derive the 3x3 inverse of the flattened layer-to-device matrix, returning empty
+        // if numerical stability meant its 4x4 was invertible but somehow the 3x3 wasn't.
+        if (auto devToLayer33 = fLayerToDevMatrix.asM33().invert()) {
+            return LayerSpace<T>(map(static_cast<const T&>(devGeometry), *devToLayer33));
+        }
+        return LayerSpace<T>::Empty();
     }
 
     template<typename T>
     DeviceSpace<T> layerToDevice(const LayerSpace<T>& layerGeometry) const {
-        return DeviceSpace<T>(map(static_cast<const T&>(layerGeometry), fLayerToDevMatrix));
+        return DeviceSpace<T>(map(static_cast<const T&>(layerGeometry), fLayerToDevMatrix.asM33()));
     }
 
 private:
@@ -631,14 +648,16 @@ private:
     // param-to-layer matrix to define the layer-space coordinate system. Depending on how it's
     // decomposed, either the layer matrix or the device matrix could be the identity matrix (but
     // sometimes neither).
-    SkMatrix fLayerToDevMatrix;
-    SkMatrix fParamToLayerMatrix;
+    SkM44 fLayerToDevMatrix;
+    SkM44 fParamToLayerMatrix;
 
-    // Cached inverse of fLayerToDevMatrix
-    SkMatrix fDevToLayerMatrix;
+    // Cached inverse of fLayerToDevMatrix. We keep this as 4x4 so that conversion between different
+    // SkDevice coordinate spaces and coord space reconstruction is lossless.
+    SkM44 fDevToLayerMatrix;
 
     // Actual geometric mapping operations that work on coordinates and matrices w/o the type
     // safety of the coordinate space wrappers (hence these are private).
+    // TODO(b/40042800): Finish moving skif::Mapping operations to use the SkM44 directly.
     template<typename T>
     static T map(const T& geom, const SkMatrix& matrix);
 };
@@ -912,12 +931,16 @@ private:
     // and may also have a deferred tilemode. If 'enforceDecal' is true, the returned
     // FilterResult will be kDecal sampled and any tiling will already be applied.
     //
+    // If `allowOverscaling` is true, the returned image may be scaled beyond what's requested in
+    // `scale` to remain a multiple of 1/2X steps.
+    //
     // All deferred effects, other than potentially tile mode, will be applied. The FilterResult
     // will also be converted to the color type and color space of 'ctx' so the result is suitable
     // to pass to the blur engine.
     FilterResult rescale(const Context& ctx,
                          const LayerSpace<SkSize>& scale,
-                         bool enforceDecal) const;
+                         bool enforceDecal,
+                         bool allowOverscaling) const;
     // Draw directly to the device, which draws the same image as produced by resolve() but can be
     // useful if multiple operations need to be performed on the canvas.
     //
@@ -1093,10 +1116,6 @@ public:
 
     // TODO: Once all Backends provide a blur engine, maybe just have Backend extend it.
     virtual const SkBlurEngine* getBlurEngine() const = 0;
-
-    // TODO: Can be removed once all blur engines rely on FilterResult::rescale and not their own
-    // rescale implementations.
-    virtual bool useLegacyFilterResultBlur() const { return true; }
 
     // Properties controlling the pixel data for offscreen surfaces rendered to during filtering.
     const SkSurfaceProps& surfaceProps() const { return fSurfaceProps; }

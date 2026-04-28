@@ -17,7 +17,7 @@ class GlyphRun;
     harfbuzz), iterate over the clusters. */
 class SkClusterator {
 public:
-    SkClusterator(const sktext::GlyphRun& run);
+    explicit SkClusterator(const sktext::GlyphRun& run);
     uint32_t glyphCount() const { return fGlyphCount; }
     bool reversedChars() const { return fReversedChars; }
     struct Cluster {
@@ -26,7 +26,7 @@ public:
         uint32_t fGlyphIndex;
         uint32_t fGlyphCount;
         explicit operator bool() const { return fGlyphCount != 0; }
-        bool operator==(const SkClusterator::Cluster& o) {
+        bool operator==(const SkClusterator::Cluster& o) const {
             return fUtf8Text       == o.fUtf8Text
                 && fTextByteLength == o.fTextByteLength
                 && fGlyphIndex     == o.fGlyphIndex

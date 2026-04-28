@@ -17,11 +17,12 @@
 #include "src/core/SkStrikeCache.h"
 #include "src/gpu/ganesh/GrRecordingContextPriv.h"
 #include "src/gpu/ganesh/SkGr.h"
+#include "src/gpu/ganesh/text/GlyphData.h"
 #include "src/text/GlyphRun.h"
 #include "src/text/gpu/StrikeCache.h"
 #include "src/text/gpu/TextBlob.h"
 #include "tools/fonts/FontToolUtils.h"
-#include "tools/gpu/TestCanvas.h"
+#include "tools/ganesh/TestCanvas.h"
 #include "tools/text/gpu/TextBlobTools.h"
 
 // From Project Guttenberg. This is UTF-8 text.
@@ -37,6 +38,9 @@ public:
 };
 
 class DirectMaskGlyphVertexFillBenchmark : public Benchmark {
+    using Glyph = skgpu::ganesh::Glyph;
+    using GlyphData = skgpu::ganesh::GlyphData;
+
     bool isSuitableFor(Backend backend) override {
         return backend == Backend::kGanesh;
     }
@@ -68,8 +72,12 @@ class DirectMaskGlyphVertexFillBenchmark : public Benchmark {
         const sktext::gpu::AtlasSubRun* subRun =
                 sktext::gpu::TextBlobTools::FirstSubRun(fBlob.get());
         SkASSERT_RELEASE(subRun);
-        subRun->testingOnly_packedGlyphIDToGlyph(&fCache);
-        fVertices.reset(new char[subRun->vertexStride(drawMatrix) * subRun->glyphCount() * 4]);
+        if (!subRun->glyphVector().hasBackendData()) {
+            subRun->glyphVector().initBackendData<GlyphData>(&fCache, subRun->maskFormat());
+        }
+        const auto& glyphData = subRun->glyphVector().accessBackendData<GlyphData>();
+        fVertices.reset(new char[glyphData.vertexStride(subRun->maskFormat(), drawMatrix) *
+                                 subRun->glyphCount() * 4]);
     }
 
     void onDraw(int loops, SkCanvas* canvas) override {
@@ -79,12 +87,20 @@ class DirectMaskGlyphVertexFillBenchmark : public Benchmark {
 
         SkIRect clip = SkIRect::MakeEmpty();
         SkPaint paint;
-        GrColor grColor = SkColorToPremulGrColor(paint.getColor());
+        SkPMColor4f pmColor = SkColorToPMColor4f(paint.getColor(), /*colorInfo=*/{});
         SkMatrix positionMatrix = SkMatrix::Translate(100, 100);
 
+        auto& glyphData = subRun->glyphVector().accessBackendData<GlyphData>();
+        SkSpan<const Glyph> glyphs = subRun->glyphVector().accessBackendGlyphs<Glyph>();
         for (int loop = 0; loop < loops; loop++) {
-            subRun->fillVertexData(fVertices.get(), 0, subRun->glyphCount(),
-                                   grColor, positionMatrix, {0, 0}, clip);
+            glyphData.fillVertexData(subRun->vertexFiller(),
+                                     glyphs,
+                                     0,
+                                     subRun->glyphCount(),
+                                     pmColor,
+                                     positionMatrix,
+                                     clip,
+                                     fVertices.get());
         }
     }
 
@@ -94,4 +110,4 @@ private:
     std::unique_ptr<char[]> fVertices;
 };
 
-DEF_BENCH(return new DirectMaskGlyphVertexFillBenchmark{});
+DEF_BENCH(return new DirectMaskGlyphVertexFillBenchmark{})

@@ -121,6 +121,7 @@ typedef enum {
     A16_FLOAT_SK_COLORTYPE,
     R16G16_FLOAT_SK_COLORTYPE,
     A16_UNORM_SK_COLORTYPE,
+    R16_UNORM_SK_COLORTYPE,
     R16G16_UNORM_SK_COLORTYPE,
     R16G16B16A16_UNORM_SK_COLORTYPE,
     SRGBA_8888_SK_COLORTYPE,
@@ -231,6 +232,7 @@ typedef struct sk_font_t sk_font_t;
     cubic curves.
 */
 typedef struct sk_path_t sk_path_t;
+typedef struct sk_pathbuilder_t sk_pathbuilder_t;
 /**
     A sk_picture_t holds recorded canvas drawing commands to be played
     back at a later time.
@@ -514,6 +516,7 @@ typedef struct {
     sk_irect_t* fSubset;
     int fFrameIndex;
     int fPriorFrame;
+    size_t fMaxDecodeMemory;
 } sk_codec_options_t;
 
 typedef enum {
@@ -724,8 +727,9 @@ typedef struct {
     uint32_t  fYChromaOffset;
     uint32_t  fChromaFilter;
     uint32_t  fForceExplicitReconstruction;
-    uint32_t  fFormatFeatures;
     gr_vk_ycbcr_components_t fComponents;
+    bool      fSamplerFilterMustMatchChromaFilter;
+    bool      fSupportsLinearFilter;
 } gr_vk_ycbcrconversioninfo_t;
 
 typedef struct {
@@ -833,6 +837,11 @@ typedef struct {
     bool                        fPDFA;
     int                         fEncodingQuality;
 } sk_document_pdf_metadata_t;
+
+typedef struct {
+    float fDPI;
+    bool  fAllowNoPngs;
+} sk_document_xps_options_t;
 
 typedef struct {
     sk_colorspace_t* colorspace;
@@ -971,8 +980,6 @@ typedef struct {
     sk_pngencoder_filterflags_t fFilterFlags;
     int fZLibLevel;
     void* fComments;
-    const sk_colorspace_icc_profile_t* fICCProfile;
-    const char* fICCProfileDescription;
     const void* fGainmap;
     const void* fGainmapInfo;
 } sk_pngencoder_options_t;
@@ -993,8 +1000,6 @@ typedef struct {
     sk_jpegencoder_downsample_t fDownsample;
     sk_jpegencoder_alphaoption_t fAlphaOption;
     const sk_data_t* xmpMetadata;
-    const sk_colorspace_icc_profile_t* fICCProfile;
-    const char* fICCProfileDescription;
     int32_t fOrigin;
     bool fHasOrigin;
 } sk_jpegencoder_options_t;
@@ -1007,8 +1012,6 @@ typedef enum {
 typedef struct {
     sk_webpencoder_compression_t fCompression;
     float fQuality;
-    const sk_colorspace_icc_profile_t* fICCProfile;
-    const char* fICCProfileDescription;
 } sk_webpencoder_options_t;
 
 typedef struct sk_rrect_t sk_rrect_t;

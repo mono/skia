@@ -3,17 +3,18 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("../../gn/skia.gni")
 import("../zlib/zlib.gni")
 
 declare_args() {
   # TODO: build from source all the time for testing?
   skia_use_system_freetype2 =
       (is_official_build || !(is_android || sanitize == "MSAN")) &&
-      !is_fuchsia && !is_wasm
+      !is_canvaskit
   skia_system_freetype2_include_path = "/usr/include/freetype2"
   skia_system_freetype2_lib = "freetype"
 
-  skia_use_freetype_woff2 = is_wasm
+  skia_use_freetype_woff2 = is_canvaskit
   skia_use_freetype_svg = true
   skia_use_freetype_zlib = true
   skia_use_freetype_zlib_bundled = !skia_use_system_zlib
@@ -23,10 +24,18 @@ import("../third_party.gni")
 
 if (skia_use_system_freetype2) {
   system("freetype2") {
-    include_dirs = [ skia_system_freetype2_include_path ]
     libs = [ skia_system_freetype2_lib ]
     if (is_tizen) {
+      # mono/skia: emit only the sysroot-relative include path on Tizen so
+      # the cross-compile picks up the rootstrap's freetype headers, not
+      # whatever happens to be in the build host's /usr/include/freetype2.
+      # (Upstream's bare include_dirs= line is host-absolute and shadows
+      # the cflags `-I=` form; we drop it for is_tizen to avoid the
+      # version-skew that causes COLRv1 link failures when the host's
+      # libfreetype-dev is newer than the rootstrap's libfreetype.so.)
       cflags = [ "-I=$skia_system_freetype2_include_path" ]
+    } else {
+      include_dirs = [ skia_system_freetype2_include_path ]
     }
   }
 } else {

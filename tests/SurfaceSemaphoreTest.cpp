@@ -31,8 +31,8 @@
 #include "src/gpu/ganesh/GrDirectContextPriv.h"
 #include "tests/CtsEnforcement.h"
 #include "tests/Test.h"
+#include "tools/ganesh/TestContext.h"
 #include "tools/gpu/ContextType.h"
-#include "tools/gpu/TestContext.h"
 
 #include <cstring>
 #include <cstdint>
@@ -228,7 +228,7 @@ DEF_GANESH_TEST(SurfaceSemaphores, reporter, options, CtsEnforcement::kApiLevel_
             skgpu::ContextType contextType = static_cast<skgpu::ContextType>(typeInt);
 #ifdef SK_GL
             // Use "native" instead of explicitly trying OpenGL and OpenGL ES. Do not use GLES on
-            // desktop since tests do not account for not fixing http://skbug.com/2809
+            // desktop since tests do not account for not fixing skbug.com/40033921
             if (contextType == skgpu::ContextType::kGL ||
                 contextType == skgpu::ContextType::kGLES) {
                 if (contextType != kNativeGLType) {
@@ -358,3 +358,36 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(EmptySurfaceSemaphoreTest,
     }
 #endif
 }
+
+#if defined(SK_VULKAN)
+// Make sure our various constructors/operators work as expected.
+DEF_GANESH_TEST_FOR_VULKAN_CONTEXT(GrVkBackendSemaphoreTest,
+                                   reporter,
+                                   ctxInfo,
+                                   CtsEnforcement::kNever) {
+    auto dContext = ctxInfo.directContext();
+    GrBackendSemaphore sema;
+    REPORTER_ASSERT(reporter, !sema.isInitialized());
+
+    GrVkGpu* gpu = static_cast<GrVkGpu*>(dContext->priv().getGpu());
+    VkDevice device = gpu->device();
+
+    VkSemaphore vkSem;
+    VkSemaphoreCreateInfo createInfo;
+    createInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+    createInfo.pNext = nullptr;
+    createInfo.flags = 0;
+    GR_VK_CALL_ERRCHECK(gpu, CreateSemaphore(device, &createInfo, nullptr, &vkSem));
+    sema = GrBackendSemaphores::MakeVk(vkSem);
+
+    REPORTER_ASSERT(reporter, sema.isInitialized());
+    REPORTER_ASSERT(reporter, sema.backend() == GrBackendApi::kVulkan);
+
+    GrBackendSemaphore copy(sema);
+    REPORTER_ASSERT(reporter, copy.isInitialized());
+    REPORTER_ASSERT(reporter, copy.backend() == GrBackendApi::kVulkan);
+
+    // Cleanup
+    GR_VK_CALL(gpu->vkInterface(), DestroySemaphore(device, vkSem, nullptr));
+}
+#endif

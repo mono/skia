@@ -13,6 +13,7 @@
 #include "include/core/SkColorFilter.h"
 #include "include/core/SkData.h"
 #include "include/core/SkImage.h"
+#include "include/core/SkPathBuilder.h"
 #include "include/core/SkPathEffect.h"
 #include "include/core/SkShader.h"
 #include "include/core/SkStream.h"
@@ -30,6 +31,12 @@
 #include "tools/ToolUtils.h"
 #include "tools/fonts/FontToolUtils.h"
 
+#if defined(SK_CODEC_ENCODES_PNG_WITH_RUST)
+#include "include/encode/SkPngRustEncoder.h"
+#else
+#include "include/encode/SkPngEncoder.h"
+#endif  // defined(SK_CODEC_ENCODES_PNG_WITH_RUST)
+
 #include <string>
 
 using namespace skia_private;
@@ -44,9 +51,18 @@ using namespace skia_private;
 
 
 static std::unique_ptr<SkCanvas> MakeDOMCanvas(SkDOM* dom, uint32_t flags = 0) {
+    SkSVGCanvas::Options opts;
+    opts.flags = static_cast<SkSVGCanvas::Flags>(flags);
+    opts.pngEncoder = [](SkWStream* dst, const SkPixmap& src) {
+#if defined(SK_CODEC_ENCODES_PNG_WITH_RUST)
+        return SkPngRustEncoder::Encode(dst, src, {});
+#else
+        return SkPngEncoder::Encode(dst, src, {});
+#endif // defined(SK_CODEC_ENCODES_PNG_WITH_RUST)
+    };
     auto svgDevice = SkSVGDevice::Make(SkISize::Make(100, 100),
                                        std::make_unique<SkXMLParserWriter>(dom->beginParsing()),
-                                       flags);
+                                       opts);
     return svgDevice ? std::make_unique<SkCanvas>(svgDevice)
                      : nullptr;
 }
@@ -138,23 +154,23 @@ void test_whitespace_pos(skiatest::Reporter* reporter,
     check_text_node(reporter, dom, dom.finishParsing(), offset, 0, txt, expected);
 
     {
-        AutoTMalloc<SkScalar> xpos(len);
+        AutoTArray<SkScalar> xpos(len);
         for (int i = 0; i < SkToInt(len); ++i) {
             xpos[i] = SkIntToScalar(txt[i]);
         }
 
-        auto blob = SkTextBlob::MakeFromPosTextH(txt, len, &xpos[0], offset.y(), font);
+        auto blob = SkTextBlob::MakeFromPosTextH(txt, len, xpos, offset.y(), font);
         MakeDOMCanvas(&dom)->drawTextBlob(blob, 0, 0, paint);
     }
     check_text_node(reporter, dom, dom.finishParsing(), offset, 1, txt, expected);
 
     {
-        AutoTMalloc<SkPoint> pos(len);
+        AutoTArray<SkPoint> pos(len);
         for (int i = 0; i < SkToInt(len); ++i) {
             pos[i] = SkPoint::Make(SkIntToScalar(txt[i]), 150 - SkIntToScalar(txt[i]));
         }
 
-        auto blob = SkTextBlob::MakeFromPosText(txt, len, &pos[0], font);
+        auto blob = SkTextBlob::MakeFromPosText(txt, len, pos, font);
         MakeDOMCanvas(&dom)->drawTextBlob(blob, 0, 0, paint);
     }
     check_text_node(reporter, dom, dom.finishParsing(), offset, 2, txt, expected);
@@ -415,7 +431,7 @@ DEF_TEST(SVGDevice_textpath, reporter) {
 
     // We also use paths in the presence of path effects.
     SkScalar intervals[] = {10, 5};
-    paint.setPathEffect(SkDashPathEffect::Make(intervals, std::size(intervals), 0));
+    paint.setPathEffect(SkDashPathEffect::Make(intervals, 0));
     check_text(0, /*expect_path=*/true);
 }
 
@@ -575,7 +591,7 @@ DEF_TEST(SVGDevice_rect_with_path_effect, reporter) {
     SkDOM dom;
 
     SkScalar intervals[] = {0, 20};
-    sk_sp<SkPathEffect> pathEffect = SkDashPathEffect::Make(intervals, 2, 0);
+    sk_sp<SkPathEffect> pathEffect = SkDashPathEffect::Make(intervals, 0);
 
     SkPaint paint;
     paint.setPathEffect(pathEffect);
@@ -595,7 +611,7 @@ DEF_TEST(SVGDevice_rrect_with_path_effect, reporter) {
     SkDOM dom;
 
     SkScalar intervals[] = {0, 20};
-    sk_sp<SkPathEffect> pathEffect = SkDashPathEffect::Make(intervals, 2, 0);
+    sk_sp<SkPathEffect> pathEffect = SkDashPathEffect::Make(intervals, 0);
 
     SkPaint paint;
     paint.setPathEffect(pathEffect);
@@ -615,7 +631,7 @@ DEF_TEST(SVGDevice_oval_with_path_effect, reporter) {
     SkDOM dom;
 
     SkScalar intervals[] = {0, 20};
-    sk_sp<SkPathEffect> pathEffect = SkDashPathEffect::Make(intervals, 2, 0);
+    sk_sp<SkPathEffect> pathEffect = SkDashPathEffect::Make(intervals, 0);
 
     SkPaint paint;
     paint.setPathEffect(pathEffect);
@@ -643,12 +659,12 @@ DEF_TEST(SVGDevice_path_effect, reporter) {
 
     // Produces a line of three red dots.
     SkScalar intervals[] = {0, 20};
-    sk_sp<SkPathEffect> pathEffect = SkDashPathEffect::Make(intervals, 2, 0);
+    sk_sp<SkPathEffect> pathEffect = SkDashPathEffect::Make(intervals, 0);
     paint.setPathEffect(pathEffect);
-    SkPoint points[] = {{50, 15}, {100, 15}, {150, 15} };
+    const SkPoint points[] = {{50, 15}, {100, 15}, {150, 15} };
     {
         auto svgCanvas = MakeDOMCanvas(&dom);
-        svgCanvas->drawPoints(SkCanvas::kLines_PointMode, 3, points, paint);
+        svgCanvas->drawPoints(SkCanvas::kLines_PointMode, points, paint);
     }
     const auto* rootElement = dom.finishParsing();
     REPORTER_ASSERT(reporter, rootElement, "root element not found");
@@ -674,11 +690,12 @@ DEF_TEST(SVGDevice_relative_path_encoding, reporter) {
     SkDOM dom;
     {
         auto svgCanvas = MakeDOMCanvas(&dom, SkSVGCanvas::kRelativePathEncoding_Flag);
-        SkPath path;
-        path.moveTo(100, 50);
-        path.lineTo(200, 50);
-        path.lineTo(200, 150);
-        path.close();
+        SkPath path = SkPathBuilder()
+                      .moveTo(100, 50)
+                      .lineTo(200, 50)
+                      .lineTo(200, 150)
+                      .close()
+                      .detach();
 
         svgCanvas->drawPath(path, SkPaint());
     }

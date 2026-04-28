@@ -10,13 +10,42 @@
 
 #include "include/core/SkRect.h"
 #include "src/base/SkArenaAlloc.h"
+#include "src/base/SkBlockAllocator.h"
 #include "src/base/SkTBlockList.h"
 #include "src/gpu/graphite/CommandTypes.h"
-#include "src/gpu/graphite/DrawTypes.h"
+#include "src/gpu/graphite/ResourceTypes.h"
+
+#include <array>
+#include <cstdint>
+#include <type_traits>
+#include <utility>
 
 namespace skgpu::graphite {
 
+enum class BarrierType : uint8_t;
+enum class PrimitiveType : uint8_t;
+enum class UniformSlot;
+
+class TextureProxy;
+
 namespace DrawPassCommands {
+
+struct AddBarrier;
+struct BindAppendDataBuffer;
+struct BindGraphicsPipeline;
+struct BindIndexBuffer;
+struct BindIndirectBuffer;
+struct BindStaticDataBuffer;
+struct BindTexturesAndSamplers;
+struct BindUniformBuffer;
+struct Draw;
+struct DrawIndexed;
+struct DrawIndexedIndirect;
+struct DrawIndexedInstanced;
+struct DrawIndirect;
+struct DrawInstanced;
+struct SetBlendConstants;
+struct SetScissor;
 
 // A list of all the commands types used by a DrawPass.
 // Each of these is reified into a struct below.
@@ -31,7 +60,10 @@ namespace DrawPassCommands {
     M(BindGraphicsPipeline)              \
     M(SetBlendConstants)                 \
     M(BindUniformBuffer)                 \
-    M(BindDrawBuffers)                   \
+    M(BindStaticDataBuffer)              \
+    M(BindAppendDataBuffer)              \
+    M(BindIndirectBuffer)                \
+    M(BindIndexBuffer)                   \
     M(BindTexturesAndSamplers)           \
     M(SetScissor)                        \
     M(Draw)                              \
@@ -39,7 +71,8 @@ namespace DrawPassCommands {
     M(DrawInstanced)                     \
     M(DrawIndexedInstanced)              \
     M(DrawIndirect)                      \
-    M(DrawIndexedIndirect)
+    M(DrawIndexedIndirect)               \
+    M(AddBarrier)
 
 // Defines DrawPassCommands::Type, an enum of all draw command types.
 #define ENUM(T) k##T,
@@ -73,49 +106,54 @@ static constexpr Type kType = Type::k##T;  \
 };
 
 COMMAND(BindGraphicsPipeline,
-            uint32_t fPipelineIndex);
+            uint32_t fPipelineIndex)
 COMMAND(SetBlendConstants,
-            PODArray<float> fBlendConstants);
+            std::array<float, 4> fBlendConstants)
 COMMAND(BindUniformBuffer,
             BindBufferInfo fInfo;
-            UniformSlot fSlot);
-COMMAND(BindDrawBuffers,
-            BindBufferInfo fVertices;
-            BindBufferInfo fInstances;
-            BindBufferInfo fIndices;
-            BindBufferInfo fIndirect);
+            UniformSlot fSlot)
+COMMAND(BindStaticDataBuffer,
+            BindBufferInfo fStaticData)
+COMMAND(BindAppendDataBuffer,
+            BindBufferInfo fAppendData)
+COMMAND(BindIndexBuffer,
+            BindBufferInfo fIndices)
+COMMAND(BindIndirectBuffer,
+            BindBufferInfo fIndirect)
 COMMAND(BindTexturesAndSamplers,
             int fNumTexSamplers;
-            PODArray<int> fTextureIndices;
-            PODArray<int> fSamplerIndices);
+            PODArray<const TextureProxy*> fTextures;
+            PODArray<SamplerDesc> fSamplers)
 COMMAND(SetScissor,
-            Scissor fScissor);
+            Scissor fScissor)
 COMMAND(Draw,
             PrimitiveType fType;
             uint32_t fBaseVertex;
-            uint32_t fVertexCount);
+            uint32_t fVertexCount)
 COMMAND(DrawIndexed,
             PrimitiveType fType;
             uint32_t fBaseIndex;
             uint32_t fIndexCount;
-            uint32_t fBaseVertex);
+            uint32_t fBaseVertex)
 COMMAND(DrawInstanced,
             PrimitiveType fType;
             uint32_t fBaseVertex;
             uint32_t fVertexCount;
             uint32_t fBaseInstance;
-            uint32_t fInstanceCount);
+            uint32_t fInstanceCount)
 COMMAND(DrawIndexedInstanced,
             PrimitiveType fType;
             uint32_t fBaseIndex;
             uint32_t fIndexCount;
             uint32_t fBaseVertex;
             uint32_t fBaseInstance;
-            uint32_t fInstanceCount);
+            uint32_t fInstanceCount)
 COMMAND(DrawIndirect,
-            PrimitiveType fType);
+            PrimitiveType fType)
 COMMAND(DrawIndexedIndirect,
-            PrimitiveType fType);
+            PrimitiveType fType)
+COMMAND(AddBarrier,
+            BarrierType fType)
 
 #undef COMMAND
 
@@ -138,31 +176,41 @@ public:
     }
 
     void setBlendConstants(std::array<float, 4>  blendConstants) {
-        this->add<SetBlendConstants>(this->copy(blendConstants.data(), 4));
+        this->add<SetBlendConstants>(blendConstants);
     }
 
     void bindUniformBuffer(BindBufferInfo info, UniformSlot slot) {
         this->add<BindUniformBuffer>(info, slot);
     }
 
-    // Caller must write 'numTexSamplers' texture and sampler indices into the two returned arrays.
-    std::pair<int*, int*>
+    // Caller must write 'numTexSamplers' textures and sampler descriptions into the two returned
+    // arrays. The texture proxies must have refs held for the lifetime of this command list.
+    std::pair<const TextureProxy**, SamplerDesc*>
     bindDeferredTexturesAndSamplers(int numTexSamplers) {
-        int* textureIndices = fAlloc.makeArrayDefault<int>(numTexSamplers);
-        int* samplerIndices = fAlloc.makeArrayDefault<int>(numTexSamplers);
-        this->add<BindTexturesAndSamplers>(numTexSamplers, textureIndices, samplerIndices);
-        return {textureIndices, samplerIndices};
+        const TextureProxy** textures = fAlloc.makeArrayDefault<const TextureProxy*>(numTexSamplers);
+        SamplerDesc* samplers = fAlloc.makeArrayDefault<SamplerDesc>(numTexSamplers);
+        this->add<BindTexturesAndSamplers>(numTexSamplers, textures, samplers);
+        return {textures, samplers};
     }
 
     void setScissor(SkIRect scissor) {
         this->add<SetScissor>(Scissor(scissor));
     }
 
-    void bindDrawBuffers(BindBufferInfo vertexAttribs,
-                         BindBufferInfo instanceAttribs,
-                         BindBufferInfo indices,
-                         BindBufferInfo indirect) {
-        this->add<BindDrawBuffers>(vertexAttribs, instanceAttribs, indices, indirect);
+    void bindStaticDataBuffer(BindBufferInfo staticAttribs) {
+        this->add<BindStaticDataBuffer>(staticAttribs);
+    }
+
+    void bindAppendDataBuffer(BindBufferInfo appendAttribs) {
+        this->add<BindAppendDataBuffer>(appendAttribs);
+    }
+
+    void bindIndexBuffer(BindBufferInfo indices) {
+        this->add<BindIndexBuffer>(indices);
+    }
+
+    void bindIndirectBuffer(BindBufferInfo indirect) {
+        this->add<BindIndirectBuffer>(indirect);
     }
 
     void draw(PrimitiveType type, unsigned int baseVertex, unsigned int vertexCount) {
@@ -200,6 +248,10 @@ public:
         this->add<DrawIndexedIndirect>(type);
     }
 
+    void addBarrier(BarrierType type) {
+        this->add<AddBarrier>(type);
+    }
+
     using Command = std::pair<Type, void*>;
     using Iter = SkTBlockList<Command, 16>::CIter;
     Iter commands() const { return fCommands.items(); }
@@ -209,16 +261,6 @@ private:
     void add(Args&&... args) {
         T* cmd = fAlloc.make<T>(T{std::forward<Args>(args)...});
         fCommands.push_back(std::make_pair(T::kType, cmd));
-    }
-
-    // This copy() is for arrays.
-    // It will work with POD only arrays.
-    template <typename T>
-    T* copy(const T src[], size_t count) {
-        static_assert(std::is_trivially_copyable<T>::value);
-        T* dst = fAlloc.makeArrayDefault<T>(count);
-        memcpy(dst, src, count*sizeof(T));
-        return dst;
     }
 
     SkTBlockList<Command, 16> fCommands{SkBlockAllocator::GrowthPolicy::kFibonacci};

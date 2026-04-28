@@ -10,6 +10,7 @@
 #include "include/gpu/ganesh/GrBackendSurface.h"
 #include "include/gpu/ganesh/GrContextOptions.h"
 #include "include/gpu/ganesh/d3d/GrD3DBackendContext.h"
+#include "include/gpu/ganesh/d3d/GrD3DBackendSurface.h"
 #include "include/gpu/ganesh/d3d/GrD3DTypes.h"
 #include "src/core/SkCompressedDataUtils.h"
 #include "src/gpu/KeyBuilder.h"
@@ -123,9 +124,8 @@ bool GrD3DCaps::onCanCopySurface(const GrSurfaceProxy* dst, const SkIRect& dstRe
     SkASSERT((dstSampleCnt > 0) == SkToBool(dst->asRenderTargetProxy()));
     SkASSERT((srcSampleCnt > 0) == SkToBool(src->asRenderTargetProxy()));
 
-    DXGI_FORMAT dstFormat, srcFormat;
-    SkAssertResult(dst->backendFormat().asDxgiFormat(&dstFormat));
-    SkAssertResult(src->backendFormat().asDxgiFormat(&srcFormat));
+    DXGI_FORMAT dstFormat = GrBackendFormats::AsDxgiFormat(dst->backendFormat());
+    DXGI_FORMAT srcFormat = GrBackendFormats::AsDxgiFormat(src->backendFormat());
 
     return this->canCopyTexture(dstFormat, dstSampleCnt, srcFormat, srcSampleCnt) ||
            this->canCopyAsResolve(dstFormat, dstSampleCnt, srcFormat, srcSampleCnt);
@@ -233,9 +233,7 @@ void GrD3DCaps::initShaderCaps(int vendorID, const D3D12_FEATURE_DATA_D3D12_OPTI
     GrShaderCaps* shaderCaps = fShaderCaps.get();
     shaderCaps->fVersionDeclString = "#version 330\n";
 
-    // Shader Model 5 supports all of the following:
-    shaderCaps->fUsesPrecisionModifiers = true;
-    shaderCaps->fFlatInterpolationSupport = true;
+    shaderCaps->fFlatInterpolationSupport = true; // Supported by Shader Model 5
     // Flat interpolation appears to be slow on Qualcomm GPUs. This was tested in GL and is assumed
     // to be true with D3D as well.
     shaderCaps->fPreferFlatInterpolation = kQualcomm_D3DVendor != vendorID;
@@ -249,7 +247,7 @@ void GrD3DCaps::initShaderCaps(int vendorID, const D3D12_FEATURE_DATA_D3D12_OPTI
 
     shaderCaps->fIntegerSupport = true;
     shaderCaps->fNonsquareMatrixSupport = true;
-    // TODO(skia:12352) HLSL does not expose asinh/acosh/atanh
+    // TODO(skbug.com/40043434) HLSL does not expose asinh/acosh/atanh
     shaderCaps->fInverseHyperbolicSupport = false;
     shaderCaps->fVertexIDSupport = true;
     shaderCaps->fInfinitySupport = true;
@@ -615,7 +613,7 @@ void GrD3DCaps::initFormatTable(const DXGI_ADAPTER_DESC& adapterDesc, ID3D12Devi
         info.init(adapterDesc, device, format);
         info.fFormatColorType = GrColorType::kR_16;
         if (SkToBool(info.fFlags & FormatInfo::kTexturable_Flag)) {
-            info.fColorTypeInfoCount = 1;
+            info.fColorTypeInfoCount = 2;
             info.fColorTypeInfos.reset(new ColorTypeInfo[info.fColorTypeInfoCount]());
             int ctIdx = 0;
             // Format: DXGI_FORMAT_R16_UNORM, Surface: kAlpha_16
@@ -626,6 +624,13 @@ void GrD3DCaps::initFormatTable(const DXGI_ADAPTER_DESC& adapterDesc, ID3D12Devi
                 ctInfo.fFlags = ColorTypeInfo::kUploadData_Flag | ColorTypeInfo::kRenderable_Flag;
                 ctInfo.fReadSwizzle = skgpu::Swizzle("000r");
                 ctInfo.fWriteSwizzle = skgpu::Swizzle("a000");
+            }
+            // Format: DXGI_FORMAT_R16_UNORM, Surface: kR16_unorm
+            {
+                constexpr GrColorType ct = GrColorType::kR_16;
+                auto& ctInfo = info.fColorTypeInfos[ctIdx++];
+                ctInfo.fColorType = ct;
+                ctInfo.fFlags = ColorTypeInfo::kUploadData_Flag | ColorTypeInfo::kRenderable_Flag;
             }
         }
     }
@@ -700,25 +705,27 @@ void GrD3DCaps::initFormatTable(const DXGI_ADAPTER_DESC& adapterDesc, ID3D12Devi
     // formats are passed into the setColorType function indicates the priority in selecting which
     // format we use for a given GrcolorType.
 
-    this->setColorType(GrColorType::kAlpha_8, { DXGI_FORMAT_R8_UNORM });
-    this->setColorType(GrColorType::kBGR_565, { DXGI_FORMAT_B5G6R5_UNORM });
-    this->setColorType(GrColorType::kABGR_4444, { DXGI_FORMAT_B4G4R4A4_UNORM });
-    this->setColorType(GrColorType::kRGBA_8888, { DXGI_FORMAT_R8G8B8A8_UNORM });
-    this->setColorType(GrColorType::kRGBA_8888_SRGB, { DXGI_FORMAT_R8G8B8A8_UNORM_SRGB });
-    this->setColorType(GrColorType::kRGB_888x, { DXGI_FORMAT_R8G8B8A8_UNORM });
-    this->setColorType(GrColorType::kRG_88, { DXGI_FORMAT_R8G8_UNORM });
-    this->setColorType(GrColorType::kBGRA_8888, { DXGI_FORMAT_B8G8R8A8_UNORM });
-    this->setColorType(GrColorType::kRGBA_1010102, { DXGI_FORMAT_R10G10B10A2_UNORM });
-    this->setColorType(GrColorType::kRGB_101010x, { DXGI_FORMAT_R10G10B10A2_UNORM });
-    this->setColorType(GrColorType::kGray_8, { DXGI_FORMAT_R8_UNORM });
-    this->setColorType(GrColorType::kAlpha_F16, { DXGI_FORMAT_R16_FLOAT });
-    this->setColorType(GrColorType::kRGBA_F16, { DXGI_FORMAT_R16G16B16A16_FLOAT });
-    this->setColorType(GrColorType::kRGBA_F16_Clamped, { DXGI_FORMAT_R16G16B16A16_FLOAT });
-    this->setColorType(GrColorType::kRGB_F16F16F16x, { DXGI_FORMAT_R16G16B16A16_FLOAT });
-    this->setColorType(GrColorType::kAlpha_16, { DXGI_FORMAT_R16_UNORM });
-    this->setColorType(GrColorType::kRG_1616, { DXGI_FORMAT_R16G16_UNORM });
-    this->setColorType(GrColorType::kRGBA_16161616, { DXGI_FORMAT_R16G16B16A16_UNORM });
-    this->setColorType(GrColorType::kRG_F16, { DXGI_FORMAT_R16G16_FLOAT });
+    this->setColorType(GrColorType::kAlpha_8,          { DXGI_FORMAT_R8_UNORM            });
+    this->setColorType(GrColorType::kBGR_565,          { DXGI_FORMAT_B5G6R5_UNORM        });
+    this->setColorType(GrColorType::kABGR_4444,        { DXGI_FORMAT_B4G4R4A4_UNORM      });
+    this->setColorType(GrColorType::kRGBA_8888,        { DXGI_FORMAT_R8G8B8A8_UNORM      });
+    this->setColorType(GrColorType::kRGBA_8888_SRGB,   { DXGI_FORMAT_R8G8B8A8_UNORM_SRGB });
+    this->setColorType(GrColorType::kRGB_888x,         { DXGI_FORMAT_R8G8B8A8_UNORM      });
+    this->setColorType(GrColorType::kR_8,              { DXGI_FORMAT_R8_UNORM            });
+    this->setColorType(GrColorType::kRG_88,            { DXGI_FORMAT_R8G8_UNORM          });
+    this->setColorType(GrColorType::kBGRA_8888,        { DXGI_FORMAT_B8G8R8A8_UNORM      });
+    this->setColorType(GrColorType::kRGBA_1010102,     { DXGI_FORMAT_R10G10B10A2_UNORM   });
+    this->setColorType(GrColorType::kRGB_101010x,      { DXGI_FORMAT_R10G10B10A2_UNORM   });
+    this->setColorType(GrColorType::kGray_8,           { DXGI_FORMAT_R8_UNORM            });
+    this->setColorType(GrColorType::kAlpha_F16,        { DXGI_FORMAT_R16_FLOAT           });
+    this->setColorType(GrColorType::kRGBA_F16,         { DXGI_FORMAT_R16G16B16A16_FLOAT  });
+    this->setColorType(GrColorType::kRGBA_F16_Clamped, { DXGI_FORMAT_R16G16B16A16_FLOAT  });
+    this->setColorType(GrColorType::kRGB_F16F16F16x,   { DXGI_FORMAT_R16G16B16A16_FLOAT  });
+    this->setColorType(GrColorType::kAlpha_16,         { DXGI_FORMAT_R16_UNORM           });
+    this->setColorType(GrColorType::kR_16,             { DXGI_FORMAT_R16_UNORM           });
+    this->setColorType(GrColorType::kRG_1616,          { DXGI_FORMAT_R16G16_UNORM        });
+    this->setColorType(GrColorType::kRGBA_16161616,    { DXGI_FORMAT_R16G16B16A16_UNORM  });
+    this->setColorType(GrColorType::kRG_F16,           { DXGI_FORMAT_R16G16_FLOAT        });
 }
 
 void GrD3DCaps::FormatInfo::InitFormatFlags(const D3D12_FEATURE_DATA_FORMAT_SUPPORT& formatSupport,
@@ -802,10 +809,10 @@ void GrD3DCaps::FormatInfo::init(const DXGI_ADAPTER_DESC& adapterDesc, ID3D12Dev
 }
 
 bool GrD3DCaps::isFormatSRGB(const GrBackendFormat& format) const {
-    DXGI_FORMAT dxgiFormat;
-    if (!format.asDxgiFormat(&dxgiFormat)) {
+    if (!format.isValid()) {
         return false;
     }
+    DXGI_FORMAT dxgiFormat = GrBackendFormats::AsDxgiFormat(format);
 
     switch (dxgiFormat) {
         case DXGI_FORMAT_R8G8B8A8_UNORM_SRGB:
@@ -816,11 +823,10 @@ bool GrD3DCaps::isFormatSRGB(const GrBackendFormat& format) const {
 }
 
 bool GrD3DCaps::isFormatTexturable(const GrBackendFormat& format, GrTextureType) const {
-    DXGI_FORMAT dxgiFormat;
-    if (!format.asDxgiFormat(&dxgiFormat)) {
+    if (!format.isValid()) {
         return false;
     }
-
+    DXGI_FORMAT dxgiFormat = GrBackendFormats::AsDxgiFormat(format);
     return this->isFormatTexturable(dxgiFormat);
 }
 
@@ -831,10 +837,10 @@ bool GrD3DCaps::isFormatTexturable(DXGI_FORMAT format) const {
 
 bool GrD3DCaps::isFormatAsColorTypeRenderable(GrColorType ct, const GrBackendFormat& format,
                                              int sampleCount) const {
-    DXGI_FORMAT dxgiFormat;
-    if (!format.asDxgiFormat(&dxgiFormat)) {
+    if (!format.isValid()) {
         return false;
     }
+    DXGI_FORMAT dxgiFormat = GrBackendFormats::AsDxgiFormat(format);
     if (!this->isFormatRenderable(dxgiFormat, sampleCount)) {
         return false;
     }
@@ -846,10 +852,10 @@ bool GrD3DCaps::isFormatAsColorTypeRenderable(GrColorType ct, const GrBackendFor
 }
 
 bool GrD3DCaps::isFormatRenderable(const GrBackendFormat& format, int sampleCount) const {
-    DXGI_FORMAT dxgiFormat;
-    if (!format.asDxgiFormat(&dxgiFormat)) {
+    if (!format.isValid()) {
         return false;
     }
+    DXGI_FORMAT dxgiFormat = GrBackendFormats::AsDxgiFormat(format);
     return this->isFormatRenderable(dxgiFormat, sampleCount);
 }
 
@@ -864,10 +870,10 @@ bool GrD3DCaps::isFormatUnorderedAccessible(DXGI_FORMAT format) const {
 
 int GrD3DCaps::getRenderTargetSampleCount(int requestedCount,
                                          const GrBackendFormat& format) const {
-    DXGI_FORMAT dxgiFormat;
-    if (!format.asDxgiFormat(&dxgiFormat)) {
+    if (!format.isValid()) {
         return 0;
     }
+    DXGI_FORMAT dxgiFormat = GrBackendFormats::AsDxgiFormat(format);
 
     return this->getRenderTargetSampleCount(requestedCount, dxgiFormat);
 }
@@ -897,10 +903,10 @@ int GrD3DCaps::getRenderTargetSampleCount(int requestedCount, DXGI_FORMAT format
 }
 
 int GrD3DCaps::maxRenderTargetSampleCount(const GrBackendFormat& format) const {
-    DXGI_FORMAT dxgiFormat;
-    if (!format.asDxgiFormat(&dxgiFormat)) {
+    if (!format.isValid()) {
         return 0;
     }
+    DXGI_FORMAT dxgiFormat = GrBackendFormats::AsDxgiFormat(format);
     return this->maxRenderTargetSampleCount(dxgiFormat);
 }
 
@@ -922,14 +928,14 @@ GrColorType GrD3DCaps::getFormatColorType(DXGI_FORMAT format) const {
 GrCaps::SupportedWrite GrD3DCaps::supportedWritePixelsColorType(
         GrColorType surfaceColorType, const GrBackendFormat& surfaceFormat,
         GrColorType srcColorType) const {
-    DXGI_FORMAT dxgiFormat;
-    if (!surfaceFormat.asDxgiFormat(&dxgiFormat)) {
+    if (!surfaceFormat.isValid()) {
         return { GrColorType::kUnknown, 0 };
     }
+    DXGI_FORMAT dxgiFormat = GrBackendFormats::AsDxgiFormat(surfaceFormat);
 
     // Any buffer data needs to be aligned to 512 bytes and that of a single texel.
     size_t offsetAlignment = SkAlignTo(GrDxgiFormatBytesPerBlock(dxgiFormat),
-                                       D3D12_TEXTURE_DATA_PLACEMENT_ALIGNMENT);
+                                       (size_t) D3D12_TEXTURE_DATA_PLACEMENT_ALIGNMENT);
 
     const auto& info = this->getFormatInfo(dxgiFormat);
     for (int i = 0; i < info.fColorTypeInfoCount; ++i) {
@@ -970,10 +976,10 @@ bool GrD3DCaps::onSurfaceSupportsWritePixels(const GrSurface* surface) const {
 
 bool GrD3DCaps::onAreColorTypeAndFormatCompatible(GrColorType ct,
                                                   const GrBackendFormat& format) const {
-    DXGI_FORMAT dxgiFormat;
-    if (!format.asDxgiFormat(&dxgiFormat)) {
+    if (!format.isValid()) {
         return false;
     }
+    DXGI_FORMAT dxgiFormat = GrBackendFormats::AsDxgiFormat(format);
 
     const auto& info = this->getFormatInfo(dxgiFormat);
     for (int i = 0; i < info.fColorTypeInfoCount; ++i) {
@@ -989,7 +995,7 @@ GrBackendFormat GrD3DCaps::onGetDefaultBackendFormat(GrColorType ct) const {
     if (format == DXGI_FORMAT_UNKNOWN) {
         return {};
     }
-    return GrBackendFormat::MakeDxgi(format);
+    return GrBackendFormats::MakeD3D(format);
 }
 
 GrBackendFormat GrD3DCaps::getBackendFormatFromCompressionType(
@@ -997,7 +1003,7 @@ GrBackendFormat GrD3DCaps::getBackendFormatFromCompressionType(
     switch (compressionType) {
         case SkTextureCompressionType::kBC1_RGBA8_UNORM:
             if (this->isFormatTexturable(DXGI_FORMAT_BC1_UNORM)) {
-                return GrBackendFormat::MakeDxgi(DXGI_FORMAT_BC1_UNORM);
+                return GrBackendFormats::MakeD3D(DXGI_FORMAT_BC1_UNORM);
             }
             return {};
         default:
@@ -1009,8 +1015,8 @@ GrBackendFormat GrD3DCaps::getBackendFormatFromCompressionType(
 
 skgpu::Swizzle GrD3DCaps::onGetReadSwizzle(const GrBackendFormat& format,
                                            GrColorType colorType) const {
-    DXGI_FORMAT dxgiFormat;
-    SkAssertResult(format.asDxgiFormat(&dxgiFormat));
+    SkASSERT(format.isValid());
+    DXGI_FORMAT dxgiFormat = GrBackendFormats::AsDxgiFormat(format);
     const auto& info = this->getFormatInfo(dxgiFormat);
     for (int i = 0; i < info.fColorTypeInfoCount; ++i) {
         const auto& ctInfo = info.fColorTypeInfos[i];
@@ -1025,8 +1031,8 @@ skgpu::Swizzle GrD3DCaps::onGetReadSwizzle(const GrBackendFormat& format,
 
 skgpu::Swizzle GrD3DCaps::getWriteSwizzle(const GrBackendFormat& format,
                                           GrColorType colorType) const {
-    DXGI_FORMAT dxgiFormat;
-    SkAssertResult(format.asDxgiFormat(&dxgiFormat));
+    SkASSERT(format.isValid());
+    DXGI_FORMAT dxgiFormat = GrBackendFormats::AsDxgiFormat(format);
     const auto& info = this->getFormatInfo(dxgiFormat);
     for (int i = 0; i < info.fColorTypeInfoCount; ++i) {
         const auto& ctInfo = info.fColorTypeInfos[i];
@@ -1040,8 +1046,8 @@ skgpu::Swizzle GrD3DCaps::getWriteSwizzle(const GrBackendFormat& format,
 }
 
 uint64_t GrD3DCaps::computeFormatKey(const GrBackendFormat& format) const {
-    DXGI_FORMAT dxgiFormat;
-    SkAssertResult(format.asDxgiFormat(&dxgiFormat));
+    SkASSERT(format.isValid());
+    DXGI_FORMAT dxgiFormat = GrBackendFormats::AsDxgiFormat(format);
 
     return (uint64_t)dxgiFormat;
 }
@@ -1049,10 +1055,11 @@ uint64_t GrD3DCaps::computeFormatKey(const GrBackendFormat& format) const {
 GrCaps::SupportedRead GrD3DCaps::onSupportedReadPixelsColorType(
         GrColorType srcColorType, const GrBackendFormat& srcBackendFormat,
         GrColorType dstColorType) const {
-    DXGI_FORMAT dxgiFormat;
-    if (!srcBackendFormat.asDxgiFormat(&dxgiFormat)) {
+    if (!srcBackendFormat.isValid()) {
         return { GrColorType::kUnknown, 0 };
     }
+
+    DXGI_FORMAT dxgiFormat = GrBackendFormats::AsDxgiFormat(srcBackendFormat);
 
     SkTextureCompressionType compression = GrBackendFormatToCompressionType(srcBackendFormat);
     if (compression != SkTextureCompressionType::kNone) {
@@ -1110,26 +1117,28 @@ GrProgramDesc GrD3DCaps::makeDesc(GrRenderTarget* rt,
 #if defined(GPU_TEST_UTILS)
 std::vector<GrTest::TestFormatColorTypeCombination> GrD3DCaps::getTestingCombinations() const {
     std::vector<GrTest::TestFormatColorTypeCombination> combos = {
-        {GrColorType::kAlpha_8,        GrBackendFormat::MakeDxgi(DXGI_FORMAT_R8_UNORM)           },
-        {GrColorType::kBGR_565,        GrBackendFormat::MakeDxgi(DXGI_FORMAT_B5G6R5_UNORM)       },
-        {GrColorType::kABGR_4444,      GrBackendFormat::MakeDxgi(DXGI_FORMAT_B4G4R4A4_UNORM)     },
-        {GrColorType::kRGBA_8888,      GrBackendFormat::MakeDxgi(DXGI_FORMAT_R8G8B8A8_UNORM)     },
-        {GrColorType::kRGBA_8888_SRGB, GrBackendFormat::MakeDxgi(DXGI_FORMAT_R8G8B8A8_UNORM_SRGB)},
-        {GrColorType::kRGB_888x,       GrBackendFormat::MakeDxgi(DXGI_FORMAT_R8G8B8A8_UNORM)     },
-        {GrColorType::kRG_88,          GrBackendFormat::MakeDxgi(DXGI_FORMAT_R8G8_UNORM)         },
-        {GrColorType::kBGRA_8888,      GrBackendFormat::MakeDxgi(DXGI_FORMAT_B8G8R8A8_UNORM)     },
-        {GrColorType::kRGBA_1010102,   GrBackendFormat::MakeDxgi(DXGI_FORMAT_R10G10B10A2_UNORM)  },
-        {GrColorType::kRGB_101010x,    GrBackendFormat::MakeDxgi(DXGI_FORMAT_R10G10B10A2_UNORM)  },
-        {GrColorType::kGray_8,         GrBackendFormat::MakeDxgi(DXGI_FORMAT_R8_UNORM)           },
-        {GrColorType::kAlpha_F16,      GrBackendFormat::MakeDxgi(DXGI_FORMAT_R16_FLOAT)          },
-        {GrColorType::kRGBA_F16,       GrBackendFormat::MakeDxgi(DXGI_FORMAT_R16G16B16A16_FLOAT) },
-        {GrColorType::kRGBA_F16_Clamped, GrBackendFormat::MakeDxgi(DXGI_FORMAT_R16G16B16A16_FLOAT)},
-        {GrColorType::kRGB_F16F16F16x, GrBackendFormat::MakeDxgi(DXGI_FORMAT_R16G16B16A16_FLOAT) },
-        {GrColorType::kAlpha_16,       GrBackendFormat::MakeDxgi(DXGI_FORMAT_R16_UNORM)          },
-        {GrColorType::kRG_1616,        GrBackendFormat::MakeDxgi(DXGI_FORMAT_R16G16_UNORM)       },
-        {GrColorType::kRGBA_16161616,  GrBackendFormat::MakeDxgi(DXGI_FORMAT_R16G16B16A16_UNORM) },
-        {GrColorType::kRG_F16,         GrBackendFormat::MakeDxgi(DXGI_FORMAT_R16G16_FLOAT)       },
-        {GrColorType::kRGBA_8888,      GrBackendFormat::MakeDxgi(DXGI_FORMAT_BC1_UNORM)          },
+        {GrColorType::kAlpha_8,        GrBackendFormats::MakeD3D(DXGI_FORMAT_R8_UNORM)            },
+        {GrColorType::kBGR_565,        GrBackendFormats::MakeD3D(DXGI_FORMAT_B5G6R5_UNORM)        },
+        {GrColorType::kABGR_4444,      GrBackendFormats::MakeD3D(DXGI_FORMAT_B4G4R4A4_UNORM)      },
+        {GrColorType::kRGBA_8888,      GrBackendFormats::MakeD3D(DXGI_FORMAT_R8G8B8A8_UNORM)      },
+        {GrColorType::kRGBA_8888_SRGB, GrBackendFormats::MakeD3D(DXGI_FORMAT_R8G8B8A8_UNORM_SRGB) },
+        {GrColorType::kRGB_888x,       GrBackendFormats::MakeD3D(DXGI_FORMAT_R8G8B8A8_UNORM)      },
+        {GrColorType::kR_8,            GrBackendFormats::MakeD3D(DXGI_FORMAT_R8_UNORM)            },
+        {GrColorType::kRG_88,          GrBackendFormats::MakeD3D(DXGI_FORMAT_R8G8_UNORM)          },
+        {GrColorType::kBGRA_8888,      GrBackendFormats::MakeD3D(DXGI_FORMAT_B8G8R8A8_UNORM)      },
+        {GrColorType::kRGBA_1010102,   GrBackendFormats::MakeD3D(DXGI_FORMAT_R10G10B10A2_UNORM)   },
+        {GrColorType::kRGB_101010x,    GrBackendFormats::MakeD3D(DXGI_FORMAT_R10G10B10A2_UNORM)   },
+        {GrColorType::kGray_8,         GrBackendFormats::MakeD3D(DXGI_FORMAT_R8_UNORM)            },
+        {GrColorType::kAlpha_F16,      GrBackendFormats::MakeD3D(DXGI_FORMAT_R16_FLOAT)           },
+        {GrColorType::kRGBA_F16,       GrBackendFormats::MakeD3D(DXGI_FORMAT_R16G16B16A16_FLOAT)  },
+        {GrColorType::kRGBA_F16_Clamped, GrBackendFormats::MakeD3D(DXGI_FORMAT_R16G16B16A16_FLOAT)},
+        {GrColorType::kRGB_F16F16F16x,   GrBackendFormats::MakeD3D(DXGI_FORMAT_R16G16B16A16_FLOAT)},
+        {GrColorType::kAlpha_16,       GrBackendFormats::MakeD3D(DXGI_FORMAT_R16_UNORM)           },
+        {GrColorType::kR_16,           GrBackendFormats::MakeD3D(DXGI_FORMAT_R16_UNORM)           },
+        {GrColorType::kRG_1616,        GrBackendFormats::MakeD3D(DXGI_FORMAT_R16G16_UNORM)        },
+        {GrColorType::kRGBA_16161616,  GrBackendFormats::MakeD3D(DXGI_FORMAT_R16G16B16A16_UNORM)  },
+        {GrColorType::kRG_F16,         GrBackendFormats::MakeD3D(DXGI_FORMAT_R16G16_FLOAT)        },
+        {GrColorType::kRGBA_8888,      GrBackendFormats::MakeD3D(DXGI_FORMAT_BC1_UNORM)           },
     };
 
     return combos;

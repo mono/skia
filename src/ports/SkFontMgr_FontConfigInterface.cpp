@@ -12,13 +12,11 @@
 #include "include/core/SkTypeface.h"
 #include "include/ports/SkFontConfigInterface.h"
 #include "include/ports/SkFontMgr_FontConfigInterface.h"
-#include "include/ports/SkFontScanner_FreeType.h"
 #include "include/private/base/SkMutex.h"
 #include "src/core/SkFontDescriptor.h"
 #include "src/core/SkResourceCache.h"
 #include "src/core/SkTypefaceCache.h"
 #include "src/ports/SkFontConfigTypeface.h"
-#include "src/ports/SkTypeface_FreeType.h"
 
 #include <new>
 
@@ -199,16 +197,18 @@ protected:
             return nullptr;
         }
 
-        // Check if a typeface with this FontIdentity is already in the FontIdentity cache.
+        // Check if a typeface with this FontIdentity is already in the typeface cache.
         face = fTFCache.findByProcAndRef(find_by_FontIdentity, &identity);
         if (!face) {
-            sk_sp<SkTypeface> proxy = fScanner->MakeFromStream(
+            sk_sp<SkTypeface> realTypeface = fScanner->MakeFromStream(
                     std::unique_ptr<SkStreamAsset>(fFCI->openStream(identity)),
                     SkFontArguments().setCollectionIndex(identity.fTTCIndex));
-            face.reset(SkTypeface_FCI::Create(std::move(proxy), fFCI, identity,
+            face.reset(SkTypeface_FCI::Create(std::move(realTypeface), fFCI, identity,
                                               std::move(outFamilyName), outStyle, false));
-            // Add this FontIdentity to the FontIdentity cache.
-            fTFCache.add(face);
+            if (face) {
+                // Add this typeface to the typeface cache.
+                fTFCache.add(face);
+            }
         }
         // Add this request to the request cache.
         fCache.add(face, request.release());
@@ -242,7 +242,7 @@ protected:
             return nullptr;  // don't accept too large fonts (>= 1GB) for safety.
         }
 
-        return SkTypeface_FreeType::MakeFromStream(std::move(stream), args);
+        return fScanner->MakeFromStream(std::move(stream), args);
     }
 
     sk_sp<SkTypeface> onMakeFromFile(const char path[], int ttcIndex) const override {
@@ -260,9 +260,4 @@ SK_API sk_sp<SkFontMgr> SkFontMgr_New_FCI(sk_sp<SkFontConfigInterface> fci,
                                           std::unique_ptr<SkFontScanner> scanner) {
     SkASSERT(fci);
     return sk_make_sp<SkFontMgr_FCI>(std::move(fci), std::move(scanner));
-}
-
-SK_API sk_sp<SkFontMgr> SkFontMgr_New_FCI(sk_sp<SkFontConfigInterface> fci) {
-    SkASSERT(fci);
-    return sk_make_sp<SkFontMgr_FCI>(std::move(fci), SkFontScanner_Make_FreeType());
 }

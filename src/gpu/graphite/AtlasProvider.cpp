@@ -4,12 +4,15 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
-
 #include "src/gpu/graphite/AtlasProvider.h"
 
+#include "include/core/SkSize.h"
+#include "include/gpu/GpuTypes.h"
 #include "include/gpu/graphite/Recorder.h"
+#include "include/gpu/graphite/TextureInfo.h"
+#include "src/gpu/graphite/Caps.h"
+#include "src/gpu/graphite/ClipAtlasManager.h"
 #include "src/gpu/graphite/ComputePathAtlas.h"
-#include "src/gpu/graphite/DrawContext.h"
 #include "src/gpu/graphite/Log.h"
 #include "src/gpu/graphite/RasterPathAtlas.h"
 #include "src/gpu/graphite/RecorderPriv.h"
@@ -17,24 +20,26 @@
 #include "src/gpu/graphite/TextureProxy.h"
 #include "src/gpu/graphite/text/TextAtlasManager.h"
 
+#include <utility>
+
 namespace skgpu::graphite {
 
-AtlasProvider::PathAtlasFlagsBitMask AtlasProvider::QueryPathAtlasSupport(const Caps* caps) {
-    // The raster-backend path atlas is always supported.
-    PathAtlasFlagsBitMask flags = PathAtlasFlags::kRaster;
-    if (RendererProvider::IsVelloRendererSupported(caps)) {
-        flags |= PathAtlasFlags::kCompute;
-    }
-    return flags;
+static bool use_clip_atlas(const Recorder* recorder) {
+    // Currently only the raster atlas strategy utilizes the clip atlas.
+    return recorder->priv().rendererProvider()->pathRendererStrategy() ==
+            PathRendererStrategy::kRasterAtlas;
 }
 
 AtlasProvider::AtlasProvider(Recorder* recorder)
         : fTextAtlasManager(std::make_unique<TextAtlasManager>(recorder))
         , fRasterPathAtlas(std::make_unique<RasterPathAtlas>(recorder))
-        , fPathAtlasFlags(QueryPathAtlasSupport(recorder->priv().caps())) {}
+        , fClipAtlasManager(use_clip_atlas(recorder) ? std::make_unique<ClipAtlasManager>(recorder)
+                                                     : nullptr) {}
+
+AtlasProvider::~AtlasProvider() = default;
 
 std::unique_ptr<ComputePathAtlas> AtlasProvider::createComputePathAtlas(Recorder* recorder) const {
-    if (this->isAvailable(PathAtlasFlags::kCompute)) {
+    if (recorder->priv().caps()->computeSupport()) {
         return ComputePathAtlas::CreateDefault(recorder);
     }
     return nullptr;
@@ -42,6 +47,10 @@ std::unique_ptr<ComputePathAtlas> AtlasProvider::createComputePathAtlas(Recorder
 
 RasterPathAtlas* AtlasProvider::getRasterPathAtlas() const {
     return fRasterPathAtlas.get();
+}
+
+ClipAtlasManager* AtlasProvider::getClipAtlasManager() const {
+    return fClipAtlasManager.get();
 }
 
 sk_sp<TextureProxy> AtlasProvider::getAtlasTexture(Recorder* recorder,
@@ -84,10 +93,16 @@ sk_sp<TextureProxy> AtlasProvider::getAtlasTexture(Recorder* recorder,
 }
 
 void AtlasProvider::freeGpuResources() {
-    // Only compact the atlases, not fully free the atlases. freeGpuResources() can be called while
-    // there is pending work on the Recorder that refers to pages. In the event this is called right
-    // after a snap(), all pages would eligible for cleanup during compaction anyways.
-    this->compact(/*forceCompact=*/true);
+    // Clear out any pages not in use or needed for any pending work on the Recorder.
+    // In the event this is called right after a snap(), all pages would be eligible
+    // for cleanup anyways.
+    fTextAtlasManager->freeGpuResources();
+    if (fRasterPathAtlas) {
+        fRasterPathAtlas->freeGpuResources();
+    }
+    if (fClipAtlasManager) {
+        fClipAtlasManager->freeGpuResources();
+    }
     // Release any textures held directly by the provider. These textures are used by transient
     // ComputePathAtlases that are reset every time a DrawContext snaps a DrawTask so there is no
     // need to reset those atlases explicitly here. Since the AtlasProvider gives out refs to the
@@ -104,12 +119,18 @@ void AtlasProvider::recordUploads(DrawContext* dc) {
     if (fRasterPathAtlas) {
         fRasterPathAtlas->recordUploads(dc);
     }
+    if (fClipAtlasManager) {
+        fClipAtlasManager->recordUploads(dc);
+    }
 }
 
-void AtlasProvider::compact(bool forceCompact) {
-    fTextAtlasManager->compact(forceCompact);
+void AtlasProvider::compact() {
+    fTextAtlasManager->compact();
     if (fRasterPathAtlas) {
-        fRasterPathAtlas->compact(forceCompact);
+        fRasterPathAtlas->compact();
+    }
+    if (fClipAtlasManager) {
+        fClipAtlasManager->compact();
     }
 }
 
@@ -121,6 +142,9 @@ void AtlasProvider::invalidateAtlases() {
     fTextAtlasManager->evictAtlases();
     if (fRasterPathAtlas) {
         fRasterPathAtlas->evictAtlases();
+    }
+    if (fClipAtlasManager) {
+        fClipAtlasManager->evictAtlases();
     }
 }
 

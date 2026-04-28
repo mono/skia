@@ -26,6 +26,7 @@ class GrDirectContext;
 class GrFragmentProcessor;
 class GrImageContext;
 class GrRecordingContext;
+class GrRenderTargetProxy;
 class GrSurfaceProxyView;
 class SkMatrix;
 enum class GrColorType;
@@ -39,6 +40,7 @@ struct SkRect;
 namespace skgpu {
 enum class Mipmapped : bool;
 }
+namespace skgpu::ganesh { class SurfaceDrawContext; }
 
 // Wraps the 1 to 4 planes of a YUVA image for consumption by the GPU.
 // Initially any direct rendering will be done by passing the individual planes to a shader.
@@ -61,10 +63,9 @@ public:
     bool onHasMipmaps() const override;
     bool onIsProtected() const override;
 
-    using SkImage_GaneshBase::onMakeColorTypeAndColorSpace;
-    sk_sp<SkImage> onMakeColorTypeAndColorSpace(SkColorType,
-                                                sk_sp<SkColorSpace>,
-                                                GrDirectContext*) const final;
+    sk_sp<SkImage> onMakeColorTypeAndColorSpace(GrDirectContext*,
+                                                SkColorType,
+                                                sk_sp<SkColorSpace>) const final;
 
     sk_sp<SkImage> onReinterpretColorSpace(sk_sp<SkColorSpace>) const final;
 
@@ -72,10 +73,11 @@ public:
     GrSemaphoresSubmitted flush(GrDirectContext*, const GrFlushInfo&) const override;
 
    std::tuple<GrSurfaceProxyView, GrColorType> asView(GrRecordingContext*,
-                                                       skgpu::Mipmapped,
-                                                       GrImageTexGenPolicy) const override;
+                                                      skgpu::Mipmapped,
+                                                      GrImageTexGenPolicy,
+                                                      GrRenderTargetProxy*) const override;
 
-    std::unique_ptr<GrFragmentProcessor> asFragmentProcessor(GrRecordingContext*,
+    std::unique_ptr<GrFragmentProcessor> asFragmentProcessor(skgpu::ganesh::SurfaceDrawContext*,
                                                              SkSamplingOptions,
                                                              const SkTileMode[2],
                                                              const SkMatrix&,

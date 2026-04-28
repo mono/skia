@@ -105,6 +105,10 @@ sk_sp<SkImage> SkSurface::makeImageSnapshot(const SkIRect& srcBounds) {
     }
 }
 
+sk_sp<SkImage> SkSurface::makeTemporaryImage() {
+    return asSB(this)->onMakeTemporaryImage();
+}
+
 sk_sp<SkSurface> SkSurface::makeSurface(const SkImageInfo& info) {
     return asSB(this)->onNewSurface(info);
 }
@@ -230,6 +234,8 @@ GrRecordingContext* SkSurface::recordingContext() const {
 }
 
 skgpu::graphite::Recorder* SkSurface::recorder() const { return asConstSB(this)->onGetRecorder(); }
+
+SkRecorder* SkSurface::baseRecorder() const { return asConstSB(this)->onGetBaseRecorder(); }
 
 bool SkSurface::wait(int numSemaphores, const GrBackendSemaphore* waitSemaphores,
                      bool deleteSemaphoresAfterWait) {

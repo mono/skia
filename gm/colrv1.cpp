@@ -226,7 +226,7 @@ const uint32_t paint_glyph_nested[] = { 0xf1400, 0xf1401, 0xf1402, 0xf1403,
                                         0xf140c, 0xf140d, 0xf140e, 0xf140f };
 // clang-format on
 
-};  // namespace ColrV1TestDefinitions
+}  // namespace ColrV1TestDefinitions
 
 namespace {
 std::unique_ptr<ColrV1GM> F(
@@ -238,7 +238,7 @@ std::unique_ptr<ColrV1GM> F(
     return std::make_unique<ColrV1GM>(name, codepoints, skewX, rotateDeg, variations);
 }
 
-SkFourByteTag constexpr operator"" _t(const char* tagName, size_t size) {
+SkFourByteTag constexpr operator""_t(const char* tagName, size_t size) {
     SkASSERT(size == 4);
     return SkSetFourByteTag(tagName[0], tagName[1], tagName[2], tagName[3]);
 }

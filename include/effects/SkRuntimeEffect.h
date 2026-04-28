@@ -126,6 +126,8 @@ public:
         // don't run the inliner directly, but they still get an inlining pass once they are
         // painted.)
         bool forceUnoptimized = false;
+        // When possible this name will be used to identify the created runtime effect.
+        std::string_view fName;
 
     private:
         friend class SkRuntimeEffect;
@@ -137,7 +139,7 @@ public:
         // When not 0, this field allows Skia to assign a stable key to a known runtime effect
         uint32_t fStableKey = 0;
 
-        // TODO(skia:11209) - Replace this with a promised SkCapabilities?
+        // TODO(skbug.com/40042585) - Replace this with a promised SkCapabilities?
         // This flag lifts the ES2 restrictions on Runtime Effects that are gated by the
         // `strictES2Mode` check. Be aware that the software renderer and pipeline-stage effect are
         // still largely ES3-unaware and can still fail or crash if post-ES2 features are used.
@@ -187,6 +189,7 @@ public:
     class SK_API ChildPtr {
     public:
         ChildPtr() = default;
+        // Intentionally don't declare these to be explicit for convenience.
         ChildPtr(sk_sp<SkShader> s) : fChild(std::move(s)) {}
         ChildPtr(sk_sp<SkColorFilter> cf) : fChild(std::move(cf)) {}
         ChildPtr(sk_sp<SkBlender> b) : fChild(std::move(b)) {}
@@ -317,7 +320,9 @@ private:
     friend class SkRuntimeEffectPriv;
 
     uint32_t fHash;
-    uint32_t fStableKey;
+    // When not 0, this field holds a StableKey value or a user-defined stable key
+    uint32_t fStableKey = 0;
+    SkString fName;
 
     std::unique_ptr<SkSL::Program> fBaseProgram;
     std::unique_ptr<SkSL::RP::Program> fRPProgram;
@@ -429,7 +434,8 @@ public:
             if (!fChild) {
                 SkDEBUGFAIL("Assigning to missing child");
             } else {
-                fOwner->fChildren[(size_t)fChild->index] = std::move(val);
+                fOwner->fChildren[(size_t)fChild->index] =
+                        SkRuntimeEffect::ChildPtr(std::move(val));
             }
             return *this;
         }

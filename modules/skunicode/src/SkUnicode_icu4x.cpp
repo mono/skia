@@ -4,14 +4,14 @@
 * Use of this source code is governed by a BSD-style license that can be
 * found in the LICENSE file.
 */
-#include "modules/skunicode/include/SkUnicode_icu4x.h"
-
 #include "include/core/SkSpan.h"
 #include "include/core/SkString.h"
 #include "include/core/SkTypes.h"
+#include "include/private/base/SkAssert.h"
 #include "include/private/base/SkTArray.h"
 #include "include/private/base/SkTo.h"
 #include "modules/skunicode/include/SkUnicode.h"
+#include "modules/skunicode/include/SkUnicode_icu4x.h"
 #include "modules/skunicode/src/SkUnicode_hardcoded.h"
 #include "src/base/SkBitmaskEnum.h"
 #include "src/base/SkUTF.h"
@@ -118,7 +118,8 @@ public:
                         int utf16Units,
                         TextDirection dir,
                         std::vector<BidiRegion>* results) {
-        auto utf8 = SkUnicode::convertUtf16ToUtf8((char16_t*)utf16, utf16Units);
+        auto utf16Char = reinterpret_cast<const char16_t*>(utf16);
+        auto utf8 = SkUnicode::convertUtf16ToUtf8(utf16Char, utf16Units);
         return this->getBidiRegions(utf8.data(), utf8.size(), dir, results);
     }
 
@@ -175,10 +176,15 @@ public:
                        int levelsCount,
                        int32_t logicalFromVisual[]) override {
 
+        if (levelsCount < 1) {
+            // To avoid an assert in unicode
+            return;
+        }
+        SkASSERT(runLevels != nullptr);
         const auto bidi = ICU4XBidi::create(fDataProvider).ok().value();
         const diplomat::span<const uint8_t> levels(&runLevels[0], levelsCount);
         auto map = bidi.reorder_visual(levels);
-        SkASSERT(levelsCount == map.len());
+        SkASSERT(SkToSizeT(levelsCount) == map.len());
         std::vector<int32_t> results;
         for (size_t i = 0; i < map.len(); i++) {
             auto level = map.get(i);
@@ -221,8 +227,8 @@ private:
         // TODO: Remove hard line break hack and detect it here
         SkASSERT(!hardLineBreaks);
         const auto lineBreakingOptions = hardLineBreaks
-                                              ? ICU4XLineBreakOptionsV1{ICU4XLineBreakStrictness::Strict, ICU4XLineBreakWordOption::Normal}
-                                              : ICU4XLineBreakOptionsV1{ICU4XLineBreakStrictness::Loose, ICU4XLineBreakWordOption::Normal};
+            ? ICU4XLineBreakOptionsV1{ICU4XLineBreakStrictness::Strict, ICU4XLineBreakWordOption::Normal, false}
+            : ICU4XLineBreakOptionsV1{ICU4XLineBreakStrictness::Loose, ICU4XLineBreakWordOption::Normal, false};
         const auto segmenter = ICU4XLineSegmenter::create_auto_with_options_v1(fDataProvider, lineBreakingOptions).ok().value();
         std::string_view string_view(utf8, utf8Units);
         auto iterator = segmenter.segment_utf8(string_view);
@@ -331,9 +337,6 @@ private:
 };
 
 class SkBreakIterator_icu4x: public SkBreakIterator {
-    Position fLastResult;
-    Position fStart;
-    Position fEnd;
 public:
     SkBreakIterator_icu4x() { }
     Position first() override { SkASSERT(false); return -1; }

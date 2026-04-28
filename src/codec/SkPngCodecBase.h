@@ -13,8 +13,10 @@
 #include <optional>
 
 #include "include/codec/SkCodec.h"
+#include "include/codec/SkEncodedOrigin.h"
 #include "include/core/SkImageInfo.h"
 #include "include/core/SkRefCnt.h"
+#include "include/core/SkSpan.h"
 #include "include/private/SkEncodedInfo.h"
 #include "include/private/base/SkDebug.h"
 #include "include/private/base/SkTemplates.h"
@@ -24,18 +26,17 @@ class SkSampler;
 class SkStream;
 class SkSwizzler;
 enum class SkEncodedImageFormat;
-template <typename T> class SkSpan;
 
 // This class implements functionality shared between `SkPngCodec` and
-// `SkPngRustCodec` (the latter is from `experimental/rust_png`).
+// `SkPngRustCodec`.
 class SkPngCodecBase : public SkCodec {
 public:
     ~SkPngCodecBase() override;
 
-    static bool isCompatibleColorProfileAndType(const SkEncodedInfo::ICCProfile* profile,
+    static bool isCompatibleColorProfileAndType(const SkCodecs::ColorProfile* profile,
                                                 SkEncodedInfo::Color color);
 protected:
-    SkPngCodecBase(SkEncodedInfo&&, std::unique_ptr<SkStream>);
+    SkPngCodecBase(SkEncodedInfo&&, std::unique_ptr<SkStream>, SkEncodedOrigin origin);
 
     // Initialize most fields needed by `applyXformRow`.
     //
@@ -101,9 +102,7 @@ private:
     sk_sp<SkColorPalette> fColorTable;
 
     size_t fEncodedRowBytes = 0;  // Size of encoded/source row in bytes.
-#if defined(SK_DEBUG)
     size_t fDstRowBytes = 0;      // Size of destination row in bytes.
-#endif
 
     std::optional<SkImageInfo> fDstInfoOfPreviousColorTableCreation;
 };

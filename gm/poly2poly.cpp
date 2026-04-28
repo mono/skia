@@ -36,18 +36,18 @@ protected:
     SkISize getISize() override { return SkISize::Make(835, 840); }
 
     static void doDraw(SkCanvas* canvas, const SkFont& font, SkPaint* paint, const int isrc[],
-                       const int idst[], int count) {
-        SkMatrix matrix;
+                       const int idst[], size_t count) {
         SkPoint src[4], dst[4];
 
-        for (int i = 0; i < count; i++) {
+        for (size_t i = 0; i < count; i++) {
             src[i].set(SkIntToScalar(isrc[2*i+0]), SkIntToScalar(isrc[2*i+1]));
             dst[i].set(SkIntToScalar(idst[2*i+0]), SkIntToScalar(idst[2*i+1]));
         }
 
         canvas->save();
-        matrix.setPolyToPoly(src, dst, count);
-        canvas->concat(matrix);
+        if (auto mx = SkMatrix::PolyToPoly({src, count}, {dst, count})) {
+            canvas->concat(*mx);
+        }
 
         paint->setColor(SK_ColorGRAY);
         paint->setStyle(SkPaint::kStroke_Style);

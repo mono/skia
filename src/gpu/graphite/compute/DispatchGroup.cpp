@@ -23,6 +23,7 @@
 #include "src/gpu/graphite/RecorderPriv.h"
 #include "src/gpu/graphite/Resource.h"
 #include "src/gpu/graphite/ResourceProvider.h"
+#include "src/gpu/graphite/RuntimeEffectDictionary.h"
 #include "src/gpu/graphite/Sampler.h"
 #include "src/gpu/graphite/Texture.h"  // IWYU pragma: keep
 #include "src/gpu/graphite/TextureProxy.h"
@@ -79,7 +80,7 @@ void DispatchGroup::addResourceRefs(CommandBuffer* commandBuffer) const {
         commandBuffer->trackResource(fPipelines[i]);
     }
     for (int i = 0; i < fTextures.size(); ++i) {
-        commandBuffer->trackCommandBufferResource(fTextures[i]->refTexture());
+        commandBuffer->trackResource(fTextures[i]->refTexture());
     }
 }
 
@@ -138,8 +139,13 @@ bool Builder::appendStepInternal(
     // index ranges. On Dawn/Vulkan buffers and textures/samplers are allocated from separate bind
     // groups/descriptor sets but texture and sampler indices need to not overlap.
     const auto& bindingReqs = fRecorder->priv().caps()->resourceBindingRequirements();
-    bool distinctRanges = bindingReqs.fDistinctIndexRanges;
-    bool separateSampler = bindingReqs.fSeparateTextureAndSamplerBinding;
+    const bool separateSampler = bindingReqs.fSeparateTextureAndSamplerBinding;
+    const bool texturesUseDistinctIdxRanges = bindingReqs.fComputeUsesDistinctIdxRangesForTextures;
+    // Some binding index determination logic relies upon the fact that we do not expect to
+    // encounter a backend that both uses separate sampler bindings AND requires separate index
+    // ranges for textures.
+    SkASSERT(!(separateSampler && texturesUseDistinctIdxRanges));
+
     int bufferOrGlobalIndex = 0;
     int texIndex = 0;
     // NOTE: SkSL Metal codegen always assigns the same binding index to a texture and its sampler.
@@ -190,7 +196,7 @@ bool Builder::appendStepInternal(
                         const TextureProxy* t = fObj->fTextures[texIdx->fValue].get();
                         SkASSERT(t);
                         auto [_, colorType] = step->calculateTextureParameters(index, r);
-                        SkASSERT(t->textureInfo().isCompatible(
+                        SkASSERT(t->textureInfo().canBeFulfilledBy(
                                 fRecorder->priv().caps()->getDefaultStorageTextureInfo(colorType)));
                     }
 #endif  // SK_DEBUG
@@ -205,9 +211,9 @@ bool Builder::appendStepInternal(
                         const SamplerIndex* samplerIdx =
                                 std::get_if<SamplerIndex>(&samplerResource);
                         SkASSERT(samplerIdx);
-                        int bindingIndex = distinctRanges    ? texIndex
-                                           : separateSampler ? bufferOrGlobalIndex++
-                                                             : bufferOrGlobalIndex;
+                        int bindingIndex = texturesUseDistinctIdxRanges ? texIndex :
+                                                        separateSampler ? bufferOrGlobalIndex++
+                                                                        : bufferOrGlobalIndex;
                         dispatch.fBindings.push_back(
                                 {static_cast<BindingIndex>(bindingIndex), *samplerIdx});
                     }
@@ -223,7 +229,7 @@ bool Builder::appendStepInternal(
             bindingIndex = bufferOrGlobalIndex++;
         } else if (const TextureIndex* texIdx = std::get_if<TextureIndex>(&maybeResource)) {
             dispatchResource = *texIdx;
-            bindingIndex = distinctRanges ? texIndex++ : bufferOrGlobalIndex++;
+            bindingIndex = texturesUseDistinctIdxRanges ? texIndex++ : bufferOrGlobalIndex++;
         } else {
             SKGPU_LOG_W("Failed to allocate resource for compute dispatch");
             return false;
@@ -322,9 +328,10 @@ DispatchResourceOptional Builder::allocateResource(const ComputeStep* step,
             size_t bufferSize = step->calculateBufferSize(resourceIdx, resource);
             SkASSERT(bufferSize);
             if (resource.fPolicy == ResourcePolicy::kMapped) {
-                auto [ptr, bufInfo] = bufferMgr->getStoragePointer(bufferSize);
-                if (ptr) {
-                    step->prepareStorageBuffer(resourceIdx, resource, ptr, bufferSize);
+                auto [writer, bufInfo, _] =
+                    bufferMgr->getMappedStorageBuffer(bufferSize, /*stride=*/1);
+                if (writer) {
+                    step->prepareStorageBuffer(resourceIdx, resource, std::move(writer));
                     result = bufInfo;
                 }
             } else {
@@ -362,7 +369,8 @@ DispatchResourceOptional Builder::allocateResource(const ComputeStep* step,
             auto dataBlock = uboMgr.finish();
             SkASSERT(!dataBlock.empty());
 
-            auto [writer, bufInfo] = bufferMgr->getUniformWriter(/*count=*/1, dataBlock.size());
+            auto [writer, bufInfo, _] =
+                    bufferMgr->getMappedUniformBuffer(dataBlock.size(), /*stride=*/1);
             if (bufInfo) {
                 writer.write(dataBlock.data(), dataBlock.size());
                 result = bufInfo;

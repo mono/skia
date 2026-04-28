@@ -25,9 +25,9 @@
 #include "include/gpu/ganesh/GrTypes.h"
 #include "include/gpu/ganesh/SkImageGanesh.h"
 #include "include/gpu/ganesh/SkSurfaceGanesh.h"
-#include "include/private/SkColorData.h"
 #include "include/private/gpu/ganesh/GrTypesPriv.h"
 #include "src/core/SkAutoPixmapStorage.h"
+#include "src/core/SkColorData.h"
 #include "src/gpu/RefCntedCallback.h"
 #include "src/gpu/Swizzle.h"
 #include "src/gpu/ganesh/GrCaps.h"
@@ -47,13 +47,13 @@
 #include "src/gpu/ganesh/SurfaceContext.h"
 #include "src/gpu/ganesh/SurfaceFillContext.h"
 #include "src/gpu/ganesh/effects/GrTextureEffect.h"
+#include "tests/ComparePixels.h"
 #include "tests/CtsEnforcement.h"
 #include "tests/Test.h"
-#include "tests/TestUtils.h"
 #include "tools/ToolUtils.h"
+#include "tools/ganesh/ProxyUtils.h"
 #include "tools/gpu/ContextType.h"
 #include "tools/gpu/ManagedBackendTexture.h"
-#include "tools/gpu/ProxyUtils.h"
 
 #include <array>
 #include <functional>
@@ -69,7 +69,7 @@
 #include "src/gpu/ganesh/gl/GrGLContext.h"
 #include "src/gpu/ganesh/gl/GrGLDefines.h"
 #include "src/gpu/ganesh/gl/GrGLGpu.h"
-#include "tools/gpu/gl/GLTestContext.h"
+#include "tools/ganesh/gl/GLTestContext.h"
 #endif
 
 #if defined(SK_METAL)
@@ -79,6 +79,7 @@
 #endif
 
 #if defined(SK_DIRECT3D)
+#include "include/gpu/ganesh/d3d/GrD3DBackendSurface.h"
 #include "include/private/gpu/ganesh/GrD3DTypesMinimal.h"
 #endif
 
@@ -203,9 +204,7 @@ static bool isBGRA8(const GrBackendFormat& format) {
 #endif
         case GrBackendApi::kDirect3D: {
 #ifdef SK_DIRECT3D
-            DXGI_FORMAT d3dFormat;
-            format.asDxgiFormat(&d3dFormat);
-            return d3dFormat == DXGI_FORMAT_B8G8R8A8_UNORM;
+            return GrBackendFormats::AsDxgiFormat(format) == DXGI_FORMAT_B8G8R8A8_UNORM;
 #else
             return false;
 #endif
@@ -307,7 +306,7 @@ static void check_base_readbacks(GrDirectContext* dContext,
                                  skiatest::Reporter* reporter,
                                  const char* label) {
     if (isRGB(backendTex.getBackendFormat())) {
-        // readPixels is busted for the RGB backend format (skbug.com/8862)
+        // readPixels is busted for the RGB backend format (skbug.com/40040143)
         // TODO: add a GrColorType::kRGB_888 to fix the situation
         return;
     }
@@ -420,7 +419,7 @@ static void check_mipmaps(GrDirectContext* dContext,
                           skiatest::Reporter* reporter,
                           const char* label) {
 #ifdef SK_GL
-    // skbug.com/9141 (RGBA_F32 mipmaps appear to be broken on some Mali devices)
+    // skbug.com/40040438 (RGBA_F32 mipmaps appear to be broken on some Mali devices)
     if (GrBackendApi::kOpenGL == dContext->backend()) {
         GrGLGpu* glGPU = static_cast<GrGLGpu*>(dContext->priv().getGpu());
 
@@ -432,7 +431,7 @@ static void check_mipmaps(GrDirectContext* dContext,
 #endif
 
     if (isRGB(backendTex.getBackendFormat())) {
-        // readPixels is busted for the RGB backend format (skbug.com/8862)
+        // readPixels is busted for the RGB backend format (skbug.com/40040143)
         // TODO: add a GrColorType::kRGB_888 to fix the situation
         return;
     }
@@ -635,6 +634,7 @@ void color_type_backend_allocation_test(const sk_gpu_test::ContextInfo& ctxInfo,
         { kRGB_F16F16F16x_SkColorType,    { 0, 0.5f, 0, 0.5f }     },
         { kRGBA_F32_SkColorType,          SkColors::kGray          },
         { kR8G8_unorm_SkColorType,        { .25f, .75f, 0, 1 }     },
+        { kR16_unorm_SkColorType,         SkColors::kRed           },
         { kR16G16_unorm_SkColorType,      SkColors::kGreen         },
         { kA16_unorm_SkColorType,         kTransCol                },
         { kA16_float_SkColorType,         kTransCol                },
@@ -649,7 +649,7 @@ void color_type_backend_allocation_test(const sk_gpu_test::ContextInfo& ctxInfo,
         SkColorType colorType = combo.fColorType;
 
         if (GrBackendApi::kMetal == context->backend()) {
-            // skbug.com/9086 (Metal caps may not be handling RGBA32 correctly)
+            // skbug.com/40040379 (Metal caps may not be handling RGBA32 correctly)
             if (kRGBA_F32_SkColorType == combo.fColorType) {
                 continue;
             }

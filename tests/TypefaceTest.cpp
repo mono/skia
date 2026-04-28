@@ -45,6 +45,10 @@
 #include <memory>
 #include <utility>
 
+namespace {
+[[maybe_unused]] static inline const constexpr bool kVerboseTypefaceTest = false;
+}
+
 static void TypefaceStyle_test(skiatest::Reporter* reporter,
                                uint16_t weight, uint16_t width, SkData* data)
 {
@@ -93,7 +97,8 @@ static void TypefaceStyle_test(skiatest::Reporter* reporter,
                     (weight ==    4 && newStyle.weight() == 350) ||  // GDI weirdness
                     (weight ==    5 && newStyle.weight() == 400) ||  // GDI weirdness
                     (weight ==    0 && newStyle.weight() ==   1) ||  // DW weirdness
-                    (weight == 1000 && newStyle.weight() == 999)     // DW weirdness
+                    (weight == 1000 && newStyle.weight() == 999),    // DW weirdness
+                    "newStyle.weight(): %d weight: %" PRIu16, newStyle.weight(), weight
     );
 
     // Some back-ends (GDI) don't support width, ensure these always report 'normal'.
@@ -119,6 +124,40 @@ DEF_TEST(TypefaceStyle, reporter) {
     }
 }
 
+void TestSkTypefaceGlyphToUnicodeMap(SkTypeface& typeface, SkSpan<SkUnichar> codepoints) {
+    typeface.getGlyphToUnicodeMap(codepoints);
+}
+
+DEF_TEST(TypefaceGlyphToUnicode, reporter) {
+    std::unique_ptr<SkStreamAsset> stream(GetResourceAsStream("fonts/Em.ttf"));
+    if (!stream) {
+        REPORT_FAILURE(reporter, "fonts/Em.ttf", SkString("Cannot load resource"));
+        return;
+    }
+    sk_sp<SkTypeface> typeface(ToolUtils::TestFontMgr()->makeFromStream(stream->duplicate()));
+    if (!typeface) {
+        // Not all SkFontMgr can MakeFromStream().
+        return;
+    }
+
+    constexpr int expectedGlyphs = 6;
+    int actualGlyphs = typeface->countGlyphs();
+    if (actualGlyphs != expectedGlyphs) {
+        REPORTER_ASSERT(reporter, actualGlyphs == expectedGlyphs,
+                        "%d != %d", actualGlyphs, expectedGlyphs);
+        return;
+    }
+    SkUnichar codepoints[expectedGlyphs];
+    TestSkTypefaceGlyphToUnicodeMap(*typeface, codepoints);
+    constexpr SkUnichar expectedCodepoints[expectedGlyphs] = {0, 0, 0, 9747, 11035, 11036};
+    for (size_t i = 0; i < expectedGlyphs; ++i) {
+        // CoreText before macOS 11 sometimes infers space (0x20) for empty glyphs.
+        REPORTER_ASSERT(reporter, codepoints[i] == expectedCodepoints[i] ||
+                                 (codepoints[i] == 32 && expectedCodepoints[i] == 0),
+                        "codepoints[%zu] == %d != %d", i, codepoints[i], expectedCodepoints[i]);
+    }
+}
+
 DEF_TEST(TypefaceStyleVariable, reporter) {
     using Variation = SkFontArguments::VariationPosition;
     sk_sp<SkFontMgr> fm = ToolUtils::TestFontMgr();
@@ -141,7 +180,7 @@ DEF_TEST(TypefaceStyleVariable, reporter) {
 
     // Ensure that the font supports variable stuff
     Variation::Coordinate varPos[2];
-    int numAxes = typeface->getVariationDesignPosition(varPos, std::size(varPos));
+    int numAxes = typeface->getVariationDesignPosition(varPos);
     if (numAxes <= 0) {
         // Not all SkTypeface can get the variation.
         return;
@@ -224,6 +263,34 @@ DEF_TEST(TypefacePostScriptName, reporter) {
     }
 }
 
+DEF_TEST(TypefaceNameIter, reporter) {
+    sk_sp<SkTypeface> typeface(ToolUtils::CreateTypefaceFromResource("fonts/SpiderSymbol.ttf"));
+    if (!typeface) {
+        // Not all SkFontMgr can MakeFromStream().
+        return;
+    }
+
+    constexpr const char* expectedNames[] = { "SpiderSymbol", "Symbole de l'Araignée" };
+    std::vector<bool> found(std::size(expectedNames));
+    sk_sp<SkTypeface::LocalizedStrings> otherNames(typeface->createFamilyNameIterator());
+    SkTypeface::LocalizedString otherName;
+    while (otherNames->next(&otherName)) {
+        if constexpr (kVerboseTypefaceTest) {
+            SkDebugf("TypefaceNameIter %s, %s\n",
+                     otherName.fString.c_str(), otherName.fLanguage.c_str());
+        }
+        for (size_t i = 0; i < std::size(expectedNames); ++i) {
+            if (otherName.fString.equals(expectedNames[i])) {
+                found[i] = true;
+                break;
+            }
+        }
+    }
+    for (size_t i = 0; i < std::size(expectedNames); ++i) {
+        REPORTER_ASSERT(reporter, found[i], "Missing: %s", expectedNames[i]);
+    }
+}
+
 DEF_TEST(TypefaceRoundTrip, reporter) {
     sk_sp<SkTypeface> typeface(ToolUtils::CreateTypefaceFromResource("fonts/7630.otf"));
     if (!typeface) {
@@ -276,7 +343,7 @@ DEF_TEST(TypefaceAxes, reporter) {
             return;  // Not all SkFontMgr can makeFromStream().
         }
 
-        int actualCount = typeface->getVariationDesignPosition(nullptr, 0);
+        int actualCount = typeface->getVariationDesignPosition({});
         if (actualCount == -1) {
             return;  // The number of axes is unknown.
         }
@@ -287,7 +354,7 @@ DEF_TEST(TypefaceAxes, reporter) {
         REPORTER_ASSERT(reporter, typeface->getBounds().isEmpty());
 
         std::unique_ptr<Variation::Coordinate[]> actual(new Variation::Coordinate[actualCount]);
-        actualCount = typeface->getVariationDesignPosition(actual.get(), actualCount);
+        actualCount = typeface->getVariationDesignPosition({actual.get(), (size_t)actualCount});
         if (actualCount == -1) {
             return;  // The position cannot be determined.
         }
@@ -412,14 +479,14 @@ DEF_TEST(TypefaceVariationIndex, reporter) {
         return;
     }
 
-    int count = typeface->getVariationDesignPosition(nullptr, 0);
+    int count = typeface->getVariationDesignPosition({});
     if (!(count == 1)) {
         REPORT_FAILURE(reporter, "count == 1", SkString());
         return;
     }
 
     SkFontArguments::VariationPosition::Coordinate positionRead[1];
-    count = typeface->getVariationDesignPosition(positionRead, std::size(positionRead));
+    count = typeface->getVariationDesignPosition(positionRead);
     if (count == -1) {
         return;
     }
@@ -462,15 +529,15 @@ DEF_TEST(TypefaceAxesParameters, reporter) {
             return;  // Not all SkFontMgr can makeFromStream().
         }
 
-        int actualCount = typeface->getVariationDesignParameters(nullptr, 0);
+        int actualCount = typeface->getVariationDesignParameters({});
         if (actualCount == -1) {
             return;  // The number of axes is unknown.
         }
         REPORTER_ASSERT(reporter, actualCount == expectedCount ||
                                   actualCount == alsoAcceptedAxisTagCount);
 
-        std::unique_ptr<Axis[]> actual(new Axis[actualCount]);
-        actualCount = typeface->getVariationDesignParameters(actual.get(), actualCount);
+        skia_private::AutoTArray<Axis> actual(actualCount);
+        actualCount = typeface->getVariationDesignParameters(actual);
         if (actualCount == -1) {
             return;  // The position cannot be determined.
         }
@@ -663,7 +730,8 @@ DEF_TEST(Typeface_glyph_to_char, reporter) {
         originalCodepoints[i] = SkUTF::NextUTF8(&text, textEnd);
     }
     std::unique_ptr<SkGlyphID[]> glyphs(new SkGlyphID[codepointCount]);
-    font.unicharsToGlyphs(originalCodepoints.get(), codepointCount, glyphs.get());
+    font.unicharsToGlyphs({originalCodepoints.get(), codepointCount},
+                          {glyphs.get(), codepointCount});
     if (std::any_of(glyphs.get(), glyphs.get()+codepointCount, [](SkGlyphID g){ return g == 0;})) {
         ERRORF(reporter, "Unexpected typeface \"%s\". Expected full support for emoji_sample_text.",
                familyName.c_str());
@@ -714,8 +782,7 @@ DEF_TEST(LegacyMakeTypeface, reporter) {
 }
 
 DEF_TEST(CustomTypeface_invalid_glyphid, reporter) {
-    SkPath glyph_path;
-    glyph_path.addRect({10, 20, 30, 40});
+    SkPath glyph_path = SkPath::Rect({10, 20, 30, 40});
 
     SkCustomTypefaceBuilder builder;
     builder.setGlyph(0, 42, glyph_path);
@@ -724,7 +791,7 @@ DEF_TEST(CustomTypeface_invalid_glyphid, reporter) {
 
     SkGlyphID glyph_ids[] = {0, 1};
     SkRect bounds[2];
-    custom_font.getBounds(glyph_ids, 2, bounds, nullptr);
+    custom_font.getBounds(glyph_ids, bounds, nullptr);
 
     REPORTER_ASSERT(reporter, bounds[0] == SkRect::MakeLTRB(10, 20, 30, 40));
     REPORTER_ASSERT(reporter, bounds[1] == SkRect::MakeLTRB(0, 0, 0, 0));

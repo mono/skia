@@ -32,22 +32,22 @@ DEF_TEST(Unicode_textencodings, reporter) {
         text32[i] = text16[i] = text8[i];
     }
 
-    uint16_t glyphs8[sizeof(text8)];
-    uint16_t glyphs16[sizeof(text8)];
-    uint16_t glyphs32[sizeof(text8)];
+    SkGlyphID glyphs8[sizeof(text8)];
+    SkGlyphID glyphs16[sizeof(text8)];
+    SkGlyphID glyphs32[sizeof(text8)];
 
     SkFont font = ToolUtils::DefaultFont();
 
-    int count8  = font.textToGlyphs(text8,  len8,  SkTextEncoding::kUTF8,  glyphs8,  std::size(glyphs8));
-    int count16 = font.textToGlyphs(text16, len16, SkTextEncoding::kUTF16, glyphs16, std::size(glyphs16));
-    int count32 = font.textToGlyphs(text32, len32, SkTextEncoding::kUTF32, glyphs32, std::size(glyphs32));
+    int count8  = font.textToGlyphs(text8,  len8,  SkTextEncoding::kUTF8,  glyphs8);
+    int count16 = font.textToGlyphs(text16, len16, SkTextEncoding::kUTF16, glyphs16);
+    int count32 = font.textToGlyphs(text32, len32, SkTextEncoding::kUTF32, glyphs32);
 
     REPORTER_ASSERT(reporter, (int)len8 == count8);
     REPORTER_ASSERT(reporter, (int)len8 == count16);
     REPORTER_ASSERT(reporter, (int)len8 == count32);
 
-    REPORTER_ASSERT(reporter, !memcmp(glyphs8, glyphs16, count8 * sizeof(uint16_t)));
-    REPORTER_ASSERT(reporter, !memcmp(glyphs8, glyphs32, count8 * sizeof(uint16_t)));
+    REPORTER_ASSERT(reporter, !memcmp(glyphs8, glyphs16, count8 * sizeof(SkGlyphID)));
+    REPORTER_ASSERT(reporter, !memcmp(glyphs8, glyphs32, count8 * sizeof(SkGlyphID)));
 }
 
 DEF_TEST(glyphs_to_unichars, reporter) {
@@ -59,8 +59,8 @@ DEF_TEST(glyphs_to_unichars, reporter) {
         uni[i +  0] = i + 'A';
         uni[i + 26] = i + 'a';
     }
-    uint16_t glyphs[N];
-    font.textToGlyphs(uni, sizeof(uni), SkTextEncoding::kUTF32, glyphs, N);
+    SkGlyphID glyphs[N];
+    font.textToGlyphs(uni, sizeof(uni), SkTextEncoding::kUTF32, glyphs);
 
     SkUnichar uni2[N];
     SkFontPriv::GlyphsToUnichars(font, glyphs, N, uni2);

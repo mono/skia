@@ -43,10 +43,7 @@ static void draw_path(SkCanvas* canvas, const SkPath& path, const SkRect& rect,
 
     paint.setStrokeWidth(3);
     paint.setStrokeJoin(SkPaint::kMiter_Join);
-    int n = path.countPoints();
-    AutoTArray<SkPoint> points(n);
-    path.getPoints(points.get(), n);
-    canvas->drawPoints(SkCanvas::kPoints_PointMode, n, points.get(), paint);
+    canvas->drawPoints(SkCanvas::kPoints_PointMode, path.points(), paint);
 }
 
 /*
@@ -102,9 +99,7 @@ protected:
                 for (size_t j = 0; j < std::size(gRects); ++j) {
                     const SkRect& r = gRects[j];
 
-                    SkPath path, fillPath;
-                    path.addRect(r);
-                    skpathutils::FillPathWithPaint(path, paint, &fillPath);
+                    SkPath fillPath = skpathutils::FillPathWithPaint(SkPath::Rect(r), paint);
                     draw_path(canvas, fillPath, r, join, doFill);
 
                     canvas->translate(W + 2 * STROKE_WIDTH, 0);

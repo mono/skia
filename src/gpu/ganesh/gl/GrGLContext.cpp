@@ -7,6 +7,8 @@
 
 #include "src/gpu/ganesh/gl/GrGLContext.h"
 
+#include <cstdlib>
+
 #include "include/gpu/ganesh/GrContextOptions.h"
 #include "src/gpu/ganesh/gl/GrGLGLSL.h"
 #include "src/sksl/SkSLGLSL.h"
@@ -33,6 +35,13 @@ std::unique_ptr<GrGLContext> GrGLContext::Make(sk_sp<const GrGLInterface> interf
         return nullptr;
     }
 
+#ifdef SK_BUILD_FOR_ANDROID
+    auto getAndroidAPIVersion = []() {
+        char androidAPIVersion[PROP_VALUE_MAX];
+        int strLength = __system_property_get("ro.build.version.sdk", androidAPIVersion);
+        return strLength == 0 ? -1 : atoi(androidAPIVersion);
+    };
+
     /*
      * Qualcomm drivers for the 3xx series have a horrendous bug with some drivers. Though they
      * claim to support GLES 3.00, some perfectly valid GLSL300 shaders will only compile with
@@ -42,14 +51,21 @@ std::unique_ptr<GrGLContext> GrGLContext::Make(sk_sp<const GrGLInterface> interf
      * ?????/2015 - This bug is still present in Lollipop pre-mr1
      * 06/18/2015 - This bug does not affect the nexus 6 (which has an Adreno 4xx).
      */
-#ifdef SK_BUILD_FOR_ANDROID
     if (!options.fDisableDriverCorrectnessWorkarounds &&
         args.fDriverInfo.fRenderer == GrGLRenderer::kAdreno3xx) {
-        char androidAPIVersion[PROP_VALUE_MAX];
-        int strLength = __system_property_get("ro.build.version.sdk", androidAPIVersion);
-        if (strLength == 0 || atoi(androidAPIVersion) < 26) {
+        if (getAndroidAPIVersion() < 26) {
             args.fGLSLGeneration = SkSL::GLSLGeneration::k100es;
         }
+    }
+
+    /*
+     * Older versions of the Android emulator running on SwiftShader have a bug where
+     * GLSL 3.00 shaders can cause the emulator to hard crash.
+     * We workaround this by using #version 100 shaders.
+     */
+    if (!options.fDisableDriverCorrectnessWorkarounds &&
+        args.fDriverInfo.fRenderer == GrGLRenderer::kAndroidEmulator) {
+        args.fGLSLGeneration = SkSL::GLSLGeneration::k100es;
     }
 #endif
 
@@ -57,7 +73,7 @@ std::unique_ptr<GrGLContext> GrGLContext::Make(sk_sp<const GrGLInterface> interf
     // extension, and require that it be enabled to work with ESSL3. Other devices require the ES2
     // extension to be enabled, even when using ESSL3. Some devices appear to only support the ES2
     // extension. As an extreme (optional) solution, we can fallback to using ES2 shading language
-    // if we want to prioritize external texture support. skbug.com/7713
+    // if we want to prioritize external texture support. skbug.com/40038974
     if (GR_IS_GR_GL_ES(interface->fStandard) &&
         options.fPreferExternalImagesOverES3 &&
         !options.fDisableDriverCorrectnessWorkarounds &&

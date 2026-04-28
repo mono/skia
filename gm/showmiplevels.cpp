@@ -9,7 +9,6 @@
 #include "include/core/SkBitmap.h"
 #include "include/core/SkCanvas.h"
 #include "include/core/SkColor.h"
-#include "include/core/SkColorPriv.h"
 #include "include/core/SkImageInfo.h"
 #include "include/core/SkPaint.h"
 #include "include/core/SkPixmap.h"
@@ -20,6 +19,7 @@
 #include "include/core/SkSize.h"
 #include "include/core/SkString.h"
 #include "include/core/SkTileMode.h"
+#include "src/core/SkColorPriv.h"
 #include "src/core/SkMipmap.h"
 #include "src/core/SkMipmapBuilder.h"
 #include "tools/DecodeUtils.h"
@@ -37,7 +37,7 @@ class ShowMipLevels3 : public skiagm::GM {
 
     void onOnceBeforeDraw() override {
         fImg = ToolUtils::GetResourceAsImage("images/ship.png");
-        fImg = fImg->makeRasterImage(); // makeWithMips only works on raster for now
+        fImg = fImg->makeRasterImage(nullptr); // makeWithMips only works on raster for now
 
         const SkColor colors[] = { SK_ColorRED, SK_ColorGREEN, SK_ColorBLUE };
 

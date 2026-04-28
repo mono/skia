@@ -66,19 +66,19 @@ static void draw_drrect(SkCanvas* canvas, const SkRect& r, const SkPaint& p) {
 }
 
 static void draw_path(SkCanvas* canvas, const SkRect& r, const SkPaint& p) {
-    canvas->drawPath(SkPath::Polygon({
+    canvas->drawPath(SkPath::Polygon({{
         {r.fLeft, r.fTop},
         {r.fLeft, r.fBottom},
         {r.fRight, r.fBottom},
-    }, true), p);
+    }}, true), p);
 }
 
 static void draw_points(SkCanvas* canvas, const SkRect& r, const SkPaint& p) {
     SkPoint pts0[2] = { { r.fLeft, r.fTop }, { r.fRight, r.fBottom } };
     SkPoint pts1[2] = { { r.fLeft, r.fBottom }, { r.fRight, r.fTop } };
 
-    canvas->drawPoints(SkCanvas::kLines_PointMode, 2, pts0, p);
-    canvas->drawPoints(SkCanvas::kLines_PointMode, 2, pts1, p);
+    canvas->drawPoints(SkCanvas::kLines_PointMode, pts0, p);
+    canvas->drawPoints(SkCanvas::kLines_PointMode, pts1, p);
 }
 
 static void draw_bitmap(SkCanvas* canvas, const SkRect& r, const SkPaint& p) {

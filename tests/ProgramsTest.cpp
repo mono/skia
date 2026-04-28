@@ -328,7 +328,7 @@ bool GrDrawingManager::ProgramUnitTest(GrDirectContext* direct, int maxStages, i
         }
 
         GrPaint paint;
-        GrProcessorTestData ptd(&random, direct, /*maxTreeDepth=*/1, std::size(views), views);
+        GrProcessorTestData ptd(&random, surfaceDrawContext.get(), /*maxTreeDepth=*/1, views);
         set_random_color_coverage_stages(&paint, &ptd, maxStages, maxLevels);
         set_random_xpf(&paint, &ptd);
         GrDrawRandomOp(&random, surfaceDrawContext.get(), std::move(paint));
@@ -354,8 +354,7 @@ bool GrDrawingManager::ProgramUnitTest(GrDirectContext* direct, int maxStages, i
     for (int i = 0; i < fpFactoryCnt; ++i) {
         // Since FP factories internally randomize, call each 10 times.
         for (int j = 0; j < 10; ++j) {
-            GrProcessorTestData ptd(&random, direct, /*maxTreeDepth=*/1, std::size(views),
-                                    views);
+            GrProcessorTestData ptd(&random, sdc.get(), /*maxTreeDepth=*/1, views);
 
             GrPaint paint;
             paint.setXPFactory(GrPorterDuffXPFactory::Get(SkBlendMode::kSrc));
@@ -388,7 +387,7 @@ static int get_programs_max_stages(const sk_gpu_test::ContextInfo& ctxInfo) {
             maxStages = 1;
         }
 #endif
-        // On iOS we can exceed the maximum number of varyings. http://skbug.com/6627.
+        // On iOS we can exceed the maximum number of varyings. skbug.com/40037842.
 #ifdef SK_BUILD_FOR_IOS
             maxStages = 3;
 #endif
@@ -411,7 +410,7 @@ static int get_programs_max_levels(const sk_gpu_test::ContextInfo& ctxInfo) {
     // (e.g. uniform or varying limits); maxTreeLevels should be a number from 1 to 4 inclusive.
     int maxTreeLevels = 4;
     if (skiatest::IsGLContextType(ctxInfo.type())) {
-        // On iOS we can exceed the maximum number of varyings. http://skbug.com/6627.
+        // On iOS we can exceed the maximum number of varyings. skbug.com/40037842.
 #ifdef SK_BUILD_FOR_IOS
         maxTreeLevels = 2;
 #endif
@@ -448,7 +447,7 @@ static void test_programs(skiatest::Reporter* reporter, const sk_gpu_test::Conte
 
 DEF_GANESH_TEST(Programs, reporter, options, CtsEnforcement::kNever) {
     // Set a locale that would cause shader compilation to fail because of , as decimal separator.
-    // skbug 3330
+    // skbug.com/40034453
 #ifdef SK_BUILD_FOR_WIN
     GrAutoLocaleSetter als("sv-SE");
 #else

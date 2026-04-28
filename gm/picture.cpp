@@ -30,10 +30,10 @@ static sk_sp<SkPicture> make_picture() {
     canvas->drawRect(SkRect::MakeWH(100, 100), paint);
 
     paint.setColor(0x80FF0000);
-    canvas->drawPath(SkPath::Polygon({{0, 0}, {100, 0}, {100, 100}}, false), paint);
+    canvas->drawPath(SkPath::Polygon({{{0, 0}, {100, 0}, {100, 100}}}, false), paint);
 
     paint.setColor(0x8000FF00);
-    canvas->drawPath(SkPath::Polygon({{0, 0}, {100, 0}, {0, 100}}, false), paint);
+    canvas->drawPath(SkPath::Polygon({{{0, 0}, {100, 0}, {0, 100}}}, false), paint);
 
     paint.setColor(0x80FFFFFF);
     paint.setBlendMode(SkBlendMode::kPlus);
@@ -86,7 +86,7 @@ private:
 
 // Exercise drawing a picture with a cull rect of non-zero top-left corner.
 //
-// See skbug.com/9334, which would fail
+// See skbug.com/40040654, which would fail
 // ```
 //   dm -m picture_cull_rect --config serialize-8888
 // ```

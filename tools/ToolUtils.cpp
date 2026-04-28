@@ -11,7 +11,6 @@
 #include "include/core/SkBitmap.h"
 #include "include/core/SkBlendMode.h"
 #include "include/core/SkCanvas.h"
-#include "include/core/SkColorPriv.h"
 #include "include/core/SkColorSpace.h"
 #include "include/core/SkColorType.h"
 #include "include/core/SkFont.h"
@@ -34,10 +33,11 @@
 #include "include/core/SkTextBlob.h"
 #include "include/core/SkTileMode.h"
 #include "include/core/SkTypeface.h"
-#include "include/effects/SkGradientShader.h"
-#include "include/private/SkColorData.h"
+#include "include/effects/SkGradient.h"
 #include "include/private/base/SkCPUTypes.h"
 #include "include/private/base/SkTemplates.h"
+#include "src/core/SkColorData.h"
+#include "src/core/SkColorPriv.h"
 #include "src/core/SkFontPriv.h"
 #include "tools/SkMetaData.h"
 
@@ -82,6 +82,7 @@ const char* colortype_name(SkColorType ct) {
         case kRGBA_F16_SkColorType:           return "RGBA_F16";
         case kRGBA_F32_SkColorType:           return "RGBA_F32";
         case kR8G8_unorm_SkColorType:         return "R8G8_unorm";
+        case kR16_unorm_SkColorType:          return "R16_unorm";
         case kR16G16_unorm_SkColorType:       return "R16G16_unorm";
         case kR16G16_float_SkColorType:       return "R16G16_float";
         case kR16G16B16A16_unorm_SkColorType: return "R16G16B16A16_unorm";
@@ -116,6 +117,7 @@ const char* colortype_depth(SkColorType ct) {
         case kRGBA_F16_SkColorType:           return "F16";
         case kRGBA_F32_SkColorType:           return "F32";
         case kR8G8_unorm_SkColorType:         return "88";
+        case kR16_unorm_SkColorType:          return "R16";
         case kR16G16_unorm_SkColorType:       return "1616";
         case kR16G16_float_SkColorType:       return "F16F16";
         case kR16G16B16A16_unorm_SkColorType: return "16161616";
@@ -215,12 +217,12 @@ void add_to_text_blob_w_len(SkTextBlobBuilder* builder,
                             const SkFont&      font,
                             SkScalar           x,
                             SkScalar           y) {
-    int  count = font.countText(text, len, encoding);
+    size_t  count = font.countText(text, len, encoding);
     if (count < 1) {
         return;
     }
     auto run   = builder->allocRun(font, count, x, y);
-    font.textToGlyphs(text, len, encoding, run.glyphs, count);
+    font.textToGlyphs(text, len, encoding, {run.glyphs, count});
 }
 
 void add_to_text_blob(SkTextBlobBuilder* builder,
@@ -231,37 +233,36 @@ void add_to_text_blob(SkTextBlobBuilder* builder,
     add_to_text_blob_w_len(builder, text, strlen(text), SkTextEncoding::kUTF8, font, x, y);
 }
 
-void get_text_path(const SkFont&  font,
+SkPath get_text_path(const SkFont&  font,
                    const void*    text,
                    size_t         length,
                    SkTextEncoding encoding,
-                   SkPath*        dst,
                    const SkPoint  pos[]) {
-    SkAutoToGlyphs        atg(font, text, length, encoding);
-    const int             count = atg.count();
+    SkAutoToGlyphs      atg(font, text, length, encoding);
+    const size_t        count = atg.count();
     AutoTArray<SkPoint> computedPos;
     if (pos == nullptr) {
         computedPos.reset(count);
-        font.getPos(atg.glyphs(), count, &computedPos[0]);
+        font.getPos(atg.glyphs(), computedPos);
         pos = computedPos.get();
     }
 
     struct Rec {
-        SkPath*        fDst;
+        SkPathBuilder  fBuilder;
         const SkPoint* fPos;
-    } rec = {dst, pos};
+    } rec = {{}, pos};
     font.getPaths(atg.glyphs(),
-                  atg.count(),
                   [](const SkPath* src, const SkMatrix& mx, void* ctx) {
                       Rec* rec = (Rec*)ctx;
                       if (src) {
                           SkMatrix tmp(mx);
                           tmp.postTranslate(rec->fPos->fX, rec->fPos->fY);
-                          rec->fDst->addPath(*src, tmp);
+                          rec->fBuilder.addPath(*src, tmp);
                       }
                       rec->fPos += 1;
                   },
                   &rec);
+    return rec.fBuilder.detach();
 }
 
 SkPath make_star(const SkRect& bounds, int numPts, int step) {
@@ -277,8 +278,7 @@ SkPath make_star(const SkRect& bounds, int numPts, int step) {
         builder.lineTo(x, y);
     }
     SkPath path = builder.detach();
-    path.transform(SkMatrix::RectToRect(path.getBounds(), bounds));
-    return path;
+    return path.makeTransform(SkMatrix::RectToRectOrIdentity(path.getBounds(), bounds));
 }
 
 static inline void norm_to_rgb(SkBitmap* bm, int x, int y, const SkVector3& norm) {
@@ -453,14 +453,10 @@ void copy_to_g8(SkBitmap* dst, const SkBitmap& src) {
 
 bool equal_pixels(const SkPixmap& a, const SkPixmap& b) {
     if (a.width() != b.width() || a.height() != b.height()) {
-        SkDebugf("[ToolUtils::equal_pixels] Dimensions do not match (%d x %d) != (%d x %d)\n",
-                 a.width(), a.height(), b.width(), b.height());
         return false;
     }
 
     if (a.colorType() != b.colorType()) {
-        SkDebugf("[ToolUtils::equal_pixels] colorType does not match %d != %d\n",
-                 (int) a.colorType(), (int) b.colorType());
         return false;
     }
 
@@ -468,7 +464,6 @@ bool equal_pixels(const SkPixmap& a, const SkPixmap& b) {
         const char* aptr = (const char*)a.addr(0, y);
         const char* bptr = (const char*)b.addr(0, y);
         if (0 != memcmp(aptr, bptr, a.width() * a.info().bytesPerPixel())) {
-            SkDebugf("[ToolUtils::equal_pixels] row %d does not match byte for byte\n", y);
             return false;
         }
     }
@@ -478,11 +473,9 @@ bool equal_pixels(const SkPixmap& a, const SkPixmap& b) {
 bool equal_pixels(const SkBitmap& bm0, const SkBitmap& bm1) {
     SkPixmap pm0, pm1;
     if (!bm0.peekPixels(&pm0)) {
-        SkDebugf("Could not read pixels from A\n");
         return false;
     }
     if (!bm1.peekPixels(&pm1)) {
-        SkDebugf("Could not read pixels from B\n");
         return false;
     }
     return equal_pixels(pm0, pm1);
@@ -492,16 +485,14 @@ bool equal_pixels(const SkImage* a, const SkImage* b) {
     SkASSERT_RELEASE(a);
     SkASSERT_RELEASE(b);
     // ensure that peekPixels will succeed
-    auto imga = a->makeRasterImage();
-    auto imgb = b->makeRasterImage();
+    auto imga = a->makeRasterImage(nullptr);
+    auto imgb = b->makeRasterImage(nullptr);
 
     SkPixmap pm0, pm1;
     if (!imga->peekPixels(&pm0)) {
-        SkDebugf("Could not read pixels from A\n");
         return false;
     }
     if (!imgb->peekPixels(&pm1)) {
-        SkDebugf("Could not read pixels from B\n");
         return false;
     }
     return equal_pixels(pm0, pm1);
@@ -523,7 +514,7 @@ VariationSliders::VariationSliders(SkTypeface* typeface,
         return;
     }
 
-    int numAxes = typeface->getVariationDesignParameters(nullptr, 0);
+    int numAxes = typeface->getVariationDesignParameters({});
     if (numAxes < 0) {
         return;
     }
@@ -531,7 +522,7 @@ VariationSliders::VariationSliders(SkTypeface* typeface,
     std::unique_ptr<SkFontParameters::Variation::Axis[]> copiedAxes =
             std::make_unique<SkFontParameters::Variation::Axis[]>(numAxes);
 
-    numAxes = typeface->getVariationDesignParameters(copiedAxes.get(), numAxes);
+    numAxes = typeface->getVariationDesignParameters({copiedAxes.get(), (size_t)numAxes});
     if (numAxes < 0) {
         return;
     }
@@ -685,8 +676,7 @@ void HilbertGenerator::line(SkCanvas* canvas) {
     }
 
     SkPaint paint;
-    paint.setShader(SkGradientShader::MakeLinear(pts, colors, /* colorSpace= */ nullptr,
-                                                 /* pos= */ nullptr, 2, SkTileMode::kClamp));
+    paint.setShader(SkShaders::LinearGradient(pts, {{colors, {}, SkTileMode::kClamp}, {}}));
     canvas->drawRect(r, paint);
 }
 
@@ -771,13 +761,59 @@ void ExtractPathsFromSKP(const char filepath[], std::function<PathSniffCallback>
         std::function<PathSniffCallback> fPathSniffCallback;
     };
 
-    sk_sp<SkPicture> skp = SkPicture::MakeFromStream(&stream);
+    // We don't need to decode images etc, so we can pass nullptr for the deserial procs.
+    sk_sp<SkPicture> skp = SkPicture::MakeFromStream(&stream, nullptr);
     if (!skp) {
         SkDebugf("ExtractPaths: couldn't load skp at \"%s\"\n", filepath);
         return;
     }
     PathSniffer pathSniffer(callback);
     skp->playback(&pathSniffer);
+}
+
+bool A8ComparePaths(const SkPath& a, const SkPath& b, A8CompareProc cmp) {
+    const auto ra = a.computeTightBounds(),
+               rb = b.computeTightBounds();
+    if (ra.isEmpty() && rb.isEmpty()) {
+        return true;
+    }
+
+    const auto r = ra.makeOutset(1, 1);
+    if (!r.contains(rb)) {
+        return false;
+    }
+
+    const auto ir = r.roundOut();
+    const auto info = SkImageInfo::MakeA8(ir.width(), ir.height());
+
+    auto make_img = [&](const SkPath& path) {
+        SkPaint paint;
+        paint.setAntiAlias(true);
+        auto surf = SkSurfaces::Raster(info);
+        auto canvas = surf->getCanvas();
+        canvas->translate(1 - ir.fLeft, 1 - ir.fTop);   // keep ~1 pixel margin
+        canvas->drawPath(a, paint);
+        return surf->makeImageSnapshot();
+    };
+    auto imga = make_img(a),
+         imgb = make_img(b);
+
+    SkPixmap pma, pmb;
+    SkAssertResult(imga->peekPixels(&pma));
+    SkAssertResult(imgb->peekPixels(&pmb));
+
+    for (int y = 0; y < pma.height(); ++y) {
+        for (int x = 0; x < pma.width(); ++x) {
+            uint8_t pa = *pma.addr8(x, y),
+                    pb = *pmb.addr8(x, y);
+            if (pa != pb) {
+                if (!cmp(x, y, pa, pb)) {
+                    return false;
+                }
+            }
+        }
+    }
+    return true;
 }
 
 }  // namespace ToolUtils

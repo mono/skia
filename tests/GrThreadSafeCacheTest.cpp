@@ -29,7 +29,6 @@
 #include "include/gpu/ganesh/GrRecordingContext.h"
 #include "include/gpu/ganesh/GrTypes.h"
 #include "include/gpu/ganesh/SkSurfaceGanesh.h"
-#include "include/private/SkColorData.h"
 #include "include/private/base/SkDebug.h"
 #include "include/private/base/SkMalloc.h"
 #include "include/private/chromium/GrDeferredDisplayList.h"
@@ -37,6 +36,7 @@
 #include "include/private/chromium/GrSurfaceCharacterization.h"
 #include "include/private/gpu/ganesh/GrTypesPriv.h"
 #include "src/base/SkRandom.h"
+#include "src/core/SkColorData.h"
 #include "src/core/SkMessageBus.h"
 #include "src/gpu/GpuTypesPriv.h"
 #include "src/gpu/ResourceKey.h"
@@ -69,10 +69,10 @@
 #include "src/gpu/ganesh/SurfaceDrawContext.h"
 #include "src/gpu/ganesh/ops/GrDrawOp.h"
 #include "src/gpu/ganesh/ops/GrOp.h"
+#include "tests/ComparePixels.h"
 #include "tests/CtsEnforcement.h"
 #include "tests/Test.h"
-#include "tests/TestUtils.h"
-#include "tools/gpu/ProxyUtils.h"
+#include "tools/ganesh/ProxyUtils.h"
 
 #include <chrono>
 #include <cstddef>

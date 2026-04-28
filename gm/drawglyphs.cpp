@@ -29,10 +29,10 @@ public:
         fGlyphCount = fFont.countText(gText, txtLen, SkTextEncoding::kUTF8);
 
         fGlyphs.append(fGlyphCount);
-        fFont.textToGlyphs(gText, txtLen, SkTextEncoding::kUTF8, fGlyphs.begin(), fGlyphCount);
+        fFont.textToGlyphs(gText, txtLen, SkTextEncoding::kUTF8, fGlyphs);
 
         fPositions.append(fGlyphCount);
-        fFont.getPos(fGlyphs.begin(), fGlyphCount, fPositions.begin());
+        fFont.getPos(fGlyphs, fPositions);
         auto positions = SkSpan(fPositions.begin(), fGlyphCount);
 
         fLength = positions.back().x() - positions.front().x();
@@ -53,20 +53,19 @@ public:
     SkISize getISize() override { return SkISize::Make(640, 480); }
 
     void onDraw(SkCanvas* canvas) override {
-        canvas->drawGlyphs(fGlyphCount, fGlyphs.begin(), fPositions.begin(), {50, 100}, fFont,
-                           SkPaint{});
+        SkSpan<const SkGlyphID> glyphs = {fGlyphs.data(), (size_t)fGlyphCount};
+        SkSpan<SkPoint> pos = {fPositions.data(), (size_t)fGlyphCount};
+        canvas->drawGlyphs(glyphs, pos, {50, 100}, fFont, SkPaint{});
 
-        canvas->drawGlyphs(fGlyphCount, fGlyphs.begin(), fPositions.begin(), {50, 120}, fFont,
-                           SkPaint{});
+        canvas->drawGlyphs(glyphs, pos, {50, 120}, fFont, SkPaint{});
 
         // Check bounding box calculation.
-        for (auto& pos : fPositions) {
-            pos += {0, -500};
+        for (auto& p : fPositions) {
+            p += {0, -500};
         }
-        canvas->drawGlyphs(fGlyphCount, fGlyphs.begin(), fPositions.begin(), {50, 640}, fFont,
-                           SkPaint{});
+        canvas->drawGlyphs(glyphs, pos, {50, 640}, fFont, SkPaint{});
 
-        canvas->drawGlyphs(fGlyphCount, fGlyphs.begin(), fXforms.begin(),
+        canvas->drawGlyphsRSXform(fGlyphs, fXforms,
                            {50 + fLength / 2, 160 + fRadius}, fFont, SkPaint{});
 
         // TODO: add tests for cluster versions of drawGlyphs.

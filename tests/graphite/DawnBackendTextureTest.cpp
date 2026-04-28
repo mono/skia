@@ -10,8 +10,8 @@
 #include "include/gpu/graphite/BackendTexture.h"
 #include "include/gpu/graphite/Context.h"
 #include "include/gpu/graphite/Recorder.h"
-#include "include/gpu/graphite/dawn/DawnTypes.h"
-#include "src/gpu/graphite/dawn/DawnGraphiteTypesPriv.h"
+#include "include/gpu/graphite/dawn/DawnGraphiteTypes.h"
+#include "src/gpu/graphite/dawn/DawnGraphiteUtils.h"
 
 #include "webgpu/webgpu_cpp.h"  // NO_G3_REWRITE
 
@@ -28,7 +28,7 @@ DEF_GRAPHITE_TEST_FOR_DAWN_CONTEXT(DawnBackendTextureSimpleCreationTest,
     auto recorder = context->makeRecorder();
 
     DawnTextureInfo textureInfo;
-    textureInfo.fSampleCount = 1;
+    textureInfo.fSampleCount = SampleCount::k1;
     textureInfo.fMipmapped = skgpu::Mipmapped::kNo;
     textureInfo.fFormat = wgpu::TextureFormat::RGBA8Unorm;
     textureInfo.fUsage = wgpu::TextureUsage::TextureBinding;
@@ -52,7 +52,7 @@ DEF_GRAPHITE_TEST_FOR_DAWN_CONTEXT(DawnBackendTextureCopyVariableTest,
     auto recorder = context->makeRecorder();
 
     DawnTextureInfo textureInfo;
-    textureInfo.fSampleCount = 1;
+    textureInfo.fSampleCount = SampleCount::k1;
     textureInfo.fMipmapped = skgpu::Mipmapped::kNo;
     textureInfo.fFormat = wgpu::TextureFormat::RGBA8Unorm;
     textureInfo.fUsage = wgpu::TextureUsage::TextureBinding;

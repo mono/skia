@@ -4,26 +4,35 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
-
 #include "src/gpu/graphite/DrawAtlas.h"
 
-#include <memory>
-
+#include "include/core/SkAlphaType.h"
 #include "include/core/SkColorSpace.h"
-#include "include/core/SkStream.h"
+#include "include/core/SkImageInfo.h"
+#include "include/core/SkRect.h"
+#include "include/core/SkTypes.h"
+#include "include/gpu/GpuTypes.h"
 #include "include/gpu/graphite/Recorder.h"
-#include "include/private/SkColorData.h"
+#include "include/gpu/graphite/TextureInfo.h"
+#include "include/private/base/SkMath.h"
+#include "include/private/base/SkTArray.h"
 #include "include/private/base/SkTPin.h"
-
 #include "src/base/SkMathPriv.h"
+#include "src/core/SkSwizzlePriv.h"
 #include "src/core/SkTraceEvent.h"
-#include "src/gpu/AtlasTypes.h"
+#include "src/gpu/MaskFormat.h"
 #include "src/gpu/graphite/Caps.h"
-#include "src/gpu/graphite/CommandTypes.h"
-#include "src/gpu/graphite/ContextPriv.h"
 #include "src/gpu/graphite/DrawContext.h"
 #include "src/gpu/graphite/RecorderPriv.h"
 #include "src/gpu/graphite/TextureProxy.h"
+#include "src/gpu/graphite/task/UploadTask.h"
+
+#include <algorithm>
+#include <atomic>
+#include <memory>
+#include <tuple>
+
+enum SkColorType : int;
 
 using namespace skia_private;
 
@@ -49,16 +58,21 @@ void DrawAtlas::validate(const AtlasLocator& atlasLocator) const {
 }
 #endif
 
-std::unique_ptr<DrawAtlas> DrawAtlas::Make(SkColorType colorType, size_t bpp, int width,
-                                           int height, int plotWidth, int plotHeight,
-                                           AtlasGenerationCounter* generationCounter,
+std::unique_ptr<DrawAtlas> DrawAtlas::Make(MaskFormat maskFormat,
+                                           int width, int height,
+                                           int plotWidth, int plotHeight,
+                                           GenerationCounter* generationCounter,
                                            AllowMultitexturing allowMultitexturing,
                                            UseStorageTextures useStorageTextures,
                                            PlotEvictionCallback* evictor,
                                            std::string_view label) {
-    std::unique_ptr<DrawAtlas> atlas(new DrawAtlas(colorType, bpp, width, height,
-                                                   plotWidth, plotHeight, generationCounter,
-                                                   allowMultitexturing, useStorageTextures, label));
+    std::unique_ptr<DrawAtlas> atlas(new DrawAtlas(maskFormat,
+                                                   width, height,
+                                                   plotWidth, plotHeight,
+                                                   generationCounter,
+                                                   allowMultitexturing,
+                                                   useStorageTextures,
+                                                   label));
 
     if (evictor != nullptr) {
         atlas->fEvictionCallbacks.emplace_back(evictor);
@@ -75,13 +89,14 @@ static uint32_t next_id() {
     } while (id == SK_InvalidGenID);
     return id;
 }
-DrawAtlas::DrawAtlas(SkColorType colorType, size_t bpp, int width, int height,
-                     int plotWidth, int plotHeight, AtlasGenerationCounter* generationCounter,
+DrawAtlas::DrawAtlas(MaskFormat maskFormat,
+                     int width, int height,
+                     int plotWidth, int plotHeight,
+                     GenerationCounter* generationCounter,
                      AllowMultitexturing allowMultitexturing,
                      UseStorageTextures useStorageTextures,
                      std::string_view label)
-        : fColorType(colorType)
-        , fBytesPerPixel(bpp)
+        : fMaskFormat(maskFormat)
         , fTextureWidth(width)
         , fTextureHeight(height)
         , fPlotWidth(plotWidth)
@@ -91,14 +106,13 @@ DrawAtlas::DrawAtlas(SkColorType colorType, size_t bpp, int width, int height,
         , fAtlasID(next_id())
         , fGenerationCounter(generationCounter)
         , fAtlasGeneration(fGenerationCounter->next())
-        , fPrevFlushToken(AtlasToken::InvalidToken())
+        , fPrevFlushToken(Token::InvalidToken())
         , fFlushesSinceLastUse(0)
-        , fMaxPages(allowMultitexturing == AllowMultitexturing::kYes ?
-                            PlotLocator::kMaxMultitexturePages : 1)
+        , fMaxPages(allowMultitexturing == AllowMultitexturing::kYes ? kMaxMultitexturePages : 1)
         , fNumActivePages(0) {
     int numPlotsX = width/plotWidth;
     int numPlotsY = height/plotHeight;
-    SkASSERT(numPlotsX * numPlotsY <= PlotLocator::kMaxPlots);
+    SkASSERT(numPlotsX * numPlotsY <= kMaxPlots);
     SkASSERTF(fPlotWidth * numPlotsX == fTextureWidth,
              "Invalid DrawAtlas. Plot width: %d, texture width %d", fPlotWidth, fTextureWidth);
     SkASSERTF(fPlotHeight * numPlotsY == fTextureHeight,
@@ -109,12 +123,17 @@ DrawAtlas::DrawAtlas(SkColorType colorType, size_t bpp, int width, int height,
     this->createPages(generationCounter);
 }
 
-inline void DrawAtlas::processEviction(PlotLocator plotLocator) {
-    for (PlotEvictionCallback* evictor : fEvictionCallbacks) {
-        evictor->evict(plotLocator);
+inline void DrawAtlas::processEvictionAndResetRects(Plot* plot, bool freeData) {
+    // Process evictions
+    if (!plot->isEmpty()) {
+        const PlotLocator& plotLocator = plot->plotLocator();
+        for (PlotEvictionCallback* evictor : fEvictionCallbacks) {
+            evictor->evict(plotLocator);
+        }
+        fAtlasGeneration = fGenerationCounter->next();
     }
 
-    fAtlasGeneration = fGenerationCounter->next();
+    plot->resetRects(freeData);
 }
 
 inline void DrawAtlas::updatePlot(Plot* plot, AtlasLocator* atlasLocator) {
@@ -163,12 +182,24 @@ bool DrawAtlas::recordUploads(DrawContext* dc, Recorder* recorder) {
                 }
 
                 std::vector<MipLevel> levels;
-                levels.push_back({dataPtr, fBytesPerPixel*fPlotWidth});
+                levels.push_back({dataPtr, plot->rowBytes()});
 
                 // Src and dst colorInfo are the same
-                SkColorInfo colorInfo(fColorType, kUnknown_SkAlphaType, nullptr);
-                if (!dc->recordUpload(recorder, sk_ref_sp(proxy), colorInfo, colorInfo, levels,
-                                      dstRect, /*ConditionalUploadContext=*/nullptr)) {
+                SkColorInfo colorInfo(MaskFormatToColorType(fMaskFormat),
+                                      kUnknown_SkAlphaType,
+                                      nullptr);
+                const UploadSource uploadSource = UploadSource::Make(
+                        recorder->priv().caps(), *proxy, colorInfo, colorInfo, levels, dstRect);
+                if (!uploadSource.isValid()) {
+                    return false;
+                }
+                if (!dc->recordUpload(recorder,
+                                      sk_ref_sp(proxy),
+                                      colorInfo,
+                                      colorInfo,
+                                      uploadSource,
+                                      dstRect,
+                                      /*ConditionalUploadContext=*/nullptr)) {
                     return false;
                 }
             }
@@ -184,6 +215,9 @@ bool DrawAtlas::recordUploads(DrawContext* dc, Recorder* recorder) {
 // to hang around for a bit in case it's needed. The assumption is that flushes
 // are rare; i.e., we are not continually refreshing the frame.
 static constexpr auto kPlotRecentlyUsedCount = 32;
+// Number of flushes before we'll try to evict a plot from a sparsely used page.
+static constexpr auto kPlotUsedCountBeforeEvict = 8;
+// Number of flushes beyond which we'll consider the atlas no longer in use.
 static constexpr auto kAtlasRecentlyUsedCount = 128;
 
 DrawAtlas::ErrorCode DrawAtlas::addRect(Recorder* recorder,
@@ -202,7 +236,7 @@ DrawAtlas::ErrorCode DrawAtlas::addRect(Recorder* recorder,
             // Make sure we have a Page for the AtlasLocator to refer to
             this->activateNewPage(recorder);
         }
-        atlasLocator->updateRect(skgpu::IRect16::MakeXYWH(0, 0, 0, 0));
+        atlasLocator->updateRect(SkIRect::MakeEmpty());
         // Use the MRU Plot from the first Page
         atlasLocator->updatePlotLocator(fPages[0].fPlotList.head()->plotLocator());
         return ErrorCode::kSucceeded;
@@ -227,7 +261,7 @@ DrawAtlas::ErrorCode DrawAtlas::addRect(Recorder* recorder,
             Plot* plot = fPages[pageIdx].fPlotList.tail();
             SkASSERT(plot);
             if (plot->lastUseToken() < recorder->priv().tokenTracker()->nextFlushToken()) {
-                this->processEvictionAndResetRects(plot);
+                this->processEvictionAndResetRects(plot, /*freeData=*/false);
                 SkDEBUGCODE(bool verify = )plot->addRect(width, height, atlasLocator);
                 SkASSERT(verify);
                 this->updatePlot(plot, atlasLocator);
@@ -272,12 +306,14 @@ DrawAtlas::ErrorCode DrawAtlas::addToAtlas(Recorder* recorder,
     return ec;
 }
 
-SkIPoint DrawAtlas::prepForRender(const AtlasLocator& locator, SkAutoPixmapStorage* pixmap) {
+SkPixmap DrawAtlas::prepForRender(const AtlasLocator& locator,
+                                  int padding,
+                                  std::optional<SkColor> initialColor) {
     Plot* plot = this->findPlot(locator);
-    return plot->prepForRender(locator, pixmap);
+    return plot->prepForRender(locator, padding, initialColor);
 }
 
-void DrawAtlas::compact(AtlasToken startTokenForNextFlush, bool forceCompact) {
+void DrawAtlas::compact(Token startTokenForNextFlush) {
     if (fNumActivePages < 1) {
         fPrevFlushToken = startTokenForNextFlush;
         return;
@@ -309,11 +345,11 @@ void DrawAtlas::compact(AtlasToken startTokenForNextFlush, bool forceCompact) {
     // hasn't been used in a long time.
     // This is to handle the case where a lot of text or path rendering has occurred but then just
     // a blinking cursor is drawn.
-    if (forceCompact || atlasUsedThisFlush || fFlushesSinceLastUse > kAtlasRecentlyUsedCount) {
+    if (atlasUsedThisFlush || fFlushesSinceLastUse > kAtlasRecentlyUsedCount) {
         TArray<Plot*> availablePlots;
         uint32_t lastPageIndex = fNumActivePages - 1;
 
-        // For all plots but the last one, update number of flushes since used, and check to see
+        // For all pages but the last one, update number of flushes since used, and check to see
         // if there are any in the first pages that the last page can safely upload to.
         for (uint32_t pageIndex = 0; pageIndex < lastPageIndex; ++pageIndex) {
             if constexpr (kDumpAtlasData) {
@@ -369,9 +405,9 @@ void DrawAtlas::compact(AtlasToken startTokenForNextFlush, bool forceCompact) {
             // If this plot was used recently
             if (plot->flushesSinceLastUsed() <= kPlotRecentlyUsedCount) {
                 usedPlots++;
-            } else if (plot->lastUseToken() != AtlasToken::InvalidToken()) {
+            } else if (plot->lastUseToken() != Token::InvalidToken()) {
                 // otherwise if aged out just evict it.
-                this->processEvictionAndResetRects(plot);
+                this->processEvictionAndResetRects(plot, /*freeData=*/false);
             }
             plotIter.next();
         }
@@ -388,13 +424,16 @@ void DrawAtlas::compact(AtlasToken startTokenForNextFlush, bool forceCompact) {
             plotIter.init(fPages[lastPageIndex].fPlotList, PlotList::Iter::kHead_IterStart);
             while (Plot* plot = plotIter.get()) {
                 // If this plot was used recently
-                if (plot->flushesSinceLastUsed() <= kPlotRecentlyUsedCount) {
+                int plotFlushes = plot->flushesSinceLastUsed();
+                if (kPlotUsedCountBeforeEvict <= plotFlushes &&
+                    plotFlushes <= kPlotRecentlyUsedCount) {
                     // See if there's room in an lower index page and if so evict.
                     // We need to be somewhat harsh here so that a handful of plots that are
                     // consistently in use don't end up locking the page in memory.
                     if (!availablePlots.empty()) {
-                        this->processEvictionAndResetRects(plot);
-                        this->processEvictionAndResetRects(availablePlots.back());
+                        this->processEvictionAndResetRects(plot, /*freeData=*/true);
+                        this->processEvictionAndResetRects(availablePlots.back(),
+                                                           /*freeData=*/false);
                         availablePlots.pop_back();
                         --usedPlots;
                     }
@@ -420,7 +459,7 @@ void DrawAtlas::compact(AtlasToken startTokenForNextFlush, bool forceCompact) {
     fPrevFlushToken = startTokenForNextFlush;
 }
 
-bool DrawAtlas::createPages(AtlasGenerationCounter* generationCounter) {
+bool DrawAtlas::createPages(GenerationCounter* generationCounter) {
     SkASSERT(SkIsPow2(fTextureWidth) && SkIsPow2(fTextureHeight));
 
     int numPlotsX = fTextureWidth/fPlotWidth;
@@ -431,15 +470,18 @@ bool DrawAtlas::createPages(AtlasGenerationCounter* generationCounter) {
         fProxies[i] = nullptr;
 
         // set up allocated plots
-        fPages[i].fPlotArray = std::make_unique<sk_sp<Plot>[]>(numPlotsX * numPlotsY);
+        fPages[i].fPlotArray = std::make_unique<std::unique_ptr<Plot>[]>(numPlotsX * numPlotsY);
 
-        sk_sp<Plot>* currPlot = fPages[i].fPlotArray.get();
+        auto* currPlot = fPages[i].fPlotArray.get();
         for (int y = numPlotsY - 1, r = 0; y >= 0; --y, ++r) {
             for (int x = numPlotsX - 1, c = 0; x >= 0; --x, ++c) {
                 uint32_t plotIndex = r * numPlotsX + c;
-                currPlot->reset(new Plot(
-                    i, plotIndex, generationCounter, x, y, fPlotWidth, fPlotHeight, fColorType,
-                    fBytesPerPixel));
+                *currPlot = Plot::Make(i,
+                                       plotIndex,
+                                       generationCounter,
+                                       x, y,
+                                       fPlotWidth, fPlotHeight,
+                                       fMaskFormat);
 
                 // build LRU list
                 fPages[i].fPlotList.addToHead(currPlot->get());
@@ -455,10 +497,12 @@ bool DrawAtlas::activateNewPage(Recorder* recorder) {
     SkASSERT(fNumActivePages < this->maxPages());
     SkASSERT(!fProxies[fNumActivePages]);
 
+    auto ct = MaskFormatToColorType(fMaskFormat);
+
     const Caps* caps = recorder->priv().caps();
     auto textureInfo = fUseStorageTextures == UseStorageTextures::kYes
-                               ? caps->getDefaultStorageTextureInfo(fColorType)
-                               : caps->getDefaultSampledTextureInfo(fColorType,
+                               ? caps->getDefaultStorageTextureInfo(ct)
+                               : caps->getDefaultSampledTextureInfo(ct,
                                                                     Mipmapped::kNo,
                                                                     recorder->priv().isProtected(),
                                                                     Renderable::kNo);
@@ -494,7 +538,7 @@ inline void DrawAtlas::deactivateLastPage() {
             uint32_t plotIndex = r * numPlotsX + c;
 
             Plot* currPlot = fPages[lastPageIndex].fPlotArray[plotIndex].get();
-            currPlot->resetRects();
+            this->processEvictionAndResetRects(currPlot, /*freeData=*/true);
             currPlot->resetFlushesSinceLastUsed();
 
             // rebuild the LRU list
@@ -519,68 +563,201 @@ void DrawAtlas::markUsedPlotsAsFull() {
     }
 }
 
+void DrawAtlas::freeGpuResources(Token token) {
+    PlotList::Iter plotIter;
+    for (int pageIndex = (int)(fNumActivePages)-1; pageIndex >= 0; --pageIndex) {
+        const Page& currPage = fPages[pageIndex];
+        plotIter.init(currPage.fPlotList, PlotList::Iter::kHead_IterStart);
+        while (Plot* plot = plotIter.get()) {
+            if (plot->lastUseToken().inInterval(fPrevFlushToken, token)) {
+                // This page is in use and we can only deactivate pages from high index
+                // to low index, so bail.
+                return;
+            }
+            plotIter.next();
+        }
+        this->deactivateLastPage();
+    }
+}
+
 void DrawAtlas::evictAllPlots() {
     PlotList::Iter plotIter;
     for (uint32_t pageIndex = 0; pageIndex < fNumActivePages; ++pageIndex) {
         plotIter.init(fPages[pageIndex].fPlotList, PlotList::Iter::kHead_IterStart);
         while (Plot* plot = plotIter.get()) {
-            this->processEvictionAndResetRects(plot);
+            this->processEvictionAndResetRects(plot, /*freeData=*/true);
             plotIter.next();
         }
     }
 }
 
-DrawAtlasConfig::DrawAtlasConfig(int maxTextureSize, size_t maxBytes) {
-    static const SkISize kARGBDimensions[] = {
-        {256, 256},   // maxBytes < 2^19
-        {512, 256},   // 2^19 <= maxBytes < 2^20
-        {512, 512},   // 2^20 <= maxBytes < 2^21
-        {1024, 512},  // 2^21 <= maxBytes < 2^22
-        {1024, 1024}, // 2^22 <= maxBytes < 2^23
-        {2048, 1024}, // 2^23 <= maxBytes
-    };
-
-    // Index 0 corresponds to maxBytes of 2^18, so start by dividing it by that
-    maxBytes >>= 18;
-    // Take the floor of the log to get the index
-    int index = maxBytes > 0
-        ? SkTPin<int>(SkPrevLog2(maxBytes), 0, std::size(kARGBDimensions) - 1)
-        : 0;
-
-    SkASSERT(kARGBDimensions[index].width() <= kMaxAtlasDim);
-    SkASSERT(kARGBDimensions[index].height() <= kMaxAtlasDim);
-    fARGBDimensions.set(std::min<int>(kARGBDimensions[index].width(), maxTextureSize),
-                        std::min<int>(kARGBDimensions[index].height(), maxTextureSize));
-    fMaxTextureSize = std::min<int>(maxTextureSize, kMaxAtlasDim);
+#if defined(GPU_TEST_UTILS)
+int DrawAtlas::numAllocatedPlots() const {
+    return this->iteratePlots([](const Plot* plot) {
+        return plot->hasAllocation();
+    });
 }
 
-SkISize DrawAtlasConfig::atlasDimensions(MaskFormat type) const {
-    if (MaskFormat::kA8 == type) {
-        // A8 is always 2x the ARGB dimensions, clamped to the max allowed texture size
-        return { std::min<int>(2 * fARGBDimensions.width(), fMaxTextureSize),
-                 std::min<int>(2 * fARGBDimensions.height(), fMaxTextureSize) };
+int DrawAtlas::numNonEmptyPlots() const {
+    return this->iteratePlots([](const Plot* plot) {
+        return !plot->isEmpty();
+    });
+}
+#endif
+
+DrawAtlas::Plot::Plot(int pageIndex,
+                      int plotIndex,
+                      GenerationCounter* generationCounter,
+                      int offX, int offY,
+                      int width, int height,
+                      MaskFormat maskFormat)
+        : fLastUse(Token::InvalidToken())
+        , fFlushesSinceLastUse(0)
+        , fGenerationCounter(generationCounter)
+        , fGenID(fGenerationCounter->next())
+        , fPlotLocator(pageIndex, plotIndex, fGenID)
+        , fData(nullptr)
+        , fWidth(width)
+        , fHeight(height)
+        , fX(offX)
+        , fY(offY)
+        , fRectanizer(width, height)
+        , fOffset(SkIPoint16::Make(fX * fWidth, fY * fHeight))
+        , fMaskFormat(maskFormat)
+        , fIsFull(false) {
+    // We expect the allocated dimensions to be a multiple of 4 bytes
+    SkASSERT(((width * this->bpp()) & 0x3) == 0);
+    // The padding for faster uploads only works for 1, 2 and 4 byte texels
+    SkASSERT(this->bpp() == 1 || this->bpp() == 2 || this->bpp() == 4);
+    fDirtyRect.setEmpty();
+}
+
+DrawAtlas::Plot::~Plot() = default;
+
+bool DrawAtlas::Plot::addRect(int width, int height, AtlasLocator* atlasLocator) {
+    SkASSERT(width <= fWidth && height <= fHeight);
+
+    SkIPoint16 loc;
+    if (!fRectanizer.addRect(width, height, &loc)) {
+        return false;
+    }
+
+    auto rect = SkIRect::MakeXYWH(loc.fX, loc.fY, width, height);
+    fDirtyRect.join(rect);
+
+    rect.offset(fOffset.fX, fOffset.fY);
+    atlasLocator->updateRect(rect);
+
+    return true;
+}
+
+void* DrawAtlas::Plot::dataAt(SkIPoint atlasPoint) {
+    if (!fData) {
+        // make_unique will init the data to zeros.
+        // This is of particular importance when a caller uses padding with prepForRender().
+        fData = std::make_unique<std::byte[]>(this->rowBytes() * fHeight);
+    }
+
+    auto localPoint = atlasPoint - SkIPoint{fOffset.fX, fOffset.fY};
+    SkASSERT(localPoint.fX >= 0 && localPoint.fX < fWidth);
+    SkASSERT(localPoint.fY >= 0 && localPoint.fY < fHeight);
+
+    size_t offset = this->bpp() * (localPoint.fY * fWidth + localPoint.fX);
+
+    return fData.get() + offset;
+}
+
+SkPixmap DrawAtlas::Plot::prepForRender(const AtlasLocator& al,
+                                        int padding,
+                                        std::optional<SkColor> initialColor) {
+    SkASSERT(padding >= 0);
+    auto info = SkImageInfo::Make(
+            al.dimensions(), MaskFormatToColorType(fMaskFormat), kOpaque_SkAlphaType);
+    SkPixmap outerPM{info, this->dataAt(al.topLeft()), this->rowBytes()};
+    if (initialColor) {
+#if defined(SK_DEBUG)
+        if (*initialColor == 0) {
+            SkDebugf("Plot Data: potential redudant clear of Plot to zero.");
+        }
+#endif
+        outerPM.erase(*initialColor);
+    }
+    SkPixmap innerPM;
+    SkIRect rect = SkIRect::MakeSize(outerPM.dimensions()).makeInset(padding, padding);
+    SkAssertResult(outerPM.extractSubset(&innerPM, rect));
+    return innerPM;
+}
+
+void DrawAtlas::Plot::copySubImage(const AtlasLocator& al, const void* image) {
+    const unsigned char* imagePtr = (const unsigned char*)image;
+    unsigned char* dataPtr = (unsigned char*)this->dataAt(al.topLeft());
+    int width = al.width();
+    int height = al.height();
+    auto bpp = this->bpp();
+    size_t imageRB = width * bpp;
+    size_t plotRB = this->rowBytes();
+
+    // copy into the data buffer, swizzling as we go if this is ARGB data
+    constexpr bool kBGRAIsNative = kN32_SkColorType == kBGRA_8888_SkColorType;
+    if (bpp == 4 && kBGRAIsNative) {
+        for (int i = 0; i < height; ++i) {
+            SkOpts::RGBA_to_BGRA((uint32_t*)dataPtr, (const uint32_t*)imagePtr, width);
+            dataPtr += plotRB;
+            imagePtr += imageRB;
+        }
     } else {
-        return fARGBDimensions;
+        for (int i = 0; i < height; ++i) {
+            memcpy(dataPtr, imagePtr, imageRB);
+            dataPtr += plotRB;
+            imagePtr += imageRB;
+        }
     }
 }
 
-SkISize DrawAtlasConfig::plotDimensions(MaskFormat type) const {
-    if (MaskFormat::kA8 == type) {
-        SkISize atlasDimensions = this->atlasDimensions(type);
-        // For A8 we want to grow the plots at larger texture sizes to accept more of the
-        // larger SDF glyphs. Since the largest SDF glyph can be 170x170 with padding, this
-        // allows us to pack 3 in a 512x256 plot, or 9 in a 512x512 plot.
-
-        // This will give us 512x256 plots for 2048x1024, 512x512 plots for 2048x2048,
-        // and 256x256 plots otherwise.
-        int plotWidth = atlasDimensions.width() >= 2048 ? 512 : 256;
-        int plotHeight = atlasDimensions.height() >= 2048 ? 512 : 256;
-
-        return { plotWidth, plotHeight };
-    } else {
-        // ARGB and LCD always use 256x256 plots -- this has been shown to be faster
-        return { 256, 256 };
+std::pair<const void*, SkIRect> DrawAtlas::Plot::prepareForUpload() {
+    // We should only be issuing uploads if we are dirty
+    SkASSERT(!fDirtyRect.isEmpty());
+    if (!fData) {
+        return {nullptr, {}};
     }
+    const std::byte* dataPtr;
+    SkIRect offsetRect;
+    // Clamp to 4-byte aligned boundaries
+    auto bpp = this->bpp();
+    unsigned int clearBits = 0x3 / bpp;
+    fDirtyRect.fLeft &= ~clearBits;
+    fDirtyRect.fRight += clearBits;
+    fDirtyRect.fRight &= ~clearBits;
+    SkASSERT(fDirtyRect.fRight <= fWidth);
+    // Set up dataPtr
+    dataPtr = fData.get();
+    dataPtr += this->rowBytes() * fDirtyRect.fTop;
+    dataPtr += bpp * fDirtyRect.fLeft;
+    offsetRect = fDirtyRect.makeOffset(fOffset.fX, fOffset.fY);
+
+    fDirtyRect.setEmpty();
+    fIsFull = false;
+
+    return {dataPtr, offsetRect};
+}
+
+void DrawAtlas::Plot::resetRects(bool freeData) {
+    fRectanizer.reset();
+    fGenID = fGenerationCounter->next();
+    auto pageIndex = fPlotLocator.pageIndex();
+    auto plotIndex = fPlotLocator.plotIndex();
+    fPlotLocator = PlotLocator(pageIndex, plotIndex, fGenID);
+    fLastUse = Token::InvalidToken();
+
+    if (freeData) {
+        fData = {};
+    } else if (fData) {
+        // zero out the plot
+        sk_bzero(fData.get(), this->rowBytes() * fHeight);
+    }
+
+    fDirtyRect.setEmpty();
+    fIsFull = false;
 }
 
 }  // namespace skgpu::graphite

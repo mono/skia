@@ -8,21 +8,22 @@
 #include "include/core/SkBitmap.h"
 #include "include/core/SkCanvas.h"
 #include "include/core/SkColorFilter.h"
-#include "include/core/SkColorPriv.h"
 #include "include/core/SkContourMeasure.h"
 #include "include/core/SkGraphics.h"
 #include "include/core/SkPath.h"
+#include "include/core/SkPathBuilder.h"
 #include "include/core/SkPathEffect.h"
 #include "include/core/SkRegion.h"
 #include "include/core/SkShader.h"
 #include "include/core/SkStream.h"
 #include "include/core/SkTypeface.h"
 #include "include/core/SkVertices.h"
-#include "include/effects/SkGradientShader.h"
+#include "include/effects/SkGradient.h"
 #include "include/private/base/SkTDArray.h"
 #include "src/base/SkRandom.h"
 #include "src/base/SkTime.h"
 #include "src/base/SkUTF.h"
+#include "src/core/SkColorPriv.h"
 #include "src/core/SkGeometry.h"
 #include "src/core/SkOSFile.h"
 #include "tools/DecodeUtils.h"
@@ -42,9 +43,8 @@ static sk_sp<SkShader> make_shader0(SkIPoint* size) {
 static sk_sp<SkShader> make_shader1(const SkIPoint& size) {
     SkPoint pts[] = { { 0, 0, },
                       { SkIntToScalar(size.fX), SkIntToScalar(size.fY) } };
-    SkColor colors[] = { SK_ColorRED, SK_ColorGREEN, SK_ColorBLUE, SK_ColorRED };
-    return SkGradientShader::MakeLinear(pts, colors, nullptr,
-                    std::size(colors), SkTileMode::kMirror);
+    SkColor4f colors[] = { SkColors::kRed, SkColors::kGreen, SkColors::kBlue, SkColors::kRed };
+    return SkShaders::LinearGradient(pts, {{colors, {}, SkTileMode::kMirror}, {}});
 }
 
 class Patch {
@@ -266,7 +266,7 @@ public:
         paint.setShader(nullptr);
         paint.setAntiAlias(true);
         paint.setStrokeWidth(SkIntToScalar(5));
-        canvas->drawPoints(SkCanvas::kPoints_PointMode, std::size(fPts), fPts, paint);
+        canvas->drawPoints(SkCanvas::kPoints_PointMode, fPts, paint);
 
         canvas->translate(0, SkIntToScalar(300));
 
@@ -325,7 +325,8 @@ DEF_SLIDE( return new PatchSlide(); )
 //////////////////////////////////////////////////////////////////////////////
 
 namespace {
-static sk_sp<SkVertices> make_verts(const SkPath& path, SkScalar width) {
+static sk_sp<SkVertices> make_verts(const SkPathBuilder& pathbuilder, SkScalar width) {
+    SkPath path = pathbuilder.snapshot();
     auto meas = SkContourMeasureIter(path, false).next();
     if (!meas) {
         return nullptr;
@@ -343,7 +344,7 @@ static sk_sp<SkVertices> make_verts(const SkPath& path, SkScalar width) {
             continue;
         }
         SkPoint* dst = pts.append(2);
-        mx.mapPoints(dst, src, 2);
+        mx.mapPoints({dst, 2}, {src, 2});
     }
 
     int vertCount = pts.size();
@@ -363,7 +364,7 @@ static sk_sp<SkVertices> make_verts(const SkPath& path, SkScalar width) {
 
 class PseudoInkSlide : public ClickHandlerSlide {
     enum { N = 100 };
-    SkPath            fPath;
+    SkPathBuilder     fPath;
     sk_sp<SkVertices> fVertices[N];
     SkPaint           fSkeletonP, fStrokeP, fVertsP;
     bool              fDirty = true;

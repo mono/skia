@@ -8,6 +8,7 @@
 #include "src/gpu/graphite/render/CoverBoundsRenderStep.h"
 
 #include "include/core/SkM44.h"
+#include "include/private/base/SkDebug.h"
 #include "src/base/SkEnumBitMask.h"
 #include "src/base/SkVx.h"
 #include "src/core/SkSLTypeShared.h"
@@ -17,29 +18,32 @@
 #include "src/gpu/graphite/DrawParams.h"
 #include "src/gpu/graphite/DrawTypes.h"
 #include "src/gpu/graphite/DrawWriter.h"
+#include "src/gpu/graphite/PipelineData.h"
 #include "src/gpu/graphite/geom/Geometry.h"
 #include "src/gpu/graphite/geom/Rect.h"
 #include "src/gpu/graphite/geom/Shape.h"
-#include "src/gpu/graphite/geom/Transform_graphite.h"
-
-#include <string_view>
+#include "src/gpu/graphite/geom/Transform.h"
 
 namespace skgpu::graphite {
 
-CoverBoundsRenderStep::CoverBoundsRenderStep(const char* tag, DepthStencilSettings dsSettings)
-        : RenderStep("CoverBoundsRenderStep",
-                     tag,
-                     Flags::kPerformsShading,
+CoverBoundsRenderStep::CoverBoundsRenderStep(Layout layout,
+                                             RenderStep::RenderStepID renderStepID,
+                                             DepthStencilSettings dsSettings)
+        : RenderStep(layout,
+                     renderStepID,
+                     Flags::kPerformsShading |
+                     Flags::kAppendInstances |
+                     Flags::kInverseFillsScissor,
                      /*uniforms=*/{},
                      PrimitiveType::kTriangleStrip,
                      dsSettings,
-                     /*vertexAttrs=*/  {},
-                     /*instanceAttrs=*/{{"bounds", VertexAttribType::kFloat4, SkSLType::kFloat4},
-                                        {"depth", VertexAttribType::kFloat, SkSLType::kFloat},
-                                        {"ssboIndices", VertexAttribType::kUInt2, SkSLType::kUInt2},
-                                        {"mat0", VertexAttribType::kFloat3, SkSLType::kFloat3},
-                                        {"mat1", VertexAttribType::kFloat3, SkSLType::kFloat3},
-                                        {"mat2", VertexAttribType::kFloat3, SkSLType::kFloat3}}) {}
+                     /*staticAttrs=*/ {},
+                     /*appendAttrs=*/{{{"bounds", VertexAttribType::kFloat4, SkSLType::kFloat4},
+                                      {"depth", VertexAttribType::kFloat, SkSLType::kFloat},
+                                      {"ssboIndex", VertexAttribType::kUInt, SkSLType::kUInt},
+                                      {"mat0", VertexAttribType::kFloat3, SkSLType::kFloat3},
+                                      {"mat1", VertexAttribType::kFloat3, SkSLType::kFloat3},
+                                      {"mat2", VertexAttribType::kFloat3, SkSLType::kFloat3}}}) {}
 
 CoverBoundsRenderStep::~CoverBoundsRenderStep() {}
 
@@ -54,7 +58,7 @@ std::string CoverBoundsRenderStep::vertexSkSL() const {
 
 void CoverBoundsRenderStep::writeVertices(DrawWriter* writer,
                                           const DrawParams& params,
-                                          skvx::uint2 ssboIndices) const {
+                                          uint32_t ssboIndex) const {
     // Each instance is 4 vertices, forming 2 triangles from a single triangle strip, so no indices
     // are needed. sk_VertexID is used to place vertex positions, so no vertex buffer is needed.
     DrawWriter::Instances instances{*writer, {}, {}, 4};
@@ -66,22 +70,23 @@ void CoverBoundsRenderStep::writeVertices(DrawWriter* writer,
         // device space and then the VS will use the inverse of the transform to compute local
         // coordinates.
         bounds = skvx::shuffle</*R*/2, /*B*/3, /*L*/0, /*T*/1>(
-                skvx::cast<float>(skvx::int4::Load(&params.clip().scissor())));
+                skvx::cast<float>(skvx::int4::Load(&params.scissor())));
     } else {
         bounds = params.geometry().bounds().ltrb();
     }
 
     // Since the local coords always have Z=0, we can discard the 3rd row and column of the matrix.
     const SkM44& m = params.transform().matrix();
-    instances.append(1) << bounds << params.order().depthAsFloat() << ssboIndices
+    instances.append(1) << bounds << params.order().depthAsFloat() << ssboIndex
                         << m.rc(0,0) << m.rc(1,0) << m.rc(3,0)
                         << m.rc(0,1) << m.rc(1,1) << m.rc(3,1)
                         << m.rc(0,3) << m.rc(1,3) << m.rc(3,3);
 }
 
 void CoverBoundsRenderStep::writeUniformsAndTextures(const DrawParams&,
-                                                     PipelineDataGatherer*) const {
+                                                     PipelineDataGatherer* gatherer) const {
     // All data is uploaded as instance attributes, so no uniforms are needed.
+    SkDEBUGCODE(gatherer->checkRewind());
 }
 
 }  // namespace skgpu::graphite

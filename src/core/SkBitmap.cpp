@@ -7,7 +7,7 @@
 
 #include "include/core/SkBitmap.h"
 
-#include "include/core/SkColorSpace.h" // IWYU pragma: keep
+#include "include/core/SkColorSpace.h"  // IWYU pragma: keep
 #include "include/core/SkColorType.h"
 #include "include/core/SkImage.h"
 #include "include/core/SkMallocPixelRef.h"
@@ -23,12 +23,12 @@
 #include "include/private/base/SkTo.h"
 #include "src/core/SkConvertPixels.h"
 #include "src/core/SkImageInfoPriv.h"
-#include "src/core/SkImagePriv.h"
 #include "src/core/SkMask.h"
 #include "src/core/SkMaskFilterBase.h"
 #include "src/core/SkMipmap.h"
 #include "src/core/SkPixelRefPriv.h"
 #include "src/core/SkWritePixelsRec.h"
+#include "src/image/SkImage_Raster.h"
 #include "src/shaders/SkImageShader.h"
 
 #include <cstring>
@@ -346,16 +346,6 @@ bool SkBitmap::installPixels(const SkPixmap& pixmap) {
                                nullptr, nullptr);
 }
 
-bool SkBitmap::installMaskPixels(SkMaskBuilder& mask) {
-    if (SkMask::kA8_Format != mask.fFormat) {
-        this->reset();
-        return false;
-    }
-    return this->installPixels(SkImageInfo::MakeA8(mask.fBounds.width(),
-                                                   mask.fBounds.height()),
-                               mask.image(), mask.fRowBytes);
-}
-
 ///////////////////////////////////////////////////////////////////////////////
 
 uint32_t SkBitmap::getGenerationID() const {
@@ -659,19 +649,25 @@ sk_sp<SkShader> SkBitmap::makeShader(const SkSamplingOptions& sampling,
 sk_sp<SkShader> SkBitmap::makeShader(SkTileMode tmx, SkTileMode tmy,
                                      const SkSamplingOptions& sampling,
                                      const SkMatrix& lm) const {
-    if (!lm.invert(nullptr)) {
+    if (!lm.invert()) {
         return nullptr;
     }
-    return SkImageShader::Make(SkMakeImageFromRasterBitmap(*this, kIfMutable_SkCopyPixelsMode),
-                               tmx, tmy, sampling, &lm);
+    return SkImageShader::Make(SkImage_Raster::MakeFromBitmap(*this, SkCopyPixelsMode::kIfMutable),
+                               tmx,
+                               tmy,
+                               sampling,
+                               &lm);
 }
 
 sk_sp<SkShader> SkBitmap::makeShader(SkTileMode tmx, SkTileMode tmy,
                                      const SkSamplingOptions& sampling,
                                      const SkMatrix* lm) const {
-    if (lm && !lm->invert(nullptr)) {
+    if (lm && !lm->invert()) {
         return nullptr;
     }
-    return SkImageShader::Make(SkMakeImageFromRasterBitmap(*this, kIfMutable_SkCopyPixelsMode),
-                               tmx, tmy, sampling, lm);
+    return SkImageShader::Make(SkImage_Raster::MakeFromBitmap(*this, SkCopyPixelsMode::kIfMutable),
+                               tmx,
+                               tmy,
+                               sampling,
+                               lm);
 }

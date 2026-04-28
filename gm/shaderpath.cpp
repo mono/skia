@@ -14,6 +14,7 @@
 #include "include/core/SkMatrix.h"
 #include "include/core/SkPaint.h"
 #include "include/core/SkPath.h"
+#include "include/core/SkPathBuilder.h"
 #include "include/core/SkPoint.h"
 #include "include/core/SkScalar.h"
 #include "include/core/SkShader.h"
@@ -21,7 +22,8 @@
 #include "include/core/SkString.h"
 #include "include/core/SkTileMode.h"
 #include "include/core/SkTypes.h"
-#include "include/effects/SkGradientShader.h"
+#include "include/effects/SkGradient.h"
+#include "src/core/SkColorPriv.h"
 #include "tools/ToolUtils.h"
 
 #include <string.h>
@@ -37,17 +39,15 @@ static void makebm(SkBitmap* bm, int w, int h) {
     const SkPoint     kPts0[] = { { 0, 0 }, { s, s } };
     const SkPoint     kPts1[] = { { s/2, 0 }, { s/2, s } };
     const SkScalar    kPos[] = { 0, SK_Scalar1/2, SK_Scalar1 };
-    const SkColor kColors0[] = {0x80F00080, 0xF0F08000, 0x800080F0 };
-    const SkColor kColors1[] = {0xF08000F0, 0x8080F000, 0xF000F080 };
-
 
     SkPaint     paint;
-
-    paint.setShader(SkGradientShader::MakeLinear(kPts0, kColors0, kPos,
-                    std::size(kColors0), SkTileMode::kClamp));
+    SkColorConverter conv0({0x80F00080, 0xF0F08000, 0x800080F0});
+    paint.setShader(SkShaders::LinearGradient(kPts0,
+                                              {{conv0.colors4f(), kPos, SkTileMode::kClamp}, {}}));
     canvas.drawPaint(paint);
-    paint.setShader(SkGradientShader::MakeLinear(kPts1, kColors1, kPos,
-                    std::size(kColors1), SkTileMode::kClamp));
+    SkColorConverter conv1({0xF08000F0, 0x8080F000, 0xF000F080});
+    paint.setShader(SkShaders::LinearGradient(kPts1,
+                                              {{conv1.colors4f(), kPos, SkTileMode::kClamp}, {}}));
     canvas.drawPaint(paint);
 }
 
@@ -99,8 +99,10 @@ protected:
         // position the baseline of the first path
         canvas->translate(0.f, 2.25);
 
-        SkPath path;
-        path.moveTo(0, 40).cubicTo(10, 70, 20, 10, 30, 40);
+        SkPath path = SkPathBuilder()
+                      .moveTo(0, 40)
+                      .cubicTo(10, 70, 20, 10, 30, 40)
+                      .detach();
 
         canvas->save();
         int i = 0;

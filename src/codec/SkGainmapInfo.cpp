@@ -31,8 +31,8 @@ static void write_rational_be(SkDynamicMemoryWStream& s, float x) {
         denominator = 0x1000;
     }
     int32_t numerator = static_cast<int32_t>(std::llround(static_cast<double>(x) * denominator));
-    SkWStreamWriteS32BE(&s, numerator);
-    SkWStreamWriteU32BE(&s, denominator);
+    SkStreamPriv::WriteS32BE(&s, numerator);
+    SkStreamPriv::WriteU32BE(&s, denominator);
 }
 
 static void write_positive_rational_be(SkDynamicMemoryWStream& s, float x) {
@@ -42,41 +42,17 @@ static void write_positive_rational_be(SkDynamicMemoryWStream& s, float x) {
         denominator = 0x1000;
     }
     uint32_t numerator = static_cast<uint32_t>(std::llround(static_cast<double>(x) * denominator));
-    SkWStreamWriteU32BE(&s, numerator);
-    SkWStreamWriteU32BE(&s, denominator);
-}
-
-static bool read_u16_be(SkStream* s, uint16_t* value) {
-    if (!s->readU16(value)) {
-        return false;
-    }
-    *value = SkEndian_SwapBE16(*value);
-    return true;
-}
-
-static bool read_u32_be(SkStream* s, uint32_t* value) {
-    if (!s->readU32(value)) {
-        return false;
-    }
-    *value = SkEndian_SwapBE32(*value);
-    return true;
-}
-
-static bool read_s32_be(SkStream* s, int32_t* value) {
-    if (!s->readS32(value)) {
-        return false;
-    }
-    *value = SkEndian_SwapBE32(*value);
-    return true;
+    SkStreamPriv::WriteU32BE(&s, numerator);
+    SkStreamPriv::WriteU32BE(&s, denominator);
 }
 
 static bool read_rational_be(SkStream* s, float* value) {
     int32_t numerator = 0;
     uint32_t denominator = 0;
-    if (!read_s32_be(s, &numerator)) {
+    if (!SkStreamPriv::ReadS32BE(s, &numerator)) {
         return false;
     }
-    if (!read_u32_be(s, &denominator)) {
+    if (!SkStreamPriv::ReadU32BE(s, &denominator)) {
         return false;
     }
     *value = static_cast<float>(static_cast<double>(numerator) / static_cast<double>(denominator));
@@ -86,10 +62,10 @@ static bool read_rational_be(SkStream* s, float* value) {
 static bool read_positive_rational_be(SkStream* s, float* value) {
     uint32_t numerator = 0;
     uint32_t denominator = 0;
-    if (!read_u32_be(s, &numerator)) {
+    if (!SkStreamPriv::ReadU32BE(s, &numerator)) {
         return false;
     }
-    if (!read_u32_be(s, &denominator)) {
+    if (!SkStreamPriv::ReadU32BE(s, &denominator)) {
         return false;
     }
     *value = static_cast<float>(static_cast<double>(numerator) / static_cast<double>(denominator));
@@ -99,7 +75,7 @@ static bool read_positive_rational_be(SkStream* s, float* value) {
 static bool read_iso_gainmap_version(SkStream* s) {
     // Ensure minimum version is 0.
     uint16_t minimum_version = 0;
-    if (!read_u16_be(s, &minimum_version)) {
+    if (!SkStreamPriv::ReadU16BE(s, &minimum_version)) {
         SkCodecPrintf("Failed to read ISO 21496-1 minimum version.\n");
         return false;
     }
@@ -110,7 +86,7 @@ static bool read_iso_gainmap_version(SkStream* s) {
 
     // Ensure writer version is present. No value is invalid.
     uint16_t writer_version = 0;
-    if (!read_u16_be(s, &writer_version)) {
+    if (!SkStreamPriv::ReadU16BE(s, &writer_version)) {
         SkCodecPrintf("Failed to read ISO 21496-1 version.\n");
         return false;
     }
@@ -236,18 +212,18 @@ bool SkGainmapInfo::Parse(const SkData* data, SkGainmapInfo& info) {
 
 sk_sp<SkData> SkGainmapInfo::SerializeVersion() {
     SkDynamicMemoryWStream s;
-    SkWStreamWriteU16BE(&s, 0);  // Minimum reader version
-    SkWStreamWriteU16BE(&s, 0);  // Writer version
+    SkStreamPriv::WriteU16BE(&s, 0);  // Minimum reader version
+    SkStreamPriv::WriteU16BE(&s, 0);  // Writer version
     return s.detachAsData();
 }
 
-static bool is_single_channel(SkColor4f c) { return c.fR == c.fG && c.fG == c.fB; };
+static bool is_single_channel(SkColor4f c) { return c.fR == c.fG && c.fG == c.fB; }
 
 sk_sp<SkData> SkGainmapInfo::serialize() const {
     SkDynamicMemoryWStream s;
     // Version.
-    SkWStreamWriteU16BE(&s, 0);  // Minimum reader version
-    SkWStreamWriteU16BE(&s, 0);  // Writer version
+    SkStreamPriv::WriteU16BE(&s, 0);  // Minimum reader version
+    SkStreamPriv::WriteU16BE(&s, 0);  // Writer version
 
     // Flags.
     bool all_single_channel = is_single_channel(fGainmapRatioMin) &&

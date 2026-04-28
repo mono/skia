@@ -24,6 +24,7 @@ load(
     "tool_path",
     "with_feature_set",
 )
+load("@rules_cc//cc/common:cc_common.bzl", "cc_common")
 load(":download_ndk_linux_amd64_toolchain.bzl", "NDK_PATH")
 
 # Supported CPUs.
@@ -294,7 +295,8 @@ def _ndk_cc_toolchain_config_impl(ctx):
             ),
             flag_set(
                 actions = [ACTION_NAMES.cpp_compile],
-                flag_groups = [flag_group(flags = ["-std=c++17"])],
+                # TODO(kjlubick) update this when updating the NDK
+                flag_groups = [flag_group(flags = ["-std=c++2a"])],
             ),
         ],
     )

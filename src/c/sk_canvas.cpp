@@ -9,6 +9,7 @@
 
 #include "include/core/SkAnnotation.h"
 #include "include/core/SkCanvas.h"
+#include "include/core/SkSpan.h"
 #include "include/core/SkOverdrawCanvas.h"
 #include "include/utils/SkNoDrawCanvas.h"
 #include "include/utils/SkNWayCanvas.h"
@@ -50,7 +51,7 @@ void sk_canvas_draw_color4f(sk_canvas_t* ccanvas, sk_color4f_t color, sk_blendmo
 }
 
 void sk_canvas_draw_points(sk_canvas_t* ccanvas, sk_point_mode_t pointMode, size_t count, const sk_point_t points [], const sk_paint_t* cpaint) {
-    AsCanvas(ccanvas)->drawPoints ((SkCanvas::PointMode)pointMode, count, AsPoint(points), *AsPaint(cpaint));
+    AsCanvas(ccanvas)->drawPoints((SkCanvas::PointMode)pointMode, SkSpan<const SkPoint>(AsPoint(points), count), *AsPaint(cpaint));
 }
 
 void sk_canvas_draw_point(sk_canvas_t* ccanvas, float x, float y, const sk_paint_t* cpaint) {
@@ -254,7 +255,11 @@ void sk_canvas_draw_drrect(sk_canvas_t* ccanvas, const sk_rrect_t* outer, const 
 }
 
 void sk_canvas_draw_atlas(sk_canvas_t* ccanvas, const sk_image_t* atlas, const sk_rsxform_t* xform, const sk_rect_t* tex, const sk_color_t* colors, int count, sk_blendmode_t mode, const sk_sampling_options_t* sampling, const sk_rect_t* cullRect, const sk_paint_t* paint) {
-    AsCanvas(ccanvas)->drawAtlas(AsImage(atlas), AsRSXform(xform), AsRect(tex), colors, count, (SkBlendMode)mode, *AsSamplingOptions(sampling), AsRect(cullRect), AsPaint(paint));
+    AsCanvas(ccanvas)->drawAtlas(AsImage(atlas),
+        SkSpan<const SkRSXform>(AsRSXform(xform), count),
+        SkSpan<const SkRect>(AsRect(tex), count),
+        colors ? SkSpan<const SkColor>(colors, count) : SkSpan<const SkColor>(),
+        (SkBlendMode)mode, *AsSamplingOptions(sampling), AsRect(cullRect), AsPaint(paint));
 }
 
 void sk_canvas_draw_patch(sk_canvas_t* ccanvas, const sk_point_t* cubics, const sk_color_t* colors, const sk_point_t* texCoords, sk_blendmode_t mode, const sk_paint_t* paint) {

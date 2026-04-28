@@ -17,11 +17,10 @@
 #include "include/private/base/SkMutex.h"
 #include "include/private/base/SkNoncopyable.h"
 #include "include/private/base/SkTArray.h"
+#include "src/base/SkSharedMutex.h"
 #include "src/utils/SkCharToGlyphCache.h"
 
 class SkFontData;
-
-#include <shared_mutex>
 
 // These are forward declared to avoid pimpl but also hide the FreeType implementation.
 typedef struct FT_LibraryRec_* FT_Library;
@@ -48,31 +47,31 @@ protected:
     ~SkTypeface_FreeType() override;
 
     std::unique_ptr<SkFontData> cloneFontData(const SkFontArguments&, SkFontStyle* style) const;
-    std::unique_ptr<SkScalerContext> onCreateScalerContext(const SkScalerContextEffects&,
-                                                           const SkDescriptor*) const override;
+    std::unique_ptr<SkScalerContext> onCreateScalerContext(
+            const SkScalerContextEffects&,
+            const SkDescriptor*) const override;
     std::unique_ptr<SkScalerContext> onCreateScalerContextAsProxyTypeface(
-                                                           const SkScalerContextEffects&,
-                                                           const SkDescriptor*,
-                                                           sk_sp<SkTypeface>) const override;
+            const SkScalerContextEffects&,
+            const SkDescriptor*,
+            SkTypeface* proxyTypeface) const override;
     void onFilterRec(SkScalerContextRec*) const override;
-    void getGlyphToUnicodeMap(SkUnichar*) const override;
+    void getGlyphToUnicodeMap(SkSpan<SkUnichar>) const override;
     std::unique_ptr<SkAdvancedTypefaceMetrics> onGetAdvancedMetrics() const override;
     void getPostScriptGlyphNames(SkString* dstArray) const override;
     bool onGetPostScriptName(SkString*) const override;
     int onGetUPEM() const override;
-    bool onGetKerningPairAdjustments(const uint16_t glyphs[], int count,
-                                     int32_t adjustments[]) const override;
-    void onCharsToGlyphs(const SkUnichar uni[], int count, SkGlyphID glyphs[]) const override;
+    bool onGetKerningPairAdjustments(SkSpan<const SkGlyphID>,
+                                     SkSpan<int32_t> adjustments) const override;
+    void onCharsToGlyphs(SkSpan<const SkUnichar>, SkSpan<SkGlyphID>) const override;
     int onCountGlyphs() const override;
 
     LocalizedStrings* onCreateFamilyNameIterator() const override;
 
     bool onGlyphMaskNeedsCurrentColor() const override;
-    int onGetVariationDesignPosition(SkFontArguments::VariationPosition::Coordinate coordinates[],
-                                     int coordinateCount) const override;
-    int onGetVariationDesignParameters(SkFontParameters::Variation::Axis parameters[],
-                                       int parameterCount) const override;
-    int onGetTableTags(SkFontTableTag tags[]) const override;
+    int onGetVariationDesignPosition(
+                             SkSpan<SkFontArguments::VariationPosition::Coordinate>) const override;
+    int onGetVariationDesignParameters(SkSpan<SkFontParameters::Variation::Axis>) const override;
+    int onGetTableTags(SkSpan<SkFontTableTag>) const override;
     size_t onGetTableData(SkFontTableTag, size_t offset,
                           size_t length, void* data) const override;
     sk_sp<SkData> onCopyTableData(SkFontTableTag) const override;
@@ -85,7 +84,7 @@ private:
     mutable SkOnce fFTFaceOnce;
     mutable std::unique_ptr<FaceRec> fFaceRec;
 
-    mutable std::shared_mutex fC2GCacheMutex;
+    mutable SkSharedMutex fC2GCacheMutex;
     mutable SkCharToGlyphCache fC2GCache;
 
     mutable SkOnce fGlyphMasksMayNeedCurrentColorOnce;

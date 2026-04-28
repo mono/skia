@@ -15,6 +15,7 @@
 #include <ObjBase.h>
 #include <XpsObjectModel.h>
 
+#include "include/core/SkCPURecorder.h"
 #include "include/core/SkCanvas.h"
 #include "include/core/SkColor.h"
 #include "include/core/SkPaint.h"
@@ -23,6 +24,7 @@
 #include "include/core/SkShader.h"
 #include "include/core/SkSize.h"
 #include "include/core/SkTypeface.h"
+#include "include/docs/SkXPSDocument.h"
 #include "include/private/base/SkTArray.h"
 #include "src/core/SkBitmapDevice.h"
 #include "src/core/SkClipStackDevice.h"
@@ -39,10 +41,14 @@ class GlyphRunList;
 
     The drawing context for the XPS backend.
 */
-class SkXPSDevice : public SkClipStackDevice {
+class SkXPSDevice final : public SkClipStackDevice {
 public:
-    SK_SPI SkXPSDevice(SkISize);
+    SK_SPI SkXPSDevice(SkISize, SkXPS::Options);
     SK_SPI ~SkXPSDevice() override;
+
+    // No support for copying nor moving.
+    SkXPSDevice(const SkXPSDevice&) = delete;
+    SkXPSDevice& operator=(const SkXPSDevice&) = delete;
 
     bool beginPortfolio(SkWStream* outputStream, IXpsOMObjectFactory*);
     /**
@@ -77,8 +83,7 @@ public:
     bool endPortfolio();
 
     void drawPaint(const SkPaint& paint) override;
-    void drawPoints(SkCanvas::PointMode mode, size_t count,
-                    const SkPoint[], const SkPaint& paint) override;
+    void drawPoints(SkCanvas::PointMode, SkSpan<const SkPoint>, const SkPaint&) override;
     void drawRect(const SkRect& r,
                   const SkPaint& paint) override;
     void drawOval(const SkRect& oval,
@@ -86,8 +91,7 @@ public:
     void drawRRect(const SkRRect& rr,
                    const SkPaint& paint) override;
     void drawPath(const SkPath& path,
-                  const SkPaint& paint,
-                  bool pathIsMutable = false) override;
+                  const SkPaint& paint) override;
     void drawImageRect(const SkImage*,
                        const SkRect* srcOrNull, const SkRect& dst,
                        const SkSamplingOptions&, const SkPaint& paint,
@@ -99,6 +103,11 @@ public:
     void drawDevice(SkDevice*, const SkSamplingOptions&, const SkPaint&) override;
 
     sk_sp<SkDevice> createDevice(const CreateInfo&, const SkPaint*) override;
+
+    SkRecorder* baseRecorder() const override {
+        // TODO(kjlubick) the creation of this should likely involve a CPU context.
+        return skcpu::Recorder::TODO();
+    }
 
 private:
     class TypefaceUse {
@@ -131,6 +140,8 @@ private:
 
     skia_private::TArray<TypefaceUse, true> fTypefaces;
     skia_private::TArray<TypefaceUse, true>* fTopTypefaces;
+
+    SkXPS::Options fOpts;
 
     /** Creates a GUID based id and places it into buffer.
         buffer should have space for at least GUID_ID_LEN wide characters.
@@ -165,7 +176,7 @@ private:
         const SkMatrix* parentTransform = nullptr);
 
     HRESULT createXpsSolidColorBrush(
-        const SkColor skColor, const SkAlpha alpha,
+        const SkColor4f skColor, const SkAlpha alpha,
         IXpsOMBrush** xpsBrush);
 
     HRESULT createXpsImageBrush(
@@ -190,7 +201,7 @@ private:
         IXpsOMBrush** xpsBrush);
 
     HRESULT createXpsGradientStop(
-        const SkColor skColor,
+        const SkColor4f skColor,
         const SkScalar offset,
         IXpsOMGradientStop** xpsGradStop);
 
@@ -241,7 +252,7 @@ private:
 
     HRESULT cornerOfClamp(
         const SkRect& tlPoints,
-        const SkColor color,
+        const SkColor4f color,
         IXpsOMVisualCollection* visuals);
 
     HRESULT clip(IXpsOMVisual* xpsVisual);
@@ -271,10 +282,6 @@ private:
         const SkMask& mask,
         const SkVector& ppuScale,
         IXpsOMPath* shadedPath);
-
-    // Disable the default copy and assign implementation.
-    SkXPSDevice(const SkXPSDevice&);
-    void operator=(const SkXPSDevice&);
 };
 
 #endif  // SK_BUILD_FOR_WIN

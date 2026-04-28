@@ -8,7 +8,6 @@
 #include "include/core/SkBitmap.h"
 #include "include/core/SkCanvas.h"
 #include "include/core/SkColorFilter.h"
-#include "include/core/SkColorPriv.h"
 #include "include/core/SkFont.h"
 #include "include/core/SkGraphics.h"
 #include "include/core/SkPathBuilder.h"
@@ -17,10 +16,11 @@
 #include "include/core/SkRegion.h"
 #include "include/core/SkShader.h"
 #include "include/core/SkTypeface.h"
-#include "include/effects/SkGradientShader.h"
+#include "include/effects/SkGradient.h"
 #include "include/utils/SkParsePath.h"
 #include "src/base/SkTime.h"
 #include "src/base/SkUTF.h"
+#include "src/core/SkColorPriv.h"
 #include "src/core/SkGeometry.h"
 #include "tools/fonts/FontToolUtils.h"
 #include "tools/timer/TimeUtils.h"
@@ -51,8 +51,7 @@ static void test_cubic() {
 
 static void test_cubic2() {
     const char* str = "M2242 -590088L-377758 9.94099e+07L-377758 9.94099e+07L2242 -590088Z";
-    SkPath path;
-    SkParsePath::FromSVGString(str, &path);
+    SkPath path = SkParsePath::FromSVGString(str).value_or(SkPath());
 
     {
         SkRect r = path.getBounds();
@@ -98,29 +97,17 @@ public:
 
         const SkScalar V = 85;
 
-        fPath[0].moveTo(40, 70);
-        fPath[0].lineTo(70, 70 + SK_ScalarHalf);
-        fPath[0].lineTo(110, 70);
+        auto make = [](SkPoint a, SkPoint b, SkPoint c) {
+            SkPoint pts[] = {a, b, c};
+            return SkPath::Polygon(pts, false);
+        };
 
-        fPath[1].moveTo(40, 70);
-        fPath[1].lineTo(70, 70 - SK_ScalarHalf);
-        fPath[1].lineTo(110, 70);
-
-        fPath[2].moveTo(V, V);
-        fPath[2].lineTo(50, V);
-        fPath[2].lineTo(50, 50);
-
-        fPath[3].moveTo(50, 50);
-        fPath[3].lineTo(50, V);
-        fPath[3].lineTo(V, V);
-
-        fPath[4].moveTo(50, 50);
-        fPath[4].lineTo(50, V);
-        fPath[4].lineTo(52, 50);
-
-        fPath[5].moveTo(52, 50);
-        fPath[5].lineTo(50, V);
-        fPath[5].lineTo(50, 50);
+        fPath[0] = make({40, 70}, {70, 70 + SK_ScalarHalf}, {110, 70});
+        fPath[1] = make({40, 70}, {70, 70 - SK_ScalarHalf}, {110, 70});
+        fPath[2] = make({V, V}, {50, V}, {50, 50});
+        fPath[3] = make({50, 50}, {50, V}, {V, V});
+        fPath[4] = make({50, 50}, {50, V}, {52, 50});
+        fPath[5] = make({52, 50}, {50, V}, {50, 50});
     }
 
     void drawPath(SkCanvas* canvas, const SkPath& path, SkPaint::Join j) {
@@ -132,9 +119,7 @@ public:
         paint.setStrokeWidth(fStroke);
 
         if (fShowHairline) {
-            SkPath fill;
-
-            skpathutils::FillPathWithPaint(path, paint, &fill);
+            SkPath fill = skpathutils::FillPathWithPaint(path, paint);
             paint.setStrokeWidth(0);
             canvas->drawPath(fill, paint);
         } else {
@@ -241,10 +226,9 @@ public:
             return false;
     }
     void draw(SkCanvas* canvas) override {
-        canvas->drawPoints(SkCanvas::kPoints_PointMode, N, fPts, fPtsPaint);
+        canvas->drawPoints(SkCanvas::kPoints_PointMode, fPts, fPtsPaint);
 
-        SkPath path;
-        this->makePath(&path);
+        SkPath path = this->makePath();
 
         if (fDoCorner) {
             canvas->drawPath(path, fCornerPaint);
@@ -271,14 +255,8 @@ protected:
     bool onClick(ClickHandlerSlide::Click *) override { return false; }
 
 private:
-    void makePath(SkPath* path) {
-        path->moveTo(fPts[0]);
-        for (int i = 1; i < N; ++i) {
-            path->lineTo(fPts[i]);
-        }
-        if (!fDoFrame) {
-            path->close();
-        }
+    SkPath makePath() {
+        return SkPath::Polygon({&fPts[0], (size_t)N}, !fDoFrame);
     }
 
     void toggle(bool& value) {
@@ -352,8 +330,7 @@ public:
     void draw(SkCanvas* canvas) override {
         canvas->drawColor(0xFFEEEEEE);
 
-        SkPath path;
-        this->makePath(&path);
+        SkPath path = this->makePath();
 
         fStrokePaint.setStrokeWidth(fWidth);
         fStrokePaint.setStrokeJoin((SkPaint::Join)fJoinType);
@@ -363,14 +340,13 @@ public:
             canvas->drawPath(path, fStrokePaint);
         }
         if (fShowHidden) {
-            SkPath hidden;
-            skpathutils::FillPathWithPaint(path, fStrokePaint, &hidden);
+            SkPath hidden = skpathutils::FillPathWithPaint(path, fStrokePaint);
             canvas->drawPath(hidden, fHiddenPaint);
         }
         if (fShowSkeleton) {
             canvas->drawPath(path, fSkeletonPaint);
         }
-        canvas->drawPoints(SkCanvas::kPoints_PointMode, N, fPts, fPtsPaint);
+        canvas->drawPoints(SkCanvas::kPoints_PointMode, fPts, fPtsPaint);
     }
 
 protected:
@@ -399,21 +375,23 @@ private:
         value = (value + 1) % 3;
     }
 
-    void makePath(SkPath* path) {
-        path->moveTo(fPts[0]);
+    SkPath makePath() {
+        SkPathBuilder builder;
+        builder.moveTo(fPts[0]);
         if (fAsCurves) {
             for (int i = 1; i < N-2; ++i) {
-                path->quadTo(fPts[i], (fPts[i+1] + fPts[i]) * 0.5f);
+                builder.quadTo(fPts[i], (fPts[i+1] + fPts[i]) * 0.5f);
             }
-            path->quadTo(fPts[N-2], fPts[N-1]);
+            builder.quadTo(fPts[N-2], fPts[N-1]);
         } else {
             for (int i = 1; i < N; ++i) {
-                path->lineTo(fPts[i]);
+                builder.lineTo(fPts[i]);
             }
         }
         if (fClosed) {
-            path->close();
+            builder.close();
         }
+        return builder.detach();
     }
 };
 DEF_SLIDE( return new FatStrokeSlide; )
@@ -460,9 +438,10 @@ public:
         paint.setAntiAlias(true);
 
         {
-            SkPath path;
-            path.moveTo(fPts[0]);
-            path.cubicTo(fPts[1], fPts[2], fPts[3]);
+            SkPath path = SkPathBuilder()
+                          .moveTo(fPts[0])
+                          .cubicTo(fPts[1], fPts[2], fPts[3])
+                          .detach();
             paint.setStyle(SkPaint::kStroke_Style);
             canvas->drawPath(path, paint);
         }
@@ -595,11 +574,12 @@ public:
 
         {
             paint.setStyle(SkPaint::kStroke_Style);
-            SkPath path;
-            path.moveTo(fPts[0]);
-            path.cubicTo(fPts[1], fPts[2], fPts[3]);
-            path.moveTo(fQuad[0]);
-            path.quadTo(fQuad[1], fQuad[2]);
+            SkPath path = SkPathBuilder()
+                          .moveTo(fPts[0])
+                          .cubicTo(fPts[1], fPts[2], fPts[3])
+                          .moveTo(fQuad[0])
+                          .quadTo(fQuad[1], fQuad[2])
+                          .detach();
             canvas->drawPath(path, paint);
         }
 
@@ -625,8 +605,8 @@ public:
 
         paint.setColor(SK_ColorGRAY);
         paint.setStroke(true);
-        canvas->drawPath(SkPathBuilder().addPolygon(fPts, 4, false).detach(), paint);
-        canvas->drawPath(SkPathBuilder().addPolygon(fQuad, 3, false).detach(), paint);
+        canvas->drawPath(SkPathBuilder().addPolygon({fPts, 4}, false).detach(), paint);
+        canvas->drawPath(SkPathBuilder().addPolygon({fQuad, 3}, false).detach(), paint);
 
         for (SkPoint p : fPts) {
             Dot(canvas, p, 7, SK_ColorBLACK);

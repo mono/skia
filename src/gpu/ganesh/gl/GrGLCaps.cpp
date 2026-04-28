@@ -90,6 +90,7 @@ GrGLCaps::GrGLCaps(const GrContextOptions& contextOptions,
     fMustResetBlendFuncBetweenDualSourceAndDisable = false;
     fBindTexture0WhenChangingTextureFBOMultisampleCount = false;
     fRebindColorAttachmentAfterCheckFramebufferStatus = false;
+    fBindDefaultFramebufferOnPresent = false;
     fFlushBeforeWritePixels = false;
     fDisableScalingCopyAsDraws = false;
     fPadRG88TransferAlignment = false;
@@ -736,21 +737,13 @@ void GrGLCaps::init(const GrContextOptions& contextOptions,
         }
         fDrawRangeElementsSupport = version >= GR_GL_VER(2,0);
     } else if (GR_IS_GR_GL_ES(standard)) {
-        if (ctxInfo.hasExtension("GL_ANGLE_base_vertex_base_instance")) {
-            fBaseVertexBaseInstanceSupport = true;
-            fNativeDrawIndirectSupport = true;
-            fMultiDrawType = MultiDrawType::kANGLEOrWebGL;
-            // The indirect structs need to reside in CPU memory for the ANGLE version.
-            fUseClientSideIndirectBuffers = true;
-        } else {
-            fBaseVertexBaseInstanceSupport = ctxInfo.hasExtension("GL_EXT_base_instance");
-            // Don't support indirect draws on ES. They don't allow VAO 0.
-            //
-            // "An INVALID_OPERATION error is generated if zero is bound to VERTEX_ARRAY_BINDING,
-            // DRAW_INDIRECT_BUFFER or to any enabled vertex array."
-            //
-            // https://www.khronos.org/registry/OpenGL/specs/es/3.1/es_spec_3.1.pdf
-        }
+        fBaseVertexBaseInstanceSupport = ctxInfo.hasExtension("GL_EXT_base_instance");
+        // Don't support indirect draws on ES. They don't allow VAO 0.
+        //
+        // "An INVALID_OPERATION error is generated if zero is bound to VERTEX_ARRAY_BINDING,
+        // DRAW_INDIRECT_BUFFER or to any enabled vertex array."
+        //
+        // https://www.khronos.org/registry/OpenGL/specs/es/3.1/es_spec_3.1.pdf
         fDrawRangeElementsSupport = version >= GR_GL_VER(3,0);
     } else if (GR_IS_GR_WEBGL(standard)) {
         fBaseVertexBaseInstanceSupport = ctxInfo.hasExtension(
@@ -765,7 +758,7 @@ void GrGLCaps::init(const GrContextOptions& contextOptions,
         fDrawRangeElementsSupport = version >= GR_GL_VER(2,0);
     }
     // We used to disable this as a correctness workaround (http://anglebug.com/4536). Now it is
-    // disabled because of poor performance (http://skbug.com/11998).
+    // disabled because of poor performance (skbug.com/40043081).
     if (ctxInfo.angleBackend() == GrGLANGLEBackend::kD3D11) {
         fBaseVertexBaseInstanceSupport = false;
         fNativeDrawIndirectSupport = false;
@@ -3937,6 +3930,10 @@ void GrGLCaps::applyDriverCorrectnessWorkarounds(const GrGLContextInfo& ctxInfo,
                                                  const GrGLInterface* glInterface,
                                                  GrShaderCaps* shaderCaps,
                                                  FormatWorkarounds* formatWorkarounds) {
+    GrGLDriverVersion driverVersion =
+        ctxInfo.angleBackend() == GrGLANGLEBackend::kUnknown ? ctxInfo.driverVersion()
+                                                             : ctxInfo.angleDriverVersion();
+
     // A driver bug on the nexus 6 causes incorrect dst copies when invalidate is called beforehand.
     // Thus we are disabling this extension for now on Adreno4xx devices.
     if (ctxInfo.renderer() == GrGLRenderer::kAdreno430       ||
@@ -3976,8 +3973,15 @@ void GrGLCaps::applyDriverCorrectnessWorkarounds(const GrGLContextInfo& ctxInfo,
         fAllowSRGBCopyTexSubImage = true;
     }
 
-    // http://anglebug.com/6030
-    if (fMSFBOType == kES_EXT_MsToTexture_MSFBOType &&
+    // Originally, this condition disabled DMSAA on non-Intel (and some Intel) devices running over
+    // ANGLE D3D11 (http://anglebug.com/6030). ANGLE's D3D11 support for
+    // EXT_multisample_render_to_texture was incomplete and has been removed
+    // (http://crbug.com/443111620), which led to some significant performance regressions
+    // (http://crbug.com/466515405). Since ANGLE had always been advertising that extension, Ganesh
+    // was disabling DMSAA almost universally. The regression was triggered due to allocating very
+    // large MSAA attachments. To preserve prior behavior on ANGLE+D3D11, we will keep DMSAA
+    // disabled (although these techniques are used with Graphite on Dawn+D3D11).
+    if (/* fMSFBOType == kES_EXT_MsToTexture_MSFBOType && */
         ctxInfo.angleBackend() == GrGLANGLEBackend::kD3D11) {
         // As GL_EXT_multisampled_render_to_texture supporting issue,
         // fall back to default dmsaa path
@@ -3992,7 +3996,7 @@ void GrGLCaps::applyDriverCorrectnessWorkarounds(const GrGLContextInfo& ctxInfo,
         }
     }
 
-    // http://skbug.com/12081
+    // skbug.com/40043172
     if (GR_IS_GR_WEBGL(ctxInfo.standard())) {
         fDisallowDynamicMSAA = true;
     }
@@ -4003,7 +4007,7 @@ void GrGLCaps::applyDriverCorrectnessWorkarounds(const GrGLContextInfo& ctxInfo,
     // or buffer to surface transfers don't work.
 #if defined(__has_feature)
 #if defined(SK_BUILD_FOR_MAC) && __has_feature(thread_sanitizer)
-    // See skbug.com/7058
+    // See skbug.com/40038290
     fMapBufferType = kNone_MapBufferType;
     fMapBufferFlags = kNone_MapFlags;
     fTransferFromBufferToTextureSupport = false;
@@ -4051,7 +4055,7 @@ void GrGLCaps::applyDriverCorrectnessWorkarounds(const GrGLContextInfo& ctxInfo,
     // GL_VENDOR:   Intel
     // GL_RENDERER: Intel(R) HD Graphics 2000
     // https://groups.google.com/g/skia-discuss/c/dYV1blEAda0/m/-zuZLXQKAwAJ?utm_medium=email&utm_source=footer
-    // See also http://skbug.com/9286
+    // See also skbug.com/40040603
     if (ctxInfo.renderer() == GrGLRenderer::kIntelSandyBridge &&
         ctxInfo.driver() == GrGLDriver::kIntel) {
         fMapBufferType  = kNone_MapBufferType;
@@ -4075,7 +4079,7 @@ void GrGLCaps::applyDriverCorrectnessWorkarounds(const GrGLContextInfo& ctxInfo,
     }
 
     // https://b.corp.google.com/issues/143074513
-    // https://skbug.com/11152
+    // https://skbug.com/40042528
     if (ctxInfo.renderer() == GrGLRenderer::kAdreno615 ||
         ctxInfo.renderer() == GrGLRenderer::kAdreno620) {
         fMSFBOType = kNone_MSFBOType;
@@ -4090,7 +4094,7 @@ void GrGLCaps::applyDriverCorrectnessWorkarounds(const GrGLContextInfo& ctxInfo,
     }
 #endif
 
-    // A lot of GPUs have trouble with full screen clears (skbug.com/7195)
+    // A lot of GPUs have trouble with full screen clears (skbug.com/40038435)
     if (ctxInfo.renderer() == GrGLRenderer::kAMDRadeonHD7xxx ||
         ctxInfo.renderer() == GrGLRenderer::kAMDRadeonR9M4xx) {
         fPerformColorClearsAsDraws = true;
@@ -4135,7 +4139,7 @@ void GrGLCaps::applyDriverCorrectnessWorkarounds(const GrGLContextInfo& ctxInfo,
         // This is known to be fixed sometime between driver 129.0 and 145.0 on Nexus 6P.
         // On driver 129 on Android M it fails the unit tests called WritePixelsPendingIO without
         // the workaround. It passes on Android N with driver 145 without the workaround.
-        // skbug.com/11834
+        // skbug.com/40042902
         if (ctxInfo.driverVersion() < GR_GL_DRIVER_VER(145, 0, 0)) {
             fDisallowTexSubImageForUnormConfigTexturesEverBoundToFBO = true;
         }
@@ -4173,7 +4177,8 @@ void GrGLCaps::applyDriverCorrectnessWorkarounds(const GrGLContextInfo& ctxInfo,
     }
 
     // TODO: Don't apply this on iOS?
-    if (ctxInfo.renderer() == GrGLRenderer::kPowerVRRogue) {
+    if (ctxInfo.renderer() == GrGLRenderer::kPowerVRRogue &&
+        driverVersion <  GR_GL_DRIVER_VER(23, 2, 0)) {
         // Our Chromebook with GrGLRenderer::kPowerVRRogue crashes on large instanced draws. The
         // current minimum number of instances observed to crash is somewhere between 2^14 and 2^15.
         // Keep the number of instances below 1000, just to be safe.
@@ -4300,7 +4305,7 @@ void GrGLCaps::applyDriverCorrectnessWorkarounds(const GrGLContextInfo& ctxInfo,
     if (ctxInfo.vendor() == GrGLVendor::kATI) {
         // The Radeon GLSL compiler on Mac gets confused by ldexp(..., -x).
         // Convert to ldexp(..., x * -1).
-        // http://skbug.com/12076
+        // skbug.com/40043167
         shaderCaps->fMustForceNegatedLdexpParamToMultiply = true;
     }
 #endif
@@ -4373,7 +4378,7 @@ void GrGLCaps::applyDriverCorrectnessWorkarounds(const GrGLContextInfo& ctxInfo,
 
     // We've seen Adreno 3xx devices produce incorrect (flipped) values for gl_FragCoord, in some
     // (rare) situations. It's sporadic, and mostly on older drivers. Additionally, old Adreno
-    // compilers (see crbug.com/skia/4078) crash when accessing .zw of gl_FragCoord, so just bypass
+    // compilers (see skbug.com/40035225) crash when accessing .zw of gl_FragCoord, so just bypass
     // using gl_FragCoord at all to get around it.
     if (ctxInfo.renderer() == GrGLRenderer::kAdreno3xx) {
         shaderCaps->fCanUseFragCoord = false;
@@ -4422,7 +4427,7 @@ void GrGLCaps::applyDriverCorrectnessWorkarounds(const GrGLContextInfo& ctxInfo,
         ctxInfo.driver()   == GrGLDriver::kIntel             ||
         ctxInfo.angleVendor() == GrGLVendor::kIntel          ||
         ctxInfo.isOverCommandBuffer()                        ||
-        ctxInfo.vendor()   == GrGLVendor::kARM /* http://skbug.com/11906 */) {
+        ctxInfo.vendor()   == GrGLVendor::kARM /* skbug.com/40043001 */) {
         fBlendEquationSupport = kBasic_BlendEquationSupport;
         shaderCaps->fAdvBlendEqInteraction = GrShaderCaps::kNotSupported_AdvBlendEqInteraction;
     }
@@ -4474,7 +4479,7 @@ void GrGLCaps::applyDriverCorrectnessWorkarounds(const GrGLContextInfo& ctxInfo,
     // Many ES3 drivers only advertise the ES2 image_external extension, but support the _essl3
     // extension, and require that it be enabled to work with ESSL3. Other devices require the ES2
     // extension to be enabled, even when using ESSL3. Enabling both extensions fixes both cases.
-    // skbug.com/7713
+    // skbug.com/40038974
     if (ctxInfo.hasExtension("GL_OES_EGL_image_external") &&
         ctxInfo.glslGeneration() >= SkSL::GLSLGeneration::k330 &&
         !shaderCaps->fExternalTextureSupport) { // i.e. Missing the _essl3 extension
@@ -4518,7 +4523,7 @@ void GrGLCaps::applyDriverCorrectnessWorkarounds(const GrGLContextInfo& ctxInfo,
     // GL_RENDERER: PowerVR Rogue AXE-1-16M
     // GL_VENDOR  : Imagination Technologies
     if (ctxInfo.renderer() == GrGLRenderer::kPowerVRRogue &&
-        ctxInfo.driverVersion() < GR_GL_DRIVER_VER(1, 15, 0)) {
+        driverVersion < GR_GL_DRIVER_VER(1, 15, 0)) {
         fDisableTessellationPathRenderer = true;
     }
 
@@ -4539,7 +4544,8 @@ void GrGLCaps::applyDriverCorrectnessWorkarounds(const GrGLContextInfo& ctxInfo,
     // GL_VERSION : OpenGL ES 3.2 build 1.13@5720833
     // GL_RENDERER: PowerVR Rogue GE8300
     // GL_VENDOR  : Imagination Technologies
-    if (ctxInfo.renderer() == GrGLRenderer::kPowerVRRogue) {
+    if (ctxInfo.renderer() == GrGLRenderer::kPowerVRRogue &&
+        driverVersion < GR_GL_DRIVER_VER(1, 15, 0)) {
         fShaderCaps->fRemoveConstFromFunctionParameters = true;
     }
 #ifdef SK_BUILD_FOR_WIN
@@ -4567,7 +4573,7 @@ void GrGLCaps::applyDriverCorrectnessWorkarounds(const GrGLContextInfo& ctxInfo,
     }
 
     // We disable srgb write control for Adreno4xx devices.
-    // see: https://bug.skia.org/5329
+    // see: skbug.com/40036502
     if (ctxInfo.renderer() == GrGLRenderer::kAdreno430 ||
         ctxInfo.renderer() == GrGLRenderer::kAdreno4xx_other) {
         fSRGBWriteControl = false;
@@ -4635,7 +4641,7 @@ void GrGLCaps::applyDriverCorrectnessWorkarounds(const GrGLContextInfo& ctxInfo,
         shaderCaps->fNoDefaultPrecisionForExternalSamplers = true;
     }
 
-    // http://skbug.com/9491: Nexus5 produces rendering artifacts when we use QCOM_tiled_rendering.
+    // skbug.com/40040812: Nexus5 produces rendering artifacts when we use QCOM_tiled_rendering.
     if (ctxInfo.renderer() == GrGLRenderer::kAdreno3xx) {
         fTiledRenderingSupport = false;
     }
@@ -4670,18 +4676,18 @@ void GrGLCaps::applyDriverCorrectnessWorkarounds(const GrGLContextInfo& ctxInfo,
         }
     }
 
-    // ANGLE's D3D9 backend + AMD GPUs are flaky with program binary caching (skbug.com/10395)
+    // ANGLE's D3D9 backend + AMD GPUs are flaky with program binary caching (skbug.com/40041731)
     if (ctxInfo.angleBackend() == GrGLANGLEBackend::kD3D9 &&
         ctxInfo.angleVendor()  == GrGLVendor::kATI) {
         fProgramBinarySupport = false;
     }
 
-    // skbug.com/11204. Avoid recursion issue in SurfaceContext::writePixels.
+    // skbug.com/40042580. Avoid recursion issue in SurfaceContext::writePixels.
     if (fDisallowTexSubImageForUnormConfigTexturesEverBoundToFBO) {
         fReuseScratchTextures = false;
     }
 
-    // skbug.com/11935. Don't reorder on these GPUs in GL on old drivers.
+    // skbug.com/40042245. Don't reorder on these GPUs in GL on old drivers.
     if ((ctxInfo.renderer() == GrGLRenderer::kAdreno620 ||
         ctxInfo.renderer() == GrGLRenderer::kAdreno640) &&
         ctxInfo.driverVersion() < GR_GL_DRIVER_VER(571, 0, 0)) {
@@ -4693,8 +4699,8 @@ void GrGLCaps::applyDriverCorrectnessWorkarounds(const GrGLContextInfo& ctxInfo,
     // We could limit this < 1.13 on ChromeOS but we don't really have a good way to detect
     // ChromeOS from here.
     if (ctxInfo.renderer()      == GrGLRenderer::kPowerVRRogue &&
-        ctxInfo.driver()        == GrGLDriver::kImagination    &&
-        ctxInfo.driverVersion() <  GR_GL_DRIVER_VER(1, 16, 0)) {
+        ctxInfo.driver()        == GrGLDriver::kImagination &&
+        driverVersion <  GR_GL_DRIVER_VER(1, 16, 0)) {
         fShaderCaps->fShaderDerivativeSupport = false;
     }
 
@@ -4731,7 +4737,7 @@ void GrGLCaps::applyDriverCorrectnessWorkarounds(const GrGLContextInfo& ctxInfo,
         fBindTexture0WhenChangingTextureFBOMultisampleCount = true;
     }
 
-    // skbug.com/12640
+    // skbug.com/40043721
     // We found that on the Galaxy S7 the TransferPixelsTo test would fail after adding
     // glCheckFramebufferStatus() checks when making new FBOs. Note that the returned status was
     // GL_FRAMEBUFFER_COMPLETE. Switching the color binding to ID 0 and back to the original
@@ -4740,7 +4746,7 @@ void GrGLCaps::applyDriverCorrectnessWorkarounds(const GrGLContextInfo& ctxInfo,
     // GL_RENDERER: "Mali-T880"
     // GL_VERSION : "OpenGL ES 3.2 v1.r22p0-01rel0.f294e54ceb2cb2d81039204fa4b0402e"
     //
-    // This *didn't* reproduce on a Kevin ChromeOS device:
+    // This *didn't* reproduce on a Samsung Chromebook Plus device:
     // GL_VENDOR  : "ARM"
     // GL_RENDERER: "Mali-T860"
     // GL_VERSION : "OpenGL ES 3.2 v1.r26p0-01rel0.217d2597f6bd19b169343737782e56e3"
@@ -4750,7 +4756,17 @@ void GrGLCaps::applyDriverCorrectnessWorkarounds(const GrGLContextInfo& ctxInfo,
         fRebindColorAttachmentAfterCheckFramebufferStatus = true;
     }
 
-    // skbug.com/13286
+#ifdef SK_BUILD_FOR_MAC
+    // skbug.com/398631003
+    if (ctxInfo.vendor() == GrGLVendor::kApple &&
+        // Even the GL ANGLE backend doesn't have this issue, so the workaround is only necessary
+        // if we're not rendering with ANGLE.
+        ctxInfo.angleBackend() == GrGLANGLEBackend::kUnknown) {
+        fBindDefaultFramebufferOnPresent = true;
+    }
+#endif
+
+    // skbug.com/40044367
     // We found that the P30 produces a GL error when setting GL_TEXTURE_MAX_ANISOTROPY as a sampler
     // parameter but not as a texture parameter. We are disabling anisotropy on drivers that may
     // be affected.
@@ -4801,7 +4817,7 @@ void GrGLCaps::applyDriverCorrectnessWorkarounds(const GrGLContextInfo& ctxInfo,
         ctxInfo.driverVersion() >= GR_GL_DRIVER_VER(2, 1, 19900)) {
         fDisableScalingCopyAsDraws = true;
     }
-    // skbug.com/14194
+    // skbug.com/40045272
     // Setting the max level is technically unnecessary, but on Intel drivers it makes it
     // clear that a rendering feedback loop is not occurring, and avoids hitting a slow path.
     // When running on ANGLE, however, this triggers the validator because we can only use
@@ -4819,6 +4835,14 @@ void GrGLCaps::applyDriverCorrectnessWorkarounds(const GrGLContextInfo& ctxInfo,
         fPadRG88TransferAlignment = true;
     }
 #endif
+
+    // Mali HW doesn't have builtin support for no perspective varying interpolation. It's more
+    // efficient to use the smooth interpolation qualifier on Mali HW since it's otherwise emulated
+    // by patching up shaders.
+    if ((ctxInfo.renderer() == GrGLRenderer::kMaliG ||
+         ctxInfo.renderer() == GrGLRenderer::kMaliT)) {
+        shaderCaps->fNoPerspectiveInterpolationSupport = false;
+    }
 }
 
 void GrGLCaps::onApplyOptionsOverrides(const GrContextOptions& options) {
@@ -5162,6 +5186,11 @@ void GrGLCaps::didQueryImplementationReadSupport(GrGLFormat format,
 
 bool GrGLCaps::onAreColorTypeAndFormatCompatible(GrColorType ct,
                                                  const GrBackendFormat& format) const {
+    if (format.textureType() == GrTextureType::kExternal) {
+        // For lack of a better alternative, assume the external format matches the requested ct.
+        return true;
+    }
+
     GrGLFormat glFormat = GrBackendFormats::AsGLFormat(format);
     const auto& info = this->getFormatInfo(glFormat);
     for (int i = 0; i < info.fColorTypeInfoCount; ++i) {

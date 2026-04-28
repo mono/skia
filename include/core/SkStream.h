@@ -20,6 +20,8 @@
 #include <cstring>
 #include <memory>
 #include <utility>
+#include <vector>
+
 class SkStreamAsset;
 
 /**
@@ -79,10 +81,12 @@ public:
     [[nodiscard]] bool readS8(int8_t*);
     [[nodiscard]] bool readS16(int16_t*);
     [[nodiscard]] bool readS32(int32_t*);
+    [[nodiscard]] bool readS64(int64_t*);
 
-    [[nodiscard]] bool readU8(uint8_t* i) { return this->readS8((int8_t*)i); }
+    [[nodiscard]] bool readU8(uint8_t* i)   { return this->readS8((int8_t*)i); }
     [[nodiscard]] bool readU16(uint16_t* i) { return this->readS16((int16_t*)i); }
     [[nodiscard]] bool readU32(uint32_t* i) { return this->readS32((int32_t*)i); }
+    [[nodiscard]] bool readU64(uint64_t* i) { return this->readS64((int64_t*)i); }
 
     [[nodiscard]] bool readBool(bool* b) {
         uint8_t i;
@@ -139,7 +143,7 @@ public:
 //SkStreamMemory
     /** Returns the starting address for the data. If this cannot be done, returns NULL. */
     virtual const void* getMemoryBase() { return nullptr; }
-    virtual sk_sp<SkData> getData() const { return nullptr; }
+    virtual sk_sp<const SkData> getData() const { return nullptr; }
 
 private:
     virtual SkStream* onDuplicate() const { return nullptr; }
@@ -240,8 +244,11 @@ public:
         uint16_t v = SkToU16(value);
         return this->write(&v, 2);
     }
-    bool write32(uint32_t v) {
-        return this->write(&v, 4);
+    bool write32(uint32_t value) {
+        return this->write(&value, 4);
+    }
+    bool write64(uint64_t value) {
+        return this->write(&value, 8);
     }
 
     bool writeText(const char text[]) {
@@ -358,18 +365,19 @@ private:
     using INHERITED = SkStreamAsset;
 };
 
+// A read only view into a block of memory.
 class SK_API SkMemoryStream : public SkStreamMemory {
 public:
     SkMemoryStream();
 
     /** We allocate (and free) the memory. Write to it via getMemoryBase() */
-    SkMemoryStream(size_t length);
+    explicit SkMemoryStream(size_t length);
 
     /** If copyData is true, the stream makes a private copy of the data. */
     SkMemoryStream(const void* data, size_t length, bool copyData = false);
 
     /** Creates the stream to read from the specified data */
-    SkMemoryStream(sk_sp<SkData> data);
+    explicit SkMemoryStream(sk_sp<const SkData> data);
 
     /** Returns a stream with a copy of the input data. */
     static std::unique_ptr<SkMemoryStream> MakeCopy(const void* data, size_t length);
@@ -378,7 +386,7 @@ public:
     static std::unique_ptr<SkMemoryStream> MakeDirect(const void* data, size_t length);
 
     /** Returns a stream with a shared reference to the input data. */
-    static std::unique_ptr<SkMemoryStream> Make(sk_sp<SkData> data);
+    static std::unique_ptr<SkMemoryStream> Make(sk_sp<const SkData> data);
 
     /** Resets the stream to the specified data and length,
         just like the constructor.
@@ -392,8 +400,9 @@ public:
     */
     void setMemoryOwned(const void* data, size_t length);
 
-    sk_sp<SkData> getData() const override { return fData; }
-    void setData(sk_sp<SkData> data);
+    sk_sp<const SkData> getData() const override { return fData; }
+
+    void setData(sk_sp<const SkData> data);
 
     const void* getAtPos();
 
@@ -424,8 +433,8 @@ private:
     SkMemoryStream* onDuplicate() const override;
     SkMemoryStream* onFork() const override;
 
-    sk_sp<SkData>   fData;
-    size_t          fOffset;
+    sk_sp<const SkData> fData;
+    size_t fOffset;
 
     using INHERITED = SkStreamMemory;
 };
@@ -434,7 +443,7 @@ private:
 
 class SK_API SkFILEWStream : public SkWStream {
 public:
-    SkFILEWStream(const char path[]);
+    explicit SkFILEWStream(const char path[]);
     ~SkFILEWStream() override;
 
     /** Returns true if the current path could be opened.
@@ -483,6 +492,9 @@ public:
 
     /** Return the contents as SkData, and then reset the stream. */
     sk_sp<SkData> detachAsData();
+
+    /** Return the contents as vector, and then reset the stream. */
+    std::vector<uint8_t> detachAsVector();
 
     /** Reset, returning a reader stream with the current content. */
     std::unique_ptr<SkStreamAsset> detachAsStream();

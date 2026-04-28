@@ -116,7 +116,7 @@ public:
 
         const Bits dist = DistanceBetweenSignAndMagnitudeNumbers(fU.bits,
                                                                  rhs.fU.bits);
-        //SkDEBUGF("(%f, %f, %d) ", u_.value_, rhs.u_.value_, dist);
+        //SkDEBUGF("(%f, %f, %d) ", fU.value, rhs.fU.value, dist);
         return dist <= kMaxUlps;
     }
 
@@ -169,5 +169,16 @@ private:
 
     FloatingPointUnion fU;
 };
+
+/** Interpolate along the function described by (keys[length], values[length])
+    for the passed searchKey. SearchKeys outside the range keys[0]-keys[Length]
+    clamp to the min or max value. This function assumes the number of pairs
+    (length) will be small and a linear search is used.
+
+    Repeated keys are allowed for discontinuous functions (so long as keys is
+    monotonically increasing). If key is the value of a repeated scalar in
+    keys the first one will be used.
+*/
+float SkFloatInterpFunc(float searchKey, const float keys[], const float values[], int length);
 
 #endif

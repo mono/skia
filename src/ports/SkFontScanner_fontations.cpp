@@ -4,6 +4,7 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
+#include "include/ports/SkFontScanner_Fontations.h"
 #include "src/ports/SkFontScanner_fontations_priv.h"
 #include "src/ports/SkTypeface_fontations_priv.h"
 #include "src/ports/fontations/src/skpath_bridge.h"
@@ -12,12 +13,13 @@
 using namespace skia_private;
 
 namespace {
-rust::Box<::fontations_ffi::BridgeFontRef> make_bridge_font_ref(SkData* fontData, uint32_t index) {
+rust::Box<::fontations_ffi::BridgeFontRef> make_bridge_font_ref(const SkData* fontData,
+                                                                uint32_t index) {
     rust::Slice<const uint8_t> slice{fontData->bytes(), fontData->size()};
     return fontations_ffi::make_font_ref(slice, index);
 }
   // TODO(drott): Remove this once SkData::MakeFromStream is able to do this itself.
-sk_sp<SkData> make_data_avoiding_copy(SkStreamAsset* stream) {
+sk_sp<const SkData> make_data_avoiding_copy(SkStreamAsset* stream) {
     if (!stream) {
         return SkData::MakeEmpty();
     }
@@ -37,21 +39,23 @@ SkFontScanner_Fontations::SkFontScanner_Fontations() {}
 SkFontScanner_Fontations::~SkFontScanner_Fontations() {}
 
 bool SkFontScanner_Fontations::scanFile(SkStreamAsset* stream, int* numFaces) const {
-    sk_sp<SkData> fontData = make_data_avoiding_copy(stream);
+    sk_sp<const SkData> fontData = make_data_avoiding_copy(stream);
     stream->rewind();
     rust::Slice<const uint8_t> slice{fontData->bytes(), fontData->size()};
     ::std::uint32_t num_fonts;
     if (!fontations_ffi::font_or_collection(slice, num_fonts)) {
         return false;
     }
-    *numFaces = num_fonts == 0 ? 1 : num_fonts;
+    if (numFaces) {
+        *numFaces = num_fonts == 0 ? 1 : num_fonts;
+    }
     return true;
 }
 
 bool SkFontScanner_Fontations::scanFace(SkStreamAsset* stream,
                                         int faceIndex,
                                         int* numInstances) const {
-    sk_sp<SkData> fontData = make_data_avoiding_copy(stream);
+    sk_sp<const SkData> fontData = make_data_avoiding_copy(stream);
     rust::Box<fontations_ffi::BridgeFontRef> fontRef =
             make_bridge_font_ref(fontData.get(), faceIndex);
     stream->rewind();
@@ -84,7 +88,7 @@ bool SkFontScanner_Fontations::scanInstance(SkStreamAsset* stream,
                                             bool* isFixedPitch,
                                             AxisDefinitions* axes,
                                             VariationPosition* position) const {
-    sk_sp<SkData> fontData = make_data_avoiding_copy(stream);
+    sk_sp<const SkData> fontData = make_data_avoiding_copy(stream);
     rust::Box<fontations_ffi::BridgeFontRef> bridgeFontFaceRef =
             make_bridge_font_ref(fontData.get(), faceIndex);
     stream->rewind();
@@ -165,8 +169,7 @@ bool SkFontScanner_Fontations::scanInstance(SkStreamAsset* stream,
         axes->reset(size);
         auto variationAxes = std::make_unique<SkFontParameters::Variation::Axis[]>(size);
         sk_fontations::AxisWrapper axisWrapper(variationAxes.get(), size);
-        auto size1 = fontations_ffi::populate_axes(*bridgeFontNamedInstanceRef, axisWrapper);
-        SkASSERT(size == size1);
+        SkASSERT(size == fontations_ffi::populate_axes(*bridgeFontNamedInstanceRef, axisWrapper));
         for (auto i = 0; i < size; ++i) {
             const auto var = variationAxes[i];
             (*axes)[i].tag = var.tag;

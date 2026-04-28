@@ -10,8 +10,13 @@
 #include "include/core/SkFont.h"
 #include "include/core/SkFontMgr.h"
 #include "include/core/SkFontStyle.h"
+#include "include/core/SkMatrix.h"
+#include "include/core/SkPath.h"
+#include "include/core/SkPathBuilder.h"
+#include "include/core/SkSpan.h"
 #include "include/core/SkTypeface.h"
 #include "include/utils/SkTextUtils.h"
+#include "include/private/base/SkTemplates.h"
 
 #include "include/c/sk_font.h"
 
@@ -124,7 +129,7 @@ void sk_font_set_skew_x(sk_font_t* font, float value) {
 }
 
 int sk_font_text_to_glyphs(const sk_font_t* font, const void* text, size_t byteLength, sk_text_encoding_t encoding, uint16_t glyphs[], int maxGlyphCount) {
-    return AsFont(font)->textToGlyphs(text, byteLength, (SkTextEncoding)encoding, glyphs, maxGlyphCount);
+    return AsFont(font)->textToGlyphs(text, byteLength, (SkTextEncoding)encoding, SkSpan<SkGlyphID>(glyphs, maxGlyphCount));
 }
 
 uint16_t sk_font_unichar_to_glyph(const sk_font_t* font, int32_t uni) {
@@ -132,7 +137,7 @@ uint16_t sk_font_unichar_to_glyph(const sk_font_t* font, int32_t uni) {
 }
 
 void sk_font_unichars_to_glyphs(const sk_font_t* font, const int32_t uni[], int count, uint16_t glyphs[]) {
-    AsFont(font)->unicharsToGlyphs(uni, count, glyphs);
+    AsFont(font)->unicharsToGlyphs(SkSpan<const SkUnichar>(uni, count), SkSpan<SkGlyphID>(glyphs, count));
 }
 
 float sk_font_measure_text(const sk_font_t* font, const void* text, size_t byteLength, sk_text_encoding_t encoding, sk_rect_t* bounds, const sk_paint_t* paint) {
@@ -148,19 +153,28 @@ size_t sk_font_break_text(const sk_font_t* font, const void* text, size_t byteLe
 }
 
 void sk_font_get_widths_bounds(const sk_font_t* font, const uint16_t glyphs[], int count, float widths[], sk_rect_t bounds[], const sk_paint_t* paint) {
-    AsFont(font)->getWidthsBounds(glyphs, count, widths, AsRect(bounds), AsPaint(paint));
+    AsFont(font)->getWidthsBounds(
+        SkSpan<const SkGlyphID>(glyphs, count),
+        widths ? SkSpan<SkScalar>(widths, count) : SkSpan<SkScalar>(),
+        bounds ? SkSpan<SkRect>(AsRect(bounds), count) : SkSpan<SkRect>(),
+        AsPaint(paint));
 }
 
 void sk_font_get_pos(const sk_font_t* font, const uint16_t glyphs[], int count, sk_point_t pos[], sk_point_t* origin) {
-    AsFont(font)->getPos(glyphs, count, AsPoint(pos), *AsPoint(origin));
+    AsFont(font)->getPos(SkSpan<const SkGlyphID>(glyphs, count), SkSpan<SkPoint>(AsPoint(pos), count), *AsPoint(origin));
 }
 
 void sk_font_get_xpos(const sk_font_t* font, const uint16_t glyphs[], int count, float xpos[], float origin) {
-    AsFont(font)->getXPos(glyphs, count, xpos, origin);
+    AsFont(font)->getXPos(SkSpan<const SkGlyphID>(glyphs, count), SkSpan<SkScalar>(xpos, count), origin);
 }
 
 bool sk_font_get_path(const sk_font_t* font, uint16_t glyph, sk_path_t* path) {
-    return AsFont(font)->getPath(glyph, AsPath(path));
+    auto result = AsFont(font)->getPath(glyph);
+    if (result) {
+        *AsPath(path) = std::move(*result);
+        return true;
+    }
+    return false;
 }
 
 void sk_font_get_paths(const sk_font_t* font, uint16_t glyphs[], int count, const sk_glyph_path_proc glyphPathProc, void* context) {
@@ -177,7 +191,7 @@ void sk_font_get_paths(const sk_font_t* font, uint16_t glyphs[], int count, cons
         }
     };
 
-    AsFont(font)->getPaths(glyphs, count, proc, &pair);
+    AsFont(font)->getPaths(SkSpan<const SkGlyphID>(glyphs, count), proc, &pair);
 }
 
 float sk_font_get_metrics(const sk_font_t* font, sk_fontmetrics_t* metrics) {
@@ -191,5 +205,29 @@ void sk_text_utils_get_path(const void* text, size_t length, sk_text_encoding_t 
 }
 
 void sk_text_utils_get_pos_path(const void* text, size_t length, sk_text_encoding_t encoding, const sk_point_t pos[], const sk_font_t* font, sk_path_t* path) {
-    SkTextUtils::GetPosPath(text, length, (SkTextEncoding)encoding, AsPoint(pos), *AsFont(font), AsPath(path));
+    const SkFont& skFont = *AsFont(font);
+    int glyphCount = skFont.countText(text, length, (SkTextEncoding)encoding);
+    if (glyphCount <= 0) {
+        *AsPath(path) = SkPath();
+        return;
+    }
+
+    skia_private::AutoTArray<SkGlyphID> glyphs(glyphCount);
+    skFont.textToGlyphs(text, length, (SkTextEncoding)encoding, glyphs);
+
+    struct Rec {
+        SkPathBuilder fDst;
+        const SkPoint* fPos;
+    } rec = { {}, AsPoint(pos) };
+
+    skFont.getPaths(glyphs, [](const SkPath* src, const SkMatrix& mx, void* ctx) {
+        Rec* rec = (Rec*)ctx;
+        if (src) {
+            SkMatrix m(mx);
+            m.postTranslate(rec->fPos->fX, rec->fPos->fY);
+            rec->fDst.addPath(*src, m);
+        }
+        rec->fPos += 1;
+    }, &rec);
+    *AsPath(path) = rec.fDst.detach();
 }

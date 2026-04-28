@@ -177,7 +177,7 @@ TextLine::TextLine(ParagraphImpl* owner,
 
     // TODO: This is the fix for flutter. Must be removed...
     for (auto cluster = &start; cluster <= &end; ++cluster) {
-        if (!cluster->run().isPlaceholder()) {
+        if (!cluster->run().isPlaceholder() && !cluster->run().isCursiveScript()) {
             fShift += cluster->getHalfLetterSpacing();
             break;
         }
@@ -684,9 +684,9 @@ std::unique_ptr<Run> TextLine::shapeEllipsis(const SkString& ellipsis, const Clu
     auto shaped = [&](sk_sp<SkTypeface> typeface, sk_sp<SkFontMgr> fallback) -> std::unique_ptr<Run> {
         ShapeHandler handler(run.heightMultiplier(), run.useHalfLeading(), run.baselineShift(), ellipsis);
         SkFont font(std::move(typeface), textStyle.getFontSize());
-        font.setEdging(SkFont::Edging::kAntiAlias);
-        font.setHinting(SkFontHinting::kSlight);
-        font.setSubpixel(true);
+        font.setEdging(textStyle.getFontEdging());
+        font.setHinting(textStyle.getFontHinting());
+        font.setSubpixel(textStyle.getSubpixel());
 
         std::unique_ptr<SkShaper> shaper = SkShapers::HB::ShapeDontWrapOrReorder(
                 fOwner->getUnicode(), fallback ? fallback : SkFontMgr::RefEmpty());
@@ -753,8 +753,10 @@ std::unique_ptr<Run> TextLine::shapeEllipsis(const SkString& ellipsis, const Clu
         // they will not be resolved with the pretiest color emoji font
         auto typeface = fOwner->fontCollection()->defaultFallback(
                                             unicode,
+                                            textStyle.getFontFamilies(),
                                             textStyle.getFontStyle(),
-                                            textStyle.getLocale());
+                                            textStyle.getLocale(),
+                                            textStyle.getFontArguments());
         if (typeface) {
             ellipsisRun = shaped(typeface, fOwner->fontCollection()->getFallbackManager());
             if (ellipsisRun->isResolved()) {
@@ -928,7 +930,7 @@ void TextLine::iterateThroughClustersInGlyphsOrder(bool reversed,
         auto trimmed = fOwner->clusters(trimmedRange);
         directional_for_each(trailed, reversed != run.leftToRight(), [&](Cluster& cluster) {
             if (ignore) return;
-            bool ghost =  &cluster >= trimmed.end();
+            bool ghost =  &cluster >= trimmed.data() + trimmed.size();
             if (!includeGhosts && ghost) {
                 return;
             }
@@ -1133,7 +1135,7 @@ LineMetrics TextLine::getMetrics() const {
     result.fLeft = this->offset().fX;
     // This is Flutter definition of a baseline
     result.fBaseline = this->offset().fY + this->height() - this->sizes().descent();
-    result.fLineNumber = this - fOwner->lines().begin();
+    result.fLineNumber = this - fOwner->lines().data();
 
     // Fill out the style parts
     this->iterateThroughVisualRuns(false,
@@ -1391,6 +1393,12 @@ PositionWithAffinity TextLine::getGlyphPositionAtCoordinate(SkScalar dx) {
     this->iterateThroughVisualRuns(true,
         [this, dx, &result]
         (const Run* run, SkScalar runOffsetInLine, TextRange textRange, SkScalar* runWidthInLine) {
+            if (run->isEllipsis()) {
+                auto utf16Index = fOwner->getUTF16Index(this->fText.end);
+                result = { SkToS32(utf16Index) , kDownstream };
+                return false;
+            }
+
             bool keepLooking = true;
             *runWidthInLine = this->iterateThroughSingleRunByStyles(
             TextAdjustment::GraphemeGluster, run, runOffsetInLine, textRange, StyleType::kNone,

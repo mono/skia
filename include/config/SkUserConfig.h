@@ -80,16 +80,6 @@
 */
 //#define SK_CANVAS_SAVE_RESTORE_PREALLOC_COUNT 32
 
-/* Determines whether to build code that supports the Ganesh GPU backend. Some classes
-   that are not GPU-specific, such as SkShader subclasses, have optional code
-   that is used allows them to interact with this GPU backend. If you'd like to
-   include this code, include -DSK_GANESH in your cflags or uncomment below.
-   Defaults to not set (No Ganesh GPU backend).
-   This define affects the ABI of Skia, so make sure it matches the client which uses
-   the compiled version of Skia.
-*/
-//#define SK_GANESH
-
 /* Skia makes use of histogram logging macros to trace the frequency of
    events. By default, Skia provides no-op versions of these macros.
    Skia consumers can provide their own definitions of these macros to
@@ -98,7 +88,9 @@
 //#define SK_HISTOGRAM_BOOLEAN(name, sample)
 //#define SK_HISTOGRAM_ENUMERATION(name, sampleEnum, enumSize)
 //#define SK_HISTOGRAM_EXACT_LINEAR(name, sample, valueMax)
+//#define SK_HISTOGRAM_CUSTOM_EXACT_LINEAR(name, sample, value_min, value_max, bucket_count)
 //#define SK_HISTOGRAM_MEMORY_KB(name, sample)
+//#define SK_HISTOGRAM_CUSTOM_COUNTS(name, sample, countMin, countMax, bucketCount)
 //#define SK_HISTOGRAM_CUSTOM_MICROSECONDS_TIMES(name, sampleUSec, minUSec, maxUSec, bucketCount)
 
 /*
@@ -129,5 +121,21 @@
  * this file.
  */
 //#define SK_API __declspec(dllexport)
+
+/*
+ * If using DNG support, set the version of the dng_sdk being compiled against here
+ * following the versioning scheme of dng_tag_valus.h
+ * eg, DNG 1.4 is 0x01040000, DNG 1.7.1 is 0x01070100, etc...
+ * If unspecified, DNG SDK 1.4 is assumed
+ */
+// #define SK_DNG_VERSION 0x01040000
+
+/*
+ * By default, Skia uses SIMD operations for many internal calculations, especially
+ * for the CPU backend. These defines can be set to disable SIMD in SkVx and
+ * SkRasterPipeline, respectively.
+ */
+// #define SKVX_DISABLE_SIMD
+// #define SKRP_CPU_SCALAR
 
 #endif

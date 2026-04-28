@@ -12,6 +12,7 @@
 #include "include/core/SkMaskFilter.h"
 #include "include/core/SkPaint.h"
 #include "include/core/SkPathEffect.h"
+#include "include/core/SkPathBuilder.h"
 #include "include/core/SkPathUtils.h"
 #include "include/core/SkShader.h"
 
@@ -161,6 +162,6 @@ void sk_paint_set_path_effect(sk_paint_t* cpaint, sk_path_effect_t* effect) {
     AsPaint(cpaint)->setPathEffect(sk_ref_sp(AsPathEffect(effect)));
 }
 
-bool sk_paint_get_fill_path(const sk_paint_t* cpaint, const sk_path_t* src, sk_path_t* dst, const sk_rect_t* cullRect, const sk_matrix_t* cmatrix) {
-    return skpathutils::FillPathWithPaint(*AsPath(src), *AsPaint(cpaint), AsPath(dst), AsRect(cullRect), AsMatrix(cmatrix));
+bool sk_paint_get_fill_path(const sk_paint_t* cpaint, const sk_path_t* src, sk_pathbuilder_t* dst, const sk_rect_t* cullRect, const sk_matrix_t* cmatrix) {
+    return skpathutils::FillPathWithPaint(*AsPath(src), *AsPaint(cpaint), AsPathBuilder(dst), AsRect(cullRect), AsMatrix(cmatrix));
 }

@@ -2,13 +2,15 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-PYTHON_VERSION_COMPATIBILITY = "PY3"
+
+from . import api as _api
 
 DEPS = [
   'depot_tools/gclient',
   'docker',
   'env',
   'infra',
+  'recipe_engine/cipd',
   'recipe_engine/context',
   'recipe_engine/file',
   'recipe_engine/path',
@@ -23,3 +25,5 @@ from recipe_engine.recipe_api import Property
 PROPERTIES = {
   'buildername': Property(default=None),
 }
+
+API = _api.BuildApi

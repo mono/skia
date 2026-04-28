@@ -28,11 +28,12 @@
 #include "src/gpu/ganesh/GrResourceProviderPriv.h"
 #include "src/gpu/ganesh/GrTexture.h"
 #include "src/gpu/ganesh/GrTextureProxy.h"
+#include "src/gpu/ganesh/SkGaneshRecorder.h"
 #include "src/gpu/ganesh/SkGr.h"
 
 #include <android/hardware_buffer.h>
 
-std::unique_ptr<SkImageGenerator> GrAHardwareBufferImageGenerator::Make(
+std::unique_ptr<GrAHardwareBufferImageGenerator> GrAHardwareBufferImageGenerator::Make(
         AHardwareBuffer* graphicBuffer, SkAlphaType alphaType, sk_sp<SkColorSpace> colorSpace,
         GrSurfaceOrigin surfaceOrigin) {
     AHardwareBuffer_Desc bufferDesc;
@@ -44,7 +45,7 @@ std::unique_ptr<SkImageGenerator> GrAHardwareBufferImageGenerator::Make(
                                          alphaType, std::move(colorSpace));
 
     bool createProtectedImage = 0 != (bufferDesc.usage & AHARDWAREBUFFER_USAGE_PROTECTED_CONTENT);
-    return std::unique_ptr<SkImageGenerator>(new GrAHardwareBufferImageGenerator(
+    return std::unique_ptr<GrAHardwareBufferImageGenerator>(new GrAHardwareBufferImageGenerator(
             info, graphicBuffer, alphaType, createProtectedImage,
             bufferDesc.format, surfaceOrigin));
 }
@@ -205,12 +206,17 @@ GrSurfaceProxyView GrAHardwareBufferImageGenerator::onGenerateTexture(
                                     /*label=*/"AHardwareBufferImageGenerator_GenerateTexture");
 }
 
-bool GrAHardwareBufferImageGenerator::onIsValid(GrRecordingContext* context) const {
-    if (nullptr == context) {
-        return false; //CPU backend is not supported, because hardware buffer can be swizzled
+bool GrAHardwareBufferImageGenerator::onIsValid(SkRecorder* recorder) const {
+    if (!recorder) {
+        return false;
     }
-    return GrBackendApi::kOpenGL == context->backend() ||
-           GrBackendApi::kVulkan == context->backend();
+    if (recorder->type() != SkRecorder::Type::kGanesh) {
+        return false;
+    }
+    auto ctx = static_cast<SkGaneshRecorder*>(recorder)->recordingContext();
+    SkASSERT(ctx);
+    return GrBackendApi::kOpenGL == ctx->backend() ||
+           GrBackendApi::kVulkan == ctx->backend();
 }
 
 #endif //SK_BUILD_FOR_ANDROID_FRAMEWORK

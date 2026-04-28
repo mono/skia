@@ -18,9 +18,9 @@
 #include "include/core/SkTypes.h"
 #include "include/gpu/ganesh/GrRecordingContext.h"
 #include "include/gpu/ganesh/GrTypes.h"
-#include "include/private/SkColorData.h"
 #include "include/private/gpu/ganesh/GrTypesPriv.h"
 #include "src/core/SkCanvasPriv.h"
+#include "src/core/SkColorData.h"
 #include "src/gpu/KeyBuilder.h"
 #include "src/gpu/ganesh/GrBuffer.h"
 #include "src/gpu/ganesh/GrCanvas.h"
@@ -48,7 +48,7 @@
 #include "src/gpu/ganesh/glsl/GrGLSLVarying.h"
 #include "src/gpu/ganesh/ops/GrDrawOp.h"
 #include "src/gpu/ganesh/ops/GrOp.h"
-#include "tools/gpu/ProxyUtils.h"
+#include "tools/ganesh/ProxyUtils.h"
 
 #include <memory>
 #include <utility>

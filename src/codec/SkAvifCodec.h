@@ -53,12 +53,13 @@ protected:
     int onGetFrameCount() override;
     bool onGetFrameInfo(int, FrameInfo*) const override;
     int onGetRepetitionCount() override;
+    IsAnimated onIsAnimated() override;
     const SkFrameHolder* getFrameHolder() const override { return &fFrameHolder; }
 
 private:
     SkAvifCodec(SkEncodedInfo&&,
                 std::unique_ptr<SkStream>,
-                sk_sp<SkData>,
+                sk_sp<const SkData>,
                 AvifDecoder,
                 SkEncodedOrigin,
                 bool);
@@ -66,7 +67,7 @@ private:
     // fAvifDecoder has a pointer to this data. This should not be freed until
     // the decode is completed. To ensure that, we declare this before
     // fAvifDecoder.
-    sk_sp<SkData> fData;
+    sk_sp<const SkData> fData;
 
     AvifDecoder fAvifDecoder;
     bool fUseAnimation;

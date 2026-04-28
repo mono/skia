@@ -23,10 +23,8 @@ VULKAN_FILES = [
     "VulkanFramebuffer.h",
     "VulkanGraphicsPipeline.cpp",
     "VulkanGraphicsPipeline.h",
-    "VulkanGraphiteTypes.cpp",
-    "VulkanGraphiteTypesPriv.h",
     "VulkanGraphiteUtils.cpp",
-    "VulkanGraphiteUtilsPriv.h",
+    "VulkanGraphiteUtils.h",
     "VulkanImageView.cpp",
     "VulkanImageView.h",
     "VulkanQueueManager.cpp",
@@ -39,6 +37,8 @@ VULKAN_FILES = [
     "VulkanSampler.h",
     "VulkanSharedContext.cpp",
     "VulkanSharedContext.h",
+    "VulkanSpirvTransforms.cpp",
+    "VulkanSpirvTransforms.h",
     "VulkanTexture.cpp",
     "VulkanTexture.h",
     "VulkanTextureInfo.cpp",
@@ -75,7 +75,10 @@ skia_cc_library(
         "//src/gpu",
         "//src/gpu/graphite",
         "//src/gpu/vk",
-    ],
+    ] + select({
+        "//bazel/common_config_settings:debug_build": ["//src/sksl/codegen:spirv_validator"],
+        "//conditions:default": [],
+    }),
 )
 
 skia_cc_library(
@@ -98,7 +101,10 @@ skia_cc_library(
         "//include/third_party/vulkan",
     ],
     local_defines = ["SK_USE_INTERNAL_VULKAN_HEADERS"],
-    visibility = ["//tools:__pkg__"],
+    visibility = [
+        "//tools:__pkg__",
+        "//tools/window:__pkg__",
+    ],
     deps = [
         "//:core",
         "//src/base",
@@ -106,5 +112,8 @@ skia_cc_library(
         "//src/gpu",
         "//src/gpu/graphite:graphite_TEST_UTIL",
         "//src/gpu/vk",
-    ],
+    ] + select({
+        "//bazel/common_config_settings:debug_build": ["//src/sksl/codegen:spirv_validator"],
+        "//conditions:default": [],
+    }),
 )

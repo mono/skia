@@ -13,6 +13,7 @@
 #include "include/gpu/graphite/precompile/PrecompileColorFilter.h"
 #include "include/gpu/graphite/precompile/PrecompileShader.h"
 #include "include/private/base/SkTArray.h"
+#include "src/core/SkRuntimeEffectPriv.h"
 #include "src/gpu/graphite/KeyContext.h"
 #include "src/gpu/graphite/KeyHelpers.h"
 #include "src/gpu/graphite/PaintParams.h"
@@ -112,18 +113,16 @@ public:
 private:
     int numChildCombinations() const override { return fNumChildCombinations; }
 
-    void addToKey(const KeyContext& keyContext,
-                  PaintParamsKeyBuilder* builder,
-                  PipelineDataGatherer* gatherer,
-                  int desiredCombination) const override {
+    void addToKey(const KeyContext& keyContext, int desiredCombination) const override {
 
         SkASSERT(desiredCombination < this->numCombinations());
 
         SkSpan<const SkRuntimeEffect::Child> childInfo = fEffect->children();
 
-        RuntimeEffectBlock::BeginBlock(keyContext, builder, gatherer, { fEffect });
-
-        KeyContextWithScope childContext(keyContext, KeyContext::Scope::kRuntimeEffect);
+        if (!RuntimeEffectBlock::BeginBlock(keyContext, { fEffect })) {
+            RuntimeEffectBlock::AddNoOpEffect(keyContext, fEffect.get());
+            return;
+        }
 
         int remainingCombinations = desiredCombination;
 
@@ -138,9 +137,11 @@ private:
                     SkSpan<const sk_sp<PrecompileBase>>(slotOptions),
                     slotOption);
 
+            KeyContext childContext = keyContext.forRuntimeEffect(fEffect.get(), rowIndex);
+
             SkASSERT(precompilebase_is_valid_as_child(option.get()));
             if (option) {
-                option->priv().addToKey(keyContext, builder, gatherer, childOptions);
+                option->priv().addToKey(childContext, childOptions);
             } else {
                 SkASSERT(childOptions == 0);
 
@@ -148,24 +149,26 @@ private:
                 switch (childInfo[rowIndex].type) {
                     case SkRuntimeEffect::ChildType::kShader:
                         // A missing shader returns transparent black
-                        SolidColorShaderBlock::AddBlock(childContext, builder, gatherer,
-                                                        SK_PMColor4fTRANSPARENT);
+                        SolidColorShaderBlock::AddBlock(childContext, SK_PMColor4fTRANSPARENT);
                         break;
 
                     case SkRuntimeEffect::ChildType::kColorFilter:
                         // A "passthrough" shader returns the input color as-is.
-                        builder->addBlock(BuiltInCodeSnippetID::kPriorOutput);
+                        keyContext.paintParamsKeyBuilder()->addBlock(
+                                BuiltInCodeSnippetID::kPriorOutput);
                         break;
 
                     case SkRuntimeEffect::ChildType::kBlender:
                         // A "passthrough" blender performs `blend_src_over(src, dest)`.
-                        AddFixedBlendMode(childContext, builder, gatherer, SkBlendMode::kSrcOver);
+                        AddFixedBlendMode(childContext, SkBlendMode::kSrcOver);
                         break;
                 }
             }
         }
 
-        builder->endBlock();
+        RuntimeEffectBlock::HandleIntrinsics(keyContext, fEffect.get());
+
+        keyContext.paintParamsKeyBuilder()->endBlock();
     }
 
     sk_sp<SkRuntimeEffect> fEffect;

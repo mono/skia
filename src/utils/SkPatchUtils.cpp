@@ -17,13 +17,13 @@
 #include "include/core/SkSize.h"
 #include "include/core/SkTypes.h"
 #include "include/core/SkVertices.h"
-#include "include/private/SkColorData.h"
 #include "include/private/base/SkFloatingPoint.h"
 #include "include/private/base/SkMath.h"
 #include "include/private/base/SkTPin.h"
 #include "include/private/base/SkTo.h"
 #include "src/base/SkArenaAlloc.h"
 #include "src/base/SkVx.h"
+#include "src/core/SkColorData.h"
 #include "src/core/SkColorSpacePriv.h"
 #include "src/core/SkConvertPixels.h"
 #include "src/core/SkGeometry.h"
@@ -183,19 +183,19 @@ SkISize SkPatchUtils::GetLevelOfDetail(const SkPoint cubics[12], const SkMatrix*
     // Approximate length of each cubic.
     SkPoint pts[kNumPtsCubic];
     SkPatchUtils::GetTopCubic(cubics, pts);
-    matrix->mapPoints(pts, kNumPtsCubic);
+    matrix->mapPoints(pts);
     SkScalar topLength = approx_arc_length(pts, kNumPtsCubic);
 
     SkPatchUtils::GetBottomCubic(cubics, pts);
-    matrix->mapPoints(pts, kNumPtsCubic);
+    matrix->mapPoints(pts);
     SkScalar bottomLength = approx_arc_length(pts, kNumPtsCubic);
 
     SkPatchUtils::GetLeftCubic(cubics, pts);
-    matrix->mapPoints(pts, kNumPtsCubic);
+    matrix->mapPoints(pts);
     SkScalar leftLength = approx_arc_length(pts, kNumPtsCubic);
 
     SkPatchUtils::GetRightCubic(cubics, pts);
-    matrix->mapPoints(pts, kNumPtsCubic);
+    matrix->mapPoints(pts);
     SkScalar rightLength = approx_arc_length(pts, kNumPtsCubic);
 
     if (topLength < 0 || bottomLength < 0 || leftLength < 0 || rightLength < 0) {

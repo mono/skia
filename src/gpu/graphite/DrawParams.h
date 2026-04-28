@@ -8,18 +8,24 @@
 #ifndef skgpu_graphite_DrawParams_DEFINED
 #define skgpu_graphite_DrawParams_DEFINED
 
-
 #include "include/core/SkPaint.h"
 #include "include/core/SkRect.h"
+#include "include/private/base/SkAssert.h"
+#include "include/private/base/SkTo.h"
 #include "src/gpu/graphite/DrawOrder.h"
-#include "src/gpu/graphite/geom/AnalyticClip.h"
+#include "src/gpu/graphite/DrawTypes.h"
 #include "src/gpu/graphite/geom/Geometry.h"
+#include "src/gpu/graphite/geom/NonMSAAClip.h"
 #include "src/gpu/graphite/geom/Rect.h"
-#include "src/gpu/graphite/geom/Transform_graphite.h"
+#include "src/gpu/graphite/geom/Transform.h"
 
+#include <algorithm>
 #include <optional>
 
+class SkShader;
+
 namespace skgpu::graphite {
+class Transform;
 
 // NOTE: Only represents the stroke or hairline styles; stroke-and-fill must be handled higher up.
 class StrokeStyle {
@@ -68,12 +74,12 @@ public:
     Clip(const Rect& drawBounds,
          const Rect& shapeBounds,
          const SkIRect& scissor,
-         const CircularRRectClip& analyticClip,
+         const NonMSAAClip& nonMSAAClip,
          const SkShader* shader)
             : fDrawBounds(drawBounds)
             , fTransformedShapeBounds(shapeBounds)
             , fScissor(scissor)
-            , fAnalyticClip(analyticClip)
+            , fNonMSAAClip(nonMSAAClip)
             , fShader(shader) {}
 
     // Tight bounds of the draw, including any padding/outset for stroking and expansion due to
@@ -85,18 +91,39 @@ public:
     // intersected with the device bounds.
     const SkIRect& scissor() const { return fScissor; }
 
-    // Clipped bounds of the shape in device space, including any padding/outset for stroking,
-    // intersected with the scissor and ignoring the fill rule. For a regular fill this is identical
-    // to drawBounds(). For an inverse fill, this is a subset of drawBounds().
+    // Unclipped bounds of the shape in device space, including any padding/outset for stroking but
+    // ignoring the fill rule. This is not restricted by the scissor (or the target device's
+    // physical bounds).
+    //
+    // For a regular fill, drawBounds() is the intersection of this rectangle and scissor().
+    //
+    // For an inverse fill, this is the bounding box of the interesting portion of any coverage
+    // mask. If it doesn't intersect the scissor, the draw fully covers the scissor; regardless the
+    // drawBounds() are equal to the scissor.
     const Rect& transformedShapeBounds() const { return fTransformedShapeBounds; }
 
-    // If set, the shape's bounds are further used to clip the draw.
-    const CircularRRectClip& analyticClip() const { return fAnalyticClip; }
+    // If set, the shape's bounds and/or an atlas mask are further used to clip the draw.
+    // NOTE: This cannot impact `drawBounds()` as pixels outside of the non-msaa clip may still be
+    // shaded and blended with a coverage value of 0, which could lead to undefined behavior on the
+    // GPU if operations were ordered assuming tighter bounds.
+    const NonMSAAClip& nonMSAAClip() const { return fNonMSAAClip; }
 
     // If set, the clip shader's output alpha is further used to clip the draw.
     const SkShader* shader() const { return fShader; }
 
     bool isClippedOut() const { return fDrawBounds.isEmptyNegativeOrNaN(); }
+
+    bool needsCoverage() const { return SkToBool(fShader) || !fNonMSAAClip.isEmpty(); }
+
+    void outsetBoundsForAA() {
+        // We use 1px to handle both subpixel/hairline approaches and the standard 1/2px outset
+        // for shapes that cover multiple pixels.
+        fTransformedShapeBounds.outset(1.f);
+        // This is a no-op for inverse fills (where fDrawBounds was already equal to fScissor),
+        // and equivalent to fDrawBounds = fTransformedShapeBounds.makeIntersect(fScissor) with
+        // the outset shape bounds.
+        fDrawBounds.outset(1.f).intersect(fScissor);
+    }
 
 private:
     // DrawList assumes the DrawBounds are correct for a given shape, transform, and style. They
@@ -104,7 +131,7 @@ private:
     Rect              fDrawBounds;
     Rect              fTransformedShapeBounds;
     SkIRect           fScissor;
-    CircularRRectClip fAnalyticClip;
+    NonMSAAClip       fNonMSAAClip;
     const SkShader*   fShader;
 };
 
@@ -116,17 +143,27 @@ public:
                const Geometry& geometry,
                const Clip& clip,
                DrawOrder drawOrder,
-               const StrokeStyle* stroke)
+               const StrokeStyle* stroke,
+               BarrierType barrierBeforeDraws)
             : fTransform(transform)
             , fGeometry(geometry)
-            , fClip(clip)
+            , fDrawBounds(clip.drawBounds())
+            , fTransformedShapeBounds(clip.transformedShapeBounds())
+            , fScissor(clip.scissor())
             , fOrder(drawOrder)
+            , fBarrierBeforeDraws(barrierBeforeDraws)
             , fStroke(stroke ? std::optional<StrokeStyle>(*stroke) : std::nullopt) {}
 
     const Transform& transform() const { return fTransform; }
     const Geometry&  geometry()  const { return fGeometry;  }
-    const Clip&      clip()      const { return fClip;      }
     DrawOrder        order()     const { return fOrder;     }
+
+    // The subset of a Clip's state that is preserved in a DrawList, whereas the other properties
+    // of a clip get consumed into the paint's key and uniform data.
+    Rect drawBounds() const { return fDrawBounds; }
+    Rect transformedShapeBounds() const { return fTransformedShapeBounds; }
+    BarrierType barrierBeforeDraws() const {return fBarrierBeforeDraws; }
+    const SkIRect& scissor() const { return fScissor; }
 
     // Optional stroke parameters if the geometry is stroked instead of filled
     bool isStroke() const { return fStroke.has_value(); }
@@ -136,11 +173,15 @@ public:
     }
 
 private:
-    const Transform& fTransform; // Lifetime of the transform must be held longer than the geometry
+    friend class ClipStack; // For updating clip and order components on depth only draws
 
-    Geometry  fGeometry;
-    Clip      fClip;
-    DrawOrder fOrder;
+    const Transform& fTransform; // Lifetime of the transform must be held longer than the geometry
+    Geometry         fGeometry;
+    Rect             fDrawBounds;
+    Rect             fTransformedShapeBounds;
+    SkIRect          fScissor;
+    DrawOrder        fOrder;
+    BarrierType      fBarrierBeforeDraws;
 
     std::optional<StrokeStyle> fStroke; // Not present implies fill
 };

@@ -24,12 +24,16 @@
 #include "include/core/SkTileMode.h"
 #include "include/core/SkTypeface.h"
 #include "include/core/SkTypes.h"
-#include "include/effects/SkGradientShader.h"
+#include "include/effects/SkGradient.h"
 #include "include/effects/SkImageFilters.h"
-#include "include/gpu/ganesh/GrContextOptions.h"
+#include "src/core/SkColorPriv.h"
 #include "src/core/SkFontPriv.h"
 #include "tools/ToolUtils.h"
 #include "tools/fonts/FontToolUtils.h"
+
+#if defined(SK_GANESH)
+#include "include/gpu/ganesh/GrContextOptions.h"
+#endif
 
 #if defined(SK_GRAPHITE)
 #include "include/gpu/graphite/ContextOptions.h"
@@ -46,8 +50,9 @@ static sk_sp<SkShader> MakeLinear() {
     constexpr SkPoint     kPts[] = { { 0, 0 }, { 32, 32 } };
     constexpr SkScalar    kPos[] = { 0, SK_Scalar1/2, SK_Scalar1 };
     constexpr SkColor kColors[] = {0x80F00080, 0xF0F08000, 0x800080F0 };
-    return SkGradientShader::MakeLinear(kPts, kColors, kPos, std::size(kColors),
-                                        SkTileMode::kClamp);
+    SkColorConverter conv(kColors);
+    return SkShaders::LinearGradient(kPts,
+        {{conv.colors4f(), kPos, SkTileMode::kClamp}, {}});
 }
 
 static sk_sp<SkImageFilter> make_grayscale(sk_sp<SkImageFilter> input) {
@@ -88,11 +93,13 @@ protected:
 
     SkISize getISize() override { return SkISize::Make(650, 1200); }
 
+#if defined(SK_GANESH)
     void modifyGrContextOptions(GrContextOptions* ctxOptions) override {
         // This will force multitexturing to verify that color text works with this,
         // as well as with any additional color transformations.
         ctxOptions->fGlyphCacheTextureMaximumBytes = 256 * 256 * 4;
     }
+#endif
 
 #if defined(SK_GRAPHITE)
     void modifyGraphiteContextOptions(skgpu::graphite::ContextOptions* ctxOptions) const override {

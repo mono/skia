@@ -36,7 +36,10 @@ static void paint_rgn(SkCanvas* canvas, const SkAAClip& clip,
 
     SkAutoMaskFreeImage amfi(mask.image());
 
-    bm.installMaskPixels(mask);
+    SkAssertResult(
+            bm.installPixels(SkImageInfo::MakeA8(mask.fBounds.width(), mask.fBounds.height()),
+                             mask.image(),
+                             mask.fRowBytes));
 
     // need to copy for deferred drawing test to work
     SkBitmap bm2;
@@ -78,8 +81,8 @@ protected:
         fRect.inset(5, 5);
         fRect.offset(25, 25);
 
-        fBasePath.addRoundRect(fBase, SkIntToScalar(5), SkIntToScalar(5));
-        fRectPath.addRoundRect(fRect, SkIntToScalar(5), SkIntToScalar(5));
+        fBasePath = SkPath::RRect(fBase, 5, 5);
+        fRectPath = SkPath::RRect(fRect, 5, 5);
         INHERITED::setBGColor(0xFFDDDDDD);
     }
 

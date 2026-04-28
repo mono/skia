@@ -9,19 +9,25 @@
 
 #include "src/core/SkTraceEvent.h"
 #include "src/gpu/graphite/ContextUtils.h"
+#include "src/gpu/graphite/GraphicsPipelineDesc.h"
+#include "src/gpu/graphite/PaintParamsKey.h"
 #include "src/gpu/graphite/Renderer.h"
+#include "src/gpu/graphite/ShaderCodeDictionary.h"
 #include "src/gpu/graphite/ShaderInfo.h"
 #include "src/utils/SkShaderUtils.h"
 
 namespace skgpu::graphite {
 
 GraphicsPipeline::GraphicsPipeline(const SharedContext* sharedContext,
-                                   const PipelineInfo& pipelineInfo)
+                                   const PipelineInfo& pipelineInfo,
+                                   std::string_view label)
         : Resource(sharedContext,
                    Ownership::kOwned,
-                   skgpu::Budgeted::kYes,
                    /*gpuMemorySize=*/0)
-        , fPipelineInfo(pipelineInfo) {}
+        , fPipelineInfo(pipelineInfo) {
+    // TODO(b/387505250): Remove this once Resource is modified to accept a label upon construction.
+    this->setLabel(label);
+}
 
 GraphicsPipeline::~GraphicsPipeline() {
 #if defined(SK_PIPELINE_LIFETIME_LOGGING)
@@ -39,10 +45,9 @@ GraphicsPipeline::PipelineInfo::PipelineInfo(
             SkEnumBitMask<PipelineCreationFlags> pipelineCreationFlags,
             uint32_t uniqueKeyHash,
             uint32_t compilationID)
-        : fDstReadReq(shaderInfo.dstReadRequirement())
+        : fDstReadStrategy(shaderInfo.dstReadStrategy())
         , fNumFragTexturesAndSamplers(shaderInfo.numFragmentTexturesAndSamplers())
-        , fHasPaintUniforms(shaderInfo.hasPaintUniforms())
-        , fHasStepUniforms(shaderInfo.hasStepUniforms())
+        , fHasCombinedUniforms(shaderInfo.hasCombinedUniforms())
         , fHasGradientBuffer(shaderInfo.hasGradientBuffer())
         , fUniqueKeyHash(uniqueKeyHash)
         , fCompilationID(compilationID)
@@ -50,8 +55,22 @@ GraphicsPipeline::PipelineInfo::PipelineInfo(
 #if defined(GPU_TEST_UTILS)
     fSkSLVertexShader = SkShaderUtils::PrettyPrint(shaderInfo.vertexSkSL());
     fSkSLFragmentShader = SkShaderUtils::PrettyPrint(shaderInfo.fragmentSkSL());
-    fLabel = shaderInfo.fsLabel();
 #endif
 }
+
+#if defined(GPU_TEST_UTILS)
+SkString GraphicsPipelineDesc::toString(const Caps* caps, ShaderCodeDictionary* dict) const {
+    SkString tmp;
+
+    tmp.append(RenderStep::RenderStepName(fRenderStepID));
+    tmp.append(" - ");
+
+    PaintParamsKey key = dict->lookup(fPaintID);
+
+    tmp.append(key.toString(caps, dict));
+
+    return tmp;
+}
+#endif
 
 }  // namespace skgpu::graphite

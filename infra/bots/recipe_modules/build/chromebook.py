@@ -20,6 +20,7 @@ def compile_fn(api, checkout_root, out_dir):
     'extra_cflags' : [],
     'extra_ldflags' : [],
     'extra_asmflags' : [],
+    'is_trivial_abi': True,
     'target_cpu': target_arch,
     'skia_use_fontconfig': False,
     'skia_use_system_freetype2': False,
@@ -102,6 +103,10 @@ def compile_fn(api, checkout_root, out_dir):
       '-L%s' % os.path.join(sysroot_dir, 'gcc-cross'),
       '-L%s' % os.path.join(sysroot_dir, 'lib'),
       '-L%s' % os.path.join(gl_dir, 'lib'),
+      # Explicitly link atomics.
+      '-Wl,-u,__aarch64_swp4_acq_rel',
+      '-Wl,-u,__aarch64_cas4_acq_rel',
+      os.path.join(sysroot_dir, 'gcc-cross', 'libgcc.a'),
     ]
   else:
     gl_dir = os.path.join(top_level,'chromebook_x86_64_gles')
@@ -124,6 +129,7 @@ def compile_fn(api, checkout_root, out_dir):
     args['is_debug'] = False
 
   gn = skia_dir.joinpath('bin', 'gn')
+  ninja = skia_dir.joinpath('third_party', 'ninja', 'ninja')
 
   with api.context(cwd=skia_dir, env=env):
     api.run(api.step, 'fetch-gn',
@@ -135,7 +141,7 @@ def compile_fn(api, checkout_root, out_dir):
     api.run(api.step, 'gn gen',
             cmd=[gn, 'gen', out_dir, '--args=' + util.py_to_gn(args)])
     api.run(api.step, 'ninja',
-            cmd=['ninja', '-C', out_dir, 'nanobench', 'dm'])
+            cmd=[ninja, '-C', out_dir, 'nanobench', 'dm'])
 
 
 def copy_build_products(api, src, dst):

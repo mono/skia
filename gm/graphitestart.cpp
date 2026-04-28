@@ -13,10 +13,11 @@
 #include "include/core/SkImage.h"
 #include "include/core/SkPaint.h"
 #include "include/core/SkPath.h"
+#include "include/core/SkPathBuilder.h"
 #include "include/core/SkRRect.h"
-#include "include/effects/SkGradientShader.h"
-#include "include/gpu/ganesh/GrRecordingContext.h"
+#include "include/effects/SkGradient.h"
 #include "src/core/SkColorFilterPriv.h"
+#include "src/core/SkColorPriv.h"
 #include "tools/DecodeUtils.h"
 #include "tools/GpuToolUtils.h"
 #include "tools/Resources.h"
@@ -28,9 +29,9 @@ sk_sp<SkShader> create_gradient_shader(SkRect r,
                                        const std::array<SkColor, 3>& colors,
                                        const std::array<float, 3>& offsets) {
     SkPoint pts[2] = { {r.fLeft, r.fTop}, {r.fRight, r.fTop} };
+    SkColorConverter conv(colors);
 
-    return SkGradientShader::MakeLinear(pts, colors.data(), offsets.data(), std::size(colors),
-                                        SkTileMode::kClamp);
+    return SkShaders::LinearGradient(pts, {{conv.colors4f(), offsets, SkTileMode::kClamp}, {}});
 }
 
 sk_sp<SkShader> create_image_shader(SkCanvas* destCanvas, SkTileMode tmX, SkTileMode tmY) {
@@ -93,13 +94,14 @@ void draw_image_shader_tile(SkCanvas* canvas, SkRect clipRect) {
     SkPaint p;
     p.setShader(create_image_shader(canvas, SkTileMode::kClamp, SkTileMode::kRepeat));
 
-    SkPath path;
-    path.moveTo(1,   1);
-    path.lineTo(32,  127);
-    path.lineTo(96,  127);
-    path.lineTo(127, 1);
-    path.lineTo(63,  32);
-    path.close();
+    SkPath path = SkPathBuilder()
+                  .moveTo(1,   1)
+                  .lineTo(32,  127)
+                  .lineTo(96,  127)
+                  .lineTo(127, 1)
+                  .lineTo(63,  32)
+                  .close()
+                  .detach();
 
     canvas->save();
         canvas->clipRect(clipRect);

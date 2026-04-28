@@ -89,10 +89,10 @@ SkString SkCFTypeIDDescription(CFTypeID id) {
 template<typename CF> CFTypeID SkCFGetTypeID();
 #define SK_GETCFTYPEID(cf) \
 template<> CFTypeID SkCFGetTypeID<cf##Ref>() { return cf##GetTypeID(); }
-SK_GETCFTYPEID(CFArray);
-SK_GETCFTYPEID(CFBoolean);
-SK_GETCFTYPEID(CFDictionary);
-SK_GETCFTYPEID(CFNumber);
+SK_GETCFTYPEID(CFArray)
+SK_GETCFTYPEID(CFBoolean)
+SK_GETCFTYPEID(CFDictionary)
+SK_GETCFTYPEID(CFNumber)
 
 /* Checked dynamic downcast of CFTypeRef.
  *
@@ -127,13 +127,13 @@ static bool SkCFDynamicCast(CFTypeRef cf, CF* cfAsCF, char const* name) {
 template<typename T> struct SkCFNumberTypeFor {};
 #define SK_CFNUMBERTYPE_FOR(c, cf) \
 template<> struct SkCFNumberTypeFor<c> : std::integral_constant<CFNumberType, cf> {};
-SK_CFNUMBERTYPE_FOR(char     , kCFNumberCharType    );
-SK_CFNUMBERTYPE_FOR(short    , kCFNumberShortType   );
-SK_CFNUMBERTYPE_FOR(int      , kCFNumberIntType     );
-SK_CFNUMBERTYPE_FOR(long     , kCFNumberLongType    );
-SK_CFNUMBERTYPE_FOR(long long, kCFNumberLongLongType);
-SK_CFNUMBERTYPE_FOR(float    , kCFNumberFloatType   );
-SK_CFNUMBERTYPE_FOR(double   , kCFNumberDoubleType  );
+SK_CFNUMBERTYPE_FOR(char     , kCFNumberCharType    )
+SK_CFNUMBERTYPE_FOR(short    , kCFNumberShortType   )
+SK_CFNUMBERTYPE_FOR(int      , kCFNumberIntType     )
+SK_CFNUMBERTYPE_FOR(long     , kCFNumberLongType    )
+SK_CFNUMBERTYPE_FOR(long long, kCFNumberLongLongType)
+SK_CFNUMBERTYPE_FOR(float    , kCFNumberFloatType   )
+SK_CFNUMBERTYPE_FOR(double   , kCFNumberDoubleType  )
 
 template <typename T>
 static bool SkCFNumberDynamicCast(CFTypeRef cf, T* number, CFNumberRef* cfNumber, char const* name){
@@ -421,11 +421,10 @@ static void get_plane_glyph_map(const uint8_t* bits,
             CGGlyph glyphs[2] = {0, 0};
             if (CTFontGetGlyphsForCharacters(ctFont, utf16, glyphs, count)) {
                 SkASSERT(glyphs[1] == 0);
-                SkASSERT(glyphs[0] < glyphCount);
                 // CTFontCopyCharacterSet and CTFontGetGlyphsForCharacters seem to add 'support'
                 // for characters 0x9, 0xA, and 0xD mapping them to the glyph for character 0x20?
                 // Prefer mappings to codepoints at or above 0x20.
-                if (glyphToUnicode[glyphs[0]] < 0x20) {
+                if (glyphs[0] < glyphCount && glyphToUnicode[glyphs[0]] < 0x20) {
                     glyphToUnicode[glyphs[0]] = codepoint;
                 }
             }
@@ -480,12 +479,12 @@ static void populate_glyph_to_unicode(CTFontRef ctFont, CFIndex glyphCount,
     }
 }
 
-void SkTypeface_Mac::getGlyphToUnicodeMap(SkUnichar* dstArray) const {
+void SkTypeface_Mac::getGlyphToUnicodeMap(SkSpan<SkUnichar> dstArray) const {
     SkUniqueCFRef<CTFontRef> ctFont =
             SkCTFontCreateExactCopy(fFontRef.get(), CTFontGetUnitsPerEm(fFontRef.get()),
                                     fOpszVariation);
-    CFIndex glyphCount = CTFontGetGlyphCount(ctFont.get());
-    populate_glyph_to_unicode(ctFont.get(), glyphCount, dstArray);
+    CFIndex glyphCount = std::min((size_t)CTFontGetGlyphCount(ctFont.get()), dstArray.size());
+    populate_glyph_to_unicode(ctFont.get(), glyphCount, dstArray.data());
 }
 
 std::unique_ptr<SkAdvancedTypefaceMetrics> SkTypeface_Mac::onGetAdvancedMetrics() const {
@@ -495,13 +494,6 @@ std::unique_ptr<SkAdvancedTypefaceMetrics> SkTypeface_Mac::onGetAdvancedMetrics(
                                     fOpszVariation);
 
     std::unique_ptr<SkAdvancedTypefaceMetrics> info(new SkAdvancedTypefaceMetrics);
-
-    {
-        SkUniqueCFRef<CFStringRef> fontName(CTFontCopyPostScriptName(ctFont.get()));
-        if (fontName.get()) {
-            SkStringFromCFString(fontName.get(), &info->fPostScriptName);
-        }
-    }
 
     CFArrayRef ctAxes = this->getVariationAxes();
     if (ctAxes && CFArrayGetCount(ctAxes) > 0) {
@@ -623,7 +615,7 @@ std::unique_ptr<SkStreamAsset> SkTypeface_Mac::onOpenStream(int* ttcIndex) const
     int numTables = this->countTables();
     SkTDArray<SkFontTableTag> tableTags;
     tableTags.resize(numTables);
-    this->getTableTags(tableTags.begin());
+    this->readTableTags(tableTags);
 
     // CT seems to be unreliable in being able to obtain the type,
     // even if all we want is the first four bytes of the font resource.
@@ -631,7 +623,7 @@ std::unique_ptr<SkStreamAsset> SkTypeface_Mac::onOpenStream(int* ttcIndex) const
     if (fontType == 0) {
         fontType = SkSFNTHeader::fontType_WindowsTrueType::TAG;
 
-        // see https://skbug.com/7630#c7
+        // see https://skbug.com/40038881#c7
         bool couldBeCFF = false;
         constexpr SkFontTableTag CFFTag = SkSetFourByteTag('C', 'F', 'F', ' ');
         constexpr SkFontTableTag CFF2Tag = SkSetFourByteTag('C', 'F', 'F', '2');
@@ -746,14 +738,14 @@ CFArrayRef SkTypeface_Mac::getVariationAxes() const {
 }
 
 int SkTypeface_Mac::onGetVariationDesignPosition(
-        SkFontArguments::VariationPosition::Coordinate coordinates[], int coordinateCount) const
+        SkSpan<SkFontArguments::VariationPosition::Coordinate> coordinates) const
 {
     CFArrayRef ctAxes = this->getVariationAxes();
     if (!ctAxes) {
         return -1;
     }
     CFIndex axisCount = CFArrayGetCount(ctAxes);
-    if (!coordinates || coordinateCount < axisCount) {
+    if (coordinates.size() < (size_t)axisCount) {
         return axisCount;
     }
 
@@ -824,19 +816,18 @@ SkTypeface::LocalizedStrings* SkTypeface_Mac::onCreateFamilyNameIterator() const
     return nameIter.release();
 }
 
-int SkTypeface_Mac::onGetTableTags(SkFontTableTag tags[]) const {
+int SkTypeface_Mac::onGetTableTags(SkSpan<SkFontTableTag> tags) const {
     SkUniqueCFRef<CFArrayRef> cfArray(
             CTFontCopyAvailableTables(fFontRef.get(), kCTFontTableOptionNoOptions));
     if (!cfArray) {
         return 0;
     }
-    CFIndex count = CFArrayGetCount(cfArray.get());
-    if (tags) {
-        for (CFIndex i = 0; i < count; ++i) {
-            uintptr_t fontTag = reinterpret_cast<uintptr_t>(
-                CFArrayGetValueAtIndex(cfArray.get(), i));
-            tags[i] = static_cast<SkFontTableTag>(fontTag);
-        }
+    const CFIndex count = CFArrayGetCount(cfArray.get());
+    const CFIndex n = std::min(count, (CFIndex)tags.size());
+    for (CFIndex i = 0; i < n; ++i) {
+        uintptr_t fontTag = reinterpret_cast<uintptr_t>(
+            CFArrayGetValueAtIndex(cfArray.get(), i));
+        tags[i] = static_cast<SkFontTableTag>(fontTag);
     }
     return count;
 }
@@ -890,8 +881,7 @@ sk_sp<SkData> SkTypeface_Mac::onCopyTableData(SkFontTableTag tag) const {
 std::unique_ptr<SkScalerContext> SkTypeface_Mac::onCreateScalerContext(
     const SkScalerContextEffects& effects, const SkDescriptor* desc) const
 {
-    return std::make_unique<SkScalerContext_Mac>(
-            sk_ref_sp(const_cast<SkTypeface_Mac*>(this)), effects, desc);
+    return std::make_unique<SkScalerContext_Mac>(*const_cast<SkTypeface_Mac*>(this), effects, desc);
 }
 
 void SkTypeface_Mac::onFilterRec(SkScalerContextRec* rec) const {
@@ -1033,7 +1023,10 @@ void SkTypeface_Mac::onGetFontDescriptor(SkFontDescriptor* desc,
     *isLocalStream = fIsFromStream;
 }
 
-void SkTypeface_Mac::onCharsToGlyphs(const SkUnichar uni[], int count, SkGlyphID glyphs[]) const {
+void SkTypeface_Mac::onCharsToGlyphs(SkSpan<const SkUnichar> uni, SkSpan<SkGlyphID> glyphs) const {
+    SkASSERT(uni.size() == glyphs.size());
+    const int count = SkToInt(uni.size());
+
     // Undocumented behavior of CTFontGetGlyphsForCharacters with non-bmp code points:
     // When a surrogate pair is detected, the glyph index used is the index of the high surrogate.
     // It is documented that if a mapping is unavailable, the glyph will be set to 0.
@@ -1041,7 +1034,7 @@ void SkTypeface_Mac::onCharsToGlyphs(const SkUnichar uni[], int count, SkGlyphID
     AutoSTMalloc<1024, UniChar> charStorage;
     const UniChar* src; // UniChar is a UTF-16 16-bit code unit.
     int srcCount;
-    const SkUnichar* utf32 = reinterpret_cast<const SkUnichar*>(uni);
+    const SkUnichar* utf32 = uni.data();
     UniChar* utf16 = charStorage.reset(2 * count);
     src = utf16;
     for (int i = 0; i < count; ++i) {
@@ -1051,7 +1044,7 @@ void SkTypeface_Mac::onCharsToGlyphs(const SkUnichar uni[], int count, SkGlyphID
 
     // If there are any non-bmp code points, the provided 'glyphs' storage will be inadequate.
     AutoSTMalloc<1024, uint16_t> glyphStorage;
-    uint16_t* macGlyphs = glyphs;
+    uint16_t* macGlyphs = glyphs.data();
     if (srcCount > count) {
         macGlyphs = glyphStorage.reset(srcCount);
     }
@@ -1062,7 +1055,7 @@ void SkTypeface_Mac::onCharsToGlyphs(const SkUnichar uni[], int count, SkGlyphID
     // If all are bmp, 'glyphs' already contains the compact glyphs.
     // If some are non-bmp, copy and compact into 'glyphs'.
     if (srcCount > count) {
-        SkASSERT(glyphs != macGlyphs);
+        SkASSERT(glyphs.data() != macGlyphs);
         int extra = 0;
         for (int i = 0; i < count; ++i) {
             glyphs[i] = macGlyphs[i + extra];
@@ -1071,7 +1064,7 @@ void SkTypeface_Mac::onCharsToGlyphs(const SkUnichar uni[], int count, SkGlyphID
             }
         }
     } else {
-        SkASSERT(glyphs == macGlyphs);
+        SkASSERT(glyphs.data() == macGlyphs);
     }
 }
 
@@ -1330,8 +1323,8 @@ sk_sp<SkTypeface> SkTypeface_Mac::MakeFromStream(std::unique_ptr<SkStreamAsset> 
     return SkTypeface_Mac::Make(std::move(ctVariant), ctVariation.opsz, std::move(stream));
 }
 
-int SkTypeface_Mac::onGetVariationDesignParameters(SkFontParameters::Variation::Axis parameters[],
-                                                   int parameterCount) const
+int SkTypeface_Mac::onGetVariationDesignParameters(
+                                       SkSpan<SkFontParameters::Variation::Axis> parameters) const
 {
     CFArrayRef ctAxes = this->getVariationAxes();
     if (!ctAxes) {
@@ -1339,7 +1332,7 @@ int SkTypeface_Mac::onGetVariationDesignParameters(SkFontParameters::Variation::
     }
     CFIndex axisCount = CFArrayGetCount(ctAxes);
 
-    if (!parameters || parameterCount < axisCount) {
+    if (parameters.size() < (size_t)axisCount) {
         return axisCount;
     }
 

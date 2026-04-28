@@ -11,10 +11,10 @@
 #include "include/core/SkBitmap.h"
 #include "include/core/SkImage.h"
 #include "include/core/SkPixelRef.h"
+#include "include/core/SkRecorder.h"
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkTypes.h"
 #include "include/private/base/SkTo.h"
-#include "src/core/SkImagePriv.h"
 #include "src/core/SkMipmap.h"
 #include "src/image/SkImage_Base.h"
 
@@ -23,16 +23,20 @@
 #include <utility>
 
 class GrDirectContext;
-class GrRecordingContext;
 class SkColorSpace;
 class SkData;
 class SkPixmap;
 class SkSurface;
+class SkImageShader;
 enum SkColorType : int;
 struct SkIRect;
 struct SkImageInfo;
 
-namespace skgpu { namespace graphite { class Recorder; } }
+enum class SkCopyPixelsMode {
+    kIfMutable,  //!< only copy src pixels if they are marked mutable
+    kAlways,     //!< always copy src pixels (even if they are marked immutable)
+    kNever,      //!< never copy src pixels (even if they are marked mutable)
+};
 
 class SkImage_Raster : public SkImage_Base {
 public:
@@ -42,7 +46,19 @@ public:
     ~SkImage_Raster() override;
 
     // From SkImage.h
-    bool isValid(GrRecordingContext* context) const override { return true; }
+    bool isValid(SkRecorder* recorder) const override {
+        if (!recorder) {
+            return false;
+        }
+        if (!recorder->cpuRecorder()) {
+            return false;
+        }
+        return true;
+    }
+    sk_sp<SkImage> makeColorTypeAndColorSpace(SkRecorder*,
+                                              SkColorType targetColorType,
+                                              sk_sp<SkColorSpace> targetColorSpace,
+                                              RequiredProperties) const override;
 
     // From SkImage_Base.h
     bool onReadPixels(GrDirectContext*, const SkImageInfo&, void*, size_t, int srcX, int srcY,
@@ -51,19 +67,14 @@ public:
     const SkBitmap* onPeekBitmap() const override { return &fBitmap; }
 
     bool getROPixels(GrDirectContext*, SkBitmap*, CachingHint) const override;
-    sk_sp<SkImage> onMakeSubset(GrDirectContext*, const SkIRect&) const override;
-    sk_sp<SkImage> onMakeSubset(skgpu::graphite::Recorder*,
-                                const SkIRect&,
-                                RequiredProperties) const override;
 
-    sk_sp<SkSurface> onMakeSurface(skgpu::graphite::Recorder*, const SkImageInfo&) const override;
+    sk_sp<SkImage> onMakeSubset(SkRecorder*, const SkIRect&, RequiredProperties) const override;
+
+    sk_sp<SkSurface> onMakeSurface(SkRecorder*, const SkImageInfo&) const final;
 
     SkPixelRef* getPixelRef() const { return fBitmap.pixelRef(); }
 
     bool onAsLegacyBitmap(GrDirectContext*, SkBitmap*) const override;
-
-    sk_sp<SkImage> onMakeColorTypeAndColorSpace(SkColorType, sk_sp<SkColorSpace>,
-                                                GrDirectContext*) const override;
 
     sk_sp<SkImage> onReinterpretColorSpace(sk_sp<SkColorSpace>) const override;
 
@@ -86,8 +97,8 @@ public:
         // SkSurfaces are marked "temporarily immutable" and making an image that uses the same
         // SkPixelRef can interact badly with SkSurface/SkImage copy-on-write. So we just always
         // make a copy with a new ID.
-        static auto constexpr kCopyMode = SkCopyPixelsMode::kAlways_SkCopyPixelsMode;
-        sk_sp<SkImage> img = SkMakeImageFromRasterBitmap(fBitmap, kCopyMode);
+        static auto constexpr kCopyMode = SkCopyPixelsMode::kAlways;
+        sk_sp<SkImage> img = SkImage_Raster::MakeFromBitmap(fBitmap, kCopyMode);
         auto imgRaster = static_cast<SkImage_Raster*>(img.get());
         if (mips) {
             imgRaster->fBitmap.fMips = std::move(mips);
@@ -101,10 +112,31 @@ public:
 
     SkBitmap bitmap() const { return fBitmap; }
 
+    // Convenience method to return a shader that implements the shader+image behavior defined for
+    // drawImage/Bitmap where the paint's shader is ignored when the bitmap is a color image, but
+    // properly compose them together when it is an alpha image. This allows the returned paint to
+    // be assigned to a paint clone without discarding the original behavior.
+    sk_sp<SkShader> makeShaderForPaint(const SkPaint& paint,
+                                       SkTileMode tmx,
+                                       SkTileMode tmy,
+                                       const SkSamplingOptions& sampling,
+                                       const SkMatrix* localMatrix);
+
+    /**
+     *  Examines the bitmap to decide if it can share the existing pixelRef, or
+     *  if it needs to make a deep-copy of the pixels.
+     *
+     *  The bitmap's pixelref will be shared if either the bitmap is marked as
+     *  immutable, or CopyPixelsMode allows it.
+     *
+     *  If the bitmap's colortype cannot be converted into a corresponding
+     *  SkImageInfo, or the bitmap's pixels cannot be accessed, this will return
+     *  nullptr.
+     */
+    static sk_sp<SkImage_Raster> MakeFromBitmap(const SkBitmap&, SkCopyPixelsMode);
+
 private:
     SkBitmap fBitmap;
 };
-
-sk_sp<SkImage> MakeRasterCopyPriv(const SkPixmap& pmap, uint32_t id);
 
 #endif // SkImage_Raster_DEFINED

@@ -10,9 +10,9 @@
 #include "include/core/SkColorSpace.h" // IWYU pragma: keep
 #include "include/core/SkColorType.h"
 #include "include/core/SkSurfaceProps.h"
-#include "include/private/SkColorData.h"
 #include "include/private/base/SkAssert.h"
 #include "src/base/SkArenaAlloc.h"
+#include "src/core/SkColorData.h"
 #include "src/core/SkEffectPriv.h"
 #include "src/core/SkRasterPipeline.h"
 #include "src/core/SkRasterPipelineOpContexts.h"
@@ -37,11 +37,17 @@ SkPMColor4f SkColorFilterBase::onFilterColor4f(const SkPMColor4f& color,
     SkRasterPipeline    pipeline(&alloc);
     pipeline.appendConstantColor(&alloc, color.vec());
     SkSurfaceProps props{}; // default OK; colorFilters don't render text
-    SkStageRec rec = {&pipeline, &alloc, kRGBA_F32_SkColorType, dstCS, color.unpremul(), props};
+    SkStageRec rec = {&pipeline,
+                      &alloc,
+                      kRGBA_F32_SkColorType,
+                      dstCS,
+                      color.unpremul(),
+                      props,
+                      SkRect::MakeEmpty()};
 
     if (as_CFB(this)->appendStages(rec, color.fA == 1)) {
         SkPMColor4f dst;
-        SkRasterPipeline_MemoryCtx dstPtr = { &dst, 0 };
+        SkRasterPipelineContexts::MemoryCtx dstPtr = {&dst, 0};
         pipeline.append(SkRasterPipelineOp::store_f32, &dstPtr);
         pipeline.run(0,0, 1,1);
         return dst;

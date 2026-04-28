@@ -8,7 +8,6 @@
 #include "gm/gm.h"
 #include "include/core/SkCanvas.h"
 #include "include/core/SkColor.h"
-#include "include/core/SkColorPriv.h"
 #include "include/core/SkImage.h"
 #include "include/core/SkImageInfo.h"
 #include "include/core/SkPaint.h"
@@ -19,9 +18,13 @@
 #include "include/core/SkString.h"
 #include "include/core/SkSurface.h"
 #include "include/core/SkTypes.h"
-#include "include/gpu/ganesh/GrDirectContext.h"
 #include "include/utils/SkParsePath.h"
 #include "src/core/SkAutoPixmapStorage.h"
+#include "src/core/SkColorPriv.h"
+
+#if defined(SK_GANESH)
+#include "include/gpu/ganesh/GrDirectContext.h"
+#endif
 
 // GM to test combinations of stroking zero length paths with different caps and other settings
 // Variables:
@@ -156,8 +159,7 @@ static skiagm::DrawResult draw_zero_length_capped_paths(SkCanvas* canvas, bool a
                     pathStr.append(verb);
                 }
 
-                SkPath path;
-                SkParsePath::FromSVGString(pathStr.c_str(), &path);
+                SkPath path = SkParsePath::FromSVGString(pathStr.c_str()).value_or(SkPath());
 
                 surface->getCanvas()->clear(SK_ColorTRANSPARENT);
                 surface->getCanvas()->drawPath(path, paint);
@@ -189,13 +191,15 @@ DEF_SIMPLE_GM_BG_CAN_FAIL(zero_length_paths_bw, canvas, errorMsg,
 
 static skiagm::DrawResult draw_zero_length_capped_paths_dbl_contour(SkCanvas* canvas, bool aa,
                                                                     SkString* errorMsg) {
+#if defined(SK_GANESH)
     auto rContext = canvas->recordingContext();
     auto dContext = GrAsDirectContext(rContext);
-
     if (!dContext && rContext) {
         *errorMsg = "Not supported in DDL mode";
         return skiagm::DrawResult::kSkip;
     }
+#endif
+
     canvas->translate(kCellPad, kCellPad);
 
     SkImageInfo info = canvas->imageInfo().makeWH(kCellWidth, kCellHeight);
@@ -231,8 +235,7 @@ static skiagm::DrawResult draw_zero_length_capped_paths_dbl_contour(SkCanvas* ca
                         ++expectedCaps;
                     }
 
-                    SkPath path;
-                    SkParsePath::FromSVGString(pathStr.c_str(), &path);
+                    SkPath path = SkParsePath::FromSVGString(pathStr.c_str()).value_or(SkPath());
 
                     surface->getCanvas()->clear(SK_ColorTRANSPARENT);
                     surface->getCanvas()->drawPath(path, paint);

@@ -21,7 +21,7 @@
 #include "include/core/SkTileMode.h"
 #include "include/core/SkTypeface.h"
 #include "include/core/SkTypes.h"
-#include "include/effects/SkGradientShader.h"
+#include "include/effects/SkGradient.h"
 #include "include/private/base/SkTDArray.h"
 #include "tools/ToolUtils.h"
 #include "tools/fonts/FontToolUtils.h"
@@ -41,7 +41,7 @@ private:
             const char* txt = "Blobber";
             size_t txtLen = strlen(txt);
             fGlyphs.append(font.countText(txt, txtLen, SkTextEncoding::kUTF8));
-            font.textToGlyphs(txt, txtLen, SkTextEncoding::kUTF8, fGlyphs.begin(), fGlyphs.size());
+            font.textToGlyphs(txt, txtLen, SkTextEncoding::kUTF8, fGlyphs);
         }
 
         SkFont font = ToolUtils::DefaultPortableFont();
@@ -71,9 +71,7 @@ private:
 
         fBlob = builder.make();
 
-        SkColor  colors[2];
-        colors[0] = SK_ColorRED;
-        colors[1] = SK_ColorGREEN;
+        const SkColor4f colors[] = {SkColors::kRed, SkColors::kGreen};
 
         SkScalar pos[std::size(colors)];
         for (unsigned i = 0; i < std::size(pos); ++i) {
@@ -81,11 +79,10 @@ private:
         }
 
         SkISize sz = this->getISize();
-        fShader = SkGradientShader::MakeRadial(SkPoint::Make(SkIntToScalar(sz.width() / 2),
-                                               SkIntToScalar(sz.height() / 2)),
-                                               sz.width() * .66f, colors, pos,
-                                               std::size(colors),
-                                               SkTileMode::kRepeat);
+        fShader = SkShaders::RadialGradient(SkPoint::Make(SkIntToScalar(sz.width() / 2),
+                                                          SkIntToScalar(sz.height() / 2)),
+                                               sz.width() * .66f,
+                                               {{colors, pos, SkTileMode::kRepeat}, {}});
     }
 
     SkString getName() const override { return SkString("textblobshader"); }
@@ -111,7 +108,7 @@ private:
         }
     }
 
-    SkTDArray<uint16_t> fGlyphs;
+    SkTDArray<SkGlyphID> fGlyphs;
     sk_sp<SkTextBlob>   fBlob;
     sk_sp<SkShader>     fShader;
 

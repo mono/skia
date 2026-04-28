@@ -93,7 +93,7 @@ protected:
         int glyphCount = font.countText(fText, txtLen, SkTextEncoding::kUTF8);
 
         fGlyphs.append(glyphCount);
-        font.textToGlyphs(fText, txtLen, SkTextEncoding::kUTF8, fGlyphs.begin(), glyphCount);
+        font.textToGlyphs(fText, txtLen, SkTextEncoding::kUTF8, fGlyphs);
     }
 
     SkString getName() const override { return SkString("textblob"); }
@@ -191,7 +191,7 @@ private:
         return builder.make();
     }
 
-    SkTDArray<uint16_t> fGlyphs;
+    SkTDArray<SkGlyphID> fGlyphs;
     sk_sp<SkTypeface>   fTypeface;
     const char*         fText;
     using INHERITED = skiagm::GM;

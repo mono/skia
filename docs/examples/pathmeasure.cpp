@@ -3,14 +3,14 @@
 #include "tools/fiddle/examples.h"
 REG_FIDDLE(pathmeasure, 256, 256, true, 0) {
 void draw(SkCanvas* canvas) {
-    SkPath path;
+    SkPathBuilder path;
     path.moveTo(0, 0);
     path.lineTo(1, 0);
     path.moveTo(0, 1);
     path.lineTo(1, 1);
-    SkPathMeasure measure(path, false);
-    SkPath result;
+    SkPathMeasure measure(path.detach(), false);
+    SkPathBuilder result;
     measure.getSegment(.5, 1.5, &result, true);
-    result.dump();
+    result.detach().dump();
 }
 }  // END FIDDLE

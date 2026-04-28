@@ -76,7 +76,7 @@ sk_sp<GrTexture> GrResourceProvider::createTexture(SkISize dimensions,
 
     int numMipLevels = 1;
     if (mipmapped == skgpu::Mipmapped::kYes) {
-        numMipLevels = SkMipmap::ComputeLevelCount(dimensions.fWidth, dimensions.fHeight) + 1;
+        numMipLevels = SkMipmap::ComputeLevelCount(dimensions) + 1;
     }
 
     if (!fCaps->validateSurfaceParams(dimensions,
@@ -336,7 +336,7 @@ sk_sp<GrTexture> GrResourceProvider::findAndRefScratchTexture(const skgpu::Scrat
     if (GrGpuResource* resource = fCache->findAndRefScratchResource(key)) {
         fGpu->stats()->incNumScratchTexturesReused();
         GrSurface* surface = static_cast<GrSurface*>(resource);
-        resource->setLabel(std::move(label));
+        resource->setLabel(label);
         return sk_sp<GrTexture>(surface->asTexture());
     }
     return nullptr;
@@ -485,7 +485,7 @@ sk_sp<const GrGpuBuffer> GrResourceProvider::findOrMakeStaticBuffer(
     AutoTMalloc<char> stagingBuffer;
     if (!vertexWriter) {
         SkASSERT(!buffer->isMapped());
-        vertexWriter = {stagingBuffer.reset(size), size};
+        vertexWriter = skgpu::VertexWriter{stagingBuffer.reset(size), size};
     }
 
     initializeBufferFn(std::move(vertexWriter), size);
@@ -822,7 +822,7 @@ sk_sp<GrAttachment> GrResourceProvider::refScratchMSAAAttachment(SkISize dimensi
     if (resource) {
         fGpu->stats()->incNumScratchMSAAAttachmentsReused();
         GrAttachment* attachment = static_cast<GrAttachment*>(resource);
-        resource->setLabel(std::move(label));
+        resource->setLabel(label);
         return sk_sp<GrAttachment>(attachment);
     }
 

@@ -6,28 +6,26 @@ void draw(SkCanvas* canvas) {
     auto debugster = [](const char* prefix, SkPath::Iter& iter) -> void {
         SkDebugf("%s:\n", prefix);
         const char* verbStr[] =  { "Move", "Line", "Quad", "Conic", "Cubic", "Close", "Done" };
-        const int pointCount[] = {     1 ,     2 ,     3 ,      3 ,      4 ,      1 ,     0  };
-        SkPath::Verb verb;
-        do {
-           SkPoint points[4];
-           verb = iter.next(points);
-           SkDebugf("k%s_Verb ", verbStr[(int) verb]);
-           for (int i = 0; i < pointCount[(int) verb]; ++i) {
-                SkDebugf("{%g, %g}, ", points[i].fX, points[i].fY);
+        while (auto rec = iter.next()) {
+           SkDebugf("k%s_Verb ", verbStr[(int)rec->fVerb]);
+            for (SkPoint p : rec->fPoints) {
+                SkDebugf("{%g, %g}, ", p.fX, p.fY);
            }
-           if (SkPath::kConic_Verb == verb) {
-               SkDebugf("weight = %g", iter.conicWeight());
+           if (SkPathVerb::kConic == rec->fVerb) {
+               SkDebugf("weight = %g", rec->conicWeight());
            }
            SkDebugf("\n");
-        } while (SkPath::kDone_Verb != verb);
+        }
         SkDebugf("\n");
     };
-    SkPath path;
-    path.quadTo(10, 20, 30, 40);
+    SkPath path = SkPathBuilder()
+                  .quadTo(10, 20, 30, 40)
+                  .detach();
     SkPath::Iter iter(path, false);
     debugster("quad open", iter);
-    SkPath path2;
-    path2.conicTo(1, 2, 3, 4, .5f);
+    SkPath path2 = SkPathBuilder()
+                   .conicTo(1, 2, 3, 4, .5f)
+                   .detach();
     iter.setPath(path2, true);
     debugster("conic closed", iter);
 }

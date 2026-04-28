@@ -15,6 +15,7 @@
 #include "include/gpu/ganesh/GrDirectContext.h"
 #include "include/gpu/ganesh/gl/GrGLBackendSurface.h"
 #include "include/gpu/ganesh/gl/GrGLTypes.h"
+#include "include/private/base/SkLog.h"
 #include "src/gpu/ganesh/GrDirectContextPriv.h"
 #include "src/gpu/ganesh/gl/GrGLDefines.h"
 #include "src/gpu/ganesh/gl/GrGLUtil.h"
@@ -37,27 +38,37 @@ GrBackendFormat GetGLBackendFormat(GrDirectContext* dContext,
         return GrBackendFormat();
     }
     switch (bufferFormat) {
-        //TODO: find out if we can detect, which graphic buffers support GR_GL_TEXTURE_2D
         case AHARDWAREBUFFER_FORMAT_R8G8B8A8_UNORM:
+            return GrBackendFormats::MakeGL(GR_GL_RGBA8);
         case AHARDWAREBUFFER_FORMAT_R8G8B8X8_UNORM:
-            return GrBackendFormats::MakeGL(GR_GL_RGBA8, GR_GL_TEXTURE_EXTERNAL);
+            // According to  https://developer.android.com/ndk/reference/group/a-hardware-buffer,
+            // the GL format equivalent is GL_RGB8 but that is considered to be 24bpp throughout
+            // Ganesh. For now keep it as an external format until we figure out the RGB vs RGBA
+            // compatibility.
+            return GrBackendFormats::MakeGLExternal();
         case AHARDWAREBUFFER_FORMAT_R16G16B16A16_FLOAT:
-            return GrBackendFormats::MakeGL(GR_GL_RGBA16F, GR_GL_TEXTURE_EXTERNAL);
+            return GrBackendFormats::MakeGL(GR_GL_RGBA16F);
         case AHARDWAREBUFFER_FORMAT_R5G6B5_UNORM:
-            return GrBackendFormats::MakeGL(GR_GL_RGB565, GR_GL_TEXTURE_EXTERNAL);
+            return GrBackendFormats::MakeGL(GR_GL_RGB565);
         case AHARDWAREBUFFER_FORMAT_R10G10B10A2_UNORM:
-            return GrBackendFormats::MakeGL(GR_GL_RGB10_A2, GR_GL_TEXTURE_EXTERNAL);
+            return GrBackendFormats::MakeGL(GR_GL_RGB10_A2);
         case AHARDWAREBUFFER_FORMAT_R8G8B8_UNORM:
-            return GrBackendFormats::MakeGL(GR_GL_RGB8, GR_GL_TEXTURE_EXTERNAL);
+            return GrBackendFormats::MakeGL(GR_GL_RGB8);
 #if __ANDROID_API__ >= 33
         case AHARDWAREBUFFER_FORMAT_R8_UNORM:
-            return GrBackendFormats::MakeGL(GR_GL_R8, GR_GL_TEXTURE_EXTERNAL);
+            return GrBackendFormats::MakeGL(GR_GL_R8);
+#endif
+#if __ANDROID_API__ >= 34
+        case AHARDWAREBUFFER_FORMAT_R10G10B10A10_UNORM:
+            // There is no GLFormat enum that corresponds to this texture format, but it is known
+            // (GrColorType and SkColorType can describe it).
+            return GrBackendFormats::MakeGLExternal();
 #endif
         default:
             if (requireKnownFormat) {
                 return GrBackendFormat();
             } else {
-                return GrBackendFormats::MakeGL(GR_GL_RGBA8, GR_GL_TEXTURE_EXTERNAL);
+                return GrBackendFormats::MakeGLExternal();
             }
     }
     SkUNREACHABLE;
@@ -88,13 +99,13 @@ void GLTextureHelper::rebind(GrDirectContext* dContext) {
     glBindTexture(fTexTarget, fTexID);
     GLenum status = GL_NO_ERROR;
     if ((status = glGetError()) != GL_NO_ERROR) {
-        SkDebugf("glBindTexture(%#x, %d) failed (%#x)", (int) fTexTarget,
+        SKIA_LOG_E("glBindTexture(%#x, %d) failed (%#x)", (int) fTexTarget,
             (int) fTexID, (int) status);
         return;
     }
     glEGLImageTargetTexture2DOES(fTexTarget, fImage);
     if ((status = glGetError()) != GL_NO_ERROR) {
-        SkDebugf("glEGLImageTargetTexture2DOES failed (%#x)", (int) status);
+        SKIA_LOG_E("glEGLImageTargetTexture2DOES failed (%#x)", (int) status);
         return;
     }
     dContext->resetContext(kTextureBinding_GrGLBackendState);
@@ -118,9 +129,14 @@ static GrBackendTexture make_gl_backend_texture(
         UpdateImageProc* updateProc,
         TexImageCtx* imageCtx,
         bool isProtectedContent,
-        const GrBackendFormat& backendFormat,
-        bool isRenderable) {
+        const GrBackendFormat& backendFormat) {
     while (GL_NO_ERROR != glGetError()) {} //clear GL errors
+
+    auto textureType = backendFormat.textureType();
+    if (textureType != GrTextureType::k2D && textureType != GrTextureType::kExternal) {
+        SKIA_LOG_E("Unsupported texture target type: %d\n", (int) textureType);
+        return GrBackendTexture();
+    }
 
     EGLClientBuffer clientBuffer = eglGetNativeClientBufferANDROID(hardwareBuffer);
     EGLint attribs[] = { EGL_IMAGE_PRESERVED_KHR, EGL_TRUE,
@@ -132,7 +148,7 @@ static GrBackendTexture make_gl_backend_texture(
     EGLImageKHR image = eglCreateImageKHR(display, EGL_NO_CONTEXT, EGL_NATIVE_BUFFER_ANDROID,
                                           clientBuffer, attribs);
     if (EGL_NO_IMAGE_KHR == image) {
-        SkDebugf("Could not create EGL image, err = (%#x)", (int) eglGetError() );
+        SKIA_LOG_E("Could not create EGL image, err = (%#x)", (int) eglGetError() );
         return GrBackendTexture();
     }
 
@@ -143,19 +159,31 @@ static GrBackendTexture make_gl_backend_texture(
         return GrBackendTexture();
     }
 
-    GrGLuint target = isRenderable ? GR_GL_TEXTURE_2D : GR_GL_TEXTURE_EXTERNAL;
+    GrGLuint target = textureType == GrTextureType::kExternal ? GR_GL_TEXTURE_EXTERNAL
+                                                              : GR_GL_TEXTURE_2D;
+
+    if (!dContext->priv().caps()->shaderCaps()->fExternalTextureSupport &&
+        textureType == GrTextureType::kExternal) {
+        // The extension OES_EGL_image_external is mandatory for an
+        // Android-compatible device. See
+        // https://source.android.com/docs/core/graphics/implement-opengl-es
+        //
+        // This path exists to support a RenderDoc fork which supports
+        // OES_EGL_image but not OES_EGL_image_external.
+        target = GR_GL_TEXTURE_2D;
+    }
 
     glBindTexture(target, texID);
     GLenum status = GL_NO_ERROR;
     if ((status = glGetError()) != GL_NO_ERROR) {
-        SkDebugf("glBindTexture failed (%#x)", (int) status);
+        SKIA_LOG_E("glBindTexture failed (%#x)", (int) status);
         glDeleteTextures(1, &texID);
         eglDestroyImageKHR(display, image);
         return GrBackendTexture();
     }
     glEGLImageTargetTexture2DOES(target, image);
     if ((status = glGetError()) != GL_NO_ERROR) {
-        SkDebugf("glEGLImageTargetTexture2DOES failed (%#x)", (int) status);
+        SKIA_LOG_E("glEGLImageTargetTexture2DOES failed (%#x)", (int) status);
         glDeleteTextures(1, &texID);
         eglDestroyImageKHR(display, image);
         return GrBackendTexture();
@@ -220,9 +248,13 @@ GrBackendTexture MakeGLBackendTexture(GrDirectContext* dContext,
         return GrBackendTexture();
     }
 
+    if (isRenderable &&
+        !dContext->priv().caps()->isFormatRenderable(backendFormat, /*sampleCount=*/1)) {
+        return GrBackendTexture();
+    }
+
     return make_gl_backend_texture(dContext, hardwareBuffer, width, height, deleteProc,
-                                   updateProc, imageCtx, isProtectedContent, backendFormat,
-                                   isRenderable);
+                                   updateProc, imageCtx, isProtectedContent, backendFormat);
 }
 
 }  // namespace GrAHardwareBufferUtils

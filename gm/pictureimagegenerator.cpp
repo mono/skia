@@ -18,6 +18,7 @@
 #include "include/core/SkMatrix.h"
 #include "include/core/SkPaint.h"
 #include "include/core/SkPath.h"
+#include "include/core/SkPathBuilder.h"
 #include "include/core/SkPicture.h"
 #include "include/core/SkPictureRecorder.h"
 #include "include/core/SkPoint.h"
@@ -30,9 +31,9 @@
 #include "include/core/SkTileMode.h"
 #include "include/core/SkTypeface.h"
 #include "include/core/SkTypes.h"
-#include "include/effects/SkGradientShader.h"
-#include "include/pathops/SkPathOps.h"
+#include "include/effects/SkGradient.h"
 #include "include/utils/SkTextUtils.h"
+#include "src/core/SkColorPriv.h"
 #include "src/image/SkImageGeneratorPriv.h"
 #include "tools/ToolUtils.h"
 #include "tools/fonts/FontToolUtils.h"
@@ -54,33 +55,35 @@ static void draw_vector_logo(SkCanvas* canvas, const SkRect& viewBox) {
     font.setEmbolden(true);
 
     SkPath path;
-    SkRect iBox, skiBox, skiaBox;
     SkTextUtils::GetPath("SKI", 3, SkTextEncoding::kUTF8, 0, 0, font, &path);
-    TightBounds(path, &skiBox);
+    auto skiBox = path.computeTightBounds();
+
     SkTextUtils::GetPath("I", 1, SkTextEncoding::kUTF8, 0, 0, font, &path);
-    TightBounds(path, &iBox);
+    auto iBox = path.computeTightBounds();
     iBox.offsetTo(skiBox.fRight - iBox.width(), iBox.fTop);
 
     const size_t textLen = strlen(kSkiaStr);
     SkTextUtils::GetPath(kSkiaStr, textLen, SkTextEncoding::kUTF8, 0, 0, font, &path);
-    TightBounds(path, &skiaBox);
+    auto skiaBox = path.computeTightBounds();
     skiaBox.outset(0, 2 * iBox.width() * (kVerticalSpacing + 1));
 
     const SkScalar accentSize = iBox.width() * kAccentScale;
     const SkScalar underlineY = iBox.bottom() +
         (kVerticalSpacing + SkScalarSqrt(3) / 2) * accentSize;
     SkAutoCanvasRestore acr(canvas, true);
-    canvas->concat(SkMatrix::RectToRect(skiaBox, viewBox));
+    canvas->concat(SkMatrix::RectToRectOrIdentity(skiaBox, viewBox));
 
     canvas->drawCircle(iBox.centerX(),
                        iBox.y() - (0.5f + kVerticalSpacing) * accentSize,
                        accentSize / 2,
                        paint);
 
-    path.reset();
-    path.moveTo(iBox.centerX() - accentSize / 2, iBox.bottom() + kVerticalSpacing * accentSize);
-    path.rLineTo(accentSize, 0);
-    path.lineTo(iBox.centerX(), underlineY);
+    path = SkPathBuilder()
+           .moveTo(iBox.centerX() - accentSize / 2,
+                   iBox.bottom() + kVerticalSpacing * accentSize)
+           .rLineTo(accentSize, 0)
+           .lineTo(iBox.centerX(), underlineY)
+           .detach();
     canvas->drawPath(path, paint);
 
     SkRect underlineRect = SkRect::MakeLTRB(iBox.centerX() - iBox.width() * accentSize * 3,
@@ -90,10 +93,9 @@ static void draw_vector_logo(SkCanvas* canvas, const SkRect& viewBox) {
     const SkPoint pts1[] = { SkPoint::Make(underlineRect.x(), 0),
                              SkPoint::Make(iBox.centerX(), 0) };
     const SkScalar pos1[] = { 0, 0.75f };
-    const SkColor colors1[] = { SK_ColorTRANSPARENT, SK_ColorBLACK };
+    const SkColor4f colors1[] = { SkColors::kTransparent, SkColors::kBlack };
     SkASSERT(std::size(pos1) == std::size(colors1));
-    paint.setShader(SkGradientShader::MakeLinear(pts1, colors1, pos1, std::size(pos1),
-                                                 SkTileMode::kClamp));
+    paint.setShader(SkShaders::LinearGradient(pts1, {{colors1, pos1, SkTileMode::kClamp}, {}}));
     canvas->drawRect(underlineRect, paint);
 
     const SkPoint pts2[] = { SkPoint::Make(iBox.x() - iBox.width() * kGradientPad, 0),
@@ -110,8 +112,9 @@ static void draw_vector_logo(SkCanvas* canvas, const SkRect& viewBox) {
         SK_ColorBLACK
     };
     SkASSERT(std::size(pos2) == std::size(colors2));
-    paint.setShader(SkGradientShader::MakeLinear(pts2, colors2, pos2, std::size(pos2),
-                                                 SkTileMode::kClamp));
+    SkColorConverter conv(colors2);
+    paint.setShader(SkShaders::LinearGradient(pts2,
+                                              {{conv.colors4f(), pos2, SkTileMode::kClamp}, {}}));
     canvas->drawSimpleText(kSkiaStr, textLen, SkTextEncoding::kUTF8, 0, 0, font, paint);
 }
 

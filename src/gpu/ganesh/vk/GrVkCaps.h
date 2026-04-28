@@ -153,27 +153,6 @@ public:
     // supported.
     bool supportsSwapchain() const { return fSupportsSwapchain; }
 
-    // Returns whether the device supports the ability to extend VkPhysicalDeviceProperties struct.
-    bool supportsPhysicalDeviceProperties2() const { return fSupportsPhysicalDeviceProperties2; }
-    // Returns whether the device supports the ability to extend VkMemoryRequirements struct.
-    bool supportsMemoryRequirements2() const { return fSupportsMemoryRequirements2; }
-
-    // Returns whether the device supports the ability to extend the vkBindMemory call.
-    bool supportsBindMemory2() const { return fSupportsBindMemory2; }
-
-    // Returns whether or not the device suports the various API maintenance fixes to Vulkan 1.0. In
-    // Vulkan 1.1 all these maintenance are part of the core spec.
-    bool supportsMaintenance1() const { return fSupportsMaintenance1; }
-    bool supportsMaintenance2() const { return fSupportsMaintenance2; }
-    bool supportsMaintenance3() const { return fSupportsMaintenance3; }
-
-    // Returns true if the device supports passing in a flag to say we are using dedicated GPU when
-    // allocating memory. For some devices this allows them to return more optimized memory knowning
-    // they will never need to suballocate amonst multiple objects.
-    bool supportsDedicatedAllocation() const { return fSupportsDedicatedAllocation; }
-
-    // Returns true if the device supports importing of external memory into Vulkan memory.
-    bool supportsExternalMemory() const { return fSupportsExternalMemory; }
     // Returns true if the device supports importing Android hardware buffers into Vulkan memory.
     bool supportsAndroidHWBExternalMemory() const { return fSupportsAndroidHWBExternalMemory; }
 
@@ -198,6 +177,10 @@ public:
     bool supportsDeviceFaultInfo() const { return fSupportsDeviceFaultInfo; }
 
     bool supportsFrameBoundary() const { return fSupportsFrameBoundary; }
+
+    bool supportsPipelineCreationCacheControl() const {
+        return fSupportsPipelineCreationCacheControl;
+    }
 
     // Returns whether we prefer to record draws directly into a primary command buffer.
     bool preferPrimaryOverSecondaryCommandBuffers() const {
@@ -302,27 +285,25 @@ public:
 #endif
 
 private:
-    enum VkVendor {
-        kAMD_VkVendor = 4098,
-        kARM_VkVendor = 5045,
-        kGoogle_VkVendor = 0x1AE0,
-        kImagination_VkVendor = 4112,
-        kIntel_VkVendor = 32902,
-        kNvidia_VkVendor = 4318,
-        kQualcomm_VkVendor = 20803,
-    };
-
     enum class IntelGPUType {
         // 9th gen
         kSkyLake,
 
         // 11th gen
         kIceLake,
+        kJasperLake,
 
-        // 12th gen
+        // 12th gen or above
         kRocketLake,
         kTigerLake,
         kAlderLake,
+        kRaptorLake,
+        kAlchemist,
+        kLunarLake,
+        kMeteorLake,
+        kArrowLake,
+        kBattlemage,
+        kPantherLake,
 
         kOther
     };
@@ -337,11 +318,19 @@ private:
         switch (type) {
             case IntelGPUType::kSkyLake:
                 return 9;
-            case IntelGPUType::kIceLake:
+            case IntelGPUType::kIceLake:     // fall through
+            case IntelGPUType::kJasperLake:
                 return 11;
-            case IntelGPUType::kRocketLake: // fall through
-            case IntelGPUType::kTigerLake:  // fall through
-            case IntelGPUType::kAlderLake:
+            case IntelGPUType::kRocketLake:  // fall through
+            case IntelGPUType::kTigerLake:   // fall through
+            case IntelGPUType::kAlderLake:   // fall through
+            case IntelGPUType::kRaptorLake:  // fall through
+            case IntelGPUType::kAlchemist:   // fall through
+            case IntelGPUType::kLunarLake:   // fall through
+            case IntelGPUType::kMeteorLake:  // fall through
+            case IntelGPUType::kArrowLake:   // fall through
+            case IntelGPUType::kBattlemage:  // fall through
+            case IntelGPUType::kPantherLake:
                 return 12;
             case IntelGPUType::kOther:
                 // For now all our workaround checks are in the form of "if gen > some_value". So
@@ -470,15 +459,6 @@ private:
 
     bool fSupportsSwapchain = false;
 
-    bool fSupportsPhysicalDeviceProperties2 = false;
-    bool fSupportsMemoryRequirements2 = false;
-    bool fSupportsBindMemory2 = false;
-    bool fSupportsMaintenance1 = false;
-    bool fSupportsMaintenance2 = false;
-    bool fSupportsMaintenance3 = false;
-
-    bool fSupportsDedicatedAllocation = false;
-    bool fSupportsExternalMemory = false;
     bool fSupportsAndroidHWBExternalMemory = false;
 
     bool fSupportsYcbcrConversion = false;
@@ -488,6 +468,8 @@ private:
     bool fSupportsDeviceFaultInfo = false;
 
     bool fSupportsFrameBoundary = false;
+
+    bool fSupportsPipelineCreationCacheControl = false;
 
     bool fPreferPrimaryOverSecondaryCommandBuffers = true;
     bool fMustInvalidatePrimaryCmdBufferStateAfterClearAttachments = false;

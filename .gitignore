@@ -12,9 +12,8 @@
 .project
 .recipe_deps/
 .settings/
-.vs/
-/_ReSharper.Caches
 .vscode/
+.vs/
 .win_toolchain/
 TAGS
 bower_components

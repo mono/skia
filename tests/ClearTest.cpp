@@ -23,9 +23,9 @@
 #include "include/gpu/ganesh/GrContextOptions.h"
 #include "include/gpu/ganesh/GrDirectContext.h"
 #include "include/gpu/ganesh/SkSurfaceGanesh.h"
-#include "include/private/SkColorData.h"
 #include "include/private/gpu/ganesh/GrTypesPriv.h"
 #include "src/core/SkAutoPixmapStorage.h"
+#include "src/core/SkColorData.h"
 #include "src/gpu/SkBackingFit.h"
 #include "src/gpu/ganesh/GrCaps.h"
 #include "src/gpu/ganesh/GrColor.h"
@@ -283,7 +283,7 @@ static void clear_op_test(skiatest::Reporter* reporter, GrDirectContext* dContex
         static constexpr SkIRect kScissorRect = SkIRect::MakeXYWH(1, 1, kW-1, kH-1);
 
         // Try combining a pure-color clear w/ a combined stencil & color clear
-        // (re skbug.com/10963)
+        // (re skbug.com/40042342)
         {
             sdc = newSDC(dContext, kW, kH);
             SkASSERT(sdc);
@@ -308,7 +308,7 @@ static void clear_op_test(skiatest::Reporter* reporter, GrDirectContext* dContex
         }
 
         // Try combining a pure-stencil clear w/ a combined stencil & color clear
-        // (re skbug.com/10963)
+        // (re skbug.com/40042342)
         {
             sdc = newSDC(dContext, kW, kH);
             SkASSERT(sdc);

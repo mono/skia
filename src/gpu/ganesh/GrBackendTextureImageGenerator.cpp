@@ -33,6 +33,7 @@
 #include "src/gpu/ganesh/GrSurfaceProxy.h"
 #include "src/gpu/ganesh/GrTexture.h"
 #include "src/gpu/ganesh/GrTextureProxy.h"
+#include "src/gpu/ganesh/SkGaneshRecorder.h"
 #include "src/gpu/ganesh/SkGr.h"
 
 #include <functional>
@@ -94,6 +95,14 @@ GrBackendTextureImageGenerator::~GrBackendTextureImageGenerator() {
 
 bool GrBackendTextureImageGenerator::onIsProtected() const {
     return fBackendTexture.isProtected();
+}
+
+bool GrBackendTextureImageGenerator::onIsValid(SkRecorder* recorder) const {
+    auto gRecorder = AsGaneshRecorder(recorder);
+    if (!gRecorder) {
+        return false;
+    }
+    return !gRecorder->recordingContext()->abandoned();
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////

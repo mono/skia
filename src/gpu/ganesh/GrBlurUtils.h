@@ -13,8 +13,10 @@
 #include "src/gpu/SkBackingFit.h"
 
 #include <memory>
+#include <optional>
 
 class GrClip;
+class GrFragmentProcessor;
 class GrPaint;
 class GrRecordingContext;
 class GrStyledShape;
@@ -28,8 +30,10 @@ enum SkAlphaType : int;
 enum class GrColorType;
 enum class SkTileMode;
 namespace skgpu { namespace ganesh { class SurfaceDrawContext; } }
+struct GrShaderCaps;
 struct SkIRect;
 struct SkISize;
+struct SkRect;
 
 /**
  *  Blur utilities.
@@ -113,6 +117,23 @@ std::unique_ptr<skgpu::ganesh::SurfaceDrawContext> GaussianBlur(
         float sigmaY,
         SkTileMode mode,
         SkBackingFit fit = SkBackingFit::kApprox);
+
+std::unique_ptr<GrFragmentProcessor> MakeCircleBlur(GrRecordingContext* context,
+                                                    const SkRect& circle,
+                                                    float sigma);
+
+std::unique_ptr<GrFragmentProcessor> MakeRectBlur(GrRecordingContext* context,
+                                                  const GrShaderCaps& caps,
+                                                  const SkRect& srcRect,
+                                                  const std::optional<SkRect>& devRect,
+                                                  const SkMatrix& viewMatrix,
+                                                  float transformedSigma);
+
+std::unique_ptr<GrFragmentProcessor> MakeRRectBlur(GrRecordingContext* context,
+                                                   float sigma,
+                                                   float xformedSigma,
+                                                   const SkRRect& srcRRect,
+                                                   const SkRRect& devRRect);
 
 }  // namespace GrBlurUtils
 

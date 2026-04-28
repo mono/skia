@@ -8,6 +8,7 @@
 #include "include/core/SkM44.h"
 #include "include/core/SkMatrix.h"
 #include "include/core/SkPath.h"
+#include "include/core/SkPathBuilder.h"
 #include "include/core/SkRect.h"
 #include "include/core/SkScalar.h"
 #include "include/core/SkTypes.h"
@@ -318,7 +319,7 @@ DEF_TEST(M44_mapRect, reporter) {
             REPORTER_ASSERT(reporter, leftFound || topFound || rightFound || bottomFound);
             // For any edge that came from a clipped corner, increase its error tolerance relative
             // to what SkPath::ApplyPerspectiveClip calculates.
-            // TODO(michaelludwig): skbug.com/12335 required updating the w epsilon distance which
+            // TODO(michaelludwig): skbug.com/40043416 required updating the w epsilon distance which
             // greatly increased noise for coords projecting to infinity. They aren't "wrong", since
             // the intent was clearly to pick a big number that's definitely offscreen, but
             // MapRect should have a more robust solution than a fixed w > epsilon and when it does,
@@ -332,8 +333,10 @@ DEF_TEST(M44_mapRect, reporter) {
             REPORTER_ASSERT(reporter, leftFound && topFound && rightFound && bottomFound);
         }
 
-        SkPath path = SkPath::Rect(src);
-        path.transform(m.asM33(), SkApplyPerspectiveClip::kYes);
+        const SkPath path = SkPathBuilder()
+            .addRect(src)
+            .transform(m.asM33())
+            .detach();
         assertRectsNearlyEqual(actual, path.getBounds(), epsilon);
     };
 
@@ -365,7 +368,7 @@ DEF_TEST(M44_mapRect, reporter) {
 }
 
 DEF_TEST(M44_mapRect_skbug12335, r) {
-    // Stripped down test case from skbug.com/12335. Essentially, the corners of this rect would
+    // Stripped down test case from skbug.com/40043416. Essentially, the corners of this rect would
     // map to homogoneous coords with very small w's (below the old value of kW0PlaneDistance) and
     // so they would be clipped "behind" the plane, resulting in an empty mapped rect. Coordinates
     // with positive that wouldn't overflow when divided by w should still be included in the mapped

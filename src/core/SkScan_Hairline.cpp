@@ -5,8 +5,10 @@
  * found in the LICENSE file.
  */
 
+#include "include/core/SkImageInfo.h"
 #include "include/core/SkPaint.h"
 #include "include/core/SkPath.h"
+#include "include/core/SkPixmap.h"
 #include "include/core/SkPoint.h"
 #include "include/core/SkRect.h"
 #include "include/core/SkRegion.h"
@@ -32,26 +34,63 @@
 #include <array>
 #include <cstdint>
 #include <cstring>
+#include <optional>
+
+#define DISPATCH_LOOP()                                     \
+    const auto pm = direct->pm;                             \
+    const auto value = direct->value;                       \
+    switch (pm.info().bytesPerPixel()) {                    \
+        case 1: DIRECT_BLIT_LOOP(writable_addr8); break;    \
+        case 2: DIRECT_BLIT_LOOP(writable_addr16); break;   \
+        case 4: DIRECT_BLIT_LOOP(writable_addr32); break;   \
+        case 8: DIRECT_BLIT_LOOP(writable_addr64); break;   \
+    }
+
+#define DIRECT_BLIT_LOOP(writable_proc)         \
+    do {                                        \
+        *pm.writable_proc(x, fy >> 16) = value; \
+        fy += dy;                               \
+    } while (++x < stopx)
 
 static void horiline(int x, int stopx, SkFixed fy, SkFixed dy,
                      SkBlitter* blitter) {
     SkASSERT(x < stopx);
 
-    do {
-        blitter->blitH(x, fy >> 16, 1);
-        fy += dy;
-    } while (++x < stopx);
+    if (auto direct = blitter->canDirectBlit()) {
+        DISPATCH_LOOP()
+    } else {
+        do {
+            blitter->blitH(x, fy >> 16, 1);
+            fy += dy;
+        } while (++x < stopx);
+    }
 }
+
+#undef DIRECT_BLIT_LOOP
+#define DIRECT_BLIT_LOOP(writable_proc)         \
+    do {                                        \
+        *pm.writable_proc(fx >> 16, y) = value; \
+        fx += dx;                               \
+    } while (++y < stopy)
+
 
 static void vertline(int y, int stopy, SkFixed fx, SkFixed dx,
                      SkBlitter* blitter) {
     SkASSERT(y < stopy);
 
-    do {
-        blitter->blitH(fx >> 16, y, 1);
-        fx += dx;
-    } while (++y < stopy);
+    if (auto direct = blitter->canDirectBlit()) {
+        DISPATCH_LOOP()
+    } else {
+        do {
+            blitter->blitH(fx >> 16, y, 1);
+            fx += dx;
+        } while (++y < stopy);
+    }
 }
+
+#undef DIRECT_BLIT_LOOP
+
+//////////////////////////////////////////////////////
 
 #ifdef SK_DEBUG
 static bool canConvertFDot6ToFixed(SkFDot6 x) {
@@ -60,8 +99,10 @@ static bool canConvertFDot6ToFixed(SkFDot6 x) {
 }
 #endif
 
-void SkScan::HairLineRgn(const SkPoint array[], int arrayCount, const SkRegion* clip,
-                         SkBlitter* origBlitter) {
+void SkScan::HairLineRgn(SkSpan<const SkPoint> src, const SkRegion* clip, SkBlitter* origBlitter) {
+    if (src.empty()) {
+        return;
+    }
     SkBlitterClipper    clipper;
     SkIRect clipR, ptsR;
 
@@ -73,14 +114,14 @@ void SkScan::HairLineRgn(const SkPoint array[], int arrayCount, const SkRegion* 
         clipBounds.set(clip->getBounds());
     }
 
-    for (int i = 0; i < arrayCount - 1; ++i) {
+    for (size_t i = 0; i < src.size() - 1; ++i) {
         SkBlitter* blitter = origBlitter;
 
         SkPoint pts[2];
 
         // We have to pre-clip the line to fit in a SkFixed, so we just chop
         // the line. TODO find a way to actually draw beyond that range.
-        if (!SkLineClipper::IntersectLine(&array[i], fixedBounds, pts)) {
+        if (!SkLineClipper::IntersectLine(&src[i], fixedBounds, pts)) {
             continue;
         }
 
@@ -260,7 +301,7 @@ static void hair_quad(const SkPoint pts[3], const SkRegion* clip,
 
     SkQuadCoeff coeff(pts);
 
-    const int lines = 1 << level;
+    const unsigned lines = 1 << level;
     float2 t(0);
     float2 dt(SK_Scalar1 / lines);
 
@@ -271,12 +312,12 @@ static void hair_quad(const SkPoint pts[3], const SkRegion* clip,
     float2 A = coeff.fA;
     float2 B = coeff.fB;
     float2 C = coeff.fC;
-    for (int i = 1; i < lines; ++i) {
+    for (unsigned i = 1; i < lines; ++i) {
         t = t + dt;
         ((A * t + B) * t + C).store(&tmp[i]);
     }
     tmp[lines] = pts[2];
-    lineproc(tmp, lines + 1, clip, blitter);
+    lineproc({tmp, lines + 1}, clip, blitter);
 }
 
 static SkRect compute_nocheck_quad_bounds(const SkPoint pts[3]) {
@@ -378,11 +419,10 @@ static inline mask2 float2_is_finite(const float2& x) {
 
 static void hair_cubic(const SkPoint pts[4], const SkRegion* clip, SkBlitter* blitter,
                        SkScan::HairRgnProc lineproc) {
-    const int lines = compute_cubic_segs(pts);
+    const size_t lines = compute_cubic_segs(pts);
     SkASSERT(lines > 0);
     if (1 == lines) {
-        SkPoint tmp[2] = { pts[0], pts[3] };
-        lineproc(tmp, 2, clip, blitter);
+        lineproc({{pts[0], pts[3]}}, clip, blitter);
         return;
     }
 
@@ -400,7 +440,7 @@ static void hair_cubic(const SkPoint pts[4], const SkRegion* clip, SkBlitter* bl
     float2 C = coeff.fC;
     float2 D = coeff.fD;
     mask2 is_finite(~0);   // start out as true
-    for (int i = 1; i < lines; ++i) {
+    for (size_t i = 1; i < lines; ++i) {
         t = t + dt;
         float2 p = ((A * t + B) * t + C) * t + D;
         is_finite &= float2_is_finite(p);
@@ -408,7 +448,7 @@ static void hair_cubic(const SkPoint pts[4], const SkRegion* clip, SkBlitter* bl
     }
     if (all(is_finite)) {
         tmp[lines] = pts[3];
-        lineproc(tmp, lines + 1, clip, blitter);
+        lineproc({tmp, lines + 1}, clip, blitter);
     } // else some point(s) are non-finite, so don't draw
 }
 
@@ -465,26 +505,31 @@ static int compute_quad_level(const SkPoint pts[3]) {
     return level;
 }
 
+template <typename T> bool optional_eq(std::optional<T> opt, T other) {
+    return opt.has_value() && (opt.value() == other);
+}
+
 /* Extend the points in the direction of the starting or ending tangent by 1/2 unit to
    account for a round or square cap. If there's no distance between the end point and
    the control point, use the next control point to create a tangent. If the curve
    is degenerate, move the cap out 1/2 unit horizontally. */
 template <SkPaint::Cap capStyle>
-void extend_pts(SkPath::Verb prevVerb, SkPath::Verb nextVerb, SkPoint* pts, int ptCount) {
+void extend_pts(std::optional<SkPathVerb> prevVerb, std::optional<SkPathVerb> nextVerb,
+                SkSpan<SkPoint> pts) {
     SkASSERT(SkPaint::kSquare_Cap == capStyle || SkPaint::kRound_Cap == capStyle);
     // The area of a circle is PI*R*R. For a unit circle, R=1/2, and the cap covers half of that.
     const SkScalar capOutset = SkPaint::kSquare_Cap == capStyle ? 0.5f : SK_ScalarPI / 8;
-    if (SkPath::kMove_Verb == prevVerb) {
-        SkPoint* first = pts;
+    if (optional_eq(prevVerb, SkPathVerb::kMove)) {
+        SkPoint* first = pts.data();
         SkPoint* ctrl = first;
-        int controls = ptCount - 1;
+        size_t controls = pts.size() - 1;
         SkVector tangent;
         do {
             tangent = *first - *++ctrl;
         } while (tangent.isZero() && --controls > 0);
         if (tangent.isZero()) {
             tangent.set(1, 0);
-            controls = ptCount - 1;  // If all points are equal, move all but one
+            controls = pts.size() - 1;  // If all points are equal, move all but one
         } else {
             tangent.normalize();
         }
@@ -492,20 +537,22 @@ void extend_pts(SkPath::Verb prevVerb, SkPath::Verb nextVerb, SkPoint* pts, int 
             first->fX += tangent.fX * capOutset;
             first->fY += tangent.fY * capOutset;
             ++first;
-        } while (++controls < ptCount);
+        } while (++controls < pts.size());
     }
-    if (SkPath::kMove_Verb == nextVerb || SkPath::kDone_Verb == nextVerb
-            || SkPath::kClose_Verb == nextVerb) {
-        SkPoint* last = &pts[ptCount - 1];
+    if (!nextVerb.has_value() ||
+        nextVerb.value() == SkPathVerb::kMove ||
+        nextVerb.value() == SkPathVerb::kClose)
+    {
+        SkPoint* last = &pts.back();
         SkPoint* ctrl = last;
-        int controls = ptCount - 1;
+        size_t controls = pts.size() - 1;
         SkVector tangent;
         do {
             tangent = *last - *--ctrl;
         } while (tangent.isZero() && --controls > 0);
         if (tangent.isZero()) {
             tangent.set(-1, 0);
-            controls = ptCount - 1;
+            controls = pts.size() - 1;
         } else {
             tangent.normalize();
         }
@@ -513,14 +560,14 @@ void extend_pts(SkPath::Verb prevVerb, SkPath::Verb nextVerb, SkPoint* pts, int 
             last->fX += tangent.fX * capOutset;
             last->fY += tangent.fY * capOutset;
             --last;
-        } while (++controls < ptCount);
+        } while (++controls < pts.size());
     }
 }
 
 template <SkPaint::Cap capStyle>
-void hair_path(const SkPath& path, const SkRasterClip& rclip, SkBlitter* blitter,
+void hair_path(const SkPathRaw& raw, const SkRasterClip& rclip, SkBlitter* blitter,
                       SkScan::HairRgnProc lineproc) {
-    if (path.isEmpty()) {
+    if (raw.empty()) {
         return;
     }
 
@@ -532,7 +579,7 @@ void hair_path(const SkPath& path, const SkRasterClip& rclip, SkBlitter* blitter
 
     {
         const int capOut = SkPaint::kButt_Cap == capStyle ? 1 : 2;
-        const SkIRect ibounds = path.getBounds().roundOut().makeOutset(capOut, capOut);
+        const SkIRect ibounds = raw.bounds().roundOut().makeOutset(capOut, capOut);
         if (rclip.quickReject(ibounds)) {
             return;
         }
@@ -578,45 +625,42 @@ void hair_path(const SkPath& path, const SkRasterClip& rclip, SkBlitter* blitter
         }
     }
 
-    SkPathPriv::RangeIter iter = SkPathPriv::Iterate(path).begin();
-    SkPathPriv::RangeIter end = SkPathPriv::Iterate(path).end();
     SkPoint               pts[4], firstPt, lastPt;
-    SkPath::Verb          prevVerb;
     SkAutoConicToQuads    converter;
 
-    if (SkPaint::kButt_Cap != capStyle) {
-        prevVerb = SkPath::kDone_Verb;
-    }
-    while (iter != end) {
-        auto [pathVerb, pathPts, w] = *iter++;
-        SkPath::Verb verb = (SkPath::Verb)pathVerb;
-        SkPath::Verb nextVerb = (iter != end) ? (SkPath::Verb)iter.peekVerb() : SkPath::kDone_Verb;
-        memcpy(pts, pathPts, SkPathPriv::PtsInIter(verb) * sizeof(SkPoint));
+    std::optional<SkPathVerb> prevVerb;
+    for (auto iter = raw.iter(); auto rec = iter.next(); ) {
+        const SkPoint* srcPts = rec->fPoints.data();
+        SkPathVerb verb = rec->fVerb;
+        auto nextVerb = iter.peekNextVerb();
         switch (verb) {
-            case SkPath::kMove_Verb:
-                firstPt = lastPt = pts[0];
+            case SkPathVerb::kMove:
+                firstPt = lastPt = srcPts[0];
                 break;
-            case SkPath::kLine_Verb:
+            case SkPathVerb::kLine:
+                std::copy(srcPts, srcPts + 2, pts);
                 if (SkPaint::kButt_Cap != capStyle) {
-                    extend_pts<capStyle>(prevVerb, nextVerb, pts, 2);
+                    extend_pts<capStyle>(prevVerb, nextVerb, {pts, 2});
                 }
-                lineproc(pts, 2, clip, blitter);
+                lineproc({pts, 2}, clip, blitter);
                 lastPt = pts[1];
                 break;
-            case SkPath::kQuad_Verb:
+            case SkPathVerb::kQuad:
+                std::copy(srcPts, srcPts + 3, pts);
                 if (SkPaint::kButt_Cap != capStyle) {
-                    extend_pts<capStyle>(prevVerb, nextVerb, pts, 3);
+                    extend_pts<capStyle>(prevVerb, nextVerb, {pts, 3});
                 }
                 hairquad(pts, clip, insetClip, outsetClip, blitter, compute_quad_level(pts), lineproc);
                 lastPt = pts[2];
                 break;
-            case SkPath::kConic_Verb: {
+            case SkPathVerb::kConic: {
+                std::copy(srcPts, srcPts + 3, pts);
                 if (SkPaint::kButt_Cap != capStyle) {
-                    extend_pts<capStyle>(prevVerb, nextVerb, pts, 3);
+                    extend_pts<capStyle>(prevVerb, nextVerb, {pts, 3});
                 }
                 // how close should the quads be to the original conic?
                 const SkScalar tol = SK_Scalar1 / 4;
-                const SkPoint* quadPts = converter.computeQuads(pts, *w, tol);
+                const SkPoint* quadPts = converter.computeQuads(pts, rec->conicWeight(), tol);
                 for (int i = 0; i < converter.countQuads(); ++i) {
                     int level = compute_quad_level(quadPts);
                     hairquad(quadPts, clip, insetClip, outsetClip, blitter, level, lineproc);
@@ -625,28 +669,27 @@ void hair_path(const SkPath& path, const SkRasterClip& rclip, SkBlitter* blitter
                 lastPt = pts[2];
                 break;
             }
-            case SkPath::kCubic_Verb: {
+            case SkPathVerb::kCubic: {
+                std::copy(srcPts, srcPts + 4, pts);
                 if (SkPaint::kButt_Cap != capStyle) {
-                    extend_pts<capStyle>(prevVerb, nextVerb, pts, 4);
+                    extend_pts<capStyle>(prevVerb, nextVerb, {pts, 4});
                 }
                 haircubic(pts, clip, insetClip, outsetClip, blitter, kMaxCubicSubdivideLevel, lineproc);
                 lastPt = pts[3];
             } break;
-            case SkPath::kClose_Verb:
+            case SkPathVerb::kClose:
                 pts[0] = lastPt;
                 pts[1] = firstPt;
-                if (SkPaint::kButt_Cap != capStyle && prevVerb == SkPath::kMove_Verb) {
+                if (SkPaint::kButt_Cap != capStyle && optional_eq(prevVerb, SkPathVerb::kMove)) {
                     // cap moveTo/close to match svg expectations for degenerate segments
-                    extend_pts<capStyle>(prevVerb, nextVerb, pts, 2);
+                    extend_pts<capStyle>(prevVerb, nextVerb, {pts, 2});
                 }
-                lineproc(pts, 2, clip, blitter);
-                break;
-            case SkPath::kDone_Verb:
+                lineproc({pts, 2}, clip, blitter);
                 break;
         }
         if (SkPaint::kButt_Cap != capStyle) {
-            if (prevVerb == SkPath::kMove_Verb &&
-                    verb >= SkPath::kLine_Verb && verb <= SkPath::kCubic_Verb) {
+            if (optional_eq(prevVerb, SkPathVerb::kMove) &&
+                verb >= SkPathVerb::kLine && verb <= SkPathVerb::kCubic) {
                 firstPt = pts[0];  // the curve moved the initial point, so close to it instead
             }
             prevVerb = verb;
@@ -654,28 +697,28 @@ void hair_path(const SkPath& path, const SkRasterClip& rclip, SkBlitter* blitter
     }
 }
 
-void SkScan::HairPath(const SkPath& path, const SkRasterClip& clip, SkBlitter* blitter) {
-    hair_path<SkPaint::kButt_Cap>(path, clip, blitter, SkScan::HairLineRgn);
+void SkScan::HairPath(const SkPathRaw& raw, const SkRasterClip& clip, SkBlitter* blitter) {
+    hair_path<SkPaint::kButt_Cap>(raw, clip, blitter, SkScan::HairLineRgn);
 }
 
-void SkScan::AntiHairPath(const SkPath& path, const SkRasterClip& clip, SkBlitter* blitter) {
-    hair_path<SkPaint::kButt_Cap>(path, clip, blitter, SkScan::AntiHairLineRgn);
+void SkScan::AntiHairPath(const SkPathRaw& raw, const SkRasterClip& clip, SkBlitter* blitter) {
+    hair_path<SkPaint::kButt_Cap>(raw, clip, blitter, SkScan::AntiHairLineRgn);
 }
 
-void SkScan::HairSquarePath(const SkPath& path, const SkRasterClip& clip, SkBlitter* blitter) {
-    hair_path<SkPaint::kSquare_Cap>(path, clip, blitter, SkScan::HairLineRgn);
+void SkScan::HairSquarePath(const SkPathRaw& raw, const SkRasterClip& clip, SkBlitter* blitter) {
+    hair_path<SkPaint::kSquare_Cap>(raw, clip, blitter, SkScan::HairLineRgn);
 }
 
-void SkScan::AntiHairSquarePath(const SkPath& path, const SkRasterClip& clip, SkBlitter* blitter) {
-    hair_path<SkPaint::kSquare_Cap>(path, clip, blitter, SkScan::AntiHairLineRgn);
+void SkScan::AntiHairSquarePath(const SkPathRaw& raw, const SkRasterClip& clip, SkBlitter* blitter) {
+    hair_path<SkPaint::kSquare_Cap>(raw, clip, blitter, SkScan::AntiHairLineRgn);
 }
 
-void SkScan::HairRoundPath(const SkPath& path, const SkRasterClip& clip, SkBlitter* blitter) {
-    hair_path<SkPaint::kRound_Cap>(path, clip, blitter, SkScan::HairLineRgn);
+void SkScan::HairRoundPath(const SkPathRaw& raw, const SkRasterClip& clip, SkBlitter* blitter) {
+    hair_path<SkPaint::kRound_Cap>(raw, clip, blitter, SkScan::HairLineRgn);
 }
 
-void SkScan::AntiHairRoundPath(const SkPath& path, const SkRasterClip& clip, SkBlitter* blitter) {
-    hair_path<SkPaint::kRound_Cap>(path, clip, blitter, SkScan::AntiHairLineRgn);
+void SkScan::AntiHairRoundPath(const SkPathRaw& raw, const SkRasterClip& clip, SkBlitter* blitter) {
+    hair_path<SkPaint::kRound_Cap>(raw, clip, blitter, SkScan::AntiHairLineRgn);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -697,6 +740,17 @@ void SkScan::FrameRect(const SkRect& r, const SkPoint& strokeSize,
     outer.setLTRB(r.fLeft - rx, r.fTop - ry, r.fRight + rx, r.fBottom + ry);
 
     if (r.width() <= dx || r.height() <= dy) {
+        // If we're empty on either axis, we remove the outset amount, to be sure
+        // we stroke the same way a polygon would (i.e. it would just see a "line"
+        // and not extend it for the miter join).
+        if (r.width() == 0) {
+            outer.fTop = r.fTop;
+            outer.fBottom = r.fBottom;
+        }
+        if (r.height() == 0) {
+            outer.fLeft = r.fLeft;
+            outer.fRight = r.fRight;
+        }
         SkScan::FillRect(outer, clip, blitter);
         return;
     }
@@ -714,16 +768,13 @@ void SkScan::FrameRect(const SkRect& r, const SkPoint& strokeSize,
     SkScan::FillRect(tmp, clip, blitter);
 }
 
-void SkScan::HairLine(const SkPoint pts[], int count, const SkRasterClip& clip,
-                      SkBlitter* blitter) {
+void SkScan::HairLine(SkSpan<const SkPoint> pts, const SkRasterClip& clip, SkBlitter* blitter) {
     if (clip.isBW()) {
-        HairLineRgn(pts, count, &clip.bwRgn(), blitter);
+        HairLineRgn(pts, &clip.bwRgn(), blitter);
     } else {
         const SkRegion* clipRgn = nullptr;
 
-        SkRect r;
-        r.setBounds(pts, count);
-        r.outset(SK_ScalarHalf, SK_ScalarHalf);
+        const auto r = SkRect::BoundsOrEmpty(pts).makeOutset(SK_ScalarHalf, SK_ScalarHalf);
 
         SkAAClipBlitterWrapper wrap;
         if (!clip.quickContains(r.roundOut())) {
@@ -731,19 +782,17 @@ void SkScan::HairLine(const SkPoint pts[], int count, const SkRasterClip& clip,
             blitter = wrap.getBlitter();
             clipRgn = &wrap.getRgn();
         }
-        HairLineRgn(pts, count, clipRgn, blitter);
+        HairLineRgn(pts, clipRgn, blitter);
     }
 }
 
-void SkScan::AntiHairLine(const SkPoint pts[], int count, const SkRasterClip& clip,
-                          SkBlitter* blitter) {
+void SkScan::AntiHairLine(SkSpan<const SkPoint> pts, const SkRasterClip& clip, SkBlitter* blitter) {
     if (clip.isBW()) {
-        AntiHairLineRgn(pts, count, &clip.bwRgn(), blitter);
+        AntiHairLineRgn(pts, &clip.bwRgn(), blitter);
     } else {
         const SkRegion* clipRgn = nullptr;
 
-        SkRect r;
-        r.setBounds(pts, count);
+        const auto r = SkRect::BoundsOrEmpty(pts);
 
         SkAAClipBlitterWrapper wrap;
         if (!clip.quickContains(r.roundOut().makeOutset(1, 1))) {
@@ -751,6 +800,6 @@ void SkScan::AntiHairLine(const SkPoint pts[], int count, const SkRasterClip& cl
             blitter = wrap.getBlitter();
             clipRgn = &wrap.getRgn();
         }
-        AntiHairLineRgn(pts, count, clipRgn, blitter);
+        AntiHairLineRgn(pts, clipRgn, blitter);
     }
 }

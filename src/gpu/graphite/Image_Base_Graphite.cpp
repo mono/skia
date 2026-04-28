@@ -19,6 +19,7 @@
 #include "src/gpu/graphite/RecorderPriv.h"
 #include "src/gpu/graphite/Surface_Graphite.h"
 #include "src/gpu/graphite/TextureUtils.h"
+#include "src/gpu/graphite/task/Task.h"
 
 namespace skgpu::graphite {
 
@@ -57,60 +58,11 @@ void Image_Base::notifyInUse(Recorder* recorder, DrawContext* drawContext) const
     if (!fLinkedDevices.empty()) {
         int emptyCount = 0;
         for (sk_sp<Device>& device : fLinkedDevices) {
-            if (!device) {
-                emptyCount++; // Already unlinked but array isn't empty yet
-            } else {
-                if (device->isScratchDevice()) {
-                    sk_sp<Task> deviceDrawTask = device->lastDrawTask();
-                    if (deviceDrawTask) {
-                        // Increment the pending read count for the device's target
-                        recorder->priv().addPendingRead(device->target());
-                        if (drawContext) {
-                            // Add a reference to the device's drawTask to `drawContext` if that's
-                            // provided.
-                            drawContext->recordDependency(std::move(deviceDrawTask));
-                        } else {
-                            // If there's no `drawContext` this notify represents a copy, so for
-                            // now append the task to the root task list since that is where the
-                            // subsequent copy task will go as well.
-                            recorder->priv().add(std::move(deviceDrawTask));
-                        }
-                    } else {
-                        // If there's no draw task yet, the device is being drawn into a child
-                        // scratch device (backdrop filter or init-from-prev layer), and the child
-                        // will later on be drawn back into the device's `drawContext`. In this case
-                        // `device` should already have performed an internal flush and have no
-                        // pending work, and not yet be marked immutable. The correct action at this
-                        // point in time is to do nothing: the final task order in the device's
-                        // DrawTask will be pre-notified tasks into the device's target, then the
-                        // child's DrawTask when it's drawn back into `device`, and then any post
-                        // tasks that further modify the `device`'s target.
-                        SkASSERT(device->recorder() && device->recorder() == recorder);
-                    }
-
-                    // Scratch devices are often already marked immutable, but they are also the
-                    // way in which Image finds the last snapped DrawTask so we don't unlink
-                    // scratch devices. The scratch image view will be short-lived as well, or the
-                    // device will transition to a non-scratch device in a future Recording and then
-                    // it will be unlinked then.
-                } else {
-                    // Automatic flushing of image views only happens when mixing reads and writes
-                    // on the originating Recorder. Draws of the view on another Recorder will
-                    // always see the texture content dependent on how Recordings are inserted.
-                    if (device->recorder() == recorder) {
-                        // Non-scratch devices push their tasks to the root task list to maintain
-                        // an order consistent with the client-triggering actions. Because of this,
-                        // there's no need to add references to the `drawContext` that the device
-                        // is being drawn into.
-                        device->flushPendingWorkToRecorder();
-                    }
-                    if (!device->recorder() || device->unique()) {
-                        // The device will not record any more commands that modify the texture, so
-                        // the image doesn't need to be linked
-                        device.reset();
-                        emptyCount++;
-                    }
-                }
+            if (!device || device->notifyInUse(recorder, drawContext)) {
+                // Already unlinked or notifyInUse() signals the device doesn't need to be linked
+                // anymore. reset() is a no-op if device is already holding null.
+                device.reset();
+                emptyCount++;
             }
         }
 
@@ -139,14 +91,17 @@ bool Image_Base::isDynamic() const {
     return emptyCount > 0;
 }
 
+// For now, CopyAsDraw is called with a nullptr for the drawContext, which causes the draw task
+// to be pushed onto the root task list. However, this could be given a drawContext in the future.
 sk_sp<Image> Image_Base::copyImage(Recorder* recorder,
                                    const SkIRect& subset,
                                    Budgeted budgeted,
                                    Mipmapped mipmapped,
                                    SkBackingFit backingFit,
                                    std::string_view label) const {
-    return CopyAsDraw(recorder, this, subset, this->imageInfo().colorInfo(),
-                      budgeted, mipmapped, backingFit, std::move(label));
+    return CopyAsDraw(recorder,
+                      /*drawContext=*/nullptr, this, subset, this->imageInfo().colorInfo(),
+                      budgeted, mipmapped, backingFit, label);
 }
 
 namespace {
@@ -165,9 +120,13 @@ TextureProxy* get_base_proxy_for_label(const Image_Base* baseImage) {
 
 } // anonymous namespace
 
-sk_sp<SkImage> Image_Base::onMakeSubset(Recorder* recorder,
+sk_sp<SkImage> Image_Base::onMakeSubset(SkRecorder* recorder,
                                         const SkIRect& subset,
                                         RequiredProperties requiredProps) const {
+    auto gRecorder = AsGraphiteRecorder(recorder);
+    if (!gRecorder) {
+        return nullptr;
+    }
     // optimization : return self if the subset == our bounds and requirements met and the image's
     // texture is immutable
     if (this->bounds() == subset &&
@@ -187,7 +146,7 @@ sk_sp<SkImage> Image_Base::onMakeSubset(Recorder* recorder,
 
     // The copied image is not considered budgeted because this is a client-invoked API and they
     // will own the image.
-    return this->copyImage(recorder,
+    return this->copyImage(gRecorder,
                            subset,
                            Budgeted::kNo,
                            requiredProps.fMipmapped ? Mipmapped::kYes : Mipmapped::kNo,
@@ -195,17 +154,23 @@ sk_sp<SkImage> Image_Base::onMakeSubset(Recorder* recorder,
                            label);
 }
 
-sk_sp<SkSurface> Image_Base::onMakeSurface(Recorder* recorder, const SkImageInfo& info) const {
-    if (!recorder) {
+sk_sp<SkSurface> Image_Base::onMakeSurface(SkRecorder* recorder, const SkImageInfo& info) const {
+    auto gRecorder = AsGraphiteRecorder(recorder);
+    if (!gRecorder) {
         return nullptr;
     }
-    return SkSurfaces::RenderTarget(recorder, info);
+    return SkSurfaces::RenderTarget(gRecorder, info);
 }
 
-sk_sp<SkImage> Image_Base::makeColorTypeAndColorSpace(Recorder* recorder,
+sk_sp<SkImage> Image_Base::makeColorTypeAndColorSpace(SkRecorder* recorder,
                                                       SkColorType targetCT,
                                                       sk_sp<SkColorSpace> targetCS,
                                                       RequiredProperties requiredProps) const {
+    auto gRecorder = AsGraphiteRecorder(recorder);
+    if (!gRecorder) {
+        return nullptr;
+    }
+
     SkColorInfo dstColorInfo{targetCT, this->alphaType(), std::move(targetCS)};
     // optimization : return self if there's no color type/space change and the image's texture
     // is immutable
@@ -224,7 +189,8 @@ sk_sp<SkImage> Image_Base::makeColorTypeAndColorSpace(Recorder* recorder,
 
     // Use CopyAsDraw directly to perform the color space changes. The copied image is not
     // considered budgeted because this is a client-invoked API and they will own the image.
-    return CopyAsDraw(recorder,
+    return CopyAsDraw(gRecorder,
+                      /*drawContext=*/nullptr,
                       this,
                       this->bounds(),
                       dstColorInfo,
@@ -235,19 +201,6 @@ sk_sp<SkImage> Image_Base::makeColorTypeAndColorSpace(Recorder* recorder,
 }
 
 // Ganesh APIs are no-ops
-
-sk_sp<SkImage> Image_Base::onMakeSubset(GrDirectContext*, const SkIRect&) const {
-    SKGPU_LOG_W("Cannot convert Graphite-backed image to Ganesh");
-    return nullptr;
-}
-
-sk_sp<SkImage> Image_Base::onMakeColorTypeAndColorSpace(SkColorType,
-                                                        sk_sp<SkColorSpace>,
-                                                        GrDirectContext*) const {
-    SKGPU_LOG_W("Cannot convert Graphite-backed image to Ganesh");
-    return nullptr;
-}
-
 void Image_Base::onAsyncRescaleAndReadPixels(const SkImageInfo& info,
                                              SkIRect srcRect,
                                              RescaleGamma rescaleGamma,

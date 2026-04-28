@@ -16,12 +16,14 @@
 #include "include/core/SkShader.h"
 #include "include/core/SkSpan.h"
 #include "include/core/SkTileMode.h"
-#include "include/effects/SkGradientShader.h"
+#include "include/effects/SkGradient.h"
 #include "include/gpu/graphite/Context.h"
-#include "include/private/SkColorData.h"
-#include "include/private/base/SkTArray.h"
+#include "src/core/SkColorData.h"
 #include "src/core/SkColorSpaceXformSteps.h"
-#include "src/gpu/graphite/ReadSwizzle.h"
+#include "src/gpu/graphite/KeyContext.h"
+#include "src/gpu/graphite/PaintParams.h"
+#include "src/gpu/graphite/PaintParamsKey.h"
+#include "src/gpu/graphite/ResourceTypes.h"
 #include "src/gpu/graphite/TextureProxy.h"
 #include "src/shaders/SkShaderBase.h"
 #include "src/shaders/gradients/SkGradientBaseShader.h"
@@ -33,21 +35,9 @@ class SkRuntimeEffect;
 namespace skgpu::graphite {
 
 class DrawContext;
-class KeyContext;
-class PaintParamsKeyBuilder;
+class FloatStorageManager;
 class PipelineDataGatherer;
 class UniquePaintParamsID;
-enum class ReadSwizzle;
-
-// Types of logical "destinations" that a blender might blend with.
-enum class DstColorType {
-    // A color read from the framebuffer.
-    kSurface,
-    // A color provided by geometry.
-    kPrimitive,
-    // A color evaluated by a child shader.
-    kChildOutput,
-};
 
 /**
  * The KeyHelpers can be used to manually construct an SkPaintParamsKey.
@@ -58,22 +48,15 @@ enum class DstColorType {
  */
 
 struct SolidColorShaderBlock {
-    static void AddBlock(const KeyContext&,
-                         PaintParamsKeyBuilder*,
-                         PipelineDataGatherer*,
-                         const SkPMColor4f&);
+    static void AddBlock(const KeyContext&, const SkPMColor4f&);
 };
 
 struct RGBPaintColorBlock {
-    static void AddBlock(const KeyContext&,
-                         PaintParamsKeyBuilder*,
-                         PipelineDataGatherer*);
+    static void AddBlock(const KeyContext&);
 };
 
 struct AlphaOnlyPaintColorBlock {
-    static void AddBlock(const KeyContext&,
-                         PaintParamsKeyBuilder*,
-                         PipelineDataGatherer*);
+    static void AddBlock(const KeyContext&);
 };
 
 struct GradientShaderBlocks {
@@ -100,7 +83,7 @@ struct GradientShaderBlocks {
                      const SkGradientBaseShader* shader,
                      sk_sp<TextureProxy> colorsAndOffsetsProxy,
                      bool useStorageBuffer,
-                     const SkGradientShader::Interpolation&);
+                     const SkGradient::Interpolation&);
 
         bool operator==(const GradientData& rhs) const = delete;
         bool operator!=(const GradientData& rhs) const = delete;
@@ -131,29 +114,24 @@ struct GradientShaderBlocks {
         const float*                  fSrcOffsets;
         const SkGradientBaseShader*   fSrcShader;
 
-        SkGradientShader::Interpolation fInterpolation;
+        SkGradient::Interpolation     fInterpolation;
     };
 
-    static void AddBlock(const KeyContext&,
-                         PaintParamsKeyBuilder*,
-                         PipelineDataGatherer*,
-                         const GradientData&);
+    static void AddBlock(const KeyContext&, const GradientData&);
 };
 
 struct LocalMatrixShaderBlock {
     struct LMShaderData {
         LMShaderData(const SkMatrix& localMatrix)
-                : fLocalMatrix(localMatrix)
-                , fHasPerspective(localMatrix.hasPerspective()) {}
+                : fLocalMatrix(localMatrix) {}
 
-        const SkM44 fLocalMatrix;
-        const bool  fHasPerspective;
+        // Local matrices are applied to coords.xy01, so a 4x4 matrix can be flattened to a 3x3
+        // for less data upload to the GPU at this point (as there will be no more coordinate
+        // space manipulation that might require the full 4x4).
+        const SkMatrix fLocalMatrix;
     };
 
-    static void BeginBlock(const KeyContext&,
-                           PaintParamsKeyBuilder*,
-                           PipelineDataGatherer*,
-                           const LMShaderData&);
+    static void BeginBlock(const KeyContext&, const LMShaderData&);
 };
 
 struct ImageShaderBlock {
@@ -162,22 +140,20 @@ struct ImageShaderBlock {
                   SkTileMode tileModeX,
                   SkTileMode tileModeY,
                   SkISize imgSize,
-                  SkRect subset);
+                  SkRect subset,
+                  ImmutableSamplerInfo immutableSamplerInfo = {});
         SkSamplingOptions fSampling;
         std::pair<SkTileMode, SkTileMode> fTileModes;
         SkISize fImgSize;
         SkRect fSubset;
 
-        // TODO: Currently this is only filled in when we're generating the key from an actual
-        // SkImageShader. In the pre-compile case we will need to create a Graphite promise
-        // image which holds the appropriate data.
+        // When we're generating the key from an actual SkImageShader fTextureProxy will be
+        // non-null. Otherwise, fImmutableSamplerInfo will be filled in.
         sk_sp<TextureProxy> fTextureProxy;
+        ImmutableSamplerInfo fImmutableSamplerInfo;
     };
 
-    static void AddBlock(const KeyContext&,
-                         PaintParamsKeyBuilder*,
-                         PipelineDataGatherer*,
-                         const ImageData&);
+    static void AddBlock(const KeyContext&, const ImageData&);
 };
 
 struct YUVImageShaderBlock {
@@ -206,10 +182,18 @@ struct YUVImageShaderBlock {
         sk_sp<TextureProxy> fTextureProxies[4];
     };
 
-    static void AddBlock(const KeyContext&,
-                         PaintParamsKeyBuilder*,
-                         PipelineDataGatherer*,
-                         const ImageData&);
+    static void AddBlock(const KeyContext&, const ImageData&);
+};
+
+struct CoordNormalizeShaderBlock {
+    struct CoordNormalizeData {
+        CoordNormalizeData(SkSize dimensions)
+                : fInvDimensions(
+                          SkSize::Make(1.0f / dimensions.width(), 1.0f / dimensions.height())) {}
+        SkSize fInvDimensions;
+    };
+
+    static void BeginBlock(const KeyContext&, const CoordNormalizeData&);
 };
 
 struct CoordClampShaderBlock {
@@ -219,11 +203,7 @@ struct CoordClampShaderBlock {
         SkRect fSubset;
     };
 
-    // The gatherer and data should be null or non-null together
-    static void BeginBlock(const KeyContext&,
-                           PaintParamsKeyBuilder*,
-                           PipelineDataGatherer*,
-                           const CoordClampData&);
+    static void BeginBlock(const KeyContext&, const CoordClampData&);
 };
 
 struct DitherShaderBlock {
@@ -236,10 +216,7 @@ struct DitherShaderBlock {
         sk_sp<TextureProxy> fLUTProxy;
     };
 
-    static void AddBlock(const KeyContext&,
-                         PaintParamsKeyBuilder*,
-                         PipelineDataGatherer*,
-                         const DitherData&);
+    static void AddBlock(const KeyContext&, const DitherData&);
 };
 
 struct PerlinNoiseShaderBlock {
@@ -270,35 +247,23 @@ struct PerlinNoiseShaderBlock {
         sk_sp<TextureProxy> fNoiseProxy;
     };
 
-    // The gatherer and data should be null or non-null together
-    static void AddBlock(const KeyContext&,
-                         PaintParamsKeyBuilder*,
-                         PipelineDataGatherer*,
-                         const PerlinNoiseData&);
+    static void AddBlock(const KeyContext&, const PerlinNoiseData&);
 };
 
 struct BlendComposeBlock {
-    static void BeginBlock(const KeyContext&, PaintParamsKeyBuilder*, PipelineDataGatherer*);
+    static void BeginBlock(const KeyContext&);
 };
 
 struct PorterDuffBlenderBlock {
-    static void AddBlock(const KeyContext&,
-                         PaintParamsKeyBuilder*,
-                         PipelineDataGatherer*,
-                         SkSpan<const float> coeffs);
+    static void AddBlock(const KeyContext&, SkSpan<const float> coeffs);
 };
 
 struct HSLCBlenderBlock {
-    static void AddBlock(const KeyContext&,
-                         PaintParamsKeyBuilder*,
-                         PipelineDataGatherer*,
-                         SkSpan<const float> coeffs);
+    static void AddBlock(const KeyContext&, SkSpan<const float> coeffs);
 };
 
 struct ComposeBlock {
-    static void BeginBlock(const KeyContext&,
-                           PaintParamsKeyBuilder*,
-                           PipelineDataGatherer*);
+    static void BeginBlock(const KeyContext&);
 };
 
 struct MatrixColorFilterBlock {
@@ -319,11 +284,7 @@ struct MatrixColorFilterBlock {
         bool  fClamp;
     };
 
-    // The gatherer and matrixCFData should be null or non-null together
-    static void AddBlock(const KeyContext&,
-                         PaintParamsKeyBuilder*,
-                         PipelineDataGatherer*,
-                         const MatrixColorFilterData&);
+    static void AddBlock(const KeyContext&, const MatrixColorFilterData&);
 };
 
 struct TableColorFilterBlock {
@@ -333,10 +294,7 @@ struct TableColorFilterBlock {
         sk_sp<TextureProxy> fTextureProxy;
     };
 
-    static void AddBlock(const KeyContext&,
-                         PaintParamsKeyBuilder*,
-                         PipelineDataGatherer*,
-                         const TableColorFilterData&);
+    static void AddBlock(const KeyContext&, const TableColorFilterData&);
 };
 
 struct ColorSpaceTransformBlock {
@@ -346,52 +304,57 @@ struct ColorSpaceTransformBlock {
                                 const SkColorSpace* dst,
                                 SkAlphaType dstAT);
         ColorSpaceTransformData(const SkColorSpaceXformSteps& steps) { fSteps = steps; }
-        ColorSpaceTransformData(ReadSwizzle swizzle) : fReadSwizzle(swizzle) {
-            SkASSERT(fSteps.flags.mask() == 0);  // By default, the colorspace should have no effect
+        ColorSpaceTransformData(Swizzle swizzle) : fReadSwizzle(swizzle) {
+            SkASSERT(fSteps.fFlags.mask() == 0);  // By default, the colorspace should have no effect
         }
         SkColorSpaceXformSteps fSteps;
-        ReadSwizzle            fReadSwizzle = ReadSwizzle::kRGBA;
+        Swizzle                fReadSwizzle = Swizzle::RGBA();
     };
 
-    static void AddBlock(const KeyContext&,
-                         PaintParamsKeyBuilder*,
-                         PipelineDataGatherer*,
-                         const ColorSpaceTransformData&);
+    static void AddBlock(const KeyContext&, const ColorSpaceTransformData&);
 };
 
-struct CircularRRectClipBlock {
-    struct CircularRRectClipData {
-        CircularRRectClipData(SkRect rect,
-                              SkPoint radiusPlusHalf,
-                              SkRect edgeSelect) :
-            fRect(rect),
-            fRadiusPlusHalf(radiusPlusHalf),
-            fEdgeSelect(edgeSelect) {}
+struct NonMSAAClipBlock {
+    struct NonMSAAClipData {
+        NonMSAAClipData(SkRect rect,
+                        SkPoint radiusPlusHalf,
+                        SkRect edgeSelect,
+                        SkPoint texCoordOffset,
+                        SkRect maskBounds,
+                        sk_sp<TextureProxy> atlasTexture)
+                : fRect(rect)
+                , fRadiusPlusHalf(radiusPlusHalf)
+                , fEdgeSelect(edgeSelect)
+                , fTexCoordOffset(texCoordOffset)
+                , fMaskBounds(maskBounds)
+                , fAtlasTexture(std::move(atlasTexture)){}
+        // analytic clip
         SkRect  fRect;            // bounds, outset by 0.5
         SkPoint fRadiusPlusHalf;  // abs() of .x is radius+0.5, if < 0 indicates inverse fill
                                   // .y is 1/(radius+0.5)
         SkRect  fEdgeSelect;      // 1 indicates a rounded corner on that side (LTRB), 0 otherwise
+
+        // atlas clip
+        SkPoint fTexCoordOffset;  // translation from local coords to unnormalized texel coords
+        SkRect  fMaskBounds;      // bounds of mask area, in unnormalized texel coords
+
+        sk_sp<TextureProxy> fAtlasTexture;
     };
 
-    static void AddBlock(const KeyContext&,
-                         PaintParamsKeyBuilder*,
-                         PipelineDataGatherer*,
-                         const CircularRRectClipData&);
+    static void AddBlock(const KeyContext&, const NonMSAAClipData&);
 };
 
-struct PrimitiveColorBlock {
-    static void AddBlock(const KeyContext&,
-                         PaintParamsKeyBuilder*,
-                         PipelineDataGatherer*);
-};
+/**
+ * Adds a block that references the primitive color produced by the RenderStep and accounts for
+ * color space transformation.
+ */
+void AddPrimitiveColor(const KeyContext&, bool skipColorXform);
 
 /**
  * Blend mode color filters blend their input (as the dst color) with some given color (supplied
  * via a uniform) as the src color.
  */
 void AddBlendModeColorFilter(const KeyContext&,
-                             PaintParamsKeyBuilder*,
-                             PipelineDataGatherer*,
                              SkBlendMode,
                              const SkPMColor4f& srcColor);
 
@@ -413,52 +376,87 @@ struct RuntimeEffectBlock {
         sk_sp<const SkData>          fUniforms;
     };
 
-    static void BeginBlock(const KeyContext&,
-                           PaintParamsKeyBuilder*,
-                           PipelineDataGatherer*,
-                           const ShaderData&);
+    // On a false return, no block has been started
+    static bool BeginBlock(const KeyContext&, const ShaderData&);
+
+    // Add a no-op placeholder for an incorrect runtime effect
+    static void AddNoOpEffect(const KeyContext&, SkRuntimeEffect*);
+
+    // Add a post-amble for runtime effects that use the toLinearSrgb/fromLinearSrgb intrinsics
+    static void HandleIntrinsics(const KeyContext&, const SkRuntimeEffect*);
 };
 
-void AddToKey(const KeyContext&,
-              PaintParamsKeyBuilder*,
-              PipelineDataGatherer*,
-              const SkBlender*);
+void AddToKey(const KeyContext&, const SkBlender*);
 
 /**
  *  Add implementation details, for the specified backend, of this SkColorFilter to the
  *  provided key.
  *
  *  @param keyContext backend context for key creation
- *  @param builder    builder for creating the key for this SkShader
- *  @param gatherer   if non-null, storage for this colorFilter's data
  *  @param filter     This function is a no-op if filter is null.
  */
-void AddToKey(const KeyContext& keyContext,
-              PaintParamsKeyBuilder* builder,
-              PipelineDataGatherer* gatherer,
-              const SkColorFilter* filter);
+void AddToKey(const KeyContext& keyContext, const SkColorFilter* filter);
 
 /**
  *  Add implementation details, for the specified backend, of this SkShader to the
  *  provided key.
  *
  *  @param keyContext backend context for key creation
- *  @param builder    builder for creating the key for this SkShader
- *  @param gatherer   if non-null, storage for this colorFilter's data
  *  @param shader     This function is a no-op if shader is null.
  */
-void AddToKey(const KeyContext& keyContext,
-              PaintParamsKeyBuilder* builder,
-              PipelineDataGatherer* gatherer,
-              const SkShader* shader);
+void AddToKey(const KeyContext& keyContext, const SkShader* shader);
 
-// TODO(b/330864257) These visitation functions are redundant with AddToKey, except that they are
-// executed in the Device::drawGeometry() stack frame, whereas the keys are currently deferred until
-// DrawPass::Make. Image use needs to be detected in the draw frame to split tasks to match client
-// actions. Once paint keys are extracted in the draw frame, this can go away entirely.
-void NotifyImagesInUse(Recorder*, DrawContext*, const SkBlender*);
-void NotifyImagesInUse(Recorder*, DrawContext*, const SkColorFilter*);
-void NotifyImagesInUse(Recorder*, DrawContext*, const SkShader*);
+/**
+ * Add blocks to the key and data builders that represent the simple image shader, e.g. it is
+ * equivalent to:
+ *
+ *     SkMatrix localMatrix = SkMatrix::Rect2Rect(imageShader.fSrcRect, imageShader.fDstRect);
+ *     sk_sp<SkShader> skImageShader = SkImageShader::MakeSubset(imageShader.fImage,
+ *                                                               imageShader.fSubset,
+ *                                                               SkTileMode::kClamp,
+ *                                                               SkTileMode::kClamp,
+ *                                                               imageShader.fSamplingOptions,
+ *                                                               imageShader.fLocalMatrix);
+ *     AddToKey(keyContext, skImageShader.get());
+ *
+ * with the benefit of not creating any SkShader objects or having to compute matrix inverses.
+ */
+void AddToKey(const KeyContext& keyContext, const PaintParams::SimpleImage& imageShader);
+
+// Add a fixed blend mode node for a specific SkBlendMode.
+void AddFixedBlendMode(const KeyContext&, SkBlendMode);
+// Add a blend mode node for an SkBlendMode that can vary
+void AddBlendMode(const KeyContext&, SkBlendMode);
+void AddDitherBlock(const KeyContext&, SkColorType);
+
+template <typename AddBlendToKeyT, typename AddSrcToKeyT, typename AddDstToKeyT>
+void Blend(const KeyContext& keyContext,
+           AddBlendToKeyT addBlendToKey,
+           AddSrcToKeyT addSrcToKey,
+           AddDstToKeyT addDstToKey) {
+    BlendComposeBlock::BeginBlock(keyContext);
+
+        addSrcToKey();
+
+        addDstToKey();
+
+        addBlendToKey();
+
+    keyContext.paintParamsKeyBuilder()->endBlock();  // BlendComposeBlock
+}
+
+template <typename AddInnerToKeyT, typename AddOuterToKeyT>
+void Compose(const KeyContext& keyContext,
+             AddInnerToKeyT addInnerToKey,
+             AddOuterToKeyT addOuterToKey) {
+    ComposeBlock::BeginBlock(keyContext);
+
+        addInnerToKey();
+
+        addOuterToKey();
+
+    keyContext.paintParamsKeyBuilder()->endBlock();  // ComposeBlock
+}
 
 } // namespace skgpu::graphite
 

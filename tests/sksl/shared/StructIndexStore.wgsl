@@ -1,13 +1,14 @@
 diagnostic(off, derivative_uniformity);
 diagnostic(off, chromium.unreachable_code);
+enable f16;
 struct FSOut {
-  @location(0) sk_FragColor: vec4<f32>,
+  @location(0) sk_FragColor: vec4<f16>,
 };
 struct _GlobalUniforms {
-  colorGreen: vec4<f32>,
-  colorRed: vec4<f32>,
+  colorGreen: vec4<f16>,
+  colorRed: vec4<f16>,
 };
-@binding(0) @group(0) var<uniform> _globalUniforms: _GlobalUniforms;
+@group(0) @binding(0) var<uniform> _globalUniforms : _GlobalUniforms;
 struct InnerLUT {
   values: vec3<f32>,
 };
@@ -18,43 +19,31 @@ struct Root {
   valueAtRoot: i32,
   outer: array<OuterLUT, 3>,
 };
-fn _skslMain(coords: vec2<f32>) -> vec4<f32> {
+fn _skslMain(coords: vec2<f32>) -> vec4<f16> {
   {
     var data: Root;
     data.valueAtRoot = 1234;
     var values: vec3<f32> = vec3<f32>(0.0);
     {
       var i: i32 = 0;
-      loop {
+      for (; i < 3; i = i + i32(1)) {
         {
           {
             var j: i32 = 0;
-            loop {
+            for (; j < 3; j = j + i32(1)) {
               {
                 values = values + vec3<f32>(1.0, 10.0, 100.0);
                 {
                   var k: i32 = 0;
-                  loop {
+                  for (; k < 3; k = k + i32(1)) {
                     {
                       data.outer[i].inner[j].values[k] = values[k];
-                    }
-                    continuing {
-                      k = k + i32(1);
-                      break if k >= 3;
                     }
                   }
                 }
               }
-              continuing {
-                j = j + i32(1);
-                break if j >= 3;
-              }
             }
           }
-        }
-        continuing {
-          i = i + i32(1);
-          break if i >= 3;
         }
       }
     }

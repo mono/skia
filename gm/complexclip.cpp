@@ -21,7 +21,8 @@
 #include "include/core/SkString.h"
 #include "include/core/SkTypeface.h"
 #include "include/core/SkTypes.h"
-#include "include/effects/SkGradientShader.h"
+#include "include/effects/SkGradient.h"
+#include "src/core/SkColorPriv.h"
 #include "tools/DecodeUtils.h"
 #include "tools/Resources.h"
 #include "tools/ToolUtils.h"
@@ -82,9 +83,11 @@ protected:
         pathPaint.setAntiAlias(true);
         pathPaint.setColor(gPathColor);
 
-        SkPath clipA = SkPath::Polygon({{10,  20}, {165, 22}, {70,  105}, {165, 177}, {-5,  180}}, true);
+        SkPath clipA = SkPath::Polygon({{{10,  20}, {165, 22}, {70,  105}, {165, 177}, {-5,  180}}},
+                                       true);
 
-        SkPath clipB = SkPath::Polygon({{40,  10}, {190, 15}, {195, 190}, {40,  185}, {155, 100}}, true);
+        SkPath clipB = SkPath::Polygon({{{40,  10}, {190, 15}, {195, 190}, {40,  185}, {155, 100}}},
+                                       true);
 
         SkFont font(ToolUtils::DefaultPortableTypeface(), 20);
 
@@ -268,9 +271,9 @@ DEF_SIMPLE_GM(clip_shader_nested, canvas, 256, 256) {
     float w = 64.f;
     float h = 64.f;
 
-    const SkColor gradColors[] = {SK_ColorBLACK, SkColorSetARGB(128, 128, 128, 128)};
-    auto s = SkGradientShader::MakeRadial({0.5f * w, 0.5f * h}, 0.1f * w, gradColors, nullptr,
-                                            2, SkTileMode::kRepeat, 0, nullptr);
+    SkColorConverter conv({SK_ColorBLACK, SkColorSetARGB(128, 128, 128, 128)});
+    auto s = SkShaders::RadialGradient({0.5f * w, 0.5f * h}, 0.1f * w,
+                                       {{conv.colors4f(), {}, SkTileMode::kRepeat}, {}});
 
     SkPaint p;
 
@@ -303,7 +306,7 @@ DEF_SIMPLE_GM(clip_shader_nested, canvas, 256, 256) {
     canvas->translate(0.f, 2.f * h);
 
     // A small blue rect, with clip shader and path clipping
-    SkPath starPath;
+    SkPathBuilder starPath;
     starPath.moveTo(0.0f, -33.3333f);
     starPath.lineTo(9.62f, -16.6667f);
     starPath.lineTo(28.867f, -16.6667f);
@@ -321,7 +324,7 @@ DEF_SIMPLE_GM(clip_shader_nested, canvas, 256, 256) {
     canvas->save();
     canvas->clipShader(s);
     canvas->translate(w/2, h/2);
-    canvas->clipPath(starPath);
+    canvas->clipPath(starPath.detach());
     p.setColor(SK_ColorBLUE);
     canvas->translate(-w/2, -h/2);
     canvas->drawRect(SkRect::MakeWH(w, h), p);
@@ -381,7 +384,7 @@ static void draw_banner(SkCanvas* canvas, Config config) {
 
     static const SkFont kFont(ToolUtils::DefaultPortableTypeface(), 12);
     canvas->drawString(banner.c_str(), 20.f, -30.f, kFont, SkPaint());
-};
+}
 
 }  // namespace
 
@@ -408,14 +411,13 @@ DEF_SIMPLE_GM(clip_shader_persp, canvas, 1370, 1030) {
     // Scale factor always applied to the image shader so that it tiles
     SkMatrix scale = SkMatrix::Scale(1.f / 4.f, 1.f / 4.f);
     // The perspective matrix applied wherever needed
-    SkPoint src[4];
-    SkRect::Make(img->dimensions()).toQuad(src);
+    const std::array<SkPoint, 4> src = SkRect::Make(img->dimensions()).toQuad();
     SkPoint dst[4] = {{0, 80.f},
                       {img->width() + 28.f, -100.f},
                       {img->width() - 28.f, img->height() + 100.f},
                       {0.f, img->height() - 80.f}};
     SkMatrix persp;
-    SkAssertResult(persp.setPolyToPoly(src, dst, 4));
+    SkAssertResult(persp.setPolyToPoly(src, dst));
 
     SkMatrix perspScale = SkMatrix::Concat(persp, scale);
 
@@ -426,11 +428,11 @@ DEF_SIMPLE_GM(clip_shader_persp, canvas, 1370, 1030) {
 
         // Make clipShaders (possibly with local matrices)
         bool gradLM = config.fLM == kGradientWithLocalMat || config.fLM == kBothWithLocalMat;
-        const SkColor gradColors[] = {SK_ColorBLACK, SkColorSetARGB(128, 128, 128, 128)};
-        auto gradShader = SkGradientShader::MakeRadial({0.5f * img->width(), 0.5f * img->height()},
-                                                        0.1f * img->width(), gradColors, nullptr, 2,
-                                                        SkTileMode::kRepeat, 0,
-                                                        gradLM ? &persp : nullptr);
+        SkColorConverter conv({SK_ColorBLACK, SkColorSetARGB(128, 128, 128, 128)});
+        auto gradShader = SkShaders::RadialGradient({0.5f * img->width(), 0.5f * img->height()},
+                                                     0.1f * img->width(),
+                                                   {{conv.colors4f(), {}, SkTileMode::kRepeat}, {}},
+                                                     gradLM ? &persp : nullptr);
         bool imageLM = config.fLM == kImageWithLocalMat || config.fLM == kBothWithLocalMat;
         auto imgShader = img->makeShader(SkTileMode::kRepeat, SkTileMode::kRepeat,
                                          SkSamplingOptions(), imageLM ? perspScale : scale);
@@ -486,8 +488,8 @@ DEF_SIMPLE_GM(clip_shader_difference, canvas, 512, 512) {
     canvas->clear(SK_ColorGRAY);
 
     SkRect rect = SkRect::MakeWH(256, 256);
-    SkMatrix local = SkMatrix::RectToRect(SkRect::MakeWH(image->width(), image->height()),
-                                          SkRect::MakeWH(64, 64));
+    SkMatrix local = SkMatrix::RectToRectOrIdentity(SkRect::MakeWH(image->width(), image->height()),
+                                                    SkRect::MakeWH(64, 64));
     auto shader = image->makeShader(SkTileMode::kRepeat, SkTileMode::kRepeat,
                                     SkSamplingOptions(), &local);
 
@@ -517,7 +519,7 @@ DEF_SIMPLE_GM(clip_shader_difference, canvas, 512, 512) {
         canvas->translate(0, 256);
         canvas->clipShader(shader, SkClipOp::kDifference);
 
-        SkPath path;
+        SkPathBuilder path;
         path.moveTo(0.f, 128.f);
         path.lineTo(128.f, 256.f);
         path.lineTo(256.f, 128.f);
@@ -528,7 +530,7 @@ DEF_SIMPLE_GM(clip_shader_difference, canvas, 512, 512) {
         path.lineTo(128.f - d, 128.f + d);
         path.lineTo(128.f + d, 128.f + d);
         path.lineTo(128.f + d, 128.f - d);
-        canvas->drawPath(path, paint);
+        canvas->drawPath(path.detach(), paint);
         canvas->restore();
     }
     // BR: Text

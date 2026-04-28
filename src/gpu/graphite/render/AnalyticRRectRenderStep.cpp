@@ -12,6 +12,7 @@
 #include "include/core/SkRRect.h"
 #include "include/core/SkScalar.h"
 #include "include/private/base/SkAssert.h"
+#include "include/private/base/SkDebug.h"
 #include "include/private/base/SkFloatingPoint.h"
 #include "include/private/base/SkPoint_impl.h"
 #include "src/base/SkEnumBitMask.h"
@@ -25,15 +26,16 @@
 #include "src/gpu/graphite/DrawParams.h"
 #include "src/gpu/graphite/DrawTypes.h"
 #include "src/gpu/graphite/DrawWriter.h"
+#include "src/gpu/graphite/PipelineData.h"
 #include "src/gpu/graphite/geom/EdgeAAQuad.h"
 #include "src/gpu/graphite/geom/Geometry.h"
 #include "src/gpu/graphite/geom/Rect.h"
 #include "src/gpu/graphite/geom/Shape.h"
-#include "src/gpu/graphite/geom/Transform_graphite.h"
+#include "src/gpu/graphite/geom/Transform.h"
 #include "src/gpu/graphite/render/CommonDepthStencilSettings.h"
 
+#include <array>
 #include <cstdint>
-#include <string_view>
 
 // This RenderStep is flexible and can draw filled rectangles, filled quadrilaterals with per-edge
 // AA, filled rounded rectangles with arbitrary corner radii, stroked rectangles with any join,
@@ -255,14 +257,6 @@ static skvx::float2 quad_center(const EdgeAAQuad& quad) {
                         dot(quad.ys(), skvx::float4(0.25f)));
 }
 
-// Represents the per-vertex attributes used in each instance.
-struct Vertex {
-    SkV2 fPosition;
-    SkV2 fNormal;
-    float fNormalScale;
-    float fCenterWeight;
-};
-
 // Allowed values for the center weight instance value (selected at record time based on style
 // and transform), and are defined such that when (insance-weight > vertex-weight) is true, the
 // vertex should be snapped to the center instead of its regular calculation.
@@ -277,6 +271,56 @@ static constexpr float kComplexAAInsets = -1.f;
 static constexpr int kCornerVertexCount = 9; // sk_VertexID is divided by this in SkSL
 static constexpr int kVertexCount = 4 * kCornerVertexCount;
 static constexpr int kIndexCount = 69;
+
+// Represents the per-vertex attributes used in each instance.
+struct Vertex {
+    uint32_t fCornerID;
+    SkV2 fPosition;
+    SkV2 fNormal;
+    float fNormalScale;
+    float fCenterWeight;
+};
+
+// This template is repeated 4 times in the vertex buffer, for each of the four corners: TL -> TR ->
+// BR -> BL. The corner ID is used to lookup per-corner instance properties such as corner radii or
+// positions.
+template<uint32_t kCornerID>
+constexpr std::array<Vertex, kCornerVertexCount> get_per_corner_vertex_attrs() {
+    // Allowed values for the normal scale attribute. +1 signals a device-space outset along the
+    // normal away from the outer edge of the stroke. 0 signals no outset, but placed on the outer
+    // edge of the stroke. -1 signals a local inset along the normal from the inner edge.
+    constexpr float kOutset = 1.0;
+    constexpr float kInset  = -1.0;
+
+    constexpr float kCenter = 1.f; // "true" as a float
+
+    // Zero, but named this way to help call out non-zero parameters.
+    constexpr float _______ = 0.f;
+
+    constexpr float kHR2 = 0.5f * SK_FloatSqrt2; // "half root 2"
+    return {{
+        // Device-space AA outsets from outer curve
+        { kCornerID, {1.0f, 0.0f}, {1.0f, 0.0f}, kOutset, _______ },
+        { kCornerID, {1.0f, 0.0f}, {kHR2, kHR2}, kOutset, _______ },
+        { kCornerID, {0.0f, 1.0f}, {kHR2, kHR2}, kOutset, _______ },
+        { kCornerID, {0.0f, 1.0f}, {0.0f, 1.0f}, kOutset, _______ },
+
+        // Outer anchors (no local or device-space normal outset)
+        { kCornerID, {1.0f, 0.0f}, {kHR2, kHR2}, _______, _______ },
+        { kCornerID, {0.0f, 1.0f}, {kHR2, kHR2}, _______, _______ },
+
+        // Inner curve (with additional AA inset in the common case)
+        { kCornerID, {1.0f, 0.0f}, {1.0f, 0.0f}, kInset,  _______ },
+        { kCornerID, {0.0f, 1.0f}, {0.0f, 1.0f}, kInset,  _______ },
+
+        // Center filling vertices (equal to inner AA insets unless 'center' triggers a fill).
+        // TODO: On backends that support "cull" distances (and with SkSL support), these vertices
+        // and their corresponding triangles can be completely removed. The inset vertices can
+        // set their cull distance value to cause all filling triangles to be discarded or not
+        // depending on the instance's style.
+        { kCornerID, {1.0f, 0.0f}, {1.0f, 0.0f}, kInset,  kCenter },
+    }};
+}
 
 static void write_index_buffer(VertexWriter writer) {
     static constexpr uint16_t kTL = 0 * kCornerVertexCount;
@@ -311,72 +355,33 @@ static void write_index_buffer(VertexWriter writer) {
 }
 
 static void write_vertex_buffer(VertexWriter writer) {
-    // Allowed values for the normal scale attribute. +1 signals a device-space outset along the
-    // normal away from the outer edge of the stroke. 0 signals no outset, but placed on the outer
-    // edge of the stroke. -1 signals a local inset along the normal from the inner edge.
-    static constexpr float kOutset = 1.0;
-    static constexpr float kInset  = -1.0;
-
-    static constexpr float kCenter = 1.f; // "true" as a float
-
-    // Zero, but named this way to help call out non-zero parameters.
-    static constexpr float _______ = 0.f;
-
-    static constexpr float kHR2 = 0.5f * SK_FloatSqrt2; // "half root 2"
-
-    // This template is repeated 4 times in the vertex buffer, for each of the four corners.
-    // The vertex ID is used to lookup per-corner instance properties such as corner radii or
-    // positions, but otherwise this vertex data produces a consistent clockwise mesh from
-    // TL -> TR -> BR -> BL.
-    static constexpr Vertex kCornerTemplate[kCornerVertexCount] = {
-        // Device-space AA outsets from outer curve
-        { {1.0f, 0.0f}, {1.0f, 0.0f}, kOutset, _______ },
-        { {1.0f, 0.0f}, {kHR2, kHR2}, kOutset, _______ },
-        { {0.0f, 1.0f}, {kHR2, kHR2}, kOutset, _______ },
-        { {0.0f, 1.0f}, {0.0f, 1.0f}, kOutset, _______ },
-
-        // Outer anchors (no local or device-space normal outset)
-        { {1.0f, 0.0f}, {kHR2, kHR2}, _______, _______ },
-        { {0.0f, 1.0f}, {kHR2, kHR2}, _______, _______ },
-
-        // Inner curve (with additional AA inset in the common case)
-        { {1.0f, 0.0f}, {1.0f, 0.0f}, kInset, _______ },
-        { {0.0f, 1.0f}, {0.0f, 1.0f}, kInset, _______ },
-
-        // Center filling vertices (equal to inner AA insets unless 'center' triggers a fill).
-        // TODO: On backends that support "cull" distances (and with SkSL support), these vertices
-        // and their corresponding triangles can be completely removed. The inset vertices can
-        // set their cull distance value to cause all filling triangles to be discarded or not
-        // depending on the instance's style.
-        { {1.0f, 0.0f}, {1.0f, 0.0f}, kInset,  kCenter },
-    };
-
     if (writer) {
-        writer << kCornerTemplate  // TL
-               << kCornerTemplate  // TR
-               << kCornerTemplate  // BR
-               << kCornerTemplate; // BL
+        writer << get_per_corner_vertex_attrs<0>()  // TL
+               << get_per_corner_vertex_attrs<1>()  // TR
+               << get_per_corner_vertex_attrs<2>()  // BR
+               << get_per_corner_vertex_attrs<3>(); // BL
     } // otherwise static buffer creation failed, so do nothing; Context initialization will fail.
 }
 
-AnalyticRRectRenderStep::AnalyticRRectRenderStep(StaticBufferManager* bufferManager)
-        : RenderStep("AnalyticRRectRenderStep",
-                     "",
+AnalyticRRectRenderStep::AnalyticRRectRenderStep(Layout layout, StaticBufferManager* bufferManager)
+        : RenderStep(layout,
+                     RenderStepID::kAnalyticRRect,
                      Flags::kPerformsShading | Flags::kEmitsCoverage | Flags::kOutsetBoundsForAA |
-                     Flags::kUseNonAAInnerFill,
+                     Flags::kUseNonAAInnerFill | Flags::kAppendInstances,
                      /*uniforms=*/{},
                      PrimitiveType::kTriangleStrip,
-                     kDirectDepthGreaterPass,
-                     /*vertexAttrs=*/{
-                            {"position", VertexAttribType::kFloat2, SkSLType::kFloat2},
-                            {"normal", VertexAttribType::kFloat2, SkSLType::kFloat2},
-                            // TODO: These values are all +1/0/-1, or +1/0, so could be packed
-                            // much more densely than as three floats.
-                            {"normalScale", VertexAttribType::kFloat, SkSLType::kFloat},
-                            {"centerWeight", VertexAttribType::kFloat, SkSLType::kFloat}
-                     },
-                     /*instanceAttrs=*/
-                            {{"xRadiiOrFlags", VertexAttribType::kFloat4, SkSLType::kFloat4},
+                     kDirectDepthLessPass,
+                     /*staticAttrs=*/{{
+                             {"cornerID", VertexAttribType::kUInt, SkSLType::kUInt},
+                             {"position", VertexAttribType::kFloat2, SkSLType::kFloat2},
+                             {"normal", VertexAttribType::kFloat2, SkSLType::kFloat2},
+                             // TODO: These values are all +1/0/-1, or +1/0, so could be packed
+                             // much more densely than as three floats.
+                             {"normalScale", VertexAttribType::kFloat, SkSLType::kFloat},
+                             {"centerWeight", VertexAttribType::kFloat, SkSLType::kFloat}
+                     }},
+                     /*appendAttrs=*/{{
+                             {"xRadiiOrFlags", VertexAttribType::kFloat4, SkSLType::kFloat4},
                              {"radiiOrQuadXs", VertexAttribType::kFloat4, SkSLType::kFloat4},
                              {"ltrbOrQuadYs", VertexAttribType::kFloat4, SkSLType::kFloat4},
                              // XY stores center of rrect in local coords. Z and W store values to
@@ -391,12 +396,13 @@ AnalyticRRectRenderStep::AnalyticRRectRenderStep(StaticBufferManager* bufferMana
                              // TODO: pack depth and ssbo index into one 32-bit attribute, if we can
                              // go without needing both render step and paint ssbo index attributes.
                              {"depth", VertexAttribType::kFloat, SkSLType::kFloat},
-                             {"ssboIndices", VertexAttribType::kUInt2, SkSLType::kUInt2},
+                             {"ssboIndex", VertexAttribType::kUInt, SkSLType::kUInt},
 
                              {"mat0", VertexAttribType::kFloat3, SkSLType::kFloat3},
                              {"mat1", VertexAttribType::kFloat3, SkSLType::kFloat3},
-                             {"mat2", VertexAttribType::kFloat3, SkSLType::kFloat3}},
-                     /*varyings=*/{
+                             {"mat2", VertexAttribType::kFloat3, SkSLType::kFloat3}
+                     }},
+                     /*varyings=*/{{
                              // TODO: If the inverse transform is part of the draw's SSBO, we can
                              // reconstruct the Jacobian in the fragment shader using the existing
                              // local coordinates varying
@@ -439,11 +445,11 @@ AnalyticRRectRenderStep::AnalyticRRectRenderStep(StaticBufferManager* bufferMana
                              //    reduction in coverage due to a device-space outset. It is clamped
                              //    below 0 to avoid adding coverage from extrapolation.
                              {"perPixelControl", SkSLType::kFloat2},
-                     }) {
+                     }}) {
     // Initialize the static buffers we'll use when recording draw calls.
     // NOTE: Each instance of this RenderStep gets its own copy of the data. Since there should only
     // ever be one AnalyticRRectRenderStep at a time, this shouldn't be an issue.
-    write_vertex_buffer(bufferManager->getVertexWriter(sizeof(Vertex) * kVertexCount,
+    write_vertex_buffer(bufferManager->getVertexWriter(kVertexCount, sizeof(Vertex),
                                                        &fVertexBuffer));
     write_index_buffer(bufferManager->getIndexWriter(sizeof(uint16_t) * kIndexCount,
                                                      &fIndexBuffer));
@@ -455,9 +461,9 @@ std::string AnalyticRRectRenderStep::vertexSkSL() const {
     // Returns the body of a vertex function, which must define a float4 devPosition variable and
     // must write to an already-defined float2 stepLocalCoords variable.
     return "float4 devPosition = analytic_rrect_vertex_fn("
-                   // Vertex Attributes
-                   "position, normal, normalScale, centerWeight, "
-                   // Instance Attributes
+                   // Static Data Attributes
+                   "cornerID, position, normal, normalScale, centerWeight, "
+                   // Append Data Attributes
                    "xRadiiOrFlags, radiiOrQuadXs, ltrbOrQuadYs, center, depth, "
                    "float3x3(mat0, mat1, mat2), "
                    // Varyings
@@ -480,7 +486,7 @@ const char* AnalyticRRectRenderStep::fragmentCoverageSkSL() const {
 
 void AnalyticRRectRenderStep::writeVertices(DrawWriter* writer,
                                             const DrawParams& params,
-                                            skvx::uint2 ssboIndices) const {
+                                            uint32_t ssboIndex) const {
     SkASSERT(params.geometry().isShape() || params.geometry().isEdgeAAQuad());
 
     DrawWriter::Instances instance{*writer, fVertexBuffer, fIndexBuffer, kIndexCount};
@@ -502,7 +508,8 @@ void AnalyticRRectRenderStep::writeVertices(DrawWriter* writer,
 
         SkASSERT(params.strokeStyle().halfWidth() >= 0.f);
         SkASSERT(shape.isRect() || shape.isLine() || params.strokeStyle().halfWidth() == 0.f ||
-                 (shape.isRRect() && SkRRectPriv::AllCornersCircular(shape.rrect())));
+                 (shape.isRRect() && SkRRectPriv::AllCornersRelativelyCircular(
+                        shape.rrect(), aaRadius * Shape::kDefaultPixelTolerance)));
 
         float strokeRadius = params.strokeStyle().halfWidth();
 
@@ -627,15 +634,16 @@ void AnalyticRRectRenderStep::writeVertices(DrawWriter* writer,
                                                    : bounds.center();
     vw << center << centerWeight << aaRadius
        << params.order().depthAsFloat()
-       << ssboIndices
+       << ssboIndex
        << m.rc(0,0) << m.rc(1,0) << m.rc(3,0)  // mat0
        << m.rc(0,1) << m.rc(1,1) << m.rc(3,1)  // mat1
        << m.rc(0,3) << m.rc(1,3) << m.rc(3,3); // mat2
 }
 
 void AnalyticRRectRenderStep::writeUniformsAndTextures(const DrawParams&,
-                                                       PipelineDataGatherer*) const {
+                                                       PipelineDataGatherer* gatherer) const {
     // All data is uploaded as instance attributes, so no uniforms are needed.
+    SkDEBUGCODE(gatherer->checkRewind());
 }
 
 }  // namespace skgpu::graphite

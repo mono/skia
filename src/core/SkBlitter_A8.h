@@ -22,6 +22,7 @@ class SkShader;
 class SkSurfaceProps;
 struct SkIRect;
 struct SkMask;
+enum class SkDrawCoverage : bool;
 
 class SkA8_Coverage_Blitter : public SkBlitter {
 public:
@@ -36,12 +37,21 @@ private:
     const SkPixmap fDevice;
 };
 
+SkBlitter* SkChooseA8Blitter(const SkPixmap& dst,
+                             const SkMatrix& ctm,
+                             const SkPaint&,
+                             SkArenaAlloc*,
+                             SkDrawCoverage,
+                             sk_sp<SkShader> clipShader);
+
+// signature compatible with color version
 SkBlitter* SkA8Blitter_Choose(const SkPixmap& dst,
                               const SkMatrix& ctm,
                               const SkPaint& paint,
-                              SkArenaAlloc*,
-                              bool drawCoverage,
+                              SkArenaAlloc* alloc,
+                              SkDrawCoverage coverage,
                               sk_sp<SkShader> clipShader,
-                              const SkSurfaceProps&);
+                              const SkSurfaceProps& /*ignored*/,
+                              const SkRect& /*ignored*/);
 
 #endif // SkBlitter_A8_DEFINED

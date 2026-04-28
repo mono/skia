@@ -9,6 +9,8 @@
 #include "src/gpu/graphite/geom/IntersectionTree.h"
 #include "tests/Test.h"
 
+#include <vector>
+
 namespace skgpu::graphite {
 
 class SimpleIntersectionTree {
@@ -29,7 +31,7 @@ private:
 
 #define CHECK(A) REPORTER_ASSERT(reporter, A)
 
-DEF_GRAPHITE_TEST(skgpu_IntersectionTree, reporter, CtsEnforcement::kApiLevel_V) {
+DEF_GRAPHITE_TEST(skgpu_IntersectionTree, reporter, CtsEnforcement::kApiLevel_202404) {
     SkRandom rand;
     {
         SimpleIntersectionTree simpleTree;

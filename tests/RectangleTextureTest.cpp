@@ -24,9 +24,9 @@
 #include "include/gpu/ganesh/GrDirectContext.h"
 #include "include/gpu/ganesh/GrTypes.h"
 #include "include/gpu/ganesh/gl/GrGLBackendSurface.h"
-#include "include/private/SkColorData.h"
 #include "include/private/base/SkTemplates.h"
 #include "include/private/gpu/ganesh/GrTypesPriv.h"
+#include "src/core/SkColorData.h"
 #include "src/gpu/Swizzle.h"
 #include "src/gpu/ganesh/GrCaps.h"
 #include "src/gpu/ganesh/GrColor.h"
@@ -46,8 +46,8 @@
 #include "src/gpu/ganesh/effects/GrTextureEffect.h"
 #include "src/gpu/ganesh/gl/GrGLDefines.h"
 #include "tests/CtsEnforcement.h"
-#include "tests/TestUtils.h"
-#include "tools/gpu/ProxyUtils.h"
+#include "tests/ganesh/GaneshTestUtils.h"
+#include "tools/ganesh/ProxyUtils.h"
 
 #include <cstdint>
 #include <initializer_list>
@@ -58,7 +58,7 @@ using namespace skia_private;
 
 struct GrContextOptions;
 
-// skbug.com/5932
+// skbug.com/40037130
 static void test_basic_draw_as_src(skiatest::Reporter* reporter, GrDirectContext* dContext,
                                    const GrSurfaceProxyView& rectView, GrColorType colorType,
                                    SkAlphaType alphaType, uint32_t expectedPixelValues[]) {

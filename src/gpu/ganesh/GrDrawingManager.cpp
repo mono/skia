@@ -277,6 +277,9 @@ bool GrDrawingManager::executeRenderTasks(GrOpFlushState* flushState) {
     static constexpr int kMaxRenderTasksBeforeFlush = 100;
     int numRenderTasksExecuted = 0;
 
+    // Unlike kMaxRenderTasksBeforeFlush, this is a global limit.
+    static constexpr int kMaxRenderPassesBeforeFlush = 100;
+
     // Execute the normal op lists.
     for (const auto& renderTask : fDAG) {
         SkASSERT(renderTask);
@@ -287,7 +290,8 @@ bool GrDrawingManager::executeRenderTasks(GrOpFlushState* flushState) {
         if (renderTask->execute(flushState)) {
             anyRenderTasksExecuted = true;
         }
-        if (++numRenderTasksExecuted >= kMaxRenderTasksBeforeFlush) {
+        if (++numRenderTasksExecuted >= kMaxRenderTasksBeforeFlush ||
+            flushState->gpu()->getCurrentSubmitRenderPassCount() >= kMaxRenderPassesBeforeFlush) {
             flushState->gpu()->submitToGpu();
             numRenderTasksExecuted = 0;
         }
@@ -308,7 +312,7 @@ void GrDrawingManager::removeRenderTasks() {
     for (const auto& task : fDAG) {
         SkASSERT(task);
         if (!task->unique() || task->requiresExplicitCleanup()) {
-            // TODO: Eventually uniqueness should be guaranteed: http://skbug.com/7111.
+            // TODO: Eventually uniqueness should be guaranteed: skbug.com/40038346.
             // DDLs, however, will always require an explicit notification for when they
             // can clean up resources.
             task->endFlush(this);
@@ -329,14 +333,14 @@ void GrDrawingManager::sortTasks() {
         SkASSERT(std::none_of(span.begin(), span.end(), [](const auto& t) {
             return t->blocksReordering();
         }));
-        SkASSERT(span.end() == fDAG.end() || fDAG[end]->blocksReordering());
+        SkASSERT(span.data() + span.size() == fDAG.end() || fDAG[end]->blocksReordering());
 
 #if defined(SK_DEBUG)
         // In order to partition the dag array like this it must be the case that each partition
         // only depends on nodes in the partition or earlier partitions.
         auto check = [&](const GrRenderTask* task, auto&& check) -> void {
             SkASSERT(GrRenderTask::TopoSortTraits::WasOutput(task) ||
-                     std::find_if(span.begin(), span.end(), [task](const auto& n) {
+                     std::any_of(span.begin(), span.end(), [task](const auto& n) {
                          return n.get() == task; }));
             for (int i = 0; i < task->fDependencies.size(); ++i) {
                 check(task->fDependencies[i], check);
@@ -1065,19 +1069,4 @@ skgpu::ganesh::PathRenderer* GrDrawingManager::getTessellationPathRenderer() {
                                                                  fOptionsForPathRendererChain);
     }
     return fPathRendererChain->getTessellationPathRenderer();
-}
-
-void GrDrawingManager::flushIfNecessary() {
-    auto direct = fContext->asDirectContext();
-    if (!direct) {
-        return;
-    }
-
-    auto resourceCache = direct->priv().getResourceCache();
-    if (resourceCache && resourceCache->requestsFlush()) {
-        if (this->flush({}, SkSurfaces::BackendSurfaceAccess::kNoAccess, GrFlushInfo(), nullptr)) {
-            this->submitToGpu();
-        }
-        resourceCache->purgeAsNeeded();
-    }
 }

@@ -11,7 +11,7 @@
 #include "include/core/SkColorFilter.h"
 #include "include/core/SkPicture.h"
 #include "include/core/SkShader.h"
-#include "include/effects/SkGradientShader.h"
+#include "include/effects/SkGradient.h"
 #include "include/effects/SkPerlinNoiseShader.h"
 
 #include "include/c/sk_shader.h"
@@ -58,62 +58,103 @@ sk_shader_t* sk_shader_new_blender(sk_blender_t* blender, const sk_shader_t* dst
     return ToShader(SkShaders::Blend(sk_ref_sp(AsBlender(blender)), sk_ref_sp(AsShader(dst)), sk_ref_sp(AsShader(src))).release());
 }
 
-// SkGradientShader
+// Helper to convert SkColor array to SkColor4f array
+static std::vector<SkColor4f> ColorsToColor4f(const sk_color_t colors[], int count) {
+    std::vector<SkColor4f> c4f(count);
+    for (int i = 0; i < count; i++) {
+        c4f[i] = SkColor4f::FromColor(colors[i]);
+    }
+    return c4f;
+}
+
+// SkGradient
 
 sk_shader_t* sk_shader_new_linear_gradient(const sk_point_t points[2], const sk_color_t colors[], const float colorPos[], int colorCount, sk_shader_tilemode_t tileMode, const sk_matrix_t* localMatrix) {
     SkMatrix m;
     if (localMatrix)
         m = AsMatrix(localMatrix);
-    return ToShader(SkGradientShader::MakeLinear(AsPoint(points), colors, colorPos, colorCount, (SkTileMode)tileMode, 0, localMatrix ? &m : nullptr).release());
+    auto c4f = ColorsToColor4f(colors, colorCount);
+    SkGradient::Colors gc(SkSpan<const SkColor4f>(c4f.data(), colorCount),
+                          colorPos ? SkSpan<const float>(colorPos, colorCount) : SkSpan<const float>(),
+                          (SkTileMode)tileMode);
+    return ToShader(SkShaders::LinearGradient(AsPoint(points), SkGradient(gc, {}), localMatrix ? &m : nullptr).release());
 }
 
 sk_shader_t* sk_shader_new_linear_gradient_color4f(const sk_point_t points[2], const sk_color4f_t* colors, const sk_colorspace_t* colorspace, const float colorPos[], int colorCount, sk_shader_tilemode_t tileMode, const sk_matrix_t* localMatrix) {
     SkMatrix m;
     if (localMatrix)
         m = AsMatrix(localMatrix);
-    return ToShader(SkGradientShader::MakeLinear(AsPoint(points), AsColor4f(colors), sk_ref_sp(AsColorSpace(colorspace)), colorPos, colorCount, (SkTileMode)tileMode, 0, localMatrix ? &m : nullptr).release());
+    SkGradient::Colors gc(SkSpan<const SkColor4f>(AsColor4f(colors), colorCount),
+                          colorPos ? SkSpan<const float>(colorPos, colorCount) : SkSpan<const float>(),
+                          (SkTileMode)tileMode,
+                          sk_ref_sp(AsColorSpace(colorspace)));
+    return ToShader(SkShaders::LinearGradient(AsPoint(points), SkGradient(gc, {}), localMatrix ? &m : nullptr).release());
 }
 
 sk_shader_t* sk_shader_new_radial_gradient(const sk_point_t* center, float radius, const sk_color_t colors[], const float colorPos[], int colorCount, sk_shader_tilemode_t tileMode, const sk_matrix_t* localMatrix) {
     SkMatrix m;
     if (localMatrix)
         m = AsMatrix(localMatrix);
-    return ToShader(SkGradientShader::MakeRadial(*AsPoint(center), (SkScalar)radius, colors, colorPos, colorCount, (SkTileMode)tileMode, 0, localMatrix ? &m : nullptr).release());
+    auto c4f = ColorsToColor4f(colors, colorCount);
+    SkGradient::Colors gc(SkSpan<const SkColor4f>(c4f.data(), colorCount),
+                          colorPos ? SkSpan<const float>(colorPos, colorCount) : SkSpan<const float>(),
+                          (SkTileMode)tileMode);
+    return ToShader(SkShaders::RadialGradient(*AsPoint(center), (SkScalar)radius, SkGradient(gc, {}), localMatrix ? &m : nullptr).release());
 }
 
 sk_shader_t* sk_shader_new_radial_gradient_color4f(const sk_point_t* center, float radius, const sk_color4f_t* colors, const sk_colorspace_t* colorspace, const float colorPos[], int colorCount, sk_shader_tilemode_t tileMode, const sk_matrix_t* localMatrix) {
     SkMatrix m;
     if (localMatrix)
         m = AsMatrix(localMatrix);
-    return ToShader(SkGradientShader::MakeRadial(*AsPoint(center), (SkScalar)radius, AsColor4f(colors), sk_ref_sp(AsColorSpace(colorspace)), colorPos, colorCount, (SkTileMode)tileMode, 0, localMatrix ? &m : nullptr).release());
+    SkGradient::Colors gc(SkSpan<const SkColor4f>(AsColor4f(colors), colorCount),
+                          colorPos ? SkSpan<const float>(colorPos, colorCount) : SkSpan<const float>(),
+                          (SkTileMode)tileMode,
+                          sk_ref_sp(AsColorSpace(colorspace)));
+    return ToShader(SkShaders::RadialGradient(*AsPoint(center), (SkScalar)radius, SkGradient(gc, {}), localMatrix ? &m : nullptr).release());
 }
 
 sk_shader_t* sk_shader_new_sweep_gradient(const sk_point_t* center, const sk_color_t colors[], const float colorPos[], int colorCount, sk_shader_tilemode_t tileMode, float startAngle, float endAngle, const sk_matrix_t* localMatrix) {
     SkMatrix m;
     if (localMatrix)
         m = AsMatrix(localMatrix);
-    return ToShader(SkGradientShader::MakeSweep(center->x, center->y, colors, colorPos, colorCount, (SkTileMode)tileMode, startAngle, endAngle, 0, localMatrix ? &m : nullptr).release());
+    auto c4f = ColorsToColor4f(colors, colorCount);
+    SkGradient::Colors gc(SkSpan<const SkColor4f>(c4f.data(), colorCount),
+                          colorPos ? SkSpan<const float>(colorPos, colorCount) : SkSpan<const float>(),
+                          (SkTileMode)tileMode);
+    return ToShader(SkShaders::SweepGradient({center->x, center->y}, startAngle, endAngle, SkGradient(gc, {}), localMatrix ? &m : nullptr).release());
 }
 
 sk_shader_t* sk_shader_new_sweep_gradient_color4f(const sk_point_t* center, const sk_color4f_t* colors, const sk_colorspace_t* colorspace, const float colorPos[], int colorCount, sk_shader_tilemode_t tileMode, float startAngle, float endAngle, const sk_matrix_t* localMatrix) {
     SkMatrix m;
     if (localMatrix)
         m = AsMatrix(localMatrix);
-    return ToShader(SkGradientShader::MakeSweep(center->x, center->y, AsColor4f(colors), sk_ref_sp(AsColorSpace(colorspace)), colorPos, colorCount, (SkTileMode)tileMode, startAngle, endAngle, 0, localMatrix ? &m : nullptr).release());
+    SkGradient::Colors gc(SkSpan<const SkColor4f>(AsColor4f(colors), colorCount),
+                          colorPos ? SkSpan<const float>(colorPos, colorCount) : SkSpan<const float>(),
+                          (SkTileMode)tileMode,
+                          sk_ref_sp(AsColorSpace(colorspace)));
+    return ToShader(SkShaders::SweepGradient({center->x, center->y}, startAngle, endAngle, SkGradient(gc, {}), localMatrix ? &m : nullptr).release());
 }
 
 sk_shader_t* sk_shader_new_two_point_conical_gradient(const sk_point_t* start, float startRadius, const sk_point_t* end, float endRadius, const sk_color_t colors[], const float colorPos[], int colorCount, sk_shader_tilemode_t tileMode, const sk_matrix_t* localMatrix) {
     SkMatrix m;
     if (localMatrix)
         m = AsMatrix(localMatrix);
-    return ToShader(SkGradientShader::MakeTwoPointConical(*AsPoint(start), startRadius, *AsPoint(end), endRadius, colors, colorPos, colorCount, (SkTileMode)tileMode, 0, localMatrix ? &m : nullptr).release());
+    auto c4f = ColorsToColor4f(colors, colorCount);
+    SkGradient::Colors gc(SkSpan<const SkColor4f>(c4f.data(), colorCount),
+                          colorPos ? SkSpan<const float>(colorPos, colorCount) : SkSpan<const float>(),
+                          (SkTileMode)tileMode);
+    return ToShader(SkShaders::TwoPointConicalGradient(*AsPoint(start), startRadius, *AsPoint(end), endRadius, SkGradient(gc, {}), localMatrix ? &m : nullptr).release());
 }
 
 sk_shader_t* sk_shader_new_two_point_conical_gradient_color4f(const sk_point_t* start, float startRadius, const sk_point_t* end, float endRadius, const sk_color4f_t* colors, const sk_colorspace_t* colorspace, const float colorPos[], int colorCount, sk_shader_tilemode_t tileMode, const sk_matrix_t* localMatrix) {
     SkMatrix m;
     if (localMatrix)
         m = AsMatrix(localMatrix);
-    return ToShader(SkGradientShader::MakeTwoPointConical(*AsPoint(start), startRadius, *AsPoint(end), endRadius, AsColor4f(colors), sk_ref_sp(AsColorSpace(colorspace)), colorPos, colorCount, (SkTileMode)tileMode, 0, localMatrix ? &m : nullptr).release());
+    SkGradient::Colors gc(SkSpan<const SkColor4f>(AsColor4f(colors), colorCount),
+                          colorPos ? SkSpan<const float>(colorPos, colorCount) : SkSpan<const float>(),
+                          (SkTileMode)tileMode,
+                          sk_ref_sp(AsColorSpace(colorspace)));
+    return ToShader(SkShaders::TwoPointConicalGradient(*AsPoint(start), startRadius, *AsPoint(end), endRadius, SkGradient(gc, {}), localMatrix ? &m : nullptr).release());
 }
 
 // SkPerlinNoiseShader

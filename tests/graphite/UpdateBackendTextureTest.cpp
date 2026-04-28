@@ -17,7 +17,7 @@
 #include "src/gpu/graphite/Caps.h"
 #include "src/gpu/graphite/ContextPriv.h"
 #include "src/gpu/graphite/Surface_Graphite.h"
-#include "tests/TestUtils.h"
+#include "tests/ComparePixels.h"
 #include "tools/ToolUtils.h"
 #include "tools/graphite/GraphiteTestContext.h"
 
@@ -144,7 +144,7 @@ void check_levels(skiatest::Reporter* reporter,
 
     for (int i = 0, drawSize = kSize.width(); i < numLevels; ++i, drawSize /= 2) {
         if (i == 5) {
-            // TODO: Metal currently never draws the top-most mip-level (skbug.com/13792)
+            // TODO: Metal currently never draws the top-most mip-level (skbug.com/40044877)
             continue;
         }
 
@@ -185,7 +185,7 @@ void check_levels(skiatest::Reporter* reporter,
 } // anonymous namespace
 
 DEF_GRAPHITE_TEST_FOR_RENDERING_CONTEXTS(UpdateImageBackendTextureTest, reporter, context,
-                                         CtsEnforcement::kApiLevel_V) {
+                                         CtsEnforcement::kApiLevel_202404) {
     const Caps* caps = context->priv().caps();
     std::unique_ptr<Recorder> recorder = context->makeRecorder();
 
@@ -237,7 +237,7 @@ DEF_CONDITIONAL_GRAPHITE_TEST_FOR_ALL_CONTEXTS(UpdateBackendTextureFinishedProcT
                                                context,
                                                testContext,
                                                true,
-                                               CtsEnforcement::kNextRelease) {
+                                               CtsEnforcement::kApiLevel_202504) {
     const Caps* caps = context->priv().caps();
     std::unique_ptr<Recorder> recorder = context->makeRecorder();
 
@@ -267,7 +267,11 @@ DEF_CONDITIONAL_GRAPHITE_TEST_FOR_ALL_CONTEXTS(UpdateBackendTextureFinishedProcT
                                                        finishedProc,
                                                        &finishCtx);
 
-    REPORTER_ASSERT(reporter, !finishCtx.fFinishedUpdate);
+    // Vulkan may use VK_EXT_host_image_copy to upload the texture data right away, so finished may
+    // already be called.
+    if (!caps->supportsHostImageCopy()) {
+        REPORTER_ASSERT(reporter, !finishCtx.fFinishedUpdate);
+    }
 
     std::unique_ptr<Recording> recording = recorder->snap();
     if (!recording) {
@@ -278,7 +282,9 @@ DEF_CONDITIONAL_GRAPHITE_TEST_FOR_ALL_CONTEXTS(UpdateBackendTextureFinishedProcT
     insertInfo.fRecording = recording.get();
     context->insertRecording(insertInfo);
 
-    REPORTER_ASSERT(reporter, !finishCtx.fFinishedUpdate);
+    if (!caps->supportsHostImageCopy()) {
+        REPORTER_ASSERT(reporter, !finishCtx.fFinishedUpdate);
+    }
 
     testContext->syncedSubmit(context);
     REPORTER_ASSERT(reporter, finishCtx.fFinishedUpdate);

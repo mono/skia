@@ -8,126 +8,56 @@
 #include "include/gpu/graphite/vk/VulkanGraphiteTypes.h"
 #include "include/gpu/vk/VulkanMutableTextureState.h"
 #include "src/gpu/graphite/TextureInfoPriv.h"
-#include "src/gpu/graphite/vk/VulkanGraphiteTypesPriv.h"
+#include "src/gpu/graphite/vk/VulkanGraphiteUtils.h"
 #include "src/gpu/vk/VulkanUtilsPriv.h"
 
 #include <cstdint>
 
 namespace skgpu::graphite {
 
-class VulkanTextureInfoData final : public TextureInfoData {
-public:
-    VulkanTextureInfoData(VulkanTextureSpec v) : fVkSpec(v) {}
+SkString VulkanTextureInfo::toBackendString() const {
+    return SkStringPrintf(
+            "flags=0x%08X,imageTiling=%d,imageUsageFlags=0x%08X,sharingMode=%d,"
+            "aspectMask=%u",
+            fFlags,
+            fImageTiling,
+            fImageUsageFlags,
+            fSharingMode,
+            fAspectMask);
+}
 
-#if defined(SK_DEBUG)
-    skgpu::BackendApi type() const override { return skgpu::BackendApi::kVulkan; }
-#endif
-
-    VulkanTextureSpec spec() const { return fVkSpec; }
-
-private:
-    VulkanTextureSpec fVkSpec;
-
-    size_t bytesPerPixel() const override { return VkFormatBytesPerBlock(fVkSpec.fFormat); }
-
-    SkTextureCompressionType compressionType() const override {
-        return VkFormatToCompressionType(fVkSpec.fFormat);
+TextureFormat VulkanTextureInfo::viewFormat() const {
+    if (fYcbcrConversionInfo.isValid()) {
+        return fYcbcrConversionInfo.format() == VK_FORMAT_UNDEFINED
+                ? TextureFormat::kExternal
+                : VkFormatToTextureFormat(fYcbcrConversionInfo.format());
     }
 
-    bool isMemoryless() const override {
-        return fVkSpec.fImageUsageFlags & VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT;
-    }
+    return VkFormatToTextureFormat(fFormat);
+}
 
-    SkString toString() const override {
-        return SkStringPrintf("Vulkan(%s,", fVkSpec.toString().c_str());
-    }
+bool VulkanTextureInfo::isCompatible(const TextureInfo& that, bool requireExact) const {
+    const auto& vt = TextureInfoPriv::Get<VulkanTextureInfo>(that);
 
-    SkString toRPAttachmentString(uint32_t sampleCount) const override {
-        return SkStringPrintf(
-                "Vulkan(f=%u,s=%u)", static_cast<unsigned int>(fVkSpec.fFormat), sampleCount);
-    }
-
-    void copyTo(AnyTextureInfoData& dstData) const override {
-        // Don't assert that dstData has a Vulkan type() because it could be
-        // uninitialized and that assert would fail.
-        dstData.emplace<VulkanTextureInfoData>(fVkSpec);
-    }
-
-    bool equal(const TextureInfoData* that) const override {
-        SkASSERT(!that || that->type() == skgpu::BackendApi::kVulkan);
-        if (auto otherVk = static_cast<const VulkanTextureInfoData*>(that)) {
-            return fVkSpec == otherVk->fVkSpec;
-        }
-        return false;
-    }
-
-    bool isCompatible(const TextureInfoData* that) const override {
-        SkASSERT(!that || that->type() == skgpu::BackendApi::kVulkan);
-        if (auto otherVk = static_cast<const VulkanTextureInfoData*>(that)) {
-            return fVkSpec.isCompatible(otherVk->fVkSpec);
-        }
-        return false;
-    }
-};
-
-static const VulkanTextureInfoData* get_and_cast_data(const TextureInfo& info) {
-    auto data = TextureInfoPriv::GetData(info);
-    SkASSERT(!data || data->type() == skgpu::BackendApi::kVulkan);
-    return static_cast<const VulkanTextureInfoData*>(data);
+    // The usages may match or the usage passed in may be a superset of the usage stored within.
+    const auto usageMask = requireExact ? vt.fImageUsageFlags : fImageUsageFlags;
+    return fFlags == vt.fFlags &&
+           fFormat == vt.fFormat &&
+           fImageTiling == vt.fImageTiling &&
+           fSharingMode == vt.fSharingMode &&
+           fAspectMask == vt.fAspectMask &&
+           (usageMask & vt.fImageUsageFlags) == fImageUsageFlags &&
+           fYcbcrConversionInfo == vt.fYcbcrConversionInfo;
 }
 
 namespace TextureInfos {
+
 TextureInfo MakeVulkan(const VulkanTextureInfo& vkInfo) {
-    skgpu::Protected p = Protected::kNo;
-    if (vkInfo.fFlags & VK_IMAGE_CREATE_PROTECTED_BIT) {
-        p = Protected::kYes;
-    }
-    return TextureInfoPriv::Make(skgpu::BackendApi::kVulkan,
-                                 vkInfo.fSampleCount,
-                                 vkInfo.fMipmapped,
-                                 p,
-                                 VulkanTextureInfoData(vkInfo));
+    return TextureInfoPriv::Make(vkInfo);
 }
 
 bool GetVulkanTextureInfo(const TextureInfo& info, VulkanTextureInfo* out) {
-    if (!info.isValid() || info.backend() != skgpu::BackendApi::kVulkan) {
-        return false;
-    }
-    SkASSERT(out);
-    const VulkanTextureInfoData* vkData = get_and_cast_data(info);
-    SkASSERT(vkData);
-    *out = VulkanTextureSpecToTextureInfo(vkData->spec(), info.numSamples(), info.mipmapped());
-    return true;
-}
-
-// This cannot return a const reference or we get a warning about returning
-// a reference to a temporary local variable.
-VulkanTextureSpec GetVulkanTextureSpec(const TextureInfo& info) {
-    SkASSERT(info.isValid() && info.backend() == skgpu::BackendApi::kVulkan);
-    const VulkanTextureInfoData* vkData = get_and_cast_data(info);
-    SkASSERT(vkData);
-    return vkData->spec();
-}
-
-VkFormat GetVkFormat(const TextureInfo& info) {
-    SkASSERT(info.isValid() && info.backend() == skgpu::BackendApi::kVulkan);
-    const VulkanTextureInfoData* vkData = get_and_cast_data(info);
-    SkASSERT(vkData);
-    return vkData->spec().fFormat;
-}
-
-VkImageUsageFlags GetVkUsageFlags(const TextureInfo& info) {
-    SkASSERT(info.isValid() && info.backend() == skgpu::BackendApi::kVulkan);
-    const VulkanTextureInfoData* vkData = get_and_cast_data(info);
-    SkASSERT(vkData);
-    return vkData->spec().fImageUsageFlags;
-}
-
-VulkanYcbcrConversionInfo GetVulkanYcbcrConversionInfo(const TextureInfo& info) {
-    SkASSERT(info.isValid() && info.backend() == skgpu::BackendApi::kVulkan);
-    const VulkanTextureInfoData* vkData = get_and_cast_data(info);
-    SkASSERT(vkData);
-    return vkData->spec().fYcbcrConversionInfo;
+    return TextureInfoPriv::Copy(info, out);
 }
 
 }  // namespace TextureInfos

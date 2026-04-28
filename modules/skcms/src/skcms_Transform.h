@@ -72,12 +72,14 @@ namespace skcms_private {
     M(hlg_b)              \
     M(hlg_a)              \
     M(hlg_rgb)            \
+    M(hlg_ootf_scale)     \
                           \
     M(hlginv_r)           \
     M(hlginv_g)           \
     M(hlginv_b)           \
     M(hlginv_a)           \
     M(hlginv_rgb)         \
+    M(hlginv_ootf_scale)  \
                           \
     M(table_r)            \
     M(table_g)            \
@@ -101,6 +103,7 @@ namespace skcms_private {
     M(store_161616BE)      \
     M(store_16161616BE)    \
     M(store_101010x_XR)    \
+    M(store_10101010_XR)   \
     M(store_hhh)           \
     M(store_hhhh)          \
     M(store_fff)           \

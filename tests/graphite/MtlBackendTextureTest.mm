@@ -11,7 +11,6 @@
 #include "include/gpu/graphite/Context.h"
 #include "include/gpu/graphite/Recorder.h"
 #include "include/gpu/graphite/mtl/MtlGraphiteTypes.h"
-#include "include/gpu/graphite/mtl/MtlGraphiteTypesUtils.h"
 
 #import <Metal/Metal.h>
 
@@ -25,7 +24,7 @@ DEF_GRAPHITE_TEST_FOR_METAL_CONTEXT(MtlBackendTextureTest, reporter, context, te
     auto recorder = context->makeRecorder();
 
     MtlTextureInfo textureInfo;
-    textureInfo.fSampleCount = 1;
+    textureInfo.fSampleCount = SampleCount::k1;
     textureInfo.fMipmapped = skgpu::Mipmapped::kNo;
     textureInfo.fFormat = MTLPixelFormatRGBA8Unorm;
     textureInfo.fStorageMode = MTLStorageModePrivate;
@@ -54,7 +53,7 @@ DEF_GRAPHITE_TEST_FOR_METAL_CONTEXT(MtlBackendTextureTest, reporter, context, te
 
     // It should fail with a sample count greater than 1
     textureInfo.fFormat = MTLPixelFormatRGBA8Unorm;
-    textureInfo.fSampleCount = 4;
+    textureInfo.fSampleCount = SampleCount::k4;
     beTexture = recorder->createBackendTexture(kSize, TextureInfos::MakeMetal(textureInfo));
     REPORTER_ASSERT(reporter, !beTexture.isValid());
     recorder->deleteBackendTexture(beTexture);

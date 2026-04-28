@@ -14,6 +14,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 
 namespace skgpu { struct VertexWriter; }
 
@@ -44,6 +45,8 @@ public:
         // Over-allocate enough curves for 1 in 4 to chop. Every chop introduces 2 new patches:
         // another curve patch and a triangle patch that glues the two chops together,
         // i.e. + 2 * ((count + 3) / 4) == (count + 3) / 2
+        constexpr int kMaxVerbCount = std::numeric_limits<int>::max() >> 2;
+        totalCombinedPathVerbCnt = std::min(kMaxVerbCount, totalCombinedPathVerbCnt);
         return totalCombinedPathVerbCnt + (totalCombinedPathVerbCnt + 3) / 2;
     }
 
@@ -56,10 +59,18 @@ public:
         return NumCurveTrianglesAtResolveLevel(resolveLevel) * 3;
     }
 
+    static constexpr size_t VertexBufferVertexCount() {
+        return kMaxParametricSegments + 1;
+    }
+
+    static constexpr size_t VertexBufferStride() {
+        return 2 * sizeof(float);
+    }
+
     // Return the number of bytes to allocate for a buffer filled via WriteVertexBuffer, assuming
     // the shader and curve instances do require more than kMaxParametricSegments segments.
     static constexpr size_t VertexBufferSize() {
-        return (kMaxParametricSegments + 1) * (2 * sizeof(float));
+        return VertexBufferVertexCount() * VertexBufferStride();
     }
 
     // As above but for the corresponding index buffer, written via WriteIndexBuffer.
@@ -80,6 +91,8 @@ public:
 
     static constexpr int PreallocCount(int totalCombinedPathVerbCnt)  {
         // Over-allocate enough wedges for 1 in 4 to chop, i.e., ceil(maxWedges * 5/4)
+        constexpr int kMaxVerbCount = std::numeric_limits<int>::max() >> 3;
+        totalCombinedPathVerbCnt = std::min(kMaxVerbCount, totalCombinedPathVerbCnt);
         return (totalCombinedPathVerbCnt * 5 + 3) / 4;
     }
 
@@ -89,8 +102,16 @@ public:
         return (NumCurveTrianglesAtResolveLevel(resolveLevel) + 1) * 3;
     }
 
+    static constexpr size_t VertexBufferVertexCount() {
+        return (kMaxParametricSegments + 1) + 1/*fan vertex*/;
+    }
+
+    static constexpr size_t VertexBufferStride() {
+        return 2 * sizeof(float);
+    }
+
     static constexpr size_t VertexBufferSize() {
-        return ((kMaxParametricSegments + 1) + 1/*fan vertex*/) * (2 * sizeof(float));
+        return VertexBufferVertexCount() * VertexBufferStride();
     }
 
     static constexpr size_t IndexBufferSize() {
@@ -124,6 +145,8 @@ public:
         // Over-allocate enough patches for each stroke to chop once, and for 8 extra caps. Since
         // we have to chop at inflections, points of 180 degree rotation, and anywhere a stroke
         // requires too many parametric segments, many strokes will end up getting choppped.
+        constexpr int kMaxVerbCount = std::numeric_limits<int>::max() >> 2;
+        totalCombinedPathVerbCnt = std::min(kMaxVerbCount, totalCombinedPathVerbCnt);
         return (totalCombinedPathVerbCnt * 2) + 8/* caps */;
     }
 

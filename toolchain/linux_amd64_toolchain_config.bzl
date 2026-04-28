@@ -14,9 +14,9 @@ It follows the example of:
 # https://github.com/bazelbuild/bazel/blob/master/tools/build_defs/cc/action_names.bzl
 load("@bazel_tools//tools/build_defs/cc:action_names.bzl", "ACTION_NAMES")
 
-# https://github.com/bazelbuild/bazel/blob/master/tools/cpp/cc_toolchain_config_lib.bzl
+# https://github.com/bazelbuild/rules_cc/blob/main/cc/cc_toolchain_config_lib.bzl
 load(
-    "@bazel_tools//tools/cpp:cc_toolchain_config_lib.bzl",
+    "@rules_cc//cc:cc_toolchain_config_lib.bzl",
     "action_config",
     "feature",
     "flag_group",
@@ -24,10 +24,11 @@ load(
     "tool",
     "variable_with_value",
 )
+load("@rules_cc//cc/common:cc_common.bzl", "cc_common")
 load(":clang_layering_check.bzl", "make_layering_check_features")
 
 # The location of the created clang toolchain.
-EXTERNAL_TOOLCHAIN = "external/clang_linux_amd64"
+EXTERNAL_TOOLCHAIN = "external/+_repo_rules+clang_linux_amd64"
 
 def _linux_amd64_toolchain_info(ctx):
     action_configs = _make_action_configs()
@@ -35,7 +36,6 @@ def _linux_amd64_toolchain_info(ctx):
     features += _make_default_flags()
     features += make_layering_check_features()
     features += _make_diagnostic_flags()
-    features += _make_iwyu_flags()
 
     # https://bazel.build/rules/lib/cc_common#create_cc_toolchain_config_info
     # Note, this rule is defined in Java code, not Starlark
@@ -224,7 +224,7 @@ def _make_default_flags():
                     "-isystem",
                     EXTERNAL_TOOLCHAIN + "/usr/include",
                     "-isystem",
-                    EXTERNAL_TOOLCHAIN + "/lib/clang/15.0.1/include",
+                    EXTERNAL_TOOLCHAIN + "/lib/clang/18/include",
                     "-isystem",
                     EXTERNAL_TOOLCHAIN + "/usr/include/x86_64-linux-gnu",
                     # We do not want clang to search in absolute paths for files. This makes
@@ -242,7 +242,6 @@ def _make_default_flags():
         flag_groups = [
             flag_group(
                 flags = [
-                    "-std=c++17",
                     "-stdlib=libc++",
                 ],
             ),
@@ -262,7 +261,6 @@ def _make_default_flags():
                     # We chose to use the llvm runtime, not the gcc one because it is already
                     # included in the clang binary
                     "--rtlib=compiler-rt",
-                    "-std=c++17",
                     "-stdlib=libc++",
                     # We statically include these libc++ libraries so they do not need to be
                     # on a developer's machine (they can be tricky to get).
@@ -277,15 +275,35 @@ def _make_default_flags():
             ),
         ],
     )
-    return [feature(
-        "default_flags",
-        enabled = True,
-        flag_sets = [
-            cxx_compile_includes,
-            cpp_compile_flags,
-            link_exe_flags,
+
+    cpp20_flags = flag_set(
+        actions = [
+            ACTION_NAMES.cpp_compile,
+            ACTION_NAMES.cpp_link_executable,
+            ACTION_NAMES.cpp_link_dynamic_library,
+            ACTION_NAMES.cpp_link_nodeps_dynamic_library,
         ],
-    )]
+        flag_groups = [
+            flag_group(
+                flags = [
+                    "-std=c++20",
+                ],
+            ),
+        ],
+    )
+
+    return [
+        feature(
+            name = "default_flags",
+            enabled = True,
+            flag_sets = [
+                cxx_compile_includes,
+                cpp_compile_flags,
+                link_exe_flags,
+                cpp20_flags,
+            ],
+        ),
+    ]
 
 def _make_diagnostic_flags():
     """Here we define the flags that can be turned on via features to yield debug info."""
@@ -330,7 +348,7 @@ def _make_diagnostic_flags():
         # Running a Bazel command with --features diagnostic will cause the compilation and
         # link steps to be more verbose.
         feature(
-            "diagnostic",
+            name = "diagnostic",
             enabled = False,
             flag_sets = [
                 cxx_diagnostic,
@@ -338,7 +356,7 @@ def _make_diagnostic_flags():
             ],
         ),
         feature(
-            "diagnostic_link",
+            name = "diagnostic_link",
             enabled = False,
             flag_sets = [
                 link_diagnostic,
@@ -347,45 +365,10 @@ def _make_diagnostic_flags():
         # Running a Bazel command with --features print_search_dirs will cause the link to fail
         # but directories searched for libraries, etc will be displayed.
         feature(
-            "print_search_dirs",
+            name = "print_search_dirs",
             enabled = False,
             flag_sets = [
                 link_search_dirs,
-            ],
-        ),
-    ]
-
-def _make_iwyu_flags():
-    """Here we define the flags that signal whether or not to enforce IWYU."""
-
-    # https://bazel.build/docs/cc-toolchain-config-reference#features
-    opt_file_into_iwyu = flag_set(
-        actions = [
-            ACTION_NAMES.c_compile,
-            ACTION_NAMES.cpp_compile,
-        ],
-        flag_groups = [
-            flag_group(
-                flags = [
-                    # This define does not impact compilation, but it acts as a signal to the
-                    # clang_trampoline.sh whether to maybe check the file with include-what-you-use
-                    # A define was chosen because it is ignored by clang and IWYU, but can be
-                    # easily found with bash.
-                    # The clang_trampoline.sh file has a list of allowed subdirectories for which
-                    # IWYU should be enforced, allowing us to slowly opt more and more directories
-                    # in over time.
-                    "-DSKIA_ENFORCE_IWYU",
-                ],
-            ),
-        ],
-    )
-
-    return [
-        feature(
-            "skia_enforce_iwyu",
-            enabled = False,
-            flag_sets = [
-                opt_file_into_iwyu,
             ],
         ),
     ]

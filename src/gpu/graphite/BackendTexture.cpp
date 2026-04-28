@@ -7,7 +7,8 @@
 
 #include "include/gpu/graphite/BackendTexture.h"
 
-#include "include/gpu/MutableTextureState.h"
+#include "include/gpu/GpuTypes.h"
+#include "include/private/base/SkAssert.h"
 #include "src/gpu/graphite/BackendTexturePriv.h"
 
 namespace skgpu::graphite {
@@ -55,7 +56,7 @@ bool BackendTexture::operator==(const BackendTexture& that) const {
     return fTextureData->equal(that.fTextureData.get());
 }
 
-BackendTextureData::~BackendTextureData(){};
+BackendTextureData::~BackendTextureData() {}
 
 } // namespace skgpu::graphite
 

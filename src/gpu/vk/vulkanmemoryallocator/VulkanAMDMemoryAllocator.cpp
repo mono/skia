@@ -17,7 +17,6 @@
 #include "src/gpu/vk/VulkanUtilsPriv.h"
 #include "src/gpu/vk/vulkanmemoryallocator/VulkanMemoryAllocatorPriv.h"
 
-#include <algorithm>
 #include <cstring>
 
 namespace skgpu {
@@ -28,8 +27,7 @@ sk_sp<VulkanMemoryAllocator> VulkanAMDMemoryAllocator::Make(VkInstance instance,
                                                             uint32_t physicalDeviceVersion,
                                                             const VulkanExtensions* extensions,
                                                             const VulkanInterface* interface,
-                                                            ThreadSafe threadSafe,
-                                                            std::optional<VkDeviceSize> blockSize) {
+                                                            ThreadSafe threadSafe) {
 #define SKGPU_COPY_FUNCTION(NAME) functions.vk##NAME = interface->fFunctions.f##NAME
 #define SKGPU_COPY_FUNCTION_KHR(NAME) functions.vk##NAME##KHR = interface->fFunctions.f##NAME
 
@@ -70,11 +68,8 @@ sk_sp<VulkanMemoryAllocator> VulkanAMDMemoryAllocator::Make(VkInstance instance,
     if (threadSafe == ThreadSafe::kNo) {
         info.flags |= VMA_ALLOCATOR_CREATE_EXTERNALLY_SYNCHRONIZED_BIT;
     }
-    if (physicalDeviceVersion >= VK_MAKE_VERSION(1, 1, 0) ||
-        (extensions->hasExtension(VK_KHR_DEDICATED_ALLOCATION_EXTENSION_NAME, 1) &&
-         extensions->hasExtension(VK_KHR_GET_MEMORY_REQUIREMENTS_2_EXTENSION_NAME, 1))) {
-        info.flags |= VMA_ALLOCATOR_CREATE_KHR_DEDICATED_ALLOCATION_BIT;
-    }
+    // Dedicated allocation is always available since Vulkan 1.1 is the minimum requirement.
+    info.flags |= VMA_ALLOCATOR_CREATE_KHR_DEDICATED_ALLOCATION_BIT;
 
     info.physicalDevice = physicalDevice;
     info.device = device;
@@ -82,15 +77,17 @@ sk_sp<VulkanMemoryAllocator> VulkanAMDMemoryAllocator::Make(VkInstance instance,
     // It seems to be a good compromise of not wasting unused allocated space and not making too
     // many small allocations. The AMD allocator will start making blocks at 1/8 the max size and
     // builds up block size as needed before capping at the max set here.
-    info.preferredLargeHeapBlockSize = blockSize.value_or(4 * 1024 * 1024);
+    constexpr size_t kBlockSize = 4 * 1024 * 1024;
+    info.preferredLargeHeapBlockSize = kBlockSize;
     info.pAllocationCallbacks = nullptr;
     info.pDeviceMemoryCallbacks = nullptr;
     info.pHeapSizeLimit = nullptr;
     info.pVulkanFunctions = &functions;
     info.instance = instance;
     // TODO: Update our interface and headers to support vulkan 1.3 and add in the new required
-    // functions for 1.3 that the allocator needs. Until then we just clamp the version to 1.1.
-    info.vulkanApiVersion = std::min(physicalDeviceVersion, VK_MAKE_VERSION(1, 1, 0));
+    // functions for 1.3 that the allocator needs. Until then we just clamp the version to 1.1,
+    // which is also Skia's minimum requirement.
+    info.vulkanApiVersion = VK_API_VERSION_1_1;
     info.pTypeExternalMemoryHandleTypes = nullptr;
 
     VmaAllocator allocator;
@@ -278,8 +275,7 @@ std::pair<uint64_t, uint64_t> VulkanAMDMemoryAllocator::totalAllocatedAndUsedMem
 
 namespace VulkanMemoryAllocators {
 sk_sp<VulkanMemoryAllocator> Make(const skgpu::VulkanBackendContext& backendContext,
-                                  ThreadSafe threadSafe,
-                                  std::optional<VkDeviceSize> blockSize) {
+                                  ThreadSafe threadSafe) {
     SkASSERT(backendContext.fInstance != VK_NULL_HANDLE);
     SkASSERT(backendContext.fPhysicalDevice != VK_NULL_HANDLE);
     SkASSERT(backendContext.fDevice != VK_NULL_HANDLE);
@@ -311,8 +307,7 @@ sk_sp<VulkanMemoryAllocator> Make(const skgpu::VulkanBackendContext& backendCont
                                           physDevVersion,
                                           extensions,
                                           interface.get(),
-                                          threadSafe,
-                                          blockSize);
+                                          threadSafe);
 }
 
 }  // namespace VulkanMemoryAllocators

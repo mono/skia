@@ -136,7 +136,7 @@ bool SurfaceContext::readPixels(GrDirectContext* dContext, GrPixmap dst, SkIPoin
     GrSurface* srcSurface = srcProxy->peekSurface();
 
     SkColorSpaceXformSteps::Flags flags =
-            SkColorSpaceXformSteps{this->colorInfo(), dst.info()}.flags;
+            SkColorSpaceXformSteps{this->colorInfo(), dst.info()}.fFlags;
     bool unpremul            = flags.unpremul,
          needColorConversion = flags.linearize || flags.gamut_transform || flags.encode,
          premul              = flags.premul;
@@ -407,7 +407,7 @@ bool SurfaceContext::internalWritePixels(GrDirectContext* dContext,
     GrSurface* dstSurface = dstProxy->peekSurface();
 
     SkColorSpaceXformSteps::Flags flags =
-            SkColorSpaceXformSteps{src[0].colorInfo(), this->colorInfo()}.flags;
+            SkColorSpaceXformSteps{src[0].colorInfo(), this->colorInfo()}.fFlags;
     bool unpremul            = flags.unpremul,
          needColorConversion = flags.linearize || flags.gamut_transform || flags.encode,
          premul              = flags.premul;
@@ -1358,7 +1358,7 @@ SurfaceContext::PixelTransferResult SurfaceContext::transferPixels(GrColorType d
     size_t size = rowBytes * rect.height();
     // By using kStream_GrAccessPattern here, we are not able to cache and reuse the buffer for
     // multiple reads. Switching to kDynamic_GrAccessPattern would allow for this, however doing
-    // so causes a crash in a chromium test. See skbug.com/11297
+    // so causes a crash in a chromium test. See skbug.com/40042671
     auto buffer = direct->priv().resourceProvider()->createBuffer(
             size,
             GrGpuBufferType::kXferGpuToCpu,

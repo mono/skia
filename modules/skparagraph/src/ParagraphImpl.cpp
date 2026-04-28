@@ -3,6 +3,7 @@
 #include "include/core/SkFontMetrics.h"
 #include "include/core/SkMatrix.h"
 #include "include/core/SkPath.h"
+#include "include/core/SkPathBuilder.h"
 #include "include/core/SkPictureRecorder.h"
 #include "include/core/SkSpan.h"
 #include "include/core/SkTypeface.h"
@@ -354,8 +355,9 @@ Cluster::Cluster(ParagraphImpl* owner,
     size_t whiteSpacesBreakLen = 0;
     size_t intraWordBreakLen = 0;
 
-    const char* ch = text.begin();
-    if (text.end() - ch == 1 && *(const unsigned char*)ch <= 0x7F) {
+    const char* ch = text.data();
+    const char* chEnd = ch + text.size();
+    if (chEnd - ch == 1 && *(const unsigned char*)ch <= 0x7F) {
         // I am not even sure it's worth it if we do not save a unicode call
         if (is_ascii_7bit_space(*ch)) {
             ++whiteSpacesBreakLen;
@@ -421,12 +423,15 @@ void ParagraphImpl::applySpacingAndBuildClusterTable() {
         // We have to letter space the entire paragraph (second most common case)
         auto& run = fRuns[0];
         auto& style = fTextStyles[0].fStyle;
-        run.addSpacesEvenly(style.getLetterSpacing());
+        run.addLetterSpacesEvenly(style.getLetterSpacing());
+
         this->buildClusterTable();
+
         // This is something Flutter requires
         for (auto& cluster : fClusters) {
-            cluster.setHalfLetterSpacing(style.getLetterSpacing()/2);
+            cluster.setHalfLetterSpacing(style.getLetterSpacing() / 2);
         }
+
         return;
     }
 
@@ -483,9 +488,10 @@ void ParagraphImpl::applySpacingAndBuildClusterTable() {
                     wordSpacingPending = false;
                 }
             }
-            // Process letter spacing
-            if (currentStyle->fStyle.getLetterSpacing() != 0) {
-                shift += run.addSpacesEvenly(currentStyle->fStyle.getLetterSpacing(), cluster);
+            // Process letter spacing (it will be cancelled out for Script languages
+            if ((currentStyle->fStyle.getLetterSpacing() != 0)) {
+                shift +=
+                        run.addLetterSpacesEvenly(currentStyle->fStyle.getLetterSpacing(), cluster);
             }
 
             if (soFarWhitespacesOnly && !cluster->isWhitespaceBreak()) {
@@ -1413,10 +1419,7 @@ void ParagraphImpl::extendedVisit(const ExtendedVisitor& visitor) {
                     SkRect rect = context.clip.makeOffset(line.offset());
                     AutoSTArray<16, SkRect> glyphBounds;
                     glyphBounds.reset(SkToInt(run->size()));
-                    run->font().getBounds(run->glyphs().data(),
-                                          SkToInt(run->size()),
-                                          glyphBounds.data(),
-                                          nullptr);
+                    run->font().getBounds(run->glyphs(), glyphBounds, nullptr);
                     STArray<128, uint32_t> clusterStorage;
                     const uint32_t* clusterPtr = run->clusterIndexes().data();
                     if (run->fClusterStart > 0) {
@@ -1448,6 +1451,7 @@ void ParagraphImpl::extendedVisit(const ExtendedVisitor& visitor) {
 }
 
 int ParagraphImpl::getPath(int lineNumber, SkPath* dest) {
+    SkPathBuilder builder;
     int notConverted = 0;
     auto& line = fLines[lineNumber];
     line.iterateThroughVisualRuns(
@@ -1473,21 +1477,20 @@ int ParagraphImpl::getPath(int lineNumber, SkPath* dest) {
                                 line.offset().fY + correctedBaseline);
               SkRect rect = context.clip.makeOffset(offset);
               struct Rec {
-                  SkPath* fPath;
+                  SkPathBuilder* fBuilder;
                   SkPoint fOffset;
                   const SkPoint* fPos;
                   int fNotConverted;
               } rec =
-                  {dest, SkPoint::Make(rect.left(), rect.top()),
-                   &run->positions()[context.pos], 0};
-              font.getPaths(&run->glyphs()[context.pos], context.size,
+                  {&builder, SkPoint::Make(rect.left(), rect.top()), &run->positions()[context.pos], 0};
+              font.getPaths({&run->glyphs()[context.pos], context.size},
                     [](const SkPath* path, const SkMatrix& mx, void* ctx) {
                         Rec* rec = reinterpret_cast<Rec*>(ctx);
                         if (path) {
                             SkMatrix total = mx;
                             total.postTranslate(rec->fPos->fX + rec->fOffset.fX,
                                                 rec->fPos->fY + rec->fOffset.fY);
-                            rec->fPath->addPath(*path, total);
+                            rec->fBuilder->addPath(*path, total);
                         } else {
                             rec->fNotConverted++;
                         }
@@ -1495,6 +1498,7 @@ int ParagraphImpl::getPath(int lineNumber, SkPath* dest) {
                     }, &rec);
               notConverted += rec.fNotConverted;
           });
+        *dest = builder.detach();
         return true;
     });
 
@@ -1502,28 +1506,28 @@ int ParagraphImpl::getPath(int lineNumber, SkPath* dest) {
 }
 
 SkPath Paragraph::GetPath(SkTextBlob* textBlob) {
-    SkPath path;
+    SkPathBuilder builder;
     SkTextBlobRunIterator iter(textBlob);
     while (!iter.done()) {
         SkFont font = iter.font();
-        struct Rec { SkPath* fDst; SkPoint fOffset; const SkPoint* fPos; } rec =
-            {&path, {textBlob->bounds().left(), textBlob->bounds().top()},
+        struct Rec { SkPathBuilder* fBuilder; SkPoint fOffset; const SkPoint* fPos; } rec =
+            {&builder, {textBlob->bounds().left(), textBlob->bounds().top()},
              iter.points()};
-        font.getPaths(iter.glyphs(), iter.glyphCount(),
+        font.getPaths({iter.glyphs(), iter.glyphCount()},
             [](const SkPath* src, const SkMatrix& mx, void* ctx) {
                 Rec* rec = (Rec*)ctx;
                 if (src) {
                     SkMatrix tmp(mx);
                     tmp.postTranslate(rec->fPos->fX - rec->fOffset.fX,
                                       rec->fPos->fY - rec->fOffset.fY);
-                    rec->fDst->addPath(*src, tmp);
+                    rec->fBuilder->addPath(*src, tmp);
                 }
                 rec->fPos += 1;
             },
             &rec);
         iter.next();
     }
-    return path;
+    return builder.detach();
 }
 
 bool ParagraphImpl::containsEmoji(SkTextBlob* textBlob) {
@@ -1547,8 +1551,7 @@ bool ParagraphImpl::containsColorFontOrBitmap(SkTextBlob* textBlob) {
     bool flag = false;
     while (!iter.done() && !flag) {
         iter.font().getPaths(
-            (const SkGlyphID*) iter.glyphs(),
-            iter.glyphCount(),
+            {(const SkGlyphID*) iter.glyphs(), iter.glyphCount()},
             [](const SkPath* path, const SkMatrix& mx, void* ctx) {
                 if (path == nullptr) {
                     bool* flag1 = (bool*)ctx;

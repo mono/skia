@@ -8,14 +8,45 @@
  */
 
 #include "include/core/SkBBHFactory.h"
+#include "include/core/SkData.h"
 #include "include/core/SkDrawable.h"
+#include "include/core/SkImage.h"
 #include "include/core/SkPicture.h"
 #include "include/core/SkPictureRecorder.h"
+#include "include/core/SkSerialProcs.h"
 #include "include/core/SkShader.h"
+#include "include/encode/SkPngEncoder.h"
 
 #include "include/c/sk_picture.h"
 
 #include "src/c/sk_types_priv.h"
+
+namespace {
+
+// [mono/skia fork patch] Skia m147's default {Ser,Deser}ialProcs leave both
+// fImageProc fields null, and serialize_image()/deserialize_image() return
+// nullptr if no encoder/decoder is supplied — silently dropping every raster
+// image drawn into the picture (e.g. via DrawBitmap). Earlier Skia versions
+// had a built-in PNG fallback on both sides. Restore that behaviour at the C
+// API boundary so SKPicture.Serialize/Deserialize stays lossless for managed
+// callers.
+SkSerialProcs default_serial_procs() {
+    SkSerialProcs procs;
+    procs.fImageProc = [](SkImage* img, void*) -> sk_sp<const SkData> {
+        return SkPngEncoder::Encode(nullptr, img, SkPngEncoder::Options{});
+    };
+    return procs;
+}
+
+SkDeserialProcs default_deserial_procs() {
+    SkDeserialProcs procs;
+    procs.fImageProc = [](const void* data, size_t length, void*) -> sk_sp<SkImage> {
+        return SkImages::DeferredFromEncodedData(SkData::MakeWithCopy(data, length));
+    };
+    return procs;
+}
+
+}  // namespace
 
 // SkPictureRecorder
 
@@ -74,23 +105,28 @@ sk_shader_t* sk_picture_make_shader(sk_picture_t* src, sk_shader_tilemode_t tmx,
 }
 
 sk_data_t* sk_picture_serialize_to_data(const sk_picture_t* picture) {
-    return ToData(AsPicture(picture)->serialize().release());
+    SkSerialProcs procs = default_serial_procs();
+    return ToData(AsPicture(picture)->serialize(&procs).release());
 }
 
 void sk_picture_serialize_to_stream(const sk_picture_t* picture, sk_wstream_t* stream) {
-    AsPicture(picture)->serialize(AsWStream(stream));
+    SkSerialProcs procs = default_serial_procs();
+    AsPicture(picture)->serialize(AsWStream(stream), &procs);
 }
 
 sk_picture_t* sk_picture_deserialize_from_stream(sk_stream_t* stream) {
-    return ToPicture(SkPicture::MakeFromStream(AsStream(stream)).release());
+    SkDeserialProcs procs = default_deserial_procs();
+    return ToPicture(SkPicture::MakeFromStream(AsStream(stream), &procs).release());
 }
 
 sk_picture_t* sk_picture_deserialize_from_data(sk_data_t* data) {
-    return ToPicture(SkPicture::MakeFromData(AsData(data)).release());
+    SkDeserialProcs procs = default_deserial_procs();
+    return ToPicture(SkPicture::MakeFromData(AsData(data), &procs).release());
 }
 
 sk_picture_t* sk_picture_deserialize_from_memory(void* buffer, size_t length) {
-    return ToPicture(SkPicture::MakeFromData(buffer, length).release());
+    SkDeserialProcs procs = default_deserial_procs();
+    return ToPicture(SkPicture::MakeFromData(buffer, length, &procs).release());
 }
 
 void sk_picture_playback(const sk_picture_t* picture, sk_canvas_t* canvas) {

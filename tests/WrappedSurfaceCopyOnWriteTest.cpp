@@ -20,11 +20,11 @@
 #include "include/gpu/GpuTypes.h"
 #include "include/gpu/ganesh/GrDirectContext.h"
 #include "include/gpu/ganesh/GrTypes.h"
-#include "include/private/SkColorData.h"
 #include "include/private/chromium/GrDeferredDisplayListRecorder.h"
 #include "include/private/chromium/GrSurfaceCharacterization.h"
 #include "include/private/gpu/ganesh/GrTypesPriv.h"
 #include "src/core/SkAutoPixmapStorage.h"
+#include "src/core/SkColorData.h"
 #include "src/gpu/SkBackingFit.h"
 #include "src/gpu/ganesh/GrCanvas.h"
 #include "src/gpu/ganesh/GrDirectContextPriv.h"
@@ -38,11 +38,12 @@
 #include "src/gpu/ganesh/GrTextureProxy.h"
 #include "src/gpu/ganesh/SurfaceContext.h"
 #include "src/gpu/ganesh/SurfaceFillContext.h"
+#include "tests/ComparePixels.h"
 #include "tests/CtsEnforcement.h"
 #include "tests/Test.h"
-#include "tests/TestUtils.h"
+#include "tests/ganesh/GaneshTestUtils.h"
+#include "tools/ganesh/ProxyUtils.h"
 #include "tools/gpu/BackendSurfaceFactory.h"
-#include "tools/gpu/ProxyUtils.h"
 
 #include <functional>
 #include <memory>

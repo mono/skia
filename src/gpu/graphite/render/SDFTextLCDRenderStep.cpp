@@ -30,15 +30,14 @@
 #include "src/gpu/graphite/TextureProxy.h"
 #include "src/gpu/graphite/geom/Geometry.h"
 #include "src/gpu/graphite/geom/SubRunData.h"
-#include "src/gpu/graphite/geom/Transform_graphite.h"
+#include "src/gpu/graphite/geom/Transform.h"
 #include "src/gpu/graphite/render/CommonDepthStencilSettings.h"
+#include "src/gpu/graphite/text/GlyphData.h"
 #include "src/gpu/graphite/text/TextAtlasManager.h"
 #include "src/sksl/SkSLString.h"
 #include "src/text/gpu/DistanceFieldAdjustTable.h"
 #include "src/text/gpu/SubRunContainer.h"
 #include "src/text/gpu/VertexFiller.h"
-
-#include <string_view>
 
 namespace skgpu::graphite {
 
@@ -49,31 +48,31 @@ constexpr int kNumSDFAtlasTextures = 4;
 
 }  // namespace
 
-SDFTextLCDRenderStep::SDFTextLCDRenderStep()
-        : RenderStep("SDFTextLCDRenderStep",
-                     "",
+SDFTextLCDRenderStep::SDFTextLCDRenderStep(Layout layout)
+        : RenderStep(layout,
+                     RenderStepID::kSDFTextLCD,
                      Flags::kPerformsShading | Flags::kHasTextures | Flags::kEmitsCoverage |
-                     Flags::kLCDCoverage,
+                     Flags::kLCDCoverage | Flags::kAppendInstances,
                      /*uniforms=*/{{"subRunDeviceMatrix", SkSLType::kFloat4x4},
                                    {"deviceToLocal", SkSLType::kFloat4x4},
                                    {"atlasSizeInv", SkSLType::kFloat2},
                                    {"pixelGeometryDelta", SkSLType::kHalf2},
                                    {"gammaParams", SkSLType::kHalf4}},
                      PrimitiveType::kTriangleStrip,
-                     kDirectDepthGEqualPass,
-                     /*vertexAttrs=*/ {},
-                     /*instanceAttrs=*/
-                     {{"size", VertexAttribType::kUShort2, SkSLType::kUShort2},
+                     kDirectDepthLEqualPass,
+                     /*staticAttrs=*/ {},
+                     /*appendAttrs=*/
+                     {{{"size", VertexAttribType::kUShort2, SkSLType::kUShort2},
                       {"uvPos", VertexAttribType::kUShort2, SkSLType::kUShort2},
                       {"xyPos", VertexAttribType::kFloat2, SkSLType::kFloat2},
                       {"indexAndFlags", VertexAttribType::kUShort2, SkSLType::kUShort2},
                       {"strikeToSourceScale", VertexAttribType::kFloat, SkSLType::kFloat},
                       {"depth", VertexAttribType::kFloat, SkSLType::kFloat},
-                      {"ssboIndices", VertexAttribType::kUInt2, SkSLType::kUInt2}},
+                      {"ssboIndex", VertexAttribType::kUInt, SkSLType::kUInt}}},
                      /*varyings=*/
-                     {{"unormTexCoords", SkSLType::kFloat2},
+                     {{{"unormTexCoords", SkSLType::kFloat2},
                       {"textureCoords", SkSLType::kFloat2},
-                      {"texIndex", SkSLType::kFloat}}) {}
+                      {"texIndex", SkSLType::kFloat}}}) {}
 
 SDFTextLCDRenderStep::~SDFTextLCDRenderStep() {}
 
@@ -130,19 +129,22 @@ const char* SDFTextLCDRenderStep::fragmentCoverageSkSL() const {
 
 void SDFTextLCDRenderStep::writeVertices(DrawWriter* dw,
                                          const DrawParams& params,
-                                         skvx::uint2 ssboIndices) const {
+                                         uint32_t ssboIndex) const {
     const SubRunData& subRunData = params.geometry().subRunData();
-    subRunData.subRun()->vertexFiller().fillInstanceData(dw,
-                                                         subRunData.startGlyphIndex(),
-                                                         subRunData.glyphCount(),
-                                                         subRunData.subRun()->instanceFlags(),
-                                                         ssboIndices,
-                                                         subRunData.subRun()->glyphs(),
-                                                         params.order().depthAsFloat());
+    auto& glyphData = subRunData.subRun()->glyphVector().accessBackendData<GlyphData>();
+    glyphData.fillInstanceData(subRunData.subRun()->vertexFiller(),
+                               subRunData.subRun()->glyphVector().accessBackendGlyphs<Glyph>(),
+                               dw,
+                               subRunData.startGlyphIndex(),
+                               subRunData.glyphCount(),
+                               subRunData.subRun()->instanceFlags(),
+                               ssboIndex,
+                               params.order().depthAsFloat());
 }
 
 void SDFTextLCDRenderStep::writeUniformsAndTextures(const DrawParams& params,
                                                     PipelineDataGatherer* gatherer) const {
+    SkDEBUGCODE(gatherer->checkRewind());
     SkDEBUGCODE(UniformExpectationsValidator uev(gatherer, this->uniforms());)
 
     const SubRunData& subRunData = params.geometry().subRunData();
