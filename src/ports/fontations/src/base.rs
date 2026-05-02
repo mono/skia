@@ -100,10 +100,10 @@ pub fn unhinted_advance_width_or_zero(
 pub fn outline_format(outlines: &BridgeOutlineCollection) -> OutlineFormat {
     let outlines = outlines.0.as_ref();
     match outlines.and_then(|o| o.format()) {
-        None => OutlineFormat::NoOutlines,
         Some(OutlineGlyphFormat::Glyf) => OutlineFormat::Glyf,
         Some(OutlineGlyphFormat::Cff) => OutlineFormat::Cff,
         Some(OutlineGlyphFormat::Cff2) => OutlineFormat::Cff2,
+        _ => OutlineFormat::NoOutlines,
     }
 }
 
@@ -254,7 +254,7 @@ pub fn coordinates_for_shifted_named_instance_index(
 
             Some(instance_coords.len() as isize)
         })
-        .unwrap_or(-1)
+        .unwrap_or(0)
 }
 
 pub fn num_axes(font_ref: &BridgeFontRef) -> usize {

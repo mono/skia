@@ -135,9 +135,10 @@ public:
 
     SkStrikeDeviceInfo strikeDeviceInfo() const override;
 
-    TextureProxy* target();
-    // May be null if target is not sampleable.
-    TextureProxyView readSurfaceView() const;
+    // May not be texturable, but includes the swizzle required when sampling or reading to CPU
+    const TextureProxyView& target() const;
+    bool isTexturable() const;
+
     // Can succeed if target is readable but not sampleable. Assumes 'subset' is contained in bounds
     sk_sp<Image> makeImageCopy(const SkIRect& subset, Budgeted, Mipmapped, SkBackingFit);
 
@@ -298,10 +299,10 @@ private:
     // the transform, clip, and DrawOrder (although Device still tracks stencil buffer usage).
     void drawClipShape(const Transform&, const Shape&, const Clip&, DrawOrder);
 
-    std::pair<DrawParams*, Layer*> drawClipShapeImmediate(const Transform&,
-                                                          const Shape&,
-                                                          const Clip&,
-                                                          DrawOrder);
+    std::pair<DrawParams*, Insertion> drawClipShapeImmediate(const Transform&,
+                                                             const Shape&,
+                                                             const Clip&,
+                                                             DrawOrder);
 
     void updateNextDepthForClipping(PaintersDepth depth);
 

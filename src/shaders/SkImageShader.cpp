@@ -583,6 +583,7 @@ bool SkImageShader::appendStages(const SkStageRec& rec, const SkShaders::MatrixR
             case kAlpha_8_SkColorType:      p->append(SkRasterPipelineOp::gather_a8,    ctx); break;
             case kA16_unorm_SkColorType:    p->append(SkRasterPipelineOp::gather_a16,   ctx); break;
             case kA16_float_SkColorType:    p->append(SkRasterPipelineOp::gather_af16,  ctx); break;
+            case kR16_float_SkColorType:    p->append(SkRasterPipelineOp::gather_rf16,  ctx); break;
             case kRGB_565_SkColorType:      p->append(SkRasterPipelineOp::gather_565,   ctx); break;
             case kARGB_4444_SkColorType:    p->append(SkRasterPipelineOp::gather_4444,  ctx); break;
             case kR8G8_unorm_SkColorType:   p->append(SkRasterPipelineOp::gather_rg88,  ctx); break;
@@ -691,11 +692,10 @@ bool SkImageShader::appendStages(const SkStageRec& rec, const SkShaders::MatrixR
     // Check for fast-path stages.
     // TODO: Could we use the fast-path stages for each level when doing linear mipmap filtering?
     SkColorType ct = upper.pm.colorType();
-    if (true
-        && (ct == kRGBA_8888_SkColorType || ct == kBGRA_8888_SkColorType)
-        && !sampling.useCubic && sampling.filter == SkFilterMode::kLinear
-        && sampling.mipmap != SkMipmapMode::kLinear
-        && fTileModeX == SkTileMode::kClamp && fTileModeY == SkTileMode::kClamp) {
+    if ((ct == kRGBA_8888_SkColorType || ct == kBGRA_8888_SkColorType) &&
+        !sampling.useCubic && sampling.filter == SkFilterMode::kLinear &&
+        sampling.mipmap != SkMipmapMode::kLinear &&
+        fTileModeX == SkTileMode::kClamp && fTileModeY == SkTileMode::kClamp) {
         // Check bounding box of points we will sample to see if we can use lowp
         // and not over/under flow.
         bool shouldUseHighPBilerp = false;
@@ -723,10 +723,9 @@ bool SkImageShader::appendStages(const SkStageRec& rec, const SkShaders::MatrixR
         }
         return append_misc();
     }
-    if (true
-        && (ct == kRGBA_8888_SkColorType || ct == kBGRA_8888_SkColorType)
-        && sampling.useCubic
-        && fTileModeX == SkTileMode::kClamp && fTileModeY == SkTileMode::kClamp) {
+    if ((ct == kRGBA_8888_SkColorType || ct == kBGRA_8888_SkColorType) &&
+        sampling.useCubic &&
+        fTileModeX == SkTileMode::kClamp && fTileModeY == SkTileMode::kClamp) {
 
         p->append(SkRasterPipelineOp::bicubic_clamp_8888, upper.gather);
         if (ct == kBGRA_8888_SkColorType) {
