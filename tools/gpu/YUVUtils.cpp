@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 Google Inc.
+ * Copyright 2019 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -493,10 +493,14 @@ bool LazyYUVImage::ensureYUVImage(Recorder* recorder, Type type) {
                         return false;
                     }
                 }
+                // Many YUV[A] planar configs may not have an alpha channel in a plane's texture,
+                // in which case kOpaque could be used; but always use kUnpremul since the logical
+                // combined YUV[A] sample is always unpremul before being converted to RGBA.
+                // Don't use kUnknown since a plane may include the real alpha channel and
+                // kUnknown would be interpreted as "force-opaque".
                 planeImgs[i] = SkImages::WrapTexture(recorder,
                                                      mbet->texture(),
-                                                     plane.colorType(),
-                                                     plane.alphaType(),
+                                                     kUnpremul_SkAlphaType,
                                                      fColorSpace,
                                                      skgpu::Origin::kTopLeft,
                                                      genMipmaps,
