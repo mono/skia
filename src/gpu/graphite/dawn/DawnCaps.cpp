@@ -96,6 +96,8 @@ bool is_valid_view(const DawnTextureInfo& dawnInfo) {
 #if !defined(__EMSCRIPTEN__)
     switch (dawnInfo.fFormat) {
         case wgpu::TextureFormat::R8BG8Biplanar420Unorm:
+        case wgpu::TextureFormat::R8BG8Biplanar422Unorm:
+        case wgpu::TextureFormat::R8BG8Biplanar444Unorm:
             if (dawnInfo.fAspect == wgpu::TextureAspect::Plane0Only) {
                 return dawnInfo.getViewFormat() == wgpu::TextureFormat::R8Unorm;
             } else if (dawnInfo.fAspect == wgpu::TextureAspect::Plane1Only) {
@@ -104,6 +106,8 @@ bool is_valid_view(const DawnTextureInfo& dawnInfo) {
             break; // else fall through to validate All aspect
 
         case wgpu::TextureFormat::R10X6BG10X6Biplanar420Unorm:
+        case wgpu::TextureFormat::R10X6BG10X6Biplanar422Unorm:
+        case wgpu::TextureFormat::R10X6BG10X6Biplanar444Unorm:
             if (dawnInfo.fAspect == wgpu::TextureAspect::Plane0Only) {
                 return dawnInfo.getViewFormat() == wgpu::TextureFormat::R16Unorm;
             } else if (dawnInfo.fAspect == wgpu::TextureAspect::Plane1Only) {
@@ -111,6 +115,7 @@ bool is_valid_view(const DawnTextureInfo& dawnInfo) {
             }
             break; // else fall through to validate All aspect
 
+        // There are not yet triplanar variants for 10-bit YUV formats.
         case wgpu::TextureFormat::R8BG8A8Triplanar420Unorm:
             if (dawnInfo.fAspect == wgpu::TextureAspect::Plane0Only ||
                 dawnInfo.fAspect == wgpu::TextureAspect::Plane2Only) {
@@ -175,6 +180,12 @@ std::pair<SkEnumBitMask<TextureUsage>, SkEnumBitMask<SampleCount>> DawnCaps::get
         if ((formatInfo.fFlags & msaaFlag) == msaaFlag) {
             // WebGPU only supports 1x and 4x MSAA
             sampleCounts |= SampleCount::k4;
+            if (this->msaaRenderToSingleSampledSupport() &&
+                !TextureFormatIsDepthOrStencil(format)) {
+                // If WebGPU exposes the MSRTSS extension, assume that all color formats that
+                // support MSAA can support MSRTSS.
+                supported |= TextureUsage::kMSRTSS;
+            }
         }
     }
 
@@ -302,17 +313,6 @@ SkISize DawnCaps::getDepthAttachmentDimensions(const TextureInfo& textureInfo,
     return colorAttachmentDimensions;
 }
 
-SkSpan<const Caps::ColorTypeInfo> DawnCaps::getColorTypeInfos(
-        const TextureInfo& textureInfo) const {
-    auto dawnFormat = TextureInfoPriv::Get<DawnTextureInfo>(textureInfo).getViewFormat();
-    if (dawnFormat == wgpu::TextureFormat::Undefined) {
-        return {};
-    }
-
-    const FormatInfo& formatInfo = this->getFormatInfo(dawnFormat);
-    return {formatInfo.fColorTypeInfos.get(), formatInfo.fColorTypeInfoCount};
-}
-
 void DawnCaps::initCaps(const DawnBackendContext& backendContext, const ContextOptions& options) {
     // GetAdapter() is not available in WASM and there's no way to get AdapterInfo off of
     // the WGPUDevice directly.
@@ -434,6 +434,9 @@ void DawnCaps::initCaps(const DawnBackendContext& backendContext, const ContextO
                 backendContext.fDevice.HasFeature(wgpu::FeatureName::DawnPartialLoadResolveTexture);
         fDifferentResolveAttachmentSizeSupport = fSupportsPartialLoadResolve;
     }
+
+    fSupportsRenderPassRenderArea =
+            backendContext.fDevice.HasFeature(wgpu::FeatureName::RenderPassRenderArea);
 #endif
 
     if (!fSupportsPartialLoadResolve &&
@@ -681,7 +684,7 @@ void DawnCaps::initFormatTable(const wgpu::Device& device) {
     {
         info = &fFormatTable[GetFormatIndex(wgpu::TextureFormat::R16Float)];
         info->fFlags = FormatInfo::kAllFlags;
-        info->fColorTypeInfoCount = 1;
+        info->fColorTypeInfoCount = 2;
         info->fColorTypeInfos = std::make_unique<ColorTypeInfo[]>(info->fColorTypeInfoCount);
         int ctIdx = 0;
         // Format: R16Float, Surface: kA16_float
@@ -692,6 +695,13 @@ void DawnCaps::initFormatTable(const wgpu::Device& device) {
             ctInfo.fFlags = ColorTypeInfo::kUploadData_Flag | ColorTypeInfo::kRenderable_Flag;
             ctInfo.fReadSwizzle = skgpu::Swizzle("000r");
             ctInfo.fWriteSwizzle = skgpu::Swizzle("a000");
+        }
+        // Format: R16Float, Surface: kR16_float
+        {
+            auto& ctInfo = info->fColorTypeInfos[ctIdx++];
+            ctInfo.fColorType = kR16_float_SkColorType;
+            ctInfo.fTransferColorType = kR16_float_SkColorType;
+            ctInfo.fFlags = ColorTypeInfo::kUploadData_Flag | ColorTypeInfo::kRenderable_Flag;
         }
     }
 
