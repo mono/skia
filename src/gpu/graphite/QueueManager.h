@@ -65,6 +65,7 @@ public:
 
     [[nodiscard]] bool submitToGpu(const SubmitInfo&);
     [[nodiscard]] bool hasUnfinishedGpuWork();
+    [[nodiscard]] bool hasPendingGPUWork() const;
     void checkForFinishedWork(SyncToCpu);
 
 #if defined(GPU_TEST_UTILS)
@@ -76,7 +77,7 @@ public:
 
     virtual void tick() const {}
 
-    void addUploadBufferManagerRefs(UploadBufferManager*);
+    void addUploadBufferManagerRefs(UploadBufferManager*, ResourceProvider*);
 
 protected:
     QueueManager(const SharedContext* sharedContext);
