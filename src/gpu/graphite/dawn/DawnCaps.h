@@ -33,6 +33,7 @@ public:
         return fSupportedResolveTextureLoadOp;
     }
     bool supportsPartialLoadResolve() const { return fSupportsPartialLoadResolve; }
+    bool supportsRenderPassRenderArea() const { return fSupportsRenderPassRenderArea; }
 
     SkISize getDepthAttachmentDimensions(const TextureInfo&,
                                          const SkISize colorAttachmentDimensions) const override;
@@ -68,7 +69,6 @@ public:
     bool emulateLoadStoreResolve() const { return fEmulateLoadStoreResolve; }
 
 private:
-    SkSpan<const ColorTypeInfo> getColorTypeInfos(const TextureInfo&) const override;
     TextureInfo onGetDefaultTextureInfo(SkEnumBitMask<TextureUsage> usage,
                                         TextureFormat,
                                         SampleCount,
@@ -132,6 +132,7 @@ private:
     // and resolve. With this feature, we can do that partially according to the actual damage
     // region.
     bool fSupportsPartialLoadResolve = false;
+    bool fSupportsRenderPassRenderArea = false;
 
     bool fEmulateLoadStoreResolve = false;
 
