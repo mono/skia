@@ -142,7 +142,7 @@ const void* sk_stream_get_memory_base(sk_stream_t* cstream) {
 }
 
 sk_data_t* sk_stream_get_data(sk_stream_t* cstream) {
-    return ToData(AsStream(cstream)->getData().release());
+    return ToData(const_cast<SkData*>(AsStream(cstream)->getData().release()));
 }
 
 sk_stream_t* sk_stream_fork(sk_stream_t* cstream) {
