@@ -20,6 +20,7 @@
 #include "include/private/base/SkDebug.h"
 #include "include/private/base/SkTemplates.h"
 #include "src/core/SkAutoPixmapStorage.h"
+#include "src/core/SkColorSpaceXformSteps.h"
 #include "src/core/SkCompressedDataUtils.h"
 #include "src/core/SkConvertPixels.h"
 #include "src/core/SkMipmap.h"
@@ -33,6 +34,7 @@
 #include "src/gpu/graphite/TextureFormat.h"
 #include "src/gpu/graphite/TextureInfoPriv.h"
 #include "src/gpu/graphite/TextureProxy.h"
+#include "src/gpu/graphite/TextureProxyView.h"
 #include "src/gpu/graphite/UploadBufferManager.h"
 
 #include <algorithm>
@@ -96,26 +98,26 @@ UploadSource& UploadSource::operator=(UploadSource&&) = default;
 UploadSource::~UploadSource() = default;
 
 UploadSource UploadSource::Make(const Caps* caps,
-                                const TextureProxy& textureProxy,
+                                const TextureProxyView& dstView,
                                 const SkColorInfo& srcColorInfo,
                                 const SkColorInfo& dstColorInfo,
                                 SkSpan<const MipLevel> levels,
                                 const SkIRect& dstRect) {
-    const TextureInfo& texInfo = textureProxy.textureInfo();
+    SkDEBUGCODE(const TextureInfo& texInfo = dstView.proxy()->textureInfo());
 
     SkASSERT(caps->isTexturable(texInfo));
-    SkASSERT(caps->areColorTypeAndTextureInfoCompatible(dstColorInfo.colorType(), texInfo));
+    SkASSERT(AreColorTypeAndFormatCompatible(dstColorInfo.colorType(), dstView.proxy()->format()));
 
     unsigned int mipLevelCount = levels.size();
     // The assumption is either that we have no mipmaps, or that our rect is the entire texture
-    SkASSERT(mipLevelCount == 1 || dstRect == SkIRect::MakeSize(textureProxy.dimensions()));
+    SkASSERT(mipLevelCount == 1 || dstRect == SkIRect::MakeSize(dstView.dimensions()));
 
     // We assume that if the texture has mip levels, we either upload to all the levels or just the
     // first.
 #ifdef SK_DEBUG
     unsigned int numExpectedLevels = 1;
     if (texInfo.mipmapped() == Mipmapped::kYes) {
-        numExpectedLevels = SkMipmap::ComputeLevelCount(textureProxy.dimensions()) + 1;
+        numExpectedLevels = SkMipmap::ComputeLevelCount(dstView.dimensions()) + 1;
     }
     SkASSERT(mipLevelCount == 1 || mipLevelCount == numExpectedLevels);
 #endif
@@ -133,24 +135,23 @@ UploadSource UploadSource::Make(const Caps* caps,
         source.fLevels.push_back(levels[i]);
     }
 
-    SkColorType supportedColorType;
-    bool isRGB888Format;
-    std::tie(supportedColorType, isRGB888Format) = caps->supportedTransferColorType(
-            dstColorInfo.colorType(), texInfo);
-    if (supportedColorType == kUnknown_SkColorType) {
+    SkColorSpaceXformSteps csSteps{srcColorInfo.colorSpace(), srcColorInfo.alphaType(),
+                                   dstColorInfo.colorSpace(), dstColorInfo.alphaType()};
+    auto xferFn = TextureFormatXferFn::MakeCpuToGpu(srcColorInfo.colorType(),
+                                                    csSteps,
+                                                    dstView.proxy()->format(),
+                                                    dstView.swizzle());
+    if (!xferFn) {
         return Invalid();
     }
 
-    SkASSERT(!source.isRGB888Format() || (supportedColorType == kRGB_888x_SkColorType &&
-                                          dstColorInfo.colorType() == kRGB_888x_SkColorType));
-
-    constexpr size_t kRGB888Bytes = 3;
-
-    source.fIsRGB888Format = isRGB888Format;
-    source.fBytesPerPixel =
-            isRGB888Format ? kRGB888Bytes : SkColorTypeBytesPerPixel(supportedColorType);
-    source.fCanUploadOnHost =
-            textureProxy.isInstantiated() ? textureProxy.texture()->canUploadOnHost(source) : false;
+    source.fXferFn = xferFn;
+    source.fBytesPerPixel = TextureFormatBytesPerBlock(dstView.proxy()->format());
+    // Don't upload on the host if we need to perform conversions that could be done directly into
+    // a mapped GPU buffer.
+    source.fCanUploadOnHost = xferFn->isIdentity() &&
+                              dstView.proxy()->isInstantiated() &&
+                              dstView.proxy()->texture()->canUploadOnHost();
 
     return source;
 }
@@ -166,8 +167,7 @@ UploadSource UploadSource::MakeCompressed(const Caps* caps,
     const TextureInfo& texInfo = textureProxy.textureInfo();
     SkASSERT(caps->isTexturable(texInfo));
 
-    SkTextureCompressionType compression =
-            TextureFormatCompressionType(TextureInfoPriv::ViewFormat(texInfo));
+    SkTextureCompressionType compression = TextureFormatCompressionType(textureProxy.format());
     if (compression == SkTextureCompressionType::kNone) {
         return Invalid();
     }
@@ -190,9 +190,8 @@ UploadSource UploadSource::MakeCompressed(const Caps* caps,
 
     source.fCompression = compression;
     source.fBytesPerPixel = SkCompressedBlockSize(compression);
-    source.fCanUploadOnHost =
-            textureProxy.isInstantiated() ? textureProxy.texture()->canUploadOnHost(source) : false;
-
+    source.fCanUploadOnHost = textureProxy.isInstantiated() &&
+                              textureProxy.texture()->canUploadOnHost();
     return source;
 }
 
@@ -211,7 +210,7 @@ UploadInstance::UploadInstance(const Buffer* buffer,
         , fConditionalContext(std::move(condContext)) {}
 
 UploadInstance UploadInstance::Make(Recorder* recorder,
-                                    sk_sp<TextureProxy> textureProxy,
+                                    const TextureProxyView& dstView,
                                     const SkColorInfo& srcColorInfo,
                                     const SkColorInfo& dstColorInfo,
                                     const UploadSource& source,
@@ -239,72 +238,24 @@ UploadInstance UploadInstance::Make(Recorder* recorder,
                     combinedBufferSize);
         return Invalid();
     }
+    SkASSERT(source.formatXferFn().has_value()); // UploadSource verified this
 
-    SkColorType supportedColorType;
-    bool isRGB888Format;
-    std::tie(supportedColorType, isRGB888Format) = caps->supportedTransferColorType(
-            dstColorInfo.colorType(), textureProxy->textureInfo());
-    SkASSERT(supportedColorType != kUnknown_SkColorType); // UploadSource verified this
-    SkColorInfo supportedColorInfo = dstColorInfo.makeColorType(supportedColorType);
-    if (supportedColorInfo.alphaType() == kUnknown_SkAlphaType) {
-        supportedColorInfo = supportedColorInfo.makeAlphaType(kOpaque_SkAlphaType);
-    }
-    SkColorInfo inputColorInfo = srcColorInfo;
-    if (inputColorInfo.alphaType() == kUnknown_SkAlphaType) {
-        inputColorInfo = inputColorInfo.makeAlphaType(kOpaque_SkAlphaType);
-    }
     UploadInstance upload{bufferInfo.fBuffer,
                           source.bytesPerPixel(),
-                          std::move(textureProxy),
+                          dstView.refProxy(),
                           std::move(condContext)};
 
     // Fill in copy data
     int32_t currentWidth = dstRect.width();
     int32_t currentHeight = dstRect.height();
-    bool needsConversion = (inputColorInfo != supportedColorInfo);
     for (uint32_t currentMipLevel = 0; currentMipLevel < mipLevelCount; currentMipLevel++) {
-        const size_t trimRowBytes = currentWidth * source.bytesPerPixel();
         const size_t srcRowBytes = levels[currentMipLevel].fRowBytes;
         const auto [mipOffset, dstRowBytes] = levelOffsetsAndRowBytes[currentMipLevel];
 
         // copy data into the buffer, skipping any trailing bytes
         const char* src = (const char*)levels[currentMipLevel].fPixels;
-
-        if (source.isRGB888Format()) {
-            SkISize dims = {currentWidth, currentHeight};
-            SkImageInfo srcImageInfo = SkImageInfo::Make(dims, inputColorInfo);
-            SkImageInfo dstImageInfo = SkImageInfo::Make(dims, supportedColorInfo);
-
-            const void* rgbConvertSrc = src;
-            size_t rgbSrcRowBytes = srcRowBytes;
-            SkAutoPixmapStorage temp;
-            if (needsConversion) {
-                temp.alloc(dstImageInfo);
-                SkAssertResult(SkConvertPixels(dstImageInfo,
-                                               temp.writable_addr(),
-                                               temp.rowBytes(),
-                                               srcImageInfo,
-                                               src,
-                                               srcRowBytes));
-                rgbConvertSrc = temp.addr();
-                rgbSrcRowBytes = temp.rowBytes();
-            }
-            writer.writeRGBFromRGBx(mipOffset,
-                                    rgbConvertSrc,
-                                    rgbSrcRowBytes,
-                                    dstRowBytes,
-                                    currentWidth,
-                                    currentHeight);
-        } else if (needsConversion) {
-            SkISize dims = {currentWidth, currentHeight};
-            SkImageInfo srcImageInfo = SkImageInfo::Make(dims, inputColorInfo);
-            SkImageInfo dstImageInfo = SkImageInfo::Make(dims, supportedColorInfo);
-
-            writer.convertAndWrite(
-                    mipOffset, srcImageInfo, src, srcRowBytes, dstImageInfo, dstRowBytes);
-        } else {
-            writer.write(mipOffset, src, srcRowBytes, dstRowBytes, trimRowBytes, currentHeight);
-        }
+        writer.convert(mipOffset, currentWidth, currentHeight,
+                       src, srcRowBytes, *source.formatXferFn(), dstRowBytes);
 
         // For mipped data, the dstRect is always the full texture so we don't need to worry about
         // modifying the TL coord as it will always be 0,0,for all levels.
@@ -488,7 +439,7 @@ Task::Status UploadInstance::addCommand(Context* context,
 //---------------------------------------------------------------------------
 
 bool UploadList::recordUpload(Recorder* recorder,
-                              sk_sp<TextureProxy> textureProxy,
+                              const TextureProxyView& dstView,
                               const SkColorInfo& srcColorInfo,
                               const SkColorInfo& dstColorInfo,
                               const UploadSource& source,
@@ -496,11 +447,11 @@ bool UploadList::recordUpload(Recorder* recorder,
                               std::unique_ptr<ConditionalUploadContext> condContext) {
     // If possible, upload the data directly on host.
     if (source.canUploadOnHost()) {
-        return textureProxy->texture()->uploadDataOnHost(source, dstRect);
+        return dstView.proxy()->texture()->uploadDataOnHost(source, dstRect);
     }
 
     UploadInstance instance = UploadInstance::Make(recorder,
-                                                   std::move(textureProxy),
+                                                   std::move(dstView),
                                                    srcColorInfo,
                                                    dstColorInfo,
                                                    source,

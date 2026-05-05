@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Google Inc.
+ * Copyright 2020 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -180,7 +180,6 @@ static CompressedImageObjects make_compressed_image(SkCanvas* canvas,
         if (texture) {
             image = SkImages::WrapTexture(recorder,
                                           texture->texture(),
-                                          skgpu::CompressionTypeToSkColorType(compression),
                                           kPremul_SkAlphaType,
                                           /*colorSpace=*/nullptr);
             if (image) {

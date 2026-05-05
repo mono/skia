@@ -202,7 +202,7 @@ skgpu::graphite::PaintOptions MouriMapBlur(RuntimeEffectManager& effectManager) 
     return paintOptions;
 }
 
-skgpu::graphite::PaintOptions MouriMapToneMap(RuntimeEffectManager& effectManager) {
+static sk_sp<PrecompileShader> create_tone_map(RuntimeEffectManager& effectManager) {
     SkColorInfo ci { kRGBA_8888_SkColorType, kPremul_SkAlphaType, nullptr };
     sk_sp<PrecompileShader> input = PrecompileShaders::Image(ImageShaderFlags::kExcludeCubic,
                                                              { &ci, 1 },
@@ -222,8 +222,13 @@ skgpu::graphite::PaintOptions MouriMapToneMap(RuntimeEffectManager& effectManage
     sk_sp<PrecompileShader> inLinear =
             toneMap->makeWithWorkingColorSpace(luxCI.refColorSpace());
 
+    return inLinear;
+}
+
+skgpu::graphite::PaintOptions MouriMapToneMap(RuntimeEffectManager& effectManager) {
+
     PaintOptions paintOptions;
-    paintOptions.setShaders({{ std::move(inLinear) }});
+    paintOptions.setShaders({{ create_tone_map(effectManager) }});
     paintOptions.setBlendModes(SKSPAN_INIT_ONE( SkBlendMode::kSrc ));
     return paintOptions;
 }
@@ -861,7 +866,7 @@ void VisitAndroidPrecompileSettings_Old(
           DrawTypeFlags::kNonAAFillRect,
           kRGBA16F_1_D_Linear },
 
-        // 100% (1/1) handles 55
+        // 24: 100% (1/1) handles 55
         { MouriMapToneMap(effectManager),
           DrawTypeFlags::kNonAAFillRect,
           kRGBA_1_D_SRGB },
@@ -929,25 +934,27 @@ void VisitAndroidPrecompileSettings_Old(
 
         // The next 3 have a RE_LinearEffect and a MatrixFilter along w/ different ancillary
         // additions
-        // 100% (1/1) handles 20
+        // 34: 100% (1/1) handles 20
         { LinearEffect(k0x188a0000__DISPLAY_P3__false__0x90a0000__Shader,
                        create_hw_image_precompile_shader(),
                        SkBlendMode::kSrcOver,
                        /* paintColorIsOpaque= */ true,
-                       /* matrixColorFilter= */ true),
+                       /* matrixColorFilter= */ true,
+                       /* dither= */ false),
           DrawTypeFlags::kAnalyticRRect,
           kRGBA_1_D_SRGB },
 
-        // 100% (1/1) handles 13
+        // 35: 100% (1/1) handles 13
         { LinearEffect(k0x188a0000__DISPLAY_P3__false__0x90a0000__Shader,
                        create_hw_image_precompile_shader(),
                        SkBlendMode::kSrcOver,
                        /* paintColorIsOpaque= */ false,
-                       /* matrixColorFilter= */ true),
+                       /* matrixColorFilter= */ true,
+                       /* dither= */ false),
           DrawTypeFlags::kAnalyticRRect,
           kRGBA_1_D_SRGB },
 
-        // 100% (1/1) handles 18
+        // 36: 100% (1/1) handles 18
         { LinearEffect(k0x188a0000__DISPLAY_P3__false__0x90a0000__Shader,
                        create_hw_image_precompile_shader(),
                        SkBlendMode::kSrcOver,
@@ -1092,10 +1099,85 @@ void VisitAndroidPrecompileSettings_Old(
           DrawTypeFlags::kNonAAFillRect | DrawTypeFlags::kAnalyticClip,
           kRGBA_1_D },
 
-        // 60: 100% (1/1) handles 117
+        // 100% (1/1) handles 117
         { Builder().transparent().blend().srcOver(),
           DrawTypeFlags::kNonAAFillRect,
           kRGBA_1_D },
+
+        // TODO(robertphillips): The following 3 paint options duplicate earlier ones but add
+        // an SRGB working colorspace. It is likely the 3 paint options w/o the colorspace are
+        // now redundant.
+
+        // 59: 100% (2/2) handles 174 177
+        // This is just 34 w/ an SRGB working colorspace
+        { LinearEffect(k0x188a0000__DISPLAY_P3__false__0x90a0000__Shader,
+                       create_hw_image_precompile_shader(),
+                       SkBlendMode::kSrcOver,
+                       /* paintColorIsOpaque= */ true,
+                       /* matrixColorFilter= */ true,
+                       /* dither= */ false,
+                       SkColorSpace::MakeSRGBLinear()),
+          kRRectAndNonAARect,
+          kRGBA_1_D_SRGB },
+
+        // 60: 100% (1/1) handles 173
+        // This is just 35 w/ an SRGB working colorspace
+        { LinearEffect(k0x188a0000__DISPLAY_P3__false__0x90a0000__Shader,
+                       create_hw_image_precompile_shader(),
+                       SkBlendMode::kSrcOver,
+                       /* paintColorIsOpaque= */ false,
+                       /* matrixColorFilter= */ true,
+                       /* dither= */ false,
+                       SkColorSpace::MakeSRGBLinear()),
+          DrawTypeFlags::kAnalyticRRect,
+          kRGBA_1_D_SRGB },
+
+        // 61: 100% (2/2) handles 175 179
+        // This is just 36 w/ an SRGB working colorspace
+        { LinearEffect(k0x188a0000__DISPLAY_P3__false__0x90a0000__Shader,
+                       create_hw_image_precompile_shader(),
+                       SkBlendMode::kSrcOver,
+                       /* paintColorIsOpaque= */ true,
+                       /* matrixColorFilter= */ true,
+                       /* dither= */ true,
+                       SkColorSpace::MakeSRGBLinear()),
+          kRRectAndNonAARect,
+          kRGBA_1_D_SRGB },
+
+        // 62: 100% (1/1) handles 176
+        { LinearEffect(k0x188a0000__DISPLAY_P3__false__0x90a0000__Shader,
+                       create_hw_image_precompile_shader(),
+                       SkBlendMode::kSrcOver,
+                       /* paintColorIsOpaque= */ false,
+                       /* matrixColorFilter= */ false,
+                       /* dither= */ false,
+                       SkColorSpace::MakeSRGBLinear()),
+          DrawTypeFlags::kNonAAFillRect,
+          kRGBA_1_D_SRGB },
+
+        // 63: 100% (1/1) handles 180
+        // Just 62 w/ and opaque Paint color
+        { LinearEffect(k0x188a0000__DISPLAY_P3__false__0x90a0000__Shader,
+                       create_hw_image_precompile_shader(),
+                       SkBlendMode::kSrcOver,
+                       /* paintColorIsOpaque= */ true,
+                       /* matrixColorFilter= */ false,
+                       /* dither= */ false,
+                       SkColorSpace::MakeSRGBLinear()),
+          DrawTypeFlags::kNonAAFillRect,
+          kRGBA_1_D_SRGB },
+
+        // 64: 100% (1/1) handles: 178
+        // This is just 24 wrapped in a very specific LinearEffect
+        { LinearEffect(kUNKNOWN__SRGB__false__UNKNOWN__Shader,
+                       create_tone_map(effectManager),
+                       SkBlendMode::kSrcOver,
+                       /* paintColorIsOpaque= */ true,
+                       /* matrixColorFilter= */ false,
+                       /* dither= */ false,
+                       SkColorSpace::MakeSRGBLinear()),
+          DrawTypeFlags::kNonAAFillRect,
+          kRGBA_1_D_SRGB },
 
 #if defined(SK_VULKAN) && defined(SK_BUILD_FOR_ANDROID)
 
