@@ -40,6 +40,7 @@ SK_C_API bool sk_pixmap_erase_color4f(const sk_pixmap_t* cpixmap, const sk_color
 // Sk*Encoder
 
 SK_C_API bool sk_webpencoder_encode(sk_wstream_t* dst, const sk_pixmap_t* src, const sk_webpencoder_options_t* options);
+SK_C_API bool sk_webpencoder_encode_animated(sk_wstream_t* dst, const sk_webpencoder_frame_t* src, int count, const sk_webpencoder_options_t* options);
 SK_C_API bool sk_jpegencoder_encode(sk_wstream_t* dst, const sk_pixmap_t* src, const sk_jpegencoder_options_t* options);
 SK_C_API bool sk_pngencoder_encode(sk_wstream_t* dst, const sk_pixmap_t* src, const sk_pngencoder_options_t* options);
 
