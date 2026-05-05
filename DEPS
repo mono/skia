@@ -1,36 +1,3 @@
-# This file manages the dependencies used by Skia developers for local, stand-alone Skia builds and
-# Skia testing infrastructure. The versions specified by the commit hashes represent the revisions
-# we happen to be currently testing. Skia provides no endorsement or recommendation on the revision
-# to use for these libraries.
-
-use_relative_paths = True
-
-vars = {
-  # Three lines of non-changing comments so that
-  # the commit queue can handle CLs rolling different
-  # dependencies without interference from each other.
-  'infra_revision': '5997e0271ce752c20f475f4e76c92917d81b02eb',
-
-  # ninja CIPD package version.
-  # https://chrome-infra-packages.appspot.com/p/infra/3pp/tools/ninja
-  'ninja_version': 'version:2@1.12.1.chromium.4',
-
-  # googlefonts_testdata CIPD package version
-  # https://chrome-infra-packages.appspot.com/p/chromium/third_party/googlefonts_testdata/
-  'googlefonts_testdata_version': 'version:20230913',
-
-  # Pre-built task drivers from this repo, used for CI.
-  'task_drivers_revision': 'git_revision:b5d31abb7bc772a69f800de45783768768437675',
-}
-
-# If you modify this file, you will need to regenerate the Bazel version of this file (bazel/deps.bzl).
-# To do so, run:
-#     bazelisk run //bazel/deps_parser
-#
-# To apply the changes for the GN build, you will need to resync the git repositories using:
-#     ./tools/git-sync-deps
-deps = {
-  "buildtools"                                   : "https://chromium.googlesource.com/chromium/src/buildtools.git@729495f2ffa69080907780591fa2a630b2556e98",
   # "third_party/externals/angle2"                 : "https://chromium.googlesource.com/angle/angle.git@b1b19492e609101305bf434bb01ca7ff93619549",
   "third_party/externals/brotli"                 : "https://skia.googlesource.com/external/github.com/google/brotli.git@028fb5a23661f123017c060daa546b55cf4bde29",
   "third_party/externals/d3d12allocator"         : "https://skia.googlesource.com/external/github.com/GPUOpen-LibrariesAndSDKs/D3D12MemoryAllocator.git@169895d529dfce00390a20e69c2f516066fe7a3b",

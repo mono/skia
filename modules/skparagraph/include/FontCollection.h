@@ -1,4 +1,4 @@
-// Copyright 2019 Google LLC.
+// Copyright 2019 Google LLC
 #ifndef FontCollection_DEFINED
 #define FontCollection_DEFINED
 
@@ -55,8 +55,12 @@ private:
 
     sk_sp<SkTypeface> matchTypeface(const SkString& familyName, SkFontStyle fontStyle);
 
+    sk_sp<SkTypeface> cloneTypeface(const sk_sp<SkTypeface>& typeface, const FontArguments& args);
+
     struct FaceCache;
     std::unique_ptr<FaceCache> fFaceCache;
+    struct VariationCache;
+    std::unique_ptr<VariationCache> fVariationCache;
     bool fEnableFontFallback;
     sk_sp<SkFontMgr> fDefaultFontManager;
     sk_sp<SkFontMgr> fAssetFontManager;
