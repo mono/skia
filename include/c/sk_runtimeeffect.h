@@ -19,8 +19,8 @@ SK_C_API void sk_runtimeeffect_unref(sk_runtimeeffect_t* effect);
 SK_C_API sk_shader_t* sk_runtimeeffect_make_shader(sk_runtimeeffect_t* effect, sk_data_t* uniforms, sk_flattenable_t** children, size_t childCount, const sk_matrix_t* localMatrix);
 SK_C_API sk_colorfilter_t* sk_runtimeeffect_make_color_filter(sk_runtimeeffect_t* effect, sk_data_t* uniforms, sk_flattenable_t** children, size_t childCount);
 SK_C_API sk_blender_t* sk_runtimeeffect_make_blender(sk_runtimeeffect_t* effect, sk_data_t* uniforms, sk_flattenable_t** children, size_t childCount);
-SK_C_API sk_imagefilter_t* sk_runtimeeffect_make_image_filter(sk_runtimeeffect_t* effect, sk_data_t* uniforms, const char* childShaderName, const sk_imagefilter_t* input);
-SK_C_API sk_imagefilter_t* sk_runtimeeffect_make_image_filter_with_children(sk_runtimeeffect_t* effect, sk_data_t* uniforms, float maxSampleRadius, const char** childShaderNames, const sk_imagefilter_t** inputs, int inputCount);
+SK_C_API sk_imagefilter_t* sk_runtimeeffect_make_image_filter(sk_runtimeeffect_t* effect, sk_data_t* uniforms, sk_flattenable_t** children, size_t childCount, const char* childShaderName, const sk_imagefilter_t* input);
+SK_C_API sk_imagefilter_t* sk_runtimeeffect_make_image_filter_with_children(sk_runtimeeffect_t* effect, sk_data_t* uniforms, sk_flattenable_t** children, size_t childCount, float maxSampleRadius, const char** childShaderNames, const sk_imagefilter_t** inputs, int inputCount);
 SK_C_API size_t sk_runtimeeffect_get_uniform_byte_size(const sk_runtimeeffect_t* effect);
 
 SK_C_API size_t sk_runtimeeffect_get_uniforms_size(const sk_runtimeeffect_t* effect);
