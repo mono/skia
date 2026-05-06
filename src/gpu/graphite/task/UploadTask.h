@@ -14,6 +14,7 @@
 #include "include/core/SkSpan.h"
 #include "include/private/base/SkTArray.h"
 #include "src/gpu/graphite/CommandTypes.h"
+#include "src/gpu/graphite/TextureFormatXferFn.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -35,6 +36,7 @@ class ResourceProvider;
 class RuntimeEffectDictionary;
 class ScratchResourceManager;
 class TextureProxy;
+class TextureProxyView;
 
 struct MipLevel {
     const void* fPixels = nullptr;
@@ -84,7 +86,7 @@ public:
 class UploadSource {
 public:
     static UploadSource Make(const Caps*,
-                             const TextureProxy& textureProxy,
+                             const TextureProxyView& dstView,
                              const SkColorInfo& srcColorInfo,
                              const SkColorInfo& dstColorInfo,
                              SkSpan<const MipLevel> levels,
@@ -102,9 +104,9 @@ public:
 
     SkSpan<const MipLevel> levels() const { return fLevels; }
     bool canUploadOnHost() const { return fCanUploadOnHost; }
-    bool isRGB888Format() const { return fIsRGB888Format; }
     SkTextureCompressionType compression() const { return fCompression; }
     size_t bytesPerPixel() const { return fBytesPerPixel; }
+    const std::optional<TextureFormatXferFn>& formatXferFn() const { return fXferFn; }
 
 private:
     static UploadSource Invalid() { return {}; }
@@ -115,12 +117,12 @@ private:
 
     // Whether the texture supports uploads directly from host memory.
     bool fCanUploadOnHost = false;
-    // Whether the texture is RGB888, which is typically emulated by RGBA8888.
-    bool fIsRGB888Format = false;
     // Compression type, if any.
     SkTextureCompressionType fCompression;
     // Bytes per pixel or block (if compressed)
     size_t fBytesPerPixel = 0;
+    // Not present for compressed formats
+    std::optional<TextureFormatXferFn> fXferFn;
 };
 
 /**
@@ -130,7 +132,7 @@ private:
 class UploadInstance {
 public:
     static UploadInstance Make(Recorder*,
-                               sk_sp<TextureProxy> textureProxy,
+                               const TextureProxyView& dst,
                                const SkColorInfo& srcColorInfo,
                                const SkColorInfo& dstColorInfo,
                                const UploadSource& source,
@@ -183,7 +185,7 @@ private:
 class UploadList {
 public:
     bool recordUpload(Recorder*,
-                      sk_sp<TextureProxy> targetProxy,
+                      const TextureProxyView& dst,
                       const SkColorInfo& srcColorInfo,
                       const SkColorInfo& dstColorInfo,
                       const UploadSource& source,
