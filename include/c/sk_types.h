@@ -66,7 +66,7 @@
 #endif
 
 #ifndef SK_C_INCREMENT
-#define SK_C_INCREMENT 0
+#define SK_C_INCREMENT 1
 #endif
 
 ///////////////////////////////////////////////////////////////////////////////////////
@@ -119,6 +119,7 @@ typedef enum {
     // READONLY
     R8G8_UNORM_SK_COLORTYPE,
     A16_FLOAT_SK_COLORTYPE,
+    R16_FLOAT_SK_COLORTYPE,
     R16G16_FLOAT_SK_COLORTYPE,
     A16_UNORM_SK_COLORTYPE,
     R16_UNORM_SK_COLORTYPE,
