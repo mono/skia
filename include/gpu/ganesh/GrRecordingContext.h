@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 Google Inc.
+ * Copyright 2019 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -67,6 +67,7 @@ public:
             colorType == kA16_unorm_SkColorType          ||
             colorType == kA16_float_SkColorType          ||
             colorType == kR16_unorm_SkColorType          ||
+            colorType == kR16_float_SkColorType          ||
             colorType == kR16G16_float_SkColorType       ||
             colorType == kR16G16B16A16_unorm_SkColorType ||
             colorType == kGray_8_SkColorType) {

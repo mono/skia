@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 Google Inc.
+ * Copyright 2018 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -283,6 +283,8 @@ static void surface_draw_test_helper(skiatest::Reporter* reporter,
         REPORTER_ASSERT(reporter, surface->readPixels(readbackBitmap, 0, 0));
         REPORTER_ASSERT(reporter, check_read(reporter, srcBitmap, readbackBitmap));
     }
+
+    surface.reset();
 
     cleanup_resources(buffer);
 }

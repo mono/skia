@@ -1,5 +1,5 @@
 /*
- * Copyright 2025 Google LLC.
+ * Copyright 2025 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -13,6 +13,7 @@
 #include "tests/Test.h"
 #include "tools/Resources.h"
 
+#include <array>
 #include <cmath>
 #include <cstring>
 
@@ -142,14 +143,15 @@ DEF_TEST(RustIcc_profile_conversion, r) {
 
     // Set up simple gamma curves
     rust_profile.has_trc = true;
-    for (int i = 0; i < 3; i++) {
-        rust_profile.trc[i].g = 2.2f;
-        rust_profile.trc[i].a = 1.0f;
-        rust_profile.trc[i].b = 0.0f;
-        rust_profile.trc[i].c = 0.0f;
-        rust_profile.trc[i].d = 0.0f;
-        rust_profile.trc[i].e = 0.0f;
-        rust_profile.trc[i].f = 0.0f;
+    for (auto* ch : {&rust_profile.trc_r, &rust_profile.trc_g, &rust_profile.trc_b}) {
+        ch->table_entries = 0;  // parametric curve (no table)
+        ch->parametric.g = 2.2f;
+        ch->parametric.a = 1.0f;
+        ch->parametric.b = 0.0f;
+        ch->parametric.c = 0.0f;
+        ch->parametric.d = 0.0f;
+        ch->parametric.e = 0.0f;
+        ch->parametric.f = 0.0f;
     }
 
     // Convert to skcms
@@ -186,6 +188,45 @@ DEF_TEST(RustIcc_profile_conversion_fails_without_data, r) {
     REPORTER_ASSERT(r, !success);
 }
 
+DEF_TEST(RustIcc_profile_conversion_fails_trc_without_matrix, r) {
+    // Profile with TRC curves but no toXYZD50 matrix should fail conversion,
+    // matching skcms_Parse's usable_as_src() validation. Without both TRC and
+    // toXYZD50, skcms_Transform would return false.
+    rust_icc::IccProfile rust_profile;
+    rust_profile.data_color_space = skcms_Signature_RGB;
+    rust_profile.connection_space = skcms_Signature_XYZ;
+    rust_profile.has_to_xyzd50 = false;
+    rust_profile.has_trc = true;
+    for (auto* ch : {&rust_profile.trc_r, &rust_profile.trc_g, &rust_profile.trc_b}) {
+        ch->table_entries = 0;
+        ch->parametric.g = 2.2f;
+        ch->parametric.a = 1.0f;
+    }
+
+    skcms_ICCProfile skcms_profile;
+    bool success = rust_icc::ToSkcmsIccProfile(rust_profile, &skcms_profile);
+
+    REPORTER_ASSERT(r, !success);
+}
+
+DEF_TEST(RustIcc_profile_conversion_fails_matrix_without_trc, r) {
+    // Profile with toXYZD50 matrix but no TRC curves (and no A2B) should fail
+    // conversion, matching skcms_Parse's usable_as_src() validation.
+    rust_icc::IccProfile rust_profile;
+    rust_profile.data_color_space = skcms_Signature_RGB;
+    rust_profile.connection_space = skcms_Signature_XYZ;
+    rust_profile.has_to_xyzd50 = true;
+    rust_profile.to_xyzd50.vals[0][0] = 1.0f;
+    rust_profile.to_xyzd50.vals[1][1] = 1.0f;
+    rust_profile.to_xyzd50.vals[2][2] = 1.0f;
+    rust_profile.has_trc = false;
+
+    skcms_ICCProfile skcms_profile;
+    bool success = rust_icc::ToSkcmsIccProfile(rust_profile, &skcms_profile);
+
+    REPORTER_ASSERT(r, !success);
+}
+
 DEF_TEST(RustIcc_cicp_conversion, r) {
     // Create a profile with CICP data
     rust_icc::IccProfile rust_profile;
@@ -197,6 +238,14 @@ DEF_TEST(RustIcc_cicp_conversion, r) {
     rust_profile.to_xyzd50.vals[0][0] = 1.0f;
     rust_profile.to_xyzd50.vals[1][1] = 1.0f;
     rust_profile.to_xyzd50.vals[2][2] = 1.0f;
+
+    // Set up TRC curves (required alongside toXYZD50 for usable_as_src)
+    rust_profile.has_trc = true;
+    for (auto* ch : {&rust_profile.trc_r, &rust_profile.trc_g, &rust_profile.trc_b}) {
+        ch->table_entries = 0;
+        ch->parametric.g = 2.2f;
+        ch->parametric.a = 1.0f;
+    }
 
     // Set CICP data (e.g., BT.709 primaries, BT.709 transfer, BT.709 matrix, full range)
     rust_profile.has_cicp = true;
@@ -233,6 +282,15 @@ DEF_TEST(RustIcc_a2b_b2a_flags, r) {
     rust_profile.has_a2b = true;
     rust_profile.has_b2a = false;
 
+    // A2B requires exactly 3 output channels with matching curves.
+    rust_profile.a2b.output_channels = 3;
+    rust_icc::Curve id_curve;
+    id_curve.table_entries = 0;
+    id_curve.parametric = {1.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
+    for (int i = 0; i < 3; i++) {
+        rust_profile.a2b.output_curves.push_back(id_curve);
+    }
+
     // Convert to skcms
     skcms_ICCProfile skcms_profile;
     bool success = rust_icc::ToSkcmsIccProfile(rust_profile, &skcms_profile);
@@ -255,14 +313,15 @@ DEF_TEST(RustIcc_profile_with_a2b_curves, r) {
     rust_profile.to_xyzd50.vals[2][2] = 1.0f;
 
     rust_profile.has_trc = true;
-    for (int i = 0; i < 3; i++) {
-        rust_profile.trc[i].g = 2.2f;
-        rust_profile.trc[i].a = 1.0f;
-        rust_profile.trc[i].b = 0.0f;
-        rust_profile.trc[i].c = 0.0f;
-        rust_profile.trc[i].d = 0.0f;
-        rust_profile.trc[i].e = 0.0f;
-        rust_profile.trc[i].f = 0.0f;
+    for (auto* ch : {&rust_profile.trc_r, &rust_profile.trc_g, &rust_profile.trc_b}) {
+        ch->table_entries = 0;  // parametric curve (no table)
+        ch->parametric.g = 2.2f;
+        ch->parametric.a = 1.0f;
+        ch->parametric.b = 0.0f;
+        ch->parametric.c = 0.0f;
+        ch->parametric.d = 0.0f;
+        ch->parametric.e = 0.0f;
+        ch->parametric.f = 0.0f;
     }
 
     // Add A2B transform with input curves
@@ -348,14 +407,15 @@ DEF_TEST(RustIcc_profile_with_a2b_matrix, r) {
     rust_profile.to_xyzd50.vals[2][2] = 1.0f;
 
     rust_profile.has_trc = true;
-    for (int i = 0; i < 3; i++) {
-        rust_profile.trc[i].g = 2.2f;
-        rust_profile.trc[i].a = 1.0f;
-        rust_profile.trc[i].b = 0.0f;
-        rust_profile.trc[i].c = 0.0f;
-        rust_profile.trc[i].d = 0.0f;
-        rust_profile.trc[i].e = 0.0f;
-        rust_profile.trc[i].f = 0.0f;
+    for (auto* ch : {&rust_profile.trc_r, &rust_profile.trc_g, &rust_profile.trc_b}) {
+        ch->table_entries = 0;  // parametric curve (no table)
+        ch->parametric.g = 2.2f;
+        ch->parametric.a = 1.0f;
+        ch->parametric.b = 0.0f;
+        ch->parametric.c = 0.0f;
+        ch->parametric.d = 0.0f;
+        ch->parametric.e = 0.0f;
+        ch->parametric.f = 0.0f;
     }
 
     // Add A2B transform with matrix
@@ -390,13 +450,15 @@ DEF_TEST(RustIcc_profile_with_a2b_matrix, r) {
     rust_profile.a2b.matrix.vals[2][1] = 0.1192f;
     rust_profile.a2b.matrix.vals[2][2] = 0.9505f;
 
-    // Set up minimal grid
+    // Set up minimal grid (2x2x2 = 8 points, 1 byte per output = 8 bytes)
     rust::Vec<uint8_t> grid_data;
-    grid_data.push_back(0x80);
+    for (int i = 0; i < 8; i++) {
+        grid_data.push_back(0x80);
+    }
     rust_profile.a2b.grid_data = std::move(grid_data);
-    rust_profile.a2b.grid_points[0] = 1;
-    rust_profile.a2b.grid_points[1] = 1;
-    rust_profile.a2b.grid_points[2] = 1;
+    rust_profile.a2b.grid_points[0] = 2;
+    rust_profile.a2b.grid_points[1] = 2;
+    rust_profile.a2b.grid_points[2] = 2;
 
     // Convert to skcms
     skcms_ICCProfile skcms_profile;
@@ -432,14 +494,15 @@ DEF_TEST(RustIcc_profile_with_table_curves, r) {
     rust_profile.to_xyzd50.vals[2][2] = 1.0f;
 
     rust_profile.has_trc = true;
-    for (int i = 0; i < 3; i++) {
-        rust_profile.trc[i].g = 2.2f;
-        rust_profile.trc[i].a = 1.0f;
-        rust_profile.trc[i].b = 0.0f;
-        rust_profile.trc[i].c = 0.0f;
-        rust_profile.trc[i].d = 0.0f;
-        rust_profile.trc[i].e = 0.0f;
-        rust_profile.trc[i].f = 0.0f;
+    for (auto* ch : {&rust_profile.trc_r, &rust_profile.trc_g, &rust_profile.trc_b}) {
+        ch->table_entries = 0;  // parametric curve (no table)
+        ch->parametric.g = 2.2f;
+        ch->parametric.a = 1.0f;
+        ch->parametric.b = 0.0f;
+        ch->parametric.c = 0.0f;
+        ch->parametric.d = 0.0f;
+        ch->parametric.e = 0.0f;
+        ch->parametric.f = 0.0f;
     }
 
     // Add A2B transform with table-based curves
@@ -481,15 +544,15 @@ DEF_TEST(RustIcc_profile_with_table_curves, r) {
     }
     rust_profile.a2b.input_curves = std::move(input_curves);
 
-    // Minimal grid (1x1x1 = 1 point, 3 output channels = 3 bytes)
+    // Minimal grid (2x2x2 = 8 points, 3 output channels = 24 bytes)
     rust::Vec<uint8_t> grid_data;
-    grid_data.push_back(0x80);
-    grid_data.push_back(0x80);
-    grid_data.push_back(0x80);
+    for (int i = 0; i < 24; i++) {
+        grid_data.push_back(0x80);
+    }
     rust_profile.a2b.grid_data = std::move(grid_data);
-    rust_profile.a2b.grid_points[0] = 1;
-    rust_profile.a2b.grid_points[1] = 1;
-    rust_profile.a2b.grid_points[2] = 1;
+    rust_profile.a2b.grid_points[0] = 2;
+    rust_profile.a2b.grid_points[1] = 2;
+    rust_profile.a2b.grid_points[2] = 2;
     rust_profile.a2b.is_16bit_grid = false;
 
     // Convert to skcms (rust_profile must remain alive after this!)
@@ -521,6 +584,70 @@ DEF_TEST(RustIcc_profile_with_table_curves, r) {
     // rust_profile goes out of scope here, invalidating pointers in skcms_profile
 }
 
+// Regression tests for crbug.com/504160794 and crbug.com/504103236:
+// ToSkcmsIccProfile must reject A2B structs with out-of-range channel counts
+// or zero in an active grid_points dimension (which would cause skcms to
+// read out of bounds).
+DEF_TEST(RustIcc_reject_malformed_a2b, r) {
+    // Identity output curve reused by every case.
+    rust_icc::Curve id_curve;
+    id_curve.table_entries = 0;
+    id_curve.parametric = {1.0f, 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
+
+    struct Case {
+        const char* label;
+        uint32_t    input_channels;
+        uint32_t    output_channels;
+        std::array<uint8_t, 4> grid_points;
+        bool        has_grid;     // whether to attach CLUT data
+    };
+
+    const Case cases[] = {
+        // b/504160794 – channel count > 4
+        {"input_channels=64", 64, 3, {0,0,0,0}, false},
+        {"input_channels=5",   5, 3, {0,0,0,0}, false},
+        {"output_channels=5",  3, 5, {0,0,0,0}, false},
+        // b/504103236 – zero in active grid dimension
+        {"grid_points[1]=0",   2, 3, {2,0,0,0}, true},
+        // b/506010945 – output_channels != 3 causes OOB in clut()
+        {"output_channels=1",  1, 1, {2,0,0,0}, true},
+        {"output_channels=2",  3, 2, {0,0,0,0}, false},
+        {"output_channels=4",  3, 4, {0,0,0,0}, false},
+    };
+
+    for (const auto& tc : cases) {
+        rust_icc::IccProfile prof;
+        prof.data_color_space = skcms_Signature_RGB;
+        prof.connection_space  = skcms_Signature_XYZ;
+        prof.has_a2b = true;
+        prof.a2b.input_channels  = tc.input_channels;
+        prof.a2b.output_channels = tc.output_channels;
+        prof.a2b.grid_points = tc.grid_points;
+
+        // Output curves (always 3 for PCS)
+        rust::Vec<rust_icc::Curve> out;
+        for (int i = 0; i < 3; i++) out.push_back(id_curve);
+        prof.a2b.output_curves = std::move(out);
+
+        if (tc.has_grid) {
+            rust::Vec<uint8_t> grid;
+            for (int i = 0; i < 3; i++) grid.push_back(0x80);
+            prof.a2b.grid_data = std::move(grid);
+            prof.a2b.is_16bit_grid = false;
+
+            rust::Vec<rust_icc::Curve> in_c;
+            for (uint32_t i = 0; i < tc.input_channels && i < 4; i++) {
+                in_c.push_back(id_curve);
+            }
+            prof.a2b.input_curves = std::move(in_c);
+        }
+
+        skcms_ICCProfile skcms_profile;
+        bool ok = rust_icc::ToSkcmsIccProfile(prof, &skcms_profile);
+        REPORTER_ASSERT(r, !ok, "Expected rejection for: %s", tc.label);
+    }
+}
+
 DEF_TEST(RustIcc_profile_with_b2a, r) {
     // Create a profile with B2A transform (inverse)
     rust_icc::IccProfile rust_profile;
@@ -534,14 +661,15 @@ DEF_TEST(RustIcc_profile_with_b2a, r) {
     rust_profile.to_xyzd50.vals[2][2] = 1.0f;
 
     rust_profile.has_trc = true;
-    for (int i = 0; i < 3; i++) {
-        rust_profile.trc[i].g = 2.2f;
-        rust_profile.trc[i].a = 1.0f;
-        rust_profile.trc[i].b = 0.0f;
-        rust_profile.trc[i].c = 0.0f;
-        rust_profile.trc[i].d = 0.0f;
-        rust_profile.trc[i].e = 0.0f;
-        rust_profile.trc[i].f = 0.0f;
+    for (auto* ch : {&rust_profile.trc_r, &rust_profile.trc_g, &rust_profile.trc_b}) {
+        ch->table_entries = 0;  // parametric curve (no table)
+        ch->parametric.g = 2.2f;
+        ch->parametric.a = 1.0f;
+        ch->parametric.b = 0.0f;
+        ch->parametric.c = 0.0f;
+        ch->parametric.d = 0.0f;
+        ch->parametric.e = 0.0f;
+        ch->parametric.f = 0.0f;
     }
 
     // Add B2A transform
@@ -612,6 +740,51 @@ DEF_TEST(RustIcc_profile_with_b2a, r) {
 
     // Verify output curves
     REPORTER_ASSERT(r, fabsf(skcms_profile.B2A.output_curves[0].parametric.g - 1.0f) < 0.0001f);
+}
+
+// End-to-end: Rust-parsed ICC profiles with 3-channel CLUTs through skcms_Transform.
+// Validates that the suffix padding added by convert_grid_data() in FFI.rs prevents
+// the skcms gather over-read (b/498869813) from causing ASAN failures.
+DEF_TEST(RustIcc_clut_transform_exercises_gather_overread, r) {
+    skcms_DisableRuntimeCPUDetection();
+    const char* profiles_with_cluts[] = {
+        "icc_profiles/apng19.icc",
+        "icc_profiles/srgb_lab_pcs.icc",
+        "icc_profiles/upperRight.icc",
+    };
+
+    for (const char* path : profiles_with_cluts) {
+        auto data = GetResourceAsData(path);
+        if (!data) {
+            ERRORF(r, "Failed to load: %s", path);
+            continue;
+        }
+
+        // Parse through the Rust FFI path.
+        auto profile = SkCodecs::MakeICCProfileWithRust(data);
+        if (!profile) {
+            ERRORF(r, "Rust parser failed for: %s", path);
+            continue;
+        }
+
+        const skcms_ICCProfile* src = profile->profile();
+        if (!src->has_A2B) {
+            ERRORF(r, "[%s] Expected has_A2B but got false", path);
+            continue;
+        }
+
+        // Transform pixels to exercise the CLUT gather path.
+        uint8_t src_pixels[] = {0, 0, 0,  128, 128, 128,  255, 255, 255};
+        uint8_t dst_pixels[9] = {};
+        bool transformed = skcms_Transform(
+                src_pixels, skcms_PixelFormat_RGB_888, skcms_AlphaFormat_Opaque, src,
+                dst_pixels, skcms_PixelFormat_RGB_888, skcms_AlphaFormat_Opaque,
+                skcms_sRGB_profile(),
+                3);
+        if (!transformed) {
+            ERRORF(r, "[%s] skcms_Transform failed", path);
+        }
+    }
 }
 
 // Helper to compare two skcms_Curve objects by evaluating them at sample points.
@@ -728,10 +901,15 @@ static void compare_a2b_grid_data(
 
 DEF_TEST(RustIcc_equivalence_with_skcms_resource_files, r) {
     // List of ICC profile files in resources/icc_profiles.
-    // apng19.icc is an ICCv4 scanner profile with only A2B tags (no TRC/XYZ),
-    // including 256-entry M curve tables and 16-bit CLUT grid data.
-    // swapped.icc is an ICCv2 display profile with 1024-entry table TRC curves;
-    // it exercises ApproximateCurveWrapper's endianness fix.
+    // - apng19.icc is an ICCv4 scanner profile with only A2B tags (no TRC/XYZ),
+    //   including 256-entry M curve tables and 16-bit CLUT grid data.
+    // - swapped.icc is an ICCv2 display profile with 1024-entry table TRC curves;
+    //   exercises the TRC table pass-through path (raw big-endian bytes, no approximation).
+    // - mu_gray.icc is a GRAY/prtr printer profile with kTRC (256-entry curv) and
+    //   no colorant matrix; exercises the GRAY toXYZD50 synthesis path.
+    // - tiles.icc is the Apple RGB monitor profile (RGB/mntr, 1024-entry curv TRCs)
+    //   embedded in tiles.png, which is used by the svg/as-border-image Blink layout
+    //   test.  Same TRC structure as swapped.icc but a distinct profile.
     const char* icc_files[] = {
         "icc_profiles/AdobeRGB1998.icc",
         "icc_profiles/HP_Z32x.icc",
@@ -739,8 +917,12 @@ DEF_TEST(RustIcc_equivalence_with_skcms_resource_files, r) {
         "icc_profiles/srgb_lab_pcs.icc",
         "icc_profiles/upperLeft.icc",
         "icc_profiles/upperRight.icc",
+        // Files added after regressions found during development of the Rust parser, not covered
+        // by existing ICC profiles in Skia's resources:
         "icc_profiles/apng19.icc",
-        "icc_profiles/swapped.icc"
+        "icc_profiles/swapped.icc",
+        "icc_profiles/mu_gray.icc",
+        "icc_profiles/tiles.icc",
     };
 
     for (const char* path : icc_files) {
@@ -956,20 +1138,15 @@ DEF_TEST(RustIcc_equivalence_with_skcms_resource_files, r) {
     }
 }
 
-// Regression test for the ApproximateCurveWrapper endianness bug.
+// Regression test for multi-entry TRC table pass-through.
 //
-// moxcms stores TRC curve entries as native-endian uint16_t values.  The
-// original ApproximateCurveWrapper cast them directly to uint8_t* for
-// skcms_Curve::table_16, which expects big-endian bytes.  On little-endian
-// platforms (x86 / ARM64) every byte pair was swapped, causing
-// skcms_ApproximateCurve to receive garbage data and return false, so the
-// Rust path produced has_trc=false for any display profile with a multi-entry
-// table TRC.  This caused profiles to be silently dropped and hundreds of
-// blink web tests to fail with wrong colours.
-//
-// swapped.icc is a real ICC v2 display profile with 1024-entry table TRCs
-// that exercises this exact path.
-DEF_TEST(RustIcc_trc_table_approximation_endianness, r) {
+// swapped.icc is a real ICC v2 display profile with 1024-entry curv TRCs.
+// The Rust bridge must pass the raw big-endian u16 table bytes through to
+// skcms unchanged (table_entries > 0, table_16 set) rather than approximating
+// the curve as a parametric function.  Passing the table exactly eliminates
+// the ±1 ULP rounding difference that previously caused a max_difference=1
+// pixel error across the entire image in svg/as-border-image.
+DEF_TEST(RustIcc_trc_table_passthrough, r) {
     auto data = GetResourceAsData("icc_profiles/swapped.icc");
     if (!data) {
         ERRORF(r, "Failed to load icc_profiles/swapped.icc");
@@ -985,9 +1162,7 @@ DEF_TEST(RustIcc_trc_table_approximation_endianness, r) {
     REPORTER_ASSERT(r, skcms_prof.has_trc,
                     "skcms should report has_trc=true for swapped.icc");
 
-    // Rust/moxcms path: before the endianness fix this returned has_trc=false
-    // because ApproximateCurveWrapper received byte-swapped data and
-    // skcms_ApproximateCurve returned false for every channel.
+    // Rust/moxcms path: must expose the 1024-entry table TRC bit-exactly.
     auto rust_profile = SkCodecs::MakeICCProfileWithRust(data);
     if (!rust_profile) {
         ERRORF(r, "Rust ICC parser failed to parse swapped.icc");
@@ -997,17 +1172,68 @@ DEF_TEST(RustIcc_trc_table_approximation_endianness, r) {
 
     REPORTER_ASSERT(r, rp.has_trc,
                     "Rust ICC path must set has_trc=true for swapped.icc; "
-                    "failure indicates the ApproximateCurveWrapper endianness bug");
+                    "failure indicates the TRC table pass-through is broken");
 
     if (!rp.has_trc || !skcms_prof.has_trc) {
         return;
     }
 
-    // The Rust path approximates the table as a parametric curve; compare
-    // both against the skcms table by sampling at several input values.
-    // Allow 1% tolerance for the approximation error.
+    // The Rust path now passes the table through bit-exactly.  Both profiles
+    // should have table_entries > 0 and identical big-endian byte content.
     for (int c = 0; c < 3; ++c) {
         compare_curves_by_evaluation(r, "swapped.icc", "trc", c,
                                      rp.trc[c], skcms_prof.trc[c]);
+    }
+}
+
+// Regression test for the non-fatal B2A rejection path.
+//
+// pq_hdr.icc is an ICCv4 PQ HDR profile with an A2B tag and a curve-only B2A
+// tag.  The Rust path reuses convert_to_a2b() for B2A, then a2b_to_b2a()
+// swaps input/output channels.  Curve-only B2A profiles yield invalid channel
+// counts so ToSkcmsB2A rejects them.  ToSkcmsIccProfile must treat this
+// rejection as non-fatal: has_B2A is left false while A2B (and the rest of
+// the profile) is still usable.
+DEF_TEST(RustIcc_pq_hdr_b2a_absent, r) {
+    auto data = GetResourceAsData("icc_profiles/pq_hdr.icc");
+    if (!data) {
+        ERRORF(r, "Failed to load icc_profiles/pq_hdr.icc");
+        return;
+    }
+
+    auto rust_profile  = SkCodecs::MakeICCProfileWithRust(data);
+    auto skcms_profile = SkCodecs::ColorProfile::MakeICCProfileWithSkCMS(data);
+
+    if (!rust_profile) {
+        ERRORF(r, "Rust parser failed for pq_hdr.icc");
+        return;
+    }
+    if (!skcms_profile) {
+        ERRORF(r, "SkCMS parser failed for pq_hdr.icc");
+        return;
+    }
+
+    const auto& rust  = *rust_profile->profile();
+    const auto& skcms = *skcms_profile->profile();
+
+    // Both parsers must expose the A2B tag.
+    REPORTER_ASSERT(r, rust.has_A2B,  "Rust must expose A2B for pq_hdr.icc");
+    REPORTER_ASSERT(r, skcms.has_A2B, "skcms must expose A2B for pq_hdr.icc");
+
+    // skcms parses the curve-only B2A tag; the Rust path correctly rejects it
+    // because a2b_to_b2a() cannot handle curve-only B2A.  has_B2A must be
+    // false in the Rust profile and the parse must not have failed entirely.
+    REPORTER_ASSERT(r,  skcms.has_B2A, "skcms must expose B2A for pq_hdr.icc");
+    REPORTER_ASSERT(r, !rust.has_B2A,
+                    "Rust must not expose B2A for curve-only B2A (pq_hdr.icc); "
+                    "if this now passes, a2b_to_b2a() handles curve-only B2A and "
+                    "pq_hdr.icc can be added to RustIcc_equivalence_with_skcms_resource_files");
+
+    // The profiles should be approximately equal on everything except B2A.
+    // Temporarily clear has_B2A on the skcms copy so the comparison is fair.
+    skcms_ICCProfile skcms_no_b2a = skcms;
+    skcms_no_b2a.has_B2A = false;
+    if (!skcms_ApproximatelyEqualProfiles(&rust, &skcms_no_b2a)) {
+        ERRORF(r, "[pq_hdr.icc] profiles not approximately equal (ignoring B2A)");
     }
 }

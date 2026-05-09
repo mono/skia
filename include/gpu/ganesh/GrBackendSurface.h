@@ -1,5 +1,5 @@
 /*
- * Copyright 2017 Google Inc.
+ * Copyright 2017 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -12,13 +12,11 @@
 #include "include/core/SkSize.h"
 #include "include/gpu/GpuTypes.h"
 #include "include/gpu/ganesh/GrTypes.h"
-#include "include/gpu/ganesh/mock/GrMockTypes.h"
 #include "include/private/base/SkAPI.h"
 #include "include/private/base/SkAnySubclass.h"
 #include "include/private/base/SkDebug.h"
 #include "include/private/gpu/ganesh/GrTypesPriv.h"
 
-enum class SkTextureCompressionType;
 class GrBackendFormatData;
 class GrBackendTextureData;
 class GrBackendRenderTargetData;
@@ -44,10 +42,6 @@ public:
     GrBackendFormat& operator=(const GrBackendFormat&);
     ~GrBackendFormat();
 
-    static GrBackendFormat MakeMock(GrColorType colorType,
-                                    SkTextureCompressionType compression,
-                                    bool isStencilFormat = false);
-
     bool operator==(const GrBackendFormat& that) const;
     bool operator!=(const GrBackendFormat& that) const { return !(*this == that); }
 
@@ -61,15 +55,6 @@ public:
     uint32_t channelMask() const;
 
     GrColorFormatDesc desc() const;
-
-    /**
-     * If the backend API is not Mock these three calls will return kUnknown, kNone or false,
-     * respectively. Otherwise, only one of the following can be true. The GrColorType is not
-     * kUnknown, the compression type is not kNone, or this is a mock stencil format.
-     */
-    GrColorType asMockColorType() const;
-    SkTextureCompressionType asMockCompressionType() const;
-    bool isMockStencilFormat() const;
 
     // If possible, copies the GrBackendFormat and forces the texture type to be Texture2D. If the
     // GrBackendFormat was for Vulkan and it originally had a skgpu::VulkanYcbcrConversionInfo,
@@ -96,43 +81,22 @@ private:
     // GrBackendFormats::MakeGL instead.
     template <typename FormatData>
     GrBackendFormat(GrTextureType textureType, GrBackendApi api, const FormatData& formatData)
-            : fBackend(api), fValid(true), fTextureType(textureType) {
+            : fBackend(api), fTextureType(textureType), fValid(true) {
         fFormatData.emplace<FormatData>(formatData);
     }
 
-    GrBackendFormat(GrColorType, SkTextureCompressionType, bool isStencilFormat);
-
-#ifdef SK_DEBUG
-    bool validateMock() const;
-#endif
-
-    GrBackendApi fBackend = GrBackendApi::kMock;
-    bool fValid = false;
     AnyFormatData fFormatData;
-
-    struct {
-        GrColorType fColorType;
-        SkTextureCompressionType fCompressionType;
-        bool fIsStencilFormat;
-    } fMock;
+    GrBackendApi fBackend = GrBackendApi::kUnsupported;
     GrTextureType fTextureType = GrTextureType::kNone;
+    bool fValid = false;
 };
 
 class SK_API GrBackendTexture {
 public:
     // Creates an invalid backend texture.
     GrBackendTexture();
-
-    GrBackendTexture(int width,
-                     int height,
-                     skgpu::Mipmapped,
-                     const GrMockTextureInfo& mockInfo,
-                     std::string_view label = {});
-
     GrBackendTexture(const GrBackendTexture& that);
-
     ~GrBackendTexture();
-
     GrBackendTexture& operator=(const GrBackendTexture& that);
 
     SkISize dimensions() const { return {fWidth, fHeight}; }
@@ -146,10 +110,6 @@ public:
 
     // Get the GrBackendFormat for this texture (or an invalid format if this is not valid).
     GrBackendFormat getBackendFormat() const;
-
-    // If the backend API is Mock, copies a snapshot of the GrMockTextureInfo struct into the passed
-    // in pointer and returns true. Otherwise returns false if the backend API is not Mock.
-    bool getMockTextureInfo(GrMockTextureInfo*) const;
 
     // If the client changes any of the mutable backend of the GrBackendTexture they should call
     // this function to inform Skia that those values have changed. The backend API specific state
@@ -208,26 +168,16 @@ private:
     int fHeight;        //<! height in pixels
     const std::string fLabel;
     skgpu::Mipmapped fMipmapped;
-    GrBackendApi fBackend;
+    GrBackendApi fBackend = GrBackendApi::kUnsupported;
     GrTextureType fTextureType;
     AnyTextureData fTextureData;
-
-    GrMockTextureInfo fMockInfo;
 };
 
 class SK_API GrBackendRenderTarget {
 public:
     // Creates an invalid backend texture.
     GrBackendRenderTarget();
-
-    GrBackendRenderTarget(int width,
-                          int height,
-                          int sampleCnt,
-                          int stencilBits,
-                          const GrMockRenderTargetInfo& mockInfo);
-
     ~GrBackendRenderTarget();
-
     GrBackendRenderTarget(const GrBackendRenderTarget& that);
     GrBackendRenderTarget& operator=(const GrBackendRenderTarget&);
 
@@ -241,10 +191,6 @@ public:
 
     // Get the GrBackendFormat for this render target (or an invalid format if this is not valid).
     GrBackendFormat getBackendFormat() const;
-
-    // If the backend API is Mock, copies a snapshot of the GrMockTextureInfo struct into the passed
-    // in pointer and returns true. Otherwise returns false if the backend API is not Mock.
-    bool getMockRenderTargetInfo(GrMockRenderTargetInfo*) const;
 
     // If the client changes any of the mutable backend of the GrBackendTexture they should call
     // this function to inform Skia that those values have changed. The backend API specific state
@@ -304,10 +250,8 @@ private:
     int fSampleCnt;
     int fStencilBits;
 
-    GrBackendApi fBackend;
+    GrBackendApi fBackend = GrBackendApi::kUnsupported;
     AnyRenderTargetData fRTData;
-
-    GrMockRenderTargetInfo fMockInfo;
 };
 
 #endif

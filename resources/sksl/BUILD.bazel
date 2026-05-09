@@ -85,6 +85,7 @@ skia_filegroup(
         ":sksl_folding_tests",
         ":sksl_rte_tests",
         ":sksl_shared_tests",
+        ":sksl_skrp_tests",
     ],
     visibility = ["//tools/skslc:__pkg__"],
 )
@@ -907,6 +908,10 @@ skia_filegroup(
         "intrinsics/Step.sksl",
         "intrinsics/Tan.sksl",
         "intrinsics/Tanh.sksl",
+        "intrinsics/TextureReadImage.sksl",
+        "intrinsics/TextureReadSampler.sksl",
+        "intrinsics/TextureSizeImage.sksl",
+        "intrinsics/TextureSizeSampler.sksl",
         "intrinsics/Transpose.sksl",
         "intrinsics/Trunc.sksl",
         "intrinsics/UintBitsToFloat.sksl",
@@ -1089,6 +1094,7 @@ skia_filegroup(
         "shared/UnaryPositiveNegative.sksl",
         "shared/UniformArray.sksl",
         "shared/UniformBuffers.sksl",
+        "shared/UniformMatrixArray.sksl",
         "shared/UniformMatrixResize.sksl",
         "shared/UnusedVariables.sksl",
         "shared/VectorConstructors.sksl",
@@ -1203,5 +1209,12 @@ skia_filegroup(
         "wgsl/VertexPositionOutputIsAlwaysDeclared.vert",
         "wgsl/WorkgroupSize.compute",
         "workarounds/LastFragColor.sksl",
+    ],
+)
+
+skia_filegroup(
+    name = "sksl_skrp_tests",
+    srcs = [
+        "skrp/ImmediateOpsOpt.sksl",
     ],
 )

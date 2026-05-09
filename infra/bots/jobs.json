@@ -457,6 +457,9 @@
     "name": "Build-Ubuntu24.04-Clang-x86_64-Debug-ICU4X"
   },
   {
+    "name": "Build-Ubuntu24.04-Clang-x86_64-Debug-RustALL"
+  },
+  {
     "name": "Build-Ubuntu24.04-Clang-x86_64-Debug-RustPNG"
   },
   {
@@ -593,10 +596,16 @@
     "name": "Build-Ubuntu24.04-EMCC-wasm-Debug-CanvasKit_CPU"
   },
   {
+    "name": "Build-Ubuntu24.04-EMCC-wasm-Debug-StandaloneWasm"
+  },
+  {
     "name": "Build-Ubuntu24.04-EMCC-wasm-Release-CanvasKit"
   },
   {
     "name": "Build-Ubuntu24.04-EMCC-wasm-Release-CanvasKit_CPU"
+  },
+  {
+    "name": "Build-Ubuntu24.04-EMCC-wasm-Release-StandaloneWasm"
   },
   {
     "name": "Build-Win-Clang-arm64-Debug"
@@ -1062,13 +1071,16 @@
     "name": "Perf-ChromeOS-Clang-Octopus-GPU-IntelUHDGraphics600-x86_64-Release-All"
   },
   {
+    "name": "Perf-ChromeOS-Clang-Rauru-GPU-MT8196-arm64-Release-All"
+  },
+  {
     "name": "Perf-ChromeOS-Clang-Trogdor-GPU-Adreno618-arm64-Release-All"
   },
   {
-    "name": "Perf-Mac11-Clang-MacBookPro11.5-GPU-RadeonHD8870M-x86_64-Release-All-Graphite_Native_Metal"
+    "name": "Perf-Mac12-Clang-MacBookPro11.5-GPU-RadeonHD8870M-x86_64-Release-All-Graphite_Native_Metal"
   },
   {
-    "name": "Perf-Mac11-Clang-MacBookPro11.5-GPU-RadeonHD8870M-x86_64-Release-All-Metal"
+    "name": "Perf-Mac12-Clang-MacBookPro11.5-GPU-RadeonHD8870M-x86_64-Release-All-Metal"
   },
   {
     "name": "Perf-Mac13-Clang-MacBookPro15.3-GPU-AppleM3-arm64-Debug-All"
@@ -1219,12 +1231,6 @@
   },
   {
     "name": "Perf-Win11-Clang-NUC11TZi5-GPU-IntelIrisXe-x86_64-Release-All-Vulkan"
-  },
-  {
-    "name": "Perf-Win11-Clang-NUC5i7RYH-GPU-IntelIris6100-x86_64-Release-All-ANGLE"
-  },
-  {
-    "name": "Perf-Win11-Clang-NUC5i7RYH-GPU-IntelIris6100-x86_64-Release-All-Graphite_Dawn_D3D11"
   },
   {
     "name": "Perf-Win11-Clang-NUC6i5SYK-GPU-IntelIris540-x86_64-Release-All-ANGLE"
@@ -1619,13 +1625,21 @@
     "name": "Test-Android-Clang-Pixel9-GPU-MaliG715-arm64-Release-All-Android_Graphite_Native_Vulkan",
     "cq_config": {
       "location_regexes": [
+        "tools/gpu/vk/.*",
         "(tests|src/gpu)/graphite/.*",
         "src/sksl/generated/.*"
       ]
     }
   },
   {
-    "name": "Test-Android-Clang-Pixel9-GPU-MaliG715-arm64-Release-All-Android_Vulkan"
+    "name": "Test-Android-Clang-Pixel9-GPU-MaliG715-arm64-Release-All-Android_Vulkan",
+    "cq_config": {
+      "location_regexes": [
+        "tools/gpu/vk/.*",
+        "(tests|src/gpu)/ganesh/.*",
+        "src/sksl/generated/.*"
+      ]
+    }
   },
   {
     "name": "Test-Android12-Clang-Pixel5-GPU-Adreno620-arm64-Debug-All-Android"
@@ -1670,25 +1684,31 @@
     "name": "Test-ChromeOS-Clang-Octopus-GPU-IntelUHDGraphics600-x86_64-Release-All"
   },
   {
+    "name": "Test-ChromeOS-Clang-Rauru-GPU-MT8196-arm64-Debug-All"
+  },
+  {
+    "name": "Test-ChromeOS-Clang-Rauru-GPU-MT8196-arm64-Release-All"
+  },
+  {
     "name": "Test-ChromeOS-Clang-Trogdor-GPU-Adreno618-arm64-Debug-All"
   },
   {
     "name": "Test-ChromeOS-Clang-Trogdor-GPU-Adreno618-arm64-Release-All"
   },
   {
-    "name": "Test-Mac11-Clang-MacBookPro11.5-GPU-RadeonHD8870M-x86_64-Debug-All-Graphite_Native_Metal"
+    "name": "Test-Mac12-Clang-MacBookPro11.5-GPU-RadeonHD8870M-x86_64-Debug-All-Graphite_Native_Metal"
   },
   {
-    "name": "Test-Mac11-Clang-MacBookPro11.5-GPU-RadeonHD8870M-x86_64-Debug-All-Metal"
+    "name": "Test-Mac12-Clang-MacBookPro11.5-GPU-RadeonHD8870M-x86_64-Debug-All-Metal"
   },
   {
-    "name": "Test-Mac11-Clang-MacBookPro11.5-GPU-RadeonHD8870M-x86_64-Debug-All-Metal_ColorSpaces"
+    "name": "Test-Mac12-Clang-MacBookPro11.5-GPU-RadeonHD8870M-x86_64-Debug-All-Metal_ColorSpaces"
   },
   {
-    "name": "Test-Mac11-Clang-MacBookPro11.5-GPU-RadeonHD8870M-x86_64-Release-All-Metal"
+    "name": "Test-Mac12-Clang-MacBookPro11.5-GPU-RadeonHD8870M-x86_64-Release-All-Metal"
   },
   {
-    "name": "Test-Mac11-Clang-MacBookPro11.5-GPU-RadeonHD8870M-x86_64-Release-All-Metal_ColorSpaces"
+    "name": "Test-Mac12-Clang-MacBookPro11.5-GPU-RadeonHD8870M-x86_64-Release-All-Metal_ColorSpaces"
   },
   {
     "name": "Test-Mac13-Clang-MacBookPro15.3-GPU-AppleM3-arm64-Debug-All"
@@ -1917,8 +1937,11 @@
     "name": "Test-Ubuntu24.04-Clang-GCE-CPU-AVX2-x86_64-Debug-All-OldestSupportedSkpVersion"
   },
   {
-    "name": "Test-Ubuntu24.04-Clang-GCE-CPU-AVX2-x86_64-Debug-All-RustPNG",
+    "name": "Test-Ubuntu24.04-Clang-GCE-CPU-AVX2-x86_64-Debug-All-RustALL",
     "cq_config": {}
+  },
+  {
+    "name": "Test-Ubuntu24.04-Clang-GCE-CPU-AVX2-x86_64-Debug-All-RustPNG"
   },
   {
     "name": "Test-Ubuntu24.04-Clang-GCE-CPU-AVX2-x86_64-Debug-All-SK_USE_DISCARDABLE_SCALEDIMAGECACHE"
@@ -2023,7 +2046,8 @@
     "cq_config": {}
   },
   {
-    "name": "Test-Ubuntu24.04-Clang-Golo-GPU-QuadroP400-x86_64-Release-All-Graphite_Native_Vulkan"
+    "name": "Test-Ubuntu24.04-Clang-Golo-GPU-QuadroP400-x86_64-Release-All-Graphite_Native_Vulkan",
+    "cq_config": {}
   },
   {
     "name": "Test-Ubuntu24.04-Clang-Golo-GPU-QuadroP400-x86_64-Release-All-Graphite_Native_Vulkan_TestPrecompile",
@@ -2042,7 +2066,13 @@
     "name": "Test-Ubuntu24.04-Clang-Golo-GPU-QuadroP400-x86_64-Release-All-SK_USE_PADDED_BLUR_UPSCALE"
   },
   {
-    "name": "Test-Ubuntu24.04-Clang-Golo-GPU-QuadroP400-x86_64-Release-All-Vulkan"
+    "name": "Test-Ubuntu24.04-Clang-Golo-GPU-QuadroP400-x86_64-Release-All-Vulkan",
+    "cq_config": {
+      "location_regexes": [
+        "tools/gpu/vk/.*",
+        "tests/ganesh/.*"
+      ]
+    }
   },
   {
     "name": "Test-Ubuntu24.04-Clang-NUC11TZi5-CPU-AVX2-x86_64-Release-All"
@@ -2205,9 +2235,6 @@
     "name": "Test-Win11-Clang-NUC11TZi5-GPU-IntelIrisXe-x86_64-Debug-All-Vulkan"
   },
   {
-    "name": "Test-Win11-Clang-NUC11TZi5-GPU-IntelIrisXe-x86_64-Release-All-ANGLE"
-  },
-  {
     "name": "Test-Win11-Clang-NUC11TZi5-GPU-IntelIrisXe-x86_64-Release-All-Graphite_Dawn_D3D11"
   },
   {
@@ -2218,18 +2245,6 @@
   },
   {
     "name": "Test-Win11-Clang-NUC11TZi5-GPU-IntelIrisXe-x86_64-Release-All-Vulkan"
-  },
-  {
-    "name": "Test-Win11-Clang-NUC5i7RYH-GPU-IntelIris6100-x86_64-Debug-All-ANGLE"
-  },
-  {
-    "name": "Test-Win11-Clang-NUC5i7RYH-GPU-IntelIris6100-x86_64-Debug-All-Graphite_Dawn_D3D11"
-  },
-  {
-    "name": "Test-Win11-Clang-NUC5i7RYH-GPU-IntelIris6100-x86_64-Release-All-ANGLE"
-  },
-  {
-    "name": "Test-Win11-Clang-NUC5i7RYH-GPU-IntelIris6100-x86_64-Release-All-Graphite_Dawn_D3D11"
   },
   {
     "name": "Test-Win11-Clang-NUC6i5SYK-GPU-IntelIris540-x86_64-Debug-All-ANGLE"

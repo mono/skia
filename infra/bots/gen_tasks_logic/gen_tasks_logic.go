@@ -863,6 +863,8 @@ var androidDeviceInfos = map[string][]string{
 	"Wembley":         {"wembley", "SP2A.220505.008"},
 }
 
+type dimensionMap map[string]string
+
 // defaultSwarmDimensions generates default swarming bot dimensions for the given task.
 func (b *TaskBuilder) defaultSwarmDimensions() {
 	d := map[string]string{
@@ -879,7 +881,7 @@ func (b *TaskBuilder) defaultSwarmDimensions() {
 			"Mac11":       "Mac-11",
 			"Mac12":       "Mac-12",
 			"Mac13":       "Mac-13",
-			"Mac14":       "Mac-14.7", // Builds run on 14.5, tests on 14.7.
+			"Mac14":       "Mac-14.7",
 			"Mac15":       "Mac-15.7",
 			"Mokey":       "Android",
 			"MokeyGo32":   "Android",
@@ -888,7 +890,7 @@ func (b *TaskBuilder) defaultSwarmDimensions() {
 			"Ubuntu24.04": UBUNTU_24_04_OS,
 			"Win":         DEFAULT_OS_WIN_GCE,
 			"Win10":       "Windows-10-19045",
-			"Win11":       "Windows-11-26100.1742",
+			"Win11":       "Windows-11-26100",
 			"iOS":         "iOS-13.3.1",
 			"iOS18":       "iOS-18.2.1",
 		}[os]
@@ -904,7 +906,7 @@ func (b *TaskBuilder) defaultSwarmDimensions() {
 			d["gce"] = "1"
 		}
 		if os == "Win11" && b.GPU("IntelUHDGraphics770") {
-			d["os"] = "Windows-11-26200.6584"
+			d["os"] = "Windows-11-26200"
 		}
 		if strings.Contains(os, "iOS") {
 			d["pool"] = "SkiaIOS"
@@ -951,6 +953,7 @@ func (b *TaskBuilder) defaultSwarmDimensions() {
 				"Guybrush": "16002.27.0",
 				"Octopus":  "16002.21.0",
 				"Corsola":  "16200.0.0",
+				"Rauru":    "16503.10.0",
 				"Trogdor":  "16002.26.0",
 			}[b.Parts["model"]]
 			if !ok {
@@ -972,7 +975,7 @@ func (b *TaskBuilder) defaultSwarmDimensions() {
 			}
 			d["device"] = device
 		} else if b.CPU() || b.ExtraConfig("CanvasKit", "Docker", "SwiftShader") {
-			modelMapping, ok := map[string]map[string]map[string]string{
+			modelMapping, ok := map[string]map[string]dimensionMap{
 				"AppleM1": {
 					"MacMini9.1": {"cpu": "arm64-64-Apple_M1"},
 				},
@@ -996,7 +999,6 @@ func (b *TaskBuilder) defaultSwarmDimensions() {
 					"MacBookPro11.5": {"cpu": "x86-64-i7-4870HQ"},
 					"MacMini7.1":     {"cpu": "x86-64-i5-4278U"},
 					"MacMini8.1":     {"cpu": "x86-64-i7-8700B"},
-					"NUC5i7RYH":      {"cpu": "x86-64-i7-5557U"},
 					"NUC9i7QN":       {"cpu": "x86-64-i7-9750H"},
 					// Unfortunately, these machines don't have a more-specific
 					// CPU dimension we can use. However, they do have integrated
@@ -1041,7 +1043,6 @@ func (b *TaskBuilder) defaultSwarmDimensions() {
 					"GTX1660":             "10de:2184-31.0.15.4601",
 					"IntelHD4400":         "8086:0a16-10.0.26100.1",
 					"IntelIris540":        "8086:1926-31.0.101.2115",
-					"IntelIris6100":       "8086:162b-20.19.15.5171",
 					"IntelIris655":        "8086:3ea5-26.20.100.7463",
 					"IntelIrisXe":         "8086:9a49-31.0.101.5333",
 					"IntelUHDGraphics770": "8086:a780-31.0.101.5333",
@@ -1112,34 +1113,18 @@ func (b *TaskBuilder) defaultSwarmDimensions() {
 			}
 		}
 		if b.MatchOs("Mac") {
-			// TODO(borenet): Remove empty and nested entries after all Macs
-			// are migrated to the new lab.
-			if macModel, ok := map[string]interface{}{
-				"MacBookAir7.2":  "",
-				"MacBookPro11.5": "MacBookPro11,5",
-				"MacBookPro15.1": "MacBookPro15,1",
-				"MacBookPro15.3": "Mac15,3",
-				"MacBookPro16.2": "",
-				"MacMini7.1":     "",
-				"MacMini8.1":     "Macmini8,1",
-				"MacMini9.1": map[string]string{
-					"Mac12": "",
-					"Mac13": "",
-					"Mac14": "Macmini9,1",
-				},
-				"MacMini16.10": "Mac16,10",
-				// TODO(borenet): This is currently resolving to multiple
-				// different actual device types.
-				"VMware7.1": "",
+			// We sometimes have machines on different versions of Mac-N.x, so this lets us adjust
+			// those on the specific hardware.
+			if dims, ok := map[string]dimensionMap{
+				"MacBookPro11.5": {"mac_model": "MacBookPro11,5", "os": "Mac-12.7"},
+				"MacBookPro15.1": {"mac_model": "MacBookPro15,1", "os": "Mac-15.3"},
+				"MacBookPro15.3": {"mac_model": "Mac15,3", "os": "Mac-13.5"},
+				"MacMini8.1":     {"mac_model": "Macmini8,1"}, // on both 14.5 and 14.7
+				"MacMini9.1":     {"mac_model": "Macmini9,1", "os": "Mac-14.7"},
+				"MacMini16.10":   {"mac_model": "Mac16,10", "os": "Mac-15.7"},
 			}[b.Parts["model"]]; ok {
-				if macModel != "" {
-					macModelDim, ok := macModel.(string)
-					if !ok {
-						macModelDim = macModel.(map[string]string)[b.Parts["os"]]
-					}
-					if macModelDim != "" {
-						d["mac_model"] = macModelDim
-					}
+				for k, v := range dims {
+					d[k] = v
 				}
 			} else {
 				log.Fatalf("No mac_model found for %q", b.Parts["model"])
