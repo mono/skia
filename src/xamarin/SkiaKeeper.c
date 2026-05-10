@@ -50,6 +50,16 @@
 #include "include/c/sksg_invalidation_controller.h"
 #include "include/c/skresources_resource_provider.h"
 
+// Graphite — guarded so non-Graphite builds don't need the headers,
+// but each shim cpp keeps a no-op !SK_GRAPHITE branch so anchoring
+// the symbol is safe regardless. macOS in particular needs this
+// because :skia is linked via `-lskia` and the linker drops object
+// files whose externs aren't referenced by something in the dylib.
+#include "include/c/sk_graphite.h"
+#include "include/c/sk_graphite_dawn.h"
+#include "include/c/sk_graphite_metal.h"
+#include "include/c/sk_graphite_vulkan.h"
+
 
 // Xamarin
 #include "include/xamarin/sk_managedstream.h"
@@ -103,6 +113,16 @@ void** KeepSkiaCSymbols (void)
         (void*)skottie_animation_make_from_stream,
         (void*)sksg_invalidation_controller_new,
         (void*)skresources_resource_provider_ref,
+
+        // Graphite — one symbol per shim cpp, so the linker pulls in the
+        // whole object file (and its sibling symbols) when libskia.a is
+        // consumed via -lskia. The per-backend cpps export stubs in their
+        // !SK_GRAPHITE / !SK_BACKEND branches, so anchoring is safe even
+        // when a backend is disabled.
+        (void*)sk_graphite_backend_is_available,
+        (void*)sk_graphite_dawn_backend_context_new,
+        (void*)sk_graphite_mtl_backend_context_new,
+        (void*)sk_graphite_vk_backend_context_new,
 
         // Xamarin
         (void*)sk_compatpaint_new_with_font,
