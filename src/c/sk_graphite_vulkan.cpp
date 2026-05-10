@@ -1,0 +1,145 @@
+/*
+ * Copyright 2026 Microsoft Corporation. All rights reserved.
+ *
+ * Use of this source code is governed by a BSD-style license that can be
+ * found in the LICENSE file.
+ */
+
+#include "include/c/sk_graphite_vulkan.h"
+
+#include "include/core/SkTypes.h"
+
+#if defined(SK_GRAPHITE) && defined(SK_VULKAN)
+
+#include "include/gpu/GpuTypes.h"
+#include "include/gpu/graphite/BackendTexture.h"
+#include "include/gpu/graphite/Context.h"
+#include "include/gpu/graphite/ContextOptions.h"
+#include "include/gpu/graphite/TextureInfo.h"
+#include "include/gpu/graphite/vk/VulkanGraphiteContext.h"
+#include "include/gpu/graphite/vk/VulkanGraphiteTypes.h"
+#include "include/gpu/vk/VulkanBackendContext.h"
+#include "include/gpu/vk/VulkanMemoryAllocator.h"
+
+#include "src/c/sk_types_priv.h"
+#include "src/gpu/GpuTypesPriv.h"
+#include "src/gpu/vk/vulkanmemoryallocator/VulkanMemoryAllocatorPriv.h"
+
+#include <memory>
+
+namespace gr = skgpu::graphite;
+
+// Forward-declared in sk_graphite.cpp; reused here to share option translation.
+extern gr::ContextOptions sk_graphite_make_context_options(const sk_graphite_context_options_t* opts);
+
+// Heap-allocated wrapper holding a copy of the init struct so that the lambda
+// captured by the resulting skgpu::VulkanBackendContext::fGetProc has stable
+// pointers to fGetProc / fGetProcUserData regardless of caller stack lifetime.
+struct sk_graphite_vk_backend_context_t {
+    sk_graphite_vk_backend_context_init_t init;
+};
+
+extern "C" SK_C_API sk_graphite_vk_backend_context_t* sk_graphite_vk_backend_context_new(const sk_graphite_vk_backend_context_init_t* init) {
+    if (!init) return nullptr;
+    auto* bc = new sk_graphite_vk_backend_context_t{*init};
+    return bc;
+}
+
+extern "C" SK_C_API void sk_graphite_vk_backend_context_delete(sk_graphite_vk_backend_context_t* bc) {
+    delete bc;
+}
+
+extern "C" SK_C_API sk_graphite_context_t* sk_graphite_context_make_vulkan(
+    const sk_graphite_vk_backend_context_t* bc,
+    const sk_graphite_context_options_t* opts)
+{
+    if (!bc) return nullptr;
+    const auto& init = bc->init;
+
+    skgpu::VulkanBackendContext vkbc;
+    vkbc.fInstance            = reinterpret_cast<VkInstance>(init.fInstance);
+    vkbc.fPhysicalDevice      = reinterpret_cast<VkPhysicalDevice>(init.fPhysicalDevice);
+    vkbc.fDevice              = reinterpret_cast<VkDevice>(init.fDevice);
+    vkbc.fQueue               = reinterpret_cast<VkQueue>(init.fQueue);
+    vkbc.fGraphicsQueueIndex  = init.fGraphicsQueueIndex;
+    vkbc.fMaxAPIVersion       = init.fMaxAPIVersion;
+    vkbc.fProtectedContext    = init.fProtectedContext ? skgpu::Protected::kYes : skgpu::Protected::kNo;
+
+    if (init.fGetProc) {
+        // Capture by value so the lambda is independent of the wrapper's lifetime.
+        sk_graphite_vk_get_proc_t getProc = init.fGetProc;
+        void* userData = init.fGetProcUserData;
+        vkbc.fGetProc = [getProc, userData](const char* name, VkInstance instance, VkDevice device) -> PFN_vkVoidFunction {
+            return reinterpret_cast<PFN_vkVoidFunction>(
+                getProc(userData, name, reinterpret_cast<vk_instance_t*>(instance), reinterpret_cast<vk_device_t*>(device)));
+        };
+    }
+
+    // Graphite's Vulkan path does NOT auto-create a memory allocator (unlike Ganesh's
+    // GrVkGpu); the caller must supply one. Until we expose that as part of the C API
+    // (deferred to a follow-up), build the default VMA-backed allocator here.
+    if (!vkbc.fMemoryAllocator) {
+        vkbc.fMemoryAllocator = skgpu::VulkanMemoryAllocators::Make(vkbc, skgpu::ThreadSafe::kNo);
+        if (!vkbc.fMemoryAllocator) {
+            return nullptr;
+        }
+    }
+
+    auto context = gr::ContextFactory::MakeVulkan(vkbc, sk_graphite_make_context_options(opts));
+    return reinterpret_cast<sk_graphite_context_t*>(context.release());
+}
+
+// Vulkan TextureInfo + BackendTexture factories.
+
+namespace {
+gr::VulkanTextureInfo MakeNativeVkTextureInfo(const sk_graphite_vk_texture_info_t& info) {
+    auto sampleBits = static_cast<VkSampleCountFlagBits>(info.fSampleCount > 0 ? info.fSampleCount : 1);
+    auto mipmapped  = info.fMipmapped != 0 ? skgpu::Mipmapped::kYes : skgpu::Mipmapped::kNo;
+    return gr::VulkanTextureInfo(
+        sampleBits,
+        mipmapped,
+        static_cast<VkImageCreateFlags>(info.fFlags),
+        static_cast<VkFormat>(info.fFormat),
+        static_cast<VkImageTiling>(info.fImageTiling),
+        static_cast<VkImageUsageFlags>(info.fImageUsageFlags),
+        static_cast<VkSharingMode>(info.fSharingMode),
+        static_cast<VkImageAspectFlags>(info.fAspectMask),
+        skgpu::VulkanYcbcrConversionInfo{});
+}
+}  // namespace
+
+extern "C" SK_C_API sk_graphite_texture_info_t* sk_graphite_vk_texture_info_new(const sk_graphite_vk_texture_info_t* info) {
+    if (!info) return nullptr;
+    auto* ti = new gr::TextureInfo(gr::TextureInfos::MakeVulkan(MakeNativeVkTextureInfo(*info)));
+    return reinterpret_cast<sk_graphite_texture_info_t*>(ti);
+}
+
+extern "C" SK_C_API sk_graphite_backend_texture_t* sk_graphite_vk_backend_texture_new(
+    int32_t width, int32_t height,
+    const sk_graphite_vk_texture_info_t* info,
+    int32_t imageLayout,
+    uint32_t queueFamilyIndex,
+    void* vkImage)
+{
+    if (!info || width <= 0 || height <= 0) return nullptr;
+    auto vkti = MakeNativeVkTextureInfo(*info);
+    auto bt = gr::BackendTextures::MakeVulkan(
+        SkISize::Make(width, height),
+        vkti,
+        static_cast<VkImageLayout>(imageLayout),
+        queueFamilyIndex,
+        reinterpret_cast<VkImage>(vkImage),
+        skgpu::VulkanAlloc{});
+    auto* heap = new gr::BackendTexture(bt);
+    return reinterpret_cast<sk_graphite_backend_texture_t*>(heap);
+}
+
+#else  // !(SK_GRAPHITE && SK_VULKAN)
+
+extern "C" SK_C_API sk_graphite_vk_backend_context_t* sk_graphite_vk_backend_context_new(const sk_graphite_vk_backend_context_init_t*) { return nullptr; }
+extern "C" SK_C_API void sk_graphite_vk_backend_context_delete(sk_graphite_vk_backend_context_t*) {}
+extern "C" SK_C_API sk_graphite_context_t* sk_graphite_context_make_vulkan(const sk_graphite_vk_backend_context_t*, const sk_graphite_context_options_t*) { return nullptr; }
+extern "C" SK_C_API sk_graphite_texture_info_t* sk_graphite_vk_texture_info_new(const sk_graphite_vk_texture_info_t*) { return nullptr; }
+extern "C" SK_C_API sk_graphite_backend_texture_t* sk_graphite_vk_backend_texture_new(int32_t, int32_t, const sk_graphite_vk_texture_info_t*, int32_t, uint32_t, void*) { return nullptr; }
+
+#endif  // SK_GRAPHITE && SK_VULKAN
