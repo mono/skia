@@ -11,9 +11,11 @@
 
 #if defined(SK_GRAPHITE) && defined(SK_DAWN)
 
+#include "include/gpu/graphite/BackendTexture.h"
 #include "include/gpu/graphite/Context.h"
 #include "include/gpu/graphite/ContextOptions.h"
 #include "include/gpu/graphite/dawn/DawnBackendContext.h"
+#include "include/gpu/graphite/dawn/DawnGraphiteTypes.h"
 
 #include "src/c/sk_types_priv.h"
 
@@ -61,10 +63,18 @@ extern "C" SK_C_API sk_graphite_context_t* sk_graphite_context_make_dawn(
     return reinterpret_cast<sk_graphite_context_t*>(context.release());
 }
 
+extern "C" SK_C_API sk_graphite_backend_texture_t* sk_graphite_dawn_backend_texture_new(void* wgpuTexture) {
+    if (!wgpuTexture) return nullptr;
+    auto bt = gr::BackendTextures::MakeDawn(static_cast<WGPUTexture>(wgpuTexture));
+    if (!bt.isValid()) return nullptr;
+    return reinterpret_cast<sk_graphite_backend_texture_t*>(new gr::BackendTexture(bt));
+}
+
 #else  // !(SK_GRAPHITE && SK_DAWN)
 
 extern "C" SK_C_API sk_graphite_dawn_backend_context_t* sk_graphite_dawn_backend_context_new(const sk_graphite_dawn_backend_context_init_t*) { return nullptr; }
 extern "C" SK_C_API void sk_graphite_dawn_backend_context_delete(sk_graphite_dawn_backend_context_t*) {}
 extern "C" SK_C_API sk_graphite_context_t* sk_graphite_context_make_dawn(const sk_graphite_dawn_backend_context_t*, const sk_graphite_context_options_t*) { return nullptr; }
+extern "C" SK_C_API sk_graphite_backend_texture_t* sk_graphite_dawn_backend_texture_new(void*) { return nullptr; }
 
 #endif  // SK_GRAPHITE && SK_DAWN

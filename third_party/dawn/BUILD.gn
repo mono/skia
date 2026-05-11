@@ -154,7 +154,12 @@ config("dawn_api_config") {
   } else {
     libs = []
   }
-  libs += [ "$root_out_dir/$_dawn_lib_name" ]
+  # On WASM/canvaskit builds we let Emscripten's bundled webgpu.h resolve the
+  # wgpu_* symbols via -sUSE_WEBGPU=1 at the final link. There's no
+  # libdawn_combined.a produced (see below), so don't reference it as a lib.
+  if (!is_canvaskit) {
+    libs += [ "$root_out_dir/$_dawn_lib_name" ]
+  }
 
   # https://dawn.googlesource.com/dawn/+/647c352f57aa8a4c2666258455158a36c0c385af/src/dawn/native/BUILD.gn#645
   if (is_mac || is_ios) {
@@ -314,7 +319,11 @@ config("dawn_defines") {
 }
 
 group("dawn") {
-  public_deps = [ ":dawn_cmake" ]
+  if (!is_canvaskit) {
+    # canvaskit (incl. our WASM-Graphite build) does NOT build native Dawn
+    # because Emscripten's webgpu_cpp.h + -sUSE_WEBGPU=1 provide the wgpu API.
+    public_deps = [ ":dawn_cmake" ]
+  }
 
   public_configs = [ ":dawn_api_config" ]
 

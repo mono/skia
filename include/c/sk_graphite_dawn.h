@@ -38,6 +38,18 @@ SK_C_API sk_graphite_context_t* sk_graphite_context_make_dawn(
     const sk_graphite_dawn_backend_context_t* bc,
     const sk_graphite_context_options_t* opts /* nullable -> defaults */);
 
+// Wrap an externally-allocated WGPUTexture as a Graphite BackendTexture. The
+// shim queries width/height/format/usage directly from the texture, so this
+// is the path for WebGPU swap-chain textures (canvas.getContext('webgpu')
+// .getCurrentTexture()).
+//
+// Lifetime: the BackendTexture does NOT retain or release the WGPUTexture —
+// caller keeps it alive for the wrapper's lifetime. Any SkSurface/SkImage that
+// wraps this BackendTexture *will* retain it for its own lifetime, so caller
+// can drop their reference once the Surface is built.
+SK_C_API sk_graphite_backend_texture_t* sk_graphite_dawn_backend_texture_new(
+    void* wgpuTexture);  // WGPUTexture
+
 SK_C_PLUS_PLUS_END_GUARD
 
 #endif  // sk_graphite_dawn_DEFINED
