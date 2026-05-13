@@ -94,7 +94,7 @@ extern "C" SK_C_API sk_graphite_context_t* sk_graphite_context_make_vulkan(
 namespace {
 gr::VulkanTextureInfo MakeNativeVkTextureInfo(const sk_graphite_vk_texture_info_t& info) {
     auto sampleBits = static_cast<VkSampleCountFlagBits>(info.fSampleCount > 0 ? info.fSampleCount : 1);
-    auto mipmapped  = info.fMipmapped != 0 ? skgpu::Mipmapped::kYes : skgpu::Mipmapped::kNo;
+    auto mipmapped  = info.fMipmapped ? skgpu::Mipmapped::kYes : skgpu::Mipmapped::kNo;
     return gr::VulkanTextureInfo(
         sampleBits,
         mipmapped,

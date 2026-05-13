@@ -20,15 +20,15 @@ typedef struct sk_graphite_dawn_backend_context_t sk_graphite_dawn_backend_conte
 // AddRef's each at construction; the wrapper owns those references and
 // releases them on delete.
 //
-// fNonYielding: when non-zero, no DawnTickFunction is installed (Skia's
+// fNonYielding: when true, no DawnTickFunction is installed (Skia's
 // "non-yielding context" mode). Required when running over Emscripten without
-// -s ASYNCIFY. Native Dawn callers should leave it 0 — the shim installs
+// -s ASYNCIFY. Native Dawn callers should leave it false — the shim installs
 // DawnNativeProcessEventsFunction by default.
 typedef struct {
     void* fInstance;       // WGPUInstance
     void* fDevice;         // WGPUDevice
     void* fQueue;          // WGPUQueue
-    int32_t fNonYielding;  // 0 = install default tick fn; 1 = no tick fn (Emscripten)
+    bool  fNonYielding;
 } sk_graphite_dawn_backend_context_init_t;
 
 SK_C_API sk_graphite_dawn_backend_context_t* sk_graphite_dawn_backend_context_new(const sk_graphite_dawn_backend_context_init_t* init);

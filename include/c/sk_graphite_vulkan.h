@@ -50,7 +50,7 @@ SK_C_API sk_graphite_context_t* sk_graphite_context_make_vulkan(
 // add a separate _ycbcr_t struct + factory if needed.
 typedef struct {
     int32_t  fSampleCount;          // 1, 2, 4, 8, or 16
-    int32_t  fMipmapped;            // 0 = no, 1 = yes
+    bool     fMipmapped;
     uint32_t fFlags;                // VkImageCreateFlags
     int32_t  fFormat;               // VkFormat (e.g. VK_FORMAT_R8G8B8A8_UNORM)
     int32_t  fImageTiling;          // VkImageTiling

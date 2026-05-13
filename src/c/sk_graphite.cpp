@@ -136,10 +136,10 @@ extern "C" SK_C_API void sk_graphite_image_provider_delete(sk_graphite_image_pro
 extern "C" SK_C_API sk_image_t* sk_graphite_image_make_texture(
     sk_graphite_recorder_t* recorder,
     const sk_image_t* image,
-    int32_t mipmapped)
+    bool mipmapped)
 {
     SkImage::RequiredProperties props;
-    props.fMipmapped = (mipmapped != 0);
+    props.fMipmapped = mipmapped;
     auto out = SkImages::TextureFromImage(AsGraphiteRecorder(recorder), AsImage(image), props);
     return ToImage(out.release());
 }
@@ -285,11 +285,11 @@ extern "C" SK_C_API void sk_graphite_recording_delete(sk_graphite_recording_t* h
 extern "C" SK_C_API sk_surface_t* sk_graphite_surface_make_render_target(
     sk_graphite_recorder_t* recorder,
     const sk_imageinfo_t*   cinfo,
-    int32_t                 mipmapped,
+    bool                    mipmapped,
     const sk_surfaceprops_t* props)
 {
     SkImageInfo info = AsImageInfo(cinfo);
-    skgpu::Mipmapped mips = (mipmapped != 0) ? skgpu::Mipmapped::kYes : skgpu::Mipmapped::kNo;
+    skgpu::Mipmapped mips = mipmapped ? skgpu::Mipmapped::kYes : skgpu::Mipmapped::kNo;
     auto surface = SkSurfaces::RenderTarget(AsGraphiteRecorder(recorder), info, mips, AsSurfaceProps(props));
     return ToSurface(surface.release());
 }
@@ -412,8 +412,8 @@ extern "C" SK_C_API int32_t sk_graphite_texture_info_get_sample_count(const sk_g
     }
     SkUNREACHABLE;
 }
-extern "C" SK_C_API int32_t sk_graphite_texture_info_get_mipmapped(const sk_graphite_texture_info_t* h) {
-    return (AsGraphiteTextureInfo(h)->mipmapped() == skgpu::Mipmapped::kYes) ? 1 : 0;
+extern "C" SK_C_API bool sk_graphite_texture_info_get_mipmapped(const sk_graphite_texture_info_t* h) {
+    return AsGraphiteTextureInfo(h)->mipmapped() == skgpu::Mipmapped::kYes;
 }
 
 // Async readback — pass-through wrapping of Context::asyncRescaleAndReadPixels.
@@ -503,7 +503,7 @@ extern "C" SK_C_API sk_graphite_backend_t         sk_graphite_recorder_get_backe
 extern "C" SK_C_API int32_t                       sk_graphite_recorder_get_max_texture_size(const sk_graphite_recorder_t*) { return 0; }
 extern "C" SK_C_API sk_graphite_recording_t*      sk_graphite_recorder_snap(sk_graphite_recorder_t*) { return nullptr; }
 extern "C" SK_C_API void                          sk_graphite_recording_delete(sk_graphite_recording_t*) {}
-extern "C" SK_C_API sk_surface_t*                 sk_graphite_surface_make_render_target(sk_graphite_recorder_t*, const sk_imageinfo_t*, int32_t, const sk_surfaceprops_t*) { return nullptr; }
+extern "C" SK_C_API sk_surface_t*                 sk_graphite_surface_make_render_target(sk_graphite_recorder_t*, const sk_imageinfo_t*, bool, const sk_surfaceprops_t*) { return nullptr; }
 extern "C" SK_C_API void                          sk_graphite_context_async_rescale_and_read_pixels_surface(sk_graphite_context_t*, const sk_surface_t*, const sk_imageinfo_t*, const sk_irect_t*, sk_graphite_rescale_gamma_t, sk_graphite_rescale_mode_t, sk_graphite_async_read_pixels_proc_t cb, void* ctx) { if (cb) cb(ctx, nullptr); }
 extern "C" SK_C_API void                          sk_graphite_context_check_async_work_completion(sk_graphite_context_t*) {}
 extern "C" SK_C_API int32_t                       sk_graphite_async_read_result_get_count(const sk_graphite_async_read_result_t*) { return 0; }
@@ -518,13 +518,13 @@ extern "C" SK_C_API void                          sk_graphite_texture_info_delet
 extern "C" SK_C_API bool                          sk_graphite_texture_info_is_valid(const sk_graphite_texture_info_t*) { return false; }
 extern "C" SK_C_API sk_graphite_backend_t         sk_graphite_texture_info_get_backend(const sk_graphite_texture_info_t*) { return VULKAN_SK_GRAPHITE_BACKEND; }
 extern "C" SK_C_API int32_t                       sk_graphite_texture_info_get_sample_count(const sk_graphite_texture_info_t*) { return 1; }
-extern "C" SK_C_API int32_t                       sk_graphite_texture_info_get_mipmapped(const sk_graphite_texture_info_t*) { return 0; }
+extern "C" SK_C_API bool                          sk_graphite_texture_info_get_mipmapped(const sk_graphite_texture_info_t*) { return false; }
 extern "C" SK_C_API sk_image_t*                   sk_graphite_image_wrap_texture(sk_graphite_recorder_t*, const sk_graphite_backend_texture_t*, sk_colortype_t, sk_alphatype_t, sk_colorspace_t*, sk_graphite_release_proc_t, void*) { return nullptr; }
 extern "C" SK_C_API sk_graphite_backend_texture_t* sk_graphite_recorder_create_backend_texture(sk_graphite_recorder_t*, int32_t, int32_t, const sk_graphite_texture_info_t*) { return nullptr; }
 extern "C" SK_C_API void                          sk_graphite_recorder_delete_backend_texture(sk_graphite_recorder_t*, const sk_graphite_backend_texture_t*) {}
 extern "C" SK_C_API void                          sk_graphite_context_delete_backend_texture(sk_graphite_context_t*, const sk_graphite_backend_texture_t*) {}
 extern "C" SK_C_API sk_graphite_image_provider_t* sk_graphite_image_provider_new(sk_graphite_image_provider_proc_t, void*) { return nullptr; }
 extern "C" SK_C_API void                          sk_graphite_image_provider_delete(sk_graphite_image_provider_t*) {}
-extern "C" SK_C_API sk_image_t*                   sk_graphite_image_make_texture(sk_graphite_recorder_t*, const sk_image_t*, int32_t) { return nullptr; }
+extern "C" SK_C_API sk_image_t*                   sk_graphite_image_make_texture(sk_graphite_recorder_t*, const sk_image_t*, bool) { return nullptr; }
 
 #endif  // SK_GRAPHITE

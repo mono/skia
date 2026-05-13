@@ -135,7 +135,7 @@ SK_C_API void                          sk_graphite_recording_delete(sk_graphite_
 SK_C_API sk_surface_t*                 sk_graphite_surface_make_render_target(
     sk_graphite_recorder_t* recorder,
     const sk_imageinfo_t*   info,
-    int32_t                 mipmapped,           // 0 = no, 1 = yes
+    bool                    mipmapped,
     const sk_surfaceprops_t* props /* nullable */);
 
 // Wrap a caller-allocated GPU texture (described by an opaque
@@ -199,7 +199,7 @@ SK_C_API void                          sk_graphite_texture_info_delete         (
 SK_C_API bool                          sk_graphite_texture_info_is_valid       (const sk_graphite_texture_info_t* info);
 SK_C_API sk_graphite_backend_t         sk_graphite_texture_info_get_backend    (const sk_graphite_texture_info_t* info);
 SK_C_API int32_t                       sk_graphite_texture_info_get_sample_count(const sk_graphite_texture_info_t* info);
-SK_C_API int32_t                       sk_graphite_texture_info_get_mipmapped  (const sk_graphite_texture_info_t* info); // 0 = no, 1 = yes
+SK_C_API bool                          sk_graphite_texture_info_get_mipmapped  (const sk_graphite_texture_info_t* info);
 
 // Asynchronous CPU readback — direct pass-through of upstream Skia's
 // Context::asyncRescaleAndReadPixels. The legacy sk_surface_read_pixels does
@@ -265,7 +265,7 @@ typedef sk_image_t* (*sk_graphite_image_provider_proc_t)(
     void* userData,
     sk_graphite_recorder_t* recorder,
     const sk_image_t* image,
-    int32_t mipmapped /* 0 = no, 1 = yes */);
+    bool mipmapped);
 
 // Build an ImageProvider that dispatches to the given callback. Caller retains
 // ownership of the returned wrapper until it is passed to a Context via
@@ -288,7 +288,7 @@ SK_C_API void sk_graphite_image_provider_delete(sk_graphite_image_provider_t* pr
 SK_C_API sk_image_t* sk_graphite_image_make_texture(
     sk_graphite_recorder_t* recorder,
     const sk_image_t* image,
-    int32_t mipmapped /* 0 = no, 1 = yes */);
+    bool mipmapped);
 
 SK_C_PLUS_PLUS_END_GUARD
 
