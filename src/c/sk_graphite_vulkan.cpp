@@ -40,7 +40,6 @@ struct sk_graphite_vk_backend_context_t {
 };
 
 extern "C" SK_C_API sk_graphite_vk_backend_context_t* sk_graphite_vk_backend_context_new(const sk_graphite_vk_backend_context_init_t* init) {
-    if (!init) return nullptr;
     auto* bc = new sk_graphite_vk_backend_context_t{*init};
     return bc;
 }
@@ -53,7 +52,6 @@ extern "C" SK_C_API sk_graphite_context_t* sk_graphite_context_make_vulkan(
     const sk_graphite_vk_backend_context_t* bc,
     const sk_graphite_context_options_t* opts)
 {
-    if (!bc) return nullptr;
     const auto& init = bc->init;
 
     skgpu::VulkanBackendContext vkbc;
@@ -111,7 +109,6 @@ gr::VulkanTextureInfo MakeNativeVkTextureInfo(const sk_graphite_vk_texture_info_
 }  // namespace
 
 extern "C" SK_C_API sk_graphite_texture_info_t* sk_graphite_vk_texture_info_new(const sk_graphite_vk_texture_info_t* info) {
-    if (!info) return nullptr;
     auto* ti = new gr::TextureInfo(gr::TextureInfos::MakeVulkan(MakeNativeVkTextureInfo(*info)));
     return ToGraphiteTextureInfo(ti);
 }
@@ -123,7 +120,6 @@ extern "C" SK_C_API sk_graphite_backend_texture_t* sk_graphite_vk_backend_textur
     uint32_t queueFamilyIndex,
     void* vkImage)
 {
-    if (!info || width <= 0 || height <= 0) return nullptr;
     auto vkti = MakeNativeVkTextureInfo(*info);
     auto bt = gr::BackendTextures::MakeVulkan(
         SkISize::Make(width, height),

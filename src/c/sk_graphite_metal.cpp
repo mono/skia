@@ -36,7 +36,6 @@ struct sk_graphite_mtl_backend_context_t {
 };
 
 extern "C" SK_C_API sk_graphite_mtl_backend_context_t* sk_graphite_mtl_backend_context_new(const sk_graphite_mtl_backend_context_init_t* init) {
-    if (!init || !init->fDevice || !init->fQueue) return nullptr;
     auto* bc = new sk_graphite_mtl_backend_context_t;
     bc->mbc.fDevice = sk_ret_cfp(static_cast<CFTypeRef>(init->fDevice));
     bc->mbc.fQueue  = sk_ret_cfp(static_cast<CFTypeRef>(init->fQueue));
@@ -51,7 +50,6 @@ extern "C" SK_C_API sk_graphite_context_t* sk_graphite_context_make_metal(
     const sk_graphite_mtl_backend_context_t* bc,
     const sk_graphite_context_options_t* opts)
 {
-    if (!bc) return nullptr;
     gr::ContextOptions gopts;
     if (!sk_graphite_make_context_options(opts, &gopts)) return nullptr;
     auto context = gr::ContextFactory::MakeMetal(bc->mbc, gopts);
@@ -61,7 +59,6 @@ extern "C" SK_C_API sk_graphite_context_t* sk_graphite_context_make_metal(
 extern "C" SK_C_API sk_graphite_backend_texture_t* sk_graphite_mtl_backend_texture_new(
     int32_t width, int32_t height, void* mtlTexture)
 {
-    if (width <= 0 || height <= 0 || !mtlTexture) return nullptr;
     auto bt = gr::BackendTextures::MakeMetal(SkISize::Make(width, height),
                                               static_cast<CFTypeRef>(mtlTexture));
     auto* heap = new gr::BackendTexture(bt);

@@ -36,7 +36,6 @@ struct sk_graphite_dawn_backend_context_t {
 };
 
 extern "C" SK_C_API sk_graphite_dawn_backend_context_t* sk_graphite_dawn_backend_context_new(const sk_graphite_dawn_backend_context_init_t* init) {
-    if (!init || !init->fInstance || !init->fDevice || !init->fQueue) return nullptr;
     auto* bc = new sk_graphite_dawn_backend_context_t;
     // wgpu::Instance/Device/Queue construct-from-raw with AddRef semantics
     // (the wgpu C++ wrappers' default constructor takes a raw C handle and
@@ -59,7 +58,6 @@ extern "C" SK_C_API sk_graphite_context_t* sk_graphite_context_make_dawn(
     const sk_graphite_dawn_backend_context_t* bc,
     const sk_graphite_context_options_t* opts)
 {
-    if (!bc) return nullptr;
     gr::ContextOptions gopts;
     if (!sk_graphite_make_context_options(opts, &gopts)) return nullptr;
     auto context = gr::ContextFactory::MakeDawn(bc->dbc, gopts);
@@ -67,7 +65,6 @@ extern "C" SK_C_API sk_graphite_context_t* sk_graphite_context_make_dawn(
 }
 
 extern "C" SK_C_API sk_graphite_backend_texture_t* sk_graphite_dawn_backend_texture_new(void* wgpuTexture) {
-    if (!wgpuTexture) return nullptr;
     auto bt = gr::BackendTextures::MakeDawn(static_cast<WGPUTexture>(wgpuTexture));
     if (!bt.isValid()) return nullptr;
     return ToGraphiteBackendTexture(new gr::BackendTexture(bt));

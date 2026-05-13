@@ -58,7 +58,6 @@ extern "C" SK_C_API bool sk_graphite_backend_is_available(sk_graphite_backend_t 
 // ContextOptions
 
 extern "C" SK_C_API void sk_graphite_context_options_init_defaults(sk_graphite_context_options_t* out) {
-    if (!out) return;
     gr::ContextOptions defaults;
     out->fDisableDriverCorrectnessWorkarounds = defaults.fDisableDriverCorrectnessWorkarounds;
     out->fInternalMultisampleCount            = static_cast<int32_t>(defaults.fInternalMultisampleCount);
@@ -125,7 +124,6 @@ struct sk_graphite_image_provider_t {
 extern "C" SK_C_API sk_graphite_image_provider_t* sk_graphite_image_provider_new(
     sk_graphite_image_provider_proc_t proc, void* userData)
 {
-    if (!proc) return nullptr;
     auto* w = new sk_graphite_image_provider_t;
     w->sp = sk_make_sp<FfiImageProvider>(proc, userData);
     return w;
@@ -140,7 +138,6 @@ extern "C" SK_C_API sk_image_t* sk_graphite_image_make_texture(
     const sk_image_t* image,
     int32_t mipmapped)
 {
-    if (!recorder || !image) return nullptr;
     SkImage::RequiredProperties props;
     props.fMipmapped = (mipmapped != 0);
     auto out = SkImages::TextureFromImage(AsGraphiteRecorder(recorder), AsImage(image), props);
@@ -154,7 +151,6 @@ extern "C" SK_C_API sk_image_t* sk_graphite_image_make_texture(
 // well-defined "Skia defaults" state and the per-backend factory should bail
 // with nullptr so the managed caller can surface ArgumentException.
 bool sk_graphite_make_context_options(const sk_graphite_context_options_t* opts, gr::ContextOptions* out) {
-    if (!out) return false;
     *out = gr::ContextOptions{};
     if (!opts) return true;  // null = use Skia defaults
     // fInternalMultisampleCount: 0 means "leave Skia's default in place", same
@@ -180,7 +176,6 @@ extern "C" SK_C_API void sk_graphite_context_delete(sk_graphite_context_t* h) {
 }
 
 extern "C" SK_C_API sk_graphite_backend_t sk_graphite_context_get_backend(const sk_graphite_context_t* h) {
-    if (!h) return UNKNOWN_SK_GRAPHITE_BACKEND;
     switch (AsGraphiteContext(h)->backend()) {
         case skgpu::BackendApi::kDawn:        return DAWN_SK_GRAPHITE_BACKEND;
         case skgpu::BackendApi::kMetal:       return METAL_SK_GRAPHITE_BACKEND;
@@ -191,18 +186,16 @@ extern "C" SK_C_API sk_graphite_backend_t sk_graphite_context_get_backend(const 
     SkUNREACHABLE;
 }
 
-extern "C" SK_C_API bool    sk_graphite_context_is_device_lost(const sk_graphite_context_t* h)              { return h ? AsGraphiteContext(h)->isDeviceLost() : true; }
-extern "C" SK_C_API int32_t sk_graphite_context_get_max_texture_size(const sk_graphite_context_t* h)        { return h ? AsGraphiteContext(h)->maxTextureSize() : 0; }
-extern "C" SK_C_API bool    sk_graphite_context_supports_protected_content(const sk_graphite_context_t* h) { return h ? AsGraphiteContext(h)->supportsProtectedContent() : false; }
-extern "C" SK_C_API int64_t sk_graphite_context_get_current_budgeted_bytes(const sk_graphite_context_t* h)  { return h ? static_cast<int64_t>(AsGraphiteContext(h)->currentBudgetedBytes()) : 0; }
-extern "C" SK_C_API int64_t sk_graphite_context_get_max_budgeted_bytes(const sk_graphite_context_t* h)      { return h ? static_cast<int64_t>(AsGraphiteContext(h)->maxBudgetedBytes()) : 0; }
-extern "C" SK_C_API void    sk_graphite_context_set_max_budgeted_bytes(sk_graphite_context_t* h, int64_t b) { if (h && b >= 0) AsGraphiteContext(h)->setMaxBudgetedBytes(static_cast<size_t>(b)); }
-extern "C" SK_C_API void    sk_graphite_context_free_gpu_resources(sk_graphite_context_t* h)                { if (h) AsGraphiteContext(h)->freeGpuResources(); }
+extern "C" SK_C_API bool    sk_graphite_context_is_device_lost(const sk_graphite_context_t* h)              { return AsGraphiteContext(h)->isDeviceLost(); }
+extern "C" SK_C_API int32_t sk_graphite_context_get_max_texture_size(const sk_graphite_context_t* h)        { return AsGraphiteContext(h)->maxTextureSize(); }
+extern "C" SK_C_API bool    sk_graphite_context_supports_protected_content(const sk_graphite_context_t* h) { return AsGraphiteContext(h)->supportsProtectedContent(); }
+extern "C" SK_C_API int64_t sk_graphite_context_get_current_budgeted_bytes(const sk_graphite_context_t* h)  { return static_cast<int64_t>(AsGraphiteContext(h)->currentBudgetedBytes()); }
+extern "C" SK_C_API int64_t sk_graphite_context_get_max_budgeted_bytes(const sk_graphite_context_t* h)      { return static_cast<int64_t>(AsGraphiteContext(h)->maxBudgetedBytes()); }
+extern "C" SK_C_API void    sk_graphite_context_set_max_budgeted_bytes(sk_graphite_context_t* h, int64_t b) { AsGraphiteContext(h)->setMaxBudgetedBytes(static_cast<size_t>(b)); }
+extern "C" SK_C_API void    sk_graphite_context_free_gpu_resources(sk_graphite_context_t* h)                { AsGraphiteContext(h)->freeGpuResources(); }
 
 extern "C" SK_C_API void sk_graphite_context_perform_deferred_cleanup(sk_graphite_context_t* h, int64_t milliseconds) {
-    if (h && milliseconds >= 0) {
-        AsGraphiteContext(h)->performDeferredCleanup(std::chrono::milliseconds(milliseconds));
-    }
+    AsGraphiteContext(h)->performDeferredCleanup(std::chrono::milliseconds(milliseconds));
 }
 
 extern "C" SK_C_API sk_graphite_recorder_t* sk_graphite_context_make_recorder(sk_graphite_context_t* h, int64_t recorderBudgetBytes) {
@@ -212,7 +205,6 @@ extern "C" SK_C_API sk_graphite_recorder_t* sk_graphite_context_make_recorder(sk
 extern "C" SK_C_API sk_graphite_recorder_t* sk_graphite_context_make_recorder_with_image_provider(
     sk_graphite_context_t* h, int64_t recorderBudgetBytes, sk_graphite_image_provider_t* imageProvider)
 {
-    if (!h) return nullptr;
     gr::RecorderOptions opts;
     if (recorderBudgetBytes >= 0) {
         opts.fGpuBudgetInBytes = static_cast<size_t>(recorderBudgetBytes);
@@ -240,9 +232,6 @@ static sk_graphite_insert_status_t ToInsertStatus(gr::InsertStatus::V v) {
 }
 
 extern "C" SK_C_API sk_graphite_insert_status_t sk_graphite_context_insert_recording(sk_graphite_context_t* h, const sk_graphite_insert_recording_info_t* info) {
-    if (!h || !info || !info->fRecording) {
-        return INVALID_RECORDING_SK_GRAPHITE_INSERT_STATUS;
-    }
     gr::InsertRecordingInfo iri;
     iri.fRecording = AsGraphiteRecording(info->fRecording);
     iri.fTargetSurface = AsSurface(info->fTargetSurface);
@@ -254,7 +243,6 @@ extern "C" SK_C_API sk_graphite_insert_status_t sk_graphite_context_insert_recor
 }
 
 extern "C" SK_C_API bool sk_graphite_context_submit(sk_graphite_context_t* h, const sk_graphite_submit_info_t* info) {
-    if (!h) return false;
     gr::SubmitInfo si;
     if (info) {
         si.fSync          = (info->fSync == YES_SK_GRAPHITE_SYNC_TO_CPU) ? gr::SyncToCpu::kYes : gr::SyncToCpu::kNo;
@@ -271,7 +259,6 @@ extern "C" SK_C_API void sk_graphite_recorder_delete(sk_graphite_recorder_t* h) 
 }
 
 extern "C" SK_C_API sk_graphite_backend_t sk_graphite_recorder_get_backend(const sk_graphite_recorder_t* h) {
-    if (!h) return UNKNOWN_SK_GRAPHITE_BACKEND;
     switch (AsGraphiteRecorder(h)->backend()) {
         case skgpu::BackendApi::kDawn:        return DAWN_SK_GRAPHITE_BACKEND;
         case skgpu::BackendApi::kMetal:       return METAL_SK_GRAPHITE_BACKEND;
@@ -283,11 +270,10 @@ extern "C" SK_C_API sk_graphite_backend_t sk_graphite_recorder_get_backend(const
 }
 
 extern "C" SK_C_API int32_t sk_graphite_recorder_get_max_texture_size(const sk_graphite_recorder_t* h) {
-    return h ? AsGraphiteRecorder(h)->maxTextureSize() : 0;
+    return AsGraphiteRecorder(h)->maxTextureSize();
 }
 
 extern "C" SK_C_API sk_graphite_recording_t* sk_graphite_recorder_snap(sk_graphite_recorder_t* h) {
-    if (!h) return nullptr;
     auto recording = AsGraphiteRecorder(h)->snap();
     return ToGraphiteRecording(recording.release());
 }
@@ -306,7 +292,6 @@ extern "C" SK_C_API sk_surface_t* sk_graphite_surface_make_render_target(
     int32_t                 mipmapped,
     const sk_surfaceprops_t* props)
 {
-    if (!recorder || !cinfo) return nullptr;
     SkImageInfo info = AsImageInfo(cinfo);
     skgpu::Mipmapped mips = (mipmapped != 0) ? skgpu::Mipmapped::kYes : skgpu::Mipmapped::kNo;
     auto surface = SkSurfaces::RenderTarget(AsGraphiteRecorder(recorder), info, mips, AsSurfaceProps(props));
@@ -322,7 +307,6 @@ extern "C" SK_C_API sk_surface_t* sk_graphite_surface_wrap_backend_texture(
     sk_graphite_release_proc_t releaseProc,
     void* releaseContext)
 {
-    if (!recorder || !backendTexture) return nullptr;
     auto surface = SkSurfaces::WrapBackendTexture(
         AsGraphiteRecorder(recorder),
         *AsGraphiteBackendTexture(backendTexture),
@@ -343,7 +327,6 @@ extern "C" SK_C_API sk_image_t* sk_graphite_image_wrap_texture(
     sk_graphite_release_proc_t releaseProc,
     void* releaseContext)
 {
-    if (!recorder || !backendTexture) return nullptr;
     auto image = SkImages::WrapTexture(
         AsGraphiteRecorder(recorder),
         *AsGraphiteBackendTexture(backendTexture),
@@ -360,7 +343,6 @@ extern "C" SK_C_API sk_graphite_backend_texture_t* sk_graphite_recorder_create_b
     int32_t width, int32_t height,
     const sk_graphite_texture_info_t* info)
 {
-    if (!recorder || !info || width <= 0 || height <= 0) return nullptr;
     auto bt = AsGraphiteRecorder(recorder)->createBackendTexture(
         SkISize::Make(width, height),
         *AsGraphiteTextureInfo(info));
@@ -372,16 +354,14 @@ extern "C" SK_C_API void sk_graphite_recorder_delete_backend_texture(
     sk_graphite_recorder_t* recorder,
     const sk_graphite_backend_texture_t* tex)
 {
-    if (recorder && tex)
-        AsGraphiteRecorder(recorder)->deleteBackendTexture(*AsGraphiteBackendTexture(tex));
+    AsGraphiteRecorder(recorder)->deleteBackendTexture(*AsGraphiteBackendTexture(tex));
 }
 
 extern "C" SK_C_API void sk_graphite_context_delete_backend_texture(
     sk_graphite_context_t* context,
     const sk_graphite_backend_texture_t* tex)
 {
-    if (context && tex)
-        AsGraphiteContext(context)->deleteBackendTexture(*AsGraphiteBackendTexture(tex));
+    AsGraphiteContext(context)->deleteBackendTexture(*AsGraphiteBackendTexture(tex));
 }
 
 // BackendTexture handle: heap wrapper around the C++ value type.
@@ -390,10 +370,9 @@ extern "C" SK_C_API void sk_graphite_backend_texture_delete(sk_graphite_backend_
     delete AsGraphiteBackendTexture(h);
 }
 extern "C" SK_C_API bool sk_graphite_backend_texture_is_valid(const sk_graphite_backend_texture_t* h) {
-    return h ? AsGraphiteBackendTexture(h)->isValid() : false;
+    return AsGraphiteBackendTexture(h)->isValid();
 }
 extern "C" SK_C_API sk_graphite_backend_t sk_graphite_backend_texture_get_backend(const sk_graphite_backend_texture_t* h) {
-    if (!h) return UNKNOWN_SK_GRAPHITE_BACKEND;
     switch (AsGraphiteBackendTexture(h)->backend()) {
         case skgpu::BackendApi::kDawn:        return DAWN_SK_GRAPHITE_BACKEND;
         case skgpu::BackendApi::kMetal:       return METAL_SK_GRAPHITE_BACKEND;
@@ -404,7 +383,6 @@ extern "C" SK_C_API sk_graphite_backend_t sk_graphite_backend_texture_get_backen
     SkUNREACHABLE;
 }
 extern "C" SK_C_API void sk_graphite_backend_texture_get_dimensions(const sk_graphite_backend_texture_t* h, int32_t* outW, int32_t* outH) {
-    if (!h || !outW || !outH) return;
     auto d = AsGraphiteBackendTexture(h)->dimensions();
     *outW = d.fWidth;
     *outH = d.fHeight;
@@ -416,10 +394,9 @@ extern "C" SK_C_API void sk_graphite_texture_info_delete(sk_graphite_texture_inf
     delete AsGraphiteTextureInfo(h);
 }
 extern "C" SK_C_API bool sk_graphite_texture_info_is_valid(const sk_graphite_texture_info_t* h) {
-    return h ? AsGraphiteTextureInfo(h)->isValid() : false;
+    return AsGraphiteTextureInfo(h)->isValid();
 }
 extern "C" SK_C_API sk_graphite_backend_t sk_graphite_texture_info_get_backend(const sk_graphite_texture_info_t* h) {
-    if (!h) return UNKNOWN_SK_GRAPHITE_BACKEND;
     switch (AsGraphiteTextureInfo(h)->backend()) {
         case skgpu::BackendApi::kDawn:        return DAWN_SK_GRAPHITE_BACKEND;
         case skgpu::BackendApi::kMetal:       return METAL_SK_GRAPHITE_BACKEND;
@@ -430,7 +407,6 @@ extern "C" SK_C_API sk_graphite_backend_t sk_graphite_texture_info_get_backend(c
     SkUNREACHABLE;
 }
 extern "C" SK_C_API int32_t sk_graphite_texture_info_get_sample_count(const sk_graphite_texture_info_t* h) {
-    if (!h) return 1;
     switch (AsGraphiteTextureInfo(h)->sampleCount()) {
         case gr::SampleCount::k1:  return 1;
         case gr::SampleCount::k2:  return 2;
@@ -441,7 +417,7 @@ extern "C" SK_C_API int32_t sk_graphite_texture_info_get_sample_count(const sk_g
     SkUNREACHABLE;
 }
 extern "C" SK_C_API int32_t sk_graphite_texture_info_get_mipmapped(const sk_graphite_texture_info_t* h) {
-    return (h && AsGraphiteTextureInfo(h)->mipmapped() == skgpu::Mipmapped::kYes) ? 1 : 0;
+    return (AsGraphiteTextureInfo(h)->mipmapped() == skgpu::Mipmapped::kYes) ? 1 : 0;
 }
 
 // Async readback — pass-through wrapping of Context::asyncRescaleAndReadPixels.
@@ -476,10 +452,6 @@ extern "C" SK_C_API void sk_graphite_context_async_rescale_and_read_pixels_surfa
     sk_graphite_async_read_pixels_proc_t callback,
     void* callbackContext)
 {
-    if (!h || !surface || !cdstInfo || !csrcRect || !callback) {
-        if (callback) callback(callbackContext, nullptr);  // signal failure synchronously
-        return;
-    }
     auto* bridge = new AsyncReadCallbackBridge{callback, callbackContext};
     AsGraphiteContext(h)->asyncRescaleAndReadPixels(
         AsSurface(surface),
@@ -492,7 +464,7 @@ extern "C" SK_C_API void sk_graphite_context_async_rescale_and_read_pixels_surfa
 }
 
 extern "C" SK_C_API void sk_graphite_context_check_async_work_completion(sk_graphite_context_t* h) {
-    if (h) AsGraphiteContext(h)->checkAsyncWorkCompletion();
+    AsGraphiteContext(h)->checkAsyncWorkCompletion();
 }
 
 // AsyncReadResult accessors. The opaque sk_graphite_async_read_result_t* maps
@@ -502,16 +474,14 @@ static inline const SkImage::AsyncReadResult* AsAsyncReadResult(const sk_graphit
 }
 
 extern "C" SK_C_API int32_t sk_graphite_async_read_result_get_count(const sk_graphite_async_read_result_t* h) {
-    return h ? AsAsyncReadResult(h)->count() : 0;
+    return AsAsyncReadResult(h)->count();
 }
 
 extern "C" SK_C_API const void* sk_graphite_async_read_result_get_data(const sk_graphite_async_read_result_t* h, int32_t planeIndex) {
-    if (!h || planeIndex < 0 || planeIndex >= AsAsyncReadResult(h)->count()) return nullptr;
     return AsAsyncReadResult(h)->data(planeIndex);
 }
 
 extern "C" SK_C_API size_t sk_graphite_async_read_result_get_row_bytes(const sk_graphite_async_read_result_t* h, int32_t planeIndex) {
-    if (!h || planeIndex < 0 || planeIndex >= AsAsyncReadResult(h)->count()) return 0;
     return AsAsyncReadResult(h)->rowBytes(planeIndex);
 }
 
