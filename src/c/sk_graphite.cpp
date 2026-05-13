@@ -198,11 +198,7 @@ extern "C" SK_C_API void sk_graphite_context_perform_deferred_cleanup(sk_graphit
     AsGraphiteContext(h)->performDeferredCleanup(std::chrono::milliseconds(milliseconds));
 }
 
-extern "C" SK_C_API sk_graphite_recorder_t* sk_graphite_context_make_recorder(sk_graphite_context_t* h, int64_t recorderBudgetBytes) {
-    return sk_graphite_context_make_recorder_with_image_provider(h, recorderBudgetBytes, nullptr);
-}
-
-extern "C" SK_C_API sk_graphite_recorder_t* sk_graphite_context_make_recorder_with_image_provider(
+extern "C" SK_C_API sk_graphite_recorder_t* sk_graphite_context_make_recorder(
     sk_graphite_context_t* h, int64_t recorderBudgetBytes, sk_graphite_image_provider_t* imageProvider)
 {
     gr::RecorderOptions opts;
@@ -499,8 +495,7 @@ extern "C" SK_C_API int64_t                       sk_graphite_context_get_max_bu
 extern "C" SK_C_API void                          sk_graphite_context_set_max_budgeted_bytes(sk_graphite_context_t*, int64_t) {}
 extern "C" SK_C_API void                          sk_graphite_context_free_gpu_resources(sk_graphite_context_t*) {}
 extern "C" SK_C_API void                          sk_graphite_context_perform_deferred_cleanup(sk_graphite_context_t*, int64_t) {}
-extern "C" SK_C_API sk_graphite_recorder_t*       sk_graphite_context_make_recorder(sk_graphite_context_t*, int64_t) { return nullptr; }
-extern "C" SK_C_API sk_graphite_recorder_t*       sk_graphite_context_make_recorder_with_image_provider(sk_graphite_context_t*, int64_t, sk_graphite_image_provider_t*) { return nullptr; }
+extern "C" SK_C_API sk_graphite_recorder_t*       sk_graphite_context_make_recorder(sk_graphite_context_t*, int64_t, sk_graphite_image_provider_t*) { return nullptr; }
 extern "C" SK_C_API sk_graphite_insert_status_t   sk_graphite_context_insert_recording(sk_graphite_context_t*, const sk_graphite_insert_recording_info_t*) { return INVALID_RECORDING_SK_GRAPHITE_INSERT_STATUS; }
 extern "C" SK_C_API bool                          sk_graphite_context_submit(sk_graphite_context_t*, const sk_graphite_submit_info_t*) { return false; }
 extern "C" SK_C_API void                          sk_graphite_recorder_delete(sk_graphite_recorder_t*) {}

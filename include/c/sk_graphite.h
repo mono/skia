@@ -106,14 +106,10 @@ SK_C_API void                          sk_graphite_context_free_gpu_resources(sk
 SK_C_API void                          sk_graphite_context_perform_deferred_cleanup(sk_graphite_context_t* context, int64_t milliseconds);
 
 // Recorder vending. recorderBudgetBytes < 0 uses the context default.
-SK_C_API sk_graphite_recorder_t*       sk_graphite_context_make_recorder(sk_graphite_context_t* context, int64_t recorderBudgetBytes);
-
-// Variant that attaches an ImageProvider to the new recorder. Ownership of
-// the provider transfers to the recorder on success — caller must NOT call
-// sk_graphite_image_provider_delete on it afterwards. Pass null to behave
-// identically to sk_graphite_context_make_recorder. The provider can also
-// be sourced from sk_graphite_image_provider_new.
-SK_C_API sk_graphite_recorder_t*       sk_graphite_context_make_recorder_with_image_provider(
+// imageProvider may be null. When non-null, ownership of the wrapper transfers
+// to the recorder on success — caller must NOT call sk_graphite_image_provider_delete
+// on it afterwards. The provider is constructed via sk_graphite_image_provider_new.
+SK_C_API sk_graphite_recorder_t*       sk_graphite_context_make_recorder(
     sk_graphite_context_t* context,
     int64_t recorderBudgetBytes,
     sk_graphite_image_provider_t* imageProvider);
