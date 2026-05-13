@@ -24,8 +24,9 @@
 
 namespace gr = skgpu::graphite;
 
-// Forward-declared in sk_graphite.cpp; reused here to share option translation.
-extern gr::ContextOptions sk_graphite_make_context_options(const sk_graphite_context_options_t* opts);
+// Forward-declared in sk_graphite.cpp; reused here for option translation.
+// Returns false if opts carries an invalid value (e.g. out-of-range sample count).
+extern bool sk_graphite_make_context_options(const sk_graphite_context_options_t* opts, gr::ContextOptions* out);
 
 // Heap-allocated wrapper holding an MtlBackendContext value. The wrapper
 // CFRetains the caller-supplied device/queue at construction (via sk_ret_cfp)
@@ -51,7 +52,9 @@ extern "C" SK_C_API sk_graphite_context_t* sk_graphite_context_make_metal(
     const sk_graphite_context_options_t* opts)
 {
     if (!bc) return nullptr;
-    auto context = gr::ContextFactory::MakeMetal(bc->mbc, sk_graphite_make_context_options(opts));
+    gr::ContextOptions gopts;
+    if (!sk_graphite_make_context_options(opts, &gopts)) return nullptr;
+    auto context = gr::ContextFactory::MakeMetal(bc->mbc, gopts);
     return ToGraphiteContext(context.release());
 }
 

@@ -24,9 +24,15 @@ typedef struct sk_graphite_image_provider_t     sk_graphite_image_provider_t;
 // Backend identification
 
 typedef enum {
-    DAWN_SK_GRAPHITE_BACKEND   = 0,
-    METAL_SK_GRAPHITE_BACKEND  = 1,
-    VULKAN_SK_GRAPHITE_BACKEND = 2,
+    DAWN_SK_GRAPHITE_BACKEND    = 0,
+    METAL_SK_GRAPHITE_BACKEND   = 1,
+    VULKAN_SK_GRAPHITE_BACKEND  = 2,
+    // skgpu::BackendApi has values we don't expose on the public C ABI
+    // (kMock, kUnsupported). Returned by *_get_backend when the underlying
+    // Skia object holds one of those — callers shouldn't normally see this
+    // because the per-backend factories only produce kVulkan/kMetal/kDawn,
+    // but it exists for forward-compat with future Skia milestones.
+    UNKNOWN_SK_GRAPHITE_BACKEND = -1,
 } sk_graphite_backend_t;
 
 // Returns true if the requested backend was compiled into this build of
@@ -37,7 +43,7 @@ SK_C_API bool sk_graphite_backend_is_available(sk_graphite_backend_t backend);
 
 typedef struct {
     bool      fDisableDriverCorrectnessWorkarounds;
-    int32_t   fInternalMultisampleCount;       // valid: 1, 2, 4, 8, 16
+    int32_t   fInternalMultisampleCount;       // valid: 0 (use Skia default), 1, 2, 4, 8, 16
     int64_t   fGpuBudgetInBytes;               // -1 to use Skia's default
     bool      fRequireOrderedRecordings;
     bool      fSetBackendLabels;

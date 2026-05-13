@@ -68,15 +68,18 @@ extern "C" SK_C_API void sk_graphite_context_options_init_defaults(sk_graphite_c
 }
 
 // Translate the public sample-count integer to the SampleCount enum.
-static gr::SampleCount ToGraphiteSampleCount(int32_t count) {
+// Returns true on success; *out is left unchanged on failure so the caller
+// can supply a default or surface the validation error. Used by
+// sk_graphite_make_context_options below, which propagates the bool up.
+static bool ToGraphiteSampleCount(int32_t count, gr::SampleCount* out) {
     switch (count) {
-        case 1:  return gr::SampleCount::k1;
-        case 2:  return gr::SampleCount::k2;
-        case 4:  return gr::SampleCount::k4;
-        case 8:  return gr::SampleCount::k8;
-        case 16: return gr::SampleCount::k16;
+        case 1:  *out = gr::SampleCount::k1;  return true;
+        case 2:  *out = gr::SampleCount::k2;  return true;
+        case 4:  *out = gr::SampleCount::k4;  return true;
+        case 8:  *out = gr::SampleCount::k8;  return true;
+        case 16: *out = gr::SampleCount::k16; return true;
     }
-    return gr::SampleCount::k1;
+    return false;
 }
 
 // ImageProvider bridge — routes Graphite's "I have a non-Graphite SkImage,
@@ -145,18 +148,29 @@ extern "C" SK_C_API sk_image_t* sk_graphite_image_make_texture(
 }
 
 // Public helper used by per-backend factories in sibling translation units.
-gr::ContextOptions sk_graphite_make_context_options(const sk_graphite_context_options_t* opts) {
-    gr::ContextOptions out;
-    if (opts) {
-        out.fDisableDriverCorrectnessWorkarounds = opts->fDisableDriverCorrectnessWorkarounds;
-        out.fInternalMultisampleCount            = ToGraphiteSampleCount(opts->fInternalMultisampleCount);
-        if (opts->fGpuBudgetInBytes >= 0) {
-            out.fGpuBudgetInBytes = static_cast<size_t>(opts->fGpuBudgetInBytes);
-        }
-        out.fRequireOrderedRecordings = opts->fRequireOrderedRecordings;
-        out.fSetBackendLabels         = opts->fSetBackendLabels;
+// Translate the C-ABI options struct to a Skia ContextOptions. Returns false
+// if any field carries an invalid value (currently: only fInternalMultisampleCount
+// being something other than 1/2/4/8/16). On failure *out is left in a
+// well-defined "Skia defaults" state and the per-backend factory should bail
+// with nullptr so the managed caller can surface ArgumentException.
+bool sk_graphite_make_context_options(const sk_graphite_context_options_t* opts, gr::ContextOptions* out) {
+    if (!out) return false;
+    *out = gr::ContextOptions{};
+    if (!opts) return true;  // null = use Skia defaults
+    // fInternalMultisampleCount: 0 means "leave Skia's default in place", same
+    // shape as the fGpuBudgetInBytes < 0 sentinel below. Lets a caller pass
+    // default-constructed C-side opts without tripping the validator.
+    if (opts->fInternalMultisampleCount != 0 &&
+        !ToGraphiteSampleCount(opts->fInternalMultisampleCount, &out->fInternalMultisampleCount)) {
+        return false;
     }
-    return out;
+    out->fDisableDriverCorrectnessWorkarounds = opts->fDisableDriverCorrectnessWorkarounds;
+    if (opts->fGpuBudgetInBytes >= 0) {
+        out->fGpuBudgetInBytes = static_cast<size_t>(opts->fGpuBudgetInBytes);
+    }
+    out->fRequireOrderedRecordings = opts->fRequireOrderedRecordings;
+    out->fSetBackendLabels         = opts->fSetBackendLabels;
+    return true;
 }
 
 // Context
@@ -166,13 +180,15 @@ extern "C" SK_C_API void sk_graphite_context_delete(sk_graphite_context_t* h) {
 }
 
 extern "C" SK_C_API sk_graphite_backend_t sk_graphite_context_get_backend(const sk_graphite_context_t* h) {
-    if (!h) return VULKAN_SK_GRAPHITE_BACKEND;  // arbitrary; caller misused the API
+    if (!h) return UNKNOWN_SK_GRAPHITE_BACKEND;
     switch (AsGraphiteContext(h)->backend()) {
-        case skgpu::BackendApi::kDawn:    return DAWN_SK_GRAPHITE_BACKEND;
-        case skgpu::BackendApi::kMetal:   return METAL_SK_GRAPHITE_BACKEND;
-        case skgpu::BackendApi::kVulkan:  return VULKAN_SK_GRAPHITE_BACKEND;
-        default:                          return VULKAN_SK_GRAPHITE_BACKEND;
+        case skgpu::BackendApi::kDawn:        return DAWN_SK_GRAPHITE_BACKEND;
+        case skgpu::BackendApi::kMetal:       return METAL_SK_GRAPHITE_BACKEND;
+        case skgpu::BackendApi::kVulkan:      return VULKAN_SK_GRAPHITE_BACKEND;
+        case skgpu::BackendApi::kMock:
+        case skgpu::BackendApi::kUnsupported: return UNKNOWN_SK_GRAPHITE_BACKEND;
     }
+    SkUNREACHABLE;
 }
 
 extern "C" SK_C_API bool    sk_graphite_context_is_device_lost(const sk_graphite_context_t* h)              { return h ? AsGraphiteContext(h)->isDeviceLost() : true; }
@@ -213,14 +229,14 @@ extern "C" SK_C_API sk_graphite_recorder_t* sk_graphite_context_make_recorder_wi
 
 static sk_graphite_insert_status_t ToInsertStatus(gr::InsertStatus::V v) {
     switch (v) {
-        case gr::InsertStatus::kSuccess:                       return SUCCESS_SK_GRAPHITE_INSERT_STATUS;
-        case gr::InsertStatus::kInvalidRecording:              return INVALID_RECORDING_SK_GRAPHITE_INSERT_STATUS;
+        case gr::InsertStatus::kSuccess:                         return SUCCESS_SK_GRAPHITE_INSERT_STATUS;
+        case gr::InsertStatus::kInvalidRecording:                return INVALID_RECORDING_SK_GRAPHITE_INSERT_STATUS;
         case gr::InsertStatus::kPromiseImageInstantiationFailed: return PROMISE_INSTANTIATION_FAILED_SK_GRAPHITE_INSERT_STATUS;
-        case gr::InsertStatus::kAddCommandsFailed:             return ADD_COMMANDS_FAILED_SK_GRAPHITE_INSERT_STATUS;
-        case gr::InsertStatus::kAsyncShaderCompilesFailed:     return ASYNC_SHADER_COMPILES_FAILED_SK_GRAPHITE_INSERT_STATUS;
-        case gr::InsertStatus::kOutOfOrderRecording:           return OUT_OF_ORDER_RECORDING_SK_GRAPHITE_INSERT_STATUS;
+        case gr::InsertStatus::kAddCommandsFailed:               return ADD_COMMANDS_FAILED_SK_GRAPHITE_INSERT_STATUS;
+        case gr::InsertStatus::kAsyncShaderCompilesFailed:       return ASYNC_SHADER_COMPILES_FAILED_SK_GRAPHITE_INSERT_STATUS;
+        case gr::InsertStatus::kOutOfOrderRecording:             return OUT_OF_ORDER_RECORDING_SK_GRAPHITE_INSERT_STATUS;
     }
-    return INVALID_RECORDING_SK_GRAPHITE_INSERT_STATUS;
+    SkUNREACHABLE;
 }
 
 extern "C" SK_C_API sk_graphite_insert_status_t sk_graphite_context_insert_recording(sk_graphite_context_t* h, const sk_graphite_insert_recording_info_t* info) {
@@ -255,13 +271,15 @@ extern "C" SK_C_API void sk_graphite_recorder_delete(sk_graphite_recorder_t* h) 
 }
 
 extern "C" SK_C_API sk_graphite_backend_t sk_graphite_recorder_get_backend(const sk_graphite_recorder_t* h) {
-    if (!h) return VULKAN_SK_GRAPHITE_BACKEND;
+    if (!h) return UNKNOWN_SK_GRAPHITE_BACKEND;
     switch (AsGraphiteRecorder(h)->backend()) {
-        case skgpu::BackendApi::kDawn:    return DAWN_SK_GRAPHITE_BACKEND;
-        case skgpu::BackendApi::kMetal:   return METAL_SK_GRAPHITE_BACKEND;
-        case skgpu::BackendApi::kVulkan:  return VULKAN_SK_GRAPHITE_BACKEND;
-        default:                          return VULKAN_SK_GRAPHITE_BACKEND;
+        case skgpu::BackendApi::kDawn:        return DAWN_SK_GRAPHITE_BACKEND;
+        case skgpu::BackendApi::kMetal:       return METAL_SK_GRAPHITE_BACKEND;
+        case skgpu::BackendApi::kVulkan:      return VULKAN_SK_GRAPHITE_BACKEND;
+        case skgpu::BackendApi::kMock:
+        case skgpu::BackendApi::kUnsupported: return UNKNOWN_SK_GRAPHITE_BACKEND;
     }
+    SkUNREACHABLE;
 }
 
 extern "C" SK_C_API int32_t sk_graphite_recorder_get_max_texture_size(const sk_graphite_recorder_t* h) {
@@ -375,13 +393,15 @@ extern "C" SK_C_API bool sk_graphite_backend_texture_is_valid(const sk_graphite_
     return h ? AsGraphiteBackendTexture(h)->isValid() : false;
 }
 extern "C" SK_C_API sk_graphite_backend_t sk_graphite_backend_texture_get_backend(const sk_graphite_backend_texture_t* h) {
-    if (!h) return VULKAN_SK_GRAPHITE_BACKEND;
+    if (!h) return UNKNOWN_SK_GRAPHITE_BACKEND;
     switch (AsGraphiteBackendTexture(h)->backend()) {
-        case skgpu::BackendApi::kDawn:    return DAWN_SK_GRAPHITE_BACKEND;
-        case skgpu::BackendApi::kMetal:   return METAL_SK_GRAPHITE_BACKEND;
-        case skgpu::BackendApi::kVulkan:  return VULKAN_SK_GRAPHITE_BACKEND;
-        default:                          return VULKAN_SK_GRAPHITE_BACKEND;
+        case skgpu::BackendApi::kDawn:        return DAWN_SK_GRAPHITE_BACKEND;
+        case skgpu::BackendApi::kMetal:       return METAL_SK_GRAPHITE_BACKEND;
+        case skgpu::BackendApi::kVulkan:      return VULKAN_SK_GRAPHITE_BACKEND;
+        case skgpu::BackendApi::kMock:
+        case skgpu::BackendApi::kUnsupported: return UNKNOWN_SK_GRAPHITE_BACKEND;
     }
+    SkUNREACHABLE;
 }
 extern "C" SK_C_API void sk_graphite_backend_texture_get_dimensions(const sk_graphite_backend_texture_t* h, int32_t* outW, int32_t* outH) {
     if (!h || !outW || !outH) return;
@@ -399,13 +419,15 @@ extern "C" SK_C_API bool sk_graphite_texture_info_is_valid(const sk_graphite_tex
     return h ? AsGraphiteTextureInfo(h)->isValid() : false;
 }
 extern "C" SK_C_API sk_graphite_backend_t sk_graphite_texture_info_get_backend(const sk_graphite_texture_info_t* h) {
-    if (!h) return VULKAN_SK_GRAPHITE_BACKEND;
+    if (!h) return UNKNOWN_SK_GRAPHITE_BACKEND;
     switch (AsGraphiteTextureInfo(h)->backend()) {
-        case skgpu::BackendApi::kDawn:    return DAWN_SK_GRAPHITE_BACKEND;
-        case skgpu::BackendApi::kMetal:   return METAL_SK_GRAPHITE_BACKEND;
-        case skgpu::BackendApi::kVulkan:  return VULKAN_SK_GRAPHITE_BACKEND;
-        default:                          return VULKAN_SK_GRAPHITE_BACKEND;
+        case skgpu::BackendApi::kDawn:        return DAWN_SK_GRAPHITE_BACKEND;
+        case skgpu::BackendApi::kMetal:       return METAL_SK_GRAPHITE_BACKEND;
+        case skgpu::BackendApi::kVulkan:      return VULKAN_SK_GRAPHITE_BACKEND;
+        case skgpu::BackendApi::kMock:
+        case skgpu::BackendApi::kUnsupported: return UNKNOWN_SK_GRAPHITE_BACKEND;
     }
+    SkUNREACHABLE;
 }
 extern "C" SK_C_API int32_t sk_graphite_texture_info_get_sample_count(const sk_graphite_texture_info_t* h) {
     if (!h) return 1;
@@ -416,7 +438,7 @@ extern "C" SK_C_API int32_t sk_graphite_texture_info_get_sample_count(const sk_g
         case gr::SampleCount::k8:  return 8;
         case gr::SampleCount::k16: return 16;
     }
-    return 1;
+    SkUNREACHABLE;
 }
 extern "C" SK_C_API int32_t sk_graphite_texture_info_get_mipmapped(const sk_graphite_texture_info_t* h) {
     return (h && AsGraphiteTextureInfo(h)->mipmapped() == skgpu::Mipmapped::kYes) ? 1 : 0;

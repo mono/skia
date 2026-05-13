@@ -24,7 +24,8 @@
 namespace gr = skgpu::graphite;
 
 // Forward-declared in sk_graphite.cpp; reused here for option translation.
-extern gr::ContextOptions sk_graphite_make_context_options(const sk_graphite_context_options_t* opts);
+// Returns false if opts carries an invalid value (e.g. out-of-range sample count).
+extern bool sk_graphite_make_context_options(const sk_graphite_context_options_t* opts, gr::ContextOptions* out);
 
 // Heap-allocated wrapper holding a DawnBackendContext value. The wgpu::Instance/
 // Device/Queue smart pointers AddRef on construction-from-raw and Release on
@@ -59,7 +60,9 @@ extern "C" SK_C_API sk_graphite_context_t* sk_graphite_context_make_dawn(
     const sk_graphite_context_options_t* opts)
 {
     if (!bc) return nullptr;
-    auto context = gr::ContextFactory::MakeDawn(bc->dbc, sk_graphite_make_context_options(opts));
+    gr::ContextOptions gopts;
+    if (!sk_graphite_make_context_options(opts, &gopts)) return nullptr;
+    auto context = gr::ContextFactory::MakeDawn(bc->dbc, gopts);
     return ToGraphiteContext(context.release());
 }
 
