@@ -197,6 +197,19 @@ DEF_STRUCT_MAP(GrD3DTextureResourceInfo, gr_d3d_textureresourceinfo_t, GrD3DText
 #endif // SK_DIRECT3D
 #endif // SK_GANESH
 
+#if defined(SK_GRAPHITE)
+#include "include/gpu/graphite/BackendTexture.h"
+#include "include/gpu/graphite/Context.h"
+#include "include/gpu/graphite/Recorder.h"
+#include "include/gpu/graphite/Recording.h"
+#include "include/gpu/graphite/TextureInfo.h"
+DEF_MAP_WITH_NS(skgpu::graphite, Context,        sk_graphite_context_t,         GraphiteContext)
+DEF_MAP_WITH_NS(skgpu::graphite, Recorder,       sk_graphite_recorder_t,        GraphiteRecorder)
+DEF_MAP_WITH_NS(skgpu::graphite, Recording,      sk_graphite_recording_t,       GraphiteRecording)
+DEF_MAP_WITH_NS(skgpu::graphite, BackendTexture, sk_graphite_backend_texture_t, GraphiteBackendTexture)
+DEF_MAP_WITH_NS(skgpu::graphite, TextureInfo,    sk_graphite_texture_info_t,    GraphiteTextureInfo)
+#endif // SK_GRAPHITE
+
 #include "include/effects/SkRuntimeEffect.h"
 DEF_MAP(SkRuntimeEffect::Uniform, sk_runtimeeffect_uniform_t, RuntimeEffectUniform)
 DEF_MAP(SkRuntimeEffect::Child, sk_runtimeeffect_child_t, RuntimeEffectChild)

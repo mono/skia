@@ -12,15 +12,14 @@
 #if defined(SK_GRAPHITE) && defined(SK_VULKAN)
 
 #include "include/gpu/GpuTypes.h"
-#include "include/gpu/graphite/BackendTexture.h"
-#include "include/gpu/graphite/Context.h"
 #include "include/gpu/graphite/ContextOptions.h"
-#include "include/gpu/graphite/TextureInfo.h"
 #include "include/gpu/graphite/vk/VulkanGraphiteContext.h"
 #include "include/gpu/graphite/vk/VulkanGraphiteTypes.h"
 #include "include/gpu/vk/VulkanBackendContext.h"
 #include "include/gpu/vk/VulkanMemoryAllocator.h"
 
+// Pulls in Context/BackendTexture/TextureInfo + the matching As/To helpers
+// via the SK_GRAPHITE block.
 #include "src/c/sk_types_priv.h"
 #include "src/gpu/GpuTypesPriv.h"
 #include "src/gpu/vk/vulkanmemoryallocator/VulkanMemoryAllocatorPriv.h"
@@ -86,7 +85,7 @@ extern "C" SK_C_API sk_graphite_context_t* sk_graphite_context_make_vulkan(
     }
 
     auto context = gr::ContextFactory::MakeVulkan(vkbc, sk_graphite_make_context_options(opts));
-    return reinterpret_cast<sk_graphite_context_t*>(context.release());
+    return ToGraphiteContext(context.release());
 }
 
 // Vulkan TextureInfo + BackendTexture factories.
@@ -111,7 +110,7 @@ gr::VulkanTextureInfo MakeNativeVkTextureInfo(const sk_graphite_vk_texture_info_
 extern "C" SK_C_API sk_graphite_texture_info_t* sk_graphite_vk_texture_info_new(const sk_graphite_vk_texture_info_t* info) {
     if (!info) return nullptr;
     auto* ti = new gr::TextureInfo(gr::TextureInfos::MakeVulkan(MakeNativeVkTextureInfo(*info)));
-    return reinterpret_cast<sk_graphite_texture_info_t*>(ti);
+    return ToGraphiteTextureInfo(ti);
 }
 
 extern "C" SK_C_API sk_graphite_backend_texture_t* sk_graphite_vk_backend_texture_new(
@@ -131,7 +130,7 @@ extern "C" SK_C_API sk_graphite_backend_texture_t* sk_graphite_vk_backend_textur
         reinterpret_cast<VkImage>(vkImage),
         skgpu::VulkanAlloc{});
     auto* heap = new gr::BackendTexture(bt);
-    return reinterpret_cast<sk_graphite_backend_texture_t*>(heap);
+    return ToGraphiteBackendTexture(heap);
 }
 
 #else  // !(SK_GRAPHITE && SK_VULKAN)

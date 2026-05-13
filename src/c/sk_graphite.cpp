@@ -13,17 +13,15 @@
 
 #include "include/core/SkImage.h"
 #include "include/core/SkSurface.h"
-#include "include/gpu/graphite/BackendTexture.h"
-#include "include/gpu/graphite/Context.h"
 #include "include/gpu/graphite/ContextOptions.h"
 #include "include/gpu/graphite/GraphiteTypes.h"
 #include "include/gpu/graphite/Image.h"
 #include "include/gpu/graphite/ImageProvider.h"
-#include "include/gpu/graphite/Recorder.h"
-#include "include/gpu/graphite/Recording.h"
 #include "include/gpu/graphite/Surface.h"
-#include "include/gpu/graphite/TextureInfo.h"
 
+// Pulls in the Context/Recorder/Recording/BackendTexture/TextureInfo headers
+// and the matching As/To helpers via the DEF_MAP_WITH_NS block guarded by
+// SK_GRAPHITE in sk_types_priv.h.
 #include "src/c/sk_types_priv.h"
 
 #include <chrono>
@@ -31,26 +29,6 @@
 #include <utility>
 
 namespace gr = skgpu::graphite;
-
-// reinterpret_cast helpers between opaque C handles and C++ types
-static inline gr::Context*               AsGraphiteContext(sk_graphite_context_t* h)        { return reinterpret_cast<gr::Context*>(h); }
-static inline const gr::Context*         AsGraphiteContext(const sk_graphite_context_t* h)  { return reinterpret_cast<const gr::Context*>(h); }
-static inline sk_graphite_context_t*     ToGraphiteContext(gr::Context* p)                  { return reinterpret_cast<sk_graphite_context_t*>(p); }
-
-static inline gr::Recorder*              AsGraphiteRecorder(sk_graphite_recorder_t* h)        { return reinterpret_cast<gr::Recorder*>(h); }
-static inline const gr::Recorder*        AsGraphiteRecorder(const sk_graphite_recorder_t* h)  { return reinterpret_cast<const gr::Recorder*>(h); }
-static inline sk_graphite_recorder_t*    ToGraphiteRecorder(gr::Recorder* p)                  { return reinterpret_cast<sk_graphite_recorder_t*>(p); }
-
-static inline gr::Recording*             AsGraphiteRecording(sk_graphite_recording_t* h)      { return reinterpret_cast<gr::Recording*>(h); }
-static inline sk_graphite_recording_t*   ToGraphiteRecording(gr::Recording* p)                { return reinterpret_cast<sk_graphite_recording_t*>(p); }
-
-static inline gr::BackendTexture*        AsGraphiteBackendTexture(sk_graphite_backend_texture_t* h)        { return reinterpret_cast<gr::BackendTexture*>(h); }
-static inline const gr::BackendTexture*  AsGraphiteBackendTexture(const sk_graphite_backend_texture_t* h)  { return reinterpret_cast<const gr::BackendTexture*>(h); }
-static inline sk_graphite_backend_texture_t* ToGraphiteBackendTexture(gr::BackendTexture* p)              { return reinterpret_cast<sk_graphite_backend_texture_t*>(p); }
-
-static inline gr::TextureInfo*           AsGraphiteTextureInfo(sk_graphite_texture_info_t* h)             { return reinterpret_cast<gr::TextureInfo*>(h); }
-static inline const gr::TextureInfo*     AsGraphiteTextureInfo(const sk_graphite_texture_info_t* h)       { return reinterpret_cast<const gr::TextureInfo*>(h); }
-static inline sk_graphite_texture_info_t* ToGraphiteTextureInfo(gr::TextureInfo* p)                       { return reinterpret_cast<sk_graphite_texture_info_t*>(p); }
 
 // Backend availability — runtime-queried, per-backend compile-time gated.
 extern "C" SK_C_API bool sk_graphite_backend_is_available(sk_graphite_backend_t backend) {

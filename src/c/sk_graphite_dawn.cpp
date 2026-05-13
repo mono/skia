@@ -11,12 +11,12 @@
 
 #if defined(SK_GRAPHITE) && defined(SK_DAWN)
 
-#include "include/gpu/graphite/BackendTexture.h"
-#include "include/gpu/graphite/Context.h"
 #include "include/gpu/graphite/ContextOptions.h"
 #include "include/gpu/graphite/dawn/DawnBackendContext.h"
 #include "include/gpu/graphite/dawn/DawnGraphiteTypes.h"
 
+// Pulls in Context/BackendTexture + the matching As/To helpers via the
+// SK_GRAPHITE block.
 #include "src/c/sk_types_priv.h"
 
 #include <memory>
@@ -60,14 +60,14 @@ extern "C" SK_C_API sk_graphite_context_t* sk_graphite_context_make_dawn(
 {
     if (!bc) return nullptr;
     auto context = gr::ContextFactory::MakeDawn(bc->dbc, sk_graphite_make_context_options(opts));
-    return reinterpret_cast<sk_graphite_context_t*>(context.release());
+    return ToGraphiteContext(context.release());
 }
 
 extern "C" SK_C_API sk_graphite_backend_texture_t* sk_graphite_dawn_backend_texture_new(void* wgpuTexture) {
     if (!wgpuTexture) return nullptr;
     auto bt = gr::BackendTextures::MakeDawn(static_cast<WGPUTexture>(wgpuTexture));
     if (!bt.isValid()) return nullptr;
-    return reinterpret_cast<sk_graphite_backend_texture_t*>(new gr::BackendTexture(bt));
+    return ToGraphiteBackendTexture(new gr::BackendTexture(bt));
 }
 
 #else  // !(SK_GRAPHITE && SK_DAWN)

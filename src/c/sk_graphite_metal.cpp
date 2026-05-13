@@ -11,13 +11,13 @@
 
 #if defined(SK_GRAPHITE) && defined(SK_METAL)
 
-#include "include/gpu/graphite/BackendTexture.h"
-#include "include/gpu/graphite/Context.h"
 #include "include/gpu/graphite/ContextOptions.h"
 #include "include/gpu/graphite/mtl/MtlBackendContext.h"
 #include "include/gpu/graphite/mtl/MtlGraphiteTypes_cpp.h"
 #include "include/ports/SkCFObject.h"
 
+// Pulls in Context/BackendTexture + the matching As/To helpers via the
+// SK_GRAPHITE block.
 #include "src/c/sk_types_priv.h"
 
 #include <memory>
@@ -52,7 +52,7 @@ extern "C" SK_C_API sk_graphite_context_t* sk_graphite_context_make_metal(
 {
     if (!bc) return nullptr;
     auto context = gr::ContextFactory::MakeMetal(bc->mbc, sk_graphite_make_context_options(opts));
-    return reinterpret_cast<sk_graphite_context_t*>(context.release());
+    return ToGraphiteContext(context.release());
 }
 
 extern "C" SK_C_API sk_graphite_backend_texture_t* sk_graphite_mtl_backend_texture_new(
@@ -62,7 +62,7 @@ extern "C" SK_C_API sk_graphite_backend_texture_t* sk_graphite_mtl_backend_textu
     auto bt = gr::BackendTextures::MakeMetal(SkISize::Make(width, height),
                                               static_cast<CFTypeRef>(mtlTexture));
     auto* heap = new gr::BackendTexture(bt);
-    return reinterpret_cast<sk_graphite_backend_texture_t*>(heap);
+    return ToGraphiteBackendTexture(heap);
 }
 
 #else  // !(SK_GRAPHITE && SK_METAL)
