@@ -53,20 +53,10 @@ SK_C_API void sk_graphite_context_options_init_defaults(sk_graphite_context_opti
 
 // Submission control
 
-typedef enum {
-    NO_SK_GRAPHITE_SYNC_TO_CPU  = 0,
-    YES_SK_GRAPHITE_SYNC_TO_CPU = 1,
-} sk_graphite_sync_to_cpu_t;
-
-typedef enum {
-    NO_SK_GRAPHITE_MARK_FRAME_BOUNDARY  = 0,
-    YES_SK_GRAPHITE_MARK_FRAME_BOUNDARY = 1,
-} sk_graphite_mark_frame_boundary_t;
-
 typedef struct {
-    sk_graphite_sync_to_cpu_t          fSync;
-    sk_graphite_mark_frame_boundary_t  fMarkBoundary;
-    uint64_t                           fFrameID;
+    bool      fSync;
+    bool      fMarkBoundary;
+    uint64_t  fFrameID;
 } sk_graphite_submit_info_t;
 
 // Recording insert / status

@@ -241,8 +241,8 @@ extern "C" SK_C_API sk_graphite_insert_status_t sk_graphite_context_insert_recor
 extern "C" SK_C_API bool sk_graphite_context_submit(sk_graphite_context_t* h, const sk_graphite_submit_info_t* info) {
     gr::SubmitInfo si;
     if (info) {
-        si.fSync          = (info->fSync == YES_SK_GRAPHITE_SYNC_TO_CPU) ? gr::SyncToCpu::kYes : gr::SyncToCpu::kNo;
-        si.fMarkBoundary  = (info->fMarkBoundary == YES_SK_GRAPHITE_MARK_FRAME_BOUNDARY) ? gr::MarkFrameBoundary::kYes : gr::MarkFrameBoundary::kNo;
+        si.fSync          = info->fSync         ? gr::SyncToCpu::kYes         : gr::SyncToCpu::kNo;
+        si.fMarkBoundary  = info->fMarkBoundary ? gr::MarkFrameBoundary::kYes : gr::MarkFrameBoundary::kNo;
         si.fFrameID       = info->fFrameID;
     }
     return AsGraphiteContext(h)->submit(si);
