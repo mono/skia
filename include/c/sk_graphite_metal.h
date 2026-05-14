@@ -13,26 +13,20 @@
 
 SK_C_PLUS_PLUS_BEGIN_GUARD
 
-// Opaque heap wrapper around skgpu::graphite::MtlBackendContext. The shim
-// CFRetain's the device/queue handles passed in via the init struct, so the
-// caller's references are not consumed.
-typedef struct sk_graphite_mtl_backend_context_t sk_graphite_mtl_backend_context_t;
-
 // Init struct: caller-owned id<MTLDevice> + id<MTLCommandQueue>. Both are
 // passed as opaque void* to keep the C API ObjC-free; the shim treats them
-// as CFTypeRef and CFRetain's during MakeMetal.
+// as CFTypeRef and CFRetain's during MakeMetal. Skia takes its own retains
+// on success, so the caller may drop their references as soon as
+// sk_graphite_context_make_metal returns.
 typedef struct {
     void* fDevice;   // id<MTLDevice> (CFRetain-able)
     void* fQueue;    // id<MTLCommandQueue> (CFRetain-able)
 } sk_graphite_mtl_backend_context_init_t;
 
-SK_C_API sk_graphite_mtl_backend_context_t* sk_graphite_mtl_backend_context_new(const sk_graphite_mtl_backend_context_init_t* init);
-SK_C_API void                               sk_graphite_mtl_backend_context_delete(sk_graphite_mtl_backend_context_t* bc);
-
 // Build a Graphite Context for the Metal backend. Returns null on failure
 // (Metal not built into libSkiaSharp, init invalid, or device rejected).
 SK_C_API sk_graphite_context_t* sk_graphite_context_make_metal(
-    const sk_graphite_mtl_backend_context_t* bc,
+    const sk_graphite_mtl_backend_context_init_t* init,
     const sk_graphite_context_options_t* opts /* nullable -> defaults */);
 
 // Wrap an externally-allocated id<MTLTexture> as a Graphite BackendTexture.

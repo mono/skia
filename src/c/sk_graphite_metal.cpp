@@ -28,31 +28,21 @@ namespace gr = skgpu::graphite;
 // Returns false if opts carries an invalid value (e.g. out-of-range sample count).
 extern bool sk_graphite_make_context_options(const sk_graphite_context_options_t* opts, gr::ContextOptions* out);
 
-// Heap-allocated wrapper holding an MtlBackendContext value. The wrapper
-// CFRetains the caller-supplied device/queue at construction (via sk_ret_cfp)
-// and CFReleases them on delete (via sk_cfp's destructor).
-struct sk_graphite_mtl_backend_context_t {
-    gr::MtlBackendContext mbc;
-};
-
-extern "C" SK_C_API sk_graphite_mtl_backend_context_t* sk_graphite_mtl_backend_context_new(const sk_graphite_mtl_backend_context_init_t* init) {
-    auto* bc = new sk_graphite_mtl_backend_context_t;
-    bc->mbc.fDevice = sk_ret_cfp(static_cast<CFTypeRef>(init->fDevice));
-    bc->mbc.fQueue  = sk_ret_cfp(static_cast<CFTypeRef>(init->fQueue));
-    return bc;
-}
-
-extern "C" SK_C_API void sk_graphite_mtl_backend_context_delete(sk_graphite_mtl_backend_context_t* bc) {
-    delete bc;  // sk_cfp destructors call CFRelease
-}
-
 extern "C" SK_C_API sk_graphite_context_t* sk_graphite_context_make_metal(
-    const sk_graphite_mtl_backend_context_t* bc,
+    const sk_graphite_mtl_backend_context_init_t* init,
     const sk_graphite_context_options_t* opts)
 {
+    // sk_ret_cfp CFRetains the caller's handles. The local mbc holds the
+    // retains for the duration of this call; on success MakeMetal takes its
+    // own retains into the resulting Context, so the local releases at
+    // scope-exit are correct whether MakeMetal succeeded or failed.
+    gr::MtlBackendContext mbc;
+    mbc.fDevice = sk_ret_cfp(static_cast<CFTypeRef>(init->fDevice));
+    mbc.fQueue  = sk_ret_cfp(static_cast<CFTypeRef>(init->fQueue));
+
     gr::ContextOptions gopts;
     if (!sk_graphite_make_context_options(opts, &gopts)) return nullptr;
-    auto context = gr::ContextFactory::MakeMetal(bc->mbc, gopts);
+    auto context = gr::ContextFactory::MakeMetal(mbc, gopts);
     return ToGraphiteContext(context.release());
 }
 
@@ -67,9 +57,7 @@ extern "C" SK_C_API sk_graphite_backend_texture_t* sk_graphite_mtl_backend_textu
 
 #else  // !(SK_GRAPHITE && SK_METAL)
 
-extern "C" SK_C_API sk_graphite_mtl_backend_context_t* sk_graphite_mtl_backend_context_new(const sk_graphite_mtl_backend_context_init_t*) { return nullptr; }
-extern "C" SK_C_API void sk_graphite_mtl_backend_context_delete(sk_graphite_mtl_backend_context_t*) {}
-extern "C" SK_C_API sk_graphite_context_t* sk_graphite_context_make_metal(const sk_graphite_mtl_backend_context_t*, const sk_graphite_context_options_t*) { return nullptr; }
+extern "C" SK_C_API sk_graphite_context_t* sk_graphite_context_make_metal(const sk_graphite_mtl_backend_context_init_t*, const sk_graphite_context_options_t*) { return nullptr; }
 extern "C" SK_C_API sk_graphite_backend_texture_t* sk_graphite_mtl_backend_texture_new(int32_t, int32_t, void*) { return nullptr; }
 
 #endif  // SK_GRAPHITE && SK_METAL

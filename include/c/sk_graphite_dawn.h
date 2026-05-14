@@ -13,12 +13,10 @@
 
 SK_C_PLUS_PLUS_BEGIN_GUARD
 
-// Opaque heap wrapper around skgpu::graphite::DawnBackendContext.
-typedef struct sk_graphite_dawn_backend_context_t sk_graphite_dawn_backend_context_t;
-
 // Init struct: caller-owned WGPUInstance/Device/Queue raw handles. The shim
-// AddRef's each at construction; the wrapper owns those references and
-// releases them on delete.
+// AddRef's each during sk_graphite_context_make_dawn; Skia takes its own refs
+// on success, so the caller may drop their references as soon as that call
+// returns.
 //
 // fNonYielding: when true, no DawnTickFunction is installed (Skia's
 // "non-yielding context" mode). Required when running over Emscripten without
@@ -31,11 +29,8 @@ typedef struct {
     bool  fNonYielding;
 } sk_graphite_dawn_backend_context_init_t;
 
-SK_C_API sk_graphite_dawn_backend_context_t* sk_graphite_dawn_backend_context_new(const sk_graphite_dawn_backend_context_init_t* init);
-SK_C_API void                                sk_graphite_dawn_backend_context_delete(sk_graphite_dawn_backend_context_t* bc);
-
 SK_C_API sk_graphite_context_t* sk_graphite_context_make_dawn(
-    const sk_graphite_dawn_backend_context_t* bc,
+    const sk_graphite_dawn_backend_context_init_t* init,
     const sk_graphite_context_options_t* opts /* nullable -> defaults */);
 
 // Wrap an externally-allocated WGPUTexture as a Graphite BackendTexture. The

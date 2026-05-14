@@ -27,40 +27,28 @@ namespace gr = skgpu::graphite;
 // Returns false if opts carries an invalid value (e.g. out-of-range sample count).
 extern bool sk_graphite_make_context_options(const sk_graphite_context_options_t* opts, gr::ContextOptions* out);
 
-// Heap-allocated wrapper holding a DawnBackendContext value. The wgpu::Instance/
-// Device/Queue smart pointers AddRef on construction-from-raw and Release on
-// destruction, so caller's references remain unaffected by our wrapper's
-// lifetime.
-struct sk_graphite_dawn_backend_context_t {
-    gr::DawnBackendContext dbc;
-};
-
-extern "C" SK_C_API sk_graphite_dawn_backend_context_t* sk_graphite_dawn_backend_context_new(const sk_graphite_dawn_backend_context_init_t* init) {
-    auto* bc = new sk_graphite_dawn_backend_context_t;
-    // wgpu::Instance/Device/Queue construct-from-raw with AddRef semantics
-    // (the wgpu C++ wrappers' default constructor takes a raw C handle and
-    // adds a reference unless explicitly told to acquire).
-    bc->dbc.fInstance = wgpu::Instance(static_cast<WGPUInstance>(init->fInstance));
-    bc->dbc.fDevice   = wgpu::Device  (static_cast<WGPUDevice>  (init->fDevice));
-    bc->dbc.fQueue    = wgpu::Queue   (static_cast<WGPUQueue>   (init->fQueue));
-    if (init->fNonYielding) {
-        bc->dbc.fTick = nullptr;
-    }
-    // else: leave the default (DawnNativeProcessEventsFunction on non-Emscripten).
-    return bc;
-}
-
-extern "C" SK_C_API void sk_graphite_dawn_backend_context_delete(sk_graphite_dawn_backend_context_t* bc) {
-    delete bc;  // wgpu::* destructors call Release
-}
-
 extern "C" SK_C_API sk_graphite_context_t* sk_graphite_context_make_dawn(
-    const sk_graphite_dawn_backend_context_t* bc,
+    const sk_graphite_dawn_backend_context_init_t* init,
     const sk_graphite_context_options_t* opts)
 {
+    // wgpu::Instance/Device/Queue construct-from-raw with AddRef semantics
+    // (the wgpu C++ wrappers' default constructor takes a raw C handle and
+    // adds a reference unless explicitly told to acquire). The local dbc
+    // holds those refs for the duration of this call; on success MakeDawn
+    // takes its own refs into the resulting Context, so the local releases
+    // at scope-exit are correct whether MakeDawn succeeded or failed.
+    gr::DawnBackendContext dbc;
+    dbc.fInstance = wgpu::Instance(static_cast<WGPUInstance>(init->fInstance));
+    dbc.fDevice   = wgpu::Device  (static_cast<WGPUDevice>  (init->fDevice));
+    dbc.fQueue    = wgpu::Queue   (static_cast<WGPUQueue>   (init->fQueue));
+    if (init->fNonYielding) {
+        dbc.fTick = nullptr;
+    }
+    // else: leave the default (DawnNativeProcessEventsFunction on non-Emscripten).
+
     gr::ContextOptions gopts;
     if (!sk_graphite_make_context_options(opts, &gopts)) return nullptr;
-    auto context = gr::ContextFactory::MakeDawn(bc->dbc, gopts);
+    auto context = gr::ContextFactory::MakeDawn(dbc, gopts);
     return ToGraphiteContext(context.release());
 }
 
@@ -72,9 +60,7 @@ extern "C" SK_C_API sk_graphite_backend_texture_t* sk_graphite_dawn_backend_text
 
 #else  // !(SK_GRAPHITE && SK_DAWN)
 
-extern "C" SK_C_API sk_graphite_dawn_backend_context_t* sk_graphite_dawn_backend_context_new(const sk_graphite_dawn_backend_context_init_t*) { return nullptr; }
-extern "C" SK_C_API void sk_graphite_dawn_backend_context_delete(sk_graphite_dawn_backend_context_t*) {}
-extern "C" SK_C_API sk_graphite_context_t* sk_graphite_context_make_dawn(const sk_graphite_dawn_backend_context_t*, const sk_graphite_context_options_t*) { return nullptr; }
+extern "C" SK_C_API sk_graphite_context_t* sk_graphite_context_make_dawn(const sk_graphite_dawn_backend_context_init_t*, const sk_graphite_context_options_t*) { return nullptr; }
 extern "C" SK_C_API sk_graphite_backend_texture_t* sk_graphite_dawn_backend_texture_new(void*) { return nullptr; }
 
 #endif  // SK_GRAPHITE && SK_DAWN

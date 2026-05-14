@@ -115,9 +115,9 @@ void** KeepSkiaCSymbols (void)
         // !SK_GRAPHITE / !SK_BACKEND branches, so anchoring is safe even
         // when a backend is disabled.
         (void*)sk_graphite_backend_is_available,
-        (void*)sk_graphite_dawn_backend_context_new,
-        (void*)sk_graphite_mtl_backend_context_new,
-        (void*)sk_graphite_vk_backend_context_new,
+        (void*)sk_graphite_context_make_dawn,
+        (void*)sk_graphite_context_make_metal,
+        (void*)sk_graphite_context_make_vulkan,
 
         // Xamarin
         (void*)sk_compatpaint_new_with_font,

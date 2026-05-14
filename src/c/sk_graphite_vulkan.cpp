@@ -32,28 +32,10 @@ namespace gr = skgpu::graphite;
 // Returns false if opts carries an invalid value (e.g. out-of-range sample count).
 extern bool sk_graphite_make_context_options(const sk_graphite_context_options_t* opts, gr::ContextOptions* out);
 
-// Heap-allocated wrapper holding a copy of the init struct so that the lambda
-// captured by the resulting skgpu::VulkanBackendContext::fGetProc has stable
-// pointers to fGetProc / fGetProcUserData regardless of caller stack lifetime.
-struct sk_graphite_vk_backend_context_t {
-    sk_graphite_vk_backend_context_init_t init;
-};
-
-extern "C" SK_C_API sk_graphite_vk_backend_context_t* sk_graphite_vk_backend_context_new(const sk_graphite_vk_backend_context_init_t* init) {
-    auto* bc = new sk_graphite_vk_backend_context_t{*init};
-    return bc;
-}
-
-extern "C" SK_C_API void sk_graphite_vk_backend_context_delete(sk_graphite_vk_backend_context_t* bc) {
-    delete bc;
-}
-
 extern "C" SK_C_API sk_graphite_context_t* sk_graphite_context_make_vulkan(
-    const sk_graphite_vk_backend_context_t* bc,
+    const sk_graphite_vk_backend_context_init_t init,
     const sk_graphite_context_options_t* opts)
 {
-    const auto& init = bc->init;
-
     skgpu::VulkanBackendContext vkbc;
     vkbc.fInstance            = reinterpret_cast<VkInstance>(init.fInstance);
     vkbc.fPhysicalDevice      = reinterpret_cast<VkPhysicalDevice>(init.fPhysicalDevice);
@@ -64,7 +46,7 @@ extern "C" SK_C_API sk_graphite_context_t* sk_graphite_context_make_vulkan(
     vkbc.fProtectedContext    = init.fProtectedContext ? skgpu::Protected::kYes : skgpu::Protected::kNo;
 
     if (init.fGetProc) {
-        // Capture by value so the lambda is independent of the wrapper's lifetime.
+        // Capture by value so the lambda is independent of the init struct's lifetime.
         sk_graphite_vk_get_proc_t getProc = init.fGetProc;
         void* userData = init.fGetProcUserData;
         vkbc.fGetProc = [getProc, userData](const char* name, VkInstance instance, VkDevice device) -> PFN_vkVoidFunction {
@@ -134,9 +116,7 @@ extern "C" SK_C_API sk_graphite_backend_texture_t* sk_graphite_vk_backend_textur
 
 #else  // !(SK_GRAPHITE && SK_VULKAN)
 
-extern "C" SK_C_API sk_graphite_vk_backend_context_t* sk_graphite_vk_backend_context_new(const sk_graphite_vk_backend_context_init_t*) { return nullptr; }
-extern "C" SK_C_API void sk_graphite_vk_backend_context_delete(sk_graphite_vk_backend_context_t*) {}
-extern "C" SK_C_API sk_graphite_context_t* sk_graphite_context_make_vulkan(const sk_graphite_vk_backend_context_t*, const sk_graphite_context_options_t*) { return nullptr; }
+extern "C" SK_C_API sk_graphite_context_t* sk_graphite_context_make_vulkan(const sk_graphite_vk_backend_context_init_t, const sk_graphite_context_options_t*) { return nullptr; }
 extern "C" SK_C_API sk_graphite_texture_info_t* sk_graphite_vk_texture_info_new(const sk_graphite_vk_texture_info_t*) { return nullptr; }
 extern "C" SK_C_API sk_graphite_backend_texture_t* sk_graphite_vk_backend_texture_new(int32_t, int32_t, const sk_graphite_vk_texture_info_t*, int32_t, uint32_t, void*) { return nullptr; }
 

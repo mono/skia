@@ -13,11 +13,6 @@
 
 SK_C_PLUS_PLUS_BEGIN_GUARD
 
-// Opaque handle wrapping the C++ skgpu::VulkanBackendContext value.
-// Heap-allocated so that callers can pass it across the FFI without worrying
-// about layout differences in the C++ struct between Skia revisions.
-typedef struct sk_graphite_vk_backend_context_t sk_graphite_vk_backend_context_t;
-
 // Function-pointer getter signature: identical in shape to skgpu::VulkanGetProc.
 // userData is the fGetProcUserData passed via the init struct.
 typedef VKAPI_ATTR void (VKAPI_CALL *sk_graphite_vk_func_ptr)(void);
@@ -35,14 +30,13 @@ typedef struct {
     bool                        fProtectedContext;
 } sk_graphite_vk_backend_context_init_t;
 
-// Lifetime: caller owns; pair with sk_graphite_vk_backend_context_delete.
-SK_C_API sk_graphite_vk_backend_context_t* sk_graphite_vk_backend_context_new(const sk_graphite_vk_backend_context_init_t* init);
-SK_C_API void                              sk_graphite_vk_backend_context_delete(sk_graphite_vk_backend_context_t* bc);
-
 // Build a Graphite Context for the Vulkan backend.
 // Returns null on failure (Vulkan not built in, init invalid, or device rejected).
+// The dispatch lambda captures fGetProc + fGetProcUserData by value, so the
+// caller may free the init struct as soon as this returns. Passed by value to
+// mirror gr_direct_context_make_vulkan; the marshaller copies the bytes.
 SK_C_API sk_graphite_context_t* sk_graphite_context_make_vulkan(
-    const sk_graphite_vk_backend_context_t* bc,
+    const sk_graphite_vk_backend_context_init_t init,
     const sk_graphite_context_options_t* opts /* nullable -> defaults */);
 
 // Vulkan-specific TextureInfo (POD). Field values are passed straight into
