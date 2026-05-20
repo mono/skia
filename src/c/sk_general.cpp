@@ -13,6 +13,8 @@
 
 #include "src/c/sk_types_priv.h"
 
+#include <atomic>
+
 static inline const SkRefCnt* AsRefCnt(const sk_refcnt_t* t) {
     return reinterpret_cast<const SkRefCnt*>(t);
 }
@@ -26,7 +28,11 @@ bool sk_refcnt_unique(const sk_refcnt_t* refcnt) {
     return AsRefCnt(refcnt)->unique();
 }
 int sk_refcnt_get_ref_count(const sk_refcnt_t* refcnt) {
-    return AsRefCnt(refcnt)->getRefCount();
+    // SkRefCntBase::getRefCount() was removed in m147.
+    // SkRefCntBase has a virtual destructor (vtable ptr) followed by
+    // mutable std::atomic<int32_t> fRefCnt as its only data member.
+    const char* p = reinterpret_cast<const char*>(AsRefCnt(refcnt)) + sizeof(void*);
+    return reinterpret_cast<const std::atomic<int32_t>*>(p)->load(std::memory_order_relaxed);
 }
 void sk_refcnt_safe_ref(sk_refcnt_t* refcnt) {
     SkSafeRef(AsRefCnt(refcnt));
@@ -39,7 +45,10 @@ bool sk_nvrefcnt_unique(const sk_nvrefcnt_t* refcnt) {
     return AsNVRefCnt(refcnt)->unique();
 }
 int sk_nvrefcnt_get_ref_count(const sk_nvrefcnt_t* refcnt) {
-    return AsNVRefCnt(refcnt)->getRefCount();
+    // SkNVRefCnt::getRefCount() was removed in m147.
+    // SkNVRefCnt has no virtual methods, so mutable std::atomic<int32_t> fRefCnt
+    // is the only data member at offset 0.
+    return reinterpret_cast<const std::atomic<int32_t>*>(AsNVRefCnt(refcnt))->load(std::memory_order_relaxed);
 }
 void sk_nvrefcnt_safe_ref(sk_nvrefcnt_t* refcnt) {
     SkSafeRef(AsNVRefCnt(refcnt));

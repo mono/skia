@@ -17,6 +17,8 @@
 #include "include/core/SkTypeface.h"
 #include "include/utils/SkTextUtils.h"
 #include "include/private/base/SkTemplates.h"
+#include "src/base/SkUTF.h"
+#include "src/core/SkStrikeSpec.h"
 
 #include "include/c/sk_font.h"
 
@@ -149,7 +151,75 @@ void sk_font_measure_text_no_return(const sk_font_t* font, const void* text, siz
 }
 
 size_t sk_font_break_text(const sk_font_t* font, const void* text, size_t byteLength, sk_text_encoding_t encoding, float maxWidth, float* measuredWidth, const sk_paint_t* paint) {
-    return AsFont(font)->breakText(text, byteLength, (SkTextEncoding)encoding, maxWidth, measuredWidth, AsPaint(paint));
+    // SkFont::breakText() was removed from the public API in m147 (SK_SUPPORT_UNSPANNED_APIS cleanup).
+    // Re-implement it here using internal Skia APIs.
+    const SkFont* f = AsFont(font);
+    const SkPaint* p = AsPaint(paint);
+    const SkTextEncoding enc = (SkTextEncoding)encoding;
+
+    if (0 == byteLength || 0 >= maxWidth) {
+        if (measuredWidth) *measuredWidth = 0;
+        return 0;
+    }
+    if (0 == f->getSize()) {
+        if (measuredWidth) *measuredWidth = 0;
+        return byteLength;
+    }
+
+    SkASSERT(text != nullptr);
+
+    auto [strikeSpec, scale] = SkStrikeSpec::MakeCanonicalized(*f, p);
+    SkBulkGlyphMetrics metrics{strikeSpec};
+
+    if (scale) {
+        maxWidth /= scale;
+    }
+
+    SkScalar width = 0;
+    const char* start = (const char*)text;
+    const char* stop = start + byteLength;
+    while (start < stop) {
+        const char* curr = start;
+        SkGlyphID glyphID;
+        switch (enc) {
+            case SkTextEncoding::kGlyphID: {
+                glyphID = *(const uint16_t*)start;
+                start += sizeof(uint16_t);
+            } break;
+            case SkTextEncoding::kUTF8: {
+                const char* ptr = start;
+                auto unichar = SkUTF::NextUTF8(&ptr, stop);
+                start = ptr;
+                glyphID = f->unicharToGlyph(unichar);
+            } break;
+            case SkTextEncoding::kUTF16: {
+                const uint16_t* ptr = (const uint16_t*)start;
+                auto unichar = SkUTF::NextUTF16(&ptr, (const uint16_t*)stop);
+                start = (const char*)ptr;
+                glyphID = f->unicharToGlyph(unichar);
+            } break;
+            case SkTextEncoding::kUTF32: {
+                const int32_t* ptr = (const int32_t*)start;
+                auto unichar = SkUTF::NextUTF32(&ptr, (const int32_t*)stop);
+                start = (const char*)ptr;
+                glyphID = f->unicharToGlyph(unichar);
+            } break;
+            default:
+                SK_ABORT("unexpected encoding");
+        }
+        auto glyph = metrics.glyph(glyphID);
+        SkScalar x = glyph->advanceX();
+        if ((width += x) > maxWidth) {
+            width -= x;
+            start = curr;
+            break;
+        }
+    }
+    if (measuredWidth) {
+        if (scale) width *= scale;
+        *measuredWidth = width;
+    }
+    return start - stop + byteLength;
 }
 
 void sk_font_get_widths_bounds(const sk_font_t* font, const uint16_t glyphs[], int count, float widths[], sk_rect_t bounds[], const sk_paint_t* paint) {
