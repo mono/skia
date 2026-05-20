@@ -1893,6 +1893,13 @@ skia_source_set("core") {
 
   # These deps don't belong to :core, but they are currently needed to support (de)serialization.
   deps = [
+    # mono/skia: ":fontmgr_fontconfig" must be a dep of :core so that
+    # SK_FONTMGR_FONTCONFIG_AVAILABLE is defined when compiling
+    # src/c/sk_typeface.cpp (which selects the platform font manager via
+    # that preprocessor flag). Without this dep, sk_fontmgr_create_default()
+    # falls through to SkFontMgr_New_Custom_Empty() on Linux and all font
+    # tests fail.
+    ":fontmgr_fontconfig",
     ":fontmgr_mac_ct",
     ":fontmgr_win",
     ":fontmgr_win_gdi",
