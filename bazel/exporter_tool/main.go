@@ -31,6 +31,11 @@ var gniExportDescs = []exporter.GNIExportDesc{
 				"//include/codec:any_codec_hdrs",
 			},
 		},
+		{Var: "skia_codec_icc_chromium",
+			Rules: []string{
+				"//include/private/chromium:codec_icc_chromium_hdrs",
+			},
+		},
 		{Var: "skia_codec_decode_bmp",
 			Rules: []string{
 				"//src/codec:bmp_decode",
@@ -271,8 +276,8 @@ var gniExportDescs = []exporter.GNIExportDesc{
 			}},
 		{Var: "skia_graphite_dawn_sources",
 			Rules: []string{
-				"//src/gpu/graphite/dawn:_dawn_hdrs",
-				"//src/gpu/graphite/dawn:_dawn_srcs",
+				"//src/gpu/graphite/dawn:dawn_hdrs",
+				"//src/gpu/graphite/dawn:dawn_srcs",
 			}},
 		{Var: "skia_graphite_mtl_public",
 			Rules: []string{
@@ -314,6 +319,11 @@ var gniExportDescs = []exporter.GNIExportDesc{
 				"//src/gpu/graphite/precompile:_precompile_hdrs",
 				"//src/gpu/graphite/precompile:_precompile_srcs",
 				"//src/gpu/graphite:precompile_srcs",
+			}},
+		{Var: "skia_graphite_sparse_strips_sources",
+			Rules: []string{
+				"//src/gpu/graphite/sparse_strips:sparse_strips_hdrs",
+				"//src/gpu/graphite/sparse_strips:sparse_strips_srcs",
 			}},
 	}},
 	{GNI: "gn/pathops.gni", Vars: []exporter.GNIFileListExportDesc{
@@ -511,6 +521,26 @@ var gniExportDescs = []exporter.GNIExportDesc{
 				"//rust/icc:ffi_cpp",
 			},
 		},
+		{Var: "skia_rust_exif_ffi_rs_srcs",
+			Rules: []string{
+				"//rust/exif:rs_srcs",
+			},
+		},
+		{Var: "skia_rust_exif_ffi_cxx_bridge_srcs",
+			Rules: []string{
+				"//rust/exif:cxx_bridge_srcs",
+			},
+		},
+		{Var: "skia_rust_exif_ffi_cpp_hdrs",
+			Rules: []string{
+				"//rust/exif:ffi_hdrs",
+			},
+		},
+		{Var: "skia_rust_exif_ffi_cpp_srcs",
+			Rules: []string{
+				"//rust/exif:ffi_cpp",
+			},
+		},
 	}},
 	{GNI: "gn/sksl.gni", Vars: []exporter.GNIFileListExportDesc{
 		{Var: "skia_sksl_core_sources",
@@ -585,22 +615,22 @@ var gniExportDescs = []exporter.GNIExportDesc{
 			}}},
 	},
 	{GNI: "gn/sksl_tests.gni", Vars: []exporter.GNIFileListExportDesc{
-		// This order was the order the original file was in. It could be alphabetized if we like.
+		{Var: "sksl_blend_tests", Rules: []string{"//resources/sksl:sksl_blend_tests"}},
+		{Var: "sksl_compute_tests", Rules: []string{"//resources/sksl:sksl_compute_tests"}},
 		{Var: "sksl_error_tests", Rules: []string{"//resources/sksl:sksl_error_tests"}},
+		{Var: "sksl_folding_tests", Rules: []string{"//resources/sksl:sksl_folding_tests"}},
 		{Var: "sksl_glsl_tests", Rules: []string{"//resources/sksl:sksl_glsl_tests"}},
-		{Var: "sksl_mesh_tests", Rules: []string{"//resources/sksl:sksl_mesh_tests"}},
+		{Var: "sksl_inliner_tests", Rules: []string{"//resources/sksl:sksl_inliner_tests"}},
 		{Var: "sksl_mesh_error_tests", Rules: []string{"//resources/sksl:sksl_mesh_error_tests"}},
+		{Var: "sksl_mesh_tests", Rules: []string{"//resources/sksl:sksl_mesh_tests"}},
 		{Var: "sksl_metal_tests", Rules: []string{"//resources/sksl:sksl_metal_tests"}},
+		{Var: "sksl_rte_error_tests", Rules: []string{"//resources/sksl:sksl_rte_error_tests"}},
+		{Var: "sksl_rte_tests", Rules: []string{"//resources/sksl:sksl_rte_tests"}},
+		{Var: "sksl_settings_tests", Rules: []string{"//resources/sksl:sksl_settings_tests"}},
+		{Var: "sksl_shared_tests", Rules: []string{"//resources/sksl:sksl_shared_tests"}},
+		{Var: "sksl_skrp_tests", Rules: []string{"//resources/sksl:sksl_skrp_tests"}},
 		{Var: "sksl_spirv_tests", Rules: []string{"//resources/sksl:sksl_spirv_tests"}},
 		{Var: "sksl_wgsl_tests", Rules: []string{"//resources/sksl:sksl_wgsl_tests"}},
-		{Var: "sksl_shared_tests", Rules: []string{"//resources/sksl:sksl_shared_tests"}},
-		{Var: "sksl_compute_tests", Rules: []string{"//resources/sksl:sksl_compute_tests"}},
-		{Var: "sksl_folding_tests", Rules: []string{"//resources/sksl:sksl_folding_tests"}},
-		{Var: "sksl_inliner_tests", Rules: []string{"//resources/sksl:sksl_inliner_tests"}},
-		{Var: "sksl_blend_tests", Rules: []string{"//resources/sksl:sksl_blend_tests"}},
-		{Var: "sksl_settings_tests", Rules: []string{"//resources/sksl:sksl_settings_tests"}},
-		{Var: "sksl_rte_tests", Rules: []string{"//resources/sksl:sksl_rte_tests"}},
-		{Var: "sksl_rte_error_tests", Rules: []string{"//resources/sksl:sksl_rte_error_tests"}},
 	}},
 	{GNI: "gn/utils.gni", Vars: []exporter.GNIFileListExportDesc{
 		{Var: "skia_utils_public",

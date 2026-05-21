@@ -60,12 +60,9 @@ public:
 
     const SkImageInfo& imageInfo() const  { return fImageInfo;             }
     const SkColorInfo& colorInfo() const  { return fImageInfo.colorInfo(); }
-    TextureProxy* target()                { return fTarget.get();          }
-    const TextureProxy* target()    const { return fTarget.get();          }
-    sk_sp<TextureProxy> refTarget() const { return fTarget;                }
 
-    // May be null if the target is not texturable.
-    const TextureProxyView& readSurfaceView() const { return fReadView; }
+    const TextureProxyView& target() const { return fTarget; }
+    bool isTexturable() const { return fIsTexturable; }
 
     const SkSurfaceProps& surfaceProps() const { return fSurfaceProps; }
 
@@ -78,7 +75,7 @@ public:
     void clear(const SkColor4f& clearColor);
     void discard();
 
-    std::pair<DrawParams*, Layer*> recordDraw(
+    std::pair<DrawParams*, Insertion> recordDraw(
             const Renderer* renderer,
             const Transform& localToDevice,
             const Geometry& geometry,
@@ -88,10 +85,10 @@ public:
             SkEnumBitMask<DstUsage> dstUsage,
             PipelineDataGatherer* gatherer,
             const StrokeStyle* stroke,
-            Layer* latestDepthLayer);
+            const Insertion& latestInsertion);
 
     bool recordUpload(Recorder* recorder,
-                      sk_sp<TextureProxy> targetProxy,
+                      const TextureProxyView& dstView,
                       const SkColorInfo& srcColorInfo,
                       const SkColorInfo& dstColorInfo,
                       const UploadSource& source,
@@ -124,10 +121,12 @@ private:
 
     void resetForClearOrDiscard();
 
-    sk_sp<TextureProxy> fTarget;
-    TextureProxyView fReadView;
+    // May not be texturable, but preserves the read swizzle if it were to be read back to CPU or
+    // copied to a texturable proxy.
+    TextureProxyView fTarget;
     SkImageInfo fImageInfo;
     const SkSurfaceProps fSurfaceProps;
+    bool fIsTexturable; // Cache at creation so we don't require constant Caps access
 
     // Does *not* reflect whether a dst read is needed by the DrawLists - simply specifies the
     // strategies to use should any encountered paint require it.
