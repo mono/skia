@@ -198,6 +198,7 @@ DEF_STRUCT_MAP(GrD3DTextureResourceInfo, gr_d3d_textureresourceinfo_t, GrD3DText
 #endif // SK_GANESH
 
 #if defined(SK_GRAPHITE)
+#include "include/c/sk_graphite.h"
 #include "include/gpu/graphite/BackendTexture.h"
 #include "include/gpu/graphite/Context.h"
 #include "include/gpu/graphite/Recorder.h"
