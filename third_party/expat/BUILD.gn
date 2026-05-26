@@ -44,6 +44,29 @@ if (skia_use_system_expat) {
       "$_src/expat/lib/xmltok_impl.h",
     ]
 
+    if (is_win) {
+      sources += [
+        "$_src/expat/lib/random_rand_s.c",
+        "$_src/expat/lib/random_rand_s.h",
+      ]
+    } else if (is_mac || is_ios) {
+      sources += [
+        "$_src/expat/lib/random_arc4random_buf.c",
+        "$_src/expat/lib/random_arc4random_buf.h",
+      ]
+    } else {
+      sources += [
+        "$_src/expat/lib/random_dev_urandom.c",
+        "$_src/expat/lib/random_dev_urandom.h",
+      ]
+      if (is_android || (is_linux && !is_tizen)) {
+        sources += [
+          "$_src/expat/lib/random_getrandom.c",
+          "$_src/expat/lib/random_getrandom.h",
+        ]
+      }
+    }
+
     unused_sources = [
       # Not independently compiled, but conditionally included in xmltok.c
       "$_src/expat/lib/xmltok_impl.c",
