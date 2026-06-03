@@ -159,6 +159,7 @@ static_assert ((int)SkColorType::kA16_unorm_SkColorType            == (int)A16_U
 static_assert ((int)SkColorType::kR16_unorm_SkColorType            == (int)R16_UNORM_SK_COLORTYPE,            ASSERT_MSG(SkColorType, sk_colortype_t));
 static_assert ((int)SkColorType::kR16G16_unorm_SkColorType         == (int)R16G16_UNORM_SK_COLORTYPE,         ASSERT_MSG(SkColorType, sk_colortype_t));
 static_assert ((int)SkColorType::kA16_float_SkColorType            == (int)A16_FLOAT_SK_COLORTYPE,            ASSERT_MSG(SkColorType, sk_colortype_t));
+static_assert ((int)SkColorType::kR16_float_SkColorType            == (int)R16_FLOAT_SK_COLORTYPE,            ASSERT_MSG(SkColorType, sk_colortype_t));
 static_assert ((int)SkColorType::kR16G16_float_SkColorType         == (int)R16G16_FLOAT_SK_COLORTYPE,         ASSERT_MSG(SkColorType, sk_colortype_t));
 static_assert ((int)SkColorType::kR16G16B16A16_unorm_SkColorType   == (int)R16G16B16A16_UNORM_SK_COLORTYPE,   ASSERT_MSG(SkColorType, sk_colortype_t));
 static_assert ((int)SkColorType::kSRGBA_8888_SkColorType           == (int)SRGBA_8888_SK_COLORTYPE,           ASSERT_MSG(SkColorType, sk_colortype_t));

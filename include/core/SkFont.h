@@ -357,6 +357,17 @@ public:
     SkScalar measureText(const void* text, size_t byteLength, SkTextEncoding encoding,
                          SkRect* bounds, const SkPaint* paint) const;
 
+    // [mono/skia fork patch] breakText was removed from the public API in m150
+    // but its implementation still exists in SkFont.cpp. Keeping the declaration
+    // here for ABI compatibility with the SkiaSharp C API.
+    size_t breakText(const void* text, size_t byteLength, SkTextEncoding encoding,
+                     SkScalar maxWidth, SkScalar* measuredWidth = nullptr) const {
+        return this->breakText(text, byteLength, encoding, maxWidth, measuredWidth, nullptr);
+    }
+
+    size_t breakText(const void* text, size_t byteLength, SkTextEncoding encoding,
+                     SkScalar maxWidth, SkScalar* measuredWidth, const SkPaint* paint) const;
+
     /** Returns an SkStrikeRef for this font's current settings.
 
         An SkStrikeRef caches the resolved strike (font metrics engine), avoiding the overhead
