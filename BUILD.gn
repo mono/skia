@@ -1906,6 +1906,25 @@ skia_source_set("core") {
     ":typeface_fontations",
     ":typeface_freetype",
   ]
+
+  # mono/skia: SkiaSharp's C API shims (src/c/sk_typeface.cpp et al.) are
+  # compiled into :core via gn/core.gni. The fontmgr public_defines (e.g.
+  # SK_FONTMGR_FONTCONFIG_AVAILABLE) must be visible when sk_typeface.cpp is
+  # compiled so that sk_fontmgr_create_default() compiles the correct branch.
+  # The :skia component also lists these as public_deps, but :core is compiled
+  # independently and those defines do not propagate down to it. Keep the
+  # fontmgr optional targets as public_deps of :core so their defines reach
+  # files compiled in this target.
+  public_deps = [
+    ":fontmgr_FontConfigInterface",
+    ":fontmgr_android",
+    ":fontmgr_android_ndk",
+    ":fontmgr_custom_directory",
+    ":fontmgr_custom_embedded",
+    ":fontmgr_custom_empty",
+    ":fontmgr_fontations_empty",
+    ":fontmgr_fontconfig",
+  ]
 }
 
 skia_component("skia") {
