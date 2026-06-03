@@ -16,10 +16,10 @@
 #include "include/gpu/graphite/Image.h"
 #include "include/gpu/graphite/Recorder.h"
 #include "include/gpu/graphite/Surface.h"
+#include "include/private/base/SkLog.h"
 #include "src/core/SkYUVAInfoLocation.h"
 #include "src/gpu/graphite/Caps.h"
 #include "src/gpu/graphite/Image_Graphite.h"
-#include "src/gpu/graphite/Log.h"
 #include "src/gpu/graphite/RecorderPriv.h"
 #include "src/gpu/graphite/ResourceProvider.h"
 #include "src/gpu/graphite/Texture.h"
@@ -145,8 +145,7 @@ sk_sp<Image_YUVA> Image_YUVA::Make(const Caps* caps,
             // only colortype swizzles (e.g. 000r), which can show up when wrapping single-channel
             // planar data (the public APIs accept A8 or R8 for instance).
             if (planes[plane].swizzle() == Swizzle("000r") ||
-                TextureInfoPriv::ViewFormat(planes[plane].proxy()->textureInfo())
-                        == TextureFormat::kA8) {
+                planes[plane].proxy()->format() == TextureFormat::kA8) {
                 // Pull the alpha channel into R, this is equivalent to having concatenated
                 // Swizzle("aaaa") with the plane's read swizzle.
                 channel = SkColorChannel::kA;
@@ -159,7 +158,7 @@ sk_sp<Image_YUVA> Image_YUVA::Make(const Caps* caps,
             // The alpha channel is allowed to be not provided, set it to an empty view
             channelProxies[i] = {};
         } else {
-            SKGPU_LOG_W("YUVA channel %d does not have a valid location", i);
+            SKIA_LOG_W("YUVA channel %d does not have a valid location", i);
             return nullptr;
         }
     }

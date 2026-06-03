@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 Google Inc.
+ * Copyright 2019 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -250,7 +250,7 @@ sk_sp<sksg::RenderNode> AttachMask(const skjson::ArrayValue* jmask,
     sk_sp<sksg::RenderNode> maskNode;
     if (mask_stack.size() == 1) {
         // no group needed for single mask
-        const auto rec = mask_stack.front();
+        const auto& rec = mask_stack.front();
         maskNode = rec.mask_adapter->makeMask(std::move(rec.mask_path));
     } else {
         std::vector<sk_sp<sksg::RenderNode>> masks;

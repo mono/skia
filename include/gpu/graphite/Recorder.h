@@ -17,7 +17,6 @@
 #include "include/private/base/SingleOwner.h"
 #include "include/private/base/SkAPI.h"
 #include "include/private/base/SkTArray.h"
-#include "include/private/base/SkTDArray.h"
 
 #include <chrono>
 #include <cstddef>
@@ -210,9 +209,12 @@ public:
     /**
      * Purge GPU resources on the Recorder that haven't been used in the past 'msNotUsed'
      * milliseconds or are otherwise marked for deletion, regardless of whether the context is under
-     * budget.
+     * budget. Optionally provide a `microsMaxPurgingDur` after which Skia should stop purging
+     * resources.
      */
-    void performDeferredCleanup(std::chrono::milliseconds msNotUsed);
+    void performDeferredCleanup(
+            std::chrono::milliseconds msNotUsed,
+            std::optional<std::chrono::microseconds> microsMaxPurgingDur = std::nullopt);
 
     /**
      * Returns the number of bytes of the Recorder's gpu memory cache budget that are currently in
@@ -281,7 +283,7 @@ private:
     void deregisterDevice(const Device*);
 
     SkCanvas* makeCaptureCanvas(SkCanvas*) override;
-    void createCaptureBreakpoint(SkSurface*) override;
+    SkContentID createCaptureBreakpoint(SkSurface*) override;
 
     sk_sp<SharedContext> fSharedContext;
     ResourceProvider* fResourceProvider; // May point to the Context's resource provider

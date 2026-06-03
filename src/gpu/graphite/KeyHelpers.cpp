@@ -15,6 +15,7 @@
 #include "include/core/SkScalar.h"
 #include "include/effects/SkRuntimeEffect.h"
 #include "include/gpu/graphite/Surface.h"
+#include "include/private/base/SkLog.h"
 #include "src/base/SkHalf.h"
 #include "src/core/SkBlendModeBlender.h"
 #include "src/core/SkBlenderBase.h"
@@ -42,7 +43,6 @@
 #include "src/gpu/graphite/Image_YUVA_Graphite.h"
 #include "src/gpu/graphite/KeyContext.h"
 #include "src/gpu/graphite/KeyHelpers.h"
-#include "src/gpu/graphite/Log.h"
 #include "src/gpu/graphite/PaintParams.h"
 #include "src/gpu/graphite/PaintParamsKey.h"
 #include "src/gpu/graphite/PipelineData.h"
@@ -289,6 +289,9 @@ void add_conical_gradient_uniform_data(const KeyContext& keyContext,
 
 // Writes the color and offset data directly in the gatherer gradient buffer and returns the
 // offset the data begins at in the buffer.
+//
+// Returns a negative offset to signal failure, in which case the paint key must be poisoned
+// to drop the draw.
 static int write_color_and_offset_bufdata(int numStops,
                                            const SkPMColor4f* colors,
                                            const float* offsets,
@@ -296,6 +299,7 @@ static int write_color_and_offset_bufdata(int numStops,
                                            FloatStorageManager* floatStorageManager) {
     auto [dstData, bufferOffset] = floatStorageManager->allocateGradientData(numStops, shader);
     if (dstData) {
+        SkASSERT(bufferOffset >= 0);
         // Data doesn't already exist so we need to write it.
         // Writes all offset data, then color data. This way when binary searching through the
         // offsets, there is better cache locality.
@@ -388,16 +392,24 @@ GradientShaderBlocks::GradientData::GradientData(SkShaderBase::GradientType type
 void GradientShaderBlocks::AddBlock(const KeyContext& keyContext, const GradientData& gradData) {
     int bufferOffset = 0;
     if (gradData.fNumStops > GradientData::kNumInternalStorageStops && keyContext.recorder()) {
+        bool hasStorage;
         if (gradData.fUseStorageBuffer) {
             bufferOffset = write_color_and_offset_bufdata(gradData.fNumStops,
                                                           gradData.fSrcColors,
                                                           gradData.fSrcOffsets,
                                                           gradData.fSrcShader,
                                                           keyContext.floatStorageManager());
+            hasStorage = bufferOffset >= 0;
         } else {
-            SkASSERT(gradData.fColorsAndOffsetsProxy);
             keyContext.pipelineDataGatherer()->add(gradData.fColorsAndOffsetsProxy,
                           {SkFilterMode::kNearest, SkTileMode::kClamp});
+            hasStorage = SkToBool(gradData.fColorsAndOffsetsProxy);
+        }
+
+        if (!hasStorage) {
+            keyContext.paintParamsKeyBuilder()->addErrorBlock();
+            SKIA_LOG_W("Couldn't upload large gradient color stop data");
+            return;
         }
     }
 
@@ -1031,10 +1043,10 @@ void add_color_space_uniforms(const KeyContext& keyContext,
     const bool alphaSwizzleR = readSwizzle[3] == 'r';
     const bool alphaSwizzle1 = readSwizzle[3] == '1';
 
-    // It doesn't make sense to unpremul/premul in opaque cases, but we might get a request to
-    // anyways, which we can just ignore.
-    const bool unpremul = alphaSwizzle1 ? false : steps.fFlags.unpremul;
-    const bool premul = alphaSwizzle1 ? false : steps.fFlags.premul;
+    // It doesn't make sense to unpremul/premul in opaque or alpha-only cases, but we might get a
+    // request to anyways, which we can just ignore.
+    const bool unpremul = alphaSwizzle1 || alphaSwizzleR ? false : steps.fFlags.unpremul;
+    const bool premul   = alphaSwizzle1 || alphaSwizzleR ? false : steps.fFlags.premul;
 
     const float srcW = unpremul ? -1.f :
                        (alphaSwizzleR || alphaSwizzle1) ? 1.f :
@@ -1634,7 +1646,7 @@ static void add_to_key(const KeyContext& keyContext, const SkTableColorFilter* f
                                                                 filter->bitmap(),
                                                                 "TableColorFilterTexture");
     if (!proxy) {
-        SKGPU_LOG_W("Couldn't create TableColorFilter's table");
+        SKIA_LOG_W("Couldn't create TableColorFilter's table");
 
         // Return the input color as-is.
         keyContext.paintParamsKeyBuilder()->addBlock(BuiltInCodeSnippetID::kPriorOutput);
@@ -1964,7 +1976,7 @@ static void add_image_to_key(const KeyContext& keyContext,
                                                           image,
                                                           sampling);
     if (!imageToDraw) {
-        SKGPU_LOG_W("Couldn't convert SkImage to a Graphite-backed representation");
+        SKIA_LOG_W("Couldn't convert SkImage to a Graphite-backed representation");
         keyContext.paintParamsKeyBuilder()->addErrorBlock();
         return;
     }
@@ -1982,6 +1994,37 @@ static void add_image_to_key(const KeyContext& keyContext,
     SkASSERT(keyContext.drawContext());
     static_cast<Image_Base*>(imageToDraw.get())->notifyInUse(keyContext.recorder(),
                                                              keyContext.drawContext());
+
+    // Here we detect pixel aligned blit-like image draws. Some devices have low precision filtering
+    // and will produce degraded (blurry) images unexpectedly for sequential exact pixel blits when
+    // not using nearest filtering. This is common for canvas scrolling implementations. Forcing
+    // nearest filtering when possible can also be a minor perf/power optimization depending on the
+    // hardware.
+    bool samplingHasNoEffect = false;
+    // Cubic sampling is will not filter the same as nearest even when pixel aligned.
+    if (!(keyContext.flags() & KeyGenFlags::kDisableSamplingOptimization || newSampling.useCubic)) {
+        SkMatrix totalM = keyContext.local2Dev().asM33();
+        if (keyContext.localMatrix()) {
+            totalM.preConcat(*keyContext.localMatrix());
+        }
+        totalM.normalizePerspective();
+        // The matrix should be translation with only pixel aligned 2d translation.
+        if (totalM.isTranslate() && SkScalarIsInt(totalM.getTranslateX()) &&
+            SkScalarIsInt(totalM.getTranslateY())) {
+            samplingHasNoEffect = true;
+            newSampling = SkFilterMode::kNearest;
+        }
+
+        if (samplingHasNoEffect && !keyContext.clipDrawBounds().isEmpty()) {
+            SkRect localDrawBounds = keyContext.clipDrawBounds();
+            localDrawBounds.offset(-totalM.getTranslateX(), -totalM.getTranslateY());
+            if (subset.contains(localDrawBounds)) {
+                // The draw is strictly within the subset, so we don't need to clamp.
+                subset = SkRect::Make(imageToDraw->dimensions());
+            }
+        }
+    }
+
     if (as_IB(imageToDraw)->isYUVA()) {
         return add_yuv_image_to_key(keyContext,
                                     imageToDraw.get(),
@@ -2001,25 +2044,6 @@ static void add_image_to_key(const KeyContext& keyContext,
                                         view.proxy()->dimensions(),
                                         subset);
 
-    // Here we detect pixel aligned blit-like image draws. Some devices have low precision filtering
-    // and will produce degraded (blurry) images unexpectedly for sequential exact pixel blits when
-    // not using nearest filtering. This is common for canvas scrolling implementations. Forcing
-    // nearest filtering when possible can also be a minor perf/power optimization depending on the
-    // hardware.
-    bool samplingHasNoEffect = false;
-    // Cubic sampling is will not filter the same as nearest even when pixel aligned.
-    if (!(keyContext.flags() & KeyGenFlags::kDisableSamplingOptimization || newSampling.useCubic)) {
-        SkMatrix totalM = keyContext.local2Dev().asM33();
-        if (keyContext.localMatrix()) {
-            totalM.preConcat(*keyContext.localMatrix());
-        }
-        totalM.normalizePerspective();
-        // The matrix should be translation with only pixel aligned 2d translation.
-        samplingHasNoEffect = totalM.isTranslate() && SkScalarIsInt(totalM.getTranslateX()) &&
-                              SkScalarIsInt(totalM.getTranslateY());
-    }
-
-    imgData.fSampling = samplingHasNoEffect ? SkFilterMode::kNearest : newSampling;
     imgData.fTextureProxy = view.refProxy();
     skgpu::Swizzle readSwizzle = view.swizzle();
     ColorSpaceTransformBlock::ColorSpaceTransformData colorXformData(readSwizzle);
@@ -2163,7 +2187,7 @@ static void add_to_key(const KeyContext& keyContext, const SkPerlinNoiseShader* 
                                             "PerlinNoiseNoiseTable");
 
     if (!perm || !noise) {
-        SKGPU_LOG_W("Couldn't create tables for PerlinNoiseShader");
+        SKIA_LOG_W("Couldn't create tables for PerlinNoiseShader");
         keyContext.paintParamsKeyBuilder()->addErrorBlock();
         return;
     }
@@ -2202,7 +2226,7 @@ static void add_to_key(const KeyContext& keyContext,
                                                        caps->maxTextureSize(),
                                                        props);
     if (!info.success) {
-        SKGPU_LOG_W("Couldn't access PictureShaders' Image info");
+        SKIA_LOG_W("Couldn't access PictureShaders' Image info");
         keyContext.paintParamsKeyBuilder()->addErrorBlock();
         return;
     }
@@ -2222,7 +2246,7 @@ static void add_to_key(const KeyContext& keyContext,
                                            SkBackingFit::kExact,
                                            &info.props);
     if (!surface) {
-        SKGPU_LOG_W("Could not create surface to render PictureShader");
+        SKIA_LOG_W("Could not create surface to render PictureShader");
         keyContext.paintParamsKeyBuilder()->addErrorBlock();
         return;
     }
@@ -2232,7 +2256,7 @@ static void add_to_key(const KeyContext& keyContext,
     // into 'surface' would be a child of the current device. While we push all tasks to the root
     // list this works out okay, but will need to be addressed before we move off that system.
     if (!img) {
-        SKGPU_LOG_W("Couldn't create SkImage for PictureShader");
+        SKIA_LOG_W("Couldn't create SkImage for PictureShader");
         keyContext.paintParamsKeyBuilder()->addErrorBlock();
         return;
     }
@@ -2241,7 +2265,7 @@ static void add_to_key(const KeyContext& keyContext,
     sk_sp<SkShader> imgShader = img->makeShader(shader->tileModeX(), shader->tileModeY(),
                                                 SkSamplingOptions(shader->filter()), &shaderLM);
     if (!imgShader) {
-        SKGPU_LOG_W("Couldn't create SkImageShader for PictureShader");
+        SKIA_LOG_W("Couldn't create SkImageShader for PictureShader");
         keyContext.paintParamsKeyBuilder()->addErrorBlock();
         return;
     }
@@ -2271,13 +2295,13 @@ static void add_to_key(const KeyContext& keyContext,
 
 static void add_to_key(const KeyContext& keyContext,
                        const SkTransformShader* shader) {
-    SKGPU_LOG_W("Raster-only SkShader (SkTransformShader) encountered");
+    SKIA_LOG_W("Raster-only SkShader (SkTransformShader) encountered");
     keyContext.paintParamsKeyBuilder()->addErrorBlock();
 }
 
 static void add_to_key(const KeyContext& keyContext,
                        const SkTriColorShader* shader) {
-    SKGPU_LOG_W("Raster-only SkShader (SkTriColorShader) encountered");
+    SKIA_LOG_W("Raster-only SkShader (SkTriColorShader) encountered");
     keyContext.paintParamsKeyBuilder()->addErrorBlock();
 }
 
@@ -2333,7 +2357,7 @@ static SkBitmap create_color_and_offset_bitmap(int numStops,
 
         SkHalf halfE = SkFloatToHalf(exponent);
         if ((int)SkHalfToFloat(halfE) != exponent) {
-            SKGPU_LOG_W("Encoding gradient to f16 failed");
+            SKIA_LOG_W("Encoding gradient to f16 failed");
             return {};
         }
 
@@ -2423,7 +2447,7 @@ static void add_gradient_to_key(const KeyContext& keyContext,
             SkBitmap colorsAndOffsetsBitmap =
                     create_color_and_offset_bitmap(colorCount, colors, positions);
             if (colorsAndOffsetsBitmap.empty()) {
-                SKGPU_LOG_W("Couldn't create GradientShader's color and offset bitmap");
+                SKIA_LOG_W("Couldn't create GradientShader's color and offset bitmap");
                 keyContext.paintParamsKeyBuilder()->addErrorBlock();
                 return;
             }
@@ -2433,7 +2457,7 @@ static void add_gradient_to_key(const KeyContext& keyContext,
         proxy = RecorderPriv::CreateCachedProxy(keyContext.recorder(), shader->cachedBitmap(),
                                                 "GradientTexture");
         if (!proxy) {
-            SKGPU_LOG_W("Couldn't create GradientShader's color and offset bitmap proxy");
+            SKIA_LOG_W("Couldn't create GradientShader's color and offset bitmap proxy");
             keyContext.paintParamsKeyBuilder()->addErrorBlock();
             return;
         }
@@ -2607,7 +2631,7 @@ void AddDitherBlock(const KeyContext& keyContext, SkColorType ct) {
     sk_sp<TextureProxy> proxy = RecorderPriv::CreateCachedProxy(keyContext.recorder(), gLUT,
                                                                 "DitherLUT");
     if (keyContext.recorder() && !proxy) {
-        SKGPU_LOG_W("Couldn't create dither shader's LUT");
+        SKIA_LOG_W("Couldn't create dither shader's LUT");
         keyContext.paintParamsKeyBuilder()->addBlock(BuiltInCodeSnippetID::kPriorOutput);
         return;
     }

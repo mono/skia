@@ -17,6 +17,8 @@
 #include <initializer_list>
 #include <utility>
 
+// We'd prefer not to use these types anymore. SkTDArray can be replaced skia_private::TArray
+
 class SK_SPI SkTDStorage {
 public:
     explicit SkTDStorage(int sizeOfT);
@@ -76,7 +78,17 @@ public:
     }
 
 private:
-    size_t bytes(int n) const { return SkToSizeT(n * fSizeOfT); }
+    // Fast path for pointer arithmetic. Assumes 'n' has already been bounds-checked.
+    size_t bytes(int n) const { return SkToSizeT(n) * SkToSizeT(fSizeOfT); }
+
+    // Safe path for memory allocations; protects against 32-bit overflow.
+    size_t safe_bytes(int n) const {
+        size_t size = SkToSizeT(n);
+        size_t sizeOfT = SkToSizeT(fSizeOfT);
+        SkASSERT_RELEASE(size <= SIZE_MAX / sizeOfT);
+        return size * sizeOfT;
+    }
+
     void* address(int n) { return fStorage + this->bytes(n); }
 
     // Adds delta to fSize. Crash if outside [0, INT_MAX]

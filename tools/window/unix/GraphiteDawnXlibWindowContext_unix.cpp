@@ -6,11 +6,11 @@
  */
 // Important to put this first because webgpu_cpp.h and X.h don't get along.
 // Include these first, before X11 defines None, Success, Status etc.
-#include "dawn/native/DawnNative.h"  // NO_G3_REWRITE
-#include "webgpu/webgpu_cpp.h"       // NO_G3_REWRITE
+#include "dawn/native/DawnNative.h"
+#include "include/private/base/SkAssert.h"
+#include "webgpu/webgpu_cpp.h"
 
 #include "tools/window/unix/GraphiteDawnXlibWindowContext_unix.h"
-
 #include "tools/window/GraphiteDawnWindowContext.h"
 #include "tools/window/unix/XlibWindowInfo.h"
 
@@ -82,7 +82,7 @@ bool GraphiteDawnXlibWindowContext_unix::onInitializeContext() {
 
     auto device = this->createDevice(fBackendType);
     if (!device) {
-        SkASSERT(device);
+        SK_ABORT("Graphite Dawn Xlib Window device %d not created", (int)fBackendType);
         return false;
     }
 

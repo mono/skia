@@ -54,6 +54,7 @@ static constexpr char g_type_message[] = "How to interpret --bytes, one of:\n"
                                          "color_deserialize\n"
                                          "colrv1\n"
                                          "filter_fuzz (equivalent to Chrome's filter_fuzz_stub)\n"
+                                         "hdr_agtm\n"
                                          "image_decode\n"
                                          "image_decode_incremental\n"
                                          "image_mode\n"
@@ -63,7 +64,7 @@ static constexpr char g_type_message[] = "How to interpret --bytes, one of:\n"
                                          "region_deserialize\n"
                                          "region_set_path\n"
                                          "skdescriptor_deserialize\n"
-                                         "skmeshspecialization\n"
+                                         "skmeshspecification\n"
 #if defined(SK_ENABLE_SKOTTIE)
                                          "skottie_json\n"
 #endif
@@ -91,6 +92,7 @@ static void fuzz_api(const sk_sp<SkData>&, const SkString& name);
 static void fuzz_color_deserialize(const sk_sp<SkData>&);
 static void fuzz_colrv1(const sk_sp<SkData>&);
 static void fuzz_filter_fuzz(const sk_sp<SkData>&);
+static void fuzz_hdr_agtm(const sk_sp<SkData>& data);
 static void fuzz_image_decode(const sk_sp<SkData>&);
 static void fuzz_image_decode_incremental(const sk_sp<SkData>&);
 static void fuzz_img(const sk_sp<SkData>&, uint8_t, uint8_t);
@@ -129,7 +131,6 @@ int main(int argc, char** argv) {
             "--help lists the valid types. If type is not specified,\n"
             "fuzz will make a guess based on the name of the file.\n");
     CommandLineFlags::Parse(argc, argv);
-    ToolUtils::UsePortableFontMgr();
 
     SkString path = SkString(FLAGS_bytes.isEmpty() ? argv[0] : FLAGS_bytes[0]);
     SkString type = SkString(FLAGS_type.isEmpty() ? "" : FLAGS_type[0]);
@@ -199,6 +200,10 @@ static int fuzz_file(const SkString& path, SkString type) {
     }
     if (type.equals("filter_fuzz")) {
         fuzz_filter_fuzz(std::move(bytes));
+        return 0;
+    }
+    if (type.equals("hdr_agtm")) {
+        fuzz_hdr_agtm(std::move(bytes));
         return 0;
     }
     if (type.equals("image_decode")) {
@@ -313,6 +318,7 @@ static std::map<std::string, std::string> cf_api_map = {
     {"api_draw_functions", "DrawFunctions"},
     {"api_ddl_threading", "DDLThreadingGL"},
     {"api_gradients", "Gradients"},
+    {"api_grshape", "GrStyledShape"},
     {"api_image_filter", "ImageFilter"},
     {"api_mock_gpu_canvas", "MockGPUCanvas"},
     {"api_null_canvas", "NullCanvas"},
@@ -323,14 +329,17 @@ static std::map<std::string, std::string> cf_api_map = {
     {"api_precompile", "Precompile"},
 #endif
     {"api_raster_n32_canvas", "RasterN32Canvas"},
+    {"api_regionop", "RegionOp"},
     {"api_skparagraph", "SkParagraph"},
     {"api_svg_canvas", "SVGCanvas"},
-    {"cubic_quad_roots", "CubicQuadRoots"},
+    {"api_triangulation", "Triangulation"},
+    {"cubic_roots", "CubicRoots"},
     {"jpeg_encoder", "JPEGEncoder"},
     // TODO(https://crbug.com/459478411): Add OSS-ClusterFuzz coverage of Rust
     // PNG encoder.  (And also decoder?  See earlier discussion about these map
     // entries at https://review.skia.org/1091836/comment/db7930d5_d2e1f030/)
     {"png_encoder", "PNGEncoder"},
+    {"quad_roots", "QuadRoots"},
     {"skia_pathop_fuzzer", "LegacyChromiumPathop"},
     {"webp_encoder", "WEBPEncoder"}
 };
@@ -340,22 +349,28 @@ static std::map<std::string, std::string> cf_map = {
     {"android_codec", "android_codec"},
     {"animated_image_decode", "animated_image_decode"},
     {"colrv1", "colrv1"},
+    {"hdr_agtm", "hdr_agtm"},
     {"image_decode", "image_decode"},
     {"image_decode_incremental", "image_decode_incremental"},
     {"image_filter_deserialize", "filter_fuzz"},
     {"image_filter_deserialize_width", "filter_fuzz"},
+    {"parse_path", "parse_path"},
     {"path_deserialize", "path_deserialize"},
     {"region_deserialize", "region_deserialize"},
     {"region_set_path", "region_set_path"},
+    {"skcolorspace", "color_deserialize"},
     {"skdescriptor_deserialize", "skdescriptor_deserialize"},
     {"skjson", "json"},
     {"skmeshspecification", "skmeshspecification"},
     {"skp", "skp"},
+    {"skruntimeblender", "skruntimeblender"},
+    {"skruntimecolorfilter", "skruntimecolorfilter"},
     {"skruntimeeffect", "skruntimeeffect"},
     {"sksl2glsl", "sksl2glsl"},
     {"sksl2metal", "sksl2metal"},
     {"sksl2spirv", "sksl2spirv"},
     {"sksl2pipeline", "sksl2pipeline"},
+    {"sksl2wgsl", "sksl2wgsl"},
 #if defined(SK_ENABLE_SKOTTIE)
     {"skottie_json", "skottie_json"},
 #endif
@@ -815,6 +830,13 @@ void FuzzImageFilterDeserialize(const uint8_t *data, size_t size);
 static void fuzz_filter_fuzz(const sk_sp<SkData>& data) {
     FuzzImageFilterDeserialize(data->bytes(), data->size());
     SkDebugf("[terminated] filter_fuzz didn't crash!\n");
+}
+
+void FuzzHdrAgtm(const uint8_t* data, size_t size);
+
+static void fuzz_hdr_agtm(const sk_sp<SkData>& data) {
+    FuzzHdrAgtm(data->bytes(), data->size());
+    SkDebugf("[terminated] Done HdrAgtm!\n");
 }
 
 void FuzzSkMeshSpecification(const uint8_t *fuzzData, size_t fuzzSize);

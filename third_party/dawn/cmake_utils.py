@@ -149,7 +149,7 @@ def discover_dependencies(build_dir, targets):
     #     ../../../../../cipd/clang_win/lib/clang/18/include/x86gprintrin.h
     #     ../../../../../cipd/win_toolchain/VC/Tools/MSVC/14.39.33519/include/__msvc_bit_utils.hpp
     #     ../../../../../cipd/win_toolchain/VC/Tools/MSVC/14.39.33519/include/cctype
-    #     ../../../../../cipd/win_toolchain/win_sdk/Include/10.0.22621.0/ucrt/wchar.h
+    #     ../../../../../cipd/win_toolchain/Windows Kits/10/Include/10.0.22621.0/ucrt/wchar.h
     #     ../../../third_party/externals/dawn/src/tint/api/common/binding_point.h
     #     ../../../third_party/externals/dawn/src/tint/lang/core/constant/clone_context.h
     # If there's not a match, it's a simple message like:
@@ -406,7 +406,6 @@ def get_third_party_locations():
     "-DTINT_BUILD_BENCHMARKS=OFF",
     "-DTINT_BUILD_IR_BINARY=OFF",
     "-DTINT_BUILD_TESTS=OFF",
-    "-DDAWN_USE_X11=OFF",
 
     # Explicitly mark third_party deps as not here to make debugging easier
     "-DDAWN_EMDAWNWEBGPU_DIR=NOT_SYNCED_BY_SKIA",

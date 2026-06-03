@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 Google Inc.
+ * Copyright 2018 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -202,7 +202,9 @@ void GrDirectContext::releaseResourcesAndAbandonContext() {
     fResourceCache->releaseAll();
 
     // Must be after GrResourceCache::releaseAll().
-    fMappedBufferManager.reset();
+    // Must be called before fGpu->disconnect in case there are any outstanding, unsubmitted finish
+    // procs that callback into the fMappedBufferManager.
+    fMappedBufferManager->abandon();
 
     fGpu->disconnect(GrGpu::DisconnectType::kCleanup);
 #if !defined(SK_ENABLE_OPTIMIZE_SIZE)

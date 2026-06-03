@@ -1,4 +1,4 @@
-// Copyright 2019 Google LLC.
+// Copyright 2019 Google LLC
 #include "include/core/SkFontMetrics.h"
 #include "include/core/SkTextBlob.h"
 #include "include/private/base/SkFloatingPoint.h"
@@ -57,6 +57,7 @@ Run::Run(ParagraphImpl* owner,
     fOffsets[info.glyphCount] = {0, 0};
     fClusterIndexes[info.glyphCount] = this->leftToRight() ? info.utf8Range.end() : info.utf8Range.begin();
     fEllipsis = false;
+    fHyphen = false;
     fPlaceholderIndex = std::numeric_limits<size_t>::max();
 }
 
@@ -171,10 +172,6 @@ void Run::addSpacesAtTheEnd(SkScalar space, Cluster* cluster) {
 }
 
 SkScalar Run::addLetterSpacesEvenly(SkScalar space) {
-    if (this->isCursiveScript()) {
-        // Do not apply letter spacing for script languages
-        return 0.0;
-    }
     SkScalar shift = 0;
     for (size_t i = 0; i < this->size(); ++i) {
         fPositions[i].fX += shift;
@@ -186,10 +183,6 @@ SkScalar Run::addLetterSpacesEvenly(SkScalar space) {
 }
 
 SkScalar Run::addLetterSpacesEvenly(SkScalar space, Cluster* cluster) {
-    if (this->isCursiveScript()) {
-        // Do not apply letter spacing for script languages
-        return 0.0;
-    }
     // Offset all the glyphs in the cluster
     SkScalar shift = 0;
     for (size_t i = cluster->startPos(); i < cluster->endPos(); ++i) {
@@ -371,6 +364,17 @@ SkFont Cluster::font() const {
 bool Cluster::isSoftBreak() const {
     return fOwner->codeUnitHasProperty(fTextRange.end,
                                        SkUnicode::CodeUnitFlags::kSoftLineBreakBefore);
+}
+
+bool Cluster::isSoftHyphen() const {
+    auto text = fOwner->text();
+    const char* p = text.begin() + fTextRange.start;
+    const char* end = text.begin() + fTextRange.end;
+    if (p >= end) {
+        return false;
+    }
+    SkUnichar cp = SkUTF::NextUTF8(&p, end);
+    return cp == 0x00AD && p == end;
 }
 
 bool Cluster::isGraphemeBreak() const {

@@ -18,7 +18,7 @@
 
 namespace skgpu::graphite {
 
-std::pair<DrawParams*, Layer*> DrawList::recordDraw(
+std::pair<DrawParams*, Insertion> DrawList::recordDraw(
         const Renderer* renderer,
         const Transform& localToDevice,
         const Geometry& geometry,
@@ -29,7 +29,7 @@ std::pair<DrawParams*, Layer*> DrawList::recordDraw(
         BarrierType barrierBeforeDraws,
         PipelineDataGatherer* gatherer,
         const StrokeStyle* stroke,
-        const Layer* latestDepthLayer) {
+        const Insertion& latestInsertion) {
 
     SkASSERT(localToDevice.valid());
     SkASSERT(!geometry.isEmpty() && !clip.drawBounds().isEmptyNegativeOrNaN());
@@ -84,7 +84,7 @@ std::pair<DrawParams*, Layer*> DrawList::recordDraw(
     }
 #endif
 
-    return {nullptr, nullptr};
+    return {nullptr, {}};
 }
 
 std::unique_ptr<DrawPass> DrawList::snapDrawPass(Recorder* recorder,
@@ -221,7 +221,8 @@ std::unique_ptr<DrawPass> DrawList::snapDrawPass(Recorder* recorder,
         renderStep.writeVertices(&drawWriter, draw.drawParams(), uniformSsboIndex);
 
         if (bufferMgr->hasMappingFailed()) {
-            SKGPU_LOG_W("Failed to write necessary vertex/instance data for DrawPass, dropping!");
+            SKIA_LOG_W("Failed to write necessary vertex/instance data for DrawPass, dropping!");
+            this->reset(LoadOp::kLoad);
             return nullptr;
         }
 

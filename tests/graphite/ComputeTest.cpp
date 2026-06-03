@@ -21,6 +21,7 @@
 #include "src/gpu/graphite/RecorderPriv.h"
 #include "src/gpu/graphite/ResourceProvider.h"
 #include "src/gpu/graphite/TextureProxy.h"
+#include "src/gpu/graphite/TextureProxyView.h"
 #include "src/gpu/graphite/UniformManager.h"
 #include "src/gpu/graphite/compute/ComputeStep.h"
 #include "src/gpu/graphite/compute/DispatchGroup.h"
@@ -844,7 +845,10 @@ DEF_GRAPHITE_TEST_FOR_DAWN_AND_METAL_CONTEXTS(Compute_StorageTexture,
     bool peekPixelsSuccess = bitmap.peekPixels(&pixels);
     REPORTER_ASSERT(reporter, peekPixelsSuccess);
 
-    bool readPixelsSuccess = context->priv().readPixels(pixels, texture.get(), imgInfo, 0, 0);
+    bool readPixelsSuccess = context->priv().readPixels(pixels,
+                                                        TextureProxyView{texture},
+                                                        imgInfo,
+                                                        0, 0);
     REPORTER_ASSERT(reporter, readPixelsSuccess);
 
     for (uint32_t x = 0; x < kDim; ++x) {
@@ -946,7 +950,7 @@ DEF_GRAPHITE_TEST_FOR_DAWN_AND_METAL_CONTEXTS(Compute_StorageTextureReadAndWrite
     mipLevel.fPixels = srcPixels.addr();
     mipLevel.fRowBytes = srcPixels.rowBytes();
     UploadSource uploadSource = UploadSource::Make(context->priv().caps(),
-                                                   *srcProxy,
+                                                   TextureProxyView(srcProxy),
                                                    srcPixels.info().colorInfo(),
                                                    srcPixels.info().colorInfo(),
                                                    SKSPAN_INIT_ONE(mipLevel),
@@ -956,11 +960,7 @@ DEF_GRAPHITE_TEST_FOR_DAWN_AND_METAL_CONTEXTS(Compute_StorageTextureReadAndWrite
         return;
     }
     UploadInstance upload = UploadInstance::Make(recorder.get(),
-                                                 srcProxy,
-                                                 srcPixels.info().colorInfo(),
-                                                 srcPixels.info().colorInfo(),
                                                  uploadSource,
-                                                 SkIRect::MakeWH(kDim, kDim),
                                                  std::make_unique<ImageUploadContext>());
     if (!upload.isValid()) {
         ERRORF(reporter, "Could not create UploadInstance");
@@ -1011,7 +1011,10 @@ DEF_GRAPHITE_TEST_FOR_DAWN_AND_METAL_CONTEXTS(Compute_StorageTextureReadAndWrite
     bool peekPixelsSuccess = bitmap.peekPixels(&pixels);
     REPORTER_ASSERT(reporter, peekPixelsSuccess);
 
-    bool readPixelsSuccess = context->priv().readPixels(pixels, dst.get(), imgInfo, 0, 0);
+    bool readPixelsSuccess = context->priv().readPixels(pixels,
+                                                        TextureProxyView(dst),
+                                                        imgInfo,
+                                                        0, 0);
     REPORTER_ASSERT(reporter, readPixelsSuccess);
 
     for (uint32_t x = 0; x < kDim; ++x) {
@@ -1146,7 +1149,10 @@ DEF_GRAPHITE_TEST_FOR_DAWN_AND_METAL_CONTEXTS(Compute_ReadOnlyStorageBuffer,
     bool peekPixelsSuccess = bitmap.peekPixels(&pixels);
     REPORTER_ASSERT(reporter, peekPixelsSuccess);
 
-    bool readPixelsSuccess = context->priv().readPixels(pixels, dst.get(), imgInfo, 0, 0);
+    bool readPixelsSuccess = context->priv().readPixels(pixels,
+                                                        TextureProxyView(dst),
+                                                        imgInfo,
+                                                        0, 0);
     REPORTER_ASSERT(reporter, readPixelsSuccess);
 
     for (uint32_t x = 0; x < kDim; ++x) {
@@ -1296,7 +1302,10 @@ DEF_GRAPHITE_TEST_FOR_DAWN_AND_METAL_CONTEXTS(Compute_StorageTextureMultipleComp
     bool peekPixelsSuccess = bitmap.peekPixels(&pixels);
     REPORTER_ASSERT(reporter, peekPixelsSuccess);
 
-    bool readPixelsSuccess = context->priv().readPixels(pixels, dst.get(), imgInfo, 0, 0);
+    bool readPixelsSuccess = context->priv().readPixels(pixels,
+                                                        TextureProxyView(dst),
+                                                        imgInfo,
+                                                        0, 0);
     REPORTER_ASSERT(reporter, readPixelsSuccess);
 
     for (uint32_t x = 0; x < kDim; ++x) {
@@ -1463,7 +1472,10 @@ DEF_GRAPHITE_TEST_FOR_DAWN_AND_METAL_CONTEXTS(Compute_SampledTexture,
     bool peekPixelsSuccess = bitmap.peekPixels(&pixels);
     REPORTER_ASSERT(reporter, peekPixelsSuccess);
 
-    bool readPixelsSuccess = context->priv().readPixels(pixels, dst.get(), imgInfo, 0, 0);
+    bool readPixelsSuccess = context->priv().readPixels(pixels,
+                                                        TextureProxyView(dst),
+                                                        imgInfo,
+                                                        0, 0);
     REPORTER_ASSERT(reporter, readPixelsSuccess);
 
     for (uint32_t x = 0; x < kDstDim; ++x) {

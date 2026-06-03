@@ -1,5 +1,5 @@
 /*
- * Copyright 2021 Google Inc.
+ * Copyright 2021 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -10,11 +10,12 @@
 #include "include/gpu/graphite/Recording.h"
 #include "include/private/base/SkAlign.h"
 #include "include/private/base/SkAssert.h"
+#include "include/private/base/SkLog.h"
 #include "include/private/base/SkMath.h"
 #include "include/private/base/SkTo.h"
 #include "src/gpu/graphite/Caps.h"
+#include "src/gpu/graphite/ContextPriv.h"
 #include "src/gpu/graphite/GlobalCache.h"
-#include "src/gpu/graphite/Log.h"
 #include "src/gpu/graphite/QueueManager.h"
 #include "src/gpu/graphite/RecordingPriv.h"
 #include "src/gpu/graphite/Resource.h"
@@ -44,21 +45,26 @@ namespace {
 // are addressed, we can tighten this and decide on the transfer buffer sizing as well.
 [[maybe_unused]] static constexpr uint32_t kMaxStaticDataSize = 6 << 10;
 
-uint32_t validate_count_and_stride(size_t count, size_t stride, uint32_t alignment) {
+uint32_t validate_count_and_stride(size_t count, size_t stride, size_t headroom,
+                                   uint32_t alignment) {
     // size_t may just be uint32_t, so this ensures we have enough bits to
     // compute the required byte product.
-    uint64_t count64 = SkTo<uint64_t>(count);
-    uint64_t stride64 = SkTo<uint64_t>(stride);
-    uint64_t bytes64 = count64*stride64;
+    const uint64_t count64 = SkTo<uint64_t>(count);
+    const uint64_t stride64 = SkTo<uint64_t>(stride);
+    const uint64_t bytes64 = count64*stride64;
+    const uint64_t headroom64 = SkTo<uint64_t>(headroom);
+    const uint64_t bytesWithHeadroom64 = std::max(headroom64, bytes64);
     if (count64 > std::numeric_limits<uint32_t>::max() ||
         stride64 > std::numeric_limits<uint32_t>::max() ||
-        bytes64 > std::numeric_limits<uint32_t>::max() - (alignment + 1)) {
+        bytes64 > std::numeric_limits<uint32_t>::max() ||
+        headroom64 > std::numeric_limits<uint32_t>::max() ||
+        bytesWithHeadroom64 > std::numeric_limits<uint32_t>::max() - (alignment + 1)) {
         // Return 0 to skip further allocation attempts.
         return 0;
     }
     // Since count64 and stride64 fit into 32-bits, their product won't overflow a 64-bit multiply,
     // and we've confirmed product fits into 32-bits with head room to be aligned w/o overflow.
-    return SkTo<uint32_t>(bytes64);
+    return SkTo<uint32_t>(bytesWithHeadroom64);
 }
 
 // Calculates the LCM of `alignMaybePow2` and `alignProbNonPow2`. Neither value needs to be a
@@ -208,7 +214,8 @@ BufferSubAllocator& BufferSubAllocator::operator=(BufferSubAllocator&& other) {
     return *this;
 }
 
-void BufferSubAllocator::prepForStride(size_t stride, size_t align, size_t minCount) {
+void BufferSubAllocator::prepForStride(size_t stride, size_t align, size_t minCount,
+                                       size_t headroom) {
     SkASSERT(stride > 0 && align > 0); // Expect valid inputs
     if (fBuffer) {
         if (fStride == stride && (align == 1 || align == stride)) {
@@ -230,12 +237,15 @@ void BufferSubAllocator::prepForStride(size_t stride, size_t align, size_t minCo
             align32 = lcm_alignment(minAlignment, align32);
         }
 
+        const uint32_t stride32 = SkTo<uint32_t>(stride);
+        const uint32_t headroom32 = SkTo<uint32_t>(headroom);
+        const uint32_t reserveForHeadroom = headroom32 > stride32 ? headroom32 - stride32 : 0;
         // Ensures we won't overflow fOffset past buffer size once we align it
-        if (this->remainingBytes() >= align32 - 1) {
+        if (this->remainingBytes() >= align32 - 1 + reserveForHeadroom) {
             const uint32_t offset = SkAlignNonPow2(fOffset, align32);
-            SkASSERT(offset <= fBuffer->size());
-            fStride = SkTo<uint32_t>(stride);
-            fRemaining = (SkTo<uint32_t>(fBuffer->size()) - offset) / fStride;
+            SkASSERT(offset + reserveForHeadroom <= fBuffer->size());
+            fStride = stride32;
+            fRemaining = (SkTo<uint32_t>(fBuffer->size()) - offset - reserveForHeadroom) / fStride;
             if (fRemaining > 0 && fRemaining >= minCount) {
                 // Successful prep, so preserve the aligned offset
                 fOffset = offset;
@@ -253,6 +263,13 @@ void BufferSubAllocator::reset() {
     if (fBuffer) {
         SkASSERT(fOwner);
 
+        if (fOwner->fMappingFailed) {
+            fBuffer = nullptr;
+            fRemaining = 0;
+            fTransferBuffer = {};
+            return;
+        }
+
         DrawBufferManager::BufferState& state = fOwner->fCurrentBuffers[fStateIndex];
         if (fBuffer->shareable() == Shareable::kScratch) {
             // TODO: Merge this reuse of scratch resources with the ScratchResourceManager, but
@@ -261,11 +278,8 @@ void BufferSubAllocator::reset() {
             // The scratch buffer's availability for reuse (scoped to the owning DrawBufferManager)
             // was tied to this BufferSubAllocator, so when that is reset, we just remove the buffer
             // from the set of unavailable buffers.
-            SkASSERT((fOwner->fMappingFailed && state.fUnavailableScratchBuffers.empty()) ||
-                     state.fUnavailableScratchBuffers.contains(fBuffer.get()));
-            if (!fOwner->fMappingFailed) {
-                state.fUnavailableScratchBuffers.remove(fBuffer.get());
-            }
+            SkASSERT(state.fUnavailableScratchBuffers.contains(fBuffer.get()));
+            state.fUnavailableScratchBuffers.remove(fBuffer.get());
 
             SkASSERT(!fTransferBuffer); // Scratch buffers shouldn't be using transfer buffers
             fOwner->fUsedBuffers.emplace_back(std::move(fBuffer), BindBufferInfo{});
@@ -448,12 +462,14 @@ BufferSubAllocator DrawBufferManager::getBuffer(
         size_t count,
         size_t stride,
         size_t xtraAlignment,
+        size_t headroom,
         ClearBuffer cleared,
         Shareable shareable) {
     BufferState& state = fCurrentBuffers[stateIndex];
     // The size for a buffer is aligned to the minimum block size for better resource reuse, which
     // is more conservative than fMinAlignment.
-    uint32_t requiredBytes32 = validate_count_and_stride(count, stride, state.fMinBlockSize);
+    uint32_t requiredBytes32 = validate_count_and_stride(count, stride, headroom,
+                                                         state.fMinBlockSize);
     if (fMappingFailed || !requiredBytes32) {
         return {};
     }
@@ -468,7 +484,7 @@ BufferSubAllocator DrawBufferManager::getBuffer(
     // managed by the caller, so always create a new BufferSubAllocator.
     if (shareable == Shareable::kNo) {
         state.fAvailableBuffer.resetForNewBinding(); // ensure we include min binding alignment
-        state.fAvailableBuffer.prepForStride(stride, xtraAlignment, count);
+        state.fAvailableBuffer.prepForStride(stride, xtraAlignment, count, headroom);
         if (state.fAvailableBuffer.availableWithStride() >= count) {
             SkASSERT(state.fAvailableBuffer.fBuffer);
             SkASSERT(state.fAvailableBuffer.fBuffer->shareable() == shareable);
@@ -586,7 +602,8 @@ void* StaticBufferManager::prepareStaticData(BufferState* state,
 
     SkASSERT(target);
     *target = {nullptr, 0};
-    uint32_t size32 = validate_count_and_stride(requiredBytes, /*stride=*/1, align32);
+    uint32_t size32 = validate_count_and_stride(requiredBytes, /*stride=*/1, /*headroom=*/0,
+                                                align32);
     if (!size32 || fMappingFailed) {
         return nullptr;
     }
@@ -600,7 +617,7 @@ void* StaticBufferManager::prepareStaticData(BufferState* state,
                                         fRequiredTransferAlignment,
                                         "TransferForStaticBuffer");
     if (!transferMapPtr) {
-        SKGPU_LOG_E("Failed to create or map transfer buffer that initializes static GPU data.");
+        SKIA_LOG_E("Failed to create or map transfer buffer that initializes static GPU data.");
         fMappingFailed = true;
         return nullptr;
     }
@@ -643,7 +660,7 @@ bool StaticBufferManager::BufferState::createAndUpdateBindings(
             gpuAccessPattern,
             label);
     if (!staticBuffer) {
-        SKGPU_LOG_E("Failed to create static buffer for type %d of size %u bytes.\n",
+        SKIA_LOG_E("Failed to create static buffer for type %d of size %u bytes.\n",
                     (int) fBufferType, fTotalRequiredBytes);
         return false;
     }
@@ -669,7 +686,7 @@ bool StaticBufferManager::BufferState::createAndUpdateBindings(
         // read in the vertex shader which doesn't allow protected memory access. Thus all the
         // uploads to these buffers must be done as non-protected commands.
         if (!queueManager->addTask(copyTask.get(), context, Protected::kNo)) {
-            SKGPU_LOG_E("Failed to copy data to static buffer.\n");
+            SKIA_LOG_E("Failed to copy data to static buffer.\n");
             return false;
         }
 
@@ -694,6 +711,8 @@ StaticBufferManager::FinishResult StaticBufferManager::finalize(Context* context
     if (!totalRequiredBytes) {
         return FinishResult::kNoWork;
     }
+
+    queueManager->addUploadBufferManagerRefs(&fUploadManager, context->priv().resourceProvider());
 
     if (!fVertexBufferState.createAndUpdateBindings(fResourceProvider,
                                                    context,
@@ -723,7 +742,6 @@ StaticBufferManager::FinishResult StaticBufferManager::finalize(Context* context
                                                    "StaticIndexBuffer")) {
         return FinishResult::kFailure;
     }
-    queueManager->addUploadBufferManagerRefs(&fUploadManager);
 
     // Reset the static buffer manager since the Recording's copy tasks now manage ownership of
     // the transfer buffers and the GlobalCache owns the final static buffers.

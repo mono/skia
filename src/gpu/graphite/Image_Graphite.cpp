@@ -14,11 +14,11 @@
 #include "include/gpu/graphite/Image.h"
 #include "include/gpu/graphite/Recorder.h"
 #include "include/gpu/graphite/Surface.h"
+#include "include/private/base/SkLog.h"
 #include "src/gpu/SkBackingFit.h"
 #include "src/gpu/graphite/Caps.h"
 #include "src/gpu/graphite/Device.h"
 #include "src/gpu/graphite/DrawContext.h"
-#include "src/gpu/graphite/Log.h"
 #include "src/gpu/graphite/RecorderPriv.h"
 #include "src/gpu/graphite/ResourceProvider.h"
 #include "src/gpu/graphite/Texture.h"
@@ -43,17 +43,16 @@ Image::Image(TextureProxyView view,
 Image::~Image() = default;
 
 sk_sp<Image> Image::WrapDevice(sk_sp<Device> device, std::optional<SkColorInfo> overrideInfo) {
-    TextureProxyView view = device->readSurfaceView();
-    if (!view) {
+    TextureProxyView view = device->target();
+    if (!view || !device->isTexturable()) {
         return nullptr;
     }
 
     // If an overrideInfo is provided, it needs to be compatible with the format still and the
     // changes to alpha type need to make sense.
+    TextureFormat format = view.proxy()->format();
     if (overrideInfo.has_value()) {
-        const Caps* caps = device->recorder()->priv().caps();
-        if (!caps->areColorTypeAndTextureInfoCompatible(overrideInfo->colorType(),
-                                                        view.proxy()->textureInfo())) {
+        if (!AreColorTypeAndFormatCompatible(overrideInfo->colorType(), format)) {
             return nullptr;
         }
         // For alpha type, it should match the device's alpha type or be changing from kOpaque back
@@ -67,9 +66,7 @@ sk_sp<Image> Image::WrapDevice(sk_sp<Device> device, std::optional<SkColorInfo> 
         }
 
         // Update the swizzle on the texture view to match the change in color type
-        Swizzle readSwizzle = ReadSwizzleForColorType(
-                overrideInfo->colorType(),
-                TextureInfoPriv::ViewFormat(view.proxy()->textureInfo()));
+        Swizzle readSwizzle = ReadSwizzleForColorType(overrideInfo->colorType(), format);
         view = view.replaceSwizzle(readSwizzle);
     } else {
         // Leave the texture view alone since its swizzle should match the device already
@@ -141,7 +138,7 @@ sk_sp<Image> Image::Copy(Recorder* recorder,
 
     if (mipmapped == Mipmapped::kYes) {
         if (!GenerateMipmaps(recorder, drawContext, dst)) {
-            SKGPU_LOG_W("Image::Copy failed to generate mipmaps");
+            SKIA_LOG_W("Image::Copy failed to generate mipmaps");
             return nullptr;
         }
     }
@@ -205,7 +202,7 @@ bool Image::readPixelsGraphite(SkRecorder* recorder,
             return false;
         }
         return context->priv().readPixels(dst,
-                                          fTextureProxyView.proxy(),
+                                          fTextureProxyView,
                                           this->imageInfo(),
                                           srcX,
                                           srcY);

@@ -9,7 +9,7 @@ vars = {
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling different
   # dependencies without interference from each other.
-  'infra_revision': '5997e0271ce752c20f475f4e76c92917d81b02eb',
+  'infra_revision': '2da962880dc779b04bdb70ca3f908e095704e592',
 
   # ninja CIPD package version.
   # https://chrome-infra-packages.appspot.com/p/infra/3pp/tools/ninja
@@ -21,6 +21,8 @@ vars = {
 
   # Pre-built task drivers from this repo, used for CI.
   'task_drivers_revision': 'git_revision:b5d31abb7bc772a69f800de45783768768437675',
+
+  'checkout_agents_internal': False,
 }
 
 # If you modify this file, you will need to regenerate the Bazel version of this file (bazel/deps.bzl).
@@ -114,5 +116,12 @@ deps = {
   'infra/skia-infra': {
     'url': 'https://skia.googlesource.com/buildbot.git@' + Var('infra_revision'),
     'condition': 'False',
+  },
+
+  'agents/shared': 'https://chromium.googlesource.com/chromium/agents/@e75efa515896f6bf1dea92eaffbcf8ee711a65d8',
+
+  'agents/internal': {
+    'url': 'https://chrome-internal.googlesource.com/chrome/agents-internal/@11c700b10e171091b4f0f3cf3bf95f13dee85c93',
+    'condition': 'checkout_agents_internal',
   },
 }
