@@ -47,7 +47,9 @@
 #include "src/gpu/graphite/ScratchResourceManager.h"
 #include "src/gpu/graphite/SharedContext.h"
 #include "src/gpu/graphite/Texture.h"
+#include "src/gpu/graphite/TextureInfoPriv.h"
 #include "src/gpu/graphite/TextureProxy.h"
+#include "src/gpu/graphite/TextureProxyView.h"
 #include "src/gpu/graphite/UploadBufferManager.h"
 #include "src/gpu/graphite/task/Task.h"
 #include "src/gpu/graphite/task/TaskList.h"
@@ -392,7 +394,8 @@ bool Recorder::updateBackendTexture(const BackendTexture& backendTex,
 
     SkColorType ct = srcData[0].colorType();
 
-    if (!this->priv().caps()->areColorTypeAndTextureInfoCompatible(ct, backendTex.info())) {
+    TextureFormat format = TextureInfoPriv::ViewFormat(backendTex.info());
+    if (!AreColorTypeAndFormatCompatible(ct, format)) {
         return false;
     }
 
@@ -413,14 +416,13 @@ bool Recorder::updateBackendTexture(const BackendTexture& backendTex,
         mipLevels[i].fRowBytes = srcData[i].rowBytes();
     }
 
-    sk_sp<TextureProxy> proxy = TextureProxy::Wrap(std::move(texture));
-
     // Src and dst colorInfo are the same
     const SkColorInfo& colorInfo = srcData[0].info().colorInfo();
-
+    TextureProxyView view{TextureProxy::Wrap(std::move(texture)),
+                          ReadSwizzleForColorType(srcData[0].info().colorType(), format)};
     const SkIRect dimensions = SkIRect::MakeSize(backendTex.dimensions());
     UploadSource uploadSource = UploadSource::Make(
-            this->priv().caps(), *proxy, colorInfo, colorInfo, mipLevels, dimensions);
+            this->priv().caps(), view, colorInfo, colorInfo, mipLevels, dimensions);
     if (!uploadSource.isValid()) {
         SKGPU_LOG_E("Recorder::updateBackendTexture: Could not create UploadSource");
         return false;
@@ -428,12 +430,12 @@ bool Recorder::updateBackendTexture(const BackendTexture& backendTex,
 
     // Attempt to update the texture directly on the host if possible.
     if (uploadSource.canUploadOnHost()) {
-        return proxy->texture()->uploadDataOnHost(uploadSource, dimensions);
+        return view.proxy()->texture()->uploadDataOnHost(uploadSource, dimensions);
     }
 
     // Add UploadTask to Recorder
     UploadInstance upload = UploadInstance::Make(this,
-                                                 std::move(proxy),
+                                                 view,
                                                  colorInfo,
                                                  colorInfo,
                                                  uploadSource,
@@ -544,11 +546,13 @@ void Recorder::freeGpuResources() {
     fStrikeCache->freeAll();
 }
 
-void Recorder::performDeferredCleanup(std::chrono::milliseconds msNotUsed) {
+void Recorder::performDeferredCleanup(
+        std::chrono::milliseconds msNotUsed,
+        std::optional<std::chrono::microseconds> microsMaxPurgingDur) {
     ASSERT_SINGLE_OWNER
 
     auto purgeTime = skgpu::StdSteadyClock::now() - msNotUsed;
-    fResourceProvider->purgeResourcesNotUsedSince(purgeTime);
+    fResourceProvider->purgeResourcesNotUsedSince(purgeTime, microsMaxPurgingDur);
 }
 
 size_t Recorder::currentBudgetedBytes() const {
@@ -744,6 +748,10 @@ void RecorderPriv::setContext(Context* context) {
 
 void RecorderPriv::issueFlushToken() {
     fRecorder->fTokenTracker->issueFlushToken();
+}
+
+int RecorderPriv::numRootTasks() const {
+    return fRecorder->fRootTaskList->size();
 }
 #endif
 

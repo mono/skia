@@ -289,6 +289,9 @@ void add_conical_gradient_uniform_data(const KeyContext& keyContext,
 
 // Writes the color and offset data directly in the gatherer gradient buffer and returns the
 // offset the data begins at in the buffer.
+//
+// Returns a negative offset to signal failure, in which case the paint key must be poisoned
+// to drop the draw.
 static int write_color_and_offset_bufdata(int numStops,
                                            const SkPMColor4f* colors,
                                            const float* offsets,
@@ -296,6 +299,7 @@ static int write_color_and_offset_bufdata(int numStops,
                                            FloatStorageManager* floatStorageManager) {
     auto [dstData, bufferOffset] = floatStorageManager->allocateGradientData(numStops, shader);
     if (dstData) {
+        SkASSERT(bufferOffset >= 0);
         // Data doesn't already exist so we need to write it.
         // Writes all offset data, then color data. This way when binary searching through the
         // offsets, there is better cache locality.
@@ -388,16 +392,24 @@ GradientShaderBlocks::GradientData::GradientData(SkShaderBase::GradientType type
 void GradientShaderBlocks::AddBlock(const KeyContext& keyContext, const GradientData& gradData) {
     int bufferOffset = 0;
     if (gradData.fNumStops > GradientData::kNumInternalStorageStops && keyContext.recorder()) {
+        bool hasStorage;
         if (gradData.fUseStorageBuffer) {
             bufferOffset = write_color_and_offset_bufdata(gradData.fNumStops,
                                                           gradData.fSrcColors,
                                                           gradData.fSrcOffsets,
                                                           gradData.fSrcShader,
                                                           keyContext.floatStorageManager());
+            hasStorage = bufferOffset >= 0;
         } else {
-            SkASSERT(gradData.fColorsAndOffsetsProxy);
             keyContext.pipelineDataGatherer()->add(gradData.fColorsAndOffsetsProxy,
                           {SkFilterMode::kNearest, SkTileMode::kClamp});
+            hasStorage = SkToBool(gradData.fColorsAndOffsetsProxy);
+        }
+
+        if (!hasStorage) {
+            keyContext.paintParamsKeyBuilder()->addErrorBlock();
+            SKGPU_LOG_W("Couldn't upload large gradient color stop data");
+            return;
         }
     }
 
@@ -1982,6 +1994,37 @@ static void add_image_to_key(const KeyContext& keyContext,
     SkASSERT(keyContext.drawContext());
     static_cast<Image_Base*>(imageToDraw.get())->notifyInUse(keyContext.recorder(),
                                                              keyContext.drawContext());
+
+    // Here we detect pixel aligned blit-like image draws. Some devices have low precision filtering
+    // and will produce degraded (blurry) images unexpectedly for sequential exact pixel blits when
+    // not using nearest filtering. This is common for canvas scrolling implementations. Forcing
+    // nearest filtering when possible can also be a minor perf/power optimization depending on the
+    // hardware.
+    bool samplingHasNoEffect = false;
+    // Cubic sampling is will not filter the same as nearest even when pixel aligned.
+    if (!(keyContext.flags() & KeyGenFlags::kDisableSamplingOptimization || newSampling.useCubic)) {
+        SkMatrix totalM = keyContext.local2Dev().asM33();
+        if (keyContext.localMatrix()) {
+            totalM.preConcat(*keyContext.localMatrix());
+        }
+        totalM.normalizePerspective();
+        // The matrix should be translation with only pixel aligned 2d translation.
+        if (totalM.isTranslate() && SkScalarIsInt(totalM.getTranslateX()) &&
+            SkScalarIsInt(totalM.getTranslateY())) {
+            samplingHasNoEffect = true;
+            newSampling = SkFilterMode::kNearest;
+        }
+
+        if (samplingHasNoEffect && !keyContext.clipDrawBounds().isEmpty()) {
+            SkRect localDrawBounds = keyContext.clipDrawBounds();
+            localDrawBounds.offset(-totalM.getTranslateX(), -totalM.getTranslateY());
+            if (subset.contains(localDrawBounds)) {
+                // The draw is strictly within the subset, so we don't need to clamp.
+                subset = SkRect::Make(imageToDraw->dimensions());
+            }
+        }
+    }
+
     if (as_IB(imageToDraw)->isYUVA()) {
         return add_yuv_image_to_key(keyContext,
                                     imageToDraw.get(),
@@ -2001,25 +2044,6 @@ static void add_image_to_key(const KeyContext& keyContext,
                                         view.proxy()->dimensions(),
                                         subset);
 
-    // Here we detect pixel aligned blit-like image draws. Some devices have low precision filtering
-    // and will produce degraded (blurry) images unexpectedly for sequential exact pixel blits when
-    // not using nearest filtering. This is common for canvas scrolling implementations. Forcing
-    // nearest filtering when possible can also be a minor perf/power optimization depending on the
-    // hardware.
-    bool samplingHasNoEffect = false;
-    // Cubic sampling is will not filter the same as nearest even when pixel aligned.
-    if (!(keyContext.flags() & KeyGenFlags::kDisableSamplingOptimization || newSampling.useCubic)) {
-        SkMatrix totalM = keyContext.local2Dev().asM33();
-        if (keyContext.localMatrix()) {
-            totalM.preConcat(*keyContext.localMatrix());
-        }
-        totalM.normalizePerspective();
-        // The matrix should be translation with only pixel aligned 2d translation.
-        samplingHasNoEffect = totalM.isTranslate() && SkScalarIsInt(totalM.getTranslateX()) &&
-                              SkScalarIsInt(totalM.getTranslateY());
-    }
-
-    imgData.fSampling = samplingHasNoEffect ? SkFilterMode::kNearest : newSampling;
     imgData.fTextureProxy = view.refProxy();
     skgpu::Swizzle readSwizzle = view.swizzle();
     ColorSpaceTransformBlock::ColorSpaceTransformData colorXformData(readSwizzle);

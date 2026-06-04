@@ -1,5 +1,5 @@
 /*
- * Copyright 2017 Google Inc.
+ * Copyright 2017 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -26,8 +26,8 @@ namespace sk_gpu_test {
     struct TestVkFeatures {
         VkPhysicalDeviceFeatures2 deviceFeatures;
 
-        // protectedMemoryFeatures and structs from skiaFeatures may be chained into deviceFeatures,
-        // so must share the same lifetime.
+        // Structs from skiaFeatures and protectedMemoryFeatures may be chained into deviceFeatures
+        // and therefore must share the same lifetime.
         skgpu::VulkanPreferredFeatures skiaFeatures;
         VkPhysicalDeviceProtectedMemoryFeatures protectedMemoryFeatures;
     };

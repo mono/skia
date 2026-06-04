@@ -33,6 +33,7 @@
 #include "include/core/SkString.h"
 #include "include/core/SkSurface.h"
 #include "include/encode/SkPngEncoder.h"
+#include "include/private/base/SkLog.h"
 #include "include/private/base/SkMacros.h"
 #include "src/base/SkAutoMalloc.h"
 #include "src/base/SkLeanWindows.h"
@@ -85,6 +86,15 @@
 #include "include/codec/SkPngRustDecoder.h"
 #else
 #include "include/codec/SkPngDecoder.h"
+#endif
+
+#if defined(SK_USE_PPROF)
+#include <gperftools/profiler.h>
+#include <gperftools/heap-profiler.h>
+#endif
+
+#if defined(SK_USE_PARTITION_ALLOC)
+    #include "tools/partition_alloc/TestSupport.h"
 #endif
 
 #include <cinttypes>
@@ -198,6 +208,9 @@ static DEFINE_string2(match, m, nullptr,
 static DEFINE_bool2(quiet, q, false, "if true, don't print status updates.");
 static DEFINE_bool2(verbose, v, false, "enable verbose output from the test driver.");
 
+static DEFINE_string(cpuprofile, "", "Write a pprof cpu profile to this file");
+static DEFINE_string(memprofile, "", "Write a pprof heap profile to files with this prefix.\n"
+                                     "Will produce files like prefix.NNNN.heap while running");
 
 static DEFINE_string(skps, "skps", "Directory to read skps from.");
 static DEFINE_string(mskps, "mskps", "Directory to read mskps from.");
@@ -1359,6 +1372,13 @@ class NanobenchShaderErrorHandler : public GrContextOptions::ShaderErrorHandler 
 };
 
 int main(int argc, char** argv) {
+#if defined(SK_USE_PARTITION_ALLOC)
+    // To achieve benchmark results closers to what Chromium based applications would obtain, the
+    // benchmark are run with PartitionAlloc enabled. This is the memory allocator used by Chromium
+    // based applications.
+    skiatest::InitializePartitionAllocForTesting();
+#endif
+
     CommandLineFlags::Parse(argc, argv);
 
     initializeEventTracingForTools();
@@ -1467,6 +1487,27 @@ int main(int argc, char** argv) {
 
     gSkForceRasterPipelineBlitter     = FLAGS_forceRasterPipelineHP || FLAGS_forceRasterPipeline;
     gForceHighPrecisionRasterPipeline = FLAGS_forceRasterPipelineHP;
+
+#if defined(SK_USE_PPROF)
+    if (FLAGS_cpuprofile.isEmpty() && FLAGS_memprofile.isEmpty()) {
+        SKIA_LOG_W("Neither --cpuprofile nor --memprofile set. No profiling data will be output.");
+    }
+#endif
+
+    if (!FLAGS_cpuprofile.isEmpty()) {
+#if defined(SK_USE_PPROF)
+        ProfilerStart(FLAGS_cpuprofile[0]);
+#else
+        SKIA_LOG_F("Must be compiled with -DSK_USE_PPROF (e.g. skia_use_pprof");
+#endif
+    }
+    if (!FLAGS_memprofile.isEmpty()) {
+#if defined(SK_USE_PPROF)
+        HeapProfilerStart(FLAGS_memprofile[0]);
+#else
+        SKIA_LOG_F("Must be compiled with -DSK_USE_PPROF (e.g. skia_use_pprof");
+#endif
+    }
 
     // The SkSL memory benchmark must run before any GPU painting occurs. SkSL allocates memory for
     // its modules the first time they are accessed, and this test is trying to measure the size of
@@ -1689,6 +1730,16 @@ int main(int argc, char** argv) {
             log.endBench();
         }
     }
+
+#if defined(SK_USE_PPROF)
+    if (!FLAGS_cpuprofile.isEmpty()) {
+        ProfilerStop();
+    }
+    if (!FLAGS_memprofile.isEmpty()) {
+        HeapProfilerDump("final");
+        HeapProfilerStop();
+    }
+#endif
 
     if (FLAGS_dmsaaStatsDump) {
         SkDebugf("<<Total Combined DMSAA Stats>>\n");

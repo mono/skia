@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 Google Inc.
+ * Copyright 2019 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -101,7 +101,13 @@ sk_sp<TextAnimator> TextAnimator::Make(const skjson::ObjectValue* janimator,
                 new TextAnimator(std::move(selectors), *jprops, abuilder, acontainer));
 }
 
-void TextAnimator::modulateProps(const DomainMaps& maps, ModulatorBuffer& buf) const {
+void TextAnimator::updateDomainMaps(const DomainMaps& maps, size_t fragment_count) {
+    for (auto& selector : fSelectors) {
+        selector->updateDomainMap(maps, fragment_count);
+    }
+}
+
+void TextAnimator::modulateProps(ModulatorBuffer& buf) const {
     // No selectors -> full coverage.
     const auto initial_coverage = fSelectors.empty() ? 1.f : 0.f;
 
@@ -112,7 +118,7 @@ void TextAnimator::modulateProps(const DomainMaps& maps, ModulatorBuffer& buf) c
 
     // Accumulate selector coverage.
     for (const auto& selector : fSelectors) {
-        selector->modulateCoverage(maps, buf);
+        selector->modulateCoverage(buf);
     }
 
     // Modulate animated props.

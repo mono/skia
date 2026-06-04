@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 Google Inc.
+ * Copyright 2018 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -31,7 +31,7 @@ public:
 
     void initRenderState(GrMtlRenderCommandEncoder*);
 
-    void inlineUpload(GrOpFlushState* state, GrDeferredTextureUploadFn& upload) override;
+    bool inlineUpload(GrOpFlushState* state, GrDeferredTextureUploadFn& upload) override;
     void submit();
 
 private:
