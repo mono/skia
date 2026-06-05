@@ -116,9 +116,7 @@ void VulkanCaps::init(const ContextOptions& contextOptions,
     this->setDeviceName(deviceProperties.fBase.properties.deviceName);
 #endif
 
-    // Graphite requires Vulkan version 1.1 or later, which always has protected support. The
-    // protectedMemory feature is assumed enabled if isProtected is true.
-    if (isProtected == Protected::kYes) {
+    if (isProtected == Protected::kYes && enabledFeatures.fProtectedMemory) {
         fProtectedSupport = true;
         fShouldAlwaysUseDedicatedImageMemory = true;
     }
@@ -442,6 +440,12 @@ VulkanCaps::EnabledFeatures VulkanCaps::getEnabledFeatures(
                             const VkPhysicalDeviceRGBA10X6FormatsFeaturesEXT*>(pNext);
                     enabled.fFormatRGBA10x6WithoutYCbCrSampler =
                             feature->formatRgba10x6WithoutYCbCrSampler;
+                    break;
+                }
+                case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROTECTED_MEMORY_FEATURES: {
+                    const auto *feature = reinterpret_cast<
+                            const VkPhysicalDeviceProtectedMemoryFeatures*>(pNext);
+                    enabled.fProtectedMemory = feature->protectedMemory;
                     break;
                 }
                 default:
@@ -1165,7 +1169,7 @@ void VulkanCaps::initFormatTable(const skgpu::VulkanInterface* interface,
         auto& info = this->getFormatInfoForInit(format);
         info.init(interface, *this, physDev, format);
         if (info.isTexturable(VK_IMAGE_TILING_OPTIMAL)) {
-            info.fColorTypeInfoCount = 1;
+            info.fColorTypeInfoCount = 2;
             info.fColorTypeInfos = std::make_unique<ColorTypeInfo[]>(info.fColorTypeInfoCount);
             int ctIdx = 0;
             // Format: VK_FORMAT_R16_SFLOAT, Surface: kAlpha_F16
@@ -1177,6 +1181,14 @@ void VulkanCaps::initFormatTable(const skgpu::VulkanInterface* interface,
                 ctInfo.fFlags = ColorTypeInfo::kUploadData_Flag | ColorTypeInfo::kRenderable_Flag;
                 ctInfo.fReadSwizzle = skgpu::Swizzle("000r");
                 ctInfo.fWriteSwizzle = skgpu::Swizzle("a000");
+            }
+            // Format: VK_FORMAT_R16_SFLOAT, Surface: kR_F16
+            {
+                constexpr SkColorType ct = SkColorType::kR16_float_SkColorType;
+                auto& ctInfo = info.fColorTypeInfos[ctIdx++];
+                ctInfo.fColorType = ct;
+                ctInfo.fTransferColorType = ct;
+                ctInfo.fFlags = ColorTypeInfo::kUploadData_Flag | ColorTypeInfo::kRenderable_Flag;
             }
         }
     }
@@ -1947,33 +1959,6 @@ const VulkanCaps::DepthStencilFormatInfo& VulkanCaps::getDepthStencilFormatInfo(
     return kInvalidFormat;
 }
 
-SkSpan<const Caps::ColorTypeInfo> VulkanCaps::getColorTypeInfos(
-            const TextureInfo& textureInfo) const {
-    const auto& vkInfo = TextureInfoPriv::Get<VulkanTextureInfo>(textureInfo);
-    VkFormat vkFormat = vkInfo.fFormat;
-    if (vkFormat == VK_FORMAT_UNDEFINED) {
-        // If VkFormat is undefined but there is a valid YCbCr conversion associated with the
-        // texture, then we know we are using an external format and can return color type
-        // info representative of external format color information.
-        static const ColorTypeInfo kExternalColorTypeInfos[2] = {
-                {/*ct=*/kRGBA_8888_SkColorType,
-                 /*transferCt=*/kUnknown_SkColorType,
-                 /*flags=*/0,
-                 /*readSwizzle=*/Swizzle::RGBA(),
-                 /*writeSwizzle=*/{}},
-                {/*ct=*/kRGB_888x_SkColorType,
-                 /*transferCt=*/kUnknown_SkColorType,
-                 /*flags=*/0,
-                 /*readSwizzle=*/Swizzle::RGB1(),
-                 /*writeSwizzle=*/{}}};
-        return vkInfo.fYcbcrConversionInfo.isValid() ? SkSpan(kExternalColorTypeInfos, 2)
-                                                     : SkSpan<const ColorTypeInfo>();
-    }
-
-    const FormatInfo& formatInfo = this->getFormatInfo(vkFormat);
-    return {formatInfo.fColorTypeInfos.get(), formatInfo.fColorTypeInfoCount};
-}
-
 // 4 uint32s for the render step id, paint id, compatible render pass description, and write
 // swizzle.
 static constexpr uint16_t kPipelineKeyData32Count = 4;
@@ -2124,49 +2109,9 @@ ImmutableSamplerInfo VulkanCaps::getImmutableSamplerInfo(const TextureInfo& text
     return {};
 }
 
-static constexpr const char* vk_chromafilter_to_str(VkFilter f) {
-    switch (f) {
-        case VK_FILTER_NEAREST:   return "nearest";
-        case VK_FILTER_LINEAR:    return "linear";
-        case VK_FILTER_CUBIC_EXT: return "cubic";
-        default:                  return "unknown";
-    }
-    SkUNREACHABLE;
-}
-
 std::string VulkanCaps::toString(const ImmutableSamplerInfo& immutableSamplerInfo) const {
-    const skgpu::VulkanYcbcrConversionInfo info =
-            VulkanYcbcrConversion::FromImmutableSamplerInfo(immutableSamplerInfo);
-    if (!info.isValid()) {
-        return "";
-    }
-
-    std::string result;
-
-    if (info.hasExternalFormat()) {
-        result += 'x';
-        result += std::to_string(info.externalFormat());
-    } else {
-        result += std::to_string(info.format());
-    }
-
-    result += " ";
-    result += VkModelToStr(info.model());
-    result += "+";
-    result += VkRangeToStr(info.range());
-    result += info.xChromaOffset() ? " mid"  : " cos";  // midpoint or cosited-even
-    result += info.yChromaOffset() ? " mid " : " cos "; // midpoint or cosited-even
-    result += vk_chromafilter_to_str(info.chromaFilter());
-    result += info.forceExplicitReconstruction() ? " T " : " F ";
-    result += VkSwizzleToStr(info.components().r, 'r');
-    result += VkSwizzleToStr(info.components().g, 'g');
-    result += VkSwizzleToStr(info.components().b, 'b');
-    result += VkSwizzleToStr(info.components().a, 'a');
-    result += " cf";
-    result += info.samplerFilterMustMatchChromaFilter() ? '1' : '0';
-    result += "lf";
-    result += info.supportsLinearFilter() ? '1' : '0';
-    return result;
+    return VulkanYcbcrConversion::InfoToString(
+            VulkanYcbcrConversion::FromImmutableSamplerInfo(immutableSamplerInfo));
 }
 
 } // namespace skgpu::graphite

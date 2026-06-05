@@ -31,6 +31,11 @@ var gniExportDescs = []exporter.GNIExportDesc{
 				"//include/codec:any_codec_hdrs",
 			},
 		},
+		{Var: "skia_codec_icc_chromium",
+			Rules: []string{
+				"//include/private/chromium:codec_icc_chromium_hdrs",
+			},
+		},
 		{Var: "skia_codec_decode_bmp",
 			Rules: []string{
 				"//src/codec:bmp_decode",
@@ -315,6 +320,11 @@ var gniExportDescs = []exporter.GNIExportDesc{
 				"//src/gpu/graphite/precompile:_precompile_srcs",
 				"//src/gpu/graphite:precompile_srcs",
 			}},
+		{Var: "skia_graphite_sparse_strips_sources",
+			Rules: []string{
+				"//src/gpu/graphite/sparse_strips:sparse_strips_hdrs",
+				"//src/gpu/graphite/sparse_strips:sparse_strips_srcs",
+			}},
 	}},
 	{GNI: "gn/pathops.gni", Vars: []exporter.GNIFileListExportDesc{
 		{Var: "skia_pathops_public",
@@ -509,6 +519,26 @@ var gniExportDescs = []exporter.GNIExportDesc{
 		{Var: "skia_rust_icc_ffi_cpp_srcs",
 			Rules: []string{
 				"//rust/icc:ffi_cpp",
+			},
+		},
+		{Var: "skia_rust_exif_ffi_rs_srcs",
+			Rules: []string{
+				"//rust/exif:rs_srcs",
+			},
+		},
+		{Var: "skia_rust_exif_ffi_cxx_bridge_srcs",
+			Rules: []string{
+				"//rust/exif:cxx_bridge_srcs",
+			},
+		},
+		{Var: "skia_rust_exif_ffi_cpp_hdrs",
+			Rules: []string{
+				"//rust/exif:ffi_hdrs",
+			},
+		},
+		{Var: "skia_rust_exif_ffi_cpp_srcs",
+			Rules: []string{
+				"//rust/exif:ffi_cpp",
 			},
 		},
 	}},
