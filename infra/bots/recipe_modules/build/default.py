@@ -177,6 +177,7 @@ def get_compile_flags(api, checkout_root, out_dir, workdir):
       'skia_use_runtime_icu': 'true',
       'skia_enable_optimize_size': 'true',
       'skia_use_jpeg_gainmaps': 'false',
+      'skia_use_partition_alloc': 'false',
     })
 
   if 'Exceptions' in extra_tokens:
@@ -233,6 +234,14 @@ def get_compile_flags(api, checkout_root, out_dir, workdir):
     # TODO(b/356875275) set skia_use_libpng_encode to false also
   if 'RustBMP' in extra_tokens:
     args['skia_use_rust_bmp_decode'] = 'true'
+  if 'RustALL' in extra_tokens:
+    args['skia_use_rust_bmp_decode'] = 'true'
+    args['skia_use_rust_exif'] = 'true'
+    args['skia_use_rust_icc'] = 'true'
+    args['skia_use_rust_png_decode'] = 'true'
+    args['skia_use_rust_png_encode'] = 'true'
+    args['skia_use_libpng_decode'] = 'false'
+    # TODO(b/356875275) set skia_use_libpng_encode to false also
   if 'FreeType' in extra_tokens:
     args['skia_use_freetype'] = 'true'
     args['skia_use_system_freetype2'] = 'false'
@@ -257,6 +266,7 @@ def get_compile_flags(api, checkout_root, out_dir, workdir):
       'skia_use_libpng_encode':        'false',
       'skia_use_libwebp_decode':       'false',
       'skia_use_libwebp_encode':       'false',
+      'skia_use_partition_alloc':      'false',
       'skia_use_vulkan':               'false',
       'skia_use_wuffs':                'false',
       'skia_use_zlib':                 'false',
@@ -322,7 +332,7 @@ def get_compile_flags(api, checkout_root, out_dir, workdir):
     'sanitize': sanitize,
     'target_cpu': target_arch,
     'target_os': 'ios' if any('iOS' in t for t in extra_tokens) else '',
-    'win_sdk': win_toolchain + '/win_sdk' if 'Win' in os else '',
+    'win_sdk': win_toolchain + '/Windows Kits/10' if 'Win' in os else '',
     'win_vc': win_toolchain + '/VC' if 'Win' in os else '',
     'skia_dwritecore_sdk': dwritecore if 'DWriteCore' in extra_tokens else '',
   }.items():

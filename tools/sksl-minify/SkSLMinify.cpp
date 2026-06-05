@@ -1,5 +1,5 @@
 /*
- * Copyright 2022 Google Inc.
+ * Copyright 2022 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -34,6 +34,13 @@ static bool gStringify = false;
 static SkSL::ProgramKind gProgramKind = SkSL::ProgramKind::kFragment;
 
 void SkDebugf(const char format[], ...) {
+    va_list args;
+    va_start(args, format);
+    vfprintf(stderr, format, args);
+    va_end(args);
+}
+
+void SkLog(SkLogPriority, const char format[], ...) {
     va_list args;
     va_start(args, format);
     vfprintf(stderr, format, args);

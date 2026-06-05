@@ -10,6 +10,7 @@
 
 #include <cstddef>
 #include "include/core/SkPictureRecorder.h"
+#include "include/core/SkSurface.h"
 #include "include/utils/SkNWayCanvas.h"
 
 class SkCaptureManager;
@@ -27,6 +28,7 @@ public:
     ~SkCaptureCanvas() override;
 
     sk_sp<SkPicture> snapPicture();
+    SkSurface* getBaseCanvasSurface() const;
 
 protected:
     void willSave() override;

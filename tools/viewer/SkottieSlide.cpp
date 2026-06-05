@@ -1,5 +1,5 @@
 /*
- * Copyright 2017 Google Inc.
+ * Copyright 2017 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -174,7 +174,7 @@ private:
 sk_sp<SkShapers::Factory> make_shapers_factory(bool prefer_coretext) {
 #if defined(SK_SHAPER_CORETEXT_AVAILABLE)
     if (prefer_coretext) {
-        return sk_make_sp<SkShapers::CoreTextFactory>();
+        return sk_make_sp<SkShapers::CoreTextFactory>(SkShapers::CT::LineBreakMode::kStrict);
     }
 #endif
 #if defined(SK_SHAPER_UNICODE_AVAILABLE)

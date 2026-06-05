@@ -18,6 +18,7 @@
 #include "include/private/base/SkAssert.h"
 #include "include/private/base/SkDebug.h"
 #include "src/base/SkEnumBitMask.h"
+#include "src/core/SkDistanceFieldGen.h"
 #include "src/core/SkSLTypeShared.h"
 #include "src/gpu/graphite/AtlasProvider.h"
 #include "src/gpu/graphite/Attribute.h"
@@ -53,9 +54,8 @@ SDFTextLCDRenderStep::SDFTextLCDRenderStep(Layout layout)
                      RenderStepID::kSDFTextLCD,
                      Flags::kPerformsShading | Flags::kHasTextures | Flags::kEmitsCoverage |
                      Flags::kLCDCoverage | Flags::kAppendInstances,
-                     /*uniforms=*/{{"subRunDeviceMatrix", SkSLType::kFloat4x4},
-                                   {"deviceToLocal", SkSLType::kFloat4x4},
-                                   {"atlasSizeInv", SkSLType::kFloat2},
+                     /*uniforms=*/{{"maskToDevice", SkSLType::kFloat4x4},
+                                   {"localToDevice", SkSLType::kFloat4x4},
                                    {"pixelGeometryDelta", SkSLType::kHalf2},
                                    {"gammaParams", SkSLType::kHalf4}},
                      PrimitiveType::kTriangleStrip,
@@ -71,7 +71,6 @@ SDFTextLCDRenderStep::SDFTextLCDRenderStep(Layout layout)
                       {"ssboIndex", VertexAttribType::kUInt, SkSLType::kUInt}}},
                      /*varyings=*/
                      {{{"unormTexCoords", SkSLType::kFloat2},
-                      {"textureCoords", SkSLType::kFloat2},
                       {"texIndex", SkSLType::kFloat}}}) {}
 
 SDFTextLCDRenderStep::~SDFTextLCDRenderStep() {}
@@ -81,15 +80,13 @@ std::string SDFTextLCDRenderStep::vertexSkSL() const {
     // must write to an already-defined float2 stepLocalCoords variable.
     return "texIndex = half(indexAndFlags.x);"
            "float4 devPosition = text_vertex_fn(float2(sk_VertexID >> 1, sk_VertexID & 1), "
-                                               "subRunDeviceMatrix, "
-                                               "deviceToLocal, "
-                                               "atlasSizeInv, "
+                                               "maskToDevice, "
+                                               "localToDevice, "
                                                "float2(size), "
                                                "float2(uvPos), "
                                                "xyPos, "
                                                "strikeToSourceScale, "
                                                "depth, "
-                                               "textureCoords, "
                                                "unormTexCoords, "
                                                "stepLocalCoords);";
 }
@@ -116,8 +113,7 @@ const char* SDFTextLCDRenderStep::fragmentCoverageSkSL() const {
     // TODO: Need to add 565 support.
     // TODO: Need aliased and possibly sRGB support.
     static_assert(kNumSDFAtlasTextures == 4);
-    return "outputCoverage = sdf_text_lcd_coverage_fn(textureCoords, "
-                                                     "pixelGeometryDelta, "
+    return "outputCoverage = sdf_text_lcd_coverage_fn(pixelGeometryDelta, "
                                                      "gammaParams, "
                                                      "unormTexCoords, "
                                                      "texIndex, "
@@ -156,21 +152,36 @@ void SDFTextLCDRenderStep::writeUniformsAndTextures(const DrawParams& params,
     SkASSERT(proxies && numProxies > 0);
 
     // write uniforms
-    gatherer->write(params.transform().matrix());  // subRunDeviceMatrix
-    gatherer->write(subRunData.deviceToLocal());
-    SkV2 atlasDimensionsInverse = {1.f/proxies[0]->dimensions().width(),
-                                   1.f/proxies[0]->dimensions().height()};
-    gatherer->write(atlasDimensionsInverse);
+    // TODO(b/238753996): The maskToDevice should be adjusted similar to CoverageMaskRenderStep so
+    // that the integer translation is pulled into the instance data and this uniform is less likely
+    // to change.
+    // TODO(b/307766179): Similarly, we should discard the local-to-device matrix uniform value (and
+    // just set identity) if the paint doesn't actually require local coords.
+    // TODO(b/351923375): Precompute the 3x3 inverse of the local-to-device since it's shared by all
+    // instances? We can derive it from the Transform's existing 4x4 inverse.
+    gatherer->write(subRunData.maskToDevice());
+    gatherer->write(params.transform().matrix()); // local-to-device
 
     // compute and write pixelGeometry vector
     SkV2 pixelGeometryDelta = {0, 0};
-    if (SkPixelGeometryIsH(subRunData.pixelGeometry())) {
-        pixelGeometryDelta = {1.f/(3*proxies[0]->dimensions().width()), 0};
-    } else if (SkPixelGeometryIsV(subRunData.pixelGeometry())) {
-        pixelGeometryDelta = {0, 1.f/(3*proxies[0]->dimensions().height())};
-    }
-    if (SkPixelGeometryIsBGR(subRunData.pixelGeometry())) {
-        pixelGeometryDelta = -pixelGeometryDelta;
+
+    // There is 2px padding of each glyph (SK_DistanceFieldInset). We can't allow offsetting to go
+    // outside of our padding (e.g. 2*SK_DistanceFieldInset if two SDF glyphs were next to each
+    // other is theoretically ok). This is because SDF and regular A8 masks are shared in the same
+    // atlas, so an adjacent glyph may not actually have its own padding.
+    //
+    // NOTE: kLCDOffsetLimit is multiplied by 3 to account for the scale added to pixelGeometryDelta
+    static constexpr float kLCDOffsetLimit = 3.f * (SK_DistanceFieldInset - 0.5f);
+    float maxLCDOffset = Transform(subRunData.maskToDevice()).localAARadius(subRunData.bounds());
+    if (maxLCDOffset < kLCDOffsetLimit) {
+        if (SkPixelGeometryIsH(subRunData.pixelGeometry())) {
+            pixelGeometryDelta = {1.f/(3*proxies[0]->dimensions().width()), 0};
+        } else if (SkPixelGeometryIsV(subRunData.pixelGeometry())) {
+            pixelGeometryDelta = {0, 1.f/(3*proxies[0]->dimensions().height())};
+        }
+        if (SkPixelGeometryIsBGR(subRunData.pixelGeometry())) {
+            pixelGeometryDelta = -pixelGeometryDelta;
+        }
     }
     gatherer->writeHalf(pixelGeometryDelta);
 

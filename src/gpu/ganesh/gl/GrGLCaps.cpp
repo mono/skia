@@ -2493,10 +2493,10 @@ void GrGLCaps::initFormatTable(const GrGLContextInfo& ctxInfo, const GrGLInterfa
         }
 
         if (r16FTextureSupport) {
-            // Format: R16F, Surface: kAlpha_F16
-            info.fColorTypeInfoCount = 1;
+            info.fColorTypeInfoCount = 2;
             info.fColorTypeInfos = std::make_unique<ColorTypeInfo[]>(info.fColorTypeInfoCount);
             int ctIdx = 0;
+            // Format: R16F, Surface: kAlpha_F16
             {
                 auto& ctInfo = info.fColorTypeInfos[ctIdx++];
                 ctInfo.fColorType = GrColorType::kAlpha_F16;
@@ -2525,6 +2525,38 @@ void GrGLCaps::initFormatTable(const GrGLContextInfo& ctxInfo, const GrGLInterfa
                 {
                     auto& ioFormat = ctInfo.fExternalIOFormats[ioIdx++];
                     ioFormat.fColorType = GrColorType::kAlpha_F32xxx;
+                    ioFormat.fExternalType = GR_GL_FLOAT;
+                    ioFormat.fExternalTexImageFormat = 0;
+                    ioFormat.fExternalReadFormat = GR_GL_RGBA;
+                }
+            }
+            // Format: R16F, Surface: kR_F16
+            {
+                auto& ctInfo = info.fColorTypeInfos[ctIdx++];
+                ctInfo.fColorType = GrColorType::kR_F16;
+                ctInfo.fFlags = ColorTypeInfo::kUploadData_Flag | ColorTypeInfo::kRenderable_Flag;
+                this->setColorTypeFormat(GrColorType::kR_F16, GrGLFormat::kR16F);
+
+                // External IO ColorTypes:
+                ctInfo.fExternalIOFormatCount = 2;
+                ctInfo.fExternalIOFormats = std::make_unique<ColorTypeInfo::ExternalIOFormats[]>(
+                        ctInfo.fExternalIOFormatCount);
+                int ioIdx = 0;
+                // Format: R16F, Surface: kR_F16, Data: kR_F16
+                {
+                    auto& ioFormat = ctInfo.fExternalIOFormats[ioIdx++];
+                    ioFormat.fColorType = GrColorType::kR_F16;
+                    ioFormat.fExternalType = halfFloatType;
+                    ioFormat.fExternalTexImageFormat = GR_GL_RED;
+                    ioFormat.fExternalReadFormat = GR_GL_RED;
+                    // Not guaranteed by ES/WebGL.
+                    ioFormat.fRequiresImplementationReadQuery = !GR_IS_GR_GL(standard);
+                }
+
+                // Format: R16F, Surface: kR_F16, Data: kRGBA_F32
+                {
+                    auto& ioFormat = ctInfo.fExternalIOFormats[ioIdx++];
+                    ioFormat.fColorType = GrColorType::kRGBA_F32;
                     ioFormat.fExternalType = GR_GL_FLOAT;
                     ioFormat.fExternalTexImageFormat = 0;
                     ioFormat.fExternalReadFormat = GR_GL_RGBA;
@@ -2582,7 +2614,7 @@ void GrGLCaps::initFormatTable(const GrGLContextInfo& ctxInfo, const GrGLInterfa
                 info.fInternalFormatForTexImageOrStorage = GR_GL_LUMINANCE;
             }
 
-            info.fColorTypeInfoCount = 1;
+            info.fColorTypeInfoCount = 2;
             info.fColorTypeInfos = std::make_unique<ColorTypeInfo[]>(info.fColorTypeInfoCount);
             int ctIdx = 0;
             // Format: LUMINANCE16F, Surface: kAlpha_F16
@@ -2613,6 +2645,42 @@ void GrGLCaps::initFormatTable(const GrGLContextInfo& ctxInfo, const GrGLInterfa
                 }
 
                 // Format: LUMINANCE16F, Surface: kAlpha_F16, Data: kRGBA_F32
+                {
+                    auto& ioFormat = ctInfo.fExternalIOFormats[ioIdx++];
+                    ioFormat.fColorType = GrColorType::kRGBA_F32;
+                    ioFormat.fExternalType = GR_GL_FLOAT;
+                    ioFormat.fExternalTexImageFormat = 0;
+                    ioFormat.fExternalReadFormat = GR_GL_RGBA;
+                }
+            }
+            // Format: LUMINANCE16F, Surface: kR_F16
+            {
+                auto& ctInfo = info.fColorTypeInfos[ctIdx++];
+                ctInfo.fColorType = GrColorType::kR_F16;
+                ctInfo.fFlags = ColorTypeInfo::kUploadData_Flag;
+                ctInfo.fReadSwizzle = skgpu::Swizzle("r001");
+                ctInfo.fWriteSwizzle = skgpu::Swizzle("rrr1");
+
+                int idx = static_cast<int>(GrColorType::kR_F16);
+                if (fColorTypeToFormatTable[idx] == GrGLFormat::kUnknown) {
+                    this->setColorTypeFormat(GrColorType::kR_F16, GrGLFormat::kLUMINANCE16F);
+                }
+
+                // External IO ColorTypes:
+                ctInfo.fExternalIOFormatCount = 2;
+                ctInfo.fExternalIOFormats = std::make_unique<ColorTypeInfo::ExternalIOFormats[]>(
+                        ctInfo.fExternalIOFormatCount);
+                int ioIdx = 0;
+                // Format: LUMINANCE16F, Surface: kR_F16, Data: kR_F16
+                {
+                    auto& ioFormat = ctInfo.fExternalIOFormats[ioIdx++];
+                    ioFormat.fColorType = GrColorType::kR_F16;
+                    ioFormat.fExternalType = lumHalfFloatType;
+                    ioFormat.fExternalTexImageFormat = GR_GL_LUMINANCE;
+                    ioFormat.fExternalReadFormat = 0;
+                }
+
+                // Format: LUMINANCE16F, Surface: kR_F16, Data: kRGBA_F32
                 {
                     auto& ioFormat = ctInfo.fExternalIOFormats[ioIdx++];
                     ioFormat.fColorType = GrColorType::kRGBA_F32;
@@ -4081,8 +4149,14 @@ void GrGLCaps::applyDriverCorrectnessWorkarounds(const GrGLContextInfo& ctxInfo,
     // https://b.corp.google.com/issues/143074513
     // https://skbug.com/40042528
     if (ctxInfo.renderer() == GrGLRenderer::kAdreno615 ||
-        ctxInfo.renderer() == GrGLRenderer::kAdreno620) {
+        ctxInfo.renderer() == GrGLRenderer::kAdreno620 ||
+        ctxInfo.renderer() == GrGLRenderer::kAdreno621) {
         fMSFBOType = kNone_MSFBOType;
+        fMSAAResolvesAutomatically = false;
+    }
+
+    // https://skbug.com/503013389
+    if (ctxInfo.driver() == GrGLDriver::kNVIDIA) {
         fMSAAResolvesAutomatically = false;
     }
 
@@ -4370,6 +4444,7 @@ void GrGLCaps::applyDriverCorrectnessWorkarounds(const GrGLContextInfo& ctxInfo,
         ctxInfo.renderer() == GrGLRenderer::kAdreno5xx_other ||
         ctxInfo.renderer() == GrGLRenderer::kAdreno615 ||
         ctxInfo.renderer() == GrGLRenderer::kAdreno620 ||
+        ctxInfo.renderer() == GrGLRenderer::kAdreno621 ||
         ctxInfo.renderer() == GrGLRenderer::kAdreno630 ||
         ctxInfo.renderer() == GrGLRenderer::kAdreno640 ||
         ctxInfo.renderer() == GrGLRenderer::kAdreno6xx_other) {
@@ -5339,6 +5414,10 @@ std::vector<GrTest::TestFormatColorTypeCombination> GrGLCaps::getTestingCombinat
         { GrColorType::kAlpha_F16,
           GrBackendFormats::MakeGL(GR_GL_R16F, GR_GL_TEXTURE_2D) },
         { GrColorType::kAlpha_F16,
+          GrBackendFormats::MakeGL(GR_GL_LUMINANCE16F, GR_GL_TEXTURE_2D) },
+        { GrColorType::kR_F16,
+          GrBackendFormats::MakeGL(GR_GL_R16F, GR_GL_TEXTURE_2D) },
+        { GrColorType::kR_F16,
           GrBackendFormats::MakeGL(GR_GL_LUMINANCE16F, GR_GL_TEXTURE_2D) },
         { GrColorType::kRGBA_F16,
           GrBackendFormats::MakeGL(GR_GL_RGBA16F, GR_GL_TEXTURE_2D) },

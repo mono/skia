@@ -34,6 +34,7 @@
 #include "include/gpu/graphite/Surface.h"
 #include "include/private/base/SingleOwner.h"
 #include "include/private/base/SkAlign.h"
+#include "include/private/base/SkLog.h"
 #include "include/private/base/SkMutex.h"
 #include "include/private/base/SkOnce.h"
 #include "include/private/base/SkTArray.h"
@@ -45,6 +46,7 @@
 #include "src/core/SkAutoPixmapStorage.h"
 #include "src/core/SkCPUContextImpl.h"
 #include "src/core/SkCPURecorderImpl.h"
+#include "src/core/SkColorSpaceXformSteps.h"
 #include "src/core/SkConvertPixels.h"
 #include "src/core/SkImageInfoPriv.h"
 #include "src/core/SkTraceEvent.h"
@@ -60,7 +62,6 @@
 #include "src/gpu/graphite/ContextPriv.h"
 #include "src/gpu/graphite/GlobalCache.h"
 #include "src/gpu/graphite/Image_Graphite.h"
-#include "src/gpu/graphite/Log.h"
 #include "src/gpu/graphite/QueueManager.h"
 #include "src/gpu/graphite/RecorderPriv.h"
 #include "src/gpu/graphite/RendererProvider.h"
@@ -69,6 +70,8 @@
 #include "src/gpu/graphite/RuntimeEffectDictionary.h"
 #include "src/gpu/graphite/SharedContext.h"
 #include "src/gpu/graphite/Surface_Graphite.h"
+#include "src/gpu/graphite/TextureFormatXferFn.h"
+#include "src/gpu/graphite/TextureInfoPriv.h"
 #include "src/gpu/graphite/TextureProxy.h"
 #include "src/gpu/graphite/TextureProxyView.h"
 #include "src/gpu/graphite/TextureUtils.h"
@@ -186,7 +189,7 @@ bool Context::finishInitialization() {
     }
     if (result == StaticBufferManager::FinishResult::kSuccess &&
         !fQueueManager->submitToGpu(/*submitInfo=*/{})) {
-        SKGPU_LOG_W("Failed to submit initial command buffer for Context creation.\n");
+        SKIA_LOG_W("Failed to submit initial command buffer for Context creation.\n");
         return false;
     } // else result was kNoWork so skip submitting to the GPU
     fSharedContext->setRendererProvider(std::move(renderers));
@@ -246,7 +249,7 @@ bool Context::submit(SubmitInfo submitInfo) {
     ASSERT_SINGLE_OWNER
 
     if (submitInfo.fSync == SyncToCpu::kYes && !fSharedContext->caps()->allowCpuSync()) {
-        SKGPU_LOG_E("SyncToCpu::kYes not supported with ContextOptions::fNeverYieldToWebGPU. "
+        SKIA_LOG_E("SyncToCpu::kYes not supported with ContextOptions::fNeverYieldToWebGPU. "
                     "The parameter is ignored and no synchronization will occur.");
         submitInfo.fSync = SyncToCpu::kNo;
     }
@@ -256,6 +259,8 @@ bool Context::submit(SubmitInfo submitInfo) {
 }
 
 bool Context::hasUnfinishedGpuWork() const { return fQueueManager->hasUnfinishedGpuWork(); }
+
+bool Context::hasPendingGPUWork() const { return fQueueManager->hasPendingGPUWork(); }
 
 template <typename SrcPixels>
 struct Context::AsyncParams {
@@ -280,7 +285,7 @@ struct Context::AsyncParams {
         if (!fSrcImage) {
             return false;
         }
-        // SkImage::isProtected() -> bool, TextureProxy::isProtected() -> Protected enum.
+        // SkImage::isProtected() -> bool, TextureProxyView::isProtected() -> Protected enum.
         // The explicit cast makes this function work for both template instantiations since
         // the Protected enum is backed by a bool.
         if ((bool) fSrcImage->isProtected()) {
@@ -320,7 +325,7 @@ void Context::asyncRescaleAndReadImpl(ReadFn Context::* asyncRead,
                                               rescaleGamma,
                                               rescaleMode);
     if (!scaledImage) {
-        SKGPU_LOG_W("AsyncRead failed because rescaling failed");
+        SKIA_LOG_W("AsyncRead failed because rescaling failed");
         return params.fail();
     }
     (this->*asyncRead)(std::move(recorder),
@@ -353,9 +358,9 @@ void Context::asyncRescaleAndReadPixels(const SkSurface* src,
         // no rescaling
         if (src && asConstSB(src)->isGraphiteBacked() &&
             srcRect.size() == dstImageInfo.dimensions()) {
-            TextureProxy* proxy = static_cast<const Surface*>(src)->backingTextureProxy();
+            TextureProxyView view = static_cast<const Surface*>(src)->target();
             return this->asyncReadTexture(/*recorder=*/nullptr,
-                                          {proxy, srcRect, dstImageInfo, callback, callbackContext},
+                                          {&view, srcRect, dstImageInfo, callback, callbackContext},
                                           src->imageInfo().colorInfo());
         }
         // else fall through and let asyncRescaleAndReadPixels() invoke the callback when it detects
@@ -396,7 +401,7 @@ void Context::asyncReadPixels(std::unique_ptr<Recorder> recorder,
                                               SkBackingFit::kApprox,
                                               "AsyncReadPixelsFallbackTexture");
         if (!flattened) {
-            SKGPU_LOG_W("AsyncRead failed because copy-as-drawing into a readable format failed");
+            SKIA_LOG_W("AsyncRead failed because copy-as-drawing into a readable format failed");
             return params.fail();
         }
         // Use the original fSrcRect and not flattened's size since it's approx-fit.
@@ -406,12 +411,12 @@ void Context::asyncReadPixels(std::unique_ptr<Recorder> recorder,
     }
 
     // Can copy directly from the image's texture
-    this->asyncReadTexture(std::move(recorder), params.withNewSource(view.proxy(), params.fSrcRect),
+    this->asyncReadTexture(std::move(recorder), params.withNewSource(&view, params.fSrcRect),
                            params.fSrcImage->imageInfo().colorInfo());
 }
 
 void Context::asyncReadTexture(std::unique_ptr<Recorder> recorder,
-                               const AsyncParams<TextureProxy>& params,
+                               const AsyncParams<TextureProxyView>& params,
                                const SkColorInfo& srcColorInfo) {
     SkASSERT(params.fSrcRect.size() == params.fDstImageInfo.dimensions());
 
@@ -420,7 +425,7 @@ void Context::asyncReadTexture(std::unique_ptr<Recorder> recorder,
         return params.fail();
     }
     PixelTransferResult transferResult = this->transferPixels(recorder.get(),
-                                                              params.fSrcImage,
+                                                              *params.fSrcImage,
                                                               srcColorInfo,
                                                               params.fDstImageInfo.colorInfo(),
                                                               params.fSrcRect);
@@ -575,7 +580,7 @@ void Context::asyncReadPixelsYUV420(std::unique_ptr<Recorder> recorder,
         Flush(dstSurface);
         // Must use planeInfo.bounds() for srcRect since dstSurface is kApprox-fit.
         *result = this->transferPixels(recorder.get(),
-                                       dstSurface->backingTextureProxy(),
+                                       dstSurface->target(),
                                        dstSurface->imageInfo().colorInfo(),
                                        planeInfo.colorInfo(),
                                        planeInfo.bounds());
@@ -714,43 +719,38 @@ void Context::finalizeAsyncReadPixels(std::unique_ptr<Recorder> recorder,
     // required clean up for us, just log an error message. The buffers will never be mapped and
     // thus don't need an unmap.
     if (!fQueueManager->addFinishInfo(info, fResourceProvider.get(), buffersToAsyncMap)) {
-        SKGPU_LOG_E("Failed to register finish callbacks for asyncReadPixels.");
+        SKIA_LOG_E("Failed to register finish callbacks for asyncReadPixels.");
         return;
     }
 }
 
 Context::PixelTransferResult Context::transferPixels(Recorder* recorder,
-                                                     const TextureProxy* srcProxy,
+                                                     const TextureProxyView& srcView,
                                                      const SkColorInfo& srcColorInfo,
                                                      const SkColorInfo& dstColorInfo,
                                                      const SkIRect& srcRect) {
-    SkASSERT(SkIRect::MakeSize(srcProxy->dimensions()).contains(srcRect));
+    SkASSERT(SkIRect::MakeSize(srcView.dimensions()).contains(srcRect));
     SkASSERT(SkColorInfoIsValid(dstColorInfo));
 
+    const TextureInfo& texInfo = srcView.proxy()->textureInfo();
+    const TextureFormat format = TextureInfoPriv::ViewFormat(texInfo);
     const Caps* caps = fSharedContext->caps();
-    if (!srcProxy || !caps->isCopyableSrc(srcProxy->textureInfo())) {
+
+    if (!srcView || !caps->isCopyableSrc(texInfo)) {
         return {};
     }
 
-    const SkColorType srcColorType = srcColorInfo.colorType();
-    SkColorType supportedColorType;
-    bool isRGB888Format;
-    std::tie(supportedColorType, isRGB888Format) =
-            caps->supportedTransferColorType(srcColorType, srcProxy->textureInfo());
-    if (supportedColorType == kUnknown_SkColorType) {
+    SkColorSpaceXformSteps csSteps{srcColorInfo.colorSpace(), srcColorInfo.alphaType(),
+                                   dstColorInfo.colorSpace(), dstColorInfo.alphaType()};
+    auto xferFn = TextureFormatXferFn::MakeGpuToCpu(format,
+                                                    srcView.swizzle(),
+                                                    csSteps,
+                                                    dstColorInfo.colorType());
+    if (!xferFn) {
         return {};
     }
 
-    // Fail if read color type does not have all of dstCT's color channels and those missing color
-    // channels are in the src.
-    uint32_t dstChannels = SkColorTypeChannelFlags(dstColorInfo.colorType());
-    uint32_t legalReadChannels = SkColorTypeChannelFlags(supportedColorType);
-    uint32_t srcChannels = SkColorTypeChannelFlags(srcColorType);
-    if ((~legalReadChannels & dstChannels) & srcChannels) {
-        return {};
-    }
-
-    int bpp = isRGB888Format ? 3 : SkColorTypeBytesPerPixel(supportedColorType);
+    int bpp = TextureFormatBytesPerBlock(format);
     size_t rowBytes = caps->getAlignedTextureDataRowBytes(bpp * srcRect.width());
     size_t size = SkAlignTo(rowBytes * srcRect.height(), caps->requiredTransferBufferAlignment());
     sk_sp<Buffer> buffer = fResourceProvider->findOrCreateNonShareableBuffer(
@@ -761,7 +761,7 @@ Context::PixelTransferResult Context::transferPixels(Recorder* recorder,
 
     // Set up copy task. Since we always use a new buffer the offset can be 0 and we don't need to
     // worry about aligning it to the required transfer buffer alignment.
-    sk_sp<CopyTextureToBufferTask> copyTask = CopyTextureToBufferTask::Make(sk_ref_sp(srcProxy),
+    sk_sp<CopyTextureToBufferTask> copyTask = CopyTextureToBufferTask::Make(srcView.refProxy(),
                                                                             srcRect,
                                                                             buffer,
                                                                             /*bufferOffset=*/0,
@@ -789,48 +789,17 @@ Context::PixelTransferResult Context::transferPixels(Recorder* recorder,
     PixelTransferResult result;
     result.fTransferBuffer = std::move(buffer);
     result.fSize = srcRect.size();
-    // srcColorInfo describes the texture; readColorInfo describes the result of the copy-to-buffer,
-    // which may be different; dstColorInfo is what we have to transform it into when invoking the
-    // async callbacks.
-    SkColorInfo readColorInfo = srcColorInfo.makeColorType(supportedColorType);
-    if (readColorInfo.alphaType() == kUnknown_SkAlphaType) {
-        readColorInfo = readColorInfo.makeAlphaType(kOpaque_SkAlphaType);
-    }
-    SkColorInfo outColorInfo = dstColorInfo;
-    if (outColorInfo.alphaType() == kUnknown_SkAlphaType) {
-        outColorInfo = outColorInfo.makeAlphaType(kOpaque_SkAlphaType);
-    }
-    if (readColorInfo != outColorInfo || isRGB888Format) {
-        SkISize dims = srcRect.size();
-        SkImageInfo srcInfo = SkImageInfo::Make(dims, readColorInfo);
-        SkImageInfo dstInfo = SkImageInfo::Make(dims, outColorInfo);
-
-        result.fRowBytes = dstInfo.minRowBytes();
-        result.fPixelConverter = [dstInfo, srcInfo, rowBytes, isRGB888Format](
-                void* dst, const void* src) {
-            SkAutoPixmapStorage temp;
-            size_t srcRowBytes = rowBytes;
-            if (isRGB888Format) {
-                temp.alloc(srcInfo);
-                size_t tRowBytes = temp.rowBytes();
-                auto* sRow = reinterpret_cast<const char*>(src);
-                auto* tRow = reinterpret_cast<char*>(temp.writable_addr());
-                for (int y = 0; y < srcInfo.height(); ++y, sRow += srcRowBytes, tRow += tRowBytes) {
-                    for (int x = 0; x < srcInfo.width(); ++x) {
-                        auto s = sRow + x*3;
-                        auto t = tRow + x*sizeof(uint32_t);
-                        memcpy(t, s, 3);
-                        t[3] = static_cast<char>(0xFF);
-                    }
-                }
-                src = temp.addr();
-                srcRowBytes = tRowBytes;
-            }
-            SkAssertResult(SkConvertPixels(dstInfo, dst, dstInfo.minRowBytes(),
-                                           srcInfo, src, srcRowBytes));
-        };
-    } else {
+    if (xferFn->isIdentity()) {
         result.fRowBytes = rowBytes;
+    } else {
+        SkImageInfo dstInfo = SkImageInfo::Make(srcRect.size(), dstColorInfo);
+        result.fRowBytes = dstInfo.minRowBytes();
+        result.fPixelConverter = [xferFn, dstInfo, rowBytes](void* dst, const void* src) {
+            SkASSERT(xferFn.has_value());
+            xferFn->run(dstInfo.width(), dstInfo.height(),
+                        src, rowBytes,
+                        dst, dstInfo.minRowBytes());
+        };
     }
 
     return result;
@@ -868,14 +837,20 @@ void Context::freeGpuResources() {
     fSharedContext->freeGpuResources();
 }
 
-void Context::performDeferredCleanup(std::chrono::milliseconds msNotUsed) {
+void Context::performDeferredCleanup(
+        std::chrono::milliseconds msNotUsed,
+        std::optional<std::chrono::microseconds> microsMaxPurgingDur) {
     ASSERT_SINGLE_OWNER
 
     this->checkAsyncWorkCompletion();
-
     auto purgeTime = skgpu::StdSteadyClock::now() - msNotUsed;
-    fResourceProvider->purgeResourcesNotUsedSince(purgeTime);
+
+    // We do not ever limit the time required to purge resources from the threadsafe resource cache
+    // because it holds objects which should be basically trivial to delete. Eventually, these
+    // resources will be moved into a global threadsafe resource cache anyhow.
     fSharedContext->purgeResourcesNotUsedSince(purgeTime);
+
+    fResourceProvider->purgeResourcesNotUsedSince(purgeTime, microsMaxPurgingDur);
 }
 
 size_t Context::currentBudgetedBytes() const {
@@ -963,7 +938,7 @@ void Context::deregisterRecorder(const Recorder* recorder) {
 }
 
 bool ContextPriv::readPixels(const SkPixmap& pm,
-                             const TextureProxy* textureProxy,
+                             const TextureProxyView& srcView,
                              const SkImageInfo& srcImageInfo,
                              int srcX, int srcY) {
     auto rect = SkIRect::MakeXYWH(srcX, srcY, pm.width(), pm.height());
@@ -983,11 +958,11 @@ bool ContextPriv::readPixels(const SkPixmap& pm,
     // This is roughly equivalent to the logic taken in asyncRescaleAndRead(SkSurface) to either
     // try the image-based readback (with copy-as-draw fallbacks) or read the texture directly
     // if it supports reading.
-    if (!fContext->fSharedContext->caps()->isCopyableSrc(textureProxy->textureInfo())) {
+    if (!fContext->fSharedContext->caps()->isCopyableSrc(srcView.proxy()->textureInfo())) {
         // Since this is a synchronous testing-only API, callers should have flushed any pending
         // work that modifies this texture proxy already. This means we don't have to worry about
         // re-wrapping the proxy in a new Image (that wouldn't tbe connected to any Device, etc.).
-        sk_sp<SkImage> image{new Image(TextureProxyView(sk_ref_sp(textureProxy)), srcColorInfo)};
+        sk_sp<SkImage> image{new Image(srcView, srcColorInfo)};
         Context::AsyncParams<SkImage> params {image.get(), rect, pm.info(),
                                               asyncCallback, &asyncContext};
         if (!params.validate()) {
@@ -997,7 +972,7 @@ bool ContextPriv::readPixels(const SkPixmap& pm,
         }
     } else {
         fContext->asyncReadTexture(/*recorder=*/nullptr,
-                                   {textureProxy, rect, pm.info(), asyncCallback, &asyncContext},
+                                   {&srcView, rect, pm.info(), asyncCallback, &asyncContext},
                                    srcImageInfo.colorInfo());
     }
 

@@ -1,4 +1,4 @@
-// Copyright 2019 Google LLC.
+// Copyright 2019 Google LLC
 // Use of this source code is governed by a BSD-style license that can be found in the LICENSE file.
 #include "docs/examples/50_percent_gray.cpp"
 #include "docs/examples/50_percent_srgb.cpp"
@@ -19,7 +19,6 @@
 #include "docs/examples/Bitmap_colorType.cpp"
 #include "docs/examples/Bitmap_computeByteSize.cpp"
 #include "docs/examples/Bitmap_copy_const_SkBitmap.cpp"
-#include "docs/examples/Bitmap_copy_operator.cpp"
 #include "docs/examples/Bitmap_dimensions.cpp"
 #include "docs/examples/Bitmap_drawsNothing.cpp"
 #include "docs/examples/Bitmap_empty.cpp"
@@ -534,7 +533,6 @@
 #include "docs/examples/Path_conicTo_2.cpp"
 #include "docs/examples/Path_conservativelyContainsRect.cpp"
 #include "docs/examples/Path_copy_const_SkPath.cpp"
-#include "docs/examples/Path_copy_operator.cpp"
 #include "docs/examples/Path_countPoints.cpp"
 #include "docs/examples/Path_countVerbs.cpp"
 #include "docs/examples/Path_cubicTo.cpp"
