@@ -1884,6 +1884,11 @@ skia_source_set("core") {
   # backend symbols, and the linker strips d3d12/vulkan/metal imports
   # from libSkiaSharp. :core's own compile needs the defines; its
   # dependents already inherit them from :gpu's chain.
+  #
+  # mono/skia: Similarly, SK_FONTMGR_FONTCONFIG_AVAILABLE is a public_define
+  # on :fontmgr_fontconfig and does not propagate to :core where sk_typeface.cpp
+  # is compiled. Without it, sk_fontmgr_create_default() falls through to
+  # SkFontMgr_New_Custom_Empty() on Linux, producing an empty font manager.
   defines = []
   if (skia_use_direct3d) {
     defines += [ "SK_DIRECT3D" ]
@@ -1894,6 +1899,9 @@ skia_source_set("core") {
   }
   if (skia_use_metal) {
     defines += [ "SK_METAL" ]
+  }
+  if (skia_enable_fontmgr_fontconfig) {
+    defines += [ "SK_FONTMGR_FONTCONFIG_AVAILABLE" ]
   }
 
   # These deps don't belong to :core, but they are currently needed to support (de)serialization.
