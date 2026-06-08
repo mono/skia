@@ -253,6 +253,16 @@ template("gcc_like_toolchain") {
     current_cpu = invoker.cpu
     current_os = invoker.os
 
+    # SkiaSharp patch: upstream m148 replaced the old `is_mac || is_ios` Apple
+    # checks in this toolchain with explicit `current_os == "mac"/"ios"/"tvos"`,
+    # which dropped maccatalyst and watchos (both are part of is_ios in
+    # gn/BUILDCONFIG.gn). Without them, Mac Catalyst static libs fall through to
+    # the BSD `ar @rspfile` branch, which macOS ar does not support
+    # ("ar: @libzlib.a.rsp: No such file or directory"). Restore the full set.
+    _is_apple = current_os == "mac" || current_os == "ios" ||
+                current_os == "tvos" || current_os == "watchos" ||
+                current_os == "maccatalyst"
+
     if (defined(invoker.deps)) {
       deps = invoker.deps
     }
@@ -302,12 +312,12 @@ template("gcc_like_toolchain") {
       description = "assemble {{source}}"
     }
 
-    if (current_os == "mac" || current_os == "ios" || current_os == "tvos") {
+    if (_is_apple) {
       not_needed([ "ar" ])  # We use libtool instead.
     }
 
     tool("alink") {
-      if (current_os == "mac" || current_os == "ios" || current_os == "tvos") {
+      if (_is_apple) {
         command = "libtool -static -o {{output}} -no_warning_for_no_symbols {{inputs}}"
       } else {
         rspfile = "{{output}}.rsp"
@@ -319,7 +329,10 @@ template("gcc_like_toolchain") {
       outputs =
           [ "{{root_out_dir}}/{{target_output_name}}{{output_extension}}" ]
       if (current_os == "wasm" && !is_canvaskit) {
-        default_output_extension = ".wasm.a"
+        # SkiaSharp patch: keep the ".a.wasm" suffix (upstream m148 flipped this
+        # to ".wasm.a"). SkiaSharp's standalone WASM build (native/wasm/build.cake)
+        # globs "*.a.wasm" to merge the static archives, so the order matters.
+        default_output_extension = ".a.wasm"
       } else {
         default_output_extension = ".a"
       }
@@ -337,7 +350,7 @@ template("gcc_like_toolchain") {
       }
 
       rpath = "-Wl,-soname,$soname"
-      if (current_os == "mac" || current_os == "ios" || current_os == "tvos") {
+      if (_is_apple) {
         rpath = "-Wl,-install_name,@rpath/$soname"
       }
 
@@ -352,7 +365,7 @@ template("gcc_like_toolchain") {
       # LLD doesn't need these flags, but accepts and ignores them.
       _start_group = "-Wl,--start-group"
       _end_group = "-Wl,--end-group"
-      if (current_os == "mac" || current_os == "ios" || current_os == "tvos") {
+      if (_is_apple) {
         _start_group = ""
         _end_group = ""
       }
@@ -365,10 +378,12 @@ template("gcc_like_toolchain") {
       command = "$link -shared {{ldflags}} $_start_group @$rspfile {{frameworks}} {{solibs}} $_end_group {{libs}} $rpath $_emcc_flags -o {{output}}"
       outputs = [ "{{root_out_dir}}/$soname" ]
       output_prefix = "lib"
-      if (current_os == "mac" || current_os == "ios" || current_os == "tvos") {
+      if (_is_apple) {
         default_output_extension = ".dylib"
       } else if (current_os == "wasm" && !is_canvaskit) {
-        default_output_extension = ".wasm.so"
+        # SkiaSharp patch: keep the ".so.wasm" suffix (upstream m148 flipped this
+        # to ".wasm.so") to match the standalone WASM build expectations.
+        default_output_extension = ".so.wasm"
       } else {
         default_output_extension = ".so"
       }
@@ -391,7 +406,7 @@ template("gcc_like_toolchain") {
       # LLD doesn't need these flags, but accepts and ignores them.
       _start_group = "-Wl,--start-group"
       _end_group = "-Wl,--end-group"
-      if (current_os == "mac" || current_os == "ios" || current_os == "tvos") {
+      if (_is_apple) {
         _start_group = ""
         _end_group = ""
       }
@@ -474,8 +489,11 @@ if (is_wasm) {
     }
     link = cxx
 
-    if (!is_canvaskit) {
-      deps = [ "//gn/toolchain/emsdk:activate(//gn/toolchain:$host_toolchain)" ]
-    }
+    # SkiaSharp patch: do not depend on the emsdk:activate action.
+    # Upstream added this to provision the DEPS-bundled emsdk
+    # (third_party/externals/emsdk) via bin/activate-emsdk. SkiaSharp supplies
+    # its own version-pinned emsdk through the skia_emsdk_dir GN arg and skips
+    # the DEPS emsdk entirely (GIT_SYNC_DEPS_SKIP_EMSDK=1), so activate would
+    # fail with "emsdk.py: No such file or directory".
   }
 }
