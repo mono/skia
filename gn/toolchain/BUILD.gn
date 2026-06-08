@@ -302,12 +302,12 @@ template("gcc_like_toolchain") {
       description = "assemble {{source}}"
     }
 
-    if (current_os == "mac" || current_os == "ios" || current_os == "tvos") {
+    if (current_os == "mac" || current_os == "ios" || current_os == "tvos" || current_os == "maccatalyst") {
       not_needed([ "ar" ])  # We use libtool instead.
     }
 
     tool("alink") {
-      if (current_os == "mac" || current_os == "ios" || current_os == "tvos") {
+      if (current_os == "mac" || current_os == "ios" || current_os == "tvos" || current_os == "maccatalyst") {
         command = "libtool -static -o {{output}} -no_warning_for_no_symbols {{inputs}}"
       } else {
         rspfile = "{{output}}.rsp"
@@ -337,7 +337,7 @@ template("gcc_like_toolchain") {
       }
 
       rpath = "-Wl,-soname,$soname"
-      if (current_os == "mac" || current_os == "ios" || current_os == "tvos") {
+      if (current_os == "mac" || current_os == "ios" || current_os == "tvos" || current_os == "maccatalyst") {
         rpath = "-Wl,-install_name,@rpath/$soname"
       }
 
@@ -352,7 +352,7 @@ template("gcc_like_toolchain") {
       # LLD doesn't need these flags, but accepts and ignores them.
       _start_group = "-Wl,--start-group"
       _end_group = "-Wl,--end-group"
-      if (current_os == "mac" || current_os == "ios" || current_os == "tvos") {
+      if (current_os == "mac" || current_os == "ios" || current_os == "tvos" || current_os == "maccatalyst") {
         _start_group = ""
         _end_group = ""
       }
@@ -365,7 +365,7 @@ template("gcc_like_toolchain") {
       command = "$link -shared {{ldflags}} $_start_group @$rspfile {{frameworks}} {{solibs}} $_end_group {{libs}} $rpath $_emcc_flags -o {{output}}"
       outputs = [ "{{root_out_dir}}/$soname" ]
       output_prefix = "lib"
-      if (current_os == "mac" || current_os == "ios" || current_os == "tvos") {
+      if (current_os == "mac" || current_os == "ios" || current_os == "tvos" || current_os == "maccatalyst") {
         default_output_extension = ".dylib"
       } else if (current_os == "wasm" && !is_canvaskit) {
         default_output_extension = ".wasm.so"
@@ -391,7 +391,7 @@ template("gcc_like_toolchain") {
       # LLD doesn't need these flags, but accepts and ignores them.
       _start_group = "-Wl,--start-group"
       _end_group = "-Wl,--end-group"
-      if (current_os == "mac" || current_os == "ios" || current_os == "tvos") {
+      if (current_os == "mac" || current_os == "ios" || current_os == "tvos" || current_os == "maccatalyst") {
         _start_group = ""
         _end_group = ""
       }
