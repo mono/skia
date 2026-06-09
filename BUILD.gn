@@ -1901,6 +1901,20 @@ skia_source_set("core") {
     ":typeface_fontations",
     ":typeface_freetype",
   ]
+
+  # mono/skia: SkiaSharp compiles its C API (src/c/sk_typeface.cpp) into :core
+  # via gn/core.gni. That code selects the Linux default SkFontMgr behind
+  # `#elif defined(SK_FONTMGR_FONTCONFIG_AVAILABLE)`, a public_define carried by
+  # :fontmgr_fontconfig that also supplies the <fontconfig/fontconfig.h> include
+  # path and the SkFontMgr_New_FontConfig symbol. Upstream m148
+  # (commit 029229d8be "Simplify gn typeface related deps") intentionally moved
+  # the fontmgr targets off :core, keeping them only on :skia — correct upstream,
+  # but it strips the define from our C API's compile, so sk_fontmgr_create_default
+  # silently falls back to an empty font manager on Linux. Add it back here only
+  # for the fork; the list above is left identical to upstream to keep merges clean.
+  if (skia_enable_fontmgr_fontconfig) {
+    deps += [ ":fontmgr_fontconfig" ]
+  }
 }
 
 skia_component("skia") {
