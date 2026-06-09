@@ -1887,26 +1887,6 @@ skia_source_set("core") {
   public = skia_core_public
   sources = skia_core_sources
 
-  # mono/skia: SkiaSharp's C API shims (src/c/gr_context.cpp et al.) are
-  # compiled into :core via gn/core.gni, but Skia's backend defines live on
-  # :gpu's all_dependent_configs and therefore don't reach :core. Without
-  # them, SK_ONLY_DIRECT3D / SK_ONLY_VULKAN / SK_ONLY_METAL collapse to
-  # stub returns, GPU context factory C entry points never reference
-  # backend symbols, and the linker strips d3d12/vulkan/metal imports
-  # from libSkiaSharp. :core's own compile needs the defines; its
-  # dependents already inherit them from :gpu's chain.
-  defines = []
-  if (skia_use_direct3d) {
-    defines += [ "SK_DIRECT3D" ]
-  }
-  if (skia_use_vulkan) {
-    defines += [ "SK_VULKAN" ]
-    configs += [ ":use_skia_vulkan_headers" ]
-  }
-  if (skia_use_metal) {
-    defines += [ "SK_METAL" ]
-  }
-
   # These deps don't belong to :core, but they are currently needed to support (de)serialization.
   deps = [
     ":fontmgr_mac_ct",
@@ -1917,20 +1897,6 @@ skia_source_set("core") {
     ":typeface_fontations",
     ":typeface_freetype",
   ]
-
-  # mono/skia: SkiaSharp compiles its C API (src/c/sk_typeface.cpp) into :core
-  # via gn/core.gni. That code selects the Linux default SkFontMgr behind
-  # `#elif defined(SK_FONTMGR_FONTCONFIG_AVAILABLE)`, a public_define carried by
-  # :fontmgr_fontconfig that also supplies the <fontconfig/fontconfig.h> include
-  # path and the SkFontMgr_New_FontConfig symbol. Upstream m148
-  # (commit 029229d8be "Simplify gn typeface related deps") intentionally moved
-  # the fontmgr targets off :core, keeping them only on :skia — correct upstream,
-  # but it strips the define from our C API's compile, so sk_fontmgr_create_default
-  # silently falls back to an empty font manager on Linux. Add it back here only
-  # for the fork; the list above is left identical to upstream to keep merges clean.
-  if (skia_enable_fontmgr_fontconfig) {
-    deps += [ ":fontmgr_fontconfig" ]
-  }
 }
 
 skia_component("skia") {
@@ -4041,10 +4007,121 @@ skiasharp_build("SkiaSharp") {
     # sk_pathop_simplify, sk_pathop_tight_bounds, sk_pathop_as_winding,
     # SkOpBuilder) so we need it linked into libSkiaSharp.so directly.
     ":pathops",
+
+    # mono/skia: SkiaSharp's C API shim (src/c/*.cpp) is compiled in THIS
+    # target (not upstream's :core). The font managers that sk_typeface.cpp
+    # selects per-platform are depended on directly so its public_defines
+    # (e.g. SK_FONTMGR_FONTCONFIG_AVAILABLE, emitted via optional()'s
+    # all_dependent_configs) come from libSkiaSharp's own dependency graph
+    # instead of riding on :core's churning transitive deps. These are
+    # optional() targets — empty/harmless on platforms where they're disabled.
+    ":fontmgr_FontConfigInterface",
+    ":fontmgr_android",
+    ":fontmgr_android_ndk",
+    ":fontmgr_custom_directory",
+    ":fontmgr_custom_embedded",
+    ":fontmgr_custom_empty",
+    ":fontmgr_fontations_empty",
+    ":fontmgr_fontconfig",
+    ":fontmgr_mac_ct",
+    ":fontmgr_win",
+    ":fontmgr_win_gdi",
+
+    # mono/skia: modules used directly by the C API shim. skottie pulls
+    # jsonreader/skresources/sksg in transitively, but the shim includes
+    # their headers/symbols directly (sk_linker.cpp -> jsonreader;
+    # skresources_resource_provider.cpp -> skresources;
+    # sksg_invalidation_controller.cpp -> sksg) so depend on them explicitly.
+    "modules/jsonreader",
     "modules/skottie",
+    "modules/skresources",
+    "modules/sksg",
+  ]
+
+  # mono/skia: C API public headers (moved out of upstream's :core).
+  public = [
+    "include/c/sk_bitmap.h",
+    "include/c/sk_blender.h",
+    "include/c/sk_canvas.h",
+    "include/c/sk_codec.h",
+    "include/c/sk_colorfilter.h",
+    "include/c/sk_colorspace.h",
+    "include/c/sk_data.h",
+    "include/c/sk_document.h",
+    "include/c/sk_drawable.h",
+    "include/c/sk_font.h",
+    "include/c/sk_general.h",
+    "include/c/sk_graphics.h",
+    "include/c/sk_image.h",
+    "include/c/sk_imagefilter.h",
+    "include/c/sk_maskfilter.h",
+    "include/c/sk_matrix.h",
+    "include/c/sk_paint.h",
+    "include/c/sk_path.h",
+    "include/c/sk_pathbuilder.h",
+    "include/c/sk_patheffect.h",
+    "include/c/sk_picture.h",
+    "include/c/sk_pixmap.h",
+    "include/c/sk_region.h",
+    "include/c/sk_rrect.h",
+    "include/c/sk_runtimeeffect.h",
+    "include/c/sk_shader.h",
+    "include/c/sk_stream.h",
+    "include/c/sk_string.h",
+    "include/c/sk_surface.h",
+    "include/c/sk_svg.h",
+    "include/c/sk_textblob.h",
+    "include/c/sk_typeface.h",
+    "include/c/sk_types.h",
+    "include/c/sk_vertices.h",
+    "include/c/gr_context.h",
   ]
 
   sources = [
+    # mono/skia: C API shim implementation (moved out of upstream's :core).
+    "src/c/sk_bitmap.cpp",
+    "src/c/sk_blender.cpp",
+    "src/c/sk_canvas.cpp",
+    "src/c/sk_codec.cpp",
+    "src/c/sk_colorfilter.cpp",
+    "src/c/sk_colorspace.cpp",
+    "src/c/sk_data.cpp",
+    "src/c/sk_document.cpp",
+    "src/c/sk_drawable.cpp",
+    "src/c/sk_enums.cpp",
+    "src/c/sk_font.cpp",
+    "src/c/sk_general.cpp",
+    "src/c/sk_graphics.cpp",
+    "src/c/sk_image.cpp",
+    "src/c/sk_imagefilter.cpp",
+    "src/c/sk_maskfilter.cpp",
+    "src/c/sk_matrix.cpp",
+    "src/c/sk_paint.cpp",
+    "src/c/sk_path.cpp",
+    "src/c/sk_pathbuilder.cpp",
+    "src/c/sk_patheffect.cpp",
+    "src/c/sk_picture.cpp",
+    "src/c/sk_pixmap.cpp",
+    "src/c/sk_region.cpp",
+    "src/c/sk_rrect.cpp",
+    "src/c/sk_runtimeeffect.cpp",
+    "src/c/sk_shader.cpp",
+    "src/c/sk_stream.cpp",
+    "src/c/sk_string.cpp",
+    "src/c/sk_structs.cpp",
+    "src/c/sk_surface.cpp",
+    "src/c/sk_svg.cpp",
+    "src/c/sk_textblob.cpp",
+    "src/c/sk_typeface.cpp",
+    "src/c/sk_types_priv.h",
+    "src/c/sk_vertices.cpp",
+    "src/c/gr_context.cpp",
+    "src/c/sk_linker.cpp",
+    "src/c/skottie_animation.cpp",
+    "src/c/skresources_resource_provider.cpp",
+    "src/c/sksg_invalidation_controller.cpp",
+
+    # mono/skia: managed-interop shims.
     "src/xamarin/sk_compatpaint.cpp",
     "src/xamarin/sk_manageddrawable.cpp",
     "src/xamarin/sk_managedstream.cpp",
