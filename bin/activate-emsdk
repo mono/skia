@@ -10,7 +10,10 @@ import subprocess
 import sys
 import sysconfig
 
-EMSDK_ROOT = os.path.join('third_party', 'externals', 'emsdk')
+THIS_DIR = os.path.dirname(__file__)
+SRC_ROOT_DIR = os.path.abspath(os.path.join(THIS_DIR, os.path.pardir))
+
+EMSDK_ROOT = os.path.join(SRC_ROOT_DIR, 'third_party', 'externals', 'emsdk')
 
 EMSDK_PATH = os.path.join(EMSDK_ROOT, 'emsdk.py')
 
@@ -18,6 +21,11 @@ EMSDK_PATH = os.path.join(EMSDK_ROOT, 'emsdk.py')
 EMSDK_VERSION = '4.0.7'
 
 def main():
+    if not os.path.exists(EMSDK_PATH):
+        # SkiaSharp builds WASM against an external, pre-activated emsdk supplied
+        # via skia_emsdk_dir, so there is no in-tree emsdk
+        # (third_party/externals/emsdk) to install or activate.
+        return
     if sysconfig.get_platform() in ['linux-aarch64', 'linux-arm64']:
         # This platform cannot install emsdk at the provided version. See
         # https://github.com/emscripten-core/emsdk/blob/main/emscripten-releases-tags.json#L5

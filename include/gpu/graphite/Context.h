@@ -61,6 +61,7 @@ class QueueManager;
 class ResourceProvider;
 class SharedContext;
 class TextureProxy;
+class TextureProxyView;
 
 class SK_API Context final {
 public:
@@ -86,6 +87,9 @@ public:
 
     /** Returns true if there is work that was submitted to the GPU that has not finished. */
     bool hasUnfinishedGpuWork() const;
+
+    /** Returns true if there is pending GPU work that needs to be submitted. */
+    bool hasPendingGPUWork() const;
 
     /** Makes image pixel data available to caller, possibly asynchronously. It can also rescale
         the image pixels.
@@ -382,14 +386,14 @@ private:
     // Like asyncReadPixels() except it performs no fallbacks, and requires that the texture be
     // readable. However, the texture does not need to be sampleable.
     void asyncReadTexture(std::unique_ptr<Recorder>,
-                          const AsyncParams<TextureProxy>&,
+                          const AsyncParams<TextureProxyView>&,
                           const SkColorInfo& srcColorInfo);
 
     // Inserts a texture to buffer transfer task, used by asyncReadPixels methods. If the
     // Recorder is non-null, tasks will be added to the Recorder's list; otherwise the transfer
     // tasks will be added to the queue manager directly.
     PixelTransferResult transferPixels(Recorder*,
-                                       const TextureProxy* srcProxy,
+                                       const TextureProxyView& srcView,
                                        const SkColorInfo& srcColorInfo,
                                        const SkColorInfo& dstColorInfo,
                                        const SkIRect& srcRect);

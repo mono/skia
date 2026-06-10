@@ -1,5 +1,5 @@
 /*
- * Copyright 2025 Google Inc.
+ * Copyright 2025 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -40,8 +40,8 @@ bool ContentLightLevelInformation::parse(const SkData* data) {
 
 sk_sp<SkData> ContentLightLevelInformation::serialize() const {
     SkDynamicMemoryWStream s;
-    SkStreamPriv::WriteU16BE(&s, std::llroundf(fMaxCLL));
-    SkStreamPriv::WriteU16BE(&s, std::llroundf(fMaxFALL));
+    SkStreamPriv::WriteU16BE(&s, getUint16MaxCLL());
+    SkStreamPriv::WriteU16BE(&s, getUint16MaxFALL());
     return s.detachAsData();
 }
 

@@ -1,5 +1,5 @@
 /*
- * Copyright 2021 Google Inc.
+ * Copyright 2021 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -326,6 +326,10 @@ public:
     // Regardless of success or failure, the DrawBufferManager is reset to a valid initial state
     // for recording buffer data for the next Recording.
     [[nodiscard]] bool transferToRecording(Recording*);
+
+#if defined(GPU_TEST_UTILS)
+    void testingOnly_onFailedBuffer() { this->onFailedBuffer(); }
+#endif
 
 private:
     friend class BufferSubAllocator;
