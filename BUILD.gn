@@ -4108,6 +4108,10 @@ skiasharp_build("SkiaSharp") {
     "include/c/sk_types.h",
     "include/c/sk_vertices.h",
     "include/c/gr_context.h",
+    "include/c/sk_linker.h",
+    "include/c/skottie_animation.h",
+    "include/c/skresources_resource_provider.h",
+    "include/c/sksg_invalidation_controller.h",
   ]
 
   sources = [
