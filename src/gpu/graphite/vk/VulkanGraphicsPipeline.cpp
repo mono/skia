@@ -514,10 +514,10 @@ static bool uniform_desc_set_layout(VkDescriptorSetLayout& outLayout,
                                     const VulkanSharedContext* sharedContext,
                                     bool hasCombinedUniforms,
                                     bool hasGradientBuffer) {
-    // Define a container with size reserved for up to kNumUniformBuffers descriptors. Only add
+    // Define a container with size reserved for up to kMaxNumUniformBuffers descriptors. Only add
     // DescriptorData for uniforms that actually are used and need to be included in the layout.
     skia_private::STArray<
-            VulkanGraphicsPipeline::kNumUniformBuffers, DescriptorData> uniformDescriptors;
+            VulkanGraphicsPipeline::kMaxNumUniformBuffers, DescriptorData> uniformDescriptors;
 
     DescriptorType uniformBufferType =
             sharedContext->caps()->storageBufferSupport() ? DescriptorType::kStorageBuffer
@@ -559,11 +559,12 @@ static bool texture_sampler_desc_set_layout(VkDescriptorSetLayout& outLayout,
         if (!immutableSamplers.empty() && immutableSamplers[i]) {
             immutableSampler = immutableSamplers[i].get();
         }
-        textureSamplerDescs.push_back({DescriptorType::kCombinedTextureSampler,
-                                       /*count=*/1,
-                                       /*bindingIdx=*/i,
-                                       PipelineStageFlags::kFragmentShader,
-                                       immutableSampler});
+        textureSamplerDescs.push_back(
+                {DescriptorType::kCombinedTextureSampler,
+                 /*count=*/1,
+                 /*bindingIdx=*/i,
+                 PipelineStageFlags::kVertexShader | PipelineStageFlags::kFragmentShader,
+                 immutableSampler});
     }
 
     // If no texture/samplers are used, a mock VkDescriptorSetLayout handle by passing in the

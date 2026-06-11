@@ -602,7 +602,6 @@ DEF_TEST(SkRegion_Iterator_StepsThroughAllScanlines, reporter) {
     SkRegion rgn2;
     size_t len2 = rgn2.readFromMemory(&buffer, len);
     REPORTER_ASSERT(reporter, len == len2);
-    // TODO(kjlubick) make sure fuzzer uses the iterators
 
     // Make sure the serialized/deserialzed version is the same as the original.
     for (const auto& rgn : {rgn1, rgn2}) {

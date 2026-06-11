@@ -546,11 +546,13 @@ void Recorder::freeGpuResources() {
     fStrikeCache->freeAll();
 }
 
-void Recorder::performDeferredCleanup(std::chrono::milliseconds msNotUsed) {
+void Recorder::performDeferredCleanup(
+        std::chrono::milliseconds msNotUsed,
+        std::optional<std::chrono::microseconds> microsMaxPurgingDur) {
     ASSERT_SINGLE_OWNER
 
     auto purgeTime = skgpu::StdSteadyClock::now() - msNotUsed;
-    fResourceProvider->purgeResourcesNotUsedSince(purgeTime);
+    fResourceProvider->purgeResourcesNotUsedSince(purgeTime, microsMaxPurgingDur);
 }
 
 size_t Recorder::currentBudgetedBytes() const {
@@ -746,6 +748,10 @@ void RecorderPriv::setContext(Context* context) {
 
 void RecorderPriv::issueFlushToken() {
     fRecorder->fTokenTracker->issueFlushToken();
+}
+
+int RecorderPriv::numRootTasks() const {
+    return fRecorder->fRootTaskList->size();
 }
 #endif
 

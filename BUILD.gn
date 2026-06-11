@@ -2865,6 +2865,9 @@ if (skia_enable_tools) {
       sources = bench_sources
       if (skia_enable_graphite) {
         sources += graphite_bench_sources
+        if (skia_enable_sparse_strips) {
+          sources += sparse_strips_bench_sources
+        }
       }
       if (!skia_enable_ganesh) {
         sources -= ganesh_bench_sources
@@ -3037,6 +3040,9 @@ if (skia_enable_tools) {
           "tcmalloc",
         ]
         defines = [ "SK_USE_PPROF" ]
+      }
+      if (skia_use_partition_alloc) {
+        deps += [ "tools/partition_alloc:test_support" ]
       }
     }
   }
