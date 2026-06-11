@@ -186,7 +186,12 @@ bool sk_pathop_simplify(const sk_path_t* path, sk_path_t* result) {
 }
 
 bool sk_pathop_tight_bounds(const sk_path_t* path, sk_rect_t* result) {
-    return TightBounds(*AsPath(path), AsRect(result));
+    auto rect = AsPath(path)->computeTightBounds();
+    if (rect.isFinite()) {
+        *AsRect(result) = rect;
+        return true;
+    }
+    return false;
 }
 
 bool sk_pathop_as_winding(const sk_path_t* path, sk_path_t* result) {
