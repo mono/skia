@@ -3963,6 +3963,23 @@ if (skia_build_rust_targets) {
 
 # SkiaSharp + HarfBuzzSharp
 
+declare_args() {
+  # mono/skia: when libSkiaSharp/libHarfBuzzSharp ship as Apple .framework
+  # bundles (iOS/tvOS/Mac Catalyst) the dynamic library's install_name must be
+  # the framework-relative path (@rpath/lib<name>.framework/lib<name>) instead
+  # of the bare-dylib default (@rpath/lib<name>.dylib). Setting it at link time
+  # here is the correct, tool-driven way to do it and avoids post-link
+  # install_name_tool surgery in the packaging scripts. The name is derived from
+  # each target's own name, so a single arg value is correct for both libraries
+  # even when they share a GN out directory.
+  skiasharp_apple_framework = false
+
+  # mono/skia: Mac Catalyst ships a macOS-style versioned framework
+  # (lib<name>.framework/Versions/A/lib<name>); set the install_name to that
+  # versioned path instead of the flat iOS/tvOS layout.
+  skiasharp_apple_framework_versioned = false
+}
+
 # mono/skia: strict-warnings config applied to libSkiaSharp's own sources
 # (src/c + src/xamarin). It promotes deprecated-declarations to a hard error so
 # the C API shim can never silently compile against a deprecated Skia API. It is
@@ -4147,6 +4164,16 @@ skiasharp_build("SkiaSharp") {
   ]
 
   libs = []
+
+  # mono/skia: framework-relative install_name set at link time (see
+  # skiasharp_apple_framework declare_args above).
+  if (skiasharp_apple_framework) {
+    if (skiasharp_apple_framework_versioned) {
+      ldflags = [ "-Wl,-install_name,@rpath/lib$target_name.framework/Versions/A/lib$target_name" ]
+    } else {
+      ldflags = [ "-Wl,-install_name,@rpath/lib$target_name.framework/lib$target_name" ]
+    }
+  }
 }
 
 skiasharp_build("HarfBuzzSharp") {
@@ -4181,4 +4208,14 @@ skiasharp_build("HarfBuzzSharp") {
   sources = [
     "$_src/harfbuzz-subset.cc",
   ]
+
+  # mono/skia: framework-relative install_name set at link time (see
+  # skiasharp_apple_framework declare_args above).
+  if (skiasharp_apple_framework) {
+    if (skiasharp_apple_framework_versioned) {
+      ldflags = [ "-Wl,-install_name,@rpath/lib$target_name.framework/Versions/A/lib$target_name" ]
+    } else {
+      ldflags = [ "-Wl,-install_name,@rpath/lib$target_name.framework/lib$target_name" ]
+    }
+  }
 }
