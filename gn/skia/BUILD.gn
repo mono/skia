@@ -310,13 +310,23 @@ config("default") {
     } else if (is_tvos) {
       defines += [ "SK_BUILD_FOR_TVOS" ]
       cflags += [ "-mtvos-version-min=$min_tvos_version" ]
-      ldflags += [ "-Wl,tvos_version_min=$min_tvos_version" ]
+      # NOTE: the deployment target is supplied to the linker via "-target" below.
+      # The old "-Wl,tvos_version_min=$min" form is invalid for modern ld (it is
+      # interpreted as an input file) and is omitted. This link path is only
+      # exercised now that GN links the libSkiaSharp dylib directly.
       if (ios_use_simulator) {
         cflags += [
           "-target", "$target_cpu-apple-tvos$min_tvos_version-simulator",
         ]
         ldflags += [
           "-target", "$target_cpu-apple-tvos$min_tvos_version-simulator",
+        ]
+      } else {
+        cflags += [
+          "-target", "$target_cpu-apple-tvos$min_tvos_version",
+        ]
+        ldflags += [
+          "-target", "$target_cpu-apple-tvos$min_tvos_version",
         ]
       }
     } else if (is_maccatalyst) {
@@ -336,13 +346,23 @@ config("default") {
       ]
     } else {
       cflags += [ "-mios-version-min=$min_ios_version" ]
-      ldflags += [ "-Wl,ios_version_min=$min_ios_version" ]
+      # NOTE: the deployment target is supplied to the linker via "-target" below.
+      # The old "-Wl,ios_version_min=$min" form is invalid for modern ld (it is
+      # interpreted as an input file) and is omitted. This link path is only
+      # exercised now that GN links the libSkiaSharp dylib directly.
       if (ios_use_simulator) {
         cflags += [
           "-target", "$target_cpu-apple-ios$min_ios_version-simulator",
         ]
         ldflags += [
           "-target", "$target_cpu-apple-ios$min_ios_version-simulator",
+        ]
+      } else {
+        cflags += [
+          "-target", "$target_cpu-apple-ios$min_ios_version",
+        ]
+        ldflags += [
+          "-target", "$target_cpu-apple-ios$min_ios_version",
         ]
       }
     }
