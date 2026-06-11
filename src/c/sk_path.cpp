@@ -178,11 +178,19 @@ int sk_path_convert_conic_to_quads(const sk_point_t* p0, const sk_point_t* p1, c
 // Path Ops
 
 bool sk_pathop_op(const sk_path_t* one, const sk_path_t* two, sk_pathop_t op, sk_path_t* result) {
-    return Op(*AsPath(one), *AsPath(two), (SkPathOp)op, AsPath(result));
+    if (auto res = Op(*AsPath(one), *AsPath(two), (SkPathOp)op)) {
+        *AsPath(result) = *res;
+        return true;
+    }
+    return false;
 }
 
 bool sk_pathop_simplify(const sk_path_t* path, sk_path_t* result) {
-    return Simplify(*AsPath(path), AsPath(result));
+    if (auto res = Simplify(*AsPath(path))) {
+        *AsPath(result) = *res;
+        return true;
+    }
+    return false;
 }
 
 bool sk_pathop_tight_bounds(const sk_path_t* path, sk_rect_t* result) {
@@ -195,7 +203,11 @@ bool sk_pathop_tight_bounds(const sk_path_t* path, sk_rect_t* result) {
 }
 
 bool sk_pathop_as_winding(const sk_path_t* path, sk_path_t* result) {
-    return AsWinding(*AsPath(path), AsPath(result));
+    if (auto res = AsWinding(*AsPath(path))) {
+        *AsPath(result) = *res;
+        return true;
+    }
+    return false;
 }
 
 sk_opbuilder_t* sk_opbuilder_new(void) {
@@ -211,7 +223,11 @@ void sk_opbuilder_add(sk_opbuilder_t* builder, const sk_path_t* path, sk_pathop_
 }
 
 bool sk_opbuilder_resolve(sk_opbuilder_t* builder, sk_path_t* result) {
-    return AsOpBuilder(builder)->resolve(AsPath(result));
+    if (auto res = AsOpBuilder(builder)->resolve()) {
+        *AsPath(result) = *res;
+        return true;
+    }
+    return false;
 }
 
 // Path Measure
