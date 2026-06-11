@@ -3989,9 +3989,42 @@ if (skia_build_rust_targets) {
 
 # SkiaSharp + HarfBuzzSharp
 
+# mono/skia: strict-warnings config applied to libSkiaSharp's own sources
+# (src/c + src/xamarin). It promotes deprecated-declarations to a hard error so
+# the C API shim can never silently compile against a deprecated Skia API. It is
+# applied AFTER //gn/skia:warnings on the target so this -Werror=… wins over that
+# config's -Wno-deprecated-declarations (clang uses last-flag-wins), and it is
+# unconditional (not gated on the `werror` arg) so the guard holds on every
+# platform and in every build configuration.
+config("skiasharp_strict") {
+  if (is_win) {
+    # MSVC: C4996 is the deprecation warning; /we4996 promotes it to an error.
+    cflags = [ "/we4996" ]
+  } else {
+    cflags = [ "-Werror=deprecated-declarations" ]
+  }
+}
+
 skiasharp_build("SkiaSharp") {
   public_configs = [ ":skia_public" ]
   configs += skia_library_configs
+
+  # mono/skia: libSkiaSharp is built via the custom skiasharp_build template,
+  # which (unlike Skia's skia_* templates) does not pull in Skia's
+  # skia_target_default_configs, so the //gn/skia:warnings config never reached
+  # our shim — that is why -Wall/-Wextra were absent here and deprecated API
+  # usage in src/c (e.g. SkPathOps TightBounds) compiled silently on every GN
+  # platform, surfacing only on Tizen's hand-written -Werror makefile build.
+  # Add :warnings for -Wall/-Wextra parity with upstream, then force
+  # deprecated-declarations back to a hard error: :warnings deliberately
+  # suppresses it (-Wno-deprecated-declarations) for Skia's own sources, but
+  # OUR shim must never consume deprecated Skia APIs. :skiasharp_strict is listed
+  # last so its -Werror=deprecated-declarations wins over that suppression, and
+  # it does so regardless of the global `werror` arg (which our build never sets).
+  configs += [
+    "//gn/skia:warnings",
+    ":skiasharp_strict",
+  ]
 
   if (skia_use_vulkan) {
     configs += [ ":use_skia_vulkan_headers" ]
