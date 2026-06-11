@@ -45,8 +45,8 @@ SkPictureBackedGlyphDrawable::MakeFromBuffer(SkReadBuffer& buffer) {
         return nullptr;
     }
 
-    // Propagate the outer buffer's allow-SkSL setting to the picture decoder, using the flag on
-    // the deserial procs.
+    // Glyphs have a limited set of what they can be. We explicitly disable sksl for security
+    // purposes (see b/40064011, b/40064341)
     SkDeserialProcs procs;
     procs.fAllowSkSL = false;
     procs.fAllowTagsProc = [](SkFourByteTag tag, void*) -> bool {
@@ -406,6 +406,12 @@ size_t SkGlyph::addPathFromBuffer(SkReadBuffer& buffer, SkArenaAlloc* alloc) {
         const bool pathIsHairline = buffer.readBool();
         const bool pathIsModified = buffer.readBool();
         if (auto path = buffer.readPath()) {
+            if (fMaskFormat != SkMask::kBW_Format &&
+                fMaskFormat != SkMask::kA8_Format &&
+                fMaskFormat != SkMask::kLCD16_Format) {
+                buffer.validate(false);
+                return 0;
+            }
             if (this->setPath(alloc, &path.value(), pathIsHairline, pathIsModified)) {
                 memoryIncrease += path->approximateBytesUsed();
             }

@@ -32,6 +32,7 @@ tests_sources = [
   "$_tests/CanvasStateHelpers.h",
   "$_tests/CanvasStateTest.cpp",
   "$_tests/CanvasTest.cpp",
+  "$_tests/CappedHairlinesTest.cpp",
   "$_tests/CharToGlyphCache.cpp",
   "$_tests/ChecksumTest.cpp",
   "$_tests/ClipCubicTest.cpp",
@@ -335,6 +336,7 @@ graphite_tests_sources = [
   "$_tests/graphite/UpdateBackendTextureTest.cpp",
   "$_tests/graphite/UploadBufferManagerTest.cpp",
   "$_tests/graphite/VerticesPaddingTest.cpp",
+  "$_tests/graphite/crbug_513836996.cpp",
 ]
 
 precompile_tests_sources = [
@@ -357,7 +359,15 @@ precompile_tests_sources = [
   "$_tests/graphite/precompile/UserdefinedStableKeyTest.cpp",
 ]
 
-sparse_strips_test_sources = [ "$_tests/graphite/sparse_strips/LUTTest.cpp" ]
+sparse_strips_test_sources = [
+  "$_tests/graphite/sparse_strips/ClipTest.cpp",
+  "$_tests/graphite/sparse_strips/FlattenTest.cpp",
+  "$_tests/graphite/sparse_strips/LUTTest.cpp",
+  "$_tests/graphite/sparse_strips/PolylineTest.cpp",
+  "$_tests/graphite/sparse_strips/TileTestCases.cpp",
+  "$_tests/graphite/sparse_strips/TileTestCases.h",
+  "$_tests/graphite/sparse_strips/TilerTest.cpp",
+]
 
 graphite_dawn_tests_sources = [ "$_tests/graphite/DawnBackendTextureTest.cpp" ]
 graphite_metal_tests_sources = [ "$_tests/graphite/MtlBackendTextureTest.mm" ]
@@ -475,6 +485,7 @@ ganesh_tests_sources = [
   "$_tests/GrTextBlobTest.cpp",
   "$_tests/GrTextureMipMapInvalidationTest.cpp",
   "$_tests/GrThreadSafeCacheTest.cpp",
+  "$_tests/GrUniqueProxyTest.cpp",
   "$_tests/LazyProxyTest.cpp",
   "$_tests/LazyStencilAttachmentTest.cpp",
   "$_tests/MatrixColorFilterTest.cpp",

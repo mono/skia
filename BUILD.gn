@@ -173,9 +173,10 @@ opts("ml3") {
   sources = skia_opts.ml3_sources
   if (is_win) {
     cflags = [ "/arch:AVX2" ]
-  } else {
-    # TODO(kjlubick) use -march=x86-64-v3
+  } else if (current_cpu == "x86") {
     cflags = [ "-march=haswell" ]
+  } else {
+    cflags = [ "-march=x86-64-v3" ]
   }
 }
 
@@ -184,9 +185,13 @@ opts("ml4") {
   sources = skia_opts.ml4_sources
   if (is_win) {
     cflags = [ "/arch:AVX512" ]
-  } else {
-    # TODO(kjlubick) use -march=x86-64-v4
+  } else if (current_cpu == "x86") {
     cflags = [ "-march=skylake-avx512" ]
+  } else {
+    cflags = [
+      "-march=x86-64-v4",
+      "-mprefer-vector-width=512",
+    ]
   }
 }
 
@@ -2007,6 +2012,10 @@ skia_component("skia") {
   defines = []
   libs = []
 
+  if (is_win && sanitize == "ASAN") {
+    deps += [ "gn/skia:copy_asan_runtime" ]
+  }
+
   if (skia_build_for_debugger) {
     defines += [ "SK_BUILD_FOR_DEBUGGER" ]
   }
@@ -2865,6 +2874,9 @@ if (skia_enable_tools) {
       sources = bench_sources
       if (skia_enable_graphite) {
         sources += graphite_bench_sources
+        if (skia_enable_sparse_strips) {
+          sources += sparse_strips_bench_sources
+        }
       }
       if (!skia_enable_ganesh) {
         sources -= ganesh_bench_sources
@@ -3037,6 +3049,9 @@ if (skia_enable_tools) {
           "tcmalloc",
         ]
         defines = [ "SK_USE_PPROF" ]
+      }
+      if (skia_use_partition_alloc) {
+        deps += [ "tools/partition_alloc:test_support" ]
       }
     }
   }

@@ -43,7 +43,7 @@ constexpr int kGlobalComputePipelineCacheSizeLimit = 256;
 
 #else
 // TODO: find a good value for these limits
-constexpr int kGlobalGraphicsPipelineCacheSizeLimit = 256;
+constexpr int kGlobalGraphicsPipelineCacheSizeLimit = 512;
 constexpr int kGlobalComputePipelineCacheSizeLimit = 256;
 #endif
 
@@ -210,8 +210,14 @@ sk_sp<GraphicsPipeline> GlobalCache::findGraphicsPipeline(
                 ++fStats.fNormalPreemptedByPrecompile;
             }
 
-            result->updateAccessTime();
-            result->markUsed();
+            // Update access and use when this was an ASAP-required compile, but if multiple
+            // precompile requests trigger cache hits (possible if PaintOption combinations collapse
+            // to the same PaintParamsKey or if there is dynamic blend state), we can get here and
+            // shouldn't consider the pipeline any different from the first precompile event.
+            if (!forPrecompile) {
+                result->updateAccessTime();
+                result->markUsed();
+            }
 
 #if defined(SK_PIPELINE_LIFETIME_LOGGING)
             static const char* kNames[2] = { "CacheHitForN", "CacheHitForP" };
