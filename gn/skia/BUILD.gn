@@ -375,8 +375,14 @@ config("default") {
       ldflags += [
         "-isysroot",
         xcode_sysroot,
-        "-Wl,macosx_version_min=$min_macos_version",
       ]
+
+      # NOTE: the macOS deployment target is supplied to the linker via the
+      # "-target <cpu>-apple-macos$min_macos_version" flag added below. The old
+      # "-Wl,macosx_version_min=$min_macos_version" form is invalid syntax for
+      # modern ld (it is interpreted as an input file) and is redundant, so it
+      # is intentionally omitted. This path is only exercised when GN links the
+      # libSkiaSharp dylib directly (the static libskia.a build never links).
     }
 
     # Disable linker warnings.  They're usually just annoyances like,
