@@ -4173,6 +4173,16 @@ skiasharp_build("SkiaSharp") {
   ]
 
   libs = []
+
+  # mono/skia: framework-relative install_name set at link time (see
+  # skiasharp_apple_framework declare_args above).
+  if (skiasharp_apple_framework) {
+    if (skiasharp_apple_framework_versioned) {
+      ldflags = [ "-Wl,-install_name,@rpath/lib$target_name.framework/Versions/A/lib$target_name" ]
+    } else {
+      ldflags = [ "-Wl,-install_name,@rpath/lib$target_name.framework/lib$target_name" ]
+    }
+  }
 }
 
 skiasharp_build("HarfBuzzSharp") {
@@ -4207,4 +4217,14 @@ skiasharp_build("HarfBuzzSharp") {
   sources = [
     "$_src/harfbuzz-subset.cc",
   ]
+
+  # mono/skia: framework-relative install_name set at link time (see
+  # skiasharp_apple_framework declare_args above).
+  if (skiasharp_apple_framework) {
+    if (skiasharp_apple_framework_versioned) {
+      ldflags = [ "-Wl,-install_name,@rpath/lib$target_name.framework/Versions/A/lib$target_name" ]
+    } else {
+      ldflags = [ "-Wl,-install_name,@rpath/lib$target_name.framework/lib$target_name" ]
+    }
+  }
 }
