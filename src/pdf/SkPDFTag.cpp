@@ -16,9 +16,7 @@
 #include "src/pdf/SkPDFDocumentPriv.h"
 
 #include <algorithm>
-#include <compare>
 #include <memory>
-#include <ranges>
 #include <utility>
 #include <vector>
 
@@ -121,20 +119,32 @@ struct SkPDFStructElem {
         ContentIndex(const ContentItemInfo& cii)
             : fParentId(cii.fStructParentKey), fMcid(0) {}
         bool valid() const { return static_cast<bool>(fParentId); }
-        std::strong_ordering operator<=>(const ContentIndex&) const = default;
+        bool operator==(const ContentIndex& o) const {
+            return fParentId == o.fParentId && fMcid == o.fMcid;
+        }
+        bool operator!=(const ContentIndex& o) const { return !(*this == o); }
+        bool operator< (const ContentIndex& o) const {
+            if (fParentId != o.fParentId) { return fParentId < o.fParentId; }
+            return fMcid < o.fMcid;
+        }
+        bool operator<=(const ContentIndex& o) const { return !(o < *this); }
+        bool operator> (const ContentIndex& o) const { return o < *this; }
+        bool operator>=(const ContentIndex& o) const { return !(*this < o); }
     };
     class ContentSpan {
         struct Data {
             ContentIndex fFirst;
             ContentIndex fLast;
-            bool operator==(const Data&) const = default;
+            bool operator==(const Data& o) const {
+                return fFirst == o.fFirst && fLast == o.fLast;
+            }
         };
         std::optional<Data> fData;
     public:
         ContentSpan() = default;
         ContentSpan(const ContentSpan&) = default;
         ContentSpan& operator=(const ContentSpan&) = default;
-        bool operator==(const ContentSpan& that) const = default;
+        bool operator==(const ContentSpan& that) const { return fData == that.fData; }
         bool empty() const { return !fData.has_value(); }
         const ContentIndex& first() const { return fData->fFirst; }
         const ContentIndex& last() const { return fData->fLast; }
