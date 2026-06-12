@@ -175,6 +175,10 @@ opts("ml3") {
     cflags = [ "/arch:AVX2" ]
   } else if (current_cpu == "x86") {
     cflags = [ "-march=haswell" ]
+  } else if (is_tizen) {
+    # mono/skia: Tizen's clang 10 predates the x86-64-v3 CPU name (clang 12+).
+    # haswell is the ISA-equivalent micro-arch level it understands.
+    cflags = [ "-march=haswell" ]
   } else {
     cflags = [ "-march=x86-64-v3" ]
   }
@@ -187,6 +191,13 @@ opts("ml4") {
     cflags = [ "/arch:AVX512" ]
   } else if (current_cpu == "x86") {
     cflags = [ "-march=skylake-avx512" ]
+  } else if (is_tizen) {
+    # mono/skia: Tizen's clang 10 predates the x86-64-v4 CPU name (clang 12+).
+    # skylake-avx512 is the ISA-equivalent micro-arch level it understands.
+    cflags = [
+      "-march=skylake-avx512",
+      "-mprefer-vector-width=512",
+    ]
   } else {
     cflags = [
       "-march=x86-64-v4",
