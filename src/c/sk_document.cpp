@@ -24,17 +24,25 @@ void sk_document_unref(sk_document_t* document) {
 }
 
 sk_document_t* sk_document_create_pdf_from_stream(sk_wstream_t* stream) {
+#ifdef SK_SUPPORT_PDF
     SkPDF::Metadata metadata;
     metadata.jpegDecoder = SkPDF::JPEG::Decode;
     metadata.jpegEncoder = SkPDF::JPEG::Encode;
     return ToDocument(SkPDF::MakeDocument(AsWStream(stream), metadata).release());
+#else
+    return nullptr;
+#endif
 }
 
 sk_document_t* sk_document_create_pdf_from_stream_with_metadata(sk_wstream_t* stream, const sk_document_pdf_metadata_t* cmetadata) {
+#ifdef SK_SUPPORT_PDF
     SkPDF::Metadata metadata = AsDocumentPDFMetadata(cmetadata);
     metadata.jpegDecoder = SkPDF::JPEG::Decode;
     metadata.jpegEncoder = SkPDF::JPEG::Encode;
     return ToDocument(SkPDF::MakeDocument(AsWStream(stream), metadata).release());
+#else
+    return nullptr;
+#endif
 }
 
 sk_document_t* sk_document_create_xps_from_stream_with_options(sk_wstream_t* stream, const sk_document_xps_options_t* options) {
