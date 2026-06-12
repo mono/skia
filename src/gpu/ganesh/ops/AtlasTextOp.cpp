@@ -53,6 +53,7 @@
 
 #include <algorithm>
 #include <functional>
+#include <limits>
 #include <new>
 #include <tuple>
 #include <utility>
@@ -509,7 +510,8 @@ void AtlasTextOp::onPrepareDraws(GrMeshDrawTarget* target) {
         // Only use linear padding if the glyphs were also padded for it. If we somehow get a direct
         // subrun with a corrupted transform, we should still use nearest neighbor since it was
         // packed tightly.
-        const bool hasGlyphPadding = fHead->fSubRun.glyphSrcPadding() > 0;
+        const bool hasGlyphPadding = atlasManager->supportsBilerp() ||
+                                     fHead->fSubRun.glyphSrcPadding() > 0;
         auto filter = fNeedsGlyphTransform && hasGlyphPadding ? GrSamplerState::Filter::kLinear
                                                               : GrSamplerState::Filter::kNearest;
         // Bitmap text uses a single color, combineIfPossible ensures all geometries have the same
@@ -564,8 +566,15 @@ void AtlasTextOp::onPrepareDraws(GrMeshDrawTarget* target) {
         auto& glyphData = subRun.glyphVector().accessBackendData<GlyphData>();
 
         int strideCheck = SkToInt(glyphData.vertexStride(subRun.maskFormat(), geo->fDrawMatrix));
-        // If we (unexpectedly) have buffers of different sizes between CPU and GPU, bail out.
-        SkASSERTF_RELEASE(strideCheck == vertexStride, "stride mismatch");
+        if (strideCheck != vertexStride) {
+            // We (unexpectedly) have buffers of different sizes between CPU and GPU. Bail out.
+            SKIA_LOG_D(
+                    "Warning: stride mismatch detected (subrun stride: %d vertex buffer stride: "
+                    "%d). Aborting draw.\n",
+                    strideCheck,
+                    vertexStride);
+            return;
+        }
 
         const int subRunEnd = subRun.glyphCount();
 
@@ -697,6 +706,8 @@ GrOp::CombineResult AtlasTextOp::onCombineIfPossible(GrOp* t, SkArenaAlloc*, con
 
     // We use the same filter for every Geometry that is combined, but the filter choice only looks
     // at the head's src padding, so we can only combine if we are consistent with that.
+    // NOTE: We don't have access to the context or atlas manager to check if it's always adding
+    // padding (even when the glyphs don't add it themselves), so this is conservative.
     if (fHead->fSubRun.glyphSrcPadding() != that->fHead->fSubRun.glyphSrcPadding()) {
         return CombineResult::kCannotCombine;
     }
@@ -729,6 +740,10 @@ GrOp::CombineResult AtlasTextOp::onCombineIfPossible(GrOp* t, SkArenaAlloc*, con
             // This ensures all merged bitmap color text ops have a constant color
             return CombineResult::kCannotCombine;
         }
+    }
+
+    if (std::numeric_limits<int>::max() - fNumGlyphs < that->fNumGlyphs) {
+        return CombineResult::kCannotCombine;
     }
 
     fNumGlyphs += that->fNumGlyphs;
@@ -781,5 +796,3 @@ GrGeometryProcessor* AtlasTextOp::setupDfProcessor(SkArenaAlloc* arena,
 #endif // !defined(SK_DISABLE_SDF_TEXT)
 
 } // namespace skgpu::ganesh
-
-

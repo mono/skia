@@ -462,7 +462,6 @@ static sk_sp<SkDrawable> make_nested_sksl_drawable(SkSLSource source) {
     return recorder.finishRecordingAsDrawable();
 }
 
-
 DEF_TEST(SkPictureBackedGlyphDrawable_RejectsAnyShadersThatNeedSkSL, reporter) {
     for (SkSLSource source : {SkSLSource::kShader,
                               SkSLSource::kColorFilter,

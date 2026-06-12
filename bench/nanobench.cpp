@@ -33,6 +33,7 @@
 #include "include/core/SkString.h"
 #include "include/core/SkSurface.h"
 #include "include/encode/SkPngEncoder.h"
+#include "include/private/base/SkAssert.h"
 #include "include/private/base/SkLog.h"
 #include "include/private/base/SkMacros.h"
 #include "src/base/SkAutoMalloc.h"
@@ -91,6 +92,10 @@
 #if defined(SK_USE_PPROF)
 #include <gperftools/profiler.h>
 #include <gperftools/heap-profiler.h>
+#endif
+
+#if defined(SK_USE_PARTITION_ALLOC)
+    #include "tools/partition_alloc/TestSupport.h"
 #endif
 
 #include <cinttypes>
@@ -1368,6 +1373,13 @@ class NanobenchShaderErrorHandler : public GrContextOptions::ShaderErrorHandler 
 };
 
 int main(int argc, char** argv) {
+#if defined(SK_USE_PARTITION_ALLOC)
+    // To achieve benchmark results closers to what Chromium based applications would obtain, the
+    // benchmark are run with PartitionAlloc enabled. This is the memory allocator used by Chromium
+    // based applications.
+    skiatest::InitializePartitionAllocForTesting();
+#endif
+
     CommandLineFlags::Parse(argc, argv);
 
     initializeEventTracingForTools();
@@ -1487,14 +1499,14 @@ int main(int argc, char** argv) {
 #if defined(SK_USE_PPROF)
         ProfilerStart(FLAGS_cpuprofile[0]);
 #else
-        SKIA_LOG_F("Must be compiled with -DSK_USE_PPROF (e.g. skia_use_pprof");
+        SK_ABORT("Must be compiled with -DSK_USE_PPROF (e.g. skia_use_pprof)");
 #endif
     }
     if (!FLAGS_memprofile.isEmpty()) {
 #if defined(SK_USE_PPROF)
         HeapProfilerStart(FLAGS_memprofile[0]);
 #else
-        SKIA_LOG_F("Must be compiled with -DSK_USE_PPROF (e.g. skia_use_pprof");
+        SK_ABORT("Must be compiled with -DSK_USE_PPROF (e.g. skia_use_pprof)");
 #endif
     }
 

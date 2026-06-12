@@ -26,6 +26,7 @@
 #include "include/private/base/SkTemplates.h"
 #include "include/private/base/SkTo.h"
 #include "include/private/gpu/ganesh/GrTypesPriv.h"
+#include "src/base/SkSafeMath.h"
 #include "src/core/SkColorSpaceXformSteps.h"
 #include "src/core/SkMipmap.h"
 #include "src/core/SkTraceEvent.h"
@@ -50,6 +51,7 @@
 #include "src/gpu/ganesh/GrSurface.h"
 #include "src/gpu/ganesh/GrTextureProxy.h"
 #include "src/gpu/ganesh/GrTracing.h"
+#include "src/gpu/ganesh/GrTransferFromRenderTask.h"
 #include "src/gpu/ganesh/SurfaceFillContext.h"
 #include "src/gpu/ganesh/effects/GrBicubicEffect.h"
 #include "src/gpu/ganesh/effects/GrTextureEffect.h"
@@ -276,7 +278,11 @@ bool SurfaceContext::readPixels(GrDirectContext* dContext, GrPixmap dst, SkIPoin
                             this->colorInfo().refColorSpace(),
                             dst.dimensions());
         size_t tmpRB = tmpInfo.minRowBytes();
-        size_t size = tmpRB * tmpInfo.height();
+        SkSafeMath safe;
+        size_t size = safe.mul(tmpRB, tmpInfo.height());
+        if (!safe.ok()) {
+            return false;
+        }
         // Chrome MSAN bots require the data to be initialized (hence the ()).
         tmpPixels = std::make_unique<char[]>(size);
         tmp = {tmpInfo, tmpPixels.get(), tmpRB};
@@ -536,16 +542,24 @@ bool SurfaceContext::internalWritePixels(GrDirectContext* dContext,
     bool mustBeTight = !caps->writePixelsRowBytesSupport();
     size_t tmpSize = 0;
     if (mustBeTight || convertAll) {
+        SkSafeMath safe;
         for (int i = 0; i < numLevels; ++i) {
             if (convertAll || (mustBeTight && src[i].rowBytes() != src[i].info().minRowBytes())) {
-                tmpSize += src[i].info().makeColorType(allowedColorType).minRowBytes()*
-                           src[i].height();
+                size_t minRowBytes = src[i].info().makeColorType(allowedColorType).minRowBytes();
+                size_t levelSize = safe.mul(minRowBytes, src[i].height());
+                tmpSize = safe.add(tmpSize, levelSize);
             }
+        }
+        if (!safe.ok()) {
+            return false;
         }
     }
 
     auto tmpData = tmpSize ? SkData::MakeUninitialized(tmpSize) : nullptr;
-    void*    tmp = tmpSize ? tmpData->writable_data()           : nullptr;
+    if (tmpSize && !tmpData) {
+        return false;
+    }
+    void* tmp = tmpSize ? tmpData->writable_data() : nullptr;
     AutoSTArray<15, GrMipLevel> srcLevels(numLevels);
     bool ownAllStorage = true;
     for (int i = 0; i < numLevels; ++i) {
@@ -707,6 +721,20 @@ struct SurfaceContext::AsyncReadPixelContext {
 
     void setSubmitted(bool success) {
         SkASSERT(fSubmitted == kUnsubmitted);
+        // `success` initially represents whether or not the command buffer was submitted, but the
+        // actual transfer tasks need to have been executed in order for that submission to
+        // have valid results for the async read. Ganesh will submit if any task is executed.
+        if (success) {
+            for (auto transfer : {&fPrimaryTransfer, &fUTransfer, &fVTransfer, &fATransfer}) {
+                if (!transfer->fTransferBuffer) {
+                    break; // Reached end of the planes being copied
+                }
+                if (!transfer->fTransferTask || !transfer->fTransferTask->wasExecuted()) {
+                    success = false;
+                    break;
+                }
+            }
+        }
         fSubmitted = success ? kSuccess : kFailure;
         this->runClientCallbackMaybe();
     }
@@ -1403,9 +1431,15 @@ SurfaceContext::PixelTransferResult SurfaceContext::transferPixels(GrColorType d
         return {};
     }
 
-    size_t rowBytes = GrColorTypeBytesPerPixel(supportedRead.fColorType) * rect.width();
-    rowBytes = SkAlignTo(rowBytes, this->caps()->transferBufferRowBytesAlignment());
-    size_t size = rowBytes * rect.height();
+    SkSafeMath safe;
+    size_t bytesPerPixel = GrColorTypeBytesPerPixel(supportedRead.fColorType);
+    size_t rowBytes = safe.mul(bytesPerPixel, rect.width());
+    size_t maxTransAlignment = this->caps()->transferBufferRowBytesAlignment();
+    rowBytes = safe.alignUp(rowBytes, maxTransAlignment);
+    size_t size = safe.mul(rowBytes, rect.height());
+    if (!safe.ok()) {
+        return {};
+    }
     // By using kStream_GrAccessPattern here, we are not able to cache and reuse the buffer for
     // multiple reads. Switching to kDynamic_GrAccessPattern would allow for this, however doing
     // so causes a crash in a chromium test. See skbug.com/40042671
@@ -1423,10 +1457,15 @@ SurfaceContext::PixelTransferResult SurfaceContext::transferPixels(GrColorType d
         srcRect = SkIRect::MakeLTRB(rect.fLeft, this->height() - rect.fBottom, rect.fRight,
                                     this->height() - rect.fTop);
     }
-    this->drawingManager()->newTransferFromRenderTask(this->asSurfaceProxyRef(), srcRect,
-                                                      this->colorInfo().colorType(),
-                                                      supportedRead.fColorType, buffer, 0);
+
     PixelTransferResult result;
+    result.fTransferTask = this->drawingManager()->newTransferFromRenderTask(
+            this->asSurfaceProxyRef(),
+            srcRect,
+            this->colorInfo().colorType(),
+            supportedRead.fColorType,
+            buffer,
+            0);
     result.fTransferBuffer = std::move(buffer);
     auto at = this->colorInfo().alphaType();
     if (supportedRead.fColorType != dstCT || flip) {

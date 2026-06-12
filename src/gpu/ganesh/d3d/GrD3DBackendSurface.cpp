@@ -112,6 +112,7 @@ private:
 
     bool isProtected() const override { return false; }
 
+#if defined(GPU_TEST_UTILS)
     bool equal(const GrBackendTextureData* that) const override {
         SkASSERT(!that || that->type() == GrBackendApi::kDirect3D);
         if (auto otherD3D = static_cast<const GrD3DBackendTextureData*>(that)) {
@@ -119,6 +120,7 @@ private:
         }
         return false;
     }
+#endif
 
     bool isSameTexture(const GrBackendTextureData* that) const override {
         SkASSERT(!that || that->type() == GrBackendApi::kDirect3D);
@@ -242,6 +244,7 @@ private:
 
     bool isProtected() const override { return false; }
 
+#if defined(GPU_TEST_UTILS)
     bool equal(const GrBackendRenderTargetData* that) const override {
         SkASSERT(!that || that->type() == GrBackendApi::kDirect3D);
         if (auto otherD3D = static_cast<const GrD3DBackendRenderTargetData*>(that)) {
@@ -249,6 +252,7 @@ private:
         }
         return false;
     }
+#endif
 
     GrBackendFormat getBackendFormat() const override {
         auto d3dInfo = this->snapTextureResourceInfo();
