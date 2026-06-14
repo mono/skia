@@ -231,8 +231,78 @@ template("skiasharp_build") {
     _skiasharp_mode = "static_library"
   }
 
-  target(_skiasharp_mode, target_name) {
-    forward_variables_from(invoker, "*")
+  # On the Apple framework platforms (iOS/tvOS/Mac Catalyst) the GN build itself
+  # produces a ready-to-use single-arch lib<Name>.framework in the out dir - bundle
+  # layout, framework-relative install_name (set at link time, see the ldflags in
+  # BUILD.gn) and the provenance-complete Info.plist all live here, so the packaging
+  # layer only lipos the per-arch frameworks together and code-signs. This is an
+  # inherent property of the OS: macOS (is_mac) keeps shipping a plain dylib, and every
+  # non-Apple platform falls through to the plain target() below. Mac Catalyst
+  # (is_maccatalyst) uses the macOS-style versioned Versions/A layout.
+  if (is_ios && _skiasharp_mode == "shared_library") {
+    _fw = target_name
+    _dylib_target = "${_fw}_dylib"
+
+    # Build the actual dynamic library under an internal name but with the public
+    # output name, so it lands at $root_out_dir/lib<Name>.dylib and carries the
+    # framework-relative install_name from the invoker's ldflags.
+    shared_library(_dylib_target) {
+      forward_variables_from(invoker, "*")
+      output_name = _fw
+    }
+
+    _mach_arch = target_cpu
+    if (target_cpu == "x64") {
+      _mach_arch = "x86_64"
+    }
+
+    _min_version = ""
+    if (target_os == "ios") {
+      _min_version = min_ios_version
+    } else if (target_os == "tvos") {
+      _min_version = min_tvos_version
+    } else if (target_os == "maccatalyst") {
+      _min_version = min_maccatalyst_version
+    }
+
+    _sim = "0"
+    if (ios_use_simulator) {
+      _sim = "1"
+    }
+
+    _dylib = "$root_out_dir/lib$_fw.dylib"
+    _framework_dir = "$root_out_dir/lib$_fw.framework"
+    if (is_maccatalyst) {
+      _bin = "$_framework_dir/Versions/A/lib$_fw"
+      _plist = "$_framework_dir/Versions/A/Resources/Info.plist"
+    } else {
+      _bin = "$_framework_dir/lib$_fw"
+      _plist = "$_framework_dir/Info.plist"
+    }
+
+    # The public target is the framework: assemble it from the linked dylib.
+    action(_fw) {
+      script = "//gn/skiasharp/assemble_apple_framework.py"
+      deps = [ ":$_dylib_target" ]
+      sources = [ _dylib ]
+      outputs = [
+        _bin,
+        _plist,
+      ]
+      args = [
+        "--binary", rebase_path(_dylib, root_build_dir),
+        "--output", rebase_path(_framework_dir, root_build_dir),
+        "--name", "lib$_fw",
+        "--os", target_os,
+        "--arch", _mach_arch,
+        "--sim", _sim,
+        "--min-os", _min_version,
+      ]
+    }
+  } else {
+    target(_skiasharp_mode, target_name) {
+      forward_variables_from(invoker, "*")
+    }
   }
 }
 

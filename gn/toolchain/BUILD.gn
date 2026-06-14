@@ -362,7 +362,12 @@ template("gcc_like_toolchain") {
         _emcc_flags = "-sSIDE_MODULE=1"
       }
 
-      command = "$link -shared {{ldflags}} $_start_group @$rspfile {{frameworks}} {{solibs}} $_end_group {{libs}} $rpath $_emcc_flags -o {{output}}"
+      # mono/skia: $rpath (the default -install_name/-soname) is placed BEFORE
+      # {{ldflags}} so that a target supplying its own -Wl,-install_name via
+      # ldflags (e.g. libSkiaSharp/libHarfBuzzSharp packaged as an Apple
+      # .framework on the is_ios platforms) wins by last-flag-wins. These flags
+      # are position-insensitive, so non-overriding targets are unaffected.
+      command = "$link -shared $rpath {{ldflags}} $_start_group @$rspfile {{frameworks}} {{solibs}} $_end_group {{libs}} $_emcc_flags -o {{output}}"
       outputs = [ "{{root_out_dir}}/$soname" ]
       output_prefix = "lib"
       if (current_os == "mac" || current_os == "ios" || current_os == "tvos" || current_os == "maccatalyst") {
