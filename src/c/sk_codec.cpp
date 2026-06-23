@@ -106,3 +106,7 @@ bool sk_codec_get_frame_info_for_index(sk_codec_t* codec, int index, sk_codec_fr
 int sk_codec_get_repetition_count(sk_codec_t* codec) {
     return AsCodec(codec)->getRepetitionCount();
 }
+
+sk_codec_animation_status_t sk_codec_is_animated(sk_codec_t* codec) {
+    return (sk_codec_animation_status_t)AsCodec(codec)->isAnimated();
+}
