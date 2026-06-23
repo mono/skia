@@ -24,6 +24,10 @@ void sk_imagefilter_unref(sk_imagefilter_t* cfilter) {
     SkSafeUnref(AsImageFilter(cfilter));
 }
 
+sk_imagefilter_t* sk_imagefilter_new_empty(void) {
+    return ToImageFilter(SkImageFilters::Empty().release());
+}
+
 sk_imagefilter_t* sk_imagefilter_new_arithmetic(float k1, float k2, float k3, float k4, bool enforcePMColor, const sk_imagefilter_t* background, const sk_imagefilter_t* foreground, const sk_rect_t* cropRect) {
     return ToImageFilter(SkImageFilters::Arithmetic(k1, k2, k3, k4, enforcePMColor, sk_ref_sp(AsImageFilter(background)), sk_ref_sp(AsImageFilter(foreground)), AsRect(cropRect)).release());
 }
