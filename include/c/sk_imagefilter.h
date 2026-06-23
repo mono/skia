@@ -25,6 +25,7 @@ SK_C_API sk_imagefilter_t* sk_imagefilter_new_blender(sk_blender_t* blender, con
 SK_C_API sk_imagefilter_t* sk_imagefilter_new_blur(float sigmaX, float sigmaY, sk_shader_tilemode_t tileMode, const sk_imagefilter_t* input, const sk_rect_t* cropRect);
 SK_C_API sk_imagefilter_t* sk_imagefilter_new_color_filter(sk_colorfilter_t* cf, const sk_imagefilter_t* input, const sk_rect_t* cropRect);
 SK_C_API sk_imagefilter_t* sk_imagefilter_new_compose(const sk_imagefilter_t* outer, const sk_imagefilter_t* inner);
+SK_C_API sk_imagefilter_t* sk_imagefilter_new_crop(const sk_rect_t* rect, sk_shader_tilemode_t tileMode, const sk_imagefilter_t* input);
 SK_C_API sk_imagefilter_t* sk_imagefilter_new_displacement_map_effect(sk_color_channel_t xChannelSelector, sk_color_channel_t yChannelSelector, float scale, const sk_imagefilter_t* displacement, const sk_imagefilter_t* color, const sk_rect_t* cropRect);
 SK_C_API sk_imagefilter_t* sk_imagefilter_new_drop_shadow(float dx, float dy, float sigmaX, float sigmaY, sk_color_t color, const sk_imagefilter_t* input, const sk_rect_t* cropRect);
 SK_C_API sk_imagefilter_t* sk_imagefilter_new_drop_shadow_only(float dx, float dy, float sigmaX, float sigmaY, sk_color_t color, const sk_imagefilter_t* input, const sk_rect_t* cropRect);
