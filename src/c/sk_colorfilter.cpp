@@ -11,6 +11,7 @@
 #include "include/effects/SkColorMatrixFilter.h"
 #include "include/effects/SkHighContrastFilter.h"
 #include "include/effects/SkLumaColorFilter.h"
+#include "include/effects/SkOverdrawColorFilter.h"
 
 #include "include/c/sk_colorfilter.h"
 
@@ -66,4 +67,8 @@ sk_colorfilter_t* sk_colorfilter_new_table(const uint8_t table[256]) {
 
 sk_colorfilter_t* sk_colorfilter_new_table_argb(const uint8_t tableA[256], const uint8_t tableR[256], const uint8_t tableG[256], const uint8_t tableB[256]) {
     return ToColorFilter(SkColorFilters::TableARGB(tableA, tableR, tableG, tableB).release());
+}
+
+sk_colorfilter_t* sk_colorfilter_new_overdraw(const sk_color_t colors[6]) {
+    return ToColorFilter(SkOverdrawColorFilter::MakeWithSkColors(colors).release());
 }
