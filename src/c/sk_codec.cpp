@@ -108,5 +108,6 @@ int sk_codec_get_repetition_count(sk_codec_t* codec) {
 }
 
 sk_codec_animation_status_t sk_codec_is_animated(sk_codec_t* codec) {
-    return (sk_codec_animation_status_t)AsCodec(codec)->isAnimated();
+    SkCodec::IsAnimated result = AsCodec(codec)->isAnimated();
+    return static_cast<sk_codec_animation_status_t>(static_cast<int>(result));
 }
