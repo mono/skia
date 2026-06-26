@@ -18,8 +18,8 @@
 #include "include/core/SkScalar.h"
 #include "include/core/SkStream.h"
 #include "include/core/SkTypeface.h"
-#include "include/private/base/SkOnce.h"
-#include "src/base/SkSharedMutex.h"
+#include "include/private/SkOnce.h"
+#include "src/core/SkSharedMutex.h"
 #include "src/utils/mac/SkUniqueCFRef.h"
 
 #ifdef SK_BUILD_FOR_MAC
