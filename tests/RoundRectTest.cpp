@@ -13,9 +13,10 @@
 #include "include/core/SkScalar.h"
 #include "include/core/SkTypes.h"
 #include "include/pathops/SkPathOps.h"
-#include "src/base/SkRandom.h"
+#include "src/core/SkFloatBits.h"
 #include "src/core/SkPointPriv.h"
 #include "src/core/SkRRectPriv.h"
+#include "src/core/SkRandom.h"
 #include "tests/Test.h"
 
 #include <algorithm>
@@ -215,7 +216,7 @@ static void test_round_rect_basic(skiatest::Reporter* reporter) {
     REPORTER_ASSERT(reporter, rr1_3 == rr1 && rr1_3.getType() == rr1.getType());
 
     //----
-    SkPoint halfPoint = { SkScalarHalf(kWidth), SkScalarHalf(kHeight) };
+    SkPoint halfPoint = { kWidth / 2.f, kHeight / 2.f };
     SkRRect rr2;
     rr2.setOval(rect);
 
@@ -332,7 +333,7 @@ static void test_round_rect_ovals(skiatest::Reporter* reporter) {
     SkRect oval;
     SkRect rect = SkRect::MakeLTRB(0, 0, kWidth, kHeight);
     SkRRect rr1;
-    rr1.setRectXY(rect, SkScalarHalf(kWidth), SkScalarHalf(kHeight));
+    rr1.setRectXY(rect, kWidth / 2.f, kHeight / 2.f);
 
     REPORTER_ASSERT(reporter, SkRRect::kOval_Type == rr1.type());
     oval = rr1.rect();
@@ -1187,8 +1188,8 @@ static void test_issue_2696(skiatest::Reporter* reporter) {
     auto dst = rrect.transform(xform);
     REPORTER_ASSERT(reporter, dst.has_value());
 
-    SkScalar halfWidth = SkScalarHalf(dst->width());
-    SkScalar halfHeight = SkScalarHalf(dst->height());
+    SkScalar halfWidth = dst->width() / 2.f;
+    SkScalar halfHeight = dst->height() / 2.f;
 
     for (int i = 0; i < 4; ++i) {
         REPORTER_ASSERT(reporter,
@@ -1559,4 +1560,51 @@ DEF_TEST(RRect_fuzzer_regressions, r) {
         };
         REPORTER_ASSERT(r, sizeof(buf) == SkRRect{}.readFromMemory(buf, sizeof(buf)));
     }
+}
+
+DEF_TEST(RRect_b511391129, r) {
+    const float kValA = SkBits2Float(0x4b4b4b4a); // 13323074.0f
+    const float kValB = SkBits2Float(0x4b4b4b4b); // 13323083.0f
+
+    {
+        SkRect rect = SkRect::MakeLTRB(0.0f, 0.0f, kValB, kValB);
+        SkRRect rrect;
+        rrect.setRectXY(rect, kValA, kValA);
+        REPORTER_ASSERT(r, rrect.isValid());
+    }
+
+    {
+        SkRect rect = SkRect::MakeLTRB(0.0f, 0.0f, kValB, kValB);
+        SkRRect rrect;
+        rrect.setNinePatch(rect, kValA, kValA, kValA, kValA);
+        REPORTER_ASSERT(r, rrect.isValid());
+    }
+
+    {
+        SkRect rect = SkRect::MakeLTRB(0.0f, 0.0f, kValB, kValB);
+        SkVector radii[4] = {{kValA, kValA},
+                             {kValA, kValA},
+                             {kValA, kValA},
+                             {kValA, kValA}};
+        SkRRect rrect;
+        rrect.setRectRadii(rect, radii);
+        REPORTER_ASSERT(r, rrect.isValid());
+    }
+}
+
+DEF_TEST(RRect_b527765132, r) {
+    // These values were found via fuzzing to trigger a validation due to ULPs only not being a
+    // good way to compare floats
+    const float width = 37.408840f;
+    const float height = 73.093933f;
+    const float dx = -5430.867188f;
+    const float dy = -26967.046875f;
+
+    SkRect rect = SkRect::MakeWH(width, height);
+    SkRRect rrect = SkRRect::MakeOval(rect);
+
+    SkRRect offsetRRect = rrect.makeOffset(dx, dy);
+
+    REPORTER_ASSERT(r, offsetRRect.isValid());
+    REPORTER_ASSERT(r, offsetRRect.isOval());
 }

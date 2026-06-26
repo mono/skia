@@ -11,8 +11,8 @@
 #include "include/gpu/graphite/BackendSemaphore.h"
 #include "include/gpu/graphite/vk/VulkanGraphiteTypes.h"
 #include "include/gpu/vk/VulkanMutableTextureState.h"
-#include "include/private/base/SkLog.h"
-#include "include/private/base/SkTArray.h"
+#include "include/private/SkLog.h"
+#include "include/private/SkTArray.h"
 #include "src/gpu/DataUtils.h"
 #include "src/gpu/graphite/ContextUtils.h"
 #include "src/gpu/graphite/DescriptorData.h"
@@ -580,12 +580,23 @@ void VulkanCommandBuffer::waitUntilFinished() {
     if (fSubmitFence == VK_NULL_HANDLE) {
         return;
     }
-    VULKAN_CALL_ERRCHECK(fSharedContext,
-                         WaitForFences(fSharedContext->device(),
-                                       1,
-                                       &fSubmitFence,
-                                       /*waitAll=*/true,
-                                       /*timeout=*/UINT64_MAX));
+    // On some drivers vkWaitForFences() can spuriously return VK_TIMEOUT when a signal handler
+    // runs. Work around this by retrying on VK_TIMEOUT.
+    VkResult result = VK_TIMEOUT;
+    while (result == VK_TIMEOUT) {
+        VULKAN_CALL_RESULT_NOCHECK(fSharedContext->interface(),
+                                   result,
+                                   WaitForFences(fSharedContext->device(),
+                                                 1,
+                                                 &fSubmitFence,
+                                                 /*waitAll=*/true,
+                                                 /*timeout=*/UINT64_MAX));
+    }
+    if (result != VK_SUCCESS && !fSharedContext->isDeviceLost()) {
+        SkDebugf("vkWaitForFences() failed. Error: %d\n", result);
+    }
+    SkASSERT(VK_SUCCESS == result || VK_ERROR_DEVICE_LOST == result);
+    fSharedContext->checkVkResult(result);
 }
 
 void VulkanCommandBuffer::pushConstants(const PushConstantInfo& pushConstantInfo,
@@ -614,6 +625,11 @@ bool VulkanCommandBuffer::onAddRenderPass(const RenderPassDesc& rpDesc,
                                           const DrawPassList& drawPasses) {
     SkASSERT(resolveOffset.isZero());
     for (const auto& drawPass : drawPasses) {
+        // Track resources now since the barriers will reference them.
+        if (!drawPass->addResourceRefs(fResourceProvider, this)) SK_UNLIKELY {
+            return false;
+        }
+
         // Our current implementation of setting texture image layouts does not allow layout changes
         // once we have already begun a render pass, so prior to any other commands, set the layout
         // of all sampled textures from the drawpass so they can be sampled from the shader.
@@ -648,10 +664,7 @@ bool VulkanCommandBuffer::onAddRenderPass(const RenderPassDesc& rpDesc,
             viewport, rpDesc.fDstReadStrategy == DstReadStrategy::kReadFromInput);
 
     for (const auto& drawPass : drawPasses) {
-        if (!this->addDrawPass(drawPass.get())) SK_UNLIKELY {
-            this->endRenderPass();
-            return false;
-        }
+        this->addDrawPass(drawPass.get());
     }
 
     this->endRenderPass();
@@ -1110,15 +1123,11 @@ void VulkanCommandBuffer::endRenderPass() {
     fTargetTexture = nullptr;
 }
 
-bool VulkanCommandBuffer::addDrawPass(DrawPass* drawPass) {
+void VulkanCommandBuffer::addDrawPass(DrawPass* drawPass) {
     // If there is gradient data to bind, it must be done prior to draws.
     if (drawPass->floatStorageManager()->hasData()) {
         this->recordBufferBindingInfo(drawPass->floatStorageManager()->getBufferInfo(),
                                       UniformSlot::kGradient);
-    }
-
-    if (!drawPass->addResourceRefs(fResourceProvider, this)) SK_UNLIKELY {
-        return false;
     }
 
     for (auto [type, cmdPtr] : drawPass->commands()) {
@@ -1219,8 +1228,6 @@ bool VulkanCommandBuffer::addDrawPass(DrawPass* drawPass) {
             }
         }
     }
-
-    return true;
 }
 
 void VulkanCommandBuffer::bindGraphicsPipeline(const GraphicsPipeline* graphicsPipeline) {
