@@ -165,3 +165,11 @@ void sk_paint_set_path_effect(sk_paint_t* cpaint, sk_path_effect_t* effect) {
 bool sk_paint_get_fill_path(const sk_paint_t* cpaint, const sk_path_t* src, sk_pathbuilder_t* dst, const sk_rect_t* cullRect, const sk_matrix_t* cmatrix) {
     return skpathutils::FillPathWithPaint(*AsPath(src), *AsPaint(cpaint), AsPathBuilder(dst), AsRect(cullRect), AsMatrix(cmatrix));
 }
+
+bool sk_paint_can_compute_fast_bounds(const sk_paint_t* cpaint) {
+    return AsPaint(cpaint)->canComputeFastBounds();
+}
+
+void sk_paint_compute_fast_bounds(const sk_paint_t* cpaint, const sk_rect_t* orig, sk_rect_t* storage) {
+    *AsRect(storage) = AsPaint(cpaint)->computeFastBounds(*AsRect(orig), AsRect(storage));
+}
