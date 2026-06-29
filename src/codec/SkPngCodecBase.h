@@ -57,6 +57,8 @@ protected:
     // Initialize other fields needed by `applyXformRow`.
     //
     // Needs to be called *after* (i.e. outside of) `onStartIncrementalDecode`.
+    // This timing ensures that the `swizzler` (if present) is in its final
+    // state (e.g. setting up subsampling by the user of the codec can affect `swizzleWidth`).
     void initializeXformParams();
 
     // Transforms a decoded row into the `dstInfo` format that was earlier
@@ -71,6 +73,7 @@ protected:
     void applyXformRow(void* dstRow, const uint8_t* srcRow);
 
     size_t getEncodedRowBytes() const { return fEncodedRowBytes; }
+    size_t getDstRowSize() const { return fDstRowSize; }
     const SkSwizzler* swizzler() const { return fSwizzler.get(); }
 
     struct PaletteColorEntry {
@@ -121,7 +124,7 @@ private:
     sk_sp<SkColorPalette> fColorTable;
 
     size_t fEncodedRowBytes = 0;  // Size of encoded/source row in bytes.
-    size_t fDstRowBytes = 0;      // Size of destination row in bytes.
+    size_t fDstRowSize = 0;       // Size of active destination row in bytes (excluding padding).
 
     std::optional<SkImageInfo> fDstInfoOfPreviousColorTableCreation;
 
