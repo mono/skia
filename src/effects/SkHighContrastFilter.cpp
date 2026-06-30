@@ -1,5 +1,5 @@
 /*
-* Copyright 2017 Google Inc.
+* Copyright 2017 Google LLC
 *
 * Use of this source code is governed by a BSD-style license that can be
 * found in the LICENSE file.
@@ -14,7 +14,7 @@
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkTypes.h"
 #include "include/effects/SkRuntimeEffect.h"
-#include "include/private/base/SkTPin.h"
+#include "include/private/SkTPin.h"
 #include "src/core/SkColorFilterPriv.h"
 #include "src/core/SkKnownRuntimeEffects.h"
 

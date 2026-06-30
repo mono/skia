@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 Google Inc.
+ * Copyright 2018 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -9,9 +9,9 @@
 #include "include/gpu/ganesh/GrContextThreadSafeProxy.h"
 #include "include/gpu/ganesh/GrRecordingContext.h"
 #include "include/gpu/ganesh/GrTypes.h"
-#include "include/private/base/SkAssert.h"
-#include "include/private/base/SkNoncopyable.h"
-#include "include/private/base/SkTArray.h"
+#include "include/private/SkAssert.h"
+#include "include/private/SkNoncopyable.h"
+#include "include/private/SkTArray.h"
 #include "src/core/SkChecksum.h"
 #include "src/core/SkLRUCache.h"
 #include "src/gpu/ganesh/GrCaps.h"

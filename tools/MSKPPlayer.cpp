@@ -12,11 +12,11 @@
 #include "include/core/SkPictureRecorder.h"
 #include "include/core/SkSurface.h"
 #include "include/docs/SkMultiPictureDocument.h"
-#include "include/private/base/SkTArray.h"
+#include "include/private/SkTArray.h"
 #include "include/utils/SkNWayCanvas.h"
-#include "src/base/SkTLazy.h"
 #include "src/core/SkCanvasPriv.h"
 #include "src/core/SkStringUtils.h"
+#include "src/core/SkTLazy.h"
 #include "tools/SkSharingProc.h"
 
 #if defined(SK_GANESH)
@@ -250,7 +250,7 @@ private:
 std::unique_ptr<MSKPPlayer> MSKPPlayer::Make(SkStreamSeekable* stream) {
     auto deserialContext = std::make_unique<SkSharingDeserialContext>();
     SkDeserialProcs procs;
-    procs.fImageProc = SkSharingDeserialContext::deserializeImage;
+    procs.fImageDataProc = SkSharingContext::deserializeImage;
     procs.fImageCtx = deserialContext.get();
 
     int pageCount = SkMultiPictureDocument::ReadPageCount(stream);

@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 Google Inc.
+ * Copyright 2019 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -18,7 +18,7 @@
 #include "include/core/SkShader.h"
 #include "include/core/SkTileMode.h"
 #include "include/effects/SkImageFilters.h"
-#include "include/private/base/SkAssert.h"
+#include "include/private/SkAssert.h"
 #include "modules/sksg/include/SkSGEffectNode.h"
 #include "modules/sksg/include/SkSGNode.h"
 

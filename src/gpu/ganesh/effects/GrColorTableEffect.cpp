@@ -15,11 +15,11 @@
 #include "include/core/SkString.h"
 #include "include/core/SkSurfaceProps.h"
 #include "include/gpu/GpuTypes.h"
+#include "include/private/SkAssert.h"
 #include "include/private/SkSLSampleUsage.h"
-#include "include/private/base/SkAssert.h"
-#include "include/private/base/SkTo.h"
+#include "include/private/SkTo.h"
 #include "include/private/gpu/ganesh/GrTypesPriv.h"
-#include "src/base/SkRandom.h"
+#include "src/core/SkRandom.h"
 #include "src/gpu/ganesh/GrColorInfo.h"
 #include "src/gpu/ganesh/GrFragmentProcessor.h"
 #include "src/gpu/ganesh/GrFragmentProcessors.h"
@@ -29,6 +29,7 @@
 #include "src/gpu/ganesh/SkGr.h"
 #include "src/gpu/ganesh/effects/GrTextureEffect.h"
 #include "src/gpu/ganesh/glsl/GrGLSLFragmentShaderBuilder.h"
+#include "src/gpu/ganesh/image/GrMippedBitmap.h"
 
 #include <cstdint>
 #include <tuple>
@@ -75,9 +76,8 @@ std::unique_ptr<GrFragmentProcessor::ProgramImpl> ColorTableEffect::onMakeProgra
 std::unique_ptr<GrFragmentProcessor> ColorTableEffect::Make(
         std::unique_ptr<GrFragmentProcessor> inputFP,
         GrRecordingContext* context,
-        const SkBitmap& bitmap) {
+        const GrMippedBitmap& bitmap) {
     SkASSERT(kPremul_SkAlphaType == bitmap.alphaType());
-    SkASSERT(bitmap.isImmutable());
 
     auto view = std::get<0>(GrMakeCachedBitmapProxyView(context,
                                                         bitmap,

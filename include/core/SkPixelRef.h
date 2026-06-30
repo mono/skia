@@ -10,9 +10,10 @@
 
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkSize.h"
+#include "include/private/SkAPI.h"
 #include "include/private/SkIDChangeListener.h"
-#include "include/private/base/SkAPI.h"
-#include "include/private/base/SkTo.h"
+#include "include/private/SkPixelStorage.h"
+#include "include/private/SkTo.h"
 
 #include <atomic>
 #include <cstddef>
@@ -25,7 +26,7 @@ class SkDiscardableMemory;
     This class is the smart container for pixel memory, and is used with SkBitmap.
     This class can be shared/accessed between multiple threads.
 */
-class SK_API SkPixelRef : public SkRefCnt {
+class SK_API SkPixelRef : public SkPixelStorage {
 public:
     SkPixelRef(int width, int height, void* addr, size_t rowBytes);
     ~SkPixelRef() override;

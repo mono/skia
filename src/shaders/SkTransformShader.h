@@ -1,5 +1,5 @@
 /*
- * Copyright 2021 Google Inc.
+ * Copyright 2021 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -8,7 +8,7 @@
 #define SkTextCoordShader_DEFINED
 
 #include "include/core/SkScalar.h"
-#include "include/private/base/SkAssert.h"
+#include "include/private/SkAssert.h"
 #include "src/shaders/SkShaderBase.h"
 
 class SkMatrix;

@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Google Inc.
+ * Copyright 2020 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -9,8 +9,8 @@
 
 #if !defined(SK_ENABLE_OPTIMIZE_SIZE)
 #include "include/core/SkPathTypes.h"
-#include "include/private/base/SkDebug.h"
-#include "include/private/base/SkMath.h"
+#include "include/private/SkDebug.h"
+#include "include/private/SkMath.h"
 #include "src/gpu/BufferWriter.h"
 #include "src/gpu/ganesh/GrEagerVertexAllocator.h"
 

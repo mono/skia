@@ -1,4 +1,4 @@
-// Copyright 2019 Google LLC.
+// Copyright 2019 Google LLC
 #ifndef TypefaceFontProvider_DEFINED
 #define TypefaceFontProvider_DEFINED
 
@@ -6,7 +6,7 @@
 #include "include/core/SkFontStyle.h"
 #include "include/core/SkStream.h"
 #include "include/core/SkString.h"
-#include "include/private/base/SkTArray.h"
+#include "include/private/SkTArray.h"
 
 #include <string>
 #include <unordered_map>

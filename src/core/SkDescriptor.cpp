@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 Google Inc.
+ * Copyright 2019 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -8,9 +8,9 @@
 #include "src/core/SkDescriptor.h"
 
 #include "include/core/SkTypes.h"
-#include "include/private/base/SkAlign.h"
-#include "include/private/base/SkTemplates.h"
-#include "include/private/base/SkTo.h"
+#include "include/private/SkAlign.h"
+#include "include/private/SkTemplates.h"
+#include "include/private/SkTo.h"
 #include "src/core/SkChecksum.h"
 #include "src/core/SkReadBuffer.h"
 #include "src/core/SkWriteBuffer.h"

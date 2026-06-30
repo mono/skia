@@ -8,10 +8,10 @@
 
 #include "include/core/SkSpan.h"
 #include "include/core/SkTypes.h"
-#include "include/private/base/SkTArray.h"
-#include "include/private/base/SkTo.h"
-#include "src/base/SkEnumBitMask.h"
-#include "src/base/SkScopeExit.h"
+#include "include/private/SkEnumBitMask.h"
+#include "include/private/SkTArray.h"
+#include "include/private/SkTo.h"
+#include "src/core/SkScopeExit.h"
 #include "src/core/SkTHash.h"
 #include "src/core/SkTraceEvent.h"
 #include "src/sksl/SkSLAnalysis.h"
@@ -223,6 +223,8 @@ protected:
 
     void writeOuterProduct();
 
+    void writeWorkgroupUniformLoad();
+
     void writeMatrixTimesEqualHelper(const Type& left, const Type& right, const Type& result);
 
     void writeMatrixDivisionHelpers(const Type& type);
@@ -244,6 +246,8 @@ protected:
     void writeScalarizedIntrinsicCall(const FunctionCall& c);
 
     bool writeIntrinsicCall(const FunctionCall& c, IntrinsicKind kind);
+
+    void writeTextureTarget(const Expression& arg);
 
     void writeConstructorCompound(const ConstructorCompound& c, Precedence parentPrecedence);
 
@@ -373,6 +377,7 @@ protected:
     bool fWrittenInverse2 = false, fWrittenInverse3 = false, fWrittenInverse4 = false;
     bool fWrittenMatrixCompMult = false;
     bool fWrittenOuterProduct = false;
+    bool fWrittenWorkgroupUniformLoad = false;
 };
 
 static const char* operator_name(Operator op) {
@@ -855,6 +860,21 @@ void MetalCodeGenerator::writeOuterProduct() {
     }
 }
 
+void MetalCodeGenerator::writeWorkgroupUniformLoad() {
+    static constexpr char kWorkgroupUniformLoad[] =
+"template <typename T>\n"
+"T workgroupUniformLoad(threadgroup const T* p) {\n"
+"    threadgroup_barrier(mem_flags::mem_threadgroup);\n"
+"    T result = *p;\n"
+"    threadgroup_barrier(mem_flags::mem_threadgroup);\n"
+"    return result;\n"
+"}\n";
+    if (!fWrittenWorkgroupUniformLoad) {
+        fWrittenWorkgroupUniformLoad = true;
+        fExtraFunctions.writeText(kWorkgroupUniformLoad);
+    }
+}
+
 std::string MetalCodeGenerator::getTempVariable(const Type& type) {
     std::string tempVar = "_skTemp" + std::to_string(fVarCount++);
     this->fFunctionHeader += "    " + this->typeName(type) + " " + tempVar + ";\n";
@@ -912,7 +932,7 @@ bool MetalCodeGenerator::writeIntrinsicCall(const FunctionCall& c, IntrinsicKind
     const ExpressionArray& arguments = c.arguments();
     switch (kind) {
         case k_textureRead_IntrinsicKind: {
-            this->writeExpression(*arguments[0], Precedence::kExpression);
+            this->writeTextureTarget(*arguments[0]);
             this->write(".read(");
             this->writeExpression(*arguments[1], Precedence::kSequence);
             this->write(")");
@@ -927,13 +947,21 @@ bool MetalCodeGenerator::writeIntrinsicCall(const FunctionCall& c, IntrinsicKind
             this->write(")");
             return true;
         }
+        case k_textureSize_IntrinsicKind: {
+            this->write("uint2(");
+            this->writeTextureTarget(*arguments[0]);
+            this->write(".get_width(), ");
+            this->writeTextureTarget(*arguments[0]);
+            this->write(".get_height())");
+            return true;
+        }
         case k_textureWidth_IntrinsicKind: {
-            this->writeExpression(*arguments[0], Precedence::kExpression);
+            this->writeTextureTarget(*arguments[0]);
             this->write(".get_width()");
             return true;
         }
         case k_textureHeight_IntrinsicKind: {
-            this->writeExpression(*arguments[0], Precedence::kExpression);
+            this->writeTextureTarget(*arguments[0]);
             this->write(".get_height()");
             return true;
         }
@@ -1349,6 +1377,13 @@ bool MetalCodeGenerator::writeIntrinsicCall(const FunctionCall& c, IntrinsicKind
         case k_workgroupBarrier_IntrinsicKind:
             this->write("threadgroup_barrier(mem_flags::mem_threadgroup)");
             return true;
+        case k_workgroupUniformLoad_IntrinsicKind: {
+            this->writeWorkgroupUniformLoad();
+            this->write("workgroupUniformLoad(&");
+            this->writeExpression(*c.arguments()[0], Precedence::kSequence);
+            this->write(")");
+            return true;
+        }
         case k_atomicAdd_IntrinsicKind:
             this->write("atomic_fetch_add_explicit(&");
             this->writeExpression(*c.arguments()[0], Precedence::kSequence);
@@ -1359,6 +1394,20 @@ bool MetalCodeGenerator::writeIntrinsicCall(const FunctionCall& c, IntrinsicKind
         case k_atomicLoad_IntrinsicKind:
             this->write("atomic_load_explicit(&");
             this->writeExpression(*c.arguments()[0], Precedence::kSequence);
+            this->write(", memory_order_relaxed)");
+            return true;
+        case k_atomicMax_IntrinsicKind:
+            this->write("atomic_fetch_max_explicit(&");
+            this->writeExpression(*c.arguments()[0], Precedence::kSequence);
+            this->write(", ");
+            this->writeExpression(*c.arguments()[1], Precedence::kSequence);
+            this->write(", memory_order_relaxed)");
+            return true;
+        case k_atomicMin_IntrinsicKind:
+            this->write("atomic_fetch_min_explicit(&");
+            this->writeExpression(*c.arguments()[0], Precedence::kSequence);
+            this->write(", ");
+            this->writeExpression(*c.arguments()[1], Precedence::kSequence);
             this->write(", memory_order_relaxed)");
             return true;
         case k_atomicStore_IntrinsicKind:
@@ -1385,6 +1434,16 @@ bool MetalCodeGenerator::writeIntrinsicCall(const FunctionCall& c, IntrinsicKind
         }
         default:
             return false;
+    }
+}
+
+void MetalCodeGenerator::writeTextureTarget(const Expression& arg) {
+    SkASSERT(arg.type().typeKind() == Type::TypeKind::kTexture ||
+             arg.type().typeKind() == Type::TypeKind::kSampler);
+
+    this->writeExpression(arg, Precedence::kExpression);
+    if (arg.type().typeKind() == Type::TypeKind::kSampler) {
+        this->write(".tex");
     }
 }
 

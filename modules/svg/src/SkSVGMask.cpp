@@ -1,5 +1,5 @@
 /*
- * Copyright 2021 Google Inc.
+ * Copyright 2021 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -12,7 +12,7 @@
 #include "include/core/SkM44.h"
 #include "include/core/SkPaint.h"
 #include "include/effects/SkLumaColorFilter.h"
-#include "include/private/base/SkTArray.h"
+#include "include/private/SkTArray.h"
 #include "modules/svg/include/SkSVGAttribute.h"
 #include "modules/svg/include/SkSVGAttributeParser.h"
 #include "modules/svg/include/SkSVGRenderContext.h"

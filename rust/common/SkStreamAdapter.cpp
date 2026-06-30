@@ -1,4 +1,4 @@
-// Copyright 2024 Google LLC.
+// Copyright 2024 Google LLC
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,9 +9,9 @@
 
 #include <limits>
 
-#include "include/private/base/SkAssert.h"
+#include "include/private/SkAssert.h"
 #include "rust/common/SpanUtils.h"
-#include "src/base/SkSafeMath.h"
+#include "src/core/SkSafeMath.h"
 #include "third_party/rust/cxx/v1/cxx.h"
 
 namespace rust {

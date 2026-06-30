@@ -1,4 +1,4 @@
-// Copyright 2019 Google LLC.
+// Copyright 2019 Google LLC
 // Use of this source code is governed by a BSD-style license that can be found in the LICENSE file.
 
 #include "modules/skplaintexteditor/src/shape.h"
@@ -12,11 +12,11 @@
 #include "include/core/SkString.h"
 #include "include/core/SkTextBlob.h"
 #include "include/core/SkTypes.h"
-#include "include/private/base/SkTFitsIn.h"
+#include "include/private/SkTFitsIn.h"
 #include "modules/skplaintexteditor/src/word_boundaries.h"
 #include "modules/skshaper/include/SkShaper.h"
-#include "src/base/SkUTF.h"
 #include "src/core/SkTextBlobPriv.h"
+#include "src/core/SkUTF.h"
 
 #if defined(SK_SHAPER_HARFBUZZ_AVAILABLE) && defined(SK_SHAPER_UNICODE_AVAILABLE)
 #include "modules/skshaper/include/SkShaper_harfbuzz.h"

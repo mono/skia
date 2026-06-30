@@ -1,5 +1,5 @@
 /*
- * Copyright 2023 Google Inc.
+ * Copyright 2023 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -9,12 +9,12 @@
 
 #include "include/core/SkData.h"
 #include "include/core/SkStream.h"
-#include "src/base/SkEndian.h"
-#include "src/base/SkSafeMath.h"
 #include "src/codec/SkCodecPriv.h"
 #include "src/codec/SkJpegConstants.h"
 #include "src/codec/SkJpegSegmentScan.h"
 #include "src/codec/SkTiffUtility.h"
+#include "src/core/SkEndian.h"
+#include "src/core/SkSafeMath.h"
 #include "src/core/SkStreamPriv.h"
 
 #include <cstring>

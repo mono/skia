@@ -1,4 +1,4 @@
-// Copyright 2024 Google LLC.
+// Copyright 2024 Google LLC
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,7 +6,7 @@
 #define SkStreamAdapter_DEFINED
 
 #include "include/core/SkStream.h"
-#include "include/private/base/SkAssert.h"
+#include "include/private/SkAssert.h"
 #include "rust/common/SpanUtils.h"
 
 namespace rust {

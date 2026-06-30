@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 Google Inc.
+ * Copyright 2018 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -31,6 +31,7 @@ public:
      *  @return A new SkPicture representing the serialized data, or NULL if the buffer is
      *          invalid.
      */
+    static constexpr int kDefaultRecursionLimit = 100;
     static sk_sp<SkPicture> MakeFromBuffer(SkReadBuffer& buffer);
 
     /**

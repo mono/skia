@@ -10,8 +10,8 @@
 
 #include "include/core/SkRefCnt.h"
 #include "include/gpu/graphite/GraphiteTypes.h"
-#include "include/private/base/SkDeque.h"
-#include "include/private/base/SkTArray.h"
+#include "include/private/SkDeque.h"
+#include "include/private/SkTArray.h"
 #include "src/core/SkTHash.h"
 
 #include <memory>
@@ -65,6 +65,7 @@ public:
 
     [[nodiscard]] bool submitToGpu(const SubmitInfo&);
     [[nodiscard]] bool hasUnfinishedGpuWork();
+    [[nodiscard]] bool hasPendingGPUWork() const;
     void checkForFinishedWork(SyncToCpu);
 
 #if defined(GPU_TEST_UTILS)
@@ -76,7 +77,7 @@ public:
 
     virtual void tick() const {}
 
-    void addUploadBufferManagerRefs(UploadBufferManager*);
+    void addUploadBufferManagerRefs(UploadBufferManager*, ResourceProvider*);
 
 protected:
     QueueManager(const SharedContext* sharedContext);

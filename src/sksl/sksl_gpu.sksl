@@ -40,6 +40,12 @@ $pure half4 sampleLod(sampler2D s, float3 P, float lod);
 
 $pure half4 sampleGrad(sampler2D s, float2, float2 dPdx, float2 dPdy);
 
+$pure half4 textureRead($readableTexture2D t, uint2 pos);
+$pure half4 textureRead(sampler2D s, uint2 pos);
+
+$pure uint2 textureSize(sampler2D s);
+$pure uint2 textureSize($genTexture2D t);
+
 // Currently we do not support the generic types of loading subpassInput so we have some explicit
 // versions that we currently use
 $pure half4 subpassLoad(subpassInput subpass);
@@ -56,6 +62,18 @@ void atomicStore(atomicUint a, uint value);
  * of `a` from before the addition occurred.
  */
 uint atomicAdd(atomicUint a, uint value);
+
+/**
+ * Performs an atomic minimum of `value` with the contents of `a` and returns the original contents
+ * of `a` from before the minimum operation occurred.
+ */
+uint atomicMin(atomicUint a, uint value);
+
+/**
+ * Performs an atomic maximum of `value` with the contents of `a` and returns the original contents
+ * of `a` from before the maximum operation occurred.
+ */
+uint atomicMax(atomicUint a, uint value);
 
 // Definitions of functions implementing all of the SkBlendMode blends.
 

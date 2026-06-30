@@ -1,5 +1,5 @@
 /*
- * Copyright 2017 Google Inc.
+ * Copyright 2017 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -8,7 +8,7 @@
 
 #include "include/core/SkStream.h"
 #include "include/private/SkEncodedInfo.h"
-#include "include/private/base/SkMalloc.h"
+#include "include/private/SkMalloc.h"
 
 #include <utility>
 

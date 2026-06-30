@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 Google Inc.
+ * Copyright 2019 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -13,7 +13,7 @@
 #include "include/core/SkPathEffect.h"
 #include "include/effects/SkDashPathEffect.h"
 #include "include/pathops/SkPathOps.h"
-#include "include/private/base/SkTPin.h"
+#include "include/private/SkTPin.h"
 #include "src/gpu/ganesh/geometry/GrQuad.h"
 #include "src/gpu/ganesh/ops/QuadPerEdgeAA.h"
 #include "tools/viewer/ClickHandlerSlide.h"

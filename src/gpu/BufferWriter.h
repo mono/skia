@@ -10,13 +10,13 @@
 
 #include "include/core/SkImageInfo.h"
 #include "include/core/SkRect.h"
-#include "include/private/base/SkAssert.h"
-#include "include/private/base/SkDebug.h"
-#include "include/private/base/SkTemplates.h"
-#include "include/private/base/SkTo.h"
-#include "src/base/SkRectMemcpy.h"
+#include "include/private/SkAssert.h"
+#include "include/private/SkDebug.h"
+#include "include/private/SkTemplates.h"
+#include "include/private/SkTo.h"
 #include "src/core/SkColorData.h"
 #include "src/core/SkConvertPixels.h"
+#include "src/core/SkRectMemcpy.h"
 
 #include <array>
 #include <cstddef>
@@ -29,6 +29,7 @@ namespace skgpu {
 
 namespace graphite {
     class VelloRenderer;
+    class TextureFormatXferFn;
 }
 
 struct BufferWriter {
@@ -471,6 +472,11 @@ struct TextureUploadWriter : private BufferWriter {
             dRow += dstRowBytes;
         }
     }
+
+    // Graphite-only, defined in TextureFormatXferFn
+    void convert(size_t offset, int width, int height,
+                 const void* src, size_t srcRowBytes,
+                 const graphite::TextureFormatXferFn& dst, size_t dstRowBytes);
 };
 
 }  // namespace skgpu

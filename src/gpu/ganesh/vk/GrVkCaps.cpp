@@ -302,6 +302,13 @@ bool GrVkCaps::onCanCopySurface(const GrSurfaceProxy* dst, const SkIRect& dstRec
 
 }
 
+namespace {
+bool is_tiler_gpu(uint32_t vendorId) {
+    return vendorId == skgpu::kARM_VkVendor ||
+           vendorId == skgpu::kQualcomm_VkVendor ||
+           vendorId == skgpu::kImagination_VkVendor;
+}
+} // anonymous namespace
 void GrVkCaps::init(const GrContextOptions& contextOptions,
                     const skgpu::VulkanInterface* vkInterface,
                     VkPhysicalDevice physDev,
@@ -415,12 +422,12 @@ void GrVkCaps::init(const GrContextOptions& contextOptions,
     this->initGrCaps(vkInterface, physDev, properties, memoryProperties, features, extensions);
     this->initShaderCaps(properties, features);
 
-    if (skgpu::kQualcomm_VkVendor == properties.vendorID) {
-        // A "clear" load for atlases runs faster on QC than a "discard" load followed by a
+    if (is_tiler_gpu(properties.vendorID)) {
+        // A "clear" load for atlases runs faster on tiler GPUs than a "discard" load followed by a
         // scissored clear.
-        // On NVIDIA and Intel, the discard load followed by clear is faster.
-        // TODO: Evaluate on ARM, Imagination, and ATI.
         fPreferFullscreenClears = true;
+        fDiscardStencilValuesAfterRenderPass = true;
+        fClearsAreFasterThanLoads = true;
     }
 
     if (properties.vendorID == skgpu::kNvidia_VkVendor ||
@@ -1051,7 +1058,7 @@ void GrVkCaps::initFormatTable(const GrContextOptions& contextOptions,
         auto& info = this->getFormatInfo(format);
         info.init(contextOptions, interface, physDev, properties, format);
         if (SkToBool(info.fOptimalFlags & FormatInfo::kTexturable_Flag)) {
-            info.fColorTypeInfoCount = 1;
+            info.fColorTypeInfoCount = 2;
             info.fColorTypeInfos = std::make_unique<ColorTypeInfo[]>(info.fColorTypeInfoCount);
             int ctIdx = 0;
             // Format: VK_FORMAT_R16_SFLOAT, Surface: kAlpha_F16
@@ -1063,6 +1070,14 @@ void GrVkCaps::initFormatTable(const GrContextOptions& contextOptions,
                 ctInfo.fFlags = ColorTypeInfo::kUploadData_Flag | ColorTypeInfo::kRenderable_Flag;
                 ctInfo.fReadSwizzle = skgpu::Swizzle("000r");
                 ctInfo.fWriteSwizzle = skgpu::Swizzle("a000");
+            }
+            // Format: VK_FORMAT_R16_SFLOAT, Surface: kRed_F16
+            {
+                constexpr GrColorType ct = GrColorType::kR_F16;
+                auto& ctInfo = info.fColorTypeInfos[ctIdx++];
+                ctInfo.fColorType = ct;
+                ctInfo.fTransferColorType = ct;
+                ctInfo.fFlags = ColorTypeInfo::kUploadData_Flag | ColorTypeInfo::kRenderable_Flag;
             }
         }
     }
@@ -1439,6 +1454,7 @@ void GrVkCaps::initFormatTable(const GrContextOptions& contextOptions,
     this->setColorType(GrColorType::kRGB_101010x,      { VK_FORMAT_A2B10G10R10_UNORM_PACK32 });
     this->setColorType(GrColorType::kGray_8,           { VK_FORMAT_R8_UNORM });
     this->setColorType(GrColorType::kAlpha_F16,        { VK_FORMAT_R16_SFLOAT });
+    this->setColorType(GrColorType::kR_F16,            { VK_FORMAT_R16_SFLOAT });
     this->setColorType(GrColorType::kRGBA_F16,         { VK_FORMAT_R16G16B16A16_SFLOAT });
     this->setColorType(GrColorType::kRGBA_F16_Clamped, { VK_FORMAT_R16G16B16A16_SFLOAT });
     this->setColorType(GrColorType::kRGB_F16F16F16x,   { VK_FORMAT_R16G16B16A16_SFLOAT});
@@ -2148,6 +2164,7 @@ std::vector<GrTest::TestFormatColorTypeCombination> GrVkCaps::getTestingCombinat
           GrBackendFormats::MakeVk(VK_FORMAT_R10X6G10X6B10X6A10X6_UNORM_4PACK16)},
         { GrColorType::kGray_8,           GrBackendFormats::MakeVk(VK_FORMAT_R8_UNORM)            },
         { GrColorType::kAlpha_F16,        GrBackendFormats::MakeVk(VK_FORMAT_R16_SFLOAT)          },
+        { GrColorType::kR_F16,            GrBackendFormats::MakeVk(VK_FORMAT_R16_SFLOAT)          },
         { GrColorType::kRGBA_F16,         GrBackendFormats::MakeVk(VK_FORMAT_R16G16B16A16_SFLOAT) },
         { GrColorType::kRGBA_F16_Clamped, GrBackendFormats::MakeVk(VK_FORMAT_R16G16B16A16_SFLOAT) },
         { GrColorType::kRGB_F16F16F16x,   GrBackendFormats::MakeVk(VK_FORMAT_R16G16B16A16_SFLOAT) },

@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 Google Inc.
+ * Copyright 2019 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -14,10 +14,10 @@
 #include "include/gpu/ganesh/GrContextOptions.h"
 #include "include/gpu/ganesh/GrContextThreadSafeProxy.h"
 #include "include/gpu/ganesh/GrTypes.h"
-#include "include/private/base/SkDebug.h"
-#include "include/private/base/SkMacros.h"
+#include "include/private/SkDebug.h"
+#include "include/private/SkMacros.h"
 #include "include/private/gpu/ganesh/GrTypesPriv.h"
-#include "src/base/SkArenaAlloc.h"
+#include "src/core/SkArenaAlloc.h"
 #include "src/core/SkCPUContextImpl.h"
 #include "src/core/SkCPURecorderImpl.h"
 #include "src/gpu/ganesh/GrAuditTrail.h"

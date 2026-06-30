@@ -37,15 +37,26 @@ class SkWStream;
 
 struct SkPDFIndirectReference {
     int fValue = -1;
-    explicit operator bool() const { return fValue != -1; }
+    explicit operator bool() const { return fValue >= 0; }
 
-    bool operator==(SkPDFIndirectReference v) const {
-        return fValue == v.fValue;
-    }
+    bool operator==(const SkPDFIndirectReference& o) const { return fValue == o.fValue; }
+    bool operator!=(const SkPDFIndirectReference& o) const { return fValue != o.fValue; }
+    bool operator< (const SkPDFIndirectReference& o) const { return fValue <  o.fValue; }
+    bool operator<=(const SkPDFIndirectReference& o) const { return fValue <= o.fValue; }
+    bool operator> (const SkPDFIndirectReference& o) const { return fValue >  o.fValue; }
+    bool operator>=(const SkPDFIndirectReference& o) const { return fValue >= o.fValue; }
+};
 
-    bool operator!=(SkPDFIndirectReference v) const {
-        return fValue != v.fValue;
-    }
+struct SkPDFParentTreeKey {
+    int fValue = -1;
+    explicit operator bool() const { return fValue >= 0; }
+
+    bool operator==(const SkPDFParentTreeKey& o) const { return fValue == o.fValue; }
+    bool operator!=(const SkPDFParentTreeKey& o) const { return fValue != o.fValue; }
+    bool operator< (const SkPDFParentTreeKey& o) const { return fValue <  o.fValue; }
+    bool operator<=(const SkPDFParentTreeKey& o) const { return fValue <= o.fValue; }
+    bool operator> (const SkPDFParentTreeKey& o) const { return fValue >  o.fValue; }
+    bool operator>=(const SkPDFParentTreeKey& o) const { return fValue >= o.fValue; }
 };
 
 /** \class SkPDFObject
@@ -139,7 +150,7 @@ static inline void SkPDFArray_Append(SkPDFArray* a) {}
 
 template <typename... Args>
 static inline std::unique_ptr<SkPDFArray> SkPDFMakeArray(Args... args) {
-    std::unique_ptr<SkPDFArray> ret(new SkPDFArray());
+    auto ret = std::make_unique<SkPDFArray>();
     ret->reserve(sizeof...(Args));
     SkPDFArray_Append(ret.get(), args...);
     return ret;

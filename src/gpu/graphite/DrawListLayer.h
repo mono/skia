@@ -9,10 +9,10 @@
 
 #include "src/gpu/graphite/DrawListBase.h"
 
-#include "include/private/base/SkDebug.h"
-#include "src/base/SkBlockAllocator.h"
-#include "src/base/SkEnumBitMask.h"
-#include "src/base/SkTBlockList.h"
+#include "include/private/SkDebug.h"
+#include "include/private/SkEnumBitMask.h"
+#include "src/core/SkBlockAllocator.h"
+#include "src/core/SkTBlockList.h"
 #include "src/gpu/graphite/ContextUtils.h"
 #include "src/gpu/graphite/DrawCommands.h"
 #include "src/gpu/graphite/DrawListTypes.h"
@@ -36,13 +36,14 @@ class Renderer;
 
 class DrawListLayer final : public DrawListBase {
 public:
-    // Add a construtor to prevent default zero initialization of SkTBlockList members' storage.
-    DrawListLayer() : DrawListBase() {}
+    explicit DrawListLayer(bool storageBufferSupport)
+        : DrawListBase()
+        , fStorageBufferSupport(storageBufferSupport) {}
 
     // DrawList requires that all Transforms be valid and asserts as much; invalid transforms should
     // be detected at the Device level or similar. The provided Renderer must be compatible with the
     // 'shape' and 'stroke' parameters.
-    std::pair<DrawParams*, Layer*> recordDraw(
+    std::pair<DrawParams*, Insertion> recordDraw(
             const Renderer* renderer,
             const Transform& localToDevice,
             const Geometry& geometry,
@@ -53,7 +54,7 @@ public:
             BarrierType barrierBeforeDraws,
             PipelineDataGatherer* gatherer,
             const StrokeStyle* stroke,
-            const Layer* latestDepthLayer) override;
+            const Insertion& latestInsertion) override;
 
     std::unique_ptr<DrawPass> snapDrawPass(Recorder* recorder,
                                            sk_sp<TextureProxy> target,
@@ -67,39 +68,31 @@ public:
 private:
     void recordBackwards(int stepIndex,
                          bool isStencil,
+                         bool isDepthOnly,
                          bool dependsOnDst,
                          bool requiresBarrier,
                          const RenderStep* step,
                          const UniformDataCache::Index& uniformIndex,
                          const LayerKey& key,
                          const DrawParams* drawParams,
-                         const Layer* stopLayer);
+                         const Insertion& stop,
+                         Insertion* capture,
+                         bool canForwardMerge);
 
     void recordForwards(int stepIndex,
                         bool isStencil,
+                        bool isDepthOnly,
                         bool dependsOnDst,
                         bool requiresBarrier,
                         const RenderStep* step,
                         const UniformDataCache::Index& uniformIndex,
                         const LayerKey& key,
                         const DrawParams* drawParams,
-                        const Layer* startLayer);
-
-    void recordDepthOnly(int stepIndex,
-                         bool isStencil,
-                         bool dependsOnDst,
-                         bool requiresBarrier,
-                         const RenderStep* step,
-                         const UniformDataCache::Index& uniformIndex,
-                         const LayerKey& key,
-                         const DrawParams* drawParams,
-                         Layer** captureLayer);
+                        Insertion& start);
 
     friend class DrawPass;
 
-    // It turns out that these seem to be really good default parameters. Maybe the default
-    // allocation could be brough down a little bit.
-    static constexpr uint32_t kMaxSearchLimit = 32;
+    static constexpr int32_t  kMaxSearchLimit = 32;
     static constexpr uint32_t kDefaultAllocation = 4096;
 
     // TODO (thomsmit): Try using SkSTArenaAllocWithReset that has the first storage block stored
@@ -109,10 +102,8 @@ private:
 
     int fDrawCount = 0;
     CompressedPaintersOrder fOrderCounter = CompressedPaintersOrder::First();
-    Layer* fParentDepthLayer = nullptr;
-    Layer* fStencilLayer = nullptr;
-    BindingWrapper* fStencilWrapper = nullptr;
-    StencilDraws* fStencilList = nullptr;
+
+    const bool fStorageBufferSupport;
 };
 
 } // namespace skgpu::graphite

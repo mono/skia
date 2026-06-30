@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 Google Inc.
+ * Copyright 2018 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -24,9 +24,9 @@
 #include "include/core/SkSurface.h"
 #include "include/core/SkTypes.h"
 #include "include/encode/SkPngEncoder.h"
-#include "include/private/base/SkDebug.h"
-#include "include/private/base/SkTPin.h"
-#include "include/private/base/SkTo.h"
+#include "include/private/SkDebug.h"
+#include "include/private/SkTPin.h"
+#include "include/private/SkTo.h"
 #include "modules/skottie/include/ExternalLayer.h"
 #include "modules/skottie/include/Skottie.h"
 #include "modules/skottie/utils/SkottieUtils.h"

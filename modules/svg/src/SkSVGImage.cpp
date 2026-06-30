@@ -1,5 +1,5 @@
 /*
- * Copyright 2021 Google Inc.
+ * Copyright 2021 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -12,7 +12,7 @@
 #include "include/core/SkMatrix.h"
 #include "include/core/SkSamplingOptions.h"
 #include "include/core/SkString.h"
-#include "include/private/base/SkAssert.h"
+#include "include/private/SkAssert.h"
 #include "modules/skresources/include/SkResources.h"
 #include "modules/svg/include/SkSVGAttributeParser.h"
 #include "modules/svg/include/SkSVGRenderContext.h"

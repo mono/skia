@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 Google Inc.
+ * Copyright 2019 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -35,7 +35,7 @@
 #include "include/effects/SkGradient.h"
 #include "include/effects/SkImageFilters.h"
 #include "include/effects/SkShaderMaskFilter.h"
-#include "include/private/base/SkTArray.h"
+#include "include/private/SkTArray.h"
 #include "src/core/SkLineClipper.h"
 #include "tools/DecodeUtils.h"
 #include "tools/Resources.h"

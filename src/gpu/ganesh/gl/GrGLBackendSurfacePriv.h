@@ -11,7 +11,7 @@
 #include "include/core/SkRefCnt.h"
 #include "include/gpu/ganesh/GrBackendSurface.h"
 #include "include/gpu/ganesh/GrTypes.h"
-#include "include/private/base/SkDebug.h"
+#include "include/private/SkDebug.h"
 #include "src/gpu/ganesh/GrBackendSurfacePriv.h"
 #include "src/gpu/ganesh/gl/GrGLTypesPriv.h"
 
@@ -40,11 +40,13 @@ public:
 private:
     void copyTo(AnyTextureData&) const override;
     bool isProtected() const override;
-    bool equal(const GrBackendTextureData* that) const override;
     bool isSameTexture(const GrBackendTextureData* that) const override;
     GrBackendFormat getBackendFormat() const override;
 #if defined(SK_DEBUG)
     GrBackendApi type() const override { return GrBackendApi::kOpenGL; }
+#endif
+#if defined(GPU_TEST_UTILS)
+    bool equal(const GrBackendTextureData* that) const override;
 #endif
 
     GrGLBackendTextureInfo fGLInfo;

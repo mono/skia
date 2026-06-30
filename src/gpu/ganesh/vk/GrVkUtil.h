@@ -8,9 +8,9 @@
 #ifndef GrVkUtil_DEFINED
 #define GrVkUtil_DEFINED
 
-#include "include/private/base/SkAssert.h"
-#include "include/private/base/SkDebug.h"
-#include "include/private/base/SkMacros.h"
+#include "include/private/SkAssert.h"
+#include "include/private/SkDebug.h"
+#include "include/private/SkMacros.h"
 #include "include/private/gpu/ganesh/GrTypesPriv.h"
 #include "include/private/gpu/vk/SkiaVulkan.h"
 #include "src/gpu/vk/VulkanInterface.h"
@@ -56,8 +56,8 @@ struct ProgramSettings;
 #define GR_VK_CALL_RESULT(GPU, RESULT, X)                                 \
     do {                                                                  \
         (RESULT) = GR_VK_CALL(GPU->vkInterface(), X);                     \
-        SkASSERT(VK_SUCCESS == RESULT || VK_ERROR_DEVICE_LOST == RESULT); \
         GR_VK_LOG_IF_NOT_SUCCESS(GPU, RESULT, #X);                        \
+        SkASSERT(VK_SUCCESS == RESULT || VK_ERROR_DEVICE_LOST == RESULT); \
         GPU->checkVkResult(RESULT);                                       \
     } while (false)
 

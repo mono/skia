@@ -1,11 +1,11 @@
-// Copyright 2018 Google LLC.
+// Copyright 2018 Google LLC
 // Use of this source code is governed by a BSD-style license that can be found in the LICENSE file.
 #ifndef SkPDFUnion_DEFINED
 #define SkPDFUnion_DEFINED
 
 #include "include/core/SkScalar.h"
 #include "include/core/SkString.h"
-#include "include/private/base/SkTo.h"
+#include "include/private/SkTo.h"
 
 #include <cstddef>
 #include <cstdint>

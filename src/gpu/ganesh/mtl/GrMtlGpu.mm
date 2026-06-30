@@ -1,5 +1,5 @@
 /*
- * Copyright 2017 Google Inc.
+ * Copyright 2017 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -13,10 +13,10 @@
 #include "include/gpu/ganesh/mtl/GrMtlBackendSemaphore.h"
 #include "include/gpu/ganesh/mtl/GrMtlBackendSurface.h"
 #include "include/private/gpu/ganesh/GrTypesPriv.h"
-#include "src/base/SkMathPriv.h"
-#include "src/base/SkRectMemcpy.h"
 #include "src/core/SkCompressedDataUtils.h"
+#include "src/core/SkMathPriv.h"
 #include "src/core/SkMipmap.h"
+#include "src/core/SkRectMemcpy.h"
 #include "src/gpu/DataUtils.h"
 #include "src/gpu/ganesh/GrBackendUtils.h"
 #include "src/gpu/ganesh/GrDataUtils.h"

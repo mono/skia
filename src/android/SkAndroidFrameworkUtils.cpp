@@ -1,5 +1,5 @@
 /*
- * Copyright 2017 Google Inc.
+ * Copyright 2017 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -8,10 +8,10 @@
 #include "include/android/SkAndroidFrameworkUtils.h"
 #include "include/core/SkCanvas.h"
 #include "include/effects/SkGradient.h"
-#include "include/private/base/SkTemplates.h"
+#include "include/private/SkTemplates.h"
 #include "include/utils/SkPaintFilterCanvas.h"
-#include "src/base/SkTLazy.h"
 #include "src/core/SkDevice.h"
+#include "src/core/SkTLazy.h"
 #include "src/image/SkSurface_Base.h"
 #include "src/shaders/SkShaderBase.h"
 

@@ -17,10 +17,10 @@
 #include "include/core/SkScalar.h"
 #include "include/core/SkTypes.h"
 #include "include/effects/SkImageFilters.h"
-#include "include/private/base/SkAlign.h"
-#include "include/private/base/SkFixed.h"
-#include "include/private/base/SkFloatingPoint.h"
-#include "include/private/base/SkTPin.h"
+#include "include/private/SkAlign.h"
+#include "include/private/SkFixed.h"
+#include "include/private/SkFloatingPoint.h"
+#include "include/private/SkTPin.h"
 #include "src/core/SkMask.h"
 #include "src/core/SkMaskFilterBase.h"
 #include "src/core/SkReadBuffer.h"
@@ -78,14 +78,22 @@ bool SkTableMaskFilterImpl::filterMask(SkMaskBuilder* dst, const SkMask& src,
     if (src.fFormat != SkMask::kA8_Format) {
         return false;
     }
-
+    // SkAlign4 overflows when too close to INT32_MAX, so reject when too big.
+    constexpr int32_t kMaxWidth = 1 << 30;
+    if (src.fBounds.width() > kMaxWidth) {
+        return false;
+    }
     dst->bounds() = src.fBounds;
     dst->rowBytes() = SkAlign4(dst->fBounds.width());
     dst->format() = SkMask::kA8_Format;
     dst->image() = nullptr;
 
     if (src.fImage) {
-        dst->image() = SkMaskBuilder::AllocImage(dst->computeImageSize());
+        auto imgSize = dst->computeImageSize();
+        if (imgSize == 0) {
+            return false;
+        }
+        dst->image() = SkMaskBuilder::AllocImage(imgSize);
 
         const uint8_t* srcP = src.fImage;
         uint8_t* dstP = dst->image();

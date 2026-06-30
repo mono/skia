@@ -1,5 +1,5 @@
 /*
- * Copyright 2017 Google Inc.
+ * Copyright 2017 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -17,7 +17,7 @@
 #include "include/core/SkScalar.h"
 #include "include/core/SkTypes.h"
 #include "include/core/SkVertices.h"
-#include "include/private/base/SkTo.h"
+#include "include/private/SkTo.h"
 #include "include/utils/SkShadowUtils.h"
 #include "src/core/SkDrawShadowInfo.h"
 #include "src/core/SkVerticesPriv.h"

@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 Google Inc.
+ * Copyright 2019 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -8,7 +8,7 @@
 #include "src/gpu/ganesh/GrSPIRVVaryingHandler.h"
 
 #include "include/core/SkString.h"
-#include "include/private/base/SkAssert.h"
+#include "include/private/SkAssert.h"
 #include "src/core/SkSLTypeShared.h"
 #include "src/gpu/ganesh/GrShaderVar.h"
 

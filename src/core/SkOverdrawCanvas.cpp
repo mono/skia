@@ -15,13 +15,12 @@
 #include "include/core/SkImageInfo.h"
 #include "include/core/SkMatrix.h"
 #include "include/core/SkPath.h"
+#include "include/core/SkPoint.h"
 #include "include/core/SkRSXform.h"
 #include "include/core/SkRect.h"
 #include "include/core/SkSurfaceProps.h"
-#include "include/private/base/SkAssert.h"
-#include "include/private/base/SkPoint_impl.h"
-#include "include/private/base/SkTDArray.h"
-#include "src/base/SkZip.h"
+#include "include/private/SkAssert.h"
+#include "include/private/SkTDArray.h"
 #include "src/core/SkDevice.h"
 #include "src/core/SkDraw.h"
 #include "src/core/SkDrawShadowInfo.h"
@@ -29,6 +28,8 @@
 #include "src/core/SkGlyphRunPainter.h"
 #include "src/core/SkLatticeIter.h"
 #include "src/core/SkMask.h"
+#include "src/core/SkMipmap.h"
+#include "src/core/SkZip.h"
 #include "src/text/GlyphRun.h"
 
 class SkBitmap;
@@ -78,8 +79,12 @@ public:
         }
     }
 
-    void drawBitmap(const SkBitmap&, const SkMatrix&, const SkRect* dstOrNull,
-                    const SkSamplingOptions&, const SkPaint&) const override {}
+    void drawBitmap(const SkBitmap&,
+                    const SkMatrix&,
+                    const SkRect* dstOrNull,
+                    const SkSamplingOptions&,
+                    const SkPaint&,
+                    sk_sp<SkMipmap>) const override {}
 
     void onDrawGlyphRunList(SkCanvas* canvas,
                             const sktext::GlyphRunList& glyphRunList,

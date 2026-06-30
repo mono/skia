@@ -1,5 +1,5 @@
 /*
- * Copyright 2023 Google Inc.
+ * Copyright 2023 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -8,8 +8,8 @@
 #ifndef SkRasterPipelineContextUtils_DEFINED
 #define SkRasterPipelineContextUtils_DEFINED
 
-#include "src/base/SkArenaAlloc.h"
-#include "src/base/SkUtils.h"
+#include "src/core/SkArenaAlloc.h"
+#include "src/core/SkUtils.h"
 
 #include <cstring>
 #include <type_traits>

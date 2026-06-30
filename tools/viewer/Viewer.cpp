@@ -30,16 +30,13 @@
 #include "include/core/SkSurface.h"
 #include "include/core/SkSurfaceProps.h"
 #include "include/core/SkTextBlob.h"
-#include "include/private/base/SkDebug.h"
-#include "include/private/base/SkLog.h"
-#include "include/private/base/SkTPin.h"
-#include "include/private/base/SkTo.h"
+#include "include/private/SkDebug.h"
+#include "include/private/SkLog.h"
+#include "include/private/SkTPin.h"
+#include "include/private/SkTo.h"
 #include "include/utils/SkPaintFilterCanvas.h"
-#include "src/base/SkBase64.h"
-#include "src/base/SkTLazy.h"
-#include "src/base/SkTSort.h"
-#include "src/base/SkUTF.h"
 #include "src/core/SkAutoPixmapStorage.h"
+#include "src/core/SkBase64.h"
 #include "src/core/SkColorPriv.h"
 #include "src/core/SkLRUCache.h"
 #include "src/core/SkMD5.h"
@@ -47,8 +44,11 @@
 #include "src/core/SkReadBuffer.h"
 #include "src/core/SkScan.h"
 #include "src/core/SkStringUtils.h"
+#include "src/core/SkTLazy.h"
+#include "src/core/SkTSort.h"
 #include "src/core/SkTaskGroup.h"
 #include "src/core/SkTextBlobPriv.h"
+#include "src/core/SkUTF.h"
 #include "src/image/SkImage_Base.h"
 #include "src/sksl/SkSLCompiler.h"
 #include "src/sksl/SkSLString.h"
@@ -538,15 +538,19 @@ static const Window::BackendType kSupportedBackends[] = {
 #endif
 
 #if defined(SK_DAWN) && defined(SK_GRAPHITE)
-#if defined(SK_BUILD_FOR_WIN)
+#if defined(SK_DAWN_HAS_D3D11)
         sk_app::Window::BackendType::kGraphiteDawnD3D11,
+#endif
+#if defined(SK_DAWN_HAS_D3D12)
         sk_app::Window::BackendType::kGraphiteDawnD3D12,
 #endif
-#if defined(SK_BUILD_FOR_MAC) || defined(SK_BUILD_FOR_IOS)
+#if defined(SK_DAWN_HAS_METAL)
         sk_app::Window::BackendType::kGraphiteDawnMetal,
 #endif
-#if defined(SK_BUILD_FOR_UNIX) || defined(SK_BUILD_FOR_ANDROID)
+#if defined(SK_DAWN_HAS_OPENGLES)
         sk_app::Window::BackendType::kGraphiteDawnOpenGLES,
+#endif
+#if defined(SK_DAWN_HAS_VULKAN)
         sk_app::Window::BackendType::kGraphiteDawnVulkan,
 #endif
 #endif
@@ -993,7 +997,7 @@ Viewer::Viewer(int argc, char** argv, void* platformData)
     fCommands.addCommand('a', "Transform", "Toggle Animation", [this]() {
         fAnimTimer.togglePauseResume();
     });
-    fCommands.addCommand('u', "GUI", "Zoom UI", [this]() {
+    fCommands.addCommand('u', "GUI", "Zoom Stats UI", [this]() {
         fZoomUI = !fZoomUI;
         fStatsLayer.setDisplayScale((fZoomUI ? 2.0f : 1.0f) * fWindow->scaleFactor());
         fWindow->inval();
@@ -2560,6 +2564,7 @@ void Viewer::drawImGui() {
                                 PathRendererStrategy::kRasterAtlas,
                                 PathRendererStrategy::kTessellation,
                                 PathRendererStrategy::kTessellationAndSmallAtlas,
+                                PathRendererStrategy::kCPUSparseStripsMSAA8,
                         };
                         for (size_t i = 0; i < std::size(strategies); ++i) {
                             if (skgpu::graphite::RendererProvider::IsSupported(

@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 Google Inc.
+ * Copyright 2018 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -13,6 +13,7 @@
 #include "include/core/SkMatrix.h"
 #include "include/core/SkRect.h"
 #include "include/core/SkSamplingOptions.h"
+#include "include/core/SkSpan.h"
 #include "include/core/SkString.h"
 #include "include/core/SkTileMode.h"
 #include "include/effects/SkGradient.h"
@@ -20,22 +21,21 @@
 #include "include/gpu/GpuTypes.h"
 #include "include/gpu/ganesh/GrBackendSurface.h"
 #include "include/gpu/ganesh/GrTypes.h"
-#include "include/private/base/SkAssert.h"
-#include "include/private/base/SkDebug.h"
-#include "include/private/base/SkMath.h"
-#include "include/private/base/SkOnce.h"
-#include "include/private/base/SkSpan_impl.h"
-#include "include/private/base/SkTemplates.h"
+#include "include/private/SkAssert.h"
+#include "include/private/SkDebug.h"
+#include "include/private/SkMath.h"
+#include "include/private/SkOnce.h"
+#include "include/private/SkTemplates.h"
 #include "include/private/gpu/ganesh/GrTypesPriv.h"
-#include "src/base/SkArenaAlloc.h"
-#include "src/base/SkMathPriv.h"
-#include "src/base/SkVx.h"
+#include "src/core/SkArenaAlloc.h"
 #include "src/core/SkColorData.h"
 #include "src/core/SkColorSpacePriv.h"
+#include "src/core/SkMathPriv.h"
 #include "src/core/SkRasterPipeline.h"
 #include "src/core/SkRasterPipelineOpContexts.h"
 #include "src/core/SkRasterPipelineOpList.h"
 #include "src/core/SkRuntimeEffectPriv.h"
+#include "src/core/SkVx.h"
 #include "src/gpu/ganesh/GrCaps.h"
 #include "src/gpu/ganesh/GrColorInfo.h"
 #include "src/gpu/ganesh/GrColorSpaceXform.h"
@@ -49,6 +49,7 @@
 #include "src/gpu/ganesh/effects/GrSkSLFP.h"
 #include "src/gpu/ganesh/effects/GrTextureEffect.h"
 #include "src/gpu/ganesh/gradients/GrGradientBitmapCache.h"
+#include "src/gpu/ganesh/image/GrMippedBitmap.h"
 #include "src/shaders/SkShaderBase.h"
 #include "src/shaders/gradients/SkGradientBaseShader.h"
 
@@ -61,7 +62,7 @@
 struct SkV4;
 
 #if defined(GPU_TEST_UTILS)
-#include "src/base/SkRandom.h"
+#include "src/core/SkRandom.h"
 #include "src/gpu/ganesh/GrTestUtils.h"
 #endif
 
@@ -117,9 +118,11 @@ static std::unique_ptr<GrFragmentProcessor> make_textured_colorizer(
     SkASSERT(1 == bitmap.height() && SkIsPow2(bitmap.width()));
     SkASSERT(bitmap.isImmutable());
 
-    auto view = std::get<0>(GrMakeCachedBitmapProxyView(
-            args.fSurfaceDrawContext->recordingContext(), bitmap, /*label=*/"MakeTexturedColorizer",
-            skgpu::Mipmapped::kNo));
+    auto view =
+            std::get<0>(GrMakeCachedBitmapProxyView(args.fSurfaceDrawContext->recordingContext(),
+                                                    GrMippedBitmap(bitmap),
+                                                    /*label=*/"MakeTexturedColorizer",
+                                                    skgpu::Mipmapped::kNo));
     if (!view) {
         SkDebugf("Gradient won't draw. Could not create texture.");
         return nullptr;

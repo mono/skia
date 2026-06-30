@@ -16,7 +16,7 @@
 #include "include/core/SkSpan.h"
 #include "include/core/SkTypeface.h"
 #include "include/utils/SkTextUtils.h"
-#include "include/private/base/SkTemplates.h"
+#include "include/private/SkTemplates.h"
 
 #include "include/c/sk_font.h"
 

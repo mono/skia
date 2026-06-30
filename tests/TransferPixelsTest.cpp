@@ -1,5 +1,5 @@
 /*
- * Copyright 2017 Google Inc.
+ * Copyright 2017 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -17,7 +17,7 @@
 #include "include/gpu/ganesh/GrBackendSurface.h"
 #include "include/gpu/ganesh/GrDirectContext.h"
 #include "include/gpu/ganesh/GrTypes.h"
-#include "include/private/base/SkAlign.h"
+#include "include/private/SkAlign.h"
 #include "include/private/gpu/ganesh/GrTypesPriv.h"
 #include "src/gpu/ganesh/GrCaps.h"
 #include "src/gpu/ganesh/GrColor.h"
@@ -524,6 +524,7 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(TransferPixelsToTextureTest,
                      GrColorType::kRGBA_10x6,
                      GrColorType::kGray_8,
                      GrColorType::kAlpha_F16,
+                     GrColorType::kR_F16,
                      GrColorType::kRGBA_F16,
                      GrColorType::kRGBA_F16_Clamped,
                      GrColorType::kRGB_F16F16F16x,
@@ -564,6 +565,7 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(TransferPixelsFromTextureTest,
                      GrColorType::kRGBA_10x6,
                      GrColorType::kGray_8,
                      GrColorType::kAlpha_F16,
+                     GrColorType::kR_F16,
                      GrColorType::kRGBA_F16,
                      GrColorType::kRGBA_F16_Clamped,
                      GrColorType::kRGB_F16F16F16x,

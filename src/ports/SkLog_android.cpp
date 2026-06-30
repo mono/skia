@@ -5,9 +5,9 @@
  * found in the LICENSE file.
  */
 
-#include "include/private/base/SkDebug.h"
-#include "include/private/base/SkFeatures.h"
-#include "include/private/base/SkLog.h"
+#include "include/private/SkDebug.h"
+#include "include/private/SkFeatures.h"
+#include "include/private/SkLog.h"
 
 #if defined(SK_BUILD_FOR_ANDROID)
 
@@ -34,21 +34,22 @@ void SkLogVAList(SkLogPriority priority, const char format[], va_list args) {
         fflush(stdout);
     }
 
+    // Forces all Info and Debug logs to show as warnings in Android's RenderEngine. This hack
+    // should be dropped as we update SkDebugf call sites to have more precise priority.
+#if defined(SK_IN_RENDERENGINE)
+    if (priority > SkLogPriority::kWarning) {
+        priority = SkLogPriority::kWarning;
+    }
+#endif
+
     int android_priority;
     switch (priority) {
-        case SkLogPriority::kFatal:   android_priority = ANDROID_LOG_FATAL;   break;
         case SkLogPriority::kError:   android_priority = ANDROID_LOG_ERROR;   break;
         case SkLogPriority::kWarning: android_priority = ANDROID_LOG_WARN;    break;
         case SkLogPriority::kInfo:    android_priority = ANDROID_LOG_INFO;    break;
         case SkLogPriority::kDebug:   android_priority = ANDROID_LOG_DEBUG;   break;
         default:                      android_priority = ANDROID_LOG_DEBUG;   break;
     }
-
-// Forces all Render Engine logs to show as warnings. This hack should be dropped as we update
-// SkDebugf call sites to have more precise priority.
-#if defined(SK_IN_RENDERENGINE)
-    android_priority = ANDROID_LOG_WARN;
-#endif
 
     __android_log_vprint(android_priority, LOG_TAG, format, args);
 }

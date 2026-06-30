@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 Google Inc.
+ * Copyright 2018 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -9,8 +9,8 @@
 #define SkRectPriv_DEFINED
 
 #include "include/core/SkRect.h"
-#include "src/base/SkMathPriv.h"
-#include "src/base/SkVx.h"
+#include "src/core/SkMathPriv.h"
+#include "src/core/SkVx.h"
 
 class SkM44;
 class SkMatrix;

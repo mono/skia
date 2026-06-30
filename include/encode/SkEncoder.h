@@ -1,5 +1,5 @@
 /*
- * Copyright 2017 Google Inc.
+ * Copyright 2017 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -9,9 +9,9 @@
 #define SkEncoder_DEFINED
 
 #include "include/core/SkPixmap.h"
-#include "include/private/base/SkAPI.h"
-#include "include/private/base/SkNoncopyable.h"
-#include "include/private/base/SkTemplates.h"
+#include "include/private/SkAPI.h"
+#include "include/private/SkNoncopyable.h"
+#include "include/private/SkTemplates.h"
 
 #include <cstddef>
 #include <cstdint>

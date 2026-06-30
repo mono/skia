@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 Google Inc.
+ * Copyright 2018 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -12,7 +12,7 @@
 #include "include/gpu/GpuTypes.h"
 #include "include/gpu/ganesh/GrBackendSurface.h"
 #include "include/gpu/ganesh/GrTypes.h"
-#include "include/private/base/SkAssert.h"
+#include "include/private/SkAssert.h"
 #include "include/private/gpu/ganesh/GrTypesPriv.h"
 #include "src/gpu/MaskFormat.h"
 #include "src/gpu/ganesh/GrCaps.h"
@@ -65,6 +65,8 @@ public:
     void freeAll();
 
     bool hasGlyph(skgpu::MaskFormat, const skgpu::ganesh::GlyphEntry&);
+
+    bool supportsBilerp() const { return fSupportBilerpAtlas; }
 
     GrDrawOpAtlas::ErrorCode addGlyphToAtlas(const SkGlyph&,
                                              skgpu::ganesh::GlyphEntry*,

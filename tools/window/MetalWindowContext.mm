@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 Google Inc.
+ * Copyright 2019 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -17,7 +17,7 @@
 #include "include/gpu/ganesh/mtl/GrMtlDirectContext.h"
 #include "include/gpu/ganesh/mtl/GrMtlTypes.h"
 #include "include/gpu/ganesh/mtl/SkSurfaceMetal.h"
-#include "src/base/SkMathPriv.h"
+#include "src/core/SkMathPriv.h"
 #include "src/gpu/ganesh/GrCaps.h"
 #include "src/gpu/ganesh/GrDirectContextPriv.h"
 #include "src/image/SkImage_Base.h"

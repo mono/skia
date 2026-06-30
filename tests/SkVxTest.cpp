@@ -1,14 +1,14 @@
 /*
- * Copyright 2019 Google Inc.
+ * Copyright 2019 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
 
 #include "include/core/SkPoint.h"
-#include "src/base/SkRandom.h"
-#include "src/base/SkUtils.h"
-#include "src/base/SkVx.h"
+#include "src/core/SkRandom.h"
+#include "src/core/SkUtils.h"
+#include "src/core/SkVx.h"
 #include "tests/Test.h"
 
 #include <numeric>

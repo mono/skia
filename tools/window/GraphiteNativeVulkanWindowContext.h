@@ -1,5 +1,5 @@
 /*
- * Copyright 2023 Google Inc.
+ * Copyright 2023 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -12,7 +12,7 @@
 #ifdef SK_VULKAN
 
 #include "include/core/SkSurface.h"
-#include "include/private/base/SkTemplates.h"
+#include "include/private/SkTemplates.h"
 #include "tools/gpu/vk/VkTestUtils.h"
 #include "tools/window/WindowContext.h"
 

@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 Google Inc.
+ * Copyright 2018 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -7,8 +7,8 @@
 
 #include "include/core/SkCubicMap.h"
 
-#include "include/private/base/SkTPin.h"
-#include "src/base/SkVx.h"
+#include "include/private/SkTPin.h"
+#include "src/core/SkVx.h"
 
 #include <algorithm>
 #include <cmath>

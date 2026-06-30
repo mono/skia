@@ -9,7 +9,7 @@
 #define skgpu_graphite_Resource_DEFINED
 
 #include "include/gpu/GpuTypes.h"
-#include "include/private/base/SkMutex.h"
+#include "include/private/SkMutex.h"
 #include "src/gpu/GpuTypesPriv.h"
 #include "src/gpu/graphite/GraphiteResourceKey.h"
 #include "src/gpu/graphite/ResourceTypes.h"
@@ -228,11 +228,7 @@ public:
 
     // Whether the resource is currently in use by the GPU: any resource that is used in a command
     // buffer is considered in use by the GPU.
-    //
-    // NOTE: This is currently only correct for textures, hence the name. Once the rest of the
-    // resources use the command buffer ref instead of usage ref appropriately, this can be made
-    // more generaic.
-    bool isTextureBusyOnGPU() const {
+    bool isBusyOnGPU() const {
         return (fRefs.load(std::memory_order_acquire) & RefMask(RefType::kCommandBuffer)) != 0;
     }
 
@@ -268,35 +264,6 @@ public:
 
     const char* getLabel() const { return fLabel.c_str(); }
 
-    // We allow the label on a Resource to change when used for a different function. For example
-    // when reusing a scratch Texture we can change the label to match callers current use.
-    // TODO(b/387505250): Make this method private and selectively grant privileged access only to
-    // trusted callers (like the ResourceCache).
-    void setLabel(std::string_view label) {
-        if (fLabel == label) {
-            return;
-        }
-
-        fLabel = label;
-
-        // It is not always safe to immediately update the backend GPU resource label. Mark it
-        // as dirty so it can be updated when appropriate.
-        fBackendLabelDirty = true;
-    }
-
-    // Update the backend GPU resource label to match fLabel.
-    // TODO(b/387505250): Make this method protected and selectively grant privileged access only to
-    // trusted callers to enforce threadsafe label synchronization. Currently, we rely upon the
-    // ResourceProvider to manage label updates for resources it creates and to only call this
-    // method when it is actually threadsafe to perform the update.
-    void synchronizeBackendLabel() {
-        if (fBackendLabelDirty && !fLabel.empty()) {
-            const std::string fullLabel = "Skia_" + fLabel;
-            this->setBackendLabel(fullLabel.c_str());
-        }
-        fBackendLabelDirty = false;
-    }
-
     // Tests whether a object has been abandoned or released. All objects will be in this state
     // after their creating Context is destroyed or abandoned.
     //
@@ -325,13 +292,24 @@ protected:
     Resource(const SharedContext*,
              Ownership,
              size_t gpuMemorySize,
+             std::string_view label = {},
              bool reusableRequiresPurgeable = false,
              bool requiresPrepareForReturnToCache = false);
     virtual ~Resource();
 
     const SharedContext* sharedContext() const { return fSharedContext; }
 
-    // Needs to be protected for DawnBuffer's prepareForReturnToCache
+    // Update the backend GPU resource label to match fLabel. This should only ever be called by the
+    // ResourceCache or Resource subclass constructors.
+    void synchronizeBackendLabel() {
+        if (!fLabel.empty()) {
+            const std::string fullLabel = "Skia_" + fLabel;
+            this->setBackendLabel(fullLabel.c_str());
+        }
+        fBackendLabelDirty = false;
+    }
+
+    // Needs to be protected for DawnBuffer's emscripten prepareForReturnToCache
     void setDeleteASAP() { fDeleteASAP = DeleteASAP::kYes; }
 
     using TakeRefFunc = void (*)(void* ctx);
@@ -464,6 +442,22 @@ private:
         return {(origRefs & fReusableRefMask) == RefMask(RefType::kReturnQueue),
                 (origRefs & PurgeableMask()) == 0,
                 next};
+    }
+
+    // We allow the label on a Resource to change when used for a different function (e.g. when
+    // reusing a scratch Texture, we can change the label to reflect the caller's current usage).
+    // This method is only expected to be called when returning a non-shareable or scratch resource
+    // from the cache.
+    void setLabel(std::string_view label) {
+        if (fLabel == label) {
+            return;
+        }
+
+        fLabel = label;
+
+        // It is not always safe to immediately update the backend GPU resource label. Mark it
+        // as dirty so it can be updated when appropriate.
+        fBackendLabelDirty = true;
     }
 
 #if defined(SK_DEBUG) || defined(GPU_TEST_UTILS)

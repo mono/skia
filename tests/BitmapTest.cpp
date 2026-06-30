@@ -17,11 +17,11 @@
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkScalar.h"
 #include "include/core/SkTypes.h"
-#include "include/private/base/SkDebug.h"
-#include "include/private/base/SkFloatingPoint.h"
-#include "include/private/base/SkMalloc.h"
-#include "include/private/base/SkTo.h"
-#include "src/base/SkRandom.h"
+#include "include/private/SkDebug.h"
+#include "include/private/SkFloatingPoint.h"
+#include "include/private/SkMalloc.h"
+#include "include/private/SkTo.h"
+#include "src/core/SkRandom.h"
 #include "tests/Test.h"
 #include "tools/ToolUtils.h"
 
@@ -118,6 +118,7 @@ static void test_allocpixels(skiatest::Reporter* reporter) {
         kR16_unorm_SkColorType,
         kR16G16_unorm_SkColorType,
         kA16_float_SkColorType,
+        kR16_float_SkColorType,
         kR16G16_float_SkColorType,
         kR16G16B16A16_unorm_SkColorType,
     }) {
@@ -434,6 +435,7 @@ DEF_TEST(getalphaf, reporter) {
         { kGray_8_SkColorType,             opaque },
         { kR8G8_unorm_SkColorType,         opaque },
         { kR16_unorm_SkColorType,          opaque },
+        { kR16_float_SkColorType,          opaque },
         { kR16G16_unorm_SkColorType,       opaque },
         { kR16G16_float_SkColorType,       opaque },
         { kRGB_888x_SkColorType,           opaque },

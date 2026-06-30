@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 Google LLC.
+ * Copyright 2019 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -7,11 +7,11 @@
 #include "src/gpu/ganesh/tessellate/GrPathTessellationShader.h"
 
 #include "include/core/SkMatrix.h"
-#include "include/private/base/SkAssert.h"
-#include "include/private/base/SkMacros.h"
-#include "include/private/base/SkPoint_impl.h"
-#include "include/private/base/SkTArray.h"
-#include "src/base/SkArenaAlloc.h"
+#include "include/core/SkPoint.h"
+#include "include/private/SkAssert.h"
+#include "include/private/SkMacros.h"
+#include "include/private/SkTArray.h"
+#include "src/core/SkArenaAlloc.h"
 #include "src/core/SkSLTypeShared.h"
 #include "src/gpu/KeyBuilder.h"
 #include "src/gpu/ganesh/GrShaderCaps.h"

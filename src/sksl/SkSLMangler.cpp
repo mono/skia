@@ -1,5 +1,5 @@
 /*
- * Copyright 2021 Google LLC.
+ * Copyright 2021 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -9,7 +9,7 @@
 
 #include "include/core/SkString.h"
 #include "include/core/SkTypes.h"
-#include "src/base/SkStringView.h"
+#include "src/core/SkStringView.h"
 #include "src/sksl/ir/SkSLSymbolTable.h"
 
 #include <algorithm>

@@ -1,5 +1,5 @@
 /*
- * Copyright 2021 Google LLC.
+ * Copyright 2021 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -9,7 +9,7 @@
 #define GrGrModulateAtlasCoverageEffect_DEFINED
 
 #include "include/core/SkRect.h"
-#include "include/private/base/SkMacros.h"
+#include "include/private/SkMacros.h"
 #include "src/gpu/ganesh/GrFragmentProcessor.h"
 
 #include <memory>

@@ -137,6 +137,10 @@ def _CopyrightChecks(input_api, output_api, source_file_filter=None):
     if not re.search(copyright_pattern, contents):
       results.append(output_api.PresubmitError(
           '%s is missing a correct copyright header.' % affected_file))
+    if affected_file.Action() == 'A':
+      if 'Google Inc' in contents:
+        results.append(output_api.PresubmitError(
+            '%s contains "Google Inc" in copyright header. New files should use "Google LLC".' % affected_file))
   return results
 
 
@@ -633,8 +637,7 @@ def _CommonChecks(input_api, output_api):
         input_api, output_api, source_file_filter=sources))
   results.extend(_JsonChecks(input_api, output_api))
   results.extend(_IfDefChecks(input_api, output_api))
-  results.extend(_CopyrightChecks(input_api, output_api,
-                                  source_file_filter=sources))
+  results.extend(_CopyrightChecks(input_api, output_api, source_file_filter=sources))
   results.extend(_CheckIncludesFormatted(input_api, output_api))
   results.extend(_CheckGNFormatted(input_api, output_api))
   results.extend(_CheckGitConflictMarkers(input_api, output_api))

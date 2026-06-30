@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 Google Inc.
+ * Copyright 2018 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -12,10 +12,10 @@
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkString.h"
 #include "include/gpu/ganesh/GrRecordingContext.h"
-#include "include/private/base/SkAssert.h"
-#include "include/private/base/SkDebug.h"
+#include "include/private/SkAssert.h"
+#include "include/private/SkDebug.h"
 #include "include/private/gpu/ganesh/GrTypesPriv.h"
-#include "src/base/SkArenaAlloc.h"
+#include "src/core/SkArenaAlloc.h"
 #include "src/core/SkColorData.h"
 #include "src/core/SkTraceEvent.h"
 #include "src/gpu/ganesh/GrAppliedClip.h"
@@ -38,7 +38,7 @@
 #include "src/gpu/ganesh/ops/QuadPerEdgeAA.h"
 
 #if defined(GPU_TEST_UTILS)
-#include "src/base/SkRandom.h"
+#include "src/core/SkRandom.h"
 #include "src/gpu/ganesh/GrDrawOpTest.h"
 #include "src/gpu/ganesh/GrTestUtils.h"
 #endif

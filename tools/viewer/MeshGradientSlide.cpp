@@ -1,5 +1,5 @@
 /*
- * Copyright 2024 Google Inc.
+ * Copyright 2024 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -17,8 +17,8 @@
 #include "include/core/SkString.h"
 #include "include/core/SkVertices.h"
 #include "include/effects/SkRuntimeEffect.h"
-#include "include/private/base/SkDebug.h"
-#include "src/base/SkRandom.h"
+#include "include/private/SkDebug.h"
+#include "src/core/SkRandom.h"
 #include "tools/fonts/FontToolUtils.h"
 #include "tools/viewer/Slide.h"
 

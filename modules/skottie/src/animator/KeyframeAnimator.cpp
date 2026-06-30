@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Google Inc.
+ * Copyright 2020 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -7,7 +7,7 @@
 
 #include "modules/skottie/src/animator/KeyframeAnimator.h"
 
-#include "include/private/base/SkTo.h"
+#include "include/private/SkTo.h"
 #include "modules/jsonreader/SkJSONReader.h"
 #include "modules/skottie/src/SkottieJson.h"
 

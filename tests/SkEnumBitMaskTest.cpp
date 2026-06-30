@@ -1,11 +1,11 @@
 /*
- * Copyright 2019 Google Inc.
+ * Copyright 2019 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
 
-#include "src/base/SkEnumBitMask.h"
+#include "include/private/SkEnumBitMask.h"
 #include "tests/Test.h"
 
 enum class Flags {

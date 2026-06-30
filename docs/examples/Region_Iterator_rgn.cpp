@@ -1,11 +1,11 @@
-// Copyright 2019 Google LLC.
+// Copyright 2019 Google LLC
 // Use of this source code is governed by a BSD-style license that can be found in the LICENSE file.
 #include "tools/fiddle/examples.h"
 REG_FIDDLE(Region_Iterator_rgn, 256, 256, true, 0) {
 void draw(SkCanvas* canvas) {
     SkRegion region;
     SkIRect rects[] = {{1, 2, 3, 4}, {3, 4, 5, 6}};
-    region.setRects(rects, std::size(rects));
+    region.setRects(rects);
     SkRegion::Iterator iter(region);
     auto r = iter.rect();
     SkDebugf("rect={%d,%d,%d,%d}\n", r.fLeft, r.fTop, r.fRight, r.fBottom);

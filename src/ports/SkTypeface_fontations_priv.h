@@ -1,5 +1,5 @@
 /*
- * Copyright 2023 Google Inc.
+ * Copyright 2023 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -15,8 +15,8 @@
 #include "include/core/SkSpan.h"
 #include "include/core/SkStream.h"
 #include "include/core/SkTypeface.h"
-#include "include/private/base/SkOnce.h"
-#include "include/private/base/SkTArray.h"
+#include "include/private/SkOnce.h"
+#include "include/private/SkTArray.h"
 #include "src/core/SkAdvancedTypefaceMetrics.h"
 #include "src/core/SkScalerContext.h"
 #include "src/ports/fontations/src/ffi.rs.h"

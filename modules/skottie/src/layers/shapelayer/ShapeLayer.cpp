@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 Google Inc.
+ * Copyright 2018 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -8,8 +8,8 @@
 #include "modules/skottie/src/layers/shapelayer/ShapeLayer.h"
 
 #include "include/core/SkPathTypes.h"
-#include "include/private/base/SkAssert.h"
-#include "include/private/base/SkDebug.h"
+#include "include/private/SkAssert.h"
+#include "include/private/SkDebug.h"
 #include "modules/jsonreader/SkJSONReader.h"
 #include "modules/skottie/include/Skottie.h"
 #include "modules/skottie/include/SkottieProperty.h"

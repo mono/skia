@@ -1,5 +1,5 @@
 /*
- * Copyright 2021 Google Inc.
+ * Copyright 2021 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -15,10 +15,10 @@
 #include "include/gpu/ganesh/GrDirectContext.h"
 #include "include/gpu/ganesh/SkImageGanesh.h"
 #include "include/gpu/ganesh/SkSurfaceGanesh.h"
-#include "include/private/base/SkDeque.h"
-#include "include/private/base/SkMutex.h"
-#include "include/private/base/SkTemplates.h"
-#include "include/private/base/SkThreadID.h"
+#include "include/private/SkDeque.h"
+#include "include/private/SkMutex.h"
+#include "include/private/SkTemplates.h"
+#include "include/private/SkThreadID.h"
 #include "include/private/chromium/GrDeferredDisplayList.h"
 #include "include/private/chromium/GrDeferredDisplayListRecorder.h"
 #include "include/private/chromium/GrPromiseImageTexture.h"

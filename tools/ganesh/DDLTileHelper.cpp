@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 Google Inc.
+ * Copyright 2018 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -17,7 +17,7 @@
 #include "include/private/chromium/GrDeferredDisplayListRecorder.h"
 #include "include/private/chromium/GrSurfaceCharacterization.h"
 #include "include/private/chromium/SkImageChromium.h"
-#include "src/base/SkRandom.h"
+#include "src/core/SkRandom.h"
 #include "src/core/SkTaskGroup.h"
 #include "src/gpu/ganesh/GrCaps.h"
 #include "src/gpu/ganesh/GrDeferredDisplayListPriv.h"

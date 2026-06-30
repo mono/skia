@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 Google Inc.
+ * Copyright 2018 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -11,9 +11,9 @@
 #include "include/core/SkFont.h"
 #include "include/core/SkFontTypes.h"
 #include "include/core/SkTypeface.h"
-#include "src/base/SkRandom.h"
-#include "src/base/SkUTF.h"
-#include "src/base/SkUtils.h"
+#include "src/core/SkRandom.h"
+#include "src/core/SkUTF.h"
+#include "src/core/SkUtils.h"
 #include "tools/fonts/FontToolUtils.h"
 
 // From Project Guttenberg. This is UTF-8 text.

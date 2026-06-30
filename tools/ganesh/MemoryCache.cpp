@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 Google Inc.
+ * Copyright 2018 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -7,7 +7,7 @@
 
 #include "tools/ganesh/MemoryCache.h"
 
-#include "src/base/SkBase64.h"
+#include "src/core/SkBase64.h"
 #include "src/core/SkMD5.h"
 #include "src/core/SkReadBuffer.h"
 #include "src/gpu/ganesh/GrPersistentCacheUtils.h"

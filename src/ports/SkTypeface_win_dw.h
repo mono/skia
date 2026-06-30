@@ -10,9 +10,9 @@
 
 #include "include/core/SkFontArguments.h"
 #include "include/core/SkTypeface.h"
-#include "include/private/base/SkAPI.h"
-#include "src/base/SkLeanWindows.h"
+#include "include/private/SkAPI.h"
 #include "src/core/SkAdvancedTypefaceMetrics.h"
+#include "src/core/SkLeanWindows.h"
 #include "src/core/SkTypefaceCache.h"
 #include "src/utils/win/SkDWrite.h"
 #include "src/utils/win/SkHRESULT.h"
@@ -80,7 +80,7 @@ public:
     SkTScopedComPtr<IDWriteFontFace> fDWriteFontFace;
     SkTScopedComPtr<IDWriteFontFace1> fDWriteFontFace1;
     SkTScopedComPtr<IDWriteFontFace2> fDWriteFontFace2;
-    SkTScopedComPtr<IDWriteFontFace3> fDWriteFontFace3;
+    SkTScopedComPtr<IDWriteFontFace3> fDWriteFontFace3; // With this family and font are not needed
     SkTScopedComPtr<IDWriteFontFace4> fDWriteFontFace4;
     SkTScopedComPtr<IDWriteFontFace5> fDWriteFontFace5;
     // Once WDK 10.0.25357.0 or newer is required to build, fDWriteFontFace7 can be a smart pointer.

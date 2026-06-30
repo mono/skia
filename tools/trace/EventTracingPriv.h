@@ -1,5 +1,5 @@
 /*
- * Copyright 2017 Google Inc.
+ * Copyright 2017 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -8,7 +8,7 @@
 #ifndef EventTracingPriv_DEFINED
 #define EventTracingPriv_DEFINED
 
-#include "include/private/base/SkMutex.h"
+#include "include/private/SkMutex.h"
 
 /**
  * Construct and install an SkEventTracer, based on the mode,

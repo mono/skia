@@ -1,5 +1,5 @@
 /*
- * Copyright 2017 Google Inc.
+ * Copyright 2017 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -8,7 +8,7 @@
 #ifndef GrAtlasedShaderHelpers_DEFINED
 #define GrAtlasedShaderHelpers_DEFINED
 
-#include "include/private/base/SkAssert.h"
+#include "include/private/SkAssert.h"
 #include "src/core/SkSLTypeShared.h"
 #include "src/gpu/ganesh/GrGeometryProcessor.h"
 #include "src/gpu/ganesh/GrShaderCaps.h"

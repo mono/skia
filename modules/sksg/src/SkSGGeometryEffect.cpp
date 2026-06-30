@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Google Inc.
+ * Copyright 2020 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -21,8 +21,8 @@
 #include "include/effects/SkDashPathEffect.h"
 #include "include/effects/SkTrimPathEffect.h"
 #include "include/pathops/SkPathOps.h"
-#include "include/private/base/SkAssert.h"
-#include "include/private/base/SkTArray.h"
+#include "include/private/SkAssert.h"
+#include "include/private/SkTArray.h"
 #include "modules/sksg/include/SkSGGeometryNode.h"
 #include "modules/sksg/src/SkSGTransformPriv.h"
 

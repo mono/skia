@@ -1,6 +1,6 @@
 
 /*
- * Copyright 2017 Google Inc.
+ * Copyright 2017 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -13,8 +13,8 @@
 #include "include/core/SkRRect.h"
 #include "include/utils/SkCamera.h"
 #include "include/utils/SkShadowUtils.h"
-#include "src/base/SkUTF.h"
 #include "src/core/SkBlurMask.h"
+#include "src/core/SkUTF.h"
 #include "tools/ToolUtils.h"
 #include "tools/viewer/Slide.h"
 

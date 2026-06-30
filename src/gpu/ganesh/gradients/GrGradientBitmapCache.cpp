@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 Google Inc.
+ * Copyright 2018 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -11,10 +11,10 @@
 #include "include/core/SkImageInfo.h"
 #include "include/core/SkMatrix.h"
 #include "include/core/SkTypes.h"
-#include "include/private/base/SkMalloc.h"
-#include "include/private/base/SkTemplates.h"
-#include "src/base/SkArenaAlloc.h"
-#include "src/base/SkFloatBits.h"
+#include "include/private/SkMalloc.h"
+#include "include/private/SkTemplates.h"
+#include "src/core/SkArenaAlloc.h"
+#include "src/core/SkFloatBits.h"
 #include "src/core/SkRasterPipeline.h"
 #include "src/core/SkRasterPipelineOpContexts.h"
 #include "src/core/SkRasterPipelineOpList.h"

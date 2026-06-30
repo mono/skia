@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 Google Inc.
+ * Copyright 2019 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -19,8 +19,8 @@
 #include "include/core/SkShader.h"
 #include "include/core/SkSpan.h"
 #include "include/core/SkSurfaceProps.h"
-#include "include/private/base/SkAssert.h"
-#include "src/base/SkArenaAlloc.h"
+#include "include/private/SkAssert.h"
+#include "src/core/SkArenaAlloc.h"
 #include "src/core/SkBlendModePriv.h"
 #include "src/core/SkBlenderBase.h"
 #include "src/core/SkColorSpacePriv.h"

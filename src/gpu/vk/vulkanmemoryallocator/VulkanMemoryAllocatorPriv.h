@@ -1,5 +1,5 @@
 /*
- * Copyright 2024 Google LLC.
+ * Copyright 2024 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -9,7 +9,7 @@
 #define skgpu_VulkanMemoryAllocatorUtil_DEFINED
 
 #include "include/core/SkRefCnt.h"
-#include "include/private/base/SkAPI.h"
+#include "include/private/SkAPI.h"
 #include "include/private/gpu/vk/SkiaVulkan.h"
 
 namespace skgpu {

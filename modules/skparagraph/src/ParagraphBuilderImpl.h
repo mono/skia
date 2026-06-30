@@ -1,4 +1,4 @@
-// Copyright 2019 Google LLC.
+// Copyright 2019 Google LLC
 #ifndef ParagraphBuilderImpl_DEFINED
 #define ParagraphBuilderImpl_DEFINED
 
@@ -6,8 +6,8 @@
 #include <stack>
 #include <string>
 #include <tuple>
-#include "include/private/base/SkOnce.h"
-#include "include/private/base/SkTArray.h"
+#include "include/private/SkOnce.h"
+#include "include/private/SkTArray.h"
 #include "modules/skparagraph/include/FontCollection.h"
 #include "modules/skparagraph/include/Paragraph.h"
 #include "modules/skparagraph/include/ParagraphBuilder.h"
@@ -88,13 +88,6 @@ public:
     static std::unique_ptr<ParagraphBuilder> make(const ParagraphStyle& style,
                                                   sk_sp<FontCollection> fontCollection,
                                                   sk_sp<SkUnicode> unicode);
-
-
-#if !defined(SK_DISABLE_LEGACY_PARAGRAPH_UNICODE)
-    // Just until we fix all the code; calls icu::make inside
-    static std::unique_ptr<ParagraphBuilder> make(const ParagraphStyle& style,
-                                                  sk_sp<FontCollection> fontCollection);
-#endif
 
     static bool RequiresClientICU();
 protected:

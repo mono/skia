@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 Google Inc.
+ * Copyright 2018 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -9,8 +9,8 @@
 
 #include "include/gpu/vk/VulkanBackendContext.h"
 #include "include/gpu/vk/VulkanExtensions.h"
-#include "include/private/base/SkAssert.h"
-#include "include/private/base/SkTo.h"
+#include "include/private/SkAssert.h"
+#include "include/private/SkTo.h"
 #include "src/core/SkTraceEvent.h"
 #include "src/gpu/GpuTypesPriv.h"
 #include "src/gpu/vk/VulkanInterface.h"
@@ -108,7 +108,7 @@ VkResult VulkanAMDMemoryAllocator::allocateImageMemory(VkImage image,
                                                        uint32_t allocationPropertyFlags,
                                                        skgpu::VulkanBackendMemory* backendMemory) {
     TRACE_EVENT0_ALWAYS("skia.gpu", TRACE_FUNC);
-    VmaAllocationCreateInfo info;
+    VmaAllocationCreateInfo info = {};
     info.flags = 0;
     info.usage = VMA_MEMORY_USAGE_UNKNOWN;
     info.requiredFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
@@ -140,7 +140,7 @@ VkResult VulkanAMDMemoryAllocator::allocateBufferMemory(VkBuffer buffer,
                                                         uint32_t allocationPropertyFlags,
                                                         skgpu::VulkanBackendMemory* backendMemory) {
     TRACE_EVENT0("skia.gpu", TRACE_FUNC);
-    VmaAllocationCreateInfo info;
+    VmaAllocationCreateInfo info = {};
     info.flags = 0;
     info.usage = VMA_MEMORY_USAGE_UNKNOWN;
     info.memoryTypeBits = 0;

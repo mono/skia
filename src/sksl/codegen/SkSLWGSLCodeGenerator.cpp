@@ -1,5 +1,5 @@
 /*
- * Copyright 2022 Google Inc.
+ * Copyright 2022 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -9,10 +9,10 @@
 
 #include "include/core/SkSpan.h"
 #include "include/core/SkTypes.h"
-#include "include/private/base/SkTArray.h"
-#include "include/private/base/SkTo.h"
-#include "src/base/SkEnumBitMask.h"
-#include "src/base/SkStringView.h"
+#include "include/private/SkEnumBitMask.h"
+#include "include/private/SkTArray.h"
+#include "include/private/SkTo.h"
+#include "src/core/SkStringView.h"
 #include "src/core/SkTHash.h"
 #include "src/core/SkTraceEvent.h"
 #include "src/sksl/SkSLAnalysis.h"
@@ -326,6 +326,9 @@ private:
                                            const Expression& right,
                                            Operator op,
                                            Precedence parentPrecedence);
+
+    // Helper for accessing textures from polyfilled texture and samplers
+    std::string assembleTextureFromImageOrSampler(const Expression& arg);
 
     // Writes a scratch variable into the program and returns its name (e.g. `_skTemp123`).
     std::string writeScratchVar(const Type& type, const std::string& value = "");
@@ -3238,6 +3241,16 @@ std::string WGSLCodeGenerator::assembleIntrinsicCall(const FunctionCall& call,
 
     const ExpressionArray& arguments = call.arguments();
     switch (kind) {
+        case k_workgroupUniformLoad_IntrinsicKind: {
+            // WGSL 17.11.4: workgroupUniformLoad(p : ptr<workgroup, T>) -> T
+            // The argument must be a pointer-addressable reference expression (variable reference,
+            // struct field, or array element) rooted in a variable declared in the 'workgroup'
+            // address space. Vector components (swizzles or indexed vector elements) and rvalues
+            // are not addressable.
+            std::string argument = this->assembleExpression(*arguments[0], Precedence::kSequence);
+            return "workgroupUniformLoad(&" + argument + ")";
+        }
+
         case k_atan_IntrinsicKind: {
             const char* name = (arguments.size() == 1) ? "atan" : "atan2";
             return this->assembleSimpleIntrinsic(name, call);
@@ -3491,22 +3504,46 @@ std::string WGSLCodeGenerator::assembleIntrinsicCall(const FunctionCall& call,
             expr += ", " + this->assembleExpression(*arguments[3], Precedence::kSequence);
             return expr + close;
         }
-        case k_textureHeight_IntrinsicKind:
-            return this->assembleSimpleIntrinsic("textureDimensions", call) + ".y";
 
         case k_textureRead_IntrinsicKind: {
+            // textureLoad takes a texture and coordinates. It does NOT take a sampler.
+            // If we are passed a combined sampler, we must extract just the texture.
+            std::string expr = "textureLoad(";
+
+            expr += this->assembleTextureFromImageOrSampler(*arguments[0]);
+
+            expr += ", ";
+            expr += this->assembleExpression(*arguments[1], Precedence::kSequence);
+
             // We need to inject an extra argument for the mip-level. We don't plan on using mipmaps
             // in our storage textures, so we can just pass zero.
-            auto [expr, close] = this->assemblePartialSampleCall("textureLoad",
-                                                                 call.type(),
-                                                                 *arguments[0],
-                                                                 *arguments[1]);
-            expr += ", 0";
-            return expr + close;
-        }
-        case k_textureWidth_IntrinsicKind:
-            return this->assembleSimpleIntrinsic("textureDimensions", call) + ".x";
+            expr += ", 0)";
 
+            // WGSL does not support f16 textures while all of SkSL's sample functions return
+            // "half4", so add a cast back to f16 if necessary.
+            if (type_is_low_precision(call.type(), fContext)) {
+                std::string lowPType = to_wgsl_type(fContext, call.type());
+                return lowPType + "(" + expr + ")";
+            }
+
+            return expr;
+        }
+        case k_textureSize_IntrinsicKind:
+        case k_textureWidth_IntrinsicKind:
+        case k_textureHeight_IntrinsicKind: {
+            std::string expr = "textureDimensions(";
+
+            // Use our helper to safely extract the texture
+            expr += this->assembleTextureFromImageOrSampler(*arguments[0]);
+
+            expr += ")";
+            if (kind == k_textureWidth_IntrinsicKind) {
+                expr += ".x";
+            } else if (kind == k_textureHeight_IntrinsicKind) {
+                expr += ".y";
+            }
+            return expr;
+        }
         case k_textureWrite_IntrinsicKind:
             return this->assembleSimpleIntrinsic("textureStore", call,
                                                  /*wgslOnlySupportsHighPrecision=*/true);
@@ -3540,6 +3577,8 @@ std::string WGSLCodeGenerator::assembleIntrinsicCall(const FunctionCall& call,
         case k_asin_IntrinsicKind:
         case k_atomicAdd_IntrinsicKind:
         case k_atomicLoad_IntrinsicKind:
+        case k_atomicMax_IntrinsicKind:
+        case k_atomicMin_IntrinsicKind:
         case k_atomicStore_IntrinsicKind:
         case k_ceil_IntrinsicKind:
         case k_cos_IntrinsicKind:
@@ -3757,16 +3796,21 @@ std::string WGSLCodeGenerator::assembleFunctionCall(const FunctionCall& call,
     for (int index = 0; index < args.size(); ++index) {
         if (params[index]->modifierFlags() & ModifierFlag::kOut) {
             std::unique_ptr<LValue> lvalue = this->makeLValue(*args[index]);
-            if (params[index]->modifierFlags() & ModifierFlag::kIn) {
-                // Load the lvalue's contents into the substitute argument.
-                substituteArgument.push_back(this->writeScratchVar(args[index]->type(),
-                                                                   lvalue->load()));
+            if (lvalue) {
+                if (params[index]->modifierFlags() & ModifierFlag::kIn) {
+                    // Load the lvalue's contents into the substitute argument.
+                    substituteArgument.push_back(this->writeScratchVar(args[index]->type(),
+                                                                       lvalue->load()));
+                } else {
+                    // Create a substitute argument, but leave it uninitialized.
+                    substituteArgument.push_back(this->writeScratchVar(args[index]->type()));
+                }
+                writeback.push_back(std::move(lvalue));
+                needsWriteback = true;
             } else {
-                // Create a substitute argument, but leave it uninitialized.
-                substituteArgument.push_back(this->writeScratchVar(args[index]->type()));
+                substituteArgument.push_back(std::string());
+                writeback.push_back(nullptr);
             }
-            writeback.push_back(std::move(lvalue));
-            needsWriteback = true;
         } else {
             substituteArgument.push_back(std::string());
             writeback.push_back(nullptr);
@@ -4404,6 +4448,16 @@ std::string WGSLCodeGenerator::assembleEqualityExpression(const Expression& left
     std::string rightName = this->assembleExpression(right, Precedence::kParentheses, mode);
     return this->assembleEqualityExpression(left.type(), leftName, right.type(), rightName,
                                             op, parentPrecedence);
+}
+
+std::string WGSLCodeGenerator::assembleTextureFromImageOrSampler(const Expression& arg) {
+    SkASSERT(arg.type().typeKind() == Type::TypeKind::kTexture ||
+             arg.type().typeKind() == Type::TypeKind::kSampler);
+    std::string expr = this->assembleExpression(arg, Precedence::kSequence);
+    if (arg.type().typeKind() == Type::TypeKind::kSampler) {
+        expr += kTextureSuffix;
+    }
+    return expr;
 }
 
 void WGSLCodeGenerator::writeProgramElement(const ProgramElement& e) {

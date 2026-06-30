@@ -13,7 +13,7 @@
 #include "include/core/SkImageInfo.h"
 #include "include/core/SkPixmap.h"
 #include "include/core/SkRefCnt.h"
-#include "include/private/base/SkMath.h"
+#include "include/private/SkMath.h"
 #include "src/core/SkCompressedDataUtils.h"
 #include "src/core/SkImageFilterTypes.h"
 #include "src/core/SkImageFilter_Base.h"
@@ -87,7 +87,7 @@ sk_sp<SkImage> RasterFromPixmapCopy(const SkPixmap& pmap) {
     // Here we actually make a copy of the caller's pixel data
     sk_sp<SkData> data(SkData::MakeWithCopy(pmap.addr(), size));
     return sk_make_sp<SkImage_Raster>(
-            pmap.info(), std::move(data), pmap.rowBytes(), kNeedNewImageUniqueID);
+            pmap.info(), std::move(data), pmap.rowBytes(), /*mips=*/nullptr, kNeedNewImageUniqueID);
 }
 
 sk_sp<SkImage> RasterFromData(const SkImageInfo& info, sk_sp<SkData> data, size_t rowBytes) {
@@ -101,7 +101,8 @@ sk_sp<SkImage> RasterFromData(const SkImageInfo& info, sk_sp<SkData> data, size_
         return nullptr;
     }
 
-    return sk_make_sp<SkImage_Raster>(info, std::move(data), rowBytes);
+    return sk_make_sp<SkImage_Raster>(
+            info, std::move(data), rowBytes, /*mips=*/nullptr, kNeedNewImageUniqueID);
 }
 
 sk_sp<SkImage> MakeWithFilter(sk_sp<SkImage> src,
@@ -164,7 +165,8 @@ sk_sp<SkImage> RasterFromPixmap(const SkPixmap& pmap, RasterReleaseProc proc, Re
     }
 
     sk_sp<SkData> data(SkData::MakeWithProc(pmap.addr(), size, proc, ctx));
-    return sk_make_sp<SkImage_Raster>(pmap.info(), std::move(data), pmap.rowBytes());
+    return sk_make_sp<SkImage_Raster>(
+            pmap.info(), std::move(data), pmap.rowBytes(), /*mips=*/nullptr, kNeedNewImageUniqueID);
 }
 
 }  // namespace SkImages

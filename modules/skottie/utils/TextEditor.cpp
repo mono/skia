@@ -1,5 +1,5 @@
 /*
- * Copyright 2022 Google Inc.
+ * Copyright 2022 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -18,7 +18,7 @@
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkSpan.h"
 #include "include/core/SkString.h"
-#include "src/base/SkUTF.h"
+#include "src/core/SkUTF.h"
 #include "tools/skui/InputState.h"
 
 #include <algorithm>

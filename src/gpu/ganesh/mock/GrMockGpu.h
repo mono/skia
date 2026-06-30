@@ -1,5 +1,5 @@
 /*
- * Copyright 2017 Google Inc.
+ * Copyright 2017 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -14,9 +14,10 @@
 #include "include/core/SkTextureCompressionType.h"
 #include "include/gpu/ganesh/GrBackendSurface.h"
 #include "include/gpu/ganesh/GrTypes.h"
+#include "include/gpu/ganesh/mock/GrMockBackendSurface.h"
 #include "include/gpu/ganesh/mock/GrMockTypes.h"
-#include "include/private/base/SkAssert.h"
-#include "include/private/base/SkTArray.h"
+#include "include/private/SkAssert.h"
+#include "include/private/SkTArray.h"
 #include "include/private/gpu/ganesh/GrTypesPriv.h"
 #include "src/core/SkTHash.h"
 #include "src/gpu/RefCntedCallback.h"
@@ -200,8 +201,7 @@ private:
                                               SkISize dimensions, int numStencilSamples) override;
 
     GrBackendFormat getPreferredStencilFormat(const GrBackendFormat&) override {
-        return GrBackendFormat::MakeMock(GrColorType::kUnknown, SkTextureCompressionType::kNone,
-                                         true);
+        return GrBackendFormats::MakeMockStencilFormat();
     }
 
     sk_sp<GrAttachment> makeMSAAAttachment(SkISize dimensions,

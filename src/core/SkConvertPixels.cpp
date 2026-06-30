@@ -9,16 +9,16 @@
 #include "include/core/SkColorType.h"
 #include "include/core/SkImageInfo.h"
 #include "include/core/SkSize.h"
-#include "include/private/base/SkAssert.h"
-#include "include/private/base/SkTPin.h"
-#include "include/private/base/SkTemplates.h"
-#include "src/base/SkHalf.h"
-#include "src/base/SkRectMemcpy.h"
+#include "include/private/SkAssert.h"
+#include "include/private/SkTPin.h"
+#include "include/private/SkTemplates.h"
 #include "src/core/SkColorData.h"
 #include "src/core/SkColorSpaceXformSteps.h"
+#include "src/core/SkHalf.h"
 #include "src/core/SkImageInfoPriv.h"
 #include "src/core/SkRasterPipeline.h"
 #include "src/core/SkRasterPipelineOpContexts.h"
+#include "src/core/SkRectMemcpy.h"
 #include "src/core/SkSwizzlePriv.h"
 
 #include <cstdint>
@@ -116,6 +116,7 @@ static bool convert_to_alpha8(const SkImageInfo& dstInfo,       void* vdst, size
         case kRGB_565_SkColorType:
         case kR8G8_unorm_SkColorType:
         case kR16_unorm_SkColorType:
+        case kR16_float_SkColorType:
         case kR16G16_unorm_SkColorType:
         case kR16G16_float_SkColorType:
         case kRGB_888x_SkColorType:

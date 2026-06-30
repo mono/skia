@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Google LLC.
+ * Copyright 2020 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -8,7 +8,7 @@
 #define GrTessellationShader_DEFINED
 
 #include "include/core/SkMatrix.h"
-#include "src/base/SkArenaAlloc.h"
+#include "src/core/SkArenaAlloc.h"
 #include "src/core/SkColorData.h"
 #include "src/gpu/ganesh/GrGeometryProcessor.h"
 #include "src/gpu/ganesh/GrProgramInfo.h"

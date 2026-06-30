@@ -8,6 +8,7 @@
 #include "src/gpu/graphite/TextureProxy.h"
 
 #include "include/gpu/graphite/Recorder.h"
+#include "include/private/SkPixelStorage.h"
 #include "src/core/SkMipmap.h"
 #include "src/gpu/graphite/Caps.h"
 #include "src/gpu/graphite/RecorderPriv.h"
@@ -22,7 +23,8 @@ TextureProxy::TextureProxy(SkISize dimensions,
                            const TextureInfo& info,
                            std::string_view label,
                            skgpu::Budgeted budgeted)
-        : fDimensions(dimensions)
+        : SkPixelStorage(SkPixelStorage::Type::kTextureProxy)
+        , fDimensions(dimensions)
         , fInfo(info)
         , fLabel(label)
         , fBudgeted(budgeted)
@@ -31,7 +33,8 @@ TextureProxy::TextureProxy(SkISize dimensions,
 }
 
 TextureProxy::TextureProxy(sk_sp<Texture> texture)
-        : fDimensions(texture->dimensions())
+        : SkPixelStorage(SkPixelStorage::Type::kTextureProxy)
+        , fDimensions(texture->dimensions())
         , fInfo(texture->textureInfo())
         , fLabel(texture->getLabel())
         , fBudgeted(texture->budgeted())
@@ -45,7 +48,8 @@ TextureProxy::TextureProxy(SkISize dimensions,
                            skgpu::Budgeted budgeted,
                            Volatile isVolatile,
                            LazyInstantiateCallback&& callback)
-        : fDimensions(dimensions)
+        : SkPixelStorage(SkPixelStorage::Type::kTextureProxy)
+        , fDimensions(dimensions)
         , fInfo(textureInfo)
         , fBudgeted(budgeted)
         , fVolatile(isVolatile)

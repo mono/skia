@@ -1,5 +1,5 @@
 /*
- * Copyright 2021 Google Inc.
+ * Copyright 2021 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -8,12 +8,12 @@
 
 #include "include/core/SkBlendMode.h"
 #include "include/core/SkMatrix.h"
+#include "include/core/SkPoint.h"
 #include "include/core/SkRect.h"
 #include "include/core/SkScalar.h"
 #include "include/core/SkSize.h"
 #include "include/gpu/ganesh/GrRecordingContext.h"
-#include "include/private/base/SkDebug.h"
-#include "include/private/base/SkPoint_impl.h"
+#include "include/private/SkDebug.h"
 #include "include/private/gpu/ganesh/GrTypesPriv.h"
 #include "src/core/SkIPoint16.h"
 #include "src/gpu/ganesh/GrGpu.h"

@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 Google Inc.
+ * Copyright 2018 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -8,10 +8,10 @@
 #ifndef GrMtlResourceProvider_DEFINED
 #define GrMtlResourceProvider_DEFINED
 
-#include "include/private/base/SkTArray.h"
-#include "src/base/SkSpinlock.h"
+#include "include/private/SkTArray.h"
 #include "src/core/SkChecksum.h"
 #include "src/core/SkLRUCache.h"
+#include "src/core/SkSpinlock.h"
 #include "src/core/SkTDynamicHash.h"
 #include "src/gpu/ganesh/GrProgramDesc.h"
 #include "src/gpu/ganesh/GrThreadSafePipelineBuilder.h"

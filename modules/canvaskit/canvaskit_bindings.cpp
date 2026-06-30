@@ -59,10 +59,10 @@
 #include "include/encode/SkJpegEncoder.h"
 #include "include/encode/SkPngEncoder.h"
 #include "include/encode/SkWebpEncoder.h"
-#include "include/private/base/SkOnce.h"
+#include "include/private/SkOnce.h"
 #include "include/utils/SkParsePath.h"
 #include "include/utils/SkShadowUtils.h"
-#include "src/base/SkFloatBits.h"
+#include "src/core/SkFloatBits.h"
 #include "src/core/SkPathPriv.h"
 #include "src/core/SkPathRaw.h"
 #include "src/core/SkResourceCache.h"
@@ -546,6 +546,10 @@ void ApplyTransform(SkPathBuilder& p,
     p.transform(m);
 }
 
+void ApplySetFillType(SkPathBuilder& p, SkPathFillType ft) {
+    p.setFillType(ft);
+}
+
 #ifdef CK_INCLUDE_PATHOPS
 SkPathOrNull MakeSimplified(const SkPath& path) {
     if (auto result = Simplify(path)) {
@@ -740,7 +744,7 @@ void PathAddVerbsPointsWeights(SkPathBuilder& self,
         SkSpan<const SkPathVerb>(verbs, SkToSizeT(numVerbs)),
         SkSpan<const float>(weights, SkToSizeT(numWts)),
     };
-    self.addRaw(raw);
+    self.addRaw(raw, SkPathBuilder::Reserve::kExact);
 }
 
 //========================================================================================
@@ -1508,7 +1512,7 @@ EMSCRIPTEN_BINDINGS(Skia) {
                           const SkRect* src = reinterpret_cast<const SkRect*>(srcPtr);
                           const SkRect* dst = reinterpret_cast<const SkRect*>(dstPtr);
                           auto constraint =
-                                  SkCanvas::kStrict_SrcRectConstraint;  // TODO: get from caller
+                                  SkCanvas::kFast_SrcRectConstraint;  // TODO: get from caller
                           self.drawImageRect(image.get(),
                                              *src,
                                              *dst,
@@ -1528,7 +1532,7 @@ EMSCRIPTEN_BINDINGS(Skia) {
                           const SkRect* src = reinterpret_cast<const SkRect*>(srcPtr);
                           const SkRect* dst = reinterpret_cast<const SkRect*>(dstPtr);
                           auto constraint =
-                                  SkCanvas::kStrict_SrcRectConstraint;  // TODO: get from caller
+                                  SkCanvas::kFast_SrcRectConstraint;  // TODO: get from caller
                           self.drawImageRect(
                                   image.get(), *src, *dst, {filter, mipmap}, paint, constraint);
                       }),
@@ -1838,7 +1842,19 @@ EMSCRIPTEN_BINDINGS(Skia) {
                           j.set("ascent", fm.fAscent);
                           j.set("descent", fm.fDescent);
                           j.set("leading", fm.fLeading);
-                          if (!(fm.fFlags & SkFontMetrics::kBoundsInvalid_Flag)) {
+                          if (SkScalar thickness; fm.hasUnderlineThickness(&thickness)) {
+                              j.set("underlineThickness", thickness);
+                          }
+                          if (SkScalar position; fm.hasUnderlinePosition(&position)) {
+                              j.set("underlinePosition", position);
+                          }
+                          if (SkScalar thickness; fm.hasStrikeoutThickness(&thickness)) {
+                              j.set("strikeoutThickness", thickness);
+                          }
+                          if (SkScalar position; fm.hasStrikeoutPosition(&position)) {
+                              j.set("strikeoutPosition", position);
+                          }
+                          if (fm.hasBounds()) {
                               const float rect[] = {fm.fXMin, fm.fTop, fm.fXMax, fm.fBottom};
                               j.set("bounds", MakeTypedArray(4, rect));
                           }
@@ -2457,7 +2473,7 @@ EMSCRIPTEN_BINDINGS(Skia) {
             .function("_rMoveTo", &ApplyRMoveTo)
             .function("_rQuadTo", &ApplyRQuadTo)
             .function("reset", &ApplyReset)
-            .function("setFillType", &SkPathBuilder::setFillType)
+            .function("_setFillType", &ApplySetFillType)
             .function("snapshot", optional_override([](SkPathBuilder& self) -> SkPath {
                           return self.snapshot();
                       }))

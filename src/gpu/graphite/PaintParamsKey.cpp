@@ -7,13 +7,13 @@
 
 #include "src/gpu/graphite/PaintParamsKey.h"
 
-#include "src/base/SkArenaAlloc.h"
-#include "src/base/SkAutoMalloc.h"
-#include "src/base/SkBase64.h"
-#include "src/base/SkStringView.h"
+#include "include/private/SkLog.h"
+#include "src/core/SkArenaAlloc.h"
+#include "src/core/SkAutoMalloc.h"
+#include "src/core/SkBase64.h"
+#include "src/core/SkStringView.h"
 #include "src/gpu/graphite/Caps.h"
 #include "src/gpu/graphite/KeyHelpers.h"
-#include "src/gpu/graphite/Log.h"
 #include "src/gpu/graphite/ShaderCodeDictionary.h"
 
 using namespace skia_private;
@@ -33,6 +33,7 @@ void PaintParamsKeyBuilder::checkReset() {
 }
 
 void PaintParamsKeyBuilder::pushStack(int32_t codeSnippetID) {
+    SkASSERT(!fLocked);
     SkASSERT(fDict->isValidID(codeSnippetID));
     // If the kError ID is pushed, fHasError must have been set already.
     SkASSERT(codeSnippetID != (int) BuiltInCodeSnippetID::kError || fHasError);
@@ -47,6 +48,10 @@ void PaintParamsKeyBuilder::pushStack(int32_t codeSnippetID) {
 }
 
 void PaintParamsKeyBuilder::validateData(size_t dataSize) {
+    // Check that the size of the embedded data fits our self-imposed limit.
+    SkASSERT(dataSize <= PaintParamsKey::kEmbeddedDataSizeLimit);
+
+    SkASSERT(!fLocked);
     SkASSERT(!fStack.empty()); // addData() called within code snippet block
     // Check that addData() is only called for snippets that support it and is only called once
     const ShaderSnippet* snippet = fDict->getEntry(fStack.back().fCodeSnippetID);
@@ -57,6 +62,7 @@ void PaintParamsKeyBuilder::validateData(size_t dataSize) {
 }
 
 void PaintParamsKeyBuilder::popStack() {
+    SkASSERT(!fLocked);
     SkASSERT(!fStack.empty());
     SkASSERT(fStack.back().fNumActualChildren == fStack.back().fNumExpectedChildren);
     const bool expectsData = fDict->getEntry(fStack.back().fCodeSnippetID)->storesSamplerDescData();
@@ -65,13 +71,48 @@ void PaintParamsKeyBuilder::popStack() {
     fStack.pop_back();
 }
 
+void PaintParamsKeyBuilder::validateReplacement(int32_t oldCodeSnippetID,
+                                                int32_t newCodeSnippetID) {
+    // Rules for allowed replacements:
+    // 1. BuiltInCodeSnippetIDs only
+    // 2. Have the same number of children (and 0 if allowChildren is false)
+    // 3. Have the same uniform and texture signature
+    // 4. No extra data
+    //
+    // This ensures that replacing on a block by block basis produces a valid ShaderNode tree
+    // after modification, and that extracted uniforms and textures for the original key can be
+    // used with the new key.
+    SkASSERT(oldCodeSnippetID >= 0 && oldCodeSnippetID < kBuiltInCodeSnippetIDCount);
+    SkASSERT(newCodeSnippetID >= 0 && newCodeSnippetID < kBuiltInCodeSnippetIDCount);
+
+    const ShaderSnippet* oldSnippet = fDict->getEntry(oldCodeSnippetID);
+    const ShaderSnippet* newSnippet = fDict->getEntry(newCodeSnippetID);
+
+    SkASSERT(oldSnippet->fNumChildren == newSnippet->fNumChildren);
+
+    // Same signature, not caring about the actual variable names.
+    SkASSERT(oldSnippet->fUniforms.size() == newSnippet->fUniforms.size());
+    for (int u = 0; u < oldSnippet->fUniforms.size(); ++u) {
+        const Uniform& oldU = oldSnippet->fUniforms[u];
+        const Uniform& newU = newSnippet->fUniforms[u];
+        SkASSERT(oldU.type() == newU.type());
+        SkASSERT(oldU.count() == newU.count());
+        SkASSERT(oldU.isPaintColor() == newU.isPaintColor());
+    }
+
+    SkASSERT(oldSnippet->fTexturesAndSamplers.size() == newSnippet->fTexturesAndSamplers.size());
+
+    SkASSERT(!oldSnippet->storesSamplerDescData());
+    SkASSERT(!newSnippet->storesSamplerDescData());
+}
+
 #endif // SK_DEBUG
 
 //--------------------------------------------------------------------------------------------------
 // PaintParamsKey
 
 PaintParamsKey PaintParamsKey::clone(SkArenaAlloc* arena) const {
-    uint32_t* newData = arena->makeArrayDefault<uint32_t>(fData.size());
+    int32_t* newData = arena->makeArrayDefault<int32_t>(fData.size());
     memcpy(newData, fData.data(), fData.size_bytes());
     return PaintParamsKey({newData, fData.size()});
 }
@@ -82,10 +123,11 @@ ShaderNode* PaintParamsKey::createNode(const ShaderCodeDictionary* dict,
     SkASSERT(*currentIndex < SkTo<int>(fData.size()));
     const int32_t index = (*currentIndex)++;
     const int32_t id = fData[index];
+    SkASSERT(id >= 0); // Otherwise we're calling createNode on a data length somehow
 
     const ShaderSnippet* entry = dict->getEntry(id);
     if (!entry) {
-        SKGPU_LOG_E("Unknown snippet ID in key: %d", id);
+        SKIA_LOG_E("Unknown snippet ID in key: %d", id);
         return nullptr;
     }
 
@@ -95,12 +137,18 @@ ShaderNode* PaintParamsKey::createNode(const ShaderCodeDictionary* dict,
         // its data. Determine this data length and iterate currentIndex past it.
         const int storedDataLengthIdx = (*currentIndex)++;
         SkASSERT(storedDataLengthIdx < SkTo<int>(fData.size()));
-        const int dataLength = fData[storedDataLengthIdx];
+        const int dataLength = EncodeDataSize(fData[storedDataLengthIdx]);
+        // Building ShaderNodes is assumed to be done for keys built by PaintParamsKeyBuilder or
+        // already validated for deserialization, so we consider them trusted.
+        SkASSERT(dataLength >= 0 && dataLength <= kEmbeddedDataSizeLimit);
         SkASSERT(storedDataLengthIdx + dataLength < SkTo<int>(fData.size()));
 
         // Gather the data contents (length can now be inferred by the consumers of the data) to
         // pass into ShaderNode creation. Iterate the paint key index past the data indices.
-        dataSpan = fData.subspan(storedDataLengthIdx + 1, dataLength);
+        // For the embedded data, we re-interpret the values as uint32_t's since that was what was
+        // written by addData().
+        SkSpan<const int32_t> signedDataSpan = fData.subspan(storedDataLengthIdx + 1, dataLength);
+        dataSpan = {reinterpret_cast<const uint32_t*>(signedDataSpan.data()), dataLength};
         *currentIndex += dataLength;
     }
 
@@ -233,7 +281,7 @@ SkSpan<const ShaderNode*> PaintParamsKey::getRootNodes(const Caps* caps,
     return SkSpan(rootSpan, roots.size());
 }
 
-static void append_as_base64(SkString* str, SkSpan<const uint32_t> data) {
+static void append_as_base64(SkString* str, SkSpan<const int32_t> data) {
     str->append("(");
     str->appendU32(data.size());
     str->append(": ");
@@ -249,7 +297,7 @@ static void append_as_base64(SkString* str, SkSpan<const uint32_t> data) {
 static int key_to_string(const Caps* caps,
                          SkString* str,
                          const ShaderCodeDictionary* dict,
-                         SkSpan<const uint32_t> keyData,
+                         SkSpan<const int32_t> keyData,
                          int currentIndex,
                          int indent) {
     SkASSERT(currentIndex < SkTo<int>(keyData.size()));
@@ -260,13 +308,34 @@ static int key_to_string(const Caps* caps,
         str->appendf("%*c", 2 * indent, ' ');
     }
 
-    uint32_t id = keyData[currentIndex++];
+    int32_t id = keyData[currentIndex++];
     auto entry = dict->getEntry(id);
     if (!entry) {
-        str->append("UnknownCodeSnippetID:");
+        str->append("Unknown(");
         str->appendS32(id);
-        str->append(" ");
+        str->append(")");
         return currentIndex;
+    }
+
+    // Single lined Composes get shortened to just a plus between its two children, e.g. Compose [ A
+    // B ] becomes A+B. We don't do a similar prettification for Blend [ A B C ] to (A B)+C because
+    // that's not quite as readable and they aren't nearly as common within keys. To make sure
+    // chains of Composes are not ambiguous, we only consolidate cases where the inner node is not
+    // Compose, e.g. Compose [ A Compose [ B C ]] => A+B+C but [ Compose [ Compose [ A B ] C ] does
+    // not become A+B+C
+    static constexpr int32_t kComposeID = (int32_t) BuiltInCodeSnippetID::kCompose;
+    SkASSERT(dict->getEntry(kComposeID)->fNumChildren == 2);
+    const bool prettyCompose =
+            // single-lined Compose block
+            id == kComposeID && !multiline &&
+            // that doesn't have an inner Compose child
+            currentIndex < SkTo<int>(keyData.size()) && keyData[currentIndex] != kComposeID;
+
+    if (prettyCompose) {
+        SkASSERT(entry->fNumChildren == 2); // ordered [inner, outer]
+        currentIndex = key_to_string(caps, str, dict, keyData, currentIndex, indent);
+        str->append("+");
+        return key_to_string(caps, str, dict, keyData, currentIndex, indent);
     }
 
     str->append(entry->fName);
@@ -280,8 +349,11 @@ static int key_to_string(const Caps* caps,
         // snippet ID.
         // For example:
         // [snippetId using 2 indices worth of data] [2] [dataValue0] [dataValue1] [next snippet ID]
-        const size_t dataIndexCount = keyData[currentIndex++];
-        SkASSERT(currentIndex + dataIndexCount < keyData.size());
+        const int dataIndexCount = PaintParamsKey::EncodeDataSize(keyData[currentIndex++]);
+        // Printing keys is assumed to be done for keys that were built by PaintParamsKeyBuilder or
+        // already validated for deserialization, so we consider them trusted.
+        SkASSERT(dataIndexCount >= 0 && dataIndexCount <= PaintParamsKey::kEmbeddedDataSizeLimit);
+        SkASSERT(currentIndex + dataIndexCount < SkTo<int>(keyData.size()));
 
         bool descriptiveFormAppended = false;
         if (dataIndexCount == 0) {
@@ -289,7 +361,7 @@ static int key_to_string(const Caps* caps,
             str->append("(0)");
             descriptiveFormAppended = true;
         } else {
-            SkASSERTF(dataIndexCount == 2 || dataIndexCount == 3, "count %zu", dataIndexCount);
+            SkASSERTF(dataIndexCount == 2 || dataIndexCount == 3, "count %d", dataIndexCount);
 
             // Attempt to append the sampler data as human-readable YCbCr information
             SamplerDesc s(keyData[currentIndex],
@@ -320,10 +392,13 @@ static int key_to_string(const Caps* caps,
             str->append(":\n");
             indent++;
         } else {
-            str->append(" [ ");
+            str->append("[");
         }
 
         for (int i = 0; i < entry->fNumChildren; ++i) {
+            if (i > 0) {
+                str->append(", ");
+            }
             currentIndex = key_to_string(caps, str, dict, keyData, currentIndex, indent);
         }
 
@@ -332,9 +407,7 @@ static int key_to_string(const Caps* caps,
         }
     }
 
-    if (!multiline) {
-        str->append(" ");
-    } else if (entry->fNumChildren == 0) {
+    if (multiline && entry->fNumChildren == 0) {
         str->append("\n");
     }
     return currentIndex;
@@ -346,6 +419,7 @@ SkString PaintParamsKey::toString(const Caps* caps,
     const int keySize = SkTo<int>(fData.size());
     for (int currentIndex = 0; currentIndex < keySize;) {
         currentIndex = key_to_string(caps, &str, dict, fData, currentIndex, /*indent=*/-1);
+        str.append(" ");
     }
     return str.isEmpty() ? SkString("(empty)") : str;
 }
@@ -359,9 +433,9 @@ void PaintParamsKey::dump(const Caps* caps,
 
     SkDebugf("--------------------------------------\n");
     SkDebugf("PaintParamsKey %u (keySize: %d): ", id.asUInt(), keySize);
-    const uint32_t* data = fData.data();
+    const int32_t* data = fData.data();
     for (int i = 0; i < keySize; ++i) {
-        SkDebugf("%x ", data[i]);
+        SkDebugf("%x ", (uint32_t) data[i]);
     }
     SkDebugf("\n");
 
@@ -379,13 +453,13 @@ namespace {
 
 // check a single block and, recursively, all its children
 [[nodiscard]] bool is_block_valid(const ShaderCodeDictionary* dict,
-                                  SkSpan<const uint32_t> keyData,
+                                  SkSpan<const int32_t> keyData,
                                   int* currentIndex) {
     if (*currentIndex >= SkTo<int>(keyData.size())) {
         return false;
     }
 
-    uint32_t id = keyData[(*currentIndex)++];
+    int32_t id = keyData[(*currentIndex)++];
     if (id >= kBuiltInCodeSnippetIDCount &&
         !SkKnownRuntimeEffects::IsSkiaKnownRuntimeEffect(id) &&
         !dict->isUserDefinedKnownRuntimeEffect(id)) {
@@ -402,8 +476,17 @@ namespace {
             return false;
         }
 
-        const int dataLength = keyData[(*currentIndex)++];
-
+        int dataLength = keyData[(*currentIndex)++];
+        // This `dataLength` is untrusted, so check that it doesn't overflow EncodeDataSize
+        // and that matches expectations of a valid length (i.e. it started out negative and is
+        // now positive and less than the key data limit).
+        if (dataLength >= 0 ||
+            dataLength < PaintParamsKey::EncodeDataSize(PaintParamsKey::kEmbeddedDataSizeLimit)) {
+            // Would not produce a valid size after decoding
+            return false;
+        }
+        dataLength = PaintParamsKey::EncodeDataSize(dataLength);
+        SkASSERT(dataLength >= 0 && dataLength <= PaintParamsKey::kEmbeddedDataSizeLimit);
         if (*currentIndex + dataLength > SkTo<int>(keyData.size())) {
             return false;
         }

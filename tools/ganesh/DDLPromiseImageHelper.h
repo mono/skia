@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 Google Inc.
+ * Copyright 2018 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -12,10 +12,10 @@
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkYUVAPixmaps.h"
 #include "include/gpu/ganesh/GrBackendSurface.h"
-#include "include/private/base/SkTArray.h"
+#include "include/private/SkTArray.h"
 #include "include/private/chromium/GrPromiseImageTexture.h"
-#include "src/base/SkTLazy.h"
 #include "src/core/SkCachedData.h"
+#include "src/core/SkTLazy.h"
 
 class GrContextThreadSafeProxy;
 class GrDirectContext;

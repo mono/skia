@@ -1,4 +1,4 @@
-# Copyright 2019 Google LLC.
+# Copyright 2019 Google LLC
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -30,6 +30,7 @@ declare_args() {
   skia_enable_skottie = !is_component_build
   skia_enable_svg = !is_component_build
   skia_enable_tools = is_skia_dev_build
+  skia_enable_sparse_strips = false
   skia_disable_tracing = is_official_build
   skia_enable_vello_shaders = false
   skia_disable_vma_stl_shared_mutex = false
@@ -76,13 +77,16 @@ declare_args() {
   skia_use_metal = false
   skia_use_ndk_images = is_android && defined(ndk_api) && ndk_api >= 30
   skia_use_perfetto = is_linux || is_mac || is_android
+  skia_use_pprof = false
   skia_enable_pipeline_label_tracing = false
 
   # Currently only supported in Android framework
   skia_android_framework_use_perfetto = false
   skia_use_piex = !is_win && !is_canvaskit
+  skia_use_rust_exif = false
   skia_use_rust_icc = false
   skia_use_rust_png_decode = false
+  skia_use_rust_png_for_android = false
   skia_use_rust_png_encode = false
   skia_use_rust_bmp_decode = false
   skia_use_sfml = false
@@ -118,10 +122,7 @@ declare_args() {
   #
   # While GCC is supported, it lacks CI coverage to catch regressions.
   # Therefore, we disable it by default on GCC builds.
-  #
-  # TODO(b/351867706): Re-enable. One Android test reaches PA_NOTREACHED() at
-  # the moment.
-  skia_use_partition_alloc = false
+  skia_use_partition_alloc = is_clang
   skia_partition_alloc_dir = "//third_party/externals/partition_alloc"
 }
 
@@ -161,6 +162,7 @@ declare_args() {
   skia_enable_fontmgr_custom_directory = skia_use_freetype && !is_canvaskit
   skia_enable_fontmgr_custom_embedded = skia_use_freetype
   skia_enable_fontmgr_custom_empty = skia_use_freetype && !is_canvaskit
+  skia_enable_fontmgr_fontations_empty = skia_use_fontations
   skia_enable_fontmgr_fontconfig = skia_use_freetype && skia_use_fontconfig
   skia_enable_fontmgr_win_gdi = is_win && !skia_enable_winuwp
   skia_enable_fontmgr_FontConfigInterface =

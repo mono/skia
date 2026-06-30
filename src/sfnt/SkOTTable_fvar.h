@@ -1,5 +1,5 @@
 /*
- * Copyright 2017 Google Inc.
+ * Copyright 2017 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -8,7 +8,7 @@
 #ifndef SkOTTable_fvar_DEFINED
 #define SkOTTable_fvar_DEFINED
 
-#include "src/base/SkEndian.h"
+#include "src/core/SkEndian.h"
 #include "src/sfnt/SkOTTableTypes.h"
 
 #pragma pack(push, 1)

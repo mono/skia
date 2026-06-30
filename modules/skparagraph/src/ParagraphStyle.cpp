@@ -1,9 +1,9 @@
-// Copyright 2019 Google LLC.
+// Copyright 2019 Google LLC
 
 #include "modules/skparagraph/include/DartTypes.h"
 #include "modules/skparagraph/include/ParagraphStyle.h"
-#include "src/base/SkUTF.h"
 #include "src/core/SkStringUtils.h"
+#include "src/core/SkUTF.h"
 
 namespace skia {
 namespace textlayout {

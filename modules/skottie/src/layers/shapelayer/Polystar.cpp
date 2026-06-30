@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Google Inc.
+ * Copyright 2020 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -10,9 +10,9 @@
 #include "include/core/SkPoint.h"
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkScalar.h"
-#include "include/private/base/SkFloatingPoint.h"
-#include "include/private/base/SkTPin.h"
-#include "include/private/base/SkTo.h"
+#include "include/private/SkFloatingPoint.h"
+#include "include/private/SkTPin.h"
+#include "include/private/SkTo.h"
 #include "modules/jsonreader/SkJSONReader.h"
 #include "modules/skottie/include/Skottie.h"
 #include "modules/skottie/src/Adapter.h"

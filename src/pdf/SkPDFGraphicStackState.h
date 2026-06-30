@@ -1,4 +1,4 @@
-// Copyright 2019 Google LLC.
+// Copyright 2019 Google LLC
 // Use of this source code is governed by a BSD-style license that can be found in the LICENSE file.
 #ifndef SkPDFGraphicStackState_DEFINED
 #define SkPDFGraphicStackState_DEFINED
@@ -6,7 +6,7 @@
 #include "include/core/SkColor.h"
 #include "include/core/SkMatrix.h"
 #include "include/core/SkScalar.h"
-#include "include/private/base/SkFloatingPoint.h"
+#include "include/private/SkFloatingPoint.h"
 #include "src/core/SkClipStack.h"
 
 #include <cstdint>

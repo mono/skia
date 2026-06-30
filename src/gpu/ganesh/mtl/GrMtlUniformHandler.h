@@ -1,5 +1,5 @@
 /*
-* Copyright 2018 Google Inc.
+* Copyright 2018 Google LLC
 *
 * Use of this source code is governed by a BSD-style license that can be
 * found in the LICENSE file.
@@ -8,8 +8,8 @@
 #ifndef GrMtlUniformHandler_DEFINED
 #define GrMtlUniformHandler_DEFINED
 
-#include "include/private/base/SkTArray.h"
-#include "src/base/SkTBlockList.h"
+#include "include/private/SkTArray.h"
+#include "src/core/SkTBlockList.h"
 #include "src/gpu/ganesh/GrShaderVar.h"
 #include "src/gpu/ganesh/glsl/GrGLSLUniformHandler.h"
 

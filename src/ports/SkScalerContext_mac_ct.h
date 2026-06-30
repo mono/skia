@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Google Inc.
+ * Copyright 2020 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -13,7 +13,7 @@
 
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkSize.h"
-#include "src/base/SkAutoMalloc.h"
+#include "src/core/SkAutoMalloc.h"
 #include "src/core/SkScalerContext.h"
 #include "src/utils/mac/SkUniqueCFRef.h"
 

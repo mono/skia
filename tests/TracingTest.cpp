@@ -1,9 +1,10 @@
 /*
- * Copyright 2017 Google Inc.
+ * Copyright 2017 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
+
 
 #include "include/core/SkColorType.h"
 #include "include/core/SkPoint.h"
@@ -15,6 +16,8 @@
 #include "tools/flags/CommandLineFlags.h"
 
 #include <cstdint>
+
+#if !defined(SK_DISABLE_TRACING)
 
 static DEFINE_bool(slowTracingTest, false,
                    "Artificially slow down tracing test to produce nicer JSON");
@@ -80,6 +83,7 @@ struct TracingRect : public TracingShape {
 
 }  // namespace
 
+[[maybe_unused]]
 static SkScalar gTracingTestWorkSink = 1.0f;
 
 static void do_work(int howMuchWork) {
@@ -192,3 +196,5 @@ DEF_TEST(Tracing, reporter) {
     test_trace_counters();
     test_trace_objects();
 }
+
+#endif // SK_DISABLE_TRACING

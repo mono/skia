@@ -27,11 +27,10 @@
 #include "include/gpu/ganesh/GrRecordingContext.h"
 #include "include/gpu/ganesh/GrTypes.h"
 #include "include/gpu/ganesh/SkSurfaceGanesh.h"
-#include "include/private/base/SkAssert.h"
-#include "include/private/base/SkDebug.h"
-#include "include/private/base/SkTArray.h"
+#include "include/private/SkAssert.h"
+#include "include/private/SkDebug.h"
+#include "include/private/SkTArray.h"
 #include "include/private/gpu/ganesh/GrTypesPriv.h"
-#include "src/base/SkTLazy.h"
 #include "src/core/SkBlendModeBlender.h"
 #include "src/core/SkBlenderBase.h"
 #include "src/core/SkColorData.h"
@@ -40,6 +39,7 @@
 #include "src/core/SkMaskFilterBase.h"
 #include "src/core/SkRuntimeBlender.h"
 #include "src/core/SkRuntimeEffectPriv.h"
+#include "src/core/SkTLazy.h"
 #include "src/effects/SkShaderMaskFilterImpl.h"
 #include "src/effects/colorfilters/SkBlendModeColorFilter.h"
 #include "src/effects/colorfilters/SkColorFilterBase.h"
@@ -74,6 +74,7 @@
 #include "src/gpu/ganesh/effects/GrTextureEffect.h"
 #include "src/gpu/ganesh/gradients/GrGradientShader.h"
 #include "src/gpu/ganesh/image/GrImageUtils.h"
+#include "src/gpu/ganesh/image/GrMippedBitmap.h"
 #include "src/shaders/SkBlendShader.h"
 #include "src/shaders/SkColorFilterShader.h"
 #include "src/shaders/SkColorShader.h"
@@ -444,8 +445,9 @@ static GrFPResult make_colorfilter_fp(skgpu::ganesh::SurfaceDrawContext* sdc,
                                       std::unique_ptr<GrFragmentProcessor> inputFP,
                                       const GrColorInfo&,
                                       const SkSurfaceProps&) {
-    auto cte = ColorTableEffect::Make(std::move(inputFP), sdc->recordingContext(),
-                                      filter->bitmap());
+    SkASSERT(filter->bitmap().isImmutable());
+    auto cte = ColorTableEffect::Make(
+            std::move(inputFP), sdc->recordingContext(), GrMippedBitmap(filter->bitmap()));
     return cte ? GrFPSuccess(std::move(cte)) : GrFPFailure(nullptr);
 }
 
@@ -674,11 +676,13 @@ static std::unique_ptr<GrFragmentProcessor> make_shader_fp(const SkPerlinNoiseSh
 
     auto permutationsView = std::get<0>(GrMakeCachedBitmapProxyView(
             context,
-            permutationsBitmap,
+            GrMippedBitmap(permutationsBitmap),
             /*label=*/"PerlinNoiseShader_FragmentProcessor_PermutationsView"));
 
-    auto noiseView = std::get<0>(GrMakeCachedBitmapProxyView(
-            context, noiseBitmap, /*label=*/"PerlinNoiseShader_FragmentProcessor_NoiseView"));
+    auto noiseView = std::get<0>(
+            GrMakeCachedBitmapProxyView(context,
+                                        GrMippedBitmap(noiseBitmap),
+                                        /*label=*/"PerlinNoiseShader_FragmentProcessor_NoiseView"));
 
     if (!permutationsView || !noiseView) {
         return nullptr;

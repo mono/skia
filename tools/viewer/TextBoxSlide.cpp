@@ -18,11 +18,11 @@
 #include "modules/skshaper/include/SkShaper.h"
 #include "modules/skshaper/include/SkShaper_skunicode.h"
 #include "modules/skunicode/include/SkUnicode.h"
-#include "src/base/SkRandom.h"
-#include "src/base/SkTime.h"
-#include "src/base/SkUTF.h"
 #include "src/core/SkColorPriv.h"
 #include "src/core/SkOSFile.h"
+#include "src/core/SkRandom.h"
+#include "src/core/SkTime.h"
+#include "src/core/SkUTF.h"
 #include "tools/fonts/FontToolUtils.h"
 #include "tools/viewer/Slide.h"
 
@@ -229,7 +229,7 @@ DEF_SLIDE(return new TextBoxSlide(SkShapers::Primitive::PrimitiveText,
                                   "primitive");)
 
 #if defined(SK_SHAPER_CORETEXT_AVAILABLE)
-DEF_SLIDE(return new TextBoxSlide(SkShapers::CT::CoreText,
+DEF_SLIDE(return new TextBoxSlide([]() { return SkShapers::CT::CoreText(); },
                                   make_trivial_bidi,
                                   make_trivial_script_runner,
                                   "coretext");)

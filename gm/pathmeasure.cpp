@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 Google Inc.
+ * Copyright 2018 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -13,7 +13,7 @@
 #include "include/effects/SkDashPathEffect.h"
 
 // Repro case for skbug.com/40038934.  Requires lots of RAM to run, and currently triggers UB:
-// //include/private/base/SkTDArray.h:382:26:
+// //include/private/SkTDArray.h:382:26:
 //   runtime error: signed integer overflow: 2147483644 + 4 cannot be represented in type 'int'
 
 [[maybe_unused]] static void path_measure_explosion(SkCanvas* canvas) {

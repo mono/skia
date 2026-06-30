@@ -1,5 +1,5 @@
 /*
- * Copyright 2017 Google Inc.
+ * Copyright 2017 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -42,7 +42,7 @@ public:
     }
 
     GrGpu* gpu() override { return fGpu; }
-    void inlineUpload(GrOpFlushState*, GrDeferredTextureUploadFn&) override {}
+    bool inlineUpload(GrOpFlushState*, GrDeferredTextureUploadFn&) override { return true; }
 
     int numDraws() const { return fNumDraws; }
 

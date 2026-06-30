@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Google Inc.
+ * Copyright 2020 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -12,9 +12,9 @@
 #include "include/core/SkTypeface.h"
 #include "include/gpu/ganesh/GrDirectContext.h"
 #include "include/gpu/ganesh/GrRecordingContext.h"
-#include "src/base/SkUTF.h"
-#include "src/base/SkUtils.h"
 #include "src/core/SkStrikeCache.h"
+#include "src/core/SkUTF.h"
+#include "src/core/SkUtils.h"
 #include "src/gpu/ganesh/GrRecordingContextPriv.h"
 #include "src/gpu/ganesh/SkGr.h"
 #include "src/gpu/ganesh/text/GlyphData.h"

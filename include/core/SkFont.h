@@ -16,8 +16,8 @@
 #include "include/core/SkSpan.h"
 #include "include/core/SkTypeface.h"
 #include "include/core/SkTypes.h"
-#include "include/private/base/SkTo.h"
-#include "include/private/base/SkTypeTraits.h"
+#include "include/private/SkTo.h"
+#include "include/private/SkTypeTraits.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -26,6 +26,7 @@
 
 class SkMatrix;
 class SkPaint;
+class SkStrikeRef;
 enum class SkFontHinting;
 enum class SkTextEncoding;
 struct SkFontMetrics;
@@ -363,6 +364,20 @@ public:
 
     size_t breakText(const void* text, size_t byteLength, SkTextEncoding encoding,
                      SkScalar maxWidth, SkScalar* measuredWidth, const SkPaint* paint) const;
+
+    /** Returns an SkStrikeRef for this font's current settings.
+
+        An SkStrikeRef caches the resolved strike (font metrics engine), avoiding the overhead
+        of descriptor construction, hashing, and global cache lookup on each glyph query.
+        This is useful when making many glyph metric calls (e.g. getWidths) with the same
+        font configuration.
+
+        The returned SkStrikeRef is independent of this SkFont; subsequent changes to this
+        SkFont do not affect it. Create a new SkStrikeRef after changing font properties.
+
+        @return  an SkStrikeRef for the current font settings
+    */
+    SkStrikeRef makeStrikeRef() const;
 
     /** Retrieves the advance and bounds for each glyph in glyphs.
         widths receives min(widths.size(), glyphs.size()) values.

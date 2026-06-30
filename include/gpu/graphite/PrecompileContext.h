@@ -9,8 +9,8 @@
 #define skgpu_graphite_PrecompileContext_DEFINED
 
 #include "include/core/SkRefCnt.h"
-#include "include/private/base/SingleOwner.h"
-#include "include/private/base/SkAPI.h"
+#include "include/private/SingleOwner.h"
+#include "include/private/SkAPI.h"
 
 #include <chrono>
 #include <memory>
@@ -63,12 +63,31 @@ public:
     bool precompile(sk_sp<SkData> serializedPipelineKey);
 
     /**
-     * Get a human-readable version of a serialized pipeline key.
+     * Get a human-readable version of a serialized pipeline key and, optionally, the unique
+     * hash of the Pipeline.
      *
      * @param serializedPipelineKey   serialized Pipeline key.
+     * @param uniqueHash              If non-null, this will be filled in with the unique hash.
+     *                                Note that the uniqueHash is only valid for the lifetime
+     *                                of the Context used to create this PrecompileContext.
      * @return                        A human-readable version of the provided key; "" on failure.
      */
-    std::string getPipelineLabel(sk_sp<SkData> serializedPipelineKey);
+    std::string getPipelineLabel(sk_sp<SkData> serializedPipelineKey,
+                                 uint32_t* uniqueHash = nullptr);
+
+    enum class ExternalFormatResult {
+        kInvalid,               // the serialized key was invalid
+        kNoExternalFormat,
+        kHasExternalFormat
+    };
+
+    /**
+     * Determine if a serialized pipeline key contains a usage of an external texture format.
+     *
+     * @param serializedPipelineKey   serialized Pipeline key.
+     * @return                        a tri-state value (see ExternalFormatResult)
+     */
+    ExternalFormatResult containsExternalFormat(sk_sp<SkData> serializedPipelineKey) const;
 
     // Provides access to functions that aren't part of the public API.
     PrecompileContextPriv priv();

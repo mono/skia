@@ -1,5 +1,5 @@
 /*
- * Copyright 2024 Google LLC.
+ * Copyright 2024 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -15,13 +15,13 @@
 #include "include/core/SkImageInfo.h"
 #include "include/core/SkPixmap.h"
 #include "include/core/SkSpan.h"
+#include "include/private/SkAssert.h"
 #include "include/private/SkEncodedInfo.h"
-#include "include/private/base/SkAssert.h"
-#include "include/private/base/SkTemplates.h"
-#include "src/base/SkMSAN.h"
-#include "src/base/SkSafeMath.h"
+#include "include/private/SkTemplates.h"
 #include "src/core/SkConvertPixels.h"
 #include "src/core/SkImageInfoPriv.h"
+#include "src/core/SkMSAN.h"
+#include "src/core/SkSafeMath.h"
 #include "src/encode/SkImageEncoderFns.h"
 
 namespace {

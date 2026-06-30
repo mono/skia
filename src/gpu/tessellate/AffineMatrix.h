@@ -1,5 +1,5 @@
 /*
- * Copyright 2021 Google LLC.
+ * Copyright 2021 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -11,8 +11,8 @@
 #include "include/core/SkMatrix.h"
 #include "include/core/SkPoint.h"
 #include "include/core/SkTypes.h"
-#include "src/base/SkUtils.h"
-#include "src/base/SkVx.h"
+#include "src/core/SkUtils.h"
+#include "src/core/SkVx.h"
 
 namespace skgpu::tess {
 

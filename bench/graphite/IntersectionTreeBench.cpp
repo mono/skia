@@ -1,5 +1,5 @@
 /*
- * Copyright 2021 Google Inc.
+ * Copyright 2021 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -7,8 +7,8 @@
 #include "bench/Benchmark.h"
 #include "include/core/SkPaint.h"
 #include "include/core/SkPath.h"
-#include "src/base/SkMathPriv.h"
-#include "src/base/SkRandom.h"
+#include "src/core/SkMathPriv.h"
+#include "src/core/SkRandom.h"
 #include "src/gpu/graphite/geom/IntersectionTree.h"
 #include "tools/ToolUtils.h"
 #include "tools/flags/CommandLineFlags.h"

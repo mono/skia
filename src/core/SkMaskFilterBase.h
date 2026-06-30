@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 Google Inc.
+ * Copyright 2018 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -16,7 +16,7 @@
 #include "include/core/SkScalar.h"
 #include "include/core/SkSpan.h"
 #include "include/core/SkStrokeRec.h"
-#include "include/private/base/SkNoncopyable.h"
+#include "include/private/SkNoncopyable.h"
 #include "src/core/SkMask.h"
 
 #include <optional>

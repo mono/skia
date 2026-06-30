@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 Google Inc.
+ * Copyright 2018 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -8,7 +8,7 @@
 #ifndef GrFPArgs_DEFINED
 #define GrFPArgs_DEFINED
 
-#include "include/private/base/SkAssert.h"
+#include "include/private/SkAssert.h"
 
 class GrColorInfo;
 class SkSurfaceProps;

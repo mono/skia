@@ -19,13 +19,13 @@
 #include "include/core/SkSpan.h"
 #include "include/core/SkStrokeRec.h"
 #include "include/gpu/graphite/Recorder.h"
-#include "include/private/base/SkDebug.h"
-#include "include/private/base/SkFloatingPoint.h"
-#include "src/base/SkEnumBitMask.h"
-#include "src/base/SkVx.h"
+#include "include/private/SkDebug.h"
+#include "include/private/SkEnumBitMask.h"
+#include "include/private/SkFloatingPoint.h"
 #include "src/core/SkPathPriv.h"
 #include "src/core/SkRRectPriv.h"
 #include "src/core/SkRectPriv.h"
+#include "src/core/SkVx.h"
 #include "src/gpu/graphite/AtlasProvider.h"
 #include "src/gpu/graphite/ClipAtlasManager.h"
 #include "src/gpu/graphite/Device.h"
@@ -543,8 +543,7 @@ ClipStack::RawElement::RawElement(const Rect& deviceBounds,
         , fOrder(DrawOrder::kNoIntersection)
         , fMaxZ(DrawOrder::kClearDepth)
         , fInvalidatedByIndex(-1)
-        , fCaptureParams(nullptr)
-        , fDepthLayer(nullptr) {
+        , fCaptureParams(nullptr) {
     // Discard shapes that don't have any area (including when a transform can't be inverted, since
     // it means the two dimensions are collapsed to 0 or 1 dimension in device space).
     if (fShape.isLine() || !localToDevice.valid()) {
@@ -683,19 +682,19 @@ void ClipStack::RawElement::drawClip(Device* device) {
     fOrder = DrawOrder::kNoIntersection;
     fMaxZ = DrawOrder::kClearDepth;
     fCaptureParams = nullptr;
-    fDepthLayer = nullptr;
+    fInsertion = {nullptr, nullptr};
 }
 
-Layer* ClipStack::RawElement::drawClipImmediate(Device* device, const Rect& snappedOuterBounds) {
+void ClipStack::RawElement::drawClipImmediate(Device* device, const Rect& snappedOuterBounds) {
     // We can't call validate but we need to make sure we have something to draw here.
     SkASSERT(!fShape.isEmpty());
 
     // We shouldn't be drawing if we already drew this clip element
-    SkASSERT(!fDepthLayer);
+    SkASSERT(!fInsertion);
     SkASSERT(!fCaptureParams);
 
     // Note, passing fOuterBounds here may influence the preference for wedges here.
-    std::tie(fCaptureParams, fDepthLayer) =
+    std::tie(fCaptureParams, fInsertion) =
             device->drawClipShapeImmediate(fLocalToDevice,
                                            fShape,
                                            Clip{snappedOuterBounds,
@@ -705,10 +704,8 @@ Layer* ClipStack::RawElement::drawClipImmediate(Device* device, const Rect& snap
                                                 /* shader= */ nullptr},
                                            {fMaxZ, fOrder});
 
-    SkASSERT(fDepthLayer);
+    SkASSERT(fInsertion);
     SkASSERT(fCaptureParams);
-
-    return fDepthLayer;
 }
 
 void ClipStack::RawElement::validate() const {
@@ -817,18 +814,13 @@ ClipStack::DrawInfluence ClipStack::RawElement::testForDraw(const TransformedSha
     return SimplifyForDraw(*this, draw);
 }
 
-std::pair<CompressedPaintersOrder, Layer*> ClipStack::RawElement::updateForDraw(
+std::pair<CompressedPaintersOrder, Insertion> ClipStack::RawElement::updateForDraw(
         Device* device,
         const BoundsManager* boundsManager,
         const Rect& deviceBounds,
-        const Rect& drawBounds,
+        const Rect& snappedDrawBounds,
         PaintersDepth drawZ) {
     SkASSERT(!this->isInvalid());
-    SkASSERT(!drawBounds.isEmptyNegativeOrNaN());
-
-    // Always record snapped draw bounds to avoid scissor thrashing since these bounds will be used
-    // to determine the scissor applied to the depth-only draw for the clip element.
-    Rect snappedDrawBounds = snap_scissor(drawBounds, deviceBounds);
 
     if (!this->hasPendingDraw()) {
         // No usage yet so we need an order that we will use when drawing to just the depth
@@ -877,7 +869,7 @@ std::pair<CompressedPaintersOrder, Layer*> ClipStack::RawElement::updateForDraw(
         }
     }
 
-    return {fOrder, fDepthLayer};
+    return {fOrder, fInsertion};
 }
 
 ClipStack::ClipState ClipStack::RawElement::clipType() const {
@@ -1252,13 +1244,14 @@ void ClipStack::SaveRecord::replaceWithElement(RawElement&& toAdd,
 class ClipStack::DrawShape {
 public:
     DrawShape(const Transform& localToDevice, const Geometry& geometry)
-            : fLocalToDevice(&localToDevice)
+            : fLocalToDevice(geometry.maskToDevice() ? *geometry.maskToDevice() : localToDevice)
             , fEdgeFlags(EdgeAAQuad::Flags::kAll)
             , fScissor(Rect::Infinite())
             , fShapeWasModified(false) {
         if (geometry.isShape()) {
             fShape = geometry.shape();
             fShapeMatchesGeometry = true;
+            SkASSERT(!geometry.maskToDevice()); // should be local
         } else {
             // The geometry is something special like text or vertices, in which case it's
             // definitely not a shape that could simplify cleanly with the clip stack, so just track
@@ -1268,6 +1261,7 @@ public:
             if (geometry.isEdgeAAQuad()) {
                 fEdgeFlags = geometry.edgeAAQuad().edgeFlags();
                 fShapeMatchesGeometry = geometry.edgeAAQuad().isRect();
+                SkASSERT(!geometry.maskToDevice()); // should be local
             } else {
                 fShapeMatchesGeometry = false;
             }
@@ -1289,7 +1283,7 @@ public:
         // contains check, but that would cause path rendering draws to potentially change in hard
         // to predict ways.
         SkClipOp op = fShape.inverted() ? SkClipOp::kDifference : SkClipOp::kIntersect;
-        return TransformedShape{*fLocalToDevice, fShape, fOuterBounds, fInnerBounds, op,
+        return TransformedShape{fLocalToDevice, fShape, fOuterBounds, fInnerBounds, op,
                                 /*containsChecksOnlyBounds=*/!this->shapeCanBeModified()};
     }
 
@@ -1308,7 +1302,7 @@ public:
     Clip toClip(Geometry* geometry, const NonMSAAClip& analyticClip, const SkShader* clipShader);
 
 private:
-    const Transform* fLocalToDevice;
+    Transform fLocalToDevice;
 
     // When 'style' isn't fill, the original geometry describes the pre-stroked shape, so 'fShape'
     // is updated to include the bounds post-stroking. `fShape` may also include local AA outsets
@@ -1340,9 +1334,6 @@ private:
 };
 
 bool ClipStack::DrawShape::applyStyle(const SkStrokeRec& style, const Rect& deviceBounds) {
-    // For overriding fLocalToDevice when the shape is only tracking device-space bounds
-    static const Transform kIdentity = Transform::Identity();
-
     fTransformedShapeBounds = fShape.bounds(); // not scissor'ed, regular fill rule bounds
     auto origSize = fTransformedShapeBounds.size();
     if (!SkIsFinite(origSize.x(), origSize.y())) {
@@ -1362,9 +1353,9 @@ bool ClipStack::DrawShape::applyStyle(const SkStrokeRec& style, const Rect& devi
     }
 
     // Anti-aliasing makes shapes larger than their original coordinates, but we only care about
-    // that for local clip checks in certain cases (see above).
+    // that for local clip checks in certain cases (see below).
     // NOTE: After this if-else block, `transformedShapeBounds` will be in device space.
-    float localAAOutset = fLocalToDevice->localAARadius(fTransformedShapeBounds);
+    float localAAOutset = fLocalToDevice.localAARadius(fTransformedShapeBounds);
     if (!SkIsFinite(localAAOutset)) SK_UNLIKELY {
         // We cannot calculate an accurate local shape bounds, and transformedShapeBounds is meant
         // to be unclipped. This is to maximize atlas reuse for mostly unclipped draws and to detect
@@ -1372,7 +1363,7 @@ bool ClipStack::DrawShape::applyStyle(const SkStrokeRec& style, const Rect& devi
         // is harmless in this case as these benefits are unlikely to apply for this transform.
         fTransformedShapeBounds = deviceBounds;
         fShape.setRect(deviceBounds);
-        fLocalToDevice = &kIdentity;
+        fLocalToDevice = Transform::Identity();
         fShapeMatchesGeometry = false;
     } else {
         // SkStrokeRec::GetInflationRadius() returns a device-space inflation for hairlines.
@@ -1419,19 +1410,19 @@ bool ClipStack::DrawShape::applyStyle(const SkStrokeRec& style, const Rect& devi
             fShapeMatchesGeometry = false;
         }
 
-        fTransformedShapeBounds = fLocalToDevice->mapRect(fTransformedShapeBounds);
+        fTransformedShapeBounds = fLocalToDevice.mapRect(fTransformedShapeBounds);
     }
 
     fOuterBounds = fTransformedShapeBounds;
     fInnerBounds = Rect::InfiniteInverted();
 
-    if (this->shapeCanBeModified() && fLocalToDevice->type() <= Transform::Type::kRectStaysRect) {
+    if (this->shapeCanBeModified() && fLocalToDevice.type() <= Transform::Type::kRectStaysRect) {
         if (fShape.isRect()) {
             fInnerBounds = fOuterBounds;
         } else if (fShape.isRRect()) {
             SkRect rrectInnerBounds = SkRRectPriv::InnerBounds(fShape.rrect());
             if (!rrectInnerBounds.isEmpty()) {
-                fInnerBounds = fLocalToDevice->mapRect(rrectInnerBounds);
+                fInnerBounds = fLocalToDevice.mapRect(rrectInnerBounds);
             }
         }
         // Otherwise it's a flood fill, but should have empty bounds anyways
@@ -1467,7 +1458,7 @@ Clip ClipStack::DrawShape::toClip(Geometry* geometry,
             geometry->setShape(fShape);
         }
         // Reconstruct new transformedShapeBounds and outer bounds
-        fTransformedShapeBounds = fLocalToDevice->mapRect(fShape.bounds());
+        fTransformedShapeBounds = fLocalToDevice.mapRect(fShape.bounds());
         fOuterBounds = fTransformedShapeBounds.makeIntersect(fScissor);
     }
 
@@ -1496,7 +1487,7 @@ bool ClipStack::DrawShape::intersectClipElement(const RawElement& clip) {
     SkASSERT(clip.op() == SkClipOp::kIntersect);
     if (this->shapeCanBeModified() &&
         intersect_shape(clip.localToDevice(), clip.shape(),
-                        *fLocalToDevice, &fShape, &fEdgeFlags)) {
+                        fLocalToDevice, &fShape, &fEdgeFlags)) {
         SkASSERT(!fShape.inverted());
         if (fOuterBounds.isEmptyNegativeOrNaN()) {
             // Changing from a flood fill to the clip's shape
@@ -1656,6 +1647,8 @@ void ClipStack::clipShape(const Transform& localToDevice,
 // constructor, so only identity transforms are allowed.
 namespace {
 
+#if defined(SK_GRAPHITE_USE_LEGACY_RRECT_CLIP_SHADER)
+
 AnalyticClip can_apply_analytic_clip(const Shape& shape, const Transform& localToDevice) {
     if (localToDevice.type() != Transform::Type::kIdentity) {
         return {};
@@ -1742,6 +1735,93 @@ AnalyticClip can_apply_analytic_clip(const Shape& shape, const Transform& localT
         return {rrect.rect(), circularRadius, edgeFlags, shape.inverted()};
     }
 }
+
+#else
+
+AnalyticClip can_apply_analytic_clip(const Shape& shape, const Transform& localToDevice) {
+    if (localToDevice.type() > Transform::Type::kAffine) {
+        return {};
+    }
+
+    // Since the transformation is affine, it can be represented as a 2x2 matrix and a translation.
+    // To minimize data sent to the GPU, the translation is pre-applied to the rectangle coordinates
+    // and only the 2x2 needs to be sent. The analytic clip is invoked with device coordinates so
+    // the inverse's 2x2 is used.
+    const SkM44& devToLocal = localToDevice.inverse();
+    SkV4 xform = {devToLocal.rc(0,0), devToLocal.rc(1,0), // column-major
+                  devToLocal.rc(0,1), devToLocal.rc(1,1)};
+    // Applying this translation to the local rrect geometry moves it into a new coordinate space
+    // where just the 2x2 of localToDevice is needed to map to device space (conversely, where
+    // just `xform` is needed to map device coords to the rrect's new space).
+    float tx = xform.x*localToDevice.matrix().rc(0,3) + xform.z*localToDevice.matrix().rc(1,3);
+    float ty = xform.y*localToDevice.matrix().rc(0,3) + xform.w*localToDevice.matrix().rc(1,3);
+
+    // Can handle Rect directly.
+    if (shape.isRect()) {
+        return {shape.rect().makeOffset({tx,ty}).asSkRect(),
+                SkV4{0.f, 0.f, 0.f, 0.f},
+                xform,
+                shape.inverted()};
+    }
+
+    // Otherwise we only handle certain kinds of RRects, specifically only rrects with circular
+    // corners (although each corner can differ). We don't just check AllCornersRelativelyCircular
+    // because we can fold an Y-axis scale factor into the 2x2 transform if that non-uniform scaling
+    // could make all corners effectively circular.
+    if (!shape.isRRect()) {
+        return {};
+    }
+
+    const float tolerance =
+            localToDevice.localAARadius(shape.bounds()) * Shape::kDefaultPixelTolerance;
+
+    const SkRRect& rrect = shape.rrect();
+    std::optional<float> scaleYAxis;
+    SkV4 radii;
+    for (int i = 0; i < 4; ++i) {
+        SkVector r = rrect.radii((SkRRect::Corner) i);
+        float cornerScale = SkRRectPriv::IsRelativelyCircular(r.fX, r.fY, tolerance)
+                ? 1.f : sk_ieee_float_divide(r.fX, r.fY);
+
+        if (r.fX < tolerance || r.fY < tolerance) {
+            radii[i] = 0.f; // Clamp to a square corner, so doesn't impact scale factor
+        } else if (!scaleYAxis.has_value()) {
+            // We haven't encountered a non-circular corner yet. Set the scale factor to the
+            // current radii ratio (which will be 1 if it's already circular).
+            scaleYAxis = cornerScale;
+            radii[i] = r.fX;
+        } else {
+            // We already have a scale factor from some other corner, so we need to agree.
+            if (!SkScalarNearlyEqual(cornerScale, *scaleYAxis, tolerance)) {
+                return {}; // Would not pass AllCornersRelativelyCircular after scaling
+            }
+            radii[i] = r.fX;
+        }
+    }
+
+    Rect rect = rrect.rect().makeOffset(tx, ty);
+    if (scaleYAxis.has_value() && !SkScalarNearlyEqual(*scaleYAxis, 1.f, tolerance)) {
+        const float s = *scaleYAxis;
+        rect.setTop(rect.top() * s);
+        rect.setBot(rect.bot() * s);
+
+        // Since we scaled the rrect by s, we should scale its local-to-device matrix by 1/s to
+        // remain the same shape. However, `xform` is the device-to-local matrix so as the inverse,
+        // we also just have to multiply by s.
+        xform.y *= s;
+        xform.w *= s;
+        SkASSERT(SkRRectPriv::AllCornersRelativelyCircular(
+                 *rrect.transform(SkMatrix::Scale(1.f, s)), tolerance));
+    } else {
+        // The loop above should work out to be equivalent to this function if we didn't encounter
+        // a non-uniform scale factor to push into `xform`.
+        SkASSERT(SkRRectPriv::AllCornersRelativelyCircular(rrect, tolerance));
+    }
+
+    return {rect.asSkRect(), radii, xform, shape.inverted()};
+}
+
+#endif // SK_GRAPHITE_USE_LEGACY_RRECT_CLIP_SHADER
 
 }  // anonymous namespace
 
@@ -1892,26 +1972,31 @@ Clip ClipStack::visitClipStackForDraw(const Transform& localToDevice,
     return draw.toClip(geometry, nonMSAAClip, cs.shader());
 }
 
-std::pair<CompressedPaintersOrder, Layer*> ClipStack::updateClipStateForDraw(
+std::pair<CompressedPaintersOrder, Insertion> ClipStack::updateClipStateForDraw(
         const Clip& clip,
         const ElementList& effectiveElements,
         const BoundsManager* boundsManager,
         PaintersDepth z) {
     if (clip.isClippedOut()) {
-        return {DrawOrder::kNoIntersection, nullptr};
+        return {DrawOrder::kNoIntersection, {}};
     }
 
     SkDEBUGCODE(const SaveRecord& cs = this->currentSaveRecord();)
     SkASSERT(cs.state() != ClipState::kEmpty);
 
-    // In the drawListLayer approach, each clipped draw needs to know the *latest* layer inserted
-    // into across the depth only draws that affect it. (This is the layer pointer returned by this
-    // function). To facilitate this, each clip element records the latest layer it inserted into
-    // across its render steps. Although effectiveElements may contain a mixture of drawn and
-    // undrawn elements, taking the max across the indexes (which are monotonically increasing)
-    // associated with each fDeferredLayer yields the latest layer.
-    Layer* latestInsertedLayer = nullptr;
+    // In the drawListLayer approach, each clipped draw needs to know the *latest* insertion across
+    // the depth only draws that affect it. (This is the layer pointer returned by this function).
+    // To facilitate this, each clip element records the latest layer it inserted into across its
+    // render steps. Although effectiveElements may contain a mixture of drawn and undrawn elements,
+    // taking the max across the indexes (which are monotonically increasing) associated with each
+    // fDeferredLayer yields the latest layer.
+    Insertion latestInsertion;
     Rect deviceBounds = this->deviceBounds();
+    SkASSERT(!clip.drawBounds().isEmptyNegativeOrNaN());
+
+    // Always record snapped draw bounds to avoid scissor thrashing since these bounds will be used
+    // to determine the scissor applied to the depth-only draw for the clip element.
+    Rect snappedDrawBounds = snap_scissor(clip.drawBounds(), deviceBounds);
     CompressedPaintersOrder maxClipOrder = DrawOrder::kNoIntersection;
     for (int i = 0; i < effectiveElements.size(); ++i) {
         // ClipStack owns the elements in the `clipState` so it's OK to downcast and cast away
@@ -1919,15 +2004,28 @@ std::pair<CompressedPaintersOrder, Layer*> ClipStack::updateClipStateForDraw(
         // TODO: Enforce the ownership? In debug builds we could invalidate a `ClipStateForDraw` if
         // its element pointers become dangling and assert validity here.
         const RawElement* e = static_cast<const RawElement*>(effectiveElements[i]);
-        auto [order, insertedLayer] =  const_cast<RawElement*>(e)->updateForDraw(
-                fDevice, boundsManager, deviceBounds, clip.drawBounds(), z);
+        auto [order, insertion] =  const_cast<RawElement*>(e)->updateForDraw(
+                fDevice, boundsManager, deviceBounds, snappedDrawBounds, z);
         maxClipOrder = std::max(order, maxClipOrder);
-        if (!latestInsertedLayer || insertedLayer->fOrder > latestInsertedLayer->fOrder) {
-            latestInsertedLayer = insertedLayer;
+        // Note, the > operator on the insertion only considers the layer. In the case that both
+        // insertions reside on the same layer, we arbitrarily skip the update, meaning that the
+        // list is the one associated with the earlier draw. Because depth draws are added to the
+        // head of each layer, and thus in reverse order, the insertion of an earlier draw will
+        // always be the latest depth only draw in a layer, even in the case that the clip stack
+        // draws elements out of order.
+        //
+        // (I.e. Even you get a clipstack traversal like DrawnA UndrawnB DrawnC, if B inserts into
+        // A or C's layer it either does not match and is added to the head, and thus the existing
+        // A or C insertion must be the latest bindingList, or it matches A or C and thus has an
+        // identical insertion. Even if this reverse ordering property was not true, a clipped
+        // shading draw cannot match on a depth draw, so it would either match on an existing draw
+        // or is added to to the tail, preserving the ordering).
+        if (insertion > latestInsertion) {
+            latestInsertion = insertion;
         }
     }
 
-    return {maxClipOrder, latestInsertedLayer};
+    return {maxClipOrder, latestInsertion};
 }
 
 void ClipStack::recordDeferredClipDraws() {

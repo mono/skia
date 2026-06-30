@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Google LLC.
+ * Copyright 2020 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -8,7 +8,7 @@
 #define GrStrokeTessellationShader_DEFINED
 
 #include "include/core/SkStrokeRec.h"
-#include "include/private/base/SkTArray.h"
+#include "include/private/SkTArray.h"
 #include "src/core/SkColorData.h"
 #include "src/gpu/ganesh/tessellate/GrTessellationShader.h"
 #include "src/gpu/tessellate/Tessellation.h"

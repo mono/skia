@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 Google LLC.
+ * Copyright 2019 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -9,9 +9,9 @@
 #include "include/core/SkPathTypes.h"
 #include "include/core/SkString.h"
 #include "include/gpu/ganesh/GrRecordingContext.h"
-#include "include/private/base/SkAlignedStorage.h"
-#include "include/private/base/SkOnce.h"
-#include "src/base/SkArenaAlloc.h"
+#include "include/private/SkAlignedStorage.h"
+#include "include/private/SkOnce.h"
+#include "src/core/SkArenaAlloc.h"
 #include "src/core/SkSLTypeShared.h"
 #include "src/gpu/ResourceKey.h"
 #include "src/gpu/ganesh/GrAppliedClip.h"

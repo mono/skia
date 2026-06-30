@@ -1,5 +1,5 @@
 /*
- * Copyright 2023 Google Inc.
+ * Copyright 2023 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -9,7 +9,7 @@
 
 #include "include/core/SkTypes.h"
 #include "modules/skunicode/include/SkUnicode.h"
-#include "src/base/SkUTF.h"
+#include "src/core/SkUTF.h"
 
 class SKUNICODE_API SkUnicodeHardCodedCharProperties : public SkUnicode {
 public:

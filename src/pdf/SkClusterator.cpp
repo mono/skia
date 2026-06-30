@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 Google Inc.
+ * Copyright 2018 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -8,8 +8,8 @@
 #include "src/pdf/SkClusterator.h"
 
 #include "include/core/SkSpan.h"
-#include "include/private/base/SkAssert.h"
-#include "include/private/base/SkTo.h"
+#include "include/private/SkAssert.h"
+#include "include/private/SkTo.h"
 #include "src/text/GlyphRun.h"
 
 static bool is_reversed(const uint32_t* clusters, uint32_t count) {

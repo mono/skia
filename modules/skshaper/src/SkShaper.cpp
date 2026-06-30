@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 Google Inc.
+ * Copyright 2018 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -10,9 +10,9 @@
 #include "include/core/SkFontMgr.h"
 #include "include/core/SkFontStyle.h"
 #include "include/core/SkTypeface.h"
-#include "include/private/base/SkTFitsIn.h"
+#include "include/private/SkTFitsIn.h"
 #include "modules/skshaper/include/SkShaper.h"
-#include "src/base/SkUTF.h"
+#include "src/core/SkUTF.h"
 #include <limits.h>
 #include <algorithm>
 #include <cstring>

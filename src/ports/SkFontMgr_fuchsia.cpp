@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 Google Inc.
+ * Copyright 2018 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -20,7 +20,7 @@
 #include "include/core/SkFontMgr.h"
 #include "include/core/SkStream.h"
 #include "include/core/SkTypeface.h"
-#include "include/private/base/SkThreadAnnotations.h"
+#include "include/private/SkThreadAnnotations.h"
 #include "src/core/SkTypefaceCache.h"
 
 using namespace skia_private;

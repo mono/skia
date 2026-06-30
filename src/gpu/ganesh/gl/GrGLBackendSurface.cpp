@@ -11,8 +11,8 @@
 #include "include/gpu/ganesh/GrBackendSurface.h"
 #include "include/gpu/ganesh/GrTypes.h"
 #include "include/gpu/ganesh/gl/GrGLTypes.h"
-#include "include/private/base/SkAssert.h"
-#include "include/private/base/SkDebug.h"
+#include "include/private/SkAssert.h"
+#include "include/private/SkDebug.h"
 #include "include/private/gpu/ganesh/GrTypesPriv.h"
 #include "src/gpu/ganesh/GrBackendSurfacePriv.h"
 #include "src/gpu/ganesh/gl/GrGLBackendSurfacePriv.h"
@@ -158,6 +158,7 @@ void GrGLBackendTextureData::copyTo(AnyTextureData& textureData) const {
 
 bool GrGLBackendTextureData::isProtected() const { return fGLInfo.isProtected(); }
 
+#if defined(GPU_TEST_UTILS)
 bool GrGLBackendTextureData::equal(const GrBackendTextureData* that) const {
     SkASSERT(!that || that->type() == GrBackendApi::kOpenGL);
     if (auto otherGL = static_cast<const GrGLBackendTextureData*>(that)) {
@@ -165,6 +166,7 @@ bool GrGLBackendTextureData::equal(const GrBackendTextureData* that) const {
     }
     return false;
 }
+#endif
 
 bool GrGLBackendTextureData::isSameTexture(const GrBackendTextureData* that) const {
     SkASSERT(!that || that->type() == GrBackendApi::kOpenGL);
@@ -256,6 +258,7 @@ private:
 
     bool isProtected() const override { return fGLInfo.isProtected(); }
 
+#if defined(GPU_TEST_UTILS)
     bool equal(const GrBackendRenderTargetData* that) const override {
         SkASSERT(!that || that->type() == GrBackendApi::kOpenGL);
         if (auto otherGL = static_cast<const GrGLBackendRenderTargetData*>(that)) {
@@ -263,6 +266,7 @@ private:
         }
         return false;
     }
+#endif
 
     void copyTo(AnyRenderTargetData& rtData) const override {
         rtData.emplace<GrGLBackendRenderTargetData>(fGLInfo);

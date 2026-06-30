@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Google Inc.
+ * Copyright 2020 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -12,8 +12,8 @@
 
 #if !defined(SK_ENABLE_OPTIMIZE_SIZE)
 
-#include "src/base/SkTInternalLList.h"
 #include "src/core/SkTDynamicHash.h"
+#include "src/core/SkTInternalLList.h"
 #include "src/gpu/ganesh/GrAtlasTypes.h"
 #include "src/gpu/ganesh/GrDrawOpAtlas.h"
 #include "src/gpu/ganesh/GrOnFlushResourceProvider.h"

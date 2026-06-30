@@ -1,5 +1,5 @@
 /*
- * Copyright 2024 Google Inc.
+ * Copyright 2024 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -8,8 +8,8 @@
 #ifndef SkOTTable_sbix_DEFINED
 #define SkOTTable_sbix_DEFINED
 
-#include "include/private/base/SkTemplates.h"
-#include "src/base/SkUtils.h"
+#include "include/private/SkTemplates.h"
+#include "src/core/SkUtils.h"
 #include "src/sfnt/SkOTTableTypes.h"
 
 #pragma pack(push, 1)

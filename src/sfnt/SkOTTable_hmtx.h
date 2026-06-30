@@ -1,5 +1,5 @@
 /*
- * Copyright 2022 Google Inc.
+ * Copyright 2022 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -8,7 +8,7 @@
 #ifndef SkOTTable_hmtx_DEFINED
 #define SkOTTable_hmtx_DEFINED
 
-#include "src/base/SkEndian.h"
+#include "src/core/SkEndian.h"
 #include "src/sfnt/SkOTTableTypes.h"
 
 #pragma pack(push, 1)

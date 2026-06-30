@@ -7,7 +7,7 @@
 #include "src/core/SkReadPixelsRec.h"
 
 #include "include/core/SkRect.h"
-#include "src/base/SkSafeMath.h"
+#include "src/core/SkSafeMath.h"
 
 bool SkReadPixelsRec::trim(int srcWidth, int srcHeight) {
     // fInfo.minRowBytes() returns 0 if the size doesn't fit in `size_t`.
@@ -16,6 +16,10 @@ bool SkReadPixelsRec::trim(int srcWidth, int srcHeight) {
         return false;
     }
     if (0 >= fInfo.width() || 0 >= fInfo.height()) {
+        return false;
+    }
+    // negating the largest negative integer (below) is UB
+    if (fX == INT_MIN || fY == INT_MIN) {
         return false;
     }
 

@@ -177,6 +177,8 @@ sk_fontmgr_t* sk_fontmgr_create_default(void) {
     return ToFontMgr(SkFontMgr_New_Android(nullptr, SkFontScanner_Make_FreeType()).release());
 #elif defined(SK_BUILD_FOR_MAC) || defined(SK_BUILD_FOR_IOS)
     return ToFontMgr(SkFontMgr_New_CoreText(nullptr).release());
+#elif defined(SK_BUILD_FOR_NANOSERVER)
+    return ToFontMgr(SkFontMgr::RefEmpty().release());
 #elif defined(SK_BUILD_FOR_WIN)
     return ToFontMgr(SkFontMgr_New_DirectWrite().release());
 #elif defined(SK_FONTMGR_FONTCONFIG_AVAILABLE)
@@ -228,6 +230,9 @@ sk_typeface_t* sk_fontmgr_create_from_file(sk_fontmgr_t* fontmgr, const char* pa
 }
 
 sk_typeface_t* sk_fontmgr_legacy_create_typeface(sk_fontmgr_t* fontmgr, const char* familyName, sk_fontstyle_t* style) {
+    if (!fontmgr || !style) {
+        return nullptr;
+    }
     return ToTypeface(AsFontMgr(fontmgr)->legacyMakeTypeface(familyName, *AsFontStyle(style)).release());
 }
 

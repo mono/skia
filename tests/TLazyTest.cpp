@@ -1,11 +1,11 @@
 /*
- * Copyright 2018 Google Inc.
+ * Copyright 2018 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
 
-#include "src/base/SkTLazy.h"
+#include "src/core/SkTLazy.h"
 #include "tests/Test.h"
 
 DEF_TEST(TLazy_copy, r) {

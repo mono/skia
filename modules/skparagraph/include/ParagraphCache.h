@@ -1,8 +1,8 @@
-// Copyright 2019 Google LLC.
+// Copyright 2019 Google LLC
 #ifndef ParagraphCache_DEFINED
 #define ParagraphCache_DEFINED
 
-#include "include/private/base/SkMutex.h"
+#include "include/private/SkMutex.h"
 #include <functional>  // std::function
 
 #define PARAGRAPH_CACHE_STATS

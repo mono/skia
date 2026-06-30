@@ -1,5 +1,5 @@
 /*
- * Copyright 2021 Google Inc.
+ * Copyright 2021 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -9,7 +9,7 @@
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkTypeface.h"
 #include "include/ports/SkTypeface_mac.h"
-#include "src/base/SkZip.h"
+#include "src/core/SkZip.h"
 #include "src/utils/SkFloatUtils.h"
 #include "tests/Test.h"
 

@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 Google Inc.
+ * Copyright 2018 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -24,7 +24,7 @@
 #include "include/core/SkTypes.h"
 #include "include/effects/SkDashPathEffect.h"
 #include "include/effects/SkGradient.h"
-#include "include/private/base/SkTPin.h"
+#include "include/private/SkTPin.h"
 #include "src/core/SkColorSpaceXformSteps.h"
 #include "src/core/SkImageInfoPriv.h"
 #include "tools/fonts/FontToolUtils.h"

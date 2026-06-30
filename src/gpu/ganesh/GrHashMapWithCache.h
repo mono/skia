@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Google Inc.
+ * Copyright 2020 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -8,7 +8,7 @@
 #ifndef GrHashMapWithCache_DEFINED
 #define GrHashMapWithCache_DEFINED
 
-#include "include/private/base/SkNoncopyable.h"
+#include "include/private/SkNoncopyable.h"
 #include "src/core/SkChecksum.h"
 #include "src/core/SkTHash.h"
 

@@ -838,7 +838,6 @@ func (b *TaskBuilder) swarmDimensions() {
 var androidDeviceInfos = map[string][]string{
 	"AndroidOne":      {"sprout", "MOB30Q"},
 	"GalaxyS7_G930FD": {"herolte", "R16NW"}, // This is Oreo.
-	"GalaxyS9":        {"exynos9810", "QP1A.190711.020"},
 	"GalaxyS20":       {"exynos990", "QP1A.190711.020"},
 	"GalaxyS24":       {"pineapple", "UP1A.231005.007"},
 	"GalaxyS25Plus":   {"sun", "BP2A.250605.031.A3"},
@@ -847,7 +846,6 @@ var androidDeviceInfos = map[string][]string{
 	"MokeyGo32":       {"mokey_go32", "UQ1A.240105.003.A1"},
 	"MotoG73":         {"devonf", "U1TN34.82-12-17"},
 	"Nexus5":          {"hammerhead", "M4B30Z_3437181"},
-	"Nexus7":          {"grouper", "LMY47V"}, // 2012 Nexus 7
 	"P30":             {"HWELE", "HUAWEIELE-L29"},
 	"Pixel3a":         {"sargo", "QP1A.190711.020"},
 	"Pixel4":          {"flame", "RPB2.200611.009"}, // R Preview
@@ -858,10 +856,11 @@ var androidDeviceInfos = map[string][]string{
 	"Pixel7":          {"panther", "AP4A.241205.013"},
 	"Pixel7Pro":       {"cheetah", "TD1A.221105.002"},
 	"Pixel9":          {"tokay", "AP4A.241205.013"},
-	"Pixel10":         {"frankel", "BP41.250916.012.A1"},
 	"TecnoSpark3Pro":  {"TECNO-KB8", "PPR1.180610.011"},
 	"Wembley":         {"wembley", "SP2A.220505.008"},
 }
+
+type dimensionMap map[string]string
 
 // defaultSwarmDimensions generates default swarming bot dimensions for the given task.
 func (b *TaskBuilder) defaultSwarmDimensions() {
@@ -879,7 +878,7 @@ func (b *TaskBuilder) defaultSwarmDimensions() {
 			"Mac11":       "Mac-11",
 			"Mac12":       "Mac-12",
 			"Mac13":       "Mac-13",
-			"Mac14":       "Mac-14.7", // Builds run on 14.5, tests on 14.7.
+			"Mac14":       "Mac-14.8",
 			"Mac15":       "Mac-15.7",
 			"Mokey":       "Android",
 			"MokeyGo32":   "Android",
@@ -888,7 +887,7 @@ func (b *TaskBuilder) defaultSwarmDimensions() {
 			"Ubuntu24.04": UBUNTU_24_04_OS,
 			"Win":         DEFAULT_OS_WIN_GCE,
 			"Win10":       "Windows-10-19045",
-			"Win11":       "Windows-11-26100.1742",
+			"Win11":       "Windows-11-26100",
 			"iOS":         "iOS-13.3.1",
 			"iOS18":       "iOS-18.2.1",
 		}[os]
@@ -903,8 +902,8 @@ func (b *TaskBuilder) defaultSwarmDimensions() {
 			d["os"] = DEFAULT_OS_WIN_GCE
 			d["gce"] = "1"
 		}
-		if os == "Win11" && b.GPU("IntelUHDGraphics770") {
-			d["os"] = "Windows-11-26200.6584"
+		if os == "Win11" && b.GPU("IntelUHDGraphics770", "IntelArc140V") {
+			d["os"] = "Windows-11-26200"
 		}
 		if strings.Contains(os, "iOS") {
 			d["pool"] = "SkiaIOS"
@@ -951,6 +950,7 @@ func (b *TaskBuilder) defaultSwarmDimensions() {
 				"Guybrush": "16002.27.0",
 				"Octopus":  "16002.21.0",
 				"Corsola":  "16200.0.0",
+				"Rauru":    "16503.10.0",
 				"Trogdor":  "16002.26.0",
 			}[b.Parts["model"]]
 			if !ok {
@@ -972,7 +972,7 @@ func (b *TaskBuilder) defaultSwarmDimensions() {
 			}
 			d["device"] = device
 		} else if b.CPU() || b.ExtraConfig("CanvasKit", "Docker", "SwiftShader") {
-			modelMapping, ok := map[string]map[string]map[string]string{
+			modelMapping, ok := map[string]map[string]dimensionMap{
 				"AppleM1": {
 					"MacMini9.1": {"cpu": "arm64-64-Apple_M1"},
 				},
@@ -996,7 +996,6 @@ func (b *TaskBuilder) defaultSwarmDimensions() {
 					"MacBookPro11.5": {"cpu": "x86-64-i7-4870HQ"},
 					"MacMini7.1":     {"cpu": "x86-64-i5-4278U"},
 					"MacMini8.1":     {"cpu": "x86-64-i7-8700B"},
-					"NUC5i7RYH":      {"cpu": "x86-64-i7-5557U"},
 					"NUC9i7QN":       {"cpu": "x86-64-i7-9750H"},
 					// Unfortunately, these machines don't have a more-specific
 					// CPU dimension we can use. However, they do have integrated
@@ -1039,9 +1038,9 @@ func (b *TaskBuilder) defaultSwarmDimensions() {
 			if b.MatchOs("Win") {
 				gpu, ok := map[string]string{
 					"GTX1660":             "10de:2184-31.0.15.4601",
+					"IntelArc140V":        "8086:64a0-32.0.101.7029",
 					"IntelHD4400":         "8086:0a16-10.0.26100.1",
 					"IntelIris540":        "8086:1926-31.0.101.2115",
-					"IntelIris6100":       "8086:162b-20.19.15.5171",
 					"IntelIris655":        "8086:3ea5-26.20.100.7463",
 					"IntelIrisXe":         "8086:9a49-31.0.101.5333",
 					"IntelUHDGraphics770": "8086:a780-31.0.101.5333",
@@ -1054,11 +1053,6 @@ func (b *TaskBuilder) defaultSwarmDimensions() {
 				}[b.Parts["cpu_or_gpu_value"]]
 				if !ok {
 					log.Fatalf("Entry %q not found in Win GPU mapping.", b.Parts["cpu_or_gpu_value"])
-				}
-				// TODO(borenet): Remove this block once these machines are all
-				// migrated.
-				if b.Os("Win10") && b.Parts["cpu_or_gpu_value"] == "RTX3060" {
-					gpu = "10de:2489-32.0.15.6094"
 				}
 				d["gpu"] = gpu
 			} else if b.IsLinux() {
@@ -1112,34 +1106,18 @@ func (b *TaskBuilder) defaultSwarmDimensions() {
 			}
 		}
 		if b.MatchOs("Mac") {
-			// TODO(borenet): Remove empty and nested entries after all Macs
-			// are migrated to the new lab.
-			if macModel, ok := map[string]interface{}{
-				"MacBookAir7.2":  "",
-				"MacBookPro11.5": "MacBookPro11,5",
-				"MacBookPro15.1": "MacBookPro15,1",
-				"MacBookPro15.3": "Mac15,3",
-				"MacBookPro16.2": "",
-				"MacMini7.1":     "",
-				"MacMini8.1":     "Macmini8,1",
-				"MacMini9.1": map[string]string{
-					"Mac12": "",
-					"Mac13": "",
-					"Mac14": "Macmini9,1",
-				},
-				"MacMini16.10": "Mac16,10",
-				// TODO(borenet): This is currently resolving to multiple
-				// different actual device types.
-				"VMware7.1": "",
+			// We sometimes have machines on different versions of Mac-N.x, so this lets us adjust
+			// those on the specific hardware.
+			if dims, ok := map[string]dimensionMap{
+				"MacBookPro11.5": {"mac_model": "MacBookPro11,5", "os": "Mac-12.7"},
+				"MacBookPro15.1": {"mac_model": "MacBookPro15,1", "os": "Mac-15.3"},
+				"MacBookPro15.3": {"mac_model": "Mac15,3", "os": "Mac-13.5"},
+				"MacMini8.1":     {"mac_model": "Macmini8,1"}, // on both 14.5 and 14.8
+				"MacMini9.1":     {"mac_model": "Macmini9,1", "os": "Mac-14.7"},
+				"MacMini16.10":   {"mac_model": "Mac16,10", "os": "Mac-15.7"},
 			}[b.Parts["model"]]; ok {
-				if macModel != "" {
-					macModelDim, ok := macModel.(string)
-					if !ok {
-						macModelDim = macModel.(map[string]string)[b.Parts["os"]]
-					}
-					if macModelDim != "" {
-						d["mac_model"] = macModelDim
-					}
+				for k, v := range dims {
+					d[k] = v
 				}
 			} else {
 				log.Fatalf("No mac_model found for %q", b.Parts["model"])
@@ -1397,10 +1375,10 @@ func (b *jobBuilder) recreateSKPs() {
 			"gce:1",
 			fmt.Sprintf("os:%s", DEFAULT_OS_LINUX_GCE),
 		)
-		b.usesGo()
 		b.cache(CACHES_WORKDIR...)
 		b.timeout(8 * time.Hour)
 		b.usesPython()
+		b.usesGit()
 		b.attempts(2)
 	})
 }

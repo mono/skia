@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 Google Inc.
+ * Copyright 2019 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -9,8 +9,8 @@
 #define SkCharToGlyphCache_DEFINED
 
 #include "include/core/SkTypes.h"
-#include "include/private/base/SkTDArray.h"
-#include "include/private/base/SkTo.h"
+#include "include/private/SkTDArray.h"
+#include "include/private/SkTo.h"
 
 class SkCharToGlyphCache {
 public:

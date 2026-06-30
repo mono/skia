@@ -14,10 +14,10 @@
 #include "src/gpu/graphite/SharedContext.h"
 
 #if defined(SK_ENABLE_PRECOMPILE)
+#include "include/private/SkLog.h"
 #include "src/gpu/graphite/ContextUtils.h"
 #include "src/gpu/graphite/GraphicsPipelineDesc.h"
 #include "src/gpu/graphite/GraphicsPipelineHandle.h"
-#include "src/gpu/graphite/Log.h"
 #include "src/gpu/graphite/PipelineCreationTask.h"
 #include "src/gpu/graphite/RenderPassDesc.h"
 #include "src/gpu/graphite/RendererProvider.h"
@@ -90,11 +90,16 @@ bool PrecompileContext::precompile(sk_sp<SkData> serializedPipelineKey) {
 #endif
 }
 
-std::string PrecompileContext::getPipelineLabel(sk_sp<SkData> serializedPipelineKey) {
+std::string PrecompileContext::getPipelineLabel(sk_sp<SkData> serializedPipelineKey,
+                                                uint32_t* uniqueHash) {
+    if (uniqueHash) { *uniqueHash = 0; }
 #if defined(SK_ENABLE_PRECOMPILE)
     GraphicsPipelineDesc pipelineDesc;
     RenderPassDesc renderPassDesc;
 
+    // Deep in deserialize_graphics_pipeline_desc, this will have unpacked the PaintParamsKey
+    // and then registered it with the ShaderCodeDictionary to get this session's
+    // UniquePaintParamsID for it.
     if (!DataToPipelineDesc(fSharedContext->caps(),
                             fSharedContext->shaderCodeDictionary(),
                             serializedPipelineKey.get(),
@@ -110,6 +115,15 @@ std::string PrecompileContext::getPipelineLabel(sk_sp<SkData> serializedPipeline
         return "";
     }
 
+    if (uniqueHash) {
+        const Caps* caps = fSharedContext->caps();
+
+        // This will make use of the UniquePaintParamsID registered in DataToPipelineDesc.
+        UniqueKey pipelineKey = caps->makeGraphicsPipelineKey(pipelineDesc, renderPassDesc);
+
+        *uniqueHash = pipelineKey.hash();
+    }
+
     return GetPipelineLabel(fSharedContext->caps(),
                             fSharedContext->shaderCodeDictionary(),
                             renderPassDesc,
@@ -120,5 +134,20 @@ std::string PrecompileContext::getPipelineLabel(sk_sp<SkData> serializedPipeline
 #endif
 }
 
+PrecompileContext::ExternalFormatResult PrecompileContext::containsExternalFormat(
+        sk_sp<SkData> serializedPipelineKey) const {
+#if defined(SK_ENABLE_PRECOMPILE)
+    bool containsExtFormat = false;
+    if (!DataContainsExternalFormat(fSharedContext->caps(), fSharedContext->shaderCodeDictionary(),
+                                    serializedPipelineKey.get(), &containsExtFormat)) {
+        return ExternalFormatResult::kInvalid;
+    }
+
+    return containsExtFormat ? ExternalFormatResult::kHasExternalFormat
+                             : ExternalFormatResult::kNoExternalFormat;
+#else
+    return ExternalFormatResult::kInvalid;
+#endif
+}
 
 } // namespace skgpu::graphite

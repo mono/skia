@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 Google Inc.
+ * Copyright 2018 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -8,7 +8,7 @@
 #ifndef GrMtlPipelineStateDataManager_DEFINED
 #define GrMtlPipelineStateDataManager_DEFINED
 
-#include "src/base/SkAutoMalloc.h"
+#include "src/core/SkAutoMalloc.h"
 #include "src/gpu/ganesh/GrUniformDataManager.h"
 #include "src/gpu/ganesh/mtl/GrMtlUniformHandler.h"
 

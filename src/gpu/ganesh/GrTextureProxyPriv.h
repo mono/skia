@@ -1,5 +1,5 @@
 /*
- * Copyright 2017 Google Inc.
+ * Copyright 2017 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -8,7 +8,7 @@
 #ifndef GrTextureProxyPriv_DEFINED
 #define GrTextureProxyPriv_DEFINED
 
-#include "include/private/base/SkTo.h"
+#include "include/private/SkTo.h"
 #include "src/gpu/ganesh/GrTextureProxy.h"
 
 #include <memory>

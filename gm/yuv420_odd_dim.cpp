@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 Google Inc.
+ * Copyright 2019 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -16,8 +16,8 @@
 #include "include/core/SkSurface.h"
 #include "include/core/SkTileMode.h"
 #include "include/encode/SkJpegEncoder.h"
-#include "src/base/SkRandom.h"
 #include "src/core/SkCachedData.h"
+#include "src/core/SkRandom.h"
 #include "src/image/SkImage_Base.h"
 #include "tools/DecodeUtils.h"
 #include "tools/Resources.h"

@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 Google Inc.
+ * Copyright 2019 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -8,7 +8,7 @@
 #include "modules/skottie/src/Composition.h"
 
 #include "include/core/SkString.h"
-#include "include/private/base/SkTo.h"
+#include "include/private/SkTo.h"
 #include "modules/jsonreader/SkJSONReader.h"
 #include "modules/skottie/include/Skottie.h"
 #include "modules/skottie/src/Camera.h"

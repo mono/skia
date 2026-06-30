@@ -1,5 +1,5 @@
 /*
- * Copyright 2024 Google LLC.
+ * Copyright 2024 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -15,9 +15,9 @@
 #include "include/core/SkM44.h"
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkStream.h"
-#include "src/base/SkAutoMalloc.h"
 #include "src/codec/SkCodecImageGenerator.h"
 #include "src/codec/SkPixmapUtilsPriv.h"
+#include "src/core/SkAutoMalloc.h"
 #include "src/image/SkImageGeneratorPriv.h"
 #include "tests/Test.h"
 #include "tools/Resources.h"

@@ -1,4 +1,4 @@
-// Copyright 2019 Google LLC.
+// Copyright 2019 Google LLC
 #include "include/core/SkCanvas.h"
 #include "include/core/SkFontMetrics.h"
 #include "include/core/SkMatrix.h"
@@ -7,8 +7,8 @@
 #include "include/core/SkPictureRecorder.h"
 #include "include/core/SkSpan.h"
 #include "include/core/SkTypeface.h"
-#include "include/private/base/SkTFitsIn.h"
-#include "include/private/base/SkTo.h"
+#include "include/private/SkTFitsIn.h"
+#include "include/private/SkTo.h"
 #include "modules/skparagraph/include/Metrics.h"
 #include "modules/skparagraph/include/Paragraph.h"
 #include "modules/skparagraph/include/ParagraphPainter.h"
@@ -21,8 +21,8 @@
 #include "modules/skparagraph/src/TextLine.h"
 #include "modules/skparagraph/src/TextWrapper.h"
 #include "modules/skunicode/include/SkUnicode.h"
-#include "src/base/SkUTF.h"
 #include "src/core/SkTextBlobPriv.h"
+#include "src/core/SkUTF.h"
 
 #include <algorithm>
 #include <cfloat>
@@ -418,12 +418,19 @@ void ParagraphImpl::applySpacingAndBuildClusterTable() {
         return;
     }
 
+    // Simple case: we have to letter space the entire paragraph (second most common case)
+    // With one exception (there are whitespaces, and we have to space them as CSS spec requires)
+    // which is treated as a common case down below
     if (letterSpacingStyles == 1 && !hasWordSpacing && fTextStyles.size() == 1 &&
-        fTextStyles[0].fRange.width() == fText.size() && fRuns.size() == 1) {
-        // We have to letter space the entire paragraph (second most common case)
+        fTextStyles[0].fRange.width() == fText.size() && fRuns.size() == 1 &&
+        !(this->fHasWhitespacesInside && this->fParagraphStyle.getLetterSpacingByCSSSpec())
+        ) {
         auto& run = fRuns[0];
         auto& style = fTextStyles[0].fStyle;
-        run.addLetterSpacesEvenly(style.getLetterSpacing());
+        if (!run.isCursiveScript()) {
+            // Do not apply letter spacing for script languages (no exception here)
+            run.addLetterSpacesEvenly(style.getLetterSpacing());
+        }
 
         this->buildClusterTable();
 
@@ -488,10 +495,15 @@ void ParagraphImpl::applySpacingAndBuildClusterTable() {
                     wordSpacingPending = false;
                 }
             }
-            // Process letter spacing (it will be cancelled out for Script languages
+            // We do not apply letter spacing for script languages
+            // except for one case (cluster is whitespace, and we have to follow CSS spec)
             if ((currentStyle->fStyle.getLetterSpacing() != 0)) {
-                shift +=
+                if (!run.isCursiveScript() ||
+                    (cluster->isWhitespaceBreak() &&
+                     this->fParagraphStyle.getLetterSpacingByCSSSpec())) {
+                    shift +=
                         run.addLetterSpacesEvenly(currentStyle->fStyle.getLetterSpacing(), cluster);
+                }
             }
 
             if (soFarWhitespacesOnly && !cluster->isWhitespaceBreak()) {
@@ -660,6 +672,9 @@ void ParagraphImpl::breakShapedTextIntoLines(SkScalar maxWidth) {
                 auto& line = this->addLine(offset, advance, textExcludingSpaces, text, textWithNewlines, clusters, clustersWithGhosts, widthWithSpaces, metrics);
                 if (addEllipsis) {
                     line.createEllipsis(maxWidth, this->getEllipsis(), true);
+                }
+                if (this->paragraphStyle().getRenderSoftHyphens()) {
+                    line.createSoftHyphen();
                 }
                 fLongestLine = std::max(fLongestLine, nearlyZero(line.width()) ? widthWithSpaces : line.width());
             });

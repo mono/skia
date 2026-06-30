@@ -1,5 +1,5 @@
 /*
- * Copyright 2022 Google Inc.
+ * Copyright 2022 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -17,12 +17,14 @@
 #include "include/gpu/graphite/Surface.h"
 #include "include/gpu/graphite/dawn/DawnBackendContext.h"
 #include "include/gpu/graphite/dawn/DawnGraphiteTypes.h"
+#include "include/private/SkAssert.h"
 #include "src/gpu/graphite/ContextOptionsPriv.h"
 #include "tools/ToolUtils.h"
 #include "tools/graphite/GraphiteToolUtils.h"
 #include "tools/graphite/TestOptions.h"
 #include "tools/graphite/dawn/GraphiteDawnToggles.h"
 #include "tools/window/GraphiteDisplayParams.h"
+#include "include/private/SkLog.h"
 
 #include "dawn/dawn_proc.h"
 
@@ -142,6 +144,7 @@ wgpu::Device GraphiteDawnWindowContext::createDevice(wgpu::BackendType type) {
 
     std::vector<dawn::native::Adapter> adapters = fInstance->EnumerateAdapters(&adapterOptions);
     if (adapters.empty()) {
+        SKIA_LOG_E("No dawn adapters available");
         return nullptr;
     }
 
@@ -164,13 +167,12 @@ wgpu::Device GraphiteDawnWindowContext::createDevice(wgpu::BackendType type) {
             [](const wgpu::Device&, wgpu::DeviceLostReason reason, wgpu::StringView message) {
                 if (reason == wgpu::DeviceLostReason::Unknown ||
                     reason == wgpu::DeviceLostReason::FailedCreation) {
-                    SK_ABORT("Device lost: %.*s\n", static_cast<int>(message.length), message.data);
+                    SK_ABORT("Device lost: %.*s", static_cast<int>(message.length), message.data);
                 }
             });
     deviceDescriptor.SetUncapturedErrorCallback(
             [](const wgpu::Device&, wgpu::ErrorType, wgpu::StringView message) {
-                SkDebugf("Device error: %.*s\n", static_cast<int>(message.length), message.data);
-                SkASSERT(false);
+                SK_ABORT("Device error: %.*s", static_cast<int>(message.length), message.data);
             });
 
     wgpu::DawnTogglesDescriptor deviceTogglesDesc;
@@ -190,6 +192,7 @@ wgpu::Device GraphiteDawnWindowContext::createDevice(wgpu::BackendType type) {
 
     auto device = adapter.CreateDevice(&deviceDescriptor);
     if (!device) {
+        SKIA_LOG_E("Could not create device from adapter");
         return nullptr;
     }
 

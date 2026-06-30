@@ -1,5 +1,5 @@
 /*
- * Copyright 2017 Google Inc.
+ * Copyright 2017 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -8,8 +8,8 @@
 #define GrBackendSemaphore_DEFINED
 
 #include "include/gpu/ganesh/GrTypes.h"
-#include "include/private/base/SkAPI.h"
-#include "include/private/base/SkAnySubclass.h"
+#include "include/private/SkAPI.h"
+#include "include/private/SkAnySubclass.h"
 
 #include <cstddef>
 

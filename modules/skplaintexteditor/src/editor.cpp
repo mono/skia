@@ -1,4 +1,4 @@
-// Copyright 2019 Google LLC.
+// Copyright 2019 Google LLC
 // Use of this source code is governed by a BSD-style license that can be found in the LICENSE file.
 
 #include "modules/skplaintexteditor/include/editor.h"
@@ -6,7 +6,7 @@
 #include "include/core/SkCanvas.h"
 #include "include/core/SkExecutor.h"
 #include "include/core/SkPath.h"
-#include "src/base/SkUTF.h"
+#include "src/core/SkUTF.h"
 
 #include "modules/skplaintexteditor/src/shape.h"
 

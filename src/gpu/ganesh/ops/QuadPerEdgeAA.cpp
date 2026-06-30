@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 Google Inc.
+ * Copyright 2018 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -10,10 +10,10 @@
 #include "include/core/SkCanvas.h"
 #include "include/core/SkColor.h"
 #include "include/core/SkRect.h"
-#include "include/private/base/SkMath.h"
-#include "src/base/SkArenaAlloc.h"
-#include "src/base/SkVx.h"
+#include "include/private/SkMath.h"
+#include "src/core/SkArenaAlloc.h"
 #include "src/core/SkSLTypeShared.h"
+#include "src/core/SkVx.h"
 #include "src/gpu/KeyBuilder.h"
 #include "src/gpu/ganesh/GrBuffer.h"
 #include "src/gpu/ganesh/GrCaps.h"

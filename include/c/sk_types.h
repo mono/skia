@@ -119,6 +119,7 @@ typedef enum {
     // READONLY
     R8G8_UNORM_SK_COLORTYPE,
     A16_FLOAT_SK_COLORTYPE,
+    R16_FLOAT_SK_COLORTYPE,
     R16G16_FLOAT_SK_COLORTYPE,
     A16_UNORM_SK_COLORTYPE,
     R16_UNORM_SK_COLORTYPE,
@@ -1013,6 +1014,11 @@ typedef struct {
     sk_webpencoder_compression_t fCompression;
     float fQuality;
 } sk_webpencoder_options_t;
+
+typedef struct {
+    const sk_pixmap_t* pixmap;
+    int duration;
+} sk_webpencoder_frame_t;
 
 typedef struct sk_rrect_t sk_rrect_t;
 

@@ -1,5 +1,5 @@
 /*
-* Copyright 2019 Google Inc.
+* Copyright 2019 Google LLC
 *
 * Use of this source code is governed by a BSD-style license that can be
 * found in the LICENSE file.
@@ -8,7 +8,7 @@
 #ifndef SkObjBase_DEFINED
 #define SkObjBase_DEFINED
 
-#include "src/base/SkLeanWindows.h"
+#include "src/core/SkLeanWindows.h"
 #include <objbase.h>
 
 // STDMETHOD uses COM_DECLSPEC_NOTHROW, but STDMETHODIMP does not. This leads to attribute mismatch

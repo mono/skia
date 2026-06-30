@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 Google Inc.
+ * Copyright 2018 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -9,7 +9,7 @@
 
 #include "include/core/SkCanvas.h"
 #include "include/core/SkPath.h"
-#include "include/private/base/SkAssert.h"
+#include "include/private/SkAssert.h"
 #include "modules/sksg/include/SkSGGeometryNode.h"
 #include "modules/sksg/include/SkSGNode.h"
 

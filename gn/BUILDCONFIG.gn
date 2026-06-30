@@ -25,7 +25,11 @@ declare_args() {
   cxx = "c++"
 
   win_sdk = ""
-  min_win_sdk_version = "10.0.16299.0"
+
+  # mono/skia: m150's SkFontMgr_win_dw.cpp uses IDWriteFontSet4, which is only
+  # declared in the Windows 11 SDK (10.0.22621). The default picks the lowest
+  # installed SDK >= this floor, so raise it from upstream's 10.0.16299.0.
+  min_win_sdk_version = "10.0.22621.0"
   win_sdk_version = ""
 
   win_vc = ""
@@ -298,7 +302,7 @@ if (is_win) {
 } else if (is_wasm) {
   set_default_toolchain("//gn/toolchain:wasm")
   default_toolchain_name = "wasm"
-  host_toolchain = "wasm"
+  host_toolchain = "gcc_like_host"
 } else {
   # GCC-like toolchains, including Clang.
   set_default_toolchain("//gn/toolchain:gcc_like")

@@ -1,5 +1,5 @@
 /*
- * Copyright 2017 Google Inc.
+ * Copyright 2017 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -9,7 +9,7 @@
 
 #include "include/gpu/ganesh/GrBackendSemaphore.h"
 #include "include/gpu/ganesh/vk/GrVkBackendSemaphore.h"
-#include "include/private/base/SkAssert.h"
+#include "include/private/SkAssert.h"
 #include "src/gpu/ganesh/vk/GrVkGpu.h"
 #include "src/gpu/ganesh/vk/GrVkUtil.h"
 

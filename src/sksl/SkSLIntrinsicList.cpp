@@ -1,12 +1,12 @@
 /*
- * Copyright 2021 Google LLC.
+ * Copyright 2021 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
 
-#include "src/base/SkNoDestructor.h"
-#include "src/base/SkStringView.h"
+#include "src/core/SkNoDestructor.h"
+#include "src/core/SkStringView.h"
 #include "src/sksl/SkSLIntrinsicList.h"
 
 using namespace skia_private;

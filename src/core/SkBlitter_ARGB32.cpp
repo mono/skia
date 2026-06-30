@@ -11,13 +11,11 @@
 #include "include/core/SkPixmap.h"
 #include "include/core/SkRect.h"
 #include "include/core/SkTypes.h"
-#include "include/private/base/SkAlign.h"
-#include "include/private/base/SkCPUTypes.h"
-#include "include/private/base/SkDebug.h"
-#include "include/private/base/SkMalloc.h"
-#include "include/private/base/SkTo.h"
-#include "src/base/SkUtils.h"
-#include "src/base/SkVx.h"
+#include "include/private/SkAlign.h"
+#include "include/private/SkCPUTypes.h"
+#include "include/private/SkDebug.h"
+#include "include/private/SkMalloc.h"
+#include "include/private/SkTo.h"
 #include "src/core/SkBlitMask.h"
 #include "src/core/SkBlitRow.h"
 #include "src/core/SkBlitter.h"
@@ -26,6 +24,8 @@
 #include "src/core/SkCoreBlitters.h"
 #include "src/core/SkMask.h"
 #include "src/core/SkMemset.h"
+#include "src/core/SkUtils.h"
+#include "src/core/SkVx.h"
 #include "src/shaders/SkShaderBase.h"
 
 #include <algorithm>
@@ -126,7 +126,7 @@ static inline SkPMColor blend_lcd16_opaque(int srcR, int srcG, int srcB,
 
 // TODO: rewrite at least the SSE code here.  It's miserable.
 
-#if SK_CPU_SSE_LEVEL >= SK_CPU_SSE_LEVEL_SSE2
+#if SK_CPU_X64_LEVEL >= SK_CPU_X64_LEVEL_SSE2
     #include <emmintrin.h>
 
     // The following (left) shifts cause the top 5 bits of the mask components to

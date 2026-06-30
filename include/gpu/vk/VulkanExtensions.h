@@ -1,5 +1,5 @@
 /*
- * Copyright 2022 Google LLC.
+ * Copyright 2022 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -10,9 +10,9 @@
 
 #include "include/core/SkString.h"
 #include "include/gpu/vk/VulkanTypes.h"
-#include "include/private/base/SkAPI.h"
-#include "include/private/base/SkDebug.h"
-#include "include/private/base/SkTArray.h"
+#include "include/private/SkAPI.h"
+#include "include/private/SkDebug.h"
+#include "include/private/SkTArray.h"
 #include "include/private/gpu/vk/SkiaVulkan.h"
 
 #include <cstdint>

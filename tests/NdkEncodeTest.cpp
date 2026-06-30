@@ -16,7 +16,7 @@
 #include "include/encode/SkJpegEncoder.h"
 #include "include/encode/SkPngEncoder.h"
 #include "include/encode/SkWebpEncoder.h"
-#include "include/private/base/SkMalloc.h"
+#include "include/private/SkMalloc.h"
 #include "src/image/SkImageGeneratorPriv.h"
 #include "tests/Test.h"
 #include "tools/Resources.h"
@@ -209,6 +209,7 @@ DEF_TEST(NdkEncode_unsupportedColorTypes, r) {
         kRGBA_F32_SkColorType,
         kR8G8_unorm_SkColorType,
         kA16_float_SkColorType,
+        kR16_float_SkColorType,
         kR16G16_float_SkColorType,
         kA16_unorm_SkColorType,
         kR16_unorm_SkColorType,

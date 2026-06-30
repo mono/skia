@@ -1,5 +1,5 @@
 /*
- * Copyright 2024 Google Inc.
+ * Copyright 2024 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -19,8 +19,8 @@
 #include "include/core/SkPathTypes.h"
 #include "include/core/SkSize.h"
 #include "include/core/SkString.h"
+#include "include/private/SkAssert.h"
 #include "include/private/SkPathRef.h"
-#include "include/private/base/SkAssert.h"
 #include "include/utils/SkParsePath.h"
 #include "src/core/SkGeometry.h"
 #include "src/core/SkPathPriv.h"

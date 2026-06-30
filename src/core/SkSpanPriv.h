@@ -1,5 +1,5 @@
 /*
- * Copyright 2025 Google LLC.
+ * Copyright 2025 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -9,7 +9,7 @@
 #define SkSpanPriv_DEFINED
 
 #include "include/core/SkSpan.h"
-#include "include/private/base/SkMalloc.h"
+#include "include/private/SkMalloc.h"
 
 #include <algorithm>
 

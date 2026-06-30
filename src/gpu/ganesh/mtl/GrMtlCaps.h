@@ -1,5 +1,5 @@
 /*
- * Copyright 2017 Google Inc.
+ * Copyright 2017 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -8,7 +8,7 @@
 #ifndef GrMtlCaps_DEFINED
 #define GrMtlCaps_DEFINED
 
-#include "include/private/base/SkTDArray.h"
+#include "include/private/SkTDArray.h"
 #include "src/gpu/ganesh/GrCaps.h"
 #include "src/gpu/ganesh/mtl/GrMtlAttachment.h"
 

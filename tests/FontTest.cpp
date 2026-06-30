@@ -1,5 +1,5 @@
 /*
- * Copyright 2019 Google Inc.
+ * Copyright 2019 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -10,8 +10,8 @@
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkTypeface.h"
 #include "include/core/SkTypes.h"
-#include "include/private/base/SkTo.h"
-#include "src/base/SkAutoMalloc.h"
+#include "include/private/SkTo.h"
+#include "src/core/SkAutoMalloc.h"
 #include "src/core/SkFontPriv.h"
 #include "src/core/SkPtrRecorder.h"
 #include "src/core/SkReadBuffer.h"

@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Google Inc.
+ * Copyright 2020 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -12,8 +12,8 @@
 #include "include/core/SkRect.h"
 #include "include/core/SkScalar.h"
 #include "include/core/SkTypes.h"
-#include "src/base/SkRandom.h"
 #include "src/core/SkMatrixPriv.h"
+#include "src/core/SkRandom.h"
 #include "tests/Test.h"
 
 static bool eq(const SkM44& a, const SkM44& b, float tol) {

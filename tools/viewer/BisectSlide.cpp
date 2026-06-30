@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 Google Inc.
+ * Copyright 2018 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -9,7 +9,7 @@
 
 #include "include/core/SkCanvas.h"
 #include "include/core/SkStream.h"
-#include "include/private/base/SkDebug.h"
+#include "include/private/SkDebug.h"
 #include "src/utils/SkOSPath.h"
 #include "tools/ToolUtils.h"
 

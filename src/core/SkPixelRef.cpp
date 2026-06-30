@@ -7,8 +7,9 @@
 
 #include "include/core/SkPixelRef.h"
 
-#include "include/private/base/SkAssert.h"
-#include "include/private/base/SkDebug.h"
+#include "include/private/SkAssert.h"
+#include "include/private/SkDebug.h"
+#include "include/private/SkPixelStorage.h"
 #include "src/core/SkBitmapCache.h"
 #include "src/core/SkNextID.h"
 #include "src/core/SkPixelRefPriv.h"
@@ -30,7 +31,8 @@ uint32_t SkNextID::ImageID() {
 ///////////////////////////////////////////////////////////////////////////////
 
 SkPixelRef::SkPixelRef(int width, int height, void* pixels, size_t rowBytes)
-    : fWidth(width)
+    : SkPixelStorage(SkPixelStorage::Type::kPixelRef)
+    , fWidth(width)
     , fHeight(height)
     , fPixels(pixels)
     , fRowBytes(rowBytes)

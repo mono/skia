@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Google Inc.
+ * Copyright 2020 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -8,12 +8,12 @@
 #include "include/core/SkM44.h"
 #include "include/core/SkMatrix.h"
 #include "include/core/SkRect.h"
-#include "include/private/base/SkDebug.h"
-#include "include/private/base/SkFloatingPoint.h"
-#include "src/base/SkVx.h"
+#include "include/private/SkDebug.h"
+#include "include/private/SkFloatingPoint.h"
 #include "src/core/SkMatrixInvert.h"
 #include "src/core/SkMatrixPriv.h"
 #include "src/core/SkPathPriv.h"
+#include "src/core/SkVx.h"
 
 bool SkM44::operator==(const SkM44& other) const {
     if (this == &other) {

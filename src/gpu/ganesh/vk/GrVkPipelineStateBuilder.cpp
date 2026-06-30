@@ -13,11 +13,11 @@
 #include "include/core/SkTypes.h"
 #include "include/gpu/ganesh/GrContextOptions.h"
 #include "include/gpu/ganesh/GrDirectContext.h"
-#include "include/private/base/SkTo.h"
+#include "include/private/SkTo.h"
 #include "include/private/gpu/ganesh/GrTypesPriv.h"
+#include "src/core/SkAutoLocaleSetter.h"
 #include "src/core/SkReadBuffer.h"
 #include "src/core/SkTraceEvent.h"
-#include "src/gpu/ganesh/GrAutoLocaleSetter.h"
 #include "src/gpu/ganesh/GrDirectContextPriv.h"
 #include "src/gpu/ganesh/GrPersistentCacheUtils.h"
 #include "src/gpu/ganesh/GrProgramDesc.h"
@@ -57,7 +57,7 @@ GrVkPipelineState* GrVkPipelineStateBuilder::CreatePipelineState(
     resourceProvider.pipelineStateCache()->stats()->incShaderCompilations();
 
     // ensure that we use "." as a decimal separator when creating SkSL code
-    GrAutoLocaleSetter als("C");
+    SkAutoLocaleSetter als("C");
 
     // create a builder.  This will be handed off to effects so they can use it to add
     // uniforms, varyings, textures, etc
@@ -151,6 +151,7 @@ int GrVkPipelineStateBuilder::loadShadersFromCache(SkReadBuffer* cached,
             if (outShaderModules[i]) {
                 GR_VK_CALL(fGpu->vkInterface(),
                            DestroyShaderModule(fGpu->device(), outShaderModules[i], nullptr));
+                outShaderModules[i] = VK_NULL_HANDLE;
             }
         }
         return 0;
@@ -282,6 +283,7 @@ GrVkPipelineState* GrVkPipelineStateBuilder::finalize(const GrProgramDesc& desc,
                 if (shaderModules[i]) {
                     GR_VK_CALL(fGpu->vkInterface(), DestroyShaderModule(fGpu->device(),
                                                                         shaderModules[i], nullptr));
+                    shaderModules[i] = VK_NULL_HANDLE;
                 }
             }
             return nullptr;
@@ -357,6 +359,7 @@ GrVkPipelineState* GrVkPipelineStateBuilder::finalize(const GrProgramDesc& desc,
         if (shaderModules[i]) {
             GR_VK_CALL(fGpu->vkInterface(), DestroyShaderModule(fGpu->device(), shaderModules[i],
                                                                 nullptr));
+            shaderModules[i] = VK_NULL_HANDLE;
         }
     }
 

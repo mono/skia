@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 Google Inc.
+ * Copyright 2018 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -11,7 +11,7 @@
 #include "include/core/SkTypes.h"
 #if defined(SK_BUILD_FOR_MAC) || defined(SK_BUILD_FOR_IOS)
 
-#include "include/private/base/SkTemplates.h"
+#include "include/private/SkTemplates.h"
 
 #include <CoreFoundation/CoreFoundation.h>
 #include <memory>

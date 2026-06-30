@@ -1,5 +1,5 @@
 /*
- * Copyright 2024 Google LLC.
+ * Copyright 2024 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -27,10 +27,17 @@ template <typename T> class SkSpan;
 //   transformations implemented in C++).
 class SkPngRustCodec final : public SkPngCodecBase {
 public:
-    static std::unique_ptr<SkPngRustCodec> MakeFromStream(std::unique_ptr<SkStream>, Result*);
+    static std::unique_ptr<SkPngRustCodec> MakeFromStream(std::unique_ptr<SkStream>,
+                                                          Result*,
+                                                          SkPngChunkReader* = nullptr);
 
     // `public` to support `std::make_unique<SkPngRustCodec>(...)`.
-    SkPngRustCodec(SkEncodedInfo&&, std::unique_ptr<SkStream>, rust::Box<rust_png::Reader>);
+    SkPngRustCodec(SkEncodedInfo&&,
+                   std::unique_ptr<SkStream>,
+                   rust::Box<rust_png::Reader>,
+                   sk_sp<SkPngCompositeChunkReader>,
+                   std::unique_ptr<SkStream> gainmapStream,
+                   std::optional<SkGainmapInfo> gainmapInfo);
 
     ~SkPngRustCodec() override;
 
@@ -74,6 +81,15 @@ private:
 
         int fFirstRow = 0;
         int fLastRow = 0;
+
+        // Tracks the current row index of the source image being processed.
+        // Needs to be persisted in DecodingState to support incremental decoding
+        // across multiple calls without resetting progress.
+        int fCurrentSourceRow = 0;
+        // Tracks the number of rows actually written to the destination buffer.
+        // Used to correctly report progress via rowsDecoded in incrementalDecode.
+        int fRowsWrittenToOutput = 0;
+
         // The y offset for a subset in the encoded color type, not the dst color type.
         // Only used for interlaced images.
         size_t fYByteOffset = 0;
@@ -120,6 +136,13 @@ private:
     // chunks.
     Result parseAdditionalFrameInfos();
 
+    // Determines whether or not we can read from the rust decoder directly into dst.
+    bool canReadRow();
+    void processUnknownChunks();
+    bool isLastFrame();
+    bool isSampling() const;
+    Result initializeSamplerParams(DecodingState& decodingState);
+
     // SkCodec overrides:
     Result onGetPixels(const SkImageInfo& dstInfo,
                        void* pixels,
@@ -138,10 +161,11 @@ private:
     IsAnimated onIsAnimated() override;
     const SkFrameHolder* getFrameHolder() const override;
     sk_sp<const SkData> getEncodedData() const override;
-    // Determines whether or not we can read from the rust decoder directly into dst.
-    bool canReadRow();
+    SkSampler* getSampler(bool createIfNecessary) final;
 
     // SkPngCodecBase overrides:
+    std::unique_ptr<SkCodec> onDecodeGainmap(std::unique_ptr<SkStream> stream,
+                                             SkCodec::Result* result) override;
     std::optional<SkSpan<const PaletteColorEntry>> onTryGetPlteChunk() override;
     std::optional<SkSpan<const uint8_t>> onTryGetTrnsChunk() override;
 

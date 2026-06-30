@@ -1,5 +1,5 @@
 /*
- * Copyright 2017 Google Inc.
+ * Copyright 2017 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -13,7 +13,7 @@
 #include "include/core/SkRect.h"
 #include "include/core/SkTypes.h"
 #include "include/private/SkEncodedInfo.h"
-#include "include/private/base/SkNoncopyable.h"
+#include "include/private/SkNoncopyable.h"
 
 /**
  *  Base class for a single frame of an animated image.

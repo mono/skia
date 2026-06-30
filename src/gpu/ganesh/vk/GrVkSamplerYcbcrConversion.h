@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 Google Inc.
+ * Copyright 2018 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -8,8 +8,8 @@
 #ifndef GrVkSamplerYcbcrConverison_DEFINED
 #define GrVkSamplerYcbcrConverison_DEFINED
 
-#include "include/private/base/SkDebug.h"
-#include "include/private/base/SkMacros.h"
+#include "include/private/SkDebug.h"
+#include "include/private/SkMacros.h"
 #include "include/private/gpu/vk/SkiaVulkan.h"
 #include "src/core/SkChecksum.h"
 #include "src/gpu/ganesh/GrManagedResource.h"

@@ -7,8 +7,9 @@
 #include "include/gpu/ganesh/d3d/GrD3DBackendSurface.h"
 
 #include "include/core/SkRefCnt.h"
+#include "include/core/SkTextureCompressionType.h"
 #include "include/gpu/ganesh/d3d/GrD3DTypes.h"
-#include "include/private/base/SkAssert.h"
+#include "include/private/SkAssert.h"
 #include "src/gpu/ganesh/GrBackendSurfacePriv.h"
 #include "src/gpu/ganesh/d3d/GrD3DBackendSurfacePriv.h"
 #include "src/gpu/ganesh/d3d/GrD3DResourceState.h"
@@ -111,6 +112,7 @@ private:
 
     bool isProtected() const override { return false; }
 
+#if defined(GPU_TEST_UTILS)
     bool equal(const GrBackendTextureData* that) const override {
         SkASSERT(!that || that->type() == GrBackendApi::kDirect3D);
         if (auto otherD3D = static_cast<const GrD3DBackendTextureData*>(that)) {
@@ -118,6 +120,7 @@ private:
         }
         return false;
     }
+#endif
 
     bool isSameTexture(const GrBackendTextureData* that) const override {
         SkASSERT(!that || that->type() == GrBackendApi::kDirect3D);
@@ -241,6 +244,7 @@ private:
 
     bool isProtected() const override { return false; }
 
+#if defined(GPU_TEST_UTILS)
     bool equal(const GrBackendRenderTargetData* that) const override {
         SkASSERT(!that || that->type() == GrBackendApi::kDirect3D);
         if (auto otherD3D = static_cast<const GrD3DBackendRenderTargetData*>(that)) {
@@ -248,6 +252,7 @@ private:
         }
         return false;
     }
+#endif
 
     GrBackendFormat getBackendFormat() const override {
         auto d3dInfo = this->snapTextureResourceInfo();

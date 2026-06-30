@@ -1,5 +1,5 @@
 /*
- * Copyright 2017 Google Inc.
+ * Copyright 2017 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -8,7 +8,7 @@
 #include "include/core/SkColor.h"
 #include "include/core/SkScalar.h"
 #include "include/core/SkTypes.h"
-#include "include/private/base/SkCPUTypes.h"
+#include "include/private/SkCPUTypes.h"
 #include "tests/Test.h"
 
 DEF_TEST(ColorToHSVRoundTrip, reporter) {

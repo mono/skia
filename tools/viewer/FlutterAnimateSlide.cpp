@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 Google Inc.
+ * Copyright 2018 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -11,9 +11,9 @@
 #include "include/core/SkFontMgr.h"
 #include "include/core/SkImage.h"
 #include "include/core/SkTypeface.h"
-#include "src/base/SkRandom.h"
-#include "src/base/SkTime.h"
 #include "src/core/SkColorPriv.h"
+#include "src/core/SkRandom.h"
+#include "src/core/SkTime.h"
 #include "tools/fonts/FontToolUtils.h"
 #include "tools/timer/Timer.h"
 #include "tools/viewer/Slide.h"

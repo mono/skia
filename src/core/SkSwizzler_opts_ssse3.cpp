@@ -6,13 +6,13 @@
  * found in the LICENSE file.
  */
 
-#include "include/private/base/SkFeatures.h"
+#include "include/private/SkFeatures.h"
 #include "src/core/SkOptsTargets.h"
 #include "src/core/SkSwizzlePriv.h"
 
 #if defined(SK_CPU_X86) && \
     !defined(SK_ENABLE_OPTIMIZE_SIZE) && \
-    SK_CPU_SSE_LEVEL < SK_CPU_SSE_LEVEL_SSSE3
+    SK_CPU_X64_LEVEL < SK_CPU_X64_LEVEL_SSSE3
 
 // The order of these includes is important:
 // 1) Select the target CPU architecture by defining SK_OPTS_TARGET and including SkOpts_SetTarget

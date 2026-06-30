@@ -1,5 +1,5 @@
 /*
- * Copyright 2022 Google LLC.
+ * Copyright 2022 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -9,7 +9,7 @@
 #define skgpu_VulkanTypes_DEFINED
 
 #include "include/core/SkTypes.h"
-#include "include/private/base/SkTo.h"
+#include "include/private/SkTo.h"
 #include "include/private/gpu/vk/SkiaVulkan.h"
 
 #include <cstddef>

@@ -1,5 +1,5 @@
 /*
- * Copyright 2017 Google Inc.
+ * Copyright 2017 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -11,9 +11,9 @@
 #include "include/core/SkStream.h"
 #include "include/core/SkString.h"
 #include "include/core/SkTypes.h"
-#include "include/private/base/SkNoncopyable.h"
-#include "include/private/base/SkTArray.h"
-#include "src/base/SkUTF.h"
+#include "include/private/SkNoncopyable.h"
+#include "include/private/SkTArray.h"
+#include "src/core/SkUTF.h"
 
 #include <cstring>
 #include <cstdint>

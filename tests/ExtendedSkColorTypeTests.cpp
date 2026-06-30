@@ -16,7 +16,7 @@
 #include "include/core/SkSurface.h"
 #include "include/core/SkTypes.h"
 #include "include/gpu/GpuTypes.h"
-#include "include/private/base/SkTo.h"
+#include "include/private/SkTo.h"
 #include "src/core/SkAutoPixmapStorage.h"
 #include "src/core/SkImageInfoPriv.h"
 #include "src/gpu/ganesh/GrDirectContextPriv.h"
@@ -98,6 +98,7 @@ static const TestCase gTests[] = {
     { kR8G8_unorm_SkColorType,         kOpaque_SkAlphaType, kRG_SkColorChannelFlags,   true },
     { kR16_unorm_SkColorType,          kOpaque_SkAlphaType, kRed_SkColorChannelFlag,   false},
     { kR16G16_unorm_SkColorType,       kOpaque_SkAlphaType, kRG_SkColorChannelFlags,   false},
+    { kR16_float_SkColorType,          kOpaque_SkAlphaType, kRed_SkColorChannelFlag,   false},
     { kR16G16_float_SkColorType,       kOpaque_SkAlphaType, kRG_SkColorChannelFlags,   false},
     { kR16G16B16A16_unorm_SkColorType, kPremul_SkAlphaType, kRGBA_SkColorChannelFlags, false},
 };
@@ -354,4 +355,3 @@ DEF_TEST(ExtendedSkColorTypeTests_raster, reporter) {
     for (size_t i = 0; i < std::size(gTests); ++i) {
         raster_tests(reporter, gTests[i]);
     }}
-

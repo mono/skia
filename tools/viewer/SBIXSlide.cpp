@@ -1,5 +1,5 @@
 /*
- * Copyright 2022 Google Inc.
+ * Copyright 2022 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -11,8 +11,8 @@
 #include "include/core/SkFontMgr.h"
 #include "include/core/SkGraphics.h"
 #include "include/core/SkTypeface.h"
-#include "include/private/base/SkTemplates.h"
-#include "src/base/SkTime.h"
+#include "include/private/SkTemplates.h"
+#include "src/core/SkTime.h"
 #include "src/sfnt/SkOTTable_glyf.h"
 #include "src/sfnt/SkOTTable_head.h"
 #include "src/sfnt/SkOTTable_hhea.h"

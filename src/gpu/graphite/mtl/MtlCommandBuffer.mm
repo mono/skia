@@ -9,8 +9,8 @@
 
 #include "include/gpu/graphite/BackendSemaphore.h"
 #include "include/gpu/graphite/mtl/MtlGraphiteTypes.h"
+#include "include/private/SkLog.h"
 #include "src/gpu/graphite/ContextUtils.h"
-#include "src/gpu/graphite/Log.h"
 #include "src/gpu/graphite/PipelineData.h"
 #include "src/gpu/graphite/RenderPassDesc.h"
 #include "src/gpu/graphite/TextureFormat.h"
@@ -95,7 +95,7 @@ bool MtlCommandBuffer::commit() {
     if ((*fCommandBuffer).status == MTLCommandBufferStatusError) {
         NSString* description = (*fCommandBuffer).error.localizedDescription;
         const char* errorString = [description UTF8String];
-        SKGPU_LOG_E("Failure submitting command buffer: %s", errorString);
+        SKIA_LOG_E("Failure submitting command buffer: %s", errorString);
     }
 
     return ((*fCommandBuffer).status != MTLCommandBufferStatusError);
@@ -121,15 +121,13 @@ void MtlCommandBuffer::addWaitSemaphores(size_t numWaitSemaphores,
     SkASSERT(!fActiveRenderCommandEncoder);
     SkASSERT(!fActiveComputeCommandEncoder);
     this->endBlitCommandEncoder();
-    if (@available(macOS 10.14, iOS 12.0, tvOS 12.0, *)) {
-        for (size_t i = 0; i < numWaitSemaphores; ++i) {
-            auto semaphore = waitSemaphores[i];
-            if (semaphore.isValid() && semaphore.backend() == BackendApi::kMetal) {
-                id<MTLEvent> mtlEvent =
-                        (__bridge id<MTLEvent>)BackendSemaphores::GetMtlEvent(semaphore);
-                [(*fCommandBuffer) encodeWaitForEvent:mtlEvent
-                                                value:BackendSemaphores::GetMtlValue(semaphore)];
-            }
+    for (size_t i = 0; i < numWaitSemaphores; ++i) {
+        auto semaphore = waitSemaphores[i];
+        if (semaphore.isValid() && semaphore.backend() == BackendApi::kMetal) {
+            id<MTLEvent> mtlEvent =
+                    (__bridge id<MTLEvent>)BackendSemaphores::GetMtlEvent(semaphore);
+            [(*fCommandBuffer) encodeWaitForEvent:mtlEvent
+                                            value:BackendSemaphores::GetMtlValue(semaphore)];
         }
     }
 }
@@ -146,20 +144,17 @@ void MtlCommandBuffer::addSignalSemaphores(size_t numSignalSemaphores,
     SkASSERT(!fActiveComputeCommandEncoder);
     this->endBlitCommandEncoder();
 
-    if (@available(macOS 10.14, iOS 12.0, tvOS 12.0, *)) {
-        for (size_t i = 0; i < numSignalSemaphores; ++i) {
-            auto semaphore = signalSemaphores[i];
-            if (semaphore.isValid() && semaphore.backend() == BackendApi::kMetal) {
-                id<MTLEvent> mtlEvent = (__bridge id<MTLEvent>)BackendSemaphores::GetMtlEvent;
-                [(*fCommandBuffer) encodeSignalEvent:mtlEvent
-                                               value:BackendSemaphores::GetMtlValue(semaphore)];
-            }
+    for (size_t i = 0; i < numSignalSemaphores; ++i) {
+        auto semaphore = signalSemaphores[i];
+        if (semaphore.isValid() && semaphore.backend() == BackendApi::kMetal) {
+            id<MTLEvent> mtlEvent = (__bridge id<MTLEvent>)BackendSemaphores::GetMtlEvent;
+            [(*fCommandBuffer) encodeSignalEvent:mtlEvent
+                                           value:BackendSemaphores::GetMtlValue(semaphore)];
         }
     }
 }
 
 bool MtlCommandBuffer::onAddRenderPass(const RenderPassDesc& renderPassDesc,
-                                       SkIRect renderPassBounds,
                                        const Texture* colorTexture,
                                        const Texture* resolveTexture,
                                        const Texture* depthStencilTexture,
@@ -282,14 +277,8 @@ bool MtlCommandBuffer::beginRenderPass(const RenderPassDesc& renderPassDesc,
             colorAttachment.resolveTexture = ((const MtlTexture*)resolveTexture)->mtlTexture();
             // Inclusion of a resolve texture implies the client wants to finish the
             // renderpass with a resolve.
-            if (@available(macOS 10.12, iOS 10.0, tvOS 10.0, *)) {
-                SkASSERT(colorAttachment.storeAction == MTLStoreActionDontCare);
-                colorAttachment.storeAction = MTLStoreActionMultisampleResolve;
-            } else {
-                // We expect at least Metal 2
-                // TODO: Add error output
-                SkASSERT(false);
-            }
+            SkASSERT(colorAttachment.storeAction == MTLStoreActionDontCare);
+            colorAttachment.storeAction = MTLStoreActionMultisampleResolve;
             // But it also means we have to load the resolve texture into the MSAA color attachment
             loadMSAAFromResolve = resolveInfo.fLoadOp == LoadOp::kLoad;
             // TODO: If the color resolve texture is read-only we can use a private (vs. memoryless)
@@ -332,7 +321,7 @@ bool MtlCommandBuffer::beginRenderPass(const RenderPassDesc& renderPassDesc,
         SkASSERT(colorInfo.fLoadOp == LoadOp::kDiscard);
         auto loadPipeline = fResourceProvider->findOrCreateLoadMSAAPipeline(renderPassDesc);
         if (!loadPipeline) {
-            SKGPU_LOG_E("Unable to create pipeline to load resolve texture into MSAA attachment");
+            SKIA_LOG_E("Unable to create pipeline to load resolve texture into MSAA attachment");
             return false;
         }
         this->bindGraphicsPipeline(loadPipeline.get());
@@ -356,7 +345,7 @@ void MtlCommandBuffer::endRenderPass() {
 bool MtlCommandBuffer::addDrawPass(DrawPass* drawPass) {
     const SkIRect replayedBounds = drawPass->bounds().makeOffset(fReplayTranslation.x(),
                                                                  fReplayTranslation.y());
-    if (!SkIRect::Intersects(replayedBounds, fRenderPassBounds)) {
+    if (!SkIRect::Intersects(replayedBounds, fRenderTargetBounds)) {
         // The entire DrawPass is offscreen given the replay translation so skip adding any
         // commands. When the DrawPass is partially offscreen individual draw commands will be
         // culled while preserving state changing commands.
@@ -487,7 +476,7 @@ bool MtlCommandBuffer::addDrawPass(DrawPass* drawPass) {
                 break;
             }
             case DrawPassCommands::Type::kAddBarrier: {
-                SKGPU_LOG_E("MtlCommandBuffer does not support the addition of barriers.");
+                SKIA_LOG_E("MtlCommandBuffer does not support the addition of barriers.");
                 break;
             }
         }
@@ -605,7 +594,7 @@ void MtlCommandBuffer::bindTextureAndSampler(const Texture* texture,
 void MtlCommandBuffer::setScissor(const Scissor& scissor) {
     SkASSERT(fActiveRenderCommandEncoder);
 
-    SkIRect rect = scissor.getRect(fReplayTranslation, fRenderPassBounds);
+    SkIRect rect = scissor.getRect(fReplayTranslation, fRenderTargetBounds);
     fDrawIsOffscreen = rect.isEmpty();
 
     fActiveRenderCommandEncoder->setScissorRect({
@@ -672,18 +661,14 @@ void MtlCommandBuffer::drawIndexed(PrimitiveType type, unsigned int baseIndex,
                                    unsigned int indexCount, unsigned int baseVertex) {
     SkASSERT(fActiveRenderCommandEncoder);
 
-    if (@available(macOS 10.11, iOS 9.0, tvOS 9.0, *)) {
-        auto mtlPrimitiveType = graphite_to_mtl_primitive(type);
-        size_t indexOffset =  fCurrentIndexBufferOffset + sizeof(uint16_t )* baseIndex;
-        // Use the "instance" variant witha count of 1 so that we can pass in a base vertex
-        // instead of rebinding a vertex buffer offset.
-        fActiveRenderCommandEncoder->drawIndexedPrimitives(mtlPrimitiveType, indexCount,
-                                                           MTLIndexTypeUInt16, fCurrentIndexBuffer,
-                                                           indexOffset, 1, baseVertex, 0);
+    auto mtlPrimitiveType = graphite_to_mtl_primitive(type);
+    size_t indexOffset =  fCurrentIndexBufferOffset + sizeof(uint16_t )* baseIndex;
+    // Use the "instance" variant witha count of 1 so that we can pass in a base vertex
+    // instead of rebinding a vertex buffer offset.
+    fActiveRenderCommandEncoder->drawIndexedPrimitives(mtlPrimitiveType, indexCount,
+                                                       MTLIndexTypeUInt16, fCurrentIndexBuffer,
+                                                       indexOffset, 1, baseVertex, 0);
 
-    } else {
-        SKGPU_LOG_E("Skipping unsupported draw call.");
-    }
 }
 
 void MtlCommandBuffer::drawInstanced(PrimitiveType type, unsigned int baseVertex,
@@ -706,46 +691,34 @@ void MtlCommandBuffer::drawIndexedInstanced(PrimitiveType type,
                                             unsigned int instanceCount) {
     SkASSERT(fActiveRenderCommandEncoder);
 
-    if (@available(macOS 10.11, iOS 9.0, tvOS 9.0, *)) {
-        auto mtlPrimitiveType = graphite_to_mtl_primitive(type);
-        size_t indexOffset =  fCurrentIndexBufferOffset + sizeof(uint16_t) * baseIndex;
-        fActiveRenderCommandEncoder->drawIndexedPrimitives(mtlPrimitiveType, indexCount,
-                                                           MTLIndexTypeUInt16, fCurrentIndexBuffer,
-                                                           indexOffset, instanceCount,
-                                                           baseVertex, baseInstance);
-    } else {
-        SKGPU_LOG_E("Skipping unsupported draw call.");
-    }
+    auto mtlPrimitiveType = graphite_to_mtl_primitive(type);
+    size_t indexOffset =  fCurrentIndexBufferOffset + sizeof(uint16_t) * baseIndex;
+    fActiveRenderCommandEncoder->drawIndexedPrimitives(mtlPrimitiveType, indexCount,
+                                                       MTLIndexTypeUInt16, fCurrentIndexBuffer,
+                                                       indexOffset, instanceCount,
+                                                       baseVertex, baseInstance);
 }
 
 void MtlCommandBuffer::drawIndirect(PrimitiveType type) {
     SkASSERT(fActiveRenderCommandEncoder);
     SkASSERT(fCurrentIndirectBuffer);
 
-    if (@available(macOS 10.11, iOS 9.0, tvOS 9.0, *)) {
-        auto mtlPrimitiveType = graphite_to_mtl_primitive(type);
-        fActiveRenderCommandEncoder->drawPrimitives(
-                mtlPrimitiveType, fCurrentIndirectBuffer, fCurrentIndirectBufferOffset);
-    } else {
-        SKGPU_LOG_E("Skipping unsupported draw call.");
-    }
+    auto mtlPrimitiveType = graphite_to_mtl_primitive(type);
+    fActiveRenderCommandEncoder->drawPrimitives(
+            mtlPrimitiveType, fCurrentIndirectBuffer, fCurrentIndirectBufferOffset);
 }
 
 void MtlCommandBuffer::drawIndexedIndirect(PrimitiveType type) {
     SkASSERT(fActiveRenderCommandEncoder);
     SkASSERT(fCurrentIndirectBuffer);
 
-    if (@available(macOS 10.11, iOS 9.0, tvOS 9.0, *)) {
-        auto mtlPrimitiveType = graphite_to_mtl_primitive(type);
-        fActiveRenderCommandEncoder->drawIndexedPrimitives(mtlPrimitiveType,
-                                                           MTLIndexTypeUInt32,
-                                                           fCurrentIndexBuffer,
-                                                           fCurrentIndexBufferOffset,
-                                                           fCurrentIndirectBuffer,
-                                                           fCurrentIndirectBufferOffset);
-    } else {
-        SKGPU_LOG_E("Skipping unsupported draw call.");
-    }
+    auto mtlPrimitiveType = graphite_to_mtl_primitive(type);
+    fActiveRenderCommandEncoder->drawIndexedPrimitives(mtlPrimitiveType,
+                                                        MTLIndexTypeUInt32,
+                                                        fCurrentIndexBuffer,
+                                                        fCurrentIndexBufferOffset,
+                                                        fCurrentIndirectBuffer,
+                                                        fCurrentIndirectBufferOffset);
 }
 
 void MtlCommandBuffer::beginComputePass() {

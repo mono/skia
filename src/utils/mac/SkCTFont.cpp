@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Google Inc.
+ * Copyright 2020 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -11,7 +11,7 @@
 
 #include "include/core/SkData.h"
 #include "include/core/SkRefCnt.h"
-#include "include/private/base/SkOnce.h"
+#include "include/private/SkOnce.h"
 #include "src/sfnt/SkOTTable_OS_2.h"
 #include "src/sfnt/SkSFNTHeader.h"
 #include "src/utils/mac/SkCTFont.h"

@@ -1,5 +1,5 @@
 /*
- * Copyright 2017 Google Inc.
+ * Copyright 2017 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -10,7 +10,7 @@
 #include "include/core/SkRefCnt.h"
 #include "include/gpu/ganesh/GrBackendSurface.h"
 #include "include/gpu/ganesh/GrDirectContext.h"
-#include "include/private/base/SkMutex.h"
+#include "include/private/SkMutex.h"
 #include "include/private/gpu/ganesh/GrTextureGenerator.h"
 #include "src/gpu/ResourceKey.h"
 #include "src/gpu/ganesh/GrSurfaceProxyView.h"

@@ -1,5 +1,5 @@
 /*
- * Copyright 2021 Google LLC.
+ * Copyright 2021 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -11,10 +11,10 @@
 #include "include/core/SkPathTypes.h"
 #include "include/core/SkPoint.h"
 #include "include/gpu/ganesh/GrRecordingContext.h"
-#include "include/private/base/SkAlignedStorage.h"
-#include "include/private/base/SkAssert.h"
-#include "include/private/base/SkLog.h"
-#include "include/private/base/SkOnce.h"
+#include "include/private/SkAlignedStorage.h"
+#include "include/private/SkAssert.h"
+#include "include/private/SkLog.h"
+#include "include/private/SkOnce.h"
 #include "src/core/SkMatrixPriv.h"
 #include "src/core/SkSLTypeShared.h"
 #include "src/gpu/BufferWriter.h"

@@ -14,10 +14,10 @@
 #include "include/core/SkRect.h"
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkSamplingOptions.h"
+#include "include/core/SkSpan.h"
 #include "include/gpu/graphite/Recorder.h"
-#include "include/private/base/SkDebug.h"
-#include "include/private/base/SkSpan_impl.h"
-#include "src/base/SkEnumBitMask.h"
+#include "include/private/SkDebug.h"
+#include "include/private/SkEnumBitMask.h"
 #include "src/core/SkDevice.h"
 #include "src/gpu/graphite/ClipStack.h"
 #include "src/gpu/graphite/DrawOrder.h"
@@ -135,9 +135,10 @@ public:
 
     SkStrikeDeviceInfo strikeDeviceInfo() const override;
 
-    TextureProxy* target();
-    // May be null if target is not sampleable.
-    TextureProxyView readSurfaceView() const;
+    // May not be texturable, but includes the swizzle required when sampling or reading to CPU
+    const TextureProxyView& target() const;
+    bool isTexturable() const;
+
     // Can succeed if target is readable but not sampleable. Assumes 'subset' is contained in bounds
     sk_sp<Image> makeImageCopy(const SkIRect& subset, Budgeted, Mipmapped, SkBackingFit);
 
@@ -252,7 +253,7 @@ public:
     void drawSpecial(SkSpecialImage*, const SkMatrix& localToDevice,
                      const SkSamplingOptions&, const SkPaint&,
                      SkCanvas::SrcRectConstraint) override;
-    void drawCoverageMask(const SkSpecialImage*, const SkMatrix& localToDevice,
+    void drawCoverageMask(const SkSpecialImage*, const SkMatrix& maskToDevice,
                           const SkSamplingOptions&, const SkPaint&) override;
 
     bool drawBlurredRRect(const SkRRect&, const SkPaint&, float deviceSigma) override;
@@ -298,10 +299,10 @@ private:
     // the transform, clip, and DrawOrder (although Device still tracks stencil buffer usage).
     void drawClipShape(const Transform&, const Shape&, const Clip&, DrawOrder);
 
-    std::pair<DrawParams*, Layer*> drawClipShapeImmediate(const Transform&,
-                                                          const Shape&,
-                                                          const Clip&,
-                                                          DrawOrder);
+    std::pair<DrawParams*, Insertion> drawClipShapeImmediate(const Transform&,
+                                                             const Shape&,
+                                                             const Clip&,
+                                                             DrawOrder);
 
     void updateNextDepthForClipping(PaintersDepth depth);
 

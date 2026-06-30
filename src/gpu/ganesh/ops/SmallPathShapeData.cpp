@@ -1,5 +1,5 @@
 /*
- * Copyright 2020 Google Inc.
+ * Copyright 2020 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -9,8 +9,8 @@
 
 #include "include/core/SkMatrix.h"
 #include "include/core/SkScalar.h"
-#include "include/private/base/SkFixed.h"
-#include "src/base/SkFloatBits.h"
+#include "include/private/SkFixed.h"
+#include "src/core/SkFloatBits.h"
 #include "src/gpu/ganesh/GrStyle.h"
 #include "src/gpu/ganesh/geometry/GrStyledShape.h"
 

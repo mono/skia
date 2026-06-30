@@ -16,14 +16,39 @@ if (skia_use_system_libjpeg_turbo) {
     libs = [ "jpeg" ]
   }
 } else {
+  # NOTE: As of 3.1.4.1, we point DEPS directly at the upstream libjpeg-turbo
+  # commit (not Chromium's fork tip). The upstream source does not include
+  # pre-generated build config files because it relies on CMake's
+  # configure_file(). Since Skia uses GN (not CMake), we provide pre-baked
+  # versions of these files in this directory:
+  #
+  #   third_party/libjpeg-turbo/jconfig.h      - from src/jconfig.h.in
+  #   third_party/libjpeg-turbo/jconfigint.h   - from src/jconfigint.h.in
+  #   third_party/libjpeg-turbo/jversion.h     - from src/jversion.h.in
+  #   third_party/libjpeg-turbo/neon-compat.h  - from simd/arm/neon-compat.h.in
+  #
+  # When updating libjpeg-turbo, compare the .in templates and regenerate
+  # these files if the templates have changed. See the header comments in each
+  # file for the CMake substitution values used.
+
+  config("libjpeg_config") {
+    include_dirs = [
+      ".",
+      "../externals/libjpeg-turbo",
+      "../externals/libjpeg-turbo/src",
+    ]
+  }
+
   source_set("libjpeg_headers") {
+    public_configs = [ ":libjpeg_config" ]
     sources = [
-      "../externals/libjpeg-turbo/src/jconfig.h",
+      "jconfig.h",
+      "jconfigint.h",
+      "jversion.h",
       "../externals/libjpeg-turbo/src/jdct.h",
       "../externals/libjpeg-turbo/src/jinclude.h",
       "../externals/libjpeg-turbo/src/jmorecfg.h",
       "../externals/libjpeg-turbo/src/jpeglib.h",
-      "../externals/libjpeg-turbo/src/jpeglibmangler.h",
     ]
   }
 
@@ -106,6 +131,12 @@ if (skia_use_system_libjpeg_turbo) {
   static_library("libjpeg16") {
     sources = libjpeg16_sources
 
+    include_dirs = [
+      ".",
+      "../externals/libjpeg-turbo",
+      "../externals/libjpeg-turbo/src",
+    ]
+
     defines = [
       "NO_GETENV",
       "NO_PUTENV",
@@ -117,6 +148,12 @@ if (skia_use_system_libjpeg_turbo) {
 
   static_library("libjpeg12") {
     sources = libjpeg12_sources
+
+    include_dirs = [
+      ".",
+      "../externals/libjpeg-turbo",
+      "../externals/libjpeg-turbo/src",
+    ]
 
     defines = [
       "NO_GETENV",
@@ -176,7 +213,10 @@ if (skia_use_system_libjpeg_turbo) {
         "../externals/libjpeg-turbo/simd/arm/jidctred-neon.c",
         "../externals/libjpeg-turbo/simd/arm/jquanti-neon.c",
       ]
-      include_dirs = [ "../externals/libjpeg-turbo/simd/arm" ]
+      include_dirs = [
+        ".",
+        "../externals/libjpeg-turbo/simd/arm",
+      ]
       if (current_cpu == "arm") {
         sources += [
           "../externals/libjpeg-turbo/simd/arm/aarch32/jchuff-neon.c",

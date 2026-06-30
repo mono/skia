@@ -11,7 +11,7 @@
 #include "include/gpu/graphite/ContextOptions.h"
 #include "include/gpu/graphite/dawn/DawnBackendContext.h"
 #include "include/gpu/graphite/dawn/DawnGraphiteTypes.h"
-#include "include/private/base/SkOnce.h"
+#include "include/private/SkOnce.h"
 #include "src/gpu/graphite/ContextOptionsPriv.h"
 #include "tools/gpu/ContextType.h"
 #include "tools/graphite/TestOptions.h"
@@ -62,19 +62,6 @@ std::unique_ptr<GraphiteTestContext> DawnTestContext::Make(wgpu::BackendType bac
     options.nextInChain = &togglesDesc;
     std::vector<dawn::native::Adapter> adapters = sInstance->EnumerateAdapters(&options);
     SkASSERT(!adapters.empty());
-    // Sort adapters by adapterType(DiscreteGPU, IntegratedGPU, CPU) and
-    // backendType(WebGPU, D3D11, D3D12, Metal, Vulkan, OpenGL, OpenGLES).
-    std::sort(
-            adapters.begin(), adapters.end(), [](dawn::native::Adapter a, dawn::native::Adapter b) {
-                wgpu::Adapter wgpuA = a.Get();
-                wgpu::Adapter wgpuB = b.Get();
-                wgpu::AdapterInfo infoA;
-                wgpu::AdapterInfo infoB;
-                wgpuA.GetInfo(&infoA);
-                wgpuB.GetInfo(&infoB);
-                return std::tuple(infoA.adapterType, infoA.backendType) <
-                       std::tuple(infoB.adapterType, infoB.backendType);
-            });
 
     for (const auto& adapter : adapters) {
         wgpu::Adapter wgpuAdapter = adapter.Get();
@@ -116,7 +103,7 @@ std::unique_ptr<GraphiteTestContext> DawnTestContext::Make(wgpu::BackendType bac
             wgpu::CallbackMode::AllowSpontaneous,
             [](const wgpu::Device&, wgpu::DeviceLostReason reason, wgpu::StringView message) {
                 if (reason != wgpu::DeviceLostReason::Destroyed) {
-                    SK_ABORT("Device lost: %.*s\n", static_cast<int>(message.length), message.data);
+                    SK_ABORT("Device lost: %.*s", static_cast<int>(message.length), message.data);
                 }
             });
     desc.SetUncapturedErrorCallback([](const wgpu::Device&, wgpu::ErrorType,

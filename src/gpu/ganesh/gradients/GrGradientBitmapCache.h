@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 Google Inc.
+ * Copyright 2018 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -9,9 +9,9 @@
 
 #include "include/core/SkScalar.h"
 #include "include/effects/SkGradient.h"
-#include "include/private/base/SkDebug.h"
-#include "include/private/base/SkMutex.h"
-#include "include/private/base/SkNoncopyable.h"
+#include "include/private/SkDebug.h"
+#include "include/private/SkMutex.h"
+#include "include/private/SkNoncopyable.h"
 #include "src/core/SkColorData.h"
 
 #include <cstddef>

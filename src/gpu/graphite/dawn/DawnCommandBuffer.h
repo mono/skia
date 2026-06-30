@@ -8,10 +8,10 @@
 #ifndef skgpu_graphite_DawnCommandBuffer_DEFINED
 #define skgpu_graphite_DawnCommandBuffer_DEFINED
 
+#include "include/private/SkLog.h"
 #include "src/gpu/graphite/CommandBuffer.h"
 #include "src/gpu/graphite/DrawPass.h"
 #include "src/gpu/graphite/GpuWorkSubmission.h"
-#include "src/gpu/graphite/Log.h"
 #include "src/gpu/graphite/compute/DispatchGroup.h"
 #include "src/gpu/graphite/dawn/DawnGraphicsPipeline.h"
 #include "src/gpu/graphite/dawn/DawnResourceProvider.h"
@@ -60,7 +60,6 @@ private:
     bool setNewCommandBufferResources() override;
 
     bool onAddRenderPass(const RenderPassDesc&,
-                         SkIRect renderPassBounds,
                          const Texture* colorTexture,
                          const Texture* resolveTexture,
                          const Texture* depthStencilTexture,
@@ -72,7 +71,6 @@ private:
     // Methods for populating a Dawn RenderPassEncoder:
     bool beginRenderPass(const RenderPassDesc&,
                          const SkIPoint& resolveOffset,
-                         SkIRect renderPassBounds,
                          const Texture* colorTexture,
                          const Texture* resolveTexture,
                          const Texture* depthStencilTexture);
@@ -80,7 +78,6 @@ private:
             const RenderPassDesc& intendedRenderPassDesc,
             const wgpu::RenderPassDescriptor& intendedDawnRenderPassDesc,
             const SkIPoint& resolveOffset,
-            const SkIRect& renderPassBounds,
             const DawnTexture* msaaTexture,
             const DawnTexture* resolveTexture);
     bool doBlitWithDraw(const wgpu::RenderPassEncoder& renderEncoder,
@@ -164,7 +161,7 @@ private:
 
     bool fBoundUniformBuffersDirty = false;
 
-    std::array<BindBufferInfo, DawnGraphicsPipeline::kNumUniformBuffers> fBoundUniforms;
+    std::array<BindBufferInfo, DawnGraphicsPipeline::kMaxNumUniformBuffers> fBoundUniforms;
 
     wgpu::CommandEncoder fCommandEncoder;
     wgpu::RenderPassEncoder fActiveRenderPassEncoder;

@@ -1,5 +1,5 @@
 /*
- * Copyright 2017 Google Inc.
+ * Copyright 2017 Google LLC
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
@@ -9,12 +9,12 @@
 
 #include "include/core/SkColor.h"
 #include "include/core/SkPaint.h"
-#include "src/base/SkVx.h"
 #include "src/core/SkBlendModePriv.h"
 #include "src/core/SkColorData.h"
 #include "src/core/SkRasterPipeline.h"
 #include "src/core/SkRasterPipelineOpContexts.h"
 #include "src/core/SkRasterPipelineOpList.h"
+#include "src/core/SkVx.h"
 
 #include <optional>
 
