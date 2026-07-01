@@ -9,8 +9,8 @@
 
 #include "include/gpu/GpuTypes.h"
 #include "include/gpu/graphite/Recording.h"
-#include "include/private/base/SkAssert.h"
-#include "include/private/base/SkLog.h"
+#include "include/private/SkAssert.h"
+#include "include/private/SkLog.h"
 #include "src/core/SkTraceEvent.h"
 #include "src/gpu/GpuTypesPriv.h"
 #include "src/gpu/RefCntedCallback.h"
@@ -121,7 +121,7 @@ InsertStatus QueueManager::addRecording(const InsertRecordingInfo& info, Context
 
     RETURN_FAIL_IF(!info.fRecording,
                    InsertStatus::kInvalidRecording,
-                   "No valid Recording passed into addRecording call");
+                   "Cannot insert null Recording");
 
     // Recordings from a Recorder that requires ordered recordings will have a valid recorder ID.
     // Recordings that don't have any required order are assigned SK_InvalidID.

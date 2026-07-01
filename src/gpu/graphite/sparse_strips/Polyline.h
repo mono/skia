@@ -9,7 +9,7 @@
 
 #include "include/core/SkScalar.h"
 #include "include/core/SkSpan.h"
-#include "include/private/base/SkTDArray.h"
+#include "include/private/SkTDArray.h"
 #include "src/gpu/graphite/sparse_strips/SparseStripsTypes.h"
 
 #include <cmath>
@@ -66,6 +66,10 @@ public:
         if (!fPoints.empty() && !std::isnan(fPoints.back().fX)) {
             fPoints.push_back({SK_ScalarNaN, SK_ScalarNaN});
         }
+    }
+
+    Line getLine(uint32_t index) const {
+        return {fPoints[index], fPoints[index + 1]};
     }
 
     class LineIterator {
