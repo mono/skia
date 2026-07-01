@@ -422,7 +422,6 @@ config("default") {
   }
 
   if (is_wasm) {
-    defines += [ "SK_BUILD_FOR_WASM" ]
     cflags += [ "--sysroot=$skia_emsdk_dir/upstream/emscripten/cache/sysroot" ]
     ldflags += [ "--sysroot=$skia_emsdk_dir/upstream/emscripten/cache/sysroot" ]
   }
