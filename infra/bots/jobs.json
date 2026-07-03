@@ -1568,6 +1568,9 @@
     }
   },
   {
+    "name": "Test-Android-Clang-Pixel9-GPU-MaliG715-arm64-Release-All-Android_Graphite_Native_Vulkan_AvoidDepth"
+  },
+  {
     "name": "Test-Android-Clang-Pixel9-GPU-MaliG715-arm64-Release-All-Android_Vulkan",
     "cq_config": {
       "location_regexes": [
