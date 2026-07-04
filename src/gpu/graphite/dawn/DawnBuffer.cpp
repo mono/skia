@@ -55,7 +55,16 @@ void log_map_error(WGPUBufferMapAsyncStatus status, const char*) {
             statusStr = "<other>";
             break;
     }
-    SKIA_LOG(priority, "Buffer async map failed with status %s.", statusStr);
+    // mono/skia: SKIA_LOG(priority, ...) expands to `if constexpr (priority <= ...)`,
+    // which requires `priority` to be a compile-time constant. The runtime variable
+    // set by the switch above fails that constraint. Branch on the runtime value and
+    // dispatch to the fixed-level macros; only surfaces in WASM because this whole
+    // function is gated by __EMSCRIPTEN__.
+    if (priority == SkLogPriority::kDebug) {
+        SKIA_LOG_D("Buffer async map failed with status %s.", statusStr);
+    } else {
+        SKIA_LOG_E("Buffer async map failed with status %s.", statusStr);
+    }
 }
 
 #else
