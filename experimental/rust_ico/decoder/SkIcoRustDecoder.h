@@ -1,11 +1,11 @@
 /*
- * Copyright 2025 Google LLC
+ * Copyright 2025 Google LLC.
  *
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
-#ifndef SkBmpRustDecoder_DEFINED
-#define SkBmpRustDecoder_DEFINED
+#ifndef SkIcoRustDecoder_DEFINED
+#define SkIcoRustDecoder_DEFINED
 
 #include "include/codec/SkCodec.h"
 #include "include/core/SkRefCnt.h"
@@ -16,15 +16,18 @@ class SkStream;
 
 #include <memory>
 
-namespace SkBmpRustDecoder {
+namespace SkIcoRustDecoder {
 
-/** Returns true if this data claims to be a BMP image. */
-SK_API bool IsBmp(const void*, size_t);
+/** Returns true if this data claims to be an ICO or CUR image. */
+SK_API bool IsIco(const void*, size_t);
 
 /**
- *  Attempts to decode the given bytes as a BMP using Rust implementation.
+ *  Attempts to decode the given bytes as an ICO using Rust-based
+ *  PNG and BMP decoders for the embedded images.
  *
- *  If the bytes are not a BMP, returns nullptr.
+ *  If the bytes are not an ICO, returns nullptr.
+ *
+ *  DecodeContext is ignored.
  */
 SK_API std::unique_ptr<SkCodec> Decode(std::unique_ptr<SkStream>,
                                        SkCodec::Result*,
@@ -34,9 +37,9 @@ SK_API std::unique_ptr<SkCodec> Decode(sk_sp<const SkData>,
                                        SkCodecs::DecodeContext = nullptr);
 
 inline constexpr SkCodecs::Decoder Decoder() {
-    return { "bmp", IsBmp, Decode };
+    return { "ico", IsIco, Decode };
 }
 
-}  // namespace SkBmpRustDecoder
+}  // namespace SkIcoRustDecoder
 
-#endif  // SkBmpRustDecoder_DEFINED
+#endif  // SkIcoRustDecoder_DEFINED
