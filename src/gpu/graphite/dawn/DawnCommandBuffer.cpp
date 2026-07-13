@@ -24,7 +24,10 @@
 #include "src/gpu/graphite/dawn/DawnSharedContext.h"
 #include "src/gpu/graphite/dawn/DawnTexture.h"
 
-#if defined(__EMSCRIPTEN__)
+// mono/skia: emdawnwebgpu ships TexelCopyBufferInfo/TexelCopyTextureInfo
+// natively, so the legacy Emscripten alias-to-ImageCopy* is unnecessary (and
+// would fail — ImageCopy* isn't in the port). Skip the aliases entirely.
+#if defined(__EMSCRIPTEN__) && !defined(SKIA_USING_EMDAWNWEBGPU)
 #include <emscripten/version.h>
 
 namespace wgpu {
@@ -362,7 +365,9 @@ bool DawnCommandBuffer::beginRenderPass(const RenderPassDesc& renderPassDesc,
 #endif
 
 #if WGPU_TIMESTAMP_WRITES_DEFINED
-#if defined(__EMSCRIPTEN__)
+// mono/skia: RenderPass/ComputePassTimestampWrites were merged into
+// PassTimestampWrites; emdawnwebgpu only ships the merged form.
+#if defined(__EMSCRIPTEN__) && !defined(SKIA_USING_EMDAWNWEBGPU)
     wgpu::RenderPassTimestampWrites wgpuTimestampWrites;
 #else
     wgpu::PassTimestampWrites wgpuTimestampWrites;
@@ -1136,7 +1141,9 @@ void DawnCommandBuffer::beginComputePass() {
     SkASSERT(!fActiveComputePassEncoder);
     wgpu::ComputePassDescriptor wgpuComputePassDescriptor = {};
 #if WGPU_TIMESTAMP_WRITES_DEFINED
-#if defined(__EMSCRIPTEN__)
+// mono/skia: see the analogous gate in beginRenderPass — emdawnwebgpu only
+// has the merged PassTimestampWrites form.
+#if defined(__EMSCRIPTEN__) && !defined(SKIA_USING_EMDAWNWEBGPU)
     wgpu::ComputePassTimestampWrites wgpuTimestampWrites;
 #else
     wgpu::PassTimestampWrites wgpuTimestampWrites;

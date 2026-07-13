@@ -20,7 +20,11 @@ namespace skgpu::graphite {
 namespace {
 
 wgpu::ShaderModule CreateNoopFragment(const wgpu::Device& device) {
-#if defined(__EMSCRIPTEN__)
+// mono/skia: SKIA_USING_EMDAWNWEBGPU is defined when Dawn's emdawnwebgpu
+// Emscripten port supplies webgpu.h. That port ships the *modern* Dawn API
+// (ShaderSourceWGSL), so Emscripten builds under it take the native `#else`
+// branch instead of the legacy -sUSE_WEBGPU=1 compat branch below.
+#if defined(__EMSCRIPTEN__) && !defined(SKIA_USING_EMDAWNWEBGPU)
     wgpu::ShaderModuleWGSLDescriptor wgslDesc;
 #else
     wgpu::ShaderSourceWGSL wgslDesc;

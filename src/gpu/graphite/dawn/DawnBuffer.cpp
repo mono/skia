@@ -15,7 +15,10 @@
 
 namespace skgpu::graphite {
 namespace {
-#if defined(__EMSCRIPTEN__)
+// mono/skia: WGPUBufferMapAsyncStatus was renamed to WGPUMapAsyncStatus and
+// its C++ wrapper became wgpu::MapAsyncStatus; emdawnwebgpu only ships the
+// new form, so take the native `#else` branch under the port.
+#if defined(__EMSCRIPTEN__) && !defined(SKIA_USING_EMDAWNWEBGPU)
 bool is_map_succeeded(WGPUBufferMapAsyncStatus status) {
     return status == WGPUBufferMapAsyncStatus_Success;
 }
@@ -250,7 +253,9 @@ void DawnBuffer::onAsyncMap(GpuFinishedProc proc, GpuFinishedContext ctx) {
     bool isWrite = fBuffer.GetUsage() & wgpu::BufferUsage::MapWrite;
     auto buffer = sk_ref_sp(this);
 
-#if defined(__EMSCRIPTEN__)
+// mono/skia: paired with the map-status gate at the top of the file — the
+// modern MapAsync callback signature is what emdawnwebgpu ships.
+#if defined(__EMSCRIPTEN__) && !defined(SKIA_USING_EMDAWNWEBGPU)
     fBuffer.MapAsync(
             isWrite ? wgpu::MapMode::Write : wgpu::MapMode::Read,
             0,
