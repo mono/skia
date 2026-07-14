@@ -32,6 +32,9 @@
     "name": "BazelBuild-viewer-release-mac_arm64"
   },
   {
+    "name": "BazelBuild-viewer-release-mac_x64"
+  },
+  {
     "name": "BazelTest-cpu_tests-all_go_tests-linux_rbe-linux_x64"
   },
   {
@@ -1566,6 +1569,9 @@
         "src/sksl/generated/.*"
       ]
     }
+  },
+  {
+    "name": "Test-Android-Clang-Pixel9-GPU-MaliG715-arm64-Release-All-Android_Graphite_Native_Vulkan_AvoidDepth"
   },
   {
     "name": "Test-Android-Clang-Pixel9-GPU-MaliG715-arm64-Release-All-Android_Vulkan",

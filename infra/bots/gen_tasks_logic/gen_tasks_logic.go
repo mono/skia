@@ -757,7 +757,7 @@ func (b *jobBuilder) deriveCompileTaskName() string {
 				"SkottieTracing", "SkottieWASM", "GpuTess", "DMSAAStats", "Docker", "PDF",
 				"Puppeteer", "SkottieFrames", "RenderSKP", "CanvasPerf", "AllPathsVolatile",
 				"WebGL2", "i5", "OldestSupportedSkpVersion", "FakeWGPU", "Protected",
-				"AndroidNDKFonts", "Upload", "TestPrecompile"}
+				"AndroidNDKFonts", "Upload", "TestPrecompile", "AvoidDepth"}
 			keep := make([]string, 0, len(ec))
 			for _, part := range ec {
 				if !In(part, ignore) {
@@ -844,7 +844,7 @@ var androidDeviceInfos = map[string][]string{
 	"JioNext":         {"msm8937", "RKQ1.210602.002"},
 	"Mokey":           {"mokey", "UP1A.231105.001"},
 	"MokeyGo32":       {"mokey_go32", "UQ1A.240105.003.A1"},
-	"MotoG73":         {"devonf", "U1TN34.82-12-17"},
+	"MotoG73":         {"devonf", "U1TNS34.82-12-17-3"},
 	"Nexus5":          {"hammerhead", "M4B30Z_3437181"},
 	"P30":             {"HWELE", "HUAWEIELE-L29"},
 	"Pixel3a":         {"sargo", "QP1A.190711.020"},
@@ -2195,6 +2195,7 @@ func (b *jobBuilder) bazelBuild() {
 			// We only run builds in GCE.
 			"linux_x64":   bazelCacheDirOnGCELinux,
 			"mac_arm64":   bazelCacheDirOnMac,
+			"mac_x64":     bazelCacheDirOnMac,
 			"windows_x64": bazelCacheDirOnWindows,
 		}[host]
 		if !ok {
@@ -2209,7 +2210,7 @@ func (b *jobBuilder) bazelBuild() {
 
 		cmd := []string{
 			"luci-auth", "context",
-			b.taskDriver("bazel_build", host != "windows_x64"),
+			b.taskDriver("bazel_build", false),
 			"--project_id=skia-swarming-bots",
 			"--task_id=" + specs.PLACEHOLDER_TASK_ID,
 			"--task_name=" + b.Name,
@@ -2239,6 +2240,14 @@ func (b *jobBuilder) bazelBuild() {
 		} else if host == "mac_arm64" {
 			b.usesBazel("mac_arm64")
 			b.dimension("cpu:arm64-64-Apple_M4", "pool:Skia")
+			b.usesXCode()
+		} else if host == "mac_x64" {
+			b.usesBazel("mac_x64")
+			b.dimension(
+				"cpu:x86-64-i9-8950HK",
+				"cipd_platform:mac-amd64",
+				"pool:Skia",
+			)
 			b.usesXCode()
 		} else {
 			panic("unsupported Bazel host " + host)
