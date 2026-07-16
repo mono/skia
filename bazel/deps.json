@@ -2,8 +2,14 @@
   "!note": "DO NOT MODIFY BY HAND. Instead, bazelisk run //bazel/deps_parser",
   "direct": [
     {
+      "build_file": "//bazel/external/d3d12allocator:BUILD.bazel",
+      "commit": "169895d529dfce00390a20e69c2f516066fe7a3b",
+      "name": "d3d12allocator",
+      "remote": "https://skia.googlesource.com/external/github.com/GPUOpen-LibrariesAndSDKs/D3D12MemoryAllocator.git"
+    },
+    {
       "build_file": "//bazel/external/dawn:BUILD.bazel",
-      "commit": "8b692610bcff3452945acf376290c6d753bfc833",
+      "commit": "a2d2de42f35032ebf522cb1418083e2581f506c6",
       "name": "dawn",
       "remote": "https://dawn.googlesource.com/dawn.git"
     },
@@ -185,7 +191,7 @@
       "remote": "https://skia.googlesource.com/external/github.com/KhronosGroup/SPIRV-Headers.git"
     },
     {
-      "commit": "3058f80e65b2cdfdfce62134087881ab222a08fb",
+      "commit": "58dc0b3eb014f6ad4677177ef7ed03214e647d8b",
       "name": "spirv_tools",
       "remote": "https://skia.googlesource.com/external/github.com/KhronosGroup/SPIRV-Tools.git"
     },
@@ -203,7 +209,7 @@
     },
     {
       "build_file": "//bazel/external/vulkan_tools:BUILD.bazel",
-      "commit": "6d586e9a4f0d5ffdef862149adaf1ec6b3130182",
+      "commit": "2a863f5ae6ee77baa882648581aab70530c2aefe",
       "name": "vulkan_tools",
       "remote": "https://chromium.googlesource.com/external/github.com/KhronosGroup/Vulkan-Tools"
     },
@@ -233,7 +239,7 @@
       "remote": "https://skia.googlesource.com/external/github.com/google/brotli.git"
     },
     {
-      "commit": "88f6126f3dc8848ddf7901b6df3f741dc0a1f2c2",
+      "commit": "27f40589d91de466e489a93999e7ac087ca5a5bb",
       "name": "abseil_cpp",
       "remote": "https://chromium.googlesource.com/chromium/src/third_party/abseil-cpp"
     },
