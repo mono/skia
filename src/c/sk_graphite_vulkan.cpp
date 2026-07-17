@@ -47,7 +47,7 @@ extern "C" SK_C_API sk_graphite_context_t* sk_graphite_context_make_vulkan(
 
     if (init.fGetProc) {
         // Capture by value so the lambda is independent of the init struct's lifetime.
-        sk_graphite_vk_get_proc_t getProc = init.fGetProc;
+        sk_graphite_vk_get_proc getProc = init.fGetProc;
         void* userData = init.fGetProcUserData;
         vkbc.fGetProc = [getProc, userData](const char* name, VkInstance instance, VkDevice device) -> PFN_vkVoidFunction {
             return reinterpret_cast<PFN_vkVoidFunction>(

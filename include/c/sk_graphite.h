@@ -80,7 +80,7 @@ typedef struct {
 
 // Release callback for caller-owned backend textures
 
-typedef void (*sk_graphite_release_proc_t)(void* releaseContext);
+typedef void (*sk_graphite_release_proc)(void* releaseContext);
 
 // Context
 
@@ -141,7 +141,7 @@ SK_C_API sk_surface_t*                 sk_graphite_surface_wrap_backend_texture(
     sk_colortype_t          colorType,
     sk_colorspace_t*        colorSpace /* nullable */,
     const sk_surfaceprops_t* props /* nullable */,
-    sk_graphite_release_proc_t releaseProc /* nullable */,
+    sk_graphite_release_proc releaseProc /* nullable */,
     void* releaseContext);
 
 // Wrap a Graphite-allocated or caller-allocated GPU texture as an SkImage so
@@ -153,7 +153,7 @@ SK_C_API sk_image_t*                   sk_graphite_image_wrap_texture(
     sk_colortype_t          colorType,
     sk_alphatype_t          alphaType,
     sk_colorspace_t*        colorSpace /* nullable */,
-    sk_graphite_release_proc_t releaseProc /* nullable */,
+    sk_graphite_release_proc releaseProc /* nullable */,
     void* releaseContext);
 
 // Recorder-allocated BackendTexture: lets Skia allocate a fresh GPU texture
@@ -217,7 +217,7 @@ typedef enum {
     REPEATED_CUBIC_SK_GRAPHITE_RESCALE_MODE  = 2,
 } sk_graphite_rescale_mode_t;
 
-typedef void (*sk_graphite_async_read_pixels_proc_t)(
+typedef void (*sk_graphite_async_read_pixels_proc)(
     void* callbackContext,
     const sk_graphite_async_read_result_t* result /* non-owning, valid only during callback */);
 
@@ -228,7 +228,7 @@ SK_C_API void sk_graphite_context_async_rescale_and_read_pixels_surface(
     const sk_irect_t* srcRect,
     sk_graphite_rescale_gamma_t rescaleGamma,
     sk_graphite_rescale_mode_t  rescaleMode,
-    sk_graphite_async_read_pixels_proc_t callback,
+    sk_graphite_async_read_pixels_proc callback,
     void* callbackContext);
 
 SK_C_API void sk_graphite_context_check_async_work_completion(sk_graphite_context_t* context);
@@ -251,7 +251,7 @@ SK_C_API size_t       sk_graphite_async_read_result_get_row_bytes(const sk_graph
 // the +1 reference and decrements after Skia is done. Do NOT call sk_image_unref
 // on it from your callback — return it directly.
 
-typedef sk_image_t* (*sk_graphite_image_provider_proc_t)(
+typedef sk_image_t* (*sk_graphite_image_provider_proc)(
     void* userData,
     sk_graphite_recorder_t* recorder,
     const sk_image_t* image,
@@ -262,7 +262,7 @@ typedef sk_image_t* (*sk_graphite_image_provider_proc_t)(
 // sk_graphite_context_options_t::fImageProvider; ownership transfers on
 // successful Context creation.
 SK_C_API sk_graphite_image_provider_t* sk_graphite_image_provider_new(
-    sk_graphite_image_provider_proc_t proc,
+    sk_graphite_image_provider_proc proc,
     void* userData);
 
 // Free an unused provider (e.g. when CreateVulkan returned null and the caller
@@ -272,7 +272,7 @@ SK_C_API void sk_graphite_image_provider_delete(sk_graphite_image_provider_t* pr
 
 // Upload a raster (CPU-backed) SkImage to a Graphite-backed texture. This is
 // the same operation Skia's SkImages::TextureFromImage performs; exposed so a
-// C# implementation of sk_graphite_image_provider_proc_t can do the actual
+// C# implementation of sk_graphite_image_provider_proc can do the actual
 // conversion the hook is asked for. Returns null if the recorder is null or
 // the upload failed.
 SK_C_API sk_image_t* sk_graphite_image_make_texture(

@@ -16,7 +16,7 @@ SK_C_PLUS_PLUS_BEGIN_GUARD
 // Function-pointer getter signature: identical in shape to skgpu::VulkanGetProc.
 // userData is the fGetProcUserData passed via the init struct.
 typedef VKAPI_ATTR void (VKAPI_CALL *sk_graphite_vk_func_ptr)(void);
-typedef sk_graphite_vk_func_ptr (*sk_graphite_vk_get_proc_t)(void* userData, const char* name, vk_instance_t* instance, vk_device_t* device);
+typedef sk_graphite_vk_func_ptr (*sk_graphite_vk_get_proc)(void* userData, const char* name, vk_instance_t* instance, vk_device_t* device);
 
 typedef struct {
     vk_instance_t*              fInstance;
@@ -25,7 +25,7 @@ typedef struct {
     vk_queue_t*                 fQueue;
     uint32_t                    fGraphicsQueueIndex;
     uint32_t                    fMaxAPIVersion;
-    sk_graphite_vk_get_proc_t   fGetProc;
+    sk_graphite_vk_get_proc     fGetProc;
     void*                       fGetProcUserData;
     bool                        fProtectedContext;
 } sk_graphite_vk_backend_context_init_t;
@@ -33,8 +33,15 @@ typedef struct {
 // Build a Graphite Context for the Vulkan backend.
 // Returns null on failure (Vulkan not built in, init invalid, or device rejected).
 // The dispatch lambda captures fGetProc + fGetProcUserData by value, so the
-// caller may free the init struct as soon as this returns. Passed by value to
-// mirror gr_direct_context_make_vulkan; the marshaller copies the bytes.
+// caller may free the init struct as soon as this returns.
+//
+// NOTE: unlike the Metal/Dawn make functions (which take their init struct by
+// pointer), this one takes it BY VALUE. The struct carries a function-pointer
+// callback (fGetProc). On the managed side that field maps to a delegate, which
+// makes the marshalled struct non-blittable and therefore impossible to pass by
+// pointer in the DllImport path (you cannot take the address of a managed
+// struct). Passing by value lets the marshaller copy the struct and thunk the
+// delegate, exactly as gr_direct_context_make_vulkan does.
 SK_C_API sk_graphite_context_t* sk_graphite_context_make_vulkan(
     const sk_graphite_vk_backend_context_init_t init,
     const sk_graphite_context_options_t* opts /* nullable -> defaults */);
