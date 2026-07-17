@@ -9,7 +9,7 @@
     },
     {
       "build_file": "//bazel/external/dawn:BUILD.bazel",
-      "commit": "a2d2de42f35032ebf522cb1418083e2581f506c6",
+      "commit": "2a49ad12f8a9bf7451cb71983647d662fbe70224",
       "name": "dawn",
       "remote": "https://dawn.googlesource.com/dawn.git"
     },
@@ -133,8 +133,14 @@
     },
     {
       "build_file": "//bazel/external/libjxl:BUILD.bazel",
-      "commit": "a205468bc5d3a353fb15dae2398a101dff52f2d3",
+      "commit": "332feb17d17311c748445f7ee75c4fb55cc38530",
       "name": "libjxl",
+      "patch_cmds": [
+        "rm -f lib/BUILD tools/BUILD"
+      ],
+      "patch_cmds_win": [
+        "del /f /q lib\\BUILD tools\\BUILD"
+      ],
       "remote": "https://chromium.googlesource.com/external/gitlab.com/wg1/jpeg-xl.git"
     },
     {
@@ -191,7 +197,7 @@
       "remote": "https://skia.googlesource.com/external/github.com/KhronosGroup/SPIRV-Headers.git"
     },
     {
-      "commit": "58dc0b3eb014f6ad4677177ef7ed03214e647d8b",
+      "commit": "d34072656009319e6c39368121d6cba4a790b889",
       "name": "spirv_tools",
       "remote": "https://skia.googlesource.com/external/github.com/KhronosGroup/SPIRV-Tools.git"
     },
@@ -215,7 +221,7 @@
     },
     {
       "build_file": "//bazel/external/vulkan_utility_libraries:BUILD.bazel",
-      "commit": "c0e15b2c46f9ae2314925cbbe9d97ed6ea8a717d",
+      "commit": "b856ffcc0404a8c12fa45935e72d1446c72f5f37",
       "name": "vulkan_utility_libraries",
       "remote": "https://chromium.googlesource.com/external/github.com/KhronosGroup/Vulkan-Utility-Libraries"
     },
@@ -244,7 +250,7 @@
       "remote": "https://chromium.googlesource.com/chromium/src/third_party/abseil-cpp"
     },
     {
-      "commit": "424360251cdcfc314cfc528f53c872ecd63af0f0",
+      "commit": "457c891775a7397bdb0376bb1031e6e027af1c48",
       "name": "highway",
       "remote": "https://chromium.googlesource.com/external/github.com/google/highway.git"
     }
