@@ -49,14 +49,14 @@ if (skia_use_system_freetype2) {
     defines = [ "FT2_BUILD_LIBRARY" ]
     if (target_cpu == "wasm") {
       public_defines += [
-        "FT_CONFIG_MODULES_H=<freetype-no-type1/freetype/config/ftmodule.h>",
-        "FT_CONFIG_OPTIONS_H=<freetype-no-type1/freetype/config/ftoption.h>",
+        "FT_CONFIG_MODULES_H=<freetype-no-type1/freetype/config/ftmodule.h> ",
+        "FT_CONFIG_OPTIONS_H=<freetype-no-type1/freetype/config/ftoption.h> ",
       ]
       public_include_dirs += [ "include/freetype-no-type1" ]
     } else {
       public_defines += [
-        "FT_CONFIG_MODULES_H=<freetype-android/freetype/config/ftmodule.h>",
-        "FT_CONFIG_OPTIONS_H=<freetype-android/freetype/config/ftoption.h>",
+        "FT_CONFIG_MODULES_H=<freetype-android/freetype/config/ftmodule.h> ",
+        "FT_CONFIG_OPTIONS_H=<freetype-android/freetype/config/ftoption.h> ",
       ]
       public_include_dirs += [ "include/freetype-android" ]
     }
