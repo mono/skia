@@ -35,6 +35,9 @@ enum class BoundsTest {
 struct LayerKey {
     GraphicsPipelineCache::Index fPipelineIndex;
     TextureDataCache::Index fTextureIndex;
+
+    // Set to Invalid for BindingLists when SSBOs are used; for SSBOs, each draw's uniform index
+    // is stored on the Draw itself.
     UniformDataCache::Index fUniformIndex;
 
     static constexpr LayerKey None() {
@@ -43,12 +46,10 @@ struct LayerKey {
                 UniformDataCache::kInvalidIndex};
     }
 
-    SK_ALWAYS_INLINE bool isEqual(const LayerKey& other, bool matchUniforms) const {
-        if (fPipelineIndex != other.fPipelineIndex ||
-            fTextureIndex != other.fTextureIndex) {
-            return false;
-        }
-        return !matchUniforms || fUniformIndex == other.fUniformIndex;
+    SK_ALWAYS_INLINE bool isEqual(const LayerKey& other) const {
+        return fPipelineIndex == other.fPipelineIndex &&
+               fTextureIndex == other.fTextureIndex &&
+               fUniformIndex == other.fUniformIndex;
     }
 };
 
@@ -91,6 +92,16 @@ struct BindingList {
         }
         return false;
     }
+
+    SK_ALWAYS_INLINE void addDraw(Draw* draw, bool backToFront) {
+        fBounds.join(draw->fDrawParams->drawBounds());
+        fDrawCount++;
+        if (backToFront) {
+            fDraws.addToTail(draw);
+        } else {
+            fDraws.addToHead(draw);
+        }
+    }
 };
 
 struct Layer {
@@ -101,22 +112,18 @@ struct Layer {
     SkTInternalLList<BindingList> fBindings;
     SK_DECLARE_INTERNAL_LLIST_INTERFACE(Layer);
 
-    template <bool kForwards>
-    BindingList* searchBinding(const LayerKey& key, BindingList* startList, bool matchUniform) {
-        BindingList* list;
-        BindingList* end;
-
-        if constexpr (kForwards) {
-            list = startList ? startList->fNext : fBindings.head();
-            end = nullptr;
-        } else {
-            list = fBindings.tail();
-            end = startList ? startList->fPrev : nullptr;
+    // Performs no bounds checks, so can only be used when checks have already confirmed the Layer
+    // is valid for adding a new draw into. This searches backwards from `startList` (inclusive) or
+    // the tail BindingList if null.
+    SK_ALWAYS_INLINE BindingList* searchBinding(const LayerKey& key,
+                                                BindingList* startList=nullptr) {
+        if (!startList) {
+            startList = fBindings.tail();
         }
 
         // Advancement is evaluated at compile time
-        for (; list != end; list = kForwards ? list->fNext : list->fPrev) {
-            if (list->fKey.isEqual(key, matchUniform)) {
+        for (BindingList* list = startList; list != nullptr; list = list->fPrev) {
+            if (list->fKey.isEqual(key)) {
                 return list;
             }
         }
@@ -132,26 +139,22 @@ struct Layer {
     //
     // This was implemented in https://review.skia.org/1171836 and slightly regresses performance
     // due to the overhead it introduces.
-    template <bool kIsStencil, bool kForwards>
+    template <bool kIsStencil>
     SK_ALWAYS_INLINE std::pair<BoundsTest, BindingList*> test(bool isDepthOnly,
                                                               const Rect& drawBounds,
                                                               const LayerKey& key,
-                                                              bool requiresBarrier,
-                                                              BindingList* startList,
-                                                              bool matchUniform) {
+                                                              bool requiresBarrier) {
         BindingList* foundMatch = nullptr;
-        BindingList* list;
-        BindingList* end;
-        if constexpr (kForwards) {
-            list = startList ? startList->fNext : fBindings.head();
-            end = nullptr;
-        } else {
-            list = fBindings.tail();
-            end = startList ? startList->fPrev : nullptr;
-        }
-        // Advancement is also constexpr
-        for (; list != end; list = kForwards ? list->fNext : list->fPrev) {
-            if (list->fKey.isEqual(key, matchUniform)) {
+        BindingList* list = fBindings.tail();
+        BindingList* end = nullptr;
+
+        // Always iterate backwards from the tail, we do this because most draws (including depth-
+        // only clip draws) must maintain painter's order so we can early out if they overlap with
+        // a more recent draw. In the event that there isn't any color dependency, we're just
+        // searching for a disjoint binding match and then whether or not to start from the front or
+        // the back is arbitrary
+        for (; list != end; list = list->fPrev) {
+            if (list->fKey.isEqual(key)) {
                 // A side effect of the layer key system is that a non-shading stencil step and a
                 // depth-only draw can generate a valid match. While this allows the two render
                 // steps to share the same binding list, it technically still produces a visually
@@ -207,42 +210,44 @@ struct Layer {
         return {foundMatch ? BoundsTest::kCompatibleOverlap : BoundsTest::kDisjoint, foundMatch};
     }
 
-    SK_ALWAYS_INLINE BindingList* add(bool isChild,
-                                      bool isDepthOnly,
-                                      SkArenaAllocWithReset* alloc,
-                                      BindingList* list,
-                                      BindingList* parentList,
-                                      const LayerKey& key,
-                                      Draw* draw,
-                                      const RenderStep* step,
-                                      bool insertBefore) {
-        if (list) {
-            list->fBounds.join(draw->fDrawParams->drawBounds());
-        } else {
-            fListOrder = fListOrder.next();
-            list = alloc->make<BindingList>(fListOrder, isDepthOnly);
-            list->fKey = key;
-            list->fStep = const_cast<RenderStep*>(step);
-            list->fBounds = draw->fDrawParams->drawBounds();
-            if (isDepthOnly) {
-                if (isChild) {
-                    SkASSERT(parentList);
-                    fBindings.addAfter(list, parentList);
-                } else {
-                    fBindings.addToHead(list);
-                }
-            } else {
-                fBindings.addToTail(list);
-            }
-        }
+    SK_ALWAYS_INLINE BindingList* addNewBinding(bool isDepthOnly,
+                                                SkArenaAllocWithReset* alloc,
+                                                BindingList* insertBefore,
+                                                const LayerKey& key,
+                                                const RenderStep* step) {
+        SkASSERT(!insertBefore || fBindings.isInList(insertBefore));
 
-        if (insertBefore) {
-            list->fDraws.addToHead(draw);
-        } else {
-            list->fDraws.addToTail(draw);
-        }
+        fListOrder = fListOrder.next();
+        BindingList* list = alloc->make<BindingList>(fListOrder, isDepthOnly);
+        list->fKey = key;
+        list->fStep = const_cast<RenderStep*>(step);
+        list->fBounds = Rect::InfiniteInverted();
 
-        list->fDrawCount++;
+        // We need to insert the new list in the right place to keep fBindings organized with all
+        // non-shading layers before shading layers, while also ensuring that the new `list` comes
+        // before `insertBefore` (when non-null).
+        if (insertBefore && isDepthOnly == insertBefore->fIsDepthOnly) {
+            // Since both keys' shading state matches, putting the new list right in front of
+            // `insertBefore` will not split the two sections (regardless of whether it was in the
+            // shading or non-shading section).
+            fBindings.addBefore(list, insertBefore);
+        } else if (!isDepthOnly) {
+            // Since a new shading binding can only be inserted before other shading bindings,
+            // the only way to get to this branch is to not have an insertBefore target. As such,
+            // the simplest way to maintain keeping shading bindings in the latter half is to add
+            // to the tail.
+            SkASSERT(!insertBefore);
+            fBindings.addToTail(list);
+        } else {
+            // A non-shading draw can have an `insertBefore` target that is a shading binding (e.g.
+            // where the final shading step was inserted in the layer). In that case, addBefore()
+            // would possibly split the shading bindings section of `fBindings`. Adding it to the
+            // head of the bindings' list preserves the guarantee that all non-shading bindings are
+            // at the start and satisfies adding it before the `insertBefore` (if it were non-null).
+            SkASSERT(isDepthOnly);
+            SkASSERT(!insertBefore || !insertBefore->fIsDepthOnly);
+            fBindings.addToHead(list);
+        }
 
         return list;
     }
