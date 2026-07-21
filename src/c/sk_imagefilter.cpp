@@ -24,6 +24,10 @@ void sk_imagefilter_unref(sk_imagefilter_t* cfilter) {
     SkSafeUnref(AsImageFilter(cfilter));
 }
 
+sk_imagefilter_t* sk_imagefilter_new_empty(void) {
+    return ToImageFilter(SkImageFilters::Empty().release());
+}
+
 sk_imagefilter_t* sk_imagefilter_new_arithmetic(float k1, float k2, float k3, float k4, bool enforcePMColor, const sk_imagefilter_t* background, const sk_imagefilter_t* foreground, const sk_rect_t* cropRect) {
     return ToImageFilter(SkImageFilters::Arithmetic(k1, k2, k3, k4, enforcePMColor, sk_ref_sp(AsImageFilter(background)), sk_ref_sp(AsImageFilter(foreground)), AsRect(cropRect)).release());
 }
@@ -46,6 +50,10 @@ sk_imagefilter_t* sk_imagefilter_new_color_filter(sk_colorfilter_t* cf, const sk
 
 sk_imagefilter_t* sk_imagefilter_new_compose(const sk_imagefilter_t* outer, const sk_imagefilter_t* inner) {
     return ToImageFilter(SkImageFilters::Compose(sk_ref_sp(AsImageFilter(outer)), sk_ref_sp(AsImageFilter(inner))).release());
+}
+
+sk_imagefilter_t* sk_imagefilter_new_crop(const sk_rect_t* rect, sk_shader_tilemode_t tileMode, const sk_imagefilter_t* input) {
+    return ToImageFilter(SkImageFilters::Crop(*AsRect(rect), (SkTileMode)tileMode, sk_ref_sp(AsImageFilter(input))).release());
 }
 
 sk_imagefilter_t* sk_imagefilter_new_displacement_map_effect(sk_color_channel_t xChannelSelector, sk_color_channel_t yChannelSelector, float scale, const sk_imagefilter_t* displacement, const sk_imagefilter_t* color, const sk_rect_t* cropRect) {
