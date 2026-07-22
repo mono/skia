@@ -49,11 +49,16 @@ if (skia_use_system_freetype2) {
     defines = [ "FT2_BUILD_LIBRARY" ]
     if (target_cpu == "wasm") {
       public_defines += [
-        "FT_CONFIG_MODULES_H=<freetype-no-type1/freetype/config/ftmodule.h> ",
-        "FT_CONFIG_OPTIONS_H=<freetype-no-type1/freetype/config/ftoption.h> ",
+        "FT_CONFIG_MODULES_H=<freetype-no-type1/freetype/config/ftmodule.h>",
+        "FT_CONFIG_OPTIONS_H=<freetype-no-type1/freetype/config/ftoption.h>",
       ]
       public_include_dirs += [ "include/freetype-no-type1" ]
     } else {
+      # NOTE (SkiaSharp): the trailing space below is required on Windows only. GN +
+      # clang-cl mis-tokenizes a -D macro value ending in '>' in the ninja response
+      # file, so we keep '>' off the end. It is harmless in the resulting
+      # '#include <...> ' expansion, and is not needed for the wasm branch above
+      # (emscripten toolchain, not clang-cl).
       public_defines += [
         "FT_CONFIG_MODULES_H=<freetype-android/freetype/config/ftmodule.h> ",
         "FT_CONFIG_OPTIONS_H=<freetype-android/freetype/config/ftoption.h> ",
