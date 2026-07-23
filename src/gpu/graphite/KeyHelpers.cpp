@@ -35,6 +35,7 @@
 #include "src/effects/colorfilters/SkWorkingFormatColorFilter.h"
 #include "src/gpu/Blend.h"
 #include "src/gpu/DitherUtils.h"
+#include "src/gpu/GradientBitmap.h"
 #include "src/gpu/Swizzle.h"
 #include "src/gpu/graphite/Caps.h"
 #include "src/gpu/graphite/DrawContext.h"
@@ -1059,7 +1060,13 @@ BuiltInCodeSnippetID add_xfer_fn(const KeyContext& keyContext,
             SkASSERT(!ootf);
             // Actual sRGB gamma curve to apply
             BEGIN_WRITE_UNIFORMS(keyContext, BuiltInCodeSnippetID::kCSXform_sRGB)
-            keyContext.pipelineDataGatherer()->write(SkV4{xferFn.g, xferFn.a, xferFn.b, xferFn.c});
+            // sk_csxform_srgb skips all work when g == 0, so prefer that for an identity step
+            // (vs. calling $apply_srgb_xfer_fn with values resulting in the identity).
+            float g = xferFn.g;
+            if (memcmp(&xferFn, &kLinearTF, sizeof(skcms_TransferFunction)) == 0) {
+                g = 0.f;
+            }
+            keyContext.pipelineDataGatherer()->write(SkV4{g, xferFn.a, xferFn.b, xferFn.c});
             keyContext.pipelineDataGatherer()->write(SkV3{xferFn.d, xferFn.e, xferFn.f});
             return BuiltInCodeSnippetID::kCSXform_sRGB;
         }
@@ -1289,8 +1296,10 @@ void ColorSpaceTransformBlock::AddBlock(const KeyContext& keyContext,
     } else {
         stageIDs.push_back(BuiltInCodeSnippetID::kCSXform_PreAlpha);
         BEGIN_WRITE_UNIFORMS(keyContext, BuiltInCodeSnippetID::kCSXform_PreAlpha)
-        float mode = data.fReadSwizzle[3] == '1' ?  1.f : // force-opaque
-                     steps.fFlags.unpremul       ? -1.f   // unpremul
+        const bool inlinePremul = identityConversion && steps.fFlags.premul;
+        float mode = data.fReadSwizzle[3] == '1' ?  2.f : // force-opaque
+                     steps.fFlags.unpremul       ? -1.f : // unpremul
+                     inlinePremul                ?  1.f   // premul w/o a PostAlpha stage
                                                  :  0.f;  // no-op
         keyContext.pipelineDataGatherer()->writeHalf(mode);
     }
@@ -1334,12 +1343,12 @@ void ColorSpaceTransformBlock::AddBlock(const KeyContext& keyContext,
         if (steps.fFlags.premul) {
             stageIDs.push_back(BuiltInCodeSnippetID::kCSXform_Premul);
         } // else elide the no-op
-    } else {
+    } else if (!identityConversion) {
         stageIDs.push_back(BuiltInCodeSnippetID::kCSXform_PostAlpha);
         BEGIN_WRITE_UNIFORMS(keyContext, BuiltInCodeSnippetID::kCSXform_PostAlpha)
         float premul = steps.fFlags.premul ? 0.f : 1.f;
         keyContext.pipelineDataGatherer()->writeHalf(premul);
-    }
+    } // else any premul is handled by the PreAlpha stage
 
     if (stageIDs.empty()) {
         // We've specialized down to the identity function, but we need to add a block
@@ -2519,49 +2528,6 @@ static void add_to_key(const KeyContext& keyContext,
         });
 }
 
-static SkBitmap create_color_and_offset_bitmap(int numStops,
-                                               const SkPMColor4f* colors,
-                                               const float* offsets) {
-    SkBitmap colorsAndOffsetsBitmap;
-
-    colorsAndOffsetsBitmap.allocPixels(
-            SkImageInfo::Make(numStops, 2, kRGBA_F16_SkColorType, kPremul_SkAlphaType));
-
-    for (int i = 0; i < numStops; i++) {
-        // TODO: there should be a way to directly set a premul pixel in a bitmap with
-        // a premul color.
-        SkColor4f unpremulColor = colors[i].unpremul();
-        colorsAndOffsetsBitmap.erase(unpremulColor, SkIRect::MakeXYWH(i, 0, 1, 1));
-
-        float offset = offsets ? offsets[i] : SkIntToFloat(i) / (numStops - 1);
-        SkASSERT(offset >= 0.0f && offset <= 1.0f);
-
-        int exponent;
-        float mantissa = frexp(offset, &exponent);
-
-        SkHalf halfE = SkFloatToHalf(exponent);
-        if ((int)SkHalfToFloat(halfE) != exponent) {
-            SKIA_LOG_W("Encoding gradient to f16 failed");
-            return {};
-        }
-
-#if defined(SK_DEBUG)
-        SkHalf halfM = SkFloatToHalf(mantissa);
-
-        float restored = ldexp(SkHalfToFloat(halfM), (int)SkHalfToFloat(halfE));
-        float error = abs(restored - offset);
-        SkASSERT(error < 0.001f);
-#endif
-
-        // TODO: we're only using 2 of the f16s here. The encoding could be altered to better
-        // preserve precision. This encoding yields < 0.001f error for 2^20 evenly spaced stops.
-        colorsAndOffsetsBitmap.erase(SkColor4f{mantissa, (float)exponent, 0, 1},
-                                     SkIRect::MakeXYWH(i, 1, 1, 1));
-    }
-
-    return colorsAndOffsetsBitmap;
-}
-
 // Please see GrGradientShader.cpp::make_interpolated_to_dst for substantial comments
 // as to why this code is structured this way.
 static void make_interpolated_to_dst(const KeyContext& keyContext,
@@ -2629,7 +2595,7 @@ static void add_gradient_to_key(const KeyContext& keyContext,
             && !useStorageBuffer) {
         if (shader->cachedBitmap().empty()) {
             SkBitmap colorsAndOffsetsBitmap =
-                    create_color_and_offset_bitmap(colorCount, colors, positions);
+                    skgpu::CreateGradientColorAndOffsetBitmap(colorCount, colors, positions);
             if (colorsAndOffsetsBitmap.empty()) {
                 SKIA_LOG_W("Couldn't create GradientShader's color and offset bitmap");
                 keyContext.paintParamsKeyBuilder()->addErrorBlock();

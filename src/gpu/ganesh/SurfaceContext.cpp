@@ -292,7 +292,12 @@ bool SurfaceContext::readPixels(GrDirectContext* dContext, GrPixmap dst, SkIPoin
         pt.fY = flip ? srcSurface->height() - pt.fY - dst.height() : pt.fY;
     }
 
-    dContext->priv().flushSurface(srcProxy.get());
+    bool hasPendingTasks =
+            dContext->priv().drawingManager()->getLastRenderTask(srcProxy.get()) != nullptr;
+    GrSemaphoresSubmitted flushResult = dContext->priv().flushSurface(srcProxy.get());
+    if (flushResult == GrSemaphoresSubmitted::kNo && hasPendingTasks) {
+        return false;
+    }
     dContext->submit();
     if (!dContext->priv().getGpu()->readPixels(srcSurface,
                                                SkIRect::MakePtSize(pt, dst.dimensions()),
@@ -1433,9 +1438,11 @@ SurfaceContext::PixelTransferResult SurfaceContext::transferPixels(GrColorType d
 
     SkSafeMath safe;
     size_t bytesPerPixel = GrColorTypeBytesPerPixel(supportedRead.fColorType);
+    SkASSERT(bytesPerPixel > 0);
     size_t rowBytes = safe.mul(bytesPerPixel, rect.width());
     size_t maxTransAlignment = this->caps()->transferBufferRowBytesAlignment();
-    rowBytes = safe.alignUp(rowBytes, maxTransAlignment);
+    size_t alignment = safe.lcm(bytesPerPixel, maxTransAlignment);
+    rowBytes = safe.alignUpNonPow2(rowBytes, alignment);
     size_t size = safe.mul(rowBytes, rect.height());
     if (!safe.ok()) {
         return {};

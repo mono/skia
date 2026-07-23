@@ -86,7 +86,10 @@ config("skia_public") {
 config("skia_private") {
   visibility = [ "./*" ]
 
-  defines = [ "SK_GAMMA_APPLY_TO_A8" ]
+  defines = [
+    "SK_GAMMA_APPLY_TO_A8",
+    "SK_DISABLE_LEGACY_UPDATEBOUNDSCACHE",
+  ]
   if (skia_use_fixed_gamma_text) {
     defines += [
       "SK_GAMMA_EXPONENT=1.4",
@@ -907,7 +910,7 @@ optional("gpu_shared") {
   enabled = skia_enable_ganesh || skia_enable_graphite
 
   configs = []
-  deps = []
+  deps = [ ":core" ]
   libs = []
   public_defines = []
   public_deps = []
@@ -1145,7 +1148,10 @@ optional("jpeg_encode") {
   enabled = skia_use_libjpeg_turbo_encode && !skia_use_ndk_images
   public_defines = [ "SK_CODEC_ENCODES_JPEG" ]
 
-  deps = [ "//third_party/libjpeg-turbo:libjpeg" ]
+  deps = [
+    ":core",
+    "//third_party/libjpeg-turbo:libjpeg",
+  ]
   public = skia_encode_jpeg_public
   sources = skia_encode_jpeg_srcs
 
@@ -1183,6 +1189,7 @@ optional("graphite") {
 
   enabled = skia_enable_graphite
   deps = [
+    ":core",
     ":gpu_shared",
     ":vello",
   ]
@@ -1477,23 +1484,23 @@ if (skia_use_fontations || skia_use_rust_png_decode ||
   }
 
   if (skia_use_rust_bmp_decode) {
-    _rust_targets += [ "//experimental/rust_bmp/ffi:ffi_rs" ]
+    _rust_targets += [ "//rust/bmp:ffi_rs" ]
     _rust_sources += [
-      "experimental/rust_bmp/ffi/BUILD.bazel",
-      "experimental/rust_bmp/ffi/FFI.rs",
+      "rust/bmp/BUILD.bazel",
+      "rust/bmp/FFI.rs",
     ]
     _rust_outputs += [
       "$root_out_dir/librust_bmp_ffi_rs.a",
-      "$root_out_dir/experimental/rust_bmp/ffi/FFI.rs.h",
-      "$root_out_dir/experimental/rust_bmp/ffi/FFI.rs.cc",
+      "$root_out_dir/rust/bmp/FFI.rs.h",
+      "$root_out_dir/rust/bmp/FFI.rs.cc",
     ]
     _rust_output_mappings += [
-      rebase_path("//bazel-bin/experimental/rust_bmp/ffi/libffi_rs.a",
-                  root_build_dir) + "=librust_bmp_ffi_rs.a",
-      rebase_path("//bazel-bin/experimental/rust_bmp/ffi/FFI.rs.h",
-                  root_build_dir) + "=experimental/rust_bmp/ffi/FFI.rs.h",
-      rebase_path("//bazel-bin/experimental/rust_bmp/ffi/FFI.rs.cc",
-                  root_build_dir) + "=experimental/rust_bmp/ffi/FFI.rs.cc",
+      rebase_path("//bazel-bin/rust/bmp/libffi_rs.a", root_build_dir) +
+          "=librust_bmp_ffi_rs.a",
+      rebase_path("//bazel-bin/rust/bmp/FFI.rs.h", root_build_dir) +
+          "=rust/bmp/FFI.rs.h",
+      rebase_path("//bazel-bin/rust/bmp/FFI.rs.cc", root_build_dir) +
+          "=rust/bmp/FFI.rs.cc",
     ]
   }
 
@@ -1699,7 +1706,8 @@ config("rust_common_cxx_bridge_public_config") {
 }
 
 optional("rust_common") {
-  enabled = skia_use_rust_png_decode || skia_use_rust_png_encode
+  enabled = skia_use_rust_png_decode || skia_use_rust_png_encode ||
+            skia_use_rust_bmp_decode
   public_defines = []
   if (skia_use_rust_png_for_android) {
     public_defines += [ "SK_CODEC_USES_PNG_WITH_RUST_FOR_ANDROID" ]
@@ -1787,17 +1795,14 @@ optional("png_encode_rust") {
 }
 
 if (skia_use_rust_bmp_decode) {
-  config("rust_bmp_cxx_bridge_public_config") {
-    include_dirs = [ "$root_out_dir" ]
-  }
   config("rust_bmp_cxx_bridge_private_config") {
     include_dirs = [ "." ]
   }
   skia_source_set("rust_bmp_cxx_bridge") {
     deps = [ ":rust_all_ffi_bazel_build" ]
-    public = [ "${root_out_dir}/experimental/rust_bmp/ffi/FFI.rs.h" ]
-    sources = [ "${root_out_dir}/experimental/rust_bmp/ffi/FFI.rs.cc" ]
-    public_configs = [ ":rust_bmp_cxx_bridge_public_config" ]
+    public = [ "${root_out_dir}/rust/bmp/FFI.rs.h" ]
+    sources = [ "${root_out_dir}/rust/bmp/FFI.rs.cc" ]
+    public_configs = [ ":rust_common_cxx_bridge_public_config" ]
     configs = [ ":rust_bmp_cxx_bridge_private_config" ]
   }
 }
@@ -1805,16 +1810,12 @@ if (skia_use_rust_bmp_decode) {
 optional("bmp_decode_rust") {
   public_defines = [ "SK_CODEC_DECODES_BMP_WITH_RUST" ]
   enabled = skia_use_rust_bmp_decode
-  public = [ "experimental/rust_bmp/decoder/SkBmpRustDecoder.h" ]
-  sources = [
-    "experimental/rust_bmp/decoder/SkBmpRustDecoder.cpp",
-    "experimental/rust_bmp/decoder/SkBmpRustDecoder.h",
-    "experimental/rust_bmp/decoder/impl/SkBmpRustCodec.cpp",
-    "experimental/rust_bmp/decoder/impl/SkBmpRustCodec.h",
-  ]
+  public = skia_codec_rust_bmp_public
+  sources = skia_codec_rust_bmp
   sources_for_tests = [ "tests/SkBmpRustDecoderTest.cpp" ]
   deps = [
     ":rust_bmp_cxx_bridge",
+    ":rust_common",
     ":rust_ffi_libs",
   ]
   libs = [ "c++" ]
@@ -1833,7 +1834,10 @@ optional("webp_encode") {
   public_defines = [ "SK_CODEC_ENCODES_WEBP" ]
   public = skia_encode_webp_public
 
-  deps = [ "//third_party/libwebp" ]
+  deps = [
+    ":core",
+    "//third_party/libwebp",
+  ]
   sources = skia_encode_webp_srcs
 }
 
@@ -1844,7 +1848,10 @@ optional("wuffs") {
     "SK_CODEC_DECODES_GIF",
   ]
 
-  deps = [ "//third_party/wuffs" ]
+  deps = [
+    ":core",
+    "//third_party/wuffs",
+  ]
   sources = [ "src/codec/SkWuffsCodec.cpp" ]
 }
 
@@ -1852,7 +1859,10 @@ optional("xml") {
   enabled = skia_use_expat || skia_use_jpeg_gainmaps
   public_defines = [ "SK_XML" ]
 
-  deps = [ "//third_party/expat" ]
+  deps = [
+    ":core",
+    "//third_party/expat",
+  ]
   sources = skia_xml_sources
   sources += skia_codec_xmp
   sources += skia_svg_writer_sources
@@ -2150,12 +2160,14 @@ if (is_canvaskit) {
     public_configs = [ ":skia_public" ]
 
     sources = [
+      "tools/ProcsUtils.cpp",
       "tools/SkSharingProc.cpp",
       "tools/UrlDataManager.cpp",
       "tools/debugger/DebugCanvas.cpp",
       "tools/debugger/DebugLayerManager.cpp",
       "tools/debugger/DrawCommand.cpp",
       "tools/debugger/JsonWriteBuffer.cpp",
+      "tools/fonts/FontToolUtils.cpp",
     ]
   }
 }
@@ -2649,14 +2661,14 @@ if (skia_enable_tools) {
       "tools/AutoreleasePool.h",
       "tools/DecodeUtils.cpp",
       "tools/DecodeUtils.h",
-      "tools/DeserialProcsUtils.cpp",
-      "tools/DeserialProcsUtils.h",
       "tools/EncodeUtils.cpp",
       "tools/EncodeUtils.h",
       "tools/GpuToolUtils.h",
       "tools/LsanSuppressions.cpp",
       "tools/ProcStats.cpp",
       "tools/ProcStats.h",
+      "tools/ProcsUtils.cpp",
+      "tools/ProcsUtils.h",
       "tools/Resources.cpp",
       "tools/Resources.h",
       "tools/RuntimeBlendUtils.cpp",
@@ -3218,6 +3230,7 @@ if (skia_enable_tools) {
         "fuzz/oss_fuzz/FuzzSkRuntimeColorFilter.cpp",
         "fuzz/oss_fuzz/FuzzSkRuntimeEffect.cpp",
         "fuzz/oss_fuzz/FuzzTextBlobDeserialize.cpp",
+        "tools/ProcsUtils.cpp",
         "tools/UrlDataManager.cpp",
         "tools/debugger/DebugCanvas.cpp",
         "tools/debugger/DebugLayerManager.cpp",

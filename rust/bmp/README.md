@@ -21,26 +21,26 @@ To build the code from this directory from Skia:
 
 ```
 $ cd skia-repo-root
-$ bazelisk build //src/codec:rust_bmp_decoder //experimental/rust_bmp/...
+$ bazelisk build //src/codec:rust_bmp_decoder //rust/bmp/...
 ```
 
 To run unit tests:
 
 ```
-$ bazelisk test //experimental/rust_bmp/ffi:test_bmp_ffi
+$ bazelisk test //rust/bmp:test_bmp_ffi
 ```
 
 To build the fuzzer:
 
 ```
-$ bazelisk build //experimental/rust_bmp/ffi:fuzz_rust_bmp
+$ bazelisk build //rust/bmp:fuzz_rust_bmp
 ```
 
 To run the fuzzer with the corpus:
 
 ```
-$ for bmp in experimental/rust_bmp/fuzz/corpus/*.bmp; do
-    cat "$bmp" | bazel-bin/experimental/rust_bmp/ffi/fuzz_rust_bmp
+$ for bmp in rust/bmp/fuzz/corpus/*.bmp; do
+    cat "$bmp" | bazel-bin/rust/bmp/fuzz_rust_bmp
   done
 ```
 
@@ -87,24 +87,14 @@ $ out/RustBmp/dm --src tests --nogpu \
 ## Architecture
 
 ```
-experimental/rust_bmp/
-├── ffi/                              # Rust implementation core
-│   ├── lib.rs                        # Crate root
-│   ├── FFI.rs                        # C++ interface bridge
-│   ├── bmp_decoder.rs                # Main BMP decoding logic
-│   ├── bmp_header.rs                 # BMP header parsing and validation
-│   ├── bmp_constants.rs              # Format constants and definitions
-│   ├── bmp_types.rs                  # Type definitions
-│   ├── bmp_icc.rs                    # ICC profile support through moxcms crate
-│   ├── bmp_jpeg_decoder.rs           # Embedded JPEG handling through zune-jpeg crate
-│   ├── bmp_png_decoder.rs            # Embedded PNG handling through png crate
-│   └── BUILD.bazel                   # Bazel build configuration
-├── decoder/                          # C++ integration layer
-│   ├── SkBmpRustDecoder.h/.cpp       # Skia SkCodec factory
-│   ├── impl/
-│   │   └── SkBmpRustCodec.h/.cpp     # Core codec implementation
-│   └── BUILD.bazel                   # Bazel build configuration
+rust/bmp/
+├── FFI.rs                            # C++ interface bridge
+├── BUILD.bazel                       # Bazel build configuration
 └── README.md                         # This file
+
+include/codec/SkBmpRustDecoder.h      # Skia SkCodec factory API
+src/codec/SkBmpRustDecoder.cpp        # Skia SkCodec factory implementation
+src/codec/SkBmpRustCodec.h/.cpp       # Core codec implementation
 ```
 
 ## Differences between `SkBmpCodec` and `SkBmpRustCodec`

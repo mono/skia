@@ -5,6 +5,12 @@ load(
     "skia_filegroup",
 )
 
+package(
+    default_applicable_licenses = ["//:license"],
+)
+
+licenses(["notice"])
+
 skia_filegroup(
     name = "rs_srcs",
     srcs = [
@@ -21,7 +27,7 @@ rust_cxx_bridge(
     name = "cxx_bridge",
     src = "FFI.rs",
     visibility = [
-        "//experimental/rust_bmp:__subpackages__",
+        "//src/codec:__pkg__",
     ],
     deps = ["//rust/common:ffi_utils"],
 )
@@ -31,7 +37,7 @@ rust_static_library(
     srcs = [":rs_srcs"],
     crate_root = "FFI.rs",
     visibility = [
-        "//experimental/rust_bmp:__subpackages__",
+        "//src/codec:__pkg__",
     ],
     deps = [
         ":cxx_bridge",
