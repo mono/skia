@@ -18,7 +18,7 @@
 
 namespace skgpu::graphite {
 
-std::pair<DrawParams*, Insertion> DrawList::recordDraw(
+std::pair<DrawParams*, Layer*> DrawList::recordDraw(
         const Renderer* renderer,
         const Transform& localToDevice,
         const Geometry& geometry,
@@ -29,7 +29,7 @@ std::pair<DrawParams*, Insertion> DrawList::recordDraw(
         BarrierType barrierBeforeDraws,
         PipelineDataGatherer* gatherer,
         const StrokeStyle* stroke,
-        const Insertion& latestInsertion) {
+        Layer*) {
 
     SkASSERT(localToDevice.valid());
     SkASSERT(!geometry.isEmpty() && !clip.drawBounds().isEmptyNegativeOrNaN());
@@ -84,7 +84,7 @@ std::pair<DrawParams*, Insertion> DrawList::recordDraw(
     }
 #endif
 
-    return {nullptr, {}};
+    return {nullptr, nullptr};
 }
 
 std::unique_ptr<DrawPass> DrawList::snapDrawPass(Recorder* recorder,
@@ -121,7 +121,7 @@ std::unique_ptr<DrawPass> DrawList::snapDrawPass(Recorder* recorder,
     // The DrawList is converted directly into the DrawPass' data structures, but once the DrawPass
     // is returned from Make(), it is considered immutable.
     std::unique_ptr<DrawPass> drawPass(new DrawPass(target, {fLoadOp, StoreOp::kStore}, fClearColor,
-                                                    recorder->priv().refFloatStorageManager()));
+                                                    recorder->priv().refStorageBufferManager()));
 
     DrawBufferManager* bufferMgr = recorder->priv().drawBufferManager();
     DrawWriter drawWriter(&drawPass->fCommandList, bufferMgr);
