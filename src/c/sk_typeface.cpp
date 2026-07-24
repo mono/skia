@@ -29,6 +29,8 @@ extern sk_sp<SkFontMgr> SkFontMgr_New_Custom_Embedded(const SkEmbeddedResourceHe
 #include "include/ports/SkFontScanner_FreeType.h"
 #elif defined(SK_BUILD_FOR_MAC) || defined(SK_BUILD_FOR_IOS)
 #include "include/ports/SkFontMgr_mac_ct.h"
+#elif defined(SK_BUILD_FOR_NANOSERVER)
+#include "include/ports/SkFontMgr_empty.h"
 #elif defined(SK_BUILD_FOR_WIN)
 #include "include/ports/SkTypeface_win.h"
 #elif defined(SK_FONTMGR_FONTCONFIG_AVAILABLE)
@@ -178,7 +180,7 @@ sk_fontmgr_t* sk_fontmgr_create_default(void) {
 #elif defined(SK_BUILD_FOR_MAC) || defined(SK_BUILD_FOR_IOS)
     return ToFontMgr(SkFontMgr_New_CoreText(nullptr).release());
 #elif defined(SK_BUILD_FOR_NANOSERVER)
-    return ToFontMgr(SkFontMgr::RefEmpty().release());
+    return ToFontMgr(SkFontMgr_New_Custom_Empty().release());
 #elif defined(SK_BUILD_FOR_WIN)
     return ToFontMgr(SkFontMgr_New_DirectWrite().release());
 #elif defined(SK_FONTMGR_FONTCONFIG_AVAILABLE)
