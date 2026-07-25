@@ -109,6 +109,10 @@ SK_C_API int gr_backendrendertarget_get_stencils(const gr_backendrendertarget_t*
 SK_C_API gr_backend_t gr_backendrendertarget_get_backend(const gr_backendrendertarget_t* rendertarget);
 SK_C_API bool gr_backendrendertarget_get_gl_framebufferinfo(const gr_backendrendertarget_t* rendertarget, gr_gl_framebufferinfo_t* glInfo);
 
+// Drives completion of asynchronous work (e.g. sk_image/sk_surface_async_rescale_and_read_pixels)
+// on the Ganesh backend. A submit must also occur to guarantee a finite time before callbacks fire.
+SK_C_API void gr_direct_context_check_async_work_completion(gr_direct_context_t* context);
+
 
 SK_C_PLUS_PLUS_END_GUARD
 

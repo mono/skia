@@ -140,6 +140,41 @@ bool sk_image_scale_pixels(const sk_image_t* image, const sk_pixmap_t* dst, cons
     return AsImage(image)->scalePixels(*AsPixmap(dst), *AsSamplingOptions(sampling), (SkImage::CachingHint)cachingHint);
 }
 
+int32_t sk_image_async_read_result_get_count(const sk_image_async_read_result_t* result) {
+    return AsImageAsyncReadResult(result)->count();
+}
+
+const void* sk_image_async_read_result_get_data(const sk_image_async_read_result_t* result, int32_t planeIndex) {
+    return AsImageAsyncReadResult(result)->data(planeIndex);
+}
+
+size_t sk_image_async_read_result_get_row_bytes(const sk_image_async_read_result_t* result, int32_t planeIndex) {
+    return AsImageAsyncReadResult(result)->rowBytes(planeIndex);
+}
+
+void sk_image_async_rescale_and_read_pixels(const sk_image_t* image, const sk_imageinfo_t* dstInfo, const sk_irect_t* srcRect, sk_image_rescale_gamma_t rescaleGamma, sk_image_rescale_mode_t rescaleMode, sk_image_async_read_pixels_proc callback, void* context) {
+    // The read may complete asynchronously (Ganesh), so the (proc + context) pair is heap-allocated
+    // and freed by the trampoline once the callback fires. Mirrors the sk_font_get_paths bridge idiom.
+    struct Bridge {
+        void* fContext;
+        sk_image_async_read_pixels_proc fProc;
+    };
+    auto* bridge = new Bridge { context, callback };
+    auto proc = [](SkImage::ReadPixelsContext c, std::unique_ptr<const SkImage::AsyncReadResult> result) {
+        auto* bridge = static_cast<Bridge*>(c);
+        bridge->fProc(bridge->fContext, ToImageAsyncReadResult(result.get()));
+        delete bridge;
+        // 'result' (and the pointer the callback saw) is destroyed here as the unique_ptr goes out of scope.
+    };
+    AsImage(image)->asyncRescaleAndReadPixels(
+        AsImageInfo(dstInfo),
+        *AsIRect(srcRect),
+        (SkImage::RescaleGamma)rescaleGamma,
+        (SkImage::RescaleMode)rescaleMode,
+        proc,
+        bridge);
+}
+
 sk_data_t* sk_image_ref_encoded(const sk_image_t* cimage) {
     // refEncodedData() returns sk_sp<const SkData> in m147
     sk_sp<const SkData> data = AsImage(cimage)->refEncodedData();
