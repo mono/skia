@@ -153,6 +153,8 @@ size_t sk_image_async_read_result_get_row_bytes(const sk_image_async_read_result
 }
 
 void sk_image_async_rescale_and_read_pixels(const sk_image_t* image, const sk_imageinfo_t* dstInfo, const sk_irect_t* srcRect, sk_image_rescale_gamma_t rescaleGamma, sk_image_rescale_mode_t rescaleMode, sk_image_async_read_pixels_proc callback, void* context) {
+    if (!callback)
+        return;
     // The read may complete asynchronously (Ganesh), so the (proc + context) pair is heap-allocated
     // and freed by the trampoline once the callback fires. Mirrors the sk_font_get_paths bridge idiom.
     struct Bridge {
