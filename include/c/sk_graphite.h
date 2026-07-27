@@ -196,6 +196,14 @@ SK_C_API bool                          sk_graphite_texture_info_get_mipmapped  (
 // NOT work on Graphite-backed surfaces in production builds (Skia gates the
 // implementation on GPU_TEST_UTILS — see src/gpu/graphite/Device.cpp).
 //
+// This is the Graphite-specific entry point (the async read lives on
+// graphite::Context, not SkSurface). It shares the backend-neutral result type,
+// rescale enums and callback typedef with the SkImage/SkSurface async reads —
+// see sk_image_async_read_result_t, sk_image_rescale_gamma_t,
+// sk_image_rescale_mode_t and sk_image_async_read_pixels_proc in sk_types.h.
+// Read the delivered planes with sk_image_async_read_result_get_count/_data/
+// _get_row_bytes.
+//
 // The callback is invoked exactly once. The result pointer is non-owning and
 // is only valid for the duration of the callback invocation. A null result
 // means failure (rect out of bounds, lost device, etc.).
@@ -204,39 +212,17 @@ SK_C_API bool                          sk_graphite_texture_info_get_mipmapped  (
 // from the same thread that owns the context. The callback fires on the
 // thread that calls checkAsyncWorkCompletion.
 
-typedef struct sk_graphite_async_read_result_t sk_graphite_async_read_result_t;
-
-typedef enum {
-    SRC_SK_GRAPHITE_RESCALE_GAMMA    = 0,
-    LINEAR_SK_GRAPHITE_RESCALE_GAMMA = 1,
-} sk_graphite_rescale_gamma_t;
-
-typedef enum {
-    NEAREST_SK_GRAPHITE_RESCALE_MODE         = 0,
-    REPEATED_LINEAR_SK_GRAPHITE_RESCALE_MODE = 1,
-    REPEATED_CUBIC_SK_GRAPHITE_RESCALE_MODE  = 2,
-} sk_graphite_rescale_mode_t;
-
-typedef void (*sk_graphite_async_read_pixels_proc)(
-    void* callbackContext,
-    const sk_graphite_async_read_result_t* result /* non-owning, valid only during callback */);
-
 SK_C_API void sk_graphite_context_async_rescale_and_read_pixels_surface(
     sk_graphite_context_t* context,
     const sk_surface_t* surface,
     const sk_imageinfo_t* dstInfo,
     const sk_irect_t* srcRect,
-    sk_graphite_rescale_gamma_t rescaleGamma,
-    sk_graphite_rescale_mode_t  rescaleMode,
-    sk_graphite_async_read_pixels_proc callback,
+    sk_image_rescale_gamma_t rescaleGamma,
+    sk_image_rescale_mode_t  rescaleMode,
+    sk_image_async_read_pixels_proc callback,
     void* callbackContext);
 
 SK_C_API void sk_graphite_context_check_async_work_completion(sk_graphite_context_t* context);
-
-// AsyncReadResult accessors — call only inside the async-read callback.
-SK_C_API int32_t      sk_graphite_async_read_result_get_count    (const sk_graphite_async_read_result_t* result);
-SK_C_API const void*  sk_graphite_async_read_result_get_data     (const sk_graphite_async_read_result_t* result, int32_t planeIndex);
-SK_C_API size_t       sk_graphite_async_read_result_get_row_bytes(const sk_graphite_async_read_result_t* result, int32_t planeIndex);
 
 // ImageProvider — bridge so a managed (or any external) caller can satisfy
 // Graphite's "convert non-Graphite SkImage to Graphite-backed" hook without

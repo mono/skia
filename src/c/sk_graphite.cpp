@@ -419,10 +419,12 @@ extern "C" SK_C_API bool sk_graphite_texture_info_get_mipmapped(const sk_graphit
 // Async readback — pass-through wrapping of Context::asyncRescaleAndReadPixels.
 // The C user provides a function-pointer callback + context void*. Our adapter
 // receives the unique_ptr<AsyncReadResult> from Skia, hands the user a non-owning
-// pointer to it, and lets the unique_ptr destruct when the callback returns.
+// pointer to it (via the backend-neutral sk_image_async_read_result_t), and lets
+// the unique_ptr destruct when the callback returns. The result is read back with
+// the shared sk_image_async_read_result_get_* accessors (sk_image.cpp).
 namespace {
 struct AsyncReadCallbackBridge {
-    sk_graphite_async_read_pixels_proc userCallback;
+    sk_image_async_read_pixels_proc userCallback;
     void* userContext;
 };
 
@@ -431,7 +433,7 @@ void asyncReadCallbackAdapter(SkImage::ReadPixelsContext rawBridge,
     auto* bridge = static_cast<AsyncReadCallbackBridge*>(rawBridge);
     bridge->userCallback(
         bridge->userContext,
-        reinterpret_cast<const sk_graphite_async_read_result_t*>(result.get()));
+        ToImageAsyncReadResult(result.get()));
     delete bridge;
     // unique_ptr destroys result here as it goes out of scope — pointer the user
     // saw is now invalid. Documented in sk_graphite.h.
@@ -443,11 +445,13 @@ extern "C" SK_C_API void sk_graphite_context_async_rescale_and_read_pixels_surfa
     const sk_surface_t* surface,
     const sk_imageinfo_t* cdstInfo,
     const sk_irect_t* csrcRect,
-    sk_graphite_rescale_gamma_t rescaleGamma,
-    sk_graphite_rescale_mode_t  rescaleMode,
-    sk_graphite_async_read_pixels_proc callback,
+    sk_image_rescale_gamma_t rescaleGamma,
+    sk_image_rescale_mode_t  rescaleMode,
+    sk_image_async_read_pixels_proc callback,
     void* callbackContext)
 {
+    if (!callback)
+        return;
     auto* bridge = new AsyncReadCallbackBridge{callback, callbackContext};
     AsGraphiteContext(h)->asyncRescaleAndReadPixels(
         AsSurface(surface),
@@ -461,24 +465,6 @@ extern "C" SK_C_API void sk_graphite_context_async_rescale_and_read_pixels_surfa
 
 extern "C" SK_C_API void sk_graphite_context_check_async_work_completion(sk_graphite_context_t* h) {
     AsGraphiteContext(h)->checkAsyncWorkCompletion();
-}
-
-// AsyncReadResult accessors. The opaque sk_graphite_async_read_result_t* maps
-// directly to const SkImage::AsyncReadResult*.
-static inline const SkImage::AsyncReadResult* AsAsyncReadResult(const sk_graphite_async_read_result_t* h) {
-    return reinterpret_cast<const SkImage::AsyncReadResult*>(h);
-}
-
-extern "C" SK_C_API int32_t sk_graphite_async_read_result_get_count(const sk_graphite_async_read_result_t* h) {
-    return AsAsyncReadResult(h)->count();
-}
-
-extern "C" SK_C_API const void* sk_graphite_async_read_result_get_data(const sk_graphite_async_read_result_t* h, int32_t planeIndex) {
-    return AsAsyncReadResult(h)->data(planeIndex);
-}
-
-extern "C" SK_C_API size_t sk_graphite_async_read_result_get_row_bytes(const sk_graphite_async_read_result_t* h, int32_t planeIndex) {
-    return AsAsyncReadResult(h)->rowBytes(planeIndex);
 }
 
 #else  // !SK_GRAPHITE — stubs so the C ABI surface is consistent regardless of build config
@@ -504,11 +490,8 @@ extern "C" SK_C_API int32_t                       sk_graphite_recorder_get_max_t
 extern "C" SK_C_API sk_graphite_recording_t*      sk_graphite_recorder_snap(sk_graphite_recorder_t*) { return nullptr; }
 extern "C" SK_C_API void                          sk_graphite_recording_delete(sk_graphite_recording_t*) {}
 extern "C" SK_C_API sk_surface_t*                 sk_graphite_surface_make_render_target(sk_graphite_recorder_t*, const sk_imageinfo_t*, bool, const sk_surfaceprops_t*) { return nullptr; }
-extern "C" SK_C_API void                          sk_graphite_context_async_rescale_and_read_pixels_surface(sk_graphite_context_t*, const sk_surface_t*, const sk_imageinfo_t*, const sk_irect_t*, sk_graphite_rescale_gamma_t, sk_graphite_rescale_mode_t, sk_graphite_async_read_pixels_proc cb, void* ctx) { if (cb) cb(ctx, nullptr); }
+extern "C" SK_C_API void                          sk_graphite_context_async_rescale_and_read_pixels_surface(sk_graphite_context_t*, const sk_surface_t*, const sk_imageinfo_t*, const sk_irect_t*, sk_image_rescale_gamma_t, sk_image_rescale_mode_t, sk_image_async_read_pixels_proc cb, void* ctx) { if (cb) cb(ctx, nullptr); }
 extern "C" SK_C_API void                          sk_graphite_context_check_async_work_completion(sk_graphite_context_t*) {}
-extern "C" SK_C_API int32_t                       sk_graphite_async_read_result_get_count(const sk_graphite_async_read_result_t*) { return 0; }
-extern "C" SK_C_API const void*                   sk_graphite_async_read_result_get_data(const sk_graphite_async_read_result_t*, int32_t) { return nullptr; }
-extern "C" SK_C_API size_t                        sk_graphite_async_read_result_get_row_bytes(const sk_graphite_async_read_result_t*, int32_t) { return 0; }
 extern "C" SK_C_API sk_surface_t*                 sk_graphite_surface_wrap_backend_texture(sk_graphite_recorder_t*, const sk_graphite_backend_texture_t*, sk_colortype_t, sk_colorspace_t*, const sk_surfaceprops_t*, sk_graphite_release_proc, void*) { return nullptr; }
 extern "C" SK_C_API void                          sk_graphite_backend_texture_delete(sk_graphite_backend_texture_t*) {}
 extern "C" SK_C_API bool                          sk_graphite_backend_texture_is_valid(const sk_graphite_backend_texture_t*) { return false; }
