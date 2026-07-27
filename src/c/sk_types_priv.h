@@ -13,6 +13,7 @@
 #include "include/c/sk_types.h"
 
 #include "include/core/SkTypes.h" // required to make sure SK_GANESH is defined
+#include "include/core/SkImage.h" // for the SkImage::AsyncReadResult mapping below
 
 #define SK_SKIP_ARG__(keep, skip, ...) skip
 #define SK_SKIP_ARG_(args) SK_SKIP_ARG__ args
@@ -126,6 +127,9 @@ DEF_CLASS_MAP(SkFontMgr, sk_fontmgr_t, FontMgr)
 DEF_CLASS_MAP(SkFontStyle, sk_fontstyle_t, FontStyle)
 DEF_CLASS_MAP(SkFontStyleSet, sk_fontstyleset_t, FontStyleSet)
 DEF_CLASS_MAP(SkImage, sk_image_t, Image)
+// SkImage::AsyncReadResult is a class-nested type, so it uses the namespace-qualified map
+// (like DEF_CLASS_MAP_WITH_NS(skottie::Animation, Builder, ...)) rather than a plain DEF_CLASS_MAP.
+DEF_MAP_WITH_NS(SkImage, AsyncReadResult, sk_image_async_read_result_t, ImageAsyncReadResult)
 DEF_CLASS_MAP(SkImageFilter, sk_imagefilter_t, ImageFilter)
 DEF_CLASS_MAP(SkMaskFilter, sk_maskfilter_t, MaskFilter)
 DEF_CLASS_MAP(SkMemoryStream, sk_stream_memorystream_t, MemoryStream)

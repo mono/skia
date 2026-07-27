@@ -50,6 +50,11 @@ SK_C_API sk_image_t* sk_image_make_raster_image(const sk_image_t* cimage);
 SK_C_API sk_image_t* sk_image_make_with_filter_raster(const sk_image_t* cimage, const sk_imagefilter_t* filter, const sk_irect_t* subset, const sk_irect_t* clipBounds, sk_irect_t* outSubset, sk_ipoint_t* outOffset);
 SK_C_API sk_image_t* sk_image_make_with_filter(const sk_image_t* cimage, gr_recording_context_t* context, const sk_imagefilter_t* filter, const sk_irect_t* subset, const sk_irect_t* clipBounds, sk_irect_t* outSubset, sk_ipoint_t* outOffset);
 
+SK_C_API int32_t sk_image_async_read_result_get_count(const sk_image_async_read_result_t* result);
+SK_C_API const void* sk_image_async_read_result_get_data(const sk_image_async_read_result_t* result, int32_t planeIndex);
+SK_C_API size_t sk_image_async_read_result_get_row_bytes(const sk_image_async_read_result_t* result, int32_t planeIndex);
+SK_C_API void sk_image_async_rescale_and_read_pixels(const sk_image_t* image, const sk_imageinfo_t* dstInfo, const sk_irect_t* srcRect, sk_image_rescale_gamma_t rescaleGamma, sk_image_rescale_mode_t rescaleMode, sk_image_async_read_pixels_proc callback, void* context);
+
 SK_C_PLUS_PLUS_END_GUARD
 
 #endif

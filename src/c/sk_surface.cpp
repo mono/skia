@@ -97,6 +97,30 @@ bool sk_surface_read_pixels(sk_surface_t* surface, sk_imageinfo_t* dstInfo, void
     return AsSurface(surface)->readPixels(AsImageInfo(dstInfo), dstPixels, dstRowBytes, srcX, srcY);
 }
 
+void sk_surface_async_rescale_and_read_pixels(sk_surface_t* surface, const sk_imageinfo_t* dstInfo, const sk_irect_t* srcRect, sk_image_rescale_gamma_t rescaleGamma, sk_image_rescale_mode_t rescaleMode, sk_image_async_read_pixels_proc callback, void* context) {
+    if (!callback)
+        return;
+    // The read may complete asynchronously (Ganesh), so the (proc + context) pair is heap-allocated
+    // and freed by the trampoline once the callback fires. Mirrors the sk_font_get_paths bridge idiom.
+    struct Bridge {
+        void* fContext;
+        sk_image_async_read_pixels_proc fProc;
+    };
+    auto* bridge = new Bridge { context, callback };
+    auto proc = [](SkImage::ReadPixelsContext c, std::unique_ptr<const SkImage::AsyncReadResult> result) {
+        auto* bridge = static_cast<Bridge*>(c);
+        bridge->fProc(bridge->fContext, ToImageAsyncReadResult(result.get()));
+        delete bridge;
+    };
+    AsSurface(surface)->asyncRescaleAndReadPixels(
+        AsImageInfo(dstInfo),
+        *AsIRect(srcRect),
+        (SkImage::RescaleGamma)rescaleGamma,
+        (SkImage::RescaleMode)rescaleMode,
+        proc,
+        bridge);
+}
+
 const sk_surfaceprops_t* sk_surface_get_props(sk_surface_t* surface) {
     return ToSurfaceProps(&AsSurface(surface)->props());
 }

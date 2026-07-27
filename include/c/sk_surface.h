@@ -45,6 +45,8 @@ SK_C_API void sk_surfaceprops_delete(sk_surfaceprops_t* props);
 SK_C_API uint32_t sk_surfaceprops_get_flags(sk_surfaceprops_t* props);
 SK_C_API sk_pixelgeometry_t sk_surfaceprops_get_pixel_geometry(sk_surfaceprops_t* props);
 
+SK_C_API void sk_surface_async_rescale_and_read_pixels(sk_surface_t* surface, const sk_imageinfo_t* dstInfo, const sk_irect_t* srcRect, sk_image_rescale_gamma_t rescaleGamma, sk_image_rescale_mode_t rescaleMode, sk_image_async_read_pixels_proc callback, void* context);
+
 SK_C_PLUS_PLUS_END_GUARD
 
 #endif
