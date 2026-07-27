@@ -804,6 +804,31 @@ typedef void (*sk_surface_raster_release_proc)(void* addr, void* context);
 
 typedef void (*sk_glyph_path_proc)(const sk_path_t* pathOrNull, const sk_matrix_t* matrix, void* context);
 
+// The result of an asynchronous rescale-and-read-pixels request. This maps directly to the core
+// SkImage::AsyncReadResult and is shared by the SkImage, SkSurface and (GPU backend) context
+// readback APIs. The pointer is non-owning and is only valid for the duration of the
+// sk_image_async_read_pixels_proc callback.
+typedef struct sk_image_async_read_result_t sk_image_async_read_result_t;
+
+// Controls the gamma that rescaling occurs in. Maps to SkImage::RescaleGamma.
+typedef enum {
+    SRC_SK_IMAGE_RESCALE_GAMMA,
+    LINEAR_SK_IMAGE_RESCALE_GAMMA,
+} sk_image_rescale_gamma_t;
+
+// Controls the technique (and cost) of the rescaling. Maps to SkImage::RescaleMode.
+typedef enum {
+    NEAREST_SK_IMAGE_RESCALE_MODE,
+    LINEAR_SK_IMAGE_RESCALE_MODE,
+    REPEATED_LINEAR_SK_IMAGE_RESCALE_MODE,
+    REPEATED_CUBIC_SK_IMAGE_RESCALE_MODE,
+} sk_image_rescale_mode_t;
+
+// Called when an asynchronous read is ready or on failure. Maps to SkImage::ReadPixelsCallback.
+// 'result' is non-owning and is only valid for the duration of the callback; it is nullptr on
+// failure.
+typedef void (*sk_image_async_read_pixels_proc)(void* context, const sk_image_async_read_result_t* result);
+
 typedef enum {
     ALLOW_SK_IMAGE_CACHING_HINT,
     DISALLOW_SK_IMAGE_CACHING_HINT,

@@ -158,6 +158,10 @@ void gr_direct_context_flush_and_submit(gr_direct_context_t* context, bool syncC
     SK_ONLY_GPU(AsGrDirectContext(context)->flushAndSubmit((GrSyncCpu)syncCpu));
 }
 
+void gr_direct_context_check_async_work_completion(gr_direct_context_t* context) {
+    SK_ONLY_GPU(AsGrDirectContext(context)->checkAsyncWorkCompletion());
+}
+
 void gr_direct_context_flush_image(gr_direct_context_t* context, const sk_image_t* image) {
     SK_ONLY_GPU(AsGrDirectContext(context)->flush(sk_ref_sp(AsImage(image)), GrFlushInfo()));
 }
