@@ -15,7 +15,10 @@
 
 namespace skgpu::graphite {
 namespace {
-#if defined(__EMSCRIPTEN__)
+// mono/skia: emdawnwebgpu ships wgpu::Future + WaitAny + the modern
+// OnSubmittedWorkDone(CallbackMode, callback) signature, so under it we take
+// the native `#else` submission class instead of the legacy AsyncWait one.
+#if defined(__EMSCRIPTEN__) && !defined(SKIA_USING_EMDAWNWEBGPU)
 // GpuWorkSubmission with AsyncWait. This is useful for wasm where wgpu::Future
 // is not available yet.
 class DawnWorkSubmissionWithAsyncWait final : public GpuWorkSubmission {
@@ -124,7 +127,8 @@ QueueManager::OutstandingSubmission DawnQueueManager::onSubmitToGpu(const Submit
 
     fQueue.Submit(/*commandCount=*/1, &wgpuCmdBuffer);
 
-#if defined(__EMSCRIPTEN__)
+// mono/skia: pair with the class-selection gate above.
+#if defined(__EMSCRIPTEN__) && !defined(SKIA_USING_EMDAWNWEBGPU)
     return std::make_unique<DawnWorkSubmissionWithAsyncWait>(
             std::move(fCurrentCommandBuffer), this, dawnSharedContext());
 #else

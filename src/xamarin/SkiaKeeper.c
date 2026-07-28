@@ -50,6 +50,11 @@
 #include "include/c/sksg_invalidation_controller.h"
 #include "include/c/skresources_resource_provider.h"
 
+#include "include/c/sk_graphite.h"
+#include "include/c/sk_graphite_dawn.h"
+#include "include/c/sk_graphite_metal.h"
+#include "include/c/sk_graphite_vulkan.h"
+
 
 // Xamarin
 #include "include/xamarin/sk_managedstream.h"
@@ -103,6 +108,16 @@ void** KeepSkiaCSymbols (void)
         (void*)skottie_animation_make_from_stream,
         (void*)sksg_invalidation_controller_new,
         (void*)skresources_resource_provider_ref,
+
+        // Graphite — one symbol per shim cpp, so the linker pulls in the
+        // whole object file (and its sibling symbols) when libskia.a is
+        // consumed via -lskia. The per-backend cpps export stubs in their
+        // !SK_GRAPHITE / !SK_BACKEND branches, so anchoring is safe even
+        // when a backend is disabled.
+        (void*)sk_graphite_backend_is_available,
+        (void*)sk_graphite_context_make_dawn,
+        (void*)sk_graphite_context_make_metal,
+        (void*)sk_graphite_context_make_vulkan,
 
         // Xamarin
         (void*)sk_compatpaint_new_with_font,

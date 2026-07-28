@@ -1920,6 +1920,17 @@ skia_source_set("core") {
   if (skia_use_metal) {
     defines += [ "SK_METAL" ]
   }
+  # mono/skia: same reasoning as the GR_* defines above — :graphite's
+  # all_dependent_configs apply SK_GRAPHITE/SK_DAWN to dependents but not to
+  # :core itself. The new src/c/sk_graphite*.cpp shims live in :core, so they
+  # need these defines to compile their bodies (otherwise they collapse to
+  # the !SK_GRAPHITE / !SK_DAWN stubs and never link the real symbols).
+  if (skia_enable_graphite) {
+    defines += [ "SK_GRAPHITE" ]
+  }
+  if (skia_use_dawn) {
+    defines += [ "SK_DAWN" ]
+  }
 
   # These deps don't belong to :core, but they are currently needed to support (de)serialization.
   deps = [

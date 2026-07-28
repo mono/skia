@@ -278,7 +278,12 @@ void DawnCaps::initCaps(const DawnBackendContext& backendContext, const ContextO
 #endif
 #endif // defined(__EMSCRIPTEN__)
 
-#if defined(__EMSCRIPTEN__)
+// mono/skia: legacy -sUSE_WEBGPU=1 headers ship wgpu::SupportedLimits;
+// emdawnwebgpu ships the modern Limits+CompatibilityModeLimits form (matching
+// native Dawn). The DawnTexelCopyBufferRowAlignmentLimits chain is a
+// Dawn-native-only extension not exposed by emdawnwebgpu, so it stays inside
+// the inner `!defined(__EMSCRIPTEN__)` gate.
+#if defined(__EMSCRIPTEN__) && !defined(SKIA_USING_EMDAWNWEBGPU)
     wgpu::SupportedLimits supportedLimits;
     // TODO(crbug.com/42241199): Update to use wgpu::Status when webgpu.h in Emscripten is updated.
     [[maybe_unused]] bool limitsSucceeded = backendContext.fDevice.GetLimits(&supportedLimits);
@@ -287,13 +292,15 @@ void DawnCaps::initCaps(const DawnBackendContext& backendContext, const ContextO
 #else
     wgpu::CompatibilityModeLimits compatLimits;
     wgpu::Limits limits{.nextInChain = &compatLimits};
+#if !defined(__EMSCRIPTEN__)
     wgpu::DawnTexelCopyBufferRowAlignmentLimits alignmentLimits{};
     if (backendContext.fDevice.HasFeature(wgpu::FeatureName::DawnTexelCopyBufferRowAlignment)) {
         compatLimits.nextInChain = &alignmentLimits;
     }
+#endif
     [[maybe_unused]] wgpu::Status status = backendContext.fDevice.GetLimits(&limits);
     SkASSERT(status == wgpu::Status::Success);
-#endif  // defined(__EMSCRIPTEN__)
+#endif  // defined(__EMSCRIPTEN__) && !defined(SKIA_USING_EMDAWNWEBGPU)
 
     fMaxTextureSize = limits.maxTextureDimension2D;
 
@@ -454,10 +461,10 @@ void DawnCaps::initShaderCaps(const wgpu::Device& device) {
     // discussions around enabling it using an extension in the future.
     shaderCaps->fInfinitySupport = false;
 
+#if !defined(__EMSCRIPTEN__)
     if (device.HasFeature(wgpu::FeatureName::DualSourceBlending)) {
         shaderCaps->fDualSourceBlendingSupport = true;
     }
-#if !defined(__EMSCRIPTEN__)
     if (device.HasFeature(wgpu::FeatureName::FramebufferFetch)) {
         shaderCaps->fFBFetchSupport = true;
     }

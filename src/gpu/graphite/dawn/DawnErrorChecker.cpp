@@ -41,7 +41,10 @@ SkEnumBitMask<DawnErrorType> DawnErrorChecker::popErrorScopes() {
         return DawnErrorType::kNoError;
     }
 
-#if defined(__EMSCRIPTEN__)
+// mono/skia: wgpu::ErrorCallback + the two-arg PopErrorScope form are legacy
+// -sUSE_WEBGPU=1 shapes; emdawnwebgpu ships the async-callback form used in
+// the native `#else` branch.
+#if defined(__EMSCRIPTEN__) && !defined(SKIA_USING_EMDAWNWEBGPU)
     struct ErrorState {
         SkEnumBitMask<DawnErrorType> fError;
         int fScopeIdx;

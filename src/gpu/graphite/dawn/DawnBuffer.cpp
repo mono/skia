@@ -15,7 +15,10 @@
 
 namespace skgpu::graphite {
 namespace {
-#if defined(__EMSCRIPTEN__)
+// mono/skia: WGPUBufferMapAsyncStatus was renamed to WGPUMapAsyncStatus and
+// its C++ wrapper became wgpu::MapAsyncStatus; emdawnwebgpu only ships the
+// new form, so take the native `#else` branch under the port.
+#if defined(__EMSCRIPTEN__) && !defined(SKIA_USING_EMDAWNWEBGPU)
 bool is_map_succeeded(WGPUBufferMapAsyncStatus status) {
     return status == WGPUBufferMapAsyncStatus_Success;
 }
@@ -55,7 +58,16 @@ void log_map_error(WGPUBufferMapAsyncStatus status, const char*) {
             statusStr = "<other>";
             break;
     }
-    SKIA_LOG(priority, "Buffer async map failed with status %s.", statusStr);
+    // mono/skia: SKIA_LOG(priority, ...) expands to `if constexpr (priority <= ...)`,
+    // which requires `priority` to be a compile-time constant. The runtime variable
+    // set by the switch above fails that constraint. Branch on the runtime value and
+    // dispatch to the fixed-level macros; only surfaces in WASM because this whole
+    // function is gated by __EMSCRIPTEN__.
+    if (priority == SkLogPriority::kDebug) {
+        SKIA_LOG_D("Buffer async map failed with status %s.", statusStr);
+    } else {
+        SKIA_LOG_E("Buffer async map failed with status %s.", statusStr);
+    }
 }
 
 #else
@@ -241,7 +253,9 @@ void DawnBuffer::onAsyncMap(GpuFinishedProc proc, GpuFinishedContext ctx) {
     bool isWrite = fBuffer.GetUsage() & wgpu::BufferUsage::MapWrite;
     auto buffer = sk_ref_sp(this);
 
-#if defined(__EMSCRIPTEN__)
+// mono/skia: paired with the map-status gate at the top of the file — the
+// modern MapAsync callback signature is what emdawnwebgpu ships.
+#if defined(__EMSCRIPTEN__) && !defined(SKIA_USING_EMDAWNWEBGPU)
     fBuffer.MapAsync(
             isWrite ? wgpu::MapMode::Write : wgpu::MapMode::Read,
             0,
