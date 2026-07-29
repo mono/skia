@@ -81,8 +81,7 @@
 
 #if defined(__EMSCRIPTEN__)
 // mono/skia: see GrGLFunctions.h — guard with __has_include so old
-// Emscripten (2.0.6 / 2.0.23 in SkiaSharp's WASM matrix) still
-// builds. Those toolchains pass __EMSCRIPTEN_major__ via -D and
+// Emscripten toolchains (2.0.x) that pre-date PR emscripten-core#25933
 // ship no <emscripten/version.h>.
 #  if __has_include(<emscripten/version.h>)
 #    include <emscripten/version.h>
@@ -3214,6 +3213,10 @@ void GrGLGpu::onFBOChanged() {
     if (this->caps()->workarounds().flush_on_framebuffer_change) {
         this->flush(FlushType::kForce);
     }
+    if (fHasUnflushedQueries &&
+        this->caps()->workarounds().flush_queries_before_deleting_or_unbinding_fbo) {
+        this->forcefullyFlushQueries();
+    }
 #ifdef SK_DEBUG
     if (fIsExecutingCommandBuffer_DebugOnly) {
         SkDebugf("WARNING: GL FBO binding changed while executing a command buffer. "
@@ -3234,6 +3237,10 @@ void GrGLGpu::deleteFramebuffer(GrGLuint fboid) {
     // We're relying on the GL state shadowing being correct in the workaround code below so we
     // need to handle a dirty context.
     this->handleDirtyContext();
+    if (fHasUnflushedQueries &&
+        this->caps()->workarounds().flush_queries_before_deleting_or_unbinding_fbo) {
+        this->forcefullyFlushQueries();
+    }
     if (fboid == fBoundDrawFramebuffer) {
         if (this->caps()->workarounds().unbind_attachments_on_bound_render_fbo_delete) {
             // This workaround only applies to deleting currently bound framebuffers
@@ -4053,7 +4060,7 @@ bool GrGLGpu::onClearBackendTexture(const GrBackendTexture& backendTexture,
     return result;
 }
 
-void GrGLGpu::deleteBackendTexture(const GrBackendTexture& tex) {
+void GrGLGpu::onDeleteBackendTexture(const GrBackendTexture& tex) {
     SkASSERT(GrBackendApi::kOpenGL == tex.backend());
 
     GrGLTextureInfo info;
@@ -4469,6 +4476,29 @@ void GrGLGpu::waitSemaphore(GrSemaphore* semaphore) {
 #endif
 }
 
+void GrGLGpu::forcefullyFlushQueries() {
+    if (!fHasUnflushedQueries) {
+        return;
+    }
+    if (this->glCaps().fenceType() == GrGLCaps::FenceType::kSyncObject) {
+        GrGLsync sync;
+        GL_CALL_RET(sync, FenceSync(GR_GL_SYNC_GPU_COMMANDS_COMPLETE, 0));
+        if (sync) {
+#if defined(__EMSCRIPTEN__) && __EMSCRIPTEN_major__ < 5
+            GL_CALL(ClientWaitSync(sync, GR_GL_SYNC_FLUSH_COMMANDS_BIT, 0, 0));
+#else
+            GL_CALL(ClientWaitSync(sync, GR_GL_SYNC_FLUSH_COMMANDS_BIT, 0));
+#endif
+            GL_CALL(DeleteSync(sync));
+            fHasUnflushedQueries = false;
+            return;
+        }
+    }
+
+    GL_CALL(Finish());
+    fHasUnflushedQueries = false;
+}
+
 std::optional<GrTimerQuery> GrGLGpu::startTimerQuery() {
     if (glCaps().timerQueryType() == GrGLCaps::TimerQueryType::kNone) {
         return {};
@@ -4484,6 +4514,7 @@ std::optional<GrTimerQuery> GrGLGpu::startTimerQuery() {
         GR_GL_GetIntegerv(this->glInterface(), GR_GL_GPU_DISJOINT, &_);
     }
     GL_CALL(BeginQuery(GR_GL_TIME_ELAPSED, glQuery));
+    fHasUnflushedQueries = true;
     return GrTimerQuery{glQuery};
 }
 
@@ -4493,6 +4524,7 @@ void GrGLGpu::endTimerQuery(const GrTimerQuery& timerQuery) {
     // Since only one query of a particular type can be active at once, glEndQuery doesn't take a
     // query parameter.
     GL_CALL(EndQuery(GR_GL_TIME_ELAPSED));
+    fHasUnflushedQueries = true;
 }
 
 uint64_t GrGLGpu::getTimerQueryResult(GrGLuint query) {
