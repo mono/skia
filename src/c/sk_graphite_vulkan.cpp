@@ -55,10 +55,13 @@ extern "C" SK_C_API sk_graphite_context_t* sk_graphite_context_make_vulkan(
         };
     }
 
-    // Graphite's Vulkan path does NOT auto-create a memory allocator (unlike Ganesh's
-    // GrVkGpu); the caller must supply one. Until we expose that as part of the C API
-    // (deferred to a follow-up), build the default VMA-backed allocator here.
-    if (!vkbc.fMemoryAllocator) {
+    // Adopt the caller's allocator when supplied (see gr_vk_allocator.h); otherwise
+    // fall back to Skia's default VMA-backed allocator so legacy callers stay working.
+    // ref_sp preserves the caller's ownership — they can unref the handle as soon as
+    // this returns, the Context now holds its own reference.
+    if (init.fMemoryAllocator) {
+        vkbc.fMemoryAllocator = sk_ref_sp(AsGrVkMemoryAllocator(init.fMemoryAllocator));
+    } else {
         vkbc.fMemoryAllocator = skgpu::VulkanMemoryAllocators::Make(vkbc, skgpu::ThreadSafe::kNo);
         if (!vkbc.fMemoryAllocator) {
             return nullptr;
