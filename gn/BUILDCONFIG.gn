@@ -36,9 +36,6 @@ declare_args() {
   win_toolchain_version = ""
   win_vcvars_version = ""
 
-  # Set to false when the parent process initializes the Visual C++ environment.
-  win_use_vcvars_wrapper = true
-
   clang_win = ""
   clang_win_version = ""
 
