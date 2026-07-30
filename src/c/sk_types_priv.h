@@ -33,6 +33,8 @@
 #        include "include/gpu/ganesh/vk/GrVkTypes.h"
 #        include "include/gpu/vk/VulkanBackendContext.h"
 #        include "include/gpu/vk/VulkanExtensions.h"
+#        include "src/gpu/vk/vulkanmemoryallocator/VulkanMemoryAllocatorPriv.h"
+#        include "src/gpu/GpuTypesPriv.h"
 #        define SK_ONLY_VULKAN(...) SK_FIRST_ARG(__VA_ARGS__)
 #    else
 #        define SK_ONLY_VULKAN(...) SK_SKIP_ARG(__VA_ARGS__)
@@ -477,6 +479,13 @@ static inline skgpu::VulkanBackendContext AsGrVkBackendContext(const gr_vk_backe
         };
     }
     ctx.fProtectedContext = context->fProtectedContext ? skgpu::Protected::kYes : skgpu::Protected::kNo;
+    // As of m152, Ganesh's GrVkGpu::Make no longer auto-creates a memory allocator when the
+    // caller does not supply one (the internal SK_USE_VMA fallback was removed upstream). The
+    // SkiaSharp C API does not expose the allocator, so build the default VMA-backed allocator
+    // here to preserve the existing behavior where GRContext.CreateVulkan works without one.
+    if (!ctx.fMemoryAllocator) {
+        ctx.fMemoryAllocator = skgpu::VulkanMemoryAllocators::Make(ctx, skgpu::ThreadSafe::kNo);
+    }
     return ctx;
 }
 
