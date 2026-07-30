@@ -28,6 +28,21 @@
 
 #include "src/c/sk_types_priv.h"
 
+#if SK_VULKAN
+// mono/skia: Skia m152 removed the internal SK_USE_VMA fallback in
+// src/gpu/ganesh/vk/GrVkGpu.cpp (upstream commit 5e183e5aea, "Remove
+// legacy_ganesh_vulkan target that had VMA baked in"). Before m152 lands here,
+// the fallback still hides null allocators; after it lands, Ganesh will refuse
+// to construct without one. Compensate by auto-creating Skia's default
+// VMA-backed allocator when the caller left the slot null, matching what
+// sk_graphite_vulkan.cpp already does for Graphite. Uses the same private
+// header (`VulkanMemoryAllocatorPriv.h`) — see gr_vk_allocator.cpp for the
+// rationale on why we accept that dependency. See mono/SkiaSharp#4567.
+#include "include/gpu/vk/VulkanMemoryAllocator.h"
+#include "src/gpu/GpuTypesPriv.h"    // for skgpu::ThreadSafe
+#include "src/gpu/vk/vulkanmemoryallocator/VulkanMemoryAllocatorPriv.h"
+#endif
+
 // GrRecordingContext
 
 void gr_recording_context_unref(gr_recording_context_t* context) {
@@ -73,8 +88,23 @@ gr_direct_context_t* gr_direct_context_make_gl_with_options(const gr_glinterface
     return SK_ONLY_GPU(ToGrDirectContext(GrDirectContexts::MakeGL(sk_ref_sp(AsGrGLInterface(glInterface)), opts).release()), nullptr);
 }
 
+#if SK_VULKAN
+// AsGrVkBackendContext already ref_sp's the caller's fMemoryAllocator. When it
+// was null, the returned context still carries an unset sk_sp; fill that in
+// with Skia's default VMA-backed allocator so post-m152 Ganesh doesn't refuse
+// to construct. Compat-only: any caller that supplied their own allocator
+// keeps it.
+static skgpu::VulkanBackendContext MaybeAutoAllocator(const gr_vk_backendcontext_t& vkBackendContext) {
+    skgpu::VulkanBackendContext ctx = AsGrVkBackendContext(&vkBackendContext);
+    if (!ctx.fMemoryAllocator) {
+        ctx.fMemoryAllocator = skgpu::VulkanMemoryAllocators::Make(ctx, skgpu::ThreadSafe::kNo);
+    }
+    return ctx;
+}
+#endif
+
 gr_direct_context_t* gr_direct_context_make_vulkan(const gr_vk_backendcontext_t vkBackendContext) {
-    return SK_ONLY_VULKAN(ToGrDirectContext(GrDirectContexts::MakeVulkan(AsGrVkBackendContext(&vkBackendContext)).release()), nullptr);
+    return SK_ONLY_VULKAN(ToGrDirectContext(GrDirectContexts::MakeVulkan(MaybeAutoAllocator(vkBackendContext)).release()), nullptr);
 }
 
 gr_direct_context_t* gr_direct_context_make_vulkan_with_options(const gr_vk_backendcontext_t vkBackendContext, const gr_context_options_t* options) {
@@ -83,7 +113,7 @@ gr_direct_context_t* gr_direct_context_make_vulkan_with_options(const gr_vk_back
         if (options) {
             opts = AsGrContextOptions(options);
         })
-    return SK_ONLY_VULKAN(ToGrDirectContext(GrDirectContexts::MakeVulkan(AsGrVkBackendContext(&vkBackendContext), opts).release()), nullptr);
+    return SK_ONLY_VULKAN(ToGrDirectContext(GrDirectContexts::MakeVulkan(MaybeAutoAllocator(vkBackendContext), opts).release()), nullptr);
 }
 
 gr_direct_context_t* gr_direct_context_make_metal(void* device, void* queue) {
