@@ -20,7 +20,9 @@ vars = {
   'googlefonts_testdata_version': 'version:20230913',
 
   # Pre-built task drivers from this repo, used for CI.
-  'task_drivers_revision': 'git_revision:b5d31abb7bc772a69f800de45783768768437675',
+  'task_drivers_revision': 'git_revision:348e064d2951b8209dd3dc77e89b8bc5d57242af',
+
+  'checkout_agents_internal': False,
 }
 
 # If you modify this file, you will need to regenerate the Bazel version of this file (bazel/deps.bzl).
@@ -114,4 +116,11 @@ deps = {
     'url': 'https://skia.googlesource.com/buildbot.git@' + Var('infra_revision'),
     'condition': 'False',
   },
+
+  # 'agents/shared': 'https://chromium.googlesource.com/chromium/agents/@e75efa515896f6bf1dea92eaffbcf8ee711a65d8',
+
+  # 'agents/internal': {
+  #   'url': 'https://chrome-internal.googlesource.com/chrome/agents-internal/@11c700b10e171091b4f0f3cf3bf95f13dee85c93',
+  #   'condition': 'checkout_agents_internal',
+  # },
 }
