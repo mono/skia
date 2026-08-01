@@ -33,6 +33,8 @@
 #        include "include/gpu/ganesh/vk/GrVkTypes.h"
 #        include "include/gpu/vk/VulkanBackendContext.h"
 #        include "include/gpu/vk/VulkanExtensions.h"
+#        include "src/gpu/GpuTypesPriv.h"
+#        include "src/gpu/vk/vulkanmemoryallocator/VulkanMemoryAllocatorPriv.h"
 #        define SK_ONLY_VULKAN(...) SK_FIRST_ARG(__VA_ARGS__)
 #    else
 #        define SK_ONLY_VULKAN(...) SK_SKIP_ARG(__VA_ARGS__)
@@ -477,6 +479,13 @@ static inline skgpu::VulkanBackendContext AsGrVkBackendContext(const gr_vk_backe
         };
     }
     ctx.fProtectedContext = context->fProtectedContext ? skgpu::Protected::kYes : skgpu::Protected::kNo;
+    // Skia milestone m152 removed GrVkGpu::Make's internal fallback that built a default
+    // VMA-backed allocator when the caller supplied none; MakeVulkan now returns null in that
+    // case. Preserve the previous C-API contract (a null allocator is valid) by building the
+    // default allocator here, matching the fork-owned graphite Vulkan shim.
+    if (!ctx.fMemoryAllocator) {
+        ctx.fMemoryAllocator = skgpu::VulkanMemoryAllocators::Make(ctx, skgpu::ThreadSafe::kNo);
+    }
     return ctx;
 }
 
