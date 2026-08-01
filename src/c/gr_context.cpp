@@ -26,7 +26,27 @@
 
 #include "include/c/gr_context.h"
 
+#if SK_VULKAN
+#include "include/gpu/vk/VulkanBackendContext.h"
+#include "include/gpu/vk/VulkanMemoryAllocator.h"
+#include "src/gpu/GpuTypesPriv.h"
+#include "src/gpu/vk/vulkanmemoryallocator/VulkanMemoryAllocatorPriv.h"
+#endif
+
 #include "src/c/sk_types_priv.h"
+
+#if SK_VULKAN
+// As of Skia m152, GrVkGpu::Make no longer creates an internal VMA-backed memory
+// allocator when the caller does not supply one; MakeVulkan simply fails. Mirror the
+// Graphite shim and build the default allocator here so existing callers that do not
+// provide their own allocator keep working.
+static bool sk_gr_ensure_vk_memory_allocator(skgpu::VulkanBackendContext& ctx) {
+    if (!ctx.fMemoryAllocator) {
+        ctx.fMemoryAllocator = skgpu::VulkanMemoryAllocators::Make(ctx, skgpu::ThreadSafe::kNo);
+    }
+    return ctx.fMemoryAllocator != nullptr;
+}
+#endif
 
 // GrRecordingContext
 
@@ -74,7 +94,12 @@ gr_direct_context_t* gr_direct_context_make_gl_with_options(const gr_glinterface
 }
 
 gr_direct_context_t* gr_direct_context_make_vulkan(const gr_vk_backendcontext_t vkBackendContext) {
-    return SK_ONLY_VULKAN(ToGrDirectContext(GrDirectContexts::MakeVulkan(AsGrVkBackendContext(&vkBackendContext)).release()), nullptr);
+    SK_ONLY_VULKAN(
+        skgpu::VulkanBackendContext ctx = AsGrVkBackendContext(&vkBackendContext);
+        if (!sk_gr_ensure_vk_memory_allocator(ctx)) {
+            return nullptr;
+        })
+    return SK_ONLY_VULKAN(ToGrDirectContext(GrDirectContexts::MakeVulkan(ctx).release()), nullptr);
 }
 
 gr_direct_context_t* gr_direct_context_make_vulkan_with_options(const gr_vk_backendcontext_t vkBackendContext, const gr_context_options_t* options) {
@@ -82,8 +107,12 @@ gr_direct_context_t* gr_direct_context_make_vulkan_with_options(const gr_vk_back
         GrContextOptions opts;
         if (options) {
             opts = AsGrContextOptions(options);
+        }
+        skgpu::VulkanBackendContext ctx = AsGrVkBackendContext(&vkBackendContext);
+        if (!sk_gr_ensure_vk_memory_allocator(ctx)) {
+            return nullptr;
         })
-    return SK_ONLY_VULKAN(ToGrDirectContext(GrDirectContexts::MakeVulkan(AsGrVkBackendContext(&vkBackendContext), opts).release()), nullptr);
+    return SK_ONLY_VULKAN(ToGrDirectContext(GrDirectContexts::MakeVulkan(ctx, opts).release()), nullptr);
 }
 
 gr_direct_context_t* gr_direct_context_make_metal(void* device, void* queue) {
