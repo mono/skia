@@ -9,7 +9,7 @@ vars = {
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling different
   # dependencies without interference from each other.
-  'infra_revision': 'c0e4e8a0a6bd68ffb5d8b01190d99edd9b89ecd5',
+  'infra_revision': 'd47334d0785d47ea913b41efd0038430e193525c',
 
   # ninja CIPD package version.
   # https://chrome-infra-packages.appspot.com/p/infra/3pp/tools/ninja
@@ -20,7 +20,7 @@ vars = {
   'googlefonts_testdata_version': 'version:20230913',
 
   # Pre-built task drivers from this repo, used for CI.
-  'task_drivers_revision': 'git_revision:b5d31abb7bc772a69f800de45783768768437675',
+  'task_drivers_revision': 'git_revision:348e064d2951b8209dd3dc77e89b8bc5d57242af',
 }
 
 # If you modify this file, you will need to regenerate the Bazel version of this file (bazel/deps.bzl).
