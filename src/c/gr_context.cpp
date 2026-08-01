@@ -14,6 +14,9 @@
 #if SK_VULKAN
 #include "include/gpu/ganesh/vk/GrVkBackendSurface.h"
 #include "include/gpu/ganesh/vk/GrVkDirectContext.h"
+#include "include/gpu/vk/VulkanMemoryAllocator.h"
+#include "src/gpu/GpuTypesPriv.h"
+#include "src/gpu/vk/vulkanmemoryallocator/VulkanMemoryAllocatorPriv.h"
 #endif
 #if SK_METAL
 #include "include/gpu/ganesh/mtl/GrMtlBackendContext.h"
@@ -74,16 +77,36 @@ gr_direct_context_t* gr_direct_context_make_gl_with_options(const gr_glinterface
 }
 
 gr_direct_context_t* gr_direct_context_make_vulkan(const gr_vk_backendcontext_t vkBackendContext) {
-    return SK_ONLY_VULKAN(ToGrDirectContext(GrDirectContexts::MakeVulkan(AsGrVkBackendContext(&vkBackendContext)).release()), nullptr);
+    return SK_ONLY_VULKAN(([&]() -> gr_direct_context_t* {
+        skgpu::VulkanBackendContext vkbc = AsGrVkBackendContext(&vkBackendContext);
+        // Upstream m152 removed Ganesh's internal VMA fallback (previously in
+        // GrVkGpu::Make). To preserve the C API contract where callers may omit a
+        // memory allocator, build the default VMA-backed allocator here.
+        if (!vkbc.fMemoryAllocator) {
+            vkbc.fMemoryAllocator = skgpu::VulkanMemoryAllocators::Make(vkbc, skgpu::ThreadSafe::kNo);
+            if (!vkbc.fMemoryAllocator) {
+                return nullptr;
+            }
+        }
+        return ToGrDirectContext(GrDirectContexts::MakeVulkan(vkbc).release());
+    })(), nullptr);
 }
 
 gr_direct_context_t* gr_direct_context_make_vulkan_with_options(const gr_vk_backendcontext_t vkBackendContext, const gr_context_options_t* options) {
-    SK_ONLY_VULKAN(
+    return SK_ONLY_VULKAN(([&]() -> gr_direct_context_t* {
         GrContextOptions opts;
         if (options) {
             opts = AsGrContextOptions(options);
-        })
-    return SK_ONLY_VULKAN(ToGrDirectContext(GrDirectContexts::MakeVulkan(AsGrVkBackendContext(&vkBackendContext), opts).release()), nullptr);
+        }
+        skgpu::VulkanBackendContext vkbc = AsGrVkBackendContext(&vkBackendContext);
+        if (!vkbc.fMemoryAllocator) {
+            vkbc.fMemoryAllocator = skgpu::VulkanMemoryAllocators::Make(vkbc, skgpu::ThreadSafe::kNo);
+            if (!vkbc.fMemoryAllocator) {
+                return nullptr;
+            }
+        }
+        return ToGrDirectContext(GrDirectContexts::MakeVulkan(vkbc, opts).release());
+    })(), nullptr);
 }
 
 gr_direct_context_t* gr_direct_context_make_metal(void* device, void* queue) {
