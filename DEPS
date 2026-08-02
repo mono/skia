@@ -9,7 +9,7 @@ vars = {
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling different
   # dependencies without interference from each other.
-  'infra_revision': 'c0e4e8a0a6bd68ffb5d8b01190d99edd9b89ecd5',
+  'infra_revision': 'd47334d0785d47ea913b41efd0038430e193525c',
 
   # ninja CIPD package version.
   # https://chrome-infra-packages.appspot.com/p/infra/3pp/tools/ninja
@@ -69,7 +69,7 @@ deps = {
   # "third_party/externals/perfetto"               : "https://android.googlesource.com/platform/external/perfetto@93885509be1c9240bc55fa515ceb34811e54a394",
   "third_party/externals/piex"                   : "https://android.googlesource.com/platform/external/piex.git@bb217acdca1cc0c16b704669dd6f91a1b509c406",
   # "third_party/externals/swiftshader"            : "https://swiftshader.googlesource.com/SwiftShader@f3e464b1e56795940f826a972b39e19bd9f6ac6c",
-  "third_party/externals/vulkanmemoryallocator"  : "https://chromium.googlesource.com/external/github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator@c788c52156f3ef7bc7ab769cb03c110a53ac8fcb",
+  "third_party/externals/vulkanmemoryallocator"  : "https://chromium.googlesource.com/external/github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator@eb744ea7a2b17040121b4bbb4d6f9e8a77e3cae7",
   # vulkan-deps is a meta-repo containing several interdependent Khronos Vulkan repositories.
   # When the vulkan-deps revision is updated, those repos (spirv-*, vulkan-*) should be updated as well.
   # "third_party/externals/vulkan-deps"            : "https://chromium.googlesource.com/vulkan-deps@0af4fee9206d1c8a4af8077a0b3c72284790a911",
