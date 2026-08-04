@@ -28,6 +28,10 @@ typedef struct {
     sk_graphite_vk_get_proc     fGetProc;
     void*                       fGetProcUserData;
     bool                        fProtectedContext;
+    // Optional device-lost handler (see gr_vk_device_lost.h). Nullable. Caller-owned;
+    // must outlive the Context and be freed via gr_vk_device_lost_handler_delete
+    // AFTER SKGraphiteContext destruction.
+    gr_vk_device_lost_handler_t* fDeviceLostHandler;
 } sk_graphite_vk_backend_context_init_t;
 
 // Build a Graphite Context for the Vulkan backend.
