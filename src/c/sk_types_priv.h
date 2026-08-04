@@ -33,6 +33,9 @@
 #        include "include/gpu/ganesh/vk/GrVkTypes.h"
 #        include "include/gpu/vk/VulkanBackendContext.h"
 #        include "include/gpu/vk/VulkanExtensions.h"
+#        include "include/gpu/vk/VulkanTypes.h"  // for skgpu::VulkanDeviceLostContext used by gr_vk_device_lost_thunk
+#        include <string>                         // std::string in gr_vk_device_lost_thunk signature
+#        include <vector>                         // std::vector<> in gr_vk_device_lost_thunk signature
 #        define SK_ONLY_VULKAN(...) SK_FIRST_ARG(__VA_ARGS__)
 #    else
 #        define SK_ONLY_VULKAN(...) SK_SKIP_ARG(__VA_ARGS__)
@@ -459,6 +462,14 @@ DEF_MAP(VkPhysicalDeviceFeatures2, vk_physical_device_features_2_t, VkPhysicalDe
 DEF_MAP_WITH_NS(skgpu, VulkanMemoryAllocator, gr_vk_memory_allocator_t, GrVkMemoryAllocator);
 DEF_MAP_WITH_NS(skgpu, VulkanExtensions, gr_vk_extensions_t, GrVkExtensions)
 
+// Declared in src/c/gr_vk_device_lost.cpp — adapts Skia's beefy device-lost callback
+// (std::string + fault-detail vectors) to the plain C proc stored in the handle.
+extern "C" void gr_vk_device_lost_thunk(skgpu::VulkanDeviceLostContext userData,
+                                        const std::string& description,
+                                        const std::vector<VkDeviceFaultAddressInfoEXT>&,
+                                        const std::vector<VkDeviceFaultVendorInfoEXT>&,
+                                        const std::vector<std::byte>&);
+
 static inline skgpu::VulkanBackendContext AsGrVkBackendContext(const gr_vk_backendcontext_t* context) {
     skgpu::VulkanBackendContext ctx;
     ctx.fInstance = AsVkInstance(context->fInstance);
@@ -477,6 +488,13 @@ static inline skgpu::VulkanBackendContext AsGrVkBackendContext(const gr_vk_backe
         };
     }
     ctx.fProtectedContext = context->fProtectedContext ? skgpu::Protected::kYes : skgpu::Protected::kNo;
+    // Device-lost bridge: caller-owned handle. Skia stores fDeviceLostContext raw
+    // non-owning, so the handle must outlive the Context and be freed by the caller
+    // via gr_vk_device_lost_handler_delete afterwards.
+    if (context->fDeviceLostHandler != nullptr) {
+        ctx.fDeviceLostContext = context->fDeviceLostHandler;
+        ctx.fDeviceLostProc = gr_vk_device_lost_thunk;
+    }
     return ctx;
 }
 

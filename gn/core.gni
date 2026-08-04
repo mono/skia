@@ -875,6 +875,7 @@ skia_core_sources += [
   "$_src/c/sk_types_priv.h",
   "$_src/c/sk_vertices.cpp",
   "$_src/c/gr_context.cpp",
+  "$_src/c/gr_vk_device_lost.cpp",
   "$_src/c/sk_graphite.cpp",
   "$_src/c/sk_graphite_dawn.cpp",
   "$_src/c/sk_graphite_metal.cpp",
