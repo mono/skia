@@ -266,6 +266,13 @@ extern "C" SK_C_API sk_graphite_insert_status_t sk_graphite_context_insert_recor
     sk_graphite_finished_proc finishedProc,
     void* finishedContext)
 {
+    if (targetTextureState && !targetSurface) {
+        if (finishedProc) {
+            finishedProc(finishedContext, false);
+        }
+        return INVALID_RECORDING_SK_GRAPHITE_INSERT_STATUS;
+    }
+
     std::vector<gr::BackendSemaphore> waits;
     waits.reserve(waitSemaphoreCount);
     for (int32_t i = 0; i < waitSemaphoreCount; ++i) {
@@ -345,8 +352,19 @@ extern "C" SK_C_API sk_canvas_t* sk_graphite_recorder_make_deferred_canvas(
     const sk_imageinfo_t* cinfo,
     const sk_graphite_texture_info_t* textureInfo)
 {
-    return ToCanvas(AsGraphiteRecorder(h)->makeDeferredCanvas(
-            AsImageInfo(cinfo), *AsGraphiteTextureInfo(textureInfo)));
+    auto* recorder = AsGraphiteRecorder(h);
+    auto info = AsImageInfo(cinfo);
+    auto* targetInfo = AsGraphiteTextureInfo(textureInfo);
+    if (info.isEmpty() ||
+        info.colorType() == kUnknown_SkColorType ||
+        info.alphaType() == kUnknown_SkAlphaType ||
+        info.width() > recorder->maxTextureSize() ||
+        info.height() > recorder->maxTextureSize() ||
+        !targetInfo->isValid() ||
+        targetInfo->backend() != recorder->backend()) {
+        return nullptr;
+    }
+    return ToCanvas(recorder->makeDeferredCanvas(info, *targetInfo));
 }
 
 // Recording
