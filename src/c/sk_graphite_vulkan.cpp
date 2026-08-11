@@ -61,7 +61,7 @@ extern "C" SK_C_API sk_graphite_context_t* sk_graphite_context_make_vulkan(
     // GrVkGpu); the caller must supply one. Until we expose that as part of the C API
     // (deferred to a follow-up), build the default VMA-backed allocator here.
     if (!vkbc.fMemoryAllocator) {
-        vkbc.fMemoryAllocator = skgpu::VulkanMemoryAllocators::Make(vkbc, skgpu::ThreadSafe::kNo);
+        vkbc.fMemoryAllocator = skgpu::VulkanMemoryAllocators::Make(vkbc, skgpu::ThreadSafe::kYes);
         if (!vkbc.fMemoryAllocator) {
             return nullptr;
         }
