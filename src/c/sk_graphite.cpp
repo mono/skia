@@ -27,6 +27,7 @@
 #include <chrono>
 #include <memory>
 #include <utility>
+#include <vector>
 
 namespace gr = skgpu::graphite;
 
@@ -227,6 +228,18 @@ static sk_graphite_insert_status_t ToInsertStatus(gr::InsertStatus::V v) {
     SkUNREACHABLE;
 }
 
+namespace {
+struct FfiFinishedBridge {
+    sk_graphite_finished_proc proc;
+    void* context;
+};
+
+void graphite_finished_adapter(void* raw, skgpu::CallbackResult result) {
+    std::unique_ptr<FfiFinishedBridge> bridge(static_cast<FfiFinishedBridge*>(raw));
+    bridge->proc(bridge->context, result == skgpu::CallbackResult::kSuccess);
+}
+}  // namespace
+
 extern "C" SK_C_API sk_graphite_insert_status_t sk_graphite_context_insert_recording(sk_graphite_context_t* h, const sk_graphite_insert_recording_info_t* info) {
     gr::InsertRecordingInfo iri;
     iri.fRecording = AsGraphiteRecording(info->fRecording);
@@ -236,6 +249,59 @@ extern "C" SK_C_API sk_graphite_insert_status_t sk_graphite_context_insert_recor
     iri.fTargetClip = *AsIRect(&info->fTargetClip);
     auto status = AsGraphiteContext(h)->insertRecording(iri);
     return ToInsertStatus(status);
+}
+
+extern "C" SK_C_API sk_graphite_insert_status_t sk_graphite_context_insert_recording_full(
+    sk_graphite_context_t* h,
+    sk_graphite_recording_t* recording,
+    sk_surface_t* targetSurface,
+    int32_t targetTranslationX,
+    int32_t targetTranslationY,
+    const sk_irect_t* targetClip,
+    const sk_graphite_mutable_texture_state_t* targetTextureState,
+    const void* const* waitSemaphores,
+    int32_t waitSemaphoreCount,
+    const void* const* signalSemaphores,
+    int32_t signalSemaphoreCount,
+    sk_graphite_finished_proc finishedProc,
+    void* finishedContext)
+{
+    std::vector<gr::BackendSemaphore> waits;
+    waits.reserve(waitSemaphoreCount);
+    for (int32_t i = 0; i < waitSemaphoreCount; ++i) {
+        waits.push_back(*AsGraphiteBackendSemaphore(
+                static_cast<const sk_graphite_backend_semaphore_t*>(waitSemaphores[i])));
+    }
+
+    std::vector<gr::BackendSemaphore> signals;
+    signals.reserve(signalSemaphoreCount);
+    for (int32_t i = 0; i < signalSemaphoreCount; ++i) {
+        signals.push_back(*AsGraphiteBackendSemaphore(
+                static_cast<const sk_graphite_backend_semaphore_t*>(signalSemaphores[i])));
+    }
+
+    gr::InsertRecordingInfo iri;
+    iri.fRecording = AsGraphiteRecording(recording);
+    iri.fTargetSurface = AsSurface(targetSurface);
+    iri.fTargetTranslation = {targetTranslationX, targetTranslationY};
+    if (targetClip) {
+        iri.fTargetClip = *AsIRect(targetClip);
+    }
+    iri.fTargetTextureState =
+            const_cast<skgpu::MutableTextureState*>(AsGraphiteMutableTextureState(
+                    targetTextureState));
+    iri.fNumWaitSemaphores = waits.size();
+    iri.fWaitSemaphores = waits.data();
+    iri.fNumSignalSemaphores = signals.size();
+    iri.fSignalSemaphores = signals.data();
+
+    if (finishedProc) {
+        auto* bridge = new FfiFinishedBridge{finishedProc, finishedContext};
+        iri.fFinishedContext = bridge;
+        iri.fFinishedProc = graphite_finished_adapter;
+    }
+
+    return ToInsertStatus(AsGraphiteContext(h)->insertRecording(iri));
 }
 
 extern "C" SK_C_API bool sk_graphite_context_submit(sk_graphite_context_t* h, const sk_graphite_submit_info_t* info) {
@@ -272,6 +338,15 @@ extern "C" SK_C_API int32_t sk_graphite_recorder_get_max_texture_size(const sk_g
 extern "C" SK_C_API sk_graphite_recording_t* sk_graphite_recorder_snap(sk_graphite_recorder_t* h) {
     auto recording = AsGraphiteRecorder(h)->snap();
     return ToGraphiteRecording(recording.release());
+}
+
+extern "C" SK_C_API sk_canvas_t* sk_graphite_recorder_make_deferred_canvas(
+    sk_graphite_recorder_t* h,
+    const sk_imageinfo_t* cinfo,
+    const sk_graphite_texture_info_t* textureInfo)
+{
+    return ToCanvas(AsGraphiteRecorder(h)->makeDeferredCanvas(
+            AsImageInfo(cinfo), *AsGraphiteTextureInfo(textureInfo)));
 }
 
 // Recording
@@ -383,6 +458,23 @@ extern "C" SK_C_API void sk_graphite_backend_texture_get_dimensions(const sk_gra
     *outW = d.fWidth;
     *outH = d.fHeight;
 }
+extern "C" SK_C_API sk_graphite_texture_info_t* sk_graphite_backend_texture_get_texture_info(
+    const sk_graphite_backend_texture_t* h)
+{
+    return ToGraphiteTextureInfo(new gr::TextureInfo(AsGraphiteBackendTexture(h)->info()));
+}
+
+extern "C" SK_C_API void sk_graphite_backend_semaphore_delete(
+    sk_graphite_backend_semaphore_t* h)
+{
+    delete AsGraphiteBackendSemaphore(h);
+}
+
+extern "C" SK_C_API void sk_graphite_mutable_texture_state_delete(
+    sk_graphite_mutable_texture_state_t* h)
+{
+    delete AsGraphiteMutableTextureState(h);
+}
 
 // TextureInfo handle.
 
@@ -483,11 +575,13 @@ extern "C" SK_C_API void                          sk_graphite_context_free_gpu_r
 extern "C" SK_C_API void                          sk_graphite_context_perform_deferred_cleanup(sk_graphite_context_t*, int64_t) {}
 extern "C" SK_C_API sk_graphite_recorder_t*       sk_graphite_context_make_recorder(sk_graphite_context_t*, int64_t, sk_graphite_image_provider_t*) { return nullptr; }
 extern "C" SK_C_API sk_graphite_insert_status_t   sk_graphite_context_insert_recording(sk_graphite_context_t*, const sk_graphite_insert_recording_info_t*) { return INVALID_RECORDING_SK_GRAPHITE_INSERT_STATUS; }
+extern "C" SK_C_API sk_graphite_insert_status_t   sk_graphite_context_insert_recording_full(sk_graphite_context_t*, sk_graphite_recording_t*, sk_surface_t*, int32_t, int32_t, const sk_irect_t*, const sk_graphite_mutable_texture_state_t*, const void* const*, int32_t, const void* const*, int32_t, sk_graphite_finished_proc cb, void* ctx) { if (cb) cb(ctx, false); return INVALID_RECORDING_SK_GRAPHITE_INSERT_STATUS; }
 extern "C" SK_C_API bool                          sk_graphite_context_submit(sk_graphite_context_t*, const sk_graphite_submit_info_t*) { return false; }
 extern "C" SK_C_API void                          sk_graphite_recorder_delete(sk_graphite_recorder_t*) {}
 extern "C" SK_C_API sk_graphite_backend_t         sk_graphite_recorder_get_backend(const sk_graphite_recorder_t*) { return VULKAN_SK_GRAPHITE_BACKEND; }
 extern "C" SK_C_API int32_t                       sk_graphite_recorder_get_max_texture_size(const sk_graphite_recorder_t*) { return 0; }
 extern "C" SK_C_API sk_graphite_recording_t*      sk_graphite_recorder_snap(sk_graphite_recorder_t*) { return nullptr; }
+extern "C" SK_C_API sk_canvas_t*                  sk_graphite_recorder_make_deferred_canvas(sk_graphite_recorder_t*, const sk_imageinfo_t*, const sk_graphite_texture_info_t*) { return nullptr; }
 extern "C" SK_C_API void                          sk_graphite_recording_delete(sk_graphite_recording_t*) {}
 extern "C" SK_C_API sk_surface_t*                 sk_graphite_surface_make_render_target(sk_graphite_recorder_t*, const sk_imageinfo_t*, bool, const sk_surfaceprops_t*) { return nullptr; }
 extern "C" SK_C_API void                          sk_graphite_context_async_rescale_and_read_pixels_surface(sk_graphite_context_t*, const sk_surface_t*, const sk_imageinfo_t*, const sk_irect_t*, sk_image_rescale_gamma_t, sk_image_rescale_mode_t, sk_image_async_read_pixels_proc cb, void* ctx) { if (cb) cb(ctx, nullptr); }
@@ -497,6 +591,9 @@ extern "C" SK_C_API void                          sk_graphite_backend_texture_de
 extern "C" SK_C_API bool                          sk_graphite_backend_texture_is_valid(const sk_graphite_backend_texture_t*) { return false; }
 extern "C" SK_C_API sk_graphite_backend_t         sk_graphite_backend_texture_get_backend(const sk_graphite_backend_texture_t*) { return VULKAN_SK_GRAPHITE_BACKEND; }
 extern "C" SK_C_API void                          sk_graphite_backend_texture_get_dimensions(const sk_graphite_backend_texture_t*, int32_t*, int32_t*) {}
+extern "C" SK_C_API sk_graphite_texture_info_t*   sk_graphite_backend_texture_get_texture_info(const sk_graphite_backend_texture_t*) { return nullptr; }
+extern "C" SK_C_API void                          sk_graphite_backend_semaphore_delete(sk_graphite_backend_semaphore_t*) {}
+extern "C" SK_C_API void                          sk_graphite_mutable_texture_state_delete(sk_graphite_mutable_texture_state_t*) {}
 extern "C" SK_C_API void                          sk_graphite_texture_info_delete(sk_graphite_texture_info_t*) {}
 extern "C" SK_C_API bool                          sk_graphite_texture_info_is_valid(const sk_graphite_texture_info_t*) { return false; }
 extern "C" SK_C_API sk_graphite_backend_t         sk_graphite_texture_info_get_backend(const sk_graphite_texture_info_t*) { return VULKAN_SK_GRAPHITE_BACKEND; }
