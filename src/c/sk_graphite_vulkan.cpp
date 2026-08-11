@@ -59,7 +59,7 @@ extern "C" SK_C_API sk_graphite_context_t* sk_graphite_context_make_vulkan(
 
     // The C init struct has no allocator field, so supply the default VMA allocator.
     if (!vkbc.fMemoryAllocator) {
-        vkbc.fMemoryAllocator = skgpu::VulkanMemoryAllocators::Make(vkbc, skgpu::ThreadSafe::kNo);
+        vkbc.fMemoryAllocator = skgpu::VulkanMemoryAllocators::Make(vkbc, skgpu::ThreadSafe::kYes);
         if (!vkbc.fMemoryAllocator) {
             return nullptr;
         }
