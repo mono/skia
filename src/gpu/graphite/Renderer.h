@@ -16,6 +16,7 @@
 #include "include/private/SkEnumBitMask.h"
 #include "src/core/SkVx.h"
 #include "src/gpu/graphite/Attribute.h"
+#include "src/gpu/graphite/DescriptorData.h"
 #include "src/gpu/graphite/DrawTypes.h"
 #include "src/gpu/graphite/ResourceTypes.h"
 #include "src/gpu/graphite/Uniform.h"
@@ -41,6 +42,7 @@ class Transform;
 class UniformOffsetCalculator;
 
 struct ResourceBindingRequirements;
+struct RootNodesInfo;
 
 enum class Coverage { kNone, kSingleChannel, kLCD };
 
@@ -67,7 +69,8 @@ enum class Coverage { kNone, kSingleChannel, kLCD };
         M1(SDFText)                                 \
         M2(TessellateCurves, EvenOdd)               \
         M2(TessellateCurves, Winding)               \
-        M1(TessellateStrokes)                       \
+        M2(TessellateStrokes,Fill)                  \
+        M2(TessellateStrokes,InverseFill)           \
         M2(TessellateWedges, Convex)                \
         M2(TessellateWedges, EvenOdd)               \
         M2(TessellateWedges, Winding)               \
@@ -141,7 +144,7 @@ public:
     // NOTE: The above contract is mainly so that the entire SkSL program can be created by just str
     // concatenating struct definitions generated from the RenderStep and paint Combination
     // and then including the function bodies returned here.
-    virtual std::string vertexSkSL() const = 0;
+    virtual std::string vertexSkSL(const RootNodesInfo&) const = 0;
 
     // Emits code to set up textures and samplers. Should only be defined if hasTextures is true.
     virtual std::string texturesAndSamplersSkSL(const ResourceBindingRequirements&,
@@ -158,7 +161,7 @@ public:
     // Emits code to set up a primitive color value. Should only be defined if emitsPrimitiveColor
     // is true. When implemented, the returned SkSL fragment should write its color into a
     // 'half4 primitiveColor' variable (defined in the calling code).
-    virtual const char* fragmentColorSkSL() const { return ""; }
+    virtual std::string fragmentColorSkSL(const RootNodesInfo&) const { return ""; }
 
     // Indicates whether this RenderStep's uniforms are referenced in its fragment shader code.
     // If not, its uniforms can be omitted from the fragment shader entirely.
@@ -181,7 +184,8 @@ public:
     bool appendsVertices()     const { return SkToBool(fFlags & Flags::kAppendVertices);      }
     bool vsUsesStorage()       const { return SkToBool(fFlags & Flags::kVsUsesStorage);       }
     bool fsUsesStorage()       const { return SkToBool(fFlags & Flags::kFsUsesStorage);       }
-    SkEnumBitMask<RenderStateFlags> getRenderStateFlags() const {
+    SkEnumBitMask<PipelineStageFlags> storageBufferStages() const { return fStorageBufferStages; }
+    SkEnumBitMask<RenderStateFlags>   getRenderStateFlags() const {
         SkEnumBitMask<RenderStateFlags> rs = RenderStateFlags::kNone;
         if (fFlags & Flags::kFixed)             { rs |= RenderStateFlags::kFixed;           }
         if (fFlags & Flags::kAppendVertices)    { rs |= RenderStateFlags::kAppendVertices;  }
@@ -294,11 +298,11 @@ private:
 
     static Coverage GetCoverage(SkEnumBitMask<Flags>);
 
-    RenderStepID fRenderStepID;
-    SkEnumBitMask<Flags> fFlags;
-    PrimitiveType        fPrimitiveType;
-
-    DepthStencilSettings fDepthStencilSettings;
+    RenderStepID                      fRenderStepID;
+    SkEnumBitMask<Flags>              fFlags;
+    SkEnumBitMask<PipelineStageFlags> fStorageBufferStages;
+    PrimitiveType                     fPrimitiveType;
+    DepthStencilSettings              fDepthStencilSettings;
 
     // TODO: When we always use C++17 for builds, we should be able to just let subclasses declare
     // constexpr arrays and point to those, but we need explicit storage for C++14.

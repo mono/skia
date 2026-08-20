@@ -40,7 +40,8 @@ SkSurface_Base::SkSurface_Base(const SkImageInfo& info, const SkSurfaceProps* pr
         : SkSurface(info, props), fPixelStorage(std::move(storage)) {}
 
 SkSurface_Base::~SkSurface_Base() {
-    // in case the canvas outsurvives us, we null the callback
+    // TODO: in case the canvas outsurvives us, we null the callback. Notify the capture manager
+    // that this canvas is being deleted.
     if (fCachedCanvas) {
         fCachedCanvas->setSurfaceBase(nullptr);
         fCachedCanvas->onSurfaceDelete();
@@ -101,7 +102,7 @@ bool SkSurface_Base::outstandingImageSnapshot() const {
 bool SkSurface_Base::aboutToDraw(ContentChangeMode mode) {
     this->dirtyGenerationID();
 
-    SkASSERT(!fCachedCanvas || fCachedCanvas->getSurfaceBase() == this);
+    SkASSERT(!fOwnedBaseCanvas || fOwnedBaseCanvas->getSurface() == this);
 
     if (fCachedImage) {
         // the surface may need to fork its backend, if its sharing it with
@@ -131,7 +132,7 @@ bool SkSurface_Base::aboutToDraw(ContentChangeMode mode) {
 }
 
 uint32_t SkSurface_Base::newGenerationID() {
-    SkASSERT(!fCachedCanvas || fCachedCanvas->getSurfaceBase() == this);
+    SkASSERT(!fOwnedBaseCanvas || fOwnedBaseCanvas->getSurface() == this);
     static std::atomic<uint32_t> nextID{1};
     return nextID.fetch_add(1, std::memory_order_relaxed);
 }

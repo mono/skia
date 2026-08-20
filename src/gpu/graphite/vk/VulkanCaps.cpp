@@ -78,7 +78,7 @@ void populate_resource_binding_reqs(ResourceBindingRequirements& reqs) {
 
     // Assign uniform buffer binding values for shader generation
     reqs.fCombinedUniformBufferBinding = VulkanGraphicsPipeline::kCombinedUniformIndex;
-    reqs.fGradientBufferBinding = VulkanGraphicsPipeline::kGradientBufferIndex;
+    reqs.fStorageBufferBinding = VulkanGraphicsPipeline::kStorageBufferIndex;
 
     // Assign descriptor set indices for shader generation
     reqs.fUniformsSetIdx = VulkanGraphicsPipeline::kUniformBufferDescSetIndex;
@@ -1004,7 +1004,8 @@ SkEnumBitMask<SampleCount> VulkanCaps::getSupportedSampleCounts(
                         VK_IMAGE_CREATE_MULTISAMPLED_RENDER_TO_SINGLE_SAMPLED_BIT_EXT,
                         &properties));
         if (result != VK_SUCCESS && result != VK_ERROR_FORMAT_NOT_SUPPORTED) {
-            SKIA_LOG_W("Vulkan call GetPhysicalDeviceImageFormatProperties failed: %d", result);
+            SKIA_LOG_W("Vulkan call GetPhysicalDeviceImageFormatProperties failed for msaa: %d",
+                       result);
             return {};
         }
         if (result == VK_ERROR_FORMAT_NOT_SUPPORTED ||

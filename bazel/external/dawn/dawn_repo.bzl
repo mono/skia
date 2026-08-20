@@ -32,11 +32,22 @@ def _dawn_repo_impl(repo_ctx):
     ]:
         repo_ctx.delete(h)
 
-    python_bin = repo_ctx.which("python3")
-    if not python_bin:
-        python_bin = repo_ctx.which("python")
-    if not python_bin:
-        fail("Could not find python binary on the host")
+    # Detect the host system and resolve our hermetic CPython binary
+    os_name = repo_ctx.os.name.lower()
+    os_arch = repo_ctx.os.arch.lower()
+
+    if "windows" in os_name:
+        python_dir = repo_ctx.path(Label("@cpython_windows_amd64//:BUILD.bazel")).dirname
+        python_bin = python_dir.get_child("bin").get_child("python3.exe")
+    elif "mac" in os_name:
+        if "arm" in os_arch or "aarch64" in os_arch:
+            python_dir = repo_ctx.path(Label("@cpython_mac_arm64//:BUILD.bazel")).dirname
+        else:
+            python_dir = repo_ctx.path(Label("@cpython_mac_amd64//:BUILD.bazel")).dirname
+        python_bin = python_dir.get_child("bin").get_child("python3")
+    else:
+        python_dir = repo_ctx.path(Label("@cpython_linux_amd64//:BUILD.bazel")).dirname
+        python_bin = python_dir.get_child("bin").get_child("python3")
 
     # Copy the BUILD.bazel from Skia
     repo_ctx.delete("BUILD.bazel")
@@ -51,8 +62,8 @@ def _dawn_repo_impl(repo_ctx):
     repo_ctx.watch(repo_ctx.attr.generator_py)
     repo_ctx.watch(repo_ctx.attr.build_file)
 
-    # Resolve the python paths for jinja2 and markupsafe so the generator can run
-    # with the Bazel-cached dependencies without requiring any system/host pip installs.
+    # We do *not* have to rely on jinja2 and markupsafe (deps for Dawn's generator scripts)
+    # being available. We can use the versions Bazel checks out by adding them to PYTHONPATH.
     jinja2_dir = str(repo_ctx.path(repo_ctx.attr.jinja2).dirname)
     markupsafe_dir = str(repo_ctx.path(repo_ctx.attr.markupsafe).dirname)
     path_sep = ";" if "windows" in repo_ctx.os.name.lower() else ":"

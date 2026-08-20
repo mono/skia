@@ -157,6 +157,19 @@ crate.spec(
     rev = "5d0418d0eff747c829d52738c092581312f775c9",
 )
 crate.spec(
+    package = "jpeg-encoder",
+    version = "=0.6.0",
+)
+crate.spec(
+    package = "zune-jpeg",
+    version = "=0.5.16-rc1",
+)
+crate.spec(
+    features = ["std"],
+    package = "zune-core",
+    version = "=0.5.3",
+)
+crate.spec(
     package = "moxcms",
     version = "=0.8.0",
 )
@@ -326,6 +339,10 @@ download_windows_amd64_toolchain(name = "clang_windows_amd64")
 cipd_deps = use_extension("//bazel:cipd_deps.bzl", "cipd_deps")
 use_repo(
     cipd_deps,
+    "cpython_linux_amd64",
+    "cpython_mac_amd64",
+    "cpython_mac_arm64",
+    "cpython_windows_amd64",
     "git_linux_amd64",
     "gn_linux_amd64",
     "gn_mac_amd64",

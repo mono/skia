@@ -12,8 +12,10 @@
 #include "include/core/SkSpan.h"
 #include "include/private/SkTArray.h"
 #include "src/gpu/graphite/DrawCommands.h"
+#include "src/gpu/graphite/GraphicsPipeline.h"
 #include "src/gpu/graphite/GraphicsPipelineDesc.h"
 #include "src/gpu/graphite/GraphicsPipelineHandle.h"
+#include "src/gpu/graphite/ResourceTypes.h"
 
 struct SkImageInfo;
 
@@ -21,7 +23,6 @@ namespace skgpu::graphite {
 
 class CommandBuffer;
 class DrawList;
-class StorageBufferManager;
 class GraphicsPipeline;
 struct RenderPassDesc;
 class ResourceProvider;
@@ -52,7 +53,7 @@ public:
     // contained within its dimensions.
     const SkIRect&      bounds() const { return fBounds;       }
     TextureProxy* target() const { return fTarget.get(); }
-    StorageBufferManager* storageBufferManager() const { return fStorageBufferManager.get(); }
+    const BindBufferInfo& storageBufferInfo() const { return fStorageBufferInfo; }
     std::pair<LoadOp, StoreOp> ops() const { return fOps; }
     std::array<float, 4> clearColor() const { return fClearColor; }
 
@@ -72,14 +73,21 @@ public:
         return fCommandList.commands();
     }
 
+    // The handles aren't guaranteed to have been resolved to GraphicsPipelines until
+    // after addResourceRefs() is called
     const GraphicsPipeline* getPipeline(size_t index) const {
-        return fFullPipelines[index].get();
+        SkASSERT(fPipelinesHaveBeenResolved);
+        return fPipelineHandles[index].pipelineOrNull().get();
     }
 
     // Proxies are always valid but may not be instantiated until after prepareResources() is called
     SkSpan<const sk_sp<TextureProxy>> sampledTextures() const { return fSampledTextures; }
-    // Not valid until after prepareResources() is called
-    SkSpan<const sk_sp<GraphicsPipeline>> pipelines() const { return fFullPipelines; }
+
+    // The handles aren't guaranteed to have been resolved to GraphicsPipelines until
+    // after addResourceRefs() is called
+    SkSpan<const GraphicsPipelineHandle> pipelineHandles() const {
+        return fPipelineHandles;
+    }
 
     [[nodiscard]] bool addResourceRefs(ResourceProvider*, CommandBuffer*);
 
@@ -89,8 +97,7 @@ private:
 
     DrawPass(sk_sp<TextureProxy> target,
              std::pair<LoadOp, StoreOp> ops,
-             std::array<float, 4> clearColor,
-             sk_sp<StorageBufferManager> storageBufferManager);
+             std::array<float, 4> clearColor);
 
     DrawPassCommands::List fCommandList;
 
@@ -101,7 +108,7 @@ private:
     std::array<float, 4> fClearColor;
 
     // The pipelines are referenced by index in BindGraphicsPipeline, but that will index into
-    // an array of actual GraphicsPipelines (i.e., fFullPipelines).
+    // fPipelineHandles.
     skia_private::TArray<GraphicsPipelineDesc> fPipelineDescs;
     skia_private::TArray<float> fPipelineDrawAreas;
 
@@ -109,10 +116,9 @@ private:
     skia_private::TArray<GraphicsPipelineHandle> fPipelineHandles;
     skia_private::TArray<sk_sp<TextureProxy>> fSampledTextures;
 
-    // These get resolved (from the GraphicsPipelineHandles) in prepareResources
-    skia_private::TArray<sk_sp<GraphicsPipeline>> fFullPipelines;
+    SkDEBUGCODE(bool fPipelinesHaveBeenResolved = false;)    // set in addResourceRefs
 
-    sk_sp<StorageBufferManager> fStorageBufferManager;
+    BindBufferInfo fStorageBufferInfo;
 };
 
 } // namespace skgpu::graphite
