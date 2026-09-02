@@ -26,6 +26,9 @@
     "name": "BazelBuild-viewer-debug-linux_x64"
   },
   {
+    "name": "BazelBuild-viewer-for_windows_x64_release-windows_x64"
+  },
+  {
     "name": "BazelBuild-viewer-release-linux_x64"
   },
   {
@@ -773,12 +776,6 @@
   {
     "name": "Build-Win-MSVC-x86_64-Release-Vulkan",
     "cq_config": {}
-  },
-  {
-    "name": "BuildStats-Ubuntu24.04-Clang-x86_64-Release"
-  },
-  {
-    "name": "BuildStats-Ubuntu24.04-Clang-x86_64-Release-Vulkan"
   },
   {
     "name": "Canary-Android"

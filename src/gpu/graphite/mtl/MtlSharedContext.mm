@@ -76,6 +76,7 @@ MtlSharedContext::MtlSharedContext(sk_cfp<id<MTLDevice>> device,
               { kDirectDepthLEqualPass, "direct-depth-lequal" },
               { kWindingStencilPass,    "winding-stencil"     },
               { kEvenOddStencilPass,    "evenodd-stencil"     },
+              { kIncrementStencilPass,  "increment-stencil"     },
               { kRegularCoverPass,      "regular-cover"       },
               { kInverseCoverPass,      "inverse-cover"       },
               { kIgnoreDSS,             "ignore"              },
@@ -155,6 +156,7 @@ MTLStencilDescriptor* stencil_face_to_mtl(DepthStencilSettings::Face face) {
     result.readMask = face.fReadMask;
     result.writeMask = face.fWriteMask;
     result.depthStencilPassOperation = stencil_op_to_mtl(face.fDepthStencilPassOp);
+    result.depthFailureOperation = stencil_op_to_mtl(face.fDepthFailOp);
     result.stencilFailureOperation = stencil_op_to_mtl(face.fStencilFailOp);
     return result;
 }

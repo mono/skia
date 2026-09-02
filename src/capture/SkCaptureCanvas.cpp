@@ -7,12 +7,14 @@
 
 #include "src/capture/SkCaptureCanvas.h"
 
+#include "include/core/SkBlender.h"
 #include "include/core/SkPicture.h"
 #include "include/core/SkRasterHandleAllocator.h"
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkSurface.h"
 #include "include/private/SkAssert.h"
 #include "include/private/SkLog.h"
+#include "include/private/chromium/Slug.h"
 #include "include/utils/SkNWayCanvas.h"
 #include "src/capture/SkCaptureManager.h"
 #include "src/core/SkCanvasPriv.h"
@@ -64,8 +66,30 @@ void SkCaptureCanvas::onSurfaceDelete() {
     // TODO (b/412351769): signal to the capture manager that this canvas's surface has been deleted
 }
 
-SkSurface_Base* SkCaptureCanvas::getSurfaceBase() const {
-    return this->fBaseCanvas->getSurfaceBase();
+sk_sp<SkSurface> SkCaptureCanvas::onNewSurface(const SkImageInfo& info,
+                                               const SkSurfaceProps& props) {
+    return fBaseCanvas->onNewSurface(info, props);
+}
+
+bool SkCaptureCanvas::onPeekPixels(SkPixmap* pixmap) {
+    return fBaseCanvas->peekPixels(pixmap);
+}
+
+bool SkCaptureCanvas::onAccessTopLayerPixels(SkPixmap* pixmap) {
+    return fBaseCanvas->onAccessTopLayerPixels(pixmap);
+}
+
+SkImageInfo SkCaptureCanvas::onImageInfo() const {
+    return fBaseCanvas->imageInfo();
+}
+
+bool SkCaptureCanvas::onGetProps(SkSurfaceProps* props, bool top) const {
+    return fBaseCanvas->onGetProps(props, top);
+}
+
+sk_sp<sktext::gpu::Slug> SkCaptureCanvas::onConvertGlyphRunListToSlug(
+        const sktext::GlyphRunList& glyphRunList, const SkPaint& paint) {
+    return fBaseCanvas->onConvertGlyphRunListToSlug(glyphRunList, paint);
 }
 
 //////////////////// Function forwarding ///////////////////////
@@ -268,6 +292,11 @@ void SkCaptureCanvas::onDrawAtlas2(const SkImage* image,
     }
 }
 
+void SkCaptureCanvas::onDrawMesh(const SkMesh& mesh, sk_sp<SkBlender> blender, const SkPaint& paint) {
+    this->pollCapturingStatus();
+    this->SkNWayCanvas::onDrawMesh(mesh, blender, paint);
+}
+
 void SkCaptureCanvas::onDrawGlyphRunList(const sktext::GlyphRunList& list, const SkPaint& paint) {
     this->pollCapturingStatus();
     this->SkNWayCanvas::onDrawGlyphRunList(list, paint);
@@ -343,8 +372,4 @@ void SkCaptureCanvas::onDrawEdgeAAImageSet2(const ImageSetEntry set[],
     this->pollCapturingStatus();
     this->SkNWayCanvas::onDrawEdgeAAImageSet2(
             set, count, dstClips, preViewMatrices, sampling, paint, constraint);
-}
-
-SkSurface* SkCaptureCanvas::getBaseCanvasSurface() const {
-    return fBaseCanvas->getSurface();
 }
