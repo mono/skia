@@ -4259,6 +4259,17 @@ skiasharp_build("SkiaSharp") {
   ]
 
   libs = []
+
+  # mono/skia: framework-relative install_name set at link time on the Apple
+  # framework platforms (is_ios covers iOS/tvOS/Mac Catalyst; macOS ships a plain
+  # dylib and keeps the toolchain default). Mac Catalyst uses the versioned layout.
+  if (is_ios) {
+    if (is_maccatalyst) {
+      ldflags = [ "-Wl,-install_name,@rpath/lib$target_name.framework/Versions/A/lib$target_name" ]
+    } else {
+      ldflags = [ "-Wl,-install_name,@rpath/lib$target_name.framework/lib$target_name" ]
+    }
+  }
 }
 
 skiasharp_build("HarfBuzzSharp") {
@@ -4293,4 +4304,15 @@ skiasharp_build("HarfBuzzSharp") {
   sources = [
     "$_src/harfbuzz-subset.cc",
   ]
+
+  # mono/skia: framework-relative install_name set at link time on the Apple
+  # framework platforms (is_ios covers iOS/tvOS/Mac Catalyst; macOS ships a plain
+  # dylib and keeps the toolchain default). Mac Catalyst uses the versioned layout.
+  if (is_ios) {
+    if (is_maccatalyst) {
+      ldflags = [ "-Wl,-install_name,@rpath/lib$target_name.framework/Versions/A/lib$target_name" ]
+    } else {
+      ldflags = [ "-Wl,-install_name,@rpath/lib$target_name.framework/lib$target_name" ]
+    }
+  }
 }
