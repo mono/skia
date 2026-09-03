@@ -685,6 +685,10 @@ typedef struct gr_vk_memory_allocator_t gr_vk_memory_allocator_t;
 typedef VKAPI_ATTR void (VKAPI_CALL *gr_vk_func_ptr)(void);
 typedef gr_vk_func_ptr (*gr_vk_get_proc)(void* ctx, const char* name, vk_instance_t* instance, vk_device_t* device);
 
+// Vulkan device-lost callback handle. See gr_vk_device_lost.h for the type
+// definition + _new / _delete lifecycle.
+typedef struct gr_vk_device_lost_handler_t gr_vk_device_lost_handler_t;
+
 typedef struct {
     vk_instance_t*                          fInstance;
     vk_physical_device_t*                   fPhysicalDevice;
@@ -699,6 +703,11 @@ typedef struct {
     gr_vk_get_proc                          fGetProc;
     void*                                   fGetProcUserData;
     bool                                    fProtectedContext;
+    // Optional device-lost handler (see gr_vk_device_lost.h). Nullable. When non-null,
+    // the caller retains ownership: the Context does not free the handle on destruction,
+    // mirroring Skia's raw non-owning storage of the callback. Free the handle with
+    // gr_vk_device_lost_handler_delete AFTER the Context has been deleted.
+    gr_vk_device_lost_handler_t*            fDeviceLostHandler;
 } gr_vk_backendcontext_t;
 
 typedef intptr_t gr_vk_backendmemory_t;
