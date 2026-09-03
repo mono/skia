@@ -21,6 +21,8 @@
 
 #include "src/c/sk_types_priv.h"
 
+#include <optional>
+
 namespace {
 
 // [mono/skia fork patch] Skia m147's default {Ser,Deser}ialProcs leave both
@@ -40,7 +42,7 @@ SkSerialProcs default_serial_procs() {
 
 SkDeserialProcs default_deserial_procs() {
     SkDeserialProcs procs;
-    procs.fImageProc = [](const void* data, size_t length, void*) -> sk_sp<SkImage> {
+    procs.fImageProc = [](const void* data, size_t length, std::optional<SkAlphaType>, void*) -> sk_sp<SkImage> {
         return SkImages::DeferredFromEncodedData(SkData::MakeWithCopy(data, length));
     };
     return procs;
