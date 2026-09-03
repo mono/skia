@@ -80,6 +80,24 @@ SK_C_API sk_graphite_backend_texture_t* sk_graphite_vk_backend_texture_new(
     uint32_t queueFamilyIndex,
     void*    vkImage);              // VkImage
 
+// VkImage and VkSemaphore are non-dispatchable 64-bit Vulkan handles on
+// 32-bit targets. These factories preserve the complete handle value, unlike
+// the legacy pointer-shaped backend texture overload above.
+SK_C_API sk_graphite_backend_texture_t* sk_graphite_vk_backend_texture_new_uint64(
+    int32_t  width,
+    int32_t  height,
+    const sk_graphite_vk_texture_info_t* info,
+    int32_t  imageLayout,
+    uint32_t queueFamilyIndex,
+    uint64_t vkImage);
+
+SK_C_API sk_graphite_backend_semaphore_t* sk_graphite_vk_backend_semaphore_new(
+    uint64_t vkSemaphore);
+
+SK_C_API sk_graphite_mutable_texture_state_t* sk_graphite_vk_mutable_texture_state_new(
+    int32_t imageLayout,
+    uint32_t queueFamilyIndex);
+
 SK_C_PLUS_PLUS_END_GUARD
 
 #endif  // sk_graphite_vulkan_DEFINED
