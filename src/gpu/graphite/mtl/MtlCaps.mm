@@ -7,6 +7,8 @@
 
 #include "src/gpu/graphite/mtl/MtlCaps.h"
 
+#include <TargetConditionals.h>
+
 #include "include/core/SkTextureCompressionType.h"
 #include "include/gpu/graphite/TextureInfo.h"
 #include "include/gpu/graphite/mtl/MtlGraphiteTypes.h"
@@ -143,10 +145,17 @@ void MtlCaps::initCaps(const id<MTLDevice> device) {
     // Dual source blending requires Metal 1.2, but our minimum requirements ensure 2.2
     shaderCaps->fDualSourceBlendingSupport = true;
     shaderCaps->fVectorClampMinMaxSupport = !isIntel;
+    // The iOS/tvOS simulator advertises an Apple GPU family but its Metal implementation
+    // cannot read from a render target in a fragment shader: the MSL compiles, but
+    // newRenderPipelineStateWithDescriptor fails with CompilerError Code=2 "reading from a
+    // rendertarget is not supported" (mono/SkiaSharp#4555). Keep FB fetch off there so dst
+    // reads fall back to DstReadStrategy::kTextureCopy, which the simulator handles fine.
+#if !TARGET_OS_SIMULATOR
     if (this->isApple()) {
         shaderCaps->fFBFetchSupport = true;
         shaderCaps->fFBFetchColorName = "sk_LastFragColor";
     }
+#endif
 }
 
 
