@@ -9,7 +9,7 @@ vars = {
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling different
   # dependencies without interference from each other.
-  'infra_revision': 'd18d86b514cf79c69e5fa8dc32c324f296bb8bc6',
+  'infra_revision': '43e36b5c5eea8d6fe338656001bea921499a65ac',
 
   # ninja CIPD package version.
   # https://chrome-infra-packages.appspot.com/p/infra/3pp/tools/ninja
@@ -20,7 +20,7 @@ vars = {
   'googlefonts_testdata_version': 'version:20230913',
 
   # Pre-built task drivers from this repo, used for CI.
-  'task_drivers_revision': 'git_revision:782dfac458428f99c91f1b09ccb4f88dadc06c1c',
+  'task_drivers_revision': 'git_revision:a24a8c916deca7ed9ea7dd28c74c55de853c98b6',
 
   'checkout_agents_internal': False,
 }

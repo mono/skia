@@ -17,6 +17,7 @@
 #include "src/core/SkMathPriv.h"
 #include "src/core/SkRasterPipeline.h"
 #include "src/core/SkRasterPipelineOpContexts.h"
+#include "src/core/SkRasterPipelineOpList.h"
 #include "src/core/SkVx.h"
 
 #include <functional>
@@ -287,35 +288,212 @@ XferRowFn get_xfer_row_fn(TextureFormat format, uint8_t ops) {
     }
 }
 
-void optimize_colortypes_and_swizzle(SkColorType* texBaseCT, Swizzle* readSwizzle) {
+// --- Functions for collapsing equivalent colortypes and formats into fewer xfer ops
+
+// An RPModifier for RPOps::Make() that handles calculating bt709 luminance. The API is that it
+// must have an explicit bool operator, and an apply(SkRasterPipeline*) function.
+struct BT709Luminance {
+    bool fEnabled;
+
+    explicit operator bool() const { return fEnabled; }
+    void apply(SkRasterPipeline* rp) const {
+        if (fEnabled) {
+            rp->append(SkRasterPipelineOp::bt709_luminance_or_luma_to_alpha);
+        } // else no op needed
+    }
+};
+
+bool account_for_luminance(SkColorType srcCT,
+                           bool hasColorSpaceTransform,
+                           SkColorType* dstCT) {
+    if (*dstCT == kGray_8_SkColorType) {
+        if (srcCT != kGray_8_SkColorType || hasColorSpaceTransform) {
+            // Luminance must be calculated by raster pipeline, but we'll have to apply it before
+            // any srcToDst swizzle, so pull it out to its own RPModifier. The op stores the value
+            // in the alpha channel, so that needs to be dstCT that SkRasterPipeline sees.
+            *dstCT = kAlpha_8_SkColorType;
+            return true;
+        } // else leave it as gray->gray
+    } // else trivially no extra luminance needs to be calculated, leave dstCT as-is
+    return false;
+}
+
+bool rgbx_to_rgba(SkColorType* ct) {
+    switch (*ct) {
+        case kRGB_888x_SkColorType: *ct = kRGBA_8888_SkColorType; return true;
+        case kRGB_101010x_SkColorType: *ct = kRGBA_1010102_SkColorType; return true;
+        case kRGB_F16F16F16x_SkColorType: *ct = kRGBA_F16_SkColorType; return true;
+        case kBGR_101010x_SkColorType: *ct = kBGRA_1010102_SkColorType; return true;
+        default:
+            // No colortype consolidation possible by switching to a kForceOpaque op instead.
+            return false;
+    }
+}
+
+bool bgra_to_rgba(SkColorType* ct) {
+    switch (*ct) {
+        case kBGRA_8888_SkColorType:    *ct = kRGBA_8888_SkColorType;    return true;
+        case kBGRA_1010102_SkColorType: *ct = kRGBA_1010102_SkColorType; return true;
+        case kBGR_101010x_SkColorType:  *ct = kRGB_101010x_SkColorType;  return true;
+        // NOTE: For now there's no RGBA version of the _XR color types, so they can't be swapped
+        case kBGRA_10101010_XR_SkColorType:
+        case kBGR_101010x_XR_SkColorType: [[fallthrough]];
+        default:
+            // No colortype consolidation possible by switching to a kSwapRB op instead.
+            return false;
+    }
+}
+
+template <bool TextureIsDst>
+std::pair</*ops=*/uint8_t, /*computeLuminance=*/bool> optimize_transfer(
+        SkColorType* cpuCT,
+        SkColorType* texBaseCT,
+        Swizzle* texReadSwizzle,
+        SkColorSpaceXformSteps* csSteps,
+        SkEnumBitMask<FormatXferOp> xferOps) {
+    // Aliases for color types that are based on the transfer direction
+    SkColorType* srcCT = TextureIsDst ? cpuCT     : texBaseCT;
+    SkColorType* dstCT = TextureIsDst ? texBaseCT : cpuCT;
+
+    uint8_t finalOps = 0;
+
     // Some combinations of swizzle and load/store ops in raster pipeline are redundant so try to
     // make adjustments to reduce or eliminate the use of raster pipeline entirely.
 
-    // The most trivial cases are swizzling between alpha-only and red-only color types which should
-    // be a no-op in either direction as long as the underlying data type is the same.
-    SkColorType adjustedBase = *texBaseCT;
-    if (*readSwizzle == Swizzle("000r")) {
-        // Red -> Alpha so shift the texture's "base" colortype to be the corresponding alpha type
-        switch(adjustedBase) {
-            case kR8_unorm_SkColorType:  adjustedBase = kAlpha_8_SkColorType; break;
-            case kR16_unorm_SkColorType: adjustedBase = kA16_unorm_SkColorType; break;
-            case kR16_float_SkColorType: adjustedBase = kA16_float_SkColorType; break;
-            default: break; // Go through regular RP + swizzle flow
+    // First, adjust texBaseCT to match colortype semantics that can be inferred from swizzle for
+    // alpha-only and red-only color types (hopefully creating a no-op transfer). These also test
+    // the forced-opaque swizzle equivalents.
+    {
+        SkColorType adjustedBase = *texBaseCT;
+        if (*texReadSwizzle == Swizzle("000r") || *texReadSwizzle == Swizzle("0001")) {
+            // Red -> Alpha so shift the texture's "base" colortype to be the its alpha type
+            switch(adjustedBase) {
+                case kR8_unorm_SkColorType:  adjustedBase = kAlpha_8_SkColorType; break;
+                case kR16_unorm_SkColorType: adjustedBase = kA16_unorm_SkColorType; break;
+                case kR16_float_SkColorType: adjustedBase = kA16_float_SkColorType; break;
+                default: break; // Go through regular RP + swizzle flow
+            }
+        } else if ((*texReadSwizzle == Swizzle("rrra") || *texReadSwizzle == Swizzle("rrr1")) &&
+                adjustedBase == kR8_unorm_SkColorType) {
+            // Red -> Gray so shift to kGray, which either ensures RP will generate the gray values
+            // from a non-gray input, or will be detected as a no-op when transferring to/from
+            // existing gray.
+            adjustedBase = kGray_8_SkColorType;
         }
-    } else if (*readSwizzle == Swizzle("rrra") && adjustedBase == kR8_unorm_SkColorType) {
-        // Red -> Gray so shift to kGray, which either ensures RP will generate the gray values from
-        // a non-gray input, or will be detected as a no-op when transferring to/from existing gray.
-        adjustedBase = kGray_8_SkColorType;
+
+        if (adjustedBase != *texBaseCT) {
+            *texBaseCT = adjustedBase;
+            // Must preserve any forced opacity in the swizzle
+            if ((SkColorTypeChannelFlags(adjustedBase) & kAlpha_SkColorChannelFlag) &&
+                (*texReadSwizzle)[3] == '1') {
+                *texReadSwizzle = Swizzle::RGB1();
+            } else {
+                *texReadSwizzle = Swizzle::RGBA();
+            }
+        }
     }
 
-    // TODO(michaelludwig): Include adjustments to account for redundant RB swaps between colortype
-    // and the swizzle and the FormatXferOp, and remove unnecessary alpha opacity masking (e.g.
-    // rgbx -> rgba) if the target will be masking alpha when sampling/reading anyways.
-
-    if (adjustedBase != *texBaseCT) {
-        *texBaseCT = adjustedBase;
-        *readSwizzle = Swizzle::RGBA();
+    // Second, remove normalized floating point semantics, since historically we don't enforce them
+    // during transfers (for better or worse).
+    {
+        if (*srcCT == kRGBA_F16Norm_SkColorType) {
+            *srcCT = kRGBA_F16_SkColorType;
+        }
+        if (*dstCT == kRGBA_F16Norm_SkColorType) {
+            *dstCT = kRGBA_F16_SkColorType;
+        }
     }
+
+    // Third, handle masking any unknown alpha bits if the dst doesn't already mask them.
+    {
+        bool cpuMasksAlpha = rgbx_to_rgba(cpuCT);
+        bool gpuMasksAlpha = rgbx_to_rgba(texBaseCT) || (*texReadSwizzle)[3] == '1';
+        bool srcHasJunkAlpha = TextureIsDst ? cpuMasksAlpha : gpuMasksAlpha;
+        bool dstStoresAlpha =
+                (SkColorTypeChannelFlags(*dstCT) & kAlpha_SkColorChannelFlag) &&
+                !(TextureIsDst ? gpuMasksAlpha : cpuMasksAlpha);
+
+        if (srcHasJunkAlpha) {
+            csSteps->fFlags.premul = false;
+            csSteps->fFlags.unpremul = false;
+        }
+
+        if (dstStoresAlpha) {
+            if (srcHasJunkAlpha) {
+                // Must override the junk alpha bits with opaque values during the transfer.
+                // TODO(michaelludwig): Implement a force-opaque extended xfer op to avoid applying
+                // swizzles for this.
+                *texReadSwizzle = Swizzle::Concat(*texReadSwizzle, Swizzle::RGB1());
+            }
+        } else {
+            // Reset any opacity forcing in the swizzle since it's either in finalOps or can be
+            // ignored
+            if ((*texReadSwizzle)[3] == '1') {
+                *texReadSwizzle = Swizzle((*texReadSwizzle)[0],
+                                          (*texReadSwizzle)[1],
+                                          (*texReadSwizzle)[2],
+                                          'a');
+            }
+        }
+    }
+
+    // TODO(michaelludwig): Optimize cases where there are no channel overlaps between the source
+    // and the dst and a constant value can be set for all pixels.
+
+    // Fourth, lift gray/luminance calculation out of colortype so that its placement in the
+    // raster pipeline ops list can be controlled (vs. attached to a store). If luminance has to be
+    // calculated, some additional optimizations may not be possible.
+    const bool computeLuminance = account_for_luminance(*srcCT, SkToBool(*csSteps), dstCT);
+
+    // Fifth, consolidate red/blue swaps present in colortype, swizzle, and xferOps into just ops
+    {
+        // Any swaps from the texture's base color type, swizzle, and xfer ops can always be
+        // combined since those operations are grouped together, regardless of `TextureIsDst`.
+        int numRBSwaps = 0;
+        if ((*texReadSwizzle)[0] == 'b' && (*texReadSwizzle)[2] == 'r') {
+            // Remove the swap in the swizzle (moving towards a no-op swizzle).
+            *texReadSwizzle = Swizzle::Concat(*texReadSwizzle, Swizzle::BGRA());
+            numRBSwaps++;
+        }
+        if (bgra_to_rgba(texBaseCT)) {
+            numRBSwaps++;
+        }
+        if (xferOps & FormatXferOp::kSwapRB) {
+            numRBSwaps++;
+        }
+
+        // If there is not any RGB-dependent calculation between CPU and GPU data, we can also
+        // consolidate the swap from cpu color type.
+        if (!computeLuminance && !SkToBool(*csSteps)) {
+            // TODO(michaelludwig): Once we push finalOps back into raster pipeline if we need SkRP,
+            // we can always apply this to cpuCT to remove an implicit swap_rb op.
+            SkColorType swappedCT = *cpuCT;
+            if (bgra_to_rgba(&swappedCT) && swappedCT == *texBaseCT) {
+                numRBSwaps++;
+                *cpuCT = swappedCT;
+            }
+        }
+
+        // An even number of swaps is a no-op; an odd number of swaps is the same as one swap. The
+        // swap can be skipped if the source data is known to have the same values in R and B, or
+        // if R and B will be discarded.
+        bool srcHasRBData = *srcCT != kGray_8_SkColorType && !SkColorTypeIsAlphaOnly(*srcCT);
+        bool dstKeepsRBData = !SkColorTypeIsAlphaOnly(*dstCT) || computeLuminance;
+        if ((numRBSwaps & 1) && srcHasRBData && dstKeepsRBData) {
+            finalOps |= kSwapRB;
+        }
+    }
+
+    if (xferOps & FormatXferOp::kDropAlpha) {
+        if constexpr (TextureIsDst) {
+            // On CPU->GPU conversion, FormatXferOp::kDropAlpha actually drops the alpha bits
+            finalOps |= kDropAlpha;
+        } else {
+            finalOps |= kPadAlpha;
+        }
+    }
+
+    return {finalOps, computeLuminance};
 }
 
 } // anonymous namespace
@@ -330,19 +508,19 @@ std::optional<TextureFormatXferFn> TextureFormatXferFn::MakeCpuToGpu(
         return std::nullopt;
     }
 
-    optimize_colortypes_and_swizzle(&baseCT, &dstReadSwizzle);
+    SkColorSpaceXformSteps csStepsOptimized = csSteps;
+    auto [postOps, luminance] = optimize_transfer</*TextureIsDst=*/true>(
+            &srcCT, &baseCT, &dstReadSwizzle, &csStepsOptimized, xferOps);
 
-    uint8_t postOps = 0;
-    Swizzle srcToDst = dstReadSwizzle.invert();
-
-    if (xferOps & FormatXferOp::kSwapRB) {
-        postOps |= kSwapRB;
-    }
-    if (xferOps & FormatXferOp::kDropAlpha) {
-        // On CPU->GPU conversion, FormatXferOp::kDropAlpha actually drops the alpha bits
-        postOps |= kDropAlpha;
-    }
-    auto rp = RPOps::Make(srcCT, baseCT, csSteps, srcToDst);
+    // The CPU -> GPU transform is:
+    //  SkRP{load(srcCT) ->
+    //       csSteps? ->
+    //       luminance? -> NOTE: luminance must be computed *before* the texture's swizzle
+    //       srcToDst(dstReadSwizzle^-1)? ->
+    //       store(baseCT)}? ->
+    //  postOps(baseCT->TF)?
+    auto rp = RPOps::Make(srcCT, baseCT, // ==> rpModifiers
+                          csStepsOptimized, BT709Luminance{luminance}, dstReadSwizzle.invert());
     return TextureFormatXferFn(dstFormat, /*preOps=*/0, std::move(rp), postOps);
 }
 
@@ -356,18 +534,19 @@ std::optional<TextureFormatXferFn> TextureFormatXferFn::MakeGpuToCpu(
         return std::nullopt;
     }
 
-    optimize_colortypes_and_swizzle(&baseCT, &srcReadSwizzle);
+    SkColorSpaceXformSteps csStepsOptimized = csSteps;
+    auto [preOps, luminance] = optimize_transfer</*TextureIsDst=*/false>(
+            &dstCT, &baseCT, &srcReadSwizzle, &csStepsOptimized, xferOps);
 
-    uint8_t preOps = 0;
-    Swizzle srcToDst = srcReadSwizzle;
-    if (xferOps & FormatXferOp::kSwapRB) {
-        preOps |= kSwapRB;
-    }
-    if (xferOps & FormatXferOp::kDropAlpha) {
-        // On GPU->CPU conversion, FormatXferOp::kDropAlpha must pad alpha bits back
-        preOps |= kPadAlpha;
-    }
-    auto rp = RPOps::Make(baseCT, dstCT, srcToDst, csSteps);
+    // The GPU -> CPU transform is:
+    //  preOps(TF->baseCT)? ->
+    //  SkRP{load(baseCT) ->
+    //       srcToDst(srcReadSwizzle)? ->
+    //       csSteps? ->
+    //       luminance? ->
+    //       store(dstCT)}?
+    auto rp = RPOps::Make(baseCT, dstCT, // ==> rpModifiers
+                          srcReadSwizzle, csStepsOptimized, BT709Luminance{luminance});
     return TextureFormatXferFn(srcFormat, preOps, std::move(rp), /*postOps=*/0);
 }
 
@@ -391,6 +570,12 @@ sk_sp<TextureFormatXferFn::RPOps> TextureFormatXferFn::RPOps::Make(
         (!SkToBool(rpModifiers) && ...)) {
         return nullptr; // Identity conversion
     }
+
+    // Luminance has to be calculated before the texture's swizzle so it's pulled out manually
+    // and put in the right place in `rpModifiers`, so we don't want to encounter them where
+    // the appendStore() also computes luminance.
+    SkASSERT(dstColorType != kGray_8_SkColorType);
+
     sk_sp<RPOps> ops{new RPOps(/*srcBpp=*/SkColorTypeBytesPerPixel(srcColorType),
                                /*dstBpp=*/SkColorTypeBytesPerPixel(dstColorType))};
 
