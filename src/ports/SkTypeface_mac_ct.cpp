@@ -1177,8 +1177,160 @@ static CTFontVariation ctvariation_from_SkFontArguments(CTFontRef ct, CFArrayRef
              opsz };
 }
 
+// Defined later in this translation unit; used by onMakeClone for palette baking.
+static sk_sp<SkData> skdata_from_skstreamasset(std::unique_ptr<SkStreamAsset> stream);
+static SkUniqueCFRef<CTFontRef> ctfont_from_skdata(sk_sp<SkData> data, int ttcIndex);
+
+// CoreText exposes no public API to select a COLR/CPAL palette and always renders the font's
+// default palette (index 0); the only color input it honors is the CGContext fill color, which it
+// maps to the COLR foreground entry. To honor SkFontArguments::Palette using only public API, bake
+// the requested palette (selected index + per-entry overrides) into palette 0 of a private,
+// in-memory copy of the font's `CPAL` table. A CTFont built from those bytes then renders the
+// desired colors for both COLRv0 and COLRv1, because CoreText still performs all the drawing.
+//
+// Returns nullptr when there is no usable `CPAL` table or the request is the identity, in which
+// case the caller keeps the original font. The overwrite is in place (same size, no sfnt
+// relayout); only the `CPAL` table bytes and its directory checksum change.
+static sk_sp<SkData> skdata_with_baked_palette(const SkData* fontData,
+                                               const SkFontArguments::Palette& palette) {
+    if (!fontData) {
+        return nullptr;
+    }
+    const size_t size = fontData->size();
+    const uint8_t* base = fontData->bytes();
+    if (size < sizeof(SkSFNTHeader)) {
+        return nullptr;
+    }
+
+    auto readU16 = [](const uint8_t* p) -> uint32_t {
+        return (uint32_t(p[0]) << 8) | p[1];
+    };
+    auto readU32 = [](const uint8_t* p) -> uint32_t {
+        return (uint32_t(p[0]) << 24) | (uint32_t(p[1]) << 16) | (uint32_t(p[2]) << 8) | p[3];
+    };
+
+    // Font collections ('ttcf') do not start with a table directory; do not attempt to parse them.
+    constexpr uint32_t kTTCF = SkSetFourByteTag('t', 't', 'c', 'f');
+    if (readU32(base) == kTTCF) {
+        return nullptr;
+    }
+
+    // Find the `CPAL` table in the sfnt table directory.
+    const SkSFNTHeader* header = reinterpret_cast<const SkSFNTHeader*>(base);
+    int numTables = SkEndian_SwapBE16(header->numTables);
+    size_t dirSize = sizeof(SkSFNTHeader) +
+                     sizeof(SkSFNTHeader::TableDirectoryEntry) * size_t(numTables);
+    if (numTables < 0 || size < dirSize) {
+        return nullptr;
+    }
+    const SkSFNTHeader::TableDirectoryEntry* dir =
+        reinterpret_cast<const SkSFNTHeader::TableDirectoryEntry*>(base + sizeof(SkSFNTHeader));
+
+    constexpr SkFontTableTag kCPAL = SkSetFourByteTag('C', 'P', 'A', 'L');
+    int cpalIndex = -1;
+    for (int i = 0; i < numTables; ++i) {
+        if (SkEndian_SwapBE32(dir[i].tag) == kCPAL) {
+            cpalIndex = i;
+            break;
+        }
+    }
+    if (cpalIndex < 0) {
+        return nullptr;  // not a CPAL color font
+    }
+
+    size_t cpalOffset = SkEndian_SwapBE32(dir[cpalIndex].offset);
+    size_t cpalLength = SkEndian_SwapBE32(dir[cpalIndex].logicalLength);
+    if (cpalLength < 12 || cpalOffset > size || cpalLength > size - cpalOffset) {
+        return nullptr;
+    }
+
+    // `CPAL` header (version 0 layout, shared by version 1):
+    //   uint16 version, numPaletteEntries, numPalettes, numColorRecords;
+    //   uint32 colorRecordsArrayOffset;       // from the start of the table
+    //   uint16 colorRecordIndices[numPalettes];
+    // ColorRecord is 4 bytes in BGRA order.
+    const uint8_t* cpal = base + cpalOffset;
+    uint32_t numPaletteEntries  = readU16(cpal + 2);
+    uint32_t numPalettes        = readU16(cpal + 4);
+    uint32_t numColorRecords    = readU16(cpal + 6);
+    uint32_t colorRecordsOffset = readU32(cpal + 8);
+    const uint8_t* colorRecordIndices = cpal + 12;
+    if (numPaletteEntries == 0 || numPalettes == 0) {
+        return nullptr;
+    }
+    if (size_t(12) + 2 * size_t(numPalettes) > cpalLength) {
+        return nullptr;
+    }
+    if (size_t(colorRecordsOffset) + 4 * size_t(numColorRecords) > cpalLength) {
+        return nullptr;
+    }
+
+    // CSS/FreeType semantics: an out-of-range palette index falls back to palette 0.
+    uint32_t srcIndex = 0;
+    if (palette.index > 0 && SkTo<uint32_t>(palette.index) < numPalettes) {
+        srcIndex = SkTo<uint32_t>(palette.index);
+    }
+    uint32_t srcStart = readU16(colorRecordIndices + 2 * srcIndex);
+    uint32_t dstStart = readU16(colorRecordIndices + 0);  // palette 0
+    if (srcStart + numPaletteEntries > numColorRecords ||
+        dstStart + numPaletteEntries > numColorRecords) {
+        return nullptr;
+    }
+
+    // Resolve the requested palette: start from the selected palette's color records, then apply
+    // any per-entry overrides. Use a temporary buffer so a no-op self-copy (index 0 + overrides)
+    // is well defined.
+    AutoTMalloc<uint8_t> resolved(4 * size_t(numPaletteEntries));
+    memcpy(resolved.get(),
+           cpal + colorRecordsOffset + 4 * srcStart,
+           4 * size_t(numPaletteEntries));
+    for (int i = 0; i < palette.overrideCount; ++i) {
+        const SkFontArguments::Palette::Override& o = palette.overrides[i];
+        if (SkTo<uint32_t>(o.index) < numPaletteEntries) {
+            uint8_t* rec = resolved.get() + 4 * size_t(o.index);
+            rec[0] = SkColorGetB(o.color);  // CPAL ColorRecord is BGRA
+            rec[1] = SkColorGetG(o.color);
+            rec[2] = SkColorGetR(o.color);
+            rec[3] = SkColorGetA(o.color);
+        }
+    }
+
+    // Writable copy; overwrite palette 0's color records in place (same size -> no relayout).
+    sk_sp<SkData> copy = SkData::MakeWithCopy(base, size);
+    uint8_t* out = static_cast<uint8_t*>(copy->writable_data());
+    memcpy(out + cpalOffset + colorRecordsOffset + 4 * dstStart,
+           resolved.get(),
+           4 * size_t(numPaletteEntries));
+
+    // Keep the `CPAL` table's directory checksum consistent. CoreText is lenient about table
+    // checksums, but this is cheap and keeps the synthesized sfnt well-formed.
+    if (cpalOffset + ((cpalLength + 3) & ~size_t(3)) <= size) {
+        auto* outDir = reinterpret_cast<SkSFNTHeader::TableDirectoryEntry*>(
+            out + sizeof(SkSFNTHeader));
+        outDir[cpalIndex].checksum = SkEndian_SwapBE32(
+            SkOTUtils::CalcTableChecksum((SK_OT_ULONG*)(out + cpalOffset), cpalLength));
+    }
+    return copy;
+}
+
 sk_sp<SkTypeface> SkTypeface_Mac::onMakeClone(const SkFontArguments& args) const {
-    CTFontVariation ctVariation = ctvariation_from_SkFontArguments(fFontRef.get(),
+    // CoreText always renders CPAL palette 0. Bake a non-default palette / overrides into a
+    // private in-memory copy of the font (public API only) and build a CTFont from it.
+    const SkFontArguments::Palette& palette = args.getPalette();
+    SkUniqueCFRef<CTFontRef> paletteFont;
+    if (palette.index != 0 || palette.overrideCount > 0) {
+        int ttcIndex = 0;
+        if (std::unique_ptr<SkStreamAsset> stream = this->openStream(&ttcIndex)) {
+            if (sk_sp<SkData> data = skdata_from_skstreamasset(std::move(stream))) {
+                if (sk_sp<SkData> baked = skdata_with_baked_palette(data.get(), palette)) {
+                    paletteFont = ctfont_from_skdata(std::move(baked), ttcIndex);
+                }
+            }
+        }
+    }
+    CTFontRef baseFont = paletteFont ? paletteFont.get() : fFontRef.get();
+
+    CTFontVariation ctVariation = ctvariation_from_SkFontArguments(baseFont,
                                                                    this->getVariationAxes(),
                                                                    args);
 
@@ -1189,7 +1341,7 @@ sk_sp<SkTypeface> SkTypeface_Mac::onMakeClone(const SkFontArguments& args) const
                                           &kCFTypeDictionaryKeyCallBacks,
                                           &kCFTypeDictionaryValueCallBacks));
 
-        CTFontRef ctFont = fFontRef.get();
+        CTFontRef ctFont = baseFont;
         SkUniqueCFRef<CTFontRef> wrongOpszFont;
         if (ctVariation.wrongOpszVariation) {
             // On macOS 11 cloning a system font with an opsz axis and not changing the
@@ -1215,6 +1367,8 @@ sk_sp<SkTypeface> SkTypeface_Mac::onMakeClone(const SkFontArguments& args) const
         SkUniqueCFRef<CTFontDescriptorRef> varDesc(
                 CTFontDescriptorCreateWithAttributes(attributes.get()));
         ctVariant.reset(CTFontCreateCopyWithAttributes(ctFont, 0, nullptr, varDesc.get()));
+    } else if (paletteFont) {
+        ctVariant.reset((CTFontRef)CFRetain(paletteFont.get()));
     } else {
         ctVariant.reset((CTFontRef)CFRetain(fFontRef.get()));
     }
@@ -1288,6 +1442,14 @@ sk_sp<SkTypeface> SkTypeface_Mac::MakeFromStream(std::unique_ptr<SkStreamAsset> 
     sk_sp<SkData> data = skdata_from_skstreamasset(stream->duplicate());
     if (!data) {
         return nullptr;
+    }
+    // Honor a requested COLR/CPAL palette by baking it into palette 0 of the font bytes, since
+    // CoreText only ever renders the default palette (see skdata_with_baked_palette).
+    const SkFontArguments::Palette& palette = args.getPalette();
+    if (palette.index != 0 || palette.overrideCount > 0) {
+        if (sk_sp<SkData> baked = skdata_with_baked_palette(data.get(), palette)) {
+            data = std::move(baked);
+        }
     }
     SkUniqueCFRef<CTFontRef> ct = ctfont_from_skdata(std::move(data), ttcIndex);
     if (!ct) {
