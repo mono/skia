@@ -1037,14 +1037,12 @@ void Device::drawMesh(const SkMesh& mesh, sk_sp<SkBlender> blender, const SkPain
         drawMesh = std::move(result.mesh);
     }
 
-
-    // TODO (nathanasanchez): Enable once MeshRenderStep is fully implemented.
-    [[maybe_unused]] SkBlender* primitiveBlender =
+    SkBlender* primitiveBlender =
         (blender && SkMeshSpecificationPriv::HasColors(*drawMesh.spec())) ? blender.get() : nullptr;
-    //this->drawGeometry(this->localToDeviceTransform(),
-    //                   Geometry(drawMesh),
-    //                   PaintParams(paint, primitiveBlender).makeWithMesh(mesh),
-    //                   DefaultFillStyle());
+    this->drawGeometry(this->localToDeviceTransform(),
+                       Geometry(drawMesh),
+                       PaintParams(paint, primitiveBlender).makeWithMesh(mesh),
+                       DefaultFillStyle());
 }
 
 void Device::drawImageLattice(const SkImage* image, const SkCanvas::Lattice& lattice,
@@ -1750,6 +1748,11 @@ void Device::drawGeometry(const Transform& localToDevice,
     SkEnumBitMask<KeyGenFlags> keyGenFlags = KeyGenFlags::kDefault;
     if (renderer && (renderer->useNonAAInnerFill() || renderer->coverage() == Coverage::kNone)) {
         keyGenFlags |= KeyGenFlags::kPreferFixedSrcBlend;
+    }
+    // Disable sampling optimizations if we are drawing an SkMesh since the user can vary the
+    // sampled shader local coordinates so we can't expect this optimization to always work.
+    if (geometry.isMesh()) {
+        keyGenFlags |= KeyGenFlags::kDisableSamplingOptimization;
     }
     KeyContext keyContext{fRecorder,
                           fDC.get(),
@@ -2479,8 +2482,19 @@ bool Device::drawBlurredRRect(const SkRRect& rrect, const SkPaint& paint, float 
         return true;
     }
 
+    SkRRect rrectToBlur;
+    if (paint.isAntiAlias()) {
+        rrectToBlur = rrect;
+    } else {
+        // Snap the the rounded rectangle to pixel edges to match the behavior of
+        // Device::drawRRect() for non-AA blurs when the AnalyticBlurMask approach isn't supported.
+        rrectToBlur = SkRRect::MakeRectRadii(snap_rect_to_pixels(this->localToDeviceTransform(),
+                                                                 rrect.rect()).asSkRect(),
+                                             rrect.radii().data());
+    }
+
     std::optional<AnalyticBlurMask> analyticBlur = AnalyticBlurMask::Make(
-            this->recorder(), this->localToDeviceTransform(), deviceSigma, rrect);
+            this->recorder(), this->localToDeviceTransform(), deviceSigma, rrectToBlur);
     if (!analyticBlur) {
         return false;
     }
