@@ -18,6 +18,7 @@
 #include "src/gpu/graphite/RenderPassDesc.h"
 #include "src/gpu/graphite/Sampler.h"
 #include "src/gpu/graphite/Texture.h"
+#include "src/gpu/graphite/TextureFormat.h"
 #include "src/gpu/graphite/TextureInfoPriv.h"
 #include "src/gpu/graphite/vk/VulkanBuffer.h"
 #include "src/gpu/graphite/vk/VulkanCommandBuffer.h"
@@ -52,7 +53,7 @@ VkPipelineLayout create_mock_layout(const VulkanSharedContext* sharedContext) {
     pushConstantRange.stageFlags = VulkanResourceProvider::kIntrinsicConstantStageFlags;
 
     skia_private::STArray<1, DescriptorData> inputDesc {
-            VulkanGraphicsPipeline::kInputAttachmentDescriptor};
+            VulkanGraphicsPipeline::GetInputAttachmentDescriptor()};
     VkDescriptorSetLayout setLayout;
     DescriptorDataToVkDescSetLayout(sharedContext, inputDesc, &setLayout);
 
@@ -128,6 +129,18 @@ sk_sp<Texture> VulkanResourceProvider::onCreateWrappedTexture(const BackendTextu
 
 sk_sp<ComputePipeline> VulkanResourceProvider::createComputePipeline(const ComputePipelineDesc&) {
     return nullptr;
+}
+
+const VulkanTexture* VulkanResourceProvider::getOrCreateNullTexture() {
+    if (!fNullTexture) {
+        TextureInfo info = this->vulkanSharedContext()->caps()->getDefaultReadableTextureInfo(
+                TextureFormat::kRGBA32F,
+                Protected::kNo);
+        fNullTexture = this->createTexture(
+                SkISize::Make(1, 1), info, "UnusedTextureSlot");
+        SkASSERT(fNullTexture);
+    }
+    return static_cast<const VulkanTexture*>(fNullTexture.get());
 }
 
 sk_sp<Texture> VulkanResourceProvider::createTexture(SkISize size,
