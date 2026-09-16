@@ -9,6 +9,10 @@
 
 #include "include/core/SkGraphics.h"
 
+#if defined(SK_ENABLE_SVG)
+#include "modules/svg/include/SkSVGOpenTypeSVGDecoder.h"
+#endif
+
 #include "include/c/sk_graphics.h"
 
 #include "src/c/sk_types_priv.h"
@@ -71,6 +75,14 @@ size_t sk_graphics_get_resource_cache_single_allocation_byte_limit(void) {
 
 size_t sk_graphics_set_resource_cache_single_allocation_byte_limit(size_t newLimit) {
     return SkGraphics::SetResourceCacheSingleAllocationByteLimit(newLimit);
+}
+
+bool sk_graphics_set_open_type_svg_decoder_factory_to_default() {
+#if defined(SK_ENABLE_SVG)
+	SkGraphics::SetOpenTypeSVGDecoderFactory(SkSVGOpenTypeSVGDecoder::Make);
+	return true;
+#endif
+	return false;
 }
 
 void sk_graphics_dump_memory_statistics(sk_tracememorydump_t* dump) {
