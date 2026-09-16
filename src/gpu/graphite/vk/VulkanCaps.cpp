@@ -132,8 +132,7 @@ void VulkanCaps::init(const ContextOptions& contextOptions,
 
     // Assert that our push constant sizes are below the maximum allowed (which is guaranteed to be
     // at least 128 bytes per spec).
-    static_assert(VulkanResourceProvider::kIntrinsicConstantSize < 128 &&
-                  VulkanResourceProvider::kLoadMSAAPushConstantSize < 128);
+    static_assert(VulkanResourceProvider::kIntrinsicConstantSize < 128);
 
     fRequiredUniformBufferAlignment = deviceLimits.minUniformBufferOffsetAlignment;
     fRequiredStorageBufferAlignment = deviceLimits.minStorageBufferOffsetAlignment;
@@ -248,9 +247,7 @@ void VulkanCaps::init(const ContextOptions& contextOptions,
     }
 
     // Note: ARM GPUs have always been coherent, do not add a subpass self-dependency even if the
-    // application hasn't enabled this feature as it comes with a performance cost on this GPU. Use
-    // of VK_EXT_rasterization_order_attachment_access is disabled on ARM due to an unexplained
-    // memory regression (b/437907749).
+    // application hasn't enabled this feature as it comes with a performance cost on this GPU.
     //
     // Imagination GPUs are also coherent but only within the same sample when sample-shading.
     // VK_EXT_rasterization_order_attachment_access indicates coherence when input attachment read
@@ -258,7 +255,7 @@ void VulkanCaps::init(const ContextOptions& contextOptions,
     // this extension. This is not a problem for Graphite however, which does not enable sample
     // shading (nor would it read color from other samples even if it did).
     fSupportsRasterizationOrderColorAttachmentAccess =
-            enabledFeatures.fRasterizationOrderColorAttachmentAccess && vendorID != kARM_VkVendor;
+            enabledFeatures.fRasterizationOrderColorAttachmentAccess;
     fIsInputAttachmentReadCoherent = fSupportsRasterizationOrderColorAttachmentAccess ||
                                      vendorID == kARM_VkVendor || vendorID == kImagination_VkVendor;
 
