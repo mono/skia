@@ -7,6 +7,8 @@
 
 #include "src/gpu/graphite/mtl/MtlGraphicsPipeline.h"
 
+#include "include/gpu/ShaderErrorHandler.h"
+
 #include "include/gpu/graphite/TextureInfo.h"
 #include "include/gpu/graphite/mtl/MtlGraphiteTypes.h"
 #include "include/private/SkLog.h"
@@ -428,6 +430,15 @@ sk_sp<MtlGraphicsPipeline> MtlGraphicsPipeline::Make(const MtlSharedContext* sha
                                                                     error:&error]);
     if (!pso) {
         SKIA_LOG_E("Render pipeline creation failure:\n%s", error.debugDescription.UTF8String);
+        // A shader can pass the MSL front-end compile yet still be rejected when the render
+        // pipeline state is created (e.g. framebuffer fetch on the iOS simulator, which fails
+        // here with "reading from a rendertarget is not supported" — mono/SkiaSharp#4555).
+        // Route the driver's error through the ShaderErrorHandler so it reaches the same
+        // diagnostic hook as MSL compile failures instead of only SkDebugf.
+        std::string diag = "newRenderPipelineStateWithDescriptor failed: ";
+        diag += error.debugDescription.UTF8String ? error.debugDescription.UTF8String : "(no error)";
+        sharedContext->caps()->shaderErrorHandler()->compileError(
+                label.c_str(), diag.c_str(), /*shaderWasCached=*/false);
         return nullptr;
     }
 
