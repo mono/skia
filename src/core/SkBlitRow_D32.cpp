@@ -13,6 +13,7 @@
 #include "src/core/SkColorPriv.h"
 #include "src/core/SkMemset.h"
 
+#include <array>
 #include <cstring>
 #include <iterator>
 

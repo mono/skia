@@ -5,6 +5,7 @@
  * found in the LICENSE file.
  */
 
+#include "include/private/SkToArray.h"
 #include "src/core/SkMask.h"
 
 #include "include/private/SkMalloc.h"
@@ -94,14 +95,14 @@ SkMaskBuilder SkMaskBuilder::PrepareDestination(int radiusX, int radiusY, const 
 
 ///////////////////////////////////////////////////////////////////////////////
 
-static const int gMaskFormatToShift[] = {
+static constexpr auto gMaskFormatToShift = SkToArray<int>({
     ~0, // BW -- not supported
     0,  // A8
     0,  // 3D
     2,  // ARGB32
     1,  // LCD16
     0,  // SDF
-};
+});
 
 static int maskFormatToShift(SkMask::Format format) {
     SkASSERT((unsigned)format < std::size(gMaskFormatToShift));

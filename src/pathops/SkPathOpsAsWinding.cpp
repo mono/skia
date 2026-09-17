@@ -13,6 +13,7 @@
 #include "include/core/SkTypes.h"
 #include "include/pathops/SkPathOps.h"
 #include "include/private/SkMacros.h"
+#include "include/private/SkToArray.h"
 #include "src/core/SkPathPriv.h"
 #include "src/pathops/SkPathOpsConic.h"
 #include "src/pathops/SkPathOpsCubic.h"
@@ -22,6 +23,7 @@
 #include "src/pathops/SkPathOpsTypes.h"
 
 #include <algorithm>
+#include <array>
 #include <vector>
 
 using std::vector;
@@ -50,14 +52,14 @@ struct Contour {
 };
 
 static unsigned VerbPtCount(SkPathVerb verb) {
-    static const uint8_t kPtCount[] = { 1, 1, 2, 2, 3, 0 };
+    static const auto kPtCount = SkToArray<uint8_t>({ 1, 1, 2, 2, 3, 0 });
     unsigned index = static_cast<unsigned>(verb);
     SkASSERT(index < std::size(kPtCount));
     return kPtCount[index];
 }
 
 static int VerbPtIndex(SkPathVerb verb) {
-    static const int kPtIndex[] = { 0, 1, 1, 1, 1, 0 };
+    static const auto kPtIndex = SkToArray<int>({ 0, 1, 1, 1, 1, 0 });
     unsigned index = static_cast<unsigned>(verb);
     SkASSERT(index < std::size(kPtIndex));
     return kPtIndex[index];
@@ -81,7 +83,7 @@ static int contains_edge(const SkPoint pts[4], SkPathVerb verb, SkScalar weight,
     }
     int winding = 0;
     double tVals[3];
-    Contour::Direction directions[3];
+    std::array<Contour::Direction, 3> directions;
     // must intersect horz ray with curve in case it intersects more than once
     int count = (*CurveIntercept[(int)verb * 2])(pts, weight, edge.fY, tVals);
     SkASSERT(between(0, count, 3));

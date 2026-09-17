@@ -5,6 +5,7 @@
  * found in the LICENSE file.
  */
 
+#include "include/private/SkToArray.h"
 #include "src/core/SkResourceCache.h"
 
 #include "include/core/SkString.h"
@@ -27,6 +28,7 @@
 #endif
 
 #include <algorithm>
+#include <array>
 
 using namespace skia_private;
 
@@ -141,7 +143,7 @@ bool SkResourceCache::find(const Key& key, FindVisitor visitor, void* context) {
 }
 
 static void make_size_str(size_t size, SkString* str) {
-    const char suffix[] = { 'b', 'k', 'm', 'g', 't', 0 };
+    static constexpr auto suffix = SkToArray<char>({ 'b', 'k', 'm', 'g', 't', 0 });
     int i = 0;
     while (suffix[i] && (size > 1024)) {
         i += 1;

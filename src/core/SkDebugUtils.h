@@ -12,6 +12,7 @@
 #include "include/core/SkTileMode.h"
 #include "include/private/SkAssert.h"
 #include "include/private/SkDebug.h"
+#include "include/private/SkToArray.h"
 
 #include <array>
 #include <cstdint>
@@ -31,8 +32,10 @@ inline void SkDumpBuffer(uint8_t const* const buffer, int w, int h, int rowBytes
                          bool dumpActualValues = false) {
     SkASSERT(buffer);
 
-    static constexpr char shades[] = {'0', '1', '2', '3', '4', '5', '6', '7',
-                                      '8', '9', 'A', 'B', 'C', 'D', 'E', 'F'};
+    static constexpr auto shades = SkToArray<char>({
+        '0', '1', '2', '3', '4', '5', '6', '7',
+        '8', '9', 'A', 'B', 'C', 'D', 'E', 'F'
+    });
 
     for (int y = 0; y < h; ++y) {
         for (int x = 0; x < w; ++x) {

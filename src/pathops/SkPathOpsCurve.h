@@ -20,10 +20,12 @@
 #include "src/pathops/SkPathOpsQuad.h"
 #include "src/pathops/SkPathOpsTypes.h"
 
+#include <array>
+
 struct SkPathOpsBounds;
 
 struct SkOpCurve {
-    SkPoint fPts[4];
+    std::array<SkPoint, 4> fPts;
     SkScalar fWeight;
     SkDEBUGCODE(SkPath::Verb fVerb;)
 

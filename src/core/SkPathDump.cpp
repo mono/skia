@@ -9,17 +9,19 @@
 #include "include/core/SkPathBuilder.h"
 #include "include/core/SkSpan.h"
 #include "include/core/SkStream.h"
+#include "include/private/SkToArray.h"
 #include "src/core/SkFloatBits.h"
 #include "src/core/SkStringUtils.h"
 
+#include <array>
 #include <functional>
 
-char const * const gFillTypeStrs[] = {
+static constexpr auto gFillTypeStrs = SkToArray<const char *>({
     "Winding",
     "EvenOdd",
     "InverseWinding",
     "InverseEvenOdd",
-};
+});
 
 constexpr float kSentinelConicWeight = -12345;  // not a valid weight
 
