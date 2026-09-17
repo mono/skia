@@ -4,8 +4,6 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
-#include <array>
-#include "include/private/SkToArray.h"
 #include "src/xml/SkXMLParser.h"
 
 #include "include/core/SkStream.h"
@@ -21,14 +19,14 @@
 
 #include <vector>
 
-static const auto gErrorStrings = SkToArray<const char *>({
+static char const* const gErrorStrings[] = {
     "empty or missing file ",
     "unknown element ",
     "unknown attribute name ",
     "error in attribute value ",
     "duplicate ID ",
     "unknown error "
-,});
+};
 
 SkXMLParserError::SkXMLParserError() : fCode(kNoError), fLineNumber(-1),
     fNativeCode(-1)

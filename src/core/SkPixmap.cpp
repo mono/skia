@@ -24,7 +24,6 @@
 #include "src/core/SkVx.h"
 #include "src/opts/SkMemset_opts.h"
 
-#include <array>
 #include <cstdint>
 #include <cstring>
 #include <iterator>

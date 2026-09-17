@@ -18,7 +18,6 @@
 #include "src/core/SkBitmapProcState.h"
 #include "src/core/SkMemset.h"
 
-#include <array>
 #include <cstdint>
 #include <cstring>
 

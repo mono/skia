@@ -12,7 +12,6 @@
 #include "src/core/SkGeometry.h"
 #include "src/core/SkPointPriv.h"
 
-#include <array>
 #include <utility>
 
 static void ButtCapper(SkPathBuilder* sink, const SkPoint& pivot, const SkVector& normal,
@@ -126,8 +125,8 @@ static void RoundJoiner(SkPathBuilder* outer, SkPathBuilder* inner,
     SkMatrix    matrix;
     matrix.setScale(radius, radius);
     matrix.postTranslate(pivot.fX, pivot.fY);
-    std::array<SkConic, SkConic::kMaxConicsForArc> conics;
-    int count = SkConic::BuildUnitArc(before, after, dir, &matrix, conics.data());
+    SkConic conics[SkConic::kMaxConicsForArc];
+    int count = SkConic::BuildUnitArc(before, after, dir, &matrix, conics);
     if (count > 0) {
         for (int i = 0; i < count; ++i) {
             outer->conicTo(conics[i].fPts[1], conics[i].fPts[2], conics[i].fW);

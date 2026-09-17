@@ -58,7 +58,6 @@
 #include "src/shaders/SkImageShader.h"
 
 #include <algorithm>
-#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <optional>

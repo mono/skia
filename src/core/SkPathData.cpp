@@ -5,7 +5,6 @@
  * found in the LICENSE file.
  */
 
-#include "include/private/SkToArray.h"
 #include "src/core/SkPathData.h"
 
 #include "include/core/SkPathBuilder.h"
@@ -21,7 +20,6 @@
 #include "src/core/SkSafeMath.h"
 #include "src/core/SkSpanPriv.h"
 
-#include <array>
 #include <new>
 #include <optional>
 #include <type_traits>
@@ -74,9 +72,9 @@ private:
     size_t     fTotal;
 };
 
-static constexpr auto gPtsPerVerb = SkToArray<uint8_t>({
+const uint8_t gPtsPerVerb[] = {
     1, 1, 2, 2, 3, 0,  // move, line, quad, conic, cubic, close
-});
+};
 
 static inline bool valid_conic_weight(float w) {
     return w >= 0 && SkIsFinite(w);
