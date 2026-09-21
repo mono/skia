@@ -27,10 +27,6 @@ Git Config:
   To re-enable sync:
       cd path/to/repository
       git config --unset sync-deps.disable
-
-DEPS may define a deps_patches dictionary mapping a dependency path to a list
-of repository-relative patch files. The patches are applied after checkout and
-committed locally with fixed metadata so later revision changes remain clean.
 """
 
 
@@ -177,62 +173,6 @@ def git_checkout_to_directory(git, repo, commithash, directory, shallow, verbose
     status(directory, commithash, True)  # Success.
 
 
-def apply_dependency_patches(git, deps_file_directory, dependencies, patches,
-                             verbose):
-  """Apply repository-owned patches and commit them locally.
-
-  Keeping the patched dependency checkout clean allows a later DEPS update to
-  check out a different revision without first reversing the old patch.
-  """
-  for directory in sorted(patches):
-    if directory not in dependencies:
-      raise Exception('patches specified for unknown dependency: %r' % directory)
-
-    patch_paths = patches[directory]
-    if not isinstance(patch_paths, list) or not patch_paths:
-      raise Exception('dependency patches must be a non-empty list: %r' %
-                      directory)
-
-    relative_directory = os.path.join(deps_file_directory, directory)
-    resolved_patches = [
-        os.path.join(deps_file_directory, patch_path)
-        for patch_path in patch_paths
-    ]
-
-    for patch_path in resolved_patches:
-      if not os.path.isfile(patch_path):
-        raise Exception('dependency patch does not exist: %r' % patch_path)
-
-    if subprocess.check_output(
-        [git, 'status', '--porcelain'], cwd=relative_directory).strip():
-      raise Exception('dependency checkout has local changes before patching: %r'
-                      % directory)
-
-    subprocess.check_call(
-        [git, 'apply', '--index', *resolved_patches], cwd=relative_directory)
-
-    env = os.environ.copy()
-    env.update({
-        'GIT_AUTHOR_DATE': '2000-01-01T00:00:00Z',
-        'GIT_AUTHOR_EMAIL': 'dependency-sync@skia.org',
-        'GIT_AUTHOR_NAME': 'Skia Dependency Sync',
-        'GIT_COMMITTER_DATE': '2000-01-01T00:00:00Z',
-        'GIT_COMMITTER_EMAIL': 'dependency-sync@skia.org',
-        'GIT_COMMITTER_NAME': 'Skia Dependency Sync',
-    })
-
-    subprocess.check_call(
-        [git, 'commit', '--quiet', '--no-gpg-sign',
-         '-m', 'Apply Skia dependency patches'],
-        cwd=relative_directory,
-        env=env)
-
-    if verbose:
-      patched_revision = subprocess.check_output(
-          [git, 'rev-parse', 'HEAD'], cwd=relative_directory).decode().strip()
-      status(relative_directory, patched_revision, True)
-
-
 def parse_file_to_dict(path):
   dictionary = {}
   with open(path) as f:
@@ -263,7 +203,6 @@ def git_sync_deps(deps_file_path, command_line_os_requests, shallow, verbose):
   deps_file_directory = os.path.dirname(deps_file_path)
   deps_file = parse_file_to_dict(deps_file_path)
   dependencies = deps_file['deps'].copy()
-  dependency_patches = deps_file.get('deps_patches', {})
   os_specific_dependencies = deps_file.get('deps_os', dict())
   if 'all' in command_line_os_requests:
     for value in os_specific_dependencies.itervalues():
@@ -296,8 +235,6 @@ def git_sync_deps(deps_file_path, command_line_os_requests, shallow, verbose):
       (git, repo, commithash, relative_directory, shallow, verbose))
 
   multithread(git_checkout_to_directory, list_of_arg_lists)
-  apply_dependency_patches(git, deps_file_directory, dependencies,
-                           dependency_patches, verbose)
 
 
 def multithread(function, list_of_arg_lists):

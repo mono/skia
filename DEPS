@@ -124,9 +124,3 @@ deps = {
     'condition': 'checkout_agents_internal',
   },
 }
-
-deps_patches = {
-  "third_party/externals/dng_sdk": [
-    "bazel/external/dng_sdk/dng-sdk-1.7.1-2724.patch",
-  ],
-}
