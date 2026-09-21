@@ -17,7 +17,10 @@ third_party("dng_sdk") {
     "//gn/portable:add_rtti",
   ]
 
-  public_defines = [ "qDNGBigEndian=0" ]
+  public_defines = [
+    "SK_DNG_VERSION=0x01070100",
+    "qDNGBigEndian=0",
+  ]
 
   defines = [
     "qDNGReportErrors=0",
@@ -48,6 +51,10 @@ third_party("dng_sdk") {
     "../externals/dng_sdk/source/dng_auto_ptr.h",
     "../externals/dng_sdk/source/dng_bad_pixels.cpp",
     "../externals/dng_sdk/source/dng_bad_pixels.h",
+    "../externals/dng_sdk/source/dng_big_table.cpp",
+    "../externals/dng_sdk/source/dng_big_table.h",
+    "../externals/dng_sdk/source/dng_bmff.cpp",
+    "../externals/dng_sdk/source/dng_bmff.h",
     "../externals/dng_sdk/source/dng_bottlenecks.cpp",
     "../externals/dng_sdk/source/dng_bottlenecks.h",
     "../externals/dng_sdk/source/dng_camera_profile.cpp",
@@ -59,6 +66,7 @@ third_party("dng_sdk") {
     "../externals/dng_sdk/source/dng_color_spec.h",
     "../externals/dng_sdk/source/dng_date_time.cpp",
     "../externals/dng_sdk/source/dng_date_time.h",
+    "../externals/dng_sdk/source/dng_deprecated_flags.h",
     "../externals/dng_sdk/source/dng_errors.h",
     "../externals/dng_sdk/source/dng_exceptions.cpp",
     "../externals/dng_sdk/source/dng_exceptions.h",
@@ -95,12 +103,16 @@ third_party("dng_sdk") {
     "../externals/dng_sdk/source/dng_jpeg_memory_source.cpp",
     "../externals/dng_sdk/source/dng_jpeg_memory_source.h",
     "../externals/dng_sdk/source/dng_jpeglib.h",
+    "../externals/dng_sdk/source/dng_jxl.h",
     "../externals/dng_sdk/source/dng_lens_correction.cpp",
     "../externals/dng_sdk/source/dng_lens_correction.h",
     "../externals/dng_sdk/source/dng_linearization_info.cpp",
     "../externals/dng_sdk/source/dng_linearization_info.h",
+    "../externals/dng_sdk/source/dng_local_string.cpp",
+    "../externals/dng_sdk/source/dng_local_string.h",
     "../externals/dng_sdk/source/dng_lossless_jpeg.cpp",
     "../externals/dng_sdk/source/dng_lossless_jpeg.h",
+    "../externals/dng_sdk/source/dng_lossless_jpeg_shared.cpp",
     "../externals/dng_sdk/source/dng_matrix.cpp",
     "../externals/dng_sdk/source/dng_matrix.h",
     "../externals/dng_sdk/source/dng_memory.cpp",
@@ -148,8 +160,10 @@ third_party("dng_sdk") {
     "../externals/dng_sdk/source/dng_safe_arithmetic.cpp",
     "../externals/dng_sdk/source/dng_safe_arithmetic.h",
     "../externals/dng_sdk/source/dng_sdk_limits.h",
+    "../externals/dng_sdk/source/dng_semantic_mask.h",
     "../externals/dng_sdk/source/dng_shared.cpp",
     "../externals/dng_sdk/source/dng_shared.h",
+    "../externals/dng_sdk/source/dng_simd_type.h",
     "../externals/dng_sdk/source/dng_simple_image.cpp",
     "../externals/dng_sdk/source/dng_simple_image.h",
     "../externals/dng_sdk/source/dng_spline.cpp",
