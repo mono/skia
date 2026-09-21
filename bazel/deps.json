@@ -45,8 +45,10 @@
     },
     {
       "build_file": "//bazel/external/dng_sdk:BUILD.bazel",
-      "commit": "dbe0a676450d9b8c71bf00688bb306409b779e90",
+      "commit": "1238ed113a6529a5466f9fa683a3bfc3baf7cf2b",
       "name": "dng_sdk",
+      "patch_args": ["-p1"],
+      "patches": ["//bazel/external/dng_sdk:dng-sdk-1.7.1-2724.patch"],
       "remote": "https://android.googlesource.com/platform/external/dng_sdk.git"
     },
     {

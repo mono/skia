@@ -1,5 +1,7 @@
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 
+exports_files(["dng-sdk-1.7.1-2724.patch"])
+
 cc_library(
     name = "dng_sdk",
     srcs = [
@@ -8,6 +10,8 @@ cc_library(
         "source/dng_abort_sniffer.cpp",
         "source/dng_area_task.cpp",
         "source/dng_bad_pixels.cpp",
+        "source/dng_big_table.cpp",
+        "source/dng_bmff.cpp",
         "source/dng_bottlenecks.cpp",
         "source/dng_camera_profile.cpp",
         "source/dng_color_space.cpp",
@@ -31,7 +35,9 @@ cc_library(
         "source/dng_jpeg_memory_source.cpp",
         "source/dng_lens_correction.cpp",
         "source/dng_linearization_info.cpp",
+        "source/dng_local_string.cpp",
         "source/dng_lossless_jpeg.cpp",
+        "source/dng_lossless_jpeg_shared.cpp",
         "source/dng_matrix.cpp",
         "source/dng_memory.cpp",
         "source/dng_memory_stream.cpp",
@@ -77,12 +83,15 @@ cc_library(
         "source/dng_assertions.h",
         "source/dng_auto_ptr.h",
         "source/dng_bad_pixels.h",
+        "source/dng_big_table.h",
+        "source/dng_bmff.h",
         "source/dng_bottlenecks.h",
         "source/dng_camera_profile.h",
         "source/dng_classes.h",
         "source/dng_color_space.h",
         "source/dng_color_spec.h",
         "source/dng_date_time.h",
+        "source/dng_deprecated_flags.h",
         "source/dng_errors.h",
         "source/dng_exceptions.h",
         "source/dng_exif.h",
@@ -103,8 +112,10 @@ cc_library(
         "source/dng_jpeg_image.h",
         "source/dng_jpeg_memory_source.h",
         "source/dng_jpeglib.h",
+        "source/dng_jxl.h",
         "source/dng_lens_correction.h",
         "source/dng_linearization_info.h",
+        "source/dng_local_string.h",
         "source/dng_lossless_jpeg.h",
         "source/dng_matrix.h",
         "source/dng_memory.h",
@@ -130,7 +141,9 @@ cc_library(
         "source/dng_resample.h",
         "source/dng_safe_arithmetic.h",
         "source/dng_sdk_limits.h",
+        "source/dng_semantic_mask.h",
         "source/dng_shared.h",
+        "source/dng_simd_type.h",
         "source/dng_simple_image.h",
         "source/dng_spline.h",
         "source/dng_stream.h",
@@ -148,6 +161,7 @@ cc_library(
         "source/dng_xy_coord.h",
     ],
     defines = [
+        "SK_DNG_VERSION=0x01070100",
         "qDNGBigEndian=0",  # The GN rules had this defined publicly
     ],
     includes = ["source"],
