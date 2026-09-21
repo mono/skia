@@ -10262,19 +10262,19 @@ index 0e6df48260a12bee9ad9010730ef5d5806f15499..e2a5afa93fd8221525cddc75df2b87a8
  
  /*****************************************************************************/
 diff --git a/source/dng_temperature.cpp b/source/dng_temperature.cpp
-index 877c5e9d4a0ddf5cda1c0abca6581a188a8323e7..63bb5f12f3b273c4e086dfd3ec879cdf09fe0e40 100644
+index 877c5e9d4a0ddf5cda1c0abca6581a188a8323e7..55cad4779808769ace0db10ea86c3f1a255bcdc7 100644
 --- a/source/dng_temperature.cpp
 +++ b/source/dng_temperature.cpp
 @@ -8,8 +8,14 @@
  
  #include "dng_temperature.h"
  
++#include "dng_pthread.h"
 +#include "dng_utils.h"
  #include "dng_xy_coord.h"
  
 +#include <atomic>
 +#include <cmath>
-+#include <mutex>
 +#include <vector>
 +
  /*****************************************************************************/
@@ -10316,7 +10316,7 @@ index 877c5e9d4a0ddf5cda1c0abca6581a188a8323e7..63bb5f12f3b273c4e086dfd3ec879cdf
 +
 +	std::atomic<bool> gEnableLowTemperatureLimit (false);
 +
-+	std::once_flag gExtendedLUTOnce;
++	pthread_once_t gExtendedLUTOnce = PTHREAD_ONCE_INIT;
 +	std::vector<dng_xy_coord> gExtendedLUT;
 +
 +	inline real64 SmoothStep (real64 x)
@@ -10821,7 +10821,7 @@ index 877c5e9d4a0ddf5cda1c0abca6581a188a8323e7..63bb5f12f3b273c4e086dfd3ec879cdf
 +
 +void InitExtendedTemperatureLUT ()
 +	{
-+	std::call_once (gExtendedLUTOnce, BuildExtendedTemperatureLUT);
++	pthread_once (&gExtendedLUTOnce, BuildExtendedTemperatureLUT);
 +	}
 +
 +/*****************************************************************************/
