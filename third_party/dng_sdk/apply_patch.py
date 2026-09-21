@@ -10,6 +10,7 @@ SKIA_ROOT = Path(__file__).resolve().parents[2]
 DNG_SDK_PATH = SKIA_ROOT / "third_party" / "externals" / "dng_sdk"
 PATCH_PATH = Path(__file__).with_name("dng-sdk-1.7.1-2724.patch")
 EXPECTED_BASE_REVISION = "1238ed113a6529a5466f9fa683a3bfc3baf7cf2b"
+EXPECTED_PATCHED_REVISION = "3789b5a654d207ecef1de0808018f08d31288368"
 
 
 def git(*args, capture_output=False, env=None):
@@ -41,9 +42,14 @@ def ensure_clean():
 
 def main():
     version = build_version()
+    revision = git("rev-parse", "HEAD", capture_output=True).stdout.strip()
 
     if version == "2724":
         ensure_clean()
+        if revision != EXPECTED_PATCHED_REVISION:
+            raise RuntimeError(
+                "DNG SDK build 2724 does not match the expected patched revision."
+            )
         print("Adobe DNG SDK 1.7.1 build 2724 patch is already applied.")
         return
 
@@ -52,7 +58,6 @@ def main():
             f"Expected Adobe DNG SDK build 2502 before patching, found {version!r}."
         )
 
-    revision = git("rev-parse", "HEAD", capture_output=True).stdout.strip()
     if revision != EXPECTED_BASE_REVISION:
         raise RuntimeError(
             f"Expected DNG SDK revision {EXPECTED_BASE_REVISION}, found {revision}."
@@ -85,6 +90,12 @@ def main():
         raise RuntimeError("The DNG SDK patch did not produce build 2724.")
 
     ensure_clean()
+    patched_revision = git("rev-parse", "HEAD", capture_output=True).stdout.strip()
+    if patched_revision != EXPECTED_PATCHED_REVISION:
+        raise RuntimeError(
+            f"Expected patched revision {EXPECTED_PATCHED_REVISION}, "
+            f"found {patched_revision}."
+        )
     print("Applied Adobe DNG SDK 1.7.1 build 2724 patch.")
 
 
