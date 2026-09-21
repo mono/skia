@@ -88,6 +88,9 @@ struct ResourceBindingRequirements {
     int fIntrinsicBufferBinding       = kUnassigned;
     int fCombinedUniformBufferBinding = kUnassigned;
     int fStorageBufferBinding         = kUnassigned;
+    /* Maximum texture atlas dimension for StorageBuffer fallback texture, defaults to 8192 */
+    int fMaxFallbackTextureSize       = kUnassigned;
+    int fMaxFallbackTextureBytes      = kUnassigned;
 };
 
 class Caps {
@@ -159,7 +162,7 @@ public:
                                              Protected,
                                              Renderable) const;
 
-    TextureInfo getDefaultReadableTextureInfo(SkColorType,
+    TextureInfo getDefaultReadableTextureInfo(TextureFormat,
                                               Protected = Protected::kNo) const;
 
     TextureInfo getTextureInfoForSampledCopy(const TextureInfo&,  Mipmapped) const;
@@ -170,6 +173,7 @@ public:
                                                 Protected) const;
 
     TextureInfo getDefaultStorageTextureInfo(SkColorType) const;
+    TextureInfo getDefaultReadableStorageTextureInfo(TextureFormat, Protected) const;
 
     // Tries to return a sample count > 1 if needing MSAA to render into the target specification.
     // If the target is already multisampled, it will be that count; otherwise it will be the
