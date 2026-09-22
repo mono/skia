@@ -9,7 +9,7 @@ declare_args() {
 
 import("../third_party.gni")
 
-_dng_sdk_patch_result = exec_script("apply_patch.py", [], "trim string", [ "dng-sdk-1.7.1-2724.patch" ])
+_dng_sdk_patch_result = exec_script("apply_patch.py", [], "trim string")
 if (_dng_sdk_patch_result != "") {
   print(_dng_sdk_patch_result)
 }
