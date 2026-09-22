@@ -13,12 +13,7 @@ _dng_sdk_patch_result =
     exec_script("apply_patch.py",
                 [],
                 "trim string",
-                [
-                  "adobe-1.7.1-2502-base/source/dng_file_stream.cpp",
-                  "adobe-1.7.1-2502-base/source/dng_jxl.h",
-                  "adobe-dng-sdk-1.7.1-2502-to-2724.patch",
-                  "skia-dng-sdk-1.7.1-2724-compat.patch",
-                ])
+                [ "dng-sdk-1.7.1-2724.patch" ])
 if (_dng_sdk_patch_result != "") {
   print(_dng_sdk_patch_result)
 }
