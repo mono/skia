@@ -10,7 +10,7 @@ SKIA_ROOT = Path(__file__).resolve().parents[2]
 DNG_SDK_PATH = SKIA_ROOT / "third_party" / "externals" / "dng_sdk"
 PATCH_PATH = Path(__file__).with_name("dng-sdk-1.7.1-2724.patch")
 EXPECTED_BASE_REVISION = "1238ed113a6529a5466f9fa683a3bfc3baf7cf2b"
-EXPECTED_PATCHED_REVISION = "ccb5b780801606fa858dae70a50221ed212acae3"
+EXPECTED_PATCHED_REVISION = "6d4305596597681f0babcb36047453567f710402"
 
 
 def git(*args, capture_output=False, env=None):

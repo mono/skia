@@ -10157,10 +10157,64 @@ index c8f37e2fb8aa8e2bf0b94b03b7577d87f65ca06b..c4869740987865b2b9c00f8f176d463a
  		/// Writes the specified number of zero bytes to stream.
  		/// \param count Number of zero bytes to write.
 diff --git a/source/dng_string.cpp b/source/dng_string.cpp
-index aca34055e20f26629716bc395d5bd1b6e193d3a1..a885d1956a89a722f8cb169da3a1c122f6915953 100644
+index aca34055e20f26629716bc395d5bd1b6e193d3a1..8976f4b50ee63a99be732c906c0738b0c9d36621 100644
 --- a/source/dng_string.cpp
 +++ b/source/dng_string.cpp
-@@ -856,25 +856,39 @@ uint32 dng_string::DecodeUTF8 (const char *&s,
+@@ -18,12 +18,13 @@
+ 
+ #if qMacOS
+ #include <TargetConditionals.h>
+-#if TARGET_OS_IPHONE || TARGET_IPHONE_SIMULATOR
+-#include <MobileCoreServices/MobileCoreServices.h>
+-#else
+-#include <CoreServices/CoreServices.h>
+ #endif
++
++#if qMacOS && TARGET_OS_OSX && !TARGET_OS_MACCATALYST
++#define qDNGUseMacOSCarbon 1
+ #include <CoreServices/CoreServices.h>
++#else
++#define qDNGUseMacOSCarbon 0
+ #endif
+ 
+ #if qWinOS
+@@ -56,7 +57,7 @@ static uint32 strlenAsUint32 (const char *s)
+ 
+ /*****************************************************************************/
+ 
+-#if qMacOS
++#if qDNGUseMacOSCarbon
+ 
+ static void Assign_Multibyte (dng_string &dngString,
+ 							  const char *otherString,
+@@ -685,7 +686,7 @@ uint32 dng_string::Get_SystemEncoding (dng_memory_data &buffer) const
+ 	else
+ 		{
+ 		
+-		#if qMacOS || qWinOS
++		#if qDNGUseMacOSCarbon || qWinOS
+ 		
+ 		return Extract_SystemEncoding (*this, buffer);
+ 		
+@@ -720,7 +721,7 @@ void dng_string::Set_SystemEncoding (const char *s)
+ 	else
+ 		{
+ 		
+-		#if qMacOS || qWinOS
++		#if qDNGUseMacOSCarbon || qWinOS
+ 	
+ 		Assign_SystemEncoding (*this, s);
+ 		
+@@ -796,7 +797,7 @@ void dng_string::Set_JIS_X208_1990 (const char *s)
+ 	else
+ 		{
+ 		
+-		#if qMacOS || qWinOS
++		#if qDNGUseMacOSCarbon || qWinOS
+ 	
+ 		Assign_JIS_X208_1990 (*this, s);
+ 		
+@@ -856,25 +857,39 @@ uint32 dng_string::DecodeUTF8 (const char *&s,
  		
  		}
  		
@@ -10206,7 +10260,25 @@ index aca34055e20f26629716bc395d5bd1b6e193d3a1..a885d1956a89a722f8cb169da3a1c122
  	switch (aSize)
  		{
  		
-@@ -2333,12 +2347,12 @@ int32 dng_string::Compare (const dng_string &s,
+@@ -2142,7 +2157,7 @@ void dng_string::ForceASCII ()
+ 	
+ /******************************************************************************/
+ 
+-#if qMacOS
++#if qDNGUseMacOSCarbon
+ static dng_std_mutex gProtectUCCalls;
+ #endif
+ 				
+@@ -2152,7 +2167,7 @@ int32 dng_string::Compare (const dng_string &s,
+ 						   bool digitsAsNumber) const
+ 	{
+ 	
+-	#if qMacOS
++	#if qDNGUseMacOSCarbon
+ 	
+ 		{
+ 	
+@@ -2333,12 +2348,12 @@ int32 dng_string::Compare (const dng_string &s,
  			while (*aPtr || *bPtr)
  				{
  				
@@ -11504,10 +11576,43 @@ index be1a09b39184cbf4052241530b47a667043575c3..35b545c3803362f7c7c2670ab7a9d36f
  			if (tagSignature == DNG_CHAR4 ('8', 'B', 'I', 'M') &&
  				tagID == 1061 &&
 diff --git a/source/dng_utils.cpp b/source/dng_utils.cpp
-index df1d76e885c1977f4dfb62be62d942a0f14c1a72..fb73b26e37ec6b069f98031f20894386ca385f20 100644
+index df1d76e885c1977f4dfb62be62d942a0f14c1a72..4d75c9dffb3666057a183b87ec95fbe8f1a29a85 100644
 --- a/source/dng_utils.cpp
 +++ b/source/dng_utils.cpp
-@@ -1321,15 +1321,34 @@ bool dng_image_stats::operator== (const dng_image_stats &src) const
+@@ -26,7 +26,14 @@
+ #include "dng_tile_iterator.h"
+ 
+ #if qMacOS
++#include <TargetConditionals.h>
++#endif
++
++#if qMacOS && TARGET_OS_OSX && !TARGET_OS_MACCATALYST
++#define qDNGUseMacOSCarbon 1
+ #include <CoreServices/CoreServices.h>
++#else
++#define qDNGUseMacOSCarbon 0
+ #endif
+ 
+ #if qiPhone || qMacOS
+@@ -147,7 +154,7 @@ void dng_show_message (const char *s)
+ 	if (gPrintAsserts)
+ 		fprintf (stderr, "%s%s", s, nl);
+ 		
+-	#elif qiPhone || qAndroid || qLinux || qWeb
++	#elif (qMacOS && !qDNGUseMacOSCarbon) || qiPhone || qAndroid || qLinux || qWeb
+ 	
+ 	if (gPrintAsserts)
+ 		fprintf (stderr, "%s%s", s, nl);
+@@ -161,7 +168,7 @@ void dng_show_message (const char *s)
+ 	
+ 	#endif	// qDNGDebug
+ 	
+-	#elif qMacOS
++	#elif qDNGUseMacOSCarbon
+ 	
+ 	if (gBreakOnAsserts)
+ 		{
+@@ -1321,15 +1328,34 @@ bool dng_image_stats::operator== (const dng_image_stats &src) const
  
  /*****************************************************************************/
  
@@ -11543,7 +11648,7 @@ index df1d76e885c1977f4dfb62be62d942a0f14c1a72..fb73b26e37ec6b069f98031f20894386
  	uint32 count = stream.Get_uint32 ();
  
  	// There are only 5 possible tags, and no tag may be repeated. Therefore,
-@@ -1343,6 +1362,8 @@ void dng_image_stats::Parse (dng_stream &stream)
+@@ -1343,6 +1369,8 @@ void dng_image_stats::Parse (dng_stream &stream)
  	for (uint32 i = 0; i < count; i++)
  		{
  		
@@ -11552,7 +11657,7 @@ index df1d76e885c1977f4dfb62be62d942a0f14c1a72..fb73b26e37ec6b069f98031f20894386
  		// Read child tag code.
  
  		uint32 childTagCode = stream.Get_uint32 ();
-@@ -1368,6 +1389,11 @@ void dng_image_stats::Parse (dng_stream &stream)
+@@ -1368,6 +1396,11 @@ void dng_image_stats::Parse (dng_stream &stream)
  		if (length > kMaxBytes)
  			ThrowBadFormat ("child tag byte length too large");
  
@@ -11564,7 +11669,7 @@ index df1d76e885c1977f4dfb62be62d942a0f14c1a72..fb73b26e37ec6b069f98031f20894386
  		// Read all floats.
  
  		std::vector<real32> *data = nullptr;
-@@ -1493,6 +1519,16 @@ void dng_image_stats::Parse (dng_stream &stream)
+@@ -1493,6 +1526,16 @@ void dng_image_stats::Parse (dng_stream &stream)
  			
  			}
  
