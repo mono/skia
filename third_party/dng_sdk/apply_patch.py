@@ -16,22 +16,17 @@ skia = Path(__file__).resolve().parents[2]
 root = skia / "third_party/externals/dng_sdk"
 source = root / "source"
 patch = Path(__file__).with_name("dng-sdk-1.7.1-2724-adaptations.patch")
-archive = Path.home() / ".skiasharp/cache/dng_sdk" / Path(URL).name
 
 def git_apply(*args, **kwargs):
     return subprocess.run(["git", "apply", *args, str(patch)], cwd=root, **kwargs)
 
-def digest():
-    return hashlib.sha256(archive.read_bytes()).hexdigest()
-
 if git_apply("--reverse", "--check", stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode != 0:
-    archive.parent.mkdir(parents=True, exist_ok=True)
-    if not archive.exists() or digest() != SHA256:
-        urllib.request.urlretrieve(URL, archive)
-    if digest() != SHA256:
-        raise SystemExit("Adobe DNG SDK archive checksum mismatch.")
-
     with tempfile.TemporaryDirectory() as temp:
+        archive = Path(temp) / Path(URL).name
+        urllib.request.urlretrieve(URL, archive)
+        if hashlib.sha256(archive.read_bytes()).hexdigest() != SHA256:
+            raise SystemExit("Adobe DNG SDK archive checksum mismatch.")
+
         with zipfile.ZipFile(archive) as zip_file:
             zip_file.extractall(temp, [name for name in zip_file.namelist() if name.startswith(PREFIX)])
         shutil.rmtree(source)
