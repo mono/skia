@@ -1,5 +1,5 @@
 diff --git a/source/dng_1d_function.cpp b/source/dng_1d_function.cpp
-index a166281993d081b8e1ee288f67aebe0a5021a218..32939a399eebb0cc2184737ae89038e04662dc64 100644
+index a166281..32939a3 100644
 --- a/source/dng_1d_function.cpp
 +++ b/source/dng_1d_function.cpp
 @@ -207,6 +207,19 @@ dng_piecewise_linear::~dng_piecewise_linear ()
@@ -45,7 +45,7 @@ index a166281993d081b8e1ee288f67aebe0a5021a218..32939a399eebb0cc2184737ae89038e0
  	// Binary search for the Y index.
  
 diff --git a/source/dng_1d_function.h b/source/dng_1d_function.h
-index bec72f672123c4c2dfe922dac2091fb3b4a851d4..8e712b36b33021bafd2ff0271b07dd5f18e1131b 100644
+index bec72f6..8e712b3 100644
 --- a/source/dng_1d_function.h
 +++ b/source/dng_1d_function.h
 @@ -185,7 +185,9 @@ class dng_piecewise_linear: public dng_1d_function
@@ -60,7 +60,7 @@ index bec72f672123c4c2dfe922dac2091fb3b4a851d4..8e712b36b33021bafd2ff0271b07dd5f
  
  		bool NotValid () const
 diff --git a/source/dng_1d_table.cpp b/source/dng_1d_table.cpp
-index 3e366b75e44fd72e773138c5a0c6ffff888269ba..6da86b6241103dfd12cc3daad1fb6b20c398f746 100644
+index 3e366b7..6da86b6 100644
 --- a/source/dng_1d_table.cpp
 +++ b/source/dng_1d_table.cpp
 @@ -47,7 +47,19 @@ void dng_1d_table::SubDivide (const dng_1d_function &function,
@@ -102,7 +102,7 @@ index 3e366b75e44fd72e773138c5a0c6ffff888269ba..6da86b6241103dfd12cc3daad1fb6b20
  	fTable = fBuffer->Buffer_real32 ();
  	
 diff --git a/source/dng_1d_table.h b/source/dng_1d_table.h
-index a05fb26ce31e0566776dd61401f9dd9aa16fb4b7..c3fb23ba6d279ad78b92d1652b051b3626ae5429 100644
+index a05fb26..c3fb23b 100644
 --- a/source/dng_1d_table.h
 +++ b/source/dng_1d_table.h
 @@ -86,18 +86,24 @@ class dng_1d_table: private dng_uncopyable
@@ -137,7 +137,7 @@ index a05fb26ce31e0566776dd61401f9dd9aa16fb4b7..c3fb23ba6d279ad78b92d1652b051b36
  			
  			DNG_ASSERT (!(index < 0 || index > (int32) fTableCount), "dng_1d_table::Interpolate parameter out of range");
 diff --git a/source/dng_area_task.cpp b/source/dng_area_task.cpp
-index 21a94011c015e4e3934d1a6df3981f53fdddae84..6eaaef52fb134393adeb511b70efdb0c7d88d8fa 100644
+index 21a9401..6eaaef5 100644
 --- a/source/dng_area_task.cpp
 +++ b/source/dng_area_task.cpp
 @@ -16,6 +16,7 @@
@@ -185,7 +185,7 @@ index 21a94011c015e4e3934d1a6df3981f53fdddae84..6eaaef52fb134393adeb511b70efdb0c
  	// Find minimum number of items (indices) for each task.
  
 diff --git a/source/dng_bad_pixels.cpp b/source/dng_bad_pixels.cpp
-index 4a58fcdf3a520296a3cb39edf2b3e98de2c59565..b65b63466016d54542cf34f4d477f3a467c3ebfe 100644
+index 4a58fcd..21e8503 100644
 --- a/source/dng_bad_pixels.cpp
 +++ b/source/dng_bad_pixels.cpp
 @@ -99,12 +99,15 @@ dng_rect dng_opcode_FixBadPixelsConstant::SrcArea (const dng_rect &dstArea,
@@ -324,7 +324,7 @@ index 4a58fcdf3a520296a3cb39edf2b3e98de2c59565..b65b63466016d54542cf34f4d477f3a4
  		
  		}
 -		
-+
++	
  	// Search through bad rectangle list.
  	
 -	dng_rect testRect (pt.v - radius,
@@ -447,7 +447,7 @@ index 4a58fcdf3a520296a3cb39edf2b3e98de2c59565..b65b63466016d54542cf34f4d477f3a4
  					
  					FixSingleRow (srcBuffer,
 diff --git a/source/dng_big_table.cpp b/source/dng_big_table.cpp
-index e1716f88b617a53b2ed4232fb3006c1b17625937..34379015dbdee696e20a9f1fae86ded6e759cbb2 100644
+index e1716f8..3437901 100644
 --- a/source/dng_big_table.cpp
 +++ b/source/dng_big_table.cpp
 @@ -10,6 +10,7 @@
@@ -1009,7 +1009,7 @@ index e1716f88b617a53b2ed4232fb3006c1b17625937..34379015dbdee696e20a9f1fae86ded6
  					{
  					
 diff --git a/source/dng_big_table.h b/source/dng_big_table.h
-index a669fcb686461a28890559c326e1b740ffdaa48d..3da8668f090b13d66bc8fc5f0acdbbfbf06ab6be 100644
+index a669fcb..3da8668 100644
 --- a/source/dng_big_table.h
 +++ b/source/dng_big_table.h
 @@ -165,6 +165,8 @@ class dng_big_table
@@ -1077,7 +1077,7 @@ index a669fcb686461a28890559c326e1b740ffdaa48d..3da8668f090b13d66bc8fc5f0acdbbfb
  		composite_method CompositeMethod () const
  			{
 diff --git a/source/dng_bmff.cpp b/source/dng_bmff.cpp
-index 584cc8ff271c7ce5978d7b35feeea2900d2b8be4..70c8bdb007056c33d4481184dd9e53630dea4fdb 100644
+index 584cc8f..70c8bdb 100644
 --- a/source/dng_bmff.cpp
 +++ b/source/dng_bmff.cpp
 @@ -121,6 +121,14 @@ void dng_bmff_io::Read (dng_host &host,
@@ -1105,7 +1105,7 @@ index 584cc8ff271c7ce5978d7b35feeea2900d2b8be4..70c8bdb007056c33d4481184dd9e5363
  		if (useLargeSize)
  			{
 diff --git a/source/dng_camera_profile.cpp b/source/dng_camera_profile.cpp
-index 6c716b2a4c1a6d18c72b1fb642f7960626539324..4c29afd413b73718df7d6815886d9bbbfbebf750 100644
+index 6c716b2..4c29afd 100644
 --- a/source/dng_camera_profile.cpp
 +++ b/source/dng_camera_profile.cpp
 @@ -1663,9 +1663,10 @@ void dng_camera_profile::Parse (dng_stream &stream,
@@ -1123,7 +1123,7 @@ index 6c716b2a4c1a6d18c72b1fb642f7960626539324..4c29afd413b73718df7d6815886d9bbb
  		ReadHueSatMap (stream,
  					   fHueSatDeltas3,
 diff --git a/source/dng_date_time.cpp b/source/dng_date_time.cpp
-index 702318c84461c69609fb20a72c817e34fbf83994..e5f9ca1f702bdde5aba8410fc7671f9f35aaf451 100644
+index 702318c..e5f9ca1 100644
 --- a/source/dng_date_time.cpp
 +++ b/source/dng_date_time.cpp
 @@ -427,24 +427,30 @@ void dng_date_time_info::Decode_ISO_8601 (const char *s)
@@ -1166,7 +1166,7 @@ index 702318c84461c69609fb20a72c817e34fbf83994..e5f9ca1f702bdde5aba8410fc7671f9f
  					
  					}
 diff --git a/source/dng_exceptions.cpp b/source/dng_exceptions.cpp
-index 9fdef872b65c93dab460e38dc77f4090ee70a4b2..de266fe1aaf392da9addbb7f666c2da3f6a51e51 100644
+index 9fdef87..de266fe 100644
 --- a/source/dng_exceptions.cpp
 +++ b/source/dng_exceptions.cpp
 @@ -80,6 +80,7 @@ void ReportError (const char *message,
@@ -1178,7 +1178,7 @@ index 9fdef872b65c93dab460e38dc77f4090ee70a4b2..de266fe1aaf392da9addbb7f666c2da3
  					  const char *message,
  					  const char *sub_message,
 diff --git a/source/dng_exceptions.h b/source/dng_exceptions.h
-index 68107b270f382caf7e82a37982c040baba1ef57b..87c9da0e62aacede1c6a282bbec421e3c4cf9254 100644
+index 68107b2..87c9da0 100644
 --- a/source/dng_exceptions.h
 +++ b/source/dng_exceptions.h
 @@ -186,7 +186,7 @@ inline void Fail_dng_error (dng_error_code err)
@@ -1335,7 +1335,7 @@ index 68107b270f382caf7e82a37982c040baba1ef57b..87c9da0e62aacede1c6a282bbec421e3
  	
  	Throw_dng_error (dng_error_unsupported_dng);
 diff --git a/source/dng_file_stream.cpp b/source/dng_file_stream.cpp
-index 8fb984b4ce0641e285b179682e6b653200afddaa..327a666262df89d3e6f8f36b54e4efccbc440272 100644
+index 86b20e2..470f5dd 100644
 --- a/source/dng_file_stream.cpp
 +++ b/source/dng_file_stream.cpp
 @@ -11,6 +11,8 @@
@@ -1368,8 +1368,8 @@ index 8fb984b4ce0641e285b179682e6b653200afddaa..327a666262df89d3e6f8f36b54e4efcc
 +
  		#if qDNGValidate
  
- 		ReportError ("Unable to open fd");
-@@ -225,25 +235,94 @@ dng_file_stream::~dng_file_stream ()
+ 		ReportError ("Unable to open file");
+@@ -204,25 +214,94 @@ dng_file_stream::~dng_file_stream ()
  uint64 dng_file_stream::DoGetLength ()
  	{
  	
@@ -1469,7 +1469,7 @@ index 8fb984b4ce0641e285b179682e6b653200afddaa..327a666262df89d3e6f8f36b54e4efcc
  		{
  		
  		ThrowReadFile ();
-@@ -268,7 +347,20 @@ void dng_file_stream::DoWrite (const void *data,
+@@ -247,7 +326,20 @@ void dng_file_stream::DoWrite (const void *data,
  							   uint64 offset)
  	{
  	
@@ -1492,7 +1492,7 @@ index 8fb984b4ce0641e285b179682e6b653200afddaa..327a666262df89d3e6f8f36b54e4efcc
  		
  		ThrowWriteFile ();
 diff --git a/source/dng_fingerprint.cpp b/source/dng_fingerprint.cpp
-index 6113ca702570399bc2d297632167f65a4e1f906f..f40d37af837e1e83e463b85c07c5635096aae9cb 100644
+index 6113ca7..f40d37a 100644
 --- a/source/dng_fingerprint.cpp
 +++ b/source/dng_fingerprint.cpp
 @@ -48,15 +48,11 @@ dng_fingerprint::dng_fingerprint (const dng_fingerprint& print)
@@ -1581,18 +1581,19 @@ index 6113ca702570399bc2d297632167f65a4e1f906f..f40d37af837e1e83e463b85c07c56350
  
  /******************************************************************************/
 diff --git a/source/dng_fingerprint.h b/source/dng_fingerprint.h
-index 3d8fb7516429ddc8257460501c39b13b36f18e7d..06a58478885cd24c7d29cd4e607e6732c93ff809 100644
+index 3d8fb75..7ddcc4d 100644
 --- a/source/dng_fingerprint.h
 +++ b/source/dng_fingerprint.h
-@@ -114,6 +114,11 @@ class dng_fingerprint
+@@ -113,7 +113,12 @@ class dng_fingerprint
+ 		/// Convert fingerprint to UTF-8 string and return result as a dng_string.
  
  		dng_string ToUtf8HexString () const;
- 
++		
 +		/// Utility function to convert hex char to a numbrer.
 +		/// Returns -1 if invalid hex charactor.
-+
+ 
 +		static int HexCharToNum (char hexChar);
-+
++		
  		/// Convert UTF-8 string to fingerprint. Returns true on success, false on
  		/// failure.
  		///
@@ -1610,7 +1611,7 @@ index 3d8fb7516429ddc8257460501c39b13b36f18e7d..06a58478885cd24c7d29cd4e607e6732
  
  /*****************************************************************************/
 diff --git a/source/dng_flags.h b/source/dng_flags.h
-index 4fde43e20dc321173c66a75142ecaf31a3dfe65b..98f834ef695e3a60d67724a8c2c35ad1d885ec12 100644
+index 607799d..4a5441f 100644
 --- a/source/dng_flags.h
 +++ b/source/dng_flags.h
 @@ -27,8 +27,8 @@
@@ -1625,7 +1626,7 @@ index 4fde43e20dc321173c66a75142ecaf31a3dfe65b..98f834ef695e3a60d67724a8c2c35ad1
  #define kDNGSDK_GetInfoVersion	"1.7.1 (" kDNGSDK_BuildString ")"
  
 diff --git a/source/dng_gain_map.cpp b/source/dng_gain_map.cpp
-index 799ba02a1473ec0340d25e5d63ea7a74b6ebefeb..34f9e75e92643cce82be0370bc96e7db9de27cbc 100644
+index 799ba02..34f9e75 100644
 --- a/source/dng_gain_map.cpp
 +++ b/source/dng_gain_map.cpp
 @@ -95,8 +95,8 @@ dng_gain_map_interpolator::dng_gain_map_interpolator (const dng_gain_map &map,
@@ -1939,7 +1940,7 @@ index 799ba02a1473ec0340d25e5d63ea7a74b6ebefeb..34f9e75e92643cce82be0370bc96e7db
  	fGainMap.Reset (dng_gain_map::GetStream (host, stream));
  	
 diff --git a/source/dng_gain_map.h b/source/dng_gain_map.h
-index 6a69a340ec37a4f2c9582acc335183d854dcbe20..685093f7a41a162cec6614de161fd3e29db7c9ad 100644
+index 6a69a34..685093f 100644
 --- a/source/dng_gain_map.h
 +++ b/source/dng_gain_map.h
 @@ -17,10 +17,12 @@
@@ -2057,7 +2058,7 @@ index 6a69a340ec37a4f2c9582acc335183d854dcbe20..685093f7a41a162cec6614de161fd3e2
  		/// APIs to support ProfileGainTableMap2.
  
 diff --git a/source/dng_hue_sat_map.cpp b/source/dng_hue_sat_map.cpp
-index 54bee538d506a8a465d08f795d7a611e5f6bd2f0..25d2fff1ba007626d36f820d16439cb3ffc8d3de 100644
+index 54bee53..25d2fff 100644
 --- a/source/dng_hue_sat_map.cpp
 +++ b/source/dng_hue_sat_map.cpp
 @@ -103,6 +103,12 @@ void dng_hue_sat_map::SetDivisions (uint32 hueDivisions,
@@ -2113,7 +2114,7 @@ index 54bee538d506a8a465d08f795d7a611e5f6bd2f0..25d2fff1ba007626d36f820d16439cb3
  	SafeGetDeltas () [offset] = modify;
  	
 diff --git a/source/dng_ifd.cpp b/source/dng_ifd.cpp
-index 5e20dca41c533fa6311d13ebcb10fc72dcd1dcfa..f1203490988f55b3d10ab0da2f6c103383dcc040 100644
+index 5e20dca..f120349 100644
 --- a/source/dng_ifd.cpp
 +++ b/source/dng_ifd.cpp
 @@ -1157,6 +1157,13 @@ bool dng_ifd::ParseTag (dng_host &host,
@@ -2433,7 +2434,7 @@ index 5e20dca41c533fa6311d13ebcb10fc72dcd1dcfa..f1203490988f55b3d10ab0da2f6c1033
  		
  /*****************************************************************************/
 diff --git a/source/dng_image.cpp b/source/dng_image.cpp
-index 9f2c4b617446d09ccf28dd940042a1294a16b452..66482ba50a6fcadd83671dbe41a56f72ab37b33f 100644
+index 9f2c4b6..66482ba 100644
 --- a/source/dng_image.cpp
 +++ b/source/dng_image.cpp
 @@ -12,6 +12,7 @@
@@ -2710,7 +2711,7 @@ index 9f2c4b617446d09ccf28dd940042a1294a16b452..66482ba50a6fcadd83671dbe41a56f72
  								   fBounds.r),
  						 areaBR);
 diff --git a/source/dng_image_writer.cpp b/source/dng_image_writer.cpp
-index b97ab74e1a06fed54a15974edbb6998a97bcb0cb..49a37599d44a8f43322ad23009f82a4cd58afd80 100644
+index 4452d57..dd3a396 100644
 --- a/source/dng_image_writer.cpp
 +++ b/source/dng_image_writer.cpp
 @@ -267,14 +267,15 @@ tag_encoded_text::tag_encoded_text (uint16 code,
@@ -3000,7 +3001,7 @@ index b97ab74e1a06fed54a15974edbb6998a97bcb0cb..49a37599d44a8f43322ad23009f82a4c
 -	uint32 blockColBytes = blockCols * buffer.fPlanes * buffer.fPixelSize;
 +	int32 rowBlockStep = SafeInt32Mult (rowStep, (int32) blockRows);
 +	int32 colBlockStep = SafeInt32Mult (colStep, (int32) blockCols);
-+
++	
 +	uint32 blockColBytes = SafeUint32Mult (blockCols,
 +										   buffer.fPlanes,
 +										   buffer.fPixelSize);
@@ -3058,7 +3059,7 @@ index b97ab74e1a06fed54a15974edbb6998a97bcb0cb..49a37599d44a8f43322ad23009f82a4c
  				
  			uint8 *sBuffer = (uint8 *) buffer.fData;
  				
-@@ -4946,7 +5022,9 @@ void dng_image_writer::WriteTile (dng_host &host,
+@@ -5063,7 +5139,9 @@ void dng_image_writer::WriteTile (dng_host &host,
  			uint32 *srcPtr = (uint32 *) buffer.fData;
  			uint16 *dstPtr = (uint16 *) buffer.fData;
  			
@@ -3069,7 +3070,7 @@ index b97ab74e1a06fed54a15974edbb6998a97bcb0cb..49a37599d44a8f43322ad23009f82a4c
  			
  			for (uint32 j = 0; j < pixels; j++)
  				{
-@@ -4965,7 +5043,9 @@ void dng_image_writer::WriteTile (dng_host &host,
+@@ -5082,7 +5160,9 @@ void dng_image_writer::WriteTile (dng_host &host,
  			uint32 *srcPtr = (uint32 *) buffer.fData;
  			uint8  *dstPtr = (uint8	 *) buffer.fData;
  			
@@ -3080,7 +3081,7 @@ index b97ab74e1a06fed54a15974edbb6998a97bcb0cb..49a37599d44a8f43322ad23009f82a4c
  			
  			if (stream.BigEndian () || ifd.fPredictor == cpFloatingPoint   ||
  									   ifd.fPredictor == cpFloatingPointX2 ||
-@@ -5066,6 +5146,7 @@ dng_write_tiles_task::dng_write_tiles_task
+@@ -5183,6 +5263,7 @@ dng_write_tiles_task::dng_write_tiles_task
  	,	fFakeChannels	  (fakeChannels)
  	,	fTilesDown		  (tilesDown)
  	,	fTilesAcross	  (tilesAcross)
@@ -3088,7 +3089,7 @@ index b97ab74e1a06fed54a15974edbb6998a97bcb0cb..49a37599d44a8f43322ad23009f82a4c
  	,	fCompressedSize	  (compressedSize)
  	,	fUncompressedSize (uncompressedSize)
  	,	fNextTileIndex	  (0)
-@@ -5122,7 +5203,7 @@ void dng_write_tiles_task::Process (uint32 /* threadIndex */,
+@@ -5239,7 +5320,7 @@ void dng_write_tiles_task::Process (uint32 /* threadIndex */,
  
  			uint32 tileIndex = fNextTileIndex++;
  
@@ -3097,7 +3098,7 @@ index b97ab74e1a06fed54a15974edbb6998a97bcb0cb..49a37599d44a8f43322ad23009f82a4c
  				{
  				return;
  				}
-@@ -5368,7 +5449,9 @@ void dng_image_writer::DoWriteTiles (dng_host &host,
+@@ -5485,7 +5566,9 @@ void dng_image_writer::DoWriteTiles (dng_host &host,
  									 dng_fingerprint *outDigest)
  	{
  	
@@ -3108,7 +3109,7 @@ index b97ab74e1a06fed54a15974edbb6998a97bcb0cb..49a37599d44a8f43322ad23009f82a4c
  									 host.PerformAreaTaskThreads ());
  										 
  	dng_write_tiles_task task (*this,
-@@ -5476,9 +5559,42 @@ void dng_image_writer::WriteImage (dng_host &host,
+@@ -5593,9 +5676,42 @@ void dng_image_writer::WriteImage (dng_host &host,
  	// Compute basic information.
  
  	dng_safe_uint32 bytesPerSample (TagTypeSize (image.PixelType ()));
@@ -3153,7 +3154,7 @@ index b97ab74e1a06fed54a15974edbb6998a97bcb0cb..49a37599d44a8f43322ad23009f82a4c
  	dng_safe_uint32 tileRowBytes = bytesPerPixel * ifd.fTileWidth;
  
  	// If we can compute the number of bytes needed to store the
-@@ -5512,8 +5628,9 @@ void dng_image_writer::WriteImage (dng_host &host,
+@@ -5629,8 +5745,9 @@ void dng_image_writer::WriteImage (dng_host &host,
  	
  	uint32 tilesAcross = ifd.TilesAcross ();
  	uint32 tilesDown   = ifd.TilesDown	 ();
@@ -3164,7 +3165,7 @@ index b97ab74e1a06fed54a15974edbb6998a97bcb0cb..49a37599d44a8f43322ad23009f82a4c
  							  (host.PerformAreaTaskThreads () > 1) &&
  							  (subTileLength == ifd.fTileLength) &&
  							  (ifd.fCompression != ccUncompressed);
-@@ -8047,7 +8164,12 @@ void dng_image_writer::WriteDNGWithMetadata (dng_host &host,
+@@ -8164,7 +8281,12 @@ void dng_image_writer::WriteDNGWithMetadata (dng_host &host,
  	// Get the raw image we are writing.
  
  	const dng_image &rawImage (negative.RawImage ());
@@ -3178,7 +3179,7 @@ index b97ab74e1a06fed54a15974edbb6998a97bcb0cb..49a37599d44a8f43322ad23009f82a4c
  	// Create a dng_ifd record for the raw image.
  	
  	dng_ifd info;
-@@ -9046,6 +9168,11 @@ void dng_image_writer::WriteDNGWithMetadata (dng_host &host,
+@@ -9163,6 +9285,11 @@ void dng_image_writer::WriteDNGWithMetadata (dng_host &host,
  	
  		enhancedInfo->fSamplesPerPixel = negative.Stage3Image ()->Planes ();
  
@@ -3191,7 +3192,7 @@ index b97ab74e1a06fed54a15974edbb6998a97bcb0cb..49a37599d44a8f43322ad23009f82a4c
  			(negative.Stage3Image ()->PixelType () == ttFloat);
  		
 diff --git a/source/dng_image_writer.h b/source/dng_image_writer.h
-index 36d6bb3e89b387dbf0712945f402f32526af6f07..0406844a1fbf050d4c315ff9582f257076e2f9cb 100644
+index 36d6bb3..0406844 100644
 --- a/source/dng_image_writer.h
 +++ b/source/dng_image_writer.h
 @@ -109,7 +109,7 @@ class tiff_tag: private dng_uncopyable
@@ -3232,7 +3233,7 @@ index 36d6bb3e89b387dbf0712945f402f32526af6f07..0406844a1fbf050d4c315ff9582f2570
  		uint32 fCompressedSize;
  		
 diff --git a/source/dng_info.cpp b/source/dng_info.cpp
-index 07dd90c6da37f147d93bf8f788d0fe2ce844f496..ed33b48058ba299bd3288863a23aad1e5c3c8e4a 100644
+index 07dd90c..ed33b48 100644
 --- a/source/dng_info.cpp
 +++ b/source/dng_info.cpp
 @@ -22,6 +22,65 @@
@@ -4145,7 +4146,7 @@ index 07dd90c6da37f147d93bf8f788d0fe2ce844f496..ed33b48058ba299bd3288863a23aad1e
  			}
  		
 diff --git a/source/dng_jpeg_image.cpp b/source/dng_jpeg_image.cpp
-index 93b5e116f4b0e98f050be967868cf78752840bfa..fb039cf475605f8a2e14e64803aaa8b923e2b484 100644
+index 940f824..e8b430e 100644
 --- a/source/dng_jpeg_image.cpp
 +++ b/source/dng_jpeg_image.cpp
 @@ -158,9 +158,15 @@ void dng_compressed_image_tiles::EncodeTiles (dng_host &host,
@@ -4168,7 +4169,7 @@ index 93b5e116f4b0e98f050be967868cf78752840bfa..fb039cf475605f8a2e14e64803aaa8b9
  	
  	uint32 threadCount = Min_uint32 (tileCount,
 diff --git a/source/dng_jpeg_image.h b/source/dng_jpeg_image.h
-index 3aaf409b0286d9878512fe8c26cdc61545182220..f10b38bbae885be2f923bd851c5a8c6227542ffa 100644
+index 3aaf409..f10b38b 100644
 --- a/source/dng_jpeg_image.h
 +++ b/source/dng_jpeg_image.h
 @@ -107,7 +107,10 @@ class dng_lossy_compressed_image : public dng_compressed_image_tiles
@@ -4184,7 +4185,7 @@ index 3aaf409b0286d9878512fe8c26cdc61545182220..f10b38bbae885be2f923bd851c5a8c62
  		
  		dng_fingerprint FindDigest (dng_host &host) const;
 diff --git a/source/dng_jxl.cpp b/source/dng_jxl.cpp
-index 07ebb13ecd69683cb7870a1d43a76ad1692b6510..edc197febf99486da0a0962daffb8e7c54531104 100644
+index 7da9228..5ccc04d 100755
 --- a/source/dng_jxl.cpp
 +++ b/source/dng_jxl.cpp
 @@ -508,6 +508,14 @@ class dng_jxl_io_buffer
@@ -4680,10 +4681,10 @@ index 07ebb13ecd69683cb7870a1d43a76ad1692b6510..edc197febf99486da0a0962daffb8e7c
  
  /*****************************************************************************/
 diff --git a/source/dng_jxl.h b/source/dng_jxl.h
-index 56f1363a8803860c0ea3730cb047c7e302ec8910..c8a4dc1a18d91ff0d8e358511495cc0c46107488 100644
+index cc17814..43955ce 100644
 --- a/source/dng_jxl.h
 +++ b/source/dng_jxl.h
-@@ -301,6 +301,22 @@ class dng_jxl_decoder
+@@ -299,6 +299,22 @@ class dng_jxl_decoder
  		
  		//const_dng_image_sptr fThumb;
  
@@ -4705,9 +4706,9 @@ index 56f1363a8803860c0ea3730cb047c7e302ec8910..c8a4dc1a18d91ff0d8e358511495cc0c
 +
  	public:
  
- 		virtual ~dng_jxl_decoder () {}
+ 		virtual ~dng_jxl_decoder ();
 diff --git a/source/dng_lens_correction.cpp b/source/dng_lens_correction.cpp
-index 372076f35f8fc14335e46bf03903141f0ebf87b6..26b4886ea4406764aeb8434dfb9c215565f7b21d 100644
+index 372076f..26b4886 100644
 --- a/source/dng_lens_correction.cpp
 +++ b/source/dng_lens_correction.cpp
 @@ -25,6 +25,19 @@
@@ -4992,7 +4993,7 @@ index 372076f35f8fc14335e46bf03903141f0ebf87b6..26b4886ea4406764aeb8434dfb9c2155
  			fTableOutputBits--;
  			}
 diff --git a/source/dng_linearization_info.cpp b/source/dng_linearization_info.cpp
-index a58873af4e8a25da580a5251a88567a459601e65..cdfe3e3e2e8c61e1129b01444b50732009c4b869 100644
+index a58873a..cdfe3e3 100644
 --- a/source/dng_linearization_info.cpp
 +++ b/source/dng_linearization_info.cpp
 @@ -152,7 +152,68 @@ dng_linearize_plane::dng_linearize_plane (dng_host &host,
@@ -5110,7 +5111,7 @@ index a58873af4e8a25da580a5251a88567a459601e65..cdfe3e3e2e8c61e1129b01444b507320
  
  	if (allowPreserveBlackLevels &&
 diff --git a/source/dng_local_string.cpp b/source/dng_local_string.cpp
-index 3559edd80f7a2b55c776e39ae2ecc7190cefad95..bad92b847e1bc4d243d8f4c5220233eb682bb898 100644
+index 3559edd..bad92b8 100644
 --- a/source/dng_local_string.cpp
 +++ b/source/dng_local_string.cpp
 @@ -8,6 +8,13 @@
@@ -5141,7 +5142,7 @@ index 3559edd80f7a2b55c776e39ae2ecc7190cefad95..bad92b847e1bc4d243d8f4c5220233eb
  	dng_string safeLanguage (language);
  	
 diff --git a/source/dng_lossless_jpeg_shared.cpp b/source/dng_lossless_jpeg_shared.cpp
-index 586e4455827d4bcd5dde88f5fc5ece5c3000fb8b..6826daca0f133e45932248ff58c2dddea15bdcde 100644
+index 541862c..dd505d7 100644
 --- a/source/dng_lossless_jpeg_shared.cpp
 +++ b/source/dng_lossless_jpeg_shared.cpp
 @@ -44,6 +44,7 @@
@@ -5370,7 +5371,7 @@ index 586e4455827d4bcd5dde88f5fc5ece5c3000fb8b..6826daca0f133e45932248ff58c2ddde
  
  		}
  
-@@ -1787,14 +1889,26 @@ DNG_ALWAYS_INLINE int32 dng_lossless_decoder<simd>::HuffDecode (HuffmanTable *ht
+@@ -1780,14 +1882,26 @@ DNG_ALWAYS_INLINE int32 dng_lossless_decoder<simd>::HuffDecode (HuffmanTable *ht
  
  		// With garbage input we may reach the sentinel value l = 17.
  
@@ -5400,7 +5401,7 @@ index 586e4455827d4bcd5dde88f5fc5ece5c3000fb8b..6826daca0f133e45932248ff58c2ddde
  			}
  			
  		}
-@@ -1820,30 +1934,19 @@ DNG_ALWAYS_INLINE int32 dng_lossless_decoder<simd>::HuffDecode (HuffmanTable *ht
+@@ -1813,30 +1927,19 @@ DNG_ALWAYS_INLINE int32 dng_lossless_decoder<simd>::HuffDecode (HuffmanTable *ht
   */
  
  template <SIMDType simd>
@@ -5439,7 +5440,7 @@ index 586e4455827d4bcd5dde88f5fc5ece5c3000fb8b..6826daca0f133e45932248ff58c2ddde
  
  	}
  
-@@ -1861,9 +1964,11 @@ void dng_lossless_decoder<simd>::PmPutRow (MCU *buf,
+@@ -1854,9 +1957,11 @@ void dng_lossless_decoder<simd>::PmPutRow (MCU *buf,
  	
  	uint16 *sPtr = &buf [0] [0];
  	
@@ -5453,7 +5454,7 @@ index 586e4455827d4bcd5dde88f5fc5ece5c3000fb8b..6826daca0f133e45932248ff58c2ddde
  		
  	}
  
-@@ -2074,14 +2179,15 @@ void dng_lossless_decoder<simd>::DecodeImage ()
+@@ -2067,14 +2172,15 @@ void dng_lossless_decoder<simd>::DecodeImage ()
  	// Canon sRAW support and Sony sRAW.
  	
  	if (info.compInfo [0].hSampFactor == 2 &&
@@ -5473,7 +5474,7 @@ index 586e4455827d4bcd5dde88f5fc5ece5c3000fb8b..6826daca0f133e45932248ff58c2ddde
  			int32 p0;
  			int32 p1;
  			int32 p2;
-@@ -2249,12 +2355,13 @@ void dng_lossless_decoder<simd>::DecodeImage ()
+@@ -2242,12 +2348,13 @@ void dng_lossless_decoder<simd>::DecodeImage ()
  		}
  	
  	if (info.compInfo [0].hSampFactor == 2 &&
@@ -5490,7 +5491,7 @@ index 586e4455827d4bcd5dde88f5fc5ece5c3000fb8b..6826daca0f133e45932248ff58c2ddde
  			// Sony sRaw.
  			
  			if (sony_sRAW)
-@@ -2491,9 +2598,13 @@ void dng_lossless_decoder<simd>::DecodeImage ()
+@@ -2484,9 +2591,13 @@ void dng_lossless_decoder<simd>::DecodeImage ()
  				
  				// Initialize predictors.
  				
@@ -5507,7 +5508,7 @@ index 586e4455827d4bcd5dde88f5fc5ece5c3000fb8b..6826daca0f133e45932248ff58c2ddde
  				
  				if (row == 0)
  					{
-@@ -2508,6 +2619,19 @@ void dng_lossless_decoder<simd>::DecodeImage ()
+@@ -2501,6 +2612,19 @@ void dng_lossless_decoder<simd>::DecodeImage ()
  					p1 = prevRowBuf [0] [1];
  					p2 = prevRowBuf [0] [2];
  					}
@@ -5527,7 +5528,7 @@ index 586e4455827d4bcd5dde88f5fc5ece5c3000fb8b..6826daca0f133e45932248ff58c2ddde
  				
  				for (int32 col = 0; col < numCOL; col += 2)
  					{
-@@ -2536,9 +2660,7 @@ void dng_lossless_decoder<simd>::DecodeImage ()
+@@ -2529,9 +2653,7 @@ void dng_lossless_decoder<simd>::DecodeImage ()
  
  							}
  							
@@ -5538,7 +5539,7 @@ index 586e4455827d4bcd5dde88f5fc5ece5c3000fb8b..6826daca0f133e45932248ff58c2ddde
  					
  						}
  					
-@@ -2566,9 +2688,7 @@ void dng_lossless_decoder<simd>::DecodeImage ()
+@@ -2559,9 +2681,7 @@ void dng_lossless_decoder<simd>::DecodeImage ()
  
  							}
  							
@@ -5549,7 +5550,7 @@ index 586e4455827d4bcd5dde88f5fc5ece5c3000fb8b..6826daca0f133e45932248ff58c2ddde
  					
  						}
  					
-@@ -2596,9 +2716,7 @@ void dng_lossless_decoder<simd>::DecodeImage ()
+@@ -2589,9 +2709,7 @@ void dng_lossless_decoder<simd>::DecodeImage ()
  
  							}
  							
@@ -5560,7 +5561,7 @@ index 586e4455827d4bcd5dde88f5fc5ece5c3000fb8b..6826daca0f133e45932248ff58c2ddde
  					
  						}
  					
-@@ -2626,9 +2744,7 @@ void dng_lossless_decoder<simd>::DecodeImage ()
+@@ -2619,9 +2737,7 @@ void dng_lossless_decoder<simd>::DecodeImage ()
  
  							}
  							
@@ -5571,7 +5572,7 @@ index 586e4455827d4bcd5dde88f5fc5ece5c3000fb8b..6826daca0f133e45932248ff58c2ddde
  					
  						}
  					
-@@ -2656,13 +2772,13 @@ void dng_lossless_decoder<simd>::DecodeImage ()
+@@ -2649,13 +2765,13 @@ void dng_lossless_decoder<simd>::DecodeImage ()
  
  							}
  							
@@ -5590,7 +5591,7 @@ index 586e4455827d4bcd5dde88f5fc5ece5c3000fb8b..6826daca0f133e45932248ff58c2ddde
  					
  						}
  					
-@@ -2690,13 +2806,13 @@ void dng_lossless_decoder<simd>::DecodeImage ()
+@@ -2683,13 +2799,13 @@ void dng_lossless_decoder<simd>::DecodeImage ()
  
  							}
  							
@@ -5609,7 +5610,7 @@ index 586e4455827d4bcd5dde88f5fc5ece5c3000fb8b..6826daca0f133e45932248ff58c2ddde
  					
  						}
  									
-@@ -2717,7 +2833,12 @@ void dng_lossless_decoder<simd>::DecodeImage ()
+@@ -2710,7 +2826,12 @@ void dng_lossless_decoder<simd>::DecodeImage ()
  	
  	#if qSupportHasselblad_3FR
  	
@@ -5623,7 +5624,7 @@ index 586e4455827d4bcd5dde88f5fc5ece5c3000fb8b..6826daca0f133e45932248ff58c2ddde
  		{
  		
  		fHasselblad3FR = true;
-@@ -2986,7 +3107,15 @@ void dng_lossless_decoder<simd>::StartRead (uint32 &imageWidth,
+@@ -2979,7 +3100,15 @@ void dng_lossless_decoder<simd>::StartRead (uint32 &imageWidth,
  	{ 
  	
  	ReadFileHeader	  ();
@@ -5640,7 +5641,7 @@ index 586e4455827d4bcd5dde88f5fc5ece5c3000fb8b..6826daca0f133e45932248ff58c2ddde
  	DecoderStructInit ();
  	HuffDecoderInit	  ();
  	
-@@ -3166,13 +3295,28 @@ dng_lossless_encoder<simd>::dng_lossless_encoder (const uint16 *srcData,
+@@ -3159,13 +3288,28 @@ dng_lossless_encoder<simd>::dng_lossless_encoder (const uint16 *srcData,
  	// Maximum buffering for one row of output. Add one for carryover bits
  	// from previous row.
  
@@ -5672,7 +5673,7 @@ index 586e4455827d4bcd5dde88f5fc5ece5c3000fb8b..6826daca0f133e45932248ff58c2ddde
  
  	}
  
-@@ -3181,6 +3325,11 @@ dng_lossless_encoder<simd>::dng_lossless_encoder (const uint16 *srcData,
+@@ -3174,6 +3318,11 @@ dng_lossless_encoder<simd>::dng_lossless_encoder (const uint16 *srcData,
  template <SIMDType simd>
  inline void dng_lossless_encoder<simd>::EmitByte (uint8 value)
  	{
@@ -5684,7 +5685,7 @@ index 586e4455827d4bcd5dde88f5fc5ece5c3000fb8b..6826daca0f133e45932248ff58c2ddde
  	
  	streamBuffer[streamBufferOffset++] = value;
  	
-@@ -3431,9 +3580,21 @@ inline int dng_lossless_encoder<simd>::EmitBitsToBuffer (int buffered_bits,
+@@ -3424,9 +3573,21 @@ inline int dng_lossless_encoder<simd>::EmitBitsToBuffer (int buffered_bits,
  	while (buffered_bits >= 8)
  			{
  		uint8 c = (uint8)(bit_buffer >> (buffered_bits - 8));
@@ -5706,7 +5707,7 @@ index 586e4455827d4bcd5dde88f5fc5ece5c3000fb8b..6826daca0f133e45932248ff58c2ddde
  			streamBuffer[streamBufferOffset++] = 0x00;
  			}
  		buffered_bits -= 8;
-@@ -4374,10 +4535,10 @@ void DecodeLosslessJPEG (dng_stream &stream,
+@@ -4367,10 +4528,10 @@ void DecodeLosslessJPEG (dng_stream &stream,
  					   imageHeight,
  					   imageChannels);
  					   
@@ -5721,7 +5722,7 @@ index 586e4455827d4bcd5dde88f5fc5ece5c3000fb8b..6826daca0f133e45932248ff58c2ddde
  					   
  	if (decodedSize < minDecodedSize ||
  		decodedSize > maxDecodedSize)
-@@ -4429,6 +4590,18 @@ void EncodeLosslessJPEG (const uint16 *srcData,
+@@ -4422,6 +4583,18 @@ void EncodeLosslessJPEG (const uint16 *srcData,
  						 int32 srcColStep,
  						 dng_stream &stream)
  	{
@@ -5741,7 +5742,7 @@ index 586e4455827d4bcd5dde88f5fc5ece5c3000fb8b..6826daca0f133e45932248ff58c2ddde
  	dng_lossless_encoder<simd> encoder (srcData,
  										srcRows,
 diff --git a/source/dng_memory.cpp b/source/dng_memory.cpp
-index c9f5c8a464011a497e8e5ee2573a0834c54b710d..74a58c51b7542674c410933c9c46ed0442b7fe3a 100644
+index c9f5c8a..e938b90 100644
 --- a/source/dng_memory.cpp
 +++ b/source/dng_memory.cpp
 @@ -12,12 +12,28 @@
@@ -5760,10 +5761,10 @@ index c9f5c8a464011a497e8e5ee2573a0834c54b710d..74a58c51b7542674c410933c9c46ed04
 +
 +void DNG_SetSimulateMemoryFull (bool simulate)
 +	{
-+
++	
 +	sDNGSimulateMemoryFull.store (simulate,
 +								  std::memory_order_relaxed);
-+
++	
 +	}
 +
 +/*****************************************************************************/
@@ -5784,7 +5785,7 @@ index c9f5c8a464011a497e8e5ee2573a0834c54b710d..74a58c51b7542674c410933c9c46ed04
  	
  	if (!result)
 diff --git a/source/dng_memory.h b/source/dng_memory.h
-index f92e1e01a98837dd12b83f5c6ed21ef5e888d860..b170dc6016159a4caa2da9eb7f83fe07ed19fe11 100644
+index f92e1e0..b170dc6 100644
 --- a/source/dng_memory.h
 +++ b/source/dng_memory.h
 @@ -575,6 +575,15 @@ extern dng_memory_allocator gDefaultDNGMemoryAllocator;
@@ -5804,7 +5805,7 @@ index f92e1e01a98837dd12b83f5c6ed21ef5e888d860..b170dc6016159a4caa2da9eb7f83fe07
  /// that throws a dng_exception with error code dng_error_memory if it cannot
  /// allocate memory.
 diff --git a/source/dng_memory_stream.cpp b/source/dng_memory_stream.cpp
-index f6b5e97c06c9e63a332ef4c1a4fd5687d150c017..aff7b66458aeb3ff5e18c27079087048b0f13270 100644
+index f6b5e97..aff7b66 100644
 --- a/source/dng_memory_stream.cpp
 +++ b/source/dng_memory_stream.cpp
 @@ -35,7 +35,12 @@ dng_memory_stream::dng_memory_stream (dng_memory_allocator &allocator,
@@ -5920,7 +5921,7 @@ index f6b5e97c06c9e63a332ef4c1a4fd5687d150c017..aff7b66458aeb3ff5e18c27079087048
  			
  			const uint8 *sPtr = fPageList [pageIndex]->Buffer_uint8 () +
 diff --git a/source/dng_memory_stream.h b/source/dng_memory_stream.h
-index a12bbea984250f83bd8e4908638513d754d24c7f..84077fa71bd9d6b49b3793161493ca63758a03e8 100644
+index a12bbea..84077fa 100644
 --- a/source/dng_memory_stream.h
 +++ b/source/dng_memory_stream.h
 @@ -48,7 +48,7 @@ class dng_memory_stream: public dng_stream
@@ -5933,7 +5934,7 @@ index a12bbea984250f83bd8e4908638513d754d24c7f..84077fa71bd9d6b49b3793161493ca63
  		dng_memory_stream (dng_memory_allocator &allocator,
  						   dng_abort_sniffer *sniffer = NULL,
 diff --git a/source/dng_misc_opcodes.cpp b/source/dng_misc_opcodes.cpp
-index 5e52388203d55e74d6fab50d3a6e6272ba6d78d8..00c11249950cd9f0194479da61f076d04440f847 100644
+index c0f584d..4445825 100644
 --- a/source/dng_misc_opcodes.cpp
 +++ b/source/dng_misc_opcodes.cpp
 @@ -21,6 +21,17 @@
@@ -5981,7 +5982,7 @@ index 5e52388203d55e74d6fab50d3a6e6272ba6d78d8..00c11249950cd9f0194479da61f076d0
  		overlap.t = fArea.t +
  			ConvertUint32ToInt32 (RoundUpUint32ToMultiple
  								  (static_cast<uint32> (overlap.t - fArea.t),
-@@ -526,14 +548,16 @@ void dng_opcode_MapTable::Prepare (dng_negative &negative,
+@@ -525,14 +547,16 @@ void dng_opcode_MapTable::Prepare (dng_negative &negative,
  			if (x < 0.0)
  				{
  				
@@ -6000,7 +6001,7 @@ index 5e52388203d55e74d6fab50d3a6e6272ba6d78d8..00c11249950cd9f0194479da61f076d0
  				
  				}
  				
-@@ -658,16 +682,26 @@ dng_opcode_MapPolynomial::dng_opcode_MapPolynomial (dng_stream &stream)
+@@ -652,16 +676,26 @@ dng_opcode_MapPolynomial::dng_opcode_MapPolynomial (dng_stream &stream)
  			
  	for (uint32 j = 0; j <= kMaxDegree; j++)
  		{
@@ -6029,7 +6030,7 @@ index 5e52388203d55e74d6fab50d3a6e6272ba6d78d8..00c11249950cd9f0194479da61f076d0
  		}
  	
  	#if qDNGValidate
-@@ -884,7 +918,7 @@ dng_opcode_DeltaPerRow::dng_opcode_DeltaPerRow (dng_host &host,
+@@ -878,7 +912,7 @@ dng_opcode_DeltaPerRow::dng_opcode_DeltaPerRow (dng_host &host,
  		ThrowBadFormat ();
  		}
  		
@@ -6038,7 +6039,7 @@ index 5e52388203d55e74d6fab50d3a6e6272ba6d78d8..00c11249950cd9f0194479da61f076d0
  		{
  		ThrowBadFormat ();
  		}
-@@ -897,7 +931,17 @@ dng_opcode_DeltaPerRow::dng_opcode_DeltaPerRow (dng_host &host,
+@@ -891,7 +925,17 @@ dng_opcode_DeltaPerRow::dng_opcode_DeltaPerRow (dng_host &host,
  	
  	for (uint32 j = 0; j < deltas; j++)
  		{
@@ -6056,7 +6057,7 @@ index 5e52388203d55e74d6fab50d3a6e6272ba6d78d8..00c11249950cd9f0194479da61f076d0
  		}
  		
  	#if qDNGValidate
-@@ -931,7 +975,7 @@ void dng_opcode_DeltaPerRow::PutData (dng_stream &stream) const
+@@ -925,7 +969,7 @@ void dng_opcode_DeltaPerRow::PutData (dng_stream &stream) const
  	uint32 deltas = SafeUint32DivideUp (fAreaSpec.Area ().H (),
  										fAreaSpec.RowPitch ());
  	
@@ -6065,7 +6066,7 @@ index 5e52388203d55e74d6fab50d3a6e6272ba6d78d8..00c11249950cd9f0194479da61f076d0
  	
  	fAreaSpec.PutData (stream);
  	
-@@ -1108,7 +1152,7 @@ dng_opcode_DeltaPerColumn::dng_opcode_DeltaPerColumn (dng_host &host,
+@@ -1102,7 +1146,7 @@ dng_opcode_DeltaPerColumn::dng_opcode_DeltaPerColumn (dng_host &host,
  		ThrowBadFormat ();
  		}
  		
@@ -6074,7 +6075,7 @@ index 5e52388203d55e74d6fab50d3a6e6272ba6d78d8..00c11249950cd9f0194479da61f076d0
  		{
  		ThrowBadFormat ();
  		}
-@@ -1121,7 +1165,17 @@ dng_opcode_DeltaPerColumn::dng_opcode_DeltaPerColumn (dng_host &host,
+@@ -1115,7 +1159,17 @@ dng_opcode_DeltaPerColumn::dng_opcode_DeltaPerColumn (dng_host &host,
  	
  	for (uint32 j = 0; j < deltas; j++)
  		{
@@ -6092,7 +6093,7 @@ index 5e52388203d55e74d6fab50d3a6e6272ba6d78d8..00c11249950cd9f0194479da61f076d0
  		}
  		
  	#if qDNGValidate
-@@ -1155,7 +1209,7 @@ void dng_opcode_DeltaPerColumn::PutData (dng_stream &stream) const
+@@ -1149,7 +1203,7 @@ void dng_opcode_DeltaPerColumn::PutData (dng_stream &stream) const
  	uint32 deltas = SafeUint32DivideUp (fAreaSpec.Area ().W (),
  										fAreaSpec.ColPitch ());
  	
@@ -6101,7 +6102,7 @@ index 5e52388203d55e74d6fab50d3a6e6272ba6d78d8..00c11249950cd9f0194479da61f076d0
  	
  	fAreaSpec.PutData (stream);
  	
-@@ -1271,8 +1325,12 @@ void dng_opcode_DeltaPerColumn::ProcessArea (dng_negative &negative,
+@@ -1265,8 +1319,12 @@ void dng_opcode_DeltaPerColumn::ProcessArea (dng_negative &negative,
  					real32 y = x + colDelta;
  							   
  					dPtr [0] = Pin_real32 (-1.0f, y, 1.0f);
@@ -6116,7 +6117,7 @@ index 5e52388203d55e74d6fab50d3a6e6272ba6d78d8..00c11249950cd9f0194479da61f076d0
  					
  					} // rows
  
-@@ -1330,7 +1388,7 @@ dng_opcode_ScalePerRow::dng_opcode_ScalePerRow (dng_host &host,
+@@ -1324,7 +1382,7 @@ dng_opcode_ScalePerRow::dng_opcode_ScalePerRow (dng_host &host,
  		ThrowBadFormat ();
  		}
  		
@@ -6125,7 +6126,7 @@ index 5e52388203d55e74d6fab50d3a6e6272ba6d78d8..00c11249950cd9f0194479da61f076d0
  		{
  		ThrowBadFormat ();
  		}
-@@ -1343,7 +1401,17 @@ dng_opcode_ScalePerRow::dng_opcode_ScalePerRow (dng_host &host,
+@@ -1337,7 +1395,17 @@ dng_opcode_ScalePerRow::dng_opcode_ScalePerRow (dng_host &host,
  	
  	for (uint32 j = 0; j < scales; j++)
  		{
@@ -6143,7 +6144,7 @@ index 5e52388203d55e74d6fab50d3a6e6272ba6d78d8..00c11249950cd9f0194479da61f076d0
  		}
  		
  	#if qDNGValidate
-@@ -1377,7 +1445,7 @@ void dng_opcode_ScalePerRow::PutData (dng_stream &stream) const
+@@ -1371,7 +1439,7 @@ void dng_opcode_ScalePerRow::PutData (dng_stream &stream) const
  	uint32 scales = SafeUint32DivideUp (fAreaSpec.Area ().H (),
  										fAreaSpec.RowPitch ());
  	
@@ -6152,7 +6153,7 @@ index 5e52388203d55e74d6fab50d3a6e6272ba6d78d8..00c11249950cd9f0194479da61f076d0
  	
  	fAreaSpec.PutData (stream);
  	
-@@ -1525,7 +1593,7 @@ dng_opcode_ScalePerColumn::dng_opcode_ScalePerColumn (dng_host &host,
+@@ -1519,7 +1587,7 @@ dng_opcode_ScalePerColumn::dng_opcode_ScalePerColumn (dng_host &host,
  		ThrowBadFormat ();
  		}
  		
@@ -6161,7 +6162,7 @@ index 5e52388203d55e74d6fab50d3a6e6272ba6d78d8..00c11249950cd9f0194479da61f076d0
  		{
  		ThrowBadFormat ();
  		}
-@@ -1538,7 +1606,17 @@ dng_opcode_ScalePerColumn::dng_opcode_ScalePerColumn (dng_host &host,
+@@ -1532,7 +1600,17 @@ dng_opcode_ScalePerColumn::dng_opcode_ScalePerColumn (dng_host &host,
  	
  	for (uint32 j = 0; j < scales; j++)
  		{
@@ -6179,7 +6180,7 @@ index 5e52388203d55e74d6fab50d3a6e6272ba6d78d8..00c11249950cd9f0194479da61f076d0
  		}
  		
  	#if qDNGValidate
-@@ -1572,7 +1650,7 @@ void dng_opcode_ScalePerColumn::PutData (dng_stream &stream) const
+@@ -1566,7 +1644,7 @@ void dng_opcode_ScalePerColumn::PutData (dng_stream &stream) const
  	uint32 scales = SafeUint32DivideUp (fAreaSpec.Area ().W (),
  										fAreaSpec.ColPitch ());
  	
@@ -6188,7 +6189,7 @@ index 5e52388203d55e74d6fab50d3a6e6272ba6d78d8..00c11249950cd9f0194479da61f076d0
  	
  	fAreaSpec.PutData (stream);
  	
-@@ -1661,8 +1739,9 @@ void dng_opcode_ScalePerColumn::ProcessArea (dng_negative &negative,
+@@ -1655,8 +1733,9 @@ void dng_opcode_ScalePerColumn::ProcessArea (dng_negative &negative,
  					real32 y = (x - blackOffset) * colScale + blackOffset;
  							   
  					dPtr [0] = Pin_real32 (-1.0f, y, 1.0f);
@@ -6201,7 +6202,7 @@ index 5e52388203d55e74d6fab50d3a6e6272ba6d78d8..00c11249950cd9f0194479da61f076d0
  					} // rows
  				
 diff --git a/source/dng_mosaic_info.cpp b/source/dng_mosaic_info.cpp
-index 00617df25ddbfabb36c44da6fd9c09ec5ae74b95..d7267a8d62c6c8d14cd9acac0b05405088aec759 100644
+index 00617df..d7267a8 100644
 --- a/source/dng_mosaic_info.cpp
 +++ b/source/dng_mosaic_info.cpp
 @@ -19,6 +19,7 @@
@@ -6379,7 +6380,7 @@ index 00617df25ddbfabb36c44da6fd9c09ec5ae74b95..d7267a8d62c6c8d14cd9acac0b054050
  										srcImage,
  										dstImage,
 diff --git a/source/dng_mutex.cpp b/source/dng_mutex.cpp
-index ddffd3e8eebac47352ad690cb2858e5da7eb5635..3d8b4e0293bed53c25af84b8bddeaf7990803f0e 100644
+index ddffd3e..3d8b4e0 100644
 --- a/source/dng_mutex.cpp
 +++ b/source/dng_mutex.cpp
 @@ -123,11 +123,34 @@ dng_mutex::dng_mutex (const char *mutexName, uint32 mutexLevel)
@@ -6482,7 +6483,7 @@ index ddffd3e8eebac47352ad690cb2858e5da7eb5635..3d8b4e0293bed53c25af84b8bddeaf79
  	return !timedOut;
  #else
 diff --git a/source/dng_negative.cpp b/source/dng_negative.cpp
-index 8612003d52f23dee3e1b4c2f0d2fcf837f42f070..28c7850ed16e6fe7e0cb8b4f73b799fc31c3382d 100644
+index 007e911..3831e12 100644
 --- a/source/dng_negative.cpp
 +++ b/source/dng_negative.cpp
 @@ -49,17 +49,266 @@
@@ -7000,7 +7001,7 @@ index 8612003d52f23dee3e1b4c2f0d2fcf837f42f070..28c7850ed16e6fe7e0cb8b4f73b799fc
  	real64 lower [kMaxColorPlanes];
  	real64 upper [kMaxColorPlanes];
  	
-@@ -6417,10 +6729,17 @@ void dng_negative::LosslessCompressJXL (dng_host &host,
+@@ -6605,10 +6917,17 @@ void dng_negative::LosslessCompressJXL (dng_host &host,
  		{
  		
  		AutoPtr<dng_jxl_image> lossyImage (new dng_jxl_image);
@@ -7020,7 +7021,7 @@ index 8612003d52f23dee3e1b4c2f0d2fcf837f42f070..28c7850ed16e6fe7e0cb8b4f73b799fc
  							nearLosslessOK ? dng_host::use_case_EnhancedImage
  										   : dng_host::use_case_LosslessEnhancedImage,
  							this);
-@@ -6499,7 +6818,16 @@ void dng_negative::ConvertToProxy (dng_host &host,
+@@ -6687,7 +7006,16 @@ void dng_negative::ConvertToProxy (dng_host &host,
  								   uint32 proxySize,
  								   uint64 proxyCount)
  	{
@@ -7038,7 +7039,7 @@ index 8612003d52f23dee3e1b4c2f0d2fcf837f42f070..28c7850ed16e6fe7e0cb8b4f73b799fc
  	if (!proxySize)
  		{
  		proxySize = kMaxImageSide;
-@@ -6698,6 +7026,16 @@ void dng_negative::ConvertToProxy (dng_host &host,
+@@ -6886,6 +7214,16 @@ void dng_negative::ConvertToProxy (dng_host &host,
  
  	const dng_rect originalStage3Bounds = Stage3Image ()->Bounds ();
  
@@ -7056,10 +7057,10 @@ index 8612003d52f23dee3e1b4c2f0d2fcf837f42f070..28c7850ed16e6fe7e0cb8b4f73b799fc
  		{
  
 diff --git a/source/dng_negative.h b/source/dng_negative.h
-index 9c8524a77fa626363296011e2a28cb5093be114b..e67d20f84282106fb31b4f1b67969f7af5e7d883 100644
+index b989c04..548cc6a 100644
 --- a/source/dng_negative.h
 +++ b/source/dng_negative.h
-@@ -282,7 +282,7 @@ class dng_metadata
+@@ -278,7 +278,7 @@ class dng_metadata
  		
  		bool fXMPisNewer;
  		
@@ -7068,7 +7069,7 @@ index 9c8524a77fa626363296011e2a28cb5093be114b..e67d20f84282106fb31b4f1b67969f7a
  		
  		dng_string fSourceMIME;
  		
-@@ -1085,7 +1085,7 @@ class dng_negative
+@@ -1081,7 +1081,7 @@ class dng_negative
  			
  		/// Getter for metadata
  			
@@ -7077,7 +7078,7 @@ index 9c8524a77fa626363296011e2a28cb5093be114b..e67d20f84282106fb31b4f1b67969f7a
  			{
  			return fMetadata;
  			}
-@@ -1127,7 +1127,7 @@ class dng_negative
+@@ -1123,7 +1123,7 @@ class dng_negative
  		
  		#if qMetadataOnConst
  			
@@ -7086,7 +7087,7 @@ index 9c8524a77fa626363296011e2a28cb5093be114b..e67d20f84282106fb31b4f1b67969f7a
  			{
  			return fMetadata;
  			}
-@@ -2469,13 +2469,18 @@ class dng_negative
+@@ -2465,13 +2465,18 @@ class dng_negative
  			
  		#endif	// qDNGUseXMP
  		
@@ -7107,7 +7108,7 @@ index 9c8524a77fa626363296011e2a28cb5093be114b..e67d20f84282106fb31b4f1b67969f7a
  			
  		const dng_linearization_info * GetLinearizationInfo () const
 diff --git a/source/dng_opcode_list.cpp b/source/dng_opcode_list.cpp
-index df768e493919214f734223f225f29128198043ff..552f43c13e23d9fa0070e41c85fdc6029ff46cfd 100644
+index df768e4..552f43c 100644
 --- a/source/dng_opcode_list.cpp
 +++ b/source/dng_opcode_list.cpp
 @@ -265,11 +265,25 @@ void dng_opcode_list::Parse (dng_host &host,
@@ -7170,7 +7171,7 @@ index df768e493919214f734223f225f29128198043ff..552f43c13e23d9fa0070e41c85fdc602
  		AutoPtr<dng_opcode> opcode (host.Make_dng_opcode (opcodeID,
  														  stream));
 diff --git a/source/dng_parse_utils.cpp b/source/dng_parse_utils.cpp
-index 86f5de6ec3d128ff63e8c6152a1715991b3f39d0..09280411f3713975911932271741b0b8a7b30ddd 100644
+index 86f5de6..0928041 100644
 --- a/source/dng_parse_utils.cpp
 +++ b/source/dng_parse_utils.cpp
 @@ -11,6 +11,7 @@
@@ -7208,7 +7209,7 @@ index 86f5de6ec3d128ff63e8c6152a1715991b3f39d0..09280411f3713975911932271741b0b8
  								  tagType == ttUndefined))
  				{
 diff --git a/source/dng_pixel_buffer.cpp b/source/dng_pixel_buffer.cpp
-index 1c65ee0ebdfe15ab1bbb605c9f7838d844866d02..71513ecc15483235c5394d76a6e99c50a57c566f 100644
+index 1c65ee0..71513ec 100644
 --- a/source/dng_pixel_buffer.cpp
 +++ b/source/dng_pixel_buffer.cpp
 @@ -11,6 +11,7 @@
@@ -7445,7 +7446,7 @@ index 1c65ee0ebdfe15ab1bbb605c9f7838d844866d02..71513ecc15483235c5394d76a6e99c50
  										area.l,
  										plane);
 diff --git a/source/dng_pixel_buffer.h b/source/dng_pixel_buffer.h
-index deddf48ae5efddb24b6048410f55f586e33cb06f..5c67139556758908e5f11d30953426d74984c9e0 100644
+index deddf48..5c67139 100644
 --- a/source/dng_pixel_buffer.h
 +++ b/source/dng_pixel_buffer.h
 @@ -124,6 +124,16 @@ class dng_pixel_buffer
@@ -7509,7 +7510,7 @@ index deddf48ae5efddb24b6048410f55f586e33cb06f..5c67139556758908e5f11d30953426d7
  			#endif
  
 diff --git a/source/dng_point.h b/source/dng_point.h
-index 3b37b27e1271e64fd950b3fe1579d52f72f7d462..4e3f6fd1ce62b17543f533b442fdfab9582c7c07 100644
+index 3b37b27..4e3f6fd 100644
 --- a/source/dng_point.h
 +++ b/source/dng_point.h
 @@ -316,9 +316,14 @@ inline dng_point_real64 operator* (const real64 scale,
@@ -7531,7 +7532,7 @@ index 3b37b27e1271e64fd950b3fe1579d52f72f7d462..4e3f6fd1ce62b17543f533b442fdfab9
  
  /*****************************************************************************/
 diff --git a/source/dng_preview.cpp b/source/dng_preview.cpp
-index 40d1874145daebba9b5c6ccca1aac204f8e23d0a..1bd2b3a56025ead167fc730dbe70a43c97dd7d2d 100644
+index bc1cc50..6d6d102 100644
 --- a/source/dng_preview.cpp
 +++ b/source/dng_preview.cpp
 @@ -582,7 +582,12 @@ dng_raw_preview_tag_set::dng_raw_preview_tag_set (dng_tiff_directory &directory,
@@ -7549,7 +7550,7 @@ index 40d1874145daebba9b5c6ccca1aac204f8e23d0a..1bd2b3a56025ead167fc730dbe70a43c
  		{
  		
 diff --git a/source/dng_pthread.cpp b/source/dng_pthread.cpp
-index fb82cbf413a5a33f6d62a5b4001ca46735594cff..848a64b2d42903c64528f071a698e7e21453eb55 100644
+index fb82cbf..848a64b 100644
 --- a/source/dng_pthread.cpp
 +++ b/source/dng_pthread.cpp
 @@ -195,7 +195,8 @@ namespace
@@ -7734,7 +7735,7 @@ index fb82cbf413a5a33f6d62a5b4001ca46735594cff..848a64b2d42903c64528f071a698e7e2
  }
  
 diff --git a/source/dng_rational.cpp b/source/dng_rational.cpp
-index 4b3e3d331e4917de8bd114e5710305820eb99e20..408efe583c23d5353f74c28a08487b2e294bdd21 100644
+index 4b3e3d3..408efe5 100644
 --- a/source/dng_rational.cpp
 +++ b/source/dng_rational.cpp
 @@ -27,12 +27,21 @@ real64 dng_srational::As_real64 () const
@@ -7807,7 +7808,7 @@ index 4b3e3d331e4917de8bd114e5710305820eb99e20..408efe583c23d5353f74c28a08487b2e
  	while (n % factor == 0 &&
  		   d % factor == 0 &&
 diff --git a/source/dng_read_image.cpp b/source/dng_read_image.cpp
-index b48cda44b7273272a08606170e395676d9ce37ba..752e5eac49e0b9bbaa5c536b1692283065536d82 100644
+index b48cda4..c609627 100644
 --- a/source/dng_read_image.cpp
 +++ b/source/dng_read_image.cpp
 @@ -46,7 +46,7 @@ static void DecodeDelta8 (uint8 *dPtr,
@@ -8170,7 +8171,7 @@ index b48cda44b7273272a08606170e395676d9ce37ba..752e5eac49e0b9bbaa5c536b16922830
  			DoSwapBytes16 ((uint16 *) uncompressedBuffer->Buffer (),
  						   samplesPerTile);
 -						
-+
++					
  			}
  				
  		}
@@ -8195,7 +8196,7 @@ index b48cda44b7273272a08606170e395676d9ce37ba..752e5eac49e0b9bbaa5c536b16922830
  			DoSwapBytes32 ((uint32 *) uncompressedBuffer->Buffer (),
  						   samplesPerTile);
 -						
-+
++					
  			}
  				
  		}
@@ -8612,7 +8613,7 @@ index b48cda44b7273272a08606170e395676d9ce37ba..752e5eac49e0b9bbaa5c536b16922830
  				
  				contiguousByteCount = totalFileBytes;
 diff --git a/source/dng_rect.h b/source/dng_rect.h
-index 26845a3b976095f0276a7c73afb1feb839a7e1c0..2a985bbe325b221f8825524711f5f22f3e74027f 100644
+index 26845a3..2a985bb 100644
 --- a/source/dng_rect.h
 +++ b/source/dng_rect.h
 @@ -17,6 +17,8 @@
@@ -8729,7 +8730,7 @@ index 26845a3b976095f0276a7c73afb1feb839a7e1c0..2a985bbe325b221f8825524711f5f22f
  	}
  
 diff --git a/source/dng_ref_counted_block.cpp b/source/dng_ref_counted_block.cpp
-index 32be356a9b1390f5825bba287a57f77f72cfe550..fb2686a90e9b23230f795569b75c5e8f5501ee94 100644
+index 32be356..fb2686a 100644
 --- a/source/dng_ref_counted_block.cpp
 +++ b/source/dng_ref_counted_block.cpp
 @@ -182,16 +182,20 @@ void dng_ref_counted_block::EnsureWriteable ()
@@ -8760,7 +8761,7 @@ index 32be356a9b1390f5825bba287a57f77f72cfe550..fb2686a90e9b23230f795569b75c5e8f
  
  			}
 diff --git a/source/dng_reference.cpp b/source/dng_reference.cpp
-index c93d2ca5304a86327797131252fd685268f8aa85..4e56a4b7782d7072615677b1c4157af46f26fe6a 100644
+index c93d2ca..4e56a4b 100644
 --- a/source/dng_reference.cpp
 +++ b/source/dng_reference.cpp
 @@ -1593,10 +1593,12 @@ void RefBaselineHueSatMap (const real32 *sPtrR,
@@ -8907,7 +8908,7 @@ index c93d2ca5304a86327797131252fd685268f8aa85..4e56a4b7782d7072615677b1c4157af4
  				{
  
 diff --git a/source/dng_render.cpp b/source/dng_render.cpp
-index bb11e175b6beb6a0b1f7135ebfb518ca4319efe4..a5721c2eedbdc0c8c1e178a193adfcfd3af8d2ab 100644
+index bb11e17..a5721c2 100644
 --- a/source/dng_render.cpp
 +++ b/source/dng_render.cpp
 @@ -30,10 +30,28 @@ dng_function_zero_offset::dng_function_zero_offset (real64 zeroOffset)
@@ -9049,7 +9050,7 @@ index bb11e175b6beb6a0b1f7135ebfb518ca4319efe4..a5721c2eedbdc0c8c1e178a193adfcfd
  	
  	dstSize.h =	fNegative.DefaultFinalWidth	 ();
 diff --git a/source/dng_resample.cpp b/source/dng_resample.cpp
-index c87ac6c8a1d20af018e6bbceffdbcec3508387b8..8f431f65f50037a3cffd15c11b7561bbacc6fb8e 100644
+index c87ac6c..8f431f6 100644
 --- a/source/dng_resample.cpp
 +++ b/source/dng_resample.cpp
 @@ -272,7 +272,19 @@ void dng_resample_weights::Initialize (real64 scale,
@@ -9092,7 +9093,7 @@ index c87ac6c8a1d20af018e6bbceffdbcec3508387b8..8f431f65f50037a3cffd15c11b7561bb
  				
  				for (uint32 i = 0; i < widthSqr; i++)
 diff --git a/source/dng_safe_arithmetic.cpp b/source/dng_safe_arithmetic.cpp
-index b253742e4e02232f0b2e31516959a2dba60f7ec8..ccea5c0d55e4ec3859b60f49c2230a9b1dfb4ee2 100644
+index b253742..ccea5c0 100644
 --- a/source/dng_safe_arithmetic.cpp
 +++ b/source/dng_safe_arithmetic.cpp
 @@ -82,6 +82,14 @@ int64 SafeInt64Add(int64 arg1, int64 arg2) {
@@ -9139,7 +9140,7 @@ index b253742e4e02232f0b2e31516959a2dba60f7ec8..ccea5c0d55e4ec3859b60f49c2230a9b
  		// Dummy return statement.
  		return 0;
 diff --git a/source/dng_safe_arithmetic.h b/source/dng_safe_arithmetic.h
-index 064c767d28ebb14b34adfd73d5955691c90cabe6..8d0ac73b625ed5beb170e137f8c2c1430357587e 100644
+index 064c767..8d0ac73 100644
 --- a/source/dng_safe_arithmetic.h
 +++ b/source/dng_safe_arithmetic.h
 @@ -55,6 +55,12 @@ bool SafeInt32Add(int32 arg1, int32 arg2, int32 *result);
@@ -9202,7 +9203,7 @@ index 064c767d28ebb14b34adfd73d5955691c90cabe6..8d0ac73b625ed5beb170e137f8c2c143
  	if (result > kInt64Max || result < kInt64Min) {
  		ThrowProgramError("Arithmetic overflow");
 diff --git a/source/dng_shared.cpp b/source/dng_shared.cpp
-index 57e08ded6d43e30b078b005eb3bbfe4f01e58432..9b375ad061ff3698ac4b90118c303891d07c88db 100644
+index 57e08de..9b375ad 100644
 --- a/source/dng_shared.cpp
 +++ b/source/dng_shared.cpp
 @@ -15,6 +15,7 @@
@@ -9563,7 +9564,7 @@ index 57e08ded6d43e30b078b005eb3bbfe4f01e58432..9b375ad061ff3698ac4b90118c303891
 +
 +/*****************************************************************************/
 diff --git a/source/dng_shared.h b/source/dng_shared.h
-index 4d0e7f0ae7b938b63165baf7635b22b29420f2b9..e4c8d7a8ee084dab12274f034261de2ceaf251ae 100644
+index 4d0e7f0..e4c8d7a 100644
 --- a/source/dng_shared.h
 +++ b/source/dng_shared.h
 @@ -284,7 +284,26 @@ class dng_shared
@@ -9610,7 +9611,7 @@ index 4d0e7f0ae7b938b63165baf7635b22b29420f2b9..e4c8d7a8ee084dab12274f034261de2c
  	
  /*****************************************************************************/
 diff --git a/source/dng_simple_image.cpp b/source/dng_simple_image.cpp
-index 0595ba8a1c5701a43b9cae7f12feba584994312d..8279d413d62697b3ec495d4fa5f66c89ec6a271a 100644
+index 0595ba8..8279d41 100644
 --- a/source/dng_simple_image.cpp
 +++ b/source/dng_simple_image.cpp
 @@ -8,7 +8,9 @@
@@ -9683,7 +9684,7 @@ index 0595ba8a1c5701a43b9cae7f12feba584994312d..8279d413d62697b3ec495d4fa5f66c89
  		
  	if (orientation.FlipD ())
 diff --git a/source/dng_spline.cpp b/source/dng_spline.cpp
-index 4f583b79ce50956fb371e55589cb6e5cd1f2bb22..1a96f797098f27d92ee0c76a7e45c241ff613aa9 100644
+index 4f583b7..1a96f79 100644
 --- a/source/dng_spline.cpp
 +++ b/source/dng_spline.cpp
 @@ -64,6 +64,21 @@ void dng_spline_solver::Solve ()
@@ -9709,7 +9710,7 @@ index 4f583b79ce50956fb371e55589cb6e5cd1f2bb22..1a96f797098f27d92ee0c76a7e45c241
  	int32 start = 0;
  	int32 end	= count;
 diff --git a/source/dng_spline.h b/source/dng_spline.h
-index b3f0c975df1b34c90b6065122f4b6729e6e69ef2..ebe7bcc27b637daeab40c15954f9691c2a270df0 100644
+index b3f0c97..ebe7bcc 100644
 --- a/source/dng_spline.h
 +++ b/source/dng_spline.h
 @@ -12,6 +12,7 @@
@@ -9750,7 +9751,7 @@ index b3f0c975df1b34c90b6065122f4b6729e6e69ef2..ebe7bcc27b637daeab40c15954f9691c
  	
  	real64 A3 = A2 * A;
 diff --git a/source/dng_stream.cpp b/source/dng_stream.cpp
-index cfb7d2044f6d9c232c83b9e23f12f8eae02a7601..2404423ee512bfb246c3304a75695d80f575dba7 100644
+index cfb7d20..2404423 100644
 --- a/source/dng_stream.cpp
 +++ b/source/dng_stream.cpp
 @@ -17,6 +17,7 @@
@@ -10071,7 +10072,7 @@ index cfb7d2044f6d9c232c83b9e23f12f8eae02a7601..2404423ee512bfb246c3304a75695d80
  		// Change the buffer size.
  		
 diff --git a/source/dng_stream.h b/source/dng_stream.h
-index c8f37e2fb8aa8e2bf0b94b03b7577d87f65ca06b..c4869740987865b2b9c00f8f176d463a432e2599 100644
+index c8f37e2..c486974 100644
 --- a/source/dng_stream.h
 +++ b/source/dng_stream.h
 @@ -252,16 +252,17 @@ class dng_stream: private dng_uncopyable
@@ -10157,64 +10158,10 @@ index c8f37e2fb8aa8e2bf0b94b03b7577d87f65ca06b..c4869740987865b2b9c00f8f176d463a
  		/// Writes the specified number of zero bytes to stream.
  		/// \param count Number of zero bytes to write.
 diff --git a/source/dng_string.cpp b/source/dng_string.cpp
-index aca34055e20f26629716bc395d5bd1b6e193d3a1..8976f4b50ee63a99be732c906c0738b0c9d36621 100644
+index aca3405..a885d19 100644
 --- a/source/dng_string.cpp
 +++ b/source/dng_string.cpp
-@@ -18,12 +18,13 @@
- 
- #if qMacOS
- #include <TargetConditionals.h>
--#if TARGET_OS_IPHONE || TARGET_IPHONE_SIMULATOR
--#include <MobileCoreServices/MobileCoreServices.h>
--#else
--#include <CoreServices/CoreServices.h>
- #endif
-+
-+#if qMacOS && TARGET_OS_OSX && !TARGET_OS_MACCATALYST
-+#define qDNGUseMacOSCarbon 1
- #include <CoreServices/CoreServices.h>
-+#else
-+#define qDNGUseMacOSCarbon 0
- #endif
- 
- #if qWinOS
-@@ -56,7 +57,7 @@ static uint32 strlenAsUint32 (const char *s)
- 
- /*****************************************************************************/
- 
--#if qMacOS
-+#if qDNGUseMacOSCarbon
- 
- static void Assign_Multibyte (dng_string &dngString,
- 							  const char *otherString,
-@@ -685,7 +686,7 @@ uint32 dng_string::Get_SystemEncoding (dng_memory_data &buffer) const
- 	else
- 		{
- 		
--		#if qMacOS || qWinOS
-+		#if qDNGUseMacOSCarbon || qWinOS
- 		
- 		return Extract_SystemEncoding (*this, buffer);
- 		
-@@ -720,7 +721,7 @@ void dng_string::Set_SystemEncoding (const char *s)
- 	else
- 		{
- 		
--		#if qMacOS || qWinOS
-+		#if qDNGUseMacOSCarbon || qWinOS
- 	
- 		Assign_SystemEncoding (*this, s);
- 		
-@@ -796,7 +797,7 @@ void dng_string::Set_JIS_X208_1990 (const char *s)
- 	else
- 		{
- 		
--		#if qMacOS || qWinOS
-+		#if qDNGUseMacOSCarbon || qWinOS
- 	
- 		Assign_JIS_X208_1990 (*this, s);
- 		
-@@ -856,25 +857,39 @@ uint32 dng_string::DecodeUTF8 (const char *&s,
+@@ -856,25 +856,39 @@ uint32 dng_string::DecodeUTF8 (const char *&s,
  		
  		}
  		
@@ -10260,25 +10207,7 @@ index aca34055e20f26629716bc395d5bd1b6e193d3a1..8976f4b50ee63a99be732c906c0738b0
  	switch (aSize)
  		{
  		
-@@ -2142,7 +2157,7 @@ void dng_string::ForceASCII ()
- 	
- /******************************************************************************/
- 
--#if qMacOS
-+#if qDNGUseMacOSCarbon
- static dng_std_mutex gProtectUCCalls;
- #endif
- 				
-@@ -2152,7 +2167,7 @@ int32 dng_string::Compare (const dng_string &s,
- 						   bool digitsAsNumber) const
- 	{
- 	
--	#if qMacOS
-+	#if qDNGUseMacOSCarbon
- 	
- 		{
- 	
-@@ -2333,12 +2348,12 @@ int32 dng_string::Compare (const dng_string &s,
+@@ -2333,12 +2347,12 @@ int32 dng_string::Compare (const dng_string &s,
  			while (*aPtr || *bPtr)
  				{
  				
@@ -10294,7 +10223,7 @@ index aca34055e20f26629716bc395d5bd1b6e193d3a1..8976f4b50ee63a99be732c906c0738b0
  					return -1;
  					}
 diff --git a/source/dng_tag_codes.h b/source/dng_tag_codes.h
-index a231409f11ff1712aa82565a03bb3345cc9a73b4..8cb88fe6336a20cfebf28d40d09b5273f9525bfc 100644
+index a231409..8cb88fe 100644
 --- a/source/dng_tag_codes.h
 +++ b/source/dng_tag_codes.h
 @@ -454,6 +454,7 @@ enum
@@ -10306,7 +10235,7 @@ index a231409f11ff1712aa82565a03bb3345cc9a73b4..8cb88fe6336a20cfebf28d40d09b5273
  	};
  
 diff --git a/source/dng_tag_values.h b/source/dng_tag_values.h
-index 0e6df48260a12bee9ad9010730ef5d5806f15499..e2a5afa93fd8221525cddc75df2b87a8a233df67 100644
+index 0e6df48..e2a5afa 100644
 --- a/source/dng_tag_values.h
 +++ b/source/dng_tag_values.h
 @@ -485,9 +485,20 @@ enum
@@ -10334,19 +10263,19 @@ index 0e6df48260a12bee9ad9010730ef5d5806f15499..e2a5afa93fd8221525cddc75df2b87a8
  
  /*****************************************************************************/
 diff --git a/source/dng_temperature.cpp b/source/dng_temperature.cpp
-index 877c5e9d4a0ddf5cda1c0abca6581a188a8323e7..55cad4779808769ace0db10ea86c3f1a255bcdc7 100644
+index 877c5e9..4d4e202 100644
 --- a/source/dng_temperature.cpp
 +++ b/source/dng_temperature.cpp
 @@ -8,8 +8,14 @@
  
  #include "dng_temperature.h"
  
-+#include "dng_pthread.h"
 +#include "dng_utils.h"
  #include "dng_xy_coord.h"
  
 +#include <atomic>
 +#include <cmath>
++#include <mutex>
 +#include <vector>
 +
  /*****************************************************************************/
@@ -10388,7 +10317,7 @@ index 877c5e9d4a0ddf5cda1c0abca6581a188a8323e7..55cad4779808769ace0db10ea86c3f1a
 +
 +	std::atomic<bool> gEnableLowTemperatureLimit (false);
 +
-+	pthread_once_t gExtendedLUTOnce = PTHREAD_ONCE_INIT;
++	std::once_flag gExtendedLUTOnce;
 +	std::vector<dng_xy_coord> gExtendedLUT;
 +
 +	inline real64 SmoothStep (real64 x)
@@ -10604,7 +10533,7 @@ index 877c5e9d4a0ddf5cda1c0abca6581a188a8323e7..55cad4779808769ace0db10ea86c3f1a
 +
 +		for (uint32 index = 1; index <= 30; index++)
 +			{
-+
++			
 +			real64 du = 1.0;
 +			real64 dv = kTempTable [index] . t;
 +
@@ -10656,7 +10585,7 @@ index 877c5e9d4a0ddf5cda1c0abca6581a188a8323e7..55cad4779808769ace0db10ea86c3f1a
 +			last_dt = dt;
 +			last_du = du;
 +			last_dv = dv;
-+
++			
 +			}
  		
 -		real64 uu = u - kTempTable [index] . u;
@@ -10680,7 +10609,7 @@ index 877c5e9d4a0ddf5cda1c0abca6581a188a8323e7..55cad4779808769ace0db10ea86c3f1a
 +			 lambdaNm <= lambdaMaxNm;
 +			 lambdaNm += deltaNm)
 +			{
-+
++			
 +			const real64 lambdaM = lambdaNm * 1.0e-9;
 +			const real64 exponent = c2 / (lambdaM * tempK);
 +			const real64 denom = exp (exponent) - 1.0;
@@ -10695,7 +10624,7 @@ index 877c5e9d4a0ddf5cda1c0abca6581a188a8323e7..55cad4779808769ace0db10ea86c3f1a
 +			real64 xBar = 0.0;
 +			real64 yBar = 0.0;
 +			real64 zBar = 0.0;
-+
++			
 +			CIE1931ObserverTabulated (lambdaNm, xBar, yBar, zBar);
 +
 +			const real64 w =
@@ -10704,7 +10633,7 @@ index 877c5e9d4a0ddf5cda1c0abca6581a188a8323e7..55cad4779808769ace0db10ea86c3f1a
 +			X += spd * xBar * deltaNm * w;
 +			Y += spd * yBar * deltaNm * w;
 +			Z += spd * zBar * deltaNm * w;
-+
++			
 +			}
 +
 +		const real64 sum = X + Y + Z;
@@ -10721,7 +10650,7 @@ index 877c5e9d4a0ddf5cda1c0abca6581a188a8323e7..55cad4779808769ace0db10ea86c3f1a
 +	dng_xy_coord ExtendedReferenceXY (real64 temperature,
 +									  real64 tint)
 +		{
-+
++		
 +		temperature = Pin_real64 (kExtendedMinTemperature,
 +								  temperature,
 +								  kExtendedMaxTemperature);
@@ -10779,7 +10708,7 @@ index 877c5e9d4a0ddf5cda1c0abca6581a188a8323e7..55cad4779808769ace0db10ea86c3f1a
  			
 -			if (index == 1)
 +			}
-+
++		
 +		}
 +
 +	dng_xy_coord LookupExtendedReferenceLUT (real64 temperature,
@@ -10787,13 +10716,13 @@ index 877c5e9d4a0ddf5cda1c0abca6581a188a8323e7..55cad4779808769ace0db10ea86c3f1a
 +		{
 +
 +		// Ensure the LUT is initialized before we try to access it.
-+
++		
 +		InitExtendedTemperatureLUT ();
 +
 +		temperature = Pin_real64 (kExtendedMinTemperature,
 +								  temperature,
 +								  kExtendedBlendEnd);
-+
++		
 +		tint = Pin_real64 (kExtendedMinTint, tint, kExtendedMaxTint);
 +
 +		const real64 tempF =
@@ -10831,7 +10760,7 @@ index 877c5e9d4a0ddf5cda1c0abca6581a188a8323e7..55cad4779808769ace0db10ea86c3f1a
 +	dng_xy_coord ExtendedGetXY (real64 temperature,
 +								real64 tint)
 +		{
-+
++		
 +		temperature = Pin_real64 (kExtendedMinTemperature,
 +								  temperature,
 +								  kExtendedMaxTemperature);
@@ -10865,12 +10794,12 @@ index 877c5e9d4a0ddf5cda1c0abca6581a188a8323e7..55cad4779808769ace0db10ea86c3f1a
 +	real64 XYErrorSq (const dng_xy_coord &a,
 +					  const dng_xy_coord &b)
 +		{
-+
++		
 +		const real64 dx = a.x - b.x;
 +		const real64 dy = a.y - b.y;
-+
++		
 +		return dx * dx + dy * dy;
-+
++		
 +		}
 +
 +	}	// namespace
@@ -10893,7 +10822,7 @@ index 877c5e9d4a0ddf5cda1c0abca6581a188a8323e7..55cad4779808769ace0db10ea86c3f1a
 +
 +void InitExtendedTemperatureLUT ()
 +	{
-+	pthread_once (&gExtendedLUTOnce, BuildExtendedTemperatureLUT);
++	std::call_once (gExtendedLUTOnce, BuildExtendedTemperatureLUT);
 +	}
 +
 +/*****************************************************************************/
@@ -11114,7 +11043,7 @@ index 877c5e9d4a0ddf5cda1c0abca6581a188a8323e7..55cad4779808769ace0db10ea86c3f1a
  			
  /*****************************************************************************/
 diff --git a/source/dng_temperature.h b/source/dng_temperature.h
-index 459508cf8a4784c8c647c209b94fdf5782ff76ad..b645d80bde51d36aabe567dc5852e9110b5d67ed 100644
+index 459508c..b645d80 100644
 --- a/source/dng_temperature.h
 +++ b/source/dng_temperature.h
 @@ -21,6 +21,20 @@
@@ -11139,7 +11068,7 @@ index 459508cf8a4784c8c647c209b94fdf5782ff76ad..b645d80bde51d36aabe567dc5852e911
  	{
  	
 diff --git a/source/dng_tile_iterator.cpp b/source/dng_tile_iterator.cpp
-index ba8182cbe62b86d0fdff785651d5caf62003c9f9..868ae4f1a43b88b783fa9fdbab416d10aa2fcb64 100644
+index ba8182c..868ae4f 100644
 --- a/source/dng_tile_iterator.cpp
 +++ b/source/dng_tile_iterator.cpp
 @@ -11,6 +11,7 @@
@@ -11278,7 +11207,7 @@ index ba8182cbe62b86d0fdff785651d5caf62003c9f9..868ae4f1a43b88b783fa9fdbab416d10
  		fHorizontalPage = fLeftPage;
  		fTileLeft = fRowLeft;
 diff --git a/source/dng_tone_curve.cpp b/source/dng_tone_curve.cpp
-index 1e76bcfabe5a0cd9008fce5f7ea2db6d6bbb1dc1..852d2ad621b61098c4f1b9d6050905c1118f9575 100644
+index 1e76bcf..852d2ad 100644
 --- a/source/dng_tone_curve.cpp
 +++ b/source/dng_tone_curve.cpp
 @@ -83,7 +83,9 @@ bool dng_tone_curve::IsValid () const
@@ -11293,7 +11222,7 @@ index 1e76bcfabe5a0cd9008fce5f7ea2db6d6bbb1dc1..852d2ad621b61098c4f1b9d6050905c1
  			{
  			
 diff --git a/source/dng_update_meta.cpp b/source/dng_update_meta.cpp
-index be1a09b39184cbf4052241530b47a667043575c3..35b545c3803362f7c7c2670ab7a9d36ff4acb07f 100644
+index be1a09b..35b545c 100644
 --- a/source/dng_update_meta.cpp
 +++ b/source/dng_update_meta.cpp
 @@ -15,6 +15,7 @@
@@ -11576,43 +11505,10 @@ index be1a09b39184cbf4052241530b47a667043575c3..35b545c3803362f7c7c2670ab7a9d36f
  			if (tagSignature == DNG_CHAR4 ('8', 'B', 'I', 'M') &&
  				tagID == 1061 &&
 diff --git a/source/dng_utils.cpp b/source/dng_utils.cpp
-index df1d76e885c1977f4dfb62be62d942a0f14c1a72..4d75c9dffb3666057a183b87ec95fbe8f1a29a85 100644
+index df1d76e..fb73b26 100644
 --- a/source/dng_utils.cpp
 +++ b/source/dng_utils.cpp
-@@ -26,7 +26,14 @@
- #include "dng_tile_iterator.h"
- 
- #if qMacOS
-+#include <TargetConditionals.h>
-+#endif
-+
-+#if qMacOS && TARGET_OS_OSX && !TARGET_OS_MACCATALYST
-+#define qDNGUseMacOSCarbon 1
- #include <CoreServices/CoreServices.h>
-+#else
-+#define qDNGUseMacOSCarbon 0
- #endif
- 
- #if qiPhone || qMacOS
-@@ -147,7 +154,7 @@ void dng_show_message (const char *s)
- 	if (gPrintAsserts)
- 		fprintf (stderr, "%s%s", s, nl);
- 		
--	#elif qiPhone || qAndroid || qLinux || qWeb
-+	#elif (qMacOS && !qDNGUseMacOSCarbon) || qiPhone || qAndroid || qLinux || qWeb
- 	
- 	if (gPrintAsserts)
- 		fprintf (stderr, "%s%s", s, nl);
-@@ -161,7 +168,7 @@ void dng_show_message (const char *s)
- 	
- 	#endif	// qDNGDebug
- 	
--	#elif qMacOS
-+	#elif qDNGUseMacOSCarbon
- 	
- 	if (gBreakOnAsserts)
- 		{
-@@ -1321,15 +1328,34 @@ bool dng_image_stats::operator== (const dng_image_stats &src) const
+@@ -1321,15 +1321,34 @@ bool dng_image_stats::operator== (const dng_image_stats &src) const
  
  /*****************************************************************************/
  
@@ -11648,7 +11544,7 @@ index df1d76e885c1977f4dfb62be62d942a0f14c1a72..4d75c9dffb3666057a183b87ec95fbe8
  	uint32 count = stream.Get_uint32 ();
  
  	// There are only 5 possible tags, and no tag may be repeated. Therefore,
-@@ -1343,6 +1369,8 @@ void dng_image_stats::Parse (dng_stream &stream)
+@@ -1343,6 +1362,8 @@ void dng_image_stats::Parse (dng_stream &stream)
  	for (uint32 i = 0; i < count; i++)
  		{
  		
@@ -11657,7 +11553,7 @@ index df1d76e885c1977f4dfb62be62d942a0f14c1a72..4d75c9dffb3666057a183b87ec95fbe8
  		// Read child tag code.
  
  		uint32 childTagCode = stream.Get_uint32 ();
-@@ -1368,6 +1396,11 @@ void dng_image_stats::Parse (dng_stream &stream)
+@@ -1368,6 +1389,11 @@ void dng_image_stats::Parse (dng_stream &stream)
  		if (length > kMaxBytes)
  			ThrowBadFormat ("child tag byte length too large");
  
@@ -11669,7 +11565,7 @@ index df1d76e885c1977f4dfb62be62d942a0f14c1a72..4d75c9dffb3666057a183b87ec95fbe8
  		// Read all floats.
  
  		std::vector<real32> *data = nullptr;
-@@ -1493,6 +1526,16 @@ void dng_image_stats::Parse (dng_stream &stream)
+@@ -1493,6 +1519,16 @@ void dng_image_stats::Parse (dng_stream &stream)
  			
  			}
  
@@ -11687,7 +11583,7 @@ index df1d76e885c1977f4dfb62be62d942a0f14c1a72..4d75c9dffb3666057a183b87ec95fbe8
  	
  	}
 diff --git a/source/dng_utils.h b/source/dng_utils.h
-index 5f43eae4b45d4a8d1382ce565e865c563f4d7608..eb9a2cfe54e925dd00807ffb4fa3ade1b6df129b 100644
+index 5f43eae..eb9a2cf 100644
 --- a/source/dng_utils.h
 +++ b/source/dng_utils.h
 @@ -390,8 +390,13 @@ uint32 ComputeBufferSize (uint32 pixelType,
@@ -11786,7 +11682,7 @@ index 5f43eae4b45d4a8d1382ce565e865c563f4d7608..eb9a2cfe54e925dd00807ffb4fa3ade1
  		#if qDNGValidate
  		void Dump () const;
 diff --git a/source/dng_xmp.cpp b/source/dng_xmp.cpp
-index 746a38f67b5ca2b978b34f459cbdc40b1a4a33cb..d42c1c163f173342034a86fc74412d7cb157ad24 100644
+index 746a38f..d42c1c1 100644
 --- a/source/dng_xmp.cpp
 +++ b/source/dng_xmp.cpp
 @@ -21,6 +21,7 @@
@@ -11834,7 +11730,7 @@ index 746a38f67b5ca2b978b34f459cbdc40b1a4a33cb..d42c1c163f173342034a86fc74412d7c
  				
  				char *t = temp.Buffer_char ();
 diff --git a/source/dng_xmp_sdk.cpp b/source/dng_xmp_sdk.cpp
-index f4f765f35ba1a7bb39e1648ac616e7d3e19ef2b8..b2b6a2ca8f39a0a50367d943089a303e888506cd 100644
+index f4f765f..b2b6a2c 100644
 --- a/source/dng_xmp_sdk.cpp
 +++ b/source/dng_xmp_sdk.cpp
 @@ -16,6 +16,7 @@
@@ -12060,7 +11956,7 @@ index f4f765f35ba1a7bb39e1648ac616e7d3e19ef2b8..b2b6a2ca8f39a0a50367d943089a303e
  		}
  	
 diff --git a/source/dng_xmp_sdk.h b/source/dng_xmp_sdk.h
-index bbb8f43dadfcc81b20a0903a215adddb72e55cff..364a5ad429a103f5a1230148eab8118bc0c04e5b 100644
+index bbb8f43..364a5ad 100644
 --- a/source/dng_xmp_sdk.h
 +++ b/source/dng_xmp_sdk.h
 @@ -37,6 +37,8 @@ extern const char *XMP_NS_CRS;
