@@ -17,6 +17,7 @@
 #include "include/gpu/graphite/vk/VulkanGraphiteTypes.h"
 #include "include/gpu/vk/VulkanBackendContext.h"
 #include "include/gpu/vk/VulkanMemoryAllocator.h"
+#include "include/gpu/vk/VulkanMutableTextureState.h"
 
 // Pulls in Context/BackendTexture/TextureInfo + the matching As/To helpers
 // via the SK_GRAPHITE block.
@@ -25,6 +26,7 @@
 #include "src/gpu/vk/vulkanmemoryallocator/VulkanMemoryAllocatorPriv.h"
 
 #include <memory>
+#include <cstring>
 
 namespace gr = skgpu::graphite;
 
@@ -59,7 +61,7 @@ extern "C" SK_C_API sk_graphite_context_t* sk_graphite_context_make_vulkan(
     // GrVkGpu); the caller must supply one. Until we expose that as part of the C API
     // (deferred to a follow-up), build the default VMA-backed allocator here.
     if (!vkbc.fMemoryAllocator) {
-        vkbc.fMemoryAllocator = skgpu::VulkanMemoryAllocators::Make(vkbc, skgpu::ThreadSafe::kNo);
+        vkbc.fMemoryAllocator = skgpu::VulkanMemoryAllocators::Make(vkbc, skgpu::ThreadSafe::kYes);
         if (!vkbc.fMemoryAllocator) {
             return nullptr;
         }
@@ -88,6 +90,14 @@ gr::VulkanTextureInfo MakeNativeVkTextureInfo(const sk_graphite_vk_texture_info_
         static_cast<VkImageAspectFlags>(info.fAspectMask),
         skgpu::VulkanYcbcrConversionInfo{});
 }
+
+template <typename T>
+T MakeNonDispatchableHandle(uint64_t value) {
+    static_assert(sizeof(T) == sizeof(value));
+    T handle;
+    std::memcpy(&handle, &value, sizeof(handle));
+    return handle;
+}
 }  // namespace
 
 extern "C" SK_C_API sk_graphite_texture_info_t* sk_graphite_vk_texture_info_new(const sk_graphite_vk_texture_info_t* info) {
@@ -114,10 +124,49 @@ extern "C" SK_C_API sk_graphite_backend_texture_t* sk_graphite_vk_backend_textur
     return ToGraphiteBackendTexture(heap);
 }
 
+extern "C" SK_C_API sk_graphite_backend_texture_t* sk_graphite_vk_backend_texture_new_uint64(
+    int32_t width, int32_t height,
+    const sk_graphite_vk_texture_info_t* info,
+    int32_t imageLayout,
+    uint32_t queueFamilyIndex,
+    uint64_t vkImage)
+{
+    auto vkti = MakeNativeVkTextureInfo(*info);
+    auto bt = gr::BackendTextures::MakeVulkan(
+        SkISize::Make(width, height),
+        vkti,
+        static_cast<VkImageLayout>(imageLayout),
+        queueFamilyIndex,
+        MakeNonDispatchableHandle<VkImage>(vkImage),
+        skgpu::VulkanAlloc{});
+    return ToGraphiteBackendTexture(new gr::BackendTexture(bt));
+}
+
+extern "C" SK_C_API sk_graphite_backend_semaphore_t* sk_graphite_vk_backend_semaphore_new(
+    uint64_t vkSemaphore)
+{
+    auto semaphore = gr::BackendSemaphores::MakeVulkan(
+        MakeNonDispatchableHandle<VkSemaphore>(vkSemaphore));
+    return ToGraphiteBackendSemaphore(new gr::BackendSemaphore(semaphore));
+}
+
+extern "C" SK_C_API sk_graphite_mutable_texture_state_t*
+sk_graphite_vk_mutable_texture_state_new(
+    int32_t imageLayout,
+    uint32_t queueFamilyIndex)
+{
+    auto state = skgpu::MutableTextureStates::MakeVulkan(
+        static_cast<VkImageLayout>(imageLayout), queueFamilyIndex);
+    return ToGraphiteMutableTextureState(new skgpu::MutableTextureState(state));
+}
+
 #else  // !(SK_GRAPHITE && SK_VULKAN)
 
 extern "C" SK_C_API sk_graphite_context_t* sk_graphite_context_make_vulkan(const sk_graphite_vk_backend_context_init_t, const sk_graphite_context_options_t*) { return nullptr; }
 extern "C" SK_C_API sk_graphite_texture_info_t* sk_graphite_vk_texture_info_new(const sk_graphite_vk_texture_info_t*) { return nullptr; }
 extern "C" SK_C_API sk_graphite_backend_texture_t* sk_graphite_vk_backend_texture_new(int32_t, int32_t, const sk_graphite_vk_texture_info_t*, int32_t, uint32_t, void*) { return nullptr; }
+extern "C" SK_C_API sk_graphite_backend_texture_t* sk_graphite_vk_backend_texture_new_uint64(int32_t, int32_t, const sk_graphite_vk_texture_info_t*, int32_t, uint32_t, uint64_t) { return nullptr; }
+extern "C" SK_C_API sk_graphite_backend_semaphore_t* sk_graphite_vk_backend_semaphore_new(uint64_t) { return nullptr; }
+extern "C" SK_C_API sk_graphite_mutable_texture_state_t* sk_graphite_vk_mutable_texture_state_new(int32_t, uint32_t) { return nullptr; }
 
 #endif  // SK_GRAPHITE && SK_VULKAN
