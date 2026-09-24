@@ -20,6 +20,15 @@ reader as evidence that arbitrary DNGs can be rendered.
   destination formats. A numerical exception needs a named operation, measured
   bounds on specific fixtures/platforms, an independent explanation, and
   explicit review. A broad one-byte tolerance does not meet this gate.
+- The acceptance boundary is the **public Skia codec**, not its internal Rust
+  image stages. Compare identical input bytes and `SkCodec` requests in both
+  builds: preview selection, creation and decode results, dimensions, origin,
+  color/alpha metadata, scaled/subset requests and their results, destination
+  color spaces/formats, pixels and row padding, encoded-data access, repeated
+  calls, and seekable/forward-only streams. Stage-1/2/3 oracle comparisons isolate
+  errors but are not separately exposed through `SkCodec`. A small stage
+  difference is not by itself a shipping failure if its public impact is
+  explained and **all** affected public results are proved equivalent.
 - Follow the published DNG/TIFF specifications and independent implementations.
   Never copy Adobe source, rendering tables, or SDK-supplied example images into
   this implementation or the repository. Run the SDK only in a separate
@@ -56,6 +65,17 @@ subtraction. Supported final output is confined to narrow, validated 8-bit
 monochrome and output-referred RGB8 sRGB profiles. Unsupported final
 processing returns Unimplemented rather than approximate pixels.
 
+Rust PNG is not merely libpng translated to Rust or a linker-only swap.
+`SkCodec.cpp` selects either `SkPngDecoder` or
+`SkPngRustDecoder` at build time; their C++ codecs share
+`SkPngCodecBase` for output handling but decode with different engines
+and have documented feature differences. RAW already retains the common
+`SkRawDecoder`/PIEX preview selector, but its Adobe and Rust full-DNG
+paths have separate `SkCodec` implementations. Converge their
+Skia-facing metadata, scaling, conversion and errors before replacing
+Adobe by default; equality of internal Rust and SDK stages cannot
+substitute for public `SkCodec` parity.
+
 Seekable streams rewind after PIEX inspection. The forward-only stream retains
 short reads made during PIEX probing and hands the complete buffered input to
 Rust, under the existing 100 MiB limit. PIEX still owns preview selection.
@@ -69,10 +89,10 @@ Rust, under the existing 100 MiB limit. PIEX still owns preview selection.
 | P2: Rust integration | Build a reusable safe-Rust core and thin CXX adapter with Skia's Rust/Bazel/GN conventions. Require SDK-free linkage and prove ABI/stream ownership, errors, and opt-in behavior. |
 | P3: metadata | Validate TIFF field types/counts/ranges, IFD/SubIFD/profile selection, identity and nonidentity geometry, image limits, opcodes, masks, crop, color metadata, and defaults. Reject unknown processing metadata rather than ignoring it. |
 | P4: samples | Cover SDK-supported strip/tile encodings, bit depths, predictors, byte order, JPEG/JXL build-dependent behavior, and errors. Preflight compressed inputs before image-sized allocation; never publish partial success-shaped rows. Reuse Skia JPEG/zlib only where byte parity is established. |
-| P5: linearization | Implement lookup tables, black/white normalization, and stage-changing opcodes with correct coordinate and per-plane semantics; prove both boundary values and whole-image stage parity. |
+| P5: linearization | Implement lookup tables, black/white normalization, and stage-changing opcodes with correct coordinate and per-plane semantics; compare whole-image stages diagnostically, investigate differences, and prove their impact on public output. |
 | P6: demosaic/geometry | Implement each admitted CFA class, stage-3 operations, crop/scaling and border behavior. Check advertised dimensions against actual decodable output. |
 | P7: final render | Implement camera calibration/signatures and dual-illuminant color, exposure, profile HueSat/look maps, gain maps, tone, black rendering, masks/alpha, output-referred/HDR behavior, and final quantization in the correct order. Demonstrate exact approved final pixels or explicitly reviewed narrow exceptions. |
-| P8: public integration | Keep PIEX/JPEG preview first; validate full fallback through registered `SkCodec`, not only direct Rust calls. Check seekable and forward-only input, repeated calls, output padding, metadata, destination color spaces, scaling, and malformed inputs in both Adobe and SDK-free builds. |
+| P8: public integration | Keep PIEX/JPEG preview first; validate full fallback through registered `SkCodec`, not only direct Rust calls. Check seekable and forward-only input, repeated calls, output padding, metadata, origin, encoded data, destination color spaces/formats, scaling, subsets, and malformed inputs in both Adobe and SDK-free builds. Align the Skia-facing Adobe and Rust codec logic as PNG's shared base does where behavior truly agrees. |
 | P9: safety/resources | Instrument CXX, native JPEG/zlib, and Rust paths; fuzz deep parsers/decoders with valid and malformed seeds, exercise allocation/overflow/error paths, and compare measured CPU and peak/live allocations. Do not claim a memory advantage based only on selected microbenchmarks. |
 | P10: review/platforms | Source-build and validate required macOS, Linux, Windows, Android and other shipping targets. Split upstreamable patches for review and retain opt-in mode until fidelity, functionality, and safety gates pass. |
 | P11: promotion/removal | Select Rust for the public full-DNG fallback by default **only after P0–P10**; delete the Adobe source acquisition, adaptation patch, build/DEPS metadata, and package dependency. Retain PIEX plus shared JPEG/zlib, run SDK-free native and SkiaSharp checks, and verify no Adobe runtime/build closure remains. |
@@ -186,11 +206,14 @@ Rust, under the existing 100 MiB limit. PIEX still owns preview selection.
 2. Adobe's default artistic tone and automatic black behavior are not fully
    specified by DNG. On the original real file they cause material,
    multi-byte differences from the controlled variant. Non-unity profile gain/look
-   application, masks, further opcode classes, CFA patterns, and output
+   application, masks, further opcode classes, non-2x2 CFA patterns, and output
    quantization also need complete, independently justified implementations.
-3. Nonzero-black stage normalization does not yet meet the exactness gate.
-   Other platform builds, deep Rust/JPEG/zlib sanitizers, required resource
-   benchmarks, and complete public result/size parity remain open.
+3. Nonzero-black stage normalization has one-LSB differences in selected
+   diagnostic samples. Those are **not independently a public API failure**,
+   but final black-normalized Bayer rendering is unavailable, so their effect
+   on the public pixels cannot yet be dismissed. Other platform builds,
+   deep Rust/JPEG/zlib sanitizers, required resource benchmarks, and
+   complete public result/size parity remain open.
 4. Do not switch SkiaSharp's submodule or remove Adobe until the native
    replacement passes all relevant gates. A draft native PR may be reviewed
    while these blockers remain; it must not be mistaken for release readiness.
