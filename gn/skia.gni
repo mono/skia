@@ -96,6 +96,7 @@ declare_args() {
   skia_use_rust_ico_decode = false
   skia_use_rust_jpeg_decode = false
   skia_use_rust_jpeg_encode = false
+  skia_use_rust_raw_decode = false
   skia_use_sfml = false
   skia_use_webgl = is_wasm
   skia_use_webgpu = is_wasm

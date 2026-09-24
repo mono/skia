@@ -26,6 +26,10 @@
 #include "src/core/SkStreamPriv.h"
 #include "src/core/SkTaskGroup.h"
 
+#if defined(SK_RAW_PREVIEW_ONLY) && defined(SK_CODEC_DECODES_RAW_WITH_RUST)
+#include "experimental/rust_raw/decoder/SkRawRustDecoder.h"
+#endif
+
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -37,6 +41,7 @@
 #include <utility>
 #include <vector>
 
+#if !defined(SK_RAW_PREVIEW_ONLY)
 #include "dng_area_task.h"  // NO_G3_REWRITE
 #include "dng_color_space.h"  // NO_G3_REWRITE
 #include "dng_errors.h"  // NO_G3_REWRITE
@@ -60,10 +65,12 @@
 #if qDNGUseXMP
 #include "dng_xmp_sdk.h" // NO_G3_REWRITE
 #endif
+#endif
 
 #include "src/piex.h"  // NO_G3_REWRITE
 #include "src/piex_types.h"  // NO_G3_REWRITE
 
+#if !defined(SK_RAW_PREVIEW_ONLY)
 #ifndef SK_DNG_VERSION
 #define SK_DNG_VERSION 0x01040000
 #endif
@@ -73,14 +80,18 @@
 #else
 #define OPT_PROGRESS_ARG ,dng_area_task_progress*
 #endif
+#endif
 
 using namespace skia_private;
 
+#if !defined(SK_RAW_PREVIEW_ONLY)
 template <typename T> struct sk_is_trivially_relocatable;
 template <> struct sk_is_trivially_relocatable<dng_exception> : std::true_type {};
+#endif
 
 namespace {
 
+#if !defined(SK_RAW_PREVIEW_ONLY)
 // Calculates the number of tiles of tile_size that fit into the area in vertical and horizontal
 // directions.
 dng_point num_tiles_in_area(const dng_point &areaSize,
@@ -197,6 +208,7 @@ public:
 private:
     using INHERITED = dng_host;
 };
+#endif
 
 // T must be unsigned type.
 template <class T>
@@ -223,11 +235,13 @@ class SkRawStream {
 public:
     virtual ~SkRawStream() {}
 
+#if !defined(SK_RAW_PREVIEW_ONLY)
    /*
     * Gets the length of the stream. Depending on the type of stream, this may require reading to
     * the end of the stream.
     */
-   virtual uint64 getLength() = 0;
+   virtual uint64_t getLength() = 0;
+#endif
 
    virtual bool read(void* data, size_t offset, size_t length) = 0;
 
@@ -237,6 +251,10 @@ public:
      *       abandon current object after the function call.
      */
    virtual std::unique_ptr<SkMemoryStream> transferBuffer(size_t offset, size_t size) = 0;
+
+#if defined(SK_RAW_PREVIEW_ONLY) && defined(SK_CODEC_DECODES_RAW_WITH_RUST)
+    virtual std::unique_ptr<SkStream> releaseFullStream(SkCodec::Result* result) = 0;
+#endif
 };
 
 class SkRawLimitedDynamicMemoryWStream : public SkDynamicMemoryWStream {
@@ -248,16 +266,20 @@ public:
         if (!safe_add_to_size_t(this->bytesWritten(), size, &newSize) ||
             newSize > kMaxStreamSize)
         {
+            fLimitExceeded = true;
             SkCodecPrintf("Error: Stream size exceeds the limit.\n");
             return false;
         }
         return this->INHERITED::write(buffer, size);
     }
 
+    bool limitExceeded() const { return fLimitExceeded; }
+
 private:
     // Most of valid RAW images will not be larger than 100MB. This limit is helpful to avoid
     // streaming too large data chunk. We can always adjust the limit here if we need.
     const size_t kMaxStreamSize = 100 * 1024 * 1024;  // 100MB
+    bool fLimitExceeded = false;
 
     using INHERITED = SkDynamicMemoryWStream;
 };
@@ -275,12 +297,14 @@ public:
 
     ~SkRawBufferedStream() override {}
 
-    uint64 getLength() override {
+#if !defined(SK_RAW_PREVIEW_ONLY)
+    uint64_t getLength() override {
         if (!this->bufferMoreData(kReadToEnd)) {  // read whole stream
             ThrowReadFile();
         }
         return fStreamBuffer.bytesWritten();
     }
+#endif
 
     bool read(void* data, size_t offset, size_t length) override {
         if (length == 0) {
@@ -330,35 +354,46 @@ public:
         return SkMemoryStream::Make(data);
     }
 
+#if defined(SK_RAW_PREVIEW_ONLY) && defined(SK_CODEC_DECODES_RAW_WITH_RUST)
+    std::unique_ptr<SkStream> releaseFullStream(SkCodec::Result* result) override {
+        if (!this->bufferMoreData(kReadToEnd)) {
+            *result = fStreamBuffer.limitExceeded() ? SkCodec::kUnimplemented
+                                                    : SkCodec::kIncompleteInput;
+            return nullptr;
+        }
+        fStream.reset();
+        auto fullStream = fStreamBuffer.detachAsStream();
+        if (!fullStream) {
+            *result = SkCodec::kInternalError;
+        }
+        return fullStream;
+    }
+#endif
+
 private:
     // Note: if the newSize == kReadToEnd (0), this function will read to the end of stream.
     bool bufferMoreData(size_t newSize) {
-        if (newSize == kReadToEnd) {
-            if (fWholeStreamRead) {  // already read-to-end.
-                return true;
-            }
-
-            // TODO: optimize for the special case when the input is SkMemoryStream.
-            return SkStreamPriv::Copy(&fStreamBuffer, fStream.get());
-        }
-
-        if (newSize <= fStreamBuffer.bytesWritten()) {  // already buffered to newSize
+        if (newSize != kReadToEnd && newSize <= fStreamBuffer.bytesWritten()) {
             return true;
         }
-        if (fWholeStreamRead) {  // newSize is larger than the whole stream.
-            return false;
+        uint8_t buffer[8192];
+        // PIEX can probe past EOF; retain short reads for the full-DNG fallback.
+        while (!fWholeStreamRead &&
+               (newSize == kReadToEnd || fStreamBuffer.bytesWritten() < newSize)) {
+            const size_t count = fStream->read(buffer, sizeof(buffer));
+            if (count > sizeof(buffer)) {
+                SkCodecPrintf("Error: RAW stream returned more bytes than requested.\n");
+                return false;
+            }
+            if (count == 0) {
+                fWholeStreamRead = true;
+                break;
+            }
+            if (!fStreamBuffer.write(buffer, count)) {
+                return false;
+            }
         }
-
-        // Try to read at least 8192 bytes to avoid to many small reads.
-        const size_t kMinSizeToRead = 8192;
-        const size_t sizeRequested = newSize - fStreamBuffer.bytesWritten();
-        const size_t sizeToRead = std::max(kMinSizeToRead, sizeRequested);
-        AutoSTMalloc<kMinSizeToRead, uint8> tempBuffer(sizeToRead);
-        const size_t bytesRead = fStream->read(tempBuffer.get(), sizeToRead);
-        if (bytesRead < sizeRequested) {
-            return false;
-        }
-        return fStreamBuffer.write(tempBuffer.get(), bytesRead);
+        return newSize == kReadToEnd || fStreamBuffer.bytesWritten() >= newSize;
     }
 
     std::unique_ptr<SkStream> fStream;
@@ -381,9 +416,11 @@ public:
 
     ~SkRawAssetStream() override {}
 
-    uint64 getLength() override {
+#if !defined(SK_RAW_PREVIEW_ONLY)
+    uint64_t getLength() override {
         return fStream->getLength();
     }
+#endif
 
 
     bool read(void* data, size_t offset, size_t length) override {
@@ -433,6 +470,17 @@ public:
             return SkMemoryStream::Make(data);
         }
     }
+
+#if defined(SK_RAW_PREVIEW_ONLY) && defined(SK_CODEC_DECODES_RAW_WITH_RUST)
+    std::unique_ptr<SkStream> releaseFullStream(SkCodec::Result* result) override {
+        if (!fStream->seek(0)) {
+            *result = SkCodec::kIncompleteInput;
+            return nullptr;
+        }
+        return std::move(fStream);
+    }
+#endif
+
 private:
     std::unique_ptr<SkStream> fStream;
 };
@@ -445,7 +493,7 @@ public:
     ~SkPiexStream() override {}
 
     ::piex::Error GetData(const size_t offset, const size_t length,
-                          uint8* data) override {
+                          uint8_t* data) override {
         return fStream->read(static_cast<void*>(data), offset, length) ?
             ::piex::Error::kOk : ::piex::Error::kFail;
     }
@@ -454,6 +502,7 @@ private:
     SkRawStream* fStream;
 };
 
+#if !defined(SK_RAW_PREVIEW_ONLY)
 class SkDngStream : public dng_stream {
 public:
     // Will NOT take the ownership of the stream.
@@ -681,11 +730,12 @@ private:
     bool fIsScalable;
     bool fIsXtransImage;
 };
+#endif
 
 /*
  * Tries to handle the image with PIEX. If PIEX returns kOk and finds the preview image, create a
  * SkJpegCodec. If PIEX returns kFail, then the file is invalid, return nullptr. In other cases,
- * fallback to create SkRawCodec for DNG images.
+ * fall back to DNG only when a full decoder is available.
  */
 std::unique_ptr<SkCodec> SkRawCodec::MakeFromStream(std::unique_ptr<SkStream> stream,
                                                     Result* result) {
@@ -736,6 +786,7 @@ std::unique_ptr<SkCodec> SkRawCodec::MakeFromStream(std::unique_ptr<SkStream> st
         }
     }
 
+#if !defined(SK_RAW_PREVIEW_ONLY)
     if (!SkDngImage::IsTiffHeaderValid(rawStream.get())) {
         *result = kUnimplemented;
         return nullptr;
@@ -750,8 +801,26 @@ std::unique_ptr<SkCodec> SkRawCodec::MakeFromStream(std::unique_ptr<SkStream> st
 
     *result = kSuccess;
     return std::unique_ptr<SkCodec>(new SkRawCodec(dngImage.release()));
+#elif defined(SK_CODEC_DECODES_RAW_WITH_RUST)
+    uint8_t header[4];
+    if (!rawStream->read(header, 0, sizeof(header)) ||
+        !((header[0] == 'I' && header[1] == 'I' && header[2] == 42 && header[3] == 0) ||
+          (header[0] == 'M' && header[1] == 'M' && header[2] == 0 && header[3] == 42))) {
+        *result = kUnimplemented;
+        return nullptr;
+    }
+    auto fullStream = rawStream->releaseFullStream(result);
+    if (!fullStream) {
+        return nullptr;
+    }
+    return SkRawRustDecoder::Decode(std::move(fullStream), result);
+#else
+    *result = kUnimplemented;
+    return nullptr;
+#endif
 }
 
+#if !defined(SK_RAW_PREVIEW_ONLY)
 SkCodec::Result SkRawCodec::onGetPixels(const SkImageInfo& dstInfo, void* dst,
                                         size_t dstRowBytes, const Options& options,
                                         int* rowsDecoded) {
@@ -867,6 +936,7 @@ SkRawCodec::SkRawCodec(SkDngImage* dngImage)
                                     SkEncodedInfo::kOpaque_Alpha, 8),
                 skcms_PixelFormat_RGBA_8888, nullptr)
     , fDngImage(dngImage) {}
+#endif
 
 namespace SkRawDecoder {
 
