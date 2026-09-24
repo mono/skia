@@ -153,6 +153,25 @@ Rust, under the existing 100 MiB limit. PIEX still owns preview selection.
    replacement passes all relevant gates. A draft native PR may be reviewed
    while these blockers remain; it must not be mistaken for release readiness.
 
+### Rendering-default decision before promotion
+
+The DNG specification does not define Adobe's artistic fallback tone curve
+when `ProfileToneCurve` is absent, nor an exact algorithm for
+`DefaultBlackRender=Auto`. On a controlled derivative of Skia's real DNG,
+changing only the default tone (with black rendering fixed to None) changes
+the configured SDK output by a mean **28.06** and a maximum **65** bytes;
+changing only Auto black (with identity tone) changes it by a mean **2.54**
+and a maximum **16** bytes. These are not narrow quantization exceptions.
+
+The current decision is to keep the **exact-output gate** and leave Adobe
+as the default until an independently justified equivalent exists.
+If that gate cannot be met without copying licensed implementation data,
+maintainers must explicitly approve a *different* independent rendering
+policy and its documented visual migration before P10/P11; merely widening
+a comparison tolerance or treating previews as full DNGs is not a solution.
+Continue stage/format, safety and platform work while this decision is open,
+but do not silently promote an inexact full-DNG renderer.
+
 No part of this plan requires copying Adobe implementation or example files.
 The public reference is the
 [DNG 1.7.1 specification](https://helpx.adobe.com/content/dam/help/en/photoshop/pdf/DNG_Spec_1_7_1_0.pdf);
