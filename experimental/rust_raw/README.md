@@ -438,12 +438,16 @@ remain unsupported.
 
 The **test-only** `tone.rs` validates SDR `ProfileToneCurve` points and
 evaluates a natural cubic spline with checked allocations and finite
-arithmetic. On an independent three-point color-profile ramp its Rust
-curve plus sRGB matches all **768 SDK neutral Stage-4 bytes**. Applying
-it separately to saturated sRGB channels instead misses 1,391 of
-1,536 bytes (max 74): color-profile tone is not a per-sRGB-channel
-transfer, so the direct Rust final renderer still rejects that RGB8
-profile. Two separately generated monochrome output-referred ramps
+arithmetic. A separately attributed SDK-style 4,096-entry floating-point
+lookup and intermediate-RGB extrema/interpolation operation are compiled
+in Rust tests only. On an independent three-point color-profile ramp,
+the table and RGB-tone operation plus sRGB match all **768 SDK neutral
+Stage-4 bytes**. Applying tone separately to saturated sRGB channels
+instead misses 1,391 of 1,536 bytes (max 74): a colored SDK comparison
+still reports public Rust creation as Unimplemented. The exact
+intermediate camera color/ProPhoto/exposure and output transfer must be
+verified together before publishing this profile. Two separately
+generated monochrome output-referred ramps
 with substantially different valid color tone curves produce
 identical 768-byte SDK Stage-4 outputs; mono skips this color-profile
 tone under the checked one-plane/black-None layout.

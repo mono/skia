@@ -214,14 +214,24 @@ each request rather than demanding identical internal Stage-1/2/3 bytes.
   native JPEG/zlib or public RAW selection on Linux. A macOS-host Bazel
   cross-build cannot resolve registered Linux Rust/C++ toolchains; full
   native Linux testing still needs a provisioned Linux build host.
-- Under the approved derivative policy, **one SDK-sourced diagnostic**
-  has been ported into Rust tests only: the 31-row Robertson CIE 1960
+- Under the approved derivative policy, the first SDK-sourced diagnostic
+  ported into Rust tests was the 31-row Robertson CIE 1960
   uv temperature table and its temperature interpolation. Its Rust
   comments cite the SDK version/file/symbol and Adobe copyright;
   [PROVENANCE.md](PROVENANCE.md) records the use and unmodified
-  Adobe notices are in `licenses/`. Both Rust Bazel suites now pass
-  **91/91 on ARM64 and x64**, and Linux ARM64 standalone parser tests
-  pass **91/91**. The production final renderer remains unchanged.
+  Adobe notices are in `licenses/`. At that checkpoint both Rust Bazel
+  suites passed **91/91 on ARM64 and x64**, and Linux ARM64 standalone
+  parser tests passed **91/91**. The production final renderer remains
+  unchanged.
+- SDK-derived RGB extrema/interpolation and the 4,096-entry tone lookup
+  now have per-definition attribution in test-only `tone.rs` and entries
+  in [PROVENANCE.md](PROVENANCE.md). A private comparison against an
+  independently generated three-point profile matched all **768
+  neutral Stage-4 bytes**. For that same DNG's colored pixels, Adobe's
+  public decoder succeeds and Rust still reports Unimplemented; this
+  diagnostic does **not** establish final-color parity or enable it.
+  Both Rust Bazel suites pass **93/93 on ARM64** with the two new
+  tone tests.
 - An SDK-free Apple ASan/UBSan native fuzzer with opt-in 8-bit coverage of the
   CXX RAW bridge and harness replayed generated DNG/Skia seeds and completed
   **8,000** short mutations without sanitizer failures. It reached **168
@@ -289,7 +299,9 @@ a comparison tolerance or treating previews as full DNGs is not a solution.
 Continue stage/format, safety and platform work while this decision is open,
 but do not silently promote an inexact full-DNG renderer.
 
-No part of this plan requires copying Adobe implementation or example files.
-The public reference is the
+Do not copy SDK example files into this repository. The approved licensed
+derivative permits attributed, notice-preserving SDK-derived algorithms and
+values in Rust; see [PROVENANCE.md](PROVENANCE.md). The public format reference is the
 [DNG 1.7.1 specification](https://helpx.adobe.com/content/dam/help/en/photoshop/pdf/DNG_Spec_1_7_1_0.pdf);
-the old SDK is used solely for separately built comparison executables.
+the pinned SDK is used both as a separately built comparison oracle and
+as an attributed implementation reference while the replacement is developed.

@@ -100,9 +100,88 @@ impl ToneCurve {
     }
 }
 
+// Derived from Adobe DNG SDK 1.7.1.2724,
+// source/dng_1d_table.h/cpp::dng_1d_table::Initialize/Interpolate.
+// Copyright 2006-2019 Adobe Systems Incorporated. All Rights Reserved.
+// See experimental/rust_raw/licenses/LICENSE.adobe-dng-sdk and PROVENANCE.md.
+pub(crate) struct SdkToneTable {
+    samples: Vec<f32>,
+}
+
+impl SdkToneTable {
+    const SIZE: usize = 4096;
+
+    pub(crate) fn from_curve(curve: &ToneCurve) -> Result<Self, Error> {
+        let mut samples = Vec::new();
+        samples
+            .try_reserve_exact(Self::SIZE + 2)
+            .map_err(|_| Error::OutOfMemory)?;
+        for index in 0..=Self::SIZE {
+            let value = curve.evaluate(index as f64 / Self::SIZE as f64)? as f32;
+            if !value.is_finite() {
+                return Err(Error::Invalid);
+            }
+            samples.push(value);
+        }
+        samples.push(samples[Self::SIZE]);
+        Ok(Self { samples })
+    }
+
+    pub(crate) fn interpolate(&self, value: f32) -> Result<f32, Error> {
+        if !value.is_finite() || !(0.0..=1.0).contains(&value) {
+            return Err(Error::Invalid);
+        }
+        let position = value * Self::SIZE as f32;
+        let index = position as usize;
+        let fraction = position - index as f32;
+        Ok(self.samples[index] * (1.0 - fraction) + self.samples[index + 1] * fraction)
+    }
+}
+
+// Derived from Adobe DNG SDK 1.7.1.2724,
+// source/dng_reference.cpp::RefBaselineRGBTone.
+// Copyright 2006-2023 Adobe Systems Incorporated. All Rights Reserved.
+// See experimental/rust_raw/licenses/LICENSE.adobe-dng-sdk and PROVENANCE.md.
+// This applies in intermediate RGB, before the final output color transform.
+pub(crate) fn apply_sdk_rgb_tone(
+    rgb: [f32; 3],
+    mut curve: impl FnMut(f32) -> Result<f32, Error>,
+) -> Result<[f32; 3], Error> {
+    if rgb.iter().any(|value| !value.is_finite()) {
+        return Err(Error::Invalid);
+    }
+    let clipped = rgb.map(|value| value.clamp(0.0, 1.0));
+    let mut order = [0, 1, 2];
+    order.sort_by(|&a, &b| clipped[a].total_cmp(&clipped[b]));
+    let [low, middle, high] = order;
+    if clipped[low] == clipped[high] {
+        let value = curve(clipped[low])?;
+        return if value.is_finite() {
+            Ok([value; 3])
+        } else {
+            Err(Error::Invalid)
+        };
+    }
+    let top = curve(clipped[high])?;
+    let bottom = curve(clipped[low])?;
+    let middle_value = bottom
+        + ((top - bottom) * (clipped[middle] - clipped[low]) / (clipped[high] - clipped[low]));
+    if [top, bottom, middle_value]
+        .iter()
+        .any(|value| !value.is_finite())
+    {
+        return Err(Error::Invalid);
+    }
+    let mut output = [0.0; 3];
+    output[low] = bottom;
+    output[middle] = middle_value;
+    output[high] = top;
+    Ok(output)
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{ByteOrder, Error, ToneCurve};
+    use super::{apply_sdk_rgb_tone, ByteOrder, Error, SdkToneTable, ToneCurve};
 
     fn points(values: &[(f32, f32)], order: ByteOrder) -> Vec<u8> {
         let mut bytes = Vec::new();
@@ -154,5 +233,85 @@ mod tests {
         assert_eq!(valid.evaluate(f64::NAN), Err(Error::Invalid));
         assert_eq!(valid.evaluate(-0.01), Err(Error::Invalid));
         assert_eq!(valid.evaluate(1.01), Err(Error::Invalid));
+    }
+
+    #[test]
+    fn sdk_intermediate_rgb_tone_preserves_color_order() {
+        let curve = ToneCurve::parse(
+            &points(&[(0.0, 0.0), (0.5, 0.7), (1.0, 1.0)], ByteOrder::Little),
+            ByteOrder::Little,
+        )
+        .expect("valid three-point curve");
+        let tone = |value: f32| curve.evaluate(f64::from(value)).map(|v| v as f32);
+        assert_eq!(
+            apply_sdk_rgb_tone([1.0, 0.5, 0.0], tone),
+            Ok([1.0, 0.5, 0.0])
+        );
+        assert_eq!(
+            apply_sdk_rgb_tone([0.0, 1.0, 0.5], tone),
+            Ok([0.0, 1.0, 0.5])
+        );
+        assert_eq!(apply_sdk_rgb_tone([0.5; 3], tone), Ok([0.7; 3]));
+        assert_eq!(
+            apply_sdk_rgb_tone([1.0, 1.0, 0.0], tone),
+            Ok([1.0, 1.0, 0.0])
+        );
+        assert_eq!(
+            apply_sdk_rgb_tone([1.0, 0.0, 0.0], tone),
+            Ok([1.0, 0.0, 0.0])
+        );
+        assert_eq!(
+            apply_sdk_rgb_tone([-1.0, 0.5, 2.0], tone),
+            Ok([0.0, 0.5, 1.0])
+        );
+        let color = apply_sdk_rgb_tone([0.2, 0.9, 0.6], tone).expect("colored output");
+        let low = curve.evaluate(0.2).expect("low") as f32;
+        let high = curve.evaluate(0.9).expect("high") as f32;
+        let expected = low + (high - low) * ((0.6 - 0.2) / (0.9 - 0.2));
+        assert!((color[0] - low).abs() < 1e-6);
+        assert!((color[1] - high).abs() < 1e-6);
+        assert!((color[2] - expected).abs() < 1e-6);
+        assert_ne!(color[2], tone(0.6).expect("naive per-channel tone"));
+        assert_eq!(
+            apply_sdk_rgb_tone([f32::NAN, 0.5, 1.0], tone),
+            Err(Error::Invalid)
+        );
+        assert_eq!(
+            apply_sdk_rgb_tone([0.0, 0.5, 1.0], |_| Err(Error::Unsupported)),
+            Err(Error::Unsupported)
+        );
+        assert_eq!(
+            apply_sdk_rgb_tone([0.0, 0.5, 1.0], |_| Ok(f32::INFINITY)),
+            Err(Error::Invalid)
+        );
+    }
+
+    #[test]
+    fn sdk_tone_table_interpolates_checked_curve_samples() {
+        let curve = ToneCurve::parse(
+            &points(&[(0.0, 0.0), (0.5, 0.7), (1.0, 1.0)], ByteOrder::Little),
+            ByteOrder::Little,
+        )
+        .expect("valid three-point curve");
+        let table = SdkToneTable::from_curve(&curve).expect("bounded SDK-sized table");
+        assert_eq!(table.samples.len(), 4098);
+        assert_eq!(table.interpolate(0.0), Ok(0.0));
+        assert_eq!(table.interpolate(0.5), Ok(0.7));
+        assert_eq!(table.interpolate(1.0), Ok(1.0));
+        for sample in 0..=255 {
+            let x = sample as f32 / 255.0;
+            let expected = curve.evaluate(f64::from(x)).expect("curve sample") as f32;
+            assert!(
+                (table.interpolate(x).expect("table sample") - expected).abs() < 1e-6,
+                "curve at {sample}"
+            );
+        }
+        assert_eq!(
+            apply_sdk_rgb_tone([1.0, 0.5, 0.0], |x| table.interpolate(x)),
+            Ok([1.0, 0.5, 0.0])
+        );
+        assert_eq!(table.interpolate(f32::NAN), Err(Error::Invalid));
+        assert_eq!(table.interpolate(-1.0), Err(Error::Invalid));
+        assert_eq!(table.interpolate(1.01), Err(Error::Invalid));
     }
 }

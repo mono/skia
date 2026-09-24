@@ -26,9 +26,12 @@ For each Rust implementation derived from the SDK:
 | --- | --- | --- | --- | --- |
 | `ffi/color.rs::SDK_ROBERTSON_UV` | `source/dng_temperature.cpp::kTempTable` | 31 CIE 1960 uv temperature rows, attributed by the SDK to Wyszecki & Stiles | Numerically compared to all 31 pinned SDK rows; `color::tests::sdk_robertson_temperature_is_checked_without_enabling_final_pixels` | Adobe 2006–2019 notice beside table; unmodified license/technology files in `licenses/`. Test-only, not selected by public SkCodec. |
 | `ffi/color.rs::xyz_to_kelvin_sdk_robertson` | `source/dng_temperature.cpp::LegacySetXY` | Interpolation of Robertson temperatures across chromaticity table normals; no tint or low-temperature extension ported | Rust color test and source-controlled Skia camera-profile interpolation test; public final rendering remains Unsupported | Adobe 2006–2019 notice beside method; unmodified license/technology files in `licenses/`. Test-only, not selected by public SkCodec. |
+| `ffi/tone.rs::SdkToneTable` | `source/dng_1d_table.h/cpp::dng_1d_table::Initialize/Interpolate` | Default 4,096-entry float lookup, terminal sentinel, and interpolation of a validated tone function | `tone::tests::sdk_tone_table_interpolates_checked_curve_samples`; the private SDK comparison matches 768/768 neutral Stage-4 bytes. Public colorful-tone creation still rejects. | Adobe 2006–2019 notice beside type; unmodified license/technology files in `licenses/`. Test-only, not selected by public SkCodec. |
+| `ffi/tone.rs::apply_sdk_rgb_tone` | `source/dng_reference.cpp::RefBaselineRGBTone` | Clip the intermediate RGB inputs, transform extrema through the tone curve, then interpolate the remaining channel rather than toning output sRGB separately | `tone::tests::sdk_intermediate_rgb_tone_preserves_color_order`; colorful public final output remains Unsupported | Adobe 2006–2023 notice beside method; unmodified license/technology files in `licenses/`. Test-only, not selected by public SkCodec. |
 
-`color.rs` is currently compiled by the Rust test targets, not by the
-production CXX FFI bridge (`FFI.rs` has it under `#[cfg(test)]`). The
+`color.rs` and `tone.rs` are currently compiled by Rust test targets,
+not by the production CXX FFI bridge (`FFI.rs` declares both under
+`#[cfg(test)]`). The
 session-private real-DNG Stage-4 diagnostic is also source-attributed,
 but its 1,104 one-byte mismatches are **not** a passing public
 comparison and it is not shipping decoder code.
