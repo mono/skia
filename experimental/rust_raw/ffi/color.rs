@@ -111,6 +111,84 @@ fn xyz_to_kelvin(xyz: [f64; 3]) -> Result<f64, ColorError> {
     Ok(kelvin)
 }
 
+fn planckian_uv(kelvin: f64) -> (f64, f64) {
+    let reciprocal = 1000.0 / kelvin;
+    let x = if kelvin < 4000.0 {
+        -0.2661239 * reciprocal.powi(3) - 0.2343589 * reciprocal.powi(2)
+            + 0.8776956 * reciprocal
+            + 0.179910
+    } else {
+        -3.0258469 * reciprocal.powi(3)
+            + 2.1070379 * reciprocal.powi(2)
+            + 0.2226347 * reciprocal
+            + 0.240390
+    };
+    let y = if kelvin < 2222.0 {
+        -1.1063814 * x.powi(3) - 1.34811020 * x.powi(2) + 2.18555832 * x - 0.20219683
+    } else if kelvin < 4000.0 {
+        -0.9549476 * x.powi(3) - 1.37418593 * x.powi(2) + 2.09137015 * x - 0.16748867
+    } else {
+        3.0817580 * x.powi(3) - 5.87338670 * x.powi(2) + 3.75112997 * x - 0.37001483
+    };
+    let denominator = 3.0 - 2.0 * x + 12.0 * y;
+    (4.0 * x / denominator, 6.0 * y / denominator)
+}
+
+fn xyz_to_kelvin_cie_uv(xyz: [f64; 3]) -> Result<f64, ColorError> {
+    if xyz.iter().any(|value| !value.is_finite() || *value <= 0.0) {
+        return Err(ColorError::Invalid);
+    }
+    let sum: f64 = xyz.iter().sum();
+    if !sum.is_finite() || sum <= 0.0 {
+        return Err(ColorError::Invalid);
+    }
+    let x = xyz[0] / sum;
+    let y = xyz[1] / sum;
+    if !x.is_finite() || !y.is_finite() || x <= 0.0 || y <= 0.0 || x + y >= 1.0 {
+        return Err(ColorError::Unsupported);
+    }
+    let denominator = 3.0 - 2.0 * x + 12.0 * y;
+    let (u, v) = (4.0 * x / denominator, 6.0 * y / denominator);
+    if !u.is_finite() || !v.is_finite() {
+        return Err(ColorError::Invalid);
+    }
+
+    // Kim et al.'s public Planckian xy approximation, searched in CIE 1960 uv.
+    let distance = |temperature| {
+        let (reference_u, reference_v) = planckian_uv(temperature);
+        (u - reference_u).powi(2) + (v - reference_v).powi(2)
+    };
+    let ratio = (5.0_f64.sqrt() - 1.0) / 2.0;
+    let (mut low, mut high) = (1667.0, 25000.0);
+    let mut first = high - ratio * (high - low);
+    let mut second = low + ratio * (high - low);
+    let mut first_distance = distance(first);
+    let mut second_distance = distance(second);
+    for _ in 0..96 {
+        if high - low <= 1e-7 {
+            break;
+        }
+        if first_distance < second_distance {
+            high = second;
+            second = first;
+            second_distance = first_distance;
+            first = high - ratio * (high - low);
+            first_distance = distance(first);
+        } else {
+            low = first;
+            first = second;
+            first_distance = second_distance;
+            second = low + ratio * (high - low);
+            second_distance = distance(second);
+        }
+    }
+    let kelvin = (low + high) / 2.0;
+    if !kelvin.is_finite() || !distance(kelvin).is_finite() {
+        return Err(ColorError::Unsupported);
+    }
+    Ok(kelvin)
+}
+
 impl DngColorTransform {
     pub(crate) fn from_forward_matrix(
         forward: [f64; 9],
@@ -154,18 +232,27 @@ impl DngColorTransform {
     pub(crate) fn from_dual_illuminant(
         profile: &DualIlluminantProfile,
     ) -> Result<(Self, f64), ColorError> {
-        Self::dual_transform(profile, false)
+        Self::dual_transform(profile, false, xyz_to_kelvin, 1e-12)
     }
 
     pub(crate) fn from_dual_illuminant_white_corrected(
         profile: &DualIlluminantProfile,
     ) -> Result<(Self, f64), ColorError> {
-        Self::dual_transform(profile, true)
+        Self::dual_transform(profile, true, xyz_to_kelvin, 1e-12)
+    }
+
+    pub(crate) fn from_dual_illuminant_cie_uv(
+        profile: &DualIlluminantProfile,
+        correct_forward_white: bool,
+    ) -> Result<(Self, f64), ColorError> {
+        Self::dual_transform(profile, correct_forward_white, xyz_to_kelvin_cie_uv, 1e-8)
     }
 
     fn dual_transform(
         profile: &DualIlluminantProfile,
         correct_forward_white: bool,
+        correlated_temperature: fn([f64; 3]) -> Result<f64, ColorError>,
+        convergence_tolerance: f64,
     ) -> Result<(Self, f64), ColorError> {
         if profile
             .color_matrices
@@ -201,11 +288,11 @@ impl DngColorTransform {
                     .map(|(value, neutral)| value * neutral)
                     .sum()
             });
-            let kelvin = xyz_to_kelvin(xyz)?;
+            let kelvin = correlated_temperature(xyz)?;
             let next = ((1.0 / kelvin - 1.0 / profile.illuminant_kelvin[0])
                 / (1.0 / profile.illuminant_kelvin[1] - 1.0 / profile.illuminant_kelvin[0]))
                 .clamp(0.0, 1.0);
-            if (next - weight).abs() < 1e-12 {
+            if (next - weight).abs() < convergence_tolerance {
                 weight = next;
                 converged = true;
                 break;
@@ -294,7 +381,8 @@ impl DngColorTransform {
 #[cfg(test)]
 mod tests {
     use super::{
-        xyz_to_kelvin, ColorError, DngColorTransform, DualIlluminantProfile, SRGB_TO_XYZ_D50,
+        planckian_uv, xyz_to_kelvin, xyz_to_kelvin_cie_uv, ColorError, DngColorTransform,
+        DualIlluminantProfile, SRGB_TO_XYZ_D50,
     };
 
     const FORWARD: [f64; 9] = [
@@ -338,6 +426,32 @@ mod tests {
             DngColorTransform::from_forward_matrix(FORWARD, [1.0, 0.8, 1.0]),
             Err(ColorError::Unsupported)
         ));
+    }
+
+    #[test]
+    fn nearest_cie_1960_planckian_temperature_validates_reference_illuminants() {
+        let xyz = |x: f64, y: f64| [x / y, 1.0, (1.0 - x - y) / y];
+        let d65 = xyz_to_kelvin_cie_uv(xyz(0.31271, 0.32902)).expect("D65 chromaticity");
+        let illuminant_a =
+            xyz_to_kelvin_cie_uv(xyz(0.44757, 0.40745)).expect("illuminant A chromaticity");
+        assert!((d65 - 6500.0).abs() < 10.0, "{d65}");
+        assert!((illuminant_a - 2856.0).abs() < 20.0, "{illuminant_a}");
+        for kelvin in [1800.0, 2856.0, 5000.0, 6500.0, 10000.0, 24000.0] {
+            let (u, v) = planckian_uv(kelvin);
+            let denominator = 1.0 + u / 2.0 - 2.0 * v;
+            let x = 3.0 * u / (4.0 * denominator);
+            let y = v / (2.0 * denominator);
+            let recovered = xyz_to_kelvin_cie_uv(xyz(x, y)).expect("Planckian white");
+            assert!((recovered - kelvin).abs() < 0.05, "{kelvin}: {recovered}");
+        }
+        assert_eq!(
+            xyz_to_kelvin_cie_uv([1.0, 1.0, -0.25]),
+            Err(ColorError::Invalid)
+        );
+        assert_eq!(
+            xyz_to_kelvin_cie_uv([f64::NAN, 1.0, 1.0]),
+            Err(ColorError::Invalid)
+        );
     }
 
     #[test]
@@ -448,6 +562,23 @@ mod tests {
         assert_eq!(
             corrected.render_srgb8_u16([3765, 7478, 4070]),
             Ok([91, 96, 75])
+        );
+        let (uv_transform, uv_weight) =
+            DngColorTransform::from_dual_illuminant_cie_uv(&profile, false)
+                .expect("published Planckian locus and CIE 1960 uv");
+        assert!((uv_weight - 0.2328363).abs() < 1e-5, "{uv_weight}");
+        assert!((uv_transform.camera_to_xyz_d50[0][0] - 1.5273953).abs() < 1e-5);
+        assert_eq!(
+            uv_transform.render_srgb8_u16([3604, 8659, 6823]),
+            Ok([82, 103, 121])
+        );
+        let (uv_corrected, uv_corrected_weight) =
+            DngColorTransform::from_dual_illuminant_cie_uv(&profile, true)
+                .expect("separate test-only white correction");
+        assert!((uv_corrected_weight - uv_weight).abs() < 1e-12);
+        assert_eq!(
+            uv_corrected.render_srgb8_u16([3604, 8659, 6823]),
+            Ok([83, 102, 121])
         );
         profile.analog_balance[0] = 0.0;
         assert!(matches!(

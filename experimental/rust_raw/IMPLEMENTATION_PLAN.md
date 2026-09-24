@@ -92,9 +92,10 @@ Rust, under the existing 100 MiB limit. PIEX still owns preview selection.
   `tools/raw_codec_probe_compare.py` with separate reference/candidate
   executables. A positive comparison must agree on full metadata, status, and
   every byte; keep negative cases labeled and out of the positive count.
-- Current selected baseline: both Rust Bazel suites have **86 passing tests
-  each**. Adobe-enabled ARM64 native RAW has **68/68** selected passing tests;
-  SDK-free PIEX+Rust has **70/70**. A source-built Apple ASan/UBSan SDK-free
+- Current selected baseline: both Rust Bazel suites have **87 passing tests
+  each on ARM64 and x64**. Adobe-enabled ARM64 native RAW has **68/68**
+  selected passing tests; SDK-free PIEX+Rust has **70/70**. A source-built
+  Apple ASan/UBSan SDK-free
   configuration also passes the **70** selected native tests. Apple macOS does
   not support leak detection in that ASan configuration; Rust and dependent
   JPEG/zlib deep-path sanitizer coverage still need separate verification.
@@ -122,11 +123,13 @@ Rust, under the existing 100 MiB limit. PIEX still owns preview selection.
 ## Promotion blockers
 
 1. Real/official camera-profile final RGB is not implemented. The controlled
-   identity-tone/BlackRender=None real DNG still has 3,182 different
+   identity-tone/BlackRender=None real DNG still has 2,465 different
    Stage-4 channel bytes out of 608,400 under a **test-only,
-   non-normative** white-correction trial. Neither float precision nor an
-   approximate public ProPhoto conversion explains them; no fitted constants
-   or vendor tables are enabled.
+   non-normative** white-correction trial using an independent CIE 1960
+   uv Planckian CCT (down from 3,182 with McCamy CCT). The published
+   uncorrected ForwardMatrix calculation differs in 311,040 channels.
+   Neither float precision nor an approximate public ProPhoto conversion
+   establishes parity; no fitted constants or vendor tables are enabled.
 2. Adobe's default artistic tone and automatic black behavior are not fully
    specified by DNG. On the original real file they cause material,
    multi-byte differences from the controlled variant. Profile gain/look

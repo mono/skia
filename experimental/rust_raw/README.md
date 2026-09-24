@@ -465,12 +465,18 @@ rows; malformed tone/black-render tags block Stage 3 without publishing
 rows. A private metadata-only version of `sample_1mp.dng` with identity
 tone and black rendering set to None matches the SDK at all three
 stages. The **test-only** dual-illuminant color component interpolates
-camera calibration in inverse CCT using public DNG formulas. Its
-normative ForwardMatrix transform differs from the controlled SDK
-Stage-4 image in 310,828/608,400 RGB channels (mean 0.607 bytes).
-An explicitly separate, non-normative forward-white correction reduces
-that diagnostic gap to 3,182 channels (mean 0.0057, max 3 bytes), but is
-not enabled for final rendering. Against the original default
+camera calibration in inverse CCT using public DNG formulas. It now
+compares McCamy's approximate CCT with a separate
+[published Planckian xy locus](https://en.wikipedia.org/wiki/Planckian_locus#Approximation)
+minimized in CIE 1960 uv; the resulting weights for the Skia
+sample are 0.231868 and 0.232836, respectively. With the latter weight,
+the normative ForwardMatrix transform still differs from the controlled
+SDK Stage-4 image in 311,040/608,400 RGB channels. An explicitly
+separate, non-normative forward-white correction reduces that
+diagnostic gap from 3,182 McCamy-weighted to 2,465 CIE-uv-weighted
+channels (max 3 bytes, including 47 blue-channel differences), but is
+not enabled for final rendering. Neither CCT method nor white
+correction establishes SDK color parity. Against the original default
 tone/Auto-black image even that trial differs by a mean 26.46 bytes.
 Two further private metadata-only variants isolate the SDK defaults:
 default tone alone changes output by a mean 28.06 bytes (max 65)
