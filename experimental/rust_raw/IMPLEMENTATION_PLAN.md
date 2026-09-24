@@ -149,6 +149,12 @@ Rust, under the existing 100 MiB limit. PIEX still owns preview selection.
   Public output for a generated DNG cube and two source-controlled PNG
   samples matches the single-RAW-decoder build. This tests one multi-codec
   combination, not the full platform or multi-Rust feature matrix.
+- A network-isolated **Linux ARM64** container compiled the pure-Rust
+  standalone DNG parser with Rust 1.89 and `-Dwarnings`, passing **90/90**
+  tests. This does **not** build or exercise the CXX bridge, Skia codec,
+  native JPEG/zlib or public RAW selection on Linux. A macOS-host Bazel
+  cross-build cannot resolve registered Linux Rust/C++ toolchains; full
+  native Linux testing still needs a provisioned Linux build host.
 - An SDK-free Apple ASan/UBSan native fuzzer with opt-in 8-bit coverage of the
   CXX RAW bridge and harness replayed generated DNG/Skia seeds and completed
   **8,000** short mutations without sanitizer failures. It reached **168

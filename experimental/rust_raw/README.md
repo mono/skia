@@ -767,12 +767,17 @@ was selected. Other camera-preview formats and native platforms
 remain P8 gates.
 
 A separate macOS ARM64 GN build enables Rust PNG decoding alongside the
-SDK-free PIEX/Rust RAW path. It links both Rust libraries, passes 109 selected
-RAW/PNG native tests (including the new identity-gain cases), and matches
+SDK-free PIEX/Rust RAW path. It links both Rust libraries, passes 111 selected
+RAW/PNG native tests (including four Bayer phases), and matches
 previously checked public `SkCodec` output against the
 single-RAW-codec build for an independent RGB8 DNG cube and two existing
 Skia PNGs. This is a coexistence smoke, not proof for every combination of
 Rust codecs or target platforms.
+
+A network-isolated Linux ARM64 container with Rust 1.89 passed all 90
+standalone safe-Rust parser tests with warnings denied. This is **not**
+a Linux build of Skia, CXX, JPEG/zlib, or the public decoder: that
+requires a native Linux toolchain and codec tests before promotion.
 
 The SDK-free test-only `raw_rust_decode` libFuzzer target exercises typed
 Stage-1/2/3 rows for accepted DNGs and the final mono codec path. It is built
