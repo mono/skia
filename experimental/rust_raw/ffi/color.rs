@@ -34,6 +34,44 @@ const SRGB_TO_XYZ_D50: [[f64; 3]; 3] = [
     [0.013916016, 0.097076416, 0.714096069],
 ];
 
+// Derived from Adobe DNG SDK 1.7.1.2724, source/dng_temperature.cpp::kTempTable.
+// Copyright 2006-2019 Adobe Systems Incorporated. All Rights Reserved.
+// See experimental/rust_raw/licenses/LICENSE.adobe-dng-sdk and PROVENANCE.md.
+// The SDK attributes these CIE 1960 uv data to Wyszecki & Stiles, Color Science.
+const SDK_ROBERTSON_UV: [(f64, f64, f64, f64); 31] = [
+    (0.0, 0.18006, 0.26352, -0.24341),
+    (10.0, 0.18066, 0.26589, -0.25479),
+    (20.0, 0.18133, 0.26846, -0.26876),
+    (30.0, 0.18208, 0.27119, -0.28539),
+    (40.0, 0.18293, 0.27407, -0.30470),
+    (50.0, 0.18388, 0.27709, -0.32675),
+    (60.0, 0.18494, 0.28021, -0.35156),
+    (70.0, 0.18611, 0.28342, -0.37915),
+    (80.0, 0.18740, 0.28668, -0.40955),
+    (90.0, 0.18880, 0.28997, -0.44278),
+    (100.0, 0.19032, 0.29326, -0.47888),
+    (125.0, 0.19462, 0.30141, -0.58204),
+    (150.0, 0.19962, 0.30921, -0.70471),
+    (175.0, 0.20525, 0.31647, -0.84901),
+    (200.0, 0.21142, 0.32312, -1.0182),
+    (225.0, 0.21807, 0.32909, -1.2168),
+    (250.0, 0.22511, 0.33439, -1.4512),
+    (275.0, 0.23247, 0.33904, -1.7298),
+    (300.0, 0.24010, 0.34308, -2.0637),
+    (325.0, 0.24702, 0.34655, -2.4681),
+    (350.0, 0.25591, 0.34951, -2.9641),
+    (375.0, 0.26400, 0.35200, -3.5814),
+    (400.0, 0.27218, 0.35407, -4.3633),
+    (425.0, 0.28039, 0.35577, -5.3762),
+    (450.0, 0.28863, 0.35714, -6.7262),
+    (475.0, 0.29685, 0.35823, -8.5955),
+    (500.0, 0.30505, 0.35907, -11.324),
+    (525.0, 0.31320, 0.35968, -15.628),
+    (550.0, 0.32129, 0.36011, -23.325),
+    (575.0, 0.32931, 0.36038, -40.770),
+    (600.0, 0.33724, 0.36051, -116.45),
+];
+
 fn invert(matrix: &[[f64; 3]; 3]) -> Result<[[f64; 3]; 3], ColorError> {
     let [a, b, c] = matrix[0];
     let [d, e, f] = matrix[1];
@@ -187,6 +225,51 @@ fn xyz_to_kelvin_cie_uv(xyz: [f64; 3]) -> Result<f64, ColorError> {
         return Err(ColorError::Unsupported);
     }
     Ok(kelvin)
+}
+
+// Derived from Adobe DNG SDK 1.7.1.2724,
+// source/dng_temperature.cpp::LegacySetXY (temperature interpolation only).
+// Copyright 2006-2019 Adobe Systems Incorporated. All Rights Reserved.
+// See experimental/rust_raw/licenses/LICENSE.adobe-dng-sdk and PROVENANCE.md.
+fn xyz_to_kelvin_sdk_robertson(xyz: [f64; 3]) -> Result<f64, ColorError> {
+    if xyz.iter().any(|value| !value.is_finite() || *value <= 0.0) {
+        return Err(ColorError::Invalid);
+    }
+    let sum: f64 = xyz.iter().sum();
+    if !sum.is_finite() || sum <= 0.0 {
+        return Err(ColorError::Invalid);
+    }
+    let x = xyz[0] / sum;
+    let y = xyz[1] / sum;
+    let denominator = 1.5 - x + 6.0 * y;
+    if !denominator.is_finite() || denominator <= 0.0 {
+        return Err(ColorError::Invalid);
+    }
+    let u = 2.0 * x / denominator;
+    let v = 3.0 * y / denominator;
+    let mut previous_distance = 0.0;
+    for index in 1..SDK_ROBERTSON_UV.len() {
+        let (reciprocal, target_u, target_v, slope) = SDK_ROBERTSON_UV[index];
+        let length = (1.0 + slope * slope).sqrt();
+        let (normal_u, normal_v) = (1.0 / length, slope / length);
+        let distance = -(u - target_u) * normal_v + (v - target_v) * normal_u;
+        if distance <= 0.0 || index == SDK_ROBERTSON_UV.len() - 1 {
+            let beyond = (-distance).max(0.0);
+            let fraction = if index == 1 {
+                0.0
+            } else {
+                beyond / (previous_distance + beyond)
+            };
+            let inverse_kelvin =
+                SDK_ROBERTSON_UV[index - 1].0 * fraction + reciprocal * (1.0 - fraction);
+            if !inverse_kelvin.is_finite() || inverse_kelvin <= 0.0 {
+                return Err(ColorError::Unsupported);
+            }
+            return Ok(1_000_000.0 / inverse_kelvin);
+        }
+        previous_distance = distance;
+    }
+    Err(ColorError::Unsupported)
 }
 
 impl DngColorTransform {
@@ -381,8 +464,8 @@ impl DngColorTransform {
 #[cfg(test)]
 mod tests {
     use super::{
-        planckian_uv, xyz_to_kelvin, xyz_to_kelvin_cie_uv, ColorError, DngColorTransform,
-        DualIlluminantProfile, SRGB_TO_XYZ_D50,
+        planckian_uv, xyz_to_kelvin, xyz_to_kelvin_cie_uv, xyz_to_kelvin_sdk_robertson, ColorError,
+        DngColorTransform, DualIlluminantProfile, SRGB_TO_XYZ_D50,
     };
 
     const FORWARD: [f64; 9] = [
@@ -450,6 +533,25 @@ mod tests {
         );
         assert_eq!(
             xyz_to_kelvin_cie_uv([f64::NAN, 1.0, 1.0]),
+            Err(ColorError::Invalid)
+        );
+    }
+
+    #[test]
+    fn sdk_robertson_temperature_is_checked_without_enabling_final_pixels() {
+        let xy = |x: f64, y: f64| [x / y, 1.0, (1.0 - x - y) / y];
+        let d65 =
+            xyz_to_kelvin_sdk_robertson(xy(0.3127, 0.3290)).expect("D65 correlated temperature");
+        let tungsten = xyz_to_kelvin_sdk_robertson(xy(0.4476, 0.4074))
+            .expect("Standard A correlated temperature");
+        assert!((d65 - 6500.0).abs() < 100.0, "{d65}");
+        assert!((tungsten - 2856.0).abs() < 100.0, "{tungsten}");
+        assert_eq!(
+            xyz_to_kelvin_sdk_robertson([f64::NAN, 1.0, 1.0]),
+            Err(ColorError::Invalid)
+        );
+        assert_eq!(
+            xyz_to_kelvin_sdk_robertson([-1.0, 1.0, 1.0]),
             Err(ColorError::Invalid)
         );
     }
@@ -580,6 +682,10 @@ mod tests {
             uv_corrected.render_srgb8_u16([3604, 8659, 6823]),
             Ok([83, 102, 121])
         );
+        let (_, sdk_weight) =
+            DngColorTransform::dual_transform(&profile, false, xyz_to_kelvin_sdk_robertson, 1e-10)
+                .expect("licensed Robertson CCT diagnostic");
+        assert!((sdk_weight - 0.232104825).abs() < 1e-6, "{sdk_weight}");
         profile.analog_balance[0] = 0.0;
         assert!(matches!(
             DngColorTransform::from_dual_illuminant(&profile),

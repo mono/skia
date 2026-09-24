@@ -538,8 +538,18 @@ identity tone changes it by a mean 2.54 bytes (max 16). All three
 variants retain exact Stages 1-3 on ARM64 and SDK-free x64. Neither
 default is specified sufficiently by the public DNG text to silently
 publish an Adobe-compatible replacement.
-No Adobe source or tone table was used, and neither color variant is
-approved for real-image final output.
+Those independent diagnostics used no Adobe source. After the
+maintainer authorized a licensed derivative, a separate **test-only**
+Robertson CIE 1960 uv temperature table and interpolation were ported
+from SDK 1.7.1.2724 with Adobe attribution beside both Rust definitions,
+unmodified license/technology notices in `licenses/`, and a per-symbol
+entry in [PROVENANCE.md](PROVENANCE.md). The production CXX FFI does
+**not** compile that color module. A private, source-attributed trial
+also follows SDK matrix-white normalization and intermediate ProPhoto
+clipping: for the controlled identity-tone real DNG it differs in
+1,104/608,400 channel bytes (R/G/B 39/213/852, maximum one byte).
+Neither that diagnostic nor Adobe's default tone curve is enabled for
+public final pixels. Real-image `SkCodec` output remains Unsupported.
 
 The native tests create synthetic DNGs in test code. `RustRaw_OutputMonoSrgb`
 checks the 256-value ramp against the published sRGB transfer, including
@@ -548,8 +558,8 @@ compares an explicit color-tone-tagged mono ramp with the SDK and rejects
 malformed tone or unverified black handling. `RustRaw_OutputMonoUnsupported`
 checks malformed/HDR and still-unsupported profiles. `RustRaw_AdobeParity`
 compares the monochrome final-output profiles with the pinned Adobe
-factory, and is registered only in Adobe-enabled reference builds; the
-SDK-free build runs its 65 relevant tests without a missing-oracle failure.
+factory, and is registered only in Adobe-enabled reference builds rather
+than failing an SDK-free run when the oracle is unavailable.
 `RustRaw_Stage1Strips` checks both byte orders and both sample
 widths directly through the bridge. `RustRaw_RealDngStage1` checks decoded
 RGB rows across both tiles against the pinned stage-1 reference fingerprint;

@@ -152,7 +152,7 @@ each request rather than demanding identical internal Stage-1/2/3 bytes.
   frame-index, Gray8 and RGBA1010102 rejection comparisons match for
   two narrow synthetic inputs each. This tests selected requests on
   macOS ARM64, **not** the complete A/B corpus or platform matrix.
-- Current selected baseline: both Rust Bazel suites have **90 passing tests
+- Current selected baseline: both Rust Bazel suites have **91 passing tests
   each on ARM64 and x64**. Adobe-enabled ARM64 native RAW has **71/71** selected
   passing tests; SDK-free PIEX+Rust has **73/73** on ARM64 and x64. A
   source-built Apple ASan/UBSan SDK-free configuration also passes the
@@ -209,11 +209,19 @@ each request rather than demanding identical internal Stage-1/2/3 bytes.
   samples matches the single-RAW-decoder build. This tests one multi-codec
   combination, not the full platform or multi-Rust feature matrix.
 - A network-isolated **Linux ARM64** container compiled the pure-Rust
-  standalone DNG parser with Rust 1.89 and `-Dwarnings`, passing **90/90**
+  standalone DNG parser with Rust 1.89 and `-Dwarnings`, passing **91/91**
   tests. This does **not** build or exercise the CXX bridge, Skia codec,
   native JPEG/zlib or public RAW selection on Linux. A macOS-host Bazel
   cross-build cannot resolve registered Linux Rust/C++ toolchains; full
   native Linux testing still needs a provisioned Linux build host.
+- Under the approved derivative policy, **one SDK-sourced diagnostic**
+  has been ported into Rust tests only: the 31-row Robertson CIE 1960
+  uv temperature table and its temperature interpolation. Its Rust
+  comments cite the SDK version/file/symbol and Adobe copyright;
+  [PROVENANCE.md](PROVENANCE.md) records the use and unmodified
+  Adobe notices are in `licenses/`. Both Rust Bazel suites now pass
+  **91/91 on ARM64 and x64**, and Linux ARM64 standalone parser tests
+  pass **91/91**. The production final renderer remains unchanged.
 - An SDK-free Apple ASan/UBSan native fuzzer with opt-in 8-bit coverage of the
   CXX RAW bridge and harness replayed generated DNG/Skia seeds and completed
   **8,000** short mutations without sanitizer failures. It reached **168
@@ -241,7 +249,12 @@ each request rather than demanding identical internal Stage-1/2/3 bytes.
    uv Planckian CCT (down from 3,182 with McCamy CCT). The published
    uncorrected ForwardMatrix calculation differs in 311,040 channels.
    Neither float precision nor an approximate public ProPhoto conversion
-   establishes parity; no fitted constants or vendor tables are enabled.
+   establishes parity. A subsequent **session-private, licensed
+   source-attributed diagnostic** using SDK-style temperature, PCS matrix
+   normalization, camera-white/ProPhoto clipping and transfer-table
+   quantization reduces the difference to **1,104 one-byte channels**
+   (R/G/B 39/213/852). This remains a failure, not a reviewed
+   exception; no SDK-derived table is enabled in the production renderer.
 2. Adobe's default artistic tone and automatic black behavior are not fully
    specified by DNG. On the original real file they cause material,
    multi-byte differences from the controlled variant. Non-unity profile gain/look
