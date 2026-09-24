@@ -4268,6 +4268,42 @@ DEF_TEST(RustRaw_PublicSdkFreeFallback, r) {
     }
 }
 
+DEF_TEST(RustRaw_PublicPreviewNotSelected, r) {
+    for (bool compressed : {false, true}) {
+        auto bytes = make_preview_rgb16_dng(false, false, compressed, compressed);
+        REPORTER_ASSERT(r, !bytes.empty());
+        if (bytes.empty()) {
+            continue;
+        }
+        auto data = SkData::MakeWithCopy(bytes.data(), bytes.size());
+        auto adapterStream = SkMemoryStream::Make(data);
+        auto adapter = std::make_unique<rust::stream::SkStreamAdapter>(adapterStream.get());
+        auto reader = rust_raw::new_reader(std::move(adapter));
+        REPORTER_ASSERT(r, reader->stage3_status() == rust_raw::DecodeStatus::Success &&
+                           reader->main_ifd_index() == 1 &&
+                           reader->status() == rust_raw::DecodeStatus::Unsupported);
+
+        for (int streamKind : {0, 1, 2}) {
+            std::unique_ptr<SkStream> stream;
+            if (streamKind == 1) {
+                stream = std::make_unique<NonseekableStream>(data);
+            } else if (streamKind == 2) {
+                stream = std::make_unique<RawForwardOnlyStream>(data);
+            } else {
+                stream = SkMemoryStream::Make(data);
+            }
+            SkCodec::Result result = SkCodec::kSuccess;
+            auto codec = SkRawDecoder::Decode(std::move(stream), &result);
+            REPORTER_ASSERT(r, !codec && result == SkCodec::kUnimplemented,
+                            "compressed=%d stream=%d result=%s",
+                            compressed, streamKind, SkCodec::ResultToString(result));
+        }
+        SkCodec::Result result = SkCodec::kSuccess;
+        auto codec = SkCodec::MakeFromStream(SkMemoryStream::Make(data), &result);
+        REPORTER_ASSERT(r, !codec && result == SkCodec::kUnimplemented);
+    }
+}
+
 DEF_TEST(RustRaw_PublicForwardStreamLimit, r) {
     auto bytes = make_output_mono_ramp(8);
     auto data = SkData::MakeWithCopy(bytes.data(), bytes.size());

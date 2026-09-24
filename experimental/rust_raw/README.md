@@ -703,17 +703,22 @@ Separately validated zero-black varied and uniform strip/tiled profiles
 match Stage 3 exactly. The strict output-referred sRGB RGB8 cube and
 color ramp match full SDK RGBA; other RGB profiles remain Unsupported. Its
 output-referred 8-bit mono final RGBA also matches the SDK across
-all 256 source values. This SDK-free *test build* does
-not register the Rust full-DNG decoder as production RAW. A separate
-SDK-free, PIEX-enabled macOS ARM64 build (`skia_use_dng_sdk=false`,
-`skia_use_piex=true`, `skia_use_rust_raw_decode=true`) now registers
-preview-only `SkRawDecoder` publicly without linking Adobe. On
-`dng_with_preview.dng`, it chooses JPEG with byte-identical metadata
-and RGBA pixels to the Adobe-backed public decoder; a nonseekable
-preview also works. A full DNG without a JPEG preview explicitly
-returns `kUnimplemented` in that build until the Rust renderer is
-complete and deliberately integrated. Other camera-preview formats
-and native platforms are still P8 gates.
+all 256 source values. These SDK-free *test builds* do not make Rust
+the default production full-DNG backend. In a separate SDK-free,
+PIEX-enabled opt-in build (`skia_use_dng_sdk=false`, `skia_use_piex=true`,
+`skia_use_rust_raw_decode=true`), public `SkRawDecoder` invokes Rust
+only after PIEX declines a usable JPEG preview. Eleven narrowly
+verified full-DNG final outputs match Adobe through registered
+`SkCodec`, while unsupported real DNG final rendering still reports
+`kUnimplemented`. On `dng_with_preview.dng`, PIEX chooses JPEG with
+byte-identical metadata and RGBA pixels to the Adobe-backed build,
+including nonseekable input. `RustRaw_PublicPreviewNotSelected`
+exercises an atypical larger JPEG parent IFD with a 3x3 RGB16 raw child
+in uncompressed and Deflate forms: PIEX does not choose that JPEG, so
+the SDK-free public route reports `kUnimplemented` for seekable,
+nonseekable, and short-read streams instead of pretending the preview
+was selected. Other camera-preview formats and native platforms
+remain P8 gates.
 
 The SDK-free test-only `raw_rust_decode` libFuzzer target exercises typed
 Stage-1/2/3 rows for accepted DNGs and the final mono codec path. It is built
