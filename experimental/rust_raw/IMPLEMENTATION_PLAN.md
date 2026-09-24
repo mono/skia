@@ -113,6 +113,11 @@ Rust, under the existing 100 MiB limit. PIEX still owns preview selection.
   streams; the SDK-free Rust route reports Unimplemented for their unverified
   final output instead of substituting the JPEG. These are atypical test
   containers, not representative camera previews.
+- A macOS ARM64 source build with both Rust PNG decoding and the SDK-free
+  PIEX/Rust RAW decoder passes **78/78 selected RAW/PNG native tests**.
+  Public output for a generated DNG cube and two source-controlled PNG
+  samples matches the single-RAW-decoder build. This tests one multi-codec
+  combination, not the full platform or multi-Rust feature matrix.
 - These are selected tests, **not a claim of complete SDK parity**. The real
   `sample_1mp.dng` family matches SDK Stage 1–3 but the Rust public final
   decode remains Unimplemented. Two nonzero-black Bayer fixtures differ at
