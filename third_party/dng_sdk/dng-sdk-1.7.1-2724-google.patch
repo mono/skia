@@ -1,6 +1,6 @@
 diff --git a/source/RawEnvironment.h b/source/RawEnvironment.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..688ee0e7178b385d288276bee567dab6b8327ba9
+index 0000000..688ee0e
 --- /dev/null
 +++ b/source/RawEnvironment.h
 @@ -0,0 +1,20 @@
@@ -25,7 +25,7 @@ index 0000000000000000000000000000000000000000..688ee0e7178b385d288276bee567dab6
 +
 +#endif  // __dng_RawEnvironment__
 diff --git a/source/dng_file_stream.cpp b/source/dng_file_stream.cpp
-index 470f5ddee65ecd15a480dd9e50f5ed28b3b991da..327a666262df89d3e6f8f36b54e4efccbc440272 100644
+index 470f5dd..327a666 100644
 --- a/source/dng_file_stream.cpp
 +++ b/source/dng_file_stream.cpp
 @@ -110,7 +110,7 @@ dng_file_stream::dng_file_stream (int fd,
@@ -66,7 +66,7 @@ index 470f5ddee65ecd15a480dd9e50f5ed28b3b991da..327a666262df89d3e6f8f36b54e4efcc
  
  /*****************************************************************************/
 diff --git a/source/dng_flags.h b/source/dng_flags.h
-index 4a5441faf0edb14db3aa73453196a4670aaa4c67..98f834ef695e3a60d67724a8c2c35ad1d885ec12 100644
+index 4a5441f..98f834e 100644
 --- a/source/dng_flags.h
 +++ b/source/dng_flags.h
 @@ -560,7 +560,7 @@
@@ -79,7 +79,7 @@ index 4a5441faf0edb14db3aa73453196a4670aaa4c67..98f834ef695e3a60d67724a8c2c35ad1
  
  /*****************************************************************************/
 diff --git a/source/dng_host.h b/source/dng_host.h
-index d4f5f631269d97bb3b3f72157ffb2eaab8d65f70..c033deea7099266d306eff57a051c5c31f1b0ce3 100644
+index d4f5f63..c033dee 100644
 --- a/source/dng_host.h
 +++ b/source/dng_host.h
 @@ -438,10 +438,6 @@ class dng_host: private dng_uncopyable
@@ -94,7 +94,7 @@ index d4f5f631269d97bb3b3f72157ffb2eaab8d65f70..c033deea7099266d306eff57a051c5c3
  		/// or to ensure a derived class is used instead of dng_shared.
  
 diff --git a/source/dng_image_writer.cpp b/source/dng_image_writer.cpp
-index dd3a396aad26ec48e05e24ec2142921c5b070f40..24ed960a2fa4c38a5e7c5fbbff1800a035a811ac 100644
+index dd3a396..24ed960 100644
 --- a/source/dng_image_writer.cpp
 +++ b/source/dng_image_writer.cpp
 @@ -4801,123 +4801,6 @@ void dng_image_writer::WriteData (dng_host &host,
@@ -222,7 +222,7 @@ index dd3a396aad26ec48e05e24ec2142921c5b070f40..24ed960a2fa4c38a5e7c5fbbff1800a0
  			{
  			
 diff --git a/source/dng_jpeg_image.cpp b/source/dng_jpeg_image.cpp
-index e8b430e180cd0714f7fc9f6ebca468829a2bc9a7..fb039cf475605f8a2e14e64803aaa8b923e2b484 100644
+index e8b430e..fb039cf 100644
 --- a/source/dng_jpeg_image.cpp
 +++ b/source/dng_jpeg_image.cpp
 @@ -189,7 +189,7 @@ void dng_compressed_image_tiles::EncodeTiles (dng_host &host,
@@ -371,7 +371,7 @@ index e8b430e180cd0714f7fc9f6ebca468829a2bc9a7..fb039cf475605f8a2e14e64803aaa8b9
  	}
  
 diff --git a/source/dng_jxl.cpp b/source/dng_jxl.cpp
-index 5ccc04de52209c0b7a68e5d9df3ba32cf29fe2de..6afd4ad9ec163e1232d4c4f28d8bb14d3ffe0405 100644
+index 5ccc04d..6afd4ad 100755
 --- a/source/dng_jxl.cpp
 +++ b/source/dng_jxl.cpp
 @@ -4362,25 +4362,7 @@ void PreviewColorSpaceToJXLEncoding (const PreviewColorSpaceEnum colorSpace,
@@ -402,7 +402,7 @@ index 5ccc04de52209c0b7a68e5d9df3ba32cf29fe2de..6afd4ad9ec163e1232d4c4f28d8bb14d
  
  /*****************************************************************************/
 diff --git a/source/dng_jxl.h b/source/dng_jxl.h
-index 43955ce19f2b6ae83fca60cf9ad8047e614c2d6b..c8a4dc1a18d91ff0d8e358511495cc0c46107488 100644
+index 43955ce..c8a4dc1 100644
 --- a/source/dng_jxl.h
 +++ b/source/dng_jxl.h
 @@ -215,11 +215,13 @@ class dng_jxl_encode_settings
@@ -467,7 +467,7 @@ index 43955ce19f2b6ae83fca60cf9ad8047e614c2d6b..c8a4dc1a18d91ff0d8e358511495cc0c
  /*****************************************************************************/
  
 diff --git a/source/dng_lossless_jpeg_shared.cpp b/source/dng_lossless_jpeg_shared.cpp
-index dd505d7b9d3973c1039f8108ee8026d4af8a5aec..6826daca0f133e45932248ff58c2dddea15bdcde 100644
+index dd505d7..6826dac 100644
 --- a/source/dng_lossless_jpeg_shared.cpp
 +++ b/source/dng_lossless_jpeg_shared.cpp
 @@ -1852,6 +1852,13 @@ template <SIMDType simd>
@@ -485,7 +485,7 @@ index dd505d7b9d3973c1039f8108ee8026d4af8a5aec..6826daca0f133e45932248ff58c2ddde
  	// table lookup to get its value.  It's more than 8 bits about
  	// 3-4% of the time.
 diff --git a/source/dng_misc_opcodes.cpp b/source/dng_misc_opcodes.cpp
-index 444582590ab621e0115177f424ad360e72b77fc7..00c11249950cd9f0194479da61f076d04440f847 100644
+index 4445825..00c1124 100644
 --- a/source/dng_misc_opcodes.cpp
 +++ b/source/dng_misc_opcodes.cpp
 @@ -276,6 +276,7 @@ dng_rect dng_area_spec::Overlap (const dng_rect &tile) const
@@ -520,7 +520,7 @@ index 444582590ab621e0115177f424ad360e72b77fc7..00c11249950cd9f0194479da61f076d0
  			DoMapArea16 (buffer.DirtyPixel_uint16 (overlap.t, overlap.l, plane),
  						 1,
 diff --git a/source/dng_negative.cpp b/source/dng_negative.cpp
-index 3831e124841dfe8e635308abaa2f0b0aec917829..28c7850ed16e6fe7e0cb8b4f73b799fc31c3382d 100644
+index 3831e12..28c7850 100644
 --- a/source/dng_negative.cpp
 +++ b/source/dng_negative.cpp
 @@ -6508,194 +6508,6 @@ void dng_negative::LossyCompressMosaicJXL (dng_host &host,
@@ -719,7 +719,7 @@ index 3831e124841dfe8e635308abaa2f0b0aec917829..28c7850ed16e6fe7e0cb8b4f73b799fc
  
  /*****************************************************************************/
 diff --git a/source/dng_negative.h b/source/dng_negative.h
-index 548cc6a265c88df3dfd3b45b013d17634c383e71..e67d20f84282106fb31b4f1b67969f7af5e7d883 100644
+index 548cc6a..e67d20f 100644
 --- a/source/dng_negative.h
 +++ b/source/dng_negative.h
 @@ -45,6 +45,10 @@
@@ -734,7 +734,7 @@ index 548cc6a265c88df3dfd3b45b013d17634c383e71..e67d20f84282106fb31b4f1b67969f7a
  
  // To prevent using the internal metadata when we meant to use override
 diff --git a/source/dng_preview.cpp b/source/dng_preview.cpp
-index 6d6d102bac1ec26de30cda5e9e19ca81d9e34e39..1bd2b3a56025ead167fc730dbe70a43c97dd7d2d 100644
+index 6d6d102..1bd2b3a 100644
 --- a/source/dng_preview.cpp
 +++ b/source/dng_preview.cpp
 @@ -713,47 +713,6 @@ void dng_raw_preview::SetIFDInfo (dng_host &host,
@@ -786,7 +786,7 @@ index 6d6d102bac1ec26de30cda5e9e19ca81d9e34e39..1bd2b3a56025ead167fc730dbe70a43c
  
  	}
 diff --git a/source/dng_string.cpp b/source/dng_string.cpp
-index a885d1956a89a722f8cb169da3a1c122f6915953..8976f4b50ee63a99be732c906c0738b0c9d36621 100644
+index a885d19..8976f4b 100644
 --- a/source/dng_string.cpp
 +++ b/source/dng_string.cpp
 @@ -18,12 +18,13 @@
@@ -862,7 +862,7 @@ index a885d1956a89a722f8cb169da3a1c122f6915953..8976f4b50ee63a99be732c906c0738b0
  		{
  	
 diff --git a/source/dng_temperature.cpp b/source/dng_temperature.cpp
-index 4d4e202b2ac3532ffd526538df4375c3e1b638e3..b203e4cfc6e893f482c9c5fa1afe5469b599e7c9 100644
+index 4d4e202..b203e4c 100644
 --- a/source/dng_temperature.cpp
 +++ b/source/dng_temperature.cpp
 @@ -8,12 +8,12 @@
@@ -898,7 +898,7 @@ index 4d4e202b2ac3532ffd526538df4375c3e1b638e3..b203e4cfc6e893f482c9c5fa1afe5469
  
  /*****************************************************************************/
 diff --git a/source/dng_utils.cpp b/source/dng_utils.cpp
-index fb73b26e37ec6b069f98031f20894386ca385f20..4d75c9dffb3666057a183b87ec95fbe8f1a29a85 100644
+index fb73b26..4d75c9d 100644
 --- a/source/dng_utils.cpp
 +++ b/source/dng_utils.cpp
 @@ -26,7 +26,14 @@
@@ -936,7 +936,7 @@ index fb73b26e37ec6b069f98031f20894386ca385f20..4d75c9dffb3666057a183b87ec95fbe8
  		{
 diff --git a/source/jxl/color_encoding.h b/source/jxl/color_encoding.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..e1d609242faeeef650b3cf36bf76ba9de116edc5
+index 0000000..e1d6092
 --- /dev/null
 +++ b/source/jxl/color_encoding.h
 @@ -0,0 +1,6 @@

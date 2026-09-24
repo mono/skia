@@ -1,0 +1,269 @@
+diff --git a/source/dng_ifd.cpp b/source/dng_ifd.cpp
+index f120349..e8727f4 100644
+--- a/source/dng_ifd.cpp
++++ b/source/dng_ifd.cpp
+@@ -5117,25 +5117,42 @@ dng_rect dng_ifd::TileArea (uint32 rowIndex,
+ 							uint32 colIndex) const
+ 	{
+ 	
+-	dng_rect r;
++	// dng_rect stores signed coordinates. Compute the edges in uint64 so a
++	// large tile dimension cannot wrap before it is checked. A strip taller
++	// than the image is clamped first; that remains a valid single strip.
+ 	
+-	r.t = rowIndex * fTileLength;
+-	r.b = r.t	   + fTileLength;
++	uint64 top64	= (uint64) rowIndex * (uint64) fTileLength;
++	uint64 left64	= (uint64) colIndex * (uint64) fTileWidth;
++	uint64 bottom64 = top64 + (uint64) fTileLength;
++	uint64 right64	= left64 + (uint64) fTileWidth;
+ 	
+-	r.l = colIndex * fTileWidth;
+-	r.r = r.l	   + fTileWidth;
+-	
+-	// If this IFD is using strips rather than tiles, the last strip
+-	// is trimmed so it does not extend beyond the end of the image.
++	if (fUsesStrips && bottom64 > (uint64) fImageLength)
++		{
++		bottom64 = fImageLength;
++		}
+ 	
+-	if (fUsesStrips)
++	int32 top	 = 0;
++	int32 left	 = 0;
++	int32 bottom = 0;
++	int32 right	 = 0;
++	
++	if (top64	 > (uint64) 0x7FFFFFFF ||
++		left64	 > (uint64) 0x7FFFFFFF ||
++		bottom64 > (uint64) 0x7FFFFFFF ||
++		right64	 > (uint64) 0x7FFFFFFF ||
++		bottom64 < top64 ||
++		right64	 < left64 ||
++		!ConvertUint32ToInt32 ((uint32) top64,	  &top) ||
++		!ConvertUint32ToInt32 ((uint32) left64,	  &left) ||
++		!ConvertUint32ToInt32 ((uint32) bottom64, &bottom) ||
++		!ConvertUint32ToInt32 ((uint32) right64,  &right))
+ 		{
+ 		
+-		r.b = Min_uint32 (r.b, fImageLength);
++		ThrowBadFormat ();
+ 		
+ 		}
+-		
+-	return r;
++	
++	return dng_rect (top, left, bottom, right);
+ 	
+ 	}
+ 			
+diff --git a/source/dng_read_image.cpp b/source/dng_read_image.cpp
+index c609627..bab4d7c 100644
+--- a/source/dng_read_image.cpp
++++ b/source/dng_read_image.cpp
+@@ -1014,12 +1014,31 @@ dng_image_spooler::dng_image_spooler (dng_host &host,
+ 		ThrowBadFormat ();
+ 		}
+ 
+-	uint32 stripLength = Pin_uint32 (ifd.fSubTileBlockRows,
+-									 fBlock.LogicalSize () / bytesPerRow,
+-									 fTileArea.H ());
++	// Cap to the visible tile before rounding. Pin_uint32 would otherwise
++	// force a strip taller than a short edge tile, and that strip can never
++	// fill enough to be written.
+ 
+-	stripLength = stripLength / ifd.fSubTileBlockRows
+-							  * ifd.fSubTileBlockRows;
++	int32 tileRows = fTileArea.H ();
++
++	if (tileRows <= 0)
++		{
++		ThrowBadFormat ();
++		}
++
++	uint32 availableRows = fBlock.LogicalSize () / bytesPerRow;
++
++	if (availableRows > (uint32) tileRows)
++		{
++		availableRows = (uint32) tileRows;
++		}
++
++	uint32 stripLength = availableRows / ifd.fSubTileBlockRows
++									   * ifd.fSubTileBlockRows;
++
++	if (stripLength == 0)
++		{
++		ThrowBadFormat ();
++		}
+ 	
+ 	fTileStrip	 = fTileArea;
+ 	fTileStrip.b = fTileArea.t + stripLength;
+@@ -1855,7 +1874,7 @@ bool dng_read_image::ReadLosslessJPEG (dng_host &host,
+ 
+ 	if (tileArea.IsEmpty ())
+ 		{
+-		return true;
++		ThrowBadFormat ();
+ 		}
+ 
+ 	dng_safe_uint32 bytesPerRow =
+@@ -1869,12 +1888,27 @@ bool dng_read_image::ReadLosslessJPEG (dng_host &host,
+ 		ThrowBadFormat ();
+ 		}
+ 
+-	uint32 rowsPerStrip = Pin_uint32 (ifd.fSubTileBlockRows,
+-									  kImageBufferSize / bytesPerRow.Get (),
+-									  tileArea.H ());
++	int32 tileRows = tileArea.H ();
++
++	if (tileRows <= 0)
++		{
++		ThrowBadFormat ();
++		}
++
++	uint32 availableRows = kImageBufferSize / bytesPerRow.Get ();
++
++	if (availableRows > (uint32) tileRows)
++		{
++		availableRows = (uint32) tileRows;
++		}
++
++	uint32 rowsPerStrip = availableRows / ifd.fSubTileBlockRows
++									   * ifd.fSubTileBlockRows;
+ 
+-	rowsPerStrip = rowsPerStrip / ifd.fSubTileBlockRows
+-								* ifd.fSubTileBlockRows;
++	if (rowsPerStrip == 0)
++		{
++		ThrowBadFormat ();
++		}
+ 									  
+ 	dng_safe_uint32 bufferSize = bytesPerRow * rowsPerStrip;
+ 	
+@@ -2543,10 +2577,32 @@ void dng_read_image::ReadTile (dng_host &host,
+ 				if (err == Z_BUF_ERROR && !floatingPointPredictor)
+ 					{
+ 
+-					dng_rect fullTileArea (tileArea);
++					// The visible strip can be shorter than the stored tile.
++					// Build the stored rectangle with checked conversion, and
++					// keep the original pixel buffer until the retry produces
++					// exactly the stored size. Any other result is a bad tile.
++
++					int32 fullRows = 0;
++					int32 fullCols = 0;
++
++					if (tileArea.t < 0 ||
++						tileArea.l < 0 ||
++						tileArea.H () <= 0 ||
++						tileArea.W () <= 0 ||
++						!ConvertUint32ToInt32 (ifd.fTileLength, &fullRows) ||
++						!ConvertUint32ToInt32 (ifd.fTileWidth, &fullCols) ||
++						(uint32) fullRows < tileArea.H () ||
++						(uint32) fullCols < tileArea.W () ||
++						tileArea.t > 0x7FFFFFFF - fullRows ||
++						tileArea.l > 0x7FFFFFFF - fullCols)
++						{
++						ThrowBadFormat ();
++						}
+ 
+-					fullTileArea.r = fullTileArea.l + ifd.fTileWidth;
+-					fullTileArea.b = fullTileArea.t + ifd.fTileLength;
++					dng_rect fullTileArea (tileArea.t,
++										   tileArea.l,
++										   tileArea.t + fullRows,
++										   tileArea.l + fullCols);
+ 
+ 					if (fullTileArea != tileArea)
+ 						{
+@@ -2578,20 +2634,10 @@ void dng_read_image::ReadTile (dng_host &host,
+ 											(fullSampleCount * 4u).Get ());
+ 							}
+ 
+-						if (uncompressedBuffer.Get () &&
+-							uncompressedBuffer->LogicalSize () <
+-								fullBufferSize.Get ())
+-							{
+-							uncompressedBuffer.Reset ();
+-							}
+-
+-						if (uncompressedBuffer.Get () == NULL)
+-							{
+-							uncompressedBuffer.Reset (
+-								host.Allocate (fullBufferSize.Get ()));
+-							}
++						AutoPtr<dng_memory_block> retryBuffer
++							(host.Allocate (fullBufferSize.Get ()));
+ 
+-						fullBuffer.fData = uncompressedBuffer->Buffer ();
++						fullBuffer.fData = retryBuffer->Buffer ();
+ 
+ 						uLongf fullDstLen = fullUncompressedSize.Get ();
+ 
+@@ -2601,16 +2647,28 @@ void dng_read_image::ReadTile (dng_host &host,
+ 											compressedBuffer->Buffer (),
+ 										  tileByteCount);
+ 
+-						if (err == Z_OK &&
+-							fullDstLen == fullUncompressedSize.Get ())
++						if (err != Z_OK ||
++							fullDstLen != fullUncompressedSize.Get ())
+ 							{
+-							buffer = fullBuffer;
+-							sampleCount = fullSampleCount;
+-							uncompressedSize = fullUncompressedSize;
+-							dstLen = fullDstLen;
+-							decodedFullTile = true;
++
++							if (err == Z_MEM_ERROR)
++								{
++								ThrowMemoryFull ();
++								}
++
++							ThrowBadFormat ();
++
+ 							}
+ 
++						uncompressedBuffer.Reset (retryBuffer.Release ());
++
++						buffer = fullBuffer;
++						buffer.fData = uncompressedBuffer->Buffer ();
++						sampleCount = fullSampleCount;
++						uncompressedSize = fullUncompressedSize;
++						dstLen = fullDstLen;
++						decodedFullTile = true;
++
+ 						}
+ 
+ 					}
+@@ -3193,6 +3251,11 @@ void dng_read_tiles_task::ProcessTask (uint32 tileIndex,
+ 
+ 	dng_rect tileArea = fIFD.TileArea (rowIndex, colIndex);
+ 
++	if (tileArea.IsEmpty ())
++		{
++		ThrowBadFormat ();
++		}
++
+ 	dng_host host (&fHost.Allocator (),
+ 				   sniffer);				// Cannot use sniffer attached to main host
+ 
+@@ -3960,8 +4023,18 @@ void dng_read_image::Read (dng_host &host,
+ 					
+ 					dng_rect tileArea = ifd.TileArea (rowIndex, colIndex);
+ 					
++					if (tileArea.IsEmpty ())
++						{
++						ThrowBadFormat ();
++						}
++					
+ 					uint32 subTileCount = (tileArea.H () + subTileLength - 1) /
+ 										  subTileLength;
++					
++					if (subTileCount == 0)
++						{
++						ThrowBadFormat ();
++						}
+ 										  
+ 					for (uint32 subIndex = 0; subIndex < subTileCount; subIndex++)
+ 						{

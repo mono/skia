@@ -15,12 +15,20 @@ PREFIX = "dng_sdk_1_7_1/dng_sdk/source/"
 skia = Path(__file__).resolve().parents[2]
 root = skia / "third_party/externals/dng_sdk"
 source = root / "source"
-patch = Path(__file__).with_name("dng-sdk-1.7.1-2724-adaptations.patch")
+# Port the Android15 fork's Adobe 2502 changes to 2724 first, then apply
+# SkiaSharp's decoder adjustments to that baseline.
+patches = [
+    Path(__file__).with_name("dng-sdk-1.7.1-2724-google.patch"),
+    Path(__file__).with_name("dng-sdk-1.7.1-2724-skiasharp.patch"),
+]
 
-def git_apply(*args, **kwargs):
+def git_apply(patch, *args, **kwargs):
     return subprocess.run(["git", "apply", *args, str(patch)], cwd=root, **kwargs)
 
-if git_apply("--reverse", "--check", stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode != 0:
+if any(
+    git_apply(patch, "--reverse", "--check", stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode != 0
+    for patch in reversed(patches)
+):
     with tempfile.TemporaryDirectory() as temp:
         archive = Path(temp) / Path(URL).name
         urllib.request.urlretrieve(URL, archive)
@@ -32,4 +40,5 @@ if git_apply("--reverse", "--check", stdout=subprocess.DEVNULL, stderr=subproces
         shutil.rmtree(source)
         shutil.copytree(Path(temp) / PREFIX, source)
 
-    git_apply("--whitespace=nowarn", check=True)
+    for patch in patches:
+        git_apply(patch, "--whitespace=nowarn", check=True)
