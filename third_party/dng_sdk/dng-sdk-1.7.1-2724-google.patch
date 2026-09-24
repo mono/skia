@@ -1,0 +1,949 @@
+diff --git a/source/RawEnvironment.h b/source/RawEnvironment.h
+new file mode 100644
+index 0000000..688ee0e
+--- /dev/null
++++ b/source/RawEnvironment.h
+@@ -0,0 +1,20 @@
++#ifndef __dng_RawEnvironment__
++#define __dng_RawEnvironment__
++
++// Define preprocessor constants that control platform-specific conditional
++// compilation. The constants qMacOS and qWinOS must be defined on all
++// platforms. Other constants, such as qLinux, only need to be defined if we're
++// actually compiling for that platform.
++#if defined(__linux__)
++#define qMacOS 0
++#define qWinOS 0
++#define qLinux 1
++#elif defined(__APPLE__)
++#define qMacOS 1
++#define qWinOS 0
++#elif defined(_WIN32)
++#define qMacOS 0
++#define qWinOS 1
++#endif
++
++#endif  // __dng_RawEnvironment__
+diff --git a/source/dng_file_stream.cpp b/source/dng_file_stream.cpp
+index 470f5dd..327a666 100644
+--- a/source/dng_file_stream.cpp
++++ b/source/dng_file_stream.cpp
+@@ -110,7 +110,7 @@ dng_file_stream::dng_file_stream (int fd,
+ 
+ 		#if qDNGValidate
+ 
+-		ReportError ("Unable to open file");
++		ReportError ("Unable to open fd");
+ 
+ 		ThrowSilentError ();
+ 
+@@ -136,6 +136,27 @@ dng_file_stream::dng_file_stream (int fd,
+ 
+ 	{
+ 
++	// Note: Use dup here as caller is responsible for separately managing fd.
++
++	fFile = fdopen (dup (fd), output ? "wb" : "rb");
++
++	if (!fFile)
++		{
++
++		#if qDNGValidate
++
++		ReportError ("Unable to open fd");
++
++		ThrowSilentError ();
++
++		#else
++
++		ThrowOpenFile ();
++
++		#endif
++
++		}
++
+ 	}
+ 
+ /*****************************************************************************/
+diff --git a/source/dng_flags.h b/source/dng_flags.h
+index 4a5441f..98f834e 100644
+--- a/source/dng_flags.h
++++ b/source/dng_flags.h
+@@ -560,7 +560,7 @@
+ // Enable XMP support in the DNG SDK?
+ 
+ #ifndef qDNGUseXMP
+-#define qDNGUseXMP 1
++#define qDNGUseXMP 0
+ #endif
+ 
+ /*****************************************************************************/
+diff --git a/source/dng_host.h b/source/dng_host.h
+index d4f5f63..c033dee 100644
+--- a/source/dng_host.h
++++ b/source/dng_host.h
+@@ -438,10 +438,6 @@ class dng_host: private dng_uncopyable
+ 		/// Factory method for dng_xmp class. Can be used to customize allocation or 
+ 		/// to ensure a derived class is used instead of dng_xmp.
+ 
+-		#if qDNGUseXMP
+-		virtual dng_xmp * Make_dng_xmp ();
+-		#endif
+-
+ 		/// Factory method for dng_shared class. Can be used to customize allocation 
+ 		/// or to ensure a derived class is used instead of dng_shared.
+ 
+diff --git a/source/dng_image_writer.cpp b/source/dng_image_writer.cpp
+index dd3a396..24ed960 100644
+--- a/source/dng_image_writer.cpp
++++ b/source/dng_image_writer.cpp
+@@ -4801,123 +4801,6 @@ void dng_image_writer::WriteData (dng_host &host,
+ 			
+ 		#endif	// qDNGUseLibJPEG
+ 
+-		case ccJXL:
+-			{
+-
+-			dng_jxl_encode_settings settings;
+-
+-			if (ifd.fJXLEncodeSettings)
+-				settings = *ifd.fJXLEncodeSettings;
+-
+-			else if (host.JXLEncodeSettings ())
+-				settings = *host.JXLEncodeSettings ();
+-
+-			else
+-				{
+-				DNG_REPORT ("No JXLEncodeSettings, encoding tile using default settings");
+-				}
+-
+-			#if 0
+-			printf ("jxl encode tile: distance=%0.2f, effort=%d\n",
+-					settings.Distance (),
+-					settings.Effort ());
+-			#endif
+-
+-			// Set concurrency. If we're already using multiple threads (outer
+-			// loop processes a tile per thread), then tell the jxl encoder to
+-			// use a single thread.
+-
+-			settings.SetSingleThread (usingMultipleThreads);
+-
+-			// Get color space info.
+-
+-			dng_jxl_color_space_info colorSpaceInfoLocal;
+-
+-			const dng_jxl_color_space_info *colorSpaceInfoPtr =
+-				&colorSpaceInfoLocal;
+-
+-			// If host specified a custom value, then use that.
+-			
+-			if (host.JXLColorSpaceInfo ())
+-				{
+-				
+-				colorSpaceInfoPtr = host.JXLColorSpaceInfo ();
+-
+-				}
+-
+-			// Else get it from the IFD.
+-			
+-			else if (ifd.fJXLColorEncoding)
+-				{
+-				
+-				colorSpaceInfoLocal.fJxlColorEncoding.Reset
+-					(new JxlColorEncoding (*ifd.fJXLColorEncoding));
+-
+-				}
+-
+-			else
+-				{
+-				
+-				PreviewColorSpaceToJXLEncoding (ifd.fPreviewInfo.fColorSpace,
+-												ifd.fSamplesPerPixel,
+-												colorSpaceInfoLocal);
+-				
+-				}
+-
+-			#if 0
+-			printf ("jxl: strips=%s, tiles=%s, ta=%u, td=%u\n",
+-					ifd.fUsesStrips ? "yes" : "no",
+-					ifd.fUsesTiles ? "yes" : "no",
+-					ifd.TilesAcross (),
+-					ifd.TilesDown ());
+-			#endif
+-
+-			// If we're writing a single-tile preview, then write the JXL
+-			// using the container format (i.e., with boxes) so that readers
+-			// have the option of extracting a full standalone JXL file by
+-			// simply copying the bytes.
+-
+-			if (ifd.TilesAcross () == 1 &&
+-				ifd.TilesDown   () == 1 &&
+-				(uint32 (ifd.fPreviewInfo.fColorSpace) <=
+-				 uint32 (previewColorSpace_LastValid)))
+-				{
+-
+-				#if 0
+-				printf ("--- writing JXL container\n");
+-				#endif
+-
+-				EncodeJXL_Container (host,
+-									 stream,
+-									 buffer,
+-									 settings,
+-									 *colorSpaceInfoPtr,
+-									 nullptr,
+-									 false,
+-									 false,
+-									 false,
+-									 nullptr);
+-
+-				}
+-
+-			// Otherwise write a bare JXL codestream, which saves a few bytes
+-			// per tile.
+-
+-			else
+-				{
+-
+-				EncodeJXL_Tile (host,
+-								stream,
+-								buffer,
+-								*colorSpaceInfoPtr,
+-								settings);
+-
+-				}
+-			
+-			return;
+-			
+-			}
+-
+ 		default:
+ 			{
+ 			
+diff --git a/source/dng_jpeg_image.cpp b/source/dng_jpeg_image.cpp
+index e8b430e..fb039cf 100644
+--- a/source/dng_jpeg_image.cpp
++++ b/source/dng_jpeg_image.cpp
+@@ -189,7 +189,7 @@ void dng_compressed_image_tiles::EncodeTiles (dng_host &host,
+ 		
+ 		snprintf (message,
+ 				  sizeof (message),
+-				  "JXL encode %u by %u pixels, distance = %.2f, effort = %d, size = %" PRIu64,
++				  "JXL encode %u by %u pixels, distance = %.2f, effort = %d, size = %llu",
+ 				  image.Width (),
+ 				  image.Height (),
+ 				  ifd.fJXLEncodeSettings->Distance (),
+@@ -203,7 +203,7 @@ void dng_compressed_image_tiles::EncodeTiles (dng_host &host,
+ 		
+ 		snprintf (message,
+ 				  sizeof (message),
+-				  "Lossy JPEG encode %u by %u pixels, quality = %d, size = %" PRIu64,
++				  "Lossy JPEG encode %u by %u pixels, quality = %d, size = %llu",
+ 				  image.Width (),
+ 				  image.Height (),
+ 				  ifd.fCompressionQuality,
+@@ -216,7 +216,7 @@ void dng_compressed_image_tiles::EncodeTiles (dng_host &host,
+ 		
+ 		snprintf (message,
+ 				  sizeof (message),
+-				  "Deflate encode %u by %u pixels, quality = %d, size = %" PRIu64,
++				  "Deflate encode %u by %u pixels, quality = %d, size = %llu",
+ 				  image.Width (),
+ 				  image.Height (),
+ 				  ifd.fCompressionQuality,
+@@ -229,7 +229,7 @@ void dng_compressed_image_tiles::EncodeTiles (dng_host &host,
+ 		
+ 		snprintf (message,
+ 				  sizeof (message),
+-				  "EncodeTiles %u by %u pixels, size = %" PRIu64,
++				  "EncodeTiles %u by %u pixels, size = %llu",
+ 				  image.Width (),
+ 				  image.Height (),
+ 				  NonHeaderSize ());
+@@ -522,67 +522,6 @@ void dng_jxl_image::Encode (dng_host &host,
+ 	
+ 	DNG_REQUIRE (SupportsJXL (image),
+ 				 "Unsupported image");
+-
+-	DNG_REQUIRE (image.PixelType () == ttByte  ||
+-				 image.PixelType () == ttShort ||
+-				 image.PixelType () == ttFloat,
+-				 "Unsupported pixel type");
+-				 
+-	dng_ifd ifd;
+-	
+-	ifd.fImageWidth  = image.Width  ();
+-	ifd.fImageLength = image.Height ();
+-	
+-	ifd.fSamplesPerPixel = image.Planes ();
+-	
+-	for (uint32 plane = 0; plane < ifd.fSamplesPerPixel; plane++)
+-		{
+-		
+-		if (image.PixelType () == ttFloat)
+-			{
+-			ifd.fBitsPerSample [plane] = 16;
+-			ifd.fSampleFormat  [plane] = sfFloatingPoint;
+-			}
+-			
+-		else
+-			{
+-			ifd.fBitsPerSample [plane] = image.PixelSize () * 8;
+-			}
+-			
+-		}
+-			
+-	ifd.fCompression = ccJXL;
+-	
+-	// This will cause the color encoding to use linear gamma with
+-	// no color transform, unless we override it.
+-	
+-	ifd.fPhotometricInterpretation = piLinearRaw;
+-	
+-	// Attach JXL encode settings to IFD.
+-	
+-	AutoPtr<dng_jxl_encode_settings> encodeSettingsHolder
+-		(new dng_jxl_encode_settings (encodeSettings));
+-	
+-	ifd.fJXLEncodeSettings.reset (encodeSettingsHolder.Release ());
+-	
+-	// Attach JXL color encoding to IFD, if any.
+-	
+-	if (colorEncoding)
+-		{
+-		
+-		AutoPtr<JxlColorEncoding> colorEncodingHolder
+-			(new JxlColorEncoding (*colorEncoding));
+-			
+-		ifd.fJXLColorEncoding.reset (colorEncodingHolder.Release ());
+-		
+-		}
+-	
+-	ifd.FindTileSize (1024 * 1024);
+-	
+-	EncodeTiles (host,
+-				 writer,
+-				 image,
+-				 ifd);
+ 	
+ 	}
+ 
+@@ -595,38 +534,8 @@ void dng_jxl_image::Encode (dng_host &host,
+ 							const dng_negative *negative)
+ 	{
+ 	
+-	AutoPtr<dng_jxl_encode_settings> encodeSettings
+-		(host.MakeJXLEncodeSettings (useCase,
+-									 image,
+-									 negative));
+-									 
+-	AutoPtr<JxlColorEncoding> colorEncoding;
+-
+-	if ((useCase == dng_host::use_case_EncodedMainImage ||
+-		 useCase == dng_host::use_case_ProxyImage) &&
+-		image.PixelType () == ttShort)
+-		{
+-	
+-		colorEncoding.Reset (new JxlColorEncoding);
+-
+-		memset (colorEncoding.Get (), 0, sizeof (JxlColorEncoding));
+-		
+-		// EncodeImageForCompression leaves the image far from linear gamma,
+-		// so let's pretend it is sRGB gamma.
+-
+-		colorEncoding->color_space       = image.Planes () == 1 ? JXL_COLOR_SPACE_GRAY
+-																: JXL_COLOR_SPACE_RGB;
+-		colorEncoding->white_point       = JXL_WHITE_POINT_D65;
+-		colorEncoding->primaries         = JXL_PRIMARIES_2100;
+-		colorEncoding->transfer_function = JXL_TRANSFER_FUNCTION_SRGB;
+-		
+-		}
+-	
+-	Encode (host,
+-			writer,
+-			image,
+-			*encodeSettings,
+-			colorEncoding.Get ());
++	DNG_REQUIRE (SupportsJXL (image),
++				 "Unsupported image");
+ 	
+ 	}
+ 
+diff --git a/source/dng_jxl.cpp b/source/dng_jxl.cpp
+index 5ccc04d..6afd4ad 100755
+--- a/source/dng_jxl.cpp
++++ b/source/dng_jxl.cpp
+@@ -4362,25 +4362,7 @@ void PreviewColorSpaceToJXLEncoding (const PreviewColorSpaceEnum colorSpace,
+ 
+ bool SupportsJXL (const dng_image &image)
+ 	{
+-	
+-	// TODO(erichan): We should add an image size check. But currently JXL's
+-	// limits exceed our DNG SDK limits.
+-
+-	// Currently ignore alpha; assume that it's a separate image.
+-
+-	uint32 planes	 = image.Planes ();
+-	uint32 pixelType = image.PixelType ();
+-
+-	return ((planes == 1 ||					 // gray
+-			 planes == 3)					 // RGB
+-
+-			&&
+-
+-			(pixelType == ttByte	  ||
+-			 pixelType == ttShort	  ||
+-			 pixelType == ttHalfFloat ||
+-			 pixelType == ttFloat));
+-	
++	return false;
+ 	}
+ 
+ /*****************************************************************************/
+diff --git a/source/dng_jxl.h b/source/dng_jxl.h
+index 43955ce..c8a4dc1 100644
+--- a/source/dng_jxl.h
++++ b/source/dng_jxl.h
+@@ -215,11 +215,13 @@ class dng_jxl_encode_settings
+ 
+ /*****************************************************************************/
+ 
+-bool ParseJXL (dng_host &host,
++static bool ParseJXL (dng_host &host,
+ 			   dng_stream &stream,
+ 			   dng_info &info,
+ 			   bool supportBasicCodeStream,
+-			   bool supportContainer);
++			   bool supportContainer) {
++				return false;
++			   }
+ 
+ /*****************************************************************************/
+ 
+@@ -317,22 +319,22 @@ class dng_jxl_decoder
+ 
+ 	public:
+ 
+-		virtual ~dng_jxl_decoder ();
++		virtual ~dng_jxl_decoder () {}
+ 
+ 		virtual void Decode (dng_host &host,
+-							 dng_stream &stream);
++							 dng_stream &stream) {}
+ 
+ 	protected:
+ 
+ 		virtual void ProcessExifBox (dng_host &host,
+-									 const std::vector<uint8> &data);
++									 const std::vector<uint8> &data) {}
+ 
+ 		virtual void ProcessXMPBox (dng_host &host,
+-									const std::vector<uint8> &data);
++									const std::vector<uint8> &data) {}
+ 
+ 		virtual void ProcessBox (dng_host &host,
+ 								 const dng_string &name,
+-								 const std::vector<uint8> &data);
++								 const std::vector<uint8> &data) {}
+ 
+ 	};
+ 
+@@ -401,13 +403,13 @@ static constexpr uint32 kDefaultJXLCompressionQuality = 9;
+ 
+ /*****************************************************************************/
+ 
+-void PreviewColorSpaceToJXLEncoding (const PreviewColorSpaceEnum colorSpace,
++static void PreviewColorSpaceToJXLEncoding (const PreviewColorSpaceEnum colorSpace,
+ 									 const uint32 planes,
+-									 dng_jxl_color_space_info &info);
++									 dng_jxl_color_space_info &info) {}
+ 
+ /*****************************************************************************/
+ 
+-bool SupportsJXL (const dng_image &image);
++static bool SupportsJXL (const dng_image &image) { return false; }
+ 
+ /*****************************************************************************/
+ 
+diff --git a/source/dng_lossless_jpeg_shared.cpp b/source/dng_lossless_jpeg_shared.cpp
+index dd505d7..6826dac 100644
+--- a/source/dng_lossless_jpeg_shared.cpp
++++ b/source/dng_lossless_jpeg_shared.cpp
+@@ -1852,6 +1852,13 @@ template <SIMDType simd>
+ DNG_ALWAYS_INLINE int32 dng_lossless_decoder<simd>::HuffDecode (HuffmanTable *htbl)
+ 	{
+ 	
++// BEGIN GOOGLE MODIFICATION
++	// See b/347735428.
++	if (htbl == nullptr) {
++		ThrowBadFormat ();
++	}
++// END GOOGLE MODIFICATION
++
+ 	// If the huffman code is less than 8 bits, we can use the fast
+ 	// table lookup to get its value.  It's more than 8 bits about
+ 	// 3-4% of the time.
+diff --git a/source/dng_misc_opcodes.cpp b/source/dng_misc_opcodes.cpp
+index 4445825..00c1124 100644
+--- a/source/dng_misc_opcodes.cpp
++++ b/source/dng_misc_opcodes.cpp
+@@ -276,6 +276,7 @@ dng_rect dng_area_spec::Overlap (const dng_rect &tile) const
+ 
+ /*****************************************************************************/
+ 
++DNG_ATTRIB_NO_SANITIZE("unsigned-integer-overflow")
+ dng_rect dng_area_spec::ScaledOverlap (const dng_rect &tile) const
+ 	{
+ 	
+@@ -584,12 +585,17 @@ void dng_opcode_MapTable::ProcessArea (dng_negative & /* negative */,
+   
+ 		const uint16 *table = fBlackAdjustedTable.Get () ? fBlackAdjustedTable->Buffer_uint16 ()
+ 														 : fTable			  ->Buffer_uint16 ();
+-		
+-		for (uint32 plane = fAreaSpec.Plane ();
+-			 plane < fAreaSpec.Plane () + fAreaSpec.Planes () &&
+-			 plane < buffer.Planes ();
+-			 plane++)
++// BEGIN GOOGLE MODIFICATION
++		const uint32 planeStart = fAreaSpec.Plane ();
++		const uint32 planeCount = fAreaSpec.Planes ();
++		const uint32 bufferPlanes = buffer.Planes ();
++
++		for (uint32 plane = planeStart;
++			 plane < bufferPlanes &&
++			 plane - planeStart < planeCount;
++			 ++plane)
+ 			{
++// END GOOGLE MODIFICATION
+ 			
+ 			DoMapArea16 (buffer.DirtyPixel_uint16 (overlap.t, overlap.l, plane),
+ 						 1,
+diff --git a/source/dng_negative.cpp b/source/dng_negative.cpp
+index 3831e12..28c7850 100644
+--- a/source/dng_negative.cpp
++++ b/source/dng_negative.cpp
+@@ -6508,194 +6508,6 @@ void dng_negative::LossyCompressMosaicJXL (dng_host &host,
+ 										   dng_image_writer &writer)
+ 	{
+ 	
+-	if (NeedLossyCompressMosaicJXL (host))
+-		{
+-		
+-		if (RawImage ().PixelType () == ttShort &&
+-			RawImage ().Planes    () == 1 &&
+-			RawImage ().Height    () >= 2 &&
+-			RawImage ().Width     () >= 2)
+-			{
+-			
+-			// Figure out tile size and padding so tile seams don't cross
+-			// color fields.
+-			
+-			dng_point oldSize = RawImage ().Size ();
+-			
+-			dng_point fieldSize;
+-			
+-			fieldSize.v = (oldSize.v + 1) / 2;
+-			fieldSize.h = (oldSize.h + 1) / 2;
+-			
+-			dng_point tileSize;
+-			
+-				{
+-				
+-				dng_ifd tempIFD;
+-				
+-				tempIFD.fSamplesPerPixel = 1;
+-				
+-				tempIFD.fBitsPerSample [0] = 16;
+-				
+-				tempIFD.fImageLength = fieldSize.v;
+-				tempIFD.fImageWidth  = fieldSize.h;
+-				
+-				tempIFD.FindTileSize (1024 * 1024);
+-				
+-				tileSize.v = tempIFD.fTileLength;
+-				tileSize.h = tempIFD.fTileWidth;
+-				
+-				}
+-				
+-			fieldSize.v = ((fieldSize.v + tileSize.v - 1) / tileSize.v) * tileSize.v;
+-			fieldSize.h = ((fieldSize.h + tileSize.h - 1) / tileSize.h) * tileSize.h;
+-			
+-			dng_point paddedSize;
+-			
+-			paddedSize.v = fieldSize.v * 2;
+-			paddedSize.h = fieldSize.h * 2;
+-			
+-			dng_point padOffset;
+-			
+-			padOffset.v = (paddedSize.v - oldSize.v) / 2;
+-			padOffset.h = (paddedSize.h - oldSize.h) / 2;
+-			
+-			dng_rect activeArea (padOffset.v,
+-								 padOffset.h,
+-								 padOffset.v + oldSize.v,
+-								 padOffset.h + oldSize.h);
+-				
+-			if (paddedSize != oldSize)
+-				{
+-			
+-				AutoPtr<dng_image> paddedImage (host.Make_dng_image (dng_rect (paddedSize),
+-																	 1,
+-																	 ttShort));
+-																	 
+-					{
+-					
+-					dng_lossy_mosaic_task task (RawImage (),
+-												*paddedImage,
+-												padOffset);
+-												
+-					host.PerformAreaTask (task, paddedImage->Bounds ());
+-					
+-					}
+-					
+-				// This padded image becomes the new raw image.
+-				
+-				fRawImage.Reset (paddedImage.Release ());
+-				
+-				// Adjust active area for padding.
+-				
+-				SetActiveArea (activeArea);
+-										 
+-				// We just re-created the linearization info, so copy back
+-				// the raw black level so it gets written to output DNG.
+-				
+-				SetBlackLevel (fRawImageBlackLevel);
+-										 
+-				}
+-				
+-			// Range/curve encode image for better compression.
+-			
+-				{
+-				
+-				real64 dstBlackLevel [kMaxColorPlanes];
+-				
+-				fRawImage.Reset (EncodeImageForCompression (host,
+-															RawImage (),
+-															activeArea,
+-															true,			// isSceneReferred
+-															true,			// use16Bit
+-															fRawImageBlackLevel * (1.0 / 65535.0),
+-															dstBlackLevel,
+-															fOpcodeList2));
+-															
+-				SetBlackLevel (Round_int32 (dstBlackLevel [0]));
+-															
+-				}
+-			
+-			// Apply interleaving to a temporary image.
+-
+-			AutoPtr<dng_image> tempImage (host.Make_dng_image (RawImage ().Bounds    (),
+-															   RawImage ().Planes    (),
+-															   RawImage ().PixelType ()));
+-															   
+-			Interleave2D (host,
+-						  RawImage (),
+-						  *tempImage,
+-						  2,
+-						  2,
+-						  true);
+-				
+-			// Compress.
+-			
+-			AutoPtr<dng_jxl_image> lossyImage (new dng_jxl_image);
+-			
+-				{
+-				
+-				dng_ifd tempIFD;
+-				
+-				tempIFD.fNewSubFileType = sfMainImage;
+-				
+-				tempIFD.fPhotometricInterpretation = piLinearRaw;
+-				
+-				tempIFD.fCompression = ccJXL;
+-				
+-				tempIFD.fSamplesPerPixel = 1;
+-				
+-				tempIFD.fBitsPerSample [0] = 16;
+-				
+-				tempIFD.fImageLength = paddedSize.v;
+-				tempIFD.fImageWidth  = paddedSize.h;
+-				
+-				tempIFD.fTileLength = tileSize.v;
+-				tempIFD.fTileWidth  = tileSize.h;
+-				
+-				tempIFD.fUsesTiles = true;
+-				
+-				AutoPtr<dng_jxl_encode_settings> settings
+-						(host.MakeJXLEncodeSettings (dng_host::use_case_LossyMosaic,
+-													 *tempImage,
+-													 this));
+-				
+-				tempIFD.fJXLEncodeSettings.reset (settings.Release ());
+-				
+-				AutoPtr<JxlColorEncoding> encoding (new JxlColorEncoding);
+-
+-				memset (encoding.Get (), 0, sizeof (JxlColorEncoding));
+-				
+-				// EncodeImageForCompression leaves the image far from linear gamma,
+-				// so let's pretend it is sRGB gamma.
+-
+-				encoding->color_space	    = JXL_COLOR_SPACE_GRAY;
+-				encoding->white_point	    = JXL_WHITE_POINT_D65; // unused
+-				encoding->primaries		    = JXL_PRIMARIES_2100;  // unused
+-				encoding->transfer_function = JXL_TRANSFER_FUNCTION_SRGB;
+-				
+-				tempIFD.fJXLColorEncoding.reset (encoding.Release ());
+-
+-				lossyImage->EncodeTiles (host,
+-										 writer,
+-										 *tempImage,
+-										 tempIFD);
+-				
+-				}
+-				
+-			lossyImage->fRowInterleaveFactor    = 2;
+-			lossyImage->fColumnInterleaveFactor = 2;
+-				
+-			fRawLossyCompressedImage.Reset (lossyImage.Release ());
+-			
+-			ClearRawLossyCompressedImageDigest ();
+-			
+-			ClearRawImageDigest ();
+-			
+-			}
+-
+-		}
+-	
+ 	}
+ 
+ /*****************************************************************************/
+diff --git a/source/dng_negative.h b/source/dng_negative.h
+index 548cc6a..e67d20f 100644
+--- a/source/dng_negative.h
++++ b/source/dng_negative.h
+@@ -45,6 +45,10 @@
+ #include <memory>
+ #include <vector>
+ 
++#if qDNGUseXMP
++#error "Misconfigured build, qDNGUseXMP not supported"
++#endif
++
+ /*****************************************************************************/
+ 
+ // To prevent using the internal metadata when we meant to use override
+diff --git a/source/dng_preview.cpp b/source/dng_preview.cpp
+index 6d6d102..1bd2b3a 100644
+--- a/source/dng_preview.cpp
++++ b/source/dng_preview.cpp
+@@ -713,47 +713,6 @@ void dng_raw_preview::SetIFDInfo (dng_host &host,
+ 	if (fIFD.fCompression == ccJXL)
+ 		{
+ 		
+-		// Use default host for the raw preview compression settings so any customizations
+-		// targeted for the actual main image are not used.
+-		
+-		dng_host defaultHost;
+-		
+-		// Use same compression quality as if encoding a non-full size proxy image.
+-		
+-		AutoPtr<dng_jxl_encode_settings> settings (defaultHost.MakeJXLEncodeSettings (dng_host::use_case_ProxyImage,
+-																					  image));
+-
+-		if (fForNegativeCache)
+-			{
+-			settings->SetEffort (1);
+-			}
+-		
+-		fIFD.fJXLEncodeSettings.reset (settings.Release ());
+-		
+-		fIFD.fJXLDistance    = fIFD.fJXLEncodeSettings->Distance    ();
+-		fIFD.fJXLEffort      = fIFD.fJXLEncodeSettings->Effort      ();
+-		fIFD.fJXLDecodeSpeed = fIFD.fJXLEncodeSettings->DecodeSpeed ();
+-		
+-		if (image.PixelType () == ttShort)
+-			{
+-		
+-			AutoPtr<JxlColorEncoding> encoding (new JxlColorEncoding);
+-
+-			memset (encoding.Get (), 0, sizeof (JxlColorEncoding));
+-			
+-			// EncodeImageForCompression leaves the image far from linear gamma,
+-			// so let's pretend it is sRGB gamma.
+-
+-			encoding->color_space	    = image.Planes () == 1 ? JXL_COLOR_SPACE_GRAY
+-															   : JXL_COLOR_SPACE_RGB;
+-			encoding->white_point	    = JXL_WHITE_POINT_D65;
+-			encoding->primaries		    = JXL_PRIMARIES_2100;
+-			encoding->transfer_function = JXL_TRANSFER_FUNCTION_SRGB;
+-			
+-			fIFD.fJXLColorEncoding.reset (encoding.Release ());
+-			
+-			}
+-		
+ 		}
+ 
+ 	}
+diff --git a/source/dng_string.cpp b/source/dng_string.cpp
+index a885d19..8976f4b 100644
+--- a/source/dng_string.cpp
++++ b/source/dng_string.cpp
+@@ -18,12 +18,13 @@
+ 
+ #if qMacOS
+ #include <TargetConditionals.h>
+-#if TARGET_OS_IPHONE || TARGET_IPHONE_SIMULATOR
+-#include <MobileCoreServices/MobileCoreServices.h>
+-#else
+-#include <CoreServices/CoreServices.h>
+ #endif
++
++#if qMacOS && TARGET_OS_OSX && !TARGET_OS_MACCATALYST
++#define qDNGUseMacOSCarbon 1
+ #include <CoreServices/CoreServices.h>
++#else
++#define qDNGUseMacOSCarbon 0
+ #endif
+ 
+ #if qWinOS
+@@ -56,7 +57,7 @@ static uint32 strlenAsUint32 (const char *s)
+ 
+ /*****************************************************************************/
+ 
+-#if qMacOS
++#if qDNGUseMacOSCarbon
+ 
+ static void Assign_Multibyte (dng_string &dngString,
+ 							  const char *otherString,
+@@ -685,7 +686,7 @@ uint32 dng_string::Get_SystemEncoding (dng_memory_data &buffer) const
+ 	else
+ 		{
+ 		
+-		#if qMacOS || qWinOS
++		#if qDNGUseMacOSCarbon || qWinOS
+ 		
+ 		return Extract_SystemEncoding (*this, buffer);
+ 		
+@@ -720,7 +721,7 @@ void dng_string::Set_SystemEncoding (const char *s)
+ 	else
+ 		{
+ 		
+-		#if qMacOS || qWinOS
++		#if qDNGUseMacOSCarbon || qWinOS
+ 	
+ 		Assign_SystemEncoding (*this, s);
+ 		
+@@ -796,7 +797,7 @@ void dng_string::Set_JIS_X208_1990 (const char *s)
+ 	else
+ 		{
+ 		
+-		#if qMacOS || qWinOS
++		#if qDNGUseMacOSCarbon || qWinOS
+ 	
+ 		Assign_JIS_X208_1990 (*this, s);
+ 		
+@@ -2156,7 +2157,7 @@ void dng_string::ForceASCII ()
+ 	
+ /******************************************************************************/
+ 
+-#if qMacOS
++#if qDNGUseMacOSCarbon
+ static dng_std_mutex gProtectUCCalls;
+ #endif
+ 				
+@@ -2166,7 +2167,7 @@ int32 dng_string::Compare (const dng_string &s,
+ 						   bool digitsAsNumber) const
+ 	{
+ 	
+-	#if qMacOS
++	#if qDNGUseMacOSCarbon
+ 	
+ 		{
+ 	
+diff --git a/source/dng_temperature.cpp b/source/dng_temperature.cpp
+index 4d4e202..b203e4c 100644
+--- a/source/dng_temperature.cpp
++++ b/source/dng_temperature.cpp
+@@ -8,12 +8,12 @@
+ 
+ #include "dng_temperature.h"
+ 
++#include "dng_pthread.h"
+ #include "dng_utils.h"
+ #include "dng_xy_coord.h"
+ 
+ #include <atomic>
+ #include <cmath>
+-#include <mutex>
+ #include <vector>
+ 
+ /*****************************************************************************/
+@@ -89,7 +89,7 @@ namespace
+ 
+ 	std::atomic<bool> gEnableLowTemperatureLimit (false);
+ 
+-	std::once_flag gExtendedLUTOnce;
++	pthread_once_t gExtendedLUTOnce = PTHREAD_ONCE_INIT;
+ 	std::vector<dng_xy_coord> gExtendedLUT;
+ 
+ 	inline real64 SmoothStep (real64 x)
+@@ -572,7 +572,7 @@ bool GetDNGEnableLowTemperatureLimit ()
+ 
+ void InitExtendedTemperatureLUT ()
+ 	{
+-	std::call_once (gExtendedLUTOnce, BuildExtendedTemperatureLUT);
++	pthread_once (&gExtendedLUTOnce, BuildExtendedTemperatureLUT);
+ 	}
+ 
+ /*****************************************************************************/
+diff --git a/source/dng_utils.cpp b/source/dng_utils.cpp
+index fb73b26..4d75c9d 100644
+--- a/source/dng_utils.cpp
++++ b/source/dng_utils.cpp
+@@ -26,7 +26,14 @@
+ #include "dng_tile_iterator.h"
+ 
+ #if qMacOS
++#include <TargetConditionals.h>
++#endif
++
++#if qMacOS && TARGET_OS_OSX && !TARGET_OS_MACCATALYST
++#define qDNGUseMacOSCarbon 1
+ #include <CoreServices/CoreServices.h>
++#else
++#define qDNGUseMacOSCarbon 0
+ #endif
+ 
+ #if qiPhone || qMacOS
+@@ -147,7 +154,7 @@ void dng_show_message (const char *s)
+ 	if (gPrintAsserts)
+ 		fprintf (stderr, "%s%s", s, nl);
+ 		
+-	#elif qiPhone || qAndroid || qLinux || qWeb
++	#elif (qMacOS && !qDNGUseMacOSCarbon) || qiPhone || qAndroid || qLinux || qWeb
+ 	
+ 	if (gPrintAsserts)
+ 		fprintf (stderr, "%s%s", s, nl);
+@@ -161,7 +168,7 @@ void dng_show_message (const char *s)
+ 	
+ 	#endif	// qDNGDebug
+ 	
+-	#elif qMacOS
++	#elif qDNGUseMacOSCarbon
+ 	
+ 	if (gBreakOnAsserts)
+ 		{
+diff --git a/source/jxl/color_encoding.h b/source/jxl/color_encoding.h
+new file mode 100644
+index 0000000..e1d6092
+--- /dev/null
++++ b/source/jxl/color_encoding.h
+@@ -0,0 +1,6 @@
++// This file contains stub definitions necessary to trick dng_sdk into compiling
++// without bringing in libjxl itself
++
++#pragma once
++
++struct JxlColorEncoding {};
+\ No newline at end of file
