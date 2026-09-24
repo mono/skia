@@ -31,6 +31,19 @@ the same way. F16 output must be compared against an SDK build for the
 same architecture: ARM64 and x64 Skia differ by one half-float ULP for some
 midtones even when their decoded 8-bit RGB agrees.
 
+The separate-process `raw_codec_probe_compare.py --public-matrix` now tests
+ten public `SkCodec` requests per file: several destination formats and
+color spaces, half-scale, repeated/padded output and
+seekable/forward-only/short-read input. A selected ARM64 matrix matches
+29 supported output requests on two synthetic full DNGs and the existing
+PIEX preview; one short-read preview request is explicitly declared a
+matching *creation rejection*, never counted as decoded pixels.
+The same matrix reports 20 missing Rust full-decode cases on the real
+Skia DNGs, and a scalable Bayer DNG is also a missing candidate case.
+`--subset center` and `--frame-index 1` check public rejection results
+separately. This A/B gate is incomplete until real full-DNG images and
+all shipping request/platform combinations pass.
+
 The checked stage-1 profile is classic little- or big-endian TIFF DNG 1.4:
 one full-size monochrome LinearRaw IFD, uncompressed chunky 8- or 16-bit
 unsigned samples in one or more strips, identity orientation/crop/scale,

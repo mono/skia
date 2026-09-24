@@ -24,15 +24,21 @@ reader as evidence that arbitrary DNGs can be rendered.
   image stages. Compare identical input bytes and `SkCodec` requests in both
   builds: preview selection, creation and decode results, dimensions, origin,
   color/alpha metadata, scaled/subset requests and their results, destination
-  color spaces/formats, pixels and row padding, encoded-data access, repeated
-  calls, and seekable/forward-only streams. Stage-1/2/3 oracle comparisons isolate
+  color spaces/formats, pixels and row padding, repeated calls, and
+  seekable/forward-only streams. Compare encoded-data retention where
+  observable through Skia callers. Stage-1/2/3 oracle comparisons isolate
   errors but are not separately exposed through `SkCodec`. A small stage
   difference is not by itself a shipping failure if its public impact is
   explained and **all** affected public results are proved equivalent.
-- Follow the published DNG/TIFF specifications and independent implementations.
-  Never copy Adobe source, rendering tables, or SDK-supplied example images into
-  this implementation or the repository. Run the SDK only in a separate
-  reference process; it must not be a shipping dependency or runtime fallback.
+- Follow published DNG/TIFF specifications and existing Rust codecs. The
+  maintainer has authorized a **licensed derivative** of the configured SDK
+  after establishing the public A/B contract and Skia integration pattern.
+  For every source-derived algorithm or value, record the exact SDK version,
+  file/symbol and Rust location alongside appropriate Adobe copyright and
+  license notices. Keep vendor documentation unmodified and do not redistribute
+  SDK example images. Legal review must verify the final attribution and
+  packaging; the SDK remains a separate-process reference, never a shipping
+  runtime fallback.
 - Do native Skia implementation, tests, and review first. Update SkiaSharp's
   submodule, packaging, and managed tests **only after** native decoder proof.
 
@@ -80,6 +86,21 @@ Seekable streams rewind after PIEX inspection. The forward-only stream retains
 short reads made during PIEX probing and hands the complete buffered input to
 Rust, under the existing 100 MiB limit. PIEX still owns preview selection.
 
+## Existing codec compatibility precedents
+
+| Codec | Skia-facing migration | What its tests actually establish |
+| --- | --- | --- |
+| PNG | Build-time `SkPngDecoder`/`SkPngRustDecoder` choice and shared `SkPngCodecBase` for color/output conversion. | Selected public requests compare pixels byte-for-byte. The Rust PNG README also documents APNG/CICP capability differences; universal implementation equivalence is not assumed. |
+| BMP | Rust `image` decoder behind the same `SkCodec` API, with resumable reads and Skia's swizzler. | Selected full and incremental BMP outputs match the C++ decoder exactly, including checked partial rows; this is not a claim that all invalid inputs behave identically. |
+| ICO | Rust directory parser delegates embedded images to Rust PNG/BMP codecs through shared `SkData` subsets. | Tests cover dimensions, frames, rewind, invalid input and partial streams; they do not establish an exhaustive legacy-versus-Rust byte-level A/B corpus. |
+| JPEG | Experimental `zune-jpeg` decoder behind `SkCodec`, using Skia swizzling/color and metadata. | Its C++-versus-Rust image tests allow per-channel differences (commonly 8/255, occasionally 16/255) and may skip unsupported images. This JPEG policy is **not** an automatic DNG exception. |
+
+RAW reuses CXX/`SkStreamAdapter` and the original PIEX-first selector,
+but its Adobe and Rust full-DNG paths still have separate Skia-facing
+codecs. Align the output facade and error/scale semantics, avoid redundant
+input buffering, and preserve the source-backed public comparison for
+each request rather than demanding identical internal Stage-1/2/3 bytes.
+
 ## Delivery gates
 
 | Gate | Work and acceptance |
@@ -92,10 +113,10 @@ Rust, under the existing 100 MiB limit. PIEX still owns preview selection.
 | P5: linearization | Implement lookup tables, black/white normalization, and stage-changing opcodes with correct coordinate and per-plane semantics; compare whole-image stages diagnostically, investigate differences, and prove their impact on public output. |
 | P6: demosaic/geometry | Implement each admitted CFA class, stage-3 operations, crop/scaling and border behavior. Check advertised dimensions against actual decodable output. |
 | P7: final render | Implement camera calibration/signatures and dual-illuminant color, exposure, profile HueSat/look maps, gain maps, tone, black rendering, masks/alpha, output-referred/HDR behavior, and final quantization in the correct order. Demonstrate exact approved final pixels or explicitly reviewed narrow exceptions. |
-| P8: public integration | Keep PIEX/JPEG preview first; validate full fallback through registered `SkCodec`, not only direct Rust calls. Check seekable and forward-only input, repeated calls, output padding, metadata, origin, encoded data, destination color spaces/formats, scaling, subsets, and malformed inputs in both Adobe and SDK-free builds. Align the Skia-facing Adobe and Rust codec logic as PNG's shared base does where behavior truly agrees. |
+| P8: public integration | Keep PIEX/JPEG preview first; validate full fallback through registered `SkCodec`, not only direct Rust calls. Check seekable and forward-only input, repeated calls, output padding, metadata, origin, observable encoded-data retention, destination color spaces/formats, scaling, subsets, and malformed inputs in both Adobe and SDK-free builds. Align the Skia-facing Adobe and Rust codec logic as PNG's shared base does where behavior truly agrees. |
 | P9: safety/resources | Instrument CXX, native JPEG/zlib, and Rust paths; fuzz deep parsers/decoders with valid and malformed seeds, exercise allocation/overflow/error paths, and compare measured CPU and peak/live allocations. Do not claim a memory advantage based only on selected microbenchmarks. |
 | P10: review/platforms | Source-build and validate required macOS, Linux, Windows, Android and other shipping targets. Split upstreamable patches for review and retain opt-in mode until fidelity, functionality, and safety gates pass. |
-| P11: promotion/removal | Select Rust for the public full-DNG fallback by default **only after P0–P10**; delete the Adobe source acquisition, adaptation patch, build/DEPS metadata, and package dependency. Retain PIEX plus shared JPEG/zlib, run SDK-free native and SkiaSharp checks, and verify no Adobe runtime/build closure remains. |
+| P11: promotion/removal | Select Rust for the public full-DNG fallback by default **only after P0–P10**; delete the Adobe source acquisition, adaptation patch, build/DEPS metadata, and package dependency, while retaining the copyright/license/technology notices required by any derivative Rust implementation. Retain PIEX plus shared JPEG/zlib, run SDK-free native and SkiaSharp checks, and verify no Adobe runtime/build closure remains. |
 
 ## Test strategy and current evidence
 
@@ -113,6 +134,24 @@ Rust, under the existing 100 MiB limit. PIEX still owns preview selection.
   `tools/raw_codec_probe_compare.py` with separate reference/candidate
   executables. A positive comparison must agree on full metadata, status, and
   every byte; keep negative cases labeled and out of the positive count.
+- For the **public SkCodec A/B gate**, run `tools/raw_codec_probe_compare.py`
+  with `--reference-route public --candidate-route public --public-matrix`
+  and same-architecture binaries (required for F16). Ten requests per
+  input cover RGBA/BGRA/RGB565/F16, inherited/sRGB/linear output spaces,
+  half-scale requests, padded rows, repeated decodes, and file/memory/
+  nonseekable/short-read streams. `--expect-request INPUT:REQUEST:rejection`
+  documents a *specific* reference rejection; an undeclared rejection
+  fails the comparison. Use `--subset center`, `--frame-index 1` and
+  `--decode-reject-case` for separate invalid/unsupported public
+  requests. A 3-input local matrix (two independently generated full
+  DNGs and Skia's PIEX-preview DNG) records **29/29 exact decodes and
+  one matching, explicitly declared preview short-read rejection**.
+  Real Skia DNGs still yield **20/20 missing candidate support** in
+  this matrix; a separate 3000x2000 Bayer half-scale request is also
+  unsupported in Rust though Adobe returns a 1500x1000 image. Subset,
+  frame-index, Gray8 and RGBA1010102 rejection comparisons match for
+  two narrow synthetic inputs each. This tests selected requests on
+  macOS ARM64, **not** the complete A/B corpus or platform matrix.
 - Current selected baseline: both Rust Bazel suites have **90 passing tests
   each on ARM64 and x64**. Adobe-enabled ARM64 native RAW has **71/71** selected
   passing tests; SDK-free PIEX+Rust has **73/73** on ARM64 and x64. A
