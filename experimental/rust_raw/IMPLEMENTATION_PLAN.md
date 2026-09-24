@@ -118,6 +118,12 @@ Rust, under the existing 100 MiB limit. PIEX still owns preview selection.
   Public output for a generated DNG cube and two source-controlled PNG
   samples matches the single-RAW-decoder build. This tests one multi-codec
   combination, not the full platform or multi-Rust feature matrix.
+- An SDK-free Apple ASan/UBSan native fuzzer with opt-in 8-bit coverage of the
+  CXX RAW bridge and harness replayed generated DNG/Skia seeds and completed
+  **8,000** short mutations without sanitizer failures. It reached **168
+  out of 900** native coverage counters; Rust parser and bundled JPEG/zlib
+  internals are not coverage-guided. Leak detection is unavailable in this
+  macOS ASan runtime. Keep deeper instrumentation and longer runs in P9.
 - These are selected tests, **not a claim of complete SDK parity**. The real
   `sample_1mp.dng` family matches SDK Stage 1–3 but the Rust public final
   decode remains Unimplemented. Two nonzero-black Bayer fixtures differ at

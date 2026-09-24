@@ -741,3 +741,17 @@ repository DNG resources and independently generated fixtures. A short local
 run and individual replays cover the currently supported profile families,
 but the Bazel-built Rust library is not yet instrumented for libFuzzer
 coverage, so this is not the required deep-path P9 fuzz gate.
+
+For a macOS ASan/UBSan build using a separately provided libFuzzer runtime,
+`skia_rust_raw_fuzz_coverage=true` (default false) instruments only the
+native RAW bridge and its fuzzer harness with 8-bit counters. It requires
+`skia_build_fuzzers=true`, `skia_provide_default_fuzz_engine=false`, the
+Rust RAW decoder and an external engine supplied through the build
+environment; unsupported combinations fail during GN generation. On one
+source-built Apple ASan configuration, generated monochrome, RGB8/RGB16,
+RGGB, Deflate and SOF3 seeds plus Skia DNG resources replayed successfully.
+Two short mutations sets completed **8,000** inputs without a sanitizer
+failure and reached **168/900** instrumented native bridge/harness
+counters. These numbers do not establish deep Rust parser or libjpeg/zlib
+coverage: those paths execute under native ASan/UBSan where applicable,
+but their internal decisions are not yet exposed to the fuzzer.

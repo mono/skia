@@ -2048,6 +2048,12 @@ optional("jpeg_encode_rust") {
   libs = [ "c++" ]
 }
 
+if (skia_rust_raw_fuzz_coverage) {
+  assert(skia_use_rust_raw_decode && is_mac && skia_build_fuzzers &&
+             sanitize == "ASAN" && !skia_provide_default_fuzz_engine,
+         "RAW fuzz coverage needs a macOS ASan Rust RAW build with an external fuzz engine")
+}
+
 if (skia_use_rust_raw_decode) {
   assert(skia_use_libjpeg_turbo_decode,
          "skia_use_rust_raw_decode needs Skia's JPEG decoder for DNG tiles")
@@ -2075,6 +2081,9 @@ if (skia_use_rust_raw_decode) {
 optional("raw_decode_rust") {
   public_defines = [ "SK_CODEC_DECODES_RAW_WITH_RUST" ]
   enabled = skia_use_rust_raw_decode
+  if (skia_rust_raw_fuzz_coverage) {
+    cflags = [ "-fsanitize-coverage=inline-8bit-counters,pc-table,trace-cmp" ]
+  }
   public = [ "experimental/rust_raw/decoder/SkRawRustDecoder.h" ]
   sources = [
     "experimental/rust_raw/decoder/SkRawRustDecoder.cpp",
@@ -4285,6 +4294,9 @@ if (skia_build_fuzzers) {
     libfuzzer_app("raw_rust_decode") {
       sources = [ "fuzz/oss_fuzz/FuzzRAWRustDecoder.cpp" ]
       deps = [ ":raw_decode_rust" ]
+      if (skia_rust_raw_fuzz_coverage) {
+        cflags = [ "-fsanitize-coverage=inline-8bit-counters,pc-table,trace-cmp" ]
+      }
     }
   }
 
