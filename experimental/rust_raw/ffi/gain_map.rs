@@ -4,8 +4,8 @@
 
 #![forbid(unsafe_code)]
 
-//! Test-only implementation of the published DNG profile gain-table format.
-//! Spatial input is relative to the post-warp ActiveArea and color input is RIMM.
+//! Checked DNG profile gain tables. Only proven identity tables are allowed
+//! in the currently supported final RGB8 profile; other gain stays gated.
 
 use super::dng::{range, ByteOrder, Error};
 
@@ -32,6 +32,7 @@ pub(crate) struct GainTable<'a> {
     gain_max: f32,
     table_offset: usize,
     sample_bytes: usize,
+    identity: bool,
 }
 
 fn float64(data: &[u8], offset: usize, order: ByteOrder) -> Result<f64, Error> {
@@ -134,7 +135,7 @@ impl<'a> GainTable<'a> {
                 return Err(Error::Invalid);
             }
         }
-        let result = Self {
+        let mut result = Self {
             data,
             order,
             points_v,
@@ -151,6 +152,7 @@ impl<'a> GainTable<'a> {
             gain_max,
             table_offset,
             sample_bytes,
+            identity: true,
         };
         for index in 0..samples {
             let value = result.sample(index)?;
@@ -159,8 +161,27 @@ impl<'a> GainTable<'a> {
             {
                 return Err(Error::Invalid);
             }
+            let gain = result.gain_from_stored(f64::from(value));
+            if !gain.is_finite() || gain < 0.0 {
+                return Err(Error::Invalid);
+            }
+            result.identity &= gain == 1.0;
         }
         Ok(result)
+    }
+
+    pub(crate) fn is_identity(&self) -> bool {
+        self.identity
+    }
+
+    fn gain_from_stored(&self, value: f64) -> f64 {
+        if self.data_type <= 1 {
+            let max_integer = if self.data_type == 0 { 255.0 } else { 65535.0 };
+            f64::from(self.gain_min)
+                + (value / max_integer) * (f64::from(self.gain_max) - f64::from(self.gain_min))
+        } else {
+            value
+        }
     }
 
     fn sample(&self, index: usize) -> Result<f32, Error> {
@@ -244,13 +265,7 @@ impl<'a> GainTable<'a> {
             Ok(row0 * (1.0 - tv) + row1 * tv)
         };
         let value = table(n0)? * (1.0 - tn) + table(n1)? * tn;
-        let gain = if self.data_type <= 1 {
-            let max_integer = if self.data_type == 0 { 255.0 } else { 65535.0 };
-            f64::from(self.gain_min)
-                + (value / max_integer) * (f64::from(self.gain_max) - f64::from(self.gain_min))
-        } else {
-            value
-        };
+        let gain = self.gain_from_stored(value);
         if !gain.is_finite() || gain < 0.0 {
             return Err(Error::Invalid);
         }
@@ -334,9 +349,82 @@ mod tests {
             ] {
                 let blob = fixture(order, tag, kind);
                 let parsed = GainTable::parse(&blob, order, tag).expect("valid map");
+                assert!(!parsed.is_identity());
                 assert_eq!(parsed.gain_at(0, 0, 1, 1, [0.5, 0.0, 0.0]), Ok(4.0));
                 assert_eq!(parsed.gain_at(0, 0, 2, 2, [0.5, 0.0, 0.0]), Ok(1.75));
                 assert_eq!(parsed.gain_at(1, 1, 2, 2, [0.5, 0.0, 0.0]), Ok(1.75));
+            }
+        }
+    }
+
+    #[test]
+    fn identity_requires_every_decoded_sample_to_map_to_one() {
+        for order in [ByteOrder::Little, ByteOrder::Big] {
+            for (tag, kind) in [
+                (GainTag::ProfileGainTableMap2, 0),
+                (GainTag::ProfileGainTableMap2, 1),
+                (GainTag::ProfileGainTableMap2, 2),
+                (GainTag::ProfileGainTableMap2, 3),
+                (GainTag::ProfileGainTableMap, 3),
+            ] {
+                let mut blob = fixture(order, tag, kind);
+                let (offset, sample) = match kind {
+                    0 => (80, vec![0]),
+                    1 => (80, vec![0, 0]),
+                    2 => (
+                        80,
+                        match order {
+                            ByteOrder::Little => 0x3c00u16.to_le_bytes(),
+                            ByteOrder::Big => 0x3c00u16.to_be_bytes(),
+                        }
+                        .to_vec(),
+                    ),
+                    3 => (
+                        if matches!(tag, GainTag::ProfileGainTableMap) {
+                            64
+                        } else {
+                            80
+                        },
+                        match order {
+                            ByteOrder::Little => 1.0f32.to_le_bytes(),
+                            ByteOrder::Big => 1.0f32.to_be_bytes(),
+                        }
+                        .to_vec(),
+                    ),
+                    _ => unreachable!(),
+                };
+                for value in blob[offset..].chunks_exact_mut(sample.len()) {
+                    value.copy_from_slice(&sample);
+                }
+                let identity = GainTable::parse(&blob, order, tag).expect("identity table");
+                assert!(identity.is_identity());
+                for (x, y, color) in [
+                    (0, 0, [0.0; 3]),
+                    (1, 1, [0.5, 0.25, 0.75]),
+                    (255, 255, [1.0; 3]),
+                ] {
+                    assert_eq!(identity.gain_at(x, y, 256, 256, color), Ok(1.0));
+                }
+                let last = blob.len() - sample.len();
+                let non_unity = match kind {
+                    0 => vec![255],
+                    1 => vec![255; 2],
+                    2 => (match order {
+                        ByteOrder::Little => 0x4400u16.to_le_bytes(),
+                        ByteOrder::Big => 0x4400u16.to_be_bytes(),
+                    })
+                    .to_vec(),
+                    3 => (match order {
+                        ByteOrder::Little => 4.0f32.to_le_bytes(),
+                        ByteOrder::Big => 4.0f32.to_be_bytes(),
+                    })
+                    .to_vec(),
+                    _ => unreachable!(),
+                };
+                blob[last..].copy_from_slice(&non_unity);
+                assert!(!GainTable::parse(&blob, order, tag)
+                    .expect("non-unity table")
+                    .is_identity());
             }
         }
     }

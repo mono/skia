@@ -303,6 +303,16 @@ void append32(std::vector<uint8_t>* bytes, uint32_t value, bool bigEndian) {
     }
 }
 
+void append64(std::vector<uint8_t>* bytes, uint64_t value, bool bigEndian) {
+    if (bigEndian) {
+        append32(bytes, value >> 32, true);
+        append32(bytes, value & 0xffffffff, true);
+    } else {
+        append32(bytes, value & 0xffffffff, false);
+        append32(bytes, value >> 32, false);
+    }
+}
+
 void store32(std::vector<uint8_t>* bytes, size_t offset, uint32_t value, bool bigEndian) {
     std::vector<uint8_t> encoded;
     append32(&encoded, value, bigEndian);
@@ -1243,8 +1253,67 @@ constexpr std::array<uint8_t, 27> kRgb8Samples = {
         0, 1, 0, 0, 128, 0, 0, 255, 0,
 };
 
+enum class GainFixture {
+    kNone,
+    kUInt8Unity,
+    kUInt16Unity,
+    kFloat16Unity,
+    kFloat32Unity,
+    kUInt8OnePoint,
+    kLegacyFloat32Unity,
+    kUInt8Spatial,
+    kFloat32Gain2,
+};
+
+std::vector<uint8_t> make_gain_table(bool bigEndian, GainFixture fixture) {
+    const bool legacy = fixture == GainFixture::kLegacyFloat32Unity;
+    const bool onePoint = fixture == GainFixture::kUInt8OnePoint;
+    const bool integer = fixture == GainFixture::kUInt8Unity ||
+                         fixture == GainFixture::kUInt16Unity || onePoint ||
+                         fixture == GainFixture::kUInt8Spatial;
+    const uint32_t type = integer ? (fixture == GainFixture::kUInt16Unity ? 1 : 0)
+                                  : fixture == GainFixture::kFloat16Unity ? 2 : 3;
+    const uint32_t points = onePoint ? 1 : 3;
+    std::vector<uint8_t> bytes;
+    append32(&bytes, points, bigEndian);
+    append32(&bytes, points, bigEndian);
+    for (uint64_t bits : {0x3fe0000000000000ull, 0x3fe0000000000000ull, 0ull, 0ull}) {
+        append64(&bytes, bits, bigEndian);
+    }
+    append32(&bytes, 2, bigEndian);
+    for (uint32_t bits : {0x3e800000u, 0x3f000000u, 0x3e800000u, 0u, 0u}) {
+        append32(&bytes, bits, bigEndian);
+    }
+    if (!legacy) {
+        append32(&bytes, type, bigEndian);
+        append32(&bytes, 0x3f800000, bigEndian);
+        append32(&bytes, 0x3f800000, bigEndian);
+        append32(&bytes, 0x40800000, bigEndian);
+    }
+    for (uint32_t v = 0; v < points; ++v) {
+        for (uint32_t h = 0; h < points; ++h) {
+            for (int n = 0; n < 2; ++n) {
+                const bool peak = fixture == GainFixture::kUInt8Spatial &&
+                                  v == 1 && h == 1;
+                if (type == 0) {
+                    bytes.push_back(peak ? 255 : 0);
+                } else if (type == 1) {
+                    append16(&bytes, 0, bigEndian);
+                } else if (type == 2) {
+                    append16(&bytes, 0x3c00, bigEndian);
+                } else {
+                    append32(&bytes, fixture == GainFixture::kFloat32Gain2 ?
+                                      0x40000000 : 0x3f800000, bigEndian);
+                }
+            }
+        }
+    }
+    return bytes;
+}
+
 std::vector<uint8_t> make_rgb8_root_dng(bool bigEndian, bool multipleStrips, bool ramp,
-                                        bool srgbProfile = false, bool cube = false) {
+                                        bool srgbProfile = false, bool cube = false,
+                                        GainFixture gainFixture = GainFixture::kNone) {
     const uint32_t width = ramp || cube ? 256 : 3;
     const uint32_t height = cube ? 256 : 3;
     auto word = [bigEndian](uint16_t value) {
@@ -1353,6 +1422,12 @@ std::vector<uint8_t> make_rgb8_root_dng(bool bigEndian, bool multipleStrips, boo
             {50940, 11, 4, tone}, {50964, 10, 9, forward},
             {51110, 4, 1, number(1)},
     };
+    if (gainFixture != GainFixture::kNone) {
+        auto gain = make_gain_table(bigEndian, gainFixture);
+        fields.push_back({gainFixture == GainFixture::kLegacyFloat32Unity ? uint16_t(52525)
+                                                                          : uint16_t(52544),
+                          7, static_cast<uint32_t>(gain.size()), std::move(gain)});
+    }
     std::sort(fields.begin(), fields.end(), [](const Tag& a, const Tag& b) {
         return a.id < b.id;
     });
@@ -1402,8 +1477,9 @@ std::vector<uint8_t> make_rgb8_root_dng(bool bigEndian, bool multipleStrips, boo
 }
 
 std::vector<uint8_t> make_deflate_rgb8_srgb_dng(bool bigEndian, bool multipleStrips,
-                                                bool horizontalPredictor, bool cube = false) {
-    auto bytes = make_rgb8_root_dng(bigEndian, multipleStrips, false, true, cube);
+                                                bool horizontalPredictor, bool cube = false,
+                                                GainFixture gainFixture = GainFixture::kNone) {
+    auto bytes = make_rgb8_root_dng(bigEndian, multipleStrips, false, true, cube, gainFixture);
     auto get32 = [&](size_t at) {
         if (bigEndian) {
             return (uint32_t(bytes[at]) << 24) | (uint32_t(bytes[at + 1]) << 16) |
@@ -4166,6 +4242,99 @@ DEF_TEST(RustRaw_Rgb8SrgbFinal, r) {
     check(false, false, true);
 }
 
+DEF_TEST(RustRaw_Rgb8IdentityGainFinal, r) {
+    auto baseline = [&](bool cube) {
+        auto bytes = make_rgb8_root_dng(false, false, false, true, cube);
+        SkCodec::Result result = SkCodec::kInternalError;
+        auto codec = SkRawRustDecoder::Decode(
+                SkData::MakeWithCopy(bytes.data(), bytes.size()), &result);
+        REPORTER_ASSERT(r, codec && result == SkCodec::kSuccess);
+        if (!codec) {
+            return std::vector<uint8_t>{};
+        }
+        const auto info = codec->getInfo().makeColorType(kRGBA_8888_SkColorType);
+        const size_t stride = info.minRowBytes() + 8;
+        std::vector<uint8_t> pixels(stride * info.height(), 0xa5);
+        REPORTER_ASSERT(r, codec->getPixels(info, pixels.data(), stride) == SkCodec::kSuccess);
+        return pixels;
+    };
+    const auto simplePixels = baseline(false);
+    const auto cubePixels = baseline(true);
+    if (simplePixels.empty() || cubePixels.empty()) {
+        return;
+    }
+    auto check = [&](bool bigEndian, bool multipleStrips, bool cube, GainFixture gain) {
+        auto bytes = make_rgb8_root_dng(bigEndian, multipleStrips, false, true, cube, gain);
+        auto data = SkData::MakeWithCopy(bytes.data(), bytes.size());
+        auto stream = SkMemoryStream::Make(data);
+        auto adapter = std::make_unique<rust::stream::SkStreamAdapter>(stream.get());
+        auto reader = rust_raw::new_reader(std::move(adapter));
+        REPORTER_ASSERT(r, reader->stage1_status() == rust_raw::DecodeStatus::Success &&
+                           reader->stage2_status() == rust_raw::DecodeStatus::Success &&
+                           reader->stage3_status() == rust_raw::DecodeStatus::Success &&
+                           reader->status() == rust_raw::DecodeStatus::Success);
+        SkCodec::Result result = SkCodec::kInternalError;
+        auto codec = SkRawRustDecoder::Decode(data, &result);
+        REPORTER_ASSERT(r, codec && result == SkCodec::kSuccess);
+        if (!codec) {
+            return;
+        }
+        const uint32_t width = cube ? 256 : 3;
+        const uint32_t height = cube ? 256 : 3;
+        REPORTER_ASSERT(r, codec->dimensions() == SkISize::Make(width, height));
+        if (codec->dimensions() != SkISize::Make(width, height)) {
+            return;
+        }
+        const auto info = codec->getInfo().makeColorType(kRGBA_8888_SkColorType);
+        const size_t stride = info.minRowBytes() + 8;
+        const auto& expected = cube ? cubePixels : simplePixels;
+        std::vector<uint8_t> pixels(expected.size(), 0xa5);
+        REPORTER_ASSERT(r, codec->getPixels(info, pixels.data(), stride) == SkCodec::kSuccess);
+        REPORTER_ASSERT(r, pixels == expected);
+#if defined(SK_CODEC_DECODES_RAW_WITH_DNG_SDK)
+        SkCodec::Result referenceResult = SkCodec::kInternalError;
+        auto reference = SkRawDecoder::Decode(SkMemoryStream::Make(data), &referenceResult);
+        REPORTER_ASSERT(r, reference && referenceResult == SkCodec::kSuccess);
+        if (reference) {
+            std::vector<uint8_t> referencePixels(expected.size(), 0xa5);
+            REPORTER_ASSERT(r, reference->getPixels(info, referencePixels.data(), stride) ==
+                                SkCodec::kSuccess);
+            REPORTER_ASSERT(r, pixels == referencePixels);
+        }
+#endif
+    };
+    for (GainFixture gain : {GainFixture::kUInt8Unity, GainFixture::kUInt16Unity,
+                             GainFixture::kFloat16Unity, GainFixture::kFloat32Unity,
+                             GainFixture::kUInt8OnePoint, GainFixture::kLegacyFloat32Unity}) {
+        check(false, false, true, gain);
+    }
+    for (bool bigEndian : {false, true}) {
+        for (bool multipleStrips : {false, true}) {
+            check(bigEndian, multipleStrips, false, GainFixture::kUInt8Unity);
+            check(bigEndian, multipleStrips, false, GainFixture::kLegacyFloat32Unity);
+        }
+    }
+    for (GainFixture gain : {GainFixture::kUInt8Spatial, GainFixture::kFloat32Gain2}) {
+        auto bytes = make_rgb8_root_dng(false, false, false, true, true, gain);
+        auto data = SkData::MakeWithCopy(bytes.data(), bytes.size());
+        auto stream = SkMemoryStream::Make(data);
+        auto adapter = std::make_unique<rust::stream::SkStreamAdapter>(stream.get());
+        auto reader = rust_raw::new_reader(std::move(adapter));
+        REPORTER_ASSERT(r, reader->stage1_status() == rust_raw::DecodeStatus::Success &&
+                           reader->stage2_status() == rust_raw::DecodeStatus::Success &&
+                           reader->stage3_status() == rust_raw::DecodeStatus::Success &&
+                           reader->status() == rust_raw::DecodeStatus::Unsupported);
+        std::vector<uint8_t> untouched(256 * 3, 0xa5);
+        REPORTER_ASSERT(r, !reader->copy_rgb_row(
+                0, rust::Slice<uint8_t>(untouched.data(), untouched.size())));
+        REPORTER_ASSERT(r, std::all_of(untouched.begin(), untouched.end(),
+                                       [](uint8_t sample) { return sample == 0xa5; }));
+        SkCodec::Result result = SkCodec::kSuccess;
+        auto codec = SkRawRustDecoder::Decode(data, &result);
+        REPORTER_ASSERT(r, !codec && result == SkCodec::kUnimplemented);
+    }
+}
+
 #if defined(SK_CODEC_DECODES_RAW) && !defined(SK_CODEC_DECODES_RAW_WITH_DNG_SDK)
 DEF_TEST(RustRaw_PublicSdkFreeFallback, r) {
     auto check = [&](const std::vector<uint8_t>& bytes) {
@@ -4222,6 +4391,28 @@ DEF_TEST(RustRaw_PublicSdkFreeFallback, r) {
     };
     check(make_output_mono_ramp(8));
     check(make_rgb8_root_dng(false, false, false, true, false));
+    check(make_rgb8_root_dng(false, false, false, true, false,
+                             GainFixture::kUInt8Unity));
+    check(make_rgb8_root_dng(false, false, false, true, false,
+                             GainFixture::kLegacyFloat32Unity));
+
+    for (GainFixture gain : {GainFixture::kUInt8Spatial, GainFixture::kFloat32Gain2}) {
+        auto bytes = make_rgb8_root_dng(false, false, false, true, true, gain);
+        auto data = SkData::MakeWithCopy(bytes.data(), bytes.size());
+        for (bool forwardOnly : {false, true}) {
+            std::unique_ptr<SkStream> stream;
+            if (forwardOnly) {
+                stream = std::make_unique<NonseekableStream>(data);
+            } else {
+                stream = SkMemoryStream::Make(data);
+            }
+            SkCodec::Result result = SkCodec::kSuccess;
+            auto codec = SkRawDecoder::Decode(std::move(stream), &result);
+            REPORTER_ASSERT(r, !codec && result == SkCodec::kUnimplemented,
+                            "forwardOnly=%d result=%s",
+                            forwardOnly, SkCodec::ResultToString(result));
+        }
+    }
 
     auto previewData = GetResourceAsData("images/dng_with_preview.dng");
     REPORTER_ASSERT(r, previewData);
@@ -4316,8 +4507,9 @@ DEF_TEST(RustRaw_PublicForwardStreamLimit, r) {
 #endif
 
 DEF_TEST(RustRaw_DeflateRgb8SrgbFinal, r) {
-    auto check = [&](bool bigEndian, bool multipleStrips, bool predictor2, bool cube) {
-        auto bytes = make_deflate_rgb8_srgb_dng(bigEndian, multipleStrips, predictor2, cube);
+    auto check = [&](bool bigEndian, bool multipleStrips, bool predictor2, bool cube,
+                     GainFixture gain = GainFixture::kNone) {
+        auto bytes = make_deflate_rgb8_srgb_dng(bigEndian, multipleStrips, predictor2, cube, gain);
         REPORTER_ASSERT(r, !bytes.empty());
         if (bytes.empty()) {
             return;
@@ -4402,6 +4594,24 @@ DEF_TEST(RustRaw_DeflateRgb8SrgbFinal, r) {
         }
     }
     check(false, false, true, true);
+    check(true, true, true, false, GainFixture::kUInt8Unity);
+    check(false, false, false, true, GainFixture::kFloat32Unity);
+    check(false, false, true, true, GainFixture::kLegacyFloat32Unity);
+
+    auto bytes = make_deflate_rgb8_srgb_dng(false, true, true, false,
+                                             GainFixture::kUInt8Spatial);
+    REPORTER_ASSERT(r, !bytes.empty());
+    if (!bytes.empty()) {
+        auto data = SkData::MakeWithCopy(bytes.data(), bytes.size());
+        auto stream = SkMemoryStream::Make(data);
+        auto adapter = std::make_unique<rust::stream::SkStreamAdapter>(stream.get());
+        auto reader = rust_raw::new_reader(std::move(adapter));
+        REPORTER_ASSERT(r, reader->stage3_status() == rust_raw::DecodeStatus::Success &&
+                           reader->status() == rust_raw::DecodeStatus::Unsupported);
+        SkCodec::Result result = SkCodec::kSuccess;
+        auto codec = SkRawRustDecoder::Decode(data, &result);
+        REPORTER_ASSERT(r, !codec && result == SkCodec::kUnimplemented);
+    }
 }
 
 DEF_TEST(RustRaw_DeflateRgb8Malformed, r) {

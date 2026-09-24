@@ -270,6 +270,26 @@ multiple strips, repeated rendering, padding, malformed tables and
 unverified values that stay Stage-1-only. General camera/profile RGB
 is not promoted by this exact sRGB case.
 
+The strict RGB8 profile also permits `ProfileGainTableMap` or
+`ProfileGainTableMap2` **only when a checked parse proves every table
+entry evaluates to gain 1**. Checked sampling at both image corners
+must also yield 1; conflicting, malformed and non-identity maps remain
+Unsupported at final rendering without changing checked Stage 1-3.
+Six independent 256x256 color-cube DNGs cover integer U8/U16, float16/
+float32 and legacy float32 storage, including a 1x1 spatial grid.
+All six match the separate-process SDK at Stages 1-3 and at every
+public final RGBA8888, BGRA8888 and RGB565 byte on macOS ARM64 and
+SDK-free x64; RGBAF16 also matches on the same-architecture ARM64
+reference and candidate. Three additional identity-map color cubes
+using Deflate Predictor 1/2 likewise match SDK Stages 1-3 and full
+RGBA8888 on both Mac architectures; a compressed non-unity case
+stays unsupported. Native tests cover both TIFF byte orders,
+multiple strips, seekable/forward-only public fallthrough, padding,
+Deflate strips with Predictor 1/2, and explicit rejection of colorful
+constant-gain and spatial-gain
+inputs. This is no-op metadata recognition, **not** gain-map
+application or general camera-profile rendering.
+
 The same strict sRGB profile also accepts **Compression 8 (zlib/Deflate)
 root-IFD RGB8 strips** with Predictor 1 (or absent) or horizontal Predictor 2
 per channel. TIFF ranges and every strip's complete inflated size are checked
@@ -380,7 +400,7 @@ the oracle fixture and tile binaries stay in session-private artifacts.
 This experimental 16-bit tile path needs the bundled libjpeg-turbo
 headers and 16-bit symbols; a system JPEG library is not substituted.
 
-The **test-only** `gain_map.rs` parses the published DNG 1.6
+The checked `gain_map.rs` parses the published DNG 1.6
 `ProfileGainTableMap` and DNG 1.7 `ProfileGainTableMap2` layouts without
 copying Adobe code or data. It checks dimensions, byte counts, all four
 integer/float storage types, both byte orders, pixel-centered interpolation,
@@ -388,8 +408,11 @@ RIMM input weights, and gamma. SDK-oracle comparisons established that the
 configured decoder accepts gamma `0.125..8` rather than the specification's
 `0.25..4`, and floating table gains in `1/4096..4096`. Private examples
 05-08 yield identical sampled gains across their storage types. This
-component is compiled only in tests: profile selection, exposure/RIMM
-processing and final RGB gain application remain unsupported.
+component is now compiled in the native decoder **only** to guard the
+strict RGB8 final profile for mathematical identity; interpolation
+is tested but never used to apply a non-unity gain. General profile
+selection, exposure/RIMM processing and final RGB gain application
+remain unsupported.
 
 The **test-only** `tone.rs` validates SDR `ProfileToneCurve` points and
 evaluates a natural cubic spline with checked allocations and finite
@@ -421,10 +444,11 @@ Scene-referred midtones, **all 16-bit final output**, multi-strip
 monochrome final output, and tiled RGB final output remain unsupported
 even when checked Stage 1/2/3 rows are available; the 16-bit
 output-referred ramp was not byte-exact.
-Linearization tables, other compression,
+Unverified linearization tables and other compression,
 general CFA demosaicing, Stage1-changing opcodes, other Stage-2 opcodes,
 non-identity Stage-3 processing,
-non-identity crop/scale, extra IFDs, general camera color transforms,
+non-identity crop/scale, extra IFDs, non-unity gain maps,
+general camera color transforms,
 and general color-profile tone rendering remain unsupported rather than
 being silently ignored.
 The reader
@@ -727,8 +751,9 @@ was selected. Other camera-preview formats and native platforms
 remain P8 gates.
 
 A separate macOS ARM64 GN build enables Rust PNG decoding alongside the
-SDK-free PIEX/Rust RAW path. It links both Rust libraries, passes 78 selected
-RAW/PNG native tests, and matches public `SkCodec` output against the
+SDK-free PIEX/Rust RAW path. It links both Rust libraries, passes 109 selected
+RAW/PNG native tests (including the new identity-gain cases), and matches
+previously checked public `SkCodec` output against the
 single-RAW-codec build for an independent RGB8 DNG cube and two existing
 Skia PNGs. This is a coexistence smoke, not proof for every combination of
 Rust codecs or target platforms.
@@ -754,4 +779,7 @@ Two short mutations sets completed **8,000** inputs without a sanitizer
 failure and reached **168/900** instrumented native bridge/harness
 counters. These numbers do not establish deep Rust parser or libjpeg/zlib
 coverage: those paths execute under native ASan/UBSan where applicable,
-but their internal decisions are not yet exposed to the fuzzer.
+but their internal decisions are not yet exposed to the fuzzer. A
+separate 200-run gain-map smoke with seven generated unity/non-unity
+and Deflate seeds also passed; it reached 67/900 shallow native
+counters, not a new deep-path coverage claim.

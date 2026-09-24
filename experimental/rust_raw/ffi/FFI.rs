@@ -84,7 +84,6 @@ mod color;
 mod deflate;
 mod dng;
 mod float32;
-#[cfg(test)]
 mod gain_map;
 mod input;
 mod linearization;

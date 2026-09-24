@@ -92,16 +92,26 @@ Rust, under the existing 100 MiB limit. PIEX still owns preview selection.
   `tools/raw_codec_probe_compare.py` with separate reference/candidate
   executables. A positive comparison must agree on full metadata, status, and
   every byte; keep negative cases labeled and out of the positive count.
-- Current selected baseline: both Rust Bazel suites have **87 passing tests
-  each on ARM64 and x64**. Adobe-enabled ARM64 native RAW has **68/68**
-  selected passing tests; SDK-free PIEX+Rust has **70/70**. A source-built
-  Apple ASan/UBSan SDK-free
-  configuration also passes the **70** selected native tests. Apple macOS does
+- Current selected baseline: both Rust Bazel suites have **88 passing tests
+  each on ARM64 and x64**. Adobe-enabled ARM64 native RAW has **69/69** selected
+  passing tests; SDK-free PIEX+Rust has **71/71** on ARM64 and x64. A
+  source-built Apple ASan/UBSan SDK-free configuration also passes the
+  **71** selected native tests. Apple macOS does
   not support leak detection in that ASan configuration; Rust and dependent
   JPEG/zlib deep-path sanitizer coverage still need separate verification.
 - Reference-versus-candidate process comparisons match **114/114** selected
   Stage-1 and Stage-2 cases, **112/112** supported Stage-3 cases, and
-  **11/11** narrowly supported final RGBA cases on ARM64 and x64. Same-arch
+  **11/11** narrowly supported final RGBA cases on ARM64 and x64 from the
+  previous corpus. **Six additional, independently generated RGB8 unity
+  gain-table cases** match Stages 1-3 and every final RGBA8888, BGRA8888
+  and RGB565 byte on both tested Mac architectures; RGBAF16 matches
+  on ARM64 against the same-architecture SDK. These six were red
+  (missing candidate support) before allowing validated identity maps.
+  Three additional Deflate RGB8 unity-map layouts also match all three
+  stages and full RGBA8888 on ARM64 and x64. Two uncompressed non-unity
+  maps (spatial and colorful gain 2) and one compressed gain-2 map
+  still report missing candidate support; they are **not** counted as
+  matches. Same-arch
   public `SkCodec` comparisons match all 11 final cases in RGBA8888,
   BGRA8888, RGB565, and RGBAF16 and preserve the PIEX JPEG preview. Both
   builds explicitly reject unsupported Gray8 and RGBA1010102 conversions.
@@ -114,7 +124,8 @@ Rust, under the existing 100 MiB limit. PIEX still owns preview selection.
   final output instead of substituting the JPEG. These are atypical test
   containers, not representative camera previews.
 - A macOS ARM64 source build with both Rust PNG decoding and the SDK-free
-  PIEX/Rust RAW decoder passes **78/78 selected RAW/PNG native tests**.
+  PIEX/Rust RAW decoder passes **109/109 selected RAW/PNG native tests**
+  (a wider selection than the previously recorded 78).
   Public output for a generated DNG cube and two source-controlled PNG
   samples matches the single-RAW-decoder build. This tests one multi-codec
   combination, not the full platform or multi-Rust feature matrix.
@@ -123,7 +134,9 @@ Rust, under the existing 100 MiB limit. PIEX still owns preview selection.
   **8,000** short mutations without sanitizer failures. It reached **168
   out of 900** native coverage counters; Rust parser and bundled JPEG/zlib
   internals are not coverage-guided. Leak detection is unavailable in this
-  macOS ASan runtime. Keep deeper instrumentation and longer runs in P9.
+  macOS ASan runtime. A separate seven-seed, 200-run gain-map corpus
+  passed with 67/900 shallow native counters; it does not close P9.
+  Keep deeper instrumentation and longer runs in P9.
 - These are selected tests, **not a claim of complete SDK parity**. The real
   `sample_1mp.dng` family matches SDK Stage 1–3 but the Rust public final
   decode remains Unimplemented. Two nonzero-black Bayer fixtures differ at
@@ -143,7 +156,7 @@ Rust, under the existing 100 MiB limit. PIEX still owns preview selection.
    establishes parity; no fitted constants or vendor tables are enabled.
 2. Adobe's default artistic tone and automatic black behavior are not fully
    specified by DNG. On the original real file they cause material,
-   multi-byte differences from the controlled variant. Profile gain/look
+   multi-byte differences from the controlled variant. Non-unity profile gain/look
    application, masks, further opcode classes, CFA patterns, and output
    quantization also need complete, independently justified implementations.
 3. Nonzero-black stage normalization does not yet meet the exactness gate.

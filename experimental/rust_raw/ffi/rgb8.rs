@@ -11,6 +11,7 @@ use super::dng::{
     identity_array, integral, number, optional, range, required, scalar, srgb_from_linear_u8,
     ByteOrder, Error, Tag,
 };
+use super::gain_map::{GainTable, GainTag};
 use super::linearization::{linearized_sample, LinearizationTable};
 use super::tiled::read_ifd;
 
@@ -68,7 +69,7 @@ const CAMERA_MATRIX_MILLI: [i32; 9] = [1037, 0, 0, 0, 1000, 0, 0, 0, 1212];
 const RGB8_FINAL_TAGS: &[u16] = &[
     254, 256, 257, 258, 259, 262, 273, 274, 277, 278, 279, 284, 317, 339, 50706, 50707, 50708,
     50712, 50713, 50714, 50717, 50718, 50719, 50720, 50721, 50728, 50778, 50829, 50879, 50940,
-    50964, 51110,
+    50964, 51110, 52525, 52544,
 ];
 
 fn matches_matrix(
@@ -95,7 +96,22 @@ fn matches_matrix(
     })
 }
 
-fn identity_srgb_profile(tags: &[Tag<'_>], order: ByteOrder) -> bool {
+fn identity_gain_map(tags: &[Tag<'_>], order: ByteOrder, width: u32, height: u32) -> bool {
+    let gain = match (optional(tags, 52525), optional(tags, 52544)) {
+        (None, None) => return true,
+        (Some(_), Some(_)) => return false,
+        (Some(tag), None) => (tag, GainTag::ProfileGainTableMap),
+        (None, Some(tag)) => (tag, GainTag::ProfileGainTableMap2),
+    };
+    let Ok(table) = GainTable::parse(gain.0.value, order, gain.1) else {
+        return false;
+    };
+    table.is_identity()
+        && table.gain_at(0, 0, width, height, [0.0; 3]) == Ok(1.0)
+        && table.gain_at(width - 1, height - 1, width, height, [1.0; 3]) == Ok(1.0)
+}
+
+fn identity_srgb_profile(tags: &[Tag<'_>], order: ByteOrder, width: u32, height: u32) -> bool {
     if !tags
         .iter()
         .all(|tag| RGB8_FINAL_TAGS.binary_search(&tag.id).is_ok())
@@ -117,7 +133,7 @@ fn identity_srgb_profile(tags: &[Tag<'_>], order: ByteOrder) -> bool {
                 .chunks_exact(4)
                 .zip([0u32, 0, 1f32.to_bits(), 1f32.to_bits()])
                 .all(|(value, expected)| order.u32(value) == expected)
-    })
+    }) && identity_gain_map(tags, order, width, height)
 }
 
 impl Plan {
@@ -274,7 +290,8 @@ impl Plan {
                 .into_iter()
                 .all(|id| optional(tags, id).is_none());
         let stage3_supported = stage2_supported && optional(tags, 51022).is_none();
-        let final_render_supported = stage3_supported && identity_srgb_profile(tags, order);
+        let final_render_supported =
+            stage3_supported && identity_srgb_profile(tags, order, width, height);
 
         let rows_per_strip = scalar(required(tags, 278)?, order)?;
         if rows_per_strip == 0 {
