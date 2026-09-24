@@ -92,11 +92,11 @@ Rust, under the existing 100 MiB limit. PIEX still owns preview selection.
   `tools/raw_codec_probe_compare.py` with separate reference/candidate
   executables. A positive comparison must agree on full metadata, status, and
   every byte; keep negative cases labeled and out of the positive count.
-- Current selected baseline: both Rust Bazel suites have **88 passing tests
-  each on ARM64 and x64**. Adobe-enabled ARM64 native RAW has **69/69** selected
-  passing tests; SDK-free PIEX+Rust has **71/71** on ARM64 and x64. A
+- Current selected baseline: both Rust Bazel suites have **89 passing tests
+  each on ARM64 and x64**. Adobe-enabled ARM64 native RAW has **70/70** selected
+  passing tests; SDK-free PIEX+Rust has **72/72** on ARM64 and x64. A
   source-built Apple ASan/UBSan SDK-free configuration also passes the
-  **71** selected native tests. Apple macOS does
+  **72** selected native tests. Apple macOS does
   not support leak detection in that ASan configuration; Rust and dependent
   JPEG/zlib deep-path sanitizer coverage still need separate verification.
 - Reference-versus-candidate process comparisons match **114/114** selected
@@ -117,6 +117,15 @@ Rust, under the existing 100 MiB limit. PIEX still owns preview selection.
   builds explicitly reject unsupported Gray8 and RGBA1010102 conversions.
   F16 must be compared on the same architecture: ARM64/x64 Skia conversions
   can differ by one half-float ULP even with identical 8-bit source pixels.
+- **Six more independently generated multi-strip monochrome DNGs** match
+  the SDK at Stages 1-3 and final public RGBA8888/BGRA8888/RGB565 on
+  ARM64 and x64. They exercise partial last strips, output-referred
+  8-bit midtones, scene-referred binary samples, checked full/short
+  linearization tables, and an SDK-ignored color tone curve. ARM64
+  RGBAF16 also matches the same-host SDK. All three initial cases
+  returned missing candidate support before the strip gate changed;
+  a scene-referred midtone in the last strip still rejects final
+  rendering rather than publishing partial rows.
 - A JPEG IFD alone does **not** imply PIEX selected a preview. Source-generated
   uncompressed and Deflate RGB16 files with a 3x3 raw child and a larger
   128x128 JPEG parent reach the full-DNG fallback on seekable and forward-only
@@ -124,7 +133,7 @@ Rust, under the existing 100 MiB limit. PIEX still owns preview selection.
   final output instead of substituting the JPEG. These are atypical test
   containers, not representative camera previews.
 - A macOS ARM64 source build with both Rust PNG decoding and the SDK-free
-  PIEX/Rust RAW decoder passes **109/109 selected RAW/PNG native tests**
+  PIEX/Rust RAW decoder passes **110/110 selected RAW/PNG native tests**
   (a wider selection than the previously recorded 78).
   Public output for a generated DNG cube and two source-controlled PNG
   samples matches the single-RAW-decoder build. This tests one multi-codec
@@ -135,7 +144,8 @@ Rust, under the existing 100 MiB limit. PIEX still owns preview selection.
   out of 900** native coverage counters; Rust parser and bundled JPEG/zlib
   internals are not coverage-guided. Leak detection is unavailable in this
   macOS ASan runtime. A separate seven-seed, 200-run gain-map corpus
-  passed with 67/900 shallow native counters; it does not close P9.
+  passed with 67/900 shallow native counters; a six-seed, 500-run
+  multi-strip mono corpus passed with 63/900. Neither closes P9.
   Keep deeper instrumentation and longer runs in P9.
 - These are selected tests, **not a claim of complete SDK parity**. The real
   `sample_1mp.dng` family matches SDK Stage 1–3 but the Rust public final

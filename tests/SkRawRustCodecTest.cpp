@@ -324,6 +324,56 @@ uint32_t read32(const std::vector<uint8_t>& bytes, size_t offset) {
            (uint32_t(bytes[offset + 2]) << 16) | (uint32_t(bytes[offset + 3]) << 24);
 }
 
+std::vector<uint8_t> make_output_mono_multistrip(uint32_t height, uint32_t rowsPerStrip,
+                                                 bool binary, bool explicitTone = false) {
+    if (height < 2 || rowsPerStrip == 0 || rowsPerStrip >= height) {
+        return {};
+    }
+    auto bytes = make_output_mono_ramp(8, false, explicitTone);
+    const size_t imageHeight = entry_for(bytes, 257);
+    const size_t offsets = entry_for(bytes, 273);
+    const size_t rows = entry_for(bytes, 278);
+    const size_t lengths = entry_for(bytes, 279);
+    const size_t crop = entry_for(bytes, 50720);
+    const size_t active = entry_for(bytes, 50829);
+    const size_t reference = entry_for(bytes, 50879);
+    if (std::max({imageHeight, offsets, rows, lengths, crop, active, reference}) >= bytes.size()) {
+        return {};
+    }
+    set32(&bytes, imageHeight + 8, height);
+    set32(&bytes, rows + 8, rowsPerStrip);
+    set32(&bytes, read32(bytes, crop + 8) + 8, height);
+    set32(&bytes, read32(bytes, active + 8) + 8, height);
+    if (binary) {
+        set32(&bytes, reference + 8, 0);
+    }
+    const uint32_t stripCount = 1 + (height - 1) / rowsPerStrip;
+    const size_t offsetTable = bytes.size();
+    bytes.resize(offsetTable + stripCount * 4, 0);
+    const size_t lengthTable = bytes.size();
+    bytes.resize(lengthTable + stripCount * 4, 0);
+    set32(&bytes, offsets + 4, stripCount);
+    set32(&bytes, offsets + 8, static_cast<uint32_t>(offsetTable));
+    set32(&bytes, lengths + 4, stripCount);
+    set32(&bytes, lengths + 8, static_cast<uint32_t>(lengthTable));
+    for (uint32_t strip = 0; strip < stripCount; ++strip) {
+        if (bytes.size() & 1) {
+            bytes.push_back(0);
+        }
+        set32(&bytes, offsetTable + strip * 4, static_cast<uint32_t>(bytes.size()));
+        const uint32_t firstRow = strip * rowsPerStrip;
+        const uint32_t stripRows = std::min(rowsPerStrip, height - firstRow);
+        set32(&bytes, lengthTable + strip * 4, 256 * stripRows);
+        for (uint32_t row = firstRow; row < firstRow + stripRows; ++row) {
+            for (uint32_t x = 0; x < 256; ++x) {
+                bytes.push_back(binary ? (x & 1 ? 255 : 0) :
+                                         static_cast<uint8_t>(x + 17 * row));
+            }
+        }
+    }
+    return bytes;
+}
+
 uint32_t append_opcode3_ifd(std::vector<uint8_t>* bytes, size_t original) {
     const uint16_t count = (*bytes)[original] | (uint16_t((*bytes)[original + 1]) << 8);
     if (bytes->size() & 1) {
@@ -2254,6 +2304,189 @@ DEF_TEST(RustRaw_OutputMonoSrgb, r) {
             REPORTER_ASSERT(r, pixels[i] == 0xa5);
         }
     }
+}
+
+DEF_TEST(RustRaw_OutputMonoMultiStrip, r) {
+    for (bool binary : {false, true}) {
+        for (uint32_t rowsPerStrip : {1u, 2u, 4u}) {
+            auto bytes = make_output_mono_multistrip(5, rowsPerStrip, binary);
+            REPORTER_ASSERT(r, !bytes.empty());
+            if (bytes.empty()) {
+                continue;
+            }
+            auto data = SkData::MakeWithCopy(bytes.data(), bytes.size());
+            auto stream = SkMemoryStream::Make(data);
+            auto adapter = std::make_unique<rust::stream::SkStreamAdapter>(stream.get());
+            auto reader = rust_raw::new_reader(std::move(adapter));
+            REPORTER_ASSERT(r, reader->stage1_status() == rust_raw::DecodeStatus::Success &&
+                               reader->stage2_status() == rust_raw::DecodeStatus::Success &&
+                               reader->stage3_status() == rust_raw::DecodeStatus::Success &&
+                               reader->status() == rust_raw::DecodeStatus::Success);
+            if (reader->status() != rust_raw::DecodeStatus::Success) {
+                continue;
+            }
+            for (uint32_t y = 0; y < 5; ++y) {
+                std::array<uint16_t, 258> raw, second, third;
+                raw.fill(0xa5a5);
+                second.fill(0xa5a5);
+                third.fill(0xa5a5);
+                REPORTER_ASSERT(r, reader->read_stage1_row(
+                        y, rust::Slice<uint16_t>(raw.data(), 256)) ==
+                        rust_raw::DecodeStatus::Success);
+                REPORTER_ASSERT(r, reader->read_normalized_row(
+                        y, rust::Slice<uint16_t>(second.data(), 256)) ==
+                        rust_raw::DecodeStatus::Success);
+                REPORTER_ASSERT(r, reader->read_stage3_row(
+                        y, rust::Slice<uint16_t>(third.data(), 256)) ==
+                        rust_raw::DecodeStatus::Success);
+                for (uint32_t x = 0; x < 256; ++x) {
+                    const uint8_t sample = binary ? (x & 1 ? 255 : 0) :
+                                                   static_cast<uint8_t>(x + 17 * y);
+                    REPORTER_ASSERT(r, raw[x] == sample &&
+                                       second[x] == uint16_t(sample) * 257 &&
+                                       third[x] == second[x]);
+                }
+                REPORTER_ASSERT(r, raw[256] == 0xa5a5 && second[257] == 0xa5a5 &&
+                                   third[256] == 0xa5a5);
+            }
+            SkCodec::Result result = SkCodec::kInternalError;
+            auto codec = SkRawRustDecoder::Decode(data, &result);
+            REPORTER_ASSERT(r, codec && result == SkCodec::kSuccess);
+            if (!codec) {
+                continue;
+            }
+            REPORTER_ASSERT(r, codec->dimensions() == SkISize::Make(256, 5));
+            if (codec->dimensions() != SkISize::Make(256, 5)) {
+                continue;
+            }
+            const auto info = codec->getInfo().makeColorType(kRGBA_8888_SkColorType);
+            constexpr size_t kActive = 256 * 4;
+            constexpr size_t kStride = kActive + 12;
+            std::vector<uint8_t> pixels(kStride * 5, 0xa5);
+            for (int repeat = 0; repeat < 2; ++repeat) {
+                std::fill(pixels.begin(), pixels.end(), 0xa5);
+                REPORTER_ASSERT(r, codec->getPixels(info, pixels.data(), kStride) ==
+                                    SkCodec::kSuccess);
+                for (uint32_t y = 0; y < 5; ++y) {
+                    for (uint32_t x = 0; x < 256; ++x) {
+                        const uint8_t sample = binary ? (x & 1 ? 255 : 0) :
+                                                       static_cast<uint8_t>(x + 17 * y);
+                        const uint8_t expected = binary ? sample : expected_srgb(sample);
+                        const auto* rgba = pixels.data() + y * kStride + 4 * x;
+                        REPORTER_ASSERT(r, rgba[0] == expected && rgba[1] == expected &&
+                                           rgba[2] == expected && rgba[3] == 255);
+                    }
+                    REPORTER_ASSERT(r, std::all_of(
+                            pixels.begin() + y * kStride + kActive,
+                            pixels.begin() + (y + 1) * kStride,
+                            [](uint8_t value) { return value == 0xa5; }));
+                }
+            }
+#if defined(SK_CODEC_DECODES_RAW_WITH_DNG_SDK)
+            SkCodec::Result referenceResult = SkCodec::kInternalError;
+            auto reference = SkRawDecoder::Decode(SkMemoryStream::Make(data), &referenceResult);
+            REPORTER_ASSERT(r, reference && referenceResult == SkCodec::kSuccess);
+            if (reference) {
+                std::vector<uint8_t> expected(pixels.size(), 0xa5);
+                REPORTER_ASSERT(r, reference->getPixels(info, expected.data(), kStride) ==
+                                    SkCodec::kSuccess);
+                REPORTER_ASSERT(r, pixels == expected);
+            }
+#endif
+        }
+    }
+    for (int metadata : {0, 1, 2}) {
+        auto bytes = make_output_mono_multistrip(5, 2, false, metadata == 2);
+        if (metadata != 2) {
+            bytes = with_linearization_table(std::move(bytes), false, metadata == 1, UINT8_MAX);
+        }
+        REPORTER_ASSERT(r, !bytes.empty());
+        if (bytes.empty()) {
+            continue;
+        }
+        auto data = SkData::MakeWithCopy(bytes.data(), bytes.size());
+        auto stream = SkMemoryStream::Make(data);
+        auto adapter = std::make_unique<rust::stream::SkStreamAdapter>(stream.get());
+        auto reader = rust_raw::new_reader(std::move(adapter));
+        REPORTER_ASSERT(r, reader->stage3_status() == rust_raw::DecodeStatus::Success &&
+                           reader->status() == rust_raw::DecodeStatus::Success);
+        SkCodec::Result result = SkCodec::kInternalError;
+        auto codec = SkRawRustDecoder::Decode(data, &result);
+        REPORTER_ASSERT(r, codec && result == SkCodec::kSuccess);
+        if (!codec) {
+            continue;
+        }
+        REPORTER_ASSERT(r, codec->dimensions() == SkISize::Make(256, 5));
+        if (codec->dimensions() != SkISize::Make(256, 5)) {
+            continue;
+        }
+        const auto info = codec->getInfo().makeColorType(kRGBA_8888_SkColorType);
+        constexpr size_t kActive = 256 * 4;
+        constexpr size_t kStride = kActive + 12;
+        std::vector<uint8_t> pixels(kStride * 5, 0xa5);
+        REPORTER_ASSERT(r, codec->getPixels(info, pixels.data(), kStride) == SkCodec::kSuccess);
+        for (uint32_t y = 0; y < 5; ++y) {
+            for (uint32_t x = 0; x < 256; ++x) {
+                const auto source = static_cast<uint8_t>(x + 17 * y);
+                const auto mapped = metadata == 2 ? source :
+                                    metadata == 1 ? (source == 0 ? 0 : 255) :
+                                                    std::min(uint32_t(source) * 2, 255u);
+                const uint8_t expected = expected_srgb(static_cast<uint8_t>(mapped));
+                const auto* rgba = pixels.data() + y * kStride + 4 * x;
+                REPORTER_ASSERT(r, rgba[0] == expected && rgba[1] == expected &&
+                                   rgba[2] == expected && rgba[3] == 255);
+            }
+            REPORTER_ASSERT(r, std::all_of(
+                    pixels.begin() + y * kStride + kActive,
+                    pixels.begin() + (y + 1) * kStride,
+                    [](uint8_t value) { return value == 0xa5; }));
+        }
+#if defined(SK_CODEC_DECODES_RAW_WITH_DNG_SDK)
+        SkCodec::Result referenceResult = SkCodec::kInternalError;
+        auto reference = SkRawDecoder::Decode(SkMemoryStream::Make(data), &referenceResult);
+        REPORTER_ASSERT(r, reference && referenceResult == SkCodec::kSuccess);
+        if (reference) {
+            std::vector<uint8_t> expected(pixels.size(), 0xa5);
+            REPORTER_ASSERT(r, reference->getPixels(info, expected.data(), kStride) ==
+                                SkCodec::kSuccess);
+            REPORTER_ASSERT(r, pixels == expected);
+        }
+#endif
+    }
+    auto bytes = make_output_mono_multistrip(5, 2, true);
+    REPORTER_ASSERT(r, !bytes.empty());
+    if (bytes.empty()) {
+        return;
+    }
+    const size_t offsets = entry_for(bytes, 273);
+    const size_t lengths = entry_for(bytes, 279);
+    REPORTER_ASSERT(r, offsets != bytes.size() && lengths != bytes.size());
+    if (offsets == bytes.size() || lengths == bytes.size()) {
+        return;
+    }
+    const size_t lastStrip = read32(bytes, read32(bytes, offsets + 8) + 8);
+    REPORTER_ASSERT(r, lastStrip + 1 < bytes.size());
+    if (lastStrip + 1 >= bytes.size()) {
+        return;
+    }
+    bytes[lastStrip + 1] = 128;
+    auto data = SkData::MakeWithCopy(bytes.data(), bytes.size());
+    auto stream = SkMemoryStream::Make(data);
+    auto adapter = std::make_unique<rust::stream::SkStreamAdapter>(stream.get());
+    auto reader = rust_raw::new_reader(std::move(adapter));
+    REPORTER_ASSERT(r, reader->stage3_status() == rust_raw::DecodeStatus::Success &&
+                       reader->status() == rust_raw::DecodeStatus::Unsupported);
+    std::array<uint8_t, 256 * 3> untouched;
+    untouched.fill(0xa5);
+    REPORTER_ASSERT(r, !reader->copy_rgb_row(
+            0, rust::Slice<uint8_t>(untouched.data(), untouched.size())));
+    REPORTER_ASSERT(r, std::all_of(untouched.begin(), untouched.end(),
+                                   [](uint8_t value) { return value == 0xa5; }));
+    SkCodec::Result result = SkCodec::kSuccess;
+    auto rejected = SkRawRustDecoder::Decode(data, &result);
+    REPORTER_ASSERT(r, !rejected && result == SkCodec::kUnimplemented);
+    bytes.pop_back();
+    REPORTER_ASSERT(r, stage1_status(bytes) == rust_raw::DecodeStatus::Incomplete);
 }
 
 DEF_TEST(RustRaw_LinearizedMono8SrgbFinal, r) {
@@ -4390,6 +4623,13 @@ DEF_TEST(RustRaw_PublicSdkFreeFallback, r) {
         }
     };
     check(make_output_mono_ramp(8));
+    check(make_output_mono_multistrip(5, 2, false));
+    check(make_output_mono_multistrip(5, 2, true));
+    check(with_linearization_table(
+            make_output_mono_multistrip(5, 2, false), false, false, UINT8_MAX));
+    check(with_linearization_table(
+            make_output_mono_multistrip(5, 2, false), false, true, UINT8_MAX));
+    check(make_output_mono_multistrip(5, 2, false, true));
     check(make_rgb8_root_dng(false, false, false, true, false));
     check(make_rgb8_root_dng(false, false, false, true, false,
                              GainFixture::kUInt8Unity));

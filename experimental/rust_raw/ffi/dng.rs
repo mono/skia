@@ -526,16 +526,24 @@ impl Image {
                 .as_ref()
                 .is_none_or(LinearizationTable::maps_to_sdr_8_bit)
             && bits == 8
-            && strips.len() == 1
             && black.as_slice() == [(0, 1)]
             && white == 255
             && supported_final_profile
         {
-            let length = (height as usize)
-                .checked_mul(row_bytes)
-                .ok_or(Error::Invalid)?;
-            let pixels = range(&bytes, strips[0].offset, length)?;
-            output_referred_srgb || pixels.iter().all(|&sample| sample == 0 || sample == 255)
+            if output_referred_srgb {
+                true
+            } else {
+                let mut binary = true;
+                for (index, strip) in strips.iter().enumerate() {
+                    let length = number(sizes, index, order)? as usize;
+                    let pixels = range(&bytes, strip.offset, length)?;
+                    if pixels.iter().any(|&sample| sample != 0 && sample != 255) {
+                        binary = false;
+                        break;
+                    }
+                }
+                binary
+            }
         } else {
             false
         };
@@ -768,6 +776,44 @@ mod tests {
         }
     }
 
+    fn split_fixture_into_rows(bytes: &mut Vec<u8>, big_endian: bool) -> usize {
+        let long = |n: u32| {
+            if big_endian {
+                n.to_be_bytes()
+            } else {
+                n.to_le_bytes()
+            }
+        };
+        let offset_entry = 10 + 5 * 12;
+        let rows_entry = 10 + 7 * 12;
+        let lengths_entry = 10 + 8 * 12;
+        let raw_offset = if big_endian {
+            u32::from_be_bytes(
+                bytes[offset_entry + 8..offset_entry + 12]
+                    .try_into()
+                    .expect("raw offset"),
+            )
+        } else {
+            u32::from_le_bytes(
+                bytes[offset_entry + 8..offset_entry + 12]
+                    .try_into()
+                    .expect("raw offset"),
+            )
+        };
+        bytes[rows_entry + 8..rows_entry + 12].copy_from_slice(&long(1));
+        bytes[offset_entry + 4..offset_entry + 8].copy_from_slice(&long(2));
+        bytes[lengths_entry + 4..lengths_entry + 8].copy_from_slice(&long(2));
+        let offsets = bytes.len() as u32;
+        bytes.extend_from_slice(&long(raw_offset));
+        bytes.extend_from_slice(&long(raw_offset + 2));
+        let lengths = bytes.len() as u32;
+        bytes.extend_from_slice(&long(2));
+        bytes.extend_from_slice(&long(2));
+        bytes[offset_entry + 8..offset_entry + 12].copy_from_slice(&long(offsets));
+        bytes[lengths_entry + 8..lengths_entry + 12].copy_from_slice(&long(lengths));
+        raw_offset as usize
+    }
+
     fn output_mono_with_tone() -> (Vec<u8>, usize, usize) {
         let mut bytes = fixture(false);
         *bytes.last_mut().expect("image has pixels") = 128;
@@ -874,6 +920,41 @@ mod tests {
         assert!(matches!(Image::parse(wrong_count), Err(Error::Invalid)));
         insert_colorimetric(&mut scene, 1);
         assert!(matches!(Image::parse(scene), Err(Error::Invalid)));
+    }
+
+    #[test]
+    fn monochrome_final_rows_cross_checked_strip_boundaries() {
+        for (big_endian, output_referred) in [(false, false), (true, false), (false, true)] {
+            let mut bytes = fixture(big_endian);
+            if output_referred {
+                *bytes.last_mut().expect("final sample") = 128;
+                insert_colorimetric(&mut bytes, 1);
+            }
+            let raw_offset = split_fixture_into_rows(&mut bytes, big_endian);
+            let image = Image::parse(bytes.clone()).expect("two valid strips");
+            assert_eq!(image.stage3_status(), Ok(()));
+            assert!(image.supports_final_render());
+            for (row, expected) in [[0, 255], [255, if output_referred { 188 } else { 0 }]]
+                .into_iter()
+                .enumerate()
+            {
+                let mut rgb = [0xa5; 8];
+                assert!(image.copy_rgb_row(row as u32, &mut rgb[..6]));
+                for (x, &color) in expected.iter().enumerate() {
+                    assert_eq!(&rgb[x * 3..x * 3 + 3], &[color; 3]);
+                }
+                assert_eq!(rgb[6..], [0xa5; 2]);
+            }
+            if !output_referred {
+                bytes[raw_offset + 3] = 128;
+                let image = Image::parse(bytes).expect("valid scene strips with midtone");
+                assert_eq!(image.stage3_status(), Ok(()));
+                assert!(!image.supports_final_render());
+                let mut rgb = [0xa5; 6];
+                assert!(!image.copy_rgb_row(0, &mut rgb));
+                assert_eq!(rgb, [0xa5; 6]);
+            }
+        }
     }
 
     #[test]

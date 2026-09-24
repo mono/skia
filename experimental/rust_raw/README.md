@@ -428,21 +428,28 @@ tone under the checked one-plane/black-None layout.
 
 **Final `SkCodec` output has two narrow 8-bit monochrome profiles plus
 the strict RGB8 profile described above.** The monochrome path accepts one
-uncompressed strip with identity geometry, black level zero, and white level
-255. Scene-referred/default ColorimetricReference 0 still permits only black
-(0) or white (255). Output-referred SDR ColorimetricReference 1 also permits
+or more checked uncompressed strips with identity geometry, black level
+zero, and white level 255. Scene-referred/default ColorimetricReference 0
+still permits only black (0) or white (255). Output-referred SDR
+ColorimetricReference 1 also permits
 midtones and applies the published piecewise sRGB transfer to normalized
 samples, producing opaque RGB. All 256 8-bit sample values matched the
-pinned SDK in an independent no-preview ramp. HDR value 2 is unsupported.
+pinned SDK in an independent no-preview ramp. Six independently generated
+three- to five-strip mono DNGs with partial final strips, binary scene
+values, full/short linearization tables, and color tone metadata match
+the SDK at Stages 1-3 and final RGBA8888, BGRA8888 and RGB565 on ARM64
+and x64; ARM64 RGBAF16 also matches a same-host reference. A scene-referred
+midtone in the last strip disables **all** final rows. HDR value 2 is
+unsupported.
 The output-referred monochrome profile also accepts a validated
 `ProfileToneCurve` with explicit `DefaultBlackRender=None` and leaves
 its pixels unchanged, matching both distinct SDK tone-tag fixtures on
 ARM64 and SDK-free x64. An invalid tone tag fails parsing; Auto black
 or an unverified tone/profile combination remains unsupported for
 final output.
-Scene-referred midtones, **all 16-bit final output**, multi-strip
-monochrome final output, and tiled RGB final output remain unsupported
-even when checked Stage 1/2/3 rows are available; the 16-bit
+Scene-referred midtones, **all 16-bit final output**, and tiled RGB final
+output remain unsupported even when checked Stage 1/2/3 rows are
+available; the 16-bit
 output-referred ramp was not byte-exact.
 Unverified linearization tables and other compression,
 general CFA demosaicing, Stage1-changing opcodes, other Stage-2 opcodes,
@@ -782,4 +789,7 @@ coverage: those paths execute under native ASan/UBSan where applicable,
 but their internal decisions are not yet exposed to the fuzzer. A
 separate 200-run gain-map smoke with seven generated unity/non-unity
 and Deflate seeds also passed; it reached 67/900 shallow native
-counters, not a new deep-path coverage claim.
+counters, not a new deep-path coverage claim. A later six-seed
+multi-strip monochrome smoke completed 500 mutations without sanitizer
+failure, reaching 63/900 shallow native counters; neither run replaces
+deep Rust/JPEG/zlib instrumentation.
