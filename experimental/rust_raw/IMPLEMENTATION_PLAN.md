@@ -49,7 +49,8 @@ Rust test target retains its normal CXX dependency.
 The reader currently recognizes checked classic TIFF DNG metadata and a
 limited set of uncompressed, zlib/Deflate Predictor 1/2, lossy-JPEG, and
 lossless SOF3 JPEG layouts. Tested Stage 1/2/3 paths include monochrome,
-RGB8, RGB16, float32 RGB, and guarded RGGB CFA; they are not all final-image
+RGB8, RGB16, float32 RGB, and four guarded 2x2 Bayer CFA phases;
+they are not all final-image
 decoders. Checked lookup linearization maps each raw plane before black
 subtraction. Supported final output is confined to narrow, validated 8-bit
 monochrome and output-referred RGB8 sRGB profiles. Unsupported final
@@ -92,11 +93,11 @@ Rust, under the existing 100 MiB limit. PIEX still owns preview selection.
   `tools/raw_codec_probe_compare.py` with separate reference/candidate
   executables. A positive comparison must agree on full metadata, status, and
   every byte; keep negative cases labeled and out of the positive count.
-- Current selected baseline: both Rust Bazel suites have **89 passing tests
-  each on ARM64 and x64**. Adobe-enabled ARM64 native RAW has **70/70** selected
-  passing tests; SDK-free PIEX+Rust has **72/72** on ARM64 and x64. A
+- Current selected baseline: both Rust Bazel suites have **90 passing tests
+  each on ARM64 and x64**. Adobe-enabled ARM64 native RAW has **71/71** selected
+  passing tests; SDK-free PIEX+Rust has **73/73** on ARM64 and x64. A
   source-built Apple ASan/UBSan SDK-free configuration also passes the
-  **72** selected native tests. Apple macOS does
+  **73** selected native tests. Apple macOS does
   not support leak detection in that ASan configuration; Rust and dependent
   JPEG/zlib deep-path sanitizer coverage still need separate verification.
 - Reference-versus-candidate process comparisons match **114/114** selected
@@ -126,6 +127,16 @@ Rust, under the existing 100 MiB limit. PIEX still owns preview selection.
   returned missing candidate support before the strip gate changed;
   a scene-referred midtone in the last strip still rejects final
   rendering rather than publishing partial rows.
+- **All four conventional 2x2 Bayer phases** now expose checked Stage
+  1-3 under the existing zero-black/identity-processing guard.
+  The 36 independently generated **BGGR/GRBG/GBRG** cases (12 per
+  phase) match separate SDK processes at all three stages on both
+  macOS ARM64 and SDK-free x64. Varied and constant fields, both TIFF
+  byte orders, odd borders, uncompressed/Deflate strips, SOF3 tiles,
+  and full/short lookup tables are included. Nine cases were red
+  (missing Stage 1 and Stage 3) before the CFA generalization.
+  Invalid layouts and black-normalized Bayer Stage 3 still fail
+  closed; no CFA final RGB output is enabled.
 - A JPEG IFD alone does **not** imply PIEX selected a preview. Source-generated
   uncompressed and Deflate RGB16 files with a 3x3 raw child and a larger
   128x128 JPEG parent reach the full-DNG fallback on seekable and forward-only
@@ -133,7 +144,7 @@ Rust, under the existing 100 MiB limit. PIEX still owns preview selection.
   final output instead of substituting the JPEG. These are atypical test
   containers, not representative camera previews.
 - A macOS ARM64 source build with both Rust PNG decoding and the SDK-free
-  PIEX/Rust RAW decoder passes **110/110 selected RAW/PNG native tests**
+  PIEX/Rust RAW decoder passes **111/111 selected RAW/PNG native tests**
   (a wider selection than the previously recorded 78).
   Public output for a generated DNG cube and two source-controlled PNG
   samples matches the single-RAW-decoder build. This tests one multi-codec
@@ -145,7 +156,9 @@ Rust, under the existing 100 MiB limit. PIEX still owns preview selection.
   internals are not coverage-guided. Leak detection is unavailable in this
   macOS ASan runtime. A separate seven-seed, 200-run gain-map corpus
   passed with 67/900 shallow native counters; a six-seed, 500-run
-  multi-strip mono corpus passed with 63/900. Neither closes P9.
+  multi-strip mono corpus passed with 63/900; an 18-seed Bayer-phase
+  corpus ran 1,000 mutations with 86/900 shallow counters. None
+  closes P9.
   Keep deeper instrumentation and longer runs in P9.
 - These are selected tests, **not a claim of complete SDK parity**. The real
   `sample_1mp.dng` family matches SDK Stage 1–3 but the Rust public final

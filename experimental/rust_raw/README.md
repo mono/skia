@@ -44,7 +44,7 @@ The shared safe-Rust `linearization.rs` parses bounded DNG `SHORT`
 entry. Tables declaring more than 65,536 entries are rejected rather than
 truncated, so final-render profile checks cover the entire table; valid
 redundant entries within that limit remain accepted. It now
-maps 16-bit monochrome, RGB16 and RGGB samples at Stage 2,
+maps 16-bit monochrome, RGB16 and checked Bayer samples at Stage 2,
 **after** raw Stage 1 and **before** black subtraction/normalization; Stage 3
 consumes the mapped rows. For the newly verified table profile, black must
 be zero, white 65535 and table endpoints 0/65535. Independent full/short
@@ -92,7 +92,7 @@ differences** from the SDK; Stage 3 inherits those differences because
 this no-CFA profile aliases Stage 2. That fixture is explicitly
 `pixel_mismatch`, not a passing parity case or an approved exception.
 Predictor 3, Deflate tiles/SubIFDs, other sample widths, CFA outside the
-checked RGGB path, general RGB,
+checked 2x2 Bayer path, general RGB,
 unknown processing tags and
 non-identity Stage-2 geometry are not enabled.
 
@@ -303,10 +303,11 @@ streams, unsupported predictors and altered rendering profiles fail without
 publishing pixels. The verified color profile is still narrowly gated: this
 does not make general compressed camera RGB, tone or Auto black renderable.
 
-The separate **DNG RGGB sensor** reader accepts a root/main classic-TIFF
-DNG 1.4 with uncompressed, unsigned, one-plane 16-bit samples, explicit
-2x2 RGGB CFA/plane-color/layout metadata, repeating 2x2 BlackLevel, and
-WhiteLevel with identity crop/scale. `read_stage1_bayer_row` exposes raw
+The separate **2x2 Bayer DNG sensor** reader accepts a root/main
+classic-TIFF DNG 1.4 with uncompressed, unsigned, one-plane 16-bit
+samples, explicit RGGB/BGGR/GRBG/GBRG CFA/plane-color/layout metadata,
+repeating 2x2 BlackLevel, and WhiteLevel with identity crop/scale.
+`read_stage1_bayer_row` exposes raw
 sensor `u16` rows; `read_stage2_bayer_row` applies the published local
 black subtraction and plane-maximum-black denominator, without allocating
 an image-sized output. The independent private 16x16 test fixture at
@@ -316,15 +317,23 @@ The SDK Stage 3 is a separate three-plane demosaiced image. A first
 bilinear attempt disagreed on 28 border pixels of the varied 16x16
 fixture, all in green. Equal horizontal/vertical weighting at image
 edges removed those differences without changing interior samples.
-The now-checked three-row Rust RGGB interpolator matches every Stage-3
+The now-checked three-row Rust Bayer interpolator matches every Stage-3
 sample on eight independently generated **zero-black/white-65535**
 varied strip/tile cases: little/big endian, multiple strips, cropped
 SOF3 tiles and 5x5 through 3000x2000 sizes. It never allocates a
 full normalized Stage-2 image. Stage 3 still requires identity geometry
 and absence of Stage-2/3 corrections, opcodes, noise/factor metadata and
-non-RGGB CFA layouts. Guarded constant CFA fields retain their
+other CFA layouts. Guarded constant CFA fields retain their
 fast exact-row path; independent SDK tests cover sizes 2x2 to 16x16,
 channel extremes and both byte orders.
+An additional **36 independently generated non-RGGB Bayer cases**
+(12 each for BGGR, GRBG and GBRG) match the SDK through Stages 1-3 on
+macOS ARM64 and x64. They cover varied and constant fields, both TIFF
+byte orders, multiple strips, odd-size borders, Deflate Predictor 1/2,
+SOF3 uniform/varied tiles, and full/short linearization tables. The
+constant-field fast path and interpolated rows use the checked CFA
+phase; malformed and non-Bayer 2x2 patterns remain Unsupported. None
+of these Stage-3 matches enables final sensor-color rendering.
 
 **Black-normalized varied CFA remains Stage-3 Unsupported.** Although the
 original 16x16 black-level fixture matched SDK Stage 2, an independent
@@ -337,7 +346,7 @@ Stage-3 missing support. Final `SkCodec` Bayer output is Unsupported
 even for exact Stage-3 cases. This is DNG sensor data, not proprietary
 camera-RAW decoding.
 
-The checked RGGB reader now accepts a `SHORT` DNG `LinearizationTable`
+The checked Bayer reader accepts a `SHORT` DNG `LinearizationTable`
 without changing raw Stage-1 samples. Stage 2 maps each raw code through
 the table **before** black subtraction and normalization; codes beyond
 the last entry use that entry. Stage 3 consumes those checked Stage-2
@@ -351,10 +360,10 @@ retains Stage 1 but returns Unsupported for unverified processing.
 All table ranges and types are checked before use; no default final
 Bayer rendering is enabled.
 
-Another RGGB Stage-1 path accepts **root-IFD DNG 1.4 Compression 8
+Another Bayer Stage-1 path accepts **root-IFD DNG 1.4 Compression 8
 (zlib/Deflate) 16-bit sensor strips** with Predictor 1 (or absent) or
 horizontal Predictor 2. The same guarded black normalization and
-zero-black/white-65535 Stage-3 reconstruction as uncompressed RGGB
+zero-black/white-65535 Stage-3 reconstruction as uncompressed Bayer
 apply. Both byte orders and one or multiple strips are checked; Predictor 2
 resets each row. Every strip's complete inflated size and input consumption
 are validated in an 8-KiB scratch buffer before allocating decoded pixels.
@@ -368,7 +377,7 @@ misreported as exact at later stages. The uncompressed-CFA numerical gap
 remains open; Deflate CFA tiles/SubIFDs, other CFA layouts and final
 Bayer rendering remain unsupported.
 
-The SOF3 RGGB Stage-1 path accepts **classic-TIFF DNG 1.4 Compression 7**
+The SOF3 Bayer Stage-1 path accepts **classic-TIFF DNG 1.4 Compression 7**
 with 16-bit, single-component lossless-JPEG SOF3 tiles. Checked TIFF
 offsets/counts, 2x2 CFA metadata, and edge geometry precede a full
 bitstream validation pass through the bundled libjpeg-turbo
@@ -792,4 +801,7 @@ and Deflate seeds also passed; it reached 67/900 shallow native
 counters, not a new deep-path coverage claim. A later six-seed
 multi-strip monochrome smoke completed 500 mutations without sanitizer
 failure, reaching 63/900 shallow native counters; neither run replaces
-deep Rust/JPEG/zlib instrumentation.
+deep Rust/JPEG/zlib instrumentation. Another 18-seed Bayer-pattern
+corpus (uncompressed, Deflate, SOF3 tiles and lookup tables) completed
+1,000 mutations with no sanitizer failure; it reached 86/900 native
+counters, not internal Rust or codec coverage.

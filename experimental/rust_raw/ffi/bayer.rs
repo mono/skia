@@ -4,7 +4,7 @@
 
 #![forbid(unsafe_code)]
 
-//! Narrow classic-TIFF DNG RGGB sensor path: uncompressed strips or checked
+//! Checked classic-TIFF DNG 2x2 Bayer sensor path: uncompressed strips or
 //! Deflate strips or 16-bit SOF3 tiles at Stage 1, with black/white
 //! normalization and checked linearization at Stage 2.
 
@@ -43,6 +43,7 @@ pub struct Plan {
     tiles: Vec<Tile>,
     tile_width: u32,
     tile_height: u32,
+    pattern: demosaic::BayerPattern,
     linearization: Option<LinearizationTable>,
     black: [(u64, u64); 4],
     max_black: (u64, u64),
@@ -106,6 +107,7 @@ fn constant_field(
     height: u32,
     rows_per_strip: u32,
     strips: &[Strip],
+    pattern: demosaic::BayerPattern,
 ) -> Result<Option<[u16; 3]>, Error> {
     let row_bytes = (width as usize).checked_mul(2).ok_or(Error::Invalid)?;
     let mut channels = [None; 3];
@@ -119,7 +121,7 @@ fn constant_field(
             .ok_or(Error::Invalid)?;
         let row = range(data, at, row_bytes)?;
         for (x, bytes) in row.chunks_exact(2).enumerate() {
-            if !match_constant_sample(&mut channels, x, y as usize, order.u16(bytes)) {
+            if !match_constant_sample(&mut channels, x, y as usize, order.u16(bytes), pattern) {
                 return Ok(None);
             }
         }
@@ -130,12 +132,14 @@ fn constant_field(
     }
 }
 
-fn match_constant_sample(channels: &mut [Option<u16>; 3], x: usize, y: usize, sample: u16) -> bool {
-    let channel = match (y & 1, x & 1) {
-        (0, 0) => 0,
-        (1, 1) => 2,
-        _ => 1,
-    };
+fn match_constant_sample(
+    channels: &mut [Option<u16>; 3],
+    x: usize,
+    y: usize,
+    sample: u16,
+    pattern: demosaic::BayerPattern,
+) -> bool {
+    let channel = pattern.color(x, y);
     match channels[channel] {
         Some(previous) => previous == sample,
         None => {
@@ -145,7 +149,12 @@ fn match_constant_sample(channels: &mut [Option<u16>; 3], x: usize, y: usize, sa
     }
 }
 
-fn constant_pixels(pixels: &[u16], width: u32, height: u32) -> Result<Option<[u16; 3]>, Error> {
+fn constant_pixels(
+    pixels: &[u16],
+    width: u32,
+    height: u32,
+    pattern: demosaic::BayerPattern,
+) -> Result<Option<[u16; 3]>, Error> {
     let stride = width as usize;
     if stride == 0 || pixels.len() != stride.checked_mul(height as usize).ok_or(Error::Invalid)? {
         return Err(Error::Invalid);
@@ -153,7 +162,7 @@ fn constant_pixels(pixels: &[u16], width: u32, height: u32) -> Result<Option<[u1
     let mut channels = [None; 3];
     for (y, row) in pixels.chunks_exact(stride).enumerate() {
         for (x, &sample) in row.iter().enumerate() {
-            if !match_constant_sample(&mut channels, x, y, sample) {
+            if !match_constant_sample(&mut channels, x, y, sample, pattern) {
                 return Ok(None);
             }
         }
@@ -269,12 +278,12 @@ impl Plan {
             || number(repeating, 0, order)? != 2
             || number(repeating, 1, order)? != 2
             || pattern.count != 4
-            || pattern.value != &[0, 1, 1, 2]
             || planes.count != 3
             || planes.value != &[0, 1, 2]
         {
             return Err(Error::Unsupported);
         }
+        let pattern = demosaic::BayerPattern::parse(pattern.value)?;
         if scalar(required(tags, 50711)?, order)? != 1 {
             return Err(Error::Unsupported);
         }
@@ -451,7 +460,7 @@ impl Plan {
                 .into_iter()
                 .all(|id| optional(tags, id).is_none());
         let stage3_constant = if compression == 1 && stage3_supported {
-            constant_field(data, order, width, height, rows_per_strip, &strips)?
+            constant_field(data, order, width, height, rows_per_strip, &strips, pattern)?
                 .map(|rgb| rgb.map(|sample| linearized_sample(linearization.as_ref(), sample)))
         } else {
             None
@@ -467,6 +476,7 @@ impl Plan {
             tiles,
             tile_width,
             tile_height,
+            pattern,
             linearization,
             black,
             max_black,
@@ -548,9 +558,10 @@ impl Image {
             }
         }
         if plan.stage3_supported {
-            plan.stage3_constant = constant_pixels(&pixels, plan.width, plan.height)?.map(|rgb| {
-                rgb.map(|sample| linearized_sample(plan.linearization.as_ref(), sample))
-            });
+            plan.stage3_constant = constant_pixels(&pixels, plan.width, plan.height, plan.pattern)?
+                .map(|rgb| {
+                    rgb.map(|sample| linearized_sample(plan.linearization.as_ref(), sample))
+                });
         }
         plan.tiles = Vec::new();
         Ok(Some(Self {
@@ -621,6 +632,7 @@ impl Image {
                 plan.height,
                 plan.rows_per_strip,
                 &plan.strips,
+                plan.pattern,
             )?
             .map(|rgb| rgb.map(|sample| linearized_sample(plan.linearization.as_ref(), sample)));
         }
@@ -682,6 +694,7 @@ impl Image {
             width,
             self.plan.height as usize,
             row as usize,
+            self.plan.pattern,
             output,
         )
     }

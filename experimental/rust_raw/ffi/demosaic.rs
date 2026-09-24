@@ -4,10 +4,40 @@
 
 #![forbid(unsafe_code)]
 
-//! Scalar RGGB reconstruction from checked Stage-2 samples. The same
+//! Scalar 2x2 Bayer reconstruction from checked Stage-2 samples. The same
 //! horizontal/vertical weighting is used at edges as in the interior.
 
 use crate::dng::Error;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BayerPattern {
+    Rggb,
+    Bggr,
+    Grbg,
+    Gbrg,
+}
+
+impl BayerPattern {
+    pub fn parse(bytes: &[u8]) -> Result<Self, Error> {
+        match bytes {
+            [0, 1, 1, 2] => Ok(Self::Rggb),
+            [2, 1, 1, 0] => Ok(Self::Bggr),
+            [1, 0, 2, 1] => Ok(Self::Grbg),
+            [1, 2, 0, 1] => Ok(Self::Gbrg),
+            _ => Err(Error::Unsupported),
+        }
+    }
+
+    pub fn color(self, x: usize, y: usize) -> usize {
+        let index = ((y & 1) << 1) | (x & 1);
+        match self {
+            Self::Rggb => [0, 1, 1, 2][index],
+            Self::Bggr => [2, 1, 1, 0][index],
+            Self::Grbg => [1, 0, 2, 1][index],
+            Self::Gbrg => [1, 2, 0, 1][index],
+        }
+    }
+}
 
 const DIAGONAL: &[(isize, isize)] = &[(-1, -1), (1, -1), (-1, 1), (1, 1)];
 const HORIZONTAL: &[(isize, isize)] = &[(-1, 0), (1, 0)];
@@ -71,36 +101,33 @@ fn render_row(
     width: usize,
     height: usize,
     y: usize,
+    pattern: BayerPattern,
     output: &mut [u16],
 ) {
     for x in 0..width {
         let value = sample_at(x, y);
-        let rgb = if y & 1 == 0 {
-            if x & 1 == 0 {
-                [
-                    value,
-                    green(sample_at, width, height, x, y),
-                    average(sample_at, width, height, x, y, DIAGONAL),
-                ]
-            } else {
-                [
-                    average(sample_at, width, height, x, y, HORIZONTAL),
-                    value,
-                    average(sample_at, width, height, x, y, VERTICAL),
-                ]
-            }
-        } else if x & 1 == 0 {
-            [
+        let rgb = match pattern.color(x, y) {
+            0 => [
+                value,
+                green(sample_at, width, height, x, y),
+                average(sample_at, width, height, x, y, DIAGONAL),
+            ],
+            1 if pattern.color(x ^ 1, y) == 0 => [
+                average(sample_at, width, height, x, y, HORIZONTAL),
+                value,
+                average(sample_at, width, height, x, y, VERTICAL),
+            ],
+            1 => [
                 average(sample_at, width, height, x, y, VERTICAL),
                 value,
                 average(sample_at, width, height, x, y, HORIZONTAL),
-            ]
-        } else {
-            [
+            ],
+            2 => [
                 average(sample_at, width, height, x, y, DIAGONAL),
                 green(sample_at, width, height, x, y),
                 value,
-            ]
+            ],
+            _ => unreachable!(),
         };
         output[3 * x..3 * x + 3].copy_from_slice(&rgb);
     }
@@ -112,6 +139,7 @@ pub fn bilinear_row(
     width: usize,
     height: usize,
     y: usize,
+    pattern: BayerPattern,
     output: &mut [u16],
 ) -> Result<(), Error> {
     if width < 2
@@ -122,7 +150,14 @@ pub fn bilinear_row(
     {
         return Err(Error::Invalid);
     }
-    render_row(&|x, y| samples[y * width + x], width, height, y, output);
+    render_row(
+        &|x, y| samples[y * width + x],
+        width,
+        height,
+        y,
+        pattern,
+        output,
+    );
     Ok(())
 }
 
@@ -133,6 +168,7 @@ pub fn bilinear_row_from_neighbors(
     width: usize,
     height: usize,
     y: usize,
+    pattern: BayerPattern,
     output: &mut [u16],
 ) -> Result<(), Error> {
     if width < 2
@@ -158,7 +194,7 @@ pub fn bilinear_row_from_neighbors(
             next[x]
         }
     };
-    render_row(&sample_at, width, height, y, output);
+    render_row(&sample_at, width, height, y, pattern, output);
     Ok(())
 }
 
@@ -174,7 +210,7 @@ pub fn constant_row(rgb: [u16; 3], width: usize, output: &mut [u16]) -> Result<(
 
 #[cfg(test)]
 mod tests {
-    use super::{bilinear_row, bilinear_row_from_neighbors, constant_row, Error};
+    use super::{bilinear_row, bilinear_row_from_neighbors, constant_row, BayerPattern, Error};
 
     #[test]
     fn constant_rggb_interpolates_exactly_including_edges() {
@@ -192,7 +228,15 @@ mod tests {
         let mut bilinear = vec![0u16; width * 3];
         let mut exact = vec![0u16; width * 3];
         for y in 0..height {
-            bilinear_row(&samples, width, height, y, &mut bilinear).expect("bilinear");
+            bilinear_row(
+                &samples,
+                width,
+                height,
+                y,
+                BayerPattern::Rggb,
+                &mut bilinear,
+            )
+            .expect("bilinear");
             constant_row([10000, 20000, 30000], width, &mut exact).expect("constant");
             assert_eq!(bilinear, exact);
         }
@@ -211,12 +255,12 @@ mod tests {
             2987,
         ];
         let mut output = [0u16; 12];
-        bilinear_row(&input, 4, 4, 0, &mut output).expect("candidate row");
+        bilinear_row(&input, 4, 4, 0, BayerPattern::Rggb, &mut output).expect("candidate row");
         assert_eq!(output[0], 256);
         assert_eq!(output[1], 1102);
         assert_eq!(output[2], 1729);
         assert!(matches!(
-            bilinear_row(&input, 1, 16, 0, &mut output),
+            bilinear_row(&input, 1, 16, 0, BayerPattern::Rggb, &mut output),
             Err(Error::Invalid)
         ));
     }
@@ -233,9 +277,18 @@ mod tests {
             let next = (y + 1 < 4).then(|| &pixels[(y + 1) * 4..(y + 2) * 4]);
             let mut full = [0u16; 12];
             let mut streaming = [0u16; 12];
-            bilinear_row(&pixels, 4, 4, y, &mut full).expect("full input");
-            bilinear_row_from_neighbors(previous, current, next, 4, 4, y, &mut streaming)
-                .expect("three rows");
+            bilinear_row(&pixels, 4, 4, y, BayerPattern::Rggb, &mut full).expect("full input");
+            bilinear_row_from_neighbors(
+                previous,
+                current,
+                next,
+                4,
+                4,
+                y,
+                BayerPattern::Rggb,
+                &mut streaming,
+            )
+            .expect("three rows");
             assert_eq!(streaming, full);
             if y == 0 {
                 assert_eq!(streaming[2 * 3 + 1], 5000);
@@ -246,9 +299,59 @@ mod tests {
         }
         let mut untouched = [0xa5a5; 12];
         assert_eq!(
-            bilinear_row_from_neighbors(None, &pixels[4..8], None, 4, 4, 1, &mut untouched),
+            bilinear_row_from_neighbors(
+                None,
+                &pixels[4..8],
+                None,
+                4,
+                4,
+                1,
+                BayerPattern::Rggb,
+                &mut untouched,
+            ),
             Err(Error::Invalid)
         );
         assert_eq!(untouched, [0xa5a5; 12]);
+    }
+
+    #[test]
+    fn every_bayer_phase_reconstructs_uniform_rgb_at_odd_edges() {
+        for (pattern, bytes) in [
+            (BayerPattern::Rggb, &[0, 1, 1, 2][..]),
+            (BayerPattern::Bggr, &[2, 1, 1, 0]),
+            (BayerPattern::Grbg, &[1, 0, 2, 1]),
+            (BayerPattern::Gbrg, &[1, 2, 0, 1]),
+        ] {
+            assert_eq!(BayerPattern::parse(bytes), Ok(pattern));
+            let width = 5;
+            let height = 5;
+            let samples: Vec<u16> = (0..height)
+                .flat_map(|y| (0..width).map(move |x| [10000, 20000, 30000][pattern.color(x, y)]))
+                .collect();
+            for y in 0..height {
+                let previous = (y > 0).then(|| &samples[(y - 1) * width..y * width]);
+                let current = &samples[y * width..(y + 1) * width];
+                let next = (y + 1 < height).then(|| &samples[(y + 1) * width..(y + 2) * width]);
+                let mut full = [0u16; 15];
+                let mut streamed = [0u16; 15];
+                bilinear_row(&samples, width, height, y, pattern, &mut full).expect("full");
+                bilinear_row_from_neighbors(
+                    previous,
+                    current,
+                    next,
+                    width,
+                    height,
+                    y,
+                    pattern,
+                    &mut streamed,
+                )
+                .expect("streamed");
+                assert_eq!(full, streamed);
+                for rgb in streamed.chunks_exact(3) {
+                    assert_eq!(rgb, [10000, 20000, 30000]);
+                }
+            }
+        }
+        assert_eq!(BayerPattern::parse(&[0, 1, 2, 1]), Err(Error::Unsupported));
     }
 }

@@ -1611,14 +1611,17 @@ uint16_t bayer_sample(uint32_t x, uint32_t y) {
     return static_cast<uint16_t>(1100 + ((y * 16 + x) * 37) % 2700);
 }
 
-uint16_t uniform_bayer_sample(uint32_t x, uint32_t y) {
-    if (!(x & 1) && !(y & 1)) return 10000;
-    if ((x & 1) && (y & 1)) return 30000;
-    return 20000;
+constexpr std::array<uint8_t, 4> kRggbPattern = {0, 1, 1, 2};
+
+uint16_t uniform_bayer_sample(uint32_t x, uint32_t y,
+                              const std::array<uint8_t, 4>& pattern = kRggbPattern) {
+    constexpr std::array<uint16_t, 3> samples = {10000, 20000, 30000};
+    return samples[pattern[2 * (y & 1) + (x & 1)]];
 }
 
 std::vector<uint8_t> make_rggb_dng(bool bigEndian, bool multipleStrips,
-                                    bool uniform = false) {
+                                    bool uniform = false,
+                                    const std::array<uint8_t, 4>& pattern = kRggbPattern) {
     auto word = [bigEndian](uint16_t value) {
         std::vector<uint8_t> bytes;
         append16(&bytes, value, bigEndian);
@@ -1678,7 +1681,7 @@ std::vector<uint8_t> make_rggb_dng(bool bigEndian, bool multipleStrips,
                 v.insert(v.end(), next.begin(), next.end());
                 return v;
             }()},
-            {33422, 1, 4, {0, 1, 1, 2}},
+            {33422, 1, 4, std::vector<uint8_t>(pattern.begin(), pattern.end())},
             {50706, 1, 4, {1, 4, 0, 0}}, {50707, 1, 4, {1, 1, 0, 0}},
             {50708, 2, 18, {'I', 'n', 'd', 'e', 'p', 'e', 'n', 'd', 'e',
                              'n', 't', ' ', 'B', 'a', 'y', 'e', 'r', 0}},
@@ -1732,7 +1735,7 @@ std::vector<uint8_t> make_rggb_dng(bool bigEndian, bool multipleStrips,
         const uint32_t end = multipleStrips && strip == 0 ? 8 : 16;
         for (uint32_t y = first; y < end; ++y) {
             for (uint32_t x = 0; x < 16; ++x) {
-                append16(&bytes, uniform ? uniform_bayer_sample(x, y) :
+                append16(&bytes, uniform ? uniform_bayer_sample(x, y, pattern) :
                                             bayer_sample(x, y), bigEndian);
             }
         }
@@ -1740,7 +1743,9 @@ std::vector<uint8_t> make_rggb_dng(bool bigEndian, bool multipleStrips,
     return bytes;
 }
 
-std::vector<uint8_t> encode_sof3_bayer_tile(uint32_t tileX, uint32_t tileY, bool uniform) {
+std::vector<uint8_t> encode_sof3_bayer_tile(
+        uint32_t tileX, uint32_t tileY, bool uniform,
+        const std::array<uint8_t, 4>& pattern = kRggbPattern) {
     jpeg_compress_struct jpeg{};
     jpeg_error_mgr error{};
     jpeg.err = jpeg_std_error(&error);
@@ -1761,7 +1766,7 @@ std::vector<uint8_t> encode_sof3_bayer_tile(uint32_t tileX, uint32_t tileY, bool
         for (uint32_t x = 0; x < 10; ++x) {
             const uint32_t globalX = tileX * 10 + x;
             const uint32_t globalY = tileY * 10 + jpeg.next_scanline;
-            row[x] = uniform ? uniform_bayer_sample(globalX, globalY) :
+            row[x] = uniform ? uniform_bayer_sample(globalX, globalY, pattern) :
                                bayer_sample(globalX, globalY);
         }
         J16SAMPROW scanline = row.data();
@@ -1778,8 +1783,10 @@ std::vector<uint8_t> encode_sof3_bayer_tile(uint32_t tileX, uint32_t tileY, bool
     return result;
 }
 
-std::vector<uint8_t> make_tiled_bayer_dng(bool bigEndian, bool uniform = false) {
-    auto bytes = make_rggb_dng(bigEndian, false, uniform);
+std::vector<uint8_t> make_tiled_bayer_dng(
+        bool bigEndian, bool uniform = false,
+        const std::array<uint8_t, 4>& pattern = kRggbPattern) {
+    auto bytes = make_rggb_dng(bigEndian, false, uniform, pattern);
     auto entry = [&](uint16_t id) {
         const size_t count = bigEndian ? (size_t(bytes[8]) << 8) | bytes[9] :
                                         bytes[8] | (size_t(bytes[9]) << 8);
@@ -1828,7 +1835,7 @@ std::vector<uint8_t> make_tiled_bayer_dng(bool bigEndian, bool uniform = false) 
     store32(&bytes, lengths + 8, static_cast<uint32_t>(lengthsTable), bigEndian);
     for (uint32_t ty = 0; ty < 2; ++ty) {
         for (uint32_t tx = 0; tx < 2; ++tx) {
-            auto tile = encode_sof3_bayer_tile(tx, ty, uniform);
+            auto tile = encode_sof3_bayer_tile(tx, ty, uniform, pattern);
             if (tile.empty()) {
                 return {};
             }
@@ -1845,9 +1852,10 @@ std::vector<uint8_t> make_tiled_bayer_dng(bool bigEndian, bool uniform = false) 
 
 std::vector<uint8_t> make_identity_bayer_dng(bool bigEndian, bool tiled,
                                               bool multipleStrips = true,
-                                              bool uniform = false) {
-    auto bytes = tiled ? make_tiled_bayer_dng(bigEndian, uniform) :
-                         make_rggb_dng(bigEndian, multipleStrips, uniform);
+                                              bool uniform = false,
+                                              const std::array<uint8_t, 4>& pattern = kRggbPattern) {
+    auto bytes = tiled ? make_tiled_bayer_dng(bigEndian, uniform, pattern) :
+                         make_rggb_dng(bigEndian, multipleStrips, uniform, pattern);
     if (bytes.empty()) {
         return {};
     }
@@ -1886,8 +1894,10 @@ std::vector<uint8_t> make_identity_bayer_dng(bool bigEndian, bool tiled,
 }
 
 std::vector<uint8_t> make_deflate_bayer_dng(bool bigEndian, bool multipleStrips,
-                                            bool horizontalPredictor) {
-    auto bytes = make_identity_bayer_dng(bigEndian, false, multipleStrips);
+                                            bool horizontalPredictor,
+                                            const std::array<uint8_t, 4>& pattern = kRggbPattern,
+                                            bool uniform = false) {
+    auto bytes = make_identity_bayer_dng(bigEndian, false, multipleStrips, uniform, pattern);
     if (bytes.empty()) {
         return {};
     }
@@ -5564,6 +5574,84 @@ DEF_TEST(RustRaw_BayerUniformStage3, r) {
             REPORTER_ASSERT(r, !codec && result == SkCodec::kUnimplemented);
         }
     }
+}
+
+DEF_TEST(RustRaw_BayerOtherCfaPatterns, r) {
+    auto check = [&](std::vector<uint8_t> bytes, const std::array<uint8_t, 4>& pattern,
+                     bool uniform) {
+        REPORTER_ASSERT(r, !bytes.empty());
+        if (bytes.empty()) {
+            return;
+        }
+        auto data = SkData::MakeWithCopy(bytes.data(), bytes.size());
+        auto stream = SkMemoryStream::Make(data);
+        auto adapter = std::make_unique<rust::stream::SkStreamAdapter>(stream.get());
+        auto reader = rust_raw::new_reader(std::move(adapter));
+        REPORTER_ASSERT(r, reader->stage1_status() == rust_raw::DecodeStatus::Success &&
+                           reader->stage2_status() == rust_raw::DecodeStatus::Success &&
+                           reader->stage3_status() == rust_raw::DecodeStatus::Success &&
+                           reader->status() == rust_raw::DecodeStatus::Unsupported);
+        if (reader->stage3_status() != rust_raw::DecodeStatus::Success) {
+            return;
+        }
+        REPORTER_ASSERT(r, reader->width() == 16 && reader->height() == 16 &&
+                           reader->bits_per_sample() == 16 && reader->main_ifd_index() == 0);
+        for (uint32_t y : {0u, 1u, 8u, 15u}) {
+            std::array<uint16_t, 17> raw, normalized;
+            std::array<uint16_t, 50> rgb;
+            raw.fill(0xa5a5);
+            normalized.fill(0xa5a5);
+            rgb.fill(0xa5a5);
+            REPORTER_ASSERT(r, reader->read_stage1_bayer_row(
+                    y, rust::Slice<uint16_t>(raw.data(), 16)) ==
+                    rust_raw::DecodeStatus::Success);
+            REPORTER_ASSERT(r, reader->read_stage2_bayer_row(
+                    y, rust::Slice<uint16_t>(normalized.data(), 16)) ==
+                    rust_raw::DecodeStatus::Success);
+            REPORTER_ASSERT(r, reader->read_stage3_bayer_rgb_row(
+                    y, rust::Slice<uint16_t>(rgb.data(), 48)) ==
+                    rust_raw::DecodeStatus::Success);
+            for (uint32_t x = 0; x < 16; ++x) {
+                const auto sample = uniform ? uniform_bayer_sample(x, y, pattern) :
+                                              bayer_sample(x, y);
+                REPORTER_ASSERT(r, raw[x] == sample && normalized[x] == sample);
+                const size_t pixel = 3 * x;
+                if (uniform) {
+                    REPORTER_ASSERT(r, rgb[pixel] == 10000 &&
+                                       rgb[pixel + 1] == 20000 &&
+                                       rgb[pixel + 2] == 30000);
+                } else {
+                    const size_t channel = pattern[2 * (y & 1) + (x & 1)];
+                    REPORTER_ASSERT(r, rgb[pixel + channel] == sample);
+                }
+            }
+            REPORTER_ASSERT(r, raw[16] == 0xa5a5 && normalized[16] == 0xa5a5 &&
+                               rgb[48] == 0xa5a5 && rgb[49] == 0xa5a5);
+        }
+        SkCodec::Result result = SkCodec::kSuccess;
+        auto codec = SkRawRustDecoder::Decode(data, &result);
+        REPORTER_ASSERT(r, !codec && result == SkCodec::kUnimplemented);
+    };
+    for (const std::array<uint8_t, 4>& pattern :
+         {std::array<uint8_t, 4>{2, 1, 1, 0},
+          std::array<uint8_t, 4>{1, 0, 2, 1},
+          std::array<uint8_t, 4>{1, 2, 0, 1}}) {
+        check(make_rggb_dng(false, true, true, pattern), pattern, true);
+        check(make_rggb_dng(true, false, true, pattern), pattern, true);
+        check(make_deflate_bayer_dng(false, true, true, pattern, true), pattern, true);
+        check(make_identity_bayer_dng(true, true, true, true, pattern), pattern, true);
+        check(make_identity_bayer_dng(false, true, true, false, pattern), pattern, false);
+    }
+    const std::array<uint8_t, 4> invalid = {0, 1, 2, 1};
+    auto bytes = make_rggb_dng(false, false, true, invalid);
+    auto data = SkData::MakeWithCopy(bytes.data(), bytes.size());
+    auto stream = SkMemoryStream::Make(data);
+    auto adapter = std::make_unique<rust::stream::SkStreamAdapter>(stream.get());
+    auto reader = rust_raw::new_reader(std::move(adapter));
+    REPORTER_ASSERT(r, reader->stage1_status() == rust_raw::DecodeStatus::Unsupported);
+    SkCodec::Result result = SkCodec::kSuccess;
+    auto codec = SkRawRustDecoder::Decode(data, &result);
+    REPORTER_ASSERT(r, !codec && result == SkCodec::kUnimplemented);
 }
 
 DEF_TEST(RustRaw_BayerSof3Tiles, r) {
