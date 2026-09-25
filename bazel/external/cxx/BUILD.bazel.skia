@@ -1,4 +1,6 @@
 load("@rules_cc//cc:defs.bzl", "cc_library")
+load("@rules_rust//rust:defs.bzl", "rust_library")
+load("@bazel_skylib//rules:copy_file.bzl", "copy_file")
 
 
 # This rule was created by looking at the originally generated
@@ -17,4 +19,34 @@ cc_library(
     # `#include "third_party/rust/cxx/v1/cxx.h"`.
     strip_include_prefix = "include/",
     include_prefix = "third_party/rust/cxx/v1/",
+)
+
+# GN builds the pinned CXX runtime with the same native toolchain as Skia.
+rust_library(
+    name = "cxx_rust_gn",
+    crate_name = "cxx",
+    crate_features = ["alloc", "default", "std"],
+    crate_root = "src/lib.rs",
+    edition = "2021",
+    rustc_env_files = [":cargo_toml_env_vars"],
+    rustc_flags = ["--cap-lints=allow"],
+    srcs = glob(["**/*.rs"]),
+    deps = [
+        "@crates__foldhash-0.1.5//:foldhash",
+        "@crates__link-cplusplus-1.0.12//:link_cplusplus",
+    ],
+    proc_macro_deps = ["@crates__cxxbridge-macro-1.0.168//:cxxbridge_macro"],
+    version = "1.0.168",
+)
+
+copy_file(
+    name = "cxx_runtime_gn",
+    src = "src/cxx.cc",
+    out = "gn_runtime/src/cxx.cc",
+)
+
+copy_file(
+    name = "cxx_header_gn",
+    src = "include/cxx.h",
+    out = "gn_runtime/include/cxx.h",
 )

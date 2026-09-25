@@ -1,0 +1,97 @@
+load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_static_library", "rust_test")
+load("//bazel:rust_cxx_bridge.bzl", "rust_cxx_bridge")
+load("//bazel:skia_rules.bzl", "skia_cc_library", "skia_filegroup")
+
+skia_filegroup(
+    name = "rs_srcs",
+    srcs = ["FFI.rs", "acr3_default.rs", "bayer.rs", "color.rs", "deflate.rs", "demosaic.rs", "dng.rs", "float32.rs", "gain_map.rs", "input.rs", "linearization.rs", "opcode.rs", "rgb8.rs", "rgb16.rs", "tone.rs", "tiled.rs"],
+)
+
+skia_filegroup(
+    name = "cxx_bridge_srcs",
+    srcs = ["FFI.rs"],
+)
+
+skia_cc_library(
+    name = "deflate_strip_decoder",
+    srcs = ["DeflateStripDecoder.cpp"],
+    hdrs = ["DeflateStripDecoder.h"],
+    visibility = ["//experimental/rust_raw:__subpackages__"],
+    deps = [
+        "@crates//:cxx_cc",
+        "@skia_user_config//:user_config",
+        "@zlib",
+    ],
+)
+
+skia_cc_library(
+    name = "jpeg_tile_decoder",
+    srcs = ["JpegTileDecoder.cpp"],
+    hdrs = ["JpegTileDecoder.h"],
+    visibility = ["//experimental/rust_raw:__subpackages__"],
+    deps = [
+        "//:core",
+        "//src/codec:jpeg_decode",
+        "@libjpeg_turbo",
+        "@crates//:cxx_cc",
+        "@skia_user_config//:user_config",
+    ],
+)
+
+rust_cxx_bridge(
+    name = "cxx_bridge",
+    src = "FFI.rs",
+    visibility = ["//experimental/rust_raw:__subpackages__"],
+    deps = [":deflate_strip_decoder", ":jpeg_tile_decoder", "//rust/common:ffi_utils"],
+)
+
+rust_static_library(
+    name = "ffi_rs",
+    srcs = [":rs_srcs"],
+    crate_root = "FFI.rs",
+    rustc_flags = ["-Dwarnings"],
+    visibility = ["//experimental/rust_raw:__subpackages__"],
+    deps = [
+        ":cxx_bridge",
+        "//rust/common:cxx_bridge",
+        "//rust/common:skia_rust_common",
+        "@crates//:cxx",
+    ],
+)
+
+# GN compiles the generated bridge and native decoders; this archive supplies
+# only their Rust counterparts rather than duplicating Bazel-built Skia C++.
+rust_static_library(
+    name = "ffi_rs_gn",
+    srcs = [":rs_srcs"],
+    crate_root = "FFI.rs",
+    rustc_flags = ["-Dwarnings"],
+    visibility = ["//:__pkg__"],
+    deps = [
+        ":cxx_bridge/include",
+        "//rust/common:skia_rust_common_gn",
+        "@@rules_rust++crate+crates__cxx-1.0.168//:cxx_rust_gn",
+    ],
+)
+
+rust_test(
+    name = "test_raw_ffi",
+    timeout = "short",
+    crate = ":ffi_rs",
+)
+
+rust_test(
+    name = "test_tiff_parser",
+    srcs = ["standalone.rs", "acr3_default.rs", "bayer.rs", "color.rs", "deflate.rs", "demosaic.rs", "dng.rs", "float32.rs", "gain_map.rs", "input.rs", "linearization.rs", "opcode.rs", "rgb8.rs", "rgb16.rs", "tone.rs", "tiled.rs"],
+    crate_root = "standalone.rs",
+    rustc_flags = ["-Dwarnings"],
+    timeout = "short",
+)
+
+rust_binary(
+    name = "color_probe",
+    srcs = ["color_probe.rs", "acr3_default.rs", "color.rs", "dng.rs", "linearization.rs", "opcode.rs", "tiled.rs", "tone.rs"],
+    crate_root = "color_probe.rs",
+    rustc_flags = ["-Dwarnings"],
+    testonly = True,
+)

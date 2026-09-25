@@ -54,6 +54,9 @@
 #include "tools/Resources.h"
 #include "tools/ToolUtils.h"
 
+#if defined(SK_CODEC_DECODES_RAW)
+#include "include/codec/SkRawDecoder.h"
+#endif
 #if defined(SK_CODEC_DECODES_PNG_WITH_RUST)
 #include "include/codec/SkPngRustDecoder.h"
 #endif
@@ -726,11 +729,41 @@ DEF_TEST(Codec_png_plte_trns_gama, r) {
 }
 
 // Disable RAW tests for Win32.
-#if defined(SK_CODEC_DECODES_RAW) && !defined(_WIN32)
+#if defined(SK_CODEC_DECODES_RAW_WITH_DNG_SDK) && !defined(_WIN32)
 DEF_TEST(Codec_raw, r) {
     check(r, "images/sample_1mp.dng", SkISize::Make(600, 338), false, false, false);
     check(r, "images/sample_1mp_rotated.dng", SkISize::Make(600, 338), false, false, false);
     check(r, "images/dng_with_preview.dng", SkISize::Make(600, 338), true, false, false);
+}
+#endif
+
+#if defined(SK_CODEC_DECODES_RAW) && !defined(SK_CODEC_DECODES_RAW_WITH_DNG_SDK) && !defined(_WIN32)
+DEF_TEST(Codec_raw_preview_only, r) {
+    auto withPreview = GetResourceAsData("images/dng_with_preview.dng");
+    REPORTER_ASSERT(r, withPreview);
+    if (!withPreview) {
+        return;
+    }
+    SkCodec::Result result = SkCodec::kInternalError;
+    auto codec = SkCodec::MakeFromStream(SkMemoryStream::Make(withPreview), &result);
+    REPORTER_ASSERT(r, codec && result == SkCodec::kSuccess);
+    if (codec) {
+        REPORTER_ASSERT(r, codec->getEncodedFormat() == SkEncodedImageFormat::kJPEG);
+        REPORTER_ASSERT(r, codec->dimensions() == SkISize::Make(600, 338));
+        auto info = codec->getInfo().makeColorType(kRGBA_8888_SkColorType);
+        SkBitmap pixels;
+        REPORTER_ASSERT(r, pixels.tryAllocPixels(info));
+        if (pixels.getPixels()) {
+            REPORTER_ASSERT(r, codec->getPixels(info, pixels.getPixels(), pixels.rowBytes()) ==
+                                       SkCodec::kSuccess);
+        }
+    }
+    auto withoutPreview = GetResourceAsData("images/sample_1mp.dng");
+    REPORTER_ASSERT(r, withoutPreview);
+    if (withoutPreview) {
+        auto raw = SkRawDecoder::Decode(SkMemoryStream::Make(withoutPreview), &result);
+        REPORTER_ASSERT(r, !raw && result == SkCodec::kUnimplemented);
+    }
 }
 #endif
 
@@ -833,9 +866,11 @@ DEF_TEST(Codec_Dimensions, r) {
 
     // RAW
 // Disable RAW tests for Win32.
-#if defined(SK_CODEC_DECODES_RAW) && !defined(_WIN32)
+#if defined(SK_CODEC_DECODES_RAW_WITH_DNG_SDK) && !defined(_WIN32)
     test_dimensions(r, "images/sample_1mp.dng");
     test_dimensions(r, "images/sample_1mp_rotated.dng");
+#endif
+#if defined(SK_CODEC_DECODES_RAW) && !defined(_WIN32)
     test_dimensions(r, "images/dng_with_preview.dng");
 #endif
 }
@@ -2678,4 +2713,3 @@ DEF_TEST(Codec_Bmp_b511820841, r) {
     REPORTER_ASSERT(r,
         codec->getPixels(info, &unusedPixels, info.minRowBytes(), &opts) != SkCodec::kSuccess);
 }
-
