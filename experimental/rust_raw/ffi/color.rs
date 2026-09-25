@@ -5,9 +5,9 @@
 #![forbid(unsafe_code)]
 
 //! Experimental, test-only DNG camera-profile and output color math. Public
-//! SkCodec selection, default tone/black rendering and other profiles remain open.
+//! SkCodec selection and tone/black behavior beyond the checked SDR profile remain open.
 
-use super::tone::{apply_sdk_rgb_tone, SdkToneTable};
+use super::tone::{apply_sdk_rgb_tone, SdkExposureRamp, SdkToneTable};
 
 #[derive(Debug, PartialEq)]
 pub(crate) enum ColorError {
@@ -335,20 +335,26 @@ impl SdkColorTransform {
     // See experimental/rust_raw/licenses/LICENSE.adobe-dng-sdk and PROVENANCE.md.
     // This diagnostic assumes zero exposure, no maps, SDR and explicitly
     // supplied profile tone and final sRGB transfer; it cannot render DNG generally.
-    pub(crate) fn render_identity_sdr_srgb8_u16(
+    pub(crate) fn render_sdr_srgb8_u16(
         &self,
         samples: [u16; 3],
         tone: &SdkToneTable,
         gamma: &SdkToneTable,
+        exposure: Option<&SdkExposureRamp>,
     ) -> Result<[u8; 3], ColorError> {
         let scale = 1.0f32 / f32::from(u16::MAX);
         let camera = std::array::from_fn(|channel| {
             (f32::from(samples[channel]) * scale).min(self.camera_white[channel] as f32)
         });
-        let intermediate =
+        let mut intermediate =
             matrix_vector_f32(&self.camera_to_prophoto, camera).map(|value| value.clamp(0.0, 1.0));
         if intermediate.iter().any(|value| !value.is_finite()) {
             return Err(ColorError::Invalid);
+        }
+        if let Some(ramp) = exposure {
+            for value in &mut intermediate {
+                *value = ramp.evaluate(*value).map_err(|_| ColorError::Invalid)?;
+            }
         }
         let toned = apply_sdk_rgb_tone(intermediate, |value| tone.interpolate(value))
             .map_err(|_| ColorError::Invalid)?;
@@ -688,7 +694,7 @@ mod tests {
         xyz_to_kelvin_sdk_robertson, ColorError, DngColorTransform, DualIlluminantProfile,
         SdkColorTransform, SRGB_TO_XYZ_D50,
     };
-    use crate::tone::SdkToneTable;
+    use crate::tone::{sdk_acr3_default_tone, SdkExposureRamp, SdkToneTable};
 
     const FORWARD: [f64; 9] = [
         0.7978, 0.1352, 0.0313, 0.288, 0.7119, 0.0001, 0.0, 0.0, 0.8251,
@@ -955,9 +961,29 @@ mod tests {
             ([272, 825, 414], [10, 31, 18]),
         ] {
             assert_eq!(
-                sdk.render_identity_sdr_srgb8_u16(input, &identity, &gamma),
+                sdk.render_sdr_srgb8_u16(input, &identity, &gamma, None),
                 Ok(expected),
                 "{input:?}"
+            );
+        }
+        let default_tone =
+            SdkToneTable::from_function(sdk_acr3_default_tone).expect("pinned SDK ACR3 tone");
+        let auto_black =
+            SdkExposureRamp::for_zero_exposure(5.0, 1.0, 1.0).expect("SDK default shadows");
+        for (input, without_black, with_black) in [
+            ([3604, 8659, 6823], [114, 144, 172], [110, 141, 171]),
+            ([3765, 7478, 4070], [126, 134, 98], [123, 131, 94]),
+            ([272, 825, 414], [5, 29, 15], [0, 20, 3]),
+        ] {
+            assert_eq!(
+                sdk.render_sdr_srgb8_u16(input, &default_tone, &gamma, None),
+                Ok(without_black),
+                "{input:?} default tone, black None"
+            );
+            assert_eq!(
+                sdk.render_sdr_srgb8_u16(input, &default_tone, &gamma, Some(&auto_black)),
+                Ok(with_black),
+                "{input:?} default tone and Auto black"
             );
         }
         profile.analog_balance[0] = 0.0;

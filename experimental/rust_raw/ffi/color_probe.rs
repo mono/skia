@@ -18,7 +18,7 @@ mod tone;
 use color::{sdk_illuminant_temperature, DualIlluminantProfile, SdkColorTransform};
 use dng::{optional, required, scalar, ByteOrder, Tag};
 use std::{env, fs};
-use tone::SdkToneTable;
+use tone::{sdk_acr3_default_tone, SdkExposureRamp, SdkToneTable};
 
 fn srational(tag: &Tag<'_>, index: usize, order: ByteOrder) -> f64 {
     assert_eq!((tag.kind, tag.count as usize > index), (10, true));
@@ -44,7 +44,7 @@ fn matrix(tags: &[Tag<'_>], id: u16, order: ByteOrder) -> [[f64; 3]; 3] {
     std::array::from_fn(|row| std::array::from_fn(|col| srational(tag, row * 3 + col, order)))
 }
 
-fn profile(data: &[u8]) -> DualIlluminantProfile {
+fn profile(data: &[u8], default_tone: bool, auto_black: bool) -> DualIlluminantProfile {
     assert_eq!(&data[..4], b"II\x2a\0");
     let order = ByteOrder::Little;
     let first = order.u32(&data[4..8]) as usize;
@@ -52,17 +52,33 @@ fn profile(data: &[u8]) -> DualIlluminantProfile {
     let tags = &ifd.tags;
     assert_eq!(scalar(required(tags, 256).unwrap(), order), Ok(256));
     assert_eq!(scalar(required(tags, 257).unwrap(), order), Ok(144));
-    assert_eq!(scalar(required(tags, 51110).unwrap(), order), Ok(1));
-    assert!(optional(tags, 50940).is_some_and(|tag| {
-        tag.kind == 11
-            && tag.count == 4
-            && tag.value.chunks_exact(4).map(|part| order.u32(part)).eq([
-                0,
-                0,
-                1f32.to_bits(),
-                1f32.to_bits(),
-            ])
-    }));
+    if auto_black {
+        assert!(optional(tags, 51110).is_none());
+    } else {
+        let tag = required(tags, 51110).expect("DefaultBlackRender=None");
+        assert_eq!((tag.kind, tag.count), (4, 1));
+        assert_eq!(scalar(tag, order), Ok(1));
+    }
+    let exposure = required(tags, 50730).expect("BaselineExposure");
+    let shadow_scale = required(tags, 50739).expect("ShadowScale");
+    assert_eq!(exposure.count, 1);
+    assert_eq!(shadow_scale.count, 1);
+    assert_eq!(srational(exposure, 0, order), 0.0);
+    assert_eq!(urational(shadow_scale, 0, order), 1.0);
+    if default_tone {
+        assert!(optional(tags, 50940).is_none());
+    } else {
+        assert!(optional(tags, 50940).is_some_and(|tag| {
+            tag.kind == 11
+                && tag.count == 4
+                && tag.value.chunks_exact(4).map(|part| order.u32(part)).eq([
+                    0,
+                    0,
+                    1f32.to_bits(),
+                    1f32.to_bits(),
+                ])
+        }));
+    }
     assert!(optional(tags, 52525).is_none() && optional(tags, 52544).is_none());
     let neutral = required(tags, 50728).expect("camera neutral");
     let analog = required(tags, 50727).expect("analog balance");
@@ -88,17 +104,30 @@ fn profile(data: &[u8]) -> DualIlluminantProfile {
 
 fn main() {
     let args: Vec<_> = env::args().collect();
-    assert_eq!(
-        args.len(),
-        4,
-        "usage: color_probe DNG STAGE3.rgb16 OUTPUT.rgb8"
-    );
+    let (output_file, default_tone, auto_black) = match args.as_slice() {
+        [_, _, _, output_file] => (output_file, false, false),
+        [_, _, _, mode, output_file] if mode == "--tone=sdk-default" => (output_file, true, false),
+        [_, _, _, mode, output_file] if mode == "--black=auto" => (output_file, false, true),
+        [_, _, _, tone, black, output_file]
+            if tone == "--tone=sdk-default" && black == "--black=auto" =>
+        {
+            (output_file, true, true)
+        }
+        _ => panic!(
+            "usage: color_probe DNG STAGE3.rgb16 [--tone=sdk-default] [--black=auto] OUTPUT.rgb8"
+        ),
+    };
     let data = fs::read(&args[1]).expect("controlled Skia DNG");
     let input = fs::read(&args[2]).expect("independently decoded Rust Stage 3");
     assert_eq!(input.len(), 600 * 338 * 3 * 2);
     let transform =
-        SdkColorTransform::from_dual_illuminant(&profile(&data)).expect("controlled SDR profile");
-    let tone = SdkToneTable::from_function(Ok).expect("identity tone");
+        SdkColorTransform::from_dual_illuminant(&profile(&data, default_tone, auto_black))
+            .expect("controlled SDR profile");
+    let tone = if default_tone {
+        SdkToneTable::from_function(sdk_acr3_default_tone).expect("pinned SDK ACR3 tone")
+    } else {
+        SdkToneTable::from_function(Ok).expect("identity tone")
+    };
     // Adobe DNG SDK 1.7.1.2724,
     // source/dng_color_space.cpp::dng_function_GammaEncode_sRGB.
     // Copyright 2006-2019 Adobe Systems Incorporated. All Rights Reserved.
@@ -111,6 +140,15 @@ fn main() {
         })
     })
     .expect("final sRGB transfer");
+    // Adobe DNG SDK 1.7.1.2724, source/dng_render.cpp::dng_render::dng_render
+    // defaults scene-data shadows to 5; the checked BaselineExposure,
+    // ShadowScale and Stage3Gain of this fixture are 0, 1 and 1.
+    // Copyright 2006-2023 Adobe Systems Incorporated. All Rights Reserved.
+    // See experimental/rust_raw/licenses/LICENSE.adobe-dng-sdk and PROVENANCE.md.
+    let ramp = auto_black
+        .then(|| SdkExposureRamp::for_zero_exposure(5.0, 1.0, 1.0))
+        .transpose()
+        .expect("SDK Auto-black SDR ramp");
     let mut output = Vec::new();
     output
         .try_reserve_exact(input.len() / 2)
@@ -119,9 +157,9 @@ fn main() {
         let pixel = [0, 2, 4].map(|index| u16::from_le_bytes([sample[index], sample[index + 1]]));
         output.extend_from_slice(
             &transform
-                .render_identity_sdr_srgb8_u16(pixel, &tone, &gamma)
+                .render_sdr_srgb8_u16(pixel, &tone, &gamma, ramp.as_ref())
                 .expect("checked SDK-style SDR pixel"),
         );
     }
-    fs::write(&args[3], output).expect("test-only SDR diagnostic");
+    fs::write(output_file, output).expect("test-only SDR diagnostic");
 }

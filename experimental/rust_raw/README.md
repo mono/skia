@@ -561,17 +561,32 @@ in a private color trial came from the SDK's 2850 K assignment to
 Standard Light A, not the nominal 2856 K used in the original
 diagnostic. The source-attributed, **test-only** `SdkColorTransform`
 now models the checked two-illuminant SDR camera white, PCS/ProPhoto
-matrices, clipping, identity profile tone, sRGB table and byte
-conversion. On a metadata-only identity-tone/BlackRender=None version
-of Skia's `sample_1mp.dng`, separate SDK and Rust Stage-3 processes
-agree on all 1,216,800 bytes; the Rust color diagnostic then matches
-all **608,400 SDK Stage-4 channel bytes** (SHA-256
-`b8556bfe2c6492f56648264a316ba9b97913cddb23ab00623cda85ab4fc33f12`).
-`tools/raw_dng_controlled_fixture.py` generates the DNG from the
-source-controlled Skia resource without shipping any Adobe sample;
-`tools/raw_dng_color_compare.py` runs the two native stage probes and
-the explicit Bazel `//experimental/rust_raw/ffi:color_probe` target in
-separate processes and fails closed on missing stages or pixels.
+matrices, clipping, RGB tone, sRGB table and byte conversion.
+`tone.rs` additionally samples a licensed 1,025-value SDK ACR3
+default-tone table and models the zero-exposure SDR shadow ramp;
+`tools/raw_dng_extract_acr3.py` verifies the table's pinned source
+and preserves its attribution in `acr3_default.rs`.
+`tools/raw_dng_controlled_fixture.py` derives a four-way tone/black
+matrix from Skia's existing `sample_1mp.dng` without shipping any Adobe
+example images. `tools/raw_dng_color_compare.py` runs the Adobe Stage-3/4,
+Rust Stage-3 and test-only Rust color processes independently and
+rejects missing output or the wrong stage geometry. On macOS ARM64,
+all four profiles match all **1,216,800 Stage-3 bytes** and
+**608,400 Stage-4 channel bytes**:
+
+| Profile tone | Black render | SDK/Rust Stage-4 SHA-256 |
+| --- | --- | --- |
+| Identity | None | `b8556bfe2c6492f56648264a316ba9b97913cddb23ab00623cda85ab4fc33f12` |
+| SDK ACR3 default | None | `dd3131cb848e0e834e3aea5ab51701f672be4d605c8c370c708d338b1593ca30` |
+| Identity | Auto | `8e44bfde7beafb2199d914c6e908ebe7eb254a386e768769c8f89950da0308f5` |
+| SDK ACR3 default | Auto (original DNG) | `71f515c7d5d3155d0314099820ebefb0e44c7da450c2d6c298e7ba2dd6faa6f9` |
+
+Packing test-only Rust RGB with opaque alpha for **each** of the four
+variants also matches Adobe's full-size public RGBA8888 bytes. For the
+unmodified DNG the SHA-256 is
+`5ae6021e86f03f496ab3d7cf2d81f00d7a6f2d577a4ed77f37bce6a32550cfe0`.
+This does **not** compare the Rust *public* SkCodec path, destination
+conversions, scaled requests or another camera profile.
 With source-built ARM64 `out/RawReference/dng_stage_oracle` and
 `out/RawPreview/raw_rust_stage_probe` available, reproduce the check
 from the Skia root:
@@ -584,12 +599,18 @@ python3 tools/raw_dng_color_compare.py \
   --candidate-stage out/RawPreview/raw_rust_stage_probe \
   --candidate-color bazel-bin/experimental/rust_raw/ffi/color_probe \
   --report /tmp/raw-dng-controlled-color.json
+python3 tools/raw_dng_color_compare.py --tone=sdk-default --black=auto \
+  --reference out/RawReference/dng_stage_oracle \
+  --candidate-stage out/RawPreview/raw_rust_stage_probe \
+  --candidate-color bazel-bin/experimental/rust_raw/ffi/color_probe \
+  --reference-public out/RawReference/raw_codec_probe \
+  --report /tmp/raw-dng-original-color.json
 ```
 
-This is **not** the original default-tone/Auto-black file, a public
-`SkCodec` decode, or proof for any other profile, request, or platform.
-Adobe's default tone and Auto-black renderer are still unavailable;
-real-image public `SkCodec` output remains Unimplemented.
+The second command uses the **unmodified Skia DNG**. Production CXX
+FFI still compiles neither `color.rs` nor `tone.rs`; real-image Rust
+public `SkCodec` creation remains Unimplemented, and no broader
+profile, scale, error or platform parity has been established.
 
 The native tests create synthetic DNGs in test code. `RustRaw_OutputMonoSrgb`
 checks the 256-value ramp against the published sRGB transfer, including

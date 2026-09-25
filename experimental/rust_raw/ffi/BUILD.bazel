@@ -4,7 +4,7 @@ load("//bazel:skia_rules.bzl", "skia_cc_library", "skia_filegroup")
 
 skia_filegroup(
     name = "rs_srcs",
-    srcs = ["FFI.rs", "bayer.rs", "color.rs", "deflate.rs", "demosaic.rs", "dng.rs", "float32.rs", "gain_map.rs", "input.rs", "linearization.rs", "opcode.rs", "rgb8.rs", "rgb16.rs", "tone.rs", "tiled.rs"],
+    srcs = ["FFI.rs", "acr3_default.rs", "bayer.rs", "color.rs", "deflate.rs", "demosaic.rs", "dng.rs", "float32.rs", "gain_map.rs", "input.rs", "linearization.rs", "opcode.rs", "rgb8.rs", "rgb16.rs", "tone.rs", "tiled.rs"],
 )
 
 skia_filegroup(
@@ -82,7 +82,7 @@ rust_test(
 
 rust_test(
     name = "test_tiff_parser",
-    srcs = ["standalone.rs", "bayer.rs", "color.rs", "deflate.rs", "demosaic.rs", "dng.rs", "float32.rs", "gain_map.rs", "input.rs", "linearization.rs", "opcode.rs", "rgb8.rs", "rgb16.rs", "tone.rs", "tiled.rs"],
+    srcs = ["standalone.rs", "acr3_default.rs", "bayer.rs", "color.rs", "deflate.rs", "demosaic.rs", "dng.rs", "float32.rs", "gain_map.rs", "input.rs", "linearization.rs", "opcode.rs", "rgb8.rs", "rgb16.rs", "tone.rs", "tiled.rs"],
     crate_root = "standalone.rs",
     rustc_flags = ["-Dwarnings"],
     timeout = "short",
@@ -90,7 +90,7 @@ rust_test(
 
 rust_binary(
     name = "color_probe",
-    srcs = ["color_probe.rs", "color.rs", "dng.rs", "linearization.rs", "opcode.rs", "tiled.rs", "tone.rs"],
+    srcs = ["color_probe.rs", "acr3_default.rs", "color.rs", "dng.rs", "linearization.rs", "opcode.rs", "tiled.rs", "tone.rs"],
     crate_root = "color_probe.rs",
     rustc_flags = ["-Dwarnings"],
     testonly = True,

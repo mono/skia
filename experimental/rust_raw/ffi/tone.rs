@@ -9,6 +9,9 @@
 
 use super::dng::{valid_sdr_tone_curve, ByteOrder, Error, Tag};
 
+#[path = "acr3_default.rs"]
+mod acr3_default;
+
 pub(crate) struct ToneCurve {
     points: Vec<(f64, f64)>,
     second: Vec<f64>,
@@ -145,6 +148,100 @@ impl SdkToneTable {
 }
 
 // Derived from Adobe DNG SDK 1.7.1.2724,
+// source/dng_render.cpp::dng_tone_curve_acr3_default::Evaluate.
+// Copyright 2006-2023 Adobe Systems Incorporated. All Rights Reserved.
+// See experimental/rust_raw/licenses/LICENSE.adobe-dng-sdk and PROVENANCE.md.
+pub(crate) fn sdk_acr3_default_tone(value: f64) -> Result<f64, Error> {
+    if !value.is_finite() || !(0.0..=1.0).contains(&value) {
+        return Err(Error::Invalid);
+    }
+    let entries = &acr3_default::SDK_ACR3_DEFAULT;
+    let position = value as f32 * (entries.len() - 1) as f32;
+    let index = (position as usize).min(entries.len() - 2);
+    let fraction = position - index as f32;
+    let result = entries[index] * (1.0 - fraction) + entries[index + 1] * fraction;
+    if !result.is_finite() {
+        return Err(Error::Invalid);
+    }
+    Ok(f64::from(result))
+}
+
+// Derived from Adobe DNG SDK 1.7.1.2724,
+// source/dng_render.cpp::dng_render_task::Start/
+// dng_function_exposure_ramp::Evaluate/DoBaseline1DFunction.
+// Copyright 2006-2023 Adobe Systems Incorporated. All Rights Reserved.
+// See experimental/rust_raw/licenses/LICENSE.adobe-dng-sdk and PROVENANCE.md.
+// Only the SDR, zero-exposure case is modeled; HDR and exposure compensation
+// require separate, verified processing.
+pub(crate) struct SdkExposureRamp {
+    black: f64,
+    slope: f64,
+    radius: f64,
+    quadratic_scale: f64,
+}
+
+impl SdkExposureRamp {
+    pub(crate) fn for_zero_exposure(
+        shadows: f64,
+        shadow_scale: f64,
+        stage3_gain: f64,
+    ) -> Result<Self, Error> {
+        if [shadows, shadow_scale, stage3_gain]
+            .iter()
+            .any(|value| !value.is_finite())
+            || shadows < 0.0
+            || shadow_scale <= 0.0
+            || stage3_gain <= 0.0
+        {
+            return Err(Error::Invalid);
+        }
+        let black = shadows * shadow_scale * stage3_gain * 0.001;
+        if !black.is_finite() {
+            return Err(Error::Invalid);
+        }
+        let black = black.min(0.99);
+        let slope = 1.0 / (1.0 - black);
+        let radius = (0.5 * black).min((1.0 / 16.0) / slope);
+        let quadratic_scale = if radius > 0.0 {
+            slope / (4.0 * radius)
+        } else {
+            0.0
+        };
+        if [slope, radius, quadratic_scale]
+            .iter()
+            .any(|value| !value.is_finite())
+        {
+            return Err(Error::Invalid);
+        }
+        Ok(Self {
+            black,
+            slope,
+            radius,
+            quadratic_scale,
+        })
+    }
+
+    pub(crate) fn evaluate(&self, input: f32) -> Result<f32, Error> {
+        if !input.is_finite() {
+            return Err(Error::Invalid);
+        }
+        let x = f64::from(input.clamp(0.0, 1.0));
+        let value = if x <= self.black - self.radius {
+            0.0
+        } else if x >= self.black + self.radius {
+            (x - self.black) * self.slope
+        } else {
+            let distance = x - (self.black - self.radius);
+            self.quadratic_scale * distance * distance
+        };
+        if !value.is_finite() {
+            return Err(Error::Invalid);
+        }
+        Ok((value as f32).clamp(0.0, 1.0))
+    }
+}
+
+// Derived from Adobe DNG SDK 1.7.1.2724,
 // source/dng_reference.cpp::RefBaselineRGBTone.
 // Copyright 2006-2023 Adobe Systems Incorporated. All Rights Reserved.
 // See experimental/rust_raw/licenses/LICENSE.adobe-dng-sdk and PROVENANCE.md.
@@ -187,7 +284,10 @@ pub(crate) fn apply_sdk_rgb_tone(
 
 #[cfg(test)]
 mod tests {
-    use super::{apply_sdk_rgb_tone, ByteOrder, Error, SdkToneTable, ToneCurve};
+    use super::{
+        acr3_default, apply_sdk_rgb_tone, sdk_acr3_default_tone, ByteOrder, Error, SdkExposureRamp,
+        SdkToneTable, ToneCurve,
+    };
 
     fn points(values: &[(f32, f32)], order: ByteOrder) -> Vec<u8> {
         let mut bytes = Vec::new();
@@ -319,5 +419,56 @@ mod tests {
         assert_eq!(table.interpolate(f32::NAN), Err(Error::Invalid));
         assert_eq!(table.interpolate(-1.0), Err(Error::Invalid));
         assert_eq!(table.interpolate(1.01), Err(Error::Invalid));
+    }
+
+    #[test]
+    fn pinned_sdk_acr3_default_tone_is_bounded_and_table_driven() {
+        assert_eq!(acr3_default::SDK_ACR3_DEFAULT.len(), 1025);
+        assert_eq!(sdk_acr3_default_tone(0.0), Ok(0.0));
+        assert_eq!(sdk_acr3_default_tone(1.0), Ok(1.0));
+        for index in [1, 16, 256, 512, 768, 1023] {
+            assert_eq!(
+                sdk_acr3_default_tone(index as f64 / 1024.0),
+                Ok(f64::from(acr3_default::SDK_ACR3_DEFAULT[index]))
+            );
+        }
+        let table = SdkToneTable::from_function(sdk_acr3_default_tone)
+            .expect("sampled SDK ACR3 default tone");
+        assert_eq!(table.interpolate(0.0), Ok(0.0));
+        assert_eq!(table.interpolate(1.0), Ok(1.0));
+        assert_eq!(sdk_acr3_default_tone(f64::NAN), Err(Error::Invalid));
+        assert_eq!(sdk_acr3_default_tone(-0.01), Err(Error::Invalid));
+        assert_eq!(sdk_acr3_default_tone(1.01), Err(Error::Invalid));
+    }
+
+    #[test]
+    fn sdk_sdr_auto_black_ramp_has_checked_shadow_transition() {
+        let identity =
+            SdkExposureRamp::for_zero_exposure(0.0, 1.0, 1.0).expect("BlackRender=None ramp");
+        for value in [0.0, 0.003, 0.1, 0.75, 1.0] {
+            assert_eq!(identity.evaluate(value), Ok(value));
+        }
+        // dng_render::dng_render defaults to fShadows = 5 for scene data.
+        let auto =
+            SdkExposureRamp::for_zero_exposure(5.0, 1.0, 1.0).expect("default Auto-black ramp");
+        assert_eq!(auto.evaluate(0.0), Ok(0.0));
+        assert_eq!(auto.evaluate(0.0025), Ok(0.0));
+        assert_eq!(auto.evaluate(1.0), Ok(1.0));
+        let midpoint = 0.005_f32;
+        let expected = (1.0 / 0.995 / (4.0 * 0.0025) * 0.0025 * 0.0025) as f32;
+        assert!((auto.evaluate(midpoint).unwrap() - expected).abs() < 1e-7);
+        assert_eq!(auto.evaluate(f32::NAN), Err(Error::Invalid));
+        assert!(matches!(
+            SdkExposureRamp::for_zero_exposure(5.0, -1.0, 1.0),
+            Err(Error::Invalid)
+        ));
+        assert!(matches!(
+            SdkExposureRamp::for_zero_exposure(5.0, 1.0, f64::INFINITY),
+            Err(Error::Invalid)
+        ));
+        assert!(matches!(
+            SdkExposureRamp::for_zero_exposure(f64::MAX, f64::MAX, 1.0),
+            Err(Error::Invalid)
+        ));
     }
 }

@@ -1617,6 +1617,7 @@ if (skia_use_fontations || skia_use_rust_png_decode ||
       "experimental/rust_raw/ffi/DeflateStripDecoder.cpp",
       "experimental/rust_raw/ffi/DeflateStripDecoder.h",
       "experimental/rust_raw/ffi/FFI.rs",
+      "experimental/rust_raw/ffi/acr3_default.rs",
       "experimental/rust_raw/ffi/bayer.rs",
       "experimental/rust_raw/ffi/color.rs",
       "experimental/rust_raw/ffi/demosaic.rs",

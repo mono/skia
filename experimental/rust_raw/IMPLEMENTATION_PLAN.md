@@ -249,6 +249,19 @@ Output facade, scale, and broader metadata parity remain open.
   `tools/raw_dng_color_compare.py` reproduce this with the explicit
   test-only Rust `//experimental/rust_raw/ffi:color_probe` target.
   The candidate public `SkCodec` still rejects this real DNG.
+- A source-attributed, **test-only** copy of the SDK's 1,025-entry
+  ACR3 default-tone table plus its SDR Auto-black exposure ramp now
+  matches **all 608,400 Stage-4 RGB channel bytes** for **each** of
+  identity/default tone × None/Auto black on Skia's real DNG, including
+  the unmodified original. Independent Rust Stage 3 also matches
+  all 1,216,800 bytes. Opaque test-only RGBA packing for **all four
+  variants** matches Adobe's full-size public RGBA8888 bytes via the
+  optional `--reference-public` process; Rust's own public
+  `SkCodec` still reports Unimplemented. The table is reproduced and
+  source-checked by `tools/raw_dng_extract_acr3.py`; attribution and
+  preserved Adobe notices are tracked in [PROVENANCE.md](PROVENANCE.md).
+  Both Rust Bazel targets pass **95/95 on macOS ARM64 and x64**
+  with the source-derived default-tone and SDR Auto-black tests.
 - An SDK-free Apple ASan/UBSan native fuzzer with opt-in 8-bit coverage of the
   CXX RAW bridge and harness replayed generated DNG/Skia seeds and completed
   **8,000** short mutations without sanitizer failures. It reached **168
@@ -281,15 +294,19 @@ Output facade, scale, and broader metadata parity remain open.
    normalization, camera-white/ProPhoto clipping and transfer-table
    quantization reduced that difference to **1,104 one-byte channels**
    (R/G/B 39/213/852). Correcting the SDK Standard Light A constant
-   from 2856 to 2850 K now makes the **test-only** Rust Stage-4
-   output exact for this controlled real DNG. This is **not public
+   from 2856 to 2850 K makes the **test-only** Rust Stage-4
+   output exact for the controlled DNG. Licensed ACR3 default tone and
+   Auto-black operations then match the unmodified DNG. This is **not public
    SkCodec parity**, and no SDK-derived color renderer is enabled in
    the production FFI or public codec.
 2. Adobe's default artistic tone and automatic black behavior are not fully
    specified by DNG. On the original real file they cause material,
-   multi-byte differences from the controlled variant. Non-unity profile gain/look
-   application, masks, further opcode classes, non-2x2 CFA patterns, and output
-   quantization also need complete, independently justified implementations.
+   multi-byte differences from the controlled variant. The pinned SDK
+   operations now reproduce those defaults for **one test-only fixture**,
+   not all scene-data/profile/overrange combinations or public requests.
+   Non-unity profile gain/look application, masks, further opcode
+   classes, non-2x2 CFA patterns, and output quantization for other
+   combinations still need complete, independently justified implementations.
 3. Nonzero-black stage normalization has one-LSB differences in selected
    diagnostic samples. Those are **not independently a public API failure**,
    but final black-normalized Bayer rendering is unavailable, so their effect
@@ -311,13 +328,14 @@ changing only Auto black (with identity tone) changes it by a mean **2.54**
 and a maximum **16** bytes. These are not narrow quantization exceptions.
 
 The current decision is to keep the **exact-output gate** and leave Adobe
-as the default until an independently justified equivalent exists.
-If that gate cannot be met without copying licensed implementation data,
-maintainers must explicitly approve a *different* independent rendering
-policy and its documented visual migration before P10/P11; merely widening
-a comparison tolerance or treating previews as full DNGs is not a solution.
-Continue stage/format, safety and platform work while this decision is open,
-but do not silently promote an inexact full-DNG renderer.
+as the default until a complete **public, cross-platform** equivalent
+exists. The licensed derivative reproduces these two defaults for one
+test-only real DNG, but general source-image/profile semantics and the
+Skia-facing scale, destination, streaming and error contract remain open.
+If broader exact parity cannot be achieved, maintainers must explicitly
+approve a different rendering policy and documented visual migration
+before P10/P11; merely widening a comparison tolerance or treating
+previews as full DNGs is not a solution.
 
 Do not copy SDK example files into this repository. The approved licensed
 derivative permits attributed, notice-preserving SDK-derived algorithms and
