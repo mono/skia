@@ -112,12 +112,18 @@ impl SdkToneTable {
     const SIZE: usize = 4096;
 
     pub(crate) fn from_curve(curve: &ToneCurve) -> Result<Self, Error> {
+        Self::from_function(|value| curve.evaluate(value))
+    }
+
+    pub(crate) fn from_function(
+        mut evaluate: impl FnMut(f64) -> Result<f64, Error>,
+    ) -> Result<Self, Error> {
         let mut samples = Vec::new();
         samples
             .try_reserve_exact(Self::SIZE + 2)
             .map_err(|_| Error::OutOfMemory)?;
         for index in 0..=Self::SIZE {
-            let value = curve.evaluate(index as f64 / Self::SIZE as f64)? as f32;
+            let value = evaluate(index as f64 / Self::SIZE as f64)? as f32;
             if !value.is_finite() {
                 return Err(Error::Invalid);
             }

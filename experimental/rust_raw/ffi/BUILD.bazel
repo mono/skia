@@ -1,4 +1,4 @@
-load("@rules_rust//rust:defs.bzl", "rust_static_library", "rust_test")
+load("@rules_rust//rust:defs.bzl", "rust_binary", "rust_static_library", "rust_test")
 load("//bazel:rust_cxx_bridge.bzl", "rust_cxx_bridge")
 load("//bazel:skia_rules.bzl", "skia_cc_library", "skia_filegroup")
 
@@ -86,4 +86,12 @@ rust_test(
     crate_root = "standalone.rs",
     rustc_flags = ["-Dwarnings"],
     timeout = "short",
+)
+
+rust_binary(
+    name = "color_probe",
+    srcs = ["color_probe.rs", "color.rs", "dng.rs", "linearization.rs", "opcode.rs", "tiled.rs", "tone.rs"],
+    crate_root = "color_probe.rs",
+    rustc_flags = ["-Dwarnings"],
+    testonly = True,
 )

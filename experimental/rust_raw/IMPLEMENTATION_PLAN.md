@@ -238,6 +238,17 @@ Output facade, scale, and broader metadata parity remain open.
   Both Rust Bazel suites pass **93/93 on macOS ARM64 and x64** with
   the two new tone tests; the earlier Linux ARM64 standalone result
   predates them.
+- The SDK's pinned `IlluminantToTemperature` assigns **2850 K** to
+  Standard Light A, rather than the nominal 2856 K used by an earlier
+  private trial. With source-attributed, test-only dual-illuminant
+  white, ProPhoto/sRGB matrix and transfer behavior, a separately
+  generated identity-tone/BlackRender=None version of
+  `sample_1mp.dng` matches the SDK's **1,216,800 Stage-3 bytes**
+  and **608,400 Stage-4 channel bytes** exactly on macOS ARM64.
+  `tools/raw_dng_controlled_fixture.py` and
+  `tools/raw_dng_color_compare.py` reproduce this with the explicit
+  test-only Rust `//experimental/rust_raw/ffi:color_probe` target.
+  The candidate public `SkCodec` still rejects this real DNG.
 - An SDK-free Apple ASan/UBSan native fuzzer with opt-in 8-bit coverage of the
   CXX RAW bridge and harness replayed generated DNG/Skia seeds and completed
   **8,000** short mutations without sanitizer failures. It reached **168
@@ -258,8 +269,8 @@ Output facade, scale, and broader metadata parity remain open.
 
 ## Promotion blockers
 
-1. Real/official camera-profile final RGB is not implemented. The controlled
-   identity-tone/BlackRender=None real DNG still has 2,465 different
+1. Real/official camera-profile **public** final RGB is not implemented.
+   An earlier controlled identity-tone/BlackRender=None real DNG had 2,465 different
    Stage-4 channel bytes out of 608,400 under a **test-only,
    non-normative** white-correction trial using an independent CIE 1960
    uv Planckian CCT (down from 3,182 with McCamy CCT). The published
@@ -268,9 +279,12 @@ Output facade, scale, and broader metadata parity remain open.
    establishes parity. A subsequent **session-private, licensed
    source-attributed diagnostic** using SDK-style temperature, PCS matrix
    normalization, camera-white/ProPhoto clipping and transfer-table
-   quantization reduces the difference to **1,104 one-byte channels**
-   (R/G/B 39/213/852). This remains a failure, not a reviewed
-   exception; no SDK-derived table is enabled in the production renderer.
+   quantization reduced that difference to **1,104 one-byte channels**
+   (R/G/B 39/213/852). Correcting the SDK Standard Light A constant
+   from 2856 to 2850 K now makes the **test-only** Rust Stage-4
+   output exact for this controlled real DNG. This is **not public
+   SkCodec parity**, and no SDK-derived color renderer is enabled in
+   the production FFI or public codec.
 2. Adobe's default artistic tone and automatic black behavior are not fully
    specified by DNG. On the original real file they cause material,
    multi-byte differences from the controlled variant. Non-unity profile gain/look

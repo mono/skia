@@ -556,12 +556,40 @@ Robertson CIE 1960 uv temperature table and interpolation were ported
 from SDK 1.7.1.2724 with Adobe attribution beside both Rust definitions,
 unmodified license/technology notices in `licenses/`, and a per-symbol
 entry in [PROVENANCE.md](PROVENANCE.md). The production CXX FFI does
-**not** compile that color module. A private, source-attributed trial
-also follows SDK matrix-white normalization and intermediate ProPhoto
-clipping: for the controlled identity-tone real DNG it differs in
-1,104/608,400 channel bytes (R/G/B 39/213/852, maximum one byte).
-Neither that diagnostic nor Adobe's default tone curve is enabled for
-public final pixels. Real-image `SkCodec` output remains Unsupported.
+**not** compile that color module. The last 1,104 one-byte differences
+in a private color trial came from the SDK's 2850 K assignment to
+Standard Light A, not the nominal 2856 K used in the original
+diagnostic. The source-attributed, **test-only** `SdkColorTransform`
+now models the checked two-illuminant SDR camera white, PCS/ProPhoto
+matrices, clipping, identity profile tone, sRGB table and byte
+conversion. On a metadata-only identity-tone/BlackRender=None version
+of Skia's `sample_1mp.dng`, separate SDK and Rust Stage-3 processes
+agree on all 1,216,800 bytes; the Rust color diagnostic then matches
+all **608,400 SDK Stage-4 channel bytes** (SHA-256
+`b8556bfe2c6492f56648264a316ba9b97913cddb23ab00623cda85ab4fc33f12`).
+`tools/raw_dng_controlled_fixture.py` generates the DNG from the
+source-controlled Skia resource without shipping any Adobe sample;
+`tools/raw_dng_color_compare.py` runs the two native stage probes and
+the explicit Bazel `//experimental/rust_raw/ffi:color_probe` target in
+separate processes and fails closed on missing stages or pixels.
+With source-built ARM64 `out/RawReference/dng_stage_oracle` and
+`out/RawPreview/raw_rust_stage_probe` available, reproduce the check
+from the Skia root:
+
+```
+bazelisk build //experimental/rust_raw/ffi:color_probe \
+  --platforms=//bazel/platform:mac_arm64_hermetic --compilation_mode=opt
+python3 tools/raw_dng_color_compare.py \
+  --reference out/RawReference/dng_stage_oracle \
+  --candidate-stage out/RawPreview/raw_rust_stage_probe \
+  --candidate-color bazel-bin/experimental/rust_raw/ffi/color_probe \
+  --report /tmp/raw-dng-controlled-color.json
+```
+
+This is **not** the original default-tone/Auto-black file, a public
+`SkCodec` decode, or proof for any other profile, request, or platform.
+Adobe's default tone and Auto-black renderer are still unavailable;
+real-image public `SkCodec` output remains Unimplemented.
 
 The native tests create synthetic DNGs in test code. `RustRaw_OutputMonoSrgb`
 checks the 256-value ramp against the published sRGB transfer, including

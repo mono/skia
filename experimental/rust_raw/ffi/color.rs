@@ -4,8 +4,10 @@
 
 #![forbid(unsafe_code)]
 
-//! Experimental, unregistered output-referred RGB color math. The remaining
-//! one-byte SDK color differences must be resolved before this renders final pixels.
+//! Experimental, test-only DNG camera-profile and output color math. Public
+//! SkCodec selection, default tone/black rendering and other profiles remain open.
+
+use super::tone::{apply_sdk_rgb_tone, SdkToneTable};
 
 #[derive(Debug, PartialEq)]
 pub(crate) enum ColorError {
@@ -27,11 +29,52 @@ pub(crate) struct DualIlluminantProfile {
     pub illuminant_kelvin: [f64; 2],
 }
 
+impl DualIlluminantProfile {
+    fn validate(&self) -> Result<(), ColorError> {
+        if self
+            .color_matrices
+            .iter()
+            .chain(&self.camera_calibrations)
+            .chain(&self.forward_matrices)
+            .flat_map(|matrix| matrix.iter().flatten())
+            .any(|value| !value.is_finite())
+            || self
+                .camera_neutral
+                .iter()
+                .chain(&self.analog_balance)
+                .any(|value| !value.is_finite() || *value <= 0.0)
+            || self
+                .illuminant_kelvin
+                .iter()
+                .any(|value| !value.is_finite() || !(1667.0..=25000.0).contains(value))
+            || self.illuminant_kelvin[0] == self.illuminant_kelvin[1]
+        {
+            return Err(ColorError::Invalid);
+        }
+        Ok(())
+    }
+}
+
 // Skia's canonical sRGB ICC profile matrix, expressed in XYZ D50.
 const SRGB_TO_XYZ_D50: [[f64; 3]; 3] = [
     [0.436065674, 0.385147095, 0.143066406],
     [0.222488403, 0.716873169, 0.060607910],
     [0.013916016, 0.097076416, 0.714096069],
+];
+
+// Derived from Adobe DNG SDK 1.7.1.2724,
+// source/dng_color_space.cpp::dng_space_sRGB/dng_space_ProPhoto.
+// Copyright 2006-2019 Adobe Systems Incorporated. All Rights Reserved.
+// See experimental/rust_raw/licenses/LICENSE.adobe-dng-sdk and PROVENANCE.md.
+const SDK_SRGB_TO_PCS: [[f64; 3]; 3] = [
+    [0.4361, 0.3851, 0.1431],
+    [0.2225, 0.7169, 0.0606],
+    [0.0139, 0.0971, 0.7141],
+];
+const SDK_PROPHOTO_TO_PCS: [[f64; 3]; 3] = [
+    [0.7977, 0.1352, 0.0313],
+    [0.2880, 0.7119, 0.0001],
+    [0.0, 0.0, 0.8249],
 ];
 
 // Derived from Adobe DNG SDK 1.7.1.2724, source/dng_temperature.cpp::kTempTable.
@@ -71,6 +114,19 @@ const SDK_ROBERTSON_UV: [(f64, f64, f64, f64); 31] = [
     (575.0, 0.32931, 0.36038, -40.770),
     (600.0, 0.33724, 0.36051, -116.45),
 ];
+
+// Derived from Adobe DNG SDK 1.7.1.2724,
+// source/dng_camera_profile.cpp::IlluminantToTemperature.
+// Copyright 2006-2023 Adobe Systems Incorporated. All Rights Reserved.
+// See experimental/rust_raw/licenses/LICENSE.adobe-dng-sdk and PROVENANCE.md.
+// SDK Standard Light A uses 2850 K, distinct from the nominal 2856 K illuminant.
+pub(crate) fn sdk_illuminant_temperature(tag: u16) -> Result<f64, ColorError> {
+    match tag {
+        17 => Ok(2850.0),
+        21 => Ok(6500.0),
+        _ => Err(ColorError::Unsupported),
+    }
+}
 
 fn invert(matrix: &[[f64; 3]; 3]) -> Result<[[f64; 3]; 3], ColorError> {
     let [a, b, c] = matrix[0];
@@ -125,6 +181,189 @@ fn diagonal(values: [f64; 3]) -> [[f64; 3]; 3] {
     std::array::from_fn(|row| {
         std::array::from_fn(|column| if row == column { values[row] } else { 0.0 })
     })
+}
+
+fn matrix_vector(matrix: &[[f64; 3]; 3], vector: [f64; 3]) -> [f64; 3] {
+    matrix.map(|row| row.iter().zip(vector).map(|(a, b)| a * b).sum())
+}
+
+fn matrix_vector_f32(matrix: &[[f32; 3]; 3], vector: [f32; 3]) -> [f32; 3] {
+    matrix.map(|row| row[0] * vector[0] + row[1] * vector[1] + row[2] * vector[2])
+}
+
+// Derived from Adobe DNG SDK 1.7.1.2724,
+// source/dng_xy_coord.h::D50_xy_coord (Copyright 2006-2020),
+// source/dng_xy_coord.cpp::XYtoXYZ/PCStoXYZ (Copyright 2006-2019), and
+// source/dng_camera_profile.cpp::NormalizeForwardMatrix (Copyright 2006-2023).
+// Adobe Systems Incorporated. All Rights Reserved.
+// See experimental/rust_raw/licenses/LICENSE.adobe-dng-sdk and PROVENANCE.md.
+const SDK_PCS_XY: [f64; 2] = [0.3457, 0.3585];
+
+fn sdk_xy_to_xyz(xy: [f64; 2]) -> Result<[f64; 3], ColorError> {
+    let [x, y] = xy;
+    if !x.is_finite() || !y.is_finite() || x <= 0.0 || y <= 0.0 || x + y >= 1.0 {
+        return Err(ColorError::Invalid);
+    }
+    Ok([x / y, 1.0, (1.0 - x - y) / y])
+}
+
+fn sdk_normalize_to_pcs(matrix: &[[f64; 3]; 3]) -> Result<[[f64; 3]; 3], ColorError> {
+    let white = sdk_xy_to_xyz(SDK_PCS_XY)?;
+    let mut normalized = *matrix;
+    for (row, components) in normalized.iter_mut().enumerate() {
+        let sum: f64 = components.iter().sum();
+        if !sum.is_finite() || sum <= 0.0 {
+            return Err(ColorError::Invalid);
+        }
+        for component in components.iter_mut() {
+            *component *= white[row] / sum;
+            if !component.is_finite() {
+                return Err(ColorError::Invalid);
+            }
+        }
+    }
+    Ok(normalized)
+}
+
+pub(crate) struct SdkColorTransform {
+    white_xy: [f64; 2],
+    camera_white: [f64; 3],
+    camera_to_pcs: [[f64; 3]; 3],
+    camera_to_prophoto: [[f32; 3]; 3],
+    prophoto_to_srgb: [[f32; 3]; 3],
+    illuminant_weight: f64,
+}
+
+// Derived from Adobe DNG SDK 1.7.1.2724,
+// source/dng_color_spec.cpp::NeutralToXY/SetWhiteXY/FindXYZtoCamera_SingleOrDual
+// (Copyright 2006-2019), source/dng_camera_profile.cpp::NormalizeForwardMatrix
+// (Copyright 2006-2023), and source/dng_color_space.cpp::SetMatrixToPCS
+// (Copyright 2006-2019). Adobe Systems Incorporated. All Rights Reserved.
+// See experimental/rust_raw/licenses/LICENSE.adobe-dng-sdk and PROVENANCE.md.
+// This only models a checked, SDR, two-illuminant profile in Rust tests.
+impl SdkColorTransform {
+    pub(crate) fn from_dual_illuminant(
+        profile: &DualIlluminantProfile,
+    ) -> Result<Self, ColorError> {
+        profile.validate()?;
+        let balance = diagonal(profile.analog_balance);
+        let color = std::array::from_fn(|index| {
+            multiply(
+                &multiply(&balance, &profile.camera_calibrations[index]),
+                &profile.color_matrices[index],
+            )
+        });
+        let forward = [
+            sdk_normalize_to_pcs(&profile.forward_matrices[0])?,
+            sdk_normalize_to_pcs(&profile.forward_matrices[1])?,
+        ];
+        let weight_at = |xy: [f64; 2]| -> Result<f64, ColorError> {
+            let kelvin = xyz_to_kelvin_sdk_robertson(sdk_xy_to_xyz(xy)?)?;
+            let reciprocal = 1.0 / kelvin;
+            Ok(((reciprocal - 1.0 / profile.illuminant_kelvin[0])
+                / (1.0 / profile.illuminant_kelvin[1] - 1.0 / profile.illuminant_kelvin[0]))
+                .clamp(0.0, 1.0))
+        };
+        let mut white_xy = SDK_PCS_XY;
+        for pass in 0..30 {
+            let weight = weight_at(white_xy)?;
+            let xyz_to_camera = interpolate(&color, weight);
+            let xyz = matrix_vector(&invert(&xyz_to_camera)?, profile.camera_neutral);
+            let sum: f64 = xyz.iter().sum();
+            if !sum.is_finite() || sum <= 0.0 {
+                return Err(ColorError::Invalid);
+            }
+            let mut next = [xyz[0] / sum, xyz[1] / sum];
+            sdk_xy_to_xyz(next)?;
+            if (next[0] - white_xy[0]).abs() + (next[1] - white_xy[1]).abs() < 1e-7 {
+                white_xy = next;
+                break;
+            }
+            if pass == 29 {
+                next = [(white_xy[0] + next[0]) * 0.5, (white_xy[1] + next[1]) * 0.5];
+            }
+            white_xy = next;
+        }
+        let weight = weight_at(white_xy)?;
+        let camera_matrix = interpolate(&color, weight);
+        let mut camera_white = matrix_vector(&camera_matrix, sdk_xy_to_xyz(white_xy)?);
+        let maximum = camera_white
+            .iter()
+            .copied()
+            .fold(f64::NEG_INFINITY, f64::max);
+        if !maximum.is_finite() || maximum <= 0.0 {
+            return Err(ColorError::Invalid);
+        }
+        for value in &mut camera_white {
+            *value = (*value / maximum).clamp(0.001, 1.0);
+        }
+        let calibration = interpolate(&profile.camera_calibrations, weight);
+        let individual_to_reference = invert(&multiply(&balance, &calibration))?;
+        let reference_white = matrix_vector(&individual_to_reference, camera_white);
+        if reference_white
+            .iter()
+            .any(|value| !value.is_finite() || *value <= 0.0)
+        {
+            return Err(ColorError::Invalid);
+        }
+        let adjustment = diagonal(reference_white.map(|value| 1.0 / value));
+        let camera_to_pcs = multiply(
+            &multiply(&interpolate(&forward, weight), &adjustment),
+            &individual_to_reference,
+        );
+        invert(&camera_to_pcs)?;
+        let prophoto_to_pcs = sdk_normalize_to_pcs(&SDK_PROPHOTO_TO_PCS)?;
+        let srgb_to_pcs = sdk_normalize_to_pcs(&SDK_SRGB_TO_PCS)?;
+        let to_prophoto = multiply(&invert(&prophoto_to_pcs)?, &camera_to_pcs);
+        let to_srgb = multiply(&invert(&srgb_to_pcs)?, &prophoto_to_pcs);
+        Ok(Self {
+            white_xy,
+            camera_white,
+            camera_to_pcs,
+            camera_to_prophoto: to_prophoto.map(|row| row.map(|value| value as f32)),
+            prophoto_to_srgb: to_srgb.map(|row| row.map(|value| value as f32)),
+            illuminant_weight: weight,
+        })
+    }
+
+    // Derived from Adobe DNG SDK 1.7.1.2724,
+    // source/dng_render.cpp::dng_render_task::ProcessArea,
+    // source/dng_reference.cpp::RefCopyArea16_R32/RefBaselineABCtoRGB/
+    // RefBaselineRGBTone/RefBaselineRGBtoRGB/RefCopyAreaR32_8, and
+    // source/dng_1d_table.h::dng_1d_table::Interpolate.
+    // Copyright 2006-2023 Adobe Systems Incorporated. All Rights Reserved.
+    // See experimental/rust_raw/licenses/LICENSE.adobe-dng-sdk and PROVENANCE.md.
+    // This diagnostic assumes zero exposure, no maps, SDR and explicitly
+    // supplied profile tone and final sRGB transfer; it cannot render DNG generally.
+    pub(crate) fn render_identity_sdr_srgb8_u16(
+        &self,
+        samples: [u16; 3],
+        tone: &SdkToneTable,
+        gamma: &SdkToneTable,
+    ) -> Result<[u8; 3], ColorError> {
+        let scale = 1.0f32 / f32::from(u16::MAX);
+        let camera = std::array::from_fn(|channel| {
+            (f32::from(samples[channel]) * scale).min(self.camera_white[channel] as f32)
+        });
+        let intermediate =
+            matrix_vector_f32(&self.camera_to_prophoto, camera).map(|value| value.clamp(0.0, 1.0));
+        if intermediate.iter().any(|value| !value.is_finite()) {
+            return Err(ColorError::Invalid);
+        }
+        let toned = apply_sdk_rgb_tone(intermediate, |value| tone.interpolate(value))
+            .map_err(|_| ColorError::Invalid)?;
+        let linear =
+            matrix_vector_f32(&self.prophoto_to_srgb, toned).map(|value| value.clamp(0.0, 1.0));
+        let mut output = [0; 3];
+        for (sample, channel) in linear.into_iter().zip(output.iter_mut()) {
+            let encoded = gamma.interpolate(sample).map_err(|_| ColorError::Invalid)?;
+            if !encoded.is_finite() || !(0.0..=1.0).contains(&encoded) {
+                return Err(ColorError::Invalid);
+            }
+            *channel = (encoded * 255.0 + 0.5) as u8;
+        }
+        Ok(output)
+    }
 }
 
 fn xyz_to_kelvin(xyz: [f64; 3]) -> Result<f64, ColorError> {
@@ -337,26 +576,7 @@ impl DngColorTransform {
         correlated_temperature: fn([f64; 3]) -> Result<f64, ColorError>,
         convergence_tolerance: f64,
     ) -> Result<(Self, f64), ColorError> {
-        if profile
-            .color_matrices
-            .iter()
-            .chain(&profile.camera_calibrations)
-            .chain(&profile.forward_matrices)
-            .flat_map(|matrix| matrix.iter().flatten())
-            .any(|value| !value.is_finite())
-            || profile
-                .camera_neutral
-                .iter()
-                .chain(&profile.analog_balance)
-                .any(|value| !value.is_finite() || *value <= 0.0)
-            || profile
-                .illuminant_kelvin
-                .iter()
-                .any(|value| !value.is_finite() || !(1667.0..=25000.0).contains(value))
-            || profile.illuminant_kelvin[0] == profile.illuminant_kelvin[1]
-        {
-            return Err(ColorError::Invalid);
-        }
+        profile.validate()?;
         let balance = diagonal(profile.analog_balance);
         let mut weight: f64 = 0.5;
         let mut converged = false;
@@ -464,9 +684,11 @@ impl DngColorTransform {
 #[cfg(test)]
 mod tests {
     use super::{
-        planckian_uv, xyz_to_kelvin, xyz_to_kelvin_cie_uv, xyz_to_kelvin_sdk_robertson, ColorError,
-        DngColorTransform, DualIlluminantProfile, SRGB_TO_XYZ_D50,
+        planckian_uv, sdk_illuminant_temperature, xyz_to_kelvin, xyz_to_kelvin_cie_uv,
+        xyz_to_kelvin_sdk_robertson, ColorError, DngColorTransform, DualIlluminantProfile,
+        SdkColorTransform, SRGB_TO_XYZ_D50,
     };
+    use crate::tone::SdkToneTable;
 
     const FORWARD: [f64; 9] = [
         0.7978, 0.1352, 0.0313, 0.288, 0.7119, 0.0001, 0.0, 0.0, 0.8251,
@@ -554,6 +776,9 @@ mod tests {
             xyz_to_kelvin_sdk_robertson([-1.0, 1.0, 1.0]),
             Err(ColorError::Invalid)
         );
+        assert_eq!(sdk_illuminant_temperature(17), Ok(2850.0));
+        assert_eq!(sdk_illuminant_temperature(21), Ok(6500.0));
+        assert_eq!(sdk_illuminant_temperature(0), Err(ColorError::Unsupported));
     }
 
     #[test]
@@ -682,13 +907,66 @@ mod tests {
             uv_corrected.render_srgb8_u16([3604, 8659, 6823]),
             Ok([83, 102, 121])
         );
+        profile.illuminant_kelvin[1] =
+            sdk_illuminant_temperature(17).expect("SDK Standard Light A");
         let (_, sdk_weight) =
             DngColorTransform::dual_transform(&profile, false, xyz_to_kelvin_sdk_robertson, 1e-10)
                 .expect("licensed Robertson CCT diagnostic");
-        assert!((sdk_weight - 0.232104825).abs() < 1e-6, "{sdk_weight}");
+        assert!((sdk_weight - 0.231257648).abs() < 1e-6, "{sdk_weight}");
+        let sdk = SdkColorTransform::from_dual_illuminant(&profile)
+            .expect("SDK-compatible controlled camera profile");
+        assert!((sdk.illuminant_weight - 0.23125764837895318).abs() < 1e-9);
+        for (actual, expected) in sdk
+            .white_xy
+            .into_iter()
+            .zip([0.34508682356178827, 0.35587412090173132])
+        {
+            assert!((actual - expected).abs() < 1e-10, "{actual} != {expected}");
+        }
+        for (actual, expected) in
+            sdk.camera_white
+                .into_iter()
+                .zip([0.51562499906318948, 1.0, 0.65624999736250167])
+        {
+            assert!((actual - expected).abs() < 1e-9, "{actual} != {expected}");
+        }
+        assert!((sdk.camera_to_pcs[0][0] - 1.5331930693777931).abs() < 1e-9);
+        assert!((sdk.camera_to_pcs[1][1] - 0.59759095526950901).abs() < 1e-9);
+        assert!((sdk.camera_to_pcs[2][2] - 2.3973165493819488).abs() < 1e-9);
+        let identity = SdkToneTable::from_function(Ok).expect("SDK-sized identity table");
+        // Adobe DNG SDK 1.7.1.2724
+        // source/dng_color_space.cpp::dng_function_GammaEncode_sRGB,
+        // Copyright 2006-2019 Adobe Systems Incorporated.
+        let gamma = SdkToneTable::from_function(|value| {
+            Ok(if value <= 0.0031308 {
+                value * 12.92
+            } else {
+                1.055 * value.powf(1.0 / 2.4) - 0.055
+            })
+        })
+        .expect("SDK-sized sRGB table");
+        // SDK Stage-4 reference bytes for independently controlled
+        // resources/images/sample_1mp.dng pixels with identity tone/black None.
+        for (input, expected) in [
+            ([3604, 8659, 6823], [83, 102, 121]),
+            ([3765, 7478, 4070], [91, 96, 75]),
+            ([6849, 16121, 11905], [114, 137, 152]),
+            ([1529, 3189, 1809], [57, 63, 52]),
+            ([272, 825, 414], [10, 31, 18]),
+        ] {
+            assert_eq!(
+                sdk.render_identity_sdr_srgb8_u16(input, &identity, &gamma),
+                Ok(expected),
+                "{input:?}"
+            );
+        }
         profile.analog_balance[0] = 0.0;
         assert!(matches!(
             DngColorTransform::from_dual_illuminant(&profile),
+            Err(ColorError::Invalid)
+        ));
+        assert!(matches!(
+            SdkColorTransform::from_dual_illuminant(&profile),
             Err(ColorError::Invalid)
         ));
     }
