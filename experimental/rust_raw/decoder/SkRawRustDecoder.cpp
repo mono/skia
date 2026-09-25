@@ -102,9 +102,10 @@ protected:
             *rowsDecoded = 0;
         }
         for (int y = 0; y < dstInfo.height(); ++y) {
-            if (!fReader->copy_rgb_row(static_cast<uint32_t>(y),
-                                       rust::Slice<uint8_t>(row.get(), srcRowBytes))) {
-                return kErrorInInput;
+            const Result rowResult = to_sk_result(fReader->copy_rgb_row(
+                    static_cast<uint32_t>(y), rust::Slice<uint8_t>(row.get(), srcRowBytes)));
+            if (rowResult != kSuccess) {
+                return rowResult;
             }
             if (!skcms_Transform(row.get(), skcms_PixelFormat_RGB_888,
                                  skcms_AlphaFormat_Unpremul, this->getEncodedInfo().profile(),

@@ -23,6 +23,14 @@ seekable input is rewound, while forward-only input retains every short-read
 byte before buffering the remainder under Skia's existing 100 MiB limit.
 Source-generated public `SkCodec` tests compare exact final pixels for the
 supported mono8/RGB8 profiles and JPEG preview bytes for both stream kinds.
+The final-row CXX bridge returns a typed status rather than collapsing
+invalid, unsupported, incomplete, and allocation errors to a boolean.
+The `SkCodec` adapter maps that status through its existing result mapping;
+failed direct row reads leave the destination untouched. GN explicitly
+requests the generated CXX bridge alongside the Rust archive so a changed
+FFI signature cannot leave the C++ header stale. A selected 30-request
+Adobe/Rust public matrix still reports 29 exact decodes and one declared,
+matching preview creation rejection on macOS ARM64.
 This opt-in route does not establish real or official DNG final-color parity.
 Separate-process Adobe/Rust public comparisons match all 11 selected full
 DNGs in RGBA8888, BGRA8888, RGB565 and RGBAF16 on each tested Mac

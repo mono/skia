@@ -100,6 +100,11 @@ but its Adobe and Rust full-DNG paths still have separate Skia-facing
 codecs. Align the output facade and error/scale semantics, avoid redundant
 input buffering, and preserve the source-backed public comparison for
 each request rather than demanding identical internal Stage-1/2/3 bytes.
+Final-row errors are now preserved as typed Rust/CXX statuses instead of
+being folded into a boolean `kErrorInInput`; the checked direct-reader
+tests cover unchanged destinations on rejected rows. GN now requests the
+generated RAW CXX bridge explicitly when rebuilding the Rust archive.
+Output facade, scale, and broader metadata parity remain open.
 
 ## Delivery gates
 
@@ -230,8 +235,9 @@ each request rather than demanding identical internal Stage-1/2/3 bytes.
   neutral Stage-4 bytes**. For that same DNG's colored pixels, Adobe's
   public decoder succeeds and Rust still reports Unimplemented; this
   diagnostic does **not** establish final-color parity or enable it.
-  Both Rust Bazel suites pass **93/93 on ARM64** with the two new
-  tone tests.
+  Both Rust Bazel suites pass **93/93 on macOS ARM64 and x64** with
+  the two new tone tests; the earlier Linux ARM64 standalone result
+  predates them.
 - An SDK-free Apple ASan/UBSan native fuzzer with opt-in 8-bit coverage of the
   CXX RAW bridge and harness replayed generated DNG/Skia seeds and completed
   **8,000** short mutations without sanitizer failures. It reached **168

@@ -666,13 +666,15 @@ impl Image {
         Ok(())
     }
 
-    pub fn copy_rgb_row(&self, row: u32, output: &mut [u8]) -> bool {
-        if !self.final_render_supported || output.len() != self.width as usize * 3 {
-            return false;
+    pub fn copy_rgb_row(&self, row: u32, output: &mut [u8]) -> Result<(), Error> {
+        if !self.final_render_supported {
+            return Err(Error::Unsupported);
         }
-        let Ok(pixels) = self.row_bytes(row) else {
-            return false;
-        };
+        let expected = (self.width as usize).checked_mul(3).ok_or(Error::Invalid)?;
+        if output.len() != expected {
+            return Err(Error::Invalid);
+        }
+        let pixels = self.row_bytes(row)?;
         for (&pixel, rgb) in pixels.iter().zip(output.chunks_exact_mut(3)) {
             // Final-render gating guarantees the table maps into u8.
             let mapped = linearized_sample(self.linearization.as_ref(), u16::from(pixel)) as u8;
@@ -682,7 +684,7 @@ impl Image {
                 mapped
             });
         }
-        true
+        Ok(())
     }
 }
 
@@ -854,11 +856,15 @@ mod tests {
             let image = Image::parse(bytes).unwrap_or_else(|error| panic!("{error:?}"));
             assert_eq!((image.width, image.height), (2, 2));
             let mut row = [0xaa; 6];
-            assert!(image.copy_rgb_row(0, &mut row));
+            assert_eq!(image.copy_rgb_row(0, &mut row), Ok(()));
             assert_eq!(row, [0, 0, 0, 255, 255, 255]);
-            assert!(image.copy_rgb_row(1, &mut row));
+            assert_eq!(image.copy_rgb_row(1, &mut row), Ok(()));
             assert_eq!(row, [255, 255, 255, 0, 0, 0]);
-            assert!(!image.copy_rgb_row(2, &mut row));
+            assert_eq!(image.copy_rgb_row(2, &mut row), Err(Error::Invalid));
+            assert_eq!(row, [255, 255, 255, 0, 0, 0]);
+            let mut wrong_size = [0xa5; 5];
+            assert_eq!(image.copy_rgb_row(0, &mut wrong_size), Err(Error::Invalid));
+            assert_eq!(wrong_size, [0xa5; 5]);
             let mut samples = [0; 2];
             image.raw_row(1, &mut samples).expect("raw row");
             assert_eq!(samples, [255, 0]);
@@ -900,7 +906,7 @@ mod tests {
         let image = Image::parse(scene.clone()).expect("output-referred DNG");
         assert!(image.supports_final_render());
         let mut row = [0u8; 6];
-        assert!(image.copy_rgb_row(1, &mut row));
+        assert_eq!(image.copy_rgb_row(1, &mut row), Ok(()));
         assert_eq!(row, [255, 255, 255, 188, 188, 188]);
         let mut raw = [0u16; 2];
         image.raw_row(1, &mut raw).expect("stage 1 unchanged");
@@ -939,7 +945,7 @@ mod tests {
                 .enumerate()
             {
                 let mut rgb = [0xa5; 8];
-                assert!(image.copy_rgb_row(row as u32, &mut rgb[..6]));
+                assert_eq!(image.copy_rgb_row(row as u32, &mut rgb[..6]), Ok(()));
                 for (x, &color) in expected.iter().enumerate() {
                     assert_eq!(&rgb[x * 3..x * 3 + 3], &[color; 3]);
                 }
@@ -951,7 +957,7 @@ mod tests {
                 assert_eq!(image.stage3_status(), Ok(()));
                 assert!(!image.supports_final_render());
                 let mut rgb = [0xa5; 6];
-                assert!(!image.copy_rgb_row(0, &mut rgb));
+                assert_eq!(image.copy_rgb_row(0, &mut rgb), Err(Error::Unsupported));
                 assert_eq!(rgb, [0xa5; 6]);
             }
         }
@@ -964,7 +970,7 @@ mod tests {
         assert!(image.supports_final_render());
         assert_eq!(image.stage3_status(), Ok(()));
         let mut rgb = [0xa5; 6];
-        assert!(image.copy_rgb_row(1, &mut rgb));
+        assert_eq!(image.copy_rgb_row(1, &mut rgb), Ok(()));
         assert_eq!(rgb, [255, 255, 255, 188, 188, 188]);
 
         let mut invalid_tone = bytes.clone();
@@ -982,7 +988,7 @@ mod tests {
         assert_eq!(image.stage3_status(), Ok(()));
         assert!(!image.supports_final_render());
         rgb.fill(0xa5);
-        assert!(!image.copy_rgb_row(1, &mut rgb));
+        assert_eq!(image.copy_rgb_row(1, &mut rgb), Err(Error::Unsupported));
         assert_eq!(rgb, [0xa5; 6]);
 
         let mut invalid_black = bytes;
@@ -1404,7 +1410,7 @@ mod tests {
             image.stage3_row(1, &mut stage2[..2]).expect("Stage3");
             assert_eq!(stage2, [65535, u16::from(mapped) * 257, 0xa5a5]);
             let mut rgb = [0xa5; 7];
-            assert!(image.copy_rgb_row(1, &mut rgb[..6]));
+            assert_eq!(image.copy_rgb_row(1, &mut rgb[..6]), Ok(()));
             assert_eq!(
                 rgb,
                 [
@@ -1441,7 +1447,7 @@ mod tests {
         assert_eq!(image.normalized_row(1, &mut row), Err(Error::Unsupported));
         assert_eq!(row, [0xa5a5; 2]);
         let mut rgb = [0xa5; 6];
-        assert!(!image.copy_rgb_row(1, &mut rgb));
+        assert_eq!(image.copy_rgb_row(1, &mut rgb), Err(Error::Unsupported));
         assert_eq!(rgb, [0xa5; 6]);
     }
 

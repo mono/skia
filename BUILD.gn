@@ -1607,6 +1607,7 @@ if (skia_use_fontations || skia_use_rust_png_decode ||
   if (skia_use_rust_raw_decode) {
     _rust_targets += [
       "//experimental/rust_raw/ffi:ffi_rs_gn",
+      "//experimental/rust_raw/ffi:cxx_bridge/generated",
       "//rust/common:cxx_bridge/include",
       "@@rules_rust++crate+crates__cxx-1.0.168//:cxx_runtime_gn",
       "@@rules_rust++crate+crates__cxx-1.0.168//:cxx_header_gn",

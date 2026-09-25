@@ -2488,8 +2488,9 @@ DEF_TEST(RustRaw_OutputMonoMultiStrip, r) {
                        reader->status() == rust_raw::DecodeStatus::Unsupported);
     std::array<uint8_t, 256 * 3> untouched;
     untouched.fill(0xa5);
-    REPORTER_ASSERT(r, !reader->copy_rgb_row(
-            0, rust::Slice<uint8_t>(untouched.data(), untouched.size())));
+    REPORTER_ASSERT(r, reader->copy_rgb_row(
+            0, rust::Slice<uint8_t>(untouched.data(), untouched.size())) ==
+                               rust_raw::DecodeStatus::Unsupported);
     REPORTER_ASSERT(r, std::all_of(untouched.begin(), untouched.end(),
                                    [](uint8_t value) { return value == 0xa5; }));
     SkCodec::Result result = SkCodec::kSuccess;
@@ -4568,8 +4569,9 @@ DEF_TEST(RustRaw_Rgb8IdentityGainFinal, r) {
                            reader->stage3_status() == rust_raw::DecodeStatus::Success &&
                            reader->status() == rust_raw::DecodeStatus::Unsupported);
         std::vector<uint8_t> untouched(256 * 3, 0xa5);
-        REPORTER_ASSERT(r, !reader->copy_rgb_row(
-                0, rust::Slice<uint8_t>(untouched.data(), untouched.size())));
+        REPORTER_ASSERT(r, reader->copy_rgb_row(
+                0, rust::Slice<uint8_t>(untouched.data(), untouched.size())) ==
+                                   rust_raw::DecodeStatus::Unsupported);
         REPORTER_ASSERT(r, std::all_of(untouched.begin(), untouched.end(),
                                        [](uint8_t sample) { return sample == 0xa5; }));
         SkCodec::Result result = SkCodec::kSuccess;
@@ -5194,6 +5196,35 @@ DEF_TEST(RustRaw_LinearizedRedundantTableEntry, r) {
 
 DEF_TEST(RustRaw_Rgb8SrgbProfileGuard, r) {
     const auto good = make_rgb8_root_dng(false, false, false, true);
+    auto validData = SkData::MakeWithCopy(good.data(), good.size());
+    auto validStream = SkMemoryStream::Make(validData);
+    auto validAdapter = std::make_unique<rust::stream::SkStreamAdapter>(validStream.get());
+    auto validReader = rust_raw::new_reader(std::move(validAdapter));
+    REPORTER_ASSERT(r, validReader->status() == rust_raw::DecodeStatus::Success);
+    std::array<uint8_t, 9> row;
+    row.fill(0xa5);
+    REPORTER_ASSERT(r, validReader->copy_rgb_row(3, rust::Slice<uint8_t>(row.data(), row.size())) ==
+                               rust_raw::DecodeStatus::Invalid);
+    REPORTER_ASSERT(r, validReader->copy_rgb_row(0, rust::Slice<uint8_t>(row.data(), 8)) ==
+                               rust_raw::DecodeStatus::Invalid);
+    REPORTER_ASSERT(r, std::all_of(row.begin(), row.end(),
+                                   [](uint8_t sample) { return sample == 0xa5; }));
+    REPORTER_ASSERT(r, validReader->copy_rgb_row(0, rust::Slice<uint8_t>(row.data(), row.size())) ==
+                               rust_raw::DecodeStatus::Success);
+    auto truncated = good;
+    truncated.pop_back();
+    auto truncatedData = SkData::MakeWithCopy(truncated.data(), truncated.size());
+    auto truncatedStream = SkMemoryStream::Make(truncatedData);
+    auto truncatedAdapter =
+            std::make_unique<rust::stream::SkStreamAdapter>(truncatedStream.get());
+    auto truncatedReader = rust_raw::new_reader(std::move(truncatedAdapter));
+    REPORTER_ASSERT(r, truncatedReader->status() == rust_raw::DecodeStatus::Incomplete);
+    row.fill(0xa5);
+    REPORTER_ASSERT(r, truncatedReader->copy_rgb_row(
+            0, rust::Slice<uint8_t>(row.data(), row.size())) ==
+                               rust_raw::DecodeStatus::Incomplete);
+    REPORTER_ASSERT(r, std::all_of(row.begin(), row.end(),
+                                   [](uint8_t sample) { return sample == 0xa5; }));
     auto check = [&](std::vector<uint8_t> bytes, bool stage2Identity) {
         auto data = SkData::MakeWithCopy(bytes.data(), bytes.size());
         auto stream = SkMemoryStream::Make(data);
@@ -5206,8 +5237,9 @@ DEF_TEST(RustRaw_Rgb8SrgbProfileGuard, r) {
         REPORTER_ASSERT(r, reader->status() == rust_raw::DecodeStatus::Unsupported);
         std::array<uint8_t, 9> untouched;
         untouched.fill(0xa5);
-        REPORTER_ASSERT(r, !reader->copy_rgb_row(
-                0, rust::Slice<uint8_t>(untouched.data(), untouched.size())));
+        REPORTER_ASSERT(r, reader->copy_rgb_row(
+                0, rust::Slice<uint8_t>(untouched.data(), untouched.size())) ==
+                                   rust_raw::DecodeStatus::Unsupported);
         REPORTER_ASSERT(r, std::all_of(untouched.begin(), untouched.end(),
                                        [](uint8_t sample) { return sample == 0xa5; }));
         SkCodec::Result result = SkCodec::kSuccess;

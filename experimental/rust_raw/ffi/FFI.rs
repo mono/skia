@@ -72,7 +72,7 @@ mod ffi {
         fn read_stage3_row(self: &Reader, row: u32, output: &mut [u16]) -> DecodeStatus;
         fn read_stage3_rgb_row(self: &Reader, row: u32, output: &mut [u16]) -> DecodeStatus;
         fn read_normalized_row(self: &Reader, row: u32, output: &mut [u16]) -> DecodeStatus;
-        fn copy_rgb_row(self: &Reader, row: u32, output: &mut [u8]) -> bool;
+        fn copy_rgb_row(self: &Reader, row: u32, output: &mut [u8]) -> DecodeStatus;
     }
 }
 
@@ -839,12 +839,18 @@ impl Reader {
         }
     }
 
-    pub fn copy_rgb_row(&self, row: u32, output: &mut [u8]) -> bool {
+    pub fn copy_rgb_row(&self, row: u32, output: &mut [u8]) -> DecodeStatus {
         if let Some(image) = &self.rgb8 {
-            return image.copy_rgb_row(row, output).is_ok();
+            return image
+                .copy_rgb_row(row, output)
+                .map_or_else(decoding_status, |()| DecodeStatus::Success);
         }
-        self.image
-            .as_ref()
-            .is_some_and(|image| image.copy_rgb_row(row, output))
+        match &self.image {
+            Some(image) => image
+                .copy_rgb_row(row, output)
+                .map_or_else(decoding_status, |()| DecodeStatus::Success),
+            None if self.status == DecodeStatus::Success => DecodeStatus::Unsupported,
+            None => self.status,
+        }
     }
 }
