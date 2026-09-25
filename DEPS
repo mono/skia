@@ -129,6 +129,6 @@ deps = {
 # e.g. `python tools/git-sync-deps win`
 deps_os = {
   "win": {
-    "third_party/externals/angle2"               : "https://github.com/google/angle.git@ea1cea778c4a2312ef1b963b29a62fe595dd4df8",
+    "third_party/externals/angle2"               : "https://github.com/google/angle.git@4cb3bebdc3b96723bb501328afe50f4f5cbc1de3",
   },
 }
