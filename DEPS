@@ -47,7 +47,7 @@ deps = {
   # 'third_party/externals/webgpu-headers'         : 'https://chromium.googlesource.com/external/github.com/webgpu-native/webgpu-headers@706853a9da45b8e89b7ea005aa267294d115f8ce',
 
   # "third_party/externals/delaunator-cpp"         : "https://skia.googlesource.com/external/github.com/skia-dev/delaunator-cpp.git@98305ef6c4e862f7d48df9cc647b690d796fec68",
-  "third_party/externals/dng_sdk"                : "https://android.googlesource.com/platform/external/dng_sdk.git@dbe0a676450d9b8c71bf00688bb306409b779e90",
+  # "third_party/externals/dng_sdk"                : "https://android.googlesource.com/platform/external/dng_sdk.git@dbe0a676450d9b8c71bf00688bb306409b779e90",
   # "third_party/externals/egl-registry"           : "https://skia.googlesource.com/external/github.com/KhronosGroup/EGL-Registry@b055c9b483e70ecd57b3cf7204db21f5a06f9ffe",
   # "third_party/externals/emsdk"                  : "https://skia.googlesource.com/external/github.com/emscripten-core/emsdk.git@c69d433d8509c5c64564c2f0d054bf102a5cf67e",
   "third_party/externals/expat"                  : "https://chromium.googlesource.com/external/github.com/libexpat/libexpat.git@c7ffbf3879f6aef7a7b020ef84ddb4ee00222b19",
@@ -69,7 +69,7 @@ deps = {
   # "third_party/externals/opengl-registry"        : "https://skia.googlesource.com/external/github.com/KhronosGroup/OpenGL-Registry@14b80ebeab022b2c78f84a573f01028c96075553",
   # "third_party/externals/partition_alloc"        : "https://chromium.googlesource.com/chromium/src/base/allocator/partition_allocator.git@b1d0141bcecfda2bfd108882d818fc5df70ae5c7",
   # "third_party/externals/perfetto"               : "https://android.googlesource.com/platform/external/perfetto@93885509be1c9240bc55fa515ceb34811e54a394",
-  "third_party/externals/piex"                   : "https://android.googlesource.com/platform/external/piex.git@bb217acdca1cc0c16b704669dd6f91a1b509c406",
+  # "third_party/externals/piex"                   : "https://android.googlesource.com/platform/external/piex.git@bb217acdca1cc0c16b704669dd6f91a1b509c406",
   # "third_party/externals/swiftshader"            : "https://swiftshader.googlesource.com/SwiftShader@f3e464b1e56795940f826a972b39e19bd9f6ac6c",
   "third_party/externals/vulkanmemoryallocator"  : "https://chromium.googlesource.com/external/github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator@eb744ea7a2b17040121b4bbb4d6f9e8a77e3cae7",
   # vulkan-deps is a meta-repo containing several interdependent Khronos Vulkan repositories.
