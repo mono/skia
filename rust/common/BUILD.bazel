@@ -53,6 +53,8 @@ skia_cc_library(
         "//experimental/rust_ico/ffi:__pkg__",
         "//experimental/rust_jpeg/decoder/impl:__pkg__",
         "//experimental/rust_jpeg/ffi:__pkg__",
+        "//experimental/rust_raw/decoder:__pkg__",
+        "//experimental/rust_raw/ffi:__pkg__",
         "//rust/bmp:__pkg__",
         "//rust/icc:__pkg__",
         "//rust/png:__pkg__",
@@ -72,6 +74,7 @@ rust_cxx_bridge(
     visibility = [
         "//experimental/rust_ico/ffi:__pkg__",
         "//experimental/rust_jpeg/ffi:__pkg__",
+        "//experimental/rust_raw/ffi:__pkg__",
         "//rust/bmp:__pkg__",
         "//rust/icc:__pkg__",
         "//rust/png:__pkg__",
@@ -90,6 +93,7 @@ rust_library(
     visibility = [
         "//experimental/rust_ico/ffi:__pkg__",
         "//experimental/rust_jpeg/ffi:__pkg__",
+        "//experimental/rust_raw/ffi:__pkg__",
         "//rust/bmp:__pkg__",
         "//rust/icc:__pkg__",
         "//rust/png:__pkg__",
@@ -99,4 +103,19 @@ rust_library(
         ":ffi_utils",
         "@crates//:cxx",
     ],
+)
+
+# GN provides the C++ bridge and SkStreamAdapter; its Rust archive must not
+# bring in a second, unsanitized copy of Skia's native core.
+rust_library(
+    name = "skia_rust_common_gn",
+    crate_name = "skia_rust_common",
+    srcs = ["io_traits_ffi.rs"],
+    crate_root = "io_traits_ffi.rs",
+    rustc_flags = [
+        "-Dwarnings",
+        "--cfg=cxxbridge1",
+    ],
+    visibility = ["//experimental/rust_raw/ffi:__pkg__"],
+    deps = ["@@rules_rust++crate+crates__cxx-1.0.168//:cxx_rust_gn"],
 )

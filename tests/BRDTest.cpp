@@ -27,7 +27,7 @@ DEF_TEST(BRD_types, r) {
 #if defined(SK_CODEC_DECODES_ICO)
         {"images/color_wheel.ico", false},
 #endif
-#if defined(SK_CODEC_DECODES_RAW)
+#if defined(SK_CODEC_DECODES_RAW_WITH_DNG_SDK)
         {"images/sample_1mp.dng", false},
 #endif
         {"images/mandrill.wbmp", false},

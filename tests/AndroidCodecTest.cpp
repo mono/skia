@@ -49,7 +49,7 @@ DEF_TEST(AndroidCodec_computeSampleSize, r) {
                      "images/google_chrome.ico",
 #endif
                      "images/mandrill.wbmp",
-#if defined(SK_CODEC_DECODES_RAW)
+#if defined(SK_CODEC_DECODES_RAW_WITH_DNG_SDK)
                      "images/sample_1mp.dng",
 #endif
          }) {

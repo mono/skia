@@ -30,10 +30,11 @@ git_override(
     tag = EMSDK_VERSION,
 )
 
-# use the go version specified in go.mod
+# mono/skia disables go.mod; native Rust builds still resolve this toolchain.
+# Keep this version aligned with .disabled.go.mod.
 # https://github.com/bazel-contrib/rules_go/blob/f0d3aa796ba9723ce89057f8f4b04f2165d38a72/docs/go/core/bzlmod.md
 go_sdk = use_extension("@rules_go//go:extensions.bzl", "go_sdk", dev_dependency = True)
-go_sdk.from_file(go_mod = "//:go.mod")
+go_sdk.download(version = "1.26.0")
 use_repo(go_sdk, go_sdk = "go_default_sdk")
 
 # Get all the direct and indirect dependencies specified in go.mod.
