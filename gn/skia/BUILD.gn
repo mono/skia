@@ -155,7 +155,7 @@ config("default") {
     # added in clang 12. Substitute the older spelling for Tizen builds
     # so Skia post-m143 (which made C++20 the default) keeps building
     # against the Tizen NDK toolchain.
-    if (is_tizen) {
+    if (is_tizen && !ncli_use_gcc) {
       cflags_cc += [ "-std=c++2a" ]
     } else {
       cflags_cc += [ "-std=c++20" ]
@@ -203,13 +203,9 @@ config("default") {
 
   if (is_tizen) {
     defines += [ "SK_BUILD_FOR_TIZEN" ]
-    asmflags += [
-      "--target=$ncli_target",
-      "-B$ncli/tools/$ncli_gccdir/$ncli_target/bin",
-    ]
+    asmflags += [ "-B$ncli/tools/$ncli_gccdir/$ncli_target/bin" ]
     cflags += [
       "--sysroot=$ncli/platforms/$ncli_platform",
-      "--target=$ncli_target",
       "-B$ncli/tools/$ncli_gccdir/$ncli_target/bin",
     ]
     cflags_cc += [
@@ -218,9 +214,13 @@ config("default") {
     ]
     ldflags += [
       "--sysroot=$ncli/platforms/$ncli_platform",
-      "--target=$ncli_target",
       "-B$ncli/tools/$ncli_gccdir/$ncli_target/bin",
     ]
+    if (!ncli_use_gcc) {
+      asmflags += [ "--target=$ncli_target" ]
+      cflags += [ "--target=$ncli_target" ]
+      ldflags += [ "--target=$ncli_target" ]
+    }
     lib_dirs = [
       "$ncli/platforms/$ncli_platform/usr/lib",
     ]
