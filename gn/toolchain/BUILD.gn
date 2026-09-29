@@ -21,8 +21,8 @@ declare_args() {
     }
   } else if (is_tizen) {
     target_ar = "$ncli/tools/$ncli_gccdir/$ncli_target/bin/ar"
-    target_cc = "$ncli/tools/$ncli_gccdir/$ncli_target/bin/gcc"
-    target_cxx = "$ncli/tools/$ncli_gccdir/$ncli_target/bin/g++"
+    target_cc = "$ncli/tools/$ncli_gccdir/bin/$ncli_gcc_binary_prefix-gcc"
+    target_cxx = "$ncli/tools/$ncli_gccdir/bin/$ncli_gcc_binary_prefix-g++"
   } else {
     target_ar = ar
     target_cc = cc
