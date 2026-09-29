@@ -18,7 +18,6 @@
 #include <algorithm>
 #include <compare>
 #include <memory>
-#include <ranges>
 #include <utility>
 #include <vector>
 
@@ -485,7 +484,9 @@ SkPDFIndirectReference SkPDFStructElem::emitStructElem(
         }
         if (childSpans.size() > 1) {
             std::optional<ContentIndex> minFirstAfter;
-            for (auto&& childSpan : std::views::reverse(childSpans)) {
+            // emsdk 3.1.34 does not provide std::views::reverse.
+            for (auto it = childSpans.rbegin(); it != childSpans.rend(); ++it) {
+                auto&& childSpan = *it;
                 if (childSpan.fContentSpan.empty()) {
                     // Let empty child spans remain empty
                     continue;
