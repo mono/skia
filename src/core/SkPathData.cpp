@@ -69,9 +69,9 @@ private:
     size_t     fTotal;
 };
 
-static constexpr auto gPtsPerVerb = std::to_array<uint8_t>({
+const uint8_t gPtsPerVerb[] = {
     1, 1, 2, 2, 3, 0,  // move, line, quad, conic, cubic, close
-});
+};
 
 static inline bool valid_conic_weight(float w) {
     return w >= 0 && SkIsFinite(w);
