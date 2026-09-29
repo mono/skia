@@ -171,11 +171,11 @@ var (
 	CAS_SPEC_LOTTIE_CI = &specs.CasSpec{
 		Root: "..",
 		Paths: []string{
-			"skia/.vpython3",
 			"skia/infra/bots/run_recipe.py",
 			"skia/infra/lottiecap",
 			"skia/tools/lottie-web-perf",
 			"skia/tools/lottiecap",
+			"skia/vpython.toml",
 		},
 		Excludes: []string{rbe.ExcludeGitDir},
 	}
@@ -481,6 +481,7 @@ func GenTasks(cfg *Config) {
 			"skia/.bazelrc",
 			"skia/.bazeliskrc",
 			"skia/.bazelversion",
+			"skia/.gitignore",
 			"skia/BUILD.bazel",
 			"skia/LICENSE", // Referred to by default_applicable_licenses
 			"skia/MODULE.bazel",
@@ -498,10 +499,10 @@ func GenTasks(cfg *Config) {
 	b.MustAddCasSpec(CAS_CANVASKIT, &specs.CasSpec{
 		Root: "..",
 		Paths: []string{
-			"skia/.vpython3",
 			"skia/infra/bots/run_recipe.py",
 			"skia/infra/canvaskit",
 			"skia/modules/canvaskit",
+			"skia/vpython.toml",
 		},
 		Excludes: []string{rbe.ExcludeGitDir},
 	})
@@ -510,58 +511,58 @@ func GenTasks(cfg *Config) {
 	b.MustAddCasSpec(CAS_LOTTIE_WEB, &specs.CasSpec{
 		Root: "..",
 		Paths: []string{
-			"skia/.vpython3",
 			"skia/infra/bots/run_recipe.py",
 			"skia/tools/lottie-web-perf",
+			"skia/vpython.toml",
 		},
 		Excludes: []string{rbe.ExcludeGitDir},
 	})
 	b.MustAddCasSpec(CAS_PERF, &specs.CasSpec{
 		Root: "..",
 		Paths: []string{
-			"skia/.vpython3",
 			"skia/infra/bots/assets",
 			"skia/infra/bots/run_recipe.py",
 			"skia/platform_tools/ios/bin",
 			"skia/resources",
+			"skia/vpython.toml",
 		},
 		Excludes: []string{rbe.ExcludeGitDir},
 	})
 	b.MustAddCasSpec(CAS_PUPPETEER, &specs.CasSpec{
 		Root: "../skia", // Needed for other repos.
 		Paths: []string{
-			".vpython3",
 			"tools/perf-canvaskit-puppeteer",
+			"vpython.toml",
 		},
 		Excludes: []string{rbe.ExcludeGitDir},
 	})
 	b.MustAddCasSpec(CAS_RECIPES, &specs.CasSpec{
 		Root: "..",
 		Paths: []string{
-			"skia/.vpython3",
 			"skia/infra/config/recipes.cfg",
 			"skia/infra/bots/bundle_recipes.sh",
 			"skia/infra/bots/README.recipes.md",
 			"skia/infra/bots/recipe_modules",
 			"skia/infra/bots/recipes",
 			"skia/infra/bots/recipes.py",
+			"skia/vpython.toml",
 		},
 		Excludes: []string{rbe.ExcludeGitDir},
 	})
 	b.MustAddCasSpec(CAS_RUN_RECIPE, &specs.CasSpec{
 		Root: "..",
 		Paths: []string{
-			"skia/.vpython3",
 			"skia/infra/bots/run_recipe.py",
+			"skia/vpython.toml",
 		},
 		Excludes: []string{rbe.ExcludeGitDir},
 	})
 	b.MustAddCasSpec(CAS_SKOTTIE_WASM, &specs.CasSpec{
 		Root: "..",
 		Paths: []string{
-			"skia/.vpython3",
 			"skia/infra/bots/run_recipe.py",
 			"skia/tools/skottie-wasm-perf",
+			"skia/vpython.toml",
 		},
 		Excludes: []string{rbe.ExcludeGitDir},
 	})
@@ -595,20 +596,20 @@ func GenTasks(cfg *Config) {
 	b.MustAddCasSpec(CAS_TEST, &specs.CasSpec{
 		Root: "..",
 		Paths: []string{
-			"skia/.vpython3",
 			"skia/infra/bots/assets",
 			"skia/infra/bots/run_recipe.py",
 			"skia/platform_tools/ios/bin",
 			"skia/resources",
+			"skia/vpython.toml",
 		},
 		Excludes: []string{rbe.ExcludeGitDir},
 	})
 	b.MustAddCasSpec(CAS_WASM_GM, &specs.CasSpec{
 		Root: "../skia", // Needed for other repos.
 		Paths: []string{
-			".vpython3",
 			"resources",
 			"tools/run-wasm-gm-tests",
+			"vpython.toml",
 		},
 		Excludes: []string{rbe.ExcludeGitDir},
 	})
@@ -616,12 +617,12 @@ func GenTasks(cfg *Config) {
 	b.MustAddCasSpec(CAS_RECREATE_SKPS, &specs.CasSpec{
 		Root: "..",
 		Paths: []string{
-			"skia/.vpython3",
 			"skia/DEPS",
 			"skia/bin/fetch-sk",
 			"skia/infra/bots/assets/skp",
 			"skia/infra/bots/utils.py",
 			"skia/tools/skp",
+			"skia/vpython.toml",
 		},
 		Excludes: []string{rbe.ExcludeGitDir},
 	})
@@ -679,7 +680,6 @@ func (b *TaskBuilder) kitchenTaskNoBundle(recipe string, outputDir string) {
 	b.usesLUCIAuth()
 	b.cipd(getCIPDPackage("infra/tools/luci/kitchen/${platform}", "."))
 	b.env("RECIPES_USE_PY3", "true")
-	b.envPrefixes("VPYTHON_DEFAULT_SPEC", "skia/.vpython3")
 	b.usesPython()
 	b.recipeProp("swarm_out_dir", outputDir)
 	if outputDir != OUTPUT_NONE {
@@ -854,7 +854,7 @@ var androidDeviceInfos = map[string][]string{
 	"Pixel4":          {"flame", "RPB2.200611.009"}, // R Preview
 	"Pixel4a":         {"sunfish", "AOSP.MASTER"},   // Pixel4a flashed with an Android HWASan build.
 	"Pixel4XL":        {"coral", "QD1A.190821.011.C4"},
-	"Pixel5":          {"redfin", "RD1A.200810.022.A4"},
+	"Pixel5":          {"redfin", "SP2A.220305.012"},
 	"Pixel6":          {"oriole", "SD1A.210817.037"},
 	"Pixel7":          {"panther", "AP4A.241205.013"},
 	"Pixel7Pro":       {"cheetah", "TD1A.221105.002"},
@@ -913,6 +913,8 @@ func (b *TaskBuilder) defaultSwarmDimensions() {
 			d["pool"] = "SkiaIOS"
 			if b.Model("iPhone11") {
 				d["os"] = "iOS-18.4"
+			} else if b.Model("iPhone8") {
+				d["os"] = "iOS-16.7"
 			}
 		}
 		if b.Parts["model"] == "iPadPro" {
@@ -1145,18 +1147,8 @@ func (b *TaskBuilder) defaultSwarmDimensions() {
 			// Use many-core machines for Build tasks.
 			d["machine_type"] = MACHINE_TYPE_LARGE
 		} else if d["os"] == DEFAULT_OS_MAC {
-			if b.MatchExtraConfig("iOS") {
-				// TODO(borenet): Remove this special case (and the associated
-				// machines) once the new machines have the certs needed to
-				// build for iOS.
-				d["os"] = "Mac-14.5"
-				d["cpu"] = "x86-64"
-				d["cores"] = "12"
-				delete(d, "gpu")
-			} else {
-				d["mac_model"] = "Mac16,11"
-				delete(d, "gpu")
-			}
+			delete(d, "gpu")
+			d["mac_model"] = "Mac16,11"
 		}
 	}
 
@@ -1221,6 +1213,8 @@ func (b *TaskBuilder) maybeAddIosDevImage() {
 				asset = "ios-dev-image-13.5"
 			case "13.6":
 				asset = "ios-dev-image-13.6"
+			case "16.7":
+				asset = "ios-dev-image-16.7"
 			case "18.2.1", "18.4":
 				// Newer iOS versions don't use a pre-packaged dev image.
 			default:
@@ -1628,7 +1622,7 @@ func (b *TaskBuilder) commonTestPerfAssets() {
 	if b.ExtraConfig("CanvasKit") || (b.Role("Test") && b.ExtraConfig("LottieWeb")) {
 		return
 	}
-	if b.Os("Android", "ChromeOS", "iOS") {
+	if b.MatchOs("Android", "ChromeOS", "iOS") {
 		b.asset("skp", "svg", "skimage")
 	} else if b.ExtraConfig("OldestSupportedSkpVersion") {
 		b.cipd(&specs.CipdPackage{
