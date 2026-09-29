@@ -33,10 +33,10 @@
 #include "src/core/SkTypefaceCache.h"
 #include "src/ports/SkTypeface_proxy.h"
 
-#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <fontconfig/fontconfig.h>
+#include <iterator>
 #include <memory>
 #include <string.h>
 #include <utility>
@@ -550,7 +550,7 @@ class SkFontMgr_fontconfig : public SkFontMgr {
         SkTDArray<const char*> names;
         SkTDArray<size_t> sizes;
 
-        static constexpr auto fcNameSet = std::to_array<FcSetName>({FcSetSystem, FcSetApplication});
+        static constexpr FcSetName fcNameSet[] = {FcSetSystem, FcSetApplication};
         for (int setIndex = 0; setIndex < (int)std::size(fcNameSet); ++setIndex) {
             // Return value of FcConfigGetFonts must not be destroyed.
             FcFontSet* allFonts(FcConfigGetFonts(fcconfig, fcNameSet[setIndex]));
@@ -772,7 +772,7 @@ protected:
         // TODO: Some families have 'duplicates' due to symbolic links.
         // The patterns are exactly the same except for the FC_FILE.
         // It should be possible to collapse these patterns by normalizing.
-        static constexpr auto fcNameSet = std::to_array<FcSetName>({FcSetSystem, FcSetApplication});
+        static constexpr FcSetName fcNameSet[] = {FcSetSystem, FcSetApplication};
         for (int setIndex = 0; setIndex < (int)std::size(fcNameSet); ++setIndex) {
             // Return value of FcConfigGetFonts must not be destroyed.
             FcFontSet* allFonts(FcConfigGetFonts(fFC, fcNameSet[setIndex]));

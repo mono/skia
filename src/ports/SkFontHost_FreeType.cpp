@@ -44,7 +44,7 @@
 #include "src/utils/SkCallableTraits.h"
 #include "src/utils/SkMatrix22.h"
 
-#include <array>
+#include <iterator>
 #include <memory>
 #include <optional>
 #include <tuple>
@@ -2268,7 +2268,7 @@ bool SkFontScanner_FreeType::scanInstance(SkStreamAsset* stream,
         // SkStrLCSearch binary searches this table, so the names must be lower-case and sorted.
         // There are probably more common names, but these are known to exist.
         using FS = SkFontStyle;
-        static constexpr auto commonWeights = std::to_array<CommonWeights>({
+        static constexpr CommonWeights commonWeights[] = {
                 // Multiple Masters usually default to normal.
                 CommonWeights{"all",        FS::kNormal_Weight},
                 CommonWeights{"black",      FS::kBlack_Weight},
@@ -2295,7 +2295,7 @@ bool SkFontScanner_FreeType::scanInstance(SkStreamAsset* stream,
                 CommonWeights{"ultrabold",  FS::kExtraBold_Weight},
                 CommonWeights{"ultraheavy", FS::kExtraBlack_Weight},
                 CommonWeights{"ultralight", FS::kExtraLight_Weight},
-        });
+        };
         int const index = SkStrLCSearch(&commonWeights[0].name, std::size(commonWeights),
                                         psFontInfo.weight, sizeof(commonWeights[0]));
         if (index >= 0) {

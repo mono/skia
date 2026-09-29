@@ -96,7 +96,7 @@ struct BCP47FromLanguageId {
     uint16_t languageID;
     const char* bcp47;
 };
-static constexpr auto BCP47FromLanguageID = std::to_array<BCP47FromLanguageId>({
+static constexpr BCP47FromLanguageId BCP47FromLanguageID[] = {
         /** A mapping from Mac Language Designators to BCP 47 codes.
          *  The following list was constructed more or less manually.
          *  Apple now uses BCP 47 (post OSX10.4), so there will be no new entries.
@@ -448,7 +448,7 @@ static constexpr auto BCP47FromLanguageID = std::to_array<BCP47FromLanguageId>({
         BCP47FromLanguageId{0x4c0a,        "es-NI"}, //  Spanish
         BCP47FromLanguageId{0x500a,        "es-PR"}, //  Spanish
         BCP47FromLanguageId{0x540a,        "es-US"}, //  Spanish
-});
+};
 
 namespace {
 bool BCP47FromLanguageIdLess(const BCP47FromLanguageId& a, const BCP47FromLanguageId& b) {
@@ -576,7 +576,7 @@ bool SkOTTableName::Iterator::next(SkOTTableName::Iterator::Record& record) {
     // Handle format 0 languages, translating them into BCP 47.
     const BCP47FromLanguageId target = { languageID, "" };
     int languageIndex = SkTSearch<BCP47FromLanguageId, BCP47FromLanguageIdLess>(
-            BCP47FromLanguageID.data(), std::size(BCP47FromLanguageID), target, sizeof(target));
+            BCP47FromLanguageID, std::size(BCP47FromLanguageID), target, sizeof(target));
     if (languageIndex >= 0) {
         record.language = BCP47FromLanguageID[languageIndex].bcp47;
         return true;

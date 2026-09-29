@@ -29,7 +29,7 @@
 #include "src/ports/SkTypeface_proxy.h"
 
 #include <algorithm>
-#include <array>
+#include <iterator>
 #include <limits>
 
 using namespace skia_private;
@@ -536,11 +536,11 @@ private:
 };
 
 #ifdef SK_DEBUG
-static constexpr auto gSystemFontUseStrings = std::to_array<const char*>({
+static constexpr const char* gSystemFontUseStrings[] = {
         "OnlyCustom",
         "PreferCustom",
         "PreferSystem",
-});
+};
 #endif
 
 }  // namespace

@@ -128,11 +128,11 @@ static SkScalar svg_opacity(SkColor color) {
 }
 
 // Keep in sync with SkPaint::Cap
-static constexpr auto cap_map = std::to_array<const char*>({
+static constexpr const char* cap_map[] = {
         nullptr,   // kButt_Cap (default)
         "round",   // kRound_Cap
         "square",  // kSquare_Cap
-});
+};
 static_assert(std::size(cap_map) == SkPaint::kCapCount, "missing_cap_map_entry");
 
 static const char* svg_cap(SkPaint::Cap cap) {
@@ -141,11 +141,11 @@ static const char* svg_cap(SkPaint::Cap cap) {
 }
 
 // Keep in sync with SkPaint::Join
-static constexpr auto join_map = std::to_array<const char*>({
+static constexpr const char* join_map[] = {
         nullptr,  // kMiter_Join (default)
         "round",  // kRound_Join
         "bevel",  // kBevel_Join
-});
+};
 static_assert(std::size(join_map) == SkPaint::kJoinCount, "missing_join_map_entry");
 
 static const char* svg_join(SkPaint::Join join) {
@@ -851,7 +851,7 @@ void SkSVGDevice::AutoElement::addTextAttributes(const SkFont& font) {
     }
     int weightIndex = (SkTPin(style.weight(), 100, 900) - 50) / 100;
     if (weightIndex != 3) {
-        static constexpr auto weights = std::to_array<const char*>({
+        static constexpr const char* weights[] = {
                 "100",
                 "200",
                 "300",
@@ -862,12 +862,12 @@ void SkSVGDevice::AutoElement::addTextAttributes(const SkFont& font) {
                 "bold",
                 "800",
                 "900",
-        });
+        };
         this->addAttribute("font-weight", weights[weightIndex]);
     }
     int stretchIndex = style.width() - 1;
     if (stretchIndex != 4) {
-        static constexpr auto stretches = std::to_array<const char*>({
+        static constexpr const char* stretches[] = {
                 "ultra-condensed",
                 "extra-condensed",
                 "condensed",
@@ -877,7 +877,7 @@ void SkSVGDevice::AutoElement::addTextAttributes(const SkFont& font) {
                 "expanded",
                 "extra-expanded",
                 "ultra-expanded",
-        });
+        };
         this->addAttribute("font-stretch", stretches[stretchIndex]);
     }
 
