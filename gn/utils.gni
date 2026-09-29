@@ -126,5 +126,3 @@ skia_clipstack_utils_sources = [
   "$_src/utils/SkClipStackUtils.cpp",
   "$_src/utils/SkClipStackUtils.h",
 ]
-
-
