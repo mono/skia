@@ -60,11 +60,11 @@ private:
     }
 
     void onSync() override {
-        static constexpr auto kDimensionsMap = std::to_array<SkVector>({
+        static constexpr SkVector kDimensionsMap[] = {
                 SkVector{1, 1},  // 1 -> horizontal and vertical
                 SkVector{1, 0},  // 2 -> horizontal
                 SkVector{0, 1},  // 3 -> vertical
-        });
+        };
 
         const auto dim_index = SkTPin<size_t>(static_cast<size_t>(fDimensions),
                                               1, std::size(kDimensionsMap)) - 1;

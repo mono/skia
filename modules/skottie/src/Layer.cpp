@@ -334,7 +334,7 @@ LayerBuilder::LayerBuilder(const skjson::ObjectValue& jlayer, const SkSize& comp
 {
     using BuilderInfo = skottie::internal::LayerBuilder::BuilderInfo;
     // This array maps the 'ty' field to the appropriate layer building member function
-    static constexpr auto gLayerBuildInfo = std::to_array<BuilderInfo>({
+    static constexpr BuilderInfo gLayerBuildInfo[] = {
         BuilderInfo{ &AnimationBuilder::attachPrecompLayer, kTransformEffects },  //  0 -> precomp
         BuilderInfo{ &AnimationBuilder::attachSolidLayer  , kTransformEffects },  //  1 -> solid
         BuilderInfo{ &AnimationBuilder::attachFootageLayer, kTransformEffects },  //  2 -> image
@@ -350,7 +350,7 @@ LayerBuilder::LayerBuilder(const skjson::ObjectValue& jlayer, const SkSize& comp
         BuilderInfo{ nullptr                              ,                 0 },  // 12 -> adjustment
         BuilderInfo{ &AnimationBuilder::attachNullLayer   ,                 0 },  // 13 -> camera
         BuilderInfo{ nullptr                              ,                 0 },  // 14 -> light
-    });
+    };
 
     if (fType >= 0 && SkToSizeT(fType) < std::size(gLayerBuildInfo)) {
         fBuilderInfo = gLayerBuildInfo[fType];
@@ -554,12 +554,12 @@ sk_sp<sksg::RenderNode> LayerBuilder::buildRenderTree(const AnimationBuilder& ab
 
     // Optional matte.
     if (const auto matte_mode = ParseDefault<size_t>(fJlayer["tt"], 0)) {
-        static constexpr auto gMatteModes = std::to_array<sksg::MaskEffect::Mode>({
+        static constexpr sksg::MaskEffect::Mode gMatteModes[] = {
             sksg::MaskEffect::Mode::kAlphaNormal, // tt: 1
             sksg::MaskEffect::Mode::kAlphaInvert, // tt: 2
             sksg::MaskEffect::Mode::kLumaNormal,  // tt: 3
             sksg::MaskEffect::Mode::kLumaInvert,  // tt: 4
-        });
+        };
 
         if (matte_mode <= std::size(gMatteModes)) {
             int matte_index = ParseDefault<int>(fJlayer["tp"], -1);

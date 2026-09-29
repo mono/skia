@@ -47,7 +47,7 @@ static sk_sp<SkBlender> hardMix() {
 
 static sk_sp<SkBlender> get_blender(const skjson::ObjectValue& jobject,
                                     const AnimationBuilder* abuilder) {
-    static constexpr auto kBlendModeMap = std::to_array<SkBlendMode>({
+    static constexpr SkBlendMode kBlendModeMap[] = {
             SkBlendMode::kSrcOver,     // 0:'normal'
             SkBlendMode::kMultiply,    // 1:'multiply'
             SkBlendMode::kScreen,      // 2:'screen'
@@ -65,7 +65,7 @@ static sk_sp<SkBlender> get_blender(const skjson::ObjectValue& jobject,
             SkBlendMode::kColor,       // 14:'color'
             SkBlendMode::kLuminosity,  // 15:'luminosity'
             SkBlendMode::kPlus,        // 16:'add'
-    });
+    };
 
     const size_t mode = ParseDefault<size_t>(jobject["bm"], 0);
 

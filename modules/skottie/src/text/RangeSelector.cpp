@@ -214,14 +214,14 @@ struct ShapeGenerator {
     }
 };
 
-static constexpr auto gShapeInfo = std::to_array<ShapeInfo>({
+static constexpr ShapeInfo gShapeInfo[] = {
         ShapeInfo{{0  ,0  }, {1  ,1}, 0                       , 1               , 0.0f}, //kSquare
         ShapeInfo{{0  ,0  }, {1  ,1}, 0                       , SK_FloatInfinity, 1.0f}, //kRampUp
         ShapeInfo{{0  ,0  }, {1  ,1}, SK_FloatNegativeInfinity, 1               , 1.0f}, //kRampDown
         ShapeInfo{{0  ,0  }, {1  ,1}, 0                       , 1               , 0.5f}, //kTriangle
         ShapeInfo{{0  ,.5f}, {.5f,1}, 0                       , 1               , 0.5f}, //kRound
         ShapeInfo{{.5f,0  }, {.5f,1}, 0                       , 1               , 0.5f}, //kSmooth
-});
+};
 
 } // namespace
 

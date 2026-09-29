@@ -224,18 +224,18 @@ sk_sp<SkRuntimeEffect> make_noise_effect(unsigned loops, const char* filter, con
 }
 
 sk_sp<SkRuntimeEffect> noise_effect(float octaves, NoiseFilter filter, NoiseFractal fractal) {
-    static constexpr auto gFilters = std::to_array<const char*>({
+    static constexpr const char* gFilters[] = {
             gFilterNearestSkSL,
             gFilterLinearSkSL,
             gFilterSoftLinearSkSL,
-    });
+    };
 
-    static constexpr auto gFractals = std::to_array<const char*>({
+    static constexpr const char* gFractals[] = {
             gFractalBasicSkSL,
             gFractalTurbulentBasicSkSL,
             gFractalTurbulentSmoothSkSL,
             gFractalTurbulentSharpSkSL,
-    });
+    };
 
     SkASSERT(static_cast<size_t>(filter)  < std::size(gFilters));
     SkASSERT(static_cast<size_t>(fractal) < std::size(gFractals));
@@ -246,12 +246,9 @@ sk_sp<SkRuntimeEffect> noise_effect(float octaves, NoiseFilter filter, NoiseFrac
         float    threshold;
         unsigned loops;
     };
-    static constexpr auto kLoopBins = std::to_array<BinInfo>({BinInfo{8, 20},
-                                                              BinInfo{4, 8},
-                                                              BinInfo{3, 4},
-                                                              BinInfo{2, 3},
-                                                              BinInfo{1, 2},
-                                                              BinInfo{0, 1}});
+    static constexpr BinInfo kLoopBins[] = {
+            {8, 20}, {4, 8}, {3, 4}, {2, 3}, {1, 2}, {0, 1},
+    };
 
     auto bin_index = [](float octaves) {
         SkASSERT(octaves > kLoopBins[std::size(kLoopBins) - 1].threshold);

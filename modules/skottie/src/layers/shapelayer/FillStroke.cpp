@@ -56,20 +56,20 @@ public:
             this->node()->setStyle(SkPaint::kStroke_Style);
             this->node()->setStrokeMiter(ParseDefault<SkScalar>(jpaint["ml"], 4.0f));
 
-            static constexpr auto gJoins = std::to_array<SkPaint::Join>({
+            static constexpr SkPaint::Join gJoins[] = {
                     SkPaint::kMiter_Join,
                     SkPaint::kRound_Join,
                     SkPaint::kBevel_Join,
-            });
+            };
             this->node()->setStrokeJoin(
                         gJoins[std::min<size_t>(ParseDefault<size_t>(jpaint["lj"], 1) - 1,
                                               std::size(gJoins) - 1)]);
 
-            static constexpr auto gCaps = std::to_array<SkPaint::Cap>({
+            static constexpr SkPaint::Cap gCaps[] = {
                     SkPaint::kButt_Cap,
                     SkPaint::kRound_Cap,
                     SkPaint::kSquare_Cap,
-            });
+            };
             this->node()->setStrokeCap(
                         gCaps[std::min<size_t>(ParseDefault<size_t>(jpaint["lc"], 1) - 1,
                                              std::size(gCaps) - 1)]);

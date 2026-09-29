@@ -350,12 +350,12 @@ sk_sp<TextAdapter> TextAdapter::Make(const skjson::ObjectValue& jlayer,
 
     // "More options"
     const skjson::ObjectValue* jm = (*jt)["m"];
-    static constexpr auto gGroupingMap = std::to_array<AnchorPointGrouping>({
+    static constexpr AnchorPointGrouping gGroupingMap[] = {
             AnchorPointGrouping::kCharacter,  // 'g': 1
             AnchorPointGrouping::kWord,       // 'g': 2
             AnchorPointGrouping::kLine,       // 'g': 3
             AnchorPointGrouping::kAll,        // 'g': 4
-    });
+    };
     const auto apg = jm
             ? SkTPin<int>(ParseDefault<int>((*jm)["g"], 1), 1, std::size(gGroupingMap))
             : 1;
