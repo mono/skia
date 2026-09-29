@@ -16,7 +16,9 @@
 #include "src/pdf/SkPDFDocumentPriv.h"
 
 #include <algorithm>
+#include <compare>
 #include <memory>
+#include <ranges>
 #include <utility>
 #include <vector>
 
@@ -119,32 +121,20 @@ struct SkPDFStructElem {
         ContentIndex(const ContentItemInfo& cii)
             : fParentId(cii.fStructParentKey), fMcid(0) {}
         bool valid() const { return static_cast<bool>(fParentId); }
-        bool operator==(const ContentIndex& o) const {
-            return fParentId == o.fParentId && fMcid == o.fMcid;
-        }
-        bool operator!=(const ContentIndex& o) const { return !(*this == o); }
-        bool operator< (const ContentIndex& o) const {
-            if (fParentId != o.fParentId) { return fParentId < o.fParentId; }
-            return fMcid < o.fMcid;
-        }
-        bool operator<=(const ContentIndex& o) const { return !(o < *this); }
-        bool operator> (const ContentIndex& o) const { return o < *this; }
-        bool operator>=(const ContentIndex& o) const { return !(*this < o); }
+        std::strong_ordering operator<=>(const ContentIndex&) const = default;
     };
     class ContentSpan {
         struct Data {
             ContentIndex fFirst;
             ContentIndex fLast;
-            bool operator==(const Data& o) const {
-                return fFirst == o.fFirst && fLast == o.fLast;
-            }
+            bool operator==(const Data&) const = default;
         };
         std::optional<Data> fData;
     public:
         ContentSpan() = default;
         ContentSpan(const ContentSpan&) = default;
         ContentSpan& operator=(const ContentSpan&) = default;
-        bool operator==(const ContentSpan& that) const { return fData == that.fData; }
+        bool operator==(const ContentSpan& that) const = default;
         bool empty() const { return !fData.has_value(); }
         const ContentIndex& first() const { return fData->fFirst; }
         const ContentIndex& last() const { return fData->fLast; }
@@ -153,7 +143,7 @@ struct SkPDFStructElem {
                 return;
             }
             if (this->empty()) {
-                fData = Data{ci, ci};
+                fData.emplace(ci, ci);
                 return;
             }
             if (ci < fData->fFirst) {
@@ -495,8 +485,7 @@ SkPDFIndirectReference SkPDFStructElem::emitStructElem(
         }
         if (childSpans.size() > 1) {
             std::optional<ContentIndex> minFirstAfter;
-            for (auto it = childSpans.rbegin(); it != childSpans.rend(); ++it) {
-                auto&& childSpan = *it;
+            for (auto&& childSpan : std::views::reverse(childSpans)) {
                 if (childSpan.fContentSpan.empty()) {
                     // Let empty child spans remain empty
                     continue;
