@@ -20,6 +20,8 @@ typedef struct sk_graphite_recording_t          sk_graphite_recording_t;
 typedef struct sk_graphite_backend_texture_t    sk_graphite_backend_texture_t;
 typedef struct sk_graphite_texture_info_t       sk_graphite_texture_info_t;
 typedef struct sk_graphite_image_provider_t     sk_graphite_image_provider_t;
+typedef struct sk_graphite_backend_semaphore_t  sk_graphite_backend_semaphore_t;
+typedef struct sk_graphite_mutable_texture_state_t sk_graphite_mutable_texture_state_t;
 
 // Backend identification
 
@@ -81,6 +83,7 @@ typedef struct {
 // Release callback for caller-owned backend textures
 
 typedef void (*sk_graphite_release_proc)(void* releaseContext);
+typedef void (*sk_graphite_finished_proc)(void* finishedContext, bool success);
 
 // Context
 
@@ -106,6 +109,20 @@ SK_C_API sk_graphite_recorder_t*       sk_graphite_context_make_recorder(
 
 // Insert / submit. insert returns a status — non-success is not an error path.
 SK_C_API sk_graphite_insert_status_t   sk_graphite_context_insert_recording(sk_graphite_context_t* context, const sk_graphite_insert_recording_info_t* info);
+SK_C_API sk_graphite_insert_status_t   sk_graphite_context_insert_recording_full(
+    sk_graphite_context_t* context,
+    sk_graphite_recording_t* recording,
+    sk_surface_t* targetSurface,
+    int32_t targetTranslationX,
+    int32_t targetTranslationY,
+    const sk_irect_t* targetClip,
+    const sk_graphite_mutable_texture_state_t* targetTextureState,
+    const void* const* waitSemaphores,
+    int32_t waitSemaphoreCount,
+    const void* const* signalSemaphores,
+    int32_t signalSemaphoreCount,
+    sk_graphite_finished_proc finishedProc,
+    void* finishedContext);
 SK_C_API bool                          sk_graphite_context_submit(sk_graphite_context_t* context, const sk_graphite_submit_info_t* info /* nullable -> defaults */);
 
 // Recorder
@@ -115,6 +132,10 @@ SK_C_API sk_graphite_backend_t         sk_graphite_recorder_get_backend(const sk
 SK_C_API int32_t                       sk_graphite_recorder_get_max_texture_size(const sk_graphite_recorder_t* recorder);
 // Snap: returns null if no recording has been recorded since the last snap().
 SK_C_API sk_graphite_recording_t*      sk_graphite_recorder_snap(sk_graphite_recorder_t* recorder);
+SK_C_API sk_canvas_t*                  sk_graphite_recorder_make_deferred_canvas(
+    sk_graphite_recorder_t* recorder,
+    const sk_imageinfo_t* info,
+    const sk_graphite_texture_info_t* textureInfo);
 
 // Recording
 
@@ -181,6 +202,17 @@ SK_C_API void                          sk_graphite_backend_texture_delete       
 SK_C_API bool                          sk_graphite_backend_texture_is_valid     (const sk_graphite_backend_texture_t* tex);
 SK_C_API sk_graphite_backend_t         sk_graphite_backend_texture_get_backend  (const sk_graphite_backend_texture_t* tex);
 SK_C_API void                          sk_graphite_backend_texture_get_dimensions(const sk_graphite_backend_texture_t* tex, int32_t* outWidth, int32_t* outHeight);
+SK_C_API sk_graphite_texture_info_t*   sk_graphite_backend_texture_get_texture_info(const sk_graphite_backend_texture_t* tex);
+
+// BackendSemaphore and MutableTextureState are value types in Graphite. The C
+// ABI wraps copies on the heap so callers can pass stable opaque handles into
+// sk_graphite_context_insert_recording_full and release them immediately after
+// that function returns.
+
+SK_C_API void                          sk_graphite_backend_semaphore_delete(
+    sk_graphite_backend_semaphore_t* semaphore);
+SK_C_API void                          sk_graphite_mutable_texture_state_delete(
+    sk_graphite_mutable_texture_state_t* state);
 
 // TextureInfo handle — describes a backend's texture format/sample/mipmap state
 // without referring to a concrete GPU resource.
