@@ -130,6 +130,12 @@
 #define SK_UNSAFE_BUFFER_USAGE
 #endif
 
+#if __has_cpp_attribute(clang::reinitializes)
+#define SK_REINITIALIZES [[clang::reinitializes]]
+#else
+#define SK_REINITIALIZES
+#endif
+
 // Annotates code indicating that it should be permanently exempted from
 // `-Wunsafe-buffer-usage`. For temporary cases such as migrating callers to
 // safer patterns, use `SK_UNSAFE_TODO()` instead; see documentation there.

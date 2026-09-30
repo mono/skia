@@ -20,7 +20,11 @@ declare_args() {
       target_cxx = "$_prefix/$ndk_target$ndk_api-clang++"
     }
   } else if (is_tizen) {
-    if (host_os == "win") {
+    if (ncli_use_gcc) {
+      target_ar = "$ncli/tools/$ncli_gccdir/$ncli_target/bin/ar"
+      target_cc = "$ncli/tools/$ncli_gccdir/bin/$ncli_gcc_binary_prefix-gcc"
+      target_cxx = "$ncli/tools/$ncli_gccdir/bin/$ncli_gcc_binary_prefix-g++"
+    } else if (host_os == "win") {
       target_ar = "$ncli/tools/$ncli_gccdir/$ncli_target/bin/ar.exe"
       target_cc = "$ncli/tools/llvm-${ncli_llvm_version}/bin/clang.exe"
       target_cxx = "$ncli/tools/llvm-${ncli_llvm_version}/bin/clang++.exe"

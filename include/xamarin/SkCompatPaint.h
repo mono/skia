@@ -25,6 +25,7 @@ enum class SkFilterQuality
 class SkCompatPaint : public SkPaint {
 public:
     SkCompatPaint(const SkCompatPaint& paint);
+    SkCompatPaint& operator=(const SkCompatPaint& paint);
     SkCompatPaint(const SkFont* font);
     ~SkCompatPaint();
 

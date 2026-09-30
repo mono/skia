@@ -44,6 +44,7 @@ declare_args() {
   ncli_gcc_version = "9.2.0"
   ncli_gcc_version_short = "9.2"
   ncli_llvm_version = "10"
+  ncli_use_gcc = false
 
   ios_min_target = ""
 
@@ -120,7 +121,7 @@ if (current_cpu == "") {
   current_cpu = target_cpu
 }
 
-is_clang = is_android || is_ios || is_mac || is_tizen || is_wasm ||
+is_clang = is_android || is_ios || is_mac || (is_tizen && !ncli_use_gcc) || is_wasm ||
            (cc == "clang" && cxx == "clang++") || clang_win != ""
 if (!is_clang && !is_win) {
   is_clang = exec_script("//gn/is_clang.py",
@@ -204,22 +205,27 @@ if (is_tizen) {
   ncli_target = ""
   ncli_platform = ""
   ncli_gccdir = ""
+  ncli_gcc_binary_prefix = ""
   if (target_cpu == "arm") {
     ncli_target = "arm-tizen-linux-gnueabi"
     ncli_platform = "tizen-${ncli_version}/mobile/rootstraps/mobile-${ncli_version}-device.core"
     ncli_gccdir = "arm-linux-gnueabi-gcc-${ncli_gcc_version_short}"
+    ncli_gcc_binary_prefix = "arm-linux-gnueabi"
   } else if (target_cpu == "x86") {
     ncli_target = "i586-tizen-linux-gnueabi"
     ncli_platform = "tizen-${ncli_version}/mobile/rootstraps/mobile-${ncli_version}-emulator.core"
     ncli_gccdir = "i586-linux-gnueabi-gcc-${ncli_gcc_version_short}"
+    ncli_gcc_binary_prefix = "i586-linux-gnueabi"
   } else if (target_cpu == "x64") {
     ncli_target = "x86_64-tizen-linux-gnu"
     ncli_platform = "tizen-${ncli_version}/tizen/rootstraps/tizen-${ncli_version}-emulator64.core"
     ncli_gccdir = "x86_64-linux-gnu-gcc-${ncli_gcc_version_short}"
+    ncli_gcc_binary_prefix = "x86_64-linux-gnu"
   } else if (target_cpu == "arm64") {
     ncli_target = "aarch64-tizen-linux-gnu"
     ncli_platform = "tizen-${ncli_version}/tizen/rootstraps/tizen-${ncli_version}-device64.core"
     ncli_gccdir = "aarch64-linux-gnu-gcc-${ncli_gcc_version_short}"
+    ncli_gcc_binary_prefix = "aarch64-linux-gnu"
   }
 }
 
