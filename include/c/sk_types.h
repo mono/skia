@@ -584,6 +584,33 @@ typedef enum {
 } sk_shader_tilemode_t;
 
 typedef enum {
+    DESTINATION_SK_GRADIENT_INTERPOLATION_COLORSPACE,
+    SRGB_LINEAR_SK_GRADIENT_INTERPOLATION_COLORSPACE,
+    LAB_SK_GRADIENT_INTERPOLATION_COLORSPACE,
+    OKLAB_SK_GRADIENT_INTERPOLATION_COLORSPACE,
+    OKLAB_GAMUT_MAP_SK_GRADIENT_INTERPOLATION_COLORSPACE,
+    LCH_SK_GRADIENT_INTERPOLATION_COLORSPACE,
+    OKLCH_SK_GRADIENT_INTERPOLATION_COLORSPACE,
+    OKLCH_GAMUT_MAP_SK_GRADIENT_INTERPOLATION_COLORSPACE,
+    SRGB_SK_GRADIENT_INTERPOLATION_COLORSPACE,
+    HSL_SK_GRADIENT_INTERPOLATION_COLORSPACE,
+    HWB_SK_GRADIENT_INTERPOLATION_COLORSPACE,
+} sk_gradient_interpolation_colorspace_t;
+
+typedef enum {
+    SHORTER_SK_GRADIENT_INTERPOLATION_HUEMETHOD,
+    LONGER_SK_GRADIENT_INTERPOLATION_HUEMETHOD,
+    INCREASING_SK_GRADIENT_INTERPOLATION_HUEMETHOD,
+    DECREASING_SK_GRADIENT_INTERPOLATION_HUEMETHOD,
+} sk_gradient_interpolation_huemethod_t;
+
+typedef struct {
+    sk_gradient_interpolation_colorspace_t fColorSpace;
+    sk_gradient_interpolation_huemethod_t fHueMethod;
+    bool fInPremul;
+} sk_gradient_interpolation_t;
+
+typedef enum {
     NORMAL_SK_BLUR_STYLE,   //!< fuzzy inside and outside
     SOLID_SK_BLUR_STYLE,    //!< solid inside, fuzzy outside
     OUTER_SK_BLUR_STYLE,    //!< nothing inside, fuzzy outside

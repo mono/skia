@@ -157,6 +157,62 @@ sk_shader_t* sk_shader_new_two_point_conical_gradient_color4f(const sk_point_t* 
     return ToShader(SkShaders::TwoPointConicalGradient(*AsPoint(start), startRadius, *AsPoint(end), endRadius, SkGradient(gc, {}), localMatrix ? &m : nullptr).release());
 }
 
+static SkGradient::Interpolation AsInterpolation(const sk_gradient_interpolation_t* interp) {
+    SkGradient::Interpolation result;
+    if (interp) {
+        result.fInPremul = interp->fInPremul
+            ? SkGradient::Interpolation::InPremul::kYes
+            : SkGradient::Interpolation::InPremul::kNo;
+        result.fColorSpace = (SkGradient::Interpolation::ColorSpace)interp->fColorSpace;
+        result.fHueMethod = (SkGradient::Interpolation::HueMethod)interp->fHueMethod;
+    }
+    return result;
+}
+
+sk_shader_t* sk_shader_new_linear_gradient_interpolation(const sk_point_t points[2], const sk_color4f_t* colors, const sk_colorspace_t* colorspace, const float colorPos[], int colorCount, sk_shader_tilemode_t tileMode, const sk_gradient_interpolation_t* interpolation, const sk_matrix_t* localMatrix) {
+    SkMatrix m;
+    if (localMatrix)
+        m = AsMatrix(localMatrix);
+    SkGradient::Colors gc(SkSpan<const SkColor4f>(AsColor4f(colors), colorCount),
+                          colorPos ? SkSpan<const float>(colorPos, colorCount) : SkSpan<const float>(),
+                          (SkTileMode)tileMode,
+                          sk_ref_sp(AsColorSpace(colorspace)));
+    return ToShader(SkShaders::LinearGradient(AsPoint(points), SkGradient(gc, AsInterpolation(interpolation)), localMatrix ? &m : nullptr).release());
+}
+
+sk_shader_t* sk_shader_new_radial_gradient_interpolation(const sk_point_t* center, float radius, const sk_color4f_t* colors, const sk_colorspace_t* colorspace, const float colorPos[], int colorCount, sk_shader_tilemode_t tileMode, const sk_gradient_interpolation_t* interpolation, const sk_matrix_t* localMatrix) {
+    SkMatrix m;
+    if (localMatrix)
+        m = AsMatrix(localMatrix);
+    SkGradient::Colors gc(SkSpan<const SkColor4f>(AsColor4f(colors), colorCount),
+                          colorPos ? SkSpan<const float>(colorPos, colorCount) : SkSpan<const float>(),
+                          (SkTileMode)tileMode,
+                          sk_ref_sp(AsColorSpace(colorspace)));
+    return ToShader(SkShaders::RadialGradient(*AsPoint(center), (SkScalar)radius, SkGradient(gc, AsInterpolation(interpolation)), localMatrix ? &m : nullptr).release());
+}
+
+sk_shader_t* sk_shader_new_sweep_gradient_interpolation(const sk_point_t* center, const sk_color4f_t* colors, const sk_colorspace_t* colorspace, const float colorPos[], int colorCount, sk_shader_tilemode_t tileMode, float startAngle, float endAngle, const sk_gradient_interpolation_t* interpolation, const sk_matrix_t* localMatrix) {
+    SkMatrix m;
+    if (localMatrix)
+        m = AsMatrix(localMatrix);
+    SkGradient::Colors gc(SkSpan<const SkColor4f>(AsColor4f(colors), colorCount),
+                          colorPos ? SkSpan<const float>(colorPos, colorCount) : SkSpan<const float>(),
+                          (SkTileMode)tileMode,
+                          sk_ref_sp(AsColorSpace(colorspace)));
+    return ToShader(SkShaders::SweepGradient({center->x, center->y}, startAngle, endAngle, SkGradient(gc, AsInterpolation(interpolation)), localMatrix ? &m : nullptr).release());
+}
+
+sk_shader_t* sk_shader_new_two_point_conical_gradient_interpolation(const sk_point_t* start, float startRadius, const sk_point_t* end, float endRadius, const sk_color4f_t* colors, const sk_colorspace_t* colorspace, const float colorPos[], int colorCount, sk_shader_tilemode_t tileMode, const sk_gradient_interpolation_t* interpolation, const sk_matrix_t* localMatrix) {
+    SkMatrix m;
+    if (localMatrix)
+        m = AsMatrix(localMatrix);
+    SkGradient::Colors gc(SkSpan<const SkColor4f>(AsColor4f(colors), colorCount),
+                          colorPos ? SkSpan<const float>(colorPos, colorCount) : SkSpan<const float>(),
+                          (SkTileMode)tileMode,
+                          sk_ref_sp(AsColorSpace(colorspace)));
+    return ToShader(SkShaders::TwoPointConicalGradient(*AsPoint(start), startRadius, *AsPoint(end), endRadius, SkGradient(gc, AsInterpolation(interpolation)), localMatrix ? &m : nullptr).release());
+}
+
 // SkPerlinNoiseShader
 
 sk_shader_t* sk_shader_new_perlin_noise_fractal_noise(float baseFrequencyX, float baseFrequencyY, int numOctaves, float seed, const sk_isize_t* tileSize) {
