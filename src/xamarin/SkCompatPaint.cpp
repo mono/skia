@@ -12,6 +12,7 @@
 #include "include/xamarin/SkCompatPaint.h"
 
 SkCompatPaint::SkCompatPaint(const SkCompatPaint& paint) = default;
+SkCompatPaint& SkCompatPaint::operator=(const SkCompatPaint& paint) = default;
 
 SkCompatPaint::SkCompatPaint(const SkFont* font)
     : fFont(*font)

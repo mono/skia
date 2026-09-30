@@ -10,6 +10,7 @@
 
 #include "include/private/SkAlign.h"
 #include "include/private/SkAssert.h"
+#include "include/private/SkAttributes.h"
 #include "include/private/SkMalloc.h"
 #include "include/private/SkTLogic.h"
 #include "include/private/SkTo.h"
@@ -121,7 +122,7 @@ public:
     }
 
     // Reallocates given a new count. Reallocation occurs even if new count equals old count.
-    [[clang::reinitializes]]
+    SK_REINITIALIZES
     void reset(size_t count = 0) {
         *this = AutoTArray(count);
     }
@@ -209,7 +210,7 @@ public:
     }
 
     /** Destroys previous objects in the array and default constructs count number of objects */
-    [[clang::reinitializes]]
+    SK_REINITIALIZES
     void reset(int count) {
         T* start = begin();
         T* iter = end();
@@ -330,7 +331,7 @@ public:
     }
 
     /** Resize the memory area pointed to by the current ptr without preserving contents. */
-    [[clang::reinitializes]]
+    SK_REINITIALIZES
     T* reset(size_t count = 0) {
         fPtr.reset(count ? (T*)sk_malloc_throw(count, sizeof(T)) : nullptr);
         return this->get();
@@ -401,7 +402,7 @@ public:
     }
 
     // doesn't preserve contents
-    [[clang::reinitializes]]
+    SK_REINITIALIZES
     T* reset(size_t count) {
         if (fPtr != fTStorage) {
             sk_free(fPtr);

@@ -150,16 +150,7 @@ config("default") {
       "-fvisibility=hidden",
     ]
     cflags_cc += [ "-fvisibility-inlines-hidden" ]
-    # mono/skia: Tizen Studio bundles clang-10, which only recognises the
-    # C++20 working-draft spelling `c++2a`. The final `c++20` value was
-    # added in clang 12. Substitute the older spelling for Tizen builds
-    # so Skia post-m143 (which made C++20 the default) keeps building
-    # against the Tizen NDK toolchain.
-    if (is_tizen) {
-      cflags_cc += [ "-std=c++2a" ]
-    } else {
-      cflags_cc += [ "-std=c++20" ]
-    }
+    cflags_cc += [ "-std=c++20" ]
   }
 
   if (current_cpu == "arm" && !is_win) {
@@ -203,13 +194,9 @@ config("default") {
 
   if (is_tizen) {
     defines += [ "SK_BUILD_FOR_TIZEN" ]
-    asmflags += [
-      "--target=$ncli_target",
-      "-B$ncli/tools/$ncli_gccdir/$ncli_target/bin",
-    ]
+    asmflags += [ "-B$ncli/tools/$ncli_gccdir/$ncli_target/bin" ]
     cflags += [
       "--sysroot=$ncli/platforms/$ncli_platform",
-      "--target=$ncli_target",
       "-B$ncli/tools/$ncli_gccdir/$ncli_target/bin",
     ]
     cflags_cc += [
@@ -218,7 +205,6 @@ config("default") {
     ]
     ldflags += [
       "--sysroot=$ncli/platforms/$ncli_platform",
-      "--target=$ncli_target",
       "-B$ncli/tools/$ncli_gccdir/$ncli_target/bin",
     ]
     lib_dirs = [
