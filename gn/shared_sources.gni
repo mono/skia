@@ -21,7 +21,6 @@ import("svg.gni")
 import("utils.gni")
 import("xml.gni")
 import("xps.gni")
-
 skia_opts = {
   ml3_sources = ml3
   ml4_sources = ml4
