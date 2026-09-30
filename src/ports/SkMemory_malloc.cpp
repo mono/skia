@@ -11,6 +11,7 @@
 #include "include/private/SkMalloc.h"
 
 #include <algorithm>
+#include <cstdint>
 #include <cstdlib>
 
 #if defined(SK_BUILD_FOR_MAC) || defined(SK_BUILD_FOR_IOS)
@@ -34,6 +35,12 @@
 #else
     #define SK_DEBUGFAILF(fmt, ...) SkASSERT((SkDebugf(fmt"\n", __VA_ARGS__), false))
 #endif
+
+// SkiaSharp native memory accounting hooks. Implementation in
+// src/c/sk_memory.cpp. Updates a process-wide atomic counter and fires a
+// threshold callback for the managed pressure monitor.
+extern "C" size_t sk_memory_internal_size_of(void* p);
+extern "C" void sk_memory_internal_account_delta(int64_t bytes);
 
 static inline void sk_out_of_memory(size_t size) {
     SK_DEBUGFAILF("sk_out_of_memory (asked for %zu bytes)",
@@ -77,13 +84,22 @@ void* sk_realloc_throw(void* addr, size_t size) {
         sk_free(addr);
         return nullptr;
     }
-    return throw_on_failure(size, realloc(addr, size));
+    size_t old_size = sk_memory_internal_size_of(addr);  // SkiaSharp accounting
+    void* new_addr = realloc(addr, size);
+    if (new_addr != nullptr) {
+        sk_memory_internal_account_delta(
+            static_cast<int64_t>(sk_memory_internal_size_of(new_addr)) -
+            static_cast<int64_t>(old_size));
+    }
+    return throw_on_failure(size, new_addr);
 }
 
 void sk_free(void* p) {
     // The guard here produces a performance improvement across many tests, and many platforms.
     // Removing the check was tried in skia cl 588037.
     if (p != nullptr) {
+        sk_memory_internal_account_delta(
+            -static_cast<int64_t>(sk_memory_internal_size_of(p)));  // SkiaSharp accounting
         free(p);
     }
 }
@@ -108,6 +124,10 @@ void* sk_malloc_flags(size_t size, unsigned flags) {
 #if defined(SK_BUILD_FOR_ANDROID_FRAMEWORK) && defined(__BIONIC__)
         (void)mallopt(M_THREAD_DISABLE_MEM_INIT, 0);
 #endif
+    }
+    if (p != nullptr) {
+        sk_memory_internal_account_delta(  // SkiaSharp accounting
+            static_cast<int64_t>(sk_memory_internal_size_of(p)));
     }
     if (flags & SK_MALLOC_THROW) {
         return throw_on_failure(size, p);
