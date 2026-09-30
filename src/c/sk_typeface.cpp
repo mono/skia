@@ -36,6 +36,14 @@ extern sk_sp<SkFontMgr> SkFontMgr_New_Custom_Embedded(const SkEmbeddedResourceHe
 #elif defined(SK_FONTMGR_FONTCONFIG_AVAILABLE)
 #include "include/ports/SkFontMgr_fontconfig.h"
 #include "include/ports/SkFontScanner_FreeType.h"
+#elif defined(SK_FONTMGR_FREETYPE_DIRECTORY_AVAILABLE)
+#include "include/ports/SkFontMgr_directory.h"
+
+// Matches the SK_FONT_FILE_PREFIX that upstream's now-deleted
+// SkFontMgr_custom_directory_factory.cpp used for this configuration.
+#ifndef SK_FONT_FILE_PREFIX
+#  define SK_FONT_FILE_PREFIX "/usr/share/fonts/"
+#endif
 #else
 #include "include/ports/SkFontMgr_empty.h"
 #endif
@@ -185,6 +193,15 @@ sk_fontmgr_t* sk_fontmgr_create_default(void) {
     return ToFontMgr(SkFontMgr_New_DirectWrite().release());
 #elif defined(SK_FONTMGR_FONTCONFIG_AVAILABLE)
     return ToFontMgr(SkFontMgr_New_FontConfig(nullptr, SkFontScanner_Make_FreeType()).release());
+#elif defined(SK_FONTMGR_FREETYPE_DIRECTORY_AVAILABLE)
+    // mono/skia: builds configured with skia_use_fontconfig=false (SkiaSharp's
+    // NativeAssets.Linux.NoDependencies package) have no fontconfig to ask, and
+    // would otherwise fall through to the empty font manager below — no system
+    // fonts at all. Before m148 removed SkFontMgr::Factory(), this configuration
+    // resolved to SkFontMgr_custom_directory_factory.cpp, which scanned
+    // SK_FONT_FILE_PREFIX. Scan the same directory here to keep that behaviour.
+    // See mono/SkiaSharp#4303.
+    return ToFontMgr(SkFontMgr_New_Custom_Directory(SK_FONT_FILE_PREFIX).release());
 #else
     return ToFontMgr(SkFontMgr_New_Custom_Empty().release());
 #endif

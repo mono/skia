@@ -2116,6 +2116,22 @@ skia_source_set("core") {
   if (skia_enable_fontmgr_fontconfig) {
     deps += [ ":fontmgr_fontconfig" ]
   }
+
+  # mono/skia: same problem for builds with skia_use_fontconfig=false (SkiaSharp's
+  # NativeAssets.Linux.NoDependencies package). Without a fontconfig manager the C
+  # API needs SK_FONTMGR_FREETYPE_DIRECTORY_AVAILABLE + SkFontMgr_New_Custom_Directory
+  # to scan the system font directory; otherwise sk_fontmgr_create_default returns an
+  # empty font manager and no system font resolves. See mono/SkiaSharp#4303.
+  #
+  # Scoped to is_linux (== linux or tizen) because that is exactly the set of
+  # platforms whose sk_fontmgr_create_default falls past every SK_BUILD_FOR_* branch
+  # to the fontconfig/directory/empty tail. Android and WASM would otherwise match
+  # too (both build freetype without fontconfig) but each has its own earlier branch,
+  # so pulling the directory fontmgr into :core there is dead weight.
+  if (is_linux && !skia_enable_fontmgr_fontconfig &&
+      skia_enable_fontmgr_custom_directory) {
+    deps += [ ":fontmgr_custom_directory" ]
+  }
 }
 
 skia_component("skia") {
