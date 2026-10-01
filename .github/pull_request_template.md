@@ -23,13 +23,13 @@ What does this change do, and why?
 
 **SkiaSharp issue**
 
-Related to https://github.com/mono/SkiaSharp/issues/<issue-number>
+Related SkiaSharp issue: <issue-url>
 
 <!-- Ensure a SkiaSharp issue exists for the feature or bug before opening this PR. -->
 
 **Required SkiaSharp PR**
 
-Requires https://github.com/mono/SkiaSharp/pull/<pr-number>
+Requires SkiaSharp PR: <pull-request-url>
 
 <!--
 Every change here — including build, CI, or infrastructure — needs a companion
@@ -101,4 +101,4 @@ Rendering change? Copy this in to show the difference:
 
 - [ ] Targets the `skiasharp` branch
 - [ ] `Changes` above lists every added/changed C API export (or "None.")
-- [ ] Companion `mono/SkiaSharp` PR linked above (submodule bump at minimum; regenerates bindings + adds tests for C API changes)
+- [ ] Companion SkiaSharp PR linked above (submodule bump at minimum; regenerates bindings + adds tests for C API changes)
