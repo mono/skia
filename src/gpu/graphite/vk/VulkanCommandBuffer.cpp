@@ -399,8 +399,10 @@ void VulkanCommandBuffer::prepareSurfaceForStateUpdate(SkSurface* targetSurface,
     if (newLayout == VK_IMAGE_LAYOUT_UNDEFINED) {
         newLayout = texture->currentLayout();
     }
-    VkPipelineStageFlags dstStage = VulkanTexture::LayoutToPipelineSrcStageFlags(newLayout);
-    VkAccessFlags dstAccess = VulkanTexture::LayoutToSrcAccessMask(newLayout);
+    VkPipelineStageFlags dstStage =
+            VulkanTexture::LayoutToPipelineSrcStageFlags(newLayout, fSharedContext->vulkanCaps());
+    VkAccessFlags dstAccess = VulkanTexture::LayoutToSrcAccessMask(
+            newLayout, texture->vulkanTextureInfo().fImageUsageFlags);
 
     uint32_t currentQueueFamilyIndex = texture->currentQueueFamilyIndex();
     uint32_t newQueueFamilyIndex = skgpu::MutableTextureStates::GetVkQueueFamilyIndex(newState);
@@ -1025,24 +1027,13 @@ bool VulkanCommandBuffer::beginRenderPass(const RenderPassDesc& rpDesc,
     this->submitPipelineBarriers();
     this->trackResource(vulkanRenderPass);
 
-    int frameBufferWidth = 0;
-    int frameBufferHeight = 0;
-    if (colorTexture) {
-        frameBufferWidth = colorTexture->dimensions().width();
-        frameBufferHeight = colorTexture->dimensions().height();
-    } else if (depthStencilTexture) {
-        frameBufferWidth = depthStencilTexture->dimensions().width();
-        frameBufferHeight = depthStencilTexture->dimensions().height();
-    }
     sk_sp<VulkanFramebuffer> framebuffer =
             fResourceProvider->findOrCreateFramebuffer(fSharedContext,
                                                        fTargetTexture,
                                                        vulkanResolveTexture,
                                                        vulkanDepthStencilTexture,
                                                        rpDesc,
-                                                       *vulkanRenderPass,
-                                                       frameBufferWidth,
-                                                       frameBufferHeight);
+                                                       *vulkanRenderPass);
     if (!framebuffer) {
         SKIA_LOG_W("Could not find or create Vulkan Framebuffer");
         return false;
@@ -1051,12 +1042,12 @@ bool VulkanCommandBuffer::beginRenderPass(const RenderPassDesc& rpDesc,
     bool useFullBounds = loadMSAAFromResolve &&
                          fSharedContext->vulkanCaps().mustLoadFullImageForMSAA();
 
-    SkIRect renderArea = get_render_area(useFullBounds ? SkIRect::MakeWH(frameBufferWidth,
-                                                                         frameBufferHeight)
-                                                        : fRenderAreaBounds,
-                                          vulkanRenderPass->granularity(),
-                                          frameBufferWidth,
-                                          frameBufferHeight);
+    SkISize framebufferDims = framebuffer->dimensions();
+    SkIRect renderArea = get_render_area(useFullBounds ? SkIRect::MakeSize(framebufferDims)
+                                                       : fRenderAreaBounds,
+                                         vulkanRenderPass->granularity(),
+                                         framebufferDims.width(),
+                                         framebufferDims.height());
 
     VkRenderPassBeginInfo beginInfo = {};
     beginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
@@ -1375,12 +1366,12 @@ void VulkanCommandBuffer::bindUniformBuffers() {
     auto vulkanBuffer = static_cast<const VulkanBuffer*>(combinedUboInfo.fBuffer);
 
     DescriptorType uniformBufferType =
-            fSharedContext->caps()->storageBufferSupport() ? DescriptorType::kStorageBuffer
-                                                           : DescriptorType::kUniformBuffer;
+            fSharedContext->caps()->storageBufferSupport() ? DescriptorType::kStorageBufferDynamic
+                                                           : DescriptorType::kUniformBufferDynamic;
 
     // If we determine that we should use storage buffers, we expect that the actual VkBuffer
     // supports that usage.
-    SkASSERT(uniformBufferType != DescriptorType::kStorageBuffer ||
+    SkASSERT(uniformBufferType != DescriptorType::kStorageBufferDynamic ||
              vulkanBuffer->bufferUsageFlags() | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
 
     // We expect to have up to 2 descriptors within this set. Fill out DescriptorData (for
@@ -1398,7 +1389,7 @@ void VulkanCommandBuffer::bindUniformBuffers() {
 
     if (fActiveGraphicsPipeline->usesStorageBuffer()) {
         SkASSERT(fSharedContext->caps()->storageBufferSupport());
-        uniformDescriptorData.push_back({DescriptorType::kStorageBuffer,
+        uniformDescriptorData.push_back({DescriptorType::kStorageBufferDynamic,
                                          /*count=*/1,
                                          Pipeline::kStorageBufferIndex,
                                          fActiveGraphicsPipeline->storageBufferStages()});

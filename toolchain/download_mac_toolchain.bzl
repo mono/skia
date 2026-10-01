@@ -38,6 +38,10 @@ def _delete_macos_sdk_symlinks(ctx):
 def _create_macos_sdk_symlinks(ctx):
     system_sdk_path = _get_system_sdk_path(ctx)
 
+    # Watch SDKSettings.plist so that Bazel invalidates and re-runs this
+    # repository rule whenever the active Xcode / macOS SDK is updated.
+    ctx.watch(system_sdk_path + "/SDKSettings.plist")
+
     # https://bazel.build/rules/lib/actions#symlink
     ctx.symlink(
         # from =
