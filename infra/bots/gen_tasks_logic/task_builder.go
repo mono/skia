@@ -190,7 +190,7 @@ func (b *TaskBuilder) cipdFromDEPS(pkgName string) {
 func (b *TaskBuilder) useIsolatedAssets() bool {
 	// Only do this on the RPIs for now. Other, faster machines shouldn't
 	// see much benefit and we don't need the extra complexity, for now.
-	if b.Os("ChromeOS", "iOS") || b.MatchOs("Android") {
+	if b.Os("ChromeOS") || b.MatchOs("Android", "iOS") {
 		return true
 	}
 	return false
@@ -254,7 +254,7 @@ func (b *TaskBuilder) usesCCache() {
 // shellsOutToBazel returns true if this task normally uses GN but some step
 // shells out to Bazel to build stuff, e.g. rust code.
 func (b *TaskBuilder) shellsOutToBazel() bool {
-	return b.ExtraConfig("Fontations", "RustALL", "RustPNG", "ICU4X")
+	return b.ExtraConfig("Fontations", "RustALL", "RustPNG", "RustPNGAndroid", "ICU4X")
 }
 
 func (b *TaskBuilder) usesCMake() {
