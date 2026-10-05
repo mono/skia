@@ -694,7 +694,6 @@ bool SkFontConfigInterfaceDirect::matchFamilyName(const char familyName[],
     // first we check if we can get a match directly (direct_match) with FcFontMatch
     direct_match.reset(FcFontMatch(fc, pattern.get(), &result));
     if (direct_match &&
-        this->isValidPattern(direct_match.get()) &&
         this->isAcceptableMatch(direct_match.get(), post_config_family, familyStr)) {
         match = direct_match.get();
     }
