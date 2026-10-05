@@ -57,13 +57,14 @@ sk_sp<DrawContext> DrawContext::Make(const Caps* caps,
                                      sk_sp<TextureProxy> target,
                                      SkISize deviceSize,
                                      const SkColorInfo& colorInfo,
-                                     const SkSurfaceProps& props) {
+                                     const SkSurfaceProps& props,
+                                     bool allowUnpremul) {
     if (!target) {
         return nullptr;
     }
-    // We don't render to unknown or unpremul alphatypes
+    // We don't render to unknown or unpremul alphatypes unless allowUnpremul is explicitly enabled.
     if (colorInfo.alphaType() == kUnknown_SkAlphaType ||
-        colorInfo.alphaType() == kUnpremul_SkAlphaType) {
+        (colorInfo.alphaType() == kUnpremul_SkAlphaType && !allowUnpremul)) {
         return nullptr;
     }
     if (!caps->isRenderable(target->textureInfo())) {
@@ -101,7 +102,8 @@ DrawContext::DrawContext(const Caps* caps,
                                    caps->storageBufferSupport()))
                           : std::unique_ptr<DrawListBase>(std::make_unique<DrawList>()))
         , fPendingUploads(std::make_unique<UploadList>())
-        , fStorageContext(caps->storageBufferSupport()) {
+        , fStorageContext(caps->resourceBindingRequirements().fMaxFallbackTextureSize,
+                          caps->storageBufferSupport()) {
     // Must determine a valid strategy to use should a dst texture read be required.
     SkASSERT(fDstReadStrategy != DstReadStrategy::kNoneRequired);
 
@@ -261,6 +263,7 @@ void DrawContext::flush(Recorder* recorder) {
     // to the RenderPassTask separately.
     std::unique_ptr<DrawPass> pass = fPendingDraws->snapDrawPass(recorder,
                                                                  &fStorageContext,
+                                                                 this,
                                                                  fTarget.refProxy(),
                                                                  this->imageInfo(),
                                                                  drawPassDstReadStrategy);

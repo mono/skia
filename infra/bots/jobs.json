@@ -20,6 +20,15 @@
     "cq_config": {}
   },
   {
+    "name": "BazelBuild-modules_canvaskit-ck_full_webgl2_release_debugger-linux_x64",
+    "cq_config": {
+      "location_regexes": [
+        "modules/canvaskit/.*",
+        "tools/debugger/.*"
+      ]
+    }
+  },
+  {
     "name": "BazelBuild-use_ganesh_gl-for_windows_x64_release-windows_x64"
   },
   {
@@ -462,6 +471,9 @@
   },
   {
     "name": "Build-Ubuntu24.04-Clang-x86_64-Debug-RustPNG"
+  },
+  {
+    "name": "Build-Ubuntu24.04-Clang-x86_64-Debug-RustPNGAndroid"
   },
   {
     "name": "Build-Ubuntu24.04-Clang-x86_64-Debug-SK_USE_DISCARDABLE_SCALEDIMAGECACHE"
@@ -932,12 +944,6 @@
   },
   {
     "name": "Perf-Android-Clang-Pixel4-GPU-Adreno640-arm64-Release-All-Android_Vulkan"
-  },
-  {
-    "name": "Perf-Android-Clang-Pixel4XL-GPU-Adreno640-arm64-Release-All-Android"
-  },
-  {
-    "name": "Perf-Android-Clang-Pixel4XL-GPU-Adreno640-arm64-Release-All-Android_Vulkan"
   },
   {
     "name": "Perf-Android-Clang-Pixel5-GPU-Adreno620-arm64-Release-All-Android"
@@ -1468,27 +1474,6 @@
     "name": "Test-Android-Clang-Pixel4-GPU-Adreno640-arm64-Release-All-Android_Vulkan"
   },
   {
-    "name": "Test-Android-Clang-Pixel4XL-GPU-Adreno640-arm64-Debug-All-Android"
-  },
-  {
-    "name": "Test-Android-Clang-Pixel4XL-GPU-Adreno640-arm64-Debug-All-Android_Vulkan"
-  },
-  {
-    "name": "Test-Android-Clang-Pixel4XL-GPU-Adreno640-arm64-Release-All-Android"
-  },
-  {
-    "name": "Test-Android-Clang-Pixel4XL-GPU-Adreno640-arm64-Release-All-Android_Vulkan"
-  },
-  {
-    "name": "Test-Android-Clang-Pixel4a-CPU-Snapdragon730G-arm64-Debug-All-Android_HWASAN"
-  },
-  {
-    "name": "Test-Android-Clang-Pixel4a-GPU-Adreno618-arm64-Debug-All-Android_Graphite_Native_Vulkan_HWASAN"
-  },
-  {
-    "name": "Test-Android-Clang-Pixel4a-GPU-Adreno618-arm64-Debug-All-Android_HWASAN"
-  },
-  {
     "name": "Test-Android-Clang-Pixel5-GPU-Adreno620-arm64-Debug-All-Android"
   },
   {
@@ -1892,6 +1877,9 @@
   },
   {
     "name": "Test-Ubuntu24.04-Clang-GCE-CPU-AVX2-x86_64-Debug-All-RustPNG"
+  },
+  {
+    "name": "Test-Ubuntu24.04-Clang-GCE-CPU-AVX2-x86_64-Debug-All-RustPNGAndroid"
   },
   {
     "name": "Test-Ubuntu24.04-Clang-GCE-CPU-AVX2-x86_64-Debug-All-SK_USE_DISCARDABLE_SCALEDIMAGECACHE"

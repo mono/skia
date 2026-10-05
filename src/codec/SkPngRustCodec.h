@@ -8,8 +8,12 @@
 #define SkPngRustCodec_DEFINED
 
 #include <memory>
+#include <variant>
 #include <vector>
 
+#include "include/core/SkSpan.h"
+#include "include/private/SkMalloc.h"
+#include "include/private/SkTemplates.h"
 #include "rust/png/FFI.rs.h"
 #include "src/codec/SkFrameHolder.h"
 #include "src/codec/SkPngCodecBase.h"
@@ -18,7 +22,6 @@
 struct SkEncodedInfo;
 class SkFrame;
 class SkStream;
-template <typename T> class SkSpan;
 
 // This class provides the Skia image decoding API (`SkCodec`) on top of:
 // * The third-party `png` crate (PNG decompression and decoding implemented in
@@ -42,45 +45,61 @@ public:
     ~SkPngRustCodec() override;
 
 private:
+    // Holds raw destination parameters captured in `startDecoding` before
+    // sampler/swizzler options are finalized.
+    struct UninitializedDstInfo {
+        // Pointer to the start of the caller's destination pixel buffer.
+        uint8_t* fDstPtr;
+
+        // Size of a row (in bytes) in the full image. Based on `rowBytes`
+        // passed to `onGetPixels` or `onStartIncrementalDecode`.
+        size_t fDstRowStride;
+    };
+
+    // Holds validated and calculated destination spans after `initializeDecodingDst`
+    // has run.
     struct DecodingDstInfo {
-        // `fDst` is based on `pixels` passed to `onGetPixels` or
-        // `onStartIncrementalDecode`.  For interlaced and non-interlaced
-        // images, `startDecoding` initializes `fDst` to start at the (0,0)
-        // (top-left) pixel of the current frame (which may be offset from
-        // `pixels` if the current frame is a sub-rect of the full image).
-        // After decoding a non-interlaced row this moves (by `fDstRowStride`)
-        // to the next row.
+        // Size of a row (in bytes) in the full image.
+        size_t fDstRowStride;
+
+        // `fDst` is based on `fDstPtr` from `UninitializedDstInfo`. For interlaced
+        // and non-interlaced images, `initializeDecodingDst` initializes `fDst`
+        // to start at the (0,0) (top-left) pixel of the current frame (which may
+        // be offset from `fDstPtr` if the current frame is a sub-rect of the full
+        // image). After decoding a non-interlaced row this moves (by
+        // `fDstRowStride`) to the next row.
         SkSpan<uint8_t> fDst;
 
-        // Size of a row (in bytes) in the full image.  Based on `rowBytes`
-        // passed to `onGetPixels` or `onStartIncrementalDecode`.
-        size_t fDstRowStride = 0;
-
         // Size of a row (in bytes) in the current frame.
-        size_t fDstRowSize = 0;
+        size_t fDstRowSize;
 
-        // Number of rows of the current frame that `fDst` holds.
-        size_t fDstRowCount = 0;
+        // Height (in rows) of the current frame.
+        size_t fDstRowCount;
 
         // Bytes per pixel of fDst.
-        uint8_t fDstBytesPerPixel = 0;
+        uint8_t fDstBytesPerPixel;
     };
 
     struct DecodingState {
-        // The info and pixels we will be decoding into.
-        DecodingDstInfo fDecodingDstInfo;
+        // Transitions from `UninitializedDstInfo` (set in `startDecoding`) ->
+        // `DecodingDstInfo` (populated by `initializeDecodingDst` once sampling
+        // and swizzler parameters are finalized).
+        std::variant<UninitializedDstInfo, DecodingDstInfo> fDst;
+
+        DecodingDstInfo& dst() { return std::get<DecodingDstInfo>(fDst); }
 
         // Intermediate buffer that holds color-transformed pixels that are
-        // ready to be blended with the destination.  Used only when this frame
-        // uses `SkCodecAnimation::Blend::kSrcOver`.  For interlaced images this
+        // ready to be blended with the destination. Used only when this frame
+        // uses `SkCodecAnimation::Blend::kSrcOver`. For interlaced images this
         // buffer holds the whole frame; otherwise it holds only a single row.
-
-        // This is also used in the case of subsets for interlaced images. We use
-        // this buffer as a full sized encoded image, which we then take the subset
-        // from.
+        //
+        // This is also used in the case of subsets or sampling for interlaced
+        // images. We use this buffer as a full sized encoded image, which we then
+        // take the subset / sampled rows from.
         // TODO: Subsets of APNG not supported, but if we need to, we would need
         // a separate fInterlacedBuffer along with fPreblendBuffer.
-        std::vector<uint8_t> fPreblendBuffer;
+        std::unique_ptr<uint8_t, SkFunctionObject<sk_free>> fPreblendBufferStorage;
+        SkSpan<uint8_t> fPreblendBuffer;
 
         int fFirstRow = 0;
         int fLastRow = 0;
@@ -99,19 +118,23 @@ private:
     };
 
     // Helper for validating parameters of `onGetPixels` and/or
-    // `onStartIncrementalDecode`.  If `kSuccess` is returned then
+    // `onStartIncrementalDecode`. If `kSuccess` is returned then
     // `decodingState` output parameter got populated.
     Result startDecoding(const SkImageInfo& dstInfo,
                          void* pixels,
                          size_t rowBytes,
                          const Options& options,
-                         DecodingState* decodingState);
+                         std::optional<DecodingState>& decodingState);
+
+    // Helper for initializing the destination span (`fDst`), row size, and
+    // preblend buffer once sampling/subsetting parameters are finalized.
+    Result initializeDecodingDst(DecodingState& decodingState);
 
     // Helper for taking a decoded interlaced `srcRow`, applying color
     // transformations, and then expanding it into the `frame`.
     void expandDecodedInterlacedRow(SkSpan<uint8_t> dstFrame,
                                     SkSpan<const uint8_t> srcRow,
-                                    const DecodingDstInfo& decodingState,
+                                    const DecodingDstInfo& decodingDst,
                                     bool xFormNeeded);
 
     // Helper for row-by-row decoding which is used from `onGetPixels` and/or
@@ -144,7 +167,15 @@ private:
     void processUnknownChunks();
     bool isLastFrame();
     bool isSampling() const;
-    Result initializeSamplerParams(DecodingState& decodingState);
+    // Helper to query whether the image supports sampling or subsetting
+    // (only static full-canvas images are supported; APNG animations and
+    // offset frames are unsupported).
+    bool supportsSamplingOrSubsetting();
+    // Leaves the stream just past `IEND` so that callers can keep reading it (see `Codec_end`).
+    // Like libpng, partial decodes skip this and stop early. Errors are ignored: the scanlines and
+    // the `IDAT` CRC are verified already, and libpng also tolerates a damaged tail (it checks the
+    // `IEND` CRC as if it were ancillary). No-op unless the codec is built `for_android`.
+    void finishStreamAfterLastFrame();
 
     // SkCodec overrides:
     Result onGetPixels(const SkImageInfo& dstInfo,

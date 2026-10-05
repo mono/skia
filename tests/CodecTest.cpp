@@ -48,11 +48,16 @@
 #include "src/core/SkRandom.h"
 #include "src/core/SkStreamPriv.h"
 #include "src/shaders/gradients/SkLinearGradient.h"
+#include "tests/CodecPriv.h"
 #include "tests/FakeStreams.h"
 #include "tests/Test.h"
 #include "tools/DecodeUtils.h"
 #include "tools/Resources.h"
 #include "tools/ToolUtils.h"
+
+#if defined(SK_CODEC_DECODES_ICO)
+#include "include/codec/SkIcoDecoder.h"
+#endif
 
 #if defined(SK_CODEC_DECODES_PNG_WITH_RUST)
 #include "include/codec/SkPngRustDecoder.h"
@@ -67,6 +72,7 @@
 #include <setjmp.h>
 
 #include <algorithm>
+#include <array>
 #include <cstdint>
 #include <cstring>
 #include <initializer_list>
@@ -288,10 +294,10 @@ static void test_codec(skiatest::Reporter* r, const char* path, Codec* codec, Sk
 }
 
 static bool supports_partial_scanlines(const char path[]) {
-    static const char* const exts[] = {
-        "jpg", "jpeg", "png", "webp",
-        "JPG", "JPEG", "PNG", "WEBP"
-    };
+    static constexpr auto exts = std::to_array<const char*>({
+            "jpg", "jpeg", "png", "webp",
+            "JPG", "JPEG", "PNG", "WEBP",
+    });
 
     for (uint32_t i = 0; i < std::size(exts); i++) {
         if (SkStrEndsWith(path, exts[i])) {
@@ -933,14 +939,15 @@ DEF_TEST(Codec_pngChunkReader, r) {
 #define PNG_BYTES(str) reinterpret_cast<png_byte*>(const_cast<char*>(str))
 
     // Create some chunks that match the Android framework's use.
-    static png_unknown_chunk gUnknowns[] = {
-        { "npOl", PNG_BYTES("outline"), sizeof("outline"), PNG_HAVE_IHDR },
-        { "npLb", PNG_BYTES("layoutBounds"), sizeof("layoutBounds"), PNG_HAVE_IHDR },
-        { "npTc", PNG_BYTES("ninePatchData"), sizeof("ninePatchData"), PNG_HAVE_IHDR },
-    };
+    using Chunk = png_unknown_chunk;
+    static auto gUnknowns = std::to_array<Chunk>({
+            Chunk{ "npOl", PNG_BYTES("outline"), sizeof("outline"), PNG_HAVE_IHDR },
+            Chunk{ "npLb", PNG_BYTES("layoutBounds"), sizeof("layoutBounds"), PNG_HAVE_IHDR },
+            Chunk{ "npTc", PNG_BYTES("ninePatchData"), sizeof("ninePatchData"), PNG_HAVE_IHDR },
+    });
 
     png_set_keep_unknown_chunks(png, PNG_HANDLE_CHUNK_ALWAYS, PNG_BYTES("npOl\0npLb\0npTc\0"), 3);
-    png_set_unknown_chunks(png, info, gUnknowns, std::size(gUnknowns));
+    png_set_unknown_chunks(png, info, gUnknowns.data(), std::size(gUnknowns));
 #if PNG_LIBPNG_VER < 10600
     /* Deal with unknown chunk location bug in 1.5.x and earlier */
     png_set_unknown_chunk_location(png, info, 0, PNG_HAVE_IHDR);
@@ -2679,3 +2686,41 @@ DEF_TEST(Codec_Bmp_b511820841, r) {
         codec->getPixels(info, &unusedPixels, info.minRowBytes(), &opts) != SkCodec::kSuccess);
 }
 
+#if defined(SK_CODEC_DECODES_ICO) && defined(SK_CODEC_DECODES_PNG_WITH_LIBPNG)
+DEF_SERIAL_TEST(Ico_usesRegisteredPngDecoder, r) {
+    sk_sp<SkData> icoData = make_ico_from_png_resource(r, "images/mandrill_128.png");
+
+    ScopedCodecDecoders scopedDecoders;
+    // Register a custom PNG decoder that returns a different image ("images/plane.png", 250x126)
+    // than the embedded PNG ("images/mandrill_128.png", 128x128) to verify without static state
+    // that SkIcoCodec delegates to the registered PNG decoder rather than calling libpng directly.
+    SkCodecs::Register({
+            "png",
+            SkPngDecoder::IsPng,
+            [](std::unique_ptr<SkStream>, SkCodec::Result* result, SkCodecs::DecodeContext ctx)
+                    -> std::unique_ptr<SkCodec> {
+                return SkPngDecoder::Decode(GetResourceAsStream("images/plane.png"), result, ctx);
+            },
+    });
+
+    std::unique_ptr<SkCodec> codec = SkCodec::MakeFromStream(SkMemoryStream::Make(icoData));
+    REPORTER_ASSERT(r, codec != nullptr);
+    if (codec) {
+        REPORTER_ASSERT(r,
+                        codec->dimensions() == SkISize::Make(250, 126),
+                        "Expected SkIcoCodec to use the registered PNG decoder");
+    }
+}
+
+DEF_SERIAL_TEST(Ico_fallbackToLibpngWhenPngNotRegistered, r) {
+    ScopedCodecDecoders scopedDecoders;
+    scopedDecoders.clear();
+    SkCodecs::Register(SkIcoDecoder::Decoder());
+
+    sk_sp<SkData> icoData = make_ico_from_png_resource(r, "images/mandrill_128.png");
+
+    // Even though no "png" decoder is registered, SkIcoCodec should fall back to libpng.
+    std::unique_ptr<SkCodec> codec = SkCodec::MakeFromStream(SkMemoryStream::Make(icoData));
+    REPORTER_ASSERT(r, codec != nullptr, "Expected fallback to libpng when PNG is not registered");
+}
+#endif  // SK_CODEC_DECODES_ICO && SK_CODEC_DECODES_PNG_WITH_LIBPNG
