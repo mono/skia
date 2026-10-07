@@ -203,6 +203,8 @@ DEF_STRUCT_MAP(GrD3DTextureResourceInfo, gr_d3d_textureresourceinfo_t, GrD3DText
 
 #if defined(SK_GRAPHITE)
 #include "include/c/sk_graphite.h"
+#include "include/gpu/MutableTextureState.h"
+#include "include/gpu/graphite/BackendSemaphore.h"
 #include "include/gpu/graphite/BackendTexture.h"
 #include "include/gpu/graphite/Context.h"
 #include "include/gpu/graphite/Recorder.h"
@@ -213,6 +215,8 @@ DEF_MAP_WITH_NS(skgpu::graphite, Recorder,       sk_graphite_recorder_t,        
 DEF_MAP_WITH_NS(skgpu::graphite, Recording,      sk_graphite_recording_t,       GraphiteRecording)
 DEF_MAP_WITH_NS(skgpu::graphite, BackendTexture, sk_graphite_backend_texture_t, GraphiteBackendTexture)
 DEF_MAP_WITH_NS(skgpu::graphite, TextureInfo,    sk_graphite_texture_info_t,    GraphiteTextureInfo)
+DEF_MAP_WITH_NS(skgpu::graphite, BackendSemaphore, sk_graphite_backend_semaphore_t, GraphiteBackendSemaphore)
+DEF_MAP_WITH_NS(skgpu, MutableTextureState, sk_graphite_mutable_texture_state_t, GraphiteMutableTextureState)
 #endif // SK_GRAPHITE
 
 #include "include/effects/SkRuntimeEffect.h"
