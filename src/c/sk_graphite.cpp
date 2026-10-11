@@ -23,6 +23,10 @@
 // and the matching As/To helpers via the DEF_MAP_WITH_NS block guarded by
 // SK_GRAPHITE in sk_types_priv.h.
 #include "src/c/sk_types_priv.h"
+#include "src/gpu/graphite/Caps.h"
+#include "src/gpu/graphite/RecorderPriv.h"
+#include "src/gpu/graphite/TextureFormat.h"
+#include "src/gpu/graphite/TextureInfoPriv.h"
 
 #include <chrono>
 #include <memory>
@@ -357,11 +361,17 @@ extern "C" SK_C_API sk_canvas_t* sk_graphite_recorder_make_deferred_canvas(
     auto* targetInfo = AsGraphiteTextureInfo(textureInfo);
     if (info.isEmpty() ||
         info.colorType() == kUnknown_SkColorType ||
-        info.alphaType() == kUnknown_SkAlphaType ||
+        (info.alphaType() != kPremul_SkAlphaType && info.alphaType() != kOpaque_SkAlphaType) ||
         info.width() > recorder->maxTextureSize() ||
         info.height() > recorder->maxTextureSize() ||
         !targetInfo->isValid() ||
         targetInfo->backend() != recorder->backend()) {
+        return nullptr;
+    }
+    // makeDeferredCanvas dereferences its Device even when DrawContext::Make rejects the target.
+    if (!recorder->priv().caps()->isRenderable(*targetInfo) ||
+        !gr::AreColorTypeAndFormatCompatible(
+                info.colorType(), gr::TextureInfoPriv::ViewFormat(*targetInfo))) {
         return nullptr;
     }
     return ToCanvas(recorder->makeDeferredCanvas(info, *targetInfo));
