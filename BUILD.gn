@@ -4254,6 +4254,24 @@ if (skia_build_rust_targets) {
 
 # SkiaSharp + HarfBuzzSharp
 
+declare_args() {
+  # mono/skia: the directory of Dawn's emdawnwebgpu port package
+  # (emdawnwebgpu_pkg). The port ships webgpu.cpp as source; when this is set
+  # on a WASM build it is compiled into SkiaSharp, so apps link an object
+  # instead of compiling C++20 on their own link line.
+  skiasharp_emdawnwebgpu_dir = ""
+}
+
+if (is_wasm && skiasharp_emdawnwebgpu_dir != "") {
+  static_library("emdawnwebgpu") {
+    sources = [ "$skiasharp_emdawnwebgpu_dir/webgpu/src/webgpu.cpp" ]
+    include_dirs = [
+      "$skiasharp_emdawnwebgpu_dir/webgpu/include",
+      "$skiasharp_emdawnwebgpu_dir/webgpu_cpp/include",
+    ]
+  }
+}
+
 skiasharp_build("SkiaSharp") {
   public_configs = [ ":skia_public" ]
   configs += skia_library_configs
@@ -4274,6 +4292,9 @@ skiasharp_build("SkiaSharp") {
     ":pathops",
     "modules/skottie",
   ]
+  if (is_wasm && skiasharp_emdawnwebgpu_dir != "") {
+    deps += [ ":emdawnwebgpu" ]
+  }
 
   sources = [
     "src/xamarin/sk_compatpaint.cpp",
