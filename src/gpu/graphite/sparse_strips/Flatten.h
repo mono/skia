@@ -143,7 +143,8 @@ private:
         std::array<SkPoint, kMaxQuadsInCtx + 4> fEvenPts;
 
         // The off-curve control points (p1) of the approximated quadratic segments.
-        std::array<SkPoint, kMaxQuadsInCtx> fOddPts;
+        // Sized +4 to safely handle odd numQuads and SIMD padding.
+        std::array<SkPoint, kMaxQuadsInCtx + 4> fOddPts;
 
         // The starting value of the parabolic integral for each quadratic segment. Maps the start
         // of the curve into uniform arc-length space.
@@ -200,6 +201,7 @@ private:
 
     // Stubs for non-simplifying, non-culling flattening to be used as a source of truth.
 #if defined(GPU_TEST_UTILS)
+    template <uint16_t, uint16_t> friend class FastValidator;
     void processPathsSimdTest(const SkPath& path, const SkMatrix& ctm, float width, float height,
                               Polyline* polyline);
     void processPathsScalarTest(const SkPath& path, const SkMatrix& ctm, float width,

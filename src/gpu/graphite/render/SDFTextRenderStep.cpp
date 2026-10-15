@@ -14,6 +14,7 @@
 #include "include/core/SkTileMode.h"
 #include "include/gpu/graphite/Recorder.h"
 #include "include/private/SkAssert.h"
+#include "include/private/SkAttributes.h"
 #include "include/private/SkDebug.h"
 #include "include/private/SkEnumBitMask.h"
 #include "src/core/SkSLTypeShared.h"
@@ -51,17 +52,22 @@ constexpr int kNumSDFAtlasTextures = 4;
 
 }  // namespace
 
+// NOTE: Sub run glyphs can emit triangles that self intersect, and we need those to produce
+// double blending (although usually one glyph will have 0 coverage at that pixel), so we include
+// Flags::kAllowSelfIntersection.
 SDFTextRenderStep::SDFTextRenderStep(Layout layout)
         : RenderStep(layout,
                      RenderStepID::kSDFText,
-                     Flags::kPerformsShading | Flags::kHasTextures | Flags::kEmitsCoverage |
-                     Flags::kAppendInstances,
+                     Flags::kPerformsShading | Flags::kHasTextures
+                                             | Flags::kEmitsCoverage
+                                             | Flags::kAppendInstances
+                                             | Flags::kAllowsSelfIntersection,
                      /*uniforms=*/{{"maskToDevice", SkSLType::kFloat4x4},
                                    {"localToDevice", SkSLType::kFloat4x4},
                                    {"atlasSizeInv", SkSLType::kFloat2},
                                    {"gammaParams", SkSLType::kHalf2}},
                      PrimitiveType::kTriangleStrip,
-                     kDirectDepthLEqualPass,
+                     /*stencilSettings=*/{},
                      /*staticAttrs=*/ {},
                      /*appendAttrs=*/
                      {{{"size", VertexAttribType::kUShort2, SkSLType::kUShort2},
@@ -155,7 +161,7 @@ void SDFTextRenderStep::writeUniformsAndTextures(const DrawParams& params,
     unsigned int numProxies;
     Recorder* recorder = subRunData.recorder();
     const sk_sp<TextureProxy>* proxies =
-            recorder->priv().atlasProvider()->textAtlasManager()->getProxies(
+            recorder->priv().getOrCreateAtlasProvider()->textAtlasManager()->getProxies(
                     subRunData.resolvedMaskFormat(), &numProxies);
     SkASSERT(proxies && numProxies > 0);
 
@@ -187,7 +193,7 @@ void SDFTextRenderStep::writeUniformsAndTextures(const DrawParams& params,
 
     // write textures and samplers
     for (unsigned int i = 0; i < numProxies; ++i) {
-        gatherer->add(proxies[i], {SkFilterMode::kLinear, SkTileMode::kClamp});
+        gatherer->add(SK_UNSAFE_TODO(proxies[i]), {SkFilterMode::kLinear, SkTileMode::kClamp});
     }
     // If the atlas has less than 4 active proxies we still need to set up samplers for the shader.
     for (unsigned int i = numProxies; i < kNumSDFAtlasTextures; ++i) {
