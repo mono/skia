@@ -124,3 +124,11 @@ deps = {
     'condition': 'checkout_agents_internal',
   },
 }
+
+# Platform-specific dependencies, synced by passing the OS name to git-sync-deps.
+# e.g. `python tools/git-sync-deps win`
+deps_os = {
+  "win": {
+    "third_party/externals/angle2"               : "https://github.com/google/angle.git@4cb3bebdc3b96723bb501328afe50f4f5cbc1de3",
+  },
+}
