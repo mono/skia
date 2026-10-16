@@ -12,6 +12,7 @@
 #include "include/core/SkPicture.h"
 #include "include/core/SkRegion.h"
 #include "include/effects/SkImageFilters.h"
+#include "include/effects/SkRuntimeEffect.h"
 
 #include "include/c/sk_imagefilter.h"
 
