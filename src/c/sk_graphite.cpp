@@ -13,6 +13,7 @@
 
 #include "include/core/SkImage.h"
 #include "include/core/SkSurface.h"
+#include "include/gpu/ShaderErrorHandler.h"
 #include "include/gpu/graphite/ContextOptions.h"
 #include "include/gpu/graphite/GraphiteTypes.h"
 #include "include/gpu/graphite/Image.h"
@@ -64,6 +65,7 @@ extern "C" SK_C_API void sk_graphite_context_options_init_defaults(sk_graphite_c
     out->fGpuBudgetInBytes                    = static_cast<int64_t>(defaults.fGpuBudgetInBytes);
     out->fRequireOrderedRecordings            = defaults.fRequireOrderedRecordings;
     out->fSetBackendLabels                    = defaults.fSetBackendLabels;
+    out->fShaderErrorHandler                  = nullptr;
 }
 
 // Translate the public sample-count integer to the SampleCount enum.
@@ -144,6 +146,49 @@ extern "C" SK_C_API sk_image_t* sk_graphite_image_make_texture(
     return ToImage(out.release());
 }
 
+// ShaderErrorHandler bridge — routes Graphite's "shader failed to compile"
+// hook to a plain C function pointer + userData. Owned by the caller via the
+// opaque sk_graphite_shader_error_handler_t handle (see _new / _delete below);
+// Skia's ContextOptions holds a raw non-owning pointer to it, so the bridge
+// must outlive the Context that references it.
+namespace {
+class FfiShaderErrorHandler final : public skgpu::ShaderErrorHandler {
+public:
+    FfiShaderErrorHandler(sk_graphite_shader_error_handler_proc proc, void* userData)
+        : fProc(proc), fUserData(userData) {}
+
+    void compileError(const char* shader, const char* errors, bool shaderWasCached) override {
+        if (fProc) fProc(fUserData, shader, errors, shaderWasCached);
+    }
+
+private:
+    sk_graphite_shader_error_handler_proc fProc;
+    void*                                  fUserData;
+};
+}  // namespace
+
+// Opaque handle: caller-owned bridge object. Cast-only alias so callers
+// can pass it through the C ABI while sk_graphite.cpp treats it as a real
+// FfiShaderErrorHandler*.
+struct sk_graphite_shader_error_handler_t;
+static FfiShaderErrorHandler* AsBridge(sk_graphite_shader_error_handler_t* h) {
+    return reinterpret_cast<FfiShaderErrorHandler*>(h);
+}
+
+extern "C" SK_C_API sk_graphite_shader_error_handler_t* sk_graphite_shader_error_handler_new(
+    sk_graphite_shader_error_handler_proc proc, void* userData)
+{
+    if (!proc) return nullptr;
+    return reinterpret_cast<sk_graphite_shader_error_handler_t*>(
+        new FfiShaderErrorHandler(proc, userData));
+}
+
+extern "C" SK_C_API void sk_graphite_shader_error_handler_delete(
+    sk_graphite_shader_error_handler_t* handler)
+{
+    delete AsBridge(handler);
+}
+
 // Public helper used by per-backend factories in sibling translation units.
 // Translate the C-ABI options struct to a Skia ContextOptions. Returns false
 // if any field carries an invalid value (currently: only fInternalMultisampleCount
@@ -166,6 +211,12 @@ bool sk_graphite_make_context_options(const sk_graphite_context_options_t* opts,
     }
     out->fRequireOrderedRecordings = opts->fRequireOrderedRecordings;
     out->fSetBackendLabels         = opts->fSetBackendLabels;
+    // Install shader-compile diagnostic if the caller supplied one. The bridge
+    // is caller-owned (via sk_graphite_shader_error_handler_new); Skia's
+    // ContextOptions stores it as a raw non-owning pointer, so the caller must
+    // keep it alive for the Context's lifetime and free it (via _delete) after
+    // the Context is destroyed.
+    out->fShaderErrorHandler = AsBridge(opts->fShaderErrorHandler);
     return true;
 }
 
