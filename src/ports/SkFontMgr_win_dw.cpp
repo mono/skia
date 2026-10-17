@@ -1198,8 +1198,9 @@ sk_sp<SkFontMgr> SkFontMgr_New_DirectWrite(IDWriteFactory* factory,
     int defaultFamilyNameLen = 1;
 
 #ifdef SK_BUILD_FOR_WINRT
-    defaultFamilyName = L"Segoe UI";
-    defaultFamilyNameLen = LF_FACESIZE;
+    static constexpr WCHAR defaultFamilyNameStorage[] = L"Segoe UI";
+    defaultFamilyName = defaultFamilyNameStorage;
+    defaultFamilyNameLen = sizeof(defaultFamilyNameStorage) / sizeof(WCHAR);
 #else // SK_BUILD_FOR_WINRT
     NONCLIENTMETRICSW metrics;
     metrics.cbSize = sizeof(metrics);
