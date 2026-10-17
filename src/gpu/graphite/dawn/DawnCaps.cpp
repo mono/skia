@@ -300,8 +300,8 @@ void DawnCaps::initCaps(const DawnBackendContext& backendContext, const ContextO
 // the inner `!defined(__EMSCRIPTEN__)` gate.
 #if defined(__EMSCRIPTEN__) && !defined(SKIA_USING_EMDAWNWEBGPU)
     wgpu::SupportedLimits supportedLimits;
-    [[maybe_unused]] wgpu::Status status = backendContext.fDevice.GetLimits(&supportedLimits);
-    SkASSERT(status == wgpu::Status::Success);
+    [[maybe_unused]] bool success = backendContext.fDevice.GetLimits(&supportedLimits);
+    SkASSERT(success);
     wgpu::Limits& limits = supportedLimits.limits;
 #else
     wgpu::CompatibilityModeLimits compatLimits;
