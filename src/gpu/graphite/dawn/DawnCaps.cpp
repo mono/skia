@@ -484,10 +484,12 @@ void DawnCaps::initShaderCaps(const wgpu::Device& device) {
     // discussions around enabling it using an extension in the future.
     shaderCaps->fInfinitySupport = false;
 
-#if !defined(__EMSCRIPTEN__)
+#if !defined(__EMSCRIPTEN__) || defined(SKIA_USING_EMDAWNWEBGPU)
     if (device.HasFeature(wgpu::FeatureName::DualSourceBlending)) {
         shaderCaps->fDualSourceBlendingSupport = true;
     }
+#endif
+#if !defined(__EMSCRIPTEN__)
     if (device.HasFeature(wgpu::FeatureName::FramebufferFetch)) {
         shaderCaps->fFBFetchSupport = true;
     }
