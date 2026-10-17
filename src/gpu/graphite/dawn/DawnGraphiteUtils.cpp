@@ -14,6 +14,7 @@
 #include "include/private/SkTArray.h"
 #include "src/gpu/graphite/ContextPriv.h"
 #include "src/gpu/graphite/TextureFormat.h"
+#include "src/gpu/graphite/dawn/DawnAsyncWait.h"
 #include "src/gpu/graphite/dawn/DawnQueueManager.h"
 #include "src/gpu/graphite/dawn/DawnSharedContext.h"
 
@@ -467,12 +468,28 @@ static bool check_shader_module([[maybe_unused]] const DawnSharedContext* shared
          (__EMSCRIPTEN_major__ == 3 && __EMSCRIPTEN_minor__ == 1 && __EMSCRIPTEN_tiny__ < 51)))
     return true;
 #else
+#if defined(__EMSCRIPTEN__)
+    DawnAsyncWait wait(sharedContext);
+    // A non-yielding browser Context cannot synchronously retrieve compilation info.
+    // Leave validation to WebGPU rather than enqueue a callback with stack userdata.
+    if (!wait.mayBusyWait()) {
+        return true;
+    }
+#endif
     struct Handler {
         static void Fn(WGPUCompilationInfoRequestStatus status,
                        const WGPUCompilationInfo* info,
                        void* userdata) {
             Handler* self = reinterpret_cast<Handler*>(userdata);
-            SkASSERT(status == WGPUCompilationInfoRequestStatus_Success);
+            if (status != WGPUCompilationInfoRequestStatus_Success || !info) {
+                self->fErrorHandler->compileError(
+                        self->fShaderText, "Failed to retrieve shader compilation info.",
+                        /*shaderWasCached=*/false);
+#if defined(__EMSCRIPTEN__)
+                self->fWait->signal();
+#endif
+                return;
+            }
 
             // Walk the message list and check for hard errors.
             self->fSuccess = true;
@@ -489,26 +506,49 @@ static bool check_shader_module([[maybe_unused]] const DawnSharedContext* shared
                 std::string errors;
                 for (size_t index = 0; index < info->messageCount; ++index) {
                     const WGPUCompilationMessage& entry = info->messages[index];
+#if defined(__EMSCRIPTEN__) && !defined(SKIA_USING_EMDAWNWEBGPU)
+                    std::string messageString(entry.message);
+#else
                     std::string messageString(entry.message.data, entry.message.length);
+#endif
                     errors += "line " + std::to_string(entry.lineNum) + ':' +
                               std::to_string(entry.linePos) + ' ' + messageString + '\n';
                 }
                 self->fErrorHandler->compileError(
                         self->fShaderText, errors.c_str(), /*shaderWasCached=*/false);
             }
+#if defined(__EMSCRIPTEN__)
+            self->fWait->signal();
+#endif
         }
 
         const char* fShaderText;
         ShaderErrorHandler* fErrorHandler;
         bool fSuccess = false;
+#if defined(__EMSCRIPTEN__)
+        DawnAsyncWait* fWait;
+#endif
     };
 
     Handler handler;
     handler.fShaderText = shaderText;
     handler.fErrorHandler = errorHandler;
 #if defined(__EMSCRIPTEN__)
-    // Deprecated function.
+    handler.fWait = &wait;
+#if defined(SKIA_USING_EMDAWNWEBGPU)
+    module->GetCompilationInfo(
+            wgpu::CallbackMode::AllowSpontaneous,
+            [](wgpu::CompilationInfoRequestStatus status, const wgpu::CompilationInfo* info,
+               Handler* handlerPtr) {
+                Handler::Fn(static_cast<WGPUCompilationInfoRequestStatus>(status),
+                            reinterpret_cast<const WGPUCompilationInfo*>(info),
+                            handlerPtr);
+            },
+            &handler);
+#else
     module->GetCompilationInfo(&Handler::Fn, &handler);
+#endif
+    wait.busyWait();
 #else
     // New API.
     wgpu::FutureWaitInfo waitInfo{};
