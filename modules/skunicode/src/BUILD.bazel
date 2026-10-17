@@ -3,7 +3,6 @@ load("//bazel:skia_rules.bzl", "skia_filegroup")
 package(
     default_applicable_licenses = ["//:license"],
 )
-
 licenses(["notice"])
 
 # In own group for export to //modules/skunicode/skunicode.gni:skia_unicode_builtin_icu_sources.
@@ -106,6 +105,15 @@ skia_filegroup(
     name = "icu4x_srcs",
     srcs = [
         "SkUnicode_icu4x.cpp",
+    ],
+    visibility = ["//modules/skunicode:__pkg__"],
+)
+
+# In own group for export to //modules/skunicode/skunicode.gni:skia_unicode_apple_sources.
+skia_filegroup(
+    name = "apple_srcs",
+    srcs = [
+        "SkUnicode_apple.cpp",
     ],
     visibility = ["//modules/skunicode:__pkg__"],
 )
