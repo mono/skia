@@ -14,6 +14,7 @@
 #include "include/private/SkTArray.h"
 #include "src/gpu/graphite/ContextPriv.h"
 #include "src/gpu/graphite/TextureFormat.h"
+#include "src/gpu/graphite/dawn/DawnAsyncWait.h"
 #include "src/gpu/graphite/dawn/DawnQueueManager.h"
 #include "src/gpu/graphite/dawn/DawnSharedContext.h"
 
@@ -51,6 +52,10 @@ std::unique_ptr<Context> MakeDawn(const DawnBackendContext& backendContext,
 } // namespace ContextFactory
 
 namespace {
+// FeatureName reserves zero. Unlike nullopt (the baseline), this means unavailable
+// in the legacy browser headers and must never be passed to Device::HasFeature.
+static constexpr auto kUnavailableFeature = static_cast<wgpu::FeatureName>(0);
+
 // If the extension is available (or if it's empty), the format flag bitmask is supported
 using ExtensionLimitedFlags = std::pair<std::optional<wgpu::FeatureName>,
                                         SkEnumBitMask<DawnFormatFlag>>;
@@ -77,6 +82,9 @@ public:
                 fFormatFeatures[(int) DawnFormatToTextureFormat(format)];
         SkEnumBitMask<DawnFormatFlag> supported;
         for (const ExtensionLimitedFlags& featureSet : features) {
+            if (featureSet.first == kUnavailableFeature) {
+                continue;
+            }
             if (!featureSet.first.has_value() || device.HasFeature(*featureSet.first)) {
                 supported |= featureSet.second;
             }
@@ -124,20 +132,14 @@ const DawnFormatCapabilityMap& DawnFormatCapabilityMap::Get() {
     // Alias some commonly used feature names
     using F = wgpu::FeatureName;
     static constexpr std::optional<F> Compat = std::nullopt; // The baseline
-    // mono/skia: CoreFeaturesAndLimits / TextureFormatsTier{1,2} are Dawn-extension
-    // FeatureName values not exposed by Emscripten's bundled webgpu.h; on WASM they
-    // fall back to the Compat baseline (device.HasFeature would never return true
-    // for values that don't exist anyway, so the table entries that require them
-    // are effectively unreachable). Kept as std::optional<F> so the >> operator
-    // still resolves.
-#if !defined(__EMSCRIPTEN__)
+#if !defined(__EMSCRIPTEN__) || defined(SKIA_USING_EMDAWNWEBGPU)
     static constexpr std::optional<F> Core = F::CoreFeaturesAndLimits;
     static constexpr std::optional<F> Tier1 = F::TextureFormatsTier1;
     static constexpr std::optional<F> Tier2 = F::TextureFormatsTier2;
 #else
-    static constexpr std::optional<F> Core = std::nullopt;
-    static constexpr std::optional<F> Tier1 = std::nullopt;
-    static constexpr std::optional<F> Tier2 = std::nullopt;
+    static constexpr std::optional<F> Core = kUnavailableFeature;
+    static constexpr std::optional<F> Tier1 = kUnavailableFeature;
+    static constexpr std::optional<F> Tier2 = kUnavailableFeature;
 #endif
 
     // To read this table with the HTML table in the links below, each format corresponds to a row
@@ -205,9 +207,7 @@ const DawnFormatCapabilityMap& DawnFormatCapabilityMap::Get() {
         {BGRA8UnormSrgb, {Core   >> Filter | Render | Blend | MSAA | Resolve}},
 
         // 16 bits per component
-        // mono/skia: R16Unorm / R16Snorm are Dawn-extension TextureFormat values not
-        // exposed by Emscripten's bundled webgpu.h; drop the entries on WASM.
-#if !defined(__EMSCRIPTEN__)
+#if !defined(__EMSCRIPTEN__) || defined(SKIA_USING_EMDAWNWEBGPU)
         {R16Unorm,       {Tier1  >> Render | Blend | MSAA | WriteOnly | ReadOnly}},
 
         {R16Snorm,       {Tier1  >> Render | Blend | MSAA | WriteOnly | ReadOnly}},
@@ -227,9 +227,7 @@ const DawnFormatCapabilityMap& DawnFormatCapabilityMap::Get() {
                           Tier1  >> WriteOnly | ReadOnly,
                           Tier2  >> ReadWrite}},
 
-        // mono/skia: RG16Unorm / RG16Snorm are Dawn-extension TextureFormat values
-        // not exposed by Emscripten's bundled webgpu.h; drop the entries on WASM.
-#if !defined(__EMSCRIPTEN__)
+#if !defined(__EMSCRIPTEN__) || defined(SKIA_USING_EMDAWNWEBGPU)
         {RG16Unorm,      {Tier1 >> Render | Blend | MSAA | WriteOnly | ReadOnly}},
 
         {RG16Snorm,      {Tier1 >> Render | Blend | MSAA | WriteOnly | ReadOnly}},
@@ -246,9 +244,7 @@ const DawnFormatCapabilityMap& DawnFormatCapabilityMap::Get() {
         {RG16Float,      {Compat >> Filter | Render | Blend | MSAA | Resolve,
                           Tier1  >> WriteOnly | ReadOnly}},
 
-        // mono/skia: RGBA16Unorm / RGBA16Snorm are Dawn-extension TextureFormat
-        // values not exposed by Emscripten's bundled webgpu.h; drop on WASM.
-#if !defined(__EMSCRIPTEN__)
+#if !defined(__EMSCRIPTEN__) || defined(SKIA_USING_EMDAWNWEBGPU)
         {RGBA16Unorm,    {Tier1  >> Render | Blend | MSAA | WriteOnly | ReadOnly}},
 
         {RGBA16Snorm,    {Tier1  >> Render | Blend | MSAA | WriteOnly | ReadOnly}},
@@ -274,9 +270,7 @@ const DawnFormatCapabilityMap& DawnFormatCapabilityMap::Get() {
         {R32Float,       {Compat >> Render | WriteOnly | ReadOnly | ReadWrite,
                           Core   >> MSAA,
                           F::Float32Filterable >> Filter,
-#if !defined(__EMSCRIPTEN__)
-                          // mono/skia: Float32Blendable is a Dawn-extension FeatureName
-                          // not exposed by Emscripten's bundled webgpu.h; drop on WASM.
+#if !defined(__EMSCRIPTEN__) || defined(SKIA_USING_EMDAWNWEBGPU)
                           F::Float32Blendable  >> Blend
 #endif
                           }},
@@ -290,7 +284,7 @@ const DawnFormatCapabilityMap& DawnFormatCapabilityMap::Get() {
         {RG32Float,      {Compat >> Render,
                           Core   >> WriteOnly | ReadOnly,
                           F::Float32Filterable >> Filter,
-#if !defined(__EMSCRIPTEN__)
+#if !defined(__EMSCRIPTEN__) || defined(SKIA_USING_EMDAWNWEBGPU)
                           F::Float32Blendable  >>  Blend
 #endif
                           }},
@@ -304,7 +298,7 @@ const DawnFormatCapabilityMap& DawnFormatCapabilityMap::Get() {
         {RGBA32Float,    {Compat >> Render|  WriteOnly | ReadOnly,
                           Tier2  >> ReadWrite,
                           F::Float32Filterable >> Filter,
-#if !defined(__EMSCRIPTEN__)
+#if !defined(__EMSCRIPTEN__) || defined(SKIA_USING_EMDAWNWEBGPU)
                           F::Float32Blendable  >> Blend
 #endif
                           }},
@@ -369,9 +363,7 @@ SkEnumBitMask<DawnFormatFlag> DawnTextureFormatSupport(wgpu::Device device,
 
 // *** Ground truth bidirectional map between TextureFormat and wgpu::TextureFormat ***
 
-// mono/skia: R16Unorm / RG16Unorm / RGBA16Unorm are Dawn-extension TextureFormat
-// values not exposed by Emscripten's bundled webgpu.h; moved into a native-only
-// macro (below) so consumers of DAWN_FORMAT_MAPPING don't reference them on WASM.
+// The bundled legacy browser headers do not expose normalized 16-bit formats.
 #define DAWN_FORMAT_MAPPING(M) \
         M(TextureFormat::kR8,             wgpu::TextureFormat::R8Unorm)                     \
         M(TextureFormat::kR16F,           wgpu::TextureFormat::R16Float)                    \
@@ -422,11 +414,17 @@ SkEnumBitMask<DawnFormatFlag> DawnTextureFormatSupport(wgpu::Device device,
         M(TextureFormat::kD24_S8,         wgpu::TextureFormat::Depth24PlusStencil8)         \
         M(TextureFormat::kD32F_S8,        wgpu::TextureFormat::Depth32FloatStencil8)        \
 
-#if !defined(__EMSCRIPTEN__)
-#define DAWN_FORMAT_MAPPING_NATIVE_ONLY(M) \
+#if !defined(__EMSCRIPTEN__) || defined(SKIA_USING_EMDAWNWEBGPU)
+#define DAWN_FORMAT_MAPPING_NORMALIZED16(M) \
         M(TextureFormat::kR16,            wgpu::TextureFormat::R16Unorm)                    \
         M(TextureFormat::kRG16,           wgpu::TextureFormat::RG16Unorm)                   \
-        M(TextureFormat::kRGBA16,         wgpu::TextureFormat::RGBA16Unorm)                 \
+        M(TextureFormat::kRGBA16,         wgpu::TextureFormat::RGBA16Unorm)
+#else
+#define DAWN_FORMAT_MAPPING_NORMALIZED16(M)
+#endif
+
+#if !defined(__EMSCRIPTEN__)
+#define DAWN_FORMAT_MAPPING_NATIVE_ONLY(M) \
         M(TextureFormat::kYUV8_P2_420,    wgpu::TextureFormat::R8BG8Biplanar420Unorm)       \
         M(TextureFormat::kYUV10x6_P2_420, wgpu::TextureFormat::R10X6BG10X6Biplanar420Unorm) \
         M(TextureFormat::kYUV8_P2_422,    wgpu::TextureFormat::R8BG8Biplanar422Unorm)       \
@@ -442,6 +440,7 @@ TextureFormat DawnFormatToTextureFormat(wgpu::TextureFormat format) {
 #define M(TF, WGPU) case WGPU: return TF;
     switch(format) {
         DAWN_FORMAT_MAPPING(M)
+        DAWN_FORMAT_MAPPING_NORMALIZED16(M)
         DAWN_FORMAT_MAPPING_NATIVE_ONLY(M)
         default: return TextureFormat::kUnsupported;
     }
@@ -451,6 +450,7 @@ wgpu::TextureFormat TextureFormatToDawnFormat(TextureFormat format) {
 #define M(TF, WGPU) case TF: return WGPU;
     switch(format) {
         DAWN_FORMAT_MAPPING(M)
+        DAWN_FORMAT_MAPPING_NORMALIZED16(M)
         DAWN_FORMAT_MAPPING_NATIVE_ONLY(M)
         default: return wgpu::TextureFormat::Undefined;
     }
@@ -468,12 +468,28 @@ static bool check_shader_module([[maybe_unused]] const DawnSharedContext* shared
          (__EMSCRIPTEN_major__ == 3 && __EMSCRIPTEN_minor__ == 1 && __EMSCRIPTEN_tiny__ < 51)))
     return true;
 #else
+#if defined(__EMSCRIPTEN__)
+    DawnAsyncWait wait(sharedContext);
+    // A non-yielding browser Context cannot synchronously retrieve compilation info.
+    // Leave validation to WebGPU rather than enqueue a callback with stack userdata.
+    if (!wait.mayBusyWait()) {
+        return true;
+    }
+#endif
     struct Handler {
         static void Fn(WGPUCompilationInfoRequestStatus status,
                        const WGPUCompilationInfo* info,
                        void* userdata) {
             Handler* self = reinterpret_cast<Handler*>(userdata);
-            SkASSERT(status == WGPUCompilationInfoRequestStatus_Success);
+            if (status != WGPUCompilationInfoRequestStatus_Success || !info) {
+                self->fErrorHandler->compileError(
+                        self->fShaderText, "Failed to retrieve shader compilation info.",
+                        /*shaderWasCached=*/false);
+#if defined(__EMSCRIPTEN__)
+                self->fWait->signal();
+#endif
+                return;
+            }
 
             // Walk the message list and check for hard errors.
             self->fSuccess = true;
@@ -490,26 +506,49 @@ static bool check_shader_module([[maybe_unused]] const DawnSharedContext* shared
                 std::string errors;
                 for (size_t index = 0; index < info->messageCount; ++index) {
                     const WGPUCompilationMessage& entry = info->messages[index];
+#if defined(__EMSCRIPTEN__) && !defined(SKIA_USING_EMDAWNWEBGPU)
+                    std::string messageString(entry.message);
+#else
                     std::string messageString(entry.message.data, entry.message.length);
+#endif
                     errors += "line " + std::to_string(entry.lineNum) + ':' +
                               std::to_string(entry.linePos) + ' ' + messageString + '\n';
                 }
                 self->fErrorHandler->compileError(
                         self->fShaderText, errors.c_str(), /*shaderWasCached=*/false);
             }
+#if defined(__EMSCRIPTEN__)
+            self->fWait->signal();
+#endif
         }
 
         const char* fShaderText;
         ShaderErrorHandler* fErrorHandler;
         bool fSuccess = false;
+#if defined(__EMSCRIPTEN__)
+        DawnAsyncWait* fWait;
+#endif
     };
 
     Handler handler;
     handler.fShaderText = shaderText;
     handler.fErrorHandler = errorHandler;
 #if defined(__EMSCRIPTEN__)
-    // Deprecated function.
+    handler.fWait = &wait;
+#if defined(SKIA_USING_EMDAWNWEBGPU)
+    module->GetCompilationInfo(
+            wgpu::CallbackMode::AllowSpontaneous,
+            [](wgpu::CompilationInfoRequestStatus status, const wgpu::CompilationInfo* info,
+               Handler* handlerPtr) {
+                Handler::Fn(static_cast<WGPUCompilationInfoRequestStatus>(status),
+                            reinterpret_cast<const WGPUCompilationInfo*>(info),
+                            handlerPtr);
+            },
+            &handler);
+#else
     module->GetCompilationInfo(&Handler::Fn, &handler);
+#endif
+    wait.busyWait();
 #else
     // New API.
     wgpu::FutureWaitInfo waitInfo{};
