@@ -181,9 +181,6 @@ if (is_win) {
         win_toolchain_version = exec_script("//gn/highest_version_dir.py", [ "$win_vc/Tools/MSVC", "[0-9]{2}\.[0-9]{2}\.[0-9]{5}" ], "trim string")
       }
     }
-    if (win_vcvars_version == "") {
-      win_vcvars_version = exec_script("//gn/get_vcvars_version.py", [ win_toolchain_version ], "trim string")
-    }
   }
   if (win_sdk == "") {
     win_sdk = exec_script("//gn/find_winsdk.py", [], "trim string")
