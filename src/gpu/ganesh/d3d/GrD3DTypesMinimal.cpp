@@ -54,7 +54,7 @@ bool GrD3DBackendSurfaceInfo::isProtected() const {
     return fTextureResourceInfo->fProtected == GrProtected::kYes;
 }
 
-// mono/skia: see GrD3DTypesMinimal.h — ungated so production equal() can link.
+#if defined(GPU_TEST_UTILS)
 bool GrD3DBackendSurfaceInfo::operator==(const GrD3DBackendSurfaceInfo& that) const {
     GrD3DTextureResourceInfo cpyInfoThis = *fTextureResourceInfo;
     GrD3DTextureResourceInfo cpyInfoThat = *that.fTextureResourceInfo;
@@ -64,3 +64,4 @@ bool GrD3DBackendSurfaceInfo::operator==(const GrD3DBackendSurfaceInfo& that) co
     cpyInfoThat.fResourceState = D3D12_RESOURCE_STATE_COMMON;
     return cpyInfoThis == cpyInfoThat && fResourceState == that.fResourceState;
 }
+#endif
