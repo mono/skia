@@ -110,9 +110,11 @@ template("msvc_toolchain") {
       if (toolchain_target_cpu == "x64") {
         _ml += "64"
       }
-      command = "\"$bin/$_ml.exe\" {{asmflags}} /nologo /c /Fo {{output}} {{source}}"
-      outputs =
-          [ "{{source_out_dir}}/{{target_output_name}}.{{source_name_part}}.obj" ]
+      command =
+          "\"$bin/$_ml.exe\" {{asmflags}} /nologo /c /Fo {{output}} {{source}}"
+      outputs = [
+        "{{source_out_dir}}/{{target_output_name}}.{{source_name_part}}.obj",
+      ]
       description = "assemble {{source}}"
     }
 
@@ -123,8 +125,9 @@ template("msvc_toolchain") {
       # Label names may have spaces so pdbname must be quoted.
       command = "$cc_wrapper $cl /nologo /showIncludes /FC {{defines}} {{include_dirs}} {{cflags}} $cl_m32_flag {{cflags_c}} /c {{source}} /Fo{{output}} /Fd\"$pdbname\""
       depsformat = "msvc"
-      outputs =
-          [ "{{source_out_dir}}/{{target_output_name}}.{{source_name_part}}.obj" ]
+      outputs = [
+        "{{source_out_dir}}/{{target_output_name}}.{{source_name_part}}.obj",
+      ]
       description = "compile {{source}}"
     }
 
@@ -135,15 +138,17 @@ template("msvc_toolchain") {
       # Label names may have spaces so pdbname must be quoted.
       command = "$cc_wrapper $cl /nologo /showIncludes /FC {{defines}} {{include_dirs}} {{cflags}} $cl_m32_flag {{cflags_cc}} /c {{source}} /Fo{{output}} /Fd\"$pdbname\""
       depsformat = "msvc"
-      outputs =
-          [ "{{source_out_dir}}/{{target_output_name}}.{{source_name_part}}.obj" ]
+      outputs = [
+        "{{source_out_dir}}/{{target_output_name}}.{{source_name_part}}.obj",
+      ]
       description = "compile {{source}}"
     }
 
     tool("alink") {
       rspfile = "{{output}}.rsp"
 
-      command = "$lib /nologo /ignore:4221 {{arflags}} /OUT:{{output}} @$rspfile"
+      command =
+          "$lib /nologo /ignore:4221 {{arflags}} /OUT:{{output}} @$rspfile"
       outputs = [
         # Ignore {{output_extension}} and always use .lib, there's no reason to
         # allow targets to override this extension on Windows.
