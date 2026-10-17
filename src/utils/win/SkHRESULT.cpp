@@ -17,10 +17,7 @@ void SkTraceHR(const char* file, unsigned long line, HRESULT hr, const char* msg
     SkDebugf("%s(%lu) : error 0x%lx: ", file, line, static_cast<unsigned long>(hr));
 
     LPSTR errorText = nullptr;
-    FormatMessageA(
-#ifndef SK_BUILD_FOR_WINRT
-                   FORMAT_MESSAGE_ALLOCATE_BUFFER |
-#endif // SK_BUILD_FOR_WINRT
+    FormatMessageA(FORMAT_MESSAGE_ALLOCATE_BUFFER |
                    FORMAT_MESSAGE_FROM_SYSTEM |
                    FORMAT_MESSAGE_IGNORE_INSERTS,
                    nullptr,
@@ -35,11 +32,7 @@ void SkTraceHR(const char* file, unsigned long line, HRESULT hr, const char* msg
         SkDebugf("<unknown>\n");
     } else {
         SkDebugf("%s", errorText);
-#ifdef SK_BUILD_FOR_WINRT
-        HeapFree(GetProcessHeap(), 0, errorText);
-#else // SK_BUILD_FOR_WINRT
         LocalFree(errorText);
-#endif // SK_BUILD_FOR_WINRT
         errorText = nullptr;
     }
 }
