@@ -28,6 +28,7 @@ if (skia_use_system_zlib) {
       defines += [ "ADLER32_SIMD_SSSE3" ]  # Strangely this is needed for
                                            # cpu_features.c
     }
+
     if (use_arm_neon_optimizations) {
       if (is_android) {
         defines += [ "ARMV8_OS_ANDROID" ]  # also compatible with v7
@@ -113,12 +114,15 @@ if (skia_use_system_zlib) {
     configs += [ ":zlib_simd_config" ]
     if (use_x86_x64_optimizations) {
       defines = [ "INFLATE_CHUNK_SIMD_SSE2" ]
+
       if (current_cpu == "x64") {
         defines += [ "INFLATE_CHUNK_READ_64LE" ]
       }
     }
+
     if (use_arm_neon_optimizations) {
       defines = [ "INFLATE_CHUNK_SIMD_NEON" ]
+
       if (current_cpu == "arm64") {
         defines += [ "INFLATE_CHUNK_READ_64LE" ]
       }
@@ -143,6 +147,7 @@ if (skia_use_system_zlib) {
         "CRC32_SIMD_SSE42_PCLMUL",
         "DEFLATE_SLIDE_HASH_SSE2",
       ]
+
       if (!is_win || is_clang) {
         cflags = [
           "-msse4.2",
