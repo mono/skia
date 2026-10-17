@@ -747,7 +747,7 @@ config("warnings") {
     _supports_unsafe_buffers_mappings =
         exec_script("//gn/check_compiler_flag.py",
                     [
-                      cc,
+                      target_cc,
                       "--warning-suppression-mappings=" +
                           _unsafe_buffers_mappings,
                     ],
@@ -756,6 +756,14 @@ config("warnings") {
     if (_supports_unsafe_buffers_mappings) {
       cflags += [
         "-Wunsafe-buffer-usage",
+
+        # TODO(skbug.com/571083401): Remove this warning once Skia's string story is improved
+        # Temporarily don't flag calls to printf-like (SK_PRINTF_LIKE) functions such as
+        # SkDebugf, SkStringPrintf, SkLog, and SkSL::String::printf/appendf.
+        # The warning fires at every call site whose %s arguments aren't provably
+        # null-terminated, and it cannot be suppressed from within the function or a
+        # wrapping macro.
+        "-Wno-unsafe-buffer-usage-in-format-attr-call",
         "--warning-suppression-mappings=" + _unsafe_buffers_mappings,
       ]
     } else {
@@ -940,6 +948,9 @@ if (is_wasm) {
     # CK manages its flags separately.
     config("wasm") {
     }
+
+    config("wasm_exe") {
+    }
   } else {
     config("wasm") {
       # mono/skia: upstream (standalone-wasm commit e979274a45) adds
@@ -970,6 +981,21 @@ if (is_wasm) {
           "-sASSERTIONS=1",
           "-sPTHREADS_DEBUG=1",
           "-gsource-map",
+        ]
+      }
+    }
+
+    config("wasm_exe") {
+      ldflags = [
+        "-sPROXY_TO_PTHREAD=1",
+        "-sEXIT_RUNTIME=1",
+        "-sEXPORTED_RUNTIME_METHODS=['FS', 'callMain']",
+      ]
+      if (!is_official_build) {
+        resources_dir = rebase_path("//resources", root_build_dir)
+        ldflags += [
+          "--preload-file",
+          "$resources_dir@/resources",
         ]
       }
     }
