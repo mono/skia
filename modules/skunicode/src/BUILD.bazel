@@ -3,6 +3,7 @@ load("//bazel:skia_rules.bzl", "skia_filegroup")
 package(
     default_applicable_licenses = ["//:license"],
 )
+
 licenses(["notice"])
 
 # In own group for export to //modules/skunicode/skunicode.gni:skia_unicode_builtin_icu_sources.

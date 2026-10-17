@@ -104,6 +104,7 @@ DEF_GRAPHITE_TEST_FOR_ALL_CONTEXTS(RecorderDevicePtrTest, reporter, context,
     device1.reset();
     device3.reset();
 }
+
 // Tests to make sure the Recorders can override the ordering requirement.
 DEF_GRAPHITE_TEST_FOR_ALL_CONTEXTS(RecorderOrderingTest, reporter, context,
                                    CtsEnforcement::kNever) {
