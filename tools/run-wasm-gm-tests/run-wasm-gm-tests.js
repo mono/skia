@@ -3,10 +3,9 @@
  * node run-wasm-gm-tests --js_file ../../out/wasm_gm_tests/wasm_gm_tests.js --wasm_file ../../out/wasm_gm_tests/wasm_gm_tests.wasm --known_hashes /tmp/gold2/tests/hashes.txt --output /tmp/gold2/tests/ --use_gpu --timeout 180
  */
 const puppeteer = require('puppeteer');
-const express = require('express');
 const path = require('path');
-const bodyParser = require('body-parser');
 const fs = require('fs');
+const { startServer, HOST } = require('./wasm-gm-server');
 const commandLineArgs = require('command-line-args');
 const commandLineUsage = require('command-line-usage');
 
@@ -134,69 +133,10 @@ if (!options.resources) {
   process.exit(1);
 }
 
-const resourceBaseDir = path.resolve(options.resources)
-// This executes recursively and synchronously.
-const recursivelyListFiles = (dir) => {
-  const absolutePaths = [];
-  const files = fs.readdirSync(dir);
-  files.forEach((file) => {
-    const filepath = path.join(dir, file);
-    const stats = fs.statSync(filepath);
-    if (stats.isDirectory()) {
-      absolutePaths.push(...recursivelyListFiles(filepath));
-    } else if (stats.isFile()) {
-      absolutePaths.push(path.relative(resourceBaseDir, filepath));
-    }
-  });
-  return absolutePaths;
-};
-
-const resourceListing = recursivelyListFiles(options.resources);
-console.log('Saw resources', resourceListing);
-
-const driverHTML = fs.readFileSync('run-wasm-gm-tests.html', 'utf8');
-const testJS = fs.readFileSync(options.js_file, 'utf8');
-const testWASM = fs.readFileSync(options.wasm_file, 'binary');
-const knownHashes = fs.readFileSync(options.known_hashes, 'utf8');
-
-// This express webserver will serve the HTML file running the benchmark and any additional assets
-// needed to run the tests.
-const app = express();
-app.get('/', (req, res) => res.send(driverHTML));
-
-app.use('/static/resources/', express.static(resourceBaseDir));
-console.log('resources served from', resourceBaseDir);
-
-// This allows the server to receive POST requests of up to 10MB for image/png and read the body
-// as raw bytes, housed in a buffer.
-app.use(bodyParser.raw({ type: 'image/png', limit: '10mb' }));
-
-app.get('/static/hashes.txt', (req, res) => res.send(knownHashes));
-app.get('/static/resource_listing.json', (req, res) => res.send(JSON.stringify(resourceListing)));
-app.get('/static/wasm_gm_tests.js', (req, res) => res.send(testJS));
-app.get('/static/wasm_gm_tests.wasm', function(req, res) {
-  // Set the MIME type so it can be streamed efficiently.
-  res.type('application/wasm');
-  res.send(new Buffer(testWASM, 'binary'));
-});
-app.post('/write_png', (req, res) => {
-  const md5 = req.header('X-MD5-Hash');
-  if (!md5) {
-    res.sendStatus(400);
-    return;
-  }
-  const data = req.body;
-  const newFile = path.join(options.output, md5 + '.png');
-  fs.writeFileSync(newFile, data, {
-    encoding: 'binary',
-  });
-  res.sendStatus(200);
-});
-
-const server = app.listen(options.port, () => console.log('- Local web server started.'));
+const server = startServer(options);
 
 const hash = options.use_gpu? '#gpu': '#cpu';
-const targetURL = `http://localhost:${options.port}/${hash}`;
+const targetURL = `http://${HOST}:${options.port}/${hash}`;
 const viewPort = {width: 1000, height: 1000};
 
 // Drive chrome to load the web page from the server we have running.
