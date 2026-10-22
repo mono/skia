@@ -22,7 +22,7 @@ with open(gnzip, 'wb') as f:
   OS  = {'darwin': 'mac', 'linux': 'linux', 'linux2': 'linux', 'win32': 'windows'}[sys.platform]
   cpu = {'aarch64': 'arm64', 'amd64': 'amd64', 'arm64': 'arm64', 'x86_64': 'amd64'}[platform.machine().lower()]
 
-  rev = 'b2afae122eeb6ce09c52d63f67dc53fc517dbdc8'
+  rev = 'dc390672c2b73f5bd3f72fff33a00bb12f88c1d6'
   url = 'https://chrome-infra-packages.appspot.com/dl/gn/gn/{}-{}/+/git_revision:{}'.format(
           OS,cpu,rev)
   f.write(urlopen(url).read())

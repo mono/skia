@@ -12,9 +12,9 @@ exports_files(
 )
 """,
         cipd_package = "gn/gn/linux-amd64",
-        # From https://chrome-infra-packages.appspot.com/p/gn/gn/linux-amd64/+/git_revision:1c4151ff5c1d6fbf7fa800b8d4bb34d3abc03a41
-        sha256 = "7195291488d08f3a10e85b85d8c4816e077015f1c5f196f770003a97aa42caf8",
-        tag = "git_revision:1c4151ff5c1d6fbf7fa800b8d4bb34d3abc03a41",
+        # From https://chrome-infra-packages.appspot.com/p/gn/gn/linux-amd64/+/git_revision:dc390672c2b73f5bd3f72fff33a00bb12f88c1d6
+        sha256 = "11eb4ae4e5382036d695bfe056e26c37020d0db0686c360647e05252d3d1007d",
+        tag = "git_revision:dc390672c2b73f5bd3f72fff33a00bb12f88c1d6",
     )
 
     cipd_install(
@@ -26,9 +26,9 @@ exports_files(
 )
 """,
         cipd_package = "gn/gn/mac-arm64",
-        # From https://chrome-infra-packages.appspot.com/p/gn/gn/mac-arm64/+/git_revision:1c4151ff5c1d6fbf7fa800b8d4bb34d3abc03a41
-        sha256 = "1123907ac3317530e9dd537d50cd83fd83e852aacc07d286f45753c8fc5287ed",
-        tag = "git_revision:1c4151ff5c1d6fbf7fa800b8d4bb34d3abc03a41",
+        # From https://chrome-infra-packages.appspot.com/p/gn/gn/mac-arm64/+/git_revision:dc390672c2b73f5bd3f72fff33a00bb12f88c1d6
+        sha256 = "63712cd01b91b10c76e9fe46499f2598c630eacad28ad89f3bd6ef31e84591a0",
+        tag = "git_revision:dc390672c2b73f5bd3f72fff33a00bb12f88c1d6",
     )
 
     cipd_install(
@@ -40,9 +40,9 @@ exports_files(
 )
 """,
         cipd_package = "gn/gn/mac-amd64",
-        # From https://chrome-infra-packages.appspot.com/p/gn/gn/mac-amd64/+/git_revision:1c4151ff5c1d6fbf7fa800b8d4bb34d3abc03a41
-        sha256 = "ed96f7d2f49b83b016e4bdbed432e4734a5a133accb025d7c07685e01489ba93",
-        tag = "git_revision:1c4151ff5c1d6fbf7fa800b8d4bb34d3abc03a41",
+        # From https://chrome-infra-packages.appspot.com/p/gn/gn/mac-amd64/+/git_revision:dc390672c2b73f5bd3f72fff33a00bb12f88c1d6
+        sha256 = "1e741dab2070aa28e21ab1cd4b4ff33b634b2a3b48850f2f43f7ddbd2d359827",
+        tag = "git_revision:dc390672c2b73f5bd3f72fff33a00bb12f88c1d6",
     )
 
     cipd_install(

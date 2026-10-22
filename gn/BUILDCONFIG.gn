@@ -5,6 +5,9 @@
 
 is_skia_standalone = true
 
+# Keep loose include checks and transitive generated-header dependencies.
+check_includes_strict = false
+
 # It's best to keep the names and defaults of is_foo flags consistent with Chrome.
 
 declare_args() {
