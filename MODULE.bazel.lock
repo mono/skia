@@ -192,7 +192,7 @@
   "moduleExtensions": {
     "//bazel:cipd_deps.bzl%cipd_deps": {
       "general": {
-        "bzlTransitiveDigest": "F3j7VnIyqqCb8XCKKUtRMvdGQE232Ysp+XdjdKWocHA=",
+        "bzlTransitiveDigest": "S/CsaQtMXt+uI9+wRxagRFjIjHnEdR+2WA9BxVDLXis=",
         "usagesDigest": "ZOuoSLNI2UZ4T/vf61+A32qhmZQ4bNxE2xDjQQsrZzE=",
         "recordedFileInputs": {},
         "recordedDirentsInputs": {},
@@ -201,10 +201,10 @@
           "gn_linux_amd64": {
             "repoRuleId": "@@bazel_tools//tools/build_defs/repo:http.bzl%http_archive",
             "attributes": {
-              "sha256": "11eb4ae4e5382036d695bfe056e26c37020d0db0686c360647e05252d3d1007d",
+              "sha256": "7195291488d08f3a10e85b85d8c4816e077015f1c5f196f770003a97aa42caf8",
               "urls": [
-                "https://chrome-infra-packages.appspot.com/dl/gn/gn/linux-amd64/+/git_revision%3Adc390672c2b73f5bd3f72fff33a00bb12f88c1d6",
-                "https://cdn.skia.org/bazel/11eb4ae4e5382036d695bfe056e26c37020d0db0686c360647e05252d3d1007d.zip"
+                "https://chrome-infra-packages.appspot.com/dl/gn/gn/linux-amd64/+/git_revision%3A1c4151ff5c1d6fbf7fa800b8d4bb34d3abc03a41",
+                "https://cdn.skia.org/bazel/7195291488d08f3a10e85b85d8c4816e077015f1c5f196f770003a97aa42caf8.zip"
               ],
               "type": "zip",
               "build_file_content": "\nexports_files(\n    [\"gn\"],\n    visibility = [\"//visibility:public\"]\n)\n",
@@ -215,10 +215,10 @@
           "gn_mac_arm64": {
             "repoRuleId": "@@bazel_tools//tools/build_defs/repo:http.bzl%http_archive",
             "attributes": {
-              "sha256": "63712cd01b91b10c76e9fe46499f2598c630eacad28ad89f3bd6ef31e84591a0",
+              "sha256": "1123907ac3317530e9dd537d50cd83fd83e852aacc07d286f45753c8fc5287ed",
               "urls": [
-                "https://chrome-infra-packages.appspot.com/dl/gn/gn/mac-arm64/+/git_revision%3Adc390672c2b73f5bd3f72fff33a00bb12f88c1d6",
-                "https://cdn.skia.org/bazel/63712cd01b91b10c76e9fe46499f2598c630eacad28ad89f3bd6ef31e84591a0.zip"
+                "https://chrome-infra-packages.appspot.com/dl/gn/gn/mac-arm64/+/git_revision%3A1c4151ff5c1d6fbf7fa800b8d4bb34d3abc03a41",
+                "https://cdn.skia.org/bazel/1123907ac3317530e9dd537d50cd83fd83e852aacc07d286f45753c8fc5287ed.zip"
               ],
               "type": "zip",
               "build_file_content": "\nexports_files(\n    [\"gn\"],\n    visibility = [\"//visibility:public\"]\n)\n",
@@ -229,10 +229,10 @@
           "gn_mac_amd64": {
             "repoRuleId": "@@bazel_tools//tools/build_defs/repo:http.bzl%http_archive",
             "attributes": {
-              "sha256": "1e741dab2070aa28e21ab1cd4b4ff33b634b2a3b48850f2f43f7ddbd2d359827",
+              "sha256": "ed96f7d2f49b83b016e4bdbed432e4734a5a133accb025d7c07685e01489ba93",
               "urls": [
-                "https://chrome-infra-packages.appspot.com/dl/gn/gn/mac-amd64/+/git_revision%3Adc390672c2b73f5bd3f72fff33a00bb12f88c1d6",
-                "https://cdn.skia.org/bazel/1e741dab2070aa28e21ab1cd4b4ff33b634b2a3b48850f2f43f7ddbd2d359827.zip"
+                "https://chrome-infra-packages.appspot.com/dl/gn/gn/mac-amd64/+/git_revision%3A1c4151ff5c1d6fbf7fa800b8d4bb34d3abc03a41",
+                "https://cdn.skia.org/bazel/ed96f7d2f49b83b016e4bdbed432e4734a5a133accb025d7c07685e01489ba93.zip"
               ],
               "type": "zip",
               "build_file_content": "\nexports_files(\n    [\"gn\"],\n    visibility = [\"//visibility:public\"]\n)\n",
