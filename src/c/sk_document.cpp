@@ -12,6 +12,7 @@
 #include "include/docs/SkPDFJpegHelpers.h"
 #ifdef SK_BUILD_FOR_WIN
 #include "include/docs/SkXPSDocument.h"
+#include "src/utils/win/SkTScopedComPtr.h"
 #include <XpsObjectModel.h>
 #endif
 
@@ -39,7 +40,7 @@ sk_document_t* sk_document_create_pdf_from_stream_with_metadata(sk_wstream_t* st
 
 sk_document_t* sk_document_create_xps_from_stream_with_options(sk_wstream_t* stream, const sk_document_xps_options_t* options) {
 #ifdef SK_BUILD_FOR_WIN
-    IXpsOMObjectFactory* factory = nullptr;
+    SkTScopedComPtr<IXpsOMObjectFactory> factory;
     if (!SUCCEEDED(CoCreateInstance(
             CLSID_XpsOMObjectFactory,
             nullptr,
@@ -52,7 +53,7 @@ sk_document_t* sk_document_create_xps_from_stream_with_options(sk_wstream_t* str
         opts.dpi = options->fDPI;
         opts.allowNoPngs = options->fAllowNoPngs;
     }
-    return ToDocument(SkXPS::MakeDocument(AsWStream(stream), factory, opts).release());
+    return ToDocument(SkXPS::MakeDocument(AsWStream(stream), factory.get(), opts).release());
 #else
     return nullptr;
 #endif
