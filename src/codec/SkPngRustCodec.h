@@ -12,16 +12,15 @@
 #include <vector>
 
 #include "include/core/SkSpan.h"
-#include "include/private/SkMalloc.h"
-#include "include/private/SkTemplates.h"
 #include "rust/png/FFI.rs.h"
+#include "src/codec/SkCodecPriv.h"
 #include "src/codec/SkFrameHolder.h"
 #include "src/codec/SkPngCodecBase.h"
 #include "third_party/rust/cxx/v1/cxx.h"
 
-struct SkEncodedInfo;
 class SkFrame;
 class SkStream;
+struct SkEncodedInfo;
 
 // This class provides the Skia image decoding API (`SkCodec`) on top of:
 // * The third-party `png` crate (PNG decompression and decoding implemented in
@@ -70,11 +69,11 @@ private:
         // `fDstRowStride`) to the next row.
         SkSpan<uint8_t> fDst;
 
-        // Size of a row (in bytes) in the current frame.
+        // Size of a row (in bytes) in the current frame (or subset/sampled output).
         size_t fDstRowSize;
 
-        // Height (in rows) of the current frame.
-        size_t fDstRowCount;
+        // Height (in rows) of the current frame (or subset/sampled output).
+        int fDstRowCount;
 
         // Bytes per pixel of fDst.
         uint8_t fDstBytesPerPixel;
@@ -98,8 +97,19 @@ private:
         // take the subset / sampled rows from.
         // TODO: Subsets of APNG not supported, but if we need to, we would need
         // a separate fInterlacedBuffer along with fPreblendBuffer.
-        std::unique_ptr<uint8_t, SkFunctionObject<sk_free>> fPreblendBufferStorage;
-        SkSpan<uint8_t> fPreblendBuffer;
+        SkCodecPriv::BudgetedBuffer fPreblendBuffer;
+
+        // Single-row scratch buffers used when decoding interlaced images (unless
+        // decoding a subset or sampling, where the whole untransformed image is
+        // decoded into `fPreblendBuffer` first):
+        // * `fDecodedInterlacedFullWidthRow` (size `getEncodedRowBytes()`): holds
+        //   the decoded interlaced row padded to full width (used by `read_row` in
+        //   `incrementalDecode`, or to pad `srcRow` for `applyXformRow` in
+        //   `expandDecodedInterlacedRow`).
+        // * `fXformedInterlacedRow` (size `fDstRowSize`): holds the color-transformed
+        //   interlaced row in `expandDecodedInterlacedRow` when `!canReadRow()`.
+        SkCodecPriv::BudgetedBuffer fDecodedInterlacedFullWidthRow;
+        SkCodecPriv::BudgetedBuffer fXformedInterlacedRow;
 
         int fFirstRow = 0;
         int fLastRow = 0;
@@ -108,13 +118,21 @@ private:
         // Needs to be persisted in DecodingState to support incremental decoding
         // across multiple calls without resetting progress.
         int fCurrentSourceRow = 0;
-        // Tracks the number of rows actually written to the destination buffer.
-        // Used to correctly report progress via rowsDecoded in incrementalDecode.
+        // Number of destination rows written to `fDst` so far:
+        // * Non-interlaced: incremented after each decoded row.
+        // * Interlaced full-image: updated in `expandDecodedInterlacedRow` from
+        //   `fInterlacedDecodedHeight`.
+        // * Interlaced subset/sampled: updated when flushing `fPreblendBuffer` in
+        //   `writeSubsetOrSampleToOutput`.
         int fRowsWrittenToOutput = 0;
 
         // The y offset for a subset in the encoded color type, not the dst color type.
         // Only used for interlaced images.
         size_t fYByteOffset = 0;
+
+        // Height (in rows) initialized so far by `splat_last_interlaced_row` (+8
+        // rows per Pass 1 scanline).
+        int fInterlacedDecodedHeight = 0;
     };
 
     // Helper for validating parameters of `onGetPixels` and/or
@@ -132,17 +150,31 @@ private:
 
     // Helper for taking a decoded interlaced `srcRow`, applying color
     // transformations, and then expanding it into the `frame`.
-    void expandDecodedInterlacedRow(SkSpan<uint8_t> dstFrame,
+    void expandDecodedInterlacedRow(DecodingState& decodingState,
+                                    SkSpan<uint8_t> dstFrame,
                                     SkSpan<const uint8_t> srcRow,
                                     const DecodingDstInfo& decodingDst,
                                     bool xFormNeeded);
 
     // Helper for row-by-row decoding which is used from `onGetPixels` and/or
     // `onIncrementalDecode`.
-    Result incrementalDecode(DecodingState& decodingState, int* rowsDecoded);
+    Result incrementalDecode(DecodingState& decodingState);
     // The same as incrementalDecode but uses `applyXFormRow()`. Should only
     // be used if this->canReadRows() is false.
-    Result incrementalDecodeXForm(DecodingState& decodingState, int* rowsDecoded);
+    Result incrementalDecodeXForm(DecodingState& decodingState);
+
+    // Extracts and/or samples the rows decoded so far in `fPreblendBuffer` (in
+    // the encoded color type) into `fDst` using `applyXformRow()`, and records
+    // the number of destination rows written in `fRowsWrittenToOutput`. Used
+    // for interlaced subset/sampled decodes both on halt and at end-of-frame.
+    void writeSubsetOrSampleToOutput(DecodingState& decodingState);
+
+    // Populates `rowsDecoded` after a failed decode (`kIncompleteInput` or
+    // `kErrorInInput`) with the number of destination rows written so far,
+    // matching `SkPngCodec` so callers only fill the remaining rows.
+    void reportRowsDecoded(Result result,
+                           const DecodingState& decodingState,
+                           int* rowsDecoded) const;
 
     // Helper for reading until the start of the next `fdAT` sequence.
     Result readToStartOfNextFrame();
@@ -251,17 +283,6 @@ private:
     // doesn't yet contain frame info for all `num_frames` declared in an `acTL`
     // chunk.
     bool fCanParseAdditionalFrameInfos = true;
-
-    // When decoding interlaced subsets or sampling, decode the full image into a
-    // buffer in the encoded colortype and extract/sample for the final dst using
-    // this function. This function will use applyXFormRow() for needed rows.
-    void getSubsetOrSampleFromFullImage(SkSpan<const uint8_t> fullImageBuffer,
-                                        SkSpan<uint8_t> dst,
-                                        size_t dstRowStride,
-                                        size_t offset,
-                                        int srcHeight,
-                                        int dstHeight,
-                                        size_t dstRowSize);
 };
 
 #endif  // SkPngRustCodec_DEFINED
