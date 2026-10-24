@@ -65,6 +65,12 @@ std::unique_ptr<SkCodec> SkIcoCodec::MakeFromStream(std::unique_ptr<SkStream> st
         stream.reset(nullptr);
     }
 
+    // CopyStreamToData() returns null if the stream delivers fewer bytes than it reported.
+    if (!data) {
+        *result = kIncompleteInput;
+        return nullptr;
+    }
+
     // Header size constants
     constexpr uint32_t kIcoDirectoryBytes = 6;
     constexpr uint32_t kIcoDirEntryBytes = 16;
