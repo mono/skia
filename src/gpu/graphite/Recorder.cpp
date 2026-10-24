@@ -22,6 +22,7 @@
 #include "include/gpu/graphite/ImageProvider.h"
 #include "include/gpu/graphite/Recording.h"
 #include "include/gpu/graphite/TextureInfo.h"
+#include "include/private/SkAttributes.h"
 #include "include/private/SkLog.h"
 #include "src/capture/SkCaptureManager.h"
 #include "src/core/SkMipmap.h"
@@ -129,7 +130,6 @@ Recorder::Recorder(sk_sp<SharedContext> sharedContext,
         , fRequireOrderedRecordings(options.fRequireOrderedRecordings.has_value()
                                             ? *options.fRequireOrderedRecordings
                                             : fSharedContext->caps()->requireOrderedRecordings())
-        , fAtlasProvider(std::make_unique<AtlasProvider>(this))
         , fTokenTracker(std::make_unique<TokenTracker>())
         , fStrikeCache(std::make_unique<sktext::gpu::StrikeCache>())
         , fTextBlobCache(std::make_unique<sktext::gpu::TextBlobRedrawCoordinator>(fUniqueID)) {
@@ -262,7 +262,9 @@ std::unique_ptr<Recording> Recorder::snap() {
                                                 fRuntimeEffectDict);
     if (!valid) {
         recording = nullptr;
-        fAtlasProvider->invalidateAtlases();
+        if (fAtlasProvider) {
+            fAtlasProvider->invalidateAtlases();
+        }
     }
 
     // Process the return queue at least once to keep it from growing too large, as otherwise
@@ -277,7 +279,7 @@ std::unique_ptr<Recording> Recorder::snap() {
             device->resetStorageCache();
         }
     }
-    if (!fRequireOrderedRecordings) {
+    if (!fRequireOrderedRecordings && fAtlasProvider) {
         fAtlasProvider->invalidateAtlases();
     }
 
@@ -425,8 +427,9 @@ bool Recorder::updateBackendTexture(const BackendTexture& backendTex,
 
     skia_private::STArray<16, MipLevel> mipLevels(numLevels);
     for (int i = 0; i < numLevels; ++i) {
-        SkASSERT(srcData[i].info().colorInfo() == srcData[0].info().colorInfo());
-        mipLevels.push_back({srcData[i].addr(), srcData[i].rowBytes()});
+        SkASSERT(SK_UNSAFE_TODO(srcData[i].info().colorInfo()) == srcData[0].info().colorInfo());
+        mipLevels.push_back(
+                {SK_UNSAFE_TODO(srcData[i].addr()), SK_UNSAFE_TODO(srcData[i].rowBytes())});
     }
 
     // Src and dst colorInfo are the same
@@ -546,7 +549,9 @@ void Recorder::freeGpuResources() {
 
     // Notify the atlas and resource provider to free any resources it can (does not include
     // resources that are locked due to pending work).
-    fAtlasProvider->freeGpuResources();
+    if (fAtlasProvider) {
+        fAtlasProvider->freeGpuResources();
+    }
 
     fResourceProvider->freeGpuResources();
 
@@ -737,6 +742,30 @@ sk_sp<TextureProxy> RecorderPriv::CreateCachedProxy(Recorder* recorder,
 
 size_t RecorderPriv::getResourceCacheLimit() const {
     return fRecorder->fResourceProvider->getResourceCacheLimit();
+}
+
+AtlasProvider* RecorderPriv::getOrCreateAtlasProvider() {
+    ASSERT_SINGLE_OWNER_PRIV
+    if (!fRecorder->fAtlasProvider) {
+        fRecorder->fAtlasProvider = std::make_unique<AtlasProvider>(fRecorder);
+    }
+    return fRecorder->fAtlasProvider.get();
+}
+
+void RecorderPriv::recordAtlasProviderUploads(DrawContext* dc) {
+    ASSERT_SINGLE_OWNER_PRIV
+    if (!fRecorder->fAtlasProvider) {
+        return;
+    }
+    fRecorder->fAtlasProvider->recordUploads(dc);
+}
+
+void RecorderPriv::compactAtlasProvider() {
+    ASSERT_SINGLE_OWNER_PRIV
+    if (!fRecorder->fAtlasProvider) {
+        return;
+    }
+    fRecorder->fAtlasProvider->compact();
 }
 
 #if defined(GPU_TEST_UTILS)

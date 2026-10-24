@@ -252,6 +252,7 @@ tests_sources = [
   "$_tests/SkUTFTest.cpp",
   "$_tests/SkVxTest.cpp",
   "$_tests/SkXmpTest.cpp",
+  "$_tests/SkYUVAInfoTest.cpp",
   "$_tests/Skbug5221.cpp",
   "$_tests/Skbug6389.cpp",
   "$_tests/SortTest.cpp",
@@ -372,6 +373,9 @@ sparse_strips_test_sources = [
   "$_tests/graphite/sparse_strips/ClipTest.cpp",
   "$_tests/graphite/sparse_strips/CoverageTest.cpp",
   "$_tests/graphite/sparse_strips/CoverageTestUtils.h",
+  "$_tests/graphite/sparse_strips/CullingRepros.h",
+  "$_tests/graphite/sparse_strips/FastValidator.cpp",
+  "$_tests/graphite/sparse_strips/FastValidator.h",
   "$_tests/graphite/sparse_strips/FlattenTest.cpp",
   "$_tests/graphite/sparse_strips/LUTTest.cpp",
   "$_tests/graphite/sparse_strips/Oracle.cpp",
@@ -546,6 +550,7 @@ ganesh_tests_sources = [
 
 ganesh_gl_tests_sources = [
   "$_tests/EGLImageTest.cpp",
+  "$_tests/GLFramebufferDeletionTest.cpp",
   "$_tests/GrGLExtensionsTest.cpp",
   "$_tests/RectangleTextureTest.cpp",
   "$_tests/TextureBindingsResetTest.cpp",

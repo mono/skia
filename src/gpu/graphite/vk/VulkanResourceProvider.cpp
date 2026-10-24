@@ -22,6 +22,7 @@
 #include "src/gpu/graphite/TextureInfoPriv.h"
 #include "src/gpu/graphite/vk/VulkanBuffer.h"
 #include "src/gpu/graphite/vk/VulkanCommandBuffer.h"
+#include "src/gpu/graphite/vk/VulkanComputePipeline.h"
 #include "src/gpu/graphite/vk/VulkanDescriptorPool.h"
 #include "src/gpu/graphite/vk/VulkanDescriptorSet.h"
 #include "src/gpu/graphite/vk/VulkanFramebuffer.h"
@@ -127,8 +128,9 @@ sk_sp<Texture> VulkanResourceProvider::onCreateWrappedTexture(const BackendTextu
                                       label);
 }
 
-sk_sp<ComputePipeline> VulkanResourceProvider::createComputePipeline(const ComputePipelineDesc&) {
-    return nullptr;
+sk_sp<ComputePipeline> VulkanResourceProvider::createComputePipeline(
+        const ComputePipelineDesc& desc) {
+    return VulkanComputePipeline::Make(this->nonConstVulkanSharedContext(), desc);
 }
 
 const VulkanTexture* VulkanResourceProvider::getOrCreateNullTexture() {
@@ -207,7 +209,7 @@ BackendTexture VulkanResourceProvider::onCreateBackendTexture(SkISize dimensions
 }
 
 namespace {
-GraphiteResourceKey build_desc_set_key(const SkSpan<DescriptorData>& requestedDescriptors) {
+GraphiteResourceKey build_desc_set_key(const SkSpan<const DescriptorData>& requestedDescriptors) {
     static const ResourceType kType = GraphiteResourceKey::GenerateResourceType();
 
     // The number of int32s needed for a key can depend on whether we use immutable samplers or not.
@@ -270,7 +272,7 @@ sk_sp<VulkanDescriptorSet> add_new_desc_set_to_cache(const VulkanSharedContext* 
 } // anonymous namespace
 
 sk_sp<VulkanDescriptorSet> VulkanResourceProvider::findOrCreateDescriptorSet(
-        SkSpan<DescriptorData> requestedDescriptors) {
+        SkSpan<const DescriptorData> requestedDescriptors) {
     if (requestedDescriptors.empty()) {
         return nullptr;
     }

@@ -36,6 +36,7 @@ declare_args() {
   skia_disable_tracing = is_official_build
   skia_enable_vello_shaders = false
   skia_enable_threadlocal_strikecache = false
+  skia_enable_packed_422_yuv = false
   skia_disable_vma_stl_shared_mutex = false
   skia_enable_winuwp = false
   skia_generate_workarounds = false
@@ -62,6 +63,7 @@ declare_args() {
   skia_use_lcd_text_3x_filter = false
   skia_use_harfbuzz = true
   skia_use_gl = true
+  skia_use_apple_unicode = false
   skia_use_icu = true
   skia_use_icu4x = false
   skia_use_jpeg_gainmaps = is_skia_dev_build
@@ -152,7 +154,7 @@ declare_args() {
 declare_args() {
   skia_enable_skunicode =
       skia_use_icu || skia_use_client_icu || skia_use_bidi ||
-      skia_use_libgrapheme || skia_use_icu4x
+      skia_use_libgrapheme || skia_use_icu4x || skia_use_apple_unicode
 }
 
 if (skia_use_angle && skia_gl_standard != "gles") {

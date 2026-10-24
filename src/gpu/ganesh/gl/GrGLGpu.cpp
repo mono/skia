@@ -73,6 +73,7 @@
 #include "src/sksl/ir/SkSLProgram.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <functional>
 #include <memory>
@@ -106,32 +107,32 @@ using namespace skia_private;
 
 ///////////////////////////////////////////////////////////////////////////////
 
-static const GrGLenum gXfermodeEquation2Blend[] = {
-    // Basic OpenGL blend equations.
-    GR_GL_FUNC_ADD,
-    GR_GL_FUNC_SUBTRACT,
-    GR_GL_FUNC_REVERSE_SUBTRACT,
+static constexpr auto gXfermodeEquation2Blend = std::to_array<GrGLenum>({
+        // Basic OpenGL blend equations.
+        GR_GL_FUNC_ADD,
+        GR_GL_FUNC_SUBTRACT,
+        GR_GL_FUNC_REVERSE_SUBTRACT,
 
-    // GL_KHR_blend_equation_advanced.
-    GR_GL_SCREEN,
-    GR_GL_OVERLAY,
-    GR_GL_DARKEN,
-    GR_GL_LIGHTEN,
-    GR_GL_COLORDODGE,
-    GR_GL_COLORBURN,
-    GR_GL_HARDLIGHT,
-    GR_GL_SOFTLIGHT,
-    GR_GL_DIFFERENCE,
-    GR_GL_EXCLUSION,
-    GR_GL_MULTIPLY,
-    GR_GL_HSL_HUE,
-    GR_GL_HSL_SATURATION,
-    GR_GL_HSL_COLOR,
-    GR_GL_HSL_LUMINOSITY,
+        // GL_KHR_blend_equation_advanced.
+        GR_GL_SCREEN,
+        GR_GL_OVERLAY,
+        GR_GL_DARKEN,
+        GR_GL_LIGHTEN,
+        GR_GL_COLORDODGE,
+        GR_GL_COLORBURN,
+        GR_GL_HARDLIGHT,
+        GR_GL_SOFTLIGHT,
+        GR_GL_DIFFERENCE,
+        GR_GL_EXCLUSION,
+        GR_GL_MULTIPLY,
+        GR_GL_HSL_HUE,
+        GR_GL_HSL_SATURATION,
+        GR_GL_HSL_COLOR,
+        GR_GL_HSL_LUMINOSITY,
 
-    // Illegal... needs to map to something.
-    GR_GL_FUNC_ADD,
-};
+        // Illegal... needs to map to something.
+        GR_GL_FUNC_ADD,
+});
 static_assert(0 == (int)skgpu::BlendEquation::kAdd);
 static_assert(1 == (int)skgpu::BlendEquation::kSubtract);
 static_assert(2 == (int)skgpu::BlendEquation::kReverseSubtract);
@@ -152,29 +153,29 @@ static_assert(16 == (int)skgpu::BlendEquation::kHSLColor);
 static_assert(17 == (int)skgpu::BlendEquation::kHSLLuminosity);
 static_assert(std::size(gXfermodeEquation2Blend) == skgpu::kBlendEquationCnt);
 
-static const GrGLenum gXfermodeCoeff2Blend[] = {
-    GR_GL_ZERO,
-    GR_GL_ONE,
-    GR_GL_SRC_COLOR,
-    GR_GL_ONE_MINUS_SRC_COLOR,
-    GR_GL_DST_COLOR,
-    GR_GL_ONE_MINUS_DST_COLOR,
-    GR_GL_SRC_ALPHA,
-    GR_GL_ONE_MINUS_SRC_ALPHA,
-    GR_GL_DST_ALPHA,
-    GR_GL_ONE_MINUS_DST_ALPHA,
-    GR_GL_CONSTANT_COLOR,
-    GR_GL_ONE_MINUS_CONSTANT_COLOR,
+static constexpr auto gXfermodeCoeff2Blend = std::to_array<GrGLenum>({
+        GR_GL_ZERO,
+        GR_GL_ONE,
+        GR_GL_SRC_COLOR,
+        GR_GL_ONE_MINUS_SRC_COLOR,
+        GR_GL_DST_COLOR,
+        GR_GL_ONE_MINUS_DST_COLOR,
+        GR_GL_SRC_ALPHA,
+        GR_GL_ONE_MINUS_SRC_ALPHA,
+        GR_GL_DST_ALPHA,
+        GR_GL_ONE_MINUS_DST_ALPHA,
+        GR_GL_CONSTANT_COLOR,
+        GR_GL_ONE_MINUS_CONSTANT_COLOR,
 
-    // extended blend coeffs
-    GR_GL_SRC1_COLOR,
-    GR_GL_ONE_MINUS_SRC1_COLOR,
-    GR_GL_SRC1_ALPHA,
-    GR_GL_ONE_MINUS_SRC1_ALPHA,
+        // extended blend coeffs
+        GR_GL_SRC1_COLOR,
+        GR_GL_ONE_MINUS_SRC1_COLOR,
+        GR_GL_SRC1_ALPHA,
+        GR_GL_ONE_MINUS_SRC1_ALPHA,
 
-    // Illegal... needs to map to something.
-    GR_GL_ZERO,
-};
+        // Illegal... needs to map to something.
+        GR_GL_ZERO,
+});
 
 //////////////////////////////////////////////////////////////////////////////
 
@@ -696,6 +697,12 @@ void GrGLGpu::onResetContext(uint32_t resetBits) {
         fHWBoundRenderTargetUniqueID.makeInvalid();
         fHWSRGBFramebuffer = kUnknown_TriState;
         fBoundDrawFramebuffer = 0;
+        // GrGpu starts with every reset bit dirty and all entry points call handleDirtyContext(),
+        // so the first reset happens before Ganesh binds any framebuffer.
+        if (this->caps()->workarounds().ensure_previous_framebuffer_not_deleted &&
+            !fTriedToCreateCompleteFBO) {
+            this->createCompleteFramebuffer();
+        }
     }
 
     // we assume these values
@@ -2510,20 +2517,6 @@ void GrGLGpu::flushRenderTarget(GrGLRenderTarget* target, bool useMultisampleFBO
                             target->height(),
                             kTopLeft_GrSurfaceOrigin); // the origin is irrelevant in this case
     }
-    if (this->caps()->workarounds().force_update_scissor_state_when_binding_fbo0) {
-        // The driver forgets the correct scissor state when using FBO 0.
-        if (!fHWScissorSettings.fRect.isInvalid()) {
-            const GrNativeRect& r = fHWScissorSettings.fRect;
-            GL_CALL(Scissor(r.fX, r.fY, r.fWidth, r.fHeight));
-        }
-        if (fHWScissorSettings.fEnabled == kYes_TriState) {
-            GL_CALL(Disable(GR_GL_SCISSOR_TEST));
-            GL_CALL(Enable(GR_GL_SCISSOR_TEST));
-        } else if (fHWScissorSettings.fEnabled == kNo_TriState) {
-            GL_CALL(Enable(GR_GL_SCISSOR_TEST));
-            GL_CALL(Disable(GR_GL_SCISSOR_TEST));
-        }
-    }
 
     if (this->glCaps().srgbWriteControl()) {
         this->flushFramebufferSRGB(this->caps()->isFormatSRGB(target->backendFormat()));
@@ -2642,15 +2635,15 @@ namespace {
 
 
 GrGLenum gr_to_gl_stencil_op(GrStencilOp op) {
-    static const GrGLenum gTable[kGrStencilOpCount] = {
-        GR_GL_KEEP,        // kKeep
-        GR_GL_ZERO,        // kZero
-        GR_GL_REPLACE,     // kReplace
-        GR_GL_INVERT,      // kInvert
-        GR_GL_INCR_WRAP,   // kIncWrap
-        GR_GL_DECR_WRAP,   // kDecWrap
-        GR_GL_INCR,        // kIncClamp
-        GR_GL_DECR,        // kDecClamp
+    static constexpr std::array<GrGLenum, kGrStencilOpCount> gTable = {
+            GR_GL_KEEP,       // kKeep
+            GR_GL_ZERO,       // kZero
+            GR_GL_REPLACE,    // kReplace
+            GR_GL_INVERT,     // kInvert
+            GR_GL_INCR_WRAP,  // kIncWrap
+            GR_GL_DECR_WRAP,  // kDecWrap
+            GR_GL_INCR,       // kIncClamp
+            GR_GL_DECR,       // kDecClamp
     };
     static_assert(0 == (int)GrStencilOp::kKeep);
     static_assert(1 == (int)GrStencilOp::kZero);
@@ -3205,9 +3198,6 @@ void GrGLGpu::unbindSurfaceFBOForPixelOps(GrSurface* surface, int mipLevel, GrGL
 }
 
 void GrGLGpu::onFBOChanged() {
-    if (this->caps()->workarounds().flush_on_framebuffer_change) {
-        this->flush(FlushType::kForce);
-    }
     if (fHasUnflushedQueries &&
         this->caps()->workarounds().flush_queries_before_deleting_or_unbinding_fbo) {
         this->forcefullyFlushQueries();
@@ -3220,7 +3210,75 @@ void GrGLGpu::onFBOChanged() {
 #endif
 }
 
+void GrGLGpu::createCompleteFramebuffer() {
+    SkASSERT(this->caps()->workarounds().ensure_previous_framebuffer_not_deleted);
+    SkASSERT(!fTriedToCreateCompleteFBO && !fCompleteFBOID);
+    fTriedToCreateCompleteFBO = true;
+
+    GrGLuint fboid = 0;
+    GrGLuint rbid = 0;
+    GL_CALL(GenFramebuffers(1, &fboid));
+    GL_CALL(GenRenderbuffers(1, &rbid));
+    if (!fboid || !rbid) {
+        // Neither object has been bound, so deleting them can't trigger the driver bug.
+        if (fboid) {
+            GL_CALL(DeleteFramebuffers(1, &fboid));
+        }
+        if (rbid) {
+            GL_CALL(DeleteRenderbuffers(1, &rbid));
+        }
+        return;
+    }
+
+    // Chromium attaches a texture; a renderbuffer doesn't disturb texture unit or pixel unpack
+    // state. RGBA4 is color-renderable in core ES 2.0, but prefer RGBA8 where it is supported.
+    GrGLenum format = this->glCaps().canFormatBeFBOColorAttachment(GrGLFormat::kRGBA8)
+                              ? GR_GL_RGBA8
+                              : GR_GL_RGBA4;
+    GL_CALL(BindRenderbuffer(GR_GL_RENDERBUFFER, rbid));
+    GL_CALL(RenderbufferStorage(GR_GL_RENDERBUFFER, format, 1, 1));
+
+    // Bind directly; bindFramebuffer() would try to pre-bind the complete FBO.
+    this->invalidateBoundRenderTarget();
+    GL_CALL(BindFramebuffer(GR_GL_FRAMEBUFFER, fboid));
+    fBoundDrawFramebuffer = fboid;
+    this->onFBOChanged();
+    GL_CALL(FramebufferRenderbuffer(GR_GL_FRAMEBUFFER, GR_GL_COLOR_ATTACHMENT0,
+                                    GR_GL_RENDERBUFFER, rbid));
+
+#if defined(__has_feature)
+#define SK_GL_COMPLETE_FBO_IS_TSAN __has_feature(thread_sanitizer)
+#else
+#define SK_GL_COMPLETE_FBO_IS_TSAN 0
+#endif
+// See skbug.com/40043725
+#if defined(SK_DEBUG) && !SK_GL_COMPLETE_FBO_IS_TSAN
+    if (!this->glCaps().skipErrorChecks()) {
+        GrGLenum status;
+        GL_CALL_RET(status, CheckFramebufferStatus(GR_GL_FRAMEBUFFER));
+        if (status != GR_GL_FRAMEBUFFER_COMPLETE) {
+            // Keep using it: pre-binding an incomplete FBO is no worse than not pre-binding.
+            SkDebugf("WARNING: ensure_previous_framebuffer_not_deleted FBO is incomplete (0x%x)\n",
+                     status);
+        }
+        if (this->glCaps().rebindColorAttachmentAfterCheckFramebufferStatus()) {
+            GL_CALL(FramebufferRenderbuffer(GR_GL_FRAMEBUFFER, GR_GL_COLOR_ATTACHMENT0,
+                                            GR_GL_RENDERBUFFER, rbid));
+        }
+    }
+#endif
+#undef SK_GL_COMPLETE_FBO_IS_TSAN
+
+    fCompleteFBOID = fboid;
+}
+
 void GrGLGpu::bindFramebuffer(GrGLenum target, GrGLuint fboid) {
+    if (fCompleteFBOID && fboid != fCompleteFBOID) {
+        // ensure_previous_framebuffer_not_deleted: make the complete FBO the previous binding of
+        // this target so the driver never retains a reference to an FBO we may later delete.
+        // This mirrors Chromium's GLES2DecoderImpl::BindFramebuffer().
+        GL_CALL(BindFramebuffer(target, fCompleteFBOID));
+    }
     GL_CALL(BindFramebuffer(target, fboid));
     if (target == GR_GL_FRAMEBUFFER || target == GR_GL_DRAW_FRAMEBUFFER) {
         fBoundDrawFramebuffer = fboid;
@@ -3236,31 +3294,39 @@ void GrGLGpu::deleteFramebuffer(GrGLuint fboid) {
         this->caps()->workarounds().flush_queries_before_deleting_or_unbinding_fbo) {
         this->forcefullyFlushQueries();
     }
-    if (fboid == fBoundDrawFramebuffer) {
-        if (this->caps()->workarounds().unbind_attachments_on_bound_render_fbo_delete) {
-            // This workaround only applies to deleting currently bound framebuffers
-            // on Adreno 420.  Because this is a somewhat rare case, instead of
-            // tracking all the attachments of every framebuffer instead just always
-            // unbind all attachments.
-            GL_CALL(FramebufferRenderbuffer(GR_GL_FRAMEBUFFER, GR_GL_COLOR_ATTACHMENT0,
-                                            GR_GL_RENDERBUFFER, 0));
-            GL_CALL(FramebufferRenderbuffer(GR_GL_FRAMEBUFFER, GR_GL_STENCIL_ATTACHMENT,
-                                            GR_GL_RENDERBUFFER, 0));
-            GL_CALL(FramebufferRenderbuffer(GR_GL_FRAMEBUFFER, GR_GL_DEPTH_ATTACHMENT,
-                                            GR_GL_RENDERBUFFER, 0));
-        }
+    if (fboid == fBoundDrawFramebuffer &&
+        this->caps()->workarounds().unbind_attachments_on_bound_render_fbo_delete) {
+        // This workaround only applies to deleting currently bound framebuffers
+        // on Adreno 420.  Because this is a somewhat rare case, instead of
+        // tracking all the attachments of every framebuffer instead just always
+        // unbind all attachments.
+        GL_CALL(FramebufferRenderbuffer(GR_GL_FRAMEBUFFER, GR_GL_COLOR_ATTACHMENT0,
+                                        GR_GL_RENDERBUFFER, 0));
+        GL_CALL(FramebufferRenderbuffer(GR_GL_FRAMEBUFFER, GR_GL_STENCIL_ATTACHMENT,
+                                        GR_GL_RENDERBUFFER, 0));
+        GL_CALL(FramebufferRenderbuffer(GR_GL_FRAMEBUFFER, GR_GL_DEPTH_ATTACHMENT,
+                                        GR_GL_RENDERBUFFER, 0));
+    }
 
-        if (this->caps()->workarounds().ensure_previous_framebuffer_not_deleted) {
-            // Some drivers keep an internal reference to the previously bound
-            // framebuffer, so make sure it isn't the one being deleted.
-            this->bindFramebuffer(GR_GL_FRAMEBUFFER, 0);
-        }
+    if (this->caps()->workarounds().ensure_previous_framebuffer_not_deleted) {
+        // Some drivers keep an internal reference to the previously bound framebuffer, so make
+        // sure the FBO being deleted is neither the current nor the previous binding of either
+        // target. fBoundDrawFramebuffer isn't enough to decide whether that's needed: the read
+        // binding isn't tracked (blits and MSAA resolves leave their source FBO bound to
+        // GL_READ_FRAMEBUFFER), a context reset assumes 0 without binding it, and the FBO may be
+        // the previous binding even when it isn't the current one. So always rebind 0 (which
+        // pre-binds fCompleteFBOID), leaving current == 0 and previous == fCompleteFBOID for
+        // both targets.
+        SkASSERT(!fCompleteFBOID || fboid != fCompleteFBOID);
+        this->invalidateBoundRenderTarget();
+        this->bindFramebuffer(GR_GL_FRAMEBUFFER, 0);
     }
 
     GL_CALL(DeleteFramebuffers(1, &fboid));
 
     // Deleting the currently bound framebuffer rebinds to 0.
     if (fboid == fBoundDrawFramebuffer) {
+        fBoundDrawFramebuffer = 0;
         this->onFBOChanged();
     }
 }
@@ -3472,12 +3538,12 @@ bool GrGLGpu::createMipmapProgram(int progIdx) {
                                GrShaderVar::TypeModifier::Uniform);
     GrShaderVar uTexture("u_texture", SkSLType::kTexture2DSampler);
     // We need 1, 2, or 4 texture coordinates (depending on parity of each dimension):
-    GrShaderVar vTexCoords[] = {
-        GrShaderVar("v_texCoord0", SkSLType::kHalf2, GrShaderVar::TypeModifier::Out),
-        GrShaderVar("v_texCoord1", SkSLType::kHalf2, GrShaderVar::TypeModifier::Out),
-        GrShaderVar("v_texCoord2", SkSLType::kHalf2, GrShaderVar::TypeModifier::Out),
-        GrShaderVar("v_texCoord3", SkSLType::kHalf2, GrShaderVar::TypeModifier::Out),
-    };
+    auto vTexCoords = std::to_array<GrShaderVar>({
+            GrShaderVar("v_texCoord0", SkSLType::kHalf2, GrShaderVar::TypeModifier::Out),
+            GrShaderVar("v_texCoord1", SkSLType::kHalf2, GrShaderVar::TypeModifier::Out),
+            GrShaderVar("v_texCoord2", SkSLType::kHalf2, GrShaderVar::TypeModifier::Out),
+            GrShaderVar("v_texCoord3", SkSLType::kHalf2, GrShaderVar::TypeModifier::Out),
+    });
     GrShaderVar oFragColor("o_FragColor", SkSLType::kHalf4,GrShaderVar::TypeModifier::Out);
 
     SkString vshaderTxt;
