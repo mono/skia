@@ -17,6 +17,18 @@
 #include "include/gpu/graphite/vk/VulkanGraphiteTypes.h"
 #include "include/gpu/vk/VulkanBackendContext.h"
 #include "include/gpu/vk/VulkanMemoryAllocator.h"
+#include "include/gpu/vk/VulkanTypes.h"           // skgpu::VulkanDeviceLostContext for gr_vk_device_lost_thunk
+#include "include/c/gr_vk_device_lost.h"          // gr_vk_device_lost_handler_t
+#include <string>                                  // std::string in gr_vk_device_lost_thunk signature
+#include <vector>                                  // std::vector<> in gr_vk_device_lost_thunk signature
+
+// Defined in gr_vk_device_lost.cpp — adapts Skia's std::string+vectors callback to
+// the plain C proc stored in the handle.
+extern "C" void gr_vk_device_lost_thunk(skgpu::VulkanDeviceLostContext userData,
+                                        const std::string& description,
+                                        const std::vector<VkDeviceFaultAddressInfoEXT>&,
+                                        const std::vector<VkDeviceFaultVendorInfoEXT>&,
+                                        const std::vector<std::byte>&);
 
 // Pulls in Context/BackendTexture/TextureInfo + the matching As/To helpers
 // via the SK_GRAPHITE block.
@@ -53,6 +65,13 @@ extern "C" SK_C_API sk_graphite_context_t* sk_graphite_context_make_vulkan(
             return reinterpret_cast<PFN_vkVoidFunction>(
                 getProc(userData, name, reinterpret_cast<vk_instance_t*>(instance), reinterpret_cast<vk_device_t*>(device)));
         };
+    }
+
+    // Device-lost bridge: caller-owned handle; Skia stores it non-owning, so the
+    // caller frees via gr_vk_device_lost_handler_delete after the Context dies.
+    if (init.fDeviceLostHandler) {
+        vkbc.fDeviceLostContext = init.fDeviceLostHandler;
+        vkbc.fDeviceLostProc = gr_vk_device_lost_thunk;
     }
 
     // Graphite's Vulkan path does NOT auto-create a memory allocator (unlike Ganesh's
