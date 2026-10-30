@@ -861,6 +861,7 @@ skia_core_sources += [
   "$_src/c/sk_imagefilter.cpp",
   "$_src/c/sk_maskfilter.cpp",
   "$_src/c/sk_matrix.cpp",
+  "$_src/c/sk_memory.cpp",
   "$_src/c/sk_paint.cpp",
   "$_src/c/sk_path.cpp",
   "$_src/c/sk_pathbuilder.cpp",
