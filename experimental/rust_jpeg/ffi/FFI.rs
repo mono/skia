@@ -175,7 +175,7 @@ use jpeg_segment_scan::{get_segment_params, ScannedSegment, SegmentScanner};
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use zune_core::bytestream::{ZByteIoError, ZByteReaderTrait, ZCursor, ZSeekFrom};
+use zune_core::bytestream::{ZByteIoError, ZByteReaderTrait, ZSeekFrom};
 use zune_core::colorspace::ColorSpace as ZuneColorSpace;
 
 const MAX_DECODE_IMAGE_BYTES: usize = 512 * 1024 * 1024;
@@ -397,8 +397,25 @@ fn map_color_space(cs: ZuneColorSpace) -> (JpegColor, u32) {
     }
 }
 
+const JPEG_SIGNATURE: [u8; 2] = [0xFF, jpeg_marker::SOI];
+
+fn classify_jpeg_signature(data: &[u8]) -> DecodingResult {
+    if data.len() < JPEG_SIGNATURE.len() {
+        return if JPEG_SIGNATURE.starts_with(data) {
+            DecodingResult::IncompleteInput
+        } else {
+            DecodingResult::FormatError
+        };
+    }
+    if data.starts_with(&JPEG_SIGNATURE) {
+        DecodingResult::Success
+    } else {
+        DecodingResult::FormatError
+    }
+}
+
 pub fn is_jpeg_data(data: &[u8]) -> bool {
-    data.len() >= 2 && data[0] == 0xFF && data[1] == jpeg_marker::SOI
+    matches!(classify_jpeg_signature(data), DecodingResult::Success)
 }
 
 /// Streaming JPEG reader wrapping zune-jpeg with Rust-side segment scanning.
@@ -553,24 +570,25 @@ impl Reader {
         self.try_read_more();
 
         let raw_data = self.raw_data.borrow();
-        if !is_jpeg_data(&raw_data) {
-            if raw_data.len() < 2 && !self.stream_exhausted {
-                return DecodingResult::IncompleteInput;
-            }
-            return DecodingResult::FormatError;
+        match classify_jpeg_signature(&raw_data) {
+            DecodingResult::Success => {}
+            result => return result,
         }
+        drop(raw_data);
 
         let options = zune_core::options::DecoderOptions::default().set_strict_mode(false);
 
-        let mut decoder =
-            zune_jpeg::JpegDecoder::new_with_options(ZCursor::new(raw_data.as_slice()), options);
+        let mut decoder = zune_jpeg::JpegDecoder::new_with_options(
+            GrowingJpegCursor::new(Rc::clone(&self.raw_data)),
+            options,
+        );
 
         match decoder.decode_headers() {
             Ok(()) => {}
+            Err(ref e) if e.is_recoverable_eof() => {
+                return DecodingResult::IncompleteInput;
+            }
             Err(ref e) => {
-                if !self.stream_exhausted {
-                    return DecodingResult::IncompleteInput;
-                }
                 return map_zune_error(e);
             }
         }
@@ -583,7 +601,6 @@ impl Reader {
         let cs = decoder.input_colorspace().unwrap_or(ZuneColorSpace::RGB);
         let (color, bytes_per_pixel) = map_color_space(cs);
         drop(decoder);
-        drop(raw_data);
         let (width, height) = match (u32::try_from(width), u32::try_from(height)) {
             (Ok(width), Ok(height)) => (width, height),
             _ => return DecodingResult::MemoryError,
@@ -627,9 +644,10 @@ impl Reader {
             .set_strict_mode(false)
             .jpeg_set_out_colorspace(target_cs);
 
-        let raw_data = self.raw_data.borrow();
-        let mut decoder =
-            zune_jpeg::JpegDecoder::new_with_options(ZCursor::new(raw_data.as_slice()), options);
+        let mut decoder = zune_jpeg::JpegDecoder::new_with_options(
+            GrowingJpegCursor::new(Rc::clone(&self.raw_data)),
+            options,
+        );
 
         let total_bytes = match (self.width as usize)
             .checked_mul(self.height as usize)
@@ -1009,7 +1027,8 @@ pub fn encode_jpeg(
     let quality = quality.min(100).max(1) as u8;
 
     let mut buf: Vec<u8> = Vec::new();
-    let encoder = jpeg_encoder::Encoder::new(&mut buf, quality);
+    let mut encoder = jpeg_encoder::Encoder::new(&mut buf, quality);
+    encoder.set_optimized_huffman_tables(true);
 
     match encoder.encode(&rgb_data, w16, h16, jpeg_color) {
         Ok(()) => {
@@ -1042,6 +1061,30 @@ mod tests {
     }
 
     #[test]
+    fn test_incomplete_jpeg_signature() {
+        assert!(matches!(
+            classify_jpeg_signature(&[]),
+            DecodingResult::IncompleteInput
+        ));
+        assert!(matches!(
+            classify_jpeg_signature(&[0xFF]),
+            DecodingResult::IncompleteInput
+        ));
+    }
+
+    #[test]
+    fn test_invalid_jpeg_signature() {
+        assert!(matches!(
+            classify_jpeg_signature(&[0x00]),
+            DecodingResult::FormatError
+        ));
+        assert!(matches!(
+            classify_jpeg_signature(&[0xFF, 0x00]),
+            DecodingResult::FormatError
+        ));
+    }
+
+    #[test]
     fn test_encode_jpeg_rgb_roundtrip() {
         let pixels: Vec<u8> = vec![255, 0, 0, 255, 0, 0, 255, 0, 0, 255, 0, 0];
         let mut output = Vec::new();
@@ -1057,6 +1100,33 @@ mod tests {
         );
         assert_eq!(result, EncodingResult::Success);
         assert!(is_jpeg_data(&output));
+    }
+
+    #[test]
+    fn test_encode_jpeg_uses_optimized_huffman_tables() {
+        let pixels = [0, 255, 0].repeat(100 * 100);
+
+        let mut output = Vec::new();
+        assert_eq!(
+            encode_jpeg(
+                &pixels,
+                100,
+                100,
+                100 * 3,
+                JpegEncodeColor::RGB,
+                JpegEncodeAlpha::Ignore,
+                30,
+                &mut output,
+            ),
+            EncodingResult::Success
+        );
+
+        let mut default_output = Vec::new();
+        jpeg_encoder::Encoder::new(&mut default_output, 30)
+            .encode(&pixels, 100, 100, jpeg_encoder::ColorType::Rgb)
+            .unwrap();
+
+        assert!(output.len() < default_output.len());
     }
 
     #[test]

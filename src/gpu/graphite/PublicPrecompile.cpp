@@ -10,6 +10,7 @@
 #include "include/gpu/graphite/PrecompileContext.h"
 #include "include/gpu/graphite/precompile/Precompile.h"
 #include "include/gpu/graphite/precompile/PrecompileColorFilter.h"
+#include "include/private/SkAttributes.h"
 #include "include/private/SkLog.h"
 #include "src/gpu/graphite/Caps.h"
 #include "src/gpu/graphite/ContextPriv.h"
@@ -47,6 +48,7 @@ void compile(SharedContext* sharedContext,
     const RendererProvider* rendererProvider = sharedContext->rendererProvider();
     PipelineManager* pipelineManager = sharedContext->pipelineManager();
 
+    const TextureFormat dsFormat = renderPassDesc.fDepthStencilAttachment.fFormat;
     for (const Renderer* r : rendererProvider->renderers()) {
         if (!(r->drawTypes() & drawTypes)) {
             continue;
@@ -61,6 +63,22 @@ void compile(SharedContext* sharedContext,
         if (r->coverage() != coverage) {
             // For now, UniqueIDs are explicitly built with a specific type of coverage so must
             // match what the Renderer requires
+            continue;
+        }
+
+        if (r->requiresDepth() && !TextureFormatHasDepth(dsFormat)) {
+            // This renderer requires depth, which is incompatible with the requested render pass,
+            // so skip it.
+            continue;
+        }
+        if (r->usesStencil() && !TextureFormatHasStencil(dsFormat)) {
+            // This renderer requires stencil, which is incompatible with the requested render pass,
+            // so skip it.
+            continue;
+        }
+        if (r->requiresMSAA() && renderPassDesc.fSampleCount == SampleCount::k1) {
+            // This renderer expects MSAA, which is incompatible with the requested render pass,
+            // so skip it.
             continue;
         }
 
@@ -129,7 +147,7 @@ void Precompile(PrecompileContext* precompileContext,
             const RenderPassDesc renderPassDesc =
                     RenderPassDesc::Make(caps,
                                          info,
-                                         kLoadOps[loadOpIndex],
+                                         SK_UNSAFE_TODO(kLoadOps[loadOpIndex]),
                                          StoreOp::kStore,
                                          rpp.fDSFlags,
                                          /* clearColor= */ { .0f, .0f, .0f, .0f },
@@ -167,12 +185,14 @@ void Precompile(PrecompileContext* precompileContext,
                 const RenderStep* renderStep =
                     rendererProvider->lookup(RenderStep::RenderStepID::kCoverBounds_InverseCover);
 
-                GraphicsPipelineHandle handle = pipelineManager->createHandle(
-                        sharedContext,
-                        keyContext.rtEffectDict(),
-                        { renderStep->renderStepID(), UniquePaintParamsID::Invalid() },
-                        renderPassDesc,
-                        PipelineCreationFlags::kForPrecompilation);
+                if (rpp.fDSFlags & DepthStencilFlags::kStencil) {
+                    GraphicsPipelineHandle handle = pipelineManager->createHandle(
+                            sharedContext,
+                            keyContext.rtEffectDict(),
+                            { renderStep->renderStepID(), UniquePaintParamsID::Invalid() },
+                            renderPassDesc,
+                            PipelineCreationFlags::kForPrecompilation);
+                }
             }
 
             if (drawTypes & DrawTypeFlags::kBitmapText_Color) {

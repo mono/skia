@@ -22,7 +22,7 @@ namespace skgpu::graphite {
 
 StripGenerator::StripGenerator(int width,
                                int height,
-                               const SkTDArray<uint8_t>& maskLUT,
+                               const SparseStripConfig::LUTArray& maskLUT,
                                Recorder* recorder)
         : fWidth(width)
         , fHeight(height)
@@ -35,7 +35,8 @@ bool StripGenerator::processGeometry(const SkPath& path, const SkMatrix& ctm) {
     fEnds.clear();
     fWides.clear();
 
-    AlphaAtlasManager* atlasManager = fRecorder->priv().atlasProvider()->alphaAtlasManager();
+    AlphaAtlasManager* atlasManager =
+            fRecorder->priv().getOrCreateAtlasProvider()->alphaAtlasManager();
     if (!atlasManager) {
         return false;
     }
@@ -81,7 +82,8 @@ bool StripGenerator::processGeometry(const SkPath& path, const SkMatrix& ctm) {
 }
 
 bool StripGenerator::cleanupNullCaps() {
-    AlphaAtlasManager* atlasManager = fRecorder->priv().atlasProvider()->alphaAtlasManager();
+    AlphaAtlasManager* atlasManager =
+            fRecorder->priv().getOrCreateAtlasProvider()->alphaAtlasManager();
     SkASSERT(atlasManager);
     return atlasManager->resolveNullCaps(&fEnds);
 }
