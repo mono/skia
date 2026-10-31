@@ -8,6 +8,7 @@
 #define SkIcoRustDecoder_DEFINED
 
 #include "include/codec/SkCodec.h"
+#include "include/core/SkPoint.h"
 #include "include/core/SkRefCnt.h"
 #include "include/private/SkAPI.h"
 
@@ -36,9 +37,15 @@ SK_API std::unique_ptr<SkCodec> Decode(sk_sp<const SkData>,
                                        SkCodec::Result*,
                                        SkCodecs::DecodeContext = nullptr);
 
-inline constexpr SkCodecs::Decoder Decoder() {
-    return { "ico", IsIco, Decode };
-}
+/**
+ * Returns the raw, unclamped hotspot from a CUR directory entry, in reported
+ * frame coordinates.
+ *
+ * codec must have been created by SkIcoRustDecoder::Decode().
+ */
+SK_API bool GetHotSpot(const SkCodec* codec, int frameIndex, SkIPoint* hotSpot);
+
+inline constexpr SkCodecs::Decoder Decoder() { return {"ico", IsIco, Decode}; }
 
 }  // namespace SkIcoRustDecoder
 

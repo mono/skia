@@ -19,6 +19,7 @@
 #include "include/core/SkSpan.h"
 #include "include/core/SkStrokeRec.h"
 #include "include/gpu/graphite/Recorder.h"
+#include "include/private/SkAttributes.h"
 #include "include/private/SkDebug.h"
 #include "include/private/SkEnumBitMask.h"
 #include "include/private/SkFloatingPoint.h"
@@ -425,13 +426,14 @@ bool ClipStack::TransformedShape::contains(const TransformedShape& o) const {
         fLocalToDevice.inverseMapPoints(deviceQuad, localQuad, 4);
         for (int i = 0; i < 4; ++i) {
             // TODO: Would be nice to make this consistent with how the GPU clips NDC w.
-            if (deviceQuad[i].w < SkPathPriv::kW0PlaneDistance ||
-                localQuad[i].w < SkPathPriv::kW0PlaneDistance) {
+            if (SK_UNSAFE_TODO(deviceQuad[i].w < SkPathPriv::kW0PlaneDistance) ||
+                SK_UNSAFE_TODO(localQuad[i].w < SkPathPriv::kW0PlaneDistance)) {
                 // Something in O actually projects behind the W = 0 plane and would be clipped
                 // to infinity, so it's extremely unlikely that this contains O.
                 return false;
             }
-            if (!fShape.conservativeContains(skvx::float2::Load(localQuad + i) / localQuad[i].w)) {
+            if (SK_UNSAFE_TODO(!fShape.conservativeContains(skvx::float2::Load(localQuad + i) /
+                                                            localQuad[i].w))) {
                 return false;
             }
         }
@@ -1367,9 +1369,22 @@ bool ClipStack::DrawShape::applyStyle(const SkStrokeRec& style, const Rect& devi
         fLocalToDevice = Transform::Identity();
         fShapeMatchesGeometry = false;
     } else {
-        // SkStrokeRec::GetInflationRadius() returns a device-space inflation for hairlines.
         float localOutset = 0.f;
-        if (!style.isFillStyle() && !style.isHairlineStyle()) {
+        if (style.isFillStyle()) {
+            // If the shape projects to a subpixel shape, expand the local bounds by the AA radius
+            // to create a conservative clip query that preserves the oriented bounding box.
+            if (!fShape.inverted() && any(origSize < localAAOutset)) {
+                localOutset = 0.5f * localAAOutset;
+            }
+        } else {
+            // getInflationRadius() does not handle device-space inflation for hairlines, but to
+            // preserve the bounding box in local space for as long as possible, use the
+            // `localAAOutset` as a conservative estimate for the local stroke radius that would
+            // cover the hairline.
+            //
+            // For local strokes that project to a subpixel shape, clamp to the localAAOutset as
+            // well to handle rendering that pads beyond the 1/2px outset in the subpixel case.
+            const float effectiveStrokeWidth = std::max(localAAOutset, style.getWidth());
             // Rectangles, rounded rectangles, and lines do not produce miters so don't count the
             // pessimistic limit against their draw bounds.
             const float effectiveMiterLimit = fShape.isPath() ? style.getMiter() : 1.f;
@@ -1381,17 +1396,7 @@ bool ClipStack::DrawShape::applyStyle(const SkStrokeRec& style, const Rect& devi
             localOutset = SkStrokeRec::GetInflationRadius(style.getJoin(),
                                                           effectiveMiterLimit,
                                                           effectiveCap,
-                                                          style.getWidth());
-        }
-
-        if (style.isHairlineStyle() ||
-            (!style.isFillStyle() && style.getWidth() < localAAOutset) ||
-            (style.isFillStyle() && !fShape.inverted() && any(origSize < localAAOutset))) {
-            // The geometry is a hairline or projects to a subpixel shape, so rendering will not
-            // follow the typical 1/2px outset anti-aliasing that is compatible with clipping.
-            // In this case, apply the local AA radius to the shape to have a conservative clip
-            // query while preserving the oriented bounding box.
-            localOutset += localAAOutset;
+                                                          effectiveStrokeWidth);
         }
 
         if (localOutset > 0.f) {
@@ -1950,9 +1955,13 @@ Clip ClipStack::visitClipStackForDraw(const Transform& localToDevice,
     // If there is no MSAA supported, rasterize any remaining elements by flattening them
     // into a single mask and storing in an atlas. Otherwise these will be handled by
     // Device::drawClip().
-    ClipAtlasManager* clipAtlas =
-            fDevice->recorder()->priv().atlasProvider()->getClipAtlasManager();
-    if (clipAtlas && !outEffectiveElements->empty()) {
+    ClipAtlasManager* clipAtlas = nullptr;
+    // Avoid lazily creating the AtlasProvider if there are no clip elements to atlas.
+    if (!outEffectiveElements->empty()) {
+        clipAtlas = fDevice->recorder()->priv().getOrCreateAtlasProvider()
+                            ->getClipAtlasManager();
+    }
+    if (clipAtlas) {
         AtlasClip* atlasClip = &nonMSAAClip.fAtlasClip;
 
         SkIRect iMaskBounds = cs.outerBounds().makeRoundOut().asSkIRect();

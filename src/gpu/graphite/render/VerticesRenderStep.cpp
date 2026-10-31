@@ -12,6 +12,7 @@
 #include "include/core/SkSpan.h"
 #include "include/core/SkVertices.h"
 #include "include/private/SkAssert.h"
+#include "include/private/SkAttributes.h"
 #include "include/private/SkDebug.h"
 #include "include/private/SkEnumBitMask.h"
 #include "include/private/SkTo.h"
@@ -86,19 +87,22 @@ RenderStep::RenderStepID variant_id(bool hasColor, bool hasTexCoords) {
 
 }  // namespace
 
+// NOTE: Mesh geometry can emit triangles that self intersect, but it *wants* those to produce
+// double blending, so we do always add Flags::kAllowSelfIntersection.
 VerticesRenderStep::VerticesRenderStep(Layout layout, bool hasColor, bool hasTexCoords)
         : RenderStep(layout,
                      variant_id(hasColor, hasTexCoords),
                      (hasColor ? Flags::kEmitsPrimitiveColor : Flags::kNone) |
-                     Flags::kPerformsShading | Flags::kAppendVertices,
+                     Flags::kPerformsShading | Flags::kAppendVertices
+                                             | Flags::kAllowsSelfIntersection,
                      /*uniforms=*/{{"localToDevice", SkSLType::kFloat4x4},
                                    {"depth", SkSLType::kFloat}},
                      PrimitiveType::kTriangles,
-                     kDirectDepthLEqualPass,
-                     /*staticAttrs=*/ {},
-                     /*appendAttrs=*/kAttributes[2*hasTexCoords + hasColor],
+                     /*stencilSettings=*/{},
+                     /*staticAttrs=*/{},
+                     /*appendAttrs=*/SK_UNSAFE_TODO(kAttributes[2 * hasTexCoords + hasColor]),
                      /*storageUniforms=*/{},
-                     /*varyings=*/   kVaryings[hasColor])
+                     /*varyings=*/SK_UNSAFE_TODO(kVaryings[hasColor]))
         , fHasColor(hasColor)
         , fHasTexCoords(hasTexCoords) {}
 
@@ -168,24 +172,21 @@ void VerticesRenderStep::writeVertices(DrawWriter* writer,
     VertState state(vertexCount, indices, indexCount);
     VertState::Proc vertProc = state.chooseProc(info.mode());
     while (vertProc(&state)) {
-        verts.append(3) << positions[state.f0]
-                        << VertexWriter::If(fHasColor, colors ? colors[state.f0]
-                                                              : SK_ColorTRANSPARENT)
-                        << VertexWriter::If(fHasTexCoords, texCoords ? texCoords[state.f0]
-                                                                     : SkPoint{0.f, 0.f})
-                        << ssboIndex
-                        << positions[state.f1]
-                        << VertexWriter::If(fHasColor, colors ? colors[state.f1]
-                                                              : SK_ColorTRANSPARENT)
-                        << VertexWriter::If(fHasTexCoords, texCoords ? texCoords[state.f1]
-                                                                     : SkPoint{0.f, 0.f})
-                        << ssboIndex
-                        << positions[state.f2]
-                        << VertexWriter::If(fHasColor, colors ? colors[state.f2]
-                                                              : SK_ColorTRANSPARENT)
-                        << VertexWriter::If(fHasTexCoords, texCoords ? texCoords[state.f2]
-                                                                     : SkPoint{0.f, 0.f})
-                        << ssboIndex;
+        SK_UNSAFE_TODO(
+                verts.append(3)
+                << positions[state.f0]
+                << VertexWriter::If(fHasColor, colors ? colors[state.f0] : SK_ColorTRANSPARENT)
+                << VertexWriter::If(fHasTexCoords,
+                                    texCoords ? texCoords[state.f0] : SkPoint{0.f, 0.f})
+                << ssboIndex << positions[state.f1]
+                << VertexWriter::If(fHasColor, colors ? colors[state.f1] : SK_ColorTRANSPARENT)
+                << VertexWriter::If(fHasTexCoords,
+                                    texCoords ? texCoords[state.f1] : SkPoint{0.f, 0.f})
+                << ssboIndex << positions[state.f2]
+                << VertexWriter::If(fHasColor, colors ? colors[state.f2] : SK_ColorTRANSPARENT)
+                << VertexWriter::If(fHasTexCoords,
+                                    texCoords ? texCoords[state.f2] : SkPoint{0.f, 0.f})
+                << ssboIndex);
     }
 }
 

@@ -102,6 +102,7 @@ SEMI_PUBLIC_HEADERS = [
     "SkEffectPriv.h",
     "SkEndian.h",
     "SkEnumerate.h",
+    "SkExecutors.h",
     "SkFDot6.h",
     "SkFixedArray.h",
     "SkFloatBits.h",
@@ -371,6 +372,7 @@ skia_filegroup(
         "SkEdgeBuilder.cpp",
         "SkEdgeClipper.cpp",
         "SkExecutor.cpp",
+        "SkExecutors.cpp",
         "SkFlattenable.cpp",
         "SkFloatingPoint.cpp",
         "SkFont.cpp",
@@ -465,6 +467,7 @@ skia_filegroup(
         "SkRecordOpts.cpp",
         "SkRecordedDrawable.cpp",
         "SkRecordCanvas.cpp",
+        "SkRecorder.cpp",
         "SkRecords.cpp",
         "SkRect.cpp",
         "SkRegion.cpp",
@@ -595,7 +598,9 @@ skia_cc_library(
         "//include/sksl:core_hdrs",
         "//include/utils:core_hdrs",
     ],
-    defines = select({
+    defines = [
+        "SK_ENABLE_YUVA_PACKED_422",
+    ] + select({
         ":skia_enable_threadlocal_strikecache_true": ["SK_ENABLE_THREADLOCAL_STRIKECACHE"],
         ":skia_enable_threadlocal_strikecache_false": [],
     }),

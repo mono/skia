@@ -15,6 +15,7 @@
 #include "include/gpu/vk/VulkanTypes.h"
 #include "include/private/SkMath.h"
 #include "src/gpu/SwizzlePriv.h"
+#include "src/gpu/graphite/ComputePipelineDesc.h"
 #include "src/gpu/graphite/ContextUtils.h"
 #include "src/gpu/graphite/GraphicsPipelineDesc.h"
 #include "src/gpu/graphite/GraphiteResourceKey.h"
@@ -155,6 +156,12 @@ void VulkanCaps::init(const ContextOptions& contextOptions,
     // TODO(b/353983969): Enable storage buffers once perf regressions are addressed.
     fStorageBufferSupport = false;
 
+    // These are guaranteed to be supported on Vulkan 1.0+.
+    SkASSERT(deviceLimits.maxComputeWorkGroupInvocations > 0);
+    SkASSERT(deviceLimits.maxPerStageDescriptorStorageBuffers > 0);
+    fComputeSupport = true;
+    fStorageBufferSupportForCompute = true;
+
     VkPhysicalDeviceMemoryProperties deviceMemoryProperties;
     VULKAN_CALL(vkInterface, GetPhysicalDeviceMemoryProperties(physDev, &deviceMemoryProperties));
     fSupportsMemorylessAttachments = false;
@@ -211,6 +218,7 @@ void VulkanCaps::init(const ContextOptions& contextOptions,
     fSupportsFrameBoundary = enabledFeatures.fFrameBoundary;
 
     fSupportsPipelineCreationCacheControl = enabledFeatures.fPipelineCreationCacheControl;
+    fSupportsPipelineProtectedAccess = enabledFeatures.fPipelineProtectedAccess;
 
     if (enabledFeatures.fAdvancedBlendModes) {
         fBlendEqSupport = enabledFeatures.fCoherentAdvancedBlendModes
@@ -358,6 +366,7 @@ VulkanCaps::EnabledFeatures VulkanCaps::getEnabledFeatures(
                     const auto* feature =
                             reinterpret_cast<const VkPhysicalDeviceVulkan14Features*>(pNext);
                     enabled.fHostImageCopy = feature->hostImageCopy;
+                    enabled.fPipelineProtectedAccess = feature->pipelineProtectedAccess;
                     break;
                 }
                 case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PIPELINE_CREATION_CACHE_CONTROL_FEATURES: {
@@ -454,6 +463,12 @@ VulkanCaps::EnabledFeatures VulkanCaps::getEnabledFeatures(
                     const auto *feature = reinterpret_cast<
                             const VkPhysicalDeviceProtectedMemoryFeatures*>(pNext);
                     enabled.fProtectedMemory = feature->protectedMemory;
+                    break;
+                }
+                case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PIPELINE_PROTECTED_ACCESS_FEATURES_EXT: {
+                    const auto *feature = reinterpret_cast<
+                            const VkPhysicalDevicePipelineProtectedAccessFeaturesEXT*>(pNext);
+                    enabled.fPipelineProtectedAccess = feature->pipelineProtectedAccess;
                     break;
                 }
                 default:
@@ -612,6 +627,9 @@ void VulkanCaps::applyDriverCorrectnessWorkarounds(const PhysicalDevicePropertie
     const bool isARM = skgpu::kARM_VkVendor == vendorID;
     const bool isIntel = skgpu::kIntel_VkVendor == vendorID;
     const bool isQualcomm = skgpu::kQualcomm_VkVendor == vendorID;
+    const bool isImagination = skgpu::kImagination_VkVendor == vendorID;
+
+    const bool isSwiftshader = skgpu::kGoogle_VkVendor == vendorID && 0xC0DE == deviceID;
 
     const bool isARMProprietary = isARM && VK_DRIVER_ID_ARM_PROPRIETARY == driverID;
     const bool isIntelWindowsProprietary =
@@ -633,10 +651,11 @@ void VulkanCaps::applyDriverCorrectnessWorkarounds(const PhysicalDevicePropertie
     // msaa image into the resolve image. This was reproed on a Pixel4 using the DstReadShuffle GM
     // where the top half of the GM would drop out. In Ganesh we had also seen this on Arm devices,
     // but the issue hasn't appeared yet in Graphite. It may just have occurred on older Arm drivers
-    // that we don't even test any more. This also occurs on swiftshader: b/303705884 in Ganesh, but
-    // we aren't currently testing that in Graphite yet so leaving that off the workaround for now
-    // until we run into it.
-    if (isQualcommProprietary) {
+    // that we don't even test any more.
+    // On Imagination (PowerVR) GPUs, using discardable MSAA attachments and loading from resolve in
+    // DMSAA subpasses causes 3D MMU page faults and GPU lockups.
+    // This also occurs on swiftshader, see b/303705884.
+    if (isQualcommProprietary || isImagination || isSwiftshader) {
         fMustLoadFullImageForMSAA = true;
     }
 
@@ -1197,6 +1216,23 @@ bool VulkanCaps::extractGraphicsDescs(const UniqueKey& key,
     }
 
     return true;
+}
+
+UniqueKey VulkanCaps::makeComputePipelineKey(const ComputePipelineDesc& pipelineDesc) const {
+    UniqueKey pipelineKey;
+    {
+        static const skgpu::UniqueKey::Domain kComputePipelineDomain = UniqueKey::GenerateDomain();
+        // The key is made up of a single uint32_t corresponding to the compute step ID.
+        UniqueKey::Builder builder(&pipelineKey, kComputePipelineDomain, 1, "ComputePipeline");
+        builder[0] = pipelineDesc.computeStep()->uniqueID();
+
+        // TODO(b/240615224): The local work group size should factor into the key here since it is
+        // specified in the shader text on Vulkan/SPIR-V. This is not a problem right now since
+        // ComputeSteps don't vary their workgroup size dynamically.
+
+        builder.finish();
+    }
+    return pipelineKey;
 }
 
 void VulkanCaps::buildKeyForTexture(SkISize dimensions,

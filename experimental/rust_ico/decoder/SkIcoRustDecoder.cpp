@@ -15,9 +15,7 @@
 
 namespace SkIcoRustDecoder {
 
-bool IsIco(const void* buff, size_t bytesRead) {
-    return SkIcoRustCodec::IsIco(buff, bytesRead);
-}
+bool IsIco(const void* buff, size_t bytesRead) { return SkIcoRustCodec::IsIco(buff, bytesRead); }
 
 std::unique_ptr<SkCodec> Decode(std::unique_ptr<SkStream> stream,
                                 SkCodec::Result* result,
@@ -29,6 +27,13 @@ std::unique_ptr<SkCodec> Decode(sk_sp<const SkData> data,
                                 SkCodec::Result* result,
                                 SkCodecs::DecodeContext) {
     return Decode(SkMemoryStream::Make(std::move(data)), result);
+}
+
+bool GetHotSpot(const SkCodec* codec, int frameIndex, SkIPoint* hotSpot) {
+    if (!codec || !hotSpot || frameIndex < 0) {
+        return false;
+    }
+    return static_cast<const SkIcoRustCodec*>(codec)->getHotSpot(frameIndex, hotSpot);
 }
 
 }  // namespace SkIcoRustDecoder
