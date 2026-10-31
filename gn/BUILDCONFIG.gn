@@ -169,6 +169,22 @@ if (is_android) {
   }
 }
 
+if (is_tizen) {
+  assert(target_cpu == "x64" || target_cpu == "arm64",
+         "Tizen 10 builds support only x64 and arm64.")
+  if (target_cpu == "x64") {
+    ncli_target = "x86_64-tizen-linux-gnu"
+    ncli_platform = "tizen-${ncli_version}/tizen/rootstraps/tizen-${ncli_version}-emulator64.core"
+    ncli_gccdir = "x86_64-linux-gnu-gcc-${ncli_gcc_version_short}"
+    ncli_gcc_binary_prefix = "x86_64-linux-gnu"
+  } else if (target_cpu == "arm64") {
+    ncli_target = "aarch64-tizen-linux-gnu"
+    ncli_platform = "tizen-${ncli_version}/tizen/rootstraps/tizen-${ncli_version}-device64.core"
+    ncli_gccdir = "aarch64-linux-gnu-gcc-${ncli_gcc_version_short}"
+    ncli_gcc_binary_prefix = "aarch64-linux-gnu"
+  }
+}
+
 declare_args() {
   if (is_android) {
     _prefix = "$ndk/toolchains/llvm/prebuilt/$ndk_host/bin"
@@ -225,22 +241,6 @@ if (target_os == "win") {
                                       "[0-9]+(\.[0-9]+\.[0-9]+)?",
                                     ],
                                     "trim string")
-  }
-}
-
-if (is_tizen) {
-  assert(target_cpu == "x64" || target_cpu == "arm64",
-         "Tizen 10 builds support only x64 and arm64.")
-  if (target_cpu == "x64") {
-    ncli_target = "x86_64-tizen-linux-gnu"
-    ncli_platform = "tizen-${ncli_version}/tizen/rootstraps/tizen-${ncli_version}-emulator64.core"
-    ncli_gccdir = "x86_64-linux-gnu-gcc-${ncli_gcc_version_short}"
-    ncli_gcc_binary_prefix = "x86_64-linux-gnu"
-  } else if (target_cpu == "arm64") {
-    ncli_target = "aarch64-tizen-linux-gnu"
-    ncli_platform = "tizen-${ncli_version}/tizen/rootstraps/tizen-${ncli_version}-device64.core"
-    ncli_gccdir = "aarch64-linux-gnu-gcc-${ncli_gcc_version_short}"
-    ncli_gcc_binary_prefix = "aarch64-linux-gnu"
   }
 }
 
