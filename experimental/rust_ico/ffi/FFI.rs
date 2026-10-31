@@ -145,6 +145,7 @@ mod ffi {
         /// and defines which pixels are transparent.
         /// `pixels` is the decoded output buffer (4 bytes per pixel).
         /// `entry_data` is the raw BMP entry data from the ICO file.
+        /// `row_bytes` is the destination byte stride.
         /// Transparent pixels have all 4 bytes set to 0.
         fn apply_and_mask(
             pixels: &mut [u8],
@@ -152,6 +153,7 @@ mod ffi {
             width: u32,
             height: u32,
             bytes_per_pixel: u32,
+            row_bytes: usize,
         );
     }
 }
@@ -267,8 +269,7 @@ impl Reader {
 
         let total_bytes = image::ImageDecoder::total_bytes(&decoder) as usize;
         let mut pixels = vec![0u8; total_bytes];
-        image::ImageDecoder::read_image(decoder, &mut pixels)
-            .map_err(|_| IcoError::InvalidData)?;
+        image::ImageDecoder::read_image(decoder, &mut pixels).map_err(|_| IcoError::InvalidData)?;
 
         Ok(Reader {
             pixels,
@@ -405,7 +406,7 @@ impl Reader {
                 rgba_pixels.push(chunk[0]); // R
                 rgba_pixels.push(chunk[1]); // G
                 rgba_pixels.push(chunk[2]); // B
-                rgba_pixels.push(255);      // A (opaque)
+                rgba_pixels.push(255); // A (opaque)
             }
         }
 
@@ -533,12 +534,14 @@ pub fn new_reader(
 /// `entry_data` is the raw BMP entry data (starting at the DIB header).
 /// `width` and `height` are the image dimensions.
 /// `bytes_per_pixel` is the number of bytes per pixel in the output buffer.
+/// `row_bytes` is the destination byte stride.
 pub fn apply_and_mask(
     pixels: &mut [u8],
     entry_data: &[u8],
     width: u32,
     height: u32,
     bytes_per_pixel: u32,
+    row_bytes: usize,
 ) {
     if entry_data.len() < 16 {
         return;
@@ -552,9 +555,8 @@ pub fn apply_and_mask(
         return;
     }
 
-    let header_size = u32::from_le_bytes([
-        entry_data[0], entry_data[1], entry_data[2], entry_data[3],
-    ]) as usize;
+    let header_size =
+        u32::from_le_bytes([entry_data[0], entry_data[1], entry_data[2], entry_data[3]]) as usize;
 
     // Color table size (for bit depths <= 8)
     let color_table_size = if bit_count <= 8 {
@@ -594,7 +596,7 @@ pub fn apply_and_mask(
                 let mask_bit = (and_mask[byte_index] >> bit_index) & 1;
                 if mask_bit == 1 {
                     // Transparent pixel — zero all bytes (works for premul and unpremul)
-                    let pixel_offset = (y * width + x) as usize * bpp;
+                    let pixel_offset = y as usize * row_bytes + x as usize * bpp;
                     let end = pixel_offset + bpp;
                     if end <= pixels.len() {
                         pixels[pixel_offset..end].fill(0);
@@ -671,11 +673,19 @@ pub struct DirectoryResult {
 
 impl DirectoryResult {
     fn error(status: DirectoryParseResult) -> Box<Self> {
-        Box::new(Self { status, file_type: IcoFileType::Icon, entries: Vec::new() })
+        Box::new(Self {
+            status,
+            file_type: IcoFileType::Icon,
+            entries: Vec::new(),
+        })
     }
 
     fn error_for(status: DirectoryParseResult, file_type: IcoFileType) -> Box<Self> {
-        Box::new(Self { status, file_type, entries: Vec::new() })
+        Box::new(Self {
+            status,
+            file_type,
+            entries: Vec::new(),
+        })
     }
 
     pub fn status(&self) -> DirectoryParseResult {
@@ -763,11 +773,22 @@ fn parse_directory_from_data(data: &[u8]) -> Box<DirectoryResult> {
         let hotspot_y_or_bpp = read_u16_le(data, entry_offset + 6);
 
         // For ICO files, offset 6 is bits per pixel. For CUR, it's hotspot_y.
-        let bit_count = if file_type == IcoFileType::Cursor {
+        let mut bit_count = if file_type == IcoFileType::Cursor {
             0 // Not used for sorting CUR files
         } else {
             hotspot_y_or_bpp
         };
+        if file_type == IcoFileType::Icon && bit_count == 0 {
+            let mut color_count = u16::from(data[entry_offset + 2]);
+            if color_count == 0 {
+                color_count = 256;
+            }
+            color_count -= 1;
+            while color_count != 0 {
+                bit_count += 1;
+                color_count >>= 1;
+            }
+        }
         let hotspot_y = hotspot_y_or_bpp;
 
         // Read size (offset 8 within entry) and offset (offset 12 within entry)
@@ -910,6 +931,22 @@ mod tests {
         assert_eq!(entry.offset, 22);
         assert_eq!(entry.size, 256);
         assert_eq!(entry.format, EmbeddedFormat::Bmp);
+    }
+
+    #[test]
+    fn test_parse_directory_derives_bit_count_from_color_count() {
+        let mut data = vec![
+            0x00, 0x00, 0x01, 0x00, 0x01, 0x00, // ICO header, 1 image
+            0x10, 0x10, 0x10, 0x00, // 16x16, 16 colors
+            0x01, 0x00, 0x00, 0x00, // planes, unspecified bpp
+            0x04, 0x00, 0x00, 0x00, // size = 4
+            0x16, 0x00, 0x00, 0x00, // offset = 22
+        ];
+        data.extend_from_slice(&[0x28, 0x00, 0x00, 0x00]);
+
+        let result = parse_directory_from_data(&data);
+        assert!(matches!(result.status(), DirectoryParseResult::Success));
+        assert_eq!(result.get_entry(0).bit_count, 4);
     }
 
     #[test]

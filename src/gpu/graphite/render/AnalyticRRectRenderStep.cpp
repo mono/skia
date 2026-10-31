@@ -366,11 +366,14 @@ static void write_vertex_buffer(VertexWriter writer) {
 AnalyticRRectRenderStep::AnalyticRRectRenderStep(Layout layout, StaticBufferManager* bufferManager)
         : RenderStep(layout,
                      RenderStepID::kAnalyticRRect,
-                     Flags::kPerformsShading | Flags::kEmitsCoverage | Flags::kOutsetBoundsForAA |
-                     Flags::kUseNonAAInnerFill | Flags::kAppendInstances,
+                     Flags::kPerformsShading | Flags::kEmitsCoverage
+                                             | Flags::kOutsetBoundsForAA
+                                             | Flags::kUseNonAAInnerFill
+                                             | Flags::kNoSelfIntersections
+                                             | Flags::kAppendInstances,
                      /*uniforms=*/{},
                      PrimitiveType::kTriangleStrip,
-                     kDirectDepthLessPass,
+                     /*stencilSettings=*/{},
                      /*staticAttrs=*/{{
                              {"cornerID", VertexAttribType::kUInt, SkSLType::kUInt},
                              {"position", VertexAttribType::kFloat2, SkSLType::kFloat2},
@@ -413,12 +416,21 @@ AnalyticRRectRenderStep::AnalyticRRectRenderStep(Layout layout, StaticBufferMana
                              {"edgeDistances", SkSLType::kFloat4}, // distance to LTRB edges
                              // TODO: These are constant for all fragments for a given instance,
                              // could we store them in the draw's SSBO?
+#ifdef SK_DISABLE_GRAPHITE_NONINTEGRAL_VARYINGS_FLAT_INTERPOLATION
                              {"xRadii", SkSLType::kFloat4},
                              {"yRadii", SkSLType::kFloat4},
+#else
+                             {"xRadii", SkSLType::kFloat4, Interpolation::kFlat},
+                             {"yRadii", SkSLType::kFloat4, Interpolation::kFlat},
+#endif
                              // Matches the StrokeStyle struct (X is radius, Y < 0 is round join,
                              // Y = 0 is bevel, Y > 0 is miter join).
                              // TODO: These could easily be considered part of the draw's uniforms.
+#ifdef SK_DISABLE_GRAPHITE_NONINTEGRAL_VARYINGS_FLAT_INTERPOLATION
                              {"strokeParams", SkSLType::kFloat2},
+#else
+                             {"strokeParams", SkSLType::kFloat2, Interpolation::kFlat},
+#endif
                              // 'perPixelControl' is a tightly packed description of how to
                              // evaluate the possible edges that influence coverage in a pixel.
                              // The decision points and encoded values are spread across X and Y

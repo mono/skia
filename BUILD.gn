@@ -35,6 +35,9 @@ config("skia_public") {
   if (skia_enable_optimize_size) {
     defines += [ "SK_ENABLE_OPTIMIZE_SIZE" ]
   }
+  if (skia_enable_packed_422_yuv) {
+    defines += [ "SK_ENABLE_YUVA_PACKED_422" ]
+  }
   if (skia_enable_precompile) {
     defines += [ "SK_ENABLE_PRECOMPILE" ]
   }
@@ -1304,14 +1307,21 @@ optional("xps") {
 
 optional("png_decode_common") {
   enabled = skia_use_libpng_decode || skia_use_rust_png_decode
+  public_defines = [ "SK_CODEC_DECODES_ICO" ]
+  defines = []
+  if (skia_use_libpng_decode) {
+    defines += [ "SK_CODEC_DECODES_PNG_WITH_LIBPNG" ]
+  }
+  if (skia_use_rust_png_decode) {
+    defines += [ "SK_CODEC_DECODES_PNG_WITH_RUST" ]
+  }
   public = skia_codec_png_public
-  sources = skia_codec_png_base
+  sources = [ "src/codec/SkIcoCodec.cpp" ] + skia_codec_png_base
 }
 
 optional("png_decode_libpng") {
   enabled = skia_use_libpng_decode
   public_defines = [
-    "SK_CODEC_DECODES_ICO",
     "SK_CODEC_DECODES_PNG",
     "SK_CODEC_DECODES_PNG_WITH_LIBPNG",
   ]
@@ -1321,7 +1331,7 @@ optional("png_decode_libpng") {
     ":png_decode_common",
     "//third_party/libpng",
   ]
-  sources = [ "src/codec/SkIcoCodec.cpp" ] + skia_codec_libpng_srcs
+  sources = skia_codec_libpng_srcs
 
   # Export this so fiddles could decode png using libpng
   public = skia_codec_libpng_public
@@ -1475,6 +1485,11 @@ if (skia_use_fontations || skia_use_rust_png_decode ||
       bazel_args += [ "--//rust/png:for_android=true" ]
     } else {
       bazel_args += [ "--//rust/png:for_android=false" ]
+    }
+    if (skia_build_fuzzers) {
+      bazel_args += [ "--//rust/png:fuzzing_build_mode=true" ]
+    } else {
+      bazel_args += [ "--//rust/png:fuzzing_build_mode=false" ]
     }
   }
 
@@ -2175,6 +2190,9 @@ skia_component("skia") {
     "modules/skcms",
     "//src/partition_alloc:raw_ptr",
   ]
+  if (skia_use_rust_jpeg_decode) {
+    deps += [ ":jpeg_decode_rust" ]
+  }
 
   public = []
   public += skia_codec_public
@@ -2198,6 +2216,7 @@ skia_component("skia") {
   sources += skia_ports_sources
   sources += skia_android_core_srcs
   sources += [
+    "src/android/SkAndroidFrameworkTraceUtils.cpp",
     "src/android/SkAndroidFrameworkUtils.cpp",
     "src/codec/SkAndroidCodec.cpp",
     "src/codec/SkAndroidCodecAdapter.cpp",
@@ -2316,7 +2335,6 @@ skia_component("skia") {
   # Currently only supported in Android framework.
   if (skia_android_framework_use_perfetto) {
     defines += [ "SK_ANDROID_FRAMEWORK_USE_PERFETTO" ]
-    sources += [ "src/android/SkAndroidFrameworkPerfettoStaticStorage.cpp" ]
   }
 }
 
@@ -3431,6 +3449,9 @@ if (skia_enable_tools) {
       if (skia_use_rust_bmp_decode) {
         sources += [ "fuzz/oss_fuzz/FuzzBMPRustDecoder.cpp" ]
       }
+      if (skia_use_rust_png_decode) {
+        sources += [ "fuzz/oss_fuzz/FuzzPNGRustDecoder.cpp" ]
+      }
       deps = [
         ":flags",
         ":gpu_tool_utils",
@@ -3581,6 +3602,8 @@ if (skia_enable_tools) {
         "GL",  # Used by raster window context, so cannot be behind skia_use_gl.
         "X11",
       ]
+    } else if (is_wasm) {
+      sources += [ "tools/sk_app/wasm/main_wasm.cpp" ]
     } else if (is_win) {
       sources += [
         "tools/sk_app/win/Window_win.cpp",
@@ -4065,6 +4088,13 @@ if (skia_build_fuzzers) {
         "fuzz/FuzzEncoders.cpp",
         "fuzz/oss_fuzz/FuzzPNGRustEncoder.cpp",
       ]
+      deps = []
+    }
+  }
+
+  if (skia_use_rust_png_decode) {
+    libfuzzer_app("png_rust_decoder") {
+      sources = [ "fuzz/oss_fuzz/FuzzPNGRustDecoder.cpp" ]
       deps = []
     }
   }

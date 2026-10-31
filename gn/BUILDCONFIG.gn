@@ -169,7 +169,31 @@ if (is_android) {
   }
 }
 
-if (is_win) {
+declare_args() {
+  if (is_android) {
+    _prefix = "$ndk/toolchains/llvm/prebuilt/$ndk_host/bin"
+    if (host_os == "win") {
+      target_ar = "$_prefix/llvm-ar.exe"
+      target_cc = "$_prefix/clang.exe --target=$ndk_target$ndk_api -fno-addrsig"
+      target_cxx =
+          "$_prefix/clang++.exe --target=$ndk_target$ndk_api -fno-addrsig"
+    } else {
+      target_ar = "$_prefix/llvm-ar"
+      target_cc = "$_prefix/$ndk_target$ndk_api-clang"
+      target_cxx = "$_prefix/$ndk_target$ndk_api-clang++"
+    }
+  } else if (is_tizen) {
+    target_ar = "$ncli/tools/$ncli_gccdir/$ncli_target/bin/ar"
+    target_cc = "$ncli/tools/$ncli_gccdir/bin/$ncli_gcc_binary_prefix-gcc"
+    target_cxx = "$ncli/tools/$ncli_gccdir/bin/$ncli_gcc_binary_prefix-g++"
+  } else {
+    target_ar = ar
+    target_cc = cc
+    target_cxx = cxx
+  }
+}
+
+if (target_os == "win") {
   # By default we look for 2017 (Enterprise, Pro, and Community), then 2015. If MSVC is installed in a
   # non-default location, you can set win_vc to inform us where it is.
 
@@ -270,6 +294,9 @@ default_configs += [ "//gn/skia:extra_flags" ]
 
 set_defaults("executable") {
   configs = [ "//gn/skia:executable" ] + default_configs
+  if (is_wasm) {
+    configs += [ "//gn/skia:wasm_exe" ]
+  }
 }
 
 set_defaults("source_set") {
