@@ -27,37 +27,44 @@ static void release_dwrite_factory() {
     }
 }
 
-static void create_dwrite_factory(IDWriteFactory** factory) {
+HRESULT sk_create_dwrite_factory(DWRITE_FACTORY_TYPE type, IDWriteFactory** factory) {
 #ifdef SK_BUILD_FOR_WINRT
-    typedef decltype(DWriteCreateFactory)* DWriteCreateFactoryProc;
-    DWriteCreateFactoryProc dWriteCreateFactoryProc = &DWriteCreateFactory;
+    auto dWriteCreateFactoryProc = &DWriteCreateFactory;
 #else // SK_BUILD_FOR_WINRT
     using DWriteCreateFactoryProc = decltype(DWriteCreateFactory)*;
-    DWriteCreateFactoryProc dWriteCreateFactoryProc;
-
-    dWriteCreateFactoryProc = reinterpret_cast<DWriteCreateFactoryProc>(GetProcAddress(
-            LoadLibraryExW(L"DWriteCore.dll", NULL, LOAD_LIBRARY_SEARCH_DEFAULT_DIRS),
-            "DWriteCoreCreateFactory"));
-
-    if (!dWriteCreateFactoryProc) {
+    static DWriteCreateFactoryProc dWriteCreateFactoryProc = nullptr;
+    static HRESULT loadResult = S_OK;
+    static SkOnce once;
+    once([] {
         dWriteCreateFactoryProc = reinterpret_cast<DWriteCreateFactoryProc>(GetProcAddress(
-                LoadLibraryExW(L"dwrite.dll", NULL, LOAD_LIBRARY_SEARCH_DEFAULT_DIRS),
-                "DWriteCreateFactory"));
-    }
+                LoadLibraryExW(L"DWriteCore.dll", NULL, LOAD_LIBRARY_SEARCH_DEFAULT_DIRS),
+                "DWriteCoreCreateFactory"));
 
-    if (!dWriteCreateFactoryProc) {
-        HRESULT hr = HRESULT_FROM_WIN32(GetLastError());
-        if (!IS_ERROR(hr)) {
-            hr = ERROR_PROC_NOT_FOUND;
+        if (!dWriteCreateFactoryProc) {
+            dWriteCreateFactoryProc = reinterpret_cast<DWriteCreateFactoryProc>(GetProcAddress(
+                    LoadLibraryExW(L"dwrite.dll", NULL, LOAD_LIBRARY_SEARCH_DEFAULT_DIRS),
+                    "DWriteCreateFactory"));
         }
-        HRVM(hr, "Could not get DWriteCreateFactory proc.");
-    }
+
+        if (!dWriteCreateFactoryProc) {
+            loadResult = HRESULT_FROM_WIN32(GetLastError());
+            if (!IS_ERROR(loadResult)) {
+                loadResult = HRESULT_FROM_WIN32(ERROR_PROC_NOT_FOUND);
+            }
+        }
+    });
+    HRM(loadResult, "Could not get DWriteCreateFactory proc.");
 #endif // SK_BUILD_FOR_WINRT
 
-    HRVM(dWriteCreateFactoryProc(DWRITE_FACTORY_TYPE_SHARED,
-                                 __uuidof(IDWriteFactory),
-                                 reinterpret_cast<IUnknown**>(factory)),
-         "Could not create DirectWrite factory.");
+    HRM(dWriteCreateFactoryProc(type,
+                               __uuidof(IDWriteFactory),
+                               reinterpret_cast<IUnknown**>(factory)),
+        "Could not create DirectWrite factory.");
+    return S_OK;
+}
+
+static void create_dwrite_factory(IDWriteFactory** factory) {
+    HRV(sk_create_dwrite_factory(DWRITE_FACTORY_TYPE_SHARED, factory));
     atexit(release_dwrite_factory);
 }
 
