@@ -497,3 +497,4 @@ DEF_TEST(SkSLRasterPipelineNeutralizeBranchesOnFailure, r) {
     pipeline.run(0, 0, 1, 1);
     REPORTER_ASSERT(r, out[0] == SkColors::kGreen.toBytes_RGBA());
 }
+
