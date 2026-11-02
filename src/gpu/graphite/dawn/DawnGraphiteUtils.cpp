@@ -574,8 +574,7 @@ bool DawnCompileWGSLShaderModule(const DawnSharedContext* sharedContext,
                                  const SkSL::NativeShader& wgsl,
                                  wgpu::ShaderModule* module,
                                  ShaderErrorHandler* errorHandler) {
-// mono/skia: see the analogous shader-module gates in DawnSharedContext /
-// DawnResourceProvider — emdawnwebgpu only ships wgpu::ShaderSourceWGSL.
+    // emdawnwebgpu uses ShaderSourceWGSL, not the legacy descriptor.
 #if defined(__EMSCRIPTEN__) && !defined(SKIA_USING_EMDAWNWEBGPU)
     wgpu::ShaderModuleWGSLDescriptor wgslDesc;
 #else

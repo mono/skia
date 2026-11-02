@@ -33,7 +33,7 @@ namespace {
 constexpr uint32_t kBufferBindingSizeAlignment = 16;
 
 wgpu::ShaderModule create_shader_module(const wgpu::Device& device, const char* source) {
-// mono/skia: emdawnwebgpu ships ShaderSourceWGSL; skip the legacy compat branch.
+    // emdawnwebgpu uses ShaderSourceWGSL, not the legacy descriptor.
 #if defined(__EMSCRIPTEN__) && !defined(SKIA_USING_EMDAWNWEBGPU)
     wgpu::ShaderModuleWGSLDescriptor wgslDesc;
 #else

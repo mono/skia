@@ -293,11 +293,7 @@ void DawnCaps::initCaps(const DawnBackendContext& backendContext, const ContextO
 #endif
 #endif // defined(__EMSCRIPTEN__)
 
-// mono/skia: legacy -sUSE_WEBGPU=1 headers ship wgpu::SupportedLimits;
-// emdawnwebgpu ships the modern Limits+CompatibilityModeLimits form (matching
-// native Dawn). The DawnTexelCopyBufferRowAlignmentLimits chain is a
-// Dawn-native-only extension not exposed by emdawnwebgpu, so it stays inside
-// the inner `!defined(__EMSCRIPTEN__)` gate.
+    // emdawnwebgpu uses modern limits, but lacks Dawn-native alignment extensions.
 #if defined(__EMSCRIPTEN__) && !defined(SKIA_USING_EMDAWNWEBGPU)
     wgpu::SupportedLimits supportedLimits;
     [[maybe_unused]] bool success = backendContext.fDevice.GetLimits(&supportedLimits);
