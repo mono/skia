@@ -104,17 +104,6 @@ config("default") {
       "WIN32_LEAN_AND_MEAN",
       "NOMINMAX",
     ]
-    if (is_winrt) {
-      defines += [
-        "WINAPI_FAMILY=WINAPI_FAMILY_APP",
-        "SK_BUILD_FOR_WINRT",
-      ]
-      ldflags += [
-        "/APPCONTAINER",
-        "WindowsApp.lib",
-      ]
-    }
-
     _include_dirs = [
       "$win_vc/Tools/MSVC/$win_toolchain_version/include",
       "$win_sdk/Include/$win_sdk_version/shared",
@@ -134,15 +123,10 @@ config("default") {
       include_dirs = _include_dirs
     }
 
-    _is_store = ""
-    if (is_winrt) {
-      _is_store = "/store"
-    }
-
     lib_dirs = [
       "$win_sdk/Lib/$win_sdk_version/ucrt/$current_cpu",
       "$win_sdk/Lib/$win_sdk_version/um/$current_cpu",
-      "$win_vc/Tools/MSVC/$win_toolchain_version/lib/$current_cpu$_is_store",
+      "$win_vc/Tools/MSVC/$win_toolchain_version/lib/$current_cpu",
     ]
   } else {
     cflags += [
@@ -942,14 +926,7 @@ if (is_wasm) {
     }
   } else {
     config("wasm") {
-      # mono/skia: upstream (standalone-wasm commit e979274a45) adds
-      # `-pthread` unconditionally here. That enables the wasm `atomics`
-      # target feature and makes `__atomic_*` builtins lower to real
-      # `i32.atomic.*` instructions, which later break the single-threaded
-      # Blazor/dotnet wasm-opt pass (it runs without `--enable-threads`).
-      # SkiaSharp's build.cake opts `-pthread` in via `extra_cflags_cc`
-      # only for the `mt` variant, so we drop it from the default config
-      # here and let build.cake control per-variant threading.
+      # The parent enables -pthread only for threaded WASM variants.
       common = [
         "--sysroot=$skia_emsdk_dir/upstream/emscripten/cache/sysroot",
       ]

@@ -29,9 +29,7 @@ declare_args() {
 
   win_sdk = ""
 
-  # mono/skia: m150's SkFontMgr_win_dw.cpp uses IDWriteFontSet4, which is only
-  # declared in the Windows 11 SDK (10.0.22621). The default picks the lowest
-  # installed SDK >= this floor, so raise it from upstream's 10.0.16299.0.
+  # DirectWrite's IDWriteFontSet4 requires Windows SDK 10.0.22621 or later.
   min_win_sdk_version = "10.0.22621.0"
   win_sdk_version = ""
 
@@ -95,8 +93,7 @@ is_maccatalyst = current_os == "maccatalyst"
 is_linux = current_os == "linux" || current_os == "tizen"
 is_mac = current_os == "mac"
 is_wasm = current_os == "wasm"
-is_win = current_os == "win" || current_os == "winrt"
-is_winrt = current_os == "winrt"
+is_win = current_os == "win"
 is_tizen = current_os == "tizen"
 
 # Dawn has references to fuchsia, but Skia's GN rules do not
