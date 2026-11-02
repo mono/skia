@@ -104,7 +104,6 @@ prepare_for_mask_drawing(
                 break;
         }
     }
-
     return {acceptedBuffer.first(acceptedSize),
             rejectedBuffer.first(rejectedSize),
             boundingRect.rect()};
@@ -386,4 +385,3 @@ DEF_TEST(SkScalerContext_GetImageNonDeterministicBounds, reporter) {
         }
     }
 }
-
