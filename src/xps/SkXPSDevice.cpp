@@ -174,10 +174,6 @@ template <typename T> static constexpr size_t sk_digits_in() {
 HRESULT SkXPSDevice::createXpsThumbnail(IXpsOMPage* page,
                                         const unsigned int pageNum,
                                         IXpsOMImageResource** image) {
-#ifdef SK_BUILD_FOR_WINRT
-    *image = nullptr;
-    return S_OK;
-#else
     SkTScopedComPtr<IXpsOMThumbnailGenerator> thumbnailGenerator;
     HRM(CoCreateInstance(
             CLSID_XpsOMThumbnailGenerator,
@@ -209,7 +205,6 @@ HRESULT SkXPSDevice::createXpsThumbnail(IXpsOMPage* page,
         "Could not generate thumbnail.");
 
     return S_OK;
-#endif
 }
 
 HRESULT SkXPSDevice::createXpsPage(const XPS_SIZE& pageSize,
@@ -338,8 +333,8 @@ bool SkXPSDevice::endSheet() {
 }
 
 static HRESULT subset_typeface(const SkXPSDevice::TypefaceUse& current) {
-    //The CreateFontPackage API is only supported on desktop, not in UWP
-    #if defined(SK_WINUWP) || defined(SK_BUILD_FOR_WINRT) || defined(SK_BUILD_FOR_NANOSERVER)
+    // CreateFontPackage is unavailable on UWP and NanoServer.
+    #if defined(SK_WINUWP) || defined(SK_BUILD_FOR_NANOSERVER)
     return E_NOTIMPL;
     #else
     //CreateFontPackage wants unsigned short.
@@ -434,7 +429,7 @@ static HRESULT subset_typeface(const SkXPSDevice::TypefaceUse& current) {
         "Could not set new stream for subsetted font.");
 
     return S_OK;
-    #endif //SK_WINUWP || SK_BUILD_FOR_WINRT || SK_BUILD_FOR_NANOSERVER
+    #endif //SK_WINUWP || SK_BUILD_FOR_NANOSERVER
 }
 
 bool SkXPSDevice::endPortfolio() {

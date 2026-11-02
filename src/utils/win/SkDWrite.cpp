@@ -28,10 +28,6 @@ static void release_dwrite_factory() {
 }
 
 static void create_dwrite_factory(IDWriteFactory** factory) {
-#ifdef SK_BUILD_FOR_WINRT
-    typedef decltype(DWriteCreateFactory)* DWriteCreateFactoryProc;
-    DWriteCreateFactoryProc dWriteCreateFactoryProc = &DWriteCreateFactory;
-#else // SK_BUILD_FOR_WINRT
     using DWriteCreateFactoryProc = decltype(DWriteCreateFactory)*;
     DWriteCreateFactoryProc dWriteCreateFactoryProc;
 
@@ -52,7 +48,6 @@ static void create_dwrite_factory(IDWriteFactory** factory) {
         }
         HRVM(hr, "Could not get DWriteCreateFactory proc.");
     }
-#endif // SK_BUILD_FOR_WINRT
 
     HRVM(dWriteCreateFactoryProc(DWRITE_FACTORY_TYPE_SHARED,
                                  __uuidof(IDWriteFactory),
@@ -132,9 +127,6 @@ HRESULT sk_get_locale_string(IDWriteLocalizedStrings* names, const WCHAR* prefer
 }
 
 HRESULT SkGetGetUserDefaultLocaleNameProc(SkGetUserDefaultLocaleNameProc* proc) {
-#ifdef SK_BUILD_FOR_WINRT
-    *proc = &GetUserDefaultLocaleName;
-#else // SK_BUILD_FOR_WINRT
     *proc = reinterpret_cast<SkGetUserDefaultLocaleNameProc>(
             GetProcAddress(LoadLibraryExW(L"Kernel32.dll", NULL, LOAD_LIBRARY_SEARCH_SYSTEM32),
                            "GetUserDefaultLocaleName"));
@@ -145,7 +137,6 @@ HRESULT SkGetGetUserDefaultLocaleNameProc(SkGetUserDefaultLocaleNameProc* proc) 
         }
         return hr;
     }
-#endif // SK_BUILD_FOR_WINRT
     return S_OK;
 }
 

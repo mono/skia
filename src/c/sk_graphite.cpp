@@ -81,10 +81,7 @@ static bool ToGraphiteSampleCount(int32_t count, gr::SampleCount* out) {
     return false;
 }
 
-// ImageProvider bridge — routes Graphite's "I have a non-Graphite SkImage,
-// please convert it" hook to a function pointer + userData supplied by the
-// managed (or any C) caller. Held by sk_sp inside ContextOptions; owned by
-// the Context after ContextFactory::Make* succeeds.
+// The recorder retains this callback-backed provider through RecorderOptions.
 namespace {
 class FfiImageProvider : public gr::ImageProvider {
 public:
@@ -102,7 +99,7 @@ public:
         sk_image_t* raw = fProc(
             fUserData,
             ToGraphiteRecorder(recorder),
-            ToImage(const_cast<SkImage*>(image)),  // const-correctness shim; Skia's hook is non-const
+            ToImage(image),
             props.fMipmapped ? 1 : 0);
         return sk_sp<SkImage>(AsImage(raw));
     }

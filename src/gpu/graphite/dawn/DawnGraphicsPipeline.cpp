@@ -624,8 +624,7 @@ sk_sp<DawnGraphicsPipeline> DawnGraphicsPipeline::Make(
             layout.attributes = staticDataAttributes.data();
         } else {
             layout.arrayStride = 0;
-// mono/skia: VertexStepMode::VertexBufferNotUsed was renamed to Undefined;
-// emdawnwebgpu only ships the new name.
+            // emdawnwebgpu names the unused vertex-buffer step mode Undefined.
 #if defined(__EMSCRIPTEN__) && !defined(SKIA_USING_EMDAWNWEBGPU)
             layout.stepMode = wgpu::VertexStepMode::VertexBufferNotUsed;
 #else
@@ -652,8 +651,6 @@ sk_sp<DawnGraphicsPipeline> DawnGraphicsPipeline::Make(
             layout.attributes = appendDataAttributes.data();
         } else {
             layout.arrayStride = 0;
-// mono/skia: VertexStepMode::VertexBufferNotUsed was renamed to Undefined;
-// emdawnwebgpu only ships the new name.
 #if defined(__EMSCRIPTEN__) && !defined(SKIA_USING_EMDAWNWEBGPU)
             layout.stepMode = wgpu::VertexStepMode::VertexBufferNotUsed;
 #else

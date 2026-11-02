@@ -102,7 +102,6 @@ void sk_runtimeeffect_get_uniform_from_index(const sk_runtimeeffect_t* effect, i
     auto uniforms = AsRuntimeEffect(effect)->uniforms();
     auto uniform = uniforms.begin() + index;
     *cuniform = *ToRuntimeEffectUniform(uniform);
-    // return ToRuntimeEffectUniform(&(*uniform));
 }
 
 void sk_runtimeeffect_get_uniform_from_name(const sk_runtimeeffect_t* effect, const char* name, size_t len, sk_runtimeeffect_uniform_t* cuniform) {
@@ -123,7 +122,6 @@ void sk_runtimeeffect_get_child_from_index(const sk_runtimeeffect_t* effect, int
     auto children = AsRuntimeEffect(effect)->children();
     auto child = children.begin() + index;
     *cchild = *ToRuntimeEffectChild(child);
-    // return ToRuntimeEffectUniform(&(*child));
 }
 
 void sk_runtimeeffect_get_child_from_name(const sk_runtimeeffect_t* effect, const char* name, size_t len, sk_runtimeeffect_child_t* cchild) {

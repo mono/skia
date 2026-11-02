@@ -55,9 +55,7 @@ extern "C" SK_C_API sk_graphite_context_t* sk_graphite_context_make_vulkan(
         };
     }
 
-    // Graphite's Vulkan path does NOT auto-create a memory allocator (unlike Ganesh's
-    // GrVkGpu); the caller must supply one. Until we expose that as part of the C API
-    // (deferred to a follow-up), build the default VMA-backed allocator here.
+    // The C init struct has no allocator field, so supply the default VMA allocator.
     if (!vkbc.fMemoryAllocator) {
         vkbc.fMemoryAllocator = skgpu::VulkanMemoryAllocators::Make(vkbc, skgpu::ThreadSafe::kNo);
         if (!vkbc.fMemoryAllocator) {

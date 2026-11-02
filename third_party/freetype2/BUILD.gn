@@ -26,13 +26,7 @@ if (skia_use_system_freetype2) {
   system("freetype2") {
     libs = [ skia_system_freetype2_lib ]
     if (is_tizen) {
-      # mono/skia: emit only the sysroot-relative include path on Tizen so
-      # the cross-compile picks up the rootstrap's freetype headers, not
-      # whatever happens to be in the build host's /usr/include/freetype2.
-      # (Upstream's bare include_dirs= line is host-absolute and shadows
-      # the cflags `-I=` form; we drop it for is_tizen to avoid the
-      # version-skew that causes COLRv1 link failures when the host's
-      # libfreetype-dev is newer than the rootstrap's libfreetype.so.)
+      # Use the target sysroot's headers, not the build host's.
       cflags = [ "-I=$skia_system_freetype2_include_path" ]
     } else {
       include_dirs = [ skia_system_freetype2_include_path ]
@@ -54,11 +48,7 @@ if (skia_use_system_freetype2) {
       ]
       public_include_dirs += [ "include/freetype-no-type1" ]
     } else {
-      # NOTE (SkiaSharp): the trailing space below is required on Windows only. GN +
-      # clang-cl mis-tokenizes a -D macro value ending in '>' in the ninja response
-      # file, so we keep '>' off the end. It is harmless in the resulting
-      # '#include <...> ' expansion, and is not needed for the wasm branch above
-      # (emscripten toolchain, not clang-cl).
+      # Keep the trailing space for clang-cl response-file quoting of a final '>'.
       public_defines += [
         "FT_CONFIG_MODULES_H=<freetype-android/freetype/config/ftmodule.h> ",
         "FT_CONFIG_OPTIONS_H=<freetype-android/freetype/config/ftoption.h> ",

@@ -35,8 +35,6 @@ SK_C_API gr_direct_context_t* gr_direct_context_make_metal_with_options(void* de
 SK_C_API gr_direct_context_t* gr_direct_context_make_direct3d(const gr_d3d_backendcontext_t d3dBackendContext);
 SK_C_API gr_direct_context_t* gr_direct_context_make_direct3d_with_options(const gr_d3d_backendcontext_t d3dBackendContext, const gr_context_options_t* options);
 
-// TODO: the overloads with GrContextOptions
-
 SK_C_API bool gr_direct_context_is_abandoned(gr_direct_context_t* context);
 SK_C_API void gr_direct_context_abandon_context(gr_direct_context_t* context);
 SK_C_API void gr_direct_context_release_resources_and_abandon_context(gr_direct_context_t* context);

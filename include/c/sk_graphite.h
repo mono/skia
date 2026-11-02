@@ -96,9 +96,8 @@ SK_C_API void                          sk_graphite_context_free_gpu_resources(sk
 SK_C_API void                          sk_graphite_context_perform_deferred_cleanup(sk_graphite_context_t* context, int64_t milliseconds);
 
 // Recorder vending. recorderBudgetBytes < 0 uses the context default.
-// imageProvider may be null. When non-null, ownership of the wrapper transfers
-// to the recorder on success — caller must NOT call sk_graphite_image_provider_delete
-// on it afterwards. The provider is constructed via sk_graphite_image_provider_new.
+// imageProvider may be null. The caller retains its wrapper; the recorder takes its
+// own provider reference. The wrapper may be deleted after success or failure.
 SK_C_API sk_graphite_recorder_t*       sk_graphite_context_make_recorder(
     sk_graphite_context_t* context,
     int64_t recorderBudgetBytes,
@@ -243,17 +242,13 @@ typedef sk_image_t* (*sk_graphite_image_provider_proc)(
     const sk_image_t* image,
     bool mipmapped);
 
-// Build an ImageProvider that dispatches to the given callback. Caller retains
-// ownership of the returned wrapper until it is passed to a Context via
-// sk_graphite_context_options_t::fImageProvider; ownership transfers on
-// successful Context creation.
+// Caller owns the wrapper. Recorder creation retains the provider, not the wrapper.
+// Keep proc and userData valid while any recorder uses the provider.
 SK_C_API sk_graphite_image_provider_t* sk_graphite_image_provider_new(
     sk_graphite_image_provider_proc proc,
     void* userData);
 
-// Free an unused provider (e.g. when CreateVulkan returned null and the caller
-// needs to clean up). Safe on null. Calling this AFTER the provider has been
-// installed in a Context is undefined — the Context owns it from that point.
+// Free the caller-owned wrapper; existing recorders keep their provider refs. Safe on null.
 SK_C_API void sk_graphite_image_provider_delete(sk_graphite_image_provider_t* provider);
 
 // Upload a raster (CPU-backed) SkImage to a Graphite-backed texture. This is

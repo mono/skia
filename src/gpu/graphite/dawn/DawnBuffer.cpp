@@ -15,9 +15,7 @@
 
 namespace skgpu::graphite {
 namespace {
-// mono/skia: WGPUBufferMapAsyncStatus was renamed to WGPUMapAsyncStatus and
-// its C++ wrapper became wgpu::MapAsyncStatus; emdawnwebgpu only ships the
-// new form, so take the native `#else` branch under the port.
+// emdawnwebgpu uses the native Dawn map status and callback API.
 #if defined(__EMSCRIPTEN__) && !defined(SKIA_USING_EMDAWNWEBGPU)
 bool is_map_succeeded(WGPUBufferMapAsyncStatus status) {
     return status == WGPUBufferMapAsyncStatus_Success;
@@ -58,11 +56,7 @@ void log_map_error(WGPUBufferMapAsyncStatus status, const char*) {
             statusStr = "<other>";
             break;
     }
-    // mono/skia: SKIA_LOG(priority, ...) expands to `if constexpr (priority <= ...)`,
-    // which requires `priority` to be a compile-time constant. The runtime variable
-    // set by the switch above fails that constraint. Branch on the runtime value and
-    // dispatch to the fixed-level macros; only surfaces in WASM because this whole
-    // function is gated by __EMSCRIPTEN__.
+    // Logging macros require a compile-time priority.
     if (priority == SkLogPriority::kDebug) {
         SKIA_LOG_D("Buffer async map failed with status %s.", statusStr);
     } else {
@@ -98,7 +92,7 @@ void log_map_error(wgpu::MapAsyncStatus status, wgpu::StringView message) {
               static_cast<int>(message.length),
               message.data);
 }
-#endif  // defined(__EMSCRIPTEN__)
+#endif  // defined(__EMSCRIPTEN__) && !defined(SKIA_USING_EMDAWNWEBGPU)
 }  // namespace
 
 sk_sp<DawnBuffer> DawnBuffer::Make(const DawnSharedContext* sharedContext,
@@ -253,8 +247,6 @@ void DawnBuffer::onAsyncMap(GpuFinishedProc proc, GpuFinishedContext ctx) {
     bool isWrite = fBuffer.GetUsage() & wgpu::BufferUsage::MapWrite;
     auto buffer = sk_ref_sp(this);
 
-// mono/skia: paired with the map-status gate at the top of the file — the
-// modern MapAsync callback signature is what emdawnwebgpu ships.
 #if defined(__EMSCRIPTEN__) && !defined(SKIA_USING_EMDAWNWEBGPU)
     fBuffer.MapAsync(
             isWrite ? wgpu::MapMode::Write : wgpu::MapMode::Read,

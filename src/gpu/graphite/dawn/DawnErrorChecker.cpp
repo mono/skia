@@ -41,9 +41,7 @@ SkEnumBitMask<DawnErrorType> DawnErrorChecker::popErrorScopes() {
         return DawnErrorType::kNoError;
     }
 
-// mono/skia: wgpu::ErrorCallback + the two-arg PopErrorScope form are legacy
-// -sUSE_WEBGPU=1 shapes; emdawnwebgpu ships the async-callback form used in
-// the native `#else` branch.
+    // emdawnwebgpu uses the native Dawn error-scope callback API.
 #if defined(__EMSCRIPTEN__) && !defined(SKIA_USING_EMDAWNWEBGPU)
     struct ErrorState {
         SkEnumBitMask<DawnErrorType> fError;
@@ -133,7 +131,7 @@ SkEnumBitMask<DawnErrorType> DawnErrorChecker::popErrorScopes() {
         SKIA_LOG_E("Failed waiting for 'validation' error scope to pop.");
     }
     SkASSERT(status == wgpu::WaitStatus::Success);
-#endif  // defined(__EMSCRIPTEN__)
+#endif  // defined(__EMSCRIPTEN__) && !defined(SKIA_USING_EMDAWNWEBGPU)
 
     fArmed = false;
     return errorState.fError;

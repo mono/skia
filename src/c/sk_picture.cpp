@@ -25,13 +25,7 @@
 
 namespace {
 
-// [mono/skia fork patch] Skia m147's default {Ser,Deser}ialProcs leave both
-// fImageProc fields null, and serialize_image()/deserialize_image() return
-// nullptr if no encoder/decoder is supplied — silently dropping every raster
-// image drawn into the picture (e.g. via DrawBitmap). Earlier Skia versions
-// had a built-in PNG fallback on both sides. Restore that behaviour at the C
-// API boundary so SKPicture.Serialize/Deserialize stays lossless for managed
-// callers.
+// Supply PNG serialization and image decoding callbacks for picture round-trips.
 SkSerialProcs default_serial_procs() {
     SkSerialProcs procs;
     procs.fImageProc = [](SkImage* img, void*) -> sk_sp<const SkData> {

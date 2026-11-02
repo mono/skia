@@ -751,3 +751,4 @@ DEF_TEST(Region_ConicMaxEdges, reporter) {
     SkRegion rgn;
     rgn.setPath(path, clip);
 }
+

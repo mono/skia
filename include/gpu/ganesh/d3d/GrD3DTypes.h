@@ -216,16 +216,14 @@ struct GrD3DTextureResourceInfo {
             , fSampleQualityPattern(info.fSampleQualityPattern)
             , fProtected(info.fProtected) {}
 
-    // mono/skia: upstream gated this behind GPU_TEST_UTILS in m147, but
-    // GrD3DBackendSurfaceInfo::operator== (also ungated for production
-    // equal()) calls it. Under is_official_build=true GPU_TEST_UTILS isn't
-    // defined, so keep the operator available.
+#if defined(GPU_TEST_UTILS)
     bool operator==(const GrD3DTextureResourceInfo& that) const {
         return fResource == that.fResource && fResourceState == that.fResourceState &&
                fFormat == that.fFormat && fSampleCount == that.fSampleCount &&
                fLevelCount == that.fLevelCount &&
                fSampleQualityPattern == that.fSampleQualityPattern && fProtected == that.fProtected;
     }
+#endif
 };
 
 struct GrD3DFenceInfo {

@@ -469,15 +469,7 @@ SkScalar SkFontPriv::ApproximateTransformedTextSize(const SkFont& font, const Sk
 }
 
 size_t SkFontPriv::CountTextElements(const void* text, size_t byteLength, SkTextEncoding encoding) {
-    // [mono/skia fork patch] Skia m147 changed this function's return type
-    // from int to size_t but kept its body as `return SkUTF::CountUTF{8,16}(...);`,
-    // which returns int with `-1` as the documented sentinel for malformed
-    // input. The implicit int -> size_t conversion turns -1 into SIZE_MAX,
-    // and downstream callers (e.g. SkAutoToGlyphs, measureText, breakText)
-    // then attempt to allocate / iterate that many glyph slots before
-    // crashing or wedging. Guard the sentinel at the source so malformed
-    // UTF input yields 0 elements (the same behaviour the old `int`-typed
-    // signature gave callers willing to check for negative).
+    // Malformed UTF returns -1; do not convert it to SIZE_MAX for glyph allocation.
     switch (encoding) {
         case SkTextEncoding::kUTF8: {
             int n = SkUTF::CountUTF8(reinterpret_cast<const char*>(text), byteLength);

@@ -89,7 +89,7 @@ bool dIsAtEnd(const SkManagedStream* stream, void* context) {
     return gProcs.fIsAtEnd(ToManagedStream(stream), context);
 }
 bool dHasPosition(const SkManagedStream* stream, void* context) {
-    if (!gProcs.fIsAtEnd) return false;
+    if (!gProcs.fHasPosition) return false;
     return gProcs.fHasPosition(ToManagedStream(stream), context);
 }
 bool dHasLength(const SkManagedStream* stream, void* context) {

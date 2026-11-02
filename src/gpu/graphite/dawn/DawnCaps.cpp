@@ -293,15 +293,11 @@ void DawnCaps::initCaps(const DawnBackendContext& backendContext, const ContextO
 #endif
 #endif // defined(__EMSCRIPTEN__)
 
-// mono/skia: legacy -sUSE_WEBGPU=1 headers ship wgpu::SupportedLimits;
-// emdawnwebgpu ships the modern Limits+CompatibilityModeLimits form (matching
-// native Dawn). The DawnTexelCopyBufferRowAlignmentLimits chain is a
-// Dawn-native-only extension not exposed by emdawnwebgpu, so it stays inside
-// the inner `!defined(__EMSCRIPTEN__)` gate.
+    // emdawnwebgpu uses modern limits, but lacks Dawn-native alignment extensions.
 #if defined(__EMSCRIPTEN__) && !defined(SKIA_USING_EMDAWNWEBGPU)
     wgpu::SupportedLimits supportedLimits;
-    [[maybe_unused]] wgpu::Status status = backendContext.fDevice.GetLimits(&supportedLimits);
-    SkASSERT(status == wgpu::Status::Success);
+    [[maybe_unused]] bool success = backendContext.fDevice.GetLimits(&supportedLimits);
+    SkASSERT(success);
     wgpu::Limits& limits = supportedLimits.limits;
 #else
     wgpu::CompatibilityModeLimits compatLimits;
@@ -484,10 +480,12 @@ void DawnCaps::initShaderCaps(const wgpu::Device& device) {
     // discussions around enabling it using an extension in the future.
     shaderCaps->fInfinitySupport = false;
 
-#if !defined(__EMSCRIPTEN__)
+#if !defined(__EMSCRIPTEN__) || defined(SKIA_USING_EMDAWNWEBGPU)
     if (device.HasFeature(wgpu::FeatureName::DualSourceBlending)) {
         shaderCaps->fDualSourceBlendingSupport = true;
     }
+#endif
+#if !defined(__EMSCRIPTEN__)
     if (device.HasFeature(wgpu::FeatureName::FramebufferFetch)) {
         shaderCaps->fFBFetchSupport = true;
     }
