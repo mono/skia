@@ -251,9 +251,8 @@ SK_C_API sk_graphite_image_provider_t* sk_graphite_image_provider_new(
     sk_graphite_image_provider_proc proc,
     void* userData);
 
-// Free an unused provider (e.g. when CreateVulkan returned null and the caller
-// needs to clean up). Safe on null. Calling this AFTER the provider has been
-// installed in a Context is undefined — the Context owns it from that point.
+// Free the caller-owned wrapper. Safe on null and after recorder creation;
+// existing recorders retain their own references to the underlying provider.
 SK_C_API void sk_graphite_image_provider_delete(sk_graphite_image_provider_t* provider);
 
 // Upload a raster (CPU-backed) SkImage to a Graphite-backed texture. This is

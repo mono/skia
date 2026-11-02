@@ -17,6 +17,7 @@ namespace GrGLInterfaces {
 sk_sp<const GrGLInterface> MakeWin() {
     // Both the cached WGL entry points and returned interfaces contain pointers
     // into this module, so retain it for the lifetime of the process.
+    // Do not call FreeLibrary during DLL teardown under the loader lock.
     static const HMODULE module =
             LoadLibraryExA("opengl32.dll", NULL, LOAD_LIBRARY_SEARCH_SYSTEM32);
     if (!module) {
