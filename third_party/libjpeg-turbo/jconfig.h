@@ -1,21 +1,5 @@
-/* jconfig.h
- *
- * Pre-baked configuration for libjpeg-turbo when building with Skia's GN build
- * system (which does not use CMake). Generated from src/jconfig.h.in in the
- * upstream libjpeg-turbo repository.
- *
- * Upstream version: 3.1.4.1
- * Template: src/jconfig.h.in
- *
- * CMake substitution values used:
- *   JPEG_LIB_VERSION = 62 (default, no WITH_JPEG7/WITH_JPEG8)
- *   VERSION = 3.1.4.1
- *   LIBJPEG_TURBO_VERSION_NUMBER = 3001004
- *   C_ARITH_CODING_SUPPORTED = undefined (controlled by BUILD.gn defines)
- *   D_ARITH_CODING_SUPPORTED = undefined (controlled by BUILD.gn defines)
- *   WITH_SIMD = undefined (controlled by BUILD.gn defines)
- *   RIGHT_SHIFT_IS_UNSIGNED = undefined (not set on modern compilers)
- */
+/* GN configuration from libjpeg-turbo 3.1.4.1 src/jconfig.h.in.
+ * BUILD.gn selects arithmetic coding and SIMD support. */
 
 /* Version ID for the JPEG library.
  * Might be useful for tests like "#if JPEG_LIB_VERSION >= 60".

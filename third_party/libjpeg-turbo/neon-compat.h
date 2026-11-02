@@ -1,21 +1,4 @@
-/* neon-compat.h
- *
- * Pre-baked NEON compatibility header for libjpeg-turbo when building with
- * Skia's GN build system (which does not use CMake). Generated from
- * simd/arm/neon-compat.h.in in the upstream libjpeg-turbo repository.
- *
- * Upstream version: 3.1.4.1
- * Template: simd/arm/neon-compat.h.in
- *
- * CMake substitution values used:
- *   HAVE_VLD1_S16_X3 = defined (available on Clang and MSVC)
- *   HAVE_VLD1_U16_X2 = defined (available on Clang and MSVC)
- *   HAVE_VLD1Q_U8_X4 = defined (available on Clang and MSVC)
- *
- * Note: These intrinsics are available on all compilers we target (Clang for
- * all platforms, MSVC for Windows). GCC < 12 lacks them, but Skia does not
- * build with GCC.
- */
+/* GN configuration from libjpeg-turbo 3.1.4.1 simd/arm/neon-compat.h.in. */
 
 /*
  * Copyright (C) 2020, 2024, D. R. Commander.  All Rights Reserved.

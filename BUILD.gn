@@ -2043,14 +2043,7 @@ skia_source_set("core") {
   public = skia_core_public
   sources = skia_core_sources
 
-  # mono/skia: SkiaSharp's C API shims (src/c/gr_context.cpp et al.) are
-  # compiled into :core via gn/core.gni, but Skia's backend defines live on
-  # :gpu's all_dependent_configs and therefore don't reach :core. Without
-  # them, SK_ONLY_DIRECT3D / SK_ONLY_VULKAN / SK_ONLY_METAL collapse to
-  # stub returns, GPU context factory C entry points never reference
-  # backend symbols, and the linker strips d3d12/vulkan/metal imports
-  # from libSkiaSharp. :core's own compile needs the defines; its
-  # dependents already inherit them from :gpu's chain.
+  # C API shims in :core need the backend defines, not just :gpu's dependents.
   defines = []
   if (skia_use_direct3d) {
     defines += [ "SK_DIRECT3D" ]
@@ -2062,11 +2055,6 @@ skia_source_set("core") {
   if (skia_use_metal) {
     defines += [ "SK_METAL" ]
   }
-  # mono/skia: same reasoning as the GR_* defines above — :graphite's
-  # all_dependent_configs apply SK_GRAPHITE/SK_DAWN to dependents but not to
-  # :core itself. The new src/c/sk_graphite*.cpp shims live in :core, so they
-  # need these defines to compile their bodies (otherwise they collapse to
-  # the !SK_GRAPHITE / !SK_DAWN stubs and never link the real symbols).
   if (skia_enable_graphite) {
     defines += [ "SK_GRAPHITE" ]
   }
@@ -2087,31 +2075,12 @@ skia_source_set("core") {
     ":typeface_freetype",
   ]
 
-  # mono/skia: SkiaSharp compiles its C API (src/c/sk_typeface.cpp) into :core
-  # via gn/core.gni. That code selects the Linux default SkFontMgr behind
-  # `#elif defined(SK_FONTMGR_FONTCONFIG_AVAILABLE)`, a public_define carried by
-  # :fontmgr_fontconfig that also supplies the <fontconfig/fontconfig.h> include
-  # path and the SkFontMgr_New_FontConfig symbol. Upstream m148
-  # (commit 029229d8be "Simplify gn typeface related deps") intentionally moved
-  # the fontmgr targets off :core, keeping them only on :skia — correct upstream,
-  # but it strips the define from our C API's compile, so sk_fontmgr_create_default
-  # silently falls back to an empty font manager on Linux. Add it back here only
-  # for the fork; the list above is left identical to upstream to keep merges clean.
+  # The C API's default font manager needs this target's defines and includes.
   if (skia_enable_fontmgr_fontconfig) {
     deps += [ ":fontmgr_fontconfig" ]
   }
 
-  # mono/skia: same problem for builds with skia_use_fontconfig=false (SkiaSharp's
-  # NativeAssets.Linux.NoDependencies package). Without a fontconfig manager the C
-  # API needs SK_FONTMGR_FREETYPE_DIRECTORY_AVAILABLE + SkFontMgr_New_Custom_Directory
-  # to scan the system font directory; otherwise sk_fontmgr_create_default returns an
-  # empty font manager and no system font resolves. See mono/SkiaSharp#4303.
-  #
-  # Scoped to is_linux (== linux or tizen) because that is exactly the set of
-  # platforms whose sk_fontmgr_create_default falls past every SK_BUILD_FOR_* branch
-  # to the fontconfig/directory/empty tail. Android and WASM would otherwise match
-  # too (both build freetype without fontconfig) but each has its own earlier branch,
-  # so pulling the directory fontmgr into :core there is dead weight.
+  # Linux nodeps builds scan font directories when FontConfig is unavailable.
   if (is_linux && !skia_enable_fontmgr_fontconfig &&
       skia_enable_fontmgr_custom_directory) {
     deps += [ ":fontmgr_custom_directory" ]
@@ -4250,10 +4219,7 @@ if (skia_build_rust_targets) {
 # SkiaSharp + HarfBuzzSharp
 
 declare_args() {
-  # mono/skia: the directory of Dawn's emdawnwebgpu port package
-  # (emdawnwebgpu_pkg). The port ships webgpu.cpp as source; when this is set
-  # on a WASM build it is compiled into SkiaSharp, so apps link an object
-  # instead of compiling C++20 on their own link line.
+  # Compile the browser port once into the WASM archive.
   skiasharp_emdawnwebgpu_dir = ""
 }
 
@@ -4279,11 +4245,7 @@ skiasharp_build("SkiaSharp") {
 
   deps = [
     ":skia",
-    # mono/skia: upstream made pathops optional in m147 — :skia no longer
-    # includes it, only :pdf and :xps pull it in indirectly. SkiaSharp's
-    # C API exposes pathops as first-class public functions (sk_pathop_op,
-    # sk_pathop_simplify, sk_pathop_tight_bounds, sk_pathop_as_winding,
-    # SkOpBuilder) so we need it linked into libSkiaSharp.so directly.
+    # C API path operations must also link when PDF/XPS are disabled.
     ":pathops",
     "modules/skottie",
   ]
@@ -4321,11 +4283,7 @@ skiasharp_build("HarfBuzzSharp") {
     # "HB_NO_WIN1256",
   ]
 
-  # Skia base config applies -fvisibility=hidden. HarfBuzz's HB_EXTERN
-  # macro is plain `extern` and has no visibility attribute, so hb_*
-  # symbols end up local and libHarfBuzzSharp.so exports nothing
-  # (only ~155 KB instead of ~4 MB). On Windows we override HB_EXTERN
-  # with __declspec(dllexport); do the equivalent on non-Windows.
+  # HB_EXTERN otherwise inherits Skia's hidden visibility on ELF/Mach-O.
   if (!is_win) {
     defines += [ "HB_EXTERN=extern __attribute__((visibility(\"default\")))" ]
   }

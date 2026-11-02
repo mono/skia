@@ -1,9 +1,4 @@
-/*
- * jconfigint.h - Pre-baked for libjpeg-turbo 3.1.4.1
- *
- * Generated from src/jconfigint.h.in with platform-adaptive macros.
- * See BUILD.gn header comment for rationale.
- */
+/* GN configuration from libjpeg-turbo 3.1.4.1 src/jconfigint.h.in. */
 
 /* libjpeg-turbo build number */
 #define BUILD  ""
@@ -51,9 +46,7 @@
 #define SIZEOF_SIZE_T  4
 #endif
 
-/* Define if your compiler has __builtin_ctzl() and sizeof(unsigned long) == sizeof(size_t).
- * On Windows LLP64 (including clang-cl), sizeof(long)==4 but sizeof(size_t)==8,
- * so __builtin_ctzl would truncate. Only enable when sizes match. */
+/* __builtin_ctzl must not truncate size_t on Windows LLP64. */
 #if defined(__GNUC__) && defined(__SIZEOF_LONG__) && defined(__SIZEOF_SIZE_T__) && \
     (__SIZEOF_LONG__ == __SIZEOF_SIZE_T__)
 #define HAVE_BUILTIN_CTZL
@@ -82,28 +75,13 @@
 #define FALLTHROUGH
 #endif
 
-/*
- * Define BITS_IN_JSAMPLE as either
- *   8   for 8-bit sample values (the usual setting)
- *   12  for 12-bit sample values
- * Only 8 and 12 are legal data precisions for lossy JPEG according to the
- * JPEG standard, and the IJG code does not support anything else!
- */
+/* BUILD.gn compiles separate 8-, 12- and 16-bit variants. */
 
 #ifndef BITS_IN_JSAMPLE
-#define BITS_IN_JSAMPLE  8      /* use 8 or 12 */
+#define BITS_IN_JSAMPLE  8
 #endif
 
-/*
- * Arithmetic coding and SIMD support are controlled by BUILD.gn defines,
- * not by this header. The BUILD.gn file conditionally defines WITH_SIMD,
- * C_ARITH_CODING_SUPPORTED, and D_ARITH_CODING_SUPPORTED as appropriate
- * per-target and per-platform.
- *
- * Safety: upstream restricts these features to 8-bit precision only.
- * Defensively undefine them for 12/16-bit builds in case BUILD.gn
- * defines are ever flattened across targets.
- */
+/* Arithmetic coding and SIMD are only supported by the 8-bit variant. */
 #if BITS_IN_JSAMPLE != 8
 #undef C_ARITH_CODING_SUPPORTED
 #undef D_ARITH_CODING_SUPPORTED
