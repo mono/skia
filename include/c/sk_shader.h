@@ -29,7 +29,7 @@ SK_C_API sk_shader_t* sk_shader_new_color4f(const sk_color4f_t* color, const sk_
 SK_C_API sk_shader_t* sk_shader_new_blend(sk_blendmode_t mode, const sk_shader_t* dst, const sk_shader_t* src);
 SK_C_API sk_shader_t* sk_shader_new_blender(sk_blender_t* blender, const sk_shader_t* dst, const sk_shader_t* src);
 
-// SkGradientShader
+// SkGradient
 
 SK_C_API sk_shader_t* sk_shader_new_linear_gradient(const sk_point_t points[2], const sk_color_t colors[], const float colorPos[], int colorCount, sk_shader_tilemode_t tileMode, const sk_matrix_t* localMatrix);
 SK_C_API sk_shader_t* sk_shader_new_linear_gradient_color4f(const sk_point_t points[2], const sk_color4f_t* colors, const sk_colorspace_t* colorspace, const float colorPos[], int colorCount, sk_shader_tilemode_t tileMode, const sk_matrix_t* localMatrix);

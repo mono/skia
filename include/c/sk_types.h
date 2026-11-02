@@ -372,14 +372,8 @@ typedef struct sk_imagefilter_t sk_imagefilter_t;
 
 typedef struct sk_blender_t sk_blender_t;
 
-/**
-   A sk_typeface_t pecifies the typeface and intrinsic style of a font.
-    This is used in the paint, along with optionally algorithmic settings like
-    textSize, textSkewX, textScaleX, kFakeBoldText_Mask, to specify
-    how text appears when drawn (and measured).
-
-    Typeface objects are immutable, and so they can be shared between threads.
-*/
+/** An immutable font typeface, shareable between threads.
+ * Text size and synthetic styling are configured on sk_font_t. */
 typedef struct sk_typeface_t sk_typeface_t;
 typedef uint32_t sk_font_table_tag_t;
 typedef struct sk_fontmgr_t sk_fontmgr_t;
