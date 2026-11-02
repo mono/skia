@@ -96,9 +96,8 @@ SK_C_API void                          sk_graphite_context_free_gpu_resources(sk
 SK_C_API void                          sk_graphite_context_perform_deferred_cleanup(sk_graphite_context_t* context, int64_t milliseconds);
 
 // Recorder vending. recorderBudgetBytes < 0 uses the context default.
-// imageProvider may be null. Its wrapper remains caller-owned and may be deleted
-// via sk_graphite_image_provider_delete after this call, whether it succeeds or
-// fails. A successful recorder retains its own reference to the underlying provider.
+// imageProvider may be null. The caller retains its wrapper; the recorder takes its
+// own provider reference. The wrapper may be deleted after success or failure.
 SK_C_API sk_graphite_recorder_t*       sk_graphite_context_make_recorder(
     sk_graphite_context_t* context,
     int64_t recorderBudgetBytes,
@@ -243,16 +242,13 @@ typedef sk_image_t* (*sk_graphite_image_provider_proc)(
     const sk_image_t* image,
     bool mipmapped);
 
-// Build an ImageProvider that dispatches to the given callback. Caller owns the
-// returned wrapper and must free it via sk_graphite_image_provider_delete.
-// Passing it to sk_graphite_context_make_recorder does not transfer ownership.
-// The callback and userData must remain valid while any recorder retains the provider.
+// Caller owns the wrapper. Recorder creation retains the provider, not the wrapper.
+// Keep proc and userData valid while any recorder uses the provider.
 SK_C_API sk_graphite_image_provider_t* sk_graphite_image_provider_new(
     sk_graphite_image_provider_proc proc,
     void* userData);
 
-// Free the caller-owned wrapper. Safe on null and after recorder creation;
-// existing recorders retain their own references to the underlying provider.
+// Free the caller-owned wrapper; existing recorders keep their provider refs. Safe on null.
 SK_C_API void sk_graphite_image_provider_delete(sk_graphite_image_provider_t* provider);
 
 // Upload a raster (CPU-backed) SkImage to a Graphite-backed texture. This is

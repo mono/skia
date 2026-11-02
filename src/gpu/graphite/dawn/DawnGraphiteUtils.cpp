@@ -52,8 +52,7 @@ std::unique_ptr<Context> MakeDawn(const DawnBackendContext& backendContext,
 } // namespace ContextFactory
 
 namespace {
-// FeatureName reserves zero. Unlike nullopt (the baseline), this means unavailable
-// in the legacy browser headers and must never be passed to Device::HasFeature.
+// Zero means unavailable; nullopt means baseline support. Never query zero on the device.
 static constexpr auto kUnavailableFeature = static_cast<wgpu::FeatureName>(0);
 
 // If the extension is available (or if it's empty), the format flag bitmask is supported
@@ -363,7 +362,7 @@ SkEnumBitMask<DawnFormatFlag> DawnTextureFormatSupport(wgpu::Device device,
 
 // *** Ground truth bidirectional map between TextureFormat and wgpu::TextureFormat ***
 
-// The bundled legacy browser headers do not expose normalized 16-bit formats.
+// Legacy browser headers lack normalized 16-bit formats.
 #define DAWN_FORMAT_MAPPING(M) \
         M(TextureFormat::kR8,             wgpu::TextureFormat::R8Unorm)                     \
         M(TextureFormat::kR16F,           wgpu::TextureFormat::R16Float)                    \
@@ -470,8 +469,7 @@ static bool check_shader_module([[maybe_unused]] const DawnSharedContext* shared
 #else
 #if defined(__EMSCRIPTEN__)
     DawnAsyncWait wait(sharedContext);
-    // A non-yielding browser Context cannot synchronously retrieve compilation info.
-    // Leave validation to WebGPU rather than enqueue a callback with stack userdata.
+    // Without yielding, leave validation to WebGPU; callbacks cannot retain stack state.
     if (!wait.mayBusyWait()) {
         return true;
     }
