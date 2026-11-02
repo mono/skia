@@ -185,8 +185,9 @@ if (is_win) {
       }
     }
   }
-  if (win_sdk == "") {
-    win_sdk = exec_script("//gn/find_winsdk.py", [], "trim string")
+  if (win_sdk == "" && host_os == "win" &&
+      path_exists("C:/Program Files (x86)/Windows Kits/10/.")) {
+    win_sdk = "C:/Program Files (x86)/Windows Kits/10"
   }
   if (win_sdk != "" && win_sdk_version == "") {
     win_sdk_version = exec_script("//gn/lowest_version_dir.py", [ "$win_sdk/Include", "[0-9]{2}\.[0-9]\.[0-9]{5}\.[0-9]", min_win_sdk_version ], "trim string")
