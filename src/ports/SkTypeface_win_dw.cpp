@@ -1205,23 +1205,21 @@ static HRESULT apply_fontargument_variation(SkTScopedComPtr<IDWriteFontFace>& fo
 
 sk_sp<SkTypeface> DWriteFontTypeface::MakeFromStream(std::unique_ptr<SkStreamAsset> stream,
                                                      const SkFontArguments& args) {
-    // TODO: do we need to use some user provided factory?
-    IDWriteFactory* factory = sk_get_dwrite_factory();
-    if (nullptr == factory) {
-        return nullptr;
-    }
+    // Bound factory font-cache references to the lifetime of the typeface and its clones.
+    SkTScopedComPtr<IDWriteFactory> factory;
+    HRN(sk_create_dwrite_factory(DWRITE_FACTORY_TYPE_ISOLATED, &factory));
 
     SkTScopedComPtr<StreamFontFileLoader> fontFileLoader;
     HRN(StreamFontFileLoader::Create(std::move(stream), &fontFileLoader));
     HRN(factory->RegisterFontFileLoader(fontFileLoader.get()));
     SkAutoIDWriteUnregister<StreamFontFileLoader> autoUnregisterFontFileLoader(
-        factory, fontFileLoader.get());
+        factory.get(), fontFileLoader.get());
 
     SkTScopedComPtr<StreamFontCollectionLoader> fontCollectionLoader;
     HRN(StreamFontCollectionLoader::Create(fontFileLoader.get(), &fontCollectionLoader));
     HRN(factory->RegisterFontCollectionLoader(fontCollectionLoader.get()));
     SkAutoIDWriteUnregister<StreamFontCollectionLoader> autoUnregisterFontCollectionLoader(
-        factory, fontCollectionLoader.get());
+        factory.get(), fontCollectionLoader.get());
 
     SkTScopedComPtr<IDWriteFontCollection> fontCollection;
     HRN(factory->CreateCustomFontCollection(fontCollectionLoader.get(), nullptr, 0,
@@ -1304,9 +1302,9 @@ sk_sp<SkTypeface> DWriteFontTypeface::MakeFromStream(std::unique_ptr<SkStreamAss
         apply_fontargument_variation(fontFace, args);
 
         return DWriteFontTypeface::Make(
-            factory, fontFace.get(), font.get(), fontFamily.get(),
+            factory.get(), fontFace.get(), font.get(), fontFamily.get(),
             sk_make_sp<DWriteFontTypeface::Loaders>(
-                factory,
+                factory.get(),
                 autoUnregisterFontFileLoader.release(),
                 autoUnregisterFontCollectionLoader.release()),
             args.getPalette());
