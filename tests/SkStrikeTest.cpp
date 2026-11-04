@@ -107,7 +107,6 @@ prepare_for_mask_drawing(
         }
     }
 
-
     return {acceptedBuffer.first(acceptedSize),
             rejectedBuffer.first(rejectedSize),
             boundingRect.rect()};
