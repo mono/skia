@@ -210,3 +210,4 @@ DEF_GRAPHITE_TEST_FOR_ALL_CONTEXTS(InsertRecordingPendingCountsTest, reporter, c
     REPORTER_ASSERT(reporter, status2.numPendingCommands() == pendingCommands);
     REPORTER_ASSERT(reporter, status2.numPendingPasses() == pendingPasses);
 }
+

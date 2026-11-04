@@ -504,8 +504,7 @@ static bool check_shader_module([[maybe_unused]] const DawnSharedContext* shared
             if (!self->fSuccess) {
                 std::string errors;
                 for (size_t index = 0; index < info->messageCount; ++index) {
-                    const WGPUCompilationMessage& entry =
-                            SK_UNSAFE_TODO(info->messages[index]);
+                    const WGPUCompilationMessage& entry = SK_UNSAFE_TODO(info->messages[index]);
 #if defined(__EMSCRIPTEN__) && !defined(SKIA_USING_EMDAWNWEBGPU)
                     std::string messageString(entry.message);
 #else
