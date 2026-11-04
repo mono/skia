@@ -8,6 +8,7 @@
 #include "src/gpu/graphite/QueueManager.h"
 
 #include "include/gpu/GpuTypes.h"
+#include "include/gpu/graphite/BackendTexture.h"
 #include "include/gpu/graphite/Recording.h"
 #include "include/private/SkAssert.h"
 #include "include/private/SkLog.h"
@@ -21,6 +22,7 @@
 #include "src/gpu/graphite/GpuWorkSubmission.h"
 #include "src/gpu/graphite/RecordingPriv.h"
 #include "src/gpu/graphite/Surface_Graphite.h"
+#include "src/gpu/graphite/Texture.h"
 #include "src/gpu/graphite/UploadBufferManager.h"
 #include "src/gpu/graphite/task/Task.h"
 #include "src/gpu/graphite/task/TaskList.h"
@@ -241,7 +243,9 @@ InsertStatus QueueManager::addRecording(const InsertRecordingInfo& info, Context
     // If we got here, the simulated status should be kSuccess or it means we missed returning the
     // simulated error earlier.
     SkASSERT(info.fSimulatedStatus == InsertStatus::kSuccess);
-    return InsertStatus::kSuccess;
+    return InsertStatus(InsertStatus::kSuccess,
+                        fCurrentCommandBuffer->numPendingCommands(),
+                        fCurrentCommandBuffer->numPendingPasses());
 }
 
 bool QueueManager::addTask(Task* task,
@@ -287,6 +291,18 @@ bool QueueManager::addFinishInfo(const InsertFinishInfo& info,
     }
     fCurrentCommandBuffer->addBuffersToAsyncMapOnSubmit(buffersToAsyncMap);
 
+    return true;
+}
+
+bool QueueManager::prepareBackendTextureForStateUpdate(const BackendTexture& texture,
+                                                       const skgpu::MutableTextureState* newState,
+                                                       ResourceProvider* resourceProvider) {
+    if (!this->setupCommandBuffer(resourceProvider, texture.info().isProtected())) {
+        SKIA_LOG_E("CommandBuffer creation failed");
+        return false;
+    }
+
+    fCurrentCommandBuffer->prepareBackendTextureForStateUpdate(texture, newState);
     return true;
 }
 

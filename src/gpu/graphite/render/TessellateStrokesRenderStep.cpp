@@ -14,6 +14,7 @@
 #include "include/core/SkSpan.h"
 #include "include/core/SkStrokeRec.h"
 #include "include/private/SkAssert.h"
+#include "include/private/SkAttributes.h"
 #include "include/private/SkDebug.h"
 #include "include/private/SkEnumBitMask.h"
 #include "src/core/SkGeometry.h"
@@ -88,20 +89,25 @@ static constexpr SkSpan<const Attribute> kAttributes[2] = {kAttributesWithCurveT
 
 }  // namespace
 
-TessellateStrokesRenderStep::TessellateStrokesRenderStep(Layout layout, bool infinitySupport,
+// NOTE: The stroke geometry can self intersect, and when it is performing shading, this is not
+// desired. However, when it is an inverse fill, any self intersections are gracefully handled by
+// the stencil buffer and shading is a follow-up cover step so they can be allowed.
+TessellateStrokesRenderStep::TessellateStrokesRenderStep(Layout layout,
+                                                         bool infinitySupport,
                                                          bool inverseFill)
         : RenderStep(layout,
                      inverseFill ? RenderStepID::kTessellateStrokes_InverseFill
                                  : RenderStepID::kTessellateStrokes_Fill,
-                     (inverseFill ? Flags::kNone : Flags::kPerformsShading)
-                            | Flags::kRequiresMSAA | Flags::kAppendDynamicInstances,
+                     (inverseFill ? Flags::kAllowsSelfIntersection : Flags::kPerformsShading)
+                            | Flags::kRequiresMSAA
+                            | Flags::kAppendDynamicInstances,
                      /*uniforms=*/{{"affineMatrix", SkSLType::kFloat4},
                                    {"translate", SkSLType::kFloat2},
                                    {"maxScale", SkSLType::kFloat}},
                      PrimitiveType::kTriangleStrip,
-                     inverseFill ? kIncrementStencilPass : kDirectDepthLessPass,
-                     /*staticAttrs=*/ {},
-                     /*appendAttrs=*/kAttributes[infinitySupport],
+                     inverseFill ? kIncrementStencilPass : StencilSettings(),
+                     /*staticAttrs=*/{},
+                     /*appendAttrs=*/SK_UNSAFE_TODO(kAttributes[infinitySupport]),
                      /*storageUniforms=*/{})
         , fInfinitySupport(infinitySupport) {}
 
@@ -174,7 +180,7 @@ void TessellateStrokesRenderStep::writeVertices(DrawWriter* dw,
                 break;
 
             case SkPathVerb::kLine:
-                writer.writeLine(pts[0], pts[1]);
+                writer.writeLine(pts[0], SK_UNSAFE_TODO(pts[1]));
                 break;
 
             case SkPathVerb::kQuad:
@@ -184,7 +190,7 @@ void TessellateStrokesRenderStep::writeVertices(DrawWriter* dw,
                     writer.writeCircle(cusp);
                     // A quad can only have a cusp if it's flat with a 180-degree turnaround.
                     writer.writeLine(pts[0], cusp);
-                    writer.writeLine(cusp, pts[2]);
+                    writer.writeLine(cusp, SK_UNSAFE_TODO(pts[2]));
                 } else {
                     writer.writeQuadratic(pts);
                 }
@@ -198,7 +204,7 @@ void TessellateStrokesRenderStep::writeVertices(DrawWriter* dw,
                     writer.writeCircle(cusp);
                     // A conic can only have a cusp if it's flat with a 180-degree turnaround.
                     writer.writeLine(pts[0], cusp);
-                    writer.writeLine(cusp, pts[2]);
+                    writer.writeLine(cusp, SK_UNSAFE_TODO(pts[2]));
                 } else {
                     writer.writeConic(pts, *w);
                 }
@@ -220,7 +226,7 @@ void TessellateStrokesRenderStep::writeVertices(DrawWriter* dw,
                         chops[2] = chops[4] = chops[3];
                     }
                     writer.writeCubic(chops);
-                    writer.writeCubic(chops + 3);
+                    writer.writeCubic(SK_UNSAFE_TODO(chops + 3));
                 } else {
                     SkASSERT(numChops == 2);
                     SkChopCubicAt(pts, chops, T[0], T[1]);
@@ -234,8 +240,8 @@ void TessellateStrokesRenderStep::writeVertices(DrawWriter* dw,
                         writer.writeLine(chops[6], chops[9]);
                     } else {
                         writer.writeCubic(chops);
-                        writer.writeCubic(chops + 3);
-                        writer.writeCubic(chops + 6);
+                        writer.writeCubic(SK_UNSAFE_TODO(chops + 3));
+                        writer.writeCubic(SK_UNSAFE_TODO(chops + 6));
                     }
                 }
                 break;

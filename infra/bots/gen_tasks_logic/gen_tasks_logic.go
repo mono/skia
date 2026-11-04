@@ -841,7 +841,6 @@ func (b *TaskBuilder) swarmDimensions() {
 var androidDeviceInfos = map[string][]string{
 	"AndroidOne":      {"sprout", "MOB30Q"},
 	"GalaxyS7_G930FD": {"herolte", "R16NW"}, // This is Oreo.
-	"GalaxyS20":       {"exynos990", "QP1A.190711.020"},
 	"GalaxyS24":       {"pineapple", "UP1A.231005.007"},
 	"GalaxyS25Plus":   {"sun", "BP2A.250605.031.A3"},
 	"JioNext":         {"msm8937", "RKQ1.210602.002"},
@@ -919,6 +918,8 @@ func (b *TaskBuilder) defaultSwarmDimensions() {
 		}
 		if b.Parts["model"] == "iPadPro" {
 			d["os"] = "iOS-13.6"
+		} else if b.Parts["model"] == "iPhone7" {
+			d["os"] = "iOS-15.8"
 		}
 	} else {
 		d["os"] = DEFAULT_OS_LINUX_GCE
@@ -1213,6 +1214,8 @@ func (b *TaskBuilder) maybeAddIosDevImage() {
 				asset = "ios-dev-image-13.5"
 			case "13.6":
 				asset = "ios-dev-image-13.6"
+			case "15.8":
+				asset = "ios-dev-image-15.8"
 			case "16.7":
 				asset = "ios-dev-image-16.7"
 			case "18.2.1", "18.4":
@@ -1964,6 +1967,37 @@ func (b *jobBuilder) runWasmGMTests() {
 			"--gold_key", "cpu_or_gpu_value:QuadroP400",
 			"--gold_key", "model:Golo",
 			"--gold_key", "os:Ubuntu24.04",
+		)
+	})
+}
+
+func (b *jobBuilder) dmStandaloneWasm() {
+	compileTaskName := b.compile()
+
+	b.addTask(b.Name, func(b *TaskBuilder) {
+		b.attempts(1)
+		b.swarmDimensions()
+		b.usesLUCIAuth()
+		b.dep(compileTaskName)
+		b.timeout(60 * time.Minute)
+		b.cas(CAS_TEST)
+		b.serviceAccount(b.cfg.ServiceAccountUploadGM)
+		b.commonTestPerfAssets()
+		iid := b.internalHardwareLabel()
+		iidStr := ""
+		if iid != nil {
+			iidStr = strconv.Itoa(*iid)
+			b.recipeProp("internal_hardware_label", iidStr)
+		}
+		b.cache(CACHES_WORKDIR...)
+		b.dmFlags(iidStr)
+		b.cmd(
+			b.taskDriver("run_wasm_dm", false),
+			"--local=false",
+			"--work_path", "tmp",
+			"--project_id", "skia-swarming-bots",
+			"--task_id", specs.PLACEHOLDER_TASK_ID,
+			"--task_name", b.Name,
 		)
 	})
 }
