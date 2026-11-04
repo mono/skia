@@ -8,6 +8,7 @@
 #ifndef SKSL_PROGRAM
 #define SKSL_PROGRAM
 
+#include "include/private/SkOnlyStackAllocatable.h"
 #include "src/sksl/ir/SkSLType.h"
 
 #include <cstdint>
@@ -52,11 +53,14 @@ struct ProgramInterface {
     uint8_t fRTFlipUniform = kRTFlip_None;
     bool fUseLastFragColor = false;
     bool fOutputSecondaryColor = false;
+    // True if the program references any subgroup builtin.
+    bool fUseSubgroups = false;
 
     bool operator==(const ProgramInterface& that) const {
         return fRTFlipUniform == that.fRTFlipUniform &&
                fUseLastFragColor == that.fUseLastFragColor &&
-               fOutputSecondaryColor == that.fOutputSecondaryColor;
+               fOutputSecondaryColor == that.fOutputSecondaryColor &&
+               fUseSubgroups == that.fUseSubgroups;
     }
     bool operator!=(const ProgramInterface& that) const { return !(*this == that); }
 };
@@ -74,6 +78,8 @@ struct Program {
 
     class ElementsCollection {
     public:
+        SK_ONLY_STACK_ALLOCATABLE;
+
         class iterator {
         public:
             const ProgramElement* operator*() {

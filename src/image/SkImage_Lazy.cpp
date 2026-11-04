@@ -17,6 +17,7 @@
 #include "include/core/SkSurface.h"  // IWYU pragma: keep
 #include "include/core/SkYUVAInfo.h"
 #include "include/cpu/Recorder.h"
+#include "include/private/SkOnlyStackAllocatable.h"
 #include "src/core/SkBitmapCache.h"
 #include "src/core/SkCachedData.h"
 #include "src/core/SkNextID.h"
@@ -81,6 +82,8 @@ SkImage_Lazy::Validator::Validator(sk_sp<SharedGenerator> gen, const SkColorType
 // Helper for exclusive access to a shared generator.
 class SkImage_Lazy::ScopedGenerator {
 public:
+    SK_ONLY_STACK_ALLOCATABLE;
+
     ScopedGenerator(const sk_sp<SharedGenerator>& gen)
       : fSharedGenerator(gen)
       , fAutoAcquire(gen->fMutex) {}
@@ -267,7 +270,7 @@ sk_sp<SkCachedData> SkImage_Lazy::getPlanes(
         yuvaPixmapInfo.yuvaInfo().dimensions() != this->dimensions()) {
         return nullptr;
     }
-    data.reset(SkResourceCache::NewCachedData(yuvaPixmapInfo.computeTotalBytes()));
+    data = SkResourceCache::NewCachedData(yuvaPixmapInfo.computeTotalBytes());
     SkYUVAPixmaps tempPixmaps = SkYUVAPixmaps::FromExternalMemory(yuvaPixmapInfo,
                                                                   data->writable_data());
     SkASSERT(tempPixmaps.isValid());

@@ -7,6 +7,7 @@
 
 #include "include/core/SkSpan.h"
 #include "include/core/SkTypes.h"
+#include "include/private/SkOnlyStackAllocatable.h"
 #include "src/core/SkTHash.h"
 #include "src/sksl/SkSLBuiltinTypes.h"
 #include "src/sksl/SkSLCompiler.h"
@@ -38,6 +39,8 @@ namespace {
 
 class BuiltinVariableScanner {
 public:
+    SK_ONLY_STACK_ALLOCATABLE;
+
     BuiltinVariableScanner(const Context& context, const SymbolTable& symbols)
             : fContext(context)
             , fSymbols(symbols) {}
@@ -164,6 +167,13 @@ void FindAndDeclareBuiltinVariables(Program& program) {
                 // Set secondary color output if we find sk_SecondaryFragColor.
                 case SK_SECONDARYFRAGCOLOR_BUILTIN:
                     program.fInterface.fOutputSecondaryColor = true;
+                    break;
+
+                // Record subgroup usage so backends can enable subgroup support.
+                case SK_SUBGROUPSIZE_BUILTIN:
+                case SK_SUBGROUPID_BUILTIN:
+                case SK_SUBGROUPINVOCATIONID_BUILTIN:
+                    program.fInterface.fUseSubgroups = true;
                     break;
             }
         }

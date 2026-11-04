@@ -9,6 +9,7 @@
 
 #include "include/core/SkSpan.h"
 #include "include/private/SkEnumBitMask.h"
+#include "include/private/SkOnlyStackAllocatable.h"
 #include "include/private/SkTArray.h"
 #include "include/sksl/SkSLVersion.h"
 #include "src/core/SkNoDestructor.h"
@@ -128,10 +129,12 @@ private:
 
 class Parser::AutoSymbolTable {
 public:
+    SK_ONLY_STACK_ALLOCATABLE;
+
     AutoSymbolTable(Parser* p, std::unique_ptr<SymbolTable>* newSymbolTable, bool enable = true) {
         if (enable) {
             fParser = p;
-            SymbolTable*& ctxSymbols = this->contextSymbolTable();
+            raw_ptr<SymbolTable>& ctxSymbols = this->contextSymbolTable();
             *newSymbolTable = std::make_unique<SymbolTable>(ctxSymbols, ctxSymbols->isBuiltin());
             ctxSymbols = newSymbolTable->get();
         }
@@ -139,19 +142,23 @@ public:
 
     ~AutoSymbolTable() {
         if (fParser) {
-            SymbolTable*& ctxSymbols = this->contextSymbolTable();
-            ctxSymbols = ctxSymbols->fParent;
+            raw_ptr<SymbolTable>& ctxSymbols = this->contextSymbolTable();
+            ctxSymbols = ctxSymbols->fParent.get();
         }
     }
 
 private:
-    SymbolTable*& contextSymbolTable() { return fParser->fCompiler.context().fSymbolTable; }
+    raw_ptr<SymbolTable>& contextSymbolTable() {
+        return fParser->fCompiler.context().fSymbolTable;
+    }
 
     Parser* fParser = nullptr;
 };
 
 class Parser::Checkpoint {
 public:
+    SK_ONLY_STACK_ALLOCATABLE;
+
     Checkpoint(Parser* p) : fParser(p) {
         Context& context = fParser->fCompiler.context();
         fPushbackCheckpoint = fParser->fPushback;

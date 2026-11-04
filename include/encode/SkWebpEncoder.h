@@ -13,12 +13,16 @@
 #include "include/encode/SkEncoder.h"
 #include "include/private/SkAPI.h"
 
+class GrDirectContext;
+class SkData;
+class SkImage;
 class SkPixmap;
 class SkWStream;
-class SkData;
-class GrDirectContext;
-class SkImage;
 struct skcms_ICCProfile;
+
+namespace skhdr {
+class Metadata;
+}
 
 namespace SkWebpEncoder {
 
@@ -42,6 +46,18 @@ struct SK_API Options {
      */
     Compression fCompression = Compression::kLossy;
     float fQuality = 100.0f;
+
+    /**
+     *  Container for any HDR metadata to include in the encoded image.
+     */
+    const skhdr::Metadata* fHdrMetadata = nullptr;
+
+    /**
+     *  |fMethod| is the libwebp compression method in [0, 6]. Lower values encode faster
+     *  into larger files, while larger values encode slower into smaller files. A negative
+     *  value selects the default: 3 for kLossy and 0 for kLossless.
+     */
+    int fMethod = -1;
 };
 
 /**

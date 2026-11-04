@@ -17,6 +17,7 @@
 #include "include/gpu/graphite/Surface.h"
 #include "include/private/SkAttributes.h"
 #include "include/private/SkLog.h"
+#include "include/private/SkOnlyStackAllocatable.h"
 #include "src/core/SkBlendModeBlender.h"
 #include "src/core/SkBlenderBase.h"
 #include "src/core/SkColorSpacePriv.h"
@@ -40,7 +41,6 @@
 #include "src/gpu/GradientBitmap.h"
 #include "src/gpu/Swizzle.h"
 #include "src/gpu/graphite/Caps.h"
-#include "src/gpu/graphite/DrawContext.h"
 #include "src/gpu/graphite/Image_Base_Graphite.h"
 #include "src/gpu/graphite/Image_Graphite.h"
 #include "src/gpu/graphite/Image_YUVA_Graphite.h"
@@ -60,6 +60,7 @@
 #include "src/gpu/graphite/TextureUtils.h"
 #include "src/gpu/graphite/Uniform.h"
 #include "src/gpu/graphite/UniformManager.h"
+#include "src/gpu/graphite/draw/DrawContext.h"
 #include "src/image/SkImage_Base.h"
 #include "src/shaders/SkBlendShader.h"
 #include "src/shaders/SkColorFilterShader.h"
@@ -93,6 +94,8 @@ namespace {
 // Automatically registers uniform expectations in debug builds.
 class ScopedUniformWriter {
 public:
+    SK_ONLY_STACK_ALLOCATABLE;
+
     ScopedUniformWriter(const KeyContext& keyContext, BuiltInCodeSnippetID codeSnippetID)
             : ScopedUniformWriter(keyContext.pipelineDataGatherer(),
                                   keyContext.dict()->getEntry(codeSnippetID)) {}
@@ -304,9 +307,9 @@ static int write_color_and_offset_bufdata(StorageContext* storageContext,
     auto [dstData, bufferOffset] = storageContext->allocateGradientData(numStops, shader);
     if (dstData) {
         SkASSERT(bufferOffset >= 0);
-        // Data doesn't already exist so we need to write it. Writes all offset data, then color
+        // Offsets and Colors are contiguous in memory. All offsets precede all color
         // data. This way when binary searching through the offsets, there is better cache locality.
-        for (int i = 0, colorIdx = numStops; i < numStops; i++, colorIdx+=4) {
+        for (int i = 0, colorIdx = numStops; i < numStops; i++, colorIdx += 4) {
             float offset = offsets ? SK_UNSAFE_TODO(offsets[i]) : SkIntToFloat(i) / (numStops - 1);
             SkASSERT(offset >= 0.0f && offset <= 1.0f);
 
@@ -2604,6 +2607,8 @@ static void add_gradient_to_key(const KeyContext& keyContext,
 
     sk_sp<TextureProxy> proxy;
 
+    // TODO (thomsmit) delete this in the future, all fallbacks should get routed through the
+    // StorageBufferManager. Also, need to pipe out the fragment shader visibility for this.
     bool gradUsesStorage = keyContext.caps()->storageBufferSupport();
     if (colorCount > GradientShaderBlocks::GradientData::kNumInternalStorageStops
             && !gradUsesStorage) {
