@@ -16,7 +16,6 @@
 #include "src/core/SkTraceEvent.h"
 #include "src/gpu/RefCntedCallback.h"
 #include "src/gpu/graphite/Buffer.h"
-#include "src/gpu/graphite/DrawPass.h"
 #include "src/gpu/graphite/RenderPassDesc.h"
 #include "src/gpu/graphite/Resource.h"
 #include "src/gpu/graphite/ResourceProvider.h"
@@ -24,6 +23,7 @@
 #include "src/gpu/graphite/Sampler.h"  // IWYU pragma: keep
 #include "src/gpu/graphite/Texture.h"
 #include "src/gpu/graphite/compute/DispatchGroup.h"
+#include "src/gpu/graphite/draw/DrawPass.h"
 
 #if defined(SK_DEBUG)
 #include "src/gpu/graphite/SharedContext.h"
@@ -78,27 +78,6 @@ bool CommandBuffer::isResourceTracked(const Resource* resource) {
     return globalCache->isResourceTracked(resource);
 }
 #endif
-
-void CommandBuffer::addFinishedProc(sk_sp<RefCntedCallback> finishedProc) {
-    fFinishedProcs.push_back(std::move(finishedProc));
-}
-
-void CommandBuffer::callFinishedProcs(bool success) {
-    if (!success) {
-        for (int i = 0; i < fFinishedProcs.size(); ++i) {
-            fFinishedProcs[i]->setFailureResult();
-        }
-    } else {
-        if (auto stats = this->gpuStats()) {
-            for (int i = 0; i < fFinishedProcs.size(); ++i) {
-                if (fFinishedProcs[i]->receivesGpuStats()) {
-                    fFinishedProcs[i]->setStats(*stats);
-                }
-            }
-        }
-    }
-    fFinishedProcs.clear();
-}
 
 void CommandBuffer::addBuffersToAsyncMapOnSubmit(SkSpan<const sk_sp<Buffer>> buffers) {
     for (size_t i = 0; i < buffers.size(); ++i) {

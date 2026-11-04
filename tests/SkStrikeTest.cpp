@@ -67,6 +67,7 @@ public:
         fThreadCount -= 1;
         while (fThreadCount > 0) { }
     }
+
 private:
     std::atomic<int> fThreadCount;
 };
@@ -140,7 +141,7 @@ DEF_TEST(SkStrikeMultiThread, Reporter) {
     SkStrikeCache strikeCache;
 
     // Make our own executor so the --threads parameter doesn't mess things up.
-    auto executor = SkExecutors::MakeFIFOThreadPool(kThreadCount);
+    auto executor = SkFunctionalExecutors::MakeFIFOThreadPool(kThreadCount);
     for (int tries = 0; tries < 100; tries++) {
         SkStrike strike{&strikeCache, strikeSpec, strikeSpec.createScalerContext(), nullptr,
                         nullptr};
@@ -387,3 +388,4 @@ DEF_TEST(SkScalerContext_GetImageNonDeterministicBounds, reporter) {
         }
     }
 }
+

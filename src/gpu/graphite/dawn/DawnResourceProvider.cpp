@@ -15,6 +15,7 @@
 #include "include/private/SkAlign.h"
 #include "src/gpu/graphite/ComputePipeline.h"
 #include "src/gpu/graphite/RenderPassDesc.h"
+#include "src/gpu/graphite/StorageContext.h"
 #include "src/gpu/graphite/dawn/DawnBuffer.h"
 #include "src/gpu/graphite/dawn/DawnCommandBuffer.h"
 #include "src/gpu/graphite/dawn/DawnComputePipeline.h"
@@ -24,6 +25,7 @@
 #include "src/gpu/graphite/dawn/DawnSampler.h"
 #include "src/gpu/graphite/dawn/DawnSharedContext.h"
 #include "src/gpu/graphite/dawn/DawnTexture.h"
+#include "src/partition_alloc/raw_ptr.h"
 #include "src/sksl/SkSLCompiler.h"
 
 namespace skgpu::graphite {
@@ -212,9 +214,9 @@ private:
     // them are purged OR until `pred` returns false.
     template<typename T> void purgeBuffersUntilDoneOrFalse(T pred);
 
-    DawnResourceProvider* const fResourceProvider;
+    const raw_ptr<DawnResourceProvider> fResourceProvider;
     // The current buffer being filled up, as well as the how much of it has been written to.
-    IntrinsicBuffer* fCurrentBuffer = nullptr;
+    raw_ptr<IntrinsicBuffer> fCurrentBuffer = nullptr;
 
     // All cached intrinsic buffers, in LRU order.
     SkTInternalLList<IntrinsicBuffer> fIntrinsicBuffersLRU;
@@ -632,7 +634,7 @@ const wgpu::TextureView& DawnResourceProvider::getOrCreateNullTextureView() {
         desc.usage = wgpu::TextureUsage::TextureBinding;
         desc.dimension = wgpu::TextureDimension::e2D;
         desc.size = {1, 1, 1};
-        desc.format = wgpu::TextureFormat::RGBA32Float;
+        desc.format = TextureFormatToDawnFormat(StorageContext::kTextureFormat);
         desc.mipLevelCount = 1;
         desc.sampleCount = 1;
 
@@ -687,7 +689,11 @@ wgpu::BindGroup DawnResourceProvider::findOrCreateSingleUniformBindGroup(
 
     wgpu::BindGroupEntry storageBufferNullEntry;
     storageBufferNullEntry.binding = DawnGraphicsPipeline::kStorageBufferIndex;
-    storageBufferNullEntry.buffer  = this->getOrCreateNullBuffer();
+    if (this->dawnSharedContext()->caps()->storageBufferSupport()) {
+        storageBufferNullEntry.buffer = this->getOrCreateNullBuffer();
+    } else {
+        storageBufferNullEntry.textureView = this->getOrCreateNullTextureView();
+    }
 
     std::array<wgpu::BindGroupEntry, kNumUniformEntries> entries = {
         intrinsicConstantNullEntry,

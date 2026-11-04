@@ -11,11 +11,12 @@
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkShader.h"
 #include "include/private/SkAssert.h"
+#include "include/private/SkOnlyStackAllocatable.h"
 #include "include/private/SkTArray.h"
 #include "src/core/SkTBlockList.h"
-#include "src/gpu/graphite/DrawListTypes.h"
-#include "src/gpu/graphite/DrawOrder.h"
-#include "src/gpu/graphite/DrawParams.h"
+#include "src/gpu/graphite/draw/DrawListTypes.h"
+#include "src/gpu/graphite/draw/DrawOrder.h"
+#include "src/gpu/graphite/draw/DrawParams.h"
 #include "src/gpu/graphite/geom/Rect.h"
 #include "src/gpu/graphite/geom/Shape.h"
 #include "src/gpu/graphite/geom/Transform.h"
@@ -383,6 +384,8 @@ private:
 // Clip element iteration
 class ClipStack::ElementIter {
 public:
+    SK_ONLY_STACK_ALLOCATABLE;
+
     bool operator!=(const ElementIter& o) const {
         return o.fItem != fItem && o.fRemaining != fRemaining;
     }

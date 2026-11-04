@@ -79,13 +79,11 @@ config_setting(
     ],
 )
 
-# We define this here because the emscripten toolchain calls the cpu wasm, whereas the
-# bazelbuild/platforms call it wasm32. https://github.com/emscripten-core/emsdk/issues/919
 config_setting(
     name = "cpu_wasm",
-    values = {
-        "cpu": "wasm",
-    },
+    constraint_values = [
+        "@platforms//cpu:wasm32",
+    ],
 )
 
 selects.config_setting_group(
@@ -120,6 +118,18 @@ selects.config_setting_group(
     match_all = [
         "@platforms//os:linux",
         ":fast_build",
+    ],
+    visibility = ["//:__subpackages__"],
+)
+
+# Skia's hermetic Windows toolchain. Its Clang (23) supports --warning-suppression-mappings, so
+# //include/config/copts.bzl enforces -Wunsafe-buffer-usage with it.
+# TODO(b/532990050): Add other platforms once their hermetic Clang supports it (20+).
+config_setting(
+    name = "hermetic_windows",
+    constraint_values = [
+        "@platforms//os:windows",
+        "//bazel/platform:use_hermetic_toolchain",
     ],
     visibility = ["//:__subpackages__"],
 )

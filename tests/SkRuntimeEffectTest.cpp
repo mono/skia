@@ -668,6 +668,16 @@ static void test_RuntimeEffect_Shaders(skiatest::Reporter* r,
                  "vec4 main(vec2 p) { moveCoords(p); return vec4(p, 0, 1); }");
     effect.test({0xFF000000, 0xFF0000FF, 0xFF00FF00, 0xFF00FFFF});
 
+    // A local named like the coordinates in Graphite's generated code (`pos`) must neither
+    // redeclare them nor shadow them from a nested scope.
+    effect.build("half4 main(float2 p) { float2 pos = p - 0.5; return half4(half2(pos), 0, 1); }");
+    effect.test({0xFF000000, 0xFF0000FF, 0xFF00FF00, 0xFF00FFFF});
+    effect.build(
+            "half4 main(float2 p) {"
+            "    { float2 pos = float2(0); return half4(half2(p - 0.5 + pos), 0, 1); }"
+            "}");
+    effect.test({0xFF000000, 0xFF0000FF, 0xFF00FF00, 0xFF00FFFF});
+
     //
     // Sampling children
     //
@@ -1224,6 +1234,33 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(SkRuntimeEffect_Blender_GPU,
                                        ctxInfo,
                                        CtsEnforcement::kApiLevel_T) {
     test_RuntimeEffect_Blenders(r, ctxInfo.directContext(), /*graphite=*/nullptr);
+}
+#endif
+
+#if defined(SK_GRAPHITE)
+DEF_GRAPHITE_TEST_FOR_RENDERING_CONTEXTS(SkRuntimeEffect_BlenderLocalNames_Graphite,
+                                         r,
+                                         context,
+                                         CtsEnforcement::kNextRelease) {
+    std::unique_ptr<skgpu::graphite::Recorder> recorder = context->makeRecorder();
+    GraphiteInfo graphite = {context, recorder.get()};
+    TestBlend effect(r, /*grContext=*/nullptr, &graphite);
+
+    // Locals named like the color parameters in Graphite's generated code (`inColor`, `destColor`)
+    // must neither redeclare them nor shadow them from a nested scope. The results don't depend on
+    // `d`, so they don't rely on how the backend reads the destination.
+    effect.build(
+            "half4 main(half4 s, half4 d) {"
+            "    half4 inColor = half4(1, 0, 0, 1);"
+            "    half4 destColor = s;"
+            "    return half4(inColor.r, destColor.gba);"
+            "}");
+    effect.test(0xFF8888FF);
+    effect.build(
+            "half4 main(half4 s, half4 d) {"
+            "    { half4 inColor = half4(0); return s + inColor; }"
+            "}");
+    effect.test(0xFF888888);
 }
 #endif
 
@@ -1991,6 +2028,39 @@ DEF_TEST(SkRuntimeColorFilter_b520831887, r) {
     }
 }
 
+DEF_TEST(SkRuntimeBlender_b562761166, r) {
+    // b/562761166: Under fuzzer builds, kLoopTerminationLimit is 257 so loops with <= 256
+    // iterations succeed while loops with > 256 iterations are rejected at compile time
+    auto make_loop = [](int limit) {
+        return SkRuntimeEffect::MakeForBlender(SkStringPrintf(
+                "half4 main(half4 src, half4 dst) {"
+                "    half y = 1.0;"
+                "    for (int c = 0; c < %d; ++c) {"
+                "        y += 1.0;"
+                "    }"
+                "    return half4(y);"
+                "}",
+                limit));
+    };
+
+    // 256 iterations should succeed in all builds.
+    {
+        auto [effect, err] = make_loop(256);
+        REPORTER_ASSERT(r, effect != nullptr, "%s", err.c_str());
+    }
+
+    // 257 iterations (> 256) should be rejected in fuzzer builds.
+    {
+        auto [effect, err] = make_loop(257);
+#if defined(SK_BUILD_FOR_FUZZER)
+        REPORTER_ASSERT(r, !effect);
+        REPORTER_ASSERT(r, err.contains("loop must guarantee termination in fewer iterations"));
+#else
+        REPORTER_ASSERT(r, effect != nullptr, "%s", err.c_str());
+#endif
+    }
+}
+
 DEF_TEST(SkRuntimeShader_TransformShaderPropagatesChildFailure, r) {
     // Compile a runtime shader with a conditional branch whose body invokes a child shader.
     // When the child shader fails appendStages() (e.g. due to a non-invertible local matrix),
@@ -2034,3 +2104,4 @@ DEF_TEST(SkRuntimeShader_TransformShaderPropagatesChildFailure, r) {
     REPORTER_ASSERT(r, surface->readPixels(bm, 0, 0));
     REPORTER_ASSERT(r, bm.getColor(2, 2) == SK_ColorBLUE);
 }
+

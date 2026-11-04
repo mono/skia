@@ -10,6 +10,7 @@
 
 #include "include/core/SkContext.h"
 #include "include/core/SkRefCnt.h"
+#include "include/private/SkGPUContext.h"
 #include "src/core/SkSharedContext.h"
 
 #include <memory>
@@ -21,6 +22,7 @@ class SkContext;
     data members or virtual methods.*/
 class SkContextPrivConst {
 public:
+    SkStrikeCache* strikeCache() const { return fConstContext->strikeCache(); }
 
 protected:
     explicit SkContextPrivConst(const SkContext* context) : fConstContext(context) {}
@@ -62,7 +64,20 @@ private:
 // functions in SkContext.h
 class SkContextCtorAccessor {
 public:
+    // Raster
     static std::unique_ptr<SkContext> MakeContext(const SkContextOptions& options);
+
+    // Ganesh and Graphite
+    static std::unique_ptr<SkContext> MakeContext(const SkContextOptions& options,
+                                                  std::unique_ptr<SkGPUContext> gpuContext);
+
 };
+
+namespace SkContexts {
+// Returns the global SkContext. If the global SkContext does not exist yet, it will be created.
+// This is an intermediary step in the SkContext project, whereby we use this
+// global SkContext object to remove or take away functionality from SkGraphics.
+SkContext* GetGlobalSkContext();
+}
 
 #endif  // SkContextPriv_DEFINED

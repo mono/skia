@@ -1,18 +1,20 @@
 module go.skia.org/skia
 
-go 1.26.0
+go 1.27.2
 
 require (
 	cloud.google.com/go/storage v1.55.0
+	github.com/chromedp/chromedp v0.20.1
 	github.com/flynn/json5 v0.0.0-20160717195620-7620272ed633
 	github.com/golang/glog v1.2.5
 	github.com/google/uuid v1.6.0
+	github.com/jcgregorio/logger v0.1.3
 	github.com/shirou/gopsutil v3.21.11+incompatible
 	github.com/stretchr/testify v1.11.1
 	github.com/trietmn/go-wiki v1.0.1
 	github.com/vektra/mockery/v2 v2.53.6
 	go.chromium.org/luci v0.0.0-20251208084510-e9565e513ef0
-	go.skia.org/infra v0.0.0-20261009171425-b5d690ce9f18
+	go.skia.org/infra v0.0.0-20261023145957-5fece1179c24
 	golang.org/x/oauth2 v0.36.0
 	google.golang.org/api v0.248.0
 	google.golang.org/protobuf v1.36.12
@@ -48,6 +50,7 @@ require (
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/chigopher/pathlib v0.19.1 // indirect
+	github.com/chromedp/cdproto v0.157.9 // indirect
 	github.com/cncf/xds/go v0.0.0-20260202195803-dba9d589def2 // indirect
 	github.com/danjacques/gofslock v0.0.0-20240212154529-d899e02bfe22 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
@@ -58,6 +61,7 @@ require (
 	github.com/fsnotify/fsnotify v1.10.1 // indirect
 	github.com/go-chi/chi/v5 v5.0.8 // indirect
 	github.com/go-jose/go-jose/v4 v4.1.4 // indirect
+	github.com/go-json-experiment/json v0.0.0-20260213210345-44df1a37e875 // indirect
 	github.com/go-logr/logr v1.4.4 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-ole/go-ole v1.2.6 // indirect
@@ -80,7 +84,6 @@ require (
 	github.com/iancoleman/strcase v0.3.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/invopop/jsonschema v0.7.0 // indirect
-	github.com/jcgregorio/logger v0.1.3 // indirect
 	github.com/jcgregorio/slog v0.0.0-20190423190439-e6f2d537f900 // indirect
 	github.com/jinzhu/copier v0.4.0 // indirect
 	github.com/julienschmidt/httprouter v1.3.0 // indirect
@@ -132,18 +135,18 @@ require (
 	go.opentelemetry.io/otel/sdk/metric v1.43.0 // indirect
 	go.opentelemetry.io/otel/trace v1.43.0 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
-	golang.org/x/crypto v0.55.0 // indirect
+	golang.org/x/crypto v0.57.0 // indirect
 	golang.org/x/exp v0.0.0-20260824195058-e88cd73687aa // indirect
 	golang.org/x/exp/typeparams v0.0.0-20231108232855-2478ac86f678 // indirect
-	golang.org/x/mod v0.40.0 // indirect
-	golang.org/x/net v0.58.0 // indirect
-	golang.org/x/sync v0.22.0 // indirect
-	golang.org/x/sys v0.47.0 // indirect
-	golang.org/x/telemetry v0.0.0-20260828145429-86cb5733f5b7 // indirect
-	golang.org/x/term v0.45.0 // indirect
-	golang.org/x/text v0.41.0 // indirect
+	golang.org/x/mod v0.41.0 // indirect
+	golang.org/x/net v0.59.0 // indirect
+	golang.org/x/sync v0.23.0 // indirect
+	golang.org/x/sys v0.48.0 // indirect
+	golang.org/x/telemetry v0.0.0-20260924152758-ed294f943157 // indirect
+	golang.org/x/term v0.46.0 // indirect
+	golang.org/x/text v0.42.0 // indirect
 	golang.org/x/time v0.12.0 // indirect
-	golang.org/x/tools v0.49.0 // indirect
+	golang.org/x/tools v0.51.0 // indirect
 	golang.org/x/xerrors v0.0.0-20240903120638-7835f813f4da // indirect
 	google.golang.org/genproto v0.0.0-20250818200422-3122310a409c // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260825221802-da73d73af1c5 // indirect

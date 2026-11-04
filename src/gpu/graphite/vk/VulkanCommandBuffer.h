@@ -11,8 +11,8 @@
 #include "src/gpu/graphite/CommandBuffer.h"
 
 #include "include/gpu/vk/VulkanTypes.h"
-#include "src/gpu/graphite/DrawPass.h"
 #include "src/gpu/graphite/compute/DispatchGroup.h"
+#include "src/gpu/graphite/draw/DrawPass.h"
 #include "src/gpu/graphite/vk/VulkanComputePipeline.h"
 #include "src/gpu/graphite/vk/VulkanGraphicsPipeline.h"
 #include "src/gpu/graphite/vk/VulkanResourceProvider.h"
@@ -38,7 +38,7 @@ public:
     void endStatsQuery(GpuStatsFlags) override;
     std::optional<GpuStats> gpuStats() override;
 
-    bool submit(VkQueue, const SubmitInfo&);
+    bool submit(VkQueue, const SubmitInfo&, bool includeFence = true);
 
     bool isFinished();
 
@@ -228,6 +228,7 @@ private:
     bool fBindTextureSamplers = false;
 
     std::array<BindBufferInfo, VulkanGraphicsPipeline::kMaxNumUniformBuffers> fUniformBuffersToBind;
+    const Texture* fBoundStorageFallbackTexture = nullptr;
     VkDescriptorSet fTextureSamplerDescSetToBind = VK_NULL_HANDLE;
 
     int fNumTextureSamplers = 0;

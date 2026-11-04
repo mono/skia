@@ -14,11 +14,11 @@
 #include "src/core/SkVx.h"
 #include "src/gpu/BufferWriter.h"
 #include "src/gpu/graphite/Attribute.h"
-#include "src/gpu/graphite/DrawOrder.h"
-#include "src/gpu/graphite/DrawParams.h"
 #include "src/gpu/graphite/DrawTypes.h"
-#include "src/gpu/graphite/DrawWriter.h"
 #include "src/gpu/graphite/PipelineData.h"
+#include "src/gpu/graphite/draw/DrawOrder.h"
+#include "src/gpu/graphite/draw/DrawParams.h"
+#include "src/gpu/graphite/draw/DrawWriter.h"
 #include "src/gpu/graphite/geom/Geometry.h"
 #include "src/gpu/graphite/geom/Rect.h"
 #include "src/gpu/graphite/geom/Shape.h"
@@ -88,7 +88,12 @@ void CoverBoundsRenderStep::writeVertices(DrawWriter* writer,
         bounds = skvx::shuffle</*R*/2, /*B*/3, /*L*/0, /*T*/1>(
                 skvx::cast<float>(skvx::int4::Load(&params.scissor())));
     } else {
-        bounds = params.geometry().bounds().ltrb();
+        // If there's a stroke style, the bounding box needs to increase by the stroke radius.
+        // This is not necessary for inverted fills since that maximally covers the clip.
+        // styledBounds() is sufficient because CoverBoundsRenderStep is used for inverse-strokes
+        // (not this branch) or stroke-and-fills (which don't have hairlines).
+        SkASSERT(!params.isStroke() || params.strokeStyle().halfWidth() > 0.f);
+        bounds = params.styledBounds().ltrb();
     }
 
     // Since the local coords always have Z=0, we can discard the 3rd row and column of the matrix.
