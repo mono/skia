@@ -67,6 +67,7 @@ public:
         fThreadCount -= 1;
         while (fThreadCount > 0) { }
     }
+
 private:
     std::atomic<int> fThreadCount;
 };
@@ -105,6 +106,7 @@ prepare_for_mask_drawing(
                 break;
         }
     }
+
 
     return {acceptedBuffer.first(acceptedSize),
             rejectedBuffer.first(rejectedSize),

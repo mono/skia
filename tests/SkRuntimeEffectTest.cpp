@@ -2060,6 +2060,7 @@ DEF_TEST(SkRuntimeBlender_b562761166, r) {
 #endif
     }
 }
+
 DEF_TEST(SkRuntimeShader_TransformShaderPropagatesChildFailure, r) {
     // Compile a runtime shader with a conditional branch whose body invokes a child shader.
     // When the child shader fails appendStages() (e.g. due to a non-invertible local matrix),
