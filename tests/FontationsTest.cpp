@@ -7,6 +7,7 @@
 
 #include "include/core/SkFont.h"
 #include "include/core/SkFontMetrics.h"
+#include "include/core/SkFontTypes.h"
 #include "include/core/SkStream.h"
 #include "include/core/SkTypeface.h"
 #include "include/ports/SkTypeface_fontations.h"
@@ -22,6 +23,7 @@ const char kTtcResource[] = "fonts/test.ttc";
 const char kNoCapHeightResource[] = "fonts/DejaVuSans.subset.ttf";
 const char kNoCapHeightNoHxResource[] = "fonts/DejaVuSans.subset_noHx.ttf";
 const char kVariableResource[] = "fonts/test_glyphs-glyf_colr_1_variable.ttf";
+const char kVariableCollectionResource[] = "fonts/NotoSansCJK-VF-subset.otf.ttc";
 constexpr size_t kNumVariableAxes = 44;
 
 struct AxisExpectation {
@@ -111,6 +113,29 @@ DEF_TEST(Fontations_MakeFromCollectionNonNullIndex, reporter) {
     sk_sp<SkTypeface> probeTypeface(
             SkTypeface_Make_Fontations(GetResourceAsStream(kTtcResource), args));
     REPORTER_ASSERT(reporter, probeTypeface);
+}
+
+DEF_TEST(Fontations_CloneVariableCollectionNonNullIndex, reporter) {
+    SkFontArguments args;
+    args.setCollectionIndex(1);
+    sk_sp<SkTypeface> typeface =
+            SkTypeface_Make_Fontations(GetResourceAsStream(kVariableCollectionResource), args);
+    REPORTER_ASSERT(reporter, typeface);
+
+    SkFontArguments::VariationPosition::Coordinate wghtCoord = {
+            SkSetFourByteTag('w', 'g', 'h', 't'), 700.0f};
+    SkFontArguments::VariationPosition position = {&wghtCoord, 1};
+
+    SkFontArguments cloneArgs;
+    cloneArgs.setCollectionIndex(1);
+    cloneArgs.setVariationDesignPosition(position);
+
+    sk_sp<SkTypeface> clone = typeface->makeClone(cloneArgs);
+    REPORTER_ASSERT(reporter, clone);
+
+    int ttcIndex = -1;
+    std::unique_ptr<SkStreamAsset> stream = clone->openStream(&ttcIndex);
+    REPORTER_ASSERT(reporter, ttcIndex == 1);
 }
 
 DEF_TEST(Fontations_DoNotMakeFromCollection_Invalid_Index, reporter) {
@@ -331,4 +356,40 @@ DEF_TEST(Fontations_SyntheticXHeight, reporter) {
     // xHeight falls back to ascent as well.
     const SkScalar kExpected = 11.138672;
     REPORTER_ASSERT(reporter, metrics.fXHeight == kExpected, "Metrics mismatch: %f vs. %f", kExpected, metrics.fXHeight);
+}
+
+DEF_TEST(Fontations_CffLinearAdvanceWidth, reporter) {
+    for (const char* resource : {"fonts/7630.otf", "fonts/NotoSansCJK-VF-subset.otf.ttc"}) {
+        sk_sp<SkTypeface> typeface(
+                SkTypeface_Make_Fontations(GetResourceAsStream(resource), SkFontArguments()));
+        SkASSERT_RELEASE(typeface);
+
+        SkFont unhintedFont(typeface, 12.5f);
+        unhintedFont.setEdging(SkFont::Edging::kAntiAlias);
+        unhintedFont.setSubpixel(true);
+        unhintedFont.setHinting(SkFontHinting::kNone);
+
+        SkFont hintedFont(typeface, 12.5f);
+        hintedFont.setEdging(SkFont::Edging::kAntiAlias);
+        hintedFont.setSubpixel(true);
+        hintedFont.setHinting(SkFontHinting::kNormal);
+
+        const SkGlyphID glyphId = 1;
+        SkScalar unhintedAdvance = 0.0f;
+        SkScalar hintedAdvance = 0.0f;
+        unhintedFont.getWidths({&glyphId, 1}, {&unhintedAdvance, 1});
+        hintedFont.getWidths({&glyphId, 1}, {&hintedAdvance, 1});
+
+        REPORTER_ASSERT(reporter,
+                        SkScalarFraction(unhintedAdvance) != 0.0f,
+                        "Expected fractional advance for %s, got %f",
+                        resource,
+                        unhintedAdvance);
+        REPORTER_ASSERT(reporter,
+                        hintedAdvance == unhintedAdvance,
+                        "Expected CFF/CFF2 hinted advance to match linear advance for %s: %f vs %f",
+                        resource,
+                        hintedAdvance,
+                        unhintedAdvance);
+    }
 }

@@ -9,6 +9,7 @@
 
 #include "include/core/SkTileMode.h"
 #include "include/effects/SkRuntimeEffect.h"
+#include "include/private/SkAttributes.h"
 #include "include/private/SkLog.h"
 #include "src/core/SkColorSpaceXformSteps.h"
 #include "src/core/SkMeshPriv.h"
@@ -873,8 +874,8 @@ SkSLType ShaderCodeDictionary::UniformTypeToSkSLType(const SkRuntimeEffect::Unif
 
 static const char* add_text_to_arena(std::string_view text, SkArenaAlloc* arena) {
     char* textInArena = arena->makeArrayDefault<char>(text.size() + 1);
-    memcpy(textInArena, text.data(), text.size());
-    textInArena[text.size()] = '\0';
+    SK_UNSAFE_TODO(memcpy(textInArena, text.data(), text.size()));
+    SK_UNSAFE_TODO(textInArena[text.size()] = '\0');
     return textInArena;
 }
 
@@ -1438,6 +1439,21 @@ ShaderCodeDictionary::ShaderCodeDictionary(
                                       { "samplerU" },
                                       { "samplerV" },
                                       { "samplerA" }}}
+    };
+    fBuiltInCodeSnippets[(int) BuiltInCodeSnippetID::kPackedYUVImageShader] = {
+            /*name=*/"PackedYUVImage",
+            /*staticFn=*/"sk_packed_yuv_image_shader",
+            SnippetRequirementFlags::kLocalCoords,
+            /*uniforms=*/{{{ "invImgSize",         SkSLType::kFloat2 },
+                           { "subset",             SkSLType::kFloat4 },
+                           { "tilemodeX",          SkSLType::kInt },
+                           { "tilemodeY",          SkSLType::kInt },
+                           { "channelSelectY",     SkSLType::kHalf4 },
+                           { "channelSelectU",     SkSLType::kHalf4 },
+                           { "channelSelectV",     SkSLType::kHalf4 },
+                           { "yuvToRGBMatrix",     SkSLType::kHalf3x3 },
+                           { "yuvToRGBTranslate",  SkSLType::kHalf3 }}},
+            /*texturesAndSamplers=*/{{"samplerPlane"}}
     };
     fBuiltInCodeSnippets[(int) BuiltInCodeSnippetID::kCubicYUVImageShader] = {
             /*name=*/"CubicYUVImage",

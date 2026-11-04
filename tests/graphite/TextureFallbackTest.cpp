@@ -34,7 +34,7 @@ public:
                       Flags::kPerformsShading | Flags::kFsUsesStorage,
                       /*uniforms=*/{},
                       PrimitiveType::kTriangleStrip,
-                      DepthStencilSettings{},
+                      /*stencilSettings=*/{},
                       /*staticAttrs=*/{},
                       /*appendAttrs=*/{},
                       /*storageUniforms=*/SkSpan(storageUniforms.begin(), storageUniforms.size()),

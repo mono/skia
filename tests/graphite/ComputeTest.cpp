@@ -95,8 +95,10 @@ std::unique_ptr<Recording> submit_recording(Context* context,
     return recording;
 }
 
-bool is_dawn_or_metal_context_type(skiatest::GpuContextType ctxType) {
-    return skiatest::IsDawnContextType(ctxType) || skiatest::IsMetalContextType(ctxType);
+bool is_compute_supported_context_type(skiatest::GpuContextType ctxType) {
+    return skiatest::IsDawnContextType(ctxType) ||
+           skiatest::IsMetalContextType(ctxType) ||
+           skiatest::IsVulkanContextType(ctxType);
 }
 
 // These tests often need to write one float parameter into a uniform declared as a float4 in
@@ -106,10 +108,10 @@ static constexpr size_t kFloatToFloat4Padding = 3 * sizeof(float);
 
 }  // namespace
 
-#define DEF_GRAPHITE_TEST_FOR_DAWN_AND_METAL_CONTEXTS(            \
+#define DEF_GRAPHITE_TEST_FOR_COMPUTE_CONTEXTS(            \
         name, reporter, graphite_context, test_context)           \
     DEF_GRAPHITE_TEST_FOR_CONTEXTS(name,                          \
-                                   is_dawn_or_metal_context_type, \
+                                   is_compute_supported_context_type, \
                                    reporter,                      \
                                    graphite_context,              \
                                    test_context,                  \
@@ -117,10 +119,14 @@ static constexpr size_t kFloatToFloat4Padding = 3 * sizeof(float);
 
 // TODO(b/262427430, b/262429132): Enable this test on other backends once they all support
 // compute programs.
-DEF_GRAPHITE_TEST_FOR_DAWN_AND_METAL_CONTEXTS(Compute_SingleDispatchTest,
+DEF_GRAPHITE_TEST_FOR_COMPUTE_CONTEXTS(Compute_SingleDispatchTest,
                                               reporter,
                                               context,
                                               testContext) {
+    if (context->supportsProtectedContent()) {
+        return;
+    }
+
     constexpr uint32_t kProblemSize = 512;
     constexpr float kFactor = 4.f;
 
@@ -248,12 +254,13 @@ DEF_GRAPHITE_TEST_FOR_DAWN_AND_METAL_CONTEXTS(Compute_SingleDispatchTest,
 
 // TODO(b/262427430, b/262429132): Enable this test on other backends once they all support
 // compute programs.
-DEF_GRAPHITE_TEST_FOR_DAWN_AND_METAL_CONTEXTS(Compute_DispatchGroupTest,
+DEF_GRAPHITE_TEST_FOR_COMPUTE_CONTEXTS(Compute_DispatchGroupTest,
                                               reporter,
                                               context,
                                               testContext) {
     // TODO(b/315834710): This fails on Dawn D3D11
-    if (testContext->contextType() == skgpu::ContextType::kDawn_D3D11) {
+    if (testContext->contextType() == skgpu::ContextType::kDawn_D3D11 ||
+        context->supportsProtectedContent()) {
         return;
     }
 
@@ -495,12 +502,13 @@ DEF_GRAPHITE_TEST_FOR_DAWN_AND_METAL_CONTEXTS(Compute_DispatchGroupTest,
 
 // TODO(b/262427430, b/262429132): Enable this test on other backends once they all support
 // compute programs.
-DEF_GRAPHITE_TEST_FOR_DAWN_AND_METAL_CONTEXTS(Compute_UniformBufferTest,
+DEF_GRAPHITE_TEST_FOR_COMPUTE_CONTEXTS(Compute_UniformBufferTest,
                                               reporter,
                                               context,
                                               testContext) {
     // TODO(b/315834710): This fails on Dawn D3D11
-    if (testContext->contextType() == skgpu::ContextType::kDawn_D3D11) {
+    if (testContext->contextType() == skgpu::ContextType::kDawn_D3D11 ||
+        context->supportsProtectedContent()) {
         return;
     }
 
@@ -644,10 +652,14 @@ DEF_GRAPHITE_TEST_FOR_DAWN_AND_METAL_CONTEXTS(Compute_UniformBufferTest,
 
 // TODO(b/262427430, b/262429132): Enable this test on other backends once they all support
 // compute programs.
-DEF_GRAPHITE_TEST_FOR_DAWN_AND_METAL_CONTEXTS(Compute_ExternallyAssignedBuffer,
+DEF_GRAPHITE_TEST_FOR_COMPUTE_CONTEXTS(Compute_ExternallyAssignedBuffer,
                                               reporter,
                                               context,
                                               testContext) {
+    if (context->supportsProtectedContent()) {
+        return;
+    }
+
     constexpr uint32_t kProblemSize = 512;
     constexpr float kFactor = 4.f;
 
@@ -763,10 +775,14 @@ DEF_GRAPHITE_TEST_FOR_DAWN_AND_METAL_CONTEXTS(Compute_ExternallyAssignedBuffer,
 
 // Tests the storage texture binding for a compute dispatch that writes the same color to every
 // pixel of a storage texture.
-DEF_GRAPHITE_TEST_FOR_DAWN_AND_METAL_CONTEXTS(Compute_StorageTexture,
+DEF_GRAPHITE_TEST_FOR_COMPUTE_CONTEXTS(Compute_StorageTexture,
                                               reporter,
                                               context,
                                               testContext) {
+    if (context->supportsProtectedContent()) {
+        return;
+    }
+
     std::unique_ptr<Recorder> recorder = context->makeRecorder();
 
     // For this test we allocate a 8x8 tile which is written to by a single workgroup of the same
@@ -868,10 +884,14 @@ DEF_GRAPHITE_TEST_FOR_DAWN_AND_METAL_CONTEXTS(Compute_StorageTexture,
 
 // Tests the readonly texture binding for a compute dispatch that random-access reads from a
 // CPU-populated texture and copies it to a storage texture.
-DEF_GRAPHITE_TEST_FOR_DAWN_AND_METAL_CONTEXTS(Compute_StorageTextureReadAndWrite,
+DEF_GRAPHITE_TEST_FOR_COMPUTE_CONTEXTS(Compute_StorageTextureReadAndWrite,
                                               reporter,
                                               context,
                                               testContext) {
+    if (context->supportsProtectedContent()) {
+        return;
+    }
+
     std::unique_ptr<Recorder> recorder = context->makeRecorder();
 
     // For this test we allocate a 8x8 tile which is written to by a single workgroup of the same
@@ -1033,10 +1053,14 @@ DEF_GRAPHITE_TEST_FOR_DAWN_AND_METAL_CONTEXTS(Compute_StorageTextureReadAndWrite
     }
 }
 
-DEF_GRAPHITE_TEST_FOR_DAWN_AND_METAL_CONTEXTS(Compute_ReadOnlyStorageBuffer,
+DEF_GRAPHITE_TEST_FOR_COMPUTE_CONTEXTS(Compute_ReadOnlyStorageBuffer,
                                               reporter,
                                               context,
                                               testContext) {
+    if (context->supportsProtectedContent()) {
+        return;
+    }
+
     std::unique_ptr<Recorder> recorder = context->makeRecorder();
 
     // For this test we allocate a 8x8 tile which is written to by a single workgroup of the same
@@ -1176,10 +1200,14 @@ DEF_GRAPHITE_TEST_FOR_DAWN_AND_METAL_CONTEXTS(Compute_ReadOnlyStorageBuffer,
 }
 
 // Tests that a texture written by one compute step can be sampled by a subsequent step.
-DEF_GRAPHITE_TEST_FOR_DAWN_AND_METAL_CONTEXTS(Compute_StorageTextureMultipleComputeSteps,
+DEF_GRAPHITE_TEST_FOR_COMPUTE_CONTEXTS(Compute_StorageTextureMultipleComputeSteps,
                                               reporter,
                                               context,
                                               testContext) {
+    if (context->supportsProtectedContent()) {
+        return;
+    }
+
     std::unique_ptr<Recorder> recorder = context->makeRecorder();
 
     // For this test we allocate a 8x8 tile which is written to by a single workgroup of the same
@@ -1326,10 +1354,14 @@ DEF_GRAPHITE_TEST_FOR_DAWN_AND_METAL_CONTEXTS(Compute_StorageTextureMultipleComp
 // Tests that a texture can be sampled by a compute step using a sampler.
 // TODO(armansito): Once the previous TODO is done, add additional tests that exercise mixed use of
 // texture, buffer, and sampler bindings.
-DEF_GRAPHITE_TEST_FOR_DAWN_AND_METAL_CONTEXTS(Compute_SampledTexture,
+DEF_GRAPHITE_TEST_FOR_COMPUTE_CONTEXTS(Compute_SampledTexture,
                                               reporter,
                                               context,
                                               testContext) {
+    if (context->supportsProtectedContent()) {
+        return;
+    }
+
     std::unique_ptr<Recorder> recorder = context->makeRecorder();
 
     // The first ComputeStep initializes a 8x8 texture with a checkerboard pattern of alternating
@@ -1495,12 +1527,13 @@ DEF_GRAPHITE_TEST_FOR_DAWN_AND_METAL_CONTEXTS(Compute_SampledTexture,
 // features like this as part of SkSLTest.cpp instead of as a graphite test.
 // TODO(b/262427430, b/262429132): Enable this test on other backends once they all support
 // compute programs.
-DEF_GRAPHITE_TEST_FOR_DAWN_AND_METAL_CONTEXTS(Compute_AtomicOperationsTest,
+DEF_GRAPHITE_TEST_FOR_COMPUTE_CONTEXTS(Compute_AtomicOperationsTest,
                                               reporter,
                                               context,
                                               testContext) {
     // This fails on Dawn D3D11, b/315834710
-    if (testContext->contextType() == skgpu::ContextType::kDawn_D3D11) {
+    if (testContext->contextType() == skgpu::ContextType::kDawn_D3D11 ||
+        context->supportsProtectedContent()) {
         return;
     }
 
@@ -1632,12 +1665,13 @@ DEF_GRAPHITE_TEST_FOR_DAWN_AND_METAL_CONTEXTS(Compute_AtomicOperationsTest,
 // to exercise SkSL features like this as part of SkSLTest.cpp instead of as a graphite test.
 // TODO(b/262427430, b/262429132): Enable this test on other backends once they all support
 // compute programs.
-DEF_GRAPHITE_TEST_FOR_DAWN_AND_METAL_CONTEXTS(Compute_AtomicOperationsOverArrayAndStructTest,
+DEF_GRAPHITE_TEST_FOR_COMPUTE_CONTEXTS(Compute_AtomicOperationsOverArrayAndStructTest,
                                               reporter,
                                               context,
                                               testContext) {
     // This fails on Dawn D3D11, b/315834710
-    if (testContext->contextType() == skgpu::ContextType::kDawn_D3D11) {
+    if (testContext->contextType() == skgpu::ContextType::kDawn_D3D11 ||
+        context->supportsProtectedContent()) {
         return;
     }
 
@@ -1773,10 +1807,14 @@ DEF_GRAPHITE_TEST_FOR_DAWN_AND_METAL_CONTEXTS(Compute_AtomicOperationsOverArrayA
                     secondHalfCount);
 }
 
-DEF_GRAPHITE_TEST_FOR_DAWN_AND_METAL_CONTEXTS(Compute_ClearedBuffer,
+DEF_GRAPHITE_TEST_FOR_COMPUTE_CONTEXTS(Compute_ClearedBuffer,
                                               reporter,
                                               context,
                                               testContext) {
+    if (context->supportsProtectedContent()) {
+        return;
+    }
+
     constexpr uint32_t kProblemSize = 512;
 
     // The ComputeStep packs kProblemSize floats into kProblemSize / 4 vectors and each thread
@@ -1880,10 +1918,14 @@ DEF_GRAPHITE_TEST_FOR_DAWN_AND_METAL_CONTEXTS(Compute_ClearedBuffer,
     }
 }
 
-DEF_GRAPHITE_TEST_FOR_DAWN_AND_METAL_CONTEXTS(Compute_ClearOrdering,
+DEF_GRAPHITE_TEST_FOR_COMPUTE_CONTEXTS(Compute_ClearOrdering,
                                               reporter,
                                               context,
                                               testContext) {
+    if (context->supportsProtectedContent()) {
+        return;
+    }
+
     // Initiate two independent DispatchGroups operating on the same buffer. The first group
     // writes garbage to the buffer and the second group copies the contents to an output buffer.
     // This test validates that the reads, writes, and clear occur in the expected order.
@@ -1994,10 +2036,14 @@ DEF_GRAPHITE_TEST_FOR_DAWN_AND_METAL_CONTEXTS(Compute_ClearOrdering,
     }
 }
 
-DEF_GRAPHITE_TEST_FOR_DAWN_AND_METAL_CONTEXTS(Compute_ClearOrderingScratchBuffers,
+DEF_GRAPHITE_TEST_FOR_COMPUTE_CONTEXTS(Compute_ClearOrderingScratchBuffers,
                                               reporter,
                                               context,
                                               testContext) {
+    if (context->supportsProtectedContent()) {
+        return;
+    }
+
     // This test is the same as the ClearOrdering test but the two stages write to a recycled
     // ScratchBuffer. This is primarily to test ScratchBuffer reuse.
     constexpr uint32_t kWorkgroupSize = 64;
@@ -2116,10 +2162,15 @@ DEF_GRAPHITE_TEST_FOR_DAWN_AND_METAL_CONTEXTS(Compute_ClearOrderingScratchBuffer
     }
 }
 
-DEF_GRAPHITE_TEST_FOR_DAWN_AND_METAL_CONTEXTS(Compute_IndirectDispatch,
+DEF_GRAPHITE_TEST_FOR_COMPUTE_CONTEXTS(Compute_IndirectDispatch,
                                               reporter,
                                               context,
                                               testContext) {
+    // TODO (thomsmit): Add protected bit to indirect buffers when on protected context.
+    if (context->supportsProtectedContent()) {
+        return;
+    }
+
     // This fails on Dawn D3D11, b/315834710
     if (testContext->contextType() == skgpu::ContextType::kDawn_D3D11) {
         return;
@@ -2662,11 +2713,12 @@ DEF_GRAPHITE_TEST_FOR_DAWN_CONTEXT(Compute_NativeShaderSourceWGSL, reporter, con
                     result);
 }
 
-DEF_GRAPHITE_TEST_FOR_DAWN_AND_METAL_CONTEXTS(Compute_WorkgroupUniformLoadTest,
+DEF_GRAPHITE_TEST_FOR_COMPUTE_CONTEXTS(Compute_WorkgroupUniformLoadTest,
                                               reporter,
                                               context,
                                               testContext) {
-    if (testContext->contextType() == skgpu::ContextType::kDawn_D3D11) {
+    if (testContext->contextType() == skgpu::ContextType::kDawn_D3D11 ||
+        context->supportsProtectedContent()) {
         return;
     }
 

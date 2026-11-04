@@ -23,12 +23,12 @@ namespace skgpu::graphite {
 
 sk_sp<SharedContext> MtlSharedContext::Make(const MtlBackendContext& context,
                                             const ContextOptions& options) {
-    if (@available(macOS 12, iOS 13.0, tvOS 13.0, *)) {
+    if (@available(macOS 12, iOS 15.0, tvOS 15.0, *)) {
         // no warning needed
     } else {
         SKIA_LOG_E("Skia's Graphite backend no longer supports this OS version.");
 #ifdef SK_BUILD_FOR_IOS
-        SKIA_LOG_E("Minimum supported version is iOS/tvOS 13.0.");
+        SKIA_LOG_E("Minimum supported version is iOS/tvOS 15.0.");
 #else
         SKIA_LOG_E("Minimum supported version is MacOS 12.");
 #endif
@@ -71,18 +71,29 @@ MtlSharedContext::MtlSharedContext(sk_cfp<id<MTLDevice>> device,
 
     static constexpr DepthStencilSettings kIgnoreDSS;
 
-    for (auto dss : std::initializer_list<std::pair<const DepthStencilSettings&, const char*>>{
-              { kDirectDepthLessPass,   "direct-depth-less"   },
-              { kDirectDepthLEqualPass, "direct-depth-lequal" },
-              { kWindingStencilPass,    "winding-stencil"     },
-              { kEvenOddStencilPass,    "evenodd-stencil"     },
-              { kIncrementStencilPass,  "increment-stencil"     },
-              { kRegularCoverPass,      "regular-cover"       },
-              { kInverseCoverPass,      "inverse-cover"       },
-              { kIgnoreDSS,             "ignore"              },
-            }) {
-        this->createCompatibleDepthStencilState(dss.first, dss.second);
+    // Pre-create combinations for common stencil settings X {LESS|LEQUAL} X write=true|false
+    // NOTE We don't include the ALWAYS comparison in this cross product because we currently
+    // uplift stencil-only renderpasses to depth+stencil to reduce possible combinations.
+    for (CompareOp depthTest : {CompareOp::kLess, CompareOp::kLEqual}) {
+        for (bool depthWrite : {true, false}) {
+            for (auto [stencil, name] :
+                         std::initializer_list<std::pair<StencilSettings, const char*>>{
+                    { StencilSettings{},     "direct" },
+                    { kWindingStencilPass,   "winding-stencil" },
+                    { kEvenOddStencilPass,   "evenodd-stencil" },
+                    { kIncrementStencilPass, "increment-stencil" },
+                    { kRegularCoverPass,     "regular-cover" },
+                    { kInverseCoverPass,     "inverse-cover" }
+                }) {
+                DepthStencilSettings dss = {{depthTest, depthWrite}, stencil};
+                fDepthStencilStates.push_back(
+                        {dss, this->createCompatibleDepthStencilState(dss, name)});
+            }
+        }
     }
+    // As well as completely disabled depth-stencil settings
+    fDepthStencilStates.push_back(
+            {kIgnoreDSS, this->createCompatibleDepthStencilState(kIgnoreDSS, "ignore")});
 }
 
 MtlSharedContext::~MtlSharedContext() {
@@ -107,6 +118,19 @@ std::unique_ptr<ResourceProvider> MtlSharedContext::makeResourceProvider(
 }
 
 namespace {
+
+const char* compare_op_name(CompareOp op) {
+    switch (op) {
+        case CompareOp::kAlways:   return "T";
+        case CompareOp::kNever:    return "F";
+        case CompareOp::kGreater:  return ">";
+        case CompareOp::kGEqual:   return ">=";
+        case CompareOp::kLess:     return "<";
+        case CompareOp::kLEqual:   return "<=";
+        case CompareOp::kEqual:    return "==";
+        case CompareOp::kNotEqual: return "!=";
+    }
+}
 
 MTLCompareFunction compare_op_to_mtl(CompareOp op) {
     switch (op) {
@@ -150,11 +174,13 @@ MTLStencilOperation stencil_op_to_mtl(StencilOp op) {
     }
 }
 
-MTLStencilDescriptor* stencil_face_to_mtl(DepthStencilSettings::Face face) {
+MTLStencilDescriptor* stencil_face_to_mtl(StencilSettings::Face face,
+                                          uint32_t readMask,
+                                          uint32_t writeMask) {
     MTLStencilDescriptor* result = [[MTLStencilDescriptor alloc] init];
     result.stencilCompareFunction = compare_op_to_mtl(face.fCompareOp);
-    result.readMask = face.fReadMask;
-    result.writeMask = face.fWriteMask;
+    result.readMask = readMask;
+    result.writeMask = writeMask;
     result.depthStencilPassOperation = stencil_op_to_mtl(face.fDepthStencilPassOp);
     result.depthFailureOperation = stencil_op_to_mtl(face.fDepthFailOp);
     result.stencilFailureOperation = stencil_op_to_mtl(face.fStencilFailOp);
@@ -166,41 +192,53 @@ MTLStencilDescriptor* stencil_face_to_mtl(DepthStencilSettings::Face face) {
 sk_cfp<id<MTLDepthStencilState>> MtlSharedContext::getCompatibleDepthStencilState(
             const DepthStencilSettings& depthStencilSettings) const {
 
-    sk_cfp<id<MTLDepthStencilState>>* depthStencilState;
-    depthStencilState = fDepthStencilStates.find(depthStencilSettings);
+    for (auto&& dssToMtl : fDepthStencilStates) {
+        if (dssToMtl.first == depthStencilSettings) {
+            return dssToMtl.second;
+        }
+    }
 
     // We've explicitly initialized fDepthStencilStates with all the common depth stencil settings
     // in the ctor - since there are so few of them. This frees us from concurrency concerns (i.e.,
     // if we were to lazily create them and store them in a map). However, if a new one is
     // encountered we will need to either add its initialization to the ctor or reconsider this
     // approach.
-    SkAssertResult(depthStencilState);
-    return *depthStencilState;
+    SkASSERTF(false, "Unexpected depth stencil settings");
+    return this->createCompatibleDepthStencilState(depthStencilSettings,
+                                                   "Runtime DepthStencilSettings");
 }
 
-void MtlSharedContext::createCompatibleDepthStencilState(
-                const DepthStencilSettings& depthStencilSettings,
-                const char* label) {
+sk_cfp<id<MTLDepthStencilState>> MtlSharedContext::createCompatibleDepthStencilState(
+        const DepthStencilSettings& depthStencilSettings,
+        const char* label) const {
+
+    const auto& [depthSettings, stencilSettings] = depthStencilSettings;
 
     MTLDepthStencilDescriptor* desc = [[MTLDepthStencilDescriptor alloc] init];
-    SkASSERT(depthStencilSettings.fDepthTestEnabled ||
-             depthStencilSettings.fDepthCompareOp == CompareOp::kAlways);
-    desc.depthCompareFunction = compare_op_to_mtl(depthStencilSettings.fDepthCompareOp);
-    if (depthStencilSettings.fDepthTestEnabled) {
-        desc.depthWriteEnabled = depthStencilSettings.fDepthWriteEnabled;
+    if (depthSettings.enabled()) {
+        desc.depthCompareFunction = compare_op_to_mtl(depthSettings.fCompareOp);
+        desc.depthWriteEnabled = depthSettings.fWriteEnabled;
     }
-    if (depthStencilSettings.fStencilTestEnabled) {
-        desc.frontFaceStencil = stencil_face_to_mtl(depthStencilSettings.fFrontStencil);
-        desc.backFaceStencil = stencil_face_to_mtl(depthStencilSettings.fBackStencil);
+
+    if (stencilSettings.enabled()) {
+        desc.frontFaceStencil = stencil_face_to_mtl(stencilSettings.fFrontFace,
+                                                    stencilSettings.fReadMask,
+                                                    stencilSettings.fWriteMask);
+        desc.backFaceStencil = stencil_face_to_mtl(stencilSettings.fBackFace,
+                                                   stencilSettings.fReadMask,
+                                                   stencilSettings.fWriteMask);
+
+        // NOTE: The stencil reference value is dynamic state and set on the render encoder
     }
-    desc.label = [NSString stringWithFormat:@"%@(write:%d)",
+    desc.label = [NSString stringWithFormat:@"%@(test:%@,write:%c)",
                                             [NSString stringWithUTF8String:label],
-                                            depthStencilSettings.fDepthWriteEnabled];
+                                            [NSString stringWithUTF8String:
+                                                    compare_op_name(depthSettings.fCompareOp)],
+                                            depthSettings.fWriteEnabled ? 'T' : 'F'];
 
     sk_cfp<id<MTLDepthStencilState>> dss(
             [this->device() newDepthStencilStateWithDescriptor: desc]);
-
-    fDepthStencilStates.set(depthStencilSettings, std::move(dss));
+    return dss;
 }
 
 sk_sp<GraphicsPipeline> MtlSharedContext::createGraphicsPipeline(

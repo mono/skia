@@ -33,6 +33,7 @@ class RefCntedCallback;
 namespace skgpu::graphite {
 
 class BackendSemaphore;
+class BackendTexture;
 class Buffer;
 class DispatchGroup;
 class DrawPass;
@@ -53,6 +54,9 @@ public:
     bool hasWork() { return fHasWork; }
     bool isResourceTracked(const Resource* resource);
 #endif
+
+    int numPendingCommands() const { return fNumPendingCommands; }
+    int numPendingPasses() const { return fNumPendingPasses; }
 
     // Takes a CommandBuffer ref on the Resource that will be released when the command buffer has
     // finished execution. This allows a Resource to be returned to ResourceCache for reuse while
@@ -78,6 +82,8 @@ public:
                                      const BackendSemaphore* signalSemaphores) {}
     virtual void prepareSurfaceForStateUpdate(SkSurface* targetSurface,
                                               const MutableTextureState* newState) {}
+    virtual void prepareBackendTextureForStateUpdate(const BackendTexture& texture,
+                                                     const MutableTextureState* newState) {}
 
     void addBuffersToAsyncMapOnSubmit(SkSpan<const sk_sp<Buffer>>);
     SkSpan<const sk_sp<Buffer>> buffersToAsyncMapOnSubmit() const;
@@ -217,6 +223,8 @@ private:
     TrackedResourceArray<gr_cb<Resource>> fCommandBufferResources;
     skia_private::TArray<sk_sp<RefCntedCallback>> fFinishedProcs;
     skia_private::TArray<sk_sp<Buffer>> fBuffersToAsyncMap;
+    int fNumPendingCommands = 0;
+    int fNumPendingPasses = 0;
 };
 
 } // namespace skgpu::graphite
