@@ -16,6 +16,7 @@
 #include "include/private/SkMacros.h"
 #include "include/private/SkMalloc.h"
 #include "include/private/SkMath.h"
+#include "include/private/SkOnlyStackAllocatable.h"
 #include "include/private/SkTDArray.h"
 #include "include/private/SkTo.h"
 #include "src/core/SkBlitter.h"
@@ -23,6 +24,7 @@
 #include "src/core/SkMask.h"
 #include "src/core/SkPathPriv.h"
 #include "src/core/SkScan.h"
+#include "src/partition_alloc/raw_ptr_exclusion.h"
 
 #include <algorithm>
 #include <atomic>
@@ -32,6 +34,8 @@ namespace {
 
 class AutoAAClipValidate {
 public:
+    SK_ONLY_STACK_ALLOCATABLE;
+
     AutoAAClipValidate(const SkAAClip& clip) : fClip(clip) {
         fClip.validate();
     }
@@ -78,6 +82,8 @@ struct YOffset {
 
 class RowIter {
 public:
+    SK_ONLY_STACK_ALLOCATABLE;
+
     RowIter(const uint8_t* row, const SkIRect& bounds) {
         fRow = row;
         fLeft = bounds.fLeft;
@@ -251,7 +257,10 @@ class SkAAClip::Builder {
     struct Row {
         int fY;
         int fWidth;
-        SkTDArray<uint8_t>* fData;
+        // RAW_PTR_EXCLUSION: Rows live in an SkTDArray, which never runs
+        // constructors or destructors. A raw_ptr would start uninitialized
+        // and leak its BackupRefPtr reference.
+        RAW_PTR_EXCLUSION SkTDArray<uint8_t>* fData;
     };
     SkTDArray<Row>  fRows;
     Row* fCurrRow;

@@ -23,6 +23,7 @@
 #include "include/private/SkDebug.h"
 #include "include/private/SkEnumBitMask.h"
 #include "include/private/SkFloatingPoint.h"
+#include "include/private/SkOnlyStackAllocatable.h"
 #include "src/core/SkPathPriv.h"
 #include "src/core/SkRRectPriv.h"
 #include "src/core/SkRectPriv.h"
@@ -30,10 +31,10 @@
 #include "src/gpu/graphite/AtlasProvider.h"
 #include "src/gpu/graphite/ClipAtlasManager.h"
 #include "src/gpu/graphite/Device.h"
-#include "src/gpu/graphite/DrawParams.h"
 #include "src/gpu/graphite/RecorderPriv.h"
 #include "src/gpu/graphite/RendererProvider.h"
 #include "src/gpu/graphite/TextureProxy.h"
+#include "src/gpu/graphite/draw/DrawParams.h"
 #include "src/gpu/graphite/geom/BoundsManager.h"
 #include "src/gpu/graphite/geom/EdgeAAQuad.h"
 #include "src/gpu/graphite/geom/Geometry.h"
@@ -328,6 +329,7 @@ Rect snap_scissor(const Rect& a, const Rect& deviceBounds) {
 // interact with each other, without needing to share a base class, friend each other, or have a
 // template for each combination of two types.
 struct ClipStack::TransformedShape {
+    SK_ONLY_STACK_ALLOCATABLE;
     const Transform& fLocalToDevice;
     const Shape&     fShape;
     const Rect&      fOuterBounds;
@@ -1387,19 +1389,9 @@ bool ClipStack::DrawShape::applyStyle(const SkStrokeRec& style, const Rect& devi
             //
             // For local strokes that project to a subpixel shape, clamp to the localAAOutset as
             // well to handle rendering that pads beyond the 1/2px outset in the subpixel case.
-            const float effectiveStrokeWidth = std::max(localAAOutset, style.getWidth());
-            // Rectangles, rounded rectangles, and lines do not produce miters so don't count the
-            // pessimistic limit against their draw bounds.
-            const float effectiveMiterLimit = fShape.isPath() ? style.getMiter() : 1.f;
-            // Rectangles and rounded rectangles don't have caps, so don't count that against their
-            // draw bounds (if we could efficiently know a path was a closed contour, it could
-            // be included here too).
-            const SkPaint::Cap effectiveCap = fShape.isRect() || fShape.isRRect()
-                    ? SkPaint::kButt_Cap : style.getCap();
-            localOutset = SkStrokeRec::GetInflationRadius(style.getJoin(),
-                                                          effectiveMiterLimit,
-                                                          effectiveCap,
-                                                          effectiveStrokeWidth);
+            const float strokeWidth = std::max(localAAOutset, style.getWidth());
+            localOutset = fShape.getInflationRadius(
+                    style.getJoin(), style.getMiter(), style.getCap(), strokeWidth);
         }
 
         if (localOutset > 0.f) {
