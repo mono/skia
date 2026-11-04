@@ -350,6 +350,7 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(Slug_draw_then_serialize_PathSubRun,
     SkBitmap actualPixels = render_slug(surface.get(), *deserializedSlug, paint);
     REPORTER_ASSERT(reporter, ToolUtils::equal_pixels(expectedPixels, actualPixels));
 }
+
 // DrawableOpSubmitter stores each glyph's SkGlyphID and its resolved SkDrawable* in IDOrDrawable.
 // Converting glyph IDs to drawables during submitDraws must not corrupt the glyph IDs written by
 // subsequent Slug::serialize() calls.
