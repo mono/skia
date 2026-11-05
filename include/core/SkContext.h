@@ -17,6 +17,7 @@ class SkCapture;
 class SkCaptureManager;
 class SkContextPriv;
 class SkContextPrivConst;
+class SkGPUContext;
 class SkResourceCache;
 class SkSharedContext;
 class SkStrikeCache;
@@ -53,13 +54,14 @@ public:
 
 private:
     SkContext(const SkContextOptions&);
+    SkContext(const SkContextOptions&, std::unique_ptr<SkGPUContext> gpuContext);
 
     friend class SkContextPrivConst;
     friend class SkContextPriv;
     friend class SkContextCtorAccessor;
 
     SkResourceCache* resourceCache() const;
-    SkStrikeCache* fontCache() const;
+    SkStrikeCache* strikeCache() const;
     SkTypefaceCache* typefaceCache() const;
 
     size_t fontCacheLimit() const;
@@ -77,6 +79,8 @@ private:
 
     sk_sp<SkCaptureManager> fCaptureManager;
     sk_sp<SkSharedContext> fSharedContext;
+
+    std::unique_ptr<SkGPUContext> fGPUContext;
 };
 
 #endif  // SkContext_DEFINED

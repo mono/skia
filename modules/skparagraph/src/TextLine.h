@@ -149,10 +149,15 @@ public:
 
     bool endsWithHardLineBreak() const;
 
+    // Shapes an affix string (ellipsis or soft hyphen) at cluster using its run direction and
+    // font fallback so layout width reservation and line rendering measure the same glyphs
+    static std::unique_ptr<Run> ShapeString(ParagraphImpl* owner,
+                                            BlockRange blockRange,
+                                            const SkString& ellipsis,
+                                            const Cluster* cluster);
+
 private:
-    std::unique_ptr<Run> shapeEllipsis(const SkString& ellipsis,
-                                       const Cluster* cluster,
-                                       bool isHyphen = false);
+    std::unique_ptr<Run> shapeEllipsis(const SkString& ellipsis, const Cluster* cluster);
     void justify(SkScalar maxWidth);
 
     void buildTextBlob(TextRange textRange, const TextStyle& style, const ClipContext& context);

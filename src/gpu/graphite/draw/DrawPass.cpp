@@ -4,10 +4,11 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
-#include "src/gpu/graphite/DrawPass.h"
+#include "src/gpu/graphite/draw/DrawPass.h"
 
 #include "include/private/SkLog.h"
 #include "src/core/SkTraceEvent.h"
+#include "src/gpu/graphite/CommandBuffer.h"
 #include "src/gpu/graphite/PaintParams.h"
 #include "src/gpu/graphite/PaintParamsKey.h"
 #include "src/gpu/graphite/PipelineCreationTask.h"
@@ -120,7 +121,14 @@ bool DrawPass::addResourceRefs(ResourceProvider* resourceProvider,
     }
 
     if (fStorageFallbackTexture) {
-        commandBuffer->trackResource(fStorageFallbackTexture->refTexture());
+        // When the StorageContext finalizes the fallback texture, it creates an UploadTask that is
+        // a recordDependency of the drawContext, so assert that the texture should be tracked and
+        // instantiated by this point.
+        //
+        // Note, this is a violation of separate of concerns---ideally the drawPass should be solely
+        // responsible for resourceTracking, but to avoid duplicated work, we assert here.
+        SkASSERT(fStorageFallbackTexture->isInstantiated());
+        SkASSERT(commandBuffer->isResourceTracked(fStorageFallbackTexture->texture()));
     }
 
     return true;

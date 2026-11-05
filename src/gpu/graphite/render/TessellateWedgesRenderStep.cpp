@@ -19,10 +19,10 @@
 #include "src/gpu/BufferWriter.h"
 #include "src/gpu/graphite/Attribute.h"
 #include "src/gpu/graphite/BufferManager.h"
-#include "src/gpu/graphite/DrawOrder.h"
-#include "src/gpu/graphite/DrawParams.h"
 #include "src/gpu/graphite/DrawTypes.h"
 #include "src/gpu/graphite/PipelineData.h"
+#include "src/gpu/graphite/draw/DrawOrder.h"
+#include "src/gpu/graphite/draw/DrawParams.h"
 #include "src/gpu/graphite/geom/Geometry.h"
 #include "src/gpu/graphite/geom/Shape.h"
 #include "src/gpu/graphite/geom/Transform.h"
@@ -151,7 +151,7 @@ std::unique_ptr<TessellateWedgesRenderStep> TessellateWedgesRenderStep::ConvexFi
 }
 
 std::string TessellateWedgesRenderStep::vertexSkSL(const RootNodesInfo&) const {
-    return SkSL::String::printf(
+    return SK_UNSAFE_TODO(SkSL::String::printf(
             "float2 localCoord;\n"
             "if (resolveLevel_and_idx.x < 0) {\n"
                 // A negative resolve level means this is the fan point.
@@ -167,7 +167,7 @@ std::string TessellateWedgesRenderStep::vertexSkSL(const RootNodesInfo&) const {
             "float4 devPosition = localToDevice * float4(localCoord, 0.0, 1.0);\n"
             "devPosition.z = depth;\n"
             "stepLocalCoords = localCoord;\n",
-            fInfinitySupport ? "curve_type_using_inf_support(p23)" : "curveType");
+            fInfinitySupport ? "curve_type_using_inf_support(p23)" : "curveType"));
 }
 
 void TessellateWedgesRenderStep::writeVertices(DrawWriter* dw,

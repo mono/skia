@@ -10,6 +10,7 @@
 
 #include "include/core/SkArc.h"
 #include "include/core/SkM44.h"
+#include "include/core/SkPaint.h"
 #include "include/core/SkPath.h"
 #include "include/core/SkPathTypes.h"
 #include "include/core/SkPoint.h"
@@ -97,7 +98,7 @@ public:
         if (fType == Type::kPath) {
             return fPath.getFillType(); // already incorporates invertedness
         } else {
-            return fInverted ? SkPathFillType::kInverseEvenOdd : SkPathFillType::kEvenOdd;
+            return fInverted ? SkPathFillType::kInverseWinding : SkPathFillType::kWinding;
         }
     }
 
@@ -115,6 +116,15 @@ public:
 
     // Convert the shape into a path that describes the same geometry.
     SkPath asPath() const;
+
+    // Calculate the conservative amount of outset that stroking adds to the Shape's bounds,
+    // taking advantage of the shape's type. This should only be called for local stroking, since
+    // it returns a value based on the vector concept of a stroke, and does not handle hairlines or
+    // anti-aliasing inflation logic.
+    float getInflationRadius(SkPaint::Join join,
+                             float miterLimit,
+                             SkPaint::Cap cap,
+                             float strokeWidth) const;
 
     // Access the actual geometric description of the shape. May only access the appropriate type
     // based on what was last set.

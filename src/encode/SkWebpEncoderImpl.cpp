@@ -74,8 +74,8 @@ static bool preprocess_webp_picture(WebPPicture* pic,
 
     // Set compression, method, and pixel format.
     // libwebp recommends using BGRA for lossless and YUV for lossy.
-    // The choices of |webp_config.method| currently just match Chrome's defaults.  We
-    // could potentially expose this decision to the client.
+    // Unless the client picks |opts.fMethod|, the choices of |webp_config.method| just
+    // match Chrome's defaults.
     if (SkWebpEncoder::Compression::kLossy == opts.fCompression) {
         webp_config->lossless = 0;
 #ifndef SK_WEBP_ENCODER_USE_DEFAULT_METHOD
@@ -86,6 +86,9 @@ static bool preprocess_webp_picture(WebPPicture* pic,
         webp_config->lossless = 1;
         webp_config->method = 0;
         pic->use_argb = 1;
+    }
+    if (opts.fMethod >= 0) {
+        webp_config->method = opts.fMethod;
     }
 
     {
@@ -150,7 +153,7 @@ bool Encode(SkWStream* stream, const SkPixmap& pixmap, const Options& opts) {
     // If there is no need to embed an ICC profile, we write directly to the input stream.
     // Otherwise, we will first encode to |tmp| and use a mux to add the ICC chunk.  libwebp
     // forces us to have an encoded image before we can add a profile.
-    sk_sp<SkData> icc = SkWriteICCProfile(pixmap.colorSpace());
+    sk_sp<SkData> icc = SkWriteICCProfile(pixmap.colorSpace(), opts.fHdrMetadata);
     SkDynamicMemoryWStream tmp;
     pic.custom_ptr = icc ? (void*)&tmp : (void*)stream;
     pic.writer = stream_writer;

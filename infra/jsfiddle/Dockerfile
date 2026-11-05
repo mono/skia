@@ -1,4 +1,4 @@
-FROM gcr.io/skia-public/jsfiddle-base@sha256:b8b1c1cfc6a573e9b267a48cfcd5f542ca73a9da42b953604938677799771693
+FROM gcr.io/skia-public/jsfiddle-base@sha256:267ae6e25ccfc7d0bc03b726a167f01c8af859c698623de83a4314feb3aaae32
 
 COPY canvaskit.js /usr/local/share/jsfiddle/dist/canvaskit.js
 COPY canvaskit.wasm /usr/local/share/jsfiddle/dist/canvaskit.wasm
