@@ -9,6 +9,7 @@
 
 #include "include/core/SkAnnotation.h"
 #include "include/core/SkCanvas.h"
+#include "include/core/SkMesh.h"
 #include "include/core/SkSpan.h"
 #include "include/core/SkOverdrawCanvas.h"
 #include "include/utils/SkNoDrawCanvas.h"
@@ -244,6 +245,13 @@ void sk_canvas_draw_image_nine(sk_canvas_t* ccanvas, const sk_image_t* image, co
 
 void sk_canvas_draw_vertices(sk_canvas_t* ccanvas, const sk_vertices_t* vertices, sk_blendmode_t mode, const sk_paint_t* paint) {
     AsCanvas(ccanvas)->drawVertices(AsVertices(vertices), (SkBlendMode)mode, *AsPaint(paint));
+}
+
+void sk_canvas_draw_mesh(sk_canvas_t* ccanvas, const sk_mesh_t* mesh, sk_blender_t* blender, const sk_paint_t* paint) {
+    AsCanvas(ccanvas)->drawMesh(
+        AsMeshBuilder(mesh)->fMesh,
+        blender ? sk_ref_sp(AsBlender(blender)) : nullptr,
+        *AsPaint(paint));
 }
 
 void sk_canvas_draw_arc(sk_canvas_t* ccanvas, const sk_rect_t* oval, float startAngle, float sweepAngle, bool useCenter, const sk_paint_t* paint) {
