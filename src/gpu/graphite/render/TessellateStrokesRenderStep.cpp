@@ -21,11 +21,11 @@
 #include "src/core/SkSLTypeShared.h"
 #include "src/core/SkVx.h"
 #include "src/gpu/graphite/Attribute.h"
-#include "src/gpu/graphite/DrawOrder.h"
-#include "src/gpu/graphite/DrawParams.h"
 #include "src/gpu/graphite/DrawTypes.h"
 #include "src/gpu/graphite/PipelineData.h"
 #include "src/gpu/graphite/ResourceTypes.h"
+#include "src/gpu/graphite/draw/DrawOrder.h"
+#include "src/gpu/graphite/draw/DrawParams.h"
 #include "src/gpu/graphite/geom/Geometry.h"
 #include "src/gpu/graphite/geom/Shape.h"
 #include "src/gpu/graphite/geom/Transform.h"
@@ -89,34 +89,49 @@ static constexpr SkSpan<const Attribute> kAttributes[2] = {kAttributesWithCurveT
 
 }  // namespace
 
-// NOTE: The stroke geometry can self intersect, and when it is performing shading, this is not
-// desired. However, when it is an inverse fill, any self intersections are gracefully handled by
-// the stencil buffer and shading is a follow-up cover step so they can be allowed.
 TessellateStrokesRenderStep::TessellateStrokesRenderStep(Layout layout,
+                                                         RenderStepID renderStepId,
+                                                         SkEnumBitMask<Flags> xtraFlags,
                                                          bool infinitySupport,
-                                                         bool inverseFill)
+                                                         StencilSettings stencilSettings)
         : RenderStep(layout,
-                     inverseFill ? RenderStepID::kTessellateStrokes_InverseFill
-                                 : RenderStepID::kTessellateStrokes_Fill,
-                     (inverseFill ? Flags::kAllowsSelfIntersection : Flags::kPerformsShading)
-                            | Flags::kRequiresMSAA
-                            | Flags::kAppendDynamicInstances,
+                     renderStepId,
+                     Flags::kRequiresMSAA | Flags::kAppendDynamicInstances | xtraFlags,
                      /*uniforms=*/{{"affineMatrix", SkSLType::kFloat4},
                                    {"translate", SkSLType::kFloat2},
                                    {"maxScale", SkSLType::kFloat}},
                      PrimitiveType::kTriangleStrip,
-                     inverseFill ? kIncrementStencilPass : StencilSettings(),
-                     /*staticAttrs=*/{},
+                     stencilSettings,
+                     /*staticAttrs=*/ {},
                      /*appendAttrs=*/SK_UNSAFE_TODO(kAttributes[infinitySupport]),
                      /*storageUniforms=*/{})
         , fInfinitySupport(infinitySupport) {}
 
 TessellateStrokesRenderStep::~TessellateStrokesRenderStep() {}
 
+std::unique_ptr<TessellateStrokesRenderStep> TessellateStrokesRenderStep::Regular(
+        Layout layout, bool infinitySupport) {
+    // NOTE: The stroke geometry can self intersect and this step performs shading, so do not
+    // include `kAllowsSelfIntersection` or `kNoSelfIntersection`. This allows the depth test to
+    // eliminate double blending when a transparent stroke crosses over itself.
+    return std::unique_ptr<TessellateStrokesRenderStep>(new TessellateStrokesRenderStep(
+            layout, RenderStepID::kTessellateStrokes_Fill, Flags::kPerformsShading,
+            infinitySupport, /*stencilSettings=*/{}));
+}
+
+std::unique_ptr<TessellateStrokesRenderStep> TessellateStrokesRenderStep::StencilOnly(
+        Layout layout, bool infinitySupport) {
+    // Unlike `Regular()`, this variant can allow self intersections because overlap is gracefully
+    // handled by the stencil buffer updates and then any follow-up cover step will shade once.
+    return std::unique_ptr<TessellateStrokesRenderStep>(new TessellateStrokesRenderStep(
+            layout, RenderStepID::kTessellateStrokes_Stencil, Flags::kAllowsSelfIntersection,
+            infinitySupport, kIncrementStencilPass));
+}
+
 std::string TessellateStrokesRenderStep::vertexSkSL(const RootNodesInfo&) const {
     // TODO: Assumes vertex ID support for now, max edges must equal
     // skgpu::tess::FixedCountStrokes::kMaxEdges -> (2^14 - 1) -> 16383
-    return SkSL::String::printf(
+    return SK_UNSAFE_TODO(SkSL::String::printf(
             "float edgeID = float(sk_VertexID >> 1);\n"
             "if ((sk_VertexID & 1) != 0) {"
                 "edgeID = -edgeID;"
@@ -127,7 +142,7 @@ std::string TessellateStrokesRenderStep::vertexSkSL(const RootNodesInfo&) const 
                     "stroke, %s);\n"
             "float4 devPosition = float4(devAndLocalCoords.xy, depth, 1.0);\n"
             "stepLocalCoords = devAndLocalCoords.zw;\n",
-            fInfinitySupport ? "curve_type_using_inf_support(p23)" : "curveType");
+            fInfinitySupport ? "curve_type_using_inf_support(p23)" : "curveType"));
 }
 
 void TessellateStrokesRenderStep::writeVertices(DrawWriter* dw,

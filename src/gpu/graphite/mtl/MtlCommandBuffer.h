@@ -10,7 +10,7 @@
 
 #include "include/private/SkLog.h"
 #include "src/gpu/graphite/CommandBuffer.h"
-#include "src/gpu/graphite/DrawPass.h"
+#include "src/gpu/graphite/draw/DrawPass.h"
 #include "src/gpu/graphite/mtl/MtlResourceProvider.h"
 
 #include <memory>
@@ -167,6 +167,7 @@ private:
 
     std::array<BindBufferInfo, 5> fBoundUniformBuffers;
     bool fBoundUniformBuffersDirty = false;
+    const Texture* fBoundStorageFallbackTexture = nullptr;
 
     id<MTLBuffer> fCurrentIndexBuffer;
     id<MTLBuffer> fCurrentIndirectBuffer;

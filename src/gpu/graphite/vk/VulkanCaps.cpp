@@ -13,6 +13,7 @@
 #include "include/gpu/graphite/vk/VulkanGraphiteTypes.h"
 #include "include/gpu/vk/VulkanExtensions.h"
 #include "include/gpu/vk/VulkanTypes.h"
+#include "include/private/SkAttributes.h"
 #include "include/private/SkMath.h"
 #include "src/gpu/SwizzlePriv.h"
 #include "src/gpu/graphite/ComputePipelineDesc.h"
@@ -173,7 +174,8 @@ void VulkanCaps::init(const ContextOptions& contextOptions,
         requiredLazyFlags |= VK_MEMORY_PROPERTY_PROTECTED_BIT;
     }
     for (uint32_t i = 0; i < deviceMemoryProperties.memoryTypeCount; ++i) {
-        const uint32_t& supportedFlags = deviceMemoryProperties.memoryTypes[i].propertyFlags;
+        const uint32_t& supportedFlags =
+                SK_UNSAFE_TODO(deviceMemoryProperties.memoryTypes[i].propertyFlags);
         if ((supportedFlags & requiredLazyFlags) == requiredLazyFlags) {
             fSupportsMemorylessAttachments = true;
         }
@@ -204,6 +206,9 @@ void VulkanCaps::init(const ContextOptions& contextOptions,
             vendorID == skgpu::kAMD_VkVendor ? 32 : deviceLimits.maxVertexInputAttributes;
     fMaxUniformBufferRange = deviceLimits.maxUniformBufferRange;
     fMaxStorageBufferRange = deviceLimits.maxStorageBufferRange;
+    fResourceBindingReqs.fMaxStorageBufferBytes = SkTo<int>(
+            std::min<uint64_t>(fMaxStorageBufferRange,
+                               ResourceBindingRequirements::kDefaultMaxStorageBufferBytes));
 
 #ifdef SK_BUILD_FOR_ANDROID
     if (extensions->hasExtension(
@@ -267,7 +272,7 @@ void VulkanCaps::init(const ContextOptions& contextOptions,
     fIsInputAttachmentReadCoherent = fSupportsRasterizationOrderColorAttachmentAccess ||
                                      vendorID == kARM_VkVendor || vendorID == kImagination_VkVendor;
 
-    this->initShaderCaps(enabledFeatures, vendorID);
+    this->initShaderCaps(enabledFeatures, vendorID, deviceProperties.fSubgroup);
 
     // Vulkan 1.0 dynamic state is always supported.  Dynamic state based on features of
     // VK_EXT_extended_dynamic_state and VK_EXT_extended_dynamic_state2 are also considered basic
@@ -360,6 +365,7 @@ VulkanCaps::EnabledFeatures VulkanCaps::getEnabledFeatures(
                     const auto* feature =
                             reinterpret_cast<const VkPhysicalDeviceVulkan13Features*>(pNext);
                     enabled.fPipelineCreationCacheControl = feature->pipelineCreationCacheControl;
+                    enabled.fSubgroupSizeControl = feature->subgroupSizeControl;
                     break;
                 }
                 case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_4_FEATURES: {
@@ -374,6 +380,19 @@ VulkanCaps::EnabledFeatures VulkanCaps::getEnabledFeatures(
                             reinterpret_cast<
                                 const VkPhysicalDevicePipelineCreationCacheControlFeatures*>(pNext);
                     enabled.fPipelineCreationCacheControl = feature->pipelineCreationCacheControl;
+                    break;
+                }
+                case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SUBGROUP_SIZE_CONTROL_FEATURES: {
+                    const auto* feature =
+                            reinterpret_cast<const VkPhysicalDeviceSubgroupSizeControlFeatures*>(
+                                    pNext);
+                    enabled.fSubgroupSizeControl = feature->subgroupSizeControl;
+                    break;
+                }
+                case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_MAXIMAL_RECONVERGENCE_FEATURES_KHR: {
+                    const auto* feature = reinterpret_cast<
+                            const VkPhysicalDeviceShaderMaximalReconvergenceFeaturesKHR*>(pNext);
+                    enabled.fShaderMaximalReconvergence = feature->shaderMaximalReconvergence;
                     break;
                 }
                 case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SAMPLER_YCBCR_CONVERSION_FEATURES: {
@@ -505,6 +524,11 @@ void VulkanCaps::getProperties(const skgpu::VulkanInterface* vkInterface,
     props->fHic.copyDstLayoutCount = kHicCopyDstLayoutMax;
     props->fHic.pCopyDstLayouts = hicCopyDstLayoutStorage;
 
+    // Core in Vulkan 1.1, which Graphite requires, so this can always be chained.
+    props->fSubgroup = {};
+    props->fSubgroup.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SUBGROUP_PROPERTIES;
+    AddToPNextChain(&props->fBase, &props->fSubgroup);
+
     const bool hasDriverProperties =
             physicalDeviceVersion >= VK_API_VERSION_1_2 ||
             extensions->hasExtension(VK_KHR_DRIVER_PROPERTIES_EXTENSION_NAME, 1);
@@ -533,10 +557,10 @@ void VulkanCaps::getProperties(const skgpu::VulkanInterface* vkInterface,
         // pCopyDstLayouts respectively.  The GENERAL layout is required to be found in both.  Skia
         // has two use cases for this function; initialization (UNDEFINED->GENERAL) and after
         // texture updates (GENERAL->SHADER_READ_ONLY, per Recorder::update*BackendTexture).
-        props->fHicHasShaderReadOnlyDstLayout =
-                std::find(props->fHic.pCopyDstLayouts,
-                          props->fHic.pCopyDstLayouts + props->fHic.copyDstLayoutCount,
-                          VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+        props->fHicHasShaderReadOnlyDstLayout = std::find(
+                props->fHic.pCopyDstLayouts,
+                SK_UNSAFE_TODO(props->fHic.pCopyDstLayouts + props->fHic.copyDstLayoutCount),
+                VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
     }
 
     // If this field is not filled, driver bug workarounds won't work correctly. It should always
@@ -710,9 +734,19 @@ void VulkanCaps::applyDriverCorrectnessWorkarounds(const PhysicalDevicePropertie
     if (isQualcommProprietary && driverVersion < skgpu::DriverVersion(512, 822)) {
         fMSAARenderToSingleSampledSupport = false;
     }
+
+#if defined(SK_BUILD_FOR_ANDROID)
+    // Dawn doesn't use SPIR-V maximal reconvergence on Android Imagination GPUs (Pixel 10),
+    // crbug.com/379673383. Follow suit; compute shaders force reconvergence with barriers instead.
+    if (isImagination) {
+        fShaderCaps->fSubgroupMaximalReconvergence = false;
+    }
+#endif
 }
 
-void VulkanCaps::initShaderCaps(const EnabledFeatures enabledFeatures, const uint32_t vendorID) {
+void VulkanCaps::initShaderCaps(const EnabledFeatures enabledFeatures,
+                                const uint32_t vendorID,
+                                const VkPhysicalDeviceSubgroupProperties& subgroupProperties) {
     // TODO(skbug.com/40045541): We must force std430 array stride when using SSBOs since SPIR-V
     // generation cannot handle mixed array strides being passed into functions.
     fShaderCaps->fForceStd430ArrayLayout =
@@ -722,6 +756,32 @@ void VulkanCaps::initShaderCaps(const EnabledFeatures enabledFeatures, const uin
     // (skbug.com/421927604)
     fShaderCaps->fCannotUseRelaxedPrecisionOnImageSample = vendorID == kNvidia_VkVendor;
     fShaderCaps->fDualSourceBlendingSupport = enabledFeatures.fDualSrcBlend;
+
+    // Subgroup support requirements:
+    // - SkSL exposes subgroups in compute shaders only, so only the compute stage is required
+    //   (Dawn additionally requires fragment).
+    // - fSubgroupSupport covers every operation family that SkSL can emit, so all of them are
+    //   required. Quad and relative-shuffle operations are not exposed by SkSL and not required
+    //   (Dawn requires both for WGSL).
+    // - subgroupSizeControl (VK_EXT_subgroup_size_control or Vulkan 1.3) is mandatory so that
+    //   compute pipelines can control and query the subgroup size, matching Dawn.
+    //   VulkanPreferredFeatures enables it when available. computeFullSubgroups is not required.
+    // - SkSL's half lowers to 32-bit float with RelaxedPrecision in SPIR-V, so
+    //   shaderSubgroupExtendedTypes is not needed (Dawn needs it for f16).
+    constexpr VkSubgroupFeatureFlags kRequiredSubgroupOps =
+            VK_SUBGROUP_FEATURE_BASIC_BIT | VK_SUBGROUP_FEATURE_VOTE_BIT |
+            VK_SUBGROUP_FEATURE_ARITHMETIC_BIT | VK_SUBGROUP_FEATURE_BALLOT_BIT |
+            VK_SUBGROUP_FEATURE_SHUFFLE_BIT;
+    fShaderCaps->fSubgroupSupport =
+            fComputeSupport && enabledFeatures.fSubgroupSizeControl &&
+            (subgroupProperties.supportedStages & VK_SHADER_STAGE_COMPUTE_BIT) &&
+            (subgroupProperties.supportedOperations & kRequiredSubgroupOps) == kRequiredSubgroupOps;
+
+    // Maximal reconvergence is optional; without it, compute shaders force reconvergence with
+    // barriers. VulkanPreferredFeatures enables VK_KHR_shader_maximal_reconvergence when available,
+    // and the SPIR-V generator opts compute shaders into it (MaximallyReconvergesKHR) when set.
+    fShaderCaps->fSubgroupMaximalReconvergence =
+            fShaderCaps->fSubgroupSupport && enabledFeatures.fShaderMaximalReconvergence;
 }
 
 void VulkanCaps::initFormatTable(const skgpu::VulkanInterface* interface,
@@ -1190,18 +1250,19 @@ bool VulkanCaps::extractGraphicsDescs(const UniqueKey& key,
 
     const uint32_t* rawKeyData = key.data();
 
-    SkASSERT(RenderStep::IsValidRenderStepID(rawKeyData[kPipelineKeyRenderStepIDIndex]));
-    RenderStep::RenderStepID renderStepID =
-            static_cast<RenderStep::RenderStepID>(rawKeyData[kPipelineKeyRenderStepIDIndex]);
+    SkASSERT(RenderStep::IsValidRenderStepID(
+            SK_UNSAFE_TODO(rawKeyData[kPipelineKeyRenderStepIDIndex])));
+    RenderStep::RenderStepID renderStepID = static_cast<RenderStep::RenderStepID>(
+            SK_UNSAFE_TODO(rawKeyData[kPipelineKeyRenderStepIDIndex]));
 
-    *pipelineDesc =
-            GraphicsPipelineDesc(renderStepID,
-                                 UniquePaintParamsID(rawKeyData[kPipelineKeyPaintParamsIDIndex]));
+    *pipelineDesc = GraphicsPipelineDesc(
+            renderStepID,
+            UniquePaintParamsID(SK_UNSAFE_TODO(rawKeyData[kPipelineKeyPaintParamsIDIndex])));
 
-    const uint32_t rpDescBits = rawKeyData[kPipelineKeyRenderPassDescIndex];
+    const uint32_t rpDescBits = SK_UNSAFE_TODO(rawKeyData[kPipelineKeyRenderPassDescIndex]);
     VulkanRenderPass::ExtractRenderPassDesc(
             rpDescBits,
-            SwizzleCtorAccessor::Make(rawKeyData[kPipelineKeyWriteSwizzleIndex]),
+            SwizzleCtorAccessor::Make(SK_UNSAFE_TODO(rawKeyData[kPipelineKeyWriteSwizzleIndex])),
             this->getDstReadStrategy(),
             renderPassDesc);
 

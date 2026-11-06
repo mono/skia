@@ -11,6 +11,7 @@
 #include "include/gpu/graphite/BackendSemaphore.h"
 #include "include/gpu/graphite/vk/VulkanGraphiteTypes.h"
 #include "include/gpu/vk/VulkanMutableTextureState.h"
+#include "include/private/SkAttributes.h"
 #include "include/private/SkLog.h"
 #include "include/private/SkTArray.h"
 #include "src/gpu/DataUtils.h"
@@ -281,6 +282,7 @@ void VulkanCommandBuffer::onResetCommandBuffer() {
     fBoundIndirectBuffer = VK_NULL_HANDLE;
     fBoundIndirectBufferOffset = 0;
     fTargetTexture = nullptr;
+    fBoundStorageFallbackTexture = nullptr;
     fTextureSamplerDescSetToBind = VK_NULL_HANDLE;
     fNumTextureSamplers = 0;
     fUniformBuffersToBind.fill({});
@@ -369,7 +371,7 @@ void VulkanCommandBuffer::addWaitSemaphores(size_t numWaitSemaphores,
     }
 
     for (size_t i = 0; i < numWaitSemaphores; ++i) {
-        auto& semaphore = waitSemaphores[i];
+        auto& semaphore = SK_UNSAFE_TODO(waitSemaphores[i]);
         if (semaphore.isValid() && semaphore.backend() == BackendApi::kVulkan) {
             fWaitSemaphores.push_back(BackendSemaphores::GetVkSemaphore(semaphore));
         }
@@ -384,7 +386,7 @@ void VulkanCommandBuffer::addSignalSemaphores(size_t numSignalSemaphores,
     }
 
     for (size_t i = 0; i < numSignalSemaphores; ++i) {
-        auto& semaphore = signalSemaphores[i];
+        auto& semaphore = SK_UNSAFE_TODO(signalSemaphores[i]);
         if (semaphore.isValid() && semaphore.backend() == BackendApi::kVulkan) {
             fSignalSemaphores.push_back(BackendSemaphores::GetVkSemaphore(semaphore));
         }
@@ -502,7 +504,7 @@ void VulkanCommandBuffer::prepareBackendTextureForStateUpdate(
 // further tracking.
 const Sampler* VulkanCommandBuffer::getSampler(
         const DrawPassCommands::BindTexturesAndSamplers* command, int32_t index) {
-    auto desc = command->fSamplers[index];
+    auto desc = SK_UNSAFE_TODO(command->fSamplers[index]);
     if (desc.isImmutable()) {
         const VulkanSampler* immutableSampler = fActiveGraphicsPipeline->immutableSampler(index);
         if (immutableSampler) {
@@ -542,7 +544,7 @@ static VkResult submit_to_queue(const VulkanSharedContext* sharedContext,
     VkFrameBoundaryEXT frameBoundary;
     if (markFrameBoundary == MarkFrameBoundary::kYes &&
         sharedContext->vulkanCaps().supportsFrameBoundary()) {
-        memset(&frameBoundary, 0, sizeof(VkFrameBoundaryEXT));
+        SK_UNSAFE_TODO(memset(&frameBoundary, 0, sizeof(VkFrameBoundaryEXT)));
         frameBoundary.sType = VK_STRUCTURE_TYPE_FRAME_BOUNDARY_EXT;
         frameBoundary.flags = VK_FRAME_BOUNDARY_FRAME_END_BIT_EXT;
         frameBoundary.frameID = frameID;
@@ -563,28 +565,30 @@ static VkResult submit_to_queue(const VulkanSharedContext* sharedContext,
     return result;
 }
 
-bool VulkanCommandBuffer::submit(VkQueue queue, const SubmitInfo& submitInfo) {
+bool VulkanCommandBuffer::submit(VkQueue queue, const SubmitInfo& submitInfo, bool includeFence) {
     this->end();
 
     auto device = fSharedContext->device();
     VkResult err;
 
-    if (fSubmitFence == VK_NULL_HANDLE) {
-        VkFenceCreateInfo fenceInfo = {};
-        fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-        VULKAN_CALL_RESULT(
-                fSharedContext, err, CreateFence(device, &fenceInfo, nullptr, &fSubmitFence));
-        if (err) {
-            fSubmitFence = VK_NULL_HANDLE;
-            return false;
+    if (includeFence) {
+        if (fSubmitFence == VK_NULL_HANDLE) {
+            VkFenceCreateInfo fenceInfo = {};
+            fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+            VULKAN_CALL_RESULT(
+                    fSharedContext, err, CreateFence(device, &fenceInfo, nullptr, &fSubmitFence));
+            if (err) {
+                fSubmitFence = VK_NULL_HANDLE;
+                return false;
+            }
+        } else {
+            // This cannot return DEVICE_LOST so we assert we succeeded.
+            VULKAN_CALL_RESULT(fSharedContext, err, ResetFences(device, 1, &fSubmitFence));
+            SkASSERT(err == VK_SUCCESS);
         }
-    } else {
-        // This cannot return DEVICE_LOST so we assert we succeeded.
-        VULKAN_CALL_RESULT(fSharedContext, err, ResetFences(device, 1, &fSubmitFence));
-        SkASSERT(err == VK_SUCCESS);
+        SkASSERT(fSubmitFence != VK_NULL_HANDLE);
     }
 
-    SkASSERT(fSubmitFence != VK_NULL_HANDLE);
     int waitCount = fWaitSemaphores.size();
     TArray<VkPipelineStageFlags> vkWaitStages(waitCount);
     for (int i = 0; i < waitCount; ++i) {
@@ -594,7 +598,7 @@ bool VulkanCommandBuffer::submit(VkQueue queue, const SubmitInfo& submitInfo) {
 
     VkResult submitResult = submit_to_queue(fSharedContext,
                                             queue,
-                                            fSubmitFence,
+                                            includeFence ? fSubmitFence : VK_NULL_HANDLE,
                                             waitCount,
                                             fWaitSemaphores.data(),
                                             vkWaitStages.data(),
@@ -620,8 +624,10 @@ bool VulkanCommandBuffer::submit(VkQueue queue, const SubmitInfo& submitInfo) {
                      submitResult == VK_ERROR_OUT_OF_DEVICE_MEMORY);
         }
 
-        VULKAN_CALL(fSharedContext->interface(), DestroyFence(device, fSubmitFence, nullptr));
-        fSubmitFence = VK_NULL_HANDLE;
+        if (fSubmitFence != VK_NULL_HANDLE) {
+            VULKAN_CALL(fSharedContext->interface(), DestroyFence(device, fSubmitFence, nullptr));
+            fSubmitFence = VK_NULL_HANDLE;
+        }
         return false;
     }
     return true;
@@ -715,6 +721,38 @@ bool VulkanCommandBuffer::onAddRenderPass(const RenderPassDesc& rpDesc,
                                           VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
                                           VK_ACCESS_SHADER_READ_BIT,
                                           VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
+        }
+
+        if (const TextureProxy* storageProxy = drawPass->storageFallbackTexture()) {
+            const Texture* texture = storageProxy->texture();
+            SkASSERT(texture);
+            auto* vulkanTexture =
+                    const_cast<VulkanTexture*>(static_cast<const VulkanTexture*>(texture));
+            VkPipelineStageFlags stageFlags = PipelineStageFlagsToVkPipelineStageFlags(
+                    drawPass->storageBufferStages());
+            if (!stageFlags) {
+                // Graphite compute requires storage buffers; thus a fallback texture will never
+                // require the compute bit.
+                stageFlags = VK_PIPELINE_STAGE_VERTEX_SHADER_BIT |
+                             VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+            }
+            vulkanTexture->setImageLayout(this,
+                                          VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                                          VK_ACCESS_SHADER_READ_BIT,
+                                          stageFlags);
+        } else if (!fSharedContext->caps()->storageBufferSupport() &&
+                   SkToBool(drawPass->storageBufferStages())) {
+            // Transition the null placeholder texture outside the render pass if a pipeline in this
+            // DrawPass expects a storage fallback texture slot but none was provided.
+            if (const VulkanTexture* nullTex = fResourceProvider->getOrCreateNullTexture()) {
+                VulkanTexture* vulkanTexture = const_cast<VulkanTexture*>(nullTex);
+                vulkanTexture->setImageLayout(this,
+                                              VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                                              VK_ACCESS_SHADER_READ_BIT,
+                                              VK_PIPELINE_STAGE_VERTEX_SHADER_BIT |
+                                              VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT);
+                this->trackResource(sk_ref_sp(nullTex));
+            }
         }
     }
     if (fDstCopy.first) {
@@ -1162,13 +1200,18 @@ void VulkanCommandBuffer::endRenderPass() {
     VULKAN_CALL(fSharedContext->interface(), CmdEndRenderPass(fPrimaryCommandBuffer));
     fActiveRenderPass = false;
     fTargetTexture = nullptr;
+    fBoundStorageFallbackTexture = nullptr;
 }
 
 void VulkanCommandBuffer::addDrawPass(DrawPass* drawPass) {
-    // If there is storage buffer data to bind, it must be done prior to draws.
-    if (drawPass->storageBufferInfo().fBuffer != nullptr) {
-        this->recordBufferBindingInfo(drawPass->storageBufferInfo(),
-                                      UniformSlot::kStorage);
+    // If there is storage data to bind, it must be done prior to draws; otherwise clear the slot so
+    // state from a prior DrawPass in the same RenderPass does not leak.
+    if (fSharedContext->caps()->storageBufferSupport()) {
+        this->recordBufferBindingInfo(drawPass->storageBufferInfo(), UniformSlot::kStorage);
+    } else {
+        const TextureProxy* proxy = drawPass->storageFallbackTexture();
+        fBoundStorageFallbackTexture = proxy ? proxy->texture() : nullptr;
+        fBindUniformBuffers = true;
     }
 
     for (auto [type, cmdPtr] : drawPass->commands()) {
@@ -1368,10 +1411,48 @@ void VulkanCommandBuffer::syncDescriptorSets() {
 namespace {
 void update_uniform_descriptor_set(SkSpan<DescriptorData> requestedDescriptors,
                                    SkSpan<BindBufferInfo> bindUniformBufferInfo,
+                                   const Texture* boundStorageFallbackTexture,
                                    VkDescriptorSet descSet,
+                                   VulkanResourceProvider* resourceProvider,
                                    const VulkanSharedContext* sharedContext) {
     for (size_t i = 0; i < requestedDescriptors.size(); i++) {
         int descriptorBindingIndex = requestedDescriptors[i].fBindingIndex;
+        if (requestedDescriptors[i].fType == DescriptorType::kTexture) {
+            VkDescriptorImageInfo imageInfo = {};
+            imageInfo.sampler = VK_NULL_HANDLE;
+
+            const VulkanTexture* vkTex = nullptr;
+            if (boundStorageFallbackTexture) {
+                vkTex = static_cast<const VulkanTexture*>(boundStorageFallbackTexture);
+            } else {
+                SkASSERT(resourceProvider);
+                vkTex = resourceProvider->getOrCreateNullTexture();
+            }
+            SkASSERT(vkTex);
+
+            const VulkanImageView* view = vkTex->getImageView(VulkanImageView::Usage::kShaderInput);
+            SkASSERT(view);
+            imageInfo.imageView = view ? view->imageView() : VK_NULL_HANDLE;
+            imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+
+            VkWriteDescriptorSet writeInfo = {};
+            writeInfo.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            writeInfo.dstSet = descSet;
+            writeInfo.dstBinding = descriptorBindingIndex;
+            writeInfo.dstArrayElement = 0;
+            writeInfo.descriptorCount = requestedDescriptors[i].fCount;
+            writeInfo.descriptorType = VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE;
+            writeInfo.pImageInfo = &imageInfo;
+
+            VULKAN_CALL(sharedContext->interface(),
+                        UpdateDescriptorSets(sharedContext->device(),
+                                             /*descriptorWriteCount=*/1,
+                                             &writeInfo,
+                                             /*descriptorCopyCount=*/0,
+                                             /*pDescriptorCopies=*/nullptr));
+            continue;
+        }
+
         SkASSERT(SkTo<unsigned long>(descriptorBindingIndex) < bindUniformBufferInfo.size());
         const auto& bindInfo = bindUniformBufferInfo[descriptorBindingIndex];
         if (bindInfo.fBuffer) {
@@ -1421,29 +1502,13 @@ void VulkanCommandBuffer::bindUniformBuffers() {
     const bool hasCombinedUbo =
             fActiveGraphicsPipeline->hasCombinedUniforms() &&
             fUniformBuffersToBind[Pipeline::kCombinedUniformIndex].fBuffer;
-    const bool hasStorageBuffer =
-            fActiveGraphicsPipeline->usesStorageBuffer() &&
-            fUniformBuffersToBind[Pipeline::kStorageBufferIndex].fBuffer;
+    const bool hasStorageSlot = fActiveGraphicsPipeline->usesStorageBuffer();
 
-    // We should never have a storage buffer without having a combined uniform buffer as well.
-    SkASSERT(!hasStorageBuffer || hasCombinedUbo);
-
-    // If no uniforms are used, we can go ahead and return since no descriptors need to be bound.
-    if (!hasCombinedUbo) {
+    // If no uniforms or storage are used, we can go ahead and return since no descriptors need to
+    // be bound.
+    if (!hasCombinedUbo && !hasStorageSlot) {
         return;
     }
-
-    const auto& combinedUboInfo = fUniformBuffersToBind[Pipeline::kCombinedUniformIndex];
-    auto vulkanBuffer = static_cast<const VulkanBuffer*>(combinedUboInfo.fBuffer);
-
-    DescriptorType uniformBufferType =
-            fSharedContext->caps()->storageBufferSupport() ? DescriptorType::kStorageBufferDynamic
-                                                           : DescriptorType::kUniformBufferDynamic;
-
-    // If we determine that we should use storage buffers, we expect that the actual VkBuffer
-    // supports that usage.
-    SkASSERT(uniformBufferType != DescriptorType::kStorageBufferDynamic ||
-             vulkanBuffer->bufferUsageFlags() | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
 
     // We expect to have up to 2 descriptors within this set. Fill out DescriptorData (for
     // interfacing with backend-agnostic graphite calls) and dynamic offset information for each
@@ -1451,28 +1516,52 @@ void VulkanCommandBuffer::bindUniformBuffers() {
     skia_private::STArray<2, DescriptorData> uniformDescriptorData;
     skia_private::STArray<2, uint32_t> dynamicOffsets;
 
-    uniformDescriptorData.push_back({
-            uniformBufferType,
-            /*count=*/1,
-            Pipeline::kCombinedUniformIndex,
-            PipelineStageFlags::kVertexShader | PipelineStageFlags::kFragmentShader });
-    dynamicOffsets.push_back(combinedUboInfo.fOffset);
+    const VulkanBuffer* vulkanBuffer = nullptr;
+    uint32_t combinedUboSize = 0;
+    if (hasCombinedUbo) {
+        const auto& combinedUboInfo = fUniformBuffersToBind[Pipeline::kCombinedUniformIndex];
+        vulkanBuffer = static_cast<const VulkanBuffer*>(combinedUboInfo.fBuffer);
+        combinedUboSize = combinedUboInfo.fSize;
 
-    if (fActiveGraphicsPipeline->usesStorageBuffer()) {
-        SkASSERT(fSharedContext->caps()->storageBufferSupport());
-        uniformDescriptorData.push_back({DescriptorType::kStorageBufferDynamic,
-                                         /*count=*/1,
-                                         Pipeline::kStorageBufferIndex,
-                                         fActiveGraphicsPipeline->storageBufferStages()});
-        dynamicOffsets.push_back(fUniformBuffersToBind[Pipeline::kStorageBufferIndex].fOffset);
+        DescriptorType uniformBufferType =
+                fSharedContext->caps()->storageBufferSupport()
+                        ? DescriptorType::kStorageBufferDynamic
+                        : DescriptorType::kUniformBufferDynamic;
+
+        // If we determine that we should use storage buffers, we expect that the actual VkBuffer
+        // supports that usage.
+        SkASSERT(uniformBufferType != DescriptorType::kStorageBufferDynamic ||
+                 vulkanBuffer->bufferUsageFlags() | VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+
+        uniformDescriptorData.push_back({
+                uniformBufferType,
+                /*count=*/1,
+                Pipeline::kCombinedUniformIndex,
+                PipelineStageFlags::kVertexShader | PipelineStageFlags::kFragmentShader });
+        dynamicOffsets.push_back(combinedUboInfo.fOffset);
+    }
+
+    if (hasStorageSlot) {
+        if (fSharedContext->caps()->storageBufferSupport()) {
+            uniformDescriptorData.push_back({DescriptorType::kStorageBufferDynamic,
+                                             /*count=*/1,
+                                             Pipeline::kStorageBufferIndex,
+                                             fActiveGraphicsPipeline->storageBufferStages()});
+            dynamicOffsets.push_back(fUniformBuffersToBind[Pipeline::kStorageBufferIndex].fOffset);
+        } else {
+            uniformDescriptorData.push_back({DescriptorType::kTexture,
+                                             /*count=*/1,
+                                             Pipeline::kStorageBufferIndex,
+                                             fActiveGraphicsPipeline->storageBufferStages()});
+        }
     }
 
     // Now obtain an actual descriptor set. In the case of using only one buffer, we can query
     // the VulkanBuffer for an existing cached set with the appropriate sizing and can avoid
     // performing an update call on the set. Otherwise, obtain a new set and update before binding.
     sk_sp<VulkanDescriptorSet> descSet;
-    if (hasStorageBuffer ||
-        !(descSet = vulkanBuffer->getCachedSingleBufferDescriptorSet(combinedUboInfo.fSize))) {
+    if (hasStorageSlot || !vulkanBuffer ||
+        !(descSet = vulkanBuffer->getCachedSingleBufferDescriptorSet(combinedUboSize))) {
 
         descSet = fResourceProvider->findOrCreateDescriptorSet(uniformDescriptorData);
         if (!descSet) {
@@ -1483,13 +1572,15 @@ void VulkanCommandBuffer::bindUniformBuffers() {
         // Update the set before binding.
         update_uniform_descriptor_set(uniformDescriptorData,
                                       fUniformBuffersToBind,
+                                      fBoundStorageFallbackTexture,
                                       *descSet->descriptorSet(),
+                                      fResourceProvider,
                                       fSharedContext);
 
         // If we ended up creating a new single-buffer descriptor set, cache it on the VulkanBuffer.
-        if (!hasStorageBuffer) {
+        if (!hasStorageSlot && vulkanBuffer) {
             const_cast<VulkanBuffer*>(vulkanBuffer)->
-                    addCachedSingleBufferDescriptorSet(combinedUboInfo.fSize, descSet);
+                    addCachedSingleBufferDescriptorSet(combinedUboSize, descSet);
         }
     }
 
@@ -1500,7 +1591,7 @@ void VulkanCommandBuffer::bindUniformBuffers() {
                                       Pipeline::kUniformBufferDescSetIndex,
                                       /*setCount=*/1,
                                       descSet->descriptorSet(),
-                                      uniformDescriptorData.size(),
+                                      dynamicOffsets.size(),
                                       dynamicOffsets.data()));
 
     this->trackResource(std::move(descSet));
@@ -1580,7 +1671,8 @@ void VulkanCommandBuffer::recordTextureAndSamplerDescSet(
                 // Embed immutable samplers into the descriptor set directly, which are held on the
                 // active graphics pipeline and can be indexed directly with `i`.
                 const Sampler* immutableSampler = fActiveGraphicsPipeline->immutableSampler(i);
-                SkASSERT(SkToBool(immutableSampler) == command->fSamplers[i].isImmutable());
+                SkASSERT(SkToBool(immutableSampler) ==
+                         SK_UNSAFE_TODO(command->fSamplers[i].isImmutable()));
                 descriptors.push_back({DescriptorType::kCombinedTextureSampler,
                                        /*count=*/1,
                                        /*bindingIdx=*/i,
@@ -1610,7 +1702,8 @@ void VulkanCommandBuffer::recordTextureAndSamplerDescSet(
         TArray<VkDescriptorImageInfo> descriptorImageInfos(numTexSamplers);
         if (command) {
             for (int i = 0; i < command->fNumTexSamplers; ++i) {
-                auto texture = static_cast<const VulkanTexture*>(command->fTextures[i]->texture());
+                auto texture = static_cast<const VulkanTexture*>(
+                        SK_UNSAFE_TODO(command->fTextures[i]->texture()));
                 // TODO(b/294198324): Investigate the root cause for null texture or samplers on
                 // Ubuntu QuadP400 GPU
                 if (!texture) {
@@ -1619,13 +1712,13 @@ void VulkanCommandBuffer::recordTextureAndSamplerDescSet(
                     return;
                 }
 
-                if (command->fSamplers[i].isImmutable()) {
+                if (SK_UNSAFE_TODO(command->fSamplers[i].isImmutable())) {
                     populate_write_info(set.get(), descriptorImageInfos, writeDescriptorSets,
                                         texture, /*sampler=*/nullptr, i);
                 } else {
                     auto sampler = static_cast<const VulkanSampler*>(
                             fSharedContext->globalCache()->getDynamicSampler(
-                                    command->fSamplers[i]));
+                                    SK_UNSAFE_TODO(command->fSamplers[i])));
                     // b/294198324, see above
                     if (!sampler) {
                         SKIA_LOG_E("Invalid dynamic sampler.");
@@ -2114,19 +2207,21 @@ bool VulkanCommandBuffer::onCopyBufferToTexture(const Buffer* buffer,
     for (int i = 0; i < count; ++i) {
         VkBufferImageCopy& region = regions.push_back();
         region = {};
-        region.bufferOffset = copyData[i].fBufferOffset;
+        region.bufferOffset = SK_UNSAFE_TODO(copyData[i].fBufferOffset);
         // copyData provides row length in bytes, but Vulkan expects bufferRowLength in texels.
         // For compressed this is the number of logical pixels not the number of blocks.
         region.bufferRowLength =
-                (uint32_t)((copyData[i].fBufferRowBytes/bytesPerBlock) * oneBlockDims.fWidth);
+                (uint32_t)((SK_UNSAFE_TODO(copyData[i].fBufferRowBytes) / bytesPerBlock) *
+                           oneBlockDims.fWidth);
         region.bufferImageHeight = 0; // Tightly packed
-        region.imageSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, copyData[i].fMipLevel, 0, 1 };
-        region.imageOffset = { copyData[i].fRect.left(),
-                               copyData[i].fRect.top(),
-                               /*z=*/0 };
-        region.imageExtent = { (uint32_t)copyData[i].fRect.width(),
-                               (uint32_t)copyData[i].fRect.height(),
-                               /*depth=*/1 };
+        region.imageSubresource = {
+                VK_IMAGE_ASPECT_COLOR_BIT, SK_UNSAFE_TODO(copyData[i].fMipLevel), 0, 1};
+        region.imageOffset = {SK_UNSAFE_TODO(copyData[i].fRect.left()),
+                              SK_UNSAFE_TODO(copyData[i].fRect.top()),
+                              /*z=*/0};
+        region.imageExtent = {(uint32_t)SK_UNSAFE_TODO(copyData[i].fRect.width()),
+                              (uint32_t)SK_UNSAFE_TODO(copyData[i].fRect.height()),
+                              /*depth=*/1};
     }
 
     // Enable editing of the destination texture so we can change its layout so it can be copied to.

@@ -15,6 +15,7 @@
 #include "src/core/SkChecksum.h"
 #include "src/core/SkTHash.h"
 #include "src/core/SkTraceEvent.h"
+#include "src/partition_alloc/raw_ptr.h"
 #include "src/sksl/GLSL.std.450.h"
 #include "src/sksl/SkSLAnalysis.h"
 #include "src/sksl/SkSLBuiltinTypes.h"
@@ -131,10 +132,11 @@ static SpvStorageClass get_storage_class_spv_id(StorageClass storageClass) {
         case StorageClass::kUniform: return SpvStorageClassUniform;
         // Note: In SPIR-V 1.3, a storage buffer can be declared with the "StorageBuffer"
         // storage class and the "Block" decoration and the <1.3 approach we use here ("Uniform"
-        // storage class and the "BufferBlock" decoration) is deprecated. Since we target SPIR-V
-        // 1.0, we have to use the deprecated approach which is well supported in Vulkan and
+        // storage class and the "BufferBlock" decoration) is deprecated. The deprecated approach
+        // is still valid in SPIR-V 1.3 (which we target), is well supported in Vulkan, and
         // addresses SkSL use cases (notably SkSL currently doesn't support pointer features that
-        // would benefit from SPV_KHR_variable_pointers capabilities).
+        // would benefit from SPV_KHR_variable_pointers capabilities). BufferBlock is removed in
+        // SPIR-V 1.4, so targeting 1.4+ will require switching to the StorageBuffer approach.
         case StorageClass::kStorageBuffer: return SpvStorageClassUniform;
         case StorageClass::kOutput: return SpvStorageClassOutput;
         case StorageClass::kWorkgroup: return SpvStorageClassWorkgroup;
@@ -260,7 +262,7 @@ private:
 
     struct TempVar {
         SpvId spvId;
-        const Type* type;
+        raw_ptr<const Type> type;
         std::unique_ptr<SPIRVCodeGenerator::LValue> lvalue;
     };
 
@@ -701,14 +703,14 @@ private:
 
     Analysis::SpecializationInfo fSpecializationInfo;
     Analysis::SpecializationIndex fActiveSpecializationIndex = Analysis::kUnspecialized;
-    const Analysis::SpecializedParameters* fActiveSpecialization = nullptr;
+    raw_ptr<const Analysis::SpecializedParameters> fActiveSpecialization = nullptr;
 
     THashMap<const Variable*, SpvId> fVariableMap;
     THashMap<const Type*, SpvId> fStructMap;
 
     // SPIR-V is defined in 32-bit words, so this generator directly uses std::vector<uint32_t>
     // instead of an OutputStream.
-    SPIRVBlob* fOutBuffer;
+    raw_ptr<SPIRVBlob> fOutBuffer;
     SPIRVBlob fGlobalInitializersBuffer;
     SPIRVBlob fConstantBuffer;
     SPIRVBlob fVariableBuffer;
@@ -1104,6 +1106,7 @@ static bool is_globally_reachable_op(SpvOp_ op) {
         case SpvOpExecutionMode:
         case SpvOpMemoryModel:
         case SpvOpCapability:
+        case SpvOpExtension:
         case SpvOpExtInstImport:
         case SpvOpEntryPoint:
         case SpvOpSource:
@@ -3512,8 +3515,8 @@ private:
     SPIRVCodeGenerator& fGen;
     const SpvId fVecPointer;
     ComponentArray fComponents;
-    const Type* fBaseType;
-    const Type* fSwizzleType;
+    raw_ptr<const Type> fBaseType;
+    raw_ptr<const Type> fSwizzleType;
     const StorageClass fStorageClass;
 };
 
@@ -3660,6 +3663,11 @@ std::unique_ptr<Expression> SPIRVCodeGenerator::identifier(std::string_view name
 
 SpvId SPIRVCodeGenerator::writeVariableReference(const VariableReference& ref, SPIRVBlob& out) {
     const Variable* variable = ref.variable();
+    if (IsSubgroupBuiltin(variable->layout().fBuiltin) && !fCaps.fSubgroupSupport) {
+        fContext.fErrors->error(ref.position(),
+                                "'" + std::string(variable->name()) + "' not supported");
+        return NA;
+    }
     switch (variable->layout().fBuiltin) {
         case DEVICE_FRAGCOORDS_BUILTIN: {
             // Down below, we rewrite raw references to sk_FragCoord with expressions that reference
@@ -4790,6 +4798,10 @@ void SPIRVCodeGenerator::writeLayout(const Layout& layout, SpvId target, Positio
                                  layout.fBuiltin != SK_SECONDARYFRAGCOLOR_BUILTIN)) {
             this->writeInstruction(SpvOpDecorate, target, SpvDecorationBuiltIn, layout.fBuiltin,
                                    fDecorationBuffer);
+            if (IsSubgroupBuiltin(layout.fBuiltin)) {
+                // The subgroup builtins require GroupNonUniform (SPIR-V 1.3).
+                this->addCapability(SpvCapabilityGroupNonUniform);
+            }
     }
 }
 
@@ -5752,6 +5764,13 @@ void SPIRVCodeGenerator::writeInstructions(const Program& program, SPIRVBlob& ou
         }
     }
     this->writeCapabilities(out);
+    // On Vulkan, maximal reconvergence only applies to entry points that opt in, so this is what
+    // makes ShaderCaps::fSubgroupMaximalReconvergence hold. Subgroups are only exposed in compute.
+    const bool maximallyReconverges = ProgramConfig::IsCompute(program.fConfig->fKind) &&
+                                      fCaps.fSubgroupMaximalReconvergence;
+    if (maximallyReconverges) {
+        this->writeInstruction(SpvOpExtension, "SPV_KHR_maximal_reconvergence", out);
+    }
     this->writeInstruction(SpvOpExtInstImport, fGLSLExtendedInstructions, "GLSL.std.450", out);
     this->writeInstruction(SpvOpMemoryModel, SpvAddressingModelLogical, SpvMemoryModelGLSL450, out);
     this->writeOpCode(SpvOpEntryPoint,
@@ -5784,6 +5803,12 @@ void SPIRVCodeGenerator::writeInstructions(const Program& program, SPIRVBlob& ou
                                SpvExecutionModeLocalSize,
                                localSizeX, localSizeY, localSizeZ,
                                out);
+        if (maximallyReconverges) {
+            this->writeInstruction(SpvOpExecutionMode,
+                                   fFunctionMap[mainKey],
+                                   SpvExecutionModeMaximallyReconvergesKHR,
+                                   out);
+        }
     }
     for (const ProgramElement* e : program.elements()) {
         if (e->is<Extension>()) {

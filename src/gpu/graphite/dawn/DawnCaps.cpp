@@ -356,6 +356,9 @@ void DawnCaps::initCaps(const DawnBackendContext& backendContext, const ContextO
     fResourceBindingReqs.fCombinedUniformBufferBinding =
             DawnGraphicsPipeline::kCombinedUniformIndex;
     fResourceBindingReqs.fStorageBufferBinding = DawnGraphicsPipeline::kStorageBufferIndex;
+    fResourceBindingReqs.fMaxStorageBufferBytes = SkTo<int>(
+            std::min<uint64_t>(limits.maxStorageBufferBindingSize,
+                               ResourceBindingRequirements::kDefaultMaxStorageBufferBytes));
 
 #if !defined(__EMSCRIPTEN__)
     // We need at least 4 SSBOs for intrinsic, render step, paint & gradient buffers.
@@ -489,6 +492,42 @@ void DawnCaps::initShaderCaps(const wgpu::Device& device) {
 #if !defined(__EMSCRIPTEN__)
     if (device.HasFeature(wgpu::FeatureName::FramebufferFetch)) {
         shaderCaps->fFBFetchSupport = true;
+    }
+#endif
+
+    // Dawn only exposes Subgroups when vote, ballot, shuffle, and arithmetic operations are all
+    // available in compute, which matches what fSubgroupSupport promises. The client must request
+    // the feature when creating the device.
+    //
+    // sk_SubgroupID lowers to @builtin(subgroup_id), which additionally needs the subgroup_id WGSL
+    // language feature. It has shipped but can be disabled by a killswitch, so check for it. The
+    // Emscripten bindings Skia builds against can't query it, so subgroups stay disabled there.
+#if !defined(__EMSCRIPTEN__)
+    if (device.HasFeature(wgpu::FeatureName::Subgroups) &&
+        device.GetAdapter().GetInstance().HasWGSLLanguageFeature(
+                wgpu::WGSLLanguageFeatureName::SubgroupId)) {
+        shaderCaps->fSubgroupSupport = true;
+    }
+#endif
+
+    // WebGPU cannot query or request maximal reconvergence. Maximal reconvergence can be toggled
+    // directly through dawn native, but currently dawn does not distinguish between maximal
+    // reconvergence and subgroup uniformity control. In the future these will be differentiated in
+    // dawn, and chromium will attempt to toggle maximal reconvergence.
+    //
+    // For backends other than Vulkan:
+    // - D3D12: HLSL's wave model requires the active lanes to exactly match the programmer's view
+    //   of flow control (https://github.com/microsoft/DirectXShaderCompiler/wiki/Wave-Intrinsics).
+    //   Dawn requires DXC for subgroups on D3D12.
+    // - Metal: assumed, as in MtlCaps.
+    // WASM can't query the backend, so compute shaders there force reconvergence with barriers.
+    shaderCaps->fSubgroupMaximalReconvergence = false;
+#if !defined(__EMSCRIPTEN__)
+    if (shaderCaps->fSubgroupSupport) {
+        wgpu::AdapterInfo info;
+        device.GetAdapter().GetInfo(&info);
+        shaderCaps->fSubgroupMaximalReconvergence = info.backendType == wgpu::BackendType::D3D12 ||
+                                                    info.backendType == wgpu::BackendType::Metal;
     }
 #endif
 }

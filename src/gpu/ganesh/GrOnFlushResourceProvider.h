@@ -8,6 +8,7 @@
 #ifndef GrOnFlushResourceProvider_DEFINED
 #define GrOnFlushResourceProvider_DEFINED
 
+#include "include/private/SkOnlyStackAllocatable.h"
 #include "src/gpu/ganesh/GrAtlasTypes.h"
 
 class GrCaps;
@@ -38,6 +39,13 @@ public:
     virtual void postFlush(skgpu::Token startTokenForNextFlush) {}
 
     /**
+     * Called when GrDrawingManager::flush() fails (e.g. execution/submit failure or failed
+     * instantiation). Cached resources or atlas plots that were modified during the failed flush
+     * must be invalidated.
+     */
+    virtual void onFlushFailed() {}
+
+    /**
      * Tells the callback owner to hold onto this object when freeing GPU resources.
      */
     virtual bool retainOnFreeGpuResources() { return false; }
@@ -50,6 +58,8 @@ public:
  */
 class GrOnFlushResourceProvider {
 public:
+    SK_ONLY_STACK_ALLOCATABLE;
+
     explicit GrOnFlushResourceProvider(GrDrawingManager* drawingMgr) : fDrawingMgr(drawingMgr) {}
 
     [[nodiscard]] bool instantiateProxy(GrSurfaceProxy*);

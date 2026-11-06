@@ -4,7 +4,7 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
-#include "src/gpu/graphite/DrawContext.h"
+#include "src/gpu/graphite/draw/DrawContext.h"
 
 #include "include/core/SkAlphaType.h"
 #include "include/core/SkColorType.h"
@@ -22,12 +22,6 @@
 #include "src/gpu/graphite/AtlasProvider.h"
 #include "src/gpu/graphite/Caps.h"
 #include "src/gpu/graphite/ComputePathAtlas.h"
-#include "src/gpu/graphite/DrawList.h"
-#include "src/gpu/graphite/DrawListBase.h"
-#include "src/gpu/graphite/DrawListLayer.h"
-#include "src/gpu/graphite/DrawOrder.h"
-#include "src/gpu/graphite/DrawParams.h"
-#include "src/gpu/graphite/DrawPass.h"
 #include "src/gpu/graphite/Image_Graphite.h"
 #include "src/gpu/graphite/RecorderPriv.h"
 #include "src/gpu/graphite/RenderPassDesc.h"
@@ -37,6 +31,12 @@
 #include "src/gpu/graphite/TextureProxy.h"
 #include "src/gpu/graphite/TextureProxyView.h"
 #include "src/gpu/graphite/TextureUtils.h"
+#include "src/gpu/graphite/draw/DrawList.h"
+#include "src/gpu/graphite/draw/DrawListBase.h"
+#include "src/gpu/graphite/draw/DrawListLayer.h"
+#include "src/gpu/graphite/draw/DrawOrder.h"
+#include "src/gpu/graphite/draw/DrawParams.h"
+#include "src/gpu/graphite/draw/DrawPass.h"
 #include "src/gpu/graphite/geom/Rect.h"
 #include "src/gpu/graphite/task/ComputeTask.h"
 #include "src/gpu/graphite/task/DrawTask.h"
@@ -102,7 +102,7 @@ DrawContext::DrawContext(const Caps* caps,
                                    caps->storageBufferSupport()))
                           : std::unique_ptr<DrawListBase>(std::make_unique<DrawList>()))
         , fPendingUploads(std::make_unique<UploadList>())
-        , fStorageContext(caps->resourceBindingRequirements().fMaxFallbackTextureSize,
+        , fStorageContext(caps->resourceBindingRequirements(),
                           caps->storageBufferSupport()) {
     // Must determine a valid strategy to use should a dst texture read be required.
     SkASSERT(fDstReadStrategy != DstReadStrategy::kNoneRequired);
@@ -251,7 +251,15 @@ void DrawContext::flush(Recorder* recorder) {
     // relinquishing the pending draw list to the DrawPass constructor.
     SkIRect dstReadPixelBounds = fPendingDraws->dstReadBounds().makeRoundOut().asSkIRect();
     const bool drawsRequireMSAA = fPendingDraws->drawsRequireMSAA();
-    const SkEnumBitMask<DepthStencilFlags> dsFlags = fPendingDraws->depthStencilFlags();
+    SkEnumBitMask<DepthStencilFlags> dsFlags = fPendingDraws->depthStencilFlags();
+    // TODO(michaelludwig): Track whether or not draws within fPendingDraw require the depth for
+    // occlusion or clipping (per-draw depth is already accumulated into `dsFlags`). For now,
+    // always add kDepth. RenderPassDesc::Make() ignores kDepth when Caps::avoidDepthMode() is true.
+    // Instead we should ensure that kDepth was never included at all. Only add depth when there
+    // are draws; otherwise we'd create a depth attachment for must a clear.
+    if (fPendingDraws->renderStepCount() > 0) {
+        dsFlags |= DepthStencilFlags::kDepth;
+    }
     // Determine the optimal dst read strategy for the drawpass given pending draw characteristics
     const DstReadStrategy drawPassDstReadStrategy = fPendingDraws->drawsReadDst()
                                                             ? this->dstReadStrategy()

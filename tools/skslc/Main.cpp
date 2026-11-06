@@ -142,6 +142,15 @@ public:
         return sCaps;
     }
 
+    static const SkSL::ShaderCaps* SubgroupSupport() {
+        static const SkSL::ShaderCaps* sCaps = [] {
+            std::unique_ptr<SkSL::ShaderCaps> caps = MakeShaderCaps();
+            caps->fSubgroupSupport = true;
+            return caps.release();
+        }();
+        return sCaps;
+    }
+
     static const SkSL::ShaderCaps* EmulateAbsIntFunction() {
         static const SkSL::ShaderCaps* sCaps = [] {
             std::unique_ptr<SkSL::ShaderCaps> caps = MakeShaderCaps();
@@ -303,6 +312,16 @@ public:
         return sCaps;
     }
 
+    static const SkSL::ShaderCaps* SubgroupMaximalReconvergence() {
+        static const SkSL::ShaderCaps* sCaps = [] {
+            std::unique_ptr<SkSL::ShaderCaps> caps = MakeShaderCaps();
+            caps->fSubgroupSupport = true;
+            caps->fSubgroupMaximalReconvergence = true;
+            return caps.release();
+        }();
+        return sCaps;
+    }
+
     static const SkSL::ShaderCaps* UnfoldShortCircuitAsTernary() {
         static const SkSL::ShaderCaps* sCaps = [] {
             std::unique_ptr<SkSL::ShaderCaps> caps = MakeShaderCaps();
@@ -434,6 +453,12 @@ static bool detect_shader_settings(const std::string& text,
                 }
                 if (consume_suffix(&settingsText, " ShaderDerivativeExtensionString")) {
                     *caps = Factory::ShaderDerivativeExtensionString();
+                }
+                if (consume_suffix(&settingsText, " SubgroupMaximalReconvergence")) {
+                    *caps = Factory::SubgroupMaximalReconvergence();
+                }
+                if (consume_suffix(&settingsText, " SubgroupSupport")) {
+                    *caps = Factory::SubgroupSupport();
                 }
                 if (consume_suffix(&settingsText, " UnfoldShortCircuitAsTernary")) {
                     *caps = Factory::UnfoldShortCircuitAsTernary();
@@ -657,7 +682,9 @@ static ResultCode process_command(SkSpan<std::string> args) {
                         return false;
                     }
                     // Convert the string-stream to a SPIR-V disassembly.
-                    spvtools::SpirvTools tools(SPV_ENV_VULKAN_1_0);
+                    static_assert(SkSL::kSPIRVVersion <= 0x00010300,
+                                  "SPV_ENV_VULKAN_1_1 only accepts SPIR-V up to 1.3");
+                    spvtools::SpirvTools tools(SPV_ENV_VULKAN_1_1);
                     std::string disassembly;
                     uint32_t options = spvtools::SpirvTools::kDefaultDisassembleOption;
                     options |= SPV_BINARY_TO_TEXT_OPTION_COMMENT |
