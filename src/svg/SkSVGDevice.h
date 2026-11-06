@@ -25,11 +25,11 @@ namespace sktext {
 class GlyphRunList;
 }
 
-class SkDevice;
 class SkBitmap;
 class SkBlender;
 class SkClipStack;
 class SkData;
+class SkDevice;
 class SkImage;
 class SkMesh;
 class SkPaint;

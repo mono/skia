@@ -7,9 +7,9 @@
 #include "src/gpu/graphite/sparse_strips/AlphaAtlasManager.h"
 
 #include "src/gpu/graphite/Caps.h"
-#include "src/gpu/graphite/DrawContext.h"
 #include "src/gpu/graphite/RecorderPriv.h"
 #include "src/gpu/graphite/TextureInfoPriv.h"
+#include "src/gpu/graphite/draw/DrawContext.h"
 #include "src/gpu/graphite/task/UploadTask.h"
 
 #include <algorithm>
@@ -329,6 +329,9 @@ bool AlphaAtlasManager::resolveNullCaps(EndCaps* ends) {
 }
 
 void AlphaAtlasManager::populateProxies(EndCaps* ends) const {
+    if (ends->empty()) {
+        return;
+    }
     int32_t startSlot = 0;
     while (startSlot < SparseStripConfig::kMaxTexturePages && !fPages[startSlot].isValid()) {
         startSlot++;

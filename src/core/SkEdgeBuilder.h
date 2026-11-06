@@ -10,6 +10,7 @@
 #include "include/core/SkPoint.h"
 #include "include/core/SkRect.h"
 #include "include/private/SkAssert.h"
+#include "include/private/SkOnlyStackAllocatable.h"
 #include "include/private/SkTDArray.h"
 #include "src/core/SkArenaAlloc.h"
 
@@ -17,11 +18,13 @@
 
 class SkEdge;
 class SkPath;
-struct SkPathRaw;
 struct SkAnalyticEdge;
+struct SkPathRaw;
 
 class SkEdgeBuilder {
 public:
+    SK_ONLY_STACK_ALLOCATABLE;
+
     int buildEdges(const SkPathRaw&, const SkIRect* shiftedClip);
     int buildEdges(const SkPath&, const SkIRect* shiftedClip);
 
@@ -34,6 +37,9 @@ protected:
     void**              fEdgeList = nullptr;
     SkTDArray<void*>    fList;
     SkSTArenaAlloc<512> fAlloc;
+#if !defined(SK_LEGACY_ALPHA_RUNS)
+    bool                fCanCullToTheRight = true;
+#endif
 
     enum Combine {
         kNo_Combine,

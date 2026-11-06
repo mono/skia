@@ -10,6 +10,7 @@
 
 #include "include/core/SkRefCnt.h"
 #include "include/gpu/graphite/Context.h"
+#include "include/private/SkOnlyStackAllocatable.h"
 #include "src/gpu/graphite/QueueManager.h"
 #include "src/gpu/graphite/SharedContext.h"
 
@@ -35,6 +36,8 @@ struct ContextOptions;
     data members or virtual methods. */
 class ContextPriv {
 public:
+    SK_ONLY_STACK_ALLOCATABLE;
+
     const Caps* caps() const { return fContext->fSharedContext->caps(); }
 
     const ShaderCodeDictionary* shaderCodeDictionary() const {
@@ -43,6 +46,11 @@ public:
     ShaderCodeDictionary* shaderCodeDictionary() {
         return fContext->fSharedContext->shaderCodeDictionary();
     }
+
+    static std::unique_ptr<SkGPUContext> AsGPUContext(std::unique_ptr<Context> context) {
+        return std::unique_ptr<SkGPUContext>(context.release());
+    }
+
 #if defined(GPU_TEST_UTILS)
     const GlobalCache* globalCache() const {
         return fContext->fSharedContext->globalCache();

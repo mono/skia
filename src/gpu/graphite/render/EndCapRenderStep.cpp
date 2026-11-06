@@ -15,12 +15,12 @@
 #include "src/gpu/graphite/AtlasProvider.h"
 #include "src/gpu/graphite/Attribute.h"
 #include "src/gpu/graphite/ContextUtils.h"
-#include "src/gpu/graphite/DrawOrder.h"
-#include "src/gpu/graphite/DrawParams.h"
 #include "src/gpu/graphite/DrawTypes.h"
-#include "src/gpu/graphite/DrawWriter.h"
 #include "src/gpu/graphite/PipelineData.h"
 #include "src/gpu/graphite/RecorderPriv.h"
+#include "src/gpu/graphite/draw/DrawOrder.h"
+#include "src/gpu/graphite/draw/DrawParams.h"
+#include "src/gpu/graphite/draw/DrawWriter.h"
 #include "src/gpu/graphite/geom/EndCaps.h"
 #include "src/gpu/graphite/geom/Geometry.h"
 #include "src/gpu/graphite/geom/Transform.h"
@@ -38,7 +38,6 @@ EndCapRenderStep::EndCapRenderStep(Layout layout)
                      RenderStepID::kEndCap,
                      Flags::kAppendInstances | Flags::kEmitsCoverage
                                              | Flags::kPerformsShading
-                                             | Flags::kOutsetBoundsForAA
                                              | Flags::kHasTextures
                                              | Flags::kNoSelfIntersections,
                      /*uniforms=*/{},

@@ -12,6 +12,8 @@
 #include "include/core/SkPoint.h"
 #include "include/core/SkRefCnt.h"  // IWYU pragma: keep
 #include "include/gpu/graphite/Recording.h"
+#include "include/private/SkOnlyStackAllocatable.h"
+#include "src/capture/SkCaptureAsset.h"
 
 #include <cstdint>
 #include <memory>
@@ -33,6 +35,8 @@ class TextureProxy;
 
 class RecordingPriv {
 public:
+    SK_ONLY_STACK_ALLOCATABLE;
+
     TextureProxy* deferredTargetProxy();
     const Texture* setupDeferredTarget(ResourceProvider*,
                                        Surface* targetSurface,
@@ -47,6 +51,7 @@ public:
     bool instantiateNonVolatileLazyProxies(ResourceProvider*);
 
     void setFailureResultForFinishedProcs();
+    void moveFinishedProcsTo(skia_private::TArray<sk_sp<RefCntedCallback>>& dst);
 
     bool prepareResources(ResourceProvider*,
                           ScratchResourceManager*,
@@ -68,10 +73,10 @@ public:
     uint32_t recorderID() const { return fRecording->fRecorderID; }
     uint32_t uniqueID() const { return fRecording->fUniqueID; }
 
-    const skia_private::TArray<sk_sp<SkPicture>>& capturedPictures() const {
+    const skia_private::TArray<sk_sp<SkCaptureAsset>>& capturedPictures() const {
         return fRecording->fCapturedPictures;
     }
-    void setCapturedPictures(skia_private::TArray<sk_sp<SkPicture>>&& pictures) {
+    void setCapturedPictures(skia_private::TArray<sk_sp<SkCaptureAsset>>&& pictures) {
         fRecording->fCapturedPictures = std::move(pictures);
     }
 

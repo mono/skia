@@ -20,6 +20,7 @@
 #include "src/gpu/graphite/TextureFormat.h"
 #include "src/gpu/graphite/UniformManager.h"
 #include "src/gpu/graphite/render/MeshRenderStep.h"
+#include "src/partition_alloc/raw_ptr.h"
 #include "src/sksl/SkSLString.h"
 #include "src/sksl/SkSLUtil.h"
 
@@ -31,7 +32,7 @@ namespace {
 
 struct LiftedExpression {
     // The node who's expression should be lifted.
-    const ShaderNode* fNode;
+    raw_ptr<const ShaderNode> fNode;
     // The arguments to use as input to the lifted expression.
     ShaderSnippet::Args fArgs;
     // If true, capture the expression's resolved value in a varying.
@@ -204,9 +205,9 @@ std::string emit_intrinsic_constants(const ResourceBindingRequirements& bindingR
     if (bindingReqs.fUsePushConstantsForIntrinsicConstants) {
         SkASSERT(bindingReqs.fBackendApi == BackendApi::kVulkan ||
                  bindingReqs.fBackendApi == BackendApi::kDawn);
-        result = SkSL::String::printf(
+        result = SK_UNSAFE_TODO(SkSL::String::printf(
                 "layout (%s, push_constant) uniform IntrinsicUniforms {\n",
-                bindingReqs.fBackendApi == BackendApi::kVulkan ? "vulkan" : "webgpu");
+                bindingReqs.fBackendApi == BackendApi::kVulkan ? "vulkan" : "webgpu"));
     } else {
         std::string header;
         SkSL::String::appendf(&header,
@@ -398,18 +399,19 @@ std::string emit_storage_fallback_texture(const ResourceBindingRequirements& bin
             // std140/std430 dictates 16-byte alignment for vec3; startComp must be 0 to avoid OOB
             // swizzles.
             SkASSERT(startComp == 0);
-            expr = SkSL::String::printf("t%d.%s%s%s",
-                                        startTexel,
-                                        SK_UNSAFE_TODO(kSwizzles[startComp]),
-                                        SK_UNSAFE_TODO(kSwizzles[startComp + 1]),
-                                        SK_UNSAFE_TODO(kSwizzles[startComp + 2]));
+            expr = SK_UNSAFE_TODO(SkSL::String::printf("t%d.%s%s%s",
+                                                       startTexel,
+                                                       kSwizzles[startComp],
+                                                       kSwizzles[startComp + 1],
+                                                       kSwizzles[startComp + 2]));
         } else if (vec == 2) {
-            expr = SkSL::String::printf("t%d.%s%s",
-                                        startTexel,
-                                        SK_UNSAFE_TODO(kSwizzles[startComp]),
-                                        SK_UNSAFE_TODO(kSwizzles[startComp + 1]));
+            expr = SK_UNSAFE_TODO(SkSL::String::printf("t%d.%s%s",
+                                                       startTexel,
+                                                       kSwizzles[startComp],
+                                                       kSwizzles[startComp + 1]));
         } else {
-            expr = SkSL::String::printf("t%d.%s", startTexel, SK_UNSAFE_TODO(kSwizzles[startComp]));
+            expr = SK_UNSAFE_TODO(
+                    SkSL::String::printf("t%d.%s", startTexel, kSwizzles[startComp]));
         }
 
         switch (a.type()) {
@@ -658,23 +660,26 @@ std::string emit_color_output(BlendFormula::OutputType outputType,
                               const char* inColor) {
     switch (outputType) {
         case BlendFormula::kNone_OutputType:
-            return SkSL::String::printf("%s = half4(0.0);", outColor);
+            return SK_UNSAFE_TODO(SkSL::String::printf("%s = half4(0.0);", outColor));
 
         case BlendFormula::kCoverage_OutputType:
-            return SkSL::String::printf("%s = outputCoverage;", outColor);
+            return SK_UNSAFE_TODO(SkSL::String::printf("%s = outputCoverage;", outColor));
 
         case BlendFormula::kModulate_OutputType:
-            return SkSL::String::printf("%s = %s * outputCoverage;", outColor, inColor);
+            return SK_UNSAFE_TODO(
+                    SkSL::String::printf("%s = %s * outputCoverage;", outColor, inColor));
 
         case BlendFormula::kSAModulate_OutputType:
-            return SkSL::String::printf("%s = %s.a * outputCoverage;", outColor, inColor);
+            return SK_UNSAFE_TODO(
+                    SkSL::String::printf("%s = %s.a * outputCoverage;", outColor, inColor));
 
         case BlendFormula::kISAModulate_OutputType:
-            return SkSL::String::printf("%s = (1.0 - %s.a) * outputCoverage;", outColor, inColor);
+            return SK_UNSAFE_TODO(
+                    SkSL::String::printf("%s = (1.0 - %s.a) * outputCoverage;", outColor, inColor));
 
         case BlendFormula::kISCModulate_OutputType:
-            return SkSL::String::printf(
-                    "%s = (half4(1.0) - %s) * outputCoverage;", outColor, inColor);
+            return SK_UNSAFE_TODO(SkSL::String::printf(
+                    "%s = (half4(1.0) - %s) * outputCoverage;", outColor, inColor));
 
         default:
             SkUNREACHABLE;
@@ -1111,11 +1116,39 @@ std::unique_ptr<ShaderInfo> ShaderInfo::Make(const Caps* caps,
 
     result->fStorageBufferStages |= step->storageBufferStages();
 
-    // TODO(michaelludwig): Modify the depth portion of the DepthStencilSettings depending on
-    // whether or not depth is going to be useful (and whether or not the render pass has it).
-    if (rpDesc.fDepthStencilAttachment.fFormat != TextureFormat::kUnsupported) {
-        result->fDepthStencilSettings = step->depthStencilSettings();
+    // Calculate the depth settings based on the RenderStep's flags and whether or not the
+    // renderpass has a depth attachment. Presence of a depth attachment is assumed to mean that
+    // there is something recorded in the renderpass that will make use of the depth test.
+    DepthSettings depthSettings;
+    if (TextureFormatHasDepth(rpDesc.fDepthStencilAttachment.fFormat)) {
+        if (step->requiresDepth()) {
+            // This step requires the depth buffer to prevent double blending, so writes need to be
+            // enabled and the test needs to be LESS to fail subsequent pixel touches.
+            depthSettings = {CompareOp::kLess, /*write=*/true};
+        } else {
+            // Inner fill draws use Z+1 relative to the main draw's Z, so LEQUAL is sufficient.
+            // Opting into a non-aa inner fill does not require depth writes, since this step
+            // is being rendered after the inner fill (which will trigger renderpass level depth
+            // writes).
+            //
+            // If not using the inner fill in this branch, LEQUAL is used because we either want
+            // double-blending or there shouldn't be any self-intersections to trigger double
+            // blending (at which point LEQUAL will expose any violation of kNoSelfIntersection).
+            // They do not mandate depth writes being enabled.
+            //
+            // TODO(michaelludwig): But for now set depthWrite=true when we perform shading since
+            // there is no render pass detection logic yet. This can be relaxed to only write depth
+            // when this is a depth-only draw or an occluder (no blending).
+            depthSettings = {CompareOp::kLEqual, /*write=*/step->performsShading()};
+        }
+    } else {
+        // With no depth aspect (or no depth/stencil attachment at all), the RenderStep should not
+        // require depth for its internal rendering correctness.
+        SkASSERT(!step->requiresDepth());
+        SkASSERT(!depthSettings.enabled());
     }
+
+    result->fDepthStencilSettings = {depthSettings, step->stencilSettings()};
 
     result->generateVertexSkSL(caps, step, sharedData);
     result->fVSLabel = step->name();
