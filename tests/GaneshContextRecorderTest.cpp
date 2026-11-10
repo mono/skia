@@ -11,39 +11,47 @@
 #include "include/core/SkCanvas.h"
 #include "include/core/SkColor.h"
 #include "include/core/SkColorSpace.h"
+#include "include/core/SkContext.h"
+#include "include/core/SkContextOptions.h"
 #include "include/core/SkImageInfo.h"
 #include "include/core/SkPaint.h"
 #include "include/core/SkSurface.h"
 #include "include/gpu/ganesh/GrDirectContext.h"
 #include "include/gpu/ganesh/SkImageGanesh.h"
 #include "include/gpu/ganesh/SkSurfaceGanesh.h"
+#include "src/core/SkContextPriv.h"
+#include "src/gpu/ganesh/SkGaneshGPUContextAdapter.h"
 #include "src/gpu/ganesh/SkGaneshRecorder.h"
 #include "tests/Test.h"
 
 #include <memory>
 
-// TODO(alexisdavidc) Re-enable once the new SkContext / CPU Context & Recorder API is implemented.
-#if 0
-DEF_GANESH_TEST_FOR_ALL_CONTEXTS(CPUSurface_UsesGaneshContextAndRasterRecorderToDraw_DrawsPixels,
+DEF_GANESH_TEST_FOR_ALL_CONTEXTS(SkContext_MakeRecorder_GaneshBackendSelection,
                                  reporter,
                                  ctxInfo,
                                  CtsEnforcement::kApiLevel_202604) {
-    std::unique_ptr<skcpu::Recorder> recorder = ctxInfo.directContext()->makeCPURecorder();
+    SkContextOptions opts;
+    auto gpuContext =
+            std::make_unique<SkGaneshGPUContextAdapter>(sk_ref_sp(ctxInfo.directContext()));
+    std::unique_ptr<SkContext> ctx =
+            SkContextCtorAccessor::MakeContext(opts, std::move(gpuContext));
+    REPORTER_ASSERT(reporter, ctx != nullptr);
 
-    SkImageInfo imageInfo =
-            SkImageInfo::Make(100, 100, kRGBA_8888_SkColorType, kPremul_SkAlphaType);
-    auto surface = recorder->makeBitmapSurface(imageInfo, imageInfo.minRowBytes(), {});
+    // Explicit kAutomatic prefers GPU backend.
+    std::unique_ptr<SkRecorder> autoRecorder =
+            ctx->makeRecorder(SkContext::BackendSelection::kAutomatic);
+    REPORTER_ASSERT(reporter, autoRecorder != nullptr);
+    REPORTER_ASSERT(reporter, autoRecorder->type() == SkRecorder::Type::kGanesh);
 
-    SkPaint paint;
-    paint.setColor(SK_ColorRED);
-    paint.setMaskFilter(SkMaskFilter::MakeBlur(SkBlurStyle::kNormal_SkBlurStyle, 3.1f));
-    surface->getCanvas()->drawRRect(SkRRect::MakeRectXY(SkRect::MakeWH(50, 50), 10, 15), paint);
+    std::unique_ptr<SkRecorder> gpuRecorder = ctx->makeRecorder(SkContext::BackendSelection::kGPU);
+    REPORTER_ASSERT(reporter, gpuRecorder != nullptr);
+    REPORTER_ASSERT(reporter, gpuRecorder->type() == SkRecorder::Type::kGanesh);
 
-    SkPixmap pmap;
-    REPORTER_ASSERT(reporter, surface->peekPixels(&pmap));
-    REPORTER_ASSERT(reporter, pmap.getColor(25, 25) == SK_ColorRED);
+    // Explicit kCPU forces CPU backend even when GPU is available.
+    std::unique_ptr<SkRecorder> cpuRecorder = ctx->makeRecorder(SkContext::BackendSelection::kCPU);
+    REPORTER_ASSERT(reporter, cpuRecorder != nullptr);
+    REPORTER_ASSERT(reporter, cpuRecorder->type() == SkRecorder::Type::kCPU);
 }
-#endif  // 0
 
 DEF_GANESH_TEST_FOR_ALL_CONTEXTS(ImageMakeColorSpace_GaneshImageWithContext_Success,
                                  reporter,

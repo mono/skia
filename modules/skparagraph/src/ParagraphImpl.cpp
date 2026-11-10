@@ -124,14 +124,19 @@ int32_t ParagraphImpl::unresolvedGlyphs() {
 }
 
 std::unordered_set<SkUnichar> ParagraphImpl::unresolvedCodepoints() {
-    return fUnresolvedCodepoints;
+    return fUnresolvedCodepoints ? *fUnresolvedCodepoints : std::unordered_set<SkUnichar>();
 }
 
 void ParagraphImpl::addUnresolvedCodepoints(TextRange textRange) {
+    if (fUnresolvedCodepoints == nullptr) {
+        fUnresolvedCodepoints = std::make_shared<std::unordered_set<SkUnichar>>();
+    }
+    // No cache entry may see the set change
+    SkASSERT(fUnresolvedCodepoints.use_count() == 1);
     fUnicode->forEachCodepoint(
         &fText[textRange.start], textRange.width(),
         [&](SkUnichar unichar, int32_t start, int32_t end, int32_t count) {
-            fUnresolvedCodepoints.emplace(unichar);
+            fUnresolvedCodepoints->emplace(unichar);
         }
     );
 }
@@ -341,16 +346,13 @@ Cluster::Cluster(ParagraphImpl* owner,
                  size_t start,
                  size_t end,
                  SkSpan<const char> text,
-                 SkScalar width,
-                 SkScalar height)
+                 SkScalar width)
         : fOwner(owner)
         , fRunIndex(runIndex)
         , fTextRange(text.begin() - fOwner->text().begin(), text.end() - fOwner->text().begin())
-        , fGraphemeRange(EMPTY_RANGE)
         , fStart(start)
         , fEnd(end)
         , fWidth(width)
-        , fHeight(height)
         , fHalfLetterSpacing(0.0)
         , fIsIdeographic(false) {
     size_t whiteSpacesBreakLen = 0;
@@ -542,7 +544,8 @@ void ParagraphImpl::buildClusterTable() {
               fClustersIndexFromCodeUnit[i] = fClusters.size();
             }
             // There are no glyphs but we want to have one cluster
-            fClusters.emplace_back(this, runIndex, 0ul, 1ul, this->text(run.textRange()), run.advance().fX, run.advance().fY);
+            fClusters.emplace_back(
+                    this, runIndex, 0ul, 1ul, this->text(run.textRange()), run.advance().fX);
             fCodeUnitProperties[run.textRange().start] |= SkUnicode::CodeUnitFlags::kSoftLineBreakBefore;
             fCodeUnitProperties[run.textRange().end] |= SkUnicode::CodeUnitFlags::kSoftLineBreakBefore;
         } else {
@@ -551,8 +554,7 @@ void ParagraphImpl::buildClusterTable() {
                                                                    size_t glyphEnd,
                                                                    size_t charStart,
                                                                    size_t charEnd,
-                                                                   SkScalar width,
-                                                                   SkScalar height) {
+                                                                   SkScalar width) {
                 SkASSERT(charEnd >= charStart);
                 if (charStart >= charEnd) {
                     // Empty cluster text ranges produce no code units or glyphs and are ignored
@@ -580,8 +582,7 @@ void ParagraphImpl::buildClusterTable() {
                         fClustersIndexFromCodeUnit[i] = fClusters.size();
                     }
                     SkSpan<const char> text(fText.c_str() + charStart, charEnd - charStart);
-                    fClusters.emplace_back(
-                            this, runIndex, glyphStart, glyphEnd, text, width, height);
+                    fClusters.emplace_back(this, runIndex, glyphStart, glyphEnd, text, width);
                     fCodeUnitProperties[charStart] |= SkUnicode::CodeUnitFlags::kGlyphClusterStart;
                     return;
                 }
@@ -651,8 +652,7 @@ void ParagraphImpl::buildClusterTable() {
                         fClustersIndexFromCodeUnit[i] = fClusters.size();
                     }
                     SkSpan<const char> subText(fText.c_str() + sub.range.start, sub.range.width());
-                    fClusters.emplace_back(
-                            this, runIndex, gStart, gEnd, subText, subWidth, height);
+                    fClusters.emplace_back(this, runIndex, gStart, gEnd, subText, subWidth);
                     fCodeUnitProperties[sub.range.start] |=
                             SkUnicode::CodeUnitFlags::kGlyphClusterStart;
                 }
@@ -664,7 +664,7 @@ void ParagraphImpl::buildClusterTable() {
         fMaxIntrinsicWidth += run.advance().fX;
     }
     fClustersIndexFromCodeUnit[fText.size()] = fClusters.size();
-    fClusters.emplace_back(this, EMPTY_RUN, 0, 0, this->text({fText.size(), fText.size()}), 0, 0);
+    fClusters.emplace_back(this, EMPTY_RUN, 0, 0, this->text({fText.size(), fText.size()}), 0);
 
     // Invariant: guarantee no code unit remains EMPTY_INDEX in fClustersIndexFromCodeUnit.
     // Any unmapped code units (0-glyph runs or dropped controls) attach to the last valid cluster
@@ -684,12 +684,15 @@ bool ParagraphImpl::shapeTextIntoEndlessLine() {
         return false;
     }
 
-    fUnresolvedCodepoints.clear();
+    // Release the set, do not clear it: a ParagraphCache entry may share it
+    fUnresolvedCodepoints.reset();
     fFontSwitches.clear();
 
     OneLineShaper oneLineShaper(this);
     auto result = oneLineShaper.shape();
     fUnresolvedGlyphs = oneLineShaper.unresolvedGlyphs();
+    // The runs do not change after shaping, so do not keep the growth capacity.
+    fRuns.shrink_to_fit();
 
     this->applySpacingAndBuildClusterTable();
 
@@ -864,29 +867,24 @@ void ParagraphImpl::resolveStrut() {
 }
 
 BlockRange ParagraphImpl::findAllBlocks(TextRange textRange) {
-    BlockIndex begin = EMPTY_BLOCK;
-    BlockIndex end = EMPTY_BLOCK;
-    for (int index = 0; index < fTextStyles.size(); ++index) {
-        auto& block = fTextStyles[index];
-        if (block.fRange.end <= textRange.start) {
-            continue;
-        }
-        if (block.fRange.start >= textRange.end) {
-            break;
-        }
-        if (begin == EMPTY_BLOCK) {
-            begin = index;
-        }
-        end = index;
+    // The blocks are in text order. A binary search finds the first block, so that
+    // a call for each line does not make line breaking quadratic in the number of blocks.
+    auto first =
+            std::partition_point(fTextStyles.begin(), fTextStyles.end(), [&](const Block& block) {
+                return block.fRange.end <= textRange.start;
+            });
+    auto last = first;
+    while (last != fTextStyles.end() && last->fRange.start < textRange.end) {
+        ++last;
     }
 
-    if (begin == EMPTY_INDEX || end == EMPTY_INDEX) {
+    if (first == last) {
         // It's possible if some text is not covered with any text style
         // Not in Flutter but in direct use of SkParagraph
         return EMPTY_RANGE;
     }
 
-    return { begin, end + 1 };
+    return {SkToSizeT(first - fTextStyles.begin()), SkToSizeT(last - fTextStyles.begin())};
 }
 
 TextLine& ParagraphImpl::addLine(SkVector offset,
@@ -1320,13 +1318,13 @@ void ParagraphImpl::visit(const Visitor& visitor) {
 
             STArray<128, uint32_t> clusterStorage;
             const Run* R = rec.fVisitor_Run;
-            const uint32_t* clusterPtr = &R->fClusterIndexes[0];
+            const uint32_t* clusterPtr = R->clusterIndexes().data();
 
             if (R->fClusterStart > 0) {
-                int count = R->fClusterIndexes.size();
+                int count = R->clusterIndexes().size();
                 clusterStorage.reset(count);
                 for (int i = 0; i < count; ++i) {
-                    clusterStorage[i] = R->fClusterStart + R->fClusterIndexes[i];
+                    clusterStorage[i] = R->globalClusterIndex(i);
                 }
                 clusterPtr = &clusterStorage[0];
             }
@@ -1554,8 +1552,7 @@ void ParagraphImpl::extendedVisit(const ExtendedVisitor& visitor) {
                     if (run->fClusterStart > 0) {
                         clusterStorage.reset(context.size);
                         for (size_t i = 0; i < context.size; ++i) {
-                          clusterStorage[i] =
-                              run->fClusterStart + run->fClusterIndexes[i];
+                            clusterStorage[i] = run->globalClusterIndex(i);
                         }
                         clusterPtr = &clusterStorage[0];
                     }
@@ -1565,7 +1562,7 @@ void ParagraphImpl::extendedVisit(const ExtendedVisitor& visitor) {
                         SkSize::Make(rect.width(), rect.height()),
                         SkToS16(context.size),
                         &run->glyphs()[context.pos],
-                        &run->fPositions[context.pos],
+                        &run->fGlyphData->positions()[context.pos],
                         &glyphBounds[context.pos],
                         clusterPtr,
                         0,  // flags

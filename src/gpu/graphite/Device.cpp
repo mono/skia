@@ -1896,14 +1896,8 @@ void Device::drawGeometry(const Transform& localToDevice,
     // TODO (b/540923063): Moving the pathAtlas flush prior to key extraction could allow the
     // storage context to deduplicate uploads per draw pass.
     if (pathAtlas != nullptr) {
-        Rect clippedShapeBounds = clip.transformedShapeBounds().makeIntersect(clip.scissor());
-        if (clippedShapeBounds.area() >= 0.8f * clip.transformedShapeBounds().area()) {
-            // The clip isn't excluding very much of the original shape, so store the entire path
-            // in the atlas to avoid redundant entries with slightly different clips.
-            clippedShapeBounds = clip.transformedShapeBounds();
-        }
         std::optional<CoverageMaskShape> atlasMask;
-        std::tie(renderer, atlasMask) = pathAtlas->addShape(clippedShapeBounds,
+        std::tie(renderer, atlasMask) = pathAtlas->addShape(clip,
                                                             geometry.shape(),
                                                             localToDevice,
                                                             style);
@@ -1918,7 +1912,7 @@ void Device::drawGeometry(const Transform& localToDevice,
                     SK_DUMP_TASKS_CODE("Device::drawGeometry Atlas Flush"));
 
             // Try inserting the shape again.
-            std::tie(renderer, atlasMask) = pathAtlas->addShape(clippedShapeBounds,
+            std::tie(renderer, atlasMask) = pathAtlas->addShape(clip,
                                                                 geometry.shape(),
                                                                 localToDevice,
                                                                 style);
@@ -1943,7 +1937,7 @@ void Device::drawGeometry(const Transform& localToDevice,
 
     // Determine whether or not this draw will also record an inner-fill draw. This must be done
     // before visiting the clip stack so that any clips account for both draws' Z values.
-    const bool avoidDepthMode = fRecorder->priv().caps()->avoidDepthMode();
+    const bool avoidDepthMode = fDC->avoidDepth();
     fCurrentDepth = fCurrentDepth.next();
     DrawOrder order(fCurrentDepth);
     Rect innerFillBounds = Rect::InfiniteInverted();
@@ -2489,10 +2483,8 @@ void Device::drawCoverageMask(const SkSpecialImage* mask,
                               const SkMatrix& maskToDevice,
                               const SkSamplingOptions& sampling,
                               const SkPaint& paint) {
-    CoverageMaskShape::MaskInfo maskInfo{/*fTextureOrigin=*/{SkTo<uint16_t>(mask->subset().fLeft),
-                                                             SkTo<uint16_t>(mask->subset().fTop)},
-                                         /*fMaskSize=*/{SkTo<uint16_t>(mask->width()),
-                                                        SkTo<uint16_t>(mask->height())}};
+    CoverageMaskShape::MaskInfo maskInfo{/*fTextureOrigin=*/mask->subset().topLeft(),
+                                         /*fMaskSize=*/mask->dimensions()};
 
     auto maskProxyView = AsView(mask->asImage());
     if (!maskProxyView) {
@@ -2606,34 +2598,42 @@ bool Device::drawBlurredRRect(const SkRRect& rrect, const SkPaint& paint,
     if (paint.isAntiAlias()) {
         rrectToBlur = rrect;
     } else {
-        // Snap the the rounded rectangle to pixel edges to match the behavior of
-        // Device::drawRRect() for non-AA blurs when the AnalyticBlurMask approach isn't supported.
-        rrectToBlur = SkRRect::MakeRectRadii(snap_rect_to_pixels(this->localToDeviceTransform(),
-                                                                 rrect.rect()).asSkRect(),
-                                             rrect.radii().data());
+        // Snaps the rrect to pixels the same way as the image filter fallback for blurs does,
+        // snapping based on the blur layer's transform. If we don't have rotation, we can snap
+        // with the translation applied, else we only apply the scale and snap.
+        // See skif::Mapping::decomposeCTM().
+        const SkMatrix& matrix = this->localToDevice();
+        Rect snappedRect = rrect.rect();
+        SkSize layerScale;
+        if (matrix.isScaleTranslate()) {
+            snappedRect = snap_rect_to_pixels(this->localToDeviceTransform(), snappedRect);
+        } else {
+            // Analytic blurring doesn't support the perspective case.
+            SkAssertResult(matrix.decomposeScale(&layerScale, nullptr));
+            snappedRect = snap_rect_to_pixels(
+                    Transform(SkM44::Scale(layerScale.width(), layerScale.height())), snappedRect);
+        }
+        rrectToBlur = SkRRect::MakeRectRadii(snappedRect.asSkRect(), rrect.radii().data());
     }
 
+#if defined(SK_SUPPORT_LEGACY_GRAPHITE_RRECT_BLUR)
     std::optional<AnalyticBlurMask> analyticBlur = AnalyticBlurMask::Make(
             this->recorder(), this->localToDeviceTransform(), deviceSigma, rrectToBlur);
     if (!analyticBlur) {
-#if !defined(SK_SUPPORT_LEGACY_GRAPHITE_RRECT_BLUR)
-        // Try using the analytic rrect blur specific mask.
-        std::optional<AnalyticRRectBlurMask> analyticRRectBlur = AnalyticRRectBlurMask::Make(
-                this->recorder(), this->localToDeviceTransform(), localSigma, rrectToBlur);
-        if (analyticRRectBlur) {
-            this->drawGeometry(this->localToDeviceTransform(),
-                               Geometry(*analyticRRectBlur),
-                               PaintParams(paint),
-                               SkStrokeRec(paint));
-            return true;
-        }
-#endif
-
         return false;
     }
+    Geometry geometry = Geometry(*analyticBlur);
+#else
+    std::optional<AnalyticRRectBlurMask> analyticRRectBlur = AnalyticRRectBlurMask::Make(
+            this->recorder(), this->localToDeviceTransform(), localSigma, rrectToBlur);
+    if (!analyticRRectBlur) {
+        return false;
+    }
+    Geometry geometry = Geometry(*analyticRRectBlur);
+#endif
 
     this->drawGeometry(this->localToDeviceTransform(),
-                       Geometry(*analyticBlur),
+                       std::move(geometry),
                        PaintParams(paint),
                        SkStrokeRec(paint));
     return true;

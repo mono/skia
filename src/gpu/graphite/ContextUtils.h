@@ -9,7 +9,7 @@
 #define skgpu_graphite_ContextUtils_DEFINED
 
 #include "src/core/SkSLTypeShared.h"
-#include "src/gpu/graphite/Uniform.h"
+#include "src/gpu/graphite/layout/Uniform.h"
 
 #include <cstdint>
 #include <optional>
@@ -32,10 +32,10 @@ class PaintParams;
 class PaintParamsKeyBuilder;
 class PipelineDataGatherer;
 class Recorder;
-struct RenderPassDesc;
 class RenderStep;
-struct ResourceBindingRequirements;
 class ShaderCodeDictionary;
+struct RenderPassDesc;
+struct ResourceBindingRequirements;
 enum class TextureFormat : uint8_t;
 class UniformManager;
 class UniquePaintParamsID;

@@ -13,8 +13,10 @@
 #include "include/core/SkRect.h"
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkSpan.h"
+#include "include/private/SkOnlyStackAllocatable.h"
 #include "include/private/SkTLogic.h"
 #include "src/core/SkColorData.h"  // IWYU pragma: keep
+#include "src/partition_alloc/raw_ptr.h"
 #include "src/text/gpu/GlyphVector.h"
 #include "src/text/gpu/SubRunAllocator.h"
 #include "src/text/gpu/VertexFiller.h"
@@ -151,6 +153,8 @@ protected:
 class SubRunList {
 public:
     class Iterator {
+        SK_ONLY_STACK_ALLOCATABLE;
+
     public:
         using value_type = SubRun;
         using difference_type = ptrdiff_t;
@@ -182,7 +186,7 @@ public:
 
 private:
     SubRunOwner fHead{nullptr};
-    SubRunOwner* fTail{&fHead};
+    raw_ptr<SubRunOwner> fTail{&fHead};
 };
 
 // -- SubRunContainer ------------------------------------------------------------------------------

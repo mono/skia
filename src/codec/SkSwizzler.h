@@ -12,6 +12,7 @@
 #include "include/core/SkColor.h"
 #include "include/core/SkTypes.h"
 #include "src/codec/SkSampler.h"
+#include "src/partition_alloc/raw_ptr.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -91,6 +92,15 @@ public:
     int sampleX() const { return fSampleX; }
 
     /**
+     *  Returns the first pixel of the source that we swizzle, before any sampling:
+     *  the left edge of the subset, or zero if we are not subsetting.
+     *
+     *  This getter is currently used by SkBmpStandardCodec for Bmp-in-Ico decodes,
+     *  to apply the transparency mask to the same columns as the pixels.
+     */
+    int srcOffset() const { return fSrcOffset; }
+
+    /**
      *  Returns the actual number of pixels written to destination memory, taking
      *  scaling, subsetting, and partial frames into account.
      */
@@ -139,7 +149,7 @@ private:
     // whether or not we are sampling.
     RowProc             fActualProc;
 
-    const SkPMColor*    fColorTable;      // Unowned pointer
+    raw_ptr<const SkPMColor, DanglingUntriaged> fColorTable;  // Unowned pointer
 
     // Subset Swizzles
     // There are two types of subset swizzles that we support.  We do not

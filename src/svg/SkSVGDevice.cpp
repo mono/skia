@@ -39,6 +39,7 @@
 #include "include/core/SkTypeface.h"
 #include "include/private/SkDebug.h"
 #include "include/private/SkNoncopyable.h"
+#include "include/private/SkOnlyStackAllocatable.h"
 #include "include/private/SkTPin.h"
 #include "include/private/SkTemplates.h"
 #include "include/private/SkTo.h"
@@ -51,6 +52,7 @@
 #include "src/core/SkTHash.h"
 #include "src/core/SkTLazy.h"
 #include "src/image/SkImage_Base.h"
+#include "src/partition_alloc/raw_ptr.h"
 #include "src/shaders/SkColorShader.h"
 #include "src/shaders/SkShaderBase.h"
 #include "src/text/GlyphRun.h"
@@ -213,6 +215,7 @@ bool RequiresViewportReset(const SkPaint& paint) {
 
 void AddPath(const sktext::GlyphRun& glyphRun, const SkPoint& offset, SkPathBuilder* builder) {
     struct Rec {
+        SK_ONLY_STACK_ALLOCATABLE;
         SkPathBuilder* fBuilder;
         const SkPoint  fOffset;
         const SkPoint* fPos;
@@ -273,6 +276,8 @@ private:
 };
 
 struct SkSVGDevice::MxCp {
+    SK_ONLY_STACK_ALLOCATABLE;
+
     const SkMatrix* fMatrix;
     const SkClipStack*  fClipStack;
 
@@ -360,9 +365,9 @@ private:
                             const SkShader* shader,
                             const SkMatrix& localMatrix);
 
-    SkXMLWriter*                   fWriter = nullptr;
+    raw_ptr<SkXMLWriter> fWriter;
     SkSVGCanvas::EncodePngCallback fPngEncoder = nullptr;
-    ResourceBucket*                fResourceBucket = nullptr;
+    raw_ptr<ResourceBucket> fResourceBucket;
 };
 
 void SkSVGDevice::AutoElement::addPaint(const SkPaint& paint, const Resources& resources) {

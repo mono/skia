@@ -17,12 +17,12 @@
 #include "src/gpu/DataUtils.h"
 #include "src/gpu/graphite/ContextUtils.h"
 #include "src/gpu/graphite/DescriptorData.h"
-#include "src/gpu/graphite/PipelineData.h"
 #include "src/gpu/graphite/RenderPassDesc.h"
 #include "src/gpu/graphite/Surface_Graphite.h"
 #include "src/gpu/graphite/TextureProxy.h"
-#include "src/gpu/graphite/UniformManager.h"
 #include "src/gpu/graphite/compute/DispatchGroup.h"
+#include "src/gpu/graphite/layout/PipelineData.h"
+#include "src/gpu/graphite/layout/UniformManager.h"
 #include "src/gpu/graphite/vk/VulkanBuffer.h"
 #include "src/gpu/graphite/vk/VulkanCaps.h"
 #include "src/gpu/graphite/vk/VulkanComputePipeline.h"
@@ -426,6 +426,11 @@ std::optional<ImageStateUpdateInfo> get_state_update_info(const VulkanCaps& caps
         // It is illegal to have both the new and old queue be special queue families (i.e. external
         // or foreign).
         return std::nullopt;
+    }
+
+    if (isSpecialQueue(newQueueFamilyIndex)) {
+        return ImageStateUpdateInfo{
+                newLayout, 0, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, newQueueFamilyIndex};
     }
 
     return ImageStateUpdateInfo{

@@ -13,7 +13,9 @@
 #include "include/core/SkTypes.h"
 #include "include/pathops/SkPathOps.h"
 #include "include/private/SkDebug.h"
+#include "include/private/SkOnlyStackAllocatable.h"
 #include "src/core/SkArenaAlloc.h"
+#include "src/partition_alloc/raw_ptr.h"
 #include "src/pathops/SkOpSegment.h"
 #include "src/pathops/SkOpSpan.h"
 #include "src/pathops/SkPathOpsBounds.h"
@@ -380,10 +382,10 @@ public:
     SkOpSpan* undoneSpan();
 
 protected:
-    SkOpGlobalState* fState;
+    raw_ptr<SkOpGlobalState> fState;
     SkOpSegment fHead;
-    SkOpSegment* fTail;
-    SkOpContour* fNext;
+    raw_ptr<SkOpSegment> fTail;
+    raw_ptr<SkOpContour> fNext;
     SkPathOpsBounds fBounds;
     int fCcw;
     int fCount;
@@ -440,6 +442,8 @@ public:
 
 class SkOpContourBuilder {
 public:
+    SK_ONLY_STACK_ALLOCATABLE;
+
     SkOpContourBuilder(SkOpContour* contour)
         : fContour(contour)
         , fLastIsLine(false) {
