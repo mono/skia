@@ -21,6 +21,7 @@
 #include "include/ports/SkFontScanner_FreeType.h"
 #include "include/private/SkMalloc.h"
 #include "include/private/SkMutex.h"
+#include "include/private/SkOnlyStackAllocatable.h"
 #include "include/private/SkTFitsIn.h"
 #include "include/private/SkTPin.h"
 #include "include/private/SkTemplates.h"
@@ -35,6 +36,7 @@
 #include "src/core/SkMaskGamma.h"
 #include "src/core/SkScalerContext.h"
 #include "src/core/SkTSearch.h"
+#include "src/partition_alloc/raw_ptr.h"
 #include "src/ports/SkFontHost_FreeType_common.h"
 #include "src/ports/SkFontScanner_FreeType_priv.h"
 #include "src/ports/SkTypeface_FreeType.h"
@@ -445,6 +447,8 @@ SkTypeface_FreeType::FaceRec::Make(const SkTypeface_FreeType* typeface) {
 }
 
 class AutoFTAccess {
+    SK_ONLY_STACK_ALLOCATABLE;
+
 public:
     AutoFTAccess(const SkTypeface_FreeType* tf) : fFaceRec(nullptr) {
         f_t_mutex().acquire();
@@ -493,7 +497,7 @@ private:
     // This value was chosen by eyeballing the result in Firefox and trying to match it.
     static const FT_Pos kBitmapEmboldenStrength = 1 << 6;
 
-    SkTypeface_FreeType::FaceRec* fFaceRec; // Borrowed face from the typeface's FaceRec.
+    raw_ptr<SkTypeface_FreeType::FaceRec> fFaceRec;  // Borrowed face from the typeface's FaceRec.
     FT_Face   fFace;  // Borrowed face from fFaceRec.
     FT_Size   fFTSize;  // The size to apply to the fFace.
     FT_Int    fStrikeIndex; // The bitmap strike for the fFace (or -1 if none).

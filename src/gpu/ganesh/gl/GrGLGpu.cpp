@@ -2132,7 +2132,8 @@ bool GrGLGpu::flushGLState(GrRenderTarget* renderTarget, bool useMultisampleFBO,
                       glRT->numStencilBits(useMultisampleFBO));
     }
     this->flushStencil(stencil, programInfo.origin());
-    this->flushScissorTest(GrScissorTest(programInfo.pipeline().isScissorTestEnabled()));
+    // Scissor state is configured dynamically in GrGLOpsRenderPass::onBindPipeline and
+    // GrGLOpsRenderPass::onSetScissorRect.
     this->flushWindowRectangles(programInfo.pipeline().getWindowRectsState(),
                                 glRT, programInfo.origin());
     this->flushConservativeRasterState(programInfo.pipeline().usesConservativeRaster());
@@ -4357,7 +4358,7 @@ GrGLAttribArrayState* GrGLGpu::HWVertexArrayState::bindInternalVertexArray(GrGLG
             GrGLuint arrayID;
             GR_GL_CALL(gpu->glInterface(), GenVertexArrays(1, &arrayID));
             int attrCount = gpu->glCaps().maxVertexAttributes();
-            fCoreProfileVertexArray = new GrGLVertexArray(arrayID, attrCount);
+            fCoreProfileVertexArray = std::make_unique<GrGLVertexArray>(arrayID, attrCount);
         }
         if (ibuf) {
             attribState = fCoreProfileVertexArray->bindWithIndexBuffer(gpu, ibuf);

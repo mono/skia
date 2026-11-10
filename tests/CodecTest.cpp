@@ -617,6 +617,126 @@ DEF_TEST(Codec_ico, r) {
     // Decodes an embedded PNG image
     check(r, "images/google_chrome.ico", SkISize::Make(256, 256), false, false, false, true);
 }
+
+// Makes an ICO holding one 24-bit BMP, whose AND mask makes the columns with x % 10 < 4
+// transparent.
+static sk_sp<SkData> make_ico_with_24bit_bmp(int width, int height) {
+    SkASSERT(width > 0 && width < 256 && height > 0 && height < 256);
+    const size_t xorRowBytes = SkAlign4(width * 3);
+    const size_t andRowBytes = SkAlign4((width + 7) / 8);
+    const uint32_t bmpSize = static_cast<uint32_t>(40 + height * (xorRowBytes + andRowBytes));
+
+    SkDynamicMemoryWStream stream;
+    stream.write16(0);  // Reserved
+    stream.write16(1);  // Image type: 1 for ICO
+    stream.write16(1);  // Number of images
+    stream.write8(width);
+    stream.write8(height);
+    stream.write8(0);    // Color count
+    stream.write8(0);    // Reserved
+    stream.write16(1);   // Color planes
+    stream.write16(24);  // Bits per pixel
+    stream.write32(bmpSize);
+    stream.write32(22);  // Offset of the BMP
+
+    // BITMAPINFOHEADER. Its height covers both the XOR mask (the pixels) and the AND mask.
+    stream.write32(40);
+    stream.write32(width);
+    stream.write32(2 * height);
+    stream.write16(1);   // Color planes
+    stream.write16(24);  // Bits per pixel
+    for (int i = 0; i < 6; i++) {
+        stream.write32(0);  // Compression, image size, resolution and color counts
+    }
+
+    // Both masks are stored bottom-up.
+    std::vector<uint8_t> row;
+    for (int y = height - 1; y >= 0; y--) {
+        row.assign(xorRowBytes, 0);
+        for (int x = 0; x < width; x++) {
+            row[3 * x + 0] = static_cast<uint8_t>(10 * x);  // Blue
+            row[3 * x + 1] = static_cast<uint8_t>(50 * y);  // Green
+            row[3 * x + 2] = 0xFF;                          // Red
+        }
+        stream.write(row.data(), row.size());
+    }
+    for (int y = height - 1; y >= 0; y--) {
+        row.assign(andRowBytes, 0);
+        for (int x = 0; x < width; x++) {
+            if (x % 10 < 4) {
+                row[x / 8] |= 0x80 >> (x % 8);
+            }
+        }
+        stream.write(row.data(), row.size());
+    }
+    return stream.detachAsData();
+}
+
+static bool matches_columns(const SkBitmap& actual, const SkBitmap& expected, int expectedLeft) {
+    for (int y = 0; y < actual.height(); y++) {
+        for (int x = 0; x < actual.width(); x++) {
+            if (*actual.getAddr32(x, y) != *expected.getAddr32(expectedLeft + x, y)) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+// SkBmpStandardCodec::decodeIcoMask must apply the AND mask only to the pixels of an x-subset,
+// starting at the subset's left edge, so it neither writes past a subset-sized destination nor
+// masks the wrong columns.
+DEF_TEST(Codec_ico_decodeIcoMask_subset, r) {
+    constexpr int kWidth = 24;
+    constexpr int kHeight = 4;
+    SkCodec::Result result;
+    std::unique_ptr<SkCodec> codec = SkIcoDecoder::Decode(
+            SkMemoryStream::Make(make_ico_with_24bit_bmp(kWidth, kHeight)), &result);
+    REPORTER_ASSERT(r, codec);
+    if (!codec) {
+        return;
+    }
+
+    const SkImageInfo info = codec->getInfo();
+    SkBitmap full;
+    full.allocPixels(info);
+    REPORTER_ASSERT(r, codec->getPixels(full.pixmap()) == SkCodec::kSuccess);
+    REPORTER_ASSERT(r, SkColorGetA(full.getColor(0, 0)) == 0);
+    REPORTER_ASSERT(r, SkColorGetA(full.getColor(4, 0)) == 0xFF);
+
+    // Decode an x-subset by scanlines into a buffer exactly as wide as the subset.
+    const SkIRect subset = SkIRect::MakeXYWH(6, 0, 10, kHeight);
+    SkCodec::Options options;
+    options.fSubset = &subset;
+    REPORTER_ASSERT(r, codec->startScanlineDecode(info, &options) == SkCodec::kSuccess);
+    SkBitmap bm;
+    bm.allocPixels(info.makeWH(subset.width(), kHeight));
+    REPORTER_ASSERT(r, codec->getScanlines(bm.getPixels(), kHeight, bm.rowBytes()) == kHeight);
+    REPORTER_ASSERT(r, matches_columns(bm, full, subset.left()));
+
+    // The same subset sampled by 2 through SkAndroidCodec must match the same columns of a
+    // sampled full decode. The subset's left edge is even, so both sample the same columns.
+    std::unique_ptr<SkAndroidCodec> androidCodec = SkAndroidCodec::MakeFromCodec(std::move(codec));
+    SkAndroidCodec::AndroidOptions androidOptions;
+    androidOptions.fSampleSize = 2;
+    SkBitmap sampledFull;
+    sampledFull.allocPixels(info.makeDimensions(androidCodec->getSampledDimensions(2)));
+    REPORTER_ASSERT(r,
+                    androidCodec->getAndroidPixels(sampledFull.info(),
+                                                   sampledFull.getPixels(),
+                                                   sampledFull.rowBytes(),
+                                                   &androidOptions) == SkCodec::kSuccess);
+    androidOptions.fSubset = &subset;
+    SkBitmap sampledSubset;
+    sampledSubset.allocPixels(
+            info.makeDimensions(androidCodec->getSampledSubsetDimensions(2, subset)));
+    REPORTER_ASSERT(r,
+                    androidCodec->getAndroidPixels(sampledSubset.info(),
+                                                   sampledSubset.getPixels(),
+                                                   sampledSubset.rowBytes(),
+                                                   &androidOptions) == SkCodec::kSuccess);
+    REPORTER_ASSERT(r, matches_columns(sampledSubset, sampledFull, subset.left() / 2));
+}
 #endif
 
 DEF_TEST(Codec_gif, r) {
@@ -1089,6 +1209,34 @@ DEF_TEST(Codec_raw_notseekable, r) {
     REPORTER_ASSERT(r, codec);
 
     test_info(r, codec.get(), codec->getInfo(), SkCodec::kSuccess, nullptr);
+}
+
+// Test that SkRawCodec propagates the outer DNG EXIF orientation to SkJpegCodec when the
+// embedded JPEG preview has no internal EXIF orientation marker.
+DEF_TEST(Codec_raw_preview_orientation, r) {
+    constexpr char path[] = "images/dng_with_preview.dng";
+    sk_sp<SkData> data(GetResourceAsData(path));
+    if (!data) {
+        SkDebugf("Missing resource '%s'\n", path);
+        return;
+    }
+
+    // Offset 138 is the little-endian uint16 value of the IFD0 Orientation tag (0x0112)
+    // in dng_with_preview.dng, whose embedded JPEG preview has no internal EXIF marker.
+    constexpr size_t kOrientationOffset = 138;
+    REPORTER_ASSERT(r, data->size() > kOrientationOffset + 1);
+    for (int o = kTopLeft_SkEncodedOrigin; o <= kLast_SkEncodedOrigin; ++o) {
+        sk_sp<SkData> modified = SkData::MakeWithCopy(data->bytes(), data->size());
+        uint8_t* bytes = static_cast<uint8_t*>(modified->writable_data());
+        bytes[kOrientationOffset] = static_cast<uint8_t>(o);
+        bytes[kOrientationOffset + 1] = 0;
+
+        std::unique_ptr<SkCodec> codec(SkCodec::MakeFromData(std::move(modified)));
+        REPORTER_ASSERT(r, codec);
+        if (codec) {
+            REPORTER_ASSERT(r, codec->getOrigin() == static_cast<SkEncodedOrigin>(o));
+        }
+    }
 }
 #endif
 
@@ -2052,13 +2200,204 @@ DEF_TEST(Codec_kBGR_101010x_XR_SkColorType_supported, r) {
             .makeAlphaType(kOpaque_SkAlphaType);
     SkImageInfo dstInfo = srcInfo.makeColorType(kBGR_101010x_XR_SkColorType);
     srcBm.allocPixels(srcInfo);
+    srcBm.eraseColor(SK_ColorGREEN);
     sk_sp<SkData> data = SkPngEncoder::Encode(srcBm.pixmap(), {});
     SkASSERT_RELEASE(data != nullptr);
     std::unique_ptr<SkCodec> codec(SkCodec::MakeFromData(data));
     SkBitmap dstBm;
     dstBm.allocPixels(dstInfo);
-    bool success = codec->getPixels(dstInfo, dstBm.getPixels(), dstBm.rowBytes());
-    REPORTER_ASSERT(r, SkCodec::kSuccess == success);
+    SkCodec::Result result = codec->getPixels(dstInfo, dstBm.getPixels(), dstBm.rowBytes());
+    REPORTER_ASSERT(r, result == SkCodec::kSuccess);
+}
+
+DEF_TEST(Codec_XRColorTypes, r) {
+    const std::initializer_list<const char*> kResources = {
+#if defined(SK_CODEC_DECODES_JPEG) || defined(SK_CODEC_DECODES_JPEG_WITH_RUST)
+            "images/color_wheel.jpg",
+#endif
+#if defined(SK_CODEC_DECODES_PNG_WITH_LIBPNG) || defined(SK_CODEC_DECODES_PNG_WITH_RUST)
+            "images/pngsuite/basn3p01.png",
+            "images/index8.png",
+#endif
+#if defined(SK_CODEC_DECODES_BMP) || defined(SK_CODEC_DECODES_BMP_WITH_RUST)
+            "images/rle.bmp",
+            "images/bmp-size-32x32-8bpp.bmp",
+#endif
+#if defined(SK_CODEC_DECODES_ICO) || defined(SK_CODEC_DECODES_ICO_WITH_RUST)
+            "images/color_wheel.ico",
+#endif
+#if defined(SK_CODEC_DECODES_WEBP)
+            "images/color_wheel.webp",
+#endif
+#if defined(SK_CODEC_DECODES_GIF)
+            "images/gif-transparent-index.gif",
+#endif
+    };
+
+    for (const char* path : kResources) {
+        skiatest::ReporterContext subtest(r, path);
+        sk_sp<SkData> data = GetResourceAsData(path);
+        if (!data) {
+            continue;
+        }
+        std::unique_ptr<SkCodec> codec = SkCodec::MakeFromData(data);
+        REPORTER_ASSERT(r, codec);
+        if (!codec) {
+            continue;
+        }
+
+        const SkImageInfo baseInfo = codec->getInfo();
+        const bool isOpaque = baseInfo.isOpaque();
+        const SkIPoint kSamplePoints[] = {{0, 0}, {baseInfo.width() / 2, baseInfo.height() / 2}};
+
+        for (const sk_sp<SkColorSpace>& cs :
+             {sk_sp<SkColorSpace>(nullptr), SkColorSpace::MakeSRGB()}) {
+            // kBGRA_10101010_XR_SkColorType is not implemented in SkCodec and must be rejected
+            // up front rather than reaching codec bodies with unconfigured color transforms.
+            SkBitmap bgraXR;
+            bgraXR.allocPixels(
+                    baseInfo.makeColorType(kBGRA_10101010_XR_SkColorType).makeColorSpace(cs));
+            REPORTER_ASSERT(r, codec->getPixels(bgraXR.pixmap()) == SkCodec::kInvalidConversion);
+
+            SkBitmap refF16;
+            if (isOpaque) {
+                refF16.allocPixels(
+                        baseInfo.makeColorType(kRGBA_F16_SkColorType).makeColorSpace(cs));
+                REPORTER_ASSERT(r, codec->getPixels(refF16.pixmap()) == SkCodec::kSuccess);
+            }
+
+            const SkImageInfo pixelF32 =
+                    SkImageInfo::Make(1, 1, kRGBA_F32_SkColorType, kOpaque_SkAlphaType, cs);
+            for (SkCodec::ZeroInitialized zeroInit :
+                 {SkCodec::kNo_ZeroInitialized, SkCodec::kYes_ZeroInitialized}) {
+                SkBitmap bgrXR;
+                SkImageInfo bgrInfo =
+                        baseInfo.makeColorType(kBGR_101010x_XR_SkColorType).makeColorSpace(cs);
+                bgrXR.allocPixels(bgrInfo);
+                if (zeroInit == SkCodec::kYes_ZeroInitialized) {
+                    memset(bgrXR.getPixels(), 0, bgrXR.computeByteSize());
+                }
+                SkCodec::Options opts;
+                opts.fZeroInitialized = zeroInit;
+                const SkCodec::Result expected =
+                        isOpaque ? SkCodec::kSuccess : SkCodec::kInvalidConversion;
+                REPORTER_ASSERT(r, codec->getPixels(bgrXR.pixmap(), &opts) == expected);
+                if (isOpaque) {
+                    for (SkIPoint pt : kSamplePoints) {
+                        SkColor4f refPixel = {};
+                        SkColor4f xrPixel = {};
+                        REPORTER_ASSERT(
+                                r,
+                                refF16.readPixels(
+                                        pixelF32, &refPixel, sizeof(refPixel), pt.x(), pt.y()));
+                        REPORTER_ASSERT(
+                                r,
+                                bgrXR.readPixels(
+                                        pixelF32, &xrPixel, sizeof(xrPixel), pt.x(), pt.y()));
+                        for (int c = 0; c < 4; ++c) {
+                            REPORTER_ASSERT(r, SkScalarNearlyEqual(refPixel[c], xrPixel[c], 0.02f));
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+#if defined(SK_CODEC_ENCODES_PNG_WITH_LIBPNG) && \
+        (defined(SK_CODEC_DECODES_PNG_WITH_LIBPNG) || defined(SK_CODEC_DECODES_PNG_WITH_RUST))
+DEF_TEST(Codec_XRIncompleteDecode, r) {
+    constexpr int kWidth = 16;
+    constexpr int kHeight = 64;
+    SkBitmap src;
+    src.allocPixels(SkImageInfo::Make(kWidth,
+                                      kHeight,
+                                      kRGBA_8888_SkColorType,
+                                      kOpaque_SkAlphaType,
+                                      SkColorSpace::MakeSRGB()));
+    src.eraseColor(SK_ColorRED);
+
+    // Store uncompressed so truncating at half the byte size reliably lands mid-image.
+    SkPngEncoder::Options encoderOptions;
+    encoderOptions.fFilterFlags = SkPngEncoder::FilterFlag::kNone;
+    encoderOptions.fZLibLevel = 0;
+    sk_sp<SkData> fullData = SkPngEncoder::Encode(src.pixmap(), encoderOptions);
+    REPORTER_ASSERT(r, fullData);
+    if (!fullData) {
+        return;
+    }
+    sk_sp<SkData> truncated = SkData::MakeWithoutCopy(fullData->bytes(), fullData->size() / 2);
+
+    constexpr uint32_t kZeroBGR = 0x18060180u;
+    constexpr uint32_t kRedBGR = (384u << 0) | (384u << 10) | ((384u + 510u) << 20);
+
+    for (SkCodec::ZeroInitialized zeroInit :
+         {SkCodec::kNo_ZeroInitialized, SkCodec::kYes_ZeroInitialized}) {
+        std::unique_ptr<SkCodec> codec = SkCodec::MakeFromData(truncated);
+        REPORTER_ASSERT(r, codec);
+        if (!codec) {
+            return;
+        }
+        SkImageInfo dstInfo = codec->getInfo().makeColorType(kBGR_101010x_XR_SkColorType);
+        SkBitmap dst;
+        dst.allocPixels(dstInfo);
+        const uint8_t initByte = (zeroInit == SkCodec::kYes_ZeroInitialized) ? 0x00 : 0xA5;
+        memset(dst.getPixels(), initByte, dst.computeByteSize());
+
+        SkCodec::Options opts;
+        opts.fZeroInitialized = zeroInit;
+        SkCodec::Result res = codec->getPixels(dstInfo, dst.getPixels(), dst.rowBytes(), &opts);
+        REPORTER_ASSERT(r, res == SkCodec::kIncompleteInput || res == SkCodec::kErrorInInput);
+
+        int rowsDecoded = 0;
+        while (rowsDecoded < kHeight && *dst.getAddr32(0, rowsDecoded) == kRedBGR) {
+            ++rowsDecoded;
+        }
+        REPORTER_ASSERT(r, rowsDecoded > 0 && rowsDecoded < kHeight);
+        for (int y = 0; y < kHeight; ++y) {
+            const uint32_t expected = (y < rowsDecoded) ? kRedBGR : kZeroBGR;
+            for (int x = 0; x < kWidth; ++x) {
+                REPORTER_ASSERT(r, *dst.getAddr32(x, y) == expected);
+            }
+        }
+    }
+}
+#endif
+
+DEF_TEST(Codec_PngPaletteTrnsF16Premul, r) {
+    // images/index8.png is an 8-bit palette PNG with partial-alpha tRNS entries (e.g. pixel
+    // (300, 0) has alpha 99/255). Decoding to kRGBA_F16_SkColorType with kPremul_SkAlphaType
+    // runs xformOnDecode() per row and must not premultiply the palette entries twice.
+    std::unique_ptr<SkStream> stream = GetResourceAsStream("images/index8.png");
+    if (!stream) {
+        return;
+    }
+    std::unique_ptr<SkCodec> codec = SkCodec::MakeFromStream(std::move(stream));
+    REPORTER_ASSERT(r, codec);
+    if (!codec) {
+        return;
+    }
+
+    const SkImageInfo rgbaInfo = codec->getInfo()
+                                         .makeColorType(kRGBA_8888_SkColorType)
+                                         .makeAlphaType(kPremul_SkAlphaType)
+                                         .makeColorSpace(SkColorSpace::MakeSRGB());
+    const SkImageInfo f16Info = rgbaInfo.makeColorType(kRGBA_F16_SkColorType);
+
+    SkBitmap rgbaBm;
+    SkBitmap f16Bm;
+    rgbaBm.allocPixels(rgbaInfo);
+    f16Bm.allocPixels(f16Info);
+
+    REPORTER_ASSERT(r, codec->getPixels(rgbaBm.pixmap()) == SkCodec::kSuccess);
+    REPORTER_ASSERT(r, codec->getPixels(f16Bm.pixmap()) == SkCodec::kSuccess);
+
+    const SkColor4f rgbaColor = rgbaBm.getColor4f(300, 0);
+    const SkColor4f f16Color = f16Bm.getColor4f(300, 0);
+    REPORTER_ASSERT(r, SkScalarNearlyEqual(rgbaColor.fR, f16Color.fR, 0.01f));
+    REPORTER_ASSERT(r, SkScalarNearlyEqual(rgbaColor.fG, f16Color.fG, 0.01f));
+    REPORTER_ASSERT(r, SkScalarNearlyEqual(rgbaColor.fB, f16Color.fB, 0.01f));
+    REPORTER_ASSERT(r, SkScalarNearlyEqual(rgbaColor.fA, f16Color.fA, 0.01f));
 }
 
 DEF_TEST(Codec_gif_notseekable, r) {

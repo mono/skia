@@ -24,6 +24,7 @@
 #include "include/core/SkSpan.h"
 #include "include/effects/SkGradient.h"
 #include "include/private/SkMutex.h"
+#include "include/private/SkOnlyStackAllocatable.h"
 #include "include/private/SkTo.h"
 #include "src/codec/SkCodecPriv.h"
 #include "src/core/SkDraw.h"
@@ -34,6 +35,7 @@
 #include "src/core/SkScalerContext.h"
 #include "src/core/SkScopeExit.h"
 #include "src/core/SkSharedMutex.h"
+#include "src/partition_alloc/raw_ptr.h"
 #include "src/ports/SkScalerContext_win_dw.h"
 #include "src/ports/SkTypeface_win_dw.h"
 #include "src/sfnt/SkOTTable_EBLC.h"
@@ -64,6 +66,8 @@ static SkSharedMutex* maybe_dw_mutex(DWriteFontTypeface& typeface) {
 }
 
 class SK_SCOPED_CAPABILITY Exclusive {
+    SK_ONLY_STACK_ALLOCATABLE;
+
 public:
     explicit Exclusive(SkSharedMutex* maybe_lock) SK_ACQUIRE(*maybe_lock)
         : fLock(maybe_lock) {
@@ -81,6 +85,8 @@ private:
     SkSharedMutex* fLock;
 };
 class SK_SCOPED_CAPABILITY Shared {
+    SK_ONLY_STACK_ALLOCATABLE;
+
 public:
     explicit Shared(SkSharedMutex* maybe_lock) SK_ACQUIRE_SHARED(*maybe_lock)
         : fLock(maybe_lock)  {
@@ -1705,7 +1711,7 @@ bool SkScalerContext_DW::generateSVGMetrics(const SkGlyph& glyph, SkRect* bounds
 namespace {
 struct Context {
     SkTScopedComPtr<IDWriteFontFace4> fontFace4;
-    void* glyphDataContext;
+    raw_ptr<void> glyphDataContext;
     Context(IDWriteFontFace4* face4, void* context)
         : fontFace4(SkRefComPtr(face4))
         , glyphDataContext(context)
@@ -1714,7 +1720,7 @@ struct Context {
 
 static void ReleaseProc(const void* ptr, void* context) {
     Context* ctx = (Context*)context;
-    ctx->fontFace4->ReleaseGlyphImageData(ctx->glyphDataContext);
+    ctx->fontFace4->ReleaseGlyphImageData(ctx->glyphDataContext.ExtractAsDangling());
     delete ctx;
 }
 }

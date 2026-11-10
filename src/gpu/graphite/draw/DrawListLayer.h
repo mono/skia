@@ -16,12 +16,12 @@
 #include "src/gpu/graphite/ContextUtils.h"
 #include "src/gpu/graphite/DrawCommands.h"
 #include "src/gpu/graphite/PaintParams.h"
-#include "src/gpu/graphite/PipelineData.h"
 #include "src/gpu/graphite/draw/DrawListTypes.h"
 #include "src/gpu/graphite/draw/DrawOrder.h"
 #include "src/gpu/graphite/draw/DrawParams.h"
 #include "src/gpu/graphite/geom/Rect.h"
 #include "src/gpu/graphite/geom/Transform.h"
+#include "src/gpu/graphite/layout/PipelineData.h"
 
 #include <cstdint>
 #include <functional>
@@ -36,8 +36,8 @@ class Renderer;
 
 class DrawListLayer final : public DrawListBase {
 public:
-    explicit DrawListLayer(bool storageBufferSupport)
-        : DrawListBase()
+    explicit DrawListLayer(bool avoidDepth, bool storageBufferSupport)
+        : DrawListBase(avoidDepth)
         , fStorageBufferSupport(storageBufferSupport) {}
 
     // DrawList requires that all Transforms be valid and asserts as much; invalid transforms should

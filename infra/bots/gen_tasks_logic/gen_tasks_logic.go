@@ -890,7 +890,6 @@ func (b *TaskBuilder) defaultSwarmDimensions() {
 			"Mac15":       "Mac-15.7",
 			"Mokey":       "Android",
 			"MokeyGo32":   "Android",
-			"Ubuntu20.04": UBUNTU_20_04_OS,
 			"Ubuntu22.04": UBUNTU_22_04_OS,
 			"Ubuntu24.04": UBUNTU_24_04_OS,
 			"Ubuntu26.04": UBUNTU_26_04_OS,
@@ -1081,7 +1080,7 @@ func (b *TaskBuilder) defaultSwarmDimensions() {
 					"QuadroP400":   "10de:1cb3",
 					"IntelIrisXe":  "8086:9a49",
 					"IntelArcB570": "8086:e20c-26.0.3",
-					"RadeonVega8":  "1002:1638-23.2.1",
+					"RadeonVega8":  "1002:1638-25.2.8",
 				}[b.Parts["cpu_or_gpu_value"]]
 				if !ok {
 					log.Fatalf("Entry %q not found in Linux GPU mapping.", b.Parts["cpu_or_gpu_value"])
@@ -1927,6 +1926,7 @@ func (b *jobBuilder) dmStandaloneWasm() {
 			"--dm_properties", b.recipeProperties["dm_properties"],
 			"--chrome_cache", CACHES_CHROME[0].Path,
 			"--build", OUTPUT_BUILD,
+			"--work_path", "./work",
 			"--project_id", "skia-swarming-bots",
 			"--task_id", specs.PLACEHOLDER_TASK_ID,
 			"--task_name", b.Name,

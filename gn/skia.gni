@@ -67,7 +67,6 @@ declare_args() {
   skia_use_icu = true
   skia_use_icu4x = false
   skia_use_jpeg_gainmaps = is_skia_dev_build
-  skia_use_libavif = false
   skia_use_libgrapheme = false
   skia_use_libjpeg_turbo_decode = true
   skia_use_libjpeg_turbo_encode = true
@@ -109,6 +108,11 @@ declare_args() {
   # See: https://libcxx.llvm.org/UsingLibcxx.html#enabling-the-safe-libc-mode
   skia_use_safe_libcxx = false
 
+  # Compile for WebAssembly SIMD128 (-msimd128): SkVx, skcms and the raster pipeline then use
+  # 128-bit vectors instead of scalars. The module needs WebAssembly SIMD in the browser
+  # (Chrome 91, Firefox 89, Safari 16.4).
+  skia_wasm_simd = false
+
   skia_enable_ganesh = true
   skia_enable_graphite = false
   skia_use_zlib = true
@@ -131,7 +135,8 @@ declare_args() {
   #
   # While GCC is supported, it lacks CI coverage to catch regressions.
   # Therefore, we disable it by default on GCC builds.
-  skia_use_partition_alloc = is_skia_standalone && is_clang
+  # Emscripten/Wasm lacks POSIX virtual memory primitives and is unsupported.
+  skia_use_partition_alloc = is_skia_standalone && is_clang && !is_wasm
   skia_partition_alloc_dir = "//third_party/externals/partition_alloc"
 }
 

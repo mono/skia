@@ -14,6 +14,7 @@
 #include "src/core/SkStrikeSpec.h"
 #include "src/core/SkTHash.h"
 #include "src/core/SkUTF.h"
+#include "src/partition_alloc/raw_ptr.h"
 #include "src/pdf/SkPDFGlyphUse.h"
 #include "src/pdf/SkPDFTypes.h"
 
@@ -23,9 +24,9 @@
 class SkDescriptor;
 class SkFont;
 class SkGlyph;
-class SkPaint;
 class SkPDFDocument;
 class SkPDFFont;
+class SkPaint;
 class SkString;
 class SkTypeface;
 
@@ -47,7 +48,7 @@ public:
     const SkPDFStrikeSpec fPath;
     const SkPDFStrikeSpec fImage;
     const bool fHasMaskFilter;
-    SkPDFDocument* fDoc;
+    raw_ptr<SkPDFDocument> fDoc;
     skia_private::THashMap<SkGlyphID, SkPDFFont> fFontMap;
 
     /** Get the font resource for the glyph.
@@ -144,7 +145,7 @@ public:
     const SkPDFStrike& strike() const { return *fStrike; }
 
 private:
-    const SkPDFStrike* fStrike;
+    raw_ptr<const SkPDFStrike> fStrike;
     SkPDFGlyphUse fGlyphUsage;
     SkPDFIndirectReference fIndirectReference;
     SkAdvancedTypefaceMetrics::FontType fFontType;

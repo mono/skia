@@ -8,14 +8,15 @@
 #ifndef SKSL_MODULELOADER
 #define SKSL_MODULELOADER
 
+#include "src/partition_alloc/raw_ref.h"
 #include "src/sksl/SkSLBuiltinTypes.h"
 #include <memory>
 
 namespace SkSL {
 
 class Compiler;
-struct Module;
 class Type;
+struct Module;
 
 using BuiltinTypePtr = const std::unique_ptr<Type> BuiltinTypes::*;
 
@@ -27,7 +28,7 @@ class ModuleLoader {
 private:
     struct Impl;
     std::unique_ptr<Impl> fLocalImpl;
-    Impl& fModuleLoader;
+    const raw_ref<Impl> fModuleLoader;
 
 public:
     ModuleLoader();

@@ -16,12 +16,12 @@
 #include "src/gpu/graphite/ContextUtils.h"
 #include "src/gpu/graphite/DrawCommands.h"
 #include "src/gpu/graphite/PaintParams.h"
-#include "src/gpu/graphite/PipelineData.h"
 #include "src/gpu/graphite/draw/DrawListTypes.h"
 #include "src/gpu/graphite/draw/DrawOrder.h"
 #include "src/gpu/graphite/draw/DrawParams.h"
 #include "src/gpu/graphite/geom/Rect.h"
 #include "src/gpu/graphite/geom/Transform.h"
+#include "src/gpu/graphite/layout/PipelineData.h"
 
 #include <cstdint>
 #include <limits>
@@ -65,7 +65,7 @@ class Renderer;
 class DrawList : public DrawListBase {
 public:
     // Add a constructor to prevent default zero initialization of SkTBlockList members' storage.
-    DrawList() {}
+    DrawList(bool avoidDepth) : DrawListBase(avoidDepth) {}
 
     // DrawList requires that all Transforms be valid and asserts as much; invalid transforms should
     // be detected at the Device level or similar. The provided Renderer must be compatible with the

@@ -931,6 +931,10 @@ if (is_wasm) {
   if (is_canvaskit) {
     # CK manages its flags separately.
     config("wasm") {
+      if (skia_wasm_simd) {
+        cflags = [ "-msimd128" ]
+        ldflags = [ "-msimd128" ]
+      }
     }
 
     config("wasm_exe") {
@@ -941,6 +945,9 @@ if (is_wasm) {
       common = [
         "--sysroot=$skia_emsdk_dir/upstream/emscripten/cache/sysroot",
       ]
+      if (skia_wasm_simd) {
+        common += [ "-msimd128" ]
+      }
       cflags = common
       ldflags = common
       ldflags += [

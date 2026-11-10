@@ -140,7 +140,34 @@ void TextWrapper::lookAhead(SkScalar maxWidth,
             SkScalar nextWordLength = fClusters.width();
             SkScalar nextShortWordLength = nextWordLength;
             SkScalar nextWordHyphenWidth = 0;
-            for (auto further = cluster; further != endOfClusters; ++further) {
+            auto addWidth = [maxWidth](SkScalar length, const Cluster* c) {
+                // This is a tricky flutter case: layout(width:0) places 1 cluster on each line
+                return maxWidth == 0 ? std::max(length, c->width()) : length + c->width();
+            };
+            // A force-broken word that goes on past this line gives the same walk again from a
+            // later cluster. When that walk can only be shorter, its result is already counted in
+            // fMinIntrinsicWidth (with the hyphen), so reuse the earlier one: this keeps long words
+            // linear
+            bool sameWord =
+                    fWordEnd && fWords.empty() && cluster >= fWordFrom && cluster < fWordEnd;
+            if (sameWord) {
+                for (; fWordFrom < cluster; ++fWordFrom) {
+                    fWordFromLength = addWidth(fWordFromLength, fWordFrom);
+                }
+                // The walk from here is at least this long, so it is too long for the line too
+                sameWord = nextWordLength <= fWordFromLength &&
+                           addWidth(nextWordLength, cluster) > maxWidth;
+            }
+            if (sameWord) {
+                nextWordLength = fWordLength;
+            } else {
+                fWordFrom = cluster;
+                fWordFromLength = nextWordLength;
+            }
+            // Only reuse a walk with no intra-word breaks and no negative widths
+            bool reusable = true;
+            auto further = sameWord ? endOfClusters : cluster;
+            for (; further != endOfClusters; ++further) {
                 if (further->isHardBreak() || further->isWhitespaceBreak()) {
                     break;
                 }
@@ -154,23 +181,23 @@ void TextWrapper::lookAhead(SkScalar maxWidth,
                   break;
                 }
 
+                reusable &= !further->isIntraWordBreak() && further->width() >= 0;
                 if (nextWordLength > 0 && nextWordLength <= maxWidth && further->isIntraWordBreak()) {
                     // The cluster is spaces but not the end of the word in a normal sense
                     nextNonBreakingSpace = further;
                     nextShortWordLength = nextWordLength;
                 }
 
-                if (maxWidth == 0) {
-                    // This is a tricky flutter case: layout(width:0) places 1 cluster on each line
-                    nextWordLength = std::max(nextWordLength, further->width());
-                } else {
-                    nextWordLength += further->width();
-                }
+                nextWordLength = addWidth(nextWordLength, further);
                 if (maxWidth > 0 && further->isSoftBreak()) {
                     // Include further->width() before stopping so letter-spaced soft hyphens count
                     nextWordHyphenWidth = softHyphenWidth(softHyphen, further);
                     break;
                 }
+            }
+            if (!sameWord) {
+                fWordEnd = reusable ? further : nullptr;
+                fWordLength = nextWordLength;
             }
             if (nextWordLength > maxWidth) {
                 if (nextNonBreakingSpace != nullptr) {
@@ -392,7 +419,13 @@ void TextWrapper::breakTextIntoLines(ParagraphImpl* parent,
     while (fEndLine.endCluster() != end) {
 
         auto lastLine = (hasEllipsis && unlimitedLines) || fLineNumber >= maxLines;
+#ifdef SK_IGNORE_ELLIPSIZE_TRUNCATED_LINES
         needEllipsis = hasEllipsis && !endlessLine && lastLine;
+#else
+        // Infinite width never soft-wraps, so only a finite maxLines limit can truncate after \n
+        needEllipsis = hasEllipsis && (!endlessLine || (maxWidth > 0 && !unlimitedLines)) &&
+                       lastLine;
+#endif
 
         this->lookAhead(maxWidth, end, parent->getApplyRoundingHack(), softHyphen, needEllipsis);
 
@@ -475,6 +508,14 @@ void TextWrapper::breakTextIntoLines(ParagraphImpl* parent,
         // In case of a force wrapping we don't have a break cluster and have to use the end cluster
         text.end = std::max(text.end, textExcludingSpaces.end);
 
+#ifdef SK_IGNORE_ELLIPSIZE_TRUNCATED_LINES
+        bool addEllipsis = needEllipsis && !fHardLineBreak;
+#else
+        // needEllipsis is already false when no text follows the line; without a line limit a
+        // hard-broken line hides nothing
+        bool addEllipsis = needEllipsis && (!fHardLineBreak || !unlimitedLines);
+#endif
+
         addLine(textExcludingSpaces,
                 text,
                 textIncludingNewlines, clusters, clustersWithGhosts, widthWithSpaces,
@@ -483,7 +524,7 @@ void TextWrapper::breakTextIntoLines(ParagraphImpl* parent,
                 SkVector::Make(0, fHeight),
                 SkVector::Make(fEndLine.width(), lineHeight),
                 fEndLine.metrics(),
-                needEllipsis && !fHardLineBreak);
+                addEllipsis);
 
         softLineMaxIntrinsicWidth += widthWithSpaces;
 

@@ -11,6 +11,7 @@
 #include "include/effects/SkRuntimeEffect.h"
 #include "include/private/SkAttributes.h"
 #include "include/private/SkLog.h"
+#include "include/private/SkOnlyStackAllocatable.h"
 #include "src/core/SkColorSpaceXformSteps.h"
 #include "src/core/SkMeshPriv.h"
 #include "src/core/SkRuntimeEffectPriv.h"
@@ -20,7 +21,7 @@
 #include "src/gpu/graphite/Renderer.h"
 #include "src/gpu/graphite/RuntimeEffectDictionary.h"
 #include "src/gpu/graphite/ShaderInfo.h"
-#include "src/gpu/graphite/UniformManager.h"
+#include "src/gpu/graphite/layout/UniformManager.h"
 #include "src/gpu/graphite/render/MeshRenderStep.h"
 #include "src/sksl/SkSLString.h"
 #include "src/sksl/codegen/SkSLPipelineStageCodeGenerator.h"
@@ -571,6 +572,8 @@ void validate_linearsrgb_node(const ShaderNode* node) {
 //--------------------------------------------------------------------------------------------------
 class GraphitePipelineCallbacks : public SkSL::PipelineStage::Callbacks {
 public:
+    SK_ONLY_STACK_ALLOCATABLE;
+
     GraphitePipelineCallbacks(const ShaderInfo& shaderInfo,
                               const ShaderNode* node,
                               std::string* preamble,
@@ -677,6 +680,8 @@ private:
 
 class MeshProgramCallbacks : public SkSL::PipelineStage::Callbacks {
 public:
+    SK_ONLY_STACK_ALLOCATABLE;
+
     MeshProgramCallbacks(std::string mainFn,
                          const ShaderInfo* shaderInfo,
                          const ShaderNode* node)
@@ -1380,9 +1385,15 @@ ShaderCodeDictionary::ShaderCodeDictionary(
             /*numChildren=*/kNumCoordinateManipulateChildren
     };
 
+#if defined(SK_LEGACY_LINEAR_INSET)
+#define LINEAR_INSET_STAGING_NAME "_legacy_inset"
+#else
+#define LINEAR_INSET_STAGING_NAME ""
+#endif
+
     fBuiltInCodeSnippets[(int) BuiltInCodeSnippetID::kImageShader] = {
             /*name=*/"Image",
-            /*staticFn=*/"sk_image_shader",
+            /*staticFn=*/"sk_image_shader" LINEAR_INSET_STAGING_NAME,
             SnippetRequirementFlags::kLocalCoords | SnippetRequirementFlags::kStoresSamplerDescData,
             /*uniforms=*/{{{ "invImgSize",            SkSLType::kFloat2 },
                            { "subset",                SkSLType::kFloat4 },
@@ -1393,7 +1404,7 @@ ShaderCodeDictionary::ShaderCodeDictionary(
     };
     fBuiltInCodeSnippets[(int) BuiltInCodeSnippetID::kCubicImageShader] = {
             /*name=*/"CubicImage",
-            /*staticFn=*/"sk_cubic_image_shader",
+            /*staticFn=*/"sk_cubic_image_shader" LINEAR_INSET_STAGING_NAME,
             SnippetRequirementFlags::kLocalCoords | SnippetRequirementFlags::kStoresSamplerDescData,
             /*uniforms=*/{{{ "invImgSize",            SkSLType::kFloat2 },
                            { "subset",                SkSLType::kFloat4 },
@@ -1421,7 +1432,7 @@ ShaderCodeDictionary::ShaderCodeDictionary(
 
     fBuiltInCodeSnippets[(int) BuiltInCodeSnippetID::kYUVImageShader] = {
             /*name=*/"YUVImage",
-            /*staticFn=*/"sk_yuv_image_shader",
+            /*staticFn=*/"sk_yuv_image_shader" LINEAR_INSET_STAGING_NAME,
             SnippetRequirementFlags::kLocalCoords,
             /*uniforms=*/{{{ "invImgSizeY",         SkSLType::kFloat2 },
                            { "invImgSizeUV",        SkSLType::kFloat2 },  // Relative to Y's texels
@@ -1444,7 +1455,7 @@ ShaderCodeDictionary::ShaderCodeDictionary(
     };
     fBuiltInCodeSnippets[(int) BuiltInCodeSnippetID::kPackedYUVImageShader] = {
             /*name=*/"PackedYUVImage",
-            /*staticFn=*/"sk_packed_yuv_image_shader",
+            /*staticFn=*/"sk_packed_yuv_image_shader" LINEAR_INSET_STAGING_NAME,
             SnippetRequirementFlags::kLocalCoords,
             /*uniforms=*/{{{ "invImgSize",         SkSLType::kFloat2 },
                            { "subset",             SkSLType::kFloat4 },
@@ -1459,7 +1470,7 @@ ShaderCodeDictionary::ShaderCodeDictionary(
     };
     fBuiltInCodeSnippets[(int) BuiltInCodeSnippetID::kCubicYUVImageShader] = {
             /*name=*/"CubicYUVImage",
-            /*staticFn=*/"sk_cubic_yuv_image_shader",
+            /*staticFn=*/"sk_cubic_yuv_image_shader" LINEAR_INSET_STAGING_NAME,
             SnippetRequirementFlags::kLocalCoords,
             /*uniforms=*/{{{ "invImgSizeY",       SkSLType::kFloat2 },
                            { "invImgSizeUV",      SkSLType::kFloat2 },  // Relative to Y's texels
@@ -1480,7 +1491,7 @@ ShaderCodeDictionary::ShaderCodeDictionary(
     };
     fBuiltInCodeSnippets[(int) BuiltInCodeSnippetID::kHWYUVImageShader] = {
             /*name=*/"HWYUVImage",
-            /*staticFn=*/"sk_hw_yuv_image_shader",
+            /*staticFn=*/"sk_hw_yuv_image_shader" LINEAR_INSET_STAGING_NAME,
             SnippetRequirementFlags::kLocalCoords,
             /*uniforms=*/{{{ "invImgSizeY",           SkSLType::kFloat2 },
                            { "invImgSizeUV",          SkSLType::kFloat2 }, // Relative to Y's texels
@@ -1500,7 +1511,7 @@ ShaderCodeDictionary::ShaderCodeDictionary(
 
     fBuiltInCodeSnippets[(int) BuiltInCodeSnippetID::kHWYUVNoSwizzleImageShader] = {
             /*name=*/"HWYUVImageNoSwizzle",
-            /*staticFn=*/"sk_hw_yuv_no_swizzle_image_shader",
+            /*staticFn=*/"sk_hw_yuv_no_swizzle_image_shader" LINEAR_INSET_STAGING_NAME,
             SnippetRequirementFlags::kLocalCoords,
             /*uniforms=*/{{{ "invImgSizeY",              SkSLType::kFloat2 },
                            { "invImgSizeUV",             SkSLType::kFloat2 }, // Relative to Y space
@@ -1513,6 +1524,8 @@ ShaderCodeDictionary::ShaderCodeDictionary(
                                       { "samplerV" },
                                       { "samplerA" }}}
     };
+
+#undef LINEAR_INSET_STAGING_NAME
 
     fBuiltInCodeSnippets[(int) BuiltInCodeSnippetID::kCoordNormalizeShader] = {
             /*name=*/"CoordNormalize",
