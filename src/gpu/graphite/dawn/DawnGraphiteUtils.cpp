@@ -61,9 +61,6 @@ std::unique_ptr<Context> MakeDawn(const DawnBackendContext& backendContext,
 } // namespace ContextFactory
 
 namespace {
-// Zero means unavailable; nullopt means baseline support. Never query zero on the device.
-static constexpr auto kUnavailableFeature = static_cast<wgpu::FeatureName>(0);
-
 // If the extension is available (or if it's empty), the format flag bitmask is supported
 using ExtensionLimitedFlags = std::pair<std::optional<wgpu::FeatureName>,
                                         SkEnumBitMask<DawnFormatFlag>>;
@@ -90,9 +87,6 @@ public:
                 fFormatFeatures[(int) DawnFormatToTextureFormat(format)];
         SkEnumBitMask<DawnFormatFlag> supported;
         for (const ExtensionLimitedFlags& featureSet : features) {
-            if (featureSet.first == kUnavailableFeature) {
-                continue;
-            }
             if (!featureSet.first.has_value() || device.HasFeature(*featureSet.first)) {
                 supported |= featureSet.second;
             }
@@ -140,15 +134,9 @@ const DawnFormatCapabilityMap& DawnFormatCapabilityMap::Get() {
     // Alias some commonly used feature names
     using F = wgpu::FeatureName;
     static constexpr std::optional<F> Compat = std::nullopt; // The baseline
-#if !defined(__EMSCRIPTEN__) || defined(SKIA_USING_EMDAWNWEBGPU)
-    static constexpr std::optional<F> Core = F::CoreFeaturesAndLimits;
-    static constexpr std::optional<F> Tier1 = F::TextureFormatsTier1;
-    static constexpr std::optional<F> Tier2 = F::TextureFormatsTier2;
-#else
-    static constexpr std::optional<F> Core = kUnavailableFeature;
-    static constexpr std::optional<F> Tier1 = kUnavailableFeature;
-    static constexpr std::optional<F> Tier2 = kUnavailableFeature;
-#endif
+    static constexpr F Core = F::CoreFeaturesAndLimits;
+    static constexpr F Tier1 = F::TextureFormatsTier1;
+    static constexpr F Tier2 = F::TextureFormatsTier2;
 
     // To read this table with the HTML table in the links below, each format corresponds to a row
     // in the original document. For a format, the first extension listed is the "Required feature"
@@ -215,11 +203,9 @@ const DawnFormatCapabilityMap& DawnFormatCapabilityMap::Get() {
         {BGRA8UnormSrgb, {Core   >> Filter | Render | Blend | MSAA | Resolve}},
 
         // 16 bits per component
-#if !defined(__EMSCRIPTEN__) || defined(SKIA_USING_EMDAWNWEBGPU)
         {R16Unorm,       {Tier1  >> Render | Blend | MSAA | WriteOnly | ReadOnly}},
 
         {R16Snorm,       {Tier1  >> Render | Blend | MSAA | WriteOnly | ReadOnly}},
-#endif
 
         {R16Uint,        {Compat >> Render,
                           Core   >> MSAA,
@@ -235,11 +221,9 @@ const DawnFormatCapabilityMap& DawnFormatCapabilityMap::Get() {
                           Tier1  >> WriteOnly | ReadOnly,
                           Tier2  >> ReadWrite}},
 
-#if !defined(__EMSCRIPTEN__) || defined(SKIA_USING_EMDAWNWEBGPU)
         {RG16Unorm,      {Tier1 >> Render | Blend | MSAA | WriteOnly | ReadOnly}},
 
         {RG16Snorm,      {Tier1 >> Render | Blend | MSAA | WriteOnly | ReadOnly}},
-#endif
 
         {RG16Uint,       {Compat >> Render,
                           Core   >> MSAA,
@@ -252,11 +236,9 @@ const DawnFormatCapabilityMap& DawnFormatCapabilityMap::Get() {
         {RG16Float,      {Compat >> Filter | Render | Blend | MSAA | Resolve,
                           Tier1  >> WriteOnly | ReadOnly}},
 
-#if !defined(__EMSCRIPTEN__) || defined(SKIA_USING_EMDAWNWEBGPU)
         {RGBA16Unorm,    {Tier1  >> Render | Blend | MSAA | WriteOnly | ReadOnly}},
 
         {RGBA16Snorm,    {Tier1  >> Render | Blend | MSAA | WriteOnly | ReadOnly}},
-#endif
 
         {RGBA16Uint,     {Compat >> Render | WriteOnly | ReadOnly,
                           Core   >> MSAA,
@@ -278,10 +260,7 @@ const DawnFormatCapabilityMap& DawnFormatCapabilityMap::Get() {
         {R32Float,       {Compat >> Render | WriteOnly | ReadOnly | ReadWrite,
                           Core   >> MSAA,
                           F::Float32Filterable >> Filter,
-#if !defined(__EMSCRIPTEN__) || defined(SKIA_USING_EMDAWNWEBGPU)
-                          F::Float32Blendable  >> Blend
-#endif
-                          }},
+                          F::Float32Blendable  >> Blend}},
 
         {RG32Uint,       {Compat >> Render,
                           Core   >> WriteOnly | ReadOnly}},
@@ -292,10 +271,7 @@ const DawnFormatCapabilityMap& DawnFormatCapabilityMap::Get() {
         {RG32Float,      {Compat >> Render,
                           Core   >> WriteOnly | ReadOnly,
                           F::Float32Filterable >> Filter,
-#if !defined(__EMSCRIPTEN__) || defined(SKIA_USING_EMDAWNWEBGPU)
-                          F::Float32Blendable  >>  Blend
-#endif
-                          }},
+                          F::Float32Blendable  >>  Blend}},
 
         {RGBA32Uint,     {Compat >> Render | WriteOnly | ReadOnly,
                           Tier2  >> ReadWrite}},
@@ -306,10 +282,7 @@ const DawnFormatCapabilityMap& DawnFormatCapabilityMap::Get() {
         {RGBA32Float,    {Compat >> Render|  WriteOnly | ReadOnly,
                           Tier2  >> ReadWrite,
                           F::Float32Filterable >> Filter,
-#if !defined(__EMSCRIPTEN__) || defined(SKIA_USING_EMDAWNWEBGPU)
-                          F::Float32Blendable  >> Blend
-#endif
-                          }},
+                          F::Float32Blendable  >> Blend}},
 
         // mixed component width, 32 bits per texel
         {RGB10A2Uint,    {Compat >> Render,
@@ -371,13 +344,14 @@ SkEnumBitMask<DawnFormatFlag> DawnTextureFormatSupport(wgpu::Device device,
 
 // *** Ground truth bidirectional map between TextureFormat and wgpu::TextureFormat ***
 
-// Legacy browser headers lack normalized 16-bit formats.
 #define DAWN_FORMAT_MAPPING(M) \
         M(TextureFormat::kR8,             wgpu::TextureFormat::R8Unorm)                     \
+        M(TextureFormat::kR16,            wgpu::TextureFormat::R16Unorm)                    \
         M(TextureFormat::kR16F,           wgpu::TextureFormat::R16Float)                    \
         M(TextureFormat::kR32F,           wgpu::TextureFormat::R32Float)                    \
         /*TextureFormat::kA8,             unsupported */                                    \
         M(TextureFormat::kRG8,            wgpu::TextureFormat::RG8Unorm)                    \
+        M(TextureFormat::kRG16,           wgpu::TextureFormat::RG16Unorm)                   \
         M(TextureFormat::kRG16F,          wgpu::TextureFormat::RG16Float)                   \
         M(TextureFormat::kRG32F,          wgpu::TextureFormat::RG32Float)                   \
         /*TextureFormat::kRGB8,           unsupported */                                    \
@@ -390,6 +364,7 @@ SkEnumBitMask<DawnFormatFlag> DawnTextureFormatSupport(wgpu::Device device,
         /*TextureFormat::kRGB8_sRGB,      unsupported */                                    \
         /*TextureFormat::kBGR10_XR,       unsupported */                                    \
         M(TextureFormat::kRGBA8,          wgpu::TextureFormat::RGBA8Unorm)                  \
+        M(TextureFormat::kRGBA16,         wgpu::TextureFormat::RGBA16Unorm)                 \
         M(TextureFormat::kRGBA16F,        wgpu::TextureFormat::RGBA16Float)                 \
         M(TextureFormat::kRGBA32F,        wgpu::TextureFormat::RGBA32Float)                 \
         M(TextureFormat::kRGB10_A2,       wgpu::TextureFormat::RGB10A2Unorm)                \
@@ -422,15 +397,6 @@ SkEnumBitMask<DawnFormatFlag> DawnTextureFormatSupport(wgpu::Device device,
         M(TextureFormat::kD24_S8,         wgpu::TextureFormat::Depth24PlusStencil8)         \
         M(TextureFormat::kD32F_S8,        wgpu::TextureFormat::Depth32FloatStencil8)        \
 
-#if !defined(__EMSCRIPTEN__) || defined(SKIA_USING_EMDAWNWEBGPU)
-#define DAWN_FORMAT_MAPPING_NORMALIZED16(M) \
-        M(TextureFormat::kR16,            wgpu::TextureFormat::R16Unorm)                    \
-        M(TextureFormat::kRG16,           wgpu::TextureFormat::RG16Unorm)                   \
-        M(TextureFormat::kRGBA16,         wgpu::TextureFormat::RGBA16Unorm)
-#else
-#define DAWN_FORMAT_MAPPING_NORMALIZED16(M)
-#endif
-
 #if !defined(__EMSCRIPTEN__)
 #define DAWN_FORMAT_MAPPING_NATIVE_ONLY(M) \
         M(TextureFormat::kYUV8_P2_420,    wgpu::TextureFormat::R8BG8Biplanar420Unorm)       \
@@ -448,7 +414,6 @@ TextureFormat DawnFormatToTextureFormat(wgpu::TextureFormat format) {
 #define M(TF, WGPU) case WGPU: return TF;
     switch(format) {
         DAWN_FORMAT_MAPPING(M)
-        DAWN_FORMAT_MAPPING_NORMALIZED16(M)
         DAWN_FORMAT_MAPPING_NATIVE_ONLY(M)
         default: return TextureFormat::kUnsupported;
     }
@@ -458,7 +423,6 @@ wgpu::TextureFormat TextureFormatToDawnFormat(TextureFormat format) {
 #define M(TF, WGPU) case TF: return WGPU;
     switch(format) {
         DAWN_FORMAT_MAPPING(M)
-        DAWN_FORMAT_MAPPING_NORMALIZED16(M)
         DAWN_FORMAT_MAPPING_NATIVE_ONLY(M)
         default: return wgpu::TextureFormat::Undefined;
     }
