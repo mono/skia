@@ -11,7 +11,7 @@
 #include "include/core/SkContext.h"
 #include "include/core/SkRefCnt.h"
 #include "include/private/SkGPUContext.h"
-#include "src/core/SkSharedContext.h"
+#include "src/core/SkSharedState.h"
 
 #include <memory>
 
@@ -22,12 +22,10 @@ class SkContext;
     data members or virtual methods.*/
 class SkContextPrivConst {
 public:
-    SkStrikeCache* strikeCache() const { return fConstContext->strikeCache(); }
+    const SkSharedState* sharedState() const { return fConstContext->fSharedState.get(); }
 
 protected:
     explicit SkContextPrivConst(const SkContext* context) : fConstContext(context) {}
-
-    size_t fontCacheLimit() const { return fConstContext->fontCacheLimit(); }
 
 private:
     // No taking addresses of this type.
@@ -44,7 +42,7 @@ private:
    additional data members or virtual methods.*/
 class SkContextPriv : public SkContextPrivConst {
 public:
-    SkSharedContext* sharedContext() { return fContext->fSharedContext.get(); }
+    SkSharedState* sharedState() { return fContext->fSharedState.get(); }
 
 private:
     friend class SkContext;
@@ -70,7 +68,6 @@ public:
     // Ganesh and Graphite
     static std::unique_ptr<SkContext> MakeContext(const SkContextOptions& options,
                                                   std::unique_ptr<SkGPUContext> gpuContext);
-
 };
 
 namespace SkContexts {

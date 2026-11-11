@@ -6,9 +6,11 @@
 #include "include/core/SkFontMetrics.h"
 #include "include/core/SkPoint.h"
 #include "include/core/SkRect.h"
+#include "include/core/SkRefCnt.h"
 #include "include/core/SkScalar.h"
 #include "include/core/SkSpan.h"
 #include "include/core/SkTypes.h"
+#include "include/private/SkAlign.h"
 #include "include/private/SkTArray.h"
 #include "modules/skparagraph/include/DartTypes.h"
 #include "modules/skparagraph/include/TextStyle.h"
@@ -19,6 +21,7 @@
 #include <functional>
 #include <limits>
 #include <tuple>
+#include <type_traits>
 
 class SkTextBlobBuilder;
 
@@ -70,12 +73,23 @@ public:
 
     void setOwner(ParagraphImpl* owner) { fOwner = owner; }
 
-    SkShaper::RunHandler::Buffer newRunBuffer();
+    // SkShaper writes the glyphs, positions and cluster indexes of a run into its glyph data,
+    // and the offsets into this buffer. SkShaper needs a separate offsets array, otherwise it
+    // adds the offsets to the positions. commit() then keeps the offsets only if one is not
+    // zero. A shaper keeps one buffer for all runs.
+    struct ShapingBuffer {
+        // Grows only, so a run seldom allocates.
+        skia_private::TArray<SkPoint, true> fOffsets;
+    };
+    SkShaper::RunHandler::Buffer newRunBuffer(ShapingBuffer* buffer, size_t glyphCount);
+    void commit(const ShapingBuffer& buffer);
+    // For a run that is not shaped: makes the glyph data, the caller fills the glyphs.
+    void allocateGlyphData(size_t glyphCount, bool hasOffsets);
 
-    SkScalar posX(size_t index) const { return fPositions[index].fX; }
-    void addX(size_t index, SkScalar shift) { fPositions[index].fX += shift; }
-    SkScalar posY(size_t index) const { return fPositions[index].fY; }
-    size_t size() const { return fGlyphs.size(); }
+    SkScalar posX(size_t index) const { return fGlyphData->positions()[index].fX; }
+    void addX(size_t index, SkScalar shift) { fGlyphData->positions()[index].fX += shift; }
+    SkScalar posY(size_t index) const { return fGlyphData->positions()[index].fY; }
+    size_t size() const { return fGlyphData->fSize; }
     void setWidth(SkScalar width) { fAdvance.fX = width; }
     void setHeight(SkScalar height) { fAdvance.fY = height; }
     void shift(SkScalar shiftX, SkScalar shiftY) {
@@ -102,8 +116,8 @@ public:
     SkScalar baselineShift() const { return fBaselineShift; }
     PlaceholderStyle* placeholderStyle() const;
     bool isPlaceholder() const { return fPlaceholderIndex != std::numeric_limits<size_t>::max(); }
-    size_t clusterIndex(size_t pos) const { return fClusterIndexes[pos]; }
-    size_t globalClusterIndex(size_t pos) const { return fClusterStart + fClusterIndexes[pos]; }
+    size_t clusterIndex(size_t pos) const { return fGlyphData->clusterIndexes()[pos]; }
+    size_t globalClusterIndex(size_t pos) const { return fClusterStart + clusterIndex(pos); }
     SkScalar positionX(size_t pos) const;
 
     TextRange textRange() const { return fTextRange; }
@@ -149,20 +163,15 @@ public:
     std::tuple<bool, ClusterIndex, ClusterIndex> findLimitingClusters(TextRange text) const;
     std::tuple<bool, TextIndex, TextIndex> findLimitingGlyphClusters(TextRange text) const;
     std::tuple<bool, TextIndex, TextIndex> findLimitingGraphemes(TextRange text) const;
-    SkSpan<const SkGlyphID> glyphs() const {
-        return SkSpan<const SkGlyphID>(fGlyphs.begin(), fGlyphs.size());
-    }
-    SkSpan<const SkPoint> positions() const {
-        return SkSpan<const SkPoint>(fPositions.begin(), fPositions.size());
-    }
+    SkSpan<const SkGlyphID> glyphs() const { return {fGlyphData->glyphs(), this->size()}; }
+    SkSpan<const SkPoint> positions() const { return {fGlyphData->positions(), this->size() + 1}; }
+    // Empty if all glyph offsets are zero
     SkSpan<const SkPoint> offsets() const {
-        return SkSpan<const SkPoint>(fOffsets.begin(), fOffsets.size());
+        return {fGlyphData->offsets(), fGlyphData->fHasOffsets ? this->size() : 0};
     }
     SkSpan<const uint32_t> clusterIndexes() const {
-        return SkSpan<const uint32_t>(fClusterIndexes.begin(), fClusterIndexes.size());
+        return {fGlyphData->clusterIndexes(), this->size() + 1};
     }
-
-    void commit() { }
 
     void resetJustificationShifts() {
         fJustificationShifts.clear();
@@ -188,22 +197,34 @@ private:
     TextIndex fClusterStart;
     SkShaper::RunHandler::Range fUtf8Range;
 
+    void setEndOfRun();
+
     // These fields are not modified after shaping completes and can safely be
     // shared among copies of the run that are held by different paragraphs.
-    struct GlyphData {
-        skia_private::STArray<64, SkGlyphID, true> glyphs;
-        skia_private::STArray<64, SkPoint, true> positions;
-        skia_private::STArray<64, SkPoint, true> offsets;
-        skia_private::STArray<64, uint32_t, true> clusterIndexes;
+    // One exact-size block: this header, then the arrays below; their sizes never change.
+    // The offsets are only for the runs that need them (marks, some kerning).
+    struct GlyphData : SkNVRefCnt<GlyphData> {
+        static sk_sp<GlyphData> Make(size_t glyphCount, bool hasOffsets);
+        // Only Make() creates a GlyphData, in a block from sk_malloc
+        static void* operator new(size_t) = delete;
+        static void* operator new(size_t, void* p) { return p; }
+        static void operator delete(void* p) { sk_free(p); }
+        // fSize + 1 entries, the last one is the end of the run
+        SkPoint* positions() { return reinterpret_cast<SkPoint*>(this + 1); }
+        // fSize + 1 entries, the last one is the end of the run
+        uint32_t* clusterIndexes() { return reinterpret_cast<uint32_t*>(positions() + fSize + 1); }
+        SkGlyphID* glyphs() { return reinterpret_cast<SkGlyphID*>(clusterIndexes() + fSize + 1); }
+        // fSize entries after the glyphs, or null if all offsets are zero (most runs)
+        SkPoint* offsets() {
+            return fHasOffsets ? reinterpret_cast<SkPoint*>(glyphs() + SkAlign2(fSize)) : nullptr;
+        }
+        size_t fSize;
+        bool fHasOffsets;
     };
-    std::shared_ptr<GlyphData> fGlyphData;
-    skia_private::STArray<64, SkGlyphID, true>& fGlyphs;
-    skia_private::STArray<64, SkPoint, true>& fPositions;
-    skia_private::STArray<64, SkPoint, true>& fOffsets;
-    skia_private::STArray<64, uint32_t, true>& fClusterIndexes;
+    sk_sp<GlyphData> fGlyphData;
 
-    skia_private::STArray<64, SkPoint, true> fJustificationShifts; // For justification
-                                                                   // (current and prev shifts)
+    // For justification (current and prev shifts). Empty unless the line is justified.
+    skia_private::TArray<SkPoint, true> fJustificationShifts;
 
     SkFontMetrics fFontMetrics;
     const SkScalar fHeightMultiplier;
@@ -217,6 +238,18 @@ private:
     uint8_t fBidiLevel;
     SkFourByteTag fScript;
     SkString fLanguage;
+
+public:
+    // So the run array moves runs with memcpy when it grows or shrinks. No member points into the
+    // run itself; fJustificationShifts must stay a TArray without inline storage.
+    using sk_is_trivially_relocatable = std::true_type;
+
+private:
+    static_assert(::sk_is_trivially_relocatable<decltype(fFont)>::value);
+    static_assert(::sk_is_trivially_relocatable<decltype(fGlyphData)>::value);
+    static_assert(::sk_is_trivially_relocatable<decltype(fLanguage)>::value);
+    static_assert(
+            std::is_same_v<decltype(fJustificationShifts), skia_private::TArray<SkPoint, true>>);
 };
 
 template<typename Visitor>
@@ -225,12 +258,7 @@ void Run::iterateThroughClustersInTextOrder(Visitor visitor) {
     // cluster so every code unit in fTextRange maps to a valid cluster index
     if (this->size() == 0) {
         SkASSERT(!fTextRange.empty());
-        visitor(0,
-                0,
-                fTextRange.start,
-                fTextRange.end,
-                0.0f,
-                this->calculateHeight(LineMetricStyle::CSS, LineMetricStyle::CSS));
+        visitor(0, 0, fTextRange.start, fTextRange.end, 0.0f);
         return;
     }
     // Can't figure out how to do it with one code for both cases without 100 ifs
@@ -250,8 +278,7 @@ void Run::iterateThroughClustersInTextOrder(Visitor visitor) {
                     glyph,
                     fClusterStart + cluster,
                     fClusterStart + nextCluster,
-                    this->calculateWidth(start, glyph, glyph == size()),
-                    this->calculateHeight(LineMetricStyle::CSS, LineMetricStyle::CSS));
+                    this->calculateWidth(start, glyph, glyph == size()));
 
             start = glyph;
             cluster = nextCluster;
@@ -270,8 +297,7 @@ void Run::iterateThroughClustersInTextOrder(Visitor visitor) {
                     glyph,
                     fClusterStart + cluster,
                     fClusterStart + nextCluster,
-                    this->calculateWidth(start, glyph, glyph == 0),
-                    this->calculateHeight(LineMetricStyle::CSS, LineMetricStyle::CSS));
+                    this->calculateWidth(start, glyph, glyph == 0));
 
             glyph = start;
             cluster = nextCluster;
@@ -288,26 +314,12 @@ public:
         HardLineBreak,  // calculated for all clusters (UBRK_LINE)
     };
 
-    Cluster()
-            : fOwner(nullptr)
-            , fRunIndex(EMPTY_RUN)
-            , fTextRange(EMPTY_TEXT)
-            , fGraphemeRange(EMPTY_RANGE)
-            , fStart(0)
-            , fEnd()
-            , fWidth()
-            , fHeight()
-            , fHalfLetterSpacing(0.0) {}
-
     Cluster(ParagraphImpl* owner,
             RunIndex runIndex,
             size_t start,
             size_t end,
             SkSpan<const char> text,
-            SkScalar width,
-            SkScalar height);
-
-    explicit Cluster(TextRange textRange) : fTextRange(textRange), fGraphemeRange(EMPTY_RANGE) {}
+            SkScalar width);
 
     Cluster(const Cluster&) = default;
     ~Cluster() = default;
@@ -336,7 +348,6 @@ public:
     size_t startPos() const { return fStart; }
     size_t endPos() const { return fEnd; }
     SkScalar width() const { return fWidth; }
-    SkScalar height() const { return fHeight; }
     size_t size() const { return fEnd - fStart; }
 
     void setHalfLetterSpacing(SkScalar halfLetterSpacing) { fHalfLetterSpacing = halfLetterSpacing; }
@@ -370,12 +381,10 @@ private:
     ParagraphImpl* fOwner;
     RunIndex fRunIndex;
     TextRange fTextRange;
-    GraphemeRange fGraphemeRange;
 
     size_t fStart;
     size_t fEnd;
     SkScalar fWidth;
-    SkScalar fHeight;
     SkScalar fHalfLetterSpacing;
 
     bool fIsWhiteSpaceBreak;

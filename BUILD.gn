@@ -1080,15 +1080,6 @@ optional("vello") {
   public_deps = [ "//third_party/vello" ]
 }
 
-optional("avif") {
-  enabled = skia_use_libavif
-  public_defines = [ "SK_CODEC_DECODES_AVIF" ]
-
-  deps = [ "//third_party/libavif" ]
-
-  sources = [ "src/codec/SkAvifCodec.cpp" ]
-}
-
 optional("crabbyavif") {
   enabled = skia_use_crabbyavif
   public_defines = [ "SK_CODEC_DECODES_AVIF" ]
@@ -1942,6 +1933,9 @@ optional("jpeg_decode_rust") {
   public = skia_codec_rust_jpeg_public
   sources = skia_codec_rust_jpeg
   sources_for_tests = [ "tests/SkJpegRustCodecTest.cpp" ]
+  if (skia_use_libjpeg_turbo_decode) {
+    configs = [ "//third_party/libjpeg-turbo:libjpeg_public" ]
+  }
   deps = [
     ":jpeg_encode_rust",
     ":rust_ffi_libs",
@@ -2133,7 +2127,6 @@ skia_component("skia") {
 
   deps = [
     ":android_utils",
-    ":avif",
     ":crabbyavif",
     ":jpeg_decode",
     ":jpegxl_decode",

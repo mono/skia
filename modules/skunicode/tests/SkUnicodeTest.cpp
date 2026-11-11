@@ -10,6 +10,7 @@
 #include "include/core/SkString.h"
 #include "include/core/SkTypeface.h"
 #include "src/core/SkBitmaskEnum.h"
+#include "src/core/SkUTF.h"
 #include "tests/Test.h"
 
 #include "modules/skunicode/include/SkUnicode.h"
@@ -30,6 +31,7 @@
 #include "modules/skunicode/include/SkUnicode_apple.h"
 #endif
 
+#include <string>
 #include <vector>
 
 #ifdef SK_UNICODE_ICU_IMPLEMENTATION
@@ -92,6 +94,98 @@ UNIX_ONLY_TEST(SkUnicode_Client, reporter) {
 
     for (auto flag : results) {
         REPORTER_ASSERT(reporter, !SkUnicode::hasPartOfWhiteSpaceBreakFlag(flag));
+    }
+}
+#endif
+
+#if defined(SK_UNICODE_CLIENT_IMPLEMENTATION)
+// Each UTF-8 code unit of a code point must get the flags of that code point.
+// An invalid sequence gets the flags of U+FFFD, as in SkUTF::NextUTF8WithReplacement.
+static void check_client_code_unit_flags(skiatest::Reporter* reporter,
+                                         const std::string& text,
+                                         bool replaceTabs) {
+    std::string out = text;
+    auto client = SkUnicodes::Client::Make(SkSpan<char>(out.data(), out.size()), {}, {}, {});
+    if (!client) {
+        REPORTER_ASSERT(reporter, client);
+        return;
+    }
+    constexpr auto kMask = SkUnicode::kPartOfIntraWordBreak | SkUnicode::kPartOfWhiteSpaceBreak |
+                           SkUnicode::kControl | SkUnicode::kIdeographic | SkUnicode::kTabulation;
+    TArray<SkUnicode::CodeUnitFlags, true> results;
+    REPORTER_ASSERT(reporter,
+                    client->computeCodeUnitFlags(out.data(), out.size(), replaceTabs, &results));
+    REPORTER_ASSERT(reporter, results.size() == SkToInt(text.size() + 1));
+    const char* ptr = text.data();
+    const char* end = text.data() + text.size();
+    while (ptr < end) {
+        const int start = ptr - text.data();
+        SkUnichar c = SkUTF::NextUTF8WithReplacement(&ptr, end);
+        const bool tab = replaceTabs && c == '\t';
+        SkUnicode::CodeUnitFlags expected = SkUnicode::kNoCodeUnitFlag;
+        if (tab) {
+            // A tab keeps kTabulation and gets the flags of a space.
+            c = ' ';
+            expected |= SkUnicode::kTabulation;
+        }
+        if (client->isSpace(c)) {
+            expected |= SkUnicode::kPartOfIntraWordBreak;
+        }
+        if (client->isWhitespace(c)) {
+            expected |= SkUnicode::kPartOfWhiteSpaceBreak;
+        }
+        if (client->isControl(c)) {
+            expected |= SkUnicode::kControl;
+        }
+        if (client->isIdeographic(c)) {
+            expected |= SkUnicode::kIdeographic;
+        }
+        for (int i = start; i < ptr - text.data(); ++i) {
+            if ((results[i] & kMask) != expected || out[i] != (tab ? ' ' : text[i])) {
+                ERRORF(reporter,
+                       "U+%04X code unit %d: %x != %x",
+                       (unsigned)c,
+                       i - start,
+                       (unsigned)(results[i] & kMask),
+                       (unsigned)expected);
+                return;
+            }
+        }
+    }
+}
+
+DEF_TEST(SkUnicode_Client_ComputeCodeUnitFlagsAllCodePoints, reporter) {
+    // All scalar values from U+0000 to U+10FFFF
+    std::string text;
+    for (SkUnichar c = 0; c <= 0x10FFFF; ++c) {
+        if (c >= 0xD800 && c <= 0xDFFF) {
+            continue;
+        }
+        char utf8[SkUTF::kMaxBytesInUTF8Sequence];
+        text.append(utf8, SkUTF::ToUTF8(c, utf8));
+    }
+    check_client_code_unit_flags(reporter, text, /*replaceTabs=*/false);
+    check_client_code_unit_flags(reporter, text, /*replaceTabs=*/true);
+}
+
+DEF_TEST(SkUnicode_Client_ComputeCodeUnitFlagsInvalidUTF8, reporter) {
+    // clang-format off
+    const char* kInvalid[] = {
+            "\x80", "\xBF", "\x80\x80",          // lone continuation bytes
+            "\xC3", "\xE4\xB8", "\xF0\x9F\x98",  // truncated sequences
+            "\xC0\x80", "\xC1\xBF",              // overlong, 2 bytes
+            "\xE0\x80\x80", "\xF0\x80\x80\x80",  // overlong, 3 and 4 bytes
+            "\xED\xA0\x80", "\xF4\x90\x80\x80",  // surrogate, above U+10FFFF
+            "\xF5\x80\x80\x80", "\xFE", "\xFF",  // bytes that are never in UTF-8
+            "\xE4\x41\xB8",                      // continuation byte missing
+    };
+    // clang-format on
+    for (const char* invalid : kInvalid) {
+        // Valid text with ideographs, tabs and spaces before the invalid bytes.
+        // SkUTF treats the rest of the text as one invalid sequence.
+        const std::string text = std::string("\xE4\xB8\xAD\t a") + invalid + "\xE3\x80\x80\t b";
+        check_client_code_unit_flags(reporter, text, /*replaceTabs=*/false);
+        check_client_code_unit_flags(reporter, text, /*replaceTabs=*/true);
     }
 }
 #endif
@@ -722,6 +816,107 @@ DEF_TEST_ICU_UNICODES(SkUnicode_ComputeCodeUnitFlags, reporter) {
         REPORTER_ASSERT(reporter, flags == expected);
     }
 }
+
+#if defined(SK_UNICODE_ICU_IMPLEMENTATION)
+DEF_TEST(SkUnicode_ICU_ComputeCodeUnitFlagsMultiByte, reporter) {
+    auto icu = SkUnicodes::ICU::Make();
+    // Windows test bots do not ship icudtl.dat, so ICU cannot load there
+#if !defined(SK_BUILD_FOR_WIN)
+    REPORTER_ASSERT(reporter, icu);
+#endif
+    if (!icu) {
+        return;
+    }
+    // Every UTF-8 code unit of a code point gets the code point flags.
+    // a U+4E2D U+3000 U+0085 U+20000 U+1D173 \t
+    SkString text("a\xE4\xB8\xAD\xE3\x80\x80\xC2\x85\xF0\xA0\x80\x80\xF0\x9D\x85\xB3\t");
+    constexpr auto kWhiteSpace =
+            SkUnicode::kPartOfWhiteSpaceBreak | SkUnicode::kPartOfIntraWordBreak;
+    struct {
+        int start, end;
+        SkUnicode::CodeUnitFlags flags;
+    } expected[] = {
+        { 0,  1, SkUnicode::kNoCodeUnitFlag},
+        { 1,  4, SkUnicode::kIdeographic},
+        { 4,  7, kWhiteSpace},
+        { 7,  9, SkUnicode::kPartOfIntraWordBreak | SkUnicode::kControl},
+        { 9, 13, SkUnicode::kIdeographic},
+        {13, 17, SkUnicode::kControl},
+        {17, 18, kWhiteSpace | SkUnicode::kTabulation},  // replaced with a space
+    };
+    constexpr auto kMask = kWhiteSpace | SkUnicode::kControl | SkUnicode::kIdeographic |
+                           SkUnicode::kTabulation;
+    TArray<SkUnicode::CodeUnitFlags, true> results;
+    REPORTER_ASSERT(reporter, icu->computeCodeUnitFlags(text.data(), text.size(),
+                                                        /*replaceTabs=*/true, &results));
+    REPORTER_ASSERT(reporter, results.size() == SkToInt(text.size() + 1));
+    for (auto& e : expected) {
+        for (int i = e.start; i < e.end; ++i) {
+            REPORTER_ASSERT(reporter, (results[i] & kMask) == e.flags,
+                            "code unit %d: %x != %x", i, (unsigned)(results[i] & kMask),
+                            (unsigned)e.flags);
+        }
+    }
+}
+
+DEF_TEST(SkUnicode_ICU_ComputeCodeUnitFlagsSurrogatePair, reporter) {
+    auto icu = SkUnicodes::ICU::Make();
+    // Windows test bots do not ship icudtl.dat, so ICU cannot load there
+#if !defined(SK_BUILD_FOR_WIN)
+    REPORTER_ASSERT(reporter, icu);
+#endif
+    if (!icu) {
+        return;
+    }
+    // Both UTF-16 code units of a surrogate pair get the code point flags.
+    // a U+1D173 b
+    char16_t text[] = {u'a', 0xD834, 0xDD73, u'b'};
+    constexpr int kUnits = std::size(text);
+    constexpr auto kMask = SkUnicode::kPartOfIntraWordBreak | SkUnicode::kPartOfWhiteSpaceBreak |
+                           SkUnicode::kControl;
+    TArray<SkUnicode::CodeUnitFlags, true> results;
+    REPORTER_ASSERT(reporter, icu->computeCodeUnitFlags(text, kUnits, false, &results));
+    REPORTER_ASSERT(reporter, results.size() == kUnits + 1);
+    for (int i = 1; i <= 2; ++i) {
+        REPORTER_ASSERT(reporter, (results[i] & kMask) == SkUnicode::kControl,
+                        "code unit %d: %x", i, (unsigned)(results[i] & kMask));
+    }
+}
+
+DEF_TEST(SkUnicode_ICU_ComputeCodeUnitFlagsAscii, reporter) {
+    auto icu = SkUnicodes::ICU::Make();
+    // Windows test bots do not ship icudtl.dat, so ICU cannot load there
+#if !defined(SK_BUILD_FOR_WIN)
+    REPORTER_ASSERT(reporter, icu);
+#endif
+    if (!icu) {
+        return;
+    }
+    // The UTF-8 flags of each ASCII character agree with the ICU property queries.
+    constexpr auto kMask = SkUnicode::kPartOfIntraWordBreak | SkUnicode::kPartOfWhiteSpaceBreak |
+                           SkUnicode::kControl | SkUnicode::kIdeographic;
+    for (SkUnichar c = 0; c < 128; ++c) {
+        SkUnicode::CodeUnitFlags expected = SkUnicode::kNoCodeUnitFlag;
+        if (icu->isSpace(c)) {
+            expected |= SkUnicode::kPartOfIntraWordBreak;
+        }
+        if (icu->isWhitespace(c)) {
+            expected |= SkUnicode::kPartOfWhiteSpaceBreak;
+        }
+        if (icu->isControl(c)) {
+            expected |= SkUnicode::kControl;
+        }
+        if (icu->isIdeographic(c)) {
+            expected |= SkUnicode::kIdeographic;
+        }
+        TArray<SkUnicode::CodeUnitFlags, true> results;
+        char utf8[] = {(char)c};
+        REPORTER_ASSERT(reporter, icu->computeCodeUnitFlags(utf8, 1, false, &results));
+        REPORTER_ASSERT(reporter, (results[0] & kMask) == expected,
+                        "utf8 %d: %x != %x", c, (unsigned)(results[0] & kMask), (unsigned)expected);
+    }
+}
+#endif
 
 DEF_TEST_UNICODES(SkUnicode_ReorderVisual, reporter) {
     if (!unicode) {

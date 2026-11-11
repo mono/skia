@@ -8,9 +8,11 @@
 #ifndef SkContext_DEFINED
 #define SkContext_DEFINED
 
+#include "include/core/SkRecorder.h"
 #include "include/core/SkRefCnt.h"
 #include "include/private/SkAPI.h"
 
+#include <cstddef>
 #include <memory>
 
 class SkCapture;
@@ -18,12 +20,14 @@ class SkCaptureManager;
 class SkContextPriv;
 class SkContextPrivConst;
 class SkGPUContext;
-class SkResourceCache;
-class SkSharedContext;
-class SkStrikeCache;
+class SkOpenTypeSVGDecoder;
+class SkSharedState;
 class SkTraceMemoryDump;
-class SkTypefaceCache;
 struct SkContextOptions;
+
+namespace skgpu::graphite {
+struct RecorderOptions;
+}
 
 /**
  * @brief SkContext is a central context object that serves as the mandatory first point of
@@ -52,17 +56,21 @@ public:
      */
     sk_sp<SkCapture> endCapture();
 
-private:
-    SkContext(const SkContextOptions&);
-    SkContext(const SkContextOptions&, std::unique_ptr<SkGPUContext> gpuContext);
+    enum class BackendSelection {
+        // Selects the optimal backend, preferring the attached GPU backend if available.
+        kAutomatic,
+        // Explicitly forces the creation of a CPU-backed recorder.
+        kCPU,
+        // Forces the use of the attached GPU backend (returns nullptr if none present).
+        kGPU,
+    };
 
-    friend class SkContextPrivConst;
-    friend class SkContextPriv;
-    friend class SkContextCtorAccessor;
-
-    SkResourceCache* resourceCache() const;
-    SkStrikeCache* strikeCache() const;
-    SkTypefaceCache* typefaceCache() const;
+    /**
+     * Creates and returns a new SkRecorder for this context based on the requested backend.
+     */
+    std::unique_ptr<SkRecorder> makeRecorder(
+            BackendSelection backend,
+            const skgpu::graphite::RecorderOptions* graphiteOptions = nullptr);
 
     size_t fontCacheLimit() const;
     size_t setFontCacheLimit(size_t bytes);
@@ -75,10 +83,30 @@ private:
     void purgeFontCache();
     void purgePinnedFontCache();
 
+    size_t resourceCacheTotalBytesUsed() const;
+    size_t resourceCacheTotalByteLimit() const;
+    size_t setResourceCacheTotalByteLimit(size_t newLimit);
+
+    size_t resourceCacheSingleAllocationByteLimit() const;
+    size_t setResourceCacheSingleAllocationByteLimit(size_t newLimit);
+
+    void purgeResourceCache();
+
+    int typefaceCacheCountLimit() const;
+    int setTypefaceCacheCountLimit(int count);
+
     void dumpMemoryStatistics(SkTraceMemoryDump* dump);
 
+private:
+    explicit SkContext(const SkContextOptions&);
+    SkContext(const SkContextOptions&, std::unique_ptr<SkGPUContext> gpuContext);
+
+    friend class SkContextPrivConst;
+    friend class SkContextPriv;
+    friend class SkContextCtorAccessor;
+
     sk_sp<SkCaptureManager> fCaptureManager;
-    sk_sp<SkSharedContext> fSharedContext;
+    sk_sp<SkSharedState> fSharedState;
 
     std::unique_ptr<SkGPUContext> fGPUContext;
 };

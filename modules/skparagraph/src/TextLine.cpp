@@ -490,26 +490,32 @@ void TextLine::paintDecorations(ParagraphPainter* painter, SkScalar x, SkScalar 
 }
 
 void TextLine::justify(SkScalar maxWidth) {
+    if (fHyphen != nullptr) {
+        // The rendered soft hyphen follows the text, so the text fills the rest of the line
+        maxWidth -= fHyphen->advance().fX;
+    }
     int whitespacePatches = 0;
     SkScalar textLen = 0;
     SkScalar whitespaceLen = 0;
     bool whitespacePatch = false;
-    // Take leading whitespaces width but do not increment a whitespace patch number
-    bool leadingWhitespaces = false;
+    // Take leading whitespaces width but do not increment a whitespace patch number; start true so
+    // any leading soft hyphen before the first visible cluster does not open a leading patch
+    bool leadingWhitespaces = true;
     this->iterateThroughClustersInGlyphsOrder(false, false,
         [&](const Cluster* cluster, ClusterIndex index, bool ghost) {
-            if (cluster->isWhitespaceBreak()) {
-                if (index == 0) {
-                    leadingWhitespaces = true;
-                } else if (!whitespacePatch && !leadingWhitespaces) {
+            if (cluster->isSoftHyphen()) {
+                // Soft-hyphen clusters are unrendered in the text run and must not split an
+                // adjacent ideographic or whitespace justification patch
+            } else if (cluster->isWhitespaceBreak()) {
+                if (!whitespacePatch && !leadingWhitespaces) {
                     // We only count patches BETWEEN words, not before
                     ++whitespacePatches;
                 }
                 whitespacePatch = !leadingWhitespaces;
                 whitespaceLen += cluster->width();
             } else if (cluster->isIdeographic()) {
-                // Whitespace break before and after
-                if (!whitespacePatch && index != 0) {
+                // Whitespace break before and after, except before the first visible cluster
+                if (!whitespacePatch && !leadingWhitespaces) {
                     // We only count patches BETWEEN words, not before
                     ++whitespacePatches; // before
                 }
@@ -544,8 +550,8 @@ void TextLine::justify(SkScalar maxWidth) {
     auto ghostShift = maxWidth - this->fAdvance.fX;
     // Spread the extra whitespaces
     whitespacePatch = false;
-    // Do not break on leading whitespaces
-    leadingWhitespaces = false;
+    // Do not break on leading whitespaces or leading soft hyphens
+    leadingWhitespaces = true;
     this->iterateThroughClustersInGlyphsOrder(false, true, [&](const Cluster* cluster, ClusterIndex index, bool ghost) {
 
         if (ghost) {
@@ -555,17 +561,18 @@ void TextLine::justify(SkScalar maxWidth) {
             return true;
         }
 
-        if (cluster->isWhitespaceBreak()) {
-            if (index == 0) {
-                leadingWhitespaces = true;
-            } else if (!whitespacePatch && !leadingWhitespaces) {
+        if (cluster->isSoftHyphen()) {
+            // Keep whitespacePatch and leadingWhitespaces intact across soft hyphens
+        } else if (cluster->isWhitespaceBreak()) {
+            if (!whitespacePatch && !leadingWhitespaces) {
                 shift += step;
                 whitespacePatch = true;
                 --whitespacePatches;
             }
             shift -= cluster->width();
         } else if (cluster->isIdeographic()) {
-            if (!whitespacePatch && index != 0) {
+            // Only insert a before-patch once a visible cluster has preceded this ideograph
+            if (!whitespacePatch && !leadingWhitespaces) {
                 shift += step;
                --whitespacePatches;
             }
@@ -576,7 +583,11 @@ void TextLine::justify(SkScalar maxWidth) {
             leadingWhitespaces = false;
         }
         this->shiftCluster(cluster, shift, prevShift);
-        prevShift = shift;
+        // shiftCluster still records the run-end shift for a trailing soft hyphen, but an
+        // unrendered soft hyphen must not advance prevShift for the following visible cluster
+        if (!cluster->isSoftHyphen()) {
+            prevShift = shift;
+        }
         // We skip ideographic whitespaces
         if (!cluster->isWhitespaceBreak() && cluster->isIdeographic()) {
             shift += step;
@@ -611,6 +622,7 @@ void TextLine::shiftCluster(const Cluster* cluster, SkScalar shift, SkScalar pre
 
     if (run.fJustificationShifts.empty()) {
         // Do not fill this array until needed
+        run.fJustificationShifts.reserve_exact(run.size() + 1);
         run.fJustificationShifts.push_back_n(run.size() + 1, { 0, 0 });
     }
 
@@ -740,10 +752,11 @@ std::unique_ptr<Run> TextLine::ShapeString(ParagraphImpl* owner,
         Buffer runBuffer(const RunInfo& info) override {
             SkASSERT(!fRun);
             fRun = std::make_unique<Run>(nullptr, info, 0, fLineHeight, fUseHalfLeading, fBaselineShift, 0, 0);
-            return fRun->newRunBuffer();
+            return fRun->newRunBuffer(&fBuffer, info.glyphCount);
         }
 
         void commitRunBuffer(const RunInfo& info) override {
+            fRun->commit(fBuffer);
             fRun->fAdvance.fX = info.fAdvance.fX;
             fRun->fAdvance.fY = fRun->advance().fY;
             fRun->fPlaceholderIndex = std::numeric_limits<size_t>::max();
@@ -753,6 +766,7 @@ std::unique_ptr<Run> TextLine::ShapeString(ParagraphImpl* owner,
         void commitLine() override {}
 
         std::unique_ptr<Run> fRun;
+        Run::ShapingBuffer fBuffer;
         SkScalar fLineHeight;
         bool fUseHalfLeading;
         SkScalar fBaselineShift;
@@ -1073,6 +1087,12 @@ void TextLine::iterateThroughClustersInGlyphsOrder(bool reversed,
         auto run = this->fOwner->run(r);
         auto trimmedRange = fClusterRange.intersection(run.clusterRange());
         auto trailedRange = fGhostClusterRange.intersection(run.clusterRange());
+        if (trailedRange.start >= trailedRange.end) {
+            // The ellipsis removed all clusters of this run
+            return;
+        }
+        // A run of trailing whitespaces only has no trimmed clusters
+        trimmedRange.end = std::max(trimmedRange.end, trimmedRange.start);
         SkASSERT(trimmedRange.start == trailedRange.start);
 
         auto trailed = fOwner->clusters(trailedRange);
@@ -1578,8 +1598,10 @@ PositionWithAffinity TextLine::getGlyphPositionAtCoordinate(SkScalar dx) {
                 *runWidthInLine = run->advance().fX;
                 if (fOwner->paragraphStyle().getTextDirection() == TextDirection::kLtr ||
                     dx <= this->offset().fX + runOffsetInLine + run->advance().fX) {
+                    // Like any other end of line, the position belongs to this line, not to
+                    // the start of the next one
                     auto utf16Index = fOwner->getUTF16Index(this->fText.end);
-                    result = { SkToS32(utf16Index) , kDownstream };
+                    result = {SkToS32(utf16Index), utf16Index > 0 ? kUpstream : kDownstream};
                     return false;
                 }
                 return true;

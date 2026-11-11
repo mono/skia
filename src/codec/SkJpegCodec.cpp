@@ -65,12 +65,13 @@ static SkJpegMarkerList get_sk_marker_list(jpeg_decompress_struct* dinfo) {
     return markerList;
 }
 
-static SkEncodedOrigin get_exif_orientation(sk_sp<const SkData> exifData) {
-    SkEncodedOrigin origin = kDefault_SkEncodedOrigin;
+static SkEncodedOrigin get_exif_orientation(sk_sp<const SkData> exifData,
+                                            SkEncodedOrigin defaultOrigin) {
+    SkEncodedOrigin origin;
     if (exifData && SkParseEncodedOrigin(exifData->bytes(), exifData->size(), &origin)) {
         return origin;
     }
-    return kDefault_SkEncodedOrigin;
+    return defaultOrigin;
 }
 
 enum class SaveMarkers : bool {
@@ -123,7 +124,8 @@ std::unique_ptr<SkCodec> SkJpegCodec::MakeFromStream(std::unique_ptr<SkStream> s
 
 std::unique_ptr<SkCodec> SkJpegCodec::MakeFromStream(
         std::unique_ptr<SkStream> stream,
-        Result* result, std::unique_ptr<SkCodecs::ColorProfile> defaultColorProfile) {
+        Result* result, std::unique_ptr<SkCodecs::ColorProfile> defaultColorProfile,
+        SkEncodedOrigin defaultOrigin) {
     SkASSERT(result);
     if (!stream) {
         *result = SkCodec::kInvalidInput;
@@ -146,7 +148,8 @@ std::unique_ptr<SkCodec> SkJpegCodec::MakeFromStream(
     auto metadataDecoder = std::make_unique<SkJpegMetadataDecoderImpl>(get_sk_marker_list(dinfo));
 
     SkEncodedOrigin orientation =
-            get_exif_orientation(metadataDecoder->getExifMetadata(/*copyData=*/false));
+            get_exif_orientation(metadataDecoder->getExifMetadata(/*copyData=*/false),
+                                 defaultOrigin);
 
     std::unique_ptr<SkCodecs::ColorProfile> profile;
     if (auto iccProfileData = metadataDecoder->getICCProfileData(/*copyData=*/true)) {
@@ -338,7 +341,6 @@ bool SkJpegCodec::conversionSupported(const SkImageInfo& dstInfo, bool srcIsOpaq
                 fDecoderMgr->dinfo()->out_color_space = JCS_GRAYSCALE;
             }
             break;
-        case kBGRA_10101010_XR_SkColorType:
         case kBGR_101010x_XR_SkColorType:
         case kRGBA_F16_SkColorType:
             SkASSERT(needsColorXform);
@@ -430,18 +432,18 @@ SkCodec::Result SkJpegCodec::readRows(const SkImageInfo& dstInfo,
     size_t swizzleDstRowBytes = rowBytes;
     int dstWidth = opts.fSubset ? opts.fSubset->width() : dstInfo.width();
     if (fSwizzleSrcRow && fColorXformSrcRow) {
-        decodeDst = (JSAMPLE*) fSwizzleSrcRow;
+        decodeDst = (JSAMPLE*)fSwizzleSrcRow.get();
         swizzleDst = fColorXformSrcRow;
         decodeDstRowBytes = 0;
         swizzleDstRowBytes = 0;
         dstWidth = fSwizzler->swizzleWidth();
     } else if (fColorXformSrcRow) {
-        decodeDst = (JSAMPLE*) fColorXformSrcRow;
+        decodeDst = (JSAMPLE*)fColorXformSrcRow.get();
         swizzleDst = fColorXformSrcRow;
         decodeDstRowBytes = 0;
         swizzleDstRowBytes = 0;
     } else if (fSwizzleSrcRow) {
-        decodeDst = (JSAMPLE*) fSwizzleSrcRow;
+        decodeDst = (JSAMPLE*)fSwizzleSrcRow.get();
         decodeDstRowBytes = 0;
         dstWidth = fSwizzler->swizzleWidth();
     }
@@ -610,6 +612,8 @@ bool SkJpegCodec::allocateStorage(const SkImageInfo& dstInfo) {
         if (!this->allocateFromBudget(totalBytes)) {
             return false;
         }
+        fSwizzleSrcRow = nullptr;     // Points into fStorage, freed below.
+        fColorXformSrcRow = nullptr;  // Points into fStorage, freed below.
         if (!fStorage.reset(totalBytes)) {
             return false;
         }

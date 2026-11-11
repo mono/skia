@@ -39,3 +39,60 @@ $pure $genBType workgroupUniformLoad($genBType x);
 $pure $mat      workgroupUniformLoad($mat      x);
 $pure $hmat     workgroupUniformLoad($hmat     x);
 
+// Subgroup operations. Using these requires ShaderCaps::fSubgroupSupport. They operate on the
+// active invocations of the calling subgroup. Unless ShaderCaps::fSubgroupMaximalReconvergence is
+// set, calling these in non-uniform control flow is rejected in WGSL and has implementation-defined
+// active invocations on other backends.
+$pure bool  subgroupAll(bool value);
+$pure bool  subgroupAny(bool value);
+// Bit N of the result is set when `value` is true in the active invocation whose
+// sk_SubgroupInvocationID is N.
+$pure uint4 subgroupBallot(bool value);
+
+// `id` must be a constant expression less than 128 (the largest subgroup size WGSL allows).
+// SPIR-V before 1.5, GLSL and WGSL all require a constant id.
+$pure $genType  subgroupBroadcast($genType  value, uint id);
+$pure $genHType subgroupBroadcast($genHType value, uint id);
+$pure $genIType subgroupBroadcast($genIType value, uint id);
+$pure $genUType subgroupBroadcast($genUType value, uint id);
+
+// Returns `value` from the active invocation with the lowest sk_SubgroupInvocationID.
+$pure $genType  subgroupBroadcastFirst($genType  value);
+$pure $genHType subgroupBroadcastFirst($genHType value);
+$pure $genIType subgroupBroadcastFirst($genIType value);
+$pure $genUType subgroupBroadcastFirst($genUType value);
+
+// Reductions over the active invocations. Integer arithmetic wraps; the order of floating-point
+// operations is implementation-defined.
+$pure $genType  subgroupAdd($genType  value);
+$pure $genHType subgroupAdd($genHType value);
+$pure $genIType subgroupAdd($genIType value);
+$pure $genUType subgroupAdd($genUType value);
+$pure $genType  subgroupMin($genType  value);
+$pure $genHType subgroupMin($genHType value);
+$pure $genIType subgroupMin($genIType value);
+$pure $genUType subgroupMin($genUType value);
+$pure $genType  subgroupMax($genType  value);
+$pure $genHType subgroupMax($genHType value);
+$pure $genIType subgroupMax($genIType value);
+$pure $genUType subgroupMax($genUType value);
+
+// Prefix sums over the active invocations, ordered by sk_SubgroupInvocationID. The inclusive sum
+// includes the calling invocation's value; the exclusive sum doesn't (and is 0 for the first).
+$pure $genType  subgroupInclusiveAdd($genType  value);
+$pure $genHType subgroupInclusiveAdd($genHType value);
+$pure $genIType subgroupInclusiveAdd($genIType value);
+$pure $genUType subgroupInclusiveAdd($genUType value);
+$pure $genType  subgroupExclusiveAdd($genType  value);
+$pure $genHType subgroupExclusiveAdd($genHType value);
+$pure $genIType subgroupExclusiveAdd($genIType value);
+$pure $genUType subgroupExclusiveAdd($genUType value);
+
+// Returns `value` from the invocation whose sk_SubgroupInvocationID is `id`. Unlike
+// subgroupBroadcast, `id` may vary per invocation. The result is undefined if that invocation is
+// inactive or `id` >= sk_SubgroupSize. A constant `id` must be less than 128, as in WGSL.
+$pure $genType  subgroupShuffle($genType  value, uint id);
+$pure $genHType subgroupShuffle($genHType value, uint id);
+$pure $genIType subgroupShuffle($genIType value, uint id);
+$pure $genUType subgroupShuffle($genUType value, uint id);
+

@@ -26,14 +26,15 @@
 #include "include/core/SkSurface.h"
 #include "include/core/SkSurfaceProps.h"
 #include "include/core/SkTileMode.h"
-#include "include/cpu/Recorder.h"
 #include "include/private/SkAssert.h"
+#include "include/private/SkOnlyStackAllocatable.h"
 #include "include/private/SkTo.h"
 #include "src/core/SkDraw.h"
 #include "src/core/SkMaskFilterBase.h"
 #include "src/core/SkMatrixPriv.h"
 #include "src/core/SkRasterClip.h"
 #include "src/core/SkSpecialImage.h"
+#include "src/cpu/Recorder.h"
 #include "src/image/SkImage_Base.h"
 #include "src/image/SkImage_Raster.h"
 #include "src/shaders/SkImageShader.h"
@@ -59,6 +60,8 @@ struct Bounder {
 };
 
 class SkDrawTiler {
+    SK_ONLY_STACK_ALLOCATABLE;
+
     // 8K is 1 too big, since 8K << supersample == 32768 which is too big for SkFixed
     static constexpr int kMaxDim = 8192 - 1;
 
