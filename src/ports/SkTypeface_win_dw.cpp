@@ -1273,9 +1273,9 @@ sk_sp<SkTypeface> DWriteFontTypeface::MakeFromStream(std::unique_ptr<SkStreamAss
         apply_fontargument_variation(fontFace, args);
 
         return DWriteFontTypeface::Make(
-            factory, fontFace.get(), nullptr, nullptr,
+            factory.get(), fontFace.get(), nullptr, nullptr,
             sk_make_sp<DWriteFontTypeface::Loaders>(
-                factory,
+                factory.get(),
                 autoUnregisterFontFileLoader.release()),
             args.getPalette());
     }

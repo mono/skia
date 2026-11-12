@@ -10,7 +10,9 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstddef>
+#include <limits>
 
 #define SK_OPTS_NS RPOptsTest
 
@@ -34,6 +36,49 @@
 constexpr auto F_ = SK_OPTS_NS::F_;
 using F = SK_OPTS_NS::F;
 using I32 = SK_OPTS_NS::I32;
+
+#if defined(SKRP_CPU_WASM)
+DEF_TEST(SkRasterPipelineOpts_WasmSqrt, r) {
+    constexpr size_t N = sizeof(F) / sizeof(float);
+    const float values[] = {
+        0.0f, -0.0f, 1.0f, 2.0f, 4.0f, 9.0f, -1.0f,
+        std::numeric_limits<float>::infinity(),
+        -std::numeric_limits<float>::infinity(),
+        std::numeric_limits<float>::quiet_NaN(),
+        std::numeric_limits<float>::min(),
+        std::numeric_limits<float>::max(),
+    };
+    for (size_t offset = 0; offset < std::size(values); offset += N) {
+        std::array<float, N> inputs, outputs;
+        for (size_t lane = 0; lane < N; ++lane) {
+            inputs[lane] = values[(offset + lane) % std::size(values)];
+        }
+        F result = SK_OPTS_NS::sqrt_(sk_unaligned_load<F>(inputs.data()));
+        memcpy(outputs.data(), &result, sizeof(result));
+        for (size_t lane = 0; lane < N; ++lane) {
+            float expected = std::sqrt(inputs[lane]);
+            if (std::isnan(expected)) {
+                REPORTER_ASSERT(r, std::isnan(outputs[lane]));
+            } else {
+                REPORTER_ASSERT(r, outputs[lane] == expected);
+                REPORTER_ASSERT(r, std::signbit(outputs[lane]) == std::signbit(expected));
+            }
+        }
+    }
+}
+
+DEF_TEST(SkRasterPipelineOpts_WasmRoundToEven, r) {
+    F values = {-2.5f, -1.5f, 0.5f, 1.5f};
+    I32 signedResult = SK_OPTS_NS::iround(values);
+    const I32 signedExpected = {-2, -2, 0, 2};
+    REPORTER_ASSERT(r, SK_OPTS_NS::all(signedResult == signedExpected));
+
+    values = {0.5f, 1.5f, 2.5f, 3.5f};
+    auto unsignedResult = SK_OPTS_NS::round(values);
+    const SK_OPTS_NS::U32 unsignedExpected = {0, 2, 2, 4};
+    REPORTER_ASSERT(r, SK_OPTS_NS::all(unsignedResult == unsignedExpected));
+}
+#endif
 
 template <size_t N>
 static std::array<int32_t, N> make_masks(int bits) {

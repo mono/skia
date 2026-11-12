@@ -61,7 +61,6 @@
 #include <algorithm>
 #include <array>
 #include <cstring>
-#include <iterator>
 #include <memory>
 #include <optional>
 #include <string>
@@ -535,11 +534,7 @@ void SkSVGDevice::AutoElement::addColorFilterResources(const SkColorFilter& cf,
         { SkBlendMode::kLuminosity, kBlend, "luminosity"  },
     };
 
-    // Keep the lookup compatible with emsdk 3.1.34's incomplete ranges library.
-    const auto bm_info = std::find_if(
-            std::begin(gBlendModeInfoMap),
-            std::end(gBlendModeInfoMap),
-            [bm](const BlendModeInfo& info) { return info.bm == bm; });
+    const auto bm_info = std::ranges::find(gBlendModeInfoMap, bm, &BlendModeInfo::bm);
     if (bm_info == std::end(gBlendModeInfoMap)) {
         // Unsupported blend mode.
         return;
