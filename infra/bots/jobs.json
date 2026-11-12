@@ -300,13 +300,7 @@
     "name": "Build-Ubuntu22.04-Clang-x86_64-Debug-Chromebook_GLES"
   },
   {
-    "name": "Build-Ubuntu22.04-Clang-x86_64-Debug-Vulkan"
-  },
-  {
     "name": "Build-Ubuntu22.04-Clang-x86_64-Release-Chromebook_GLES"
-  },
-  {
-    "name": "Build-Ubuntu22.04-Clang-x86_64-Release-Vulkan"
   },
   {
     "name": "Build-Ubuntu24.04-Clang-arm-Debug-Android",
@@ -444,9 +438,6 @@
     "name": "Build-Ubuntu24.04-Clang-x86_64-Debug-ASAN_Vulkan"
   },
   {
-    "name": "Build-Ubuntu24.04-Clang-x86_64-Debug-AVIF"
-  },
-  {
     "name": "Build-Ubuntu24.04-Clang-x86_64-Debug-Fontations"
   },
   {
@@ -534,13 +525,13 @@
     "name": "Build-Ubuntu24.04-Clang-x86_64-Release-ASAN_Vulkan"
   },
   {
-    "name": "Build-Ubuntu24.04-Clang-x86_64-Release-AVIF"
-  },
-  {
     "name": "Build-Ubuntu24.04-Clang-x86_64-Release-CMake"
   },
   {
     "name": "Build-Ubuntu24.04-Clang-x86_64-Release-Fast"
+  },
+  {
+    "name": "Build-Ubuntu24.04-Clang-x86_64-Release-Fontations"
   },
   {
     "name": "Build-Ubuntu24.04-Clang-x86_64-Release-Fuzz"
@@ -1117,9 +1108,6 @@
     "name": "Perf-Mac15-Clang-MacMini16.10-GPU-AppleM4-arm64-Release-All-Graphite_Native_Metal"
   },
   {
-    "name": "Perf-Ubuntu22.04-Clang-ThinkCenter-GPU-RadeonVega8-x86_64-Release-All-Vulkan"
-  },
-  {
     "name": "Perf-Ubuntu24.04-Clang-Golo-CPU-AVX2-x86_64-Release-All"
   },
   {
@@ -1163,6 +1151,9 @@
   },
   {
     "name": "Perf-Ubuntu24.04-Clang-NUC5PPYH-GPU-IntelHD405-x86_64-Release-All-Vulkan"
+  },
+  {
+    "name": "Perf-Ubuntu24.04-Clang-ThinkCenter-GPU-RadeonVega8-x86_64-Release-All-Vulkan"
   },
   {
     "name": "Perf-Ubuntu26.04-Clang-FalconRAK-GPU-IntelArcB570-x86_64-Debug-All-Graphite_Dawn_Vulkan"
@@ -1232,21 +1223,6 @@
   },
   {
     "name": "Perf-Win11-Clang-NUC13Pro-GPU-IntelArc140V-x86_64-Release-All-Vulkan"
-  },
-  {
-    "name": "Perf-Win11-Clang-NUC6i5SYK-GPU-IntelIris540-x86_64-Release-All-ANGLE"
-  },
-  {
-    "name": "Perf-Win11-Clang-NUC6i5SYK-GPU-IntelIris540-x86_64-Release-All-Graphite_Dawn_D3D11"
-  },
-  {
-    "name": "Perf-Win11-Clang-NUC6i5SYK-GPU-IntelIris540-x86_64-Release-All-Graphite_Dawn_Vulkan"
-  },
-  {
-    "name": "Perf-Win11-Clang-NUC6i5SYK-GPU-IntelIris540-x86_64-Release-All-Graphite_Native_Vulkan"
-  },
-  {
-    "name": "Perf-Win11-Clang-NUC6i5SYK-GPU-IntelIris540-x86_64-Release-All-Vulkan"
   },
   {
     "name": "Perf-Win11-Clang-NUC9i7QN-GPU-RTX3060-x86_64-Release-All"
@@ -1807,12 +1783,6 @@
     "name": "Test-Mac15-Clang-MacMini16.10-GPU-AppleM4-arm64-Release-All-TSAN_Graphite_Native_Metal"
   },
   {
-    "name": "Test-Ubuntu22.04-Clang-ThinkCenter-GPU-RadeonVega8-x86_64-Debug-All-Vulkan"
-  },
-  {
-    "name": "Test-Ubuntu22.04-Clang-ThinkCenter-GPU-RadeonVega8-x86_64-Release-All-Vulkan"
-  },
-  {
     "name": "Test-Ubuntu24.04-Clang-GCE-CPU-AVX2-x86-Debug-All"
   },
   {
@@ -1821,9 +1791,6 @@
   },
   {
     "name": "Test-Ubuntu24.04-Clang-GCE-CPU-AVX2-x86_64-Debug-All-ASAN"
-  },
-  {
-    "name": "Test-Ubuntu24.04-Clang-GCE-CPU-AVX2-x86_64-Debug-All-AVIF"
   },
   {
     "name": "Test-Ubuntu24.04-Clang-GCE-CPU-AVX2-x86_64-Debug-All-BonusConfigs",
@@ -1878,9 +1845,6 @@
     "name": "Test-Ubuntu24.04-Clang-GCE-CPU-AVX2-x86_64-Release-All"
   },
   {
-    "name": "Test-Ubuntu24.04-Clang-GCE-CPU-AVX2-x86_64-Release-All-AVIF"
-  },
-  {
     "name": "Test-Ubuntu24.04-Clang-GCE-CPU-AVX2-x86_64-Release-All-BonusConfigs"
   },
   {
@@ -1891,6 +1855,9 @@
   },
   {
     "name": "Test-Ubuntu24.04-Clang-GCE-CPU-AVX2-x86_64-Release-All-MSAN"
+  },
+  {
+    "name": "Test-Ubuntu24.04-Clang-GCE-CPU-AVX2-x86_64-Release-All-NativeFonts_Fontations"
   },
   {
     "name": "Test-Ubuntu24.04-Clang-GCE-CPU-AVX2-x86_64-Release-All-SKVX_DISABLE_SIMD"
@@ -2039,6 +2006,15 @@
     "name": "Test-Ubuntu24.04-Clang-NUC5PPYH-GPU-IntelHD405-x86_64-Release-All-Vulkan"
   },
   {
+    "name": "Test-Ubuntu24.04-Clang-ThinkCenter-GPU-RadeonVega8-x86_64-Debug-All-Vulkan"
+  },
+  {
+    "name": "Test-Ubuntu24.04-Clang-ThinkCenter-GPU-RadeonVega8-x86_64-Release-All-Vulkan"
+  },
+  {
+    "name": "Test-Ubuntu24.04-EMCC-GCE-CPU-AVX2-wasm-Debug-All-StandaloneWasm"
+  },
+  {
     "name": "Test-Ubuntu24.04-EMCC-GCE-CPU-AVX2-wasm-Release-All-CanvasKit"
   },
   {
@@ -2046,6 +2022,12 @@
   },
   {
     "name": "Test-Ubuntu24.04-EMCC-GCE-GPU-AVX2-wasm-Release-All-CanvasKit"
+  },
+  {
+    "name": "Test-Ubuntu24.04-EMCC-Golo-GPU-QuadroP400-wasm-Debug-All-StandaloneWasm"
+  },
+  {
+    "name": "Test-Ubuntu24.04-EMCC-Golo-GPU-QuadroP400-wasm-Release-All-StandaloneWasm"
   },
   {
     "name": "Test-Ubuntu26.04-Clang-FalconRAK-GPU-IntelArcB570-x86_64-Debug-All-Graphite_Dawn_Vulkan"
@@ -2072,7 +2054,15 @@
     "name": "Test-Win11-Clang-Dell3930-GPU-GTX1660-x86_64-Debug-All-ANGLE"
   },
   {
-    "name": "Test-Win11-Clang-Dell3930-GPU-GTX1660-x86_64-Debug-All-Graphite_Dawn_D3D11"
+    "name": "Test-Win11-Clang-Dell3930-GPU-GTX1660-x86_64-Debug-All-Graphite_Dawn_D3D11",
+    "cq_config": {
+      "location_regexes": [
+        "(tests|src/gpu)/graphite/.*",
+        "src/sksl/generated/.*",
+        "bazel/external/dawn/*",
+        "DEPS"
+      ]
+    }
   },
   {
     "name": "Test-Win11-Clang-Dell3930-GPU-GTX1660-x86_64-Debug-All-Graphite_Dawn_Vulkan"
@@ -2214,39 +2204,6 @@
     "name": "Test-Win11-Clang-NUC13Pro-GPU-IntelArc140V-x86_64-Release-All-Vulkan"
   },
   {
-    "name": "Test-Win11-Clang-NUC6i5SYK-GPU-IntelIris540-x86_64-Debug-All-ANGLE"
-  },
-  {
-    "name": "Test-Win11-Clang-NUC6i5SYK-GPU-IntelIris540-x86_64-Debug-All-Graphite_Dawn_D3D11"
-  },
-  {
-    "name": "Test-Win11-Clang-NUC6i5SYK-GPU-IntelIris540-x86_64-Debug-All-Graphite_Dawn_Vulkan"
-  },
-  {
-    "name": "Test-Win11-Clang-NUC6i5SYK-GPU-IntelIris540-x86_64-Debug-All-Graphite_Native_Vulkan"
-  },
-  {
-    "name": "Test-Win11-Clang-NUC6i5SYK-GPU-IntelIris540-x86_64-Debug-All-Vulkan"
-  },
-  {
-    "name": "Test-Win11-Clang-NUC6i5SYK-GPU-IntelIris540-x86_64-Release-All-ANGLE"
-  },
-  {
-    "name": "Test-Win11-Clang-NUC6i5SYK-GPU-IntelIris540-x86_64-Release-All-Graphite_Dawn_D3D11"
-  },
-  {
-    "name": "Test-Win11-Clang-NUC6i5SYK-GPU-IntelIris540-x86_64-Release-All-Graphite_Dawn_Vulkan"
-  },
-  {
-    "name": "Test-Win11-Clang-NUC6i5SYK-GPU-IntelIris540-x86_64-Release-All-Graphite_Native_Vulkan"
-  },
-  {
-    "name": "Test-Win11-Clang-NUC6i5SYK-GPU-IntelIris540-x86_64-Release-All-NativeFonts"
-  },
-  {
-    "name": "Test-Win11-Clang-NUC6i5SYK-GPU-IntelIris540-x86_64-Release-All-Vulkan"
-  },
-  {
     "name": "Test-Win11-Clang-NUC9i7QN-GPU-RTX3060-x86_64-Debug-All"
   },
   {
@@ -2361,15 +2318,7 @@
     "name": "Test-Win11-MSVC-Golo-GPU-QuadroP400-x86_64-Debug-All-Direct3D"
   },
   {
-    "name": "Test-Win11-MSVC-Golo-GPU-QuadroP400-x86_64-Debug-All-Graphite_Dawn_D3D11",
-    "cq_config": {
-      "location_regexes": [
-        "(tests|src/gpu)/graphite/.*",
-        "src/sksl/generated/.*",
-        "bazel/external/dawn/*",
-        "DEPS"
-      ]
-    }
+    "name": "Test-Win11-MSVC-Golo-GPU-QuadroP400-x86_64-Debug-All-Graphite_Dawn_D3D11"
   },
   {
     "name": "Test-Win11-MSVC-Golo-GPU-QuadroP400-x86_64-Debug-All-Graphite_Dawn_D3D12"

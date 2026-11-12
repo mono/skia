@@ -18,10 +18,8 @@
 #include "include/private/SkEnumBitMask.h"
 #include "src/core/SkSLTypeShared.h"
 #include "src/gpu/BufferWriter.h"
-#include "src/gpu/graphite/Attribute.h"
 #include "src/gpu/graphite/ContextUtils.h"
 #include "src/gpu/graphite/DrawTypes.h"
-#include "src/gpu/graphite/PipelineData.h"
 #include "src/gpu/graphite/TextureProxy.h"
 #include "src/gpu/graphite/draw/DrawOrder.h"
 #include "src/gpu/graphite/draw/DrawParams.h"
@@ -30,6 +28,8 @@
 #include "src/gpu/graphite/geom/Geometry.h"
 #include "src/gpu/graphite/geom/Rect.h"
 #include "src/gpu/graphite/geom/Transform.h"
+#include "src/gpu/graphite/layout/Attribute.h"
+#include "src/gpu/graphite/layout/PipelineData.h"
 #include "src/gpu/graphite/render/CommonDepthStencilSettings.h"
 
 #include <cstdint>
@@ -187,7 +187,8 @@ void CoverageMaskRenderStep::writeVertices(DrawWriter* dw,
 
     // Move 'drawBounds' and 'maskBounds' into the atlas coordinate space, then adjust the
     // device translation to undo the atlas origin automatically in the vertex shader.
-    skvx::float2 textureOrigin = skvx::cast<float>(coverageMask.textureOrigin());
+    skvx::float2 textureOrigin = skvx::cast<float>(skvx::int2{coverageMask.textureOrigin().x(),
+                                                              coverageMask.textureOrigin().y()});
     maskBounds += textureOrigin.xyxy();
     drawBounds += textureOrigin.xyxy();
     deviceOrigin -= textureOrigin;

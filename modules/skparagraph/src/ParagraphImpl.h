@@ -270,7 +270,7 @@ private:
 
     // Internal structures
     InternalState fState;
-    skia_private::TArray<Run, false> fRuns;         // kShaped
+    skia_private::TArray<Run> fRuns;                // kShaped
     skia_private::TArray<Cluster, true> fClusters;  // kClusterized (cached: text, word spacing, letter spacing, resolved fonts)
     skia_private::TArray<SkUnicode::CodeUnitFlags, true> fCodeUnitProperties;
     skia_private::TArray<size_t, true> fClustersIndexFromCodeUnit;
@@ -282,7 +282,9 @@ private:
     skia_private::TArray<size_t, true> fUTF16IndexForUTF8Index;
     SkOnce fillUTF16MappingOnce;
     size_t fUnresolvedGlyphs;
-    std::unordered_set<SkUnichar> fUnresolvedCodepoints;
+    // Null if all codepoints resolved. ParagraphCache shares the set, so it does not change once
+    // shaping is done; the next shaping makes a new set
+    std::shared_ptr<std::unordered_set<SkUnichar>> fUnresolvedCodepoints;
 
     skia_private::TArray<TextLine, false> fLines;   // kFormatted   (cached: width, max lines, ellipsis, text align)
     sk_sp<SkPicture> fPicture;          // kRecorded    (cached: text styles)

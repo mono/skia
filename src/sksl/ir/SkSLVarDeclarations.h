@@ -9,7 +9,7 @@
 #define SKSL_VARDECLARATIONS
 
 #include "include/core/SkTypes.h"
-#include "src/partition_alloc/raw_ptr.h"
+#include "src/partition_alloc/raw_ptr_exclusion.h"
 #include "src/sksl/ir/SkSLExpression.h"
 #include "src/sksl/ir/SkSLIRNode.h"
 #include "src/sksl/ir/SkSLModifierFlags.h"
@@ -120,8 +120,10 @@ private:
                                     const Type* baseType,
                                     std::unique_ptr<Expression>& value);
 
-    raw_ptr<Variable> fVar;
-    const Type& fBaseType;
+    // RAW_PTR_EXCLUSION: Performance: +2% on sksl_small.
+    RAW_PTR_EXCLUSION Variable* fVar;
+    // RAW_PTR_EXCLUSION: Performance: +3.5% on sksl_*.
+    RAW_PTR_EXCLUSION const Type& fBaseType;
     int fArraySize;  // zero means "not an array"
     std::unique_ptr<Expression> fValue;
 

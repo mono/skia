@@ -17,6 +17,7 @@
 #include "include/core/SkYUVAPixmaps.h"
 #include "include/private/SkEncodedInfo.h"
 #include "include/private/SkTemplates.h"
+#include "src/partition_alloc/raw_ptr.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -80,10 +81,11 @@ protected:
 
 private:
     /*
-     * Allows SkRawCodec to communicate the color profile from the exif data.
+     * Allows SkRawCodec to communicate the color profile and orientation from the exif data.
      */
     static std::unique_ptr<SkCodec> MakeFromStream(std::unique_ptr<SkStream>, Result*,
-            std::unique_ptr<SkCodecs::ColorProfile> defaultColorProfile);
+            std::unique_ptr<SkCodecs::ColorProfile> defaultColorProfile,
+            SkEncodedOrigin defaultOrigin = kDefault_SkEncodedOrigin);
 
     /*
      * Creates an instance of the decoder
@@ -123,8 +125,8 @@ private:
     const int fReadyState;
 
     skia_private::AutoTMalloc<uint8_t> fStorage;
-    uint8_t* fSwizzleSrcRow = nullptr;
-    uint32_t* fColorXformSrcRow = nullptr;
+    raw_ptr<uint8_t> fSwizzleSrcRow;
+    raw_ptr<uint32_t> fColorXformSrcRow;
 
     // libjpeg-turbo provides some subsetting.  In the case that libjpeg-turbo
     // cannot take the exact the subset that we need, we will use the swizzler

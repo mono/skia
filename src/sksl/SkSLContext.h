@@ -10,6 +10,7 @@
 
 #include "include/private/SkAssert.h"
 #include "src/partition_alloc/raw_ptr.h"
+#include "src/partition_alloc/raw_ptr_exclusion.h"
 
 namespace SkSL {
 
@@ -34,7 +35,8 @@ public:
     raw_ptr<ProgramConfig, DanglingUntriaged> fConfig = nullptr;
 
     // The Context holds a pointer to our error reporter.
-    raw_ptr<ErrorReporter> fErrors;
+    // RAW_PTR_EXCLUSION: Performance: +2.5% on sksl_skrp_large.
+    RAW_PTR_EXCLUSION ErrorReporter* fErrors;
 
     void setErrorReporter(ErrorReporter* e) {
         SkASSERT(e);

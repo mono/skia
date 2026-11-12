@@ -128,10 +128,10 @@ sk_sp<Image_YUVA> Image_YUVA::Make(const Caps* caps,
     // Y channel should match the YUVAInfo dimensions
     SkISize yDims = yuvaInfo.dimensions();
 #if defined(SK_ENABLE_YUVA_PACKED_422)
-    if (yuvaInfo.planeConfig() == SkYUVAInfo::PlaneConfig::kYUYV &&
-        SkEncodedOriginSwapsWidthHeight(yuvaInfo.origin())) {
-        using std::swap;
-        swap(yDims.fWidth, yDims.fHeight);
+    if (yuvaInfo.planeConfig() == SkYUVAInfo::PlaneConfig::kYUYV) {
+        // The packed plane has half the image's horizontal texel dimensions.
+        SkASSERT(numPlanes == 1);
+        yDims = SK_UNSAFE_TODO(planeDimensions[0]);
     }
 #endif
     if (planes[locations[kY].fPlane].dimensions() != yDims) {

@@ -20,11 +20,12 @@
 #include "include/core/SkShader.h"
 #include "include/core/SkSize.h"
 #include "include/core/SkTypeface.h"
-#include "include/cpu/Recorder.h"
 #include "include/docs/SkXPSDocument.h"
 #include "include/private/SkTArray.h"
 #include "src/core/SkBitmapDevice.h"
 #include "src/core/SkClipStackDevice.h"
+#include "src/cpu/Recorder.h"
+#include "src/partition_alloc/raw_ptr.h"
 #include "src/utils/SkBitSet.h"
 #include "src/utils/win/SkAutoCoInitialize.h"
 #include "src/utils/win/SkTScopedComPtr.h"
@@ -136,7 +137,7 @@ private:
     SkVector fCurrentPixelsPerMeter;
 
     skia_private::TArray<TypefaceUse, true> fTypefaces;
-    skia_private::TArray<TypefaceUse, true>* fTopTypefaces;
+    raw_ptr<skia_private::TArray<TypefaceUse, true>> fTopTypefaces;
 
     SkXPS::Options fOpts;
 

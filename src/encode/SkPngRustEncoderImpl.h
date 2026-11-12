@@ -9,15 +9,15 @@
 
 #include <memory>
 
+#include "include/core/SkSpan.h"
 #include "rust/png/FFI.rs.h"
 #include "src/encode/SkPngEncoderBase.h"
 #include "third_party/rust/cxx/v1/cxx.h"
 
-class SkWStream;
-struct SkEncodedInfo;
 class SkPixmap;
 class SkPngEncoderMgr;
-template <typename T> class SkSpan;
+class SkWStream;
+struct SkEncodedInfo;
 
 namespace SkPngRustEncoder {
 struct Options;
