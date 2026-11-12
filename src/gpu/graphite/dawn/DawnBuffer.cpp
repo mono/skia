@@ -56,7 +56,12 @@ void log_map_error(WGPUBufferMapAsyncStatus status, const char*) {
             statusStr = "<other>";
             break;
     }
-    SKIA_LOG(priority, "Buffer async map failed with status %s.", statusStr);
+    // Logging macros require a compile-time priority.
+    if (priority == SkLogPriority::kDebug) {
+        SKIA_LOG_D("Buffer async map failed with status %s.", statusStr);
+    } else {
+        SKIA_LOG_E("Buffer async map failed with status %s.", statusStr);
+    }
 }
 
 #else
