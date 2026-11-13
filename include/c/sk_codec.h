@@ -14,6 +14,12 @@
 
 SK_C_PLUS_PLUS_BEGIN_GUARD
 
+typedef enum {
+    SK_CODEC_ANIMATION_STATUS_YES,
+    SK_CODEC_ANIMATION_STATUS_NO,
+    SK_CODEC_ANIMATION_STATUS_UNKNOWN,
+} sk_codec_animation_status_t;
+
 SK_C_API size_t sk_codec_min_buffered_bytes_needed(void);
 
 SK_C_API sk_codec_t* sk_codec_new_from_stream(sk_stream_t* stream, sk_codec_result_t* result);
@@ -37,6 +43,7 @@ SK_C_API int sk_codec_get_frame_count(sk_codec_t* codec);
 SK_C_API void sk_codec_get_frame_info(sk_codec_t* codec, sk_codec_frameinfo_t* frameInfo);
 SK_C_API bool sk_codec_get_frame_info_for_index(sk_codec_t* codec, int index, sk_codec_frameinfo_t* frameInfo);
 SK_C_API int sk_codec_get_repetition_count(sk_codec_t* codec);
+SK_C_API sk_codec_animation_status_t sk_codec_is_animated(sk_codec_t* codec);
 
 SK_C_PLUS_PLUS_END_GUARD
 
