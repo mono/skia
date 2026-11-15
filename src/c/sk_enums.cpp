@@ -25,6 +25,7 @@
 #include "include/core/SkTypeface.h"
 #include "include/core/SkTileMode.h"
 #include "include/core/SkVertices.h"
+#include "include/core/SkMesh.h"
 #include "include/effects/Sk1DPathEffect.h"
 #include "include/effects/SkBlurMaskFilter.h"
 #include "include/effects/SkHighContrastFilter.h"
@@ -405,6 +406,27 @@ static_assert ((int)0                                                           
 static_assert ((int)SkCanvas::SaveLayerFlagsSet::kPreserveLCDText_SaveLayerFlag    == (int)PRESERVE_LCD_TEXT_SK_CANVAS_SAVELAYERREC_FLAGS,          ASSERT_MSG(SkCanvas::SaveLayerFlagsSet, sk_canvas_savelayerrec_flags_t));
 static_assert ((int)SkCanvas::SaveLayerFlagsSet::kInitWithPrevious_SaveLayerFlag   == (int)INITIALIZE_WITH_PREVIOUS_SK_CANVAS_SAVELAYERREC_FLAGS,   ASSERT_MSG(SkCanvas::SaveLayerFlagsSet, sk_canvas_savelayerrec_flags_t));
 static_assert ((int)SkCanvas::SaveLayerFlagsSet::kF16ColorType                     == (int)F16_COLOR_TYPE_SK_CANVAS_SAVELAYERREC_FLAGS,             ASSERT_MSG(SkCanvas::SaveLayerFlagsSet, sk_canvas_savelayerrec_flags_t));
+
+// sk_mesh_mode_t
+static_assert ((int)SkMesh::Mode::kTriangles       == (int)TRIANGLES_SK_MESH_MODE,        ASSERT_MSG(SkMesh::Mode, sk_mesh_mode_t));
+static_assert ((int)SkMesh::Mode::kTriangleStrip   == (int)TRIANGLE_STRIP_SK_MESH_MODE,   ASSERT_MSG(SkMesh::Mode, sk_mesh_mode_t));
+
+// sk_meshspecification_attribute_type_t
+static_assert ((int)SkMeshSpecification::Attribute::Type::kFloat          == (int)FLOAT_SK_MESHSPECIFICATION_ATTRIBUTE_TYPE,          ASSERT_MSG(SkMeshSpecification::Attribute::Type, sk_meshspecification_attribute_type_t));
+static_assert ((int)SkMeshSpecification::Attribute::Type::kFloat2         == (int)FLOAT2_SK_MESHSPECIFICATION_ATTRIBUTE_TYPE,         ASSERT_MSG(SkMeshSpecification::Attribute::Type, sk_meshspecification_attribute_type_t));
+static_assert ((int)SkMeshSpecification::Attribute::Type::kFloat3         == (int)FLOAT3_SK_MESHSPECIFICATION_ATTRIBUTE_TYPE,         ASSERT_MSG(SkMeshSpecification::Attribute::Type, sk_meshspecification_attribute_type_t));
+static_assert ((int)SkMeshSpecification::Attribute::Type::kFloat4         == (int)FLOAT4_SK_MESHSPECIFICATION_ATTRIBUTE_TYPE,         ASSERT_MSG(SkMeshSpecification::Attribute::Type, sk_meshspecification_attribute_type_t));
+static_assert ((int)SkMeshSpecification::Attribute::Type::kUByte4_unorm   == (int)UBYTE4_UNORM_SK_MESHSPECIFICATION_ATTRIBUTE_TYPE,   ASSERT_MSG(SkMeshSpecification::Attribute::Type, sk_meshspecification_attribute_type_t));
+
+// sk_meshspecification_varying_type_t
+static_assert ((int)SkMeshSpecification::Varying::Type::kFloat    == (int)FLOAT_SK_MESHSPECIFICATION_VARYING_TYPE,    ASSERT_MSG(SkMeshSpecification::Varying::Type, sk_meshspecification_varying_type_t));
+static_assert ((int)SkMeshSpecification::Varying::Type::kFloat2   == (int)FLOAT2_SK_MESHSPECIFICATION_VARYING_TYPE,   ASSERT_MSG(SkMeshSpecification::Varying::Type, sk_meshspecification_varying_type_t));
+static_assert ((int)SkMeshSpecification::Varying::Type::kFloat3   == (int)FLOAT3_SK_MESHSPECIFICATION_VARYING_TYPE,   ASSERT_MSG(SkMeshSpecification::Varying::Type, sk_meshspecification_varying_type_t));
+static_assert ((int)SkMeshSpecification::Varying::Type::kFloat4   == (int)FLOAT4_SK_MESHSPECIFICATION_VARYING_TYPE,   ASSERT_MSG(SkMeshSpecification::Varying::Type, sk_meshspecification_varying_type_t));
+static_assert ((int)SkMeshSpecification::Varying::Type::kHalf     == (int)HALF_SK_MESHSPECIFICATION_VARYING_TYPE,     ASSERT_MSG(SkMeshSpecification::Varying::Type, sk_meshspecification_varying_type_t));
+static_assert ((int)SkMeshSpecification::Varying::Type::kHalf2    == (int)HALF2_SK_MESHSPECIFICATION_VARYING_TYPE,    ASSERT_MSG(SkMeshSpecification::Varying::Type, sk_meshspecification_varying_type_t));
+static_assert ((int)SkMeshSpecification::Varying::Type::kHalf3    == (int)HALF3_SK_MESHSPECIFICATION_VARYING_TYPE,    ASSERT_MSG(SkMeshSpecification::Varying::Type, sk_meshspecification_varying_type_t));
+static_assert ((int)SkMeshSpecification::Varying::Type::kHalf4    == (int)HALF4_SK_MESHSPECIFICATION_VARYING_TYPE,    ASSERT_MSG(SkMeshSpecification::Varying::Type, sk_meshspecification_varying_type_t));
 
 #if defined(SK_GANESH)
 

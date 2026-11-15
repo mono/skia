@@ -249,7 +249,7 @@ void sk_canvas_draw_vertices(sk_canvas_t* ccanvas, const sk_vertices_t* vertices
 
 void sk_canvas_draw_mesh(sk_canvas_t* ccanvas, const sk_mesh_t* mesh, sk_blender_t* blender, const sk_paint_t* paint) {
     AsCanvas(ccanvas)->drawMesh(
-        AsMeshBuilder(mesh)->fMesh,
+        *AsMesh(mesh),
         blender ? sk_ref_sp(AsBlender(blender)) : nullptr,
         *AsPaint(paint));
 }

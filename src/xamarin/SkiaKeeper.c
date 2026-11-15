@@ -103,7 +103,7 @@ void** KeepSkiaCSymbols (void)
         (void*)sk_typeface_unref,
         (void*)sk_textblob_ref,
         (void*)sk_vertices_unref,
-        (void*)sk_mesh_new,
+        (void*)sk_mesh_delete,
         (void*)sk_graphics_init,
 
         // Animation
