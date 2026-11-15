@@ -10,6 +10,9 @@
 #include "include/core/SkData.h"
 #include "include/core/SkColorSpace.h"
 #include "include/effects/SkRuntimeEffect.h"
+#if defined(SK_GANESH)
+#include "include/gpu/ganesh/SkMeshGanesh.h"
+#endif
 
 #include "include/c/sk_mesh.h"
 #include "include/c/sk_types.h"
@@ -71,6 +74,10 @@ size_t sk_meshspecification_get_uniform_byte_size(const sk_meshspecification_t* 
     return AsMeshSpecification(spec)->uniformSize();
 }
 
+sk_colorspace_t* sk_meshspecification_get_colorspace(const sk_meshspecification_t* spec) {
+    return ToColorSpace(sk_ref_sp(AsMeshSpecification(spec)->colorSpace()).release());
+}
+
 size_t sk_meshspecification_get_uniforms_size(const sk_meshspecification_t* spec) {
     return AsMeshSpecification(spec)->uniforms().size();
 }
@@ -104,11 +111,27 @@ void sk_meshspecification_get_child_from_index(const sk_meshspecification_t* spe
 // Buffers
 
 sk_mesh_vertex_buffer_t* sk_mesh_vertex_buffer_make(const void* data, size_t size) {
+    if (!size)
+        return nullptr;
     return ToMeshVertexBuffer(SkMeshes::MakeVertexBuffer(data, size).release());
+}
+
+sk_mesh_vertex_buffer_t* sk_mesh_vertex_buffer_make_ganesh(gr_direct_context_t* context, const void* data, size_t size) {
+    if (!size)
+        return nullptr;
+    return SK_ONLY_GPU(ToMeshVertexBuffer(SkMeshes::MakeVertexBuffer(AsGrDirectContext(context), data, size).release()), nullptr);
 }
 
 sk_mesh_vertex_buffer_t* sk_mesh_vertex_buffer_copy(const sk_mesh_vertex_buffer_t* buffer) {
     return ToMeshVertexBuffer(SkMeshes::CopyVertexBuffer(sk_ref_sp(AsMeshVertexBuffer(buffer))).release());
+}
+
+sk_mesh_vertex_buffer_t* sk_mesh_vertex_buffer_copy_ganesh(gr_direct_context_t* context, const sk_mesh_vertex_buffer_t* buffer) {
+    return SK_ONLY_GPU(ToMeshVertexBuffer(SkMeshes::CopyVertexBuffer(AsGrDirectContext(context), sk_ref_sp(AsMeshVertexBuffer(buffer))).release()), nullptr);
+}
+
+bool sk_mesh_vertex_buffer_update(sk_mesh_vertex_buffer_t* buffer, gr_direct_context_t* context, const void* data, size_t offset, size_t size) {
+    return AsMeshVertexBuffer(buffer)->update(SK_ONLY_GPU(AsGrDirectContext(context), nullptr), data, offset, size);
 }
 
 size_t sk_mesh_vertex_buffer_get_size(const sk_mesh_vertex_buffer_t* buffer) {
@@ -116,108 +139,141 @@ size_t sk_mesh_vertex_buffer_get_size(const sk_mesh_vertex_buffer_t* buffer) {
 }
 
 sk_mesh_index_buffer_t* sk_mesh_index_buffer_make(const void* data, size_t size) {
+    if (!size)
+        return nullptr;
     return ToMeshIndexBuffer(SkMeshes::MakeIndexBuffer(data, size).release());
+}
+
+sk_mesh_index_buffer_t* sk_mesh_index_buffer_make_ganesh(gr_direct_context_t* context, const void* data, size_t size) {
+    if (!size)
+        return nullptr;
+    return SK_ONLY_GPU(ToMeshIndexBuffer(SkMeshes::MakeIndexBuffer(AsGrDirectContext(context), data, size).release()), nullptr);
 }
 
 sk_mesh_index_buffer_t* sk_mesh_index_buffer_copy(const sk_mesh_index_buffer_t* buffer) {
     return ToMeshIndexBuffer(SkMeshes::CopyIndexBuffer(sk_ref_sp(AsMeshIndexBuffer(buffer))).release());
 }
 
+sk_mesh_index_buffer_t* sk_mesh_index_buffer_copy_ganesh(gr_direct_context_t* context, const sk_mesh_index_buffer_t* buffer) {
+    return SK_ONLY_GPU(ToMeshIndexBuffer(SkMeshes::CopyIndexBuffer(AsGrDirectContext(context), sk_ref_sp(AsMeshIndexBuffer(buffer))).release()), nullptr);
+}
+
+bool sk_mesh_index_buffer_update(sk_mesh_index_buffer_t* buffer, gr_direct_context_t* context, const void* data, size_t offset, size_t size) {
+    return AsMeshIndexBuffer(buffer)->update(SK_ONLY_GPU(AsGrDirectContext(context), nullptr), data, offset, size);
+}
+
 size_t sk_mesh_index_buffer_get_size(const sk_mesh_index_buffer_t* buffer) {
     return AsMeshIndexBuffer(buffer)->size();
 }
 
-// SkMesh — builder pattern
+// SkMesh
 
-sk_mesh_t* sk_mesh_new(void) {
-    return ToMeshBuilder(new SkMeshBuilder());
-}
-
-void sk_mesh_delete(sk_mesh_t* mesh) {
-    delete AsMeshBuilder(mesh);
-}
-
-void sk_mesh_set_spec(sk_mesh_t* mesh, sk_meshspecification_t* spec) {
-    AsMeshBuilder(mesh)->fSpec = sk_ref_sp(AsMeshSpecification(spec));
-    AsMeshBuilder(mesh)->fValidated = false;
-}
-
-void sk_mesh_set_mode(sk_mesh_t* mesh, sk_mesh_mode_t mode) {
-    AsMeshBuilder(mesh)->fMode = (SkMesh::Mode)mode;
-    AsMeshBuilder(mesh)->fValidated = false;
-}
-
-void sk_mesh_set_vertex_buffer(sk_mesh_t* mesh, sk_mesh_vertex_buffer_t* vb, size_t vertexCount, size_t vertexOffset) {
-    AsMeshBuilder(mesh)->fVB = sk_ref_sp(AsMeshVertexBuffer(vb));
-    AsMeshBuilder(mesh)->fVCount = vertexCount;
-    AsMeshBuilder(mesh)->fVOffset = vertexOffset;
-    AsMeshBuilder(mesh)->fValidated = false;
-}
-
-void sk_mesh_set_index_buffer(sk_mesh_t* mesh, sk_mesh_index_buffer_t* ib, size_t indexCount, size_t indexOffset) {
-    AsMeshBuilder(mesh)->fIB = ib ? sk_ref_sp(AsMeshIndexBuffer(ib)) : nullptr;
-    AsMeshBuilder(mesh)->fICount = indexCount;
-    AsMeshBuilder(mesh)->fIOffset = indexOffset;
-    AsMeshBuilder(mesh)->fValidated = false;
-}
-
-void sk_mesh_set_uniforms(sk_mesh_t* mesh, sk_data_t* uniforms) {
-    AsMeshBuilder(mesh)->fUniforms = uniforms ? sk_ref_sp(AsData(uniforms)) : nullptr;
-    AsMeshBuilder(mesh)->fValidated = false;
-}
-
-void sk_mesh_set_children(sk_mesh_t* mesh, sk_flattenable_t** children, size_t childCount) {
-    auto& vec = AsMeshBuilder(mesh)->fChildren;
-    vec.resize(childCount);
+static std::vector<SkRuntimeEffect::ChildPtr> make_children(sk_flattenable_t** children, size_t childCount) {
+    std::vector<SkRuntimeEffect::ChildPtr> vec(childCount);
     for (size_t i = 0; i < childCount; i++) {
         vec[i] = sk_ref_sp(AsFlattenable(children[i]));
     }
-    AsMeshBuilder(mesh)->fValidated = false;
+    return vec;
 }
 
-void sk_mesh_set_bounds(sk_mesh_t* mesh, const sk_rect_t* bounds) {
-    AsMeshBuilder(mesh)->fBounds = *AsRect(bounds);
-    AsMeshBuilder(mesh)->fValidated = false;
-}
+sk_mesh_t* sk_mesh_make(
+    sk_meshspecification_t* spec,
+    sk_mesh_mode_t mode,
+    sk_mesh_vertex_buffer_t* vb,
+    size_t vertexCount,
+    size_t vertexOffset,
+    const sk_data_t* uniforms,
+    sk_flattenable_t** children,
+    size_t childCount,
+    const sk_rect_t* bounds,
+    sk_string_t* error) {
 
-bool sk_mesh_validate(sk_mesh_t* mesh, sk_string_t* error) {
-    auto builder = AsMeshBuilder(mesh);
-    SkMesh::Result result;
-
-    if (builder->fIB) {
-        result = SkMesh::MakeIndexed(
-            builder->fSpec,
-            builder->fMode,
-            builder->fVB,
-            builder->fVCount,
-            builder->fVOffset,
-            builder->fIB,
-            builder->fICount,
-            builder->fIOffset,
-            builder->fUniforms,
-            SkSpan(builder->fChildren.data(), builder->fChildren.size()),
-            builder->fBounds);
-    } else {
-        result = SkMesh::Make(
-            builder->fSpec,
-            builder->fMode,
-            builder->fVB,
-            builder->fVCount,
-            builder->fVOffset,
-            builder->fUniforms,
-            SkSpan(builder->fChildren.data(), builder->fChildren.size()),
-            builder->fBounds);
-    }
+    auto childVec = make_children(children, childCount);
+    auto result = SkMesh::Make(
+        sk_ref_sp(AsMeshSpecification(spec)),
+        (SkMesh::Mode)mode,
+        sk_ref_sp(AsMeshVertexBuffer(vb)),
+        vertexCount,
+        vertexOffset,
+        uniforms ? sk_ref_sp(AsData(uniforms)) : SkData::MakeEmpty(),
+        SkSpan(childVec.data(), childVec.size()),
+        *AsRect(bounds));
 
     if (error && result.error.size() > 0)
         AsString(error)->swap(result.error);
 
-    builder->fMesh = std::move(result.mesh);
-    builder->fValidated = builder->fMesh.isValid();
-    return builder->fValidated;
+    if (!result.mesh.isValid())
+        return nullptr;
+
+    return ToMesh(new SkMesh(std::move(result.mesh)));
+}
+
+sk_mesh_t* sk_mesh_make_indexed(
+    sk_meshspecification_t* spec,
+    sk_mesh_mode_t mode,
+    sk_mesh_vertex_buffer_t* vb,
+    size_t vertexCount,
+    size_t vertexOffset,
+    sk_mesh_index_buffer_t* ib,
+    size_t indexCount,
+    size_t indexOffset,
+    const sk_data_t* uniforms,
+    sk_flattenable_t** children,
+    size_t childCount,
+    const sk_rect_t* bounds,
+    sk_string_t* error) {
+
+    auto childVec = make_children(children, childCount);
+    auto result = SkMesh::MakeIndexed(
+        sk_ref_sp(AsMeshSpecification(spec)),
+        (SkMesh::Mode)mode,
+        sk_ref_sp(AsMeshVertexBuffer(vb)),
+        vertexCount,
+        vertexOffset,
+        sk_ref_sp(AsMeshIndexBuffer(ib)),
+        indexCount,
+        indexOffset,
+        uniforms ? sk_ref_sp(AsData(uniforms)) : SkData::MakeEmpty(),
+        SkSpan(childVec.data(), childVec.size()),
+        *AsRect(bounds));
+
+    if (error && result.error.size() > 0)
+        AsString(error)->swap(result.error);
+
+    if (!result.mesh.isValid())
+        return nullptr;
+
+    return ToMesh(new SkMesh(std::move(result.mesh)));
+}
+
+void sk_mesh_delete(sk_mesh_t* mesh) {
+    delete AsMesh(mesh);
 }
 
 bool sk_mesh_get_is_valid(const sk_mesh_t* mesh) {
-    return AsMeshBuilder(const_cast<sk_mesh_t*>(mesh))->fValidated &&
-           AsMeshBuilder(const_cast<sk_mesh_t*>(mesh))->fMesh.isValid();
+    return AsMesh(mesh)->isValid();
+}
+
+sk_mesh_mode_t sk_mesh_get_mode(const sk_mesh_t* mesh) {
+    return (sk_mesh_mode_t)AsMesh(mesh)->mode();
+}
+
+size_t sk_mesh_get_vertex_count(const sk_mesh_t* mesh) {
+    return AsMesh(mesh)->vertexCount();
+}
+
+size_t sk_mesh_get_vertex_offset(const sk_mesh_t* mesh) {
+    return AsMesh(mesh)->vertexOffset();
+}
+
+size_t sk_mesh_get_index_count(const sk_mesh_t* mesh) {
+    return AsMesh(mesh)->indexCount();
+}
+
+size_t sk_mesh_get_index_offset(const sk_mesh_t* mesh) {
+    return AsMesh(mesh)->indexOffset();
+}
+
+void sk_mesh_get_bounds(const sk_mesh_t* mesh, sk_rect_t* bounds) {
+    *bounds = ToRect(AsMesh(mesh)->bounds());
 }
