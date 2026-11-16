@@ -1204,6 +1204,31 @@ typedef struct {
     const char* fName;
 } sk_meshspecification_varying_t;
 
+typedef struct {
+    sk_mesh_mode_t fMode;
+    sk_mesh_vertex_buffer_t* fVB;
+    size_t fVCount;
+    size_t fVOffset;
+    const sk_data_t* fUniforms;
+    sk_flattenable_t** fChildren;
+    size_t fChildCount;
+    sk_rect_t fBounds;
+} sk_mesh_make_args_t;
+
+typedef struct {
+    sk_mesh_mode_t fMode;
+    sk_mesh_vertex_buffer_t* fVB;
+    size_t fVCount;
+    size_t fVOffset;
+    sk_mesh_index_buffer_t* fIB;
+    size_t fICount;
+    size_t fIOffset;
+    const sk_data_t* fUniforms;
+    sk_flattenable_t** fChildren;
+    size_t fChildCount;
+    sk_rect_t fBounds;
+} sk_mesh_make_indexed_args_t;
+
 /*
  * Skottie Animation
  */

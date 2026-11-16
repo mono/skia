@@ -168,10 +168,9 @@ size_t sk_mesh_index_buffer_get_size(const sk_mesh_index_buffer_t* buffer) {
 
 // SkMesh
 
-static std::vector<SkRuntimeEffect::ChildPtr> make_children(const sk_meshspecification_t* spec, sk_flattenable_t** children) {
-    if (!spec || !children)
+static std::vector<SkRuntimeEffect::ChildPtr> make_children(sk_flattenable_t** children, size_t childCount) {
+    if (!children || !childCount)
         return {};
-    size_t childCount = AsMeshSpecification(spec)->children().size();
     std::vector<SkRuntimeEffect::ChildPtr> vec(childCount);
     for (size_t i = 0; i < childCount; i++) {
         vec[i] = sk_ref_sp(AsFlattenable(children[i]));
@@ -181,25 +180,22 @@ static std::vector<SkRuntimeEffect::ChildPtr> make_children(const sk_meshspecifi
 
 sk_mesh_t* sk_mesh_make(
     sk_meshspecification_t* spec,
-    sk_mesh_mode_t mode,
-    sk_mesh_vertex_buffer_t* vb,
-    size_t vertexCount,
-    size_t vertexOffset,
-    const sk_data_t* uniforms,
-    sk_flattenable_t** children,
-    const sk_rect_t* bounds,
+    const sk_mesh_make_args_t* args,
     sk_string_t* error) {
 
-    auto childVec = make_children(spec, children);
+    if (!args)
+        return nullptr;
+
+    auto childVec = make_children(args->fChildren, args->fChildCount);
     auto result = SkMesh::Make(
         sk_ref_sp(AsMeshSpecification(spec)),
-        (SkMesh::Mode)mode,
-        sk_ref_sp(AsMeshVertexBuffer(vb)),
-        vertexCount,
-        vertexOffset,
-        uniforms ? sk_ref_sp(AsData(uniforms)) : SkData::MakeEmpty(),
+        (SkMesh::Mode)args->fMode,
+        sk_ref_sp(AsMeshVertexBuffer(args->fVB)),
+        args->fVCount,
+        args->fVOffset,
+        args->fUniforms ? sk_ref_sp(AsData(args->fUniforms)) : SkData::MakeEmpty(),
         SkSpan(childVec.data(), childVec.size()),
-        *AsRect(bounds));
+        AsRect(args->fBounds));
 
     if (error && result.error.size() > 0)
         AsString(error)->swap(result.error);
@@ -212,31 +208,25 @@ sk_mesh_t* sk_mesh_make(
 
 sk_mesh_t* sk_mesh_make_indexed(
     sk_meshspecification_t* spec,
-    sk_mesh_mode_t mode,
-    sk_mesh_vertex_buffer_t* vb,
-    size_t vertexCount,
-    size_t vertexOffset,
-    sk_mesh_index_buffer_t* ib,
-    size_t indexCount,
-    size_t indexOffset,
-    const sk_data_t* uniforms,
-    sk_flattenable_t** children,
-    const sk_rect_t* bounds,
+    const sk_mesh_make_indexed_args_t* args,
     sk_string_t* error) {
 
-    auto childVec = make_children(spec, children);
+    if (!args)
+        return nullptr;
+
+    auto childVec = make_children(args->fChildren, args->fChildCount);
     auto result = SkMesh::MakeIndexed(
         sk_ref_sp(AsMeshSpecification(spec)),
-        (SkMesh::Mode)mode,
-        sk_ref_sp(AsMeshVertexBuffer(vb)),
-        vertexCount,
-        vertexOffset,
-        sk_ref_sp(AsMeshIndexBuffer(ib)),
-        indexCount,
-        indexOffset,
-        uniforms ? sk_ref_sp(AsData(uniforms)) : SkData::MakeEmpty(),
+        (SkMesh::Mode)args->fMode,
+        sk_ref_sp(AsMeshVertexBuffer(args->fVB)),
+        args->fVCount,
+        args->fVOffset,
+        sk_ref_sp(AsMeshIndexBuffer(args->fIB)),
+        args->fICount,
+        args->fIOffset,
+        args->fUniforms ? sk_ref_sp(AsData(args->fUniforms)) : SkData::MakeEmpty(),
         SkSpan(childVec.data(), childVec.size()),
-        *AsRect(bounds));
+        AsRect(args->fBounds));
 
     if (error && result.error.size() > 0)
         AsString(error)->swap(result.error);

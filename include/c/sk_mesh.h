@@ -55,26 +55,11 @@ SK_C_API size_t sk_mesh_index_buffer_get_size(const sk_mesh_index_buffer_t* buff
 
 SK_C_API sk_mesh_t* sk_mesh_make(
     sk_meshspecification_t* spec,
-    sk_mesh_mode_t mode,
-    sk_mesh_vertex_buffer_t* vb,
-    size_t vertexCount,
-    size_t vertexOffset,
-    const sk_data_t* uniforms,
-    sk_flattenable_t** children,
-    const sk_rect_t* bounds,
+    const sk_mesh_make_args_t* args,
     sk_string_t* error);
 SK_C_API sk_mesh_t* sk_mesh_make_indexed(
     sk_meshspecification_t* spec,
-    sk_mesh_mode_t mode,
-    sk_mesh_vertex_buffer_t* vb,
-    size_t vertexCount,
-    size_t vertexOffset,
-    sk_mesh_index_buffer_t* ib,
-    size_t indexCount,
-    size_t indexOffset,
-    const sk_data_t* uniforms,
-    sk_flattenable_t** children,
-    const sk_rect_t* bounds,
+    const sk_mesh_make_indexed_args_t* args,
     sk_string_t* error);
 SK_C_API void sk_mesh_delete(sk_mesh_t* mesh);
 SK_C_API bool sk_mesh_get_is_valid(const sk_mesh_t* mesh);
