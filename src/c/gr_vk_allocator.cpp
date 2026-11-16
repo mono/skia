@@ -27,9 +27,11 @@
 #include "src/c/sk_types_priv.h"
 
 // Translate the C-ABI options into a VulkanBackendContext shaped for
-// VulkanMemoryAllocators::Make. Only the fields VMA reads are set — everything
-// else (queue, graphics queue index, memory allocator itself) is irrelevant to
-// allocator construction and left default-initialised.
+// VulkanMemoryAllocators::Make. That factory asserts fInstance, fPhysicalDevice,
+// fDevice, fQueue and fGetProc are all set, so every one of them is populated here
+// even though the queue is not currently read during allocator construction: the
+// assert is a precondition, and leaving it unmet aborts Vulkan-enabled debug builds
+// (mono/SkiaSharp#4585 review). Everything else is left default-initialised.
 static skgpu::VulkanBackendContext ToAllocatorBackendContext(
     const gr_vk_allocator_default_options_t& opts)
 {
@@ -37,6 +39,7 @@ static skgpu::VulkanBackendContext ToAllocatorBackendContext(
     ctx.fInstance       = AsVkInstance(opts.fInstance);
     ctx.fPhysicalDevice = AsVkPhysicalDevice(opts.fPhysicalDevice);
     ctx.fDevice         = AsVkDevice(opts.fDevice);
+    ctx.fQueue          = AsVkQueue(opts.fQueue);
     ctx.fMaxAPIVersion  = opts.fMaxAPIVersion;
     if (opts.fGetProc) {
         // Copy the proc + userData by value so the lambda outlives the caller's
@@ -57,8 +60,10 @@ static skgpu::VulkanBackendContext ToAllocatorBackendContext(
 extern "C" SK_C_API gr_vk_memory_allocator_t* gr_vk_memory_allocator_make_default(
     const gr_vk_allocator_default_options_t options)
 {
+    // Mirror every SkASSERT in VulkanMemoryAllocators::Make so invalid input returns
+    // null in release builds too, instead of only aborting in debug ones.
     if (!options.fInstance || !options.fPhysicalDevice ||
-        !options.fDevice || !options.fGetProc) {
+        !options.fDevice || !options.fQueue || !options.fGetProc) {
         return nullptr;
     }
 

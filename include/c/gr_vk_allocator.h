@@ -27,6 +27,10 @@ typedef struct {
     vk_instance_t*        fInstance;
     vk_physical_device_t* fPhysicalDevice;
     vk_device_t*          fDevice;
+    // Required. skgpu::VulkanMemoryAllocators::Make asserts fQueue != VK_NULL_HANDLE as a
+    // precondition (it does not currently read it, but the contract is enforced in debug
+    // builds and may be relied on in future). Pass the queue the Context will use.
+    vk_queue_t*           fQueue;
     uint32_t              fMaxAPIVersion;
     gr_vk_get_proc        fGetProc;               // required
     void*                 fGetProcUserData;
