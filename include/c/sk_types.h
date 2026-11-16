@@ -1209,7 +1209,8 @@ typedef struct {
     sk_mesh_vertex_buffer_t* fVB;
     size_t fVCount;
     size_t fVOffset;
-    const sk_data_t* fUniforms;
+    const void* fUniformData;
+    size_t fUniformSize;
     sk_flattenable_t** fChildren;
     size_t fChildCount;
     sk_rect_t fBounds;
@@ -1223,7 +1224,8 @@ typedef struct {
     sk_mesh_index_buffer_t* fIB;
     size_t fICount;
     size_t fIOffset;
-    const sk_data_t* fUniforms;
+    const void* fUniformData;
+    size_t fUniformSize;
     sk_flattenable_t** fChildren;
     size_t fChildCount;
     sk_rect_t fBounds;

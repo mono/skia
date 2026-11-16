@@ -178,6 +178,12 @@ static std::vector<SkRuntimeEffect::ChildPtr> make_children(sk_flattenable_t** c
     return vec;
 }
 
+static sk_sp<const SkData> make_uniforms(const void* data, size_t size) {
+    if (!data || !size)
+        return SkData::MakeEmpty();
+    return SkData::MakeWithCopy(data, size);
+}
+
 sk_mesh_t* sk_mesh_make(
     sk_meshspecification_t* spec,
     const sk_mesh_make_args_t* args,
@@ -193,7 +199,7 @@ sk_mesh_t* sk_mesh_make(
         sk_ref_sp(AsMeshVertexBuffer(args->fVB)),
         args->fVCount,
         args->fVOffset,
-        args->fUniforms ? sk_ref_sp(AsData(args->fUniforms)) : SkData::MakeEmpty(),
+        make_uniforms(args->fUniformData, args->fUniformSize),
         SkSpan(childVec.data(), childVec.size()),
         AsRect(args->fBounds));
 
@@ -224,7 +230,7 @@ sk_mesh_t* sk_mesh_make_indexed(
         sk_ref_sp(AsMeshIndexBuffer(args->fIB)),
         args->fICount,
         args->fIOffset,
-        args->fUniforms ? sk_ref_sp(AsData(args->fUniforms)) : SkData::MakeEmpty(),
+        make_uniforms(args->fUniformData, args->fUniformSize),
         SkSpan(childVec.data(), childVec.size()),
         AsRect(args->fBounds));
 
