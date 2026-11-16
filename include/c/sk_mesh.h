@@ -61,7 +61,6 @@ SK_C_API sk_mesh_t* sk_mesh_make(
     size_t vertexOffset,
     const sk_data_t* uniforms,
     sk_flattenable_t** children,
-    size_t childCount,
     const sk_rect_t* bounds,
     sk_string_t* error);
 SK_C_API sk_mesh_t* sk_mesh_make_indexed(
@@ -75,7 +74,6 @@ SK_C_API sk_mesh_t* sk_mesh_make_indexed(
     size_t indexOffset,
     const sk_data_t* uniforms,
     sk_flattenable_t** children,
-    size_t childCount,
     const sk_rect_t* bounds,
     sk_string_t* error);
 SK_C_API void sk_mesh_delete(sk_mesh_t* mesh);
