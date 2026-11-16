@@ -30,6 +30,13 @@ SK_C_API gr_direct_context_t* gr_direct_context_make_gl(const gr_glinterface_t* 
 SK_C_API gr_direct_context_t* gr_direct_context_make_gl_with_options(const gr_glinterface_t* glInterface, const gr_context_options_t* options);
 SK_C_API gr_direct_context_t* gr_direct_context_make_vulkan(const gr_vk_backendcontext_t vkBackendContext);
 SK_C_API gr_direct_context_t* gr_direct_context_make_vulkan_with_options(const gr_vk_backendcontext_t vkBackendContext, const gr_context_options_t* options);
+
+// Revision 2 of the Vulkan entry points, taking gr_vk_backendcontext_v2_t.
+// The two functions above are frozen: they take the original struct by value, so
+// their layout is part of the ABI for every binary already built against them.
+// New backend-context fields (currently fDeviceLostHandler) are only visible here.
+SK_C_API gr_direct_context_t* gr_direct_context_make_vulkan_v2(const gr_vk_backendcontext_v2_t vkBackendContext);
+SK_C_API gr_direct_context_t* gr_direct_context_make_vulkan_v2_with_options(const gr_vk_backendcontext_v2_t vkBackendContext, const gr_context_options_t* options);
 SK_C_API gr_direct_context_t* gr_direct_context_make_metal(void* device, void* queue);
 SK_C_API gr_direct_context_t* gr_direct_context_make_metal_with_options(void* device, void* queue, const gr_context_options_t* options);
 SK_C_API gr_direct_context_t* gr_direct_context_make_direct3d(const gr_d3d_backendcontext_t d3dBackendContext);

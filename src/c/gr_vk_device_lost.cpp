@@ -71,21 +71,18 @@ extern "C" SK_C_API gr_vk_device_lost_handler_t* gr_vk_device_lost_handler_new(
     gr_vk_device_lost_proc proc, void* userData)
 {
     if (!proc) return nullptr;
+    // Intentionally never freed - see include/c/gr_vk_device_lost.h. Skia keeps a raw
+    // non-owning pointer to this and never signals when the last holder is gone.
     auto* handler = new gr_vk_device_lost_handler_t;
     handler->fProc = proc;
     handler->fUserData = userData;
     return handler;
 }
 
-extern "C" SK_C_API void gr_vk_device_lost_handler_delete(gr_vk_device_lost_handler_t* handler)
-{
-    delete handler;
-}
 
 #else  // !SK_VULKAN
 
 extern "C" SK_C_API gr_vk_device_lost_handler_t* gr_vk_device_lost_handler_new(
     gr_vk_device_lost_proc, void*) { return nullptr; }
-extern "C" SK_C_API void gr_vk_device_lost_handler_delete(gr_vk_device_lost_handler_t*) {}
 
 #endif  // SK_VULKAN

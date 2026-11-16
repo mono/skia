@@ -51,18 +51,21 @@ typedef struct {
 typedef void (*gr_vk_device_lost_proc)(void* userData, const gr_vk_device_lost_info_t* info);
 
 // Build a bridge object that routes Skia's device-lost callback to the caller's
-// proc + userData. Ownership: the returned handle is caller-owned; pass it to
-// gr_vk_backendcontext_t.fDeviceLostHandler / sk_graphite_vk_backend_context_init_t
-// .fDeviceLostHandler and, after the associated Context has been destroyed, free
-// it with gr_vk_device_lost_handler_delete. Skia stores the callback pointer
-// non-owning inside the Context, so the bridge must outlive the Context — do NOT
-// delete the handle before the Context is deleted.
+// proc + userData, and install it via gr_vk_backendcontext_v2_t.fDeviceLostHandler
+// or sk_graphite_vk_backend_context_init_v2_t.fDeviceLostHandler.
+//
+// Lifetime: the returned handle is NEVER freed, and there is deliberately no
+// delete/free entry point. Skia copies the pointer into GrVkGpu (Ganesh) and
+// VulkanSharedContext (Graphite) and stores it raw and non-owning; those objects
+// are themselves shared (a Graphite SharedContext outlives its Context whenever a
+// Recorder still references it) and Skia gives no notification when the last of
+// them goes away. There is therefore no point at which freeing the bridge is
+// provably safe, so it is treated as immortal - the same way a C++ embedder points
+// fDeviceLostContext at a long-lived object it never tears down while a context
+// lives. The cost is one small allocation per backend context that opts in.
 SK_C_API gr_vk_device_lost_handler_t* gr_vk_device_lost_handler_new(
     gr_vk_device_lost_proc proc,
     void* userData);
-
-SK_C_API void gr_vk_device_lost_handler_delete(
-    gr_vk_device_lost_handler_t* handler);
 
 SK_C_PLUS_PLUS_END_GUARD
 

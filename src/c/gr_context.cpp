@@ -108,6 +108,41 @@ gr_direct_context_t* gr_direct_context_make_vulkan_with_options(const gr_vk_back
     return SK_ONLY_VULKAN(ToGrDirectContext(GrDirectContexts::MakeVulkan(ctx, opts).release()), nullptr);
 }
 
+// Revision 2 of the Vulkan entry points. Identical to the originals except for the
+// struct revision they accept; the originals are frozen because they take the old
+// struct by value and their layout is baked into binaries already built against them.
+gr_direct_context_t* gr_direct_context_make_vulkan_v2(const gr_vk_backendcontext_v2_t vkBackendContext) {
+    SK_ONLY_VULKAN(
+        skgpu::VulkanBackendContext ctx = AsGrVkBackendContext(&vkBackendContext);
+        // m152 removed GrVkGpu's internal fallback that created a memory allocator when the
+        // caller did not supply one. Preserve the pre-m152 behaviour at the C API boundary so
+        // existing callers that pass no allocator continue to work.
+        if (!ctx.fMemoryAllocator) {
+            ctx.fMemoryAllocator = skgpu::VulkanMemoryAllocators::Make(ctx, skgpu::ThreadSafe::kNo);
+            if (!ctx.fMemoryAllocator) {
+                return nullptr;
+            }
+        })
+    return SK_ONLY_VULKAN(ToGrDirectContext(GrDirectContexts::MakeVulkan(ctx).release()), nullptr);
+}
+
+gr_direct_context_t* gr_direct_context_make_vulkan_v2_with_options(const gr_vk_backendcontext_v2_t vkBackendContext, const gr_context_options_t* options) {
+    SK_ONLY_VULKAN(
+        GrContextOptions opts;
+        if (options) {
+            opts = AsGrContextOptions(options);
+        }
+        skgpu::VulkanBackendContext ctx = AsGrVkBackendContext(&vkBackendContext);
+        // See gr_direct_context_make_vulkan: supply a default allocator when the caller omitted one.
+        if (!ctx.fMemoryAllocator) {
+            ctx.fMemoryAllocator = skgpu::VulkanMemoryAllocators::Make(ctx, skgpu::ThreadSafe::kNo);
+            if (!ctx.fMemoryAllocator) {
+                return nullptr;
+            }
+        })
+    return SK_ONLY_VULKAN(ToGrDirectContext(GrDirectContexts::MakeVulkan(ctx, opts).release()), nullptr);
+}
+
 gr_direct_context_t* gr_direct_context_make_metal(void* device, void* queue) {
     SK_ONLY_METAL(
         GrMtlBackendContext backendContext;

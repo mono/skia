@@ -494,10 +494,37 @@ static inline skgpu::VulkanBackendContext AsGrVkBackendContext(const gr_vk_backe
         };
     }
     ctx.fProtectedContext = context->fProtectedContext ? skgpu::Protected::kYes : skgpu::Protected::kNo;
-    // Device-lost bridge: caller-owned handle. Skia stores fDeviceLostContext raw
-    // non-owning, so the handle must outlive the Context and be freed by the caller
-    // via gr_vk_device_lost_handler_delete afterwards.
-    if (context->fDeviceLostHandler != nullptr) {
+    return ctx;
+}
+
+// Revision 2 overload. Deliberately NOT implemented by delegating to the v1 shim:
+// that one captures its `context` argument in the fGetProc lambda, so handing it a
+// pointer to a local temporary would leave the lambda dangling. Both overloads
+// capture the caller's own by-value parameter, which lives across the Make* call.
+static inline skgpu::VulkanBackendContext AsGrVkBackendContext(const gr_vk_backendcontext_v2_t* context) {
+    skgpu::VulkanBackendContext ctx;
+    ctx.fInstance = AsVkInstance(context->fInstance);
+    ctx.fPhysicalDevice = AsVkPhysicalDevice(context->fPhysicalDevice);
+    ctx.fDevice = AsVkDevice(context->fDevice);
+    ctx.fQueue = AsVkQueue(context->fQueue);
+    ctx.fGraphicsQueueIndex = context->fGraphicsQueueIndex;
+    ctx.fMaxAPIVersion = context->fMaxAPIVersion;
+    ctx.fVkExtensions = AsGrVkExtensions(context->fVkExtensions);
+    ctx.fDeviceFeatures = AsVkPhysicalDeviceFeatures(context->fDeviceFeatures);
+    ctx.fDeviceFeatures2 = AsVkPhysicalDeviceFeatures2(context->fDeviceFeatures2);
+    ctx.fMemoryAllocator = sk_ref_sp(AsGrVkMemoryAllocator(context->fMemoryAllocator));
+    if (context->fGetProc != nullptr) {
+        ctx.fGetProc = [context](const char* name, VkInstance instance, VkDevice device) -> PFN_vkVoidFunction {
+            return context->fGetProc(context->fGetProcUserData, name, ToVkInstance(instance), ToVkDevice(device));
+        };
+    }
+    ctx.fProtectedContext = context->fProtectedContext ? skgpu::Protected::kYes : skgpu::Protected::kNo;
+    // Device-lost bridge. Skia stores fDeviceLostContext as a raw non-owning void*;
+    // the bridge is never freed (see include/c/gr_vk_device_lost.h).
+    //
+    // Only read fields the caller's revision actually contains.
+    if (context->fStructSize >= sizeof(gr_vk_backendcontext_v2_t) &&
+        context->fDeviceLostHandler != nullptr) {
         ctx.fDeviceLostContext = context->fDeviceLostHandler;
         ctx.fDeviceLostProc = gr_vk_device_lost_thunk;
     }
