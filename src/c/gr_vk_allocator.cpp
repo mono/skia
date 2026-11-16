@@ -42,9 +42,14 @@ static skgpu::VulkanBackendContext ToAllocatorBackendContext(
     ctx.fQueue          = AsVkQueue(opts.fQueue);
     ctx.fMaxAPIVersion  = opts.fMaxAPIVersion;
     if (opts.fGetProc) {
-        // Copy the proc + userData by value so the lambda outlives the caller's
-        // options struct — the allocator holds onto fGetProc for the duration
-        // of its lifetime and calls it during teardown as well as setup.
+        // Copy the proc + userData by value so the lambda does not depend on the
+        // caller's options struct. fGetProc is only called during creation:
+        // VulkanMemoryAllocators::Make uses it to build a temporary VulkanInterface,
+        // and the VMA allocator copies the resolved function pointers into
+        // VmaVulkanFunctions (with vkGetInstanceProcAddr/vkGetDeviceProcAddr nulled)
+        // rather than retaining the getter. It is never called afterwards, including
+        // during teardown, which is why the managed wrapper can release its delegate
+        // GCHandle as soon as creation returns.
         gr_vk_get_proc getProc = opts.fGetProc;
         void* userData         = opts.fGetProcUserData;
         ctx.fGetProc = [getProc, userData](const char* name, VkInstance instance, VkDevice device) -> PFN_vkVoidFunction {
