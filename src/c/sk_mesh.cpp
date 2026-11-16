@@ -168,7 +168,10 @@ size_t sk_mesh_index_buffer_get_size(const sk_mesh_index_buffer_t* buffer) {
 
 // SkMesh
 
-static std::vector<SkRuntimeEffect::ChildPtr> make_children(sk_flattenable_t** children, size_t childCount) {
+static std::vector<SkRuntimeEffect::ChildPtr> make_children(const sk_meshspecification_t* spec, sk_flattenable_t** children) {
+    if (!spec || !children)
+        return {};
+    size_t childCount = AsMeshSpecification(spec)->children().size();
     std::vector<SkRuntimeEffect::ChildPtr> vec(childCount);
     for (size_t i = 0; i < childCount; i++) {
         vec[i] = sk_ref_sp(AsFlattenable(children[i]));
@@ -184,11 +187,10 @@ sk_mesh_t* sk_mesh_make(
     size_t vertexOffset,
     const sk_data_t* uniforms,
     sk_flattenable_t** children,
-    size_t childCount,
     const sk_rect_t* bounds,
     sk_string_t* error) {
 
-    auto childVec = make_children(children, childCount);
+    auto childVec = make_children(spec, children);
     auto result = SkMesh::Make(
         sk_ref_sp(AsMeshSpecification(spec)),
         (SkMesh::Mode)mode,
@@ -219,11 +221,10 @@ sk_mesh_t* sk_mesh_make_indexed(
     size_t indexOffset,
     const sk_data_t* uniforms,
     sk_flattenable_t** children,
-    size_t childCount,
     const sk_rect_t* bounds,
     sk_string_t* error) {
 
-    auto childVec = make_children(children, childCount);
+    auto childVec = make_children(spec, children);
     auto result = SkMesh::MakeIndexed(
         sk_ref_sp(AsMeshSpecification(spec)),
         (SkMesh::Mode)mode,
