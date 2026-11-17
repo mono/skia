@@ -7,6 +7,8 @@
 
 #include "src/gpu/graphite/mtl/MtlGraphicsPipeline.h"
 
+#include "include/gpu/ShaderErrorHandler.h"
+
 #include "include/gpu/graphite/TextureInfo.h"
 #include "include/gpu/graphite/mtl/MtlGraphiteTypes.h"
 #include "include/private/SkLog.h"
@@ -295,6 +297,8 @@ sk_sp<MtlGraphicsPipeline> MtlGraphicsPipeline::Make(
 
     PipelineInfo pipelineInfo{ *shaderInfo, pipelineCreationFlags,
                                pipelineKey.hash(), compilationID };
+    // Kept for the ShaderErrorHandler should the pipeline state be rejected after compiling.
+    std::string pipelineMSL = vsMSL.fText + "\n" + fsMSL.fText;
 #if defined(GPU_TEST_UTILS)
     pipelineInfo.fNativeVertexShader = std::move(vsMSL.fText);
     pipelineInfo.fNativeFragmentShader = std::move(fsMSL.fText);
@@ -302,6 +306,7 @@ sk_sp<MtlGraphicsPipeline> MtlGraphicsPipeline::Make(
 
    return Make(sharedContext,
                shaderInfo->pipelineLabel(),
+               pipelineMSL,
                pipelineInfo,
                {vsLibrary.get(), "vertexMain"},
                step->appendsVertices() ? MTLVertexStepFunctionPerVertex :
@@ -359,6 +364,7 @@ sk_sp<MtlGraphicsPipeline> MtlGraphicsPipeline::MakeLoadMSAAPipeline(
     // This is an internal shader, leave off filling out the test-utils shader code
     return Make(sharedContext,
                 pipelineLabel,
+                kLoadMSAAShaderText,
                 pipelineInfo,
                 {mtlLibrary.get(), "vertexMain"},
                 /*appendStepFunc=*/{},
@@ -373,6 +379,7 @@ sk_sp<MtlGraphicsPipeline> MtlGraphicsPipeline::MakeLoadMSAAPipeline(
 
 sk_sp<MtlGraphicsPipeline> MtlGraphicsPipeline::Make(const MtlSharedContext* sharedContext,
                                                      const std::string& label,
+                                                     const std::string& msl,
                                                      const PipelineInfo& pipelineInfo,
                                                      MSLFunction vertexMain,
                                                      MTLVertexStepFunction appendStepFunc,
@@ -430,6 +437,15 @@ sk_sp<MtlGraphicsPipeline> MtlGraphicsPipeline::Make(const MtlSharedContext* sha
                                                                     error:&error]);
     if (!pso) {
         SKIA_LOG_E("Render pipeline creation failure:\n%s", error.debugDescription.UTF8String);
+        // A shader can pass the MSL front-end compile yet still be rejected when the render
+        // pipeline state is created (e.g. framebuffer fetch on the iOS simulator, which fails
+        // here with "reading from a rendertarget is not supported" — mono/SkiaSharp#4555).
+        // Route the driver's error through the ShaderErrorHandler so it reaches the same
+        // diagnostic hook as MSL compile failures instead of only SkDebugf.
+        std::string diag = "newRenderPipelineStateWithDescriptor failed: ";
+        diag += error.debugDescription.UTF8String ? error.debugDescription.UTF8String : "(no error)";
+        sharedContext->caps()->shaderErrorHandler()->compileError(
+                msl.c_str(), diag.c_str(), /*shaderWasCached=*/false);
         return nullptr;
     }
 
