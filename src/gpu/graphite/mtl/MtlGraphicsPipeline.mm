@@ -297,6 +297,8 @@ sk_sp<MtlGraphicsPipeline> MtlGraphicsPipeline::Make(
 
     PipelineInfo pipelineInfo{ *shaderInfo, pipelineCreationFlags,
                                pipelineKey.hash(), compilationID };
+    // Kept for the ShaderErrorHandler should the pipeline state be rejected after compiling.
+    std::string pipelineMSL = vsMSL.fText + "\n" + fsMSL.fText;
 #if defined(GPU_TEST_UTILS)
     pipelineInfo.fNativeVertexShader = std::move(vsMSL.fText);
     pipelineInfo.fNativeFragmentShader = std::move(fsMSL.fText);
@@ -304,6 +306,7 @@ sk_sp<MtlGraphicsPipeline> MtlGraphicsPipeline::Make(
 
    return Make(sharedContext,
                shaderInfo->pipelineLabel(),
+               pipelineMSL,
                pipelineInfo,
                {vsLibrary.get(), "vertexMain"},
                step->appendsVertices() ? MTLVertexStepFunctionPerVertex :
@@ -361,6 +364,7 @@ sk_sp<MtlGraphicsPipeline> MtlGraphicsPipeline::MakeLoadMSAAPipeline(
     // This is an internal shader, leave off filling out the test-utils shader code
     return Make(sharedContext,
                 pipelineLabel,
+                kLoadMSAAShaderText,
                 pipelineInfo,
                 {mtlLibrary.get(), "vertexMain"},
                 /*appendStepFunc=*/{},
@@ -375,6 +379,7 @@ sk_sp<MtlGraphicsPipeline> MtlGraphicsPipeline::MakeLoadMSAAPipeline(
 
 sk_sp<MtlGraphicsPipeline> MtlGraphicsPipeline::Make(const MtlSharedContext* sharedContext,
                                                      const std::string& label,
+                                                     const std::string& msl,
                                                      const PipelineInfo& pipelineInfo,
                                                      MSLFunction vertexMain,
                                                      MTLVertexStepFunction appendStepFunc,
@@ -440,7 +445,7 @@ sk_sp<MtlGraphicsPipeline> MtlGraphicsPipeline::Make(const MtlSharedContext* sha
         std::string diag = "newRenderPipelineStateWithDescriptor failed: ";
         diag += error.debugDescription.UTF8String ? error.debugDescription.UTF8String : "(no error)";
         sharedContext->caps()->shaderErrorHandler()->compileError(
-                label.c_str(), diag.c_str(), /*shaderWasCached=*/false);
+                msl.c_str(), diag.c_str(), /*shaderWasCached=*/false);
         return nullptr;
     }
 
