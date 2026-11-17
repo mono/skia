@@ -25,6 +25,7 @@
 #include "src/c/sk_types_priv.h"
 #include "src/gpu/graphite/Caps.h"
 #include "src/gpu/graphite/RecorderPriv.h"
+#include "src/gpu/graphite/RendererProvider.h"
 #include "src/gpu/graphite/TextureFormat.h"
 #include "src/gpu/graphite/TextureInfoPriv.h"
 
@@ -365,10 +366,17 @@ extern "C" SK_C_API sk_canvas_t* sk_graphite_recorder_make_deferred_canvas(
         targetInfo->backend() != recorder->backend()) {
         return nullptr;
     }
-    // makeDeferredCanvas dereferences its Device even when DrawContext::Make rejects the target.
-    if (!recorder->priv().caps()->isRenderable(*targetInfo) ||
+    // makeDeferredCanvas dereferences its Device even when Device::Make rejects the target.
+    const auto* caps = recorder->priv().caps();
+    if (!caps->isRenderable(*targetInfo) ||
         !gr::AreColorTypeAndFormatCompatible(
                 info.colorType(), gr::TextureInfoPriv::ViewFormat(*targetInfo))) {
+        return nullptr;
+    }
+    const auto strategy = recorder->priv().rendererProvider()->pathRendererStrategy();
+    if ((strategy == gr::PathRendererStrategy::kTessellation ||
+         strategy == gr::PathRendererStrategy::kTessellationAndSmallAtlas) &&
+        caps->getCompatibleMSAASampleCount(*targetInfo) <= gr::SampleCount::k1) {
         return nullptr;
     }
     return ToCanvas(recorder->makeDeferredCanvas(info, *targetInfo));
