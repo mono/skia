@@ -1162,6 +1162,76 @@ typedef struct {
 } sk_canvas_savelayerrec_t;
 
 /*
+ * Mesh
+ */
+typedef struct sk_meshspecification_t sk_meshspecification_t;
+typedef struct sk_mesh_t sk_mesh_t;
+typedef struct sk_mesh_vertex_buffer_t sk_mesh_vertex_buffer_t;
+typedef struct sk_mesh_index_buffer_t sk_mesh_index_buffer_t;
+
+typedef enum {
+    TRIANGLES_SK_MESH_MODE,
+    TRIANGLE_STRIP_SK_MESH_MODE,
+} sk_mesh_mode_t;
+
+typedef enum {
+    FLOAT_SK_MESHSPECIFICATION_ATTRIBUTE_TYPE,
+    FLOAT2_SK_MESHSPECIFICATION_ATTRIBUTE_TYPE,
+    FLOAT3_SK_MESHSPECIFICATION_ATTRIBUTE_TYPE,
+    FLOAT4_SK_MESHSPECIFICATION_ATTRIBUTE_TYPE,
+    UBYTE4_UNORM_SK_MESHSPECIFICATION_ATTRIBUTE_TYPE,
+} sk_meshspecification_attribute_type_t;
+
+typedef enum {
+    FLOAT_SK_MESHSPECIFICATION_VARYING_TYPE,
+    FLOAT2_SK_MESHSPECIFICATION_VARYING_TYPE,
+    FLOAT3_SK_MESHSPECIFICATION_VARYING_TYPE,
+    FLOAT4_SK_MESHSPECIFICATION_VARYING_TYPE,
+    HALF_SK_MESHSPECIFICATION_VARYING_TYPE,
+    HALF2_SK_MESHSPECIFICATION_VARYING_TYPE,
+    HALF3_SK_MESHSPECIFICATION_VARYING_TYPE,
+    HALF4_SK_MESHSPECIFICATION_VARYING_TYPE,
+} sk_meshspecification_varying_type_t;
+
+typedef struct {
+    sk_meshspecification_attribute_type_t fType;
+    size_t fOffset;
+    const char* fName;
+} sk_meshspecification_attribute_t;
+
+typedef struct {
+    sk_meshspecification_varying_type_t fType;
+    const char* fName;
+} sk_meshspecification_varying_t;
+
+typedef struct {
+    sk_mesh_mode_t fMode;
+    sk_mesh_vertex_buffer_t* fVB;
+    size_t fVCount;
+    size_t fVOffset;
+    const void* fUniformData;
+    size_t fUniformSize;
+    sk_flattenable_t** fChildren;
+    size_t fChildCount;
+    sk_rect_t fBounds;
+} sk_mesh_make_args_t;
+
+typedef struct {
+    sk_mesh_mode_t fMode;
+    sk_mesh_vertex_buffer_t* fVB;
+    size_t fVCount;
+    size_t fVOffset;
+    sk_mesh_index_buffer_t* fIB;
+    size_t fICount;
+    size_t fIOffset;
+    const void* fUniformData;
+    size_t fUniformSize;
+    sk_flattenable_t** fChildren;
+    size_t fChildCount;
+    sk_rect_t fBounds;
+} sk_mesh_make_indexed_args_t;
+
+/*
  * Skottie Animation
  */
 typedef struct skottie_animation_t skottie_animation_t;

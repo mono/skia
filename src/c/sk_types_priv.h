@@ -162,6 +162,12 @@ DEF_CLASS_MAP(SkTraceMemoryDump, sk_tracememorydump_t, TraceMemoryDump)
 DEF_CLASS_MAP(SkTypeface, sk_typeface_t, Typeface)
 DEF_CLASS_MAP(SkVertices, sk_vertices_t, Vertices)
 DEF_CLASS_MAP(SkWStream, sk_wstream_t, WStream)
+
+#include "include/core/SkMesh.h"
+DEF_CLASS_MAP(SkMeshSpecification, sk_meshspecification_t, MeshSpecification)
+DEF_CLASS_MAP(SkMesh, sk_mesh_t, Mesh)
+DEF_MAP_WITH_NS(SkMesh, VertexBuffer, sk_mesh_vertex_buffer_t, MeshVertexBuffer)
+DEF_MAP_WITH_NS(SkMesh, IndexBuffer, sk_mesh_index_buffer_t, MeshIndexBuffer)
 DEF_CLASS_MAP(SkM44, sk_matrix44_t, M44)
 
 DEF_CLASS_MAP(GrDirectContext, gr_direct_context_t, GrDirectContext)
