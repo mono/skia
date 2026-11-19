@@ -28,33 +28,9 @@ typedef struct {
     sk_graphite_vk_get_proc     fGetProc;
     void*                       fGetProcUserData;
     bool                        fProtectedContext;
+    void*                       fDeviceLostUserData;
+    gr_vk_device_lost_proc      fDeviceLostProc;
 } sk_graphite_vk_backend_context_init_t;
-
-// Revision 2 of the Graphite Vulkan init struct.
-//
-// sk_graphite_vk_backend_context_init_t is passed BY VALUE to
-// sk_graphite_context_make_vulkan, so its layout is part of the ABI for binaries
-// already built against it; appending a field there would make a newer library
-// read past what an older caller allocated. The original struct and entry point
-// are frozen and new fields land here, reached via sk_graphite_context_make_vulkan_v2.
-//
-// fStructSize must be set to sizeof(sk_graphite_vk_backend_context_init_v2_t) so a
-// future library can tell which revision it was handed without another entry point.
-typedef struct {
-    size_t                      fStructSize;
-    vk_instance_t*              fInstance;
-    vk_physical_device_t*       fPhysicalDevice;
-    vk_device_t*                fDevice;
-    vk_queue_t*                 fQueue;
-    uint32_t                    fGraphicsQueueIndex;
-    uint32_t                    fMaxAPIVersion;
-    sk_graphite_vk_get_proc     fGetProc;
-    void*                       fGetProcUserData;
-    bool                        fProtectedContext;
-    // Optional device-lost handler (see gr_vk_device_lost.h). Nullable, and never
-    // freed - the bridge is deliberately immortal, see that header.
-    gr_vk_device_lost_handler_t* fDeviceLostHandler;
-} sk_graphite_vk_backend_context_init_v2_t;
 
 // Build a Graphite Context for the Vulkan backend.
 // Returns null on failure (Vulkan not built in, init invalid, or device rejected).
@@ -70,12 +46,6 @@ typedef struct {
 // delegate, exactly as gr_direct_context_make_vulkan does.
 SK_C_API sk_graphite_context_t* sk_graphite_context_make_vulkan(
     const sk_graphite_vk_backend_context_init_t init,
-    const sk_graphite_context_options_t* opts /* nullable -> defaults */);
-
-// Revision 2: same contract as sk_graphite_context_make_vulkan, taking the
-// versioned init struct so the device-lost handler can be supplied.
-SK_C_API sk_graphite_context_t* sk_graphite_context_make_vulkan_v2(
-    const sk_graphite_vk_backend_context_init_v2_t init,
     const sk_graphite_context_options_t* opts /* nullable -> defaults */);
 
 // Vulkan-specific TextureInfo (POD). Field values are passed straight into

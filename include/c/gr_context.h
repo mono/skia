@@ -30,13 +30,6 @@ SK_C_API gr_direct_context_t* gr_direct_context_make_gl(const gr_glinterface_t* 
 SK_C_API gr_direct_context_t* gr_direct_context_make_gl_with_options(const gr_glinterface_t* glInterface, const gr_context_options_t* options);
 SK_C_API gr_direct_context_t* gr_direct_context_make_vulkan(const gr_vk_backendcontext_t vkBackendContext);
 SK_C_API gr_direct_context_t* gr_direct_context_make_vulkan_with_options(const gr_vk_backendcontext_t vkBackendContext, const gr_context_options_t* options);
-
-// Revision 2 of the Vulkan entry points, taking gr_vk_backendcontext_v2_t.
-// The two functions above are frozen: they take the original struct by value, so
-// their layout is part of the ABI for every binary already built against them.
-// New backend-context fields (currently fDeviceLostHandler) are only visible here.
-SK_C_API gr_direct_context_t* gr_direct_context_make_vulkan_v2(const gr_vk_backendcontext_v2_t vkBackendContext);
-SK_C_API gr_direct_context_t* gr_direct_context_make_vulkan_v2_with_options(const gr_vk_backendcontext_v2_t vkBackendContext, const gr_context_options_t* options);
 SK_C_API gr_direct_context_t* gr_direct_context_make_metal(void* device, void* queue);
 SK_C_API gr_direct_context_t* gr_direct_context_make_metal_with_options(void* device, void* queue, const gr_context_options_t* options);
 SK_C_API gr_direct_context_t* gr_direct_context_make_direct3d(const gr_d3d_backendcontext_t d3dBackendContext);
@@ -79,6 +72,15 @@ SK_C_API gr_vk_extensions_t* gr_vk_extensions_new(void);
 SK_C_API void gr_vk_extensions_delete(gr_vk_extensions_t* extensions);
 SK_C_API void gr_vk_extensions_init(gr_vk_extensions_t* extensions, gr_vk_get_proc getProc, void* userData, vk_instance_t* instance, vk_physical_device_t* physDev, uint32_t instanceExtensionCount, const char** instanceExtensions, uint32_t deviceExtensionCount, const char** deviceExtensions);
 SK_C_API bool gr_vk_extensions_has_extension(gr_vk_extensions_t* extensions, const char* ext, uint32_t minVersion);
+
+// GrVkDeviceLostInfo
+
+SK_C_API sk_string_t* gr_vk_device_lost_info_get_description(const gr_vk_device_lost_info_t* info);
+SK_C_API int32_t gr_vk_device_lost_info_get_address_info_count(const gr_vk_device_lost_info_t* info);
+SK_C_API void gr_vk_device_lost_info_get_address_info(const gr_vk_device_lost_info_t* info, int32_t index, gr_vk_device_fault_address_info_t* addressInfo);
+SK_C_API int32_t gr_vk_device_lost_info_get_vendor_info_count(const gr_vk_device_lost_info_t* info);
+SK_C_API void gr_vk_device_lost_info_get_vendor_info(const gr_vk_device_lost_info_t* info, int32_t index, gr_vk_device_fault_vendor_info_t* vendorInfo);
+SK_C_API const void* gr_vk_device_lost_info_get_vendor_binary_data(const gr_vk_device_lost_info_t* info, size_t* size);
 
 // GrBackendTexture
 

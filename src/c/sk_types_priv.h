@@ -33,9 +33,6 @@
 #        include "include/gpu/ganesh/vk/GrVkTypes.h"
 #        include "include/gpu/vk/VulkanBackendContext.h"
 #        include "include/gpu/vk/VulkanExtensions.h"
-#        include "include/gpu/vk/VulkanTypes.h"  // for skgpu::VulkanDeviceLostContext used by gr_vk_device_lost_thunk
-#        include <string>                         // std::string in gr_vk_device_lost_thunk signature
-#        include <vector>                         // std::vector<> in gr_vk_device_lost_thunk signature
 #        define SK_ONLY_VULKAN(...) SK_FIRST_ARG(__VA_ARGS__)
 #    else
 #        define SK_ONLY_VULKAN(...) SK_SKIP_ARG(__VA_ARGS__)
@@ -467,14 +464,20 @@ DEF_MAP(VkPhysicalDeviceFeatures, vk_physical_device_features_t, VkPhysicalDevic
 DEF_MAP(VkPhysicalDeviceFeatures2, vk_physical_device_features_2_t, VkPhysicalDeviceFeatures2);
 DEF_MAP_WITH_NS(skgpu, VulkanMemoryAllocator, gr_vk_memory_allocator_t, GrVkMemoryAllocator);
 DEF_MAP_WITH_NS(skgpu, VulkanExtensions, gr_vk_extensions_t, GrVkExtensions)
+DEF_MAP(VkDeviceFaultAddressInfoEXT, gr_vk_device_fault_address_info_t, GrVkDeviceFaultAddressInfo)
+DEF_MAP(VkDeviceFaultVendorInfoEXT, gr_vk_device_fault_vendor_info_t, GrVkDeviceFaultVendorInfo)
 
-// Declared in src/c/gr_vk_device_lost.cpp — adapts Skia's beefy device-lost callback
-// (std::string + fault-detail vectors) to the plain C proc stored in the handle.
-extern "C" void gr_vk_device_lost_thunk(skgpu::VulkanDeviceLostContext userData,
-                                        const std::string& description,
-                                        const std::vector<VkDeviceFaultAddressInfoEXT>&,
-                                        const std::vector<VkDeviceFaultVendorInfoEXT>&,
-                                        const std::vector<std::byte>&);
+struct gr_vk_device_lost_info_t {
+    const std::string*                              fDescription;
+    const std::vector<VkDeviceFaultAddressInfoEXT>* fAddressInfos;
+    const std::vector<VkDeviceFaultVendorInfoEXT>*  fVendorInfos;
+    const std::vector<std::byte>*                   fVendorBinaryData;
+};
+
+struct gr_vk_device_lost_context_t {
+    gr_vk_device_lost_proc fProc;
+    void*                  fUserData;
+};
 
 static inline skgpu::VulkanBackendContext AsGrVkBackendContext(const gr_vk_backendcontext_t* context) {
     skgpu::VulkanBackendContext ctx;
@@ -494,39 +497,25 @@ static inline skgpu::VulkanBackendContext AsGrVkBackendContext(const gr_vk_backe
         };
     }
     ctx.fProtectedContext = context->fProtectedContext ? skgpu::Protected::kYes : skgpu::Protected::kNo;
-    return ctx;
-}
-
-// Revision 2 overload. Deliberately NOT implemented by delegating to the v1 shim:
-// that one captures its `context` argument in the fGetProc lambda, so handing it a
-// pointer to a local temporary would leave the lambda dangling. Both overloads
-// capture the caller's own by-value parameter, which lives across the Make* call.
-static inline skgpu::VulkanBackendContext AsGrVkBackendContext(const gr_vk_backendcontext_v2_t* context) {
-    skgpu::VulkanBackendContext ctx;
-    ctx.fInstance = AsVkInstance(context->fInstance);
-    ctx.fPhysicalDevice = AsVkPhysicalDevice(context->fPhysicalDevice);
-    ctx.fDevice = AsVkDevice(context->fDevice);
-    ctx.fQueue = AsVkQueue(context->fQueue);
-    ctx.fGraphicsQueueIndex = context->fGraphicsQueueIndex;
-    ctx.fMaxAPIVersion = context->fMaxAPIVersion;
-    ctx.fVkExtensions = AsGrVkExtensions(context->fVkExtensions);
-    ctx.fDeviceFeatures = AsVkPhysicalDeviceFeatures(context->fDeviceFeatures);
-    ctx.fDeviceFeatures2 = AsVkPhysicalDeviceFeatures2(context->fDeviceFeatures2);
-    ctx.fMemoryAllocator = sk_ref_sp(AsGrVkMemoryAllocator(context->fMemoryAllocator));
-    if (context->fGetProc != nullptr) {
-        ctx.fGetProc = [context](const char* name, VkInstance instance, VkDevice device) -> PFN_vkVoidFunction {
-            return context->fGetProc(context->fGetProcUserData, name, ToVkInstance(instance), ToVkDevice(device));
+    if (context->fDeviceLostProc != nullptr) {
+        ctx.fDeviceLostContext = new gr_vk_device_lost_context_t { context->fDeviceLostProc, context->fDeviceLostUserData };
+        ctx.fDeviceLostProc = [](skgpu::VulkanDeviceLostContext faultContext,
+                                 const std::string& description,
+                                 const std::vector<VkDeviceFaultAddressInfoEXT>& addressInfos,
+                                 const std::vector<VkDeviceFaultVendorInfoEXT>& vendorInfos,
+                                 const std::vector<std::byte>& vendorBinaryData) {
+            auto* ctx = static_cast<gr_vk_device_lost_context_t*>(faultContext);
+            if (!ctx || !ctx->fProc) {
+                return;
+            }
+            gr_vk_device_lost_info_t info = {
+                &description,
+                &addressInfos,
+                &vendorInfos,
+                &vendorBinaryData,
+            };
+            ctx->fProc(ctx->fUserData, &info);
         };
-    }
-    ctx.fProtectedContext = context->fProtectedContext ? skgpu::Protected::kYes : skgpu::Protected::kNo;
-    // Device-lost bridge. Skia stores fDeviceLostContext as a raw non-owning void*;
-    // the bridge is never freed (see include/c/gr_vk_device_lost.h).
-    //
-    // Only read fields the caller's revision actually contains.
-    if (context->fStructSize >= sizeof(gr_vk_backendcontext_v2_t) &&
-        context->fDeviceLostHandler != nullptr) {
-        ctx.fDeviceLostContext = context->fDeviceLostHandler;
-        ctx.fDeviceLostProc = gr_vk_device_lost_thunk;
     }
     return ctx;
 }

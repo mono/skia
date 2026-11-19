@@ -679,12 +679,20 @@ typedef struct gr_vk_memory_allocator_t gr_vk_memory_allocator_t;
 typedef VKAPI_ATTR void (VKAPI_CALL *gr_vk_func_ptr)(void);
 typedef gr_vk_func_ptr (*gr_vk_get_proc)(void* ctx, const char* name, vk_instance_t* instance, vk_device_t* device);
 
-// Vulkan device-lost callback handle. See gr_vk_device_lost.h for the type
-// definition. The handle is deliberately immortal: Skia stores it as a raw
-// non-owning pointer that GrVkGpu / VulkanSharedContext can invoke at any time,
-// and gives no notification when the last of them is gone, so there is no point
-// at which freeing it is provably safe. There is no _delete.
-typedef struct gr_vk_device_lost_handler_t gr_vk_device_lost_handler_t;
+typedef struct gr_vk_device_lost_info_t gr_vk_device_lost_info_t;
+typedef void (*gr_vk_device_lost_proc)(void* userData, const gr_vk_device_lost_info_t* info);
+
+typedef struct {
+    int32_t   fAddressType;
+    uint64_t  fReportedAddress;
+    uint64_t  fAddressPrecision;
+} gr_vk_device_fault_address_info_t;
+
+typedef struct {
+    char      fDescription[256];
+    uint64_t  fVendorFaultCode;
+    uint64_t  fVendorFaultData;
+} gr_vk_device_fault_vendor_info_t;
 
 typedef struct {
     vk_instance_t*                          fInstance;
@@ -700,40 +708,9 @@ typedef struct {
     gr_vk_get_proc                          fGetProc;
     void*                                   fGetProcUserData;
     bool                                    fProtectedContext;
+    void*                                   fDeviceLostUserData;
+    gr_vk_device_lost_proc                  fDeviceLostProc;
 } gr_vk_backendcontext_t;
-
-// Versioned extension of gr_vk_backendcontext_t.
-//
-// gr_vk_backendcontext_t is passed BY VALUE to gr_direct_context_make_vulkan and
-// gr_direct_context_make_vulkan_with_options, so its layout is baked into every
-// binary already compiled against it. Appending a field there would make a newer
-// library read past what an older caller allocated. The original struct and its
-// entry points are therefore frozen, and new fields land here instead, reached
-// through gr_direct_context_make_vulkan_v2* .
-//
-// fStructSize must be set to sizeof(gr_vk_backendcontext_v2_t) by the caller.
-// It lets a future library detect which revision it was handed and read only the
-// fields that revision actually contains, so extending this struct again does not
-// need another entry point.
-typedef struct {
-    size_t                                  fStructSize;
-    vk_instance_t*                          fInstance;
-    vk_physical_device_t*                   fPhysicalDevice;
-    vk_device_t*                            fDevice;
-    vk_queue_t*                             fQueue;
-    uint32_t                                fGraphicsQueueIndex;
-    uint32_t                                fMaxAPIVersion;
-    const gr_vk_extensions_t*               fVkExtensions;
-    const vk_physical_device_features_t*    fDeviceFeatures;
-    const vk_physical_device_features_2_t*  fDeviceFeatures2;
-    gr_vk_memory_allocator_t*               fMemoryAllocator;
-    gr_vk_get_proc                          fGetProc;
-    void*                                   fGetProcUserData;
-    bool                                    fProtectedContext;
-    // Optional device-lost handler (see gr_vk_device_lost.h). Nullable, and never
-    // freed by Skia or by the caller - see the typedef comment above.
-    gr_vk_device_lost_handler_t*            fDeviceLostHandler;
-} gr_vk_backendcontext_v2_t;
 
 typedef intptr_t gr_vk_backendmemory_t;
 

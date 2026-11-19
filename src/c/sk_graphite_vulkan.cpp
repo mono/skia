@@ -17,18 +17,6 @@
 #include "include/gpu/graphite/vk/VulkanGraphiteTypes.h"
 #include "include/gpu/vk/VulkanBackendContext.h"
 #include "include/gpu/vk/VulkanMemoryAllocator.h"
-#include "include/gpu/vk/VulkanTypes.h"           // skgpu::VulkanDeviceLostContext for gr_vk_device_lost_thunk
-#include "include/c/gr_vk_device_lost.h"          // gr_vk_device_lost_handler_t
-#include <string>                                  // std::string in gr_vk_device_lost_thunk signature
-#include <vector>                                  // std::vector<> in gr_vk_device_lost_thunk signature
-
-// Defined in gr_vk_device_lost.cpp — adapts Skia's std::string+vectors callback to
-// the plain C proc stored in the handle.
-extern "C" void gr_vk_device_lost_thunk(skgpu::VulkanDeviceLostContext userData,
-                                        const std::string& description,
-                                        const std::vector<VkDeviceFaultAddressInfoEXT>&,
-                                        const std::vector<VkDeviceFaultVendorInfoEXT>&,
-                                        const std::vector<std::byte>&);
 
 // Pulls in Context/BackendTexture/TextureInfo + the matching As/To helpers
 // via the SK_GRAPHITE block.
@@ -44,85 +32,72 @@ namespace gr = skgpu::graphite;
 // Returns false if opts carries an invalid value (e.g. out-of-range sample count).
 extern bool sk_graphite_make_context_options(const sk_graphite_context_options_t* opts, gr::ContextOptions* out);
 
-namespace {
-// Shared body for both revisions of the Graphite Vulkan entry point. Taking the
-// fields individually keeps the two ABI revisions of the init struct out of the
-// implementation, and keeps the fGetProc lambda capturing values rather than a
-// pointer into a caller struct.
-sk_graphite_context_t* MakeVulkanContext(vk_instance_t* instance,
-                                         vk_physical_device_t* physicalDevice,
-                                         vk_device_t* device,
-                                         vk_queue_t* queue,
-                                         uint32_t graphicsQueueIndex,
-                                         uint32_t maxAPIVersion,
-                                         sk_graphite_vk_get_proc getProc,
-                                         void* getProcUserData,
-                                         bool protectedContext,
-                                         gr_vk_device_lost_handler_t* deviceLostHandler,
-                                         const sk_graphite_context_options_t* opts)
+extern "C" SK_C_API sk_graphite_context_t* sk_graphite_context_make_vulkan(
+    const sk_graphite_vk_backend_context_init_t init,
+    const sk_graphite_context_options_t* opts)
 {
     skgpu::VulkanBackendContext vkbc;
-    vkbc.fInstance            = reinterpret_cast<VkInstance>(instance);
-    vkbc.fPhysicalDevice      = reinterpret_cast<VkPhysicalDevice>(physicalDevice);
-    vkbc.fDevice              = reinterpret_cast<VkDevice>(device);
-    vkbc.fQueue               = reinterpret_cast<VkQueue>(queue);
-    vkbc.fGraphicsQueueIndex  = graphicsQueueIndex;
-    vkbc.fMaxAPIVersion       = maxAPIVersion;
-    vkbc.fProtectedContext    = protectedContext ? skgpu::Protected::kYes : skgpu::Protected::kNo;
+    vkbc.fInstance            = reinterpret_cast<VkInstance>(init.fInstance);
+    vkbc.fPhysicalDevice      = reinterpret_cast<VkPhysicalDevice>(init.fPhysicalDevice);
+    vkbc.fDevice              = reinterpret_cast<VkDevice>(init.fDevice);
+    vkbc.fQueue               = reinterpret_cast<VkQueue>(init.fQueue);
+    vkbc.fGraphicsQueueIndex  = init.fGraphicsQueueIndex;
+    vkbc.fMaxAPIVersion       = init.fMaxAPIVersion;
+    vkbc.fProtectedContext    = init.fProtectedContext ? skgpu::Protected::kYes : skgpu::Protected::kNo;
 
-    if (getProc) {
+    if (init.fGetProc) {
         // Capture by value so the lambda is independent of the init struct's lifetime.
-        vkbc.fGetProc = [getProc, getProcUserData](const char* name, VkInstance vkInstance, VkDevice vkDevice) -> PFN_vkVoidFunction {
+        sk_graphite_vk_get_proc getProc = init.fGetProc;
+        void* userData = init.fGetProcUserData;
+        vkbc.fGetProc = [getProc, userData](const char* name, VkInstance instance, VkDevice device) -> PFN_vkVoidFunction {
             return reinterpret_cast<PFN_vkVoidFunction>(
-                getProc(getProcUserData, name, reinterpret_cast<vk_instance_t*>(vkInstance), reinterpret_cast<vk_device_t*>(vkDevice)));
+                getProc(userData, name, reinterpret_cast<vk_instance_t*>(instance), reinterpret_cast<vk_device_t*>(device)));
         };
     }
 
-    // Device-lost bridge. Skia stores fDeviceLostContext as a raw non-owning void*;
-    // the bridge is never freed (see include/c/gr_vk_device_lost.h).
-    if (deviceLostHandler) {
-        vkbc.fDeviceLostContext = deviceLostHandler;
-        vkbc.fDeviceLostProc = gr_vk_device_lost_thunk;
+    if (init.fDeviceLostProc) {
+        vkbc.fDeviceLostContext = new gr_vk_device_lost_context_t { init.fDeviceLostProc, init.fDeviceLostUserData };
+        vkbc.fDeviceLostProc = [](skgpu::VulkanDeviceLostContext faultContext,
+                                  const std::string& description,
+                                  const std::vector<VkDeviceFaultAddressInfoEXT>& addressInfos,
+                                  const std::vector<VkDeviceFaultVendorInfoEXT>& vendorInfos,
+                                  const std::vector<std::byte>& vendorBinaryData) {
+            auto* ctx = static_cast<gr_vk_device_lost_context_t*>(faultContext);
+            if (!ctx || !ctx->fProc) {
+                return;
+            }
+            gr_vk_device_lost_info_t info = {
+                &description,
+                &addressInfos,
+                &vendorInfos,
+                &vendorBinaryData,
+            };
+            ctx->fProc(ctx->fUserData, &info);
+        };
     }
 
     // The C init struct has no allocator field, so supply the default VMA allocator.
     if (!vkbc.fMemoryAllocator) {
         vkbc.fMemoryAllocator = skgpu::VulkanMemoryAllocators::Make(vkbc, skgpu::ThreadSafe::kNo);
         if (!vkbc.fMemoryAllocator) {
+            delete static_cast<gr_vk_device_lost_context_t*>(vkbc.fDeviceLostContext);
             return nullptr;
         }
     }
 
     gr::ContextOptions gopts;
-    if (!sk_graphite_make_context_options(opts, &gopts)) return nullptr;
+    if (!sk_graphite_make_context_options(opts, &gopts)) {
+        delete static_cast<gr_vk_device_lost_context_t*>(vkbc.fDeviceLostContext);
+        return nullptr;
+    }
+
     auto context = gr::ContextFactory::MakeVulkan(vkbc, gopts);
+    if (!context) {
+        delete static_cast<gr_vk_device_lost_context_t*>(vkbc.fDeviceLostContext);
+        return nullptr;
+    }
+
     return ToGraphiteContext(context.release());
-}
-}  // namespace
-
-extern "C" SK_C_API sk_graphite_context_t* sk_graphite_context_make_vulkan(
-    const sk_graphite_vk_backend_context_init_t init,
-    const sk_graphite_context_options_t* opts)
-{
-    // Frozen revision: no device-lost handler in this struct.
-    return MakeVulkanContext(init.fInstance, init.fPhysicalDevice, init.fDevice, init.fQueue,
-                             init.fGraphicsQueueIndex, init.fMaxAPIVersion,
-                             init.fGetProc, init.fGetProcUserData, init.fProtectedContext,
-                             nullptr, opts);
-}
-
-extern "C" SK_C_API sk_graphite_context_t* sk_graphite_context_make_vulkan_v2(
-    const sk_graphite_vk_backend_context_init_v2_t init,
-    const sk_graphite_context_options_t* opts)
-{
-    // Only read fields the caller's revision actually contains.
-    gr_vk_device_lost_handler_t* handler =
-        init.fStructSize >= sizeof(sk_graphite_vk_backend_context_init_v2_t) ? init.fDeviceLostHandler
-                                                                            : nullptr;
-    return MakeVulkanContext(init.fInstance, init.fPhysicalDevice, init.fDevice, init.fQueue,
-                             init.fGraphicsQueueIndex, init.fMaxAPIVersion,
-                             init.fGetProc, init.fGetProcUserData, init.fProtectedContext,
-                             handler, opts);
 }
 
 // Vulkan TextureInfo + BackendTexture factories.
@@ -171,7 +146,6 @@ extern "C" SK_C_API sk_graphite_backend_texture_t* sk_graphite_vk_backend_textur
 #else  // !(SK_GRAPHITE && SK_VULKAN)
 
 extern "C" SK_C_API sk_graphite_context_t* sk_graphite_context_make_vulkan(const sk_graphite_vk_backend_context_init_t, const sk_graphite_context_options_t*) { return nullptr; }
-extern "C" SK_C_API sk_graphite_context_t* sk_graphite_context_make_vulkan_v2(const sk_graphite_vk_backend_context_init_v2_t, const sk_graphite_context_options_t*) { return nullptr; }
 extern "C" SK_C_API sk_graphite_texture_info_t* sk_graphite_vk_texture_info_new(const sk_graphite_vk_texture_info_t*) { return nullptr; }
 extern "C" SK_C_API sk_graphite_backend_texture_t* sk_graphite_vk_backend_texture_new(int32_t, int32_t, const sk_graphite_vk_texture_info_t*, int32_t, uint32_t, void*) { return nullptr; }
 
