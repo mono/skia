@@ -73,6 +73,15 @@ SK_C_API void gr_vk_extensions_delete(gr_vk_extensions_t* extensions);
 SK_C_API void gr_vk_extensions_init(gr_vk_extensions_t* extensions, gr_vk_get_proc getProc, void* userData, vk_instance_t* instance, vk_physical_device_t* physDev, uint32_t instanceExtensionCount, const char** instanceExtensions, uint32_t deviceExtensionCount, const char** deviceExtensions);
 SK_C_API bool gr_vk_extensions_has_extension(gr_vk_extensions_t* extensions, const char* ext, uint32_t minVersion);
 
+// GrVkDeviceLostInfo
+
+SK_C_API sk_string_t* gr_vk_device_lost_info_get_description(const gr_vk_device_lost_info_t* info);
+SK_C_API int32_t gr_vk_device_lost_info_get_address_info_count(const gr_vk_device_lost_info_t* info);
+SK_C_API void gr_vk_device_lost_info_get_address_info(const gr_vk_device_lost_info_t* info, int32_t index, gr_vk_device_fault_address_info_t* addressInfo);
+SK_C_API int32_t gr_vk_device_lost_info_get_vendor_info_count(const gr_vk_device_lost_info_t* info);
+SK_C_API void gr_vk_device_lost_info_get_vendor_info(const gr_vk_device_lost_info_t* info, int32_t index, gr_vk_device_fault_vendor_info_t* vendorInfo);
+SK_C_API const void* gr_vk_device_lost_info_get_vendor_binary_data(const gr_vk_device_lost_info_t* info, size_t* size);
+
 // GrBackendTexture
 
 SK_C_API gr_backendtexture_t* gr_backendtexture_new_gl(int width, int height, bool mipmapped, const gr_gl_textureinfo_t* glInfo);

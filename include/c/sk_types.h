@@ -679,6 +679,21 @@ typedef struct gr_vk_memory_allocator_t gr_vk_memory_allocator_t;
 typedef VKAPI_ATTR void (VKAPI_CALL *gr_vk_func_ptr)(void);
 typedef gr_vk_func_ptr (*gr_vk_get_proc)(void* ctx, const char* name, vk_instance_t* instance, vk_device_t* device);
 
+typedef struct gr_vk_device_lost_info_t gr_vk_device_lost_info_t;
+typedef void (*gr_vk_device_lost_proc)(void* userData, const gr_vk_device_lost_info_t* info);
+
+typedef struct {
+    int32_t   fAddressType;
+    uint64_t  fReportedAddress;
+    uint64_t  fAddressPrecision;
+} gr_vk_device_fault_address_info_t;
+
+typedef struct {
+    char      fDescription[256];
+    uint64_t  fVendorFaultCode;
+    uint64_t  fVendorFaultData;
+} gr_vk_device_fault_vendor_info_t;
+
 typedef struct {
     vk_instance_t*                          fInstance;
     vk_physical_device_t*                   fPhysicalDevice;
@@ -693,6 +708,8 @@ typedef struct {
     gr_vk_get_proc                          fGetProc;
     void*                                   fGetProcUserData;
     bool                                    fProtectedContext;
+    void*                                   fDeviceLostUserData;
+    gr_vk_device_lost_proc                  fDeviceLostProc;
 } gr_vk_backendcontext_t;
 
 typedef intptr_t gr_vk_backendmemory_t;

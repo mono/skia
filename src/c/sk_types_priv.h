@@ -464,6 +464,20 @@ DEF_MAP(VkPhysicalDeviceFeatures, vk_physical_device_features_t, VkPhysicalDevic
 DEF_MAP(VkPhysicalDeviceFeatures2, vk_physical_device_features_2_t, VkPhysicalDeviceFeatures2);
 DEF_MAP_WITH_NS(skgpu, VulkanMemoryAllocator, gr_vk_memory_allocator_t, GrVkMemoryAllocator);
 DEF_MAP_WITH_NS(skgpu, VulkanExtensions, gr_vk_extensions_t, GrVkExtensions)
+DEF_MAP(VkDeviceFaultAddressInfoEXT, gr_vk_device_fault_address_info_t, GrVkDeviceFaultAddressInfo)
+DEF_MAP(VkDeviceFaultVendorInfoEXT, gr_vk_device_fault_vendor_info_t, GrVkDeviceFaultVendorInfo)
+
+struct gr_vk_device_lost_info_t {
+    const std::string*                              fDescription;
+    const std::vector<VkDeviceFaultAddressInfoEXT>* fAddressInfos;
+    const std::vector<VkDeviceFaultVendorInfoEXT>*  fVendorInfos;
+    const std::vector<std::byte>*                   fVendorBinaryData;
+};
+
+struct gr_vk_device_lost_context_t {
+    gr_vk_device_lost_proc fProc;
+    void*                  fUserData;
+};
 
 static inline skgpu::VulkanBackendContext AsGrVkBackendContext(const gr_vk_backendcontext_t* context) {
     skgpu::VulkanBackendContext ctx;
@@ -483,6 +497,26 @@ static inline skgpu::VulkanBackendContext AsGrVkBackendContext(const gr_vk_backe
         };
     }
     ctx.fProtectedContext = context->fProtectedContext ? skgpu::Protected::kYes : skgpu::Protected::kNo;
+    if (context->fDeviceLostProc != nullptr) {
+        ctx.fDeviceLostContext = new gr_vk_device_lost_context_t { context->fDeviceLostProc, context->fDeviceLostUserData };
+        ctx.fDeviceLostProc = [](skgpu::VulkanDeviceLostContext faultContext,
+                                 const std::string& description,
+                                 const std::vector<VkDeviceFaultAddressInfoEXT>& addressInfos,
+                                 const std::vector<VkDeviceFaultVendorInfoEXT>& vendorInfos,
+                                 const std::vector<std::byte>& vendorBinaryData) {
+            auto* ctx = static_cast<gr_vk_device_lost_context_t*>(faultContext);
+            if (!ctx || !ctx->fProc) {
+                return;
+            }
+            gr_vk_device_lost_info_t info = {
+                &description,
+                &addressInfos,
+                &vendorInfos,
+                &vendorBinaryData,
+            };
+            ctx->fProc(ctx->fUserData, &info);
+        };
+    }
     return ctx;
 }
 
