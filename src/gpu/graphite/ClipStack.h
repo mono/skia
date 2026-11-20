@@ -102,7 +102,7 @@ public:
     using ElementList = skia_private::STArray<4, const Element*>;
     Clip visitClipStackForDraw(const Transform&,
                                Geometry*,
-                               const SkStrokeRec&,
+                               SkStrokeRec* style,
                                ElementList* outEffectiveElements) const;
 
     // Returns the number of elements in `elements` that have not yet been drawn in the current

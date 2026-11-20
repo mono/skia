@@ -24,7 +24,9 @@
 #include "src/gpu/ganesh/vk/GrVkUtil.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cstring>
+#include <thread>
 
 class GrGpu;
 
@@ -679,6 +681,9 @@ bool GrVkPrimaryCommandBuffer::submitToQueue(
         // restart the whole device, so waiting on the queue shouldn't have any performance impact.
         if (submitResult == VK_ERROR_DEVICE_LOST) {
             GR_VK_CALL(gpu->vkInterface(), QueueWaitIdle(queue));
+            if (gpu->vkCaps().sleepAfterLostDeviceWait()) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
         } else {
             SkASSERT(submitResult == VK_ERROR_OUT_OF_HOST_MEMORY ||
                      submitResult == VK_ERROR_OUT_OF_DEVICE_MEMORY);
@@ -691,9 +696,9 @@ bool GrVkPrimaryCommandBuffer::submitToQueue(
     return true;
 }
 
-void GrVkPrimaryCommandBuffer::forceSync(GrVkGpu* gpu) {
+bool GrVkPrimaryCommandBuffer::forceSync(GrVkGpu* gpu) {
     if (fSubmitFence == VK_NULL_HANDLE) {
-        return;
+        return true;
     }
     // On some drivers vkWaitForFences() can spuriously return VK_TIMEOUT when a signal handler
     // runs. Work around this by retrying on VK_TIMEOUT.
@@ -706,6 +711,7 @@ void GrVkPrimaryCommandBuffer::forceSync(GrVkGpu* gpu) {
         SkDebugf("vkWaitForFences() failed. Error: %d\n", result);
     }
     SkASSERT(VK_SUCCESS == result || VK_ERROR_DEVICE_LOST == result);
+    return result == VK_SUCCESS;
 }
 
 bool GrVkPrimaryCommandBuffer::finished(GrVkGpu* gpu) {

@@ -32,6 +32,9 @@
 #include "src/gpu/graphite/vk/VulkanTexture.h"
 #include "src/gpu/vk/VulkanUtilsPriv.h"
 
+#include <chrono>
+#include <thread>
+
 using namespace skia_private;
 
 namespace skgpu::graphite {
@@ -541,6 +544,9 @@ bool VulkanCommandBuffer::submit(VkQueue queue, const SubmitInfo& submitInfo) {
         // restart the whole device, so waiting on the queue shouldn't have any performance impact.
         if (submitResult == VK_ERROR_DEVICE_LOST) {
             VULKAN_CALL(fSharedContext->interface(), QueueWaitIdle(queue));
+            if (fSharedContext->vulkanCaps().sleepAfterLostDeviceWait()) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
         } else {
             SkASSERT(submitResult == VK_ERROR_OUT_OF_HOST_MEMORY ||
                      submitResult == VK_ERROR_OUT_OF_DEVICE_MEMORY);
@@ -591,6 +597,10 @@ void VulkanCommandBuffer::waitUntilFinished() {
                                                  &fSubmitFence,
                                                  /*waitAll=*/true,
                                                  /*timeout=*/UINT64_MAX));
+    }
+    if (result == VK_ERROR_DEVICE_LOST &&
+        fSharedContext->vulkanCaps().sleepAfterLostDeviceWait()) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
     if (result != VK_SUCCESS && !fSharedContext->isDeviceLost()) {
         SkDebugf("vkWaitForFences() failed. Error: %d\n", result);

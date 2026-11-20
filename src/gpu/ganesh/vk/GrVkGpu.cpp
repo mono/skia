@@ -72,9 +72,11 @@
 #include "src/gpu/vk/VulkanUtilsPriv.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cstring>
 #include <functional>
 #include <numeric>
+#include <thread>
 #include <utility>
 
 class GrAttachment;
@@ -381,8 +383,9 @@ bool GrVkGpu::submitCommandBuffer(const GrSubmitInfo& submitInfo) {
     bool didSubmit = fMainCmdBuffer->submitToQueue(this, fQueue, fSemaphoresToSignal,
                                                    fSemaphoresToWaitOn, submitInfo);
 
+    bool syncSucceeded = true;
     if (didSubmit && submitInfo.fSync == GrSyncCpu::kYes) {
-        fMainCmdBuffer->forceSync(this);
+        syncSucceeded = fMainCmdBuffer->forceSync(this);
     }
 
     // We must delete any drawables that had to wait until submit to destroy.
@@ -422,7 +425,7 @@ bool GrVkGpu::submitCommandBuffer(const GrSubmitInfo& submitInfo) {
     // released GrVkImage. That barrier needs to be put into a new command buffer and not the old
     // one that was just submitted.
     fResourceProvider.checkCommandBuffers();
-    return didSubmit;
+    return didSubmit && syncSucceeded;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -2234,10 +2237,16 @@ bool GrVkGpu::onSubmitToGpu(const GrSubmitInfo& info) {
 }
 
 void GrVkGpu::finishOutstandingGpuWork() {
-    VK_CALL(QueueWaitIdle(fQueue));
+    VkResult res;
+    VK_CALL_RET(res, QueueWaitIdle(fQueue));
 
     if (this->vkCaps().mustSyncCommandBuffersWithQueue()) {
         fResourceProvider.forceSyncAllCommandBuffers();
+    }
+
+    if (this->vkCaps().sleepAfterLostDeviceWait() &&
+        (res == VK_ERROR_DEVICE_LOST || this->isDeviceLost())) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
 }
 
@@ -2658,6 +2667,7 @@ bool GrVkGpu::checkVkResult(VkResult result) {
         case VK_SUCCESS:
             return true;
         case VK_ERROR_DEVICE_LOST:
+        case VK_ERROR_UNKNOWN:
             if (!fDeviceIsLost) {
                 // Callback should only be invoked once, and device should be marked as lost first.
                 fDeviceIsLost = true;
@@ -2665,7 +2675,8 @@ bool GrVkGpu::checkVkResult(VkResult result) {
                                                 device(),
                                                 fDeviceLostContext,
                                                 fDeviceLostProc,
-                                                vkCaps().supportsDeviceFaultInfo());
+                                                vkCaps().supportsDeviceFaultInfo(),
+                                                /*isUnknownError=*/result == VK_ERROR_UNKNOWN);
             }
             return false;
         case VK_ERROR_OUT_OF_DEVICE_MEMORY:

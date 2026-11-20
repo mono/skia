@@ -1542,7 +1542,13 @@ void Device::drawAtlasSubRun(const sktext::gpu::AtlasSubRun* subRun,
     auto& glyphData = subRun->glyphVector().accessBackendData<GlyphData>();
 
     auto [bounds, maskToDevice] =
-            subRun->vertexFiller().boundsAndDeviceMatrix(localToDevice, drawOrigin);
+            subRun->vertexFiller().boundsAndDeviceMatrix(
+                    localToDevice, drawOrigin,
+                    fRecorder->priv().caps()->supportBilerpFromGlyphAtlas());
+
+    if (bounds.isEmpty()) {
+        return;
+    }
 
     for (int subRunCursor = 0; subRunCursor < subRunEnd;) {
         // For the remainder of the run, add any atlas uploads to the Recorder's TextAtlasManager
@@ -1664,7 +1670,7 @@ void Device::drawGeometry(const Transform& localToDevice,
     ClipStack::ElementList clipElements;
     Clip clip = fClip.visitClipStackForDraw(localToDevice,
                                             &geometry,
-                                            style,
+                                            &style,
                                             &clipElements);
     if (clip.isClippedOut()) {
         // Clipped out, so don't record anything.
@@ -1800,6 +1806,19 @@ void Device::drawGeometry(const Transform& localToDevice,
                                      clipElements.empty() &&
                                      clip.scissor().contains(this->bounds());
     if (overwritesAllPixels) {
+        if (fCurrentDepth != DrawOrder::kClearDepth) {
+            // Both branches below drop every draw recorded so far from the DrawList. Reset the
+            // Device-side ordering state for those dropped draws so the 16-bit sequences cannot
+            // saturate or wrap across clear-delimited batches. Guarding on fCurrentDepth avoids
+            // redundant resets on start-of-pass clears (which would otherwise drop
+            // HybridBoundsManager's cached grid allocation).
+            if (!fRecorder->priv().caps()->useDrawListLayer()) {
+                fColorDepthBoundsManager->reset();
+                fDisjointStencilSet->reset();
+            }
+            fCurrentDepth = DrawOrder::kClearDepth;
+        }
+
         if (std::optional<SkColor4f> color = extract_paint_color(paint, fDC->colorInfo())) {
             // Fullscreen clear, so nothing has to be rendered at all
             fDC->clear(*color);
@@ -2500,6 +2519,10 @@ sk_sp<sktext::gpu::Slug> Device::convertGlyphRunListToSlug(const sktext::GlyphRu
 
 void Device::drawSlug(SkCanvas* canvas, const sktext::gpu::Slug* slug, const SkPaint& paint) {
     auto slugImpl = static_cast<const sktext::gpu::SlugImpl*>(slug);
+    if (!slugImpl->canDraw(this->localToDevice(),
+                           fRecorder->priv().caps()->supportBilerpFromGlyphAtlas())) {
+        return;
+    }
     slugImpl->subRuns()->draw(canvas, slugImpl->origin(), paint, slugImpl, this->atlasDelegate());
 }
 
