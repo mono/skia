@@ -12,6 +12,8 @@
 #include "include/core/SkBlender.h"
 #include "include/core/SkCanvas.h"
 #include "include/core/SkColor.h"
+#include "include/core/SkColorFilter.h"
+#include "include/core/SkColorSpace.h"
 #include "include/core/SkData.h"
 #include "include/core/SkImage.h"
 #include "include/core/SkImageInfo.h"
@@ -27,6 +29,7 @@
 #include "include/core/SkTileMode.h"
 #include "include/core/SkVertices.h"
 #include "include/effects/SkRuntimeEffect.h"
+#include "src/core/SkColorFilterPriv.h"
 #include "src/core/SkDevice.h"
 #include "src/core/SkMeshPriv.h"
 #include "src/core/SkRuntimeEffectPriv.h"
@@ -196,8 +199,9 @@ std::string make_vertex_source(const SkMeshSpecification& spec, int attributeRow
 // texture coordinates (1, 1), (2, 1) and (1, 2) inside the cell of its index (cells of 4 x 4, 256
 // per row), so the interpolated coordinate gives the triangle and its barycentric weights. The
 // varyings of the three corners are fetched from the vertex pass, interpolated, and the mesh's
-// fragment program, the paint's shader and the blender run as on the GPU.
-std::string make_fragment_source(const SkMeshSpecification& spec, int varyingRows) {
+// fragment program, the paint's shader and the blender run as on the GPU. With `xform` the mesh's
+// color goes from the specification's color space to the destination's (a child color filter).
+std::string make_fragment_source(const SkMeshSpecification& spec, int varyingRows, bool xform) {
     std::string sksl = rename_main(*SkMeshSpecificationPriv::FS(spec)->fSource, "sk_mesh_fs");
     bool hasColor = SkMeshSpecificationPriv::HasColors(spec);
     sksl += "\nuniform shader sk_mesh_varyings;\n"
@@ -205,6 +209,9 @@ std::string make_fragment_source(const SkMeshSpecification& spec, int varyingRow
             "uniform shader sk_mesh_paint;\n";
     if (hasColor) {
         sksl += "uniform blender sk_mesh_blender;\n";
+    }
+    if (xform) {
+        sksl += "uniform colorFilter sk_mesh_xform;\n";
     }
     sksl += "half4 main(float2 tc) {\n"
             "    float2 cell = floor(tc * 0.25);\n"
@@ -236,6 +243,9 @@ std::string make_fragment_source(const SkMeshSpecification& spec, int varyingRow
         sksl += "    float2 local = sk_mesh_fs(v, color);\n";
         if (SkMeshSpecificationPriv::AlphaType(spec) == kUnpremul_SkAlphaType) {
             sksl += "    color.rgb *= color.a;\n";
+        }
+        if (xform) {
+            sksl += "    color = sk_mesh_xform.eval(half4(color));\n";
         }
         sksl += "    return sk_mesh_blender.eval(sk_mesh_paint.eval(local), half4(color));\n";
     } else {
@@ -394,7 +404,16 @@ void SkMeshRaster::Draw(SkDevice* device,
     }
     int varyingRows = rows_for(varyingFloats);
     sk_sp<SkRuntimeEffect> vsEffect = make_effect(make_vertex_source(spec, attributeRows));
-    sk_sp<SkRuntimeEffect> fsEffect = make_effect(make_fragment_source(spec, varyingRows));
+    // The mesh's color is in the specification's color space; the destination may have another
+    // (as Ganesh: a destination with no color space means no conversion).
+    SkColorSpace* dstCS = device->imageInfo().colorSpace();
+    sk_sp<SkColorSpace> specCS = sk_ref_sp(SkMeshSpecificationPriv::ColorSpace(spec));
+    if (!specCS) {
+        specCS = SkColorSpace::MakeSRGB();
+    }
+    bool xform = SkMeshSpecificationPriv::HasColors(spec) && dstCS &&
+                 !SkColorSpace::Equals(specCS.get(), dstCS);
+    sk_sp<SkRuntimeEffect> fsEffect = make_effect(make_fragment_source(spec, varyingRows, xform));
     if (!attributeImage || !vsEffect || !fsEffect) {
         return;
     }
@@ -432,6 +451,8 @@ void SkMeshRaster::Draw(SkDevice* device,
     drawPaint.setAntiAlias(false);
     drawPaint.setColor4f({1, 1, 1, 1}, nullptr);
     sk_sp<SkData> fsUniforms = uniforms_for(*fsEffect, mesh);
+    sk_sp<SkColorFilter> xformFilter =
+            xform ? SkColorFilterPriv::MakeColorSpaceXform(specCS, sk_ref_sp(dstCS)) : nullptr;
 
     // 4. The triangles, in batches, each corner at its position from the vertex pass.
     auto position = [&](int v) {
@@ -465,7 +486,8 @@ void SkMeshRaster::Draw(SkDevice* device,
                                        {{"sk_mesh_varyings", varyingShader},
                                         {"sk_mesh_triangles", raw_shader(indexImage)},
                                         {"sk_mesh_paint", source},
-                                        {"sk_mesh_blender", blender}});
+                                        {"sk_mesh_blender", blender},
+                                        {"sk_mesh_xform", xformFilter}});
         drawPaint.setShader(fsEffect->makeShader(fsUniforms, fsChildren));
         sk_sp<SkVertices> vertices = SkVertices::MakeCopy(SkVertices::kTriangles_VertexMode,
                                                           3 * count, points.data(), coords.data(),
