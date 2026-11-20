@@ -434,14 +434,14 @@ void SkMeshRaster::Draw(SkDevice* device,
     }
     sk_sp<SkShader> varyingShader = raw_shader(varyings->makeImageSnapshot());
 
-    // 3. The paint's shader (or color) as the fragment wrapper's source color, with the paint's
-    //    alpha, and the paint drawn with the wrapper. Mask filters, path effects and antialiasing
-    //    do not apply to meshes.
+    // 3. The paint's shader, or its opaque color, as the fragment wrapper's source color; the
+    //    paint's alpha applies to the result, after the blend with the mesh's color (as Ganesh's
+    //    paint conversion with a primitive color). The paint is drawn with the wrapper. Mask
+    //    filters, path effects and antialiasing do not apply to meshes.
     SkColor4f color = paint.getColor4f();
     sk_sp<SkShader> source = paint.refShader()
-            ? SkShaders::Blend(SkBlendMode::kDstIn, paint.refShader(),
-                               SkShaders::Color({0, 0, 0, color.fA}, nullptr))
-            : SkShaders::Color(color, nullptr);
+            ? paint.refShader()
+            : SkShaders::Color({color.fR, color.fG, color.fB, 1.f}, nullptr);
     if (!blender) {
         blender = SkBlender::Mode(SkBlendMode::kModulate);
     }
@@ -449,7 +449,7 @@ void SkMeshRaster::Draw(SkDevice* device,
     drawPaint.setMaskFilter(nullptr);
     drawPaint.setPathEffect(nullptr);
     drawPaint.setAntiAlias(false);
-    drawPaint.setColor4f({1, 1, 1, 1}, nullptr);
+    drawPaint.setColor4f({1, 1, 1, color.fA}, nullptr);
     sk_sp<SkData> fsUniforms = uniforms_for(*fsEffect, mesh);
     sk_sp<SkColorFilter> xformFilter =
             xform ? SkColorFilterPriv::MakeColorSpaceXform(specCS, sk_ref_sp(dstCS)) : nullptr;
