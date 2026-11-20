@@ -37,6 +37,9 @@ SK_C_API size_t sk_graphics_set_resource_cache_total_byte_limit(size_t newLimit)
 SK_C_API size_t sk_graphics_get_resource_cache_single_allocation_byte_limit(void);
 SK_C_API size_t sk_graphics_set_resource_cache_single_allocation_byte_limit(size_t newLimit);
 
+// open type svg decoder factory
+SK_C_API bool sk_graphics_set_open_type_svg_decoder_factory_to_default();
+
 // dump
 SK_C_API void sk_graphics_dump_memory_statistics(sk_tracememorydump_t* dump);
 
