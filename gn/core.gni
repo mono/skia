@@ -422,6 +422,8 @@ skia_core_sources = [
   "$_src/core/SkMemset_opts_avx.cpp",
   "$_src/core/SkMemset_opts_erms.cpp",
   "$_src/core/SkMesh.cpp",
+  "$_src/core/SkMeshRaster.cpp",
+  "$_src/core/SkMeshRaster.h",
   "$_src/core/SkMeshPriv.h",
   "$_src/core/SkMessageBus.h",
   "$_src/core/SkMipmap.cpp",
