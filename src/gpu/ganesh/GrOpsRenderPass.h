@@ -17,6 +17,7 @@
 #include "src/gpu/ganesh/GrBuffer.h"
 #include "src/gpu/ganesh/GrDeferredUpload.h"
 #include "src/gpu/ganesh/GrXferProcessor.h"
+#include "src/partition_alloc/raw_ptr.h"
 
 #include <array>
 #include <cstddef>
@@ -62,6 +63,10 @@ public:
 
     // Updates the internal pipeline state for drawing with the provided GrProgramInfo. Enters an
     // internal "bad" state if the pipeline could not be set.
+    //
+    // If the pipeline reads the dst from a partial copy of the render target (see
+    // GrPipeline::hasDstReadBounds()), every backend restricts rasterization to the pipeline's dst
+    // read bounds so that dst reads only see valid values, even if drawBounds is wrong.
     void bindPipeline(const GrProgramInfo&, const SkRect& drawBounds);
 
     // The scissor rect is always dynamic state and therefore not stored on GrPipeline. If scissor
@@ -93,16 +98,17 @@ public:
     //   - If the scissor test is enabled, call setScissorRect()
     //   - If the current program uses textures, call bindTextures()
     //   - Call bindBuffers() (even if all buffers are null)
-    void draw(int vertexCount, int baseVertex);
-    void drawIndexed(int indexCount, int baseIndex, uint16_t minIndexValue, uint16_t maxIndexValue,
-                     int baseVertex);
+    [[nodiscard]] bool draw(int vertexCount, int baseVertex);
+    [[nodiscard]] bool drawIndexed(int indexCount, int baseIndex, uint16_t minIndexValue,
+                                   uint16_t maxIndexValue, int baseVertex);
 
     // Requires caps.drawInstancedSupport().
-    void drawInstanced(int instanceCount, int baseInstance, int vertexCount, int baseVertex);
+    [[nodiscard]] bool drawInstanced(int instanceCount, int baseInstance,
+                                     int vertexCount, int baseVertex);
 
     // Requires caps.drawInstancedSupport().
-    void drawIndexedInstanced(int indexCount, int baseIndex, int instanceCount, int baseInstance,
-                              int baseVertex);
+    [[nodiscard]] bool drawIndexedInstanced(int indexCount, int baseIndex, int instanceCount,
+                                            int baseInstance, int baseVertex);
 
     // Executes multiple draws from an array of GrDrawIndirectCommand in the provided buffer.
     //
@@ -110,7 +116,8 @@ public:
     //
     // If caps.nativeDrawIndirectSupport() is unavailable, then 'drawIndirectBuffer' must be a
     // GrCpuBuffer in order to polyfill. Performance may suffer in this scenario.
-    void drawIndirect(const GrBuffer* drawIndirectBuffer, size_t bufferOffset, int drawCount);
+    [[nodiscard]] bool drawIndirect(const GrBuffer* drawIndirectBuffer, size_t bufferOffset,
+                                    int drawCount);
 
     // Executes multiple draws from an array of GrDrawIndexedIndirectCommand in the provided buffer.
     //
@@ -118,15 +125,15 @@ public:
     //
     // If caps.nativeDrawIndirectSupport() is unavailable, then 'drawIndirectBuffer' must be a
     // GrCpuBuffer in order to polyfill. Performance may suffer in this scenario.
-    void drawIndexedIndirect(const GrBuffer* drawIndirectBuffer, size_t bufferOffset,
-                             int drawCount);
+    [[nodiscard]] bool drawIndexedIndirect(const GrBuffer* drawIndirectBuffer, size_t bufferOffset,
+                                           int drawCount);
 
     // This is a helper method for drawing a repeating pattern of vertices. The bound index buffer
     // is understood to contain 'maxPatternRepetitionsInIndexBuffer' repetitions of the pattern.
     // If more repetitions are required, then we loop.
-    void drawIndexPattern(int patternIndexCount, int patternRepeatCount,
-                          int maxPatternRepetitionsInIndexBuffer, int patternVertexCount,
-                          int baseVertex);
+    [[nodiscard]] bool drawIndexPattern(int patternIndexCount, int patternRepeatCount,
+                                        int maxPatternRepetitionsInIndexBuffer,
+                                        int patternVertexCount, int baseVertex);
 
     // Performs an upload of vertex data in the middle of a set of a set of draws
     virtual bool inlineUpload(GrOpFlushState*, GrDeferredTextureUploadFn&) = 0;
@@ -147,10 +154,10 @@ public:
     /**
      * Executes the SkDrawable object for the underlying backend.
      */
-    void executeDrawable(std::unique_ptr<SkDrawable::GpuDrawHandler>);
+    [[nodiscard]] bool executeDrawable(std::unique_ptr<SkDrawable::GpuDrawHandler>);
 
 protected:
-    GrOpsRenderPass() : fOrigin(kTopLeft_GrSurfaceOrigin), fRenderTarget(nullptr) {}
+    GrOpsRenderPass() : fOrigin(kTopLeft_GrSurfaceOrigin) {}
 
     GrOpsRenderPass(GrRenderTarget* rt, GrSurfaceOrigin origin)
             : fOrigin(origin)
@@ -165,7 +172,7 @@ protected:
     }
 
     GrSurfaceOrigin fOrigin;
-    GrRenderTarget* fRenderTarget;
+    raw_ptr<GrRenderTarget> fRenderTarget;
 
     // Backends may defer binding of certain buffers if their draw API requires a buffer, or if
     // their bind methods don't support base values.
@@ -182,7 +189,7 @@ private:
         fActiveVertexBuffer.reset();
     }
 
-    bool prepareToDraw();
+    [[nodiscard]] bool prepareToDraw();
 
     // overridden by backend-specific derived class to perform the rendering command.
     virtual void onBegin() {}
@@ -209,7 +216,9 @@ private:
     }
     virtual void onClear(const GrScissorState&, std::array<float, 4> color) = 0;
     virtual void onClearStencilClip(const GrScissorState&, bool insideStencilMask) = 0;
-    virtual void onExecuteDrawable(std::unique_ptr<SkDrawable::GpuDrawHandler>) {}
+    [[nodiscard]] virtual bool onExecuteDrawable(std::unique_ptr<SkDrawable::GpuDrawHandler>) {
+        return true;
+    }
 
     enum class DrawPipelineStatus {
         kOk = 0,

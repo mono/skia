@@ -21,6 +21,8 @@
 #include "src/gpu/ganesh/GrHashMapWithCache.h"
 #include "src/gpu/ganesh/GrSurface.h"
 #include "src/gpu/ganesh/GrSurfaceProxy.h"
+#include "src/partition_alloc/raw_ptr.h"
+#include "src/partition_alloc/raw_ptr_exclusion.h"
 
 #include <cstdint>
 
@@ -122,6 +124,15 @@ public:
 
     bool failedInstantiation() const { return fFailedInstantiation; }
 
+    // Returns true if instantiation failed and every failure was due to a promise image proxy
+    // (i.e., the client's fulfill proc did not provide a usable texture). Unlike other
+    // instantiation failures, this is an expected, recoverable condition for clients (e.g.,
+    // Chrome's compositor can race with the deletion of a promise image's backing texture) so
+    // it does not warrant abandoning the context.
+    bool failedOnlyPromiseInstantiation() const {
+        return fFailedInstantiation && !fFailedNonPromiseInstantiation;
+    }
+
     // Generate an internal plan for resource allocation. After this you can optionally call
     // `makeBudgetHeadroom` to check whether that plan would go over our memory budget.
     // Fully-lazy proxies are also instantiated at this point so that their size can
@@ -152,6 +163,9 @@ private:
     // These two methods wrap the interactions with the free pool
     void recycleRegister(Register* r);
     Register* findOrCreateRegisterFor(GrSurfaceProxy* proxy);
+
+    // Records that 'proxy' failed to instantiate (see failedOnlyPromiseInstantiation()).
+    void recordFailedInstantiation(const GrSurfaceProxy* proxy);
 
     struct FreePoolTraits {
         static const skgpu::ScratchKey& GetKey(const Register& r) {
@@ -200,10 +214,10 @@ private:
         SkDEBUGCODE(uint32_t uniqueID() const { return fUniqueID; })
 
     private:
-        GrSurfaceProxy*   fOriginatingProxy;
-        skgpu::ScratchKey fScratchKey; // free pool wants a reference to this.
-        sk_sp<GrSurface>  fExistingSurface; // queried from resource cache. may be null.
-        bool              fAccountedForInBudget = false;
+        raw_ptr<GrSurfaceProxy, DanglingUntriaged> fOriginatingProxy;
+        skgpu::ScratchKey                          fScratchKey; // free pool wants a reference to this.
+        sk_sp<GrSurface>                           fExistingSurface; // queried from resource cache. may be null.
+        bool                                       fAccountedForInBudget = false;
 
 #ifdef SK_DEBUG
         uint32_t         fUniqueID;
@@ -259,13 +273,15 @@ private:
         SkDEBUGCODE(uint32_t uniqueID() const { return fUniqueID; })
 
     private:
-        GrSurfaceProxy*  fProxy;
-        unsigned int     fStart;
-        unsigned int     fEnd;
-        Interval*        fNext = nullptr;
-        unsigned int     fUses = 0;
-        Register*        fRegister = nullptr;
-        AllowRecycling   fAllowRecycling = AllowRecycling::kYes;
+        // RAW_PTR_EXCLUSION: Performance: +11.6% on samplingoptions_filter_0_mipmap_0.
+        RAW_PTR_EXCLUSION GrSurfaceProxy*    fProxy;
+        unsigned int                         fStart;
+        unsigned int                         fEnd;
+        // RAW_PTR_EXCLUSION: Performance: ~0.2% on GPU SKP playback (estimated).
+        RAW_PTR_EXCLUSION Interval*          fNext = nullptr;
+        unsigned int                         fUses = 0;
+        raw_ptr<Register, DanglingUntriaged> fRegister;
+        AllowRecycling                       fAllowRecycling = AllowRecycling::kYes;
 
 #ifdef SK_DEBUG
         uint32_t        fUniqueID;
@@ -313,6 +329,8 @@ private:
     unsigned int fNumOps = 0;
 
     bool fFailedInstantiation = false;
+    // Set if any of the failed instantiations was for a proxy that is not a promise proxy.
+    bool fFailedNonPromiseInstantiation = false;
 
 #if defined(SK_DEBUG)
     bool fPlanned = false;

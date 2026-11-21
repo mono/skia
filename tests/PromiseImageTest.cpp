@@ -6,6 +6,7 @@
  */
 
 #include "include/core/SkAlphaType.h"
+#include "include/core/SkBitmap.h"
 #include "include/core/SkCanvas.h"
 #include "include/core/SkColor.h"
 #include "include/core/SkColorFilter.h"
@@ -18,16 +19,22 @@
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkSamplingOptions.h"
 #include "include/core/SkShader.h"
+#include "include/core/SkSpan.h"
+#include "include/core/SkString.h"
 #include "include/core/SkSurface.h"
 #include "include/core/SkTypes.h"
+#include "include/core/SkYUVAInfo.h"
 #include "include/gpu/GpuTypes.h"
 #include "include/gpu/ganesh/GrBackendSurface.h"
 #include "include/gpu/ganesh/GrDirectContext.h"
 #include "include/gpu/ganesh/GrTypes.h"
+#include "include/gpu/ganesh/GrYUVABackendTextures.h"
 #include "include/gpu/ganesh/SkSurfaceGanesh.h"
 #include "include/private/SkTArray.h"
+#include "include/private/chromium/GrDeferredDisplayList.h"
 #include "include/private/chromium/GrDeferredDisplayListRecorder.h"
 #include "include/private/chromium/GrPromiseImageTexture.h"
+#include "include/private/chromium/GrSurfaceCharacterization.h"
 #include "include/private/chromium/SkImageChromium.h"
 #include "include/private/gpu/ganesh/GrTypesPriv.h"
 #include "src/gpu/ganesh/GrCaps.h"
@@ -39,6 +46,7 @@
 #include "tools/gpu/ContextType.h"
 #include "tools/gpu/ManagedBackendTexture.h"
 
+#include <array>
 #include <cstddef>
 #include <functional>
 #include <utility>
@@ -391,6 +399,21 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(PromiseImageTextureFullCache,
     dContext->deleteBackendTexture(backendTex);
 }
 
+// Checks that 'surface' can still be drawn to and read back (i.e., its context is still usable).
+static void check_surface_is_usable(skiatest::Reporter* reporter,
+                                    GrDirectContext* dContext,
+                                    SkSurface* surface) {
+    surface->getCanvas()->clear(SK_ColorRED);
+    dContext->flushAndSubmit(surface, GrSyncCpu::kYes);
+    REPORTER_ASSERT(reporter, !dContext->abandoned());
+
+    SkBitmap bm;
+    bm.allocPixels(SkImageInfo::MakeN32Premul(surface->width(), surface->height()));
+    REPORTER_ASSERT(reporter, surface->readPixels(bm, 0, 0));
+    REPORTER_ASSERT(reporter, bm.getColor(0, 0) == SK_ColorRED,
+                    "expected 0x%08x, got 0x%08x", SK_ColorRED, bm.getColor(0, 0));
+}
+
 // Test case where promise image fulfill returns nullptr.
 DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(PromiseImageNullFulfill,
                                        reporter,
@@ -450,4 +473,172 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(PromiseImageNullFulfill,
     // We should only call each callback once and we should have made all the calls by this point.
     REPORTER_ASSERT(reporter, counts.fFulfillCount == 1);
     REPORTER_ASSERT(reporter, counts.fReleaseCount == 1);
+
+    // A promise image that fails to fulfill is not fatal: the flush's work is dropped but the
+    // context must not be abandoned (Chrome relies on this, e.g. when a promise image's backing
+    // texture has been deleted before the compositor draws it).
+    REPORTER_ASSERT(reporter, !dContext->abandoned());
+    check_surface_is_usable(reporter, dContext, surface.get());
+}
+
+// Same as PromiseImageNullFulfill but the promise image is drawn via a DDL (as Chrome's compositor
+// does).
+DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(PromiseImageNullFulfillDDL,
+                                       reporter,
+                                       ctxInfo,
+                                       CtsEnforcement::kNever) {
+    const int kWidth = 10;
+    const int kHeight = 10;
+
+    auto dContext = ctxInfo.directContext();
+
+    GrBackendFormat backendFormat =
+            dContext->defaultBackendFormat(kRGBA_8888_SkColorType, GrRenderable::kYes);
+    if (!backendFormat.isValid()) {
+        ERRORF(reporter, "No valid default kRGBA_8888 texture format.");
+        return;
+    }
+
+    SkImageInfo info = SkImageInfo::MakeN32Premul(kWidth, kHeight);
+    sk_sp<SkSurface> surface = SkSurfaces::RenderTarget(dContext, skgpu::Budgeted::kNo, info);
+    if (!surface) {
+        ERRORF(reporter, "Could not create surface.");
+        return;
+    }
+
+    GrSurfaceCharacterization characterization;
+    if (!surface->characterize(&characterization)) {
+        ERRORF(reporter, "Could not characterize surface.");
+        return;
+    }
+
+    struct Counts {
+        int fFulfillCount = 0;
+        int fReleaseCount = 0;
+    } counts;
+    auto fulfill = [](SkImages::PromiseImageTextureContext ctx) {
+        ++static_cast<Counts*>(ctx)->fFulfillCount;
+        return sk_sp<GrPromiseImageTexture>();
+    };
+    auto release = [](SkImages::PromiseImageTextureContext ctx) {
+        ++static_cast<Counts*>(ctx)->fReleaseCount;
+    };
+
+    sk_sp<const GrDeferredDisplayList> ddl;
+    {
+        GrDeferredDisplayListRecorder recorder(characterization);
+        SkCanvas* ddlCanvas = recorder.getCanvas();
+        sk_sp<SkImage> refImg(SkImages::PromiseTextureFrom(dContext->threadSafeProxy(),
+                                                           backendFormat,
+                                                           {kWidth, kHeight},
+                                                           skgpu::Mipmapped::kNo,
+                                                           kTopLeft_GrSurfaceOrigin,
+                                                           kRGBA_8888_SkColorType,
+                                                           kPremul_SkAlphaType,
+                                                           nullptr,
+                                                           fulfill,
+                                                           release,
+                                                           &counts));
+        REPORTER_ASSERT(reporter, refImg);
+        ddlCanvas->drawImage(refImg, 0, 0);
+        ddl = recorder.detach();
+    }
+    REPORTER_ASSERT(reporter, ddl);
+
+    REPORTER_ASSERT(reporter, skgpu::ganesh::DrawDDL(surface.get(), std::move(ddl)));
+    dContext->flushAndSubmit(surface.get(), GrSyncCpu::kYes);
+    REPORTER_ASSERT(reporter, counts.fFulfillCount == 1);
+
+    REPORTER_ASSERT(reporter, !dContext->abandoned());
+    check_surface_is_usable(reporter, dContext, surface.get());
+}
+
+namespace {
+struct YUVAPlaneReleaseCounter {
+    int fReleaseCount = 0;
+
+    static sk_sp<GrPromiseImageTexture> Fulfill(void*) { return nullptr; }
+    static void Release(void* self) {
+        static_cast<YUVAPlaneReleaseCounter*>(self)->fReleaseCount++;
+    }
+};
+}  // namespace
+
+// Exercises both the SkSpan overload and the deprecated pointer overload of
+// SkImages::PromiseTextureFromYUVA. Each must create an image from a valid three-plane info and
+// call the release proc exactly once per plane context when the never-drawn image is destroyed.
+DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(PromiseImageYUVAOverloads,
+                                       reporter,
+                                       ctxInfo,
+                                       CtsEnforcement::kNever) {
+    auto dContext = ctxInfo.directContext();
+
+    const GrBackendFormat planeFormat =
+            dContext->defaultBackendFormat(kAlpha_8_SkColorType, GrRenderable::kNo);
+    if (!planeFormat.isValid()) {
+        return;
+    }
+    const SkYUVAInfo yuvaInfo({4, 4},
+                              SkYUVAInfo::PlaneConfig::kY_U_V,
+                              SkYUVAInfo::Subsampling::k420,
+                              kJPEG_Full_SkYUVColorSpace);
+    const std::array<GrBackendFormat, SkYUVAInfo::kMaxPlanes> planeFormats = {
+            planeFormat, planeFormat, planeFormat};
+    const GrYUVABackendTextureInfo backendInfo(
+            yuvaInfo, planeFormats.data(), skgpu::Mipmapped::kNo, kTopLeft_GrSurfaceOrigin);
+    REPORTER_ASSERT(reporter, backendInfo.isValid());
+    constexpr int kNumPlanes = 3;
+    REPORTER_ASSERT(reporter, backendInfo.numPlanes() == kNumPlanes);
+
+    auto check_overload = [&](const char* name, auto&& makeImage) {
+        skiatest::ReporterContext subtest(reporter, SkString(name));
+        std::array<YUVAPlaneReleaseCounter, kNumPlanes> counters;
+        std::array<SkImages::PromiseImageTextureContext, kNumPlanes> contexts = {
+                &counters[0], &counters[1], &counters[2]};
+
+        sk_sp<SkImage> image = makeImage(contexts);
+        REPORTER_ASSERT(reporter, image);
+        for (const YUVAPlaneReleaseCounter& counter : counters) {
+            REPORTER_ASSERT(reporter, counter.fReleaseCount == 0);
+        }
+        image.reset();
+        for (const YUVAPlaneReleaseCounter& counter : counters) {
+            REPORTER_ASSERT(reporter, counter.fReleaseCount == 1);
+        }
+    };
+
+    check_overload("SkSpan overload",
+                   [&](std::array<SkImages::PromiseImageTextureContext, kNumPlanes>& c) {
+                       return SkImages::PromiseTextureFromYUVA(
+                               dContext->threadSafeProxy(),
+                               backendInfo,
+                               /*imageColorSpace=*/nullptr,
+                               YUVAPlaneReleaseCounter::Fulfill,
+                               YUVAPlaneReleaseCounter::Release,
+                               SkSpan<const SkImages::PromiseImageTextureContext>(c));
+                   });
+
+    check_overload("pointer overload",
+                   [&](std::array<SkImages::PromiseImageTextureContext, kNumPlanes>& c) {
+                       return SkImages::PromiseTextureFromYUVA(dContext->threadSafeProxy(),
+                                                               backendInfo,
+                                                               /*imageColorSpace=*/nullptr,
+                                                               YUVAPlaneReleaseCounter::Fulfill,
+                                                               YUVAPlaneReleaseCounter::Release,
+                                                               c.data());
+                   });
+
+    // The pointer overload validates the info before wrapping textureContexts in an SkSpan, so an
+    // invalid info with null contexts returns nullptr instead of tripping SkSpan's release-assert.
+    {
+        skiatest::ReporterContext subtest(reporter, SkString("pointer overload, invalid info"));
+        sk_sp<SkImage> image = SkImages::PromiseTextureFromYUVA(
+                dContext->threadSafeProxy(),
+                GrYUVABackendTextureInfo(),
+                /*imageColorSpace=*/nullptr,
+                YUVAPlaneReleaseCounter::Fulfill,
+                YUVAPlaneReleaseCounter::Release,
+                static_cast<SkImages::PromiseImageTextureContext*>(nullptr));
+        REPORTER_ASSERT(reporter, !image);
+    }
 }

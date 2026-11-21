@@ -256,12 +256,7 @@ bool SkImage_Ganesh::onIsProtected() const {
 GrDirectContext::FlushResult SkImage_Ganesh::flush(GrDirectContext* dContext,
                                                    const GrFlushInfo& info) const {
     if (!fContext->priv().matches(dContext) || dContext->abandoned()) {
-        if (info.fSubmittedProc) {
-            info.fSubmittedProc(info.fSubmittedContext, false);
-        }
-        if (info.fFinishedProc) {
-            info.fFinishedProc(info.fFinishedContext);
-        }
+        GrDirectContextPriv::CallFlushInfoFailureProcs(info);
         return {false, GrSemaphoresSubmitted::kNo};
     }
 
@@ -445,7 +440,7 @@ std::tuple<GrSurfaceProxyView, GrColorType> SkImage_Ganesh::asView(
 std::unique_ptr<GrFragmentProcessor> SkImage_Ganesh::asFragmentProcessor(
         skgpu::ganesh::SurfaceDrawContext* sdc,
         SkSamplingOptions sampling,
-        const SkTileMode tileModes[2],
+        std::pair<SkTileMode, SkTileMode> tileModes,
         const SkMatrix& m,
         const SkRect* subset,
         const SkRect* domain) const {

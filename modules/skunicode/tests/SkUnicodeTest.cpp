@@ -1023,3 +1023,112 @@ DEF_TEST(SkUnicode_Apple_Ideographic, reporter) {
     SkUnicode_Ideographic(apple.get(), reporter);
 }
 #endif
+
+// UAX #14 mandatory breaks (LF and BK) must set kHardLineBreakBefore after the break code point
+// in every backend. U+2028/U+2029 are 3 UTF-8 code units, so a check of one byte misses them
+DEF_TEST_UNICODES(SkUnicode_HardLineBreakAfterBK, reporter) {
+    if (!unicode) {
+        return;
+    }
+    const std::pair<const char*, std::string> kHardBreaks[] = {
+            {"LF", "\n"}, {"VT", "\v"}, {"FF", "\f"}, {"LS", "\u2028"}, {"PS", "\u2029"}};
+    // An empty tail puts the break at the end of the text, the last segment of the backend loop
+    for (const std::string tail : {"cd", ""}) {
+        for (const auto& [name, hardBreak] : kHardBreaks) {
+            skiatest::ReporterContext context(reporter, name + (" + \"" + tail + "\""));
+            std::string text = "ab" + hardBreak + tail;
+            TArray<SkUnicode::CodeUnitFlags, true> flags;
+            REPORTER_ASSERT(reporter,
+                            unicode->computeCodeUnitFlags(text.data(), text.size(), false, &flags));
+            REPORTER_ASSERT(reporter, flags.size() == SkToInt(text.size() + 1),
+                            "got %d flags for %zu code units", flags.size(), text.size());
+            const size_t breakEnd = 2 + hardBreak.size();
+            for (size_t i = 0; i <= text.size(); ++i) {
+                REPORTER_ASSERT(reporter,
+                                SkUnicode::hasHardLineBreakFlag(flags[i]) == (i == breakEnd),
+                                "index %zu, hard break ends at %zu", i, breakEnd);
+            }
+        }
+    }
+}
+
+// Every UTF-8 code unit of a Default_Ignorable_Code_Point gets kDefaultIgnorable, so SkParagraph
+// finds invisible format characters without decoding the text again
+template <typename MakeFn>
+[[maybe_unused]] static void check_default_ignorable_flags(skiatest::Reporter* reporter,
+                                                           MakeFn&& make) {
+    constexpr struct {
+        SkUnichar fChar;
+        bool fIgnorable;
+    } kCases[] = {
+            {0x200B, true},
+            {0x200D, true},
+            {0xFEFF, true},
+            {0x00AD, true},
+            {0xE0001, true},
+            {'a', false},
+            {' ', false},
+            {0x0410, false},
+    };
+    std::string text;
+    for (auto& c : kCases) {
+        char utf8[SkUTF::kMaxBytesInUTF8Sequence];
+        text.append(utf8, SkUTF::ToUTF8(c.fChar, utf8));
+    }
+    auto unicode = make(SkSpan<char>(text.data(), text.size()));
+    if (!unicode) {
+        return;
+    }
+    TArray<SkUnicode::CodeUnitFlags, true> results;
+    REPORTER_ASSERT(reporter,
+                    unicode->computeCodeUnitFlags(text.data(),
+                                                  SkToInt(text.size()),
+                                                  /*replaceTabs=*/false,
+                                                  &results));
+    REPORTER_ASSERT(reporter, results.size() == SkToInt(text.size() + 1));
+    int start = 0;
+    for (auto& c : kCases) {
+        int end = start + SkToInt(SkUTF::ToUTF8(c.fChar));
+        for (int i = start; i < end; ++i) {
+            bool flagged = (results[i] & SkUnicode::kDefaultIgnorable) != 0;
+            REPORTER_ASSERT(reporter,
+                            flagged == c.fIgnorable,
+                            "U+%04X code unit %d",
+                            (unsigned)c.fChar,
+                            i - start);
+        }
+        start = end;
+    }
+}
+
+DEF_TEST_UNICODES(SkUnicode_ComputeCodeUnitFlagsDefaultIgnorable, reporter) {
+    check_default_ignorable_flags(reporter, [&](SkSpan<char>) { return unicode; });
+}
+
+#if defined(SK_UNICODE_CLIENT_IMPLEMENTATION)
+// The client backend has its own hard-coded property table, so it gets the same check
+DEF_TEST(SkUnicode_Client_ComputeCodeUnitFlagsDefaultIgnorable, reporter) {
+    check_default_ignorable_flags(
+            reporter, [](SkSpan<char> text) { return SkUnicodes::Client::Make(text, {}, {}, {}); });
+}
+#endif
+
+#if defined(SK_UNICODE_ICU_IMPLEMENTATION)
+// The UTF-16 path decodes surrogate pairs, so a supplementary-plane ignorable flags both units
+DEF_TEST(SkUnicode_ICU_ComputeCodeUnitFlagsDefaultIgnorableUtf16, reporter) {
+    auto icu = SkUnicodes::ICU::Make();
+    if (!icu) {
+        return;
+    }
+    // U+200B U+FEFF U+E0001 a; the surrogate pair of U+E0001 is flagged on both code units
+    char16_t text[] = {0x200B, 0xFEFF, 0xDB40, 0xDC01, u'a'};
+    constexpr int kUnits = std::size(text);
+    TArray<SkUnicode::CodeUnitFlags, true> results;
+    REPORTER_ASSERT(reporter, icu->computeCodeUnitFlags(text, kUnits, false, &results));
+    REPORTER_ASSERT(reporter, results.size() == kUnits + 1);
+    for (int i = 0; i < kUnits; ++i) {
+        bool flagged = (results[i] & SkUnicode::kDefaultIgnorable) != 0;
+        REPORTER_ASSERT(reporter, flagged == (i < kUnits - 1), "code unit %d", i);
+    }
+}
+#endif

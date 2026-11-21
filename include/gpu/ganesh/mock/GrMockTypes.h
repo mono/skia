@@ -126,6 +126,8 @@ struct GrMockOptions {
         fConfigOptions[(int)GrColorType::kAlpha_8].fTexturable = true;
         fConfigOptions[(int)GrColorType::kBGR_565].fTexturable = true;
         fConfigOptions[(int)GrColorType::kRGB_565].fTexturable = true;
+        fConfigOptions[(int)GrColorType::kR_8].fTexturable = true;
+        fConfigOptions[(int)GrColorType::kR_16].fTexturable = true;
 
         fConfigOptions[(int)GrColorType::kBGRA_8888] = fConfigOptions[(int)GrColorType::kRGBA_8888];
 
@@ -149,6 +151,8 @@ struct GrMockOptions {
     int fMaxRenderTargetSize = 2048;
     int fMaxWindowRectangles = 0;
     int fMaxVertexAttributes = 16;
+    // Simulates drivers that round MSAA attachment dimensions/bpp to powers of two in uint32_t.
+    bool fEnforceImageFootprintFitsIn32Bits = false;
     std::array<ConfigOptions, kGrColorTypeCnt> fConfigOptions;
     std::array<ConfigOptions, kSkTextureCompressionTypeCount> fCompressedOptions;
 

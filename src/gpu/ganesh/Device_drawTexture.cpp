@@ -237,17 +237,7 @@ void draw_texture(skgpu::ganesh::SurfaceDrawContext* sdc,
     }
 }
 
-SkFilterMode downgrade_to_filter(const SkSamplingOptions& sampling) {
-    SkFilterMode filter = sampling.filter;
-    if (sampling.isAniso() || sampling.useCubic || sampling.mipmap != SkMipmapMode::kNone) {
-        // if we were "fancier" than just bilerp, only do bilerp
-        filter = SkFilterMode::kLinear;
-    }
-    return filter;
-}
-
 } // anonymous namespace
-
 
 //////////////////////////////////////////////////////////////////////////////
 
@@ -350,7 +340,7 @@ void Device::drawEdgeAAImage(const SkImage* image,
     }
     const SkRect* subset = restrictToSubset       ? &src : nullptr;
     const SkRect* domain = coordsAllInsideSrcRect ? &src : nullptr;
-    SkTileMode tileModes[] = {tm, tm};
+    std::pair tileModes{tm, tm};
     std::unique_ptr<GrFragmentProcessor> fp = skgpu::ganesh::AsFragmentProcessor(
             sdc, image, sampling, tileModes, textureMatrix, subset, domain);
     fp = GrColorSpaceXformEffect::Make(
@@ -425,7 +415,8 @@ void Device::drawSpecial(SkSpecialImage* special,
     SkRect dst = SkRect::MakeWH(special->width(), special->height());
     SkMatrix srcToDst = SkMatrix::RectToRectOrIdentity(src, dst);
 
-    SkSamplingOptions sampling = SkSamplingOptions(downgrade_to_filter(origSampling));
+    const SkSamplingOptions safeSampling = special->ganeshSafeSampling(origSampling);
+
     GrAA aa = fSurfaceDrawContext->chooseAA(paint);
     SkCanvas::QuadAAFlags aaFlags = (aa == GrAA::kYes) ? SkCanvas::kAll_QuadAAFlags
                                                        : SkCanvas::kNone_QuadAAFlags;
@@ -458,7 +449,7 @@ void Device::drawSpecial(SkSpecialImage* special,
                           /* dstClip= */nullptr,
                           aaFlags,
                           localToDevice,
-                          sampling,
+                          safeSampling,
                           paint,
                           constraint,
                           srcToDst,
@@ -486,7 +477,7 @@ void Device::drawCoverageMask(const SkSpecialImage* mask,
         return;
     }
 
-    SkTileMode tileModes[] = {SkTileMode::kDecal, SkTileMode::kDecal};
+    std::pair tileModes{SkTileMode::kDecal, SkTileMode::kDecal};
 
     auto deviceToMask = maskToDevice.invert();
     if (!deviceToMask) {

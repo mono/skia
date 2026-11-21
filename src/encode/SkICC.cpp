@@ -191,6 +191,7 @@ bool nearly_equal(const skcms_Matrix3x3& u, const skcms_Matrix3x3& v) {
 }
 
 constexpr uint32_t kCICPPrimariesSRGB = 1;
+constexpr uint32_t kCICPPrimariesUnspecified = 2;
 constexpr uint32_t kCICPPrimariesP3 = 12;
 constexpr uint32_t kCICPPrimariesRec2020 = 9;
 
@@ -202,7 +203,7 @@ uint32_t get_cicp_primaries(const skcms_Matrix3x3& toXYZD50) {
     } else if (nearly_equal(toXYZD50, SkNamedGamut::kRec2020)) {
         return kCICPPrimariesRec2020;
     }
-    return 0;
+    return kCICPPrimariesUnspecified;
 }
 
 constexpr uint32_t kCICPTrfnSRGB = 1;
@@ -250,7 +251,7 @@ std::string get_desc_string(const skcms_TransferFunction& fn,
     }
 
     // If available, use the named CICP primaries and transfer function.
-    if (cicp_primaries && cicp_trfn) {
+    if (cicp_primaries != kCICPPrimariesUnspecified && cicp_trfn) {
         std::string result;
         switch (cicp_primaries) {
             case kCICPPrimariesSRGB:
@@ -516,7 +517,7 @@ sk_sp<SkData> write_mAB_or_mBA_tag(uint32_t type,
         m_curves_offset = offset;
         for (size_t i = 0; i < kNumChannels; ++i) {
             m_curves_data[i] = write_trc_tag(m_curves[i]);
-            SkASSERT(a_curves_data[i]);
+            SkASSERT(m_curves_data[i]);
             offset += m_curves_data[i]->size();
         }
     }
@@ -629,7 +630,7 @@ sk_sp<SkData> SkWriteICCProfile(const skcms_ICCProfile* profile, const char* des
         SkASSERT(b2a.input_channels == kNumChannels);
         auto b2a_data = write_mAB_or_mBA_tag(kTAG_mBAType,
                                              b2a.input_curves,
-                                             b2a.output_channels ? b2a.input_curves : nullptr,
+                                             b2a.output_channels ? b2a.output_curves : nullptr,
                                              b2a.output_channels ? b2a.grid_points : nullptr,
                                              b2a.output_channels ? b2a.grid_16 : nullptr,
                                              b2a.matrix_channels ? b2a.matrix_curves : nullptr,

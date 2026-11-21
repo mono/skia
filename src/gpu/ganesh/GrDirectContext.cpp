@@ -225,6 +225,10 @@ void GrDirectContext::freeGpuResources() {
 
     // TODO: bubble this error up to the client
     (void) this->flushAndSubmit();
+    if (this->abandoned()) { // flushAndSubmit can abandon the context
+        return;
+    }
+
 #if !defined(SK_ENABLE_OPTIMIZE_SIZE)
     if (fSmallPathAtlasMgr) {
         fSmallPathAtlasMgr->reset();
@@ -436,12 +440,7 @@ skgpu::GpuStatsFlags GrDirectContext::supportedGpuStats() const {
 GrDirectContext::FlushResult GrDirectContext::flush(const GrFlushInfo& info) {
     ASSERT_SINGLE_OWNER
     if (this->abandoned()) {
-        if (info.fFinishedProc) {
-            info.fFinishedProc(info.fFinishedContext);
-        }
-        if (info.fSubmittedProc) {
-            info.fSubmittedProc(info.fSubmittedContext, false);
-        }
+        GrDirectContextPriv::CallFlushInfoFailureProcs(info);
         return {false, GrSemaphoresSubmitted::kNo};
     }
 

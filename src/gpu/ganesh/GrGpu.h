@@ -24,6 +24,7 @@
 #include "src/gpu/ganesh/GrOpsRenderPass.h"
 #include "src/gpu/ganesh/GrSamplerState.h"
 #include "src/gpu/ganesh/GrXferProcessor.h"
+#include "src/partition_alloc/raw_ptr.h"
 
 #include <array>
 #include <cstddef>
@@ -439,6 +440,7 @@ public:
     virtual void waitSemaphore(GrSemaphore* semaphore) = 0;
 
     virtual std::optional<GrTimerQuery> startTimerQuery() { return {}; }
+    virtual void endTimerQuery(const GrTimerQuery&) { SK_ABORT("timer query not supported."); }
 
     virtual void addFinishedCallback(skgpu::AutoCallback, std::optional<GrTimerQuery> = {}) = 0;
     virtual void checkFinishedCallbacks() = 0;
@@ -724,8 +726,6 @@ protected:
     void initCaps(sk_sp<const GrCaps> caps);
 
 private:
-    virtual void endTimerQuery(const GrTimerQuery&) { SK_ABORT("timer query not supported."); }
-
     virtual GrBackendTexture onCreateBackendTexture(SkISize dimensions,
                                                     const GrBackendFormat&,
                                                     GrRenderable,
@@ -897,7 +897,7 @@ private:
 
     uint32_t fResetBits;
     // The context owns us, not vice-versa, so this ptr is not ref'ed by Gpu.
-    GrDirectContext* fContext;
+    raw_ptr<GrDirectContext> fContext;
 
     struct SubmittedProc {
         SubmittedProc(GrGpuSubmittedProc proc, GrGpuSubmittedContext context)

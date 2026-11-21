@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"runtime"
 
 	"github.com/chromedp/chromedp"
 	"github.com/jcgregorio/logger"
@@ -58,10 +59,21 @@ func newChromeContext(
 	stepCtx := td.StartStep(ctx, td.Props("create chrome devtools context").Infra())
 	defer td.EndStep(stepCtx)
 
+	chromeStderr := td.NewLogStream(ctx, "chrome stderr", td.SeverityInfo)
 	execOpts := append(chromedp.DefaultExecAllocatorOptions[:],
 		chromedp.ExecPath(chromeBin),
 		chromedp.NoSandbox, // req'd for modern Ubuntus where we don't have sudo/root
+		chromedp.Flag("enable-logging", "stderr"),
+		chromedp.Flag("log-level", "1"), // WARNING+
+		chromedp.CombinedOutput(chromeStderr),
 	)
+
+	if runtime.GOOS == "linux" {
+		// Headless chrome on Linux appears to default WebGL to SwiftShader unless an ANGLE backend
+		// is specified.
+		execOpts = append(execOpts, chromedp.Flag("use-angle", "vulkan"))
+	}
+
 	chromeCtx, cancelChrome := chromedp.NewExecAllocator(ctx, execOpts...)
 
 	opts := []chromedp.ContextOption{chromedp.WithErrorf(sklog.Errorf)}

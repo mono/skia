@@ -176,6 +176,7 @@ mod ffi {
         ) -> DecodingResult;
         fn output_height(self: &Reader) -> u32;
         fn supports_streaming_full_decode(self: &Reader) -> bool;
+        fn supports_streaming_incremental_decode(self: &Reader) -> bool;
         fn supports_direct_packed_output(self: &Reader) -> bool;
         fn full_image_buffer_capacity_for_testing(self: &Reader) -> u64;
         fn reset_decode_state(self: &mut Reader);
@@ -255,6 +256,7 @@ use jpeg_multipicture::{find_mpf_in_segments, MpfResult};
 use jpeg_segment_scan::jpeg_marker;
 use jpeg_segment_scan::{get_segment_params, ScannedSegment, SegmentScanner};
 
+use std::borrow::Cow;
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -263,6 +265,9 @@ use zune_core::colorspace::ColorSpace as ZuneColorSpace;
 use zune_jpeg::{RawImcuRowStatus, ScanlineReadStatus, ScanlineStatus};
 
 const MAX_DECODE_IMAGE_BYTES: usize = 512 * 1024 * 1024;
+// 8 KiB usually fits JPEG headers without copying much entropy data past SOS.
+// Larger APP headers span multiple chunks.
+const STREAM_READ_CHUNK_SIZE: usize = 8 * 1024;
 
 #[derive(Clone)]
 struct GrowingJpegCursor {
@@ -436,20 +441,23 @@ impl EmbeddedJpegScanner {
     }
 }
 
-/// Read all available bytes from a SkStreamAdapter.
+/// Read up to max_bytes available bytes from a SkStreamAdapter.
 /// Does not block — reads whatever is available.
 fn read_available_from_stream(
     input: &mut cxx::UniquePtr<ffi::SkStreamAdapter>,
     sink: &mut Vec<u8>,
+    max_bytes: usize,
 ) -> Result<usize, ()> {
     let Some(mut stream) = input.as_mut() else {
         return Err(());
     };
     let initial_sink_len = sink.len();
-    let mut buffer = [0u8; 8192];
+    let mut buffer = [0u8; STREAM_READ_CHUNK_SIZE];
 
-    loop {
-        let bytes_read = stream.as_mut().read(&mut buffer);
+    while sink.len() - initial_sink_len < max_bytes {
+        let remaining = max_bytes - (sink.len() - initial_sink_len);
+        let to_read = remaining.min(buffer.len());
+        let bytes_read = stream.as_mut().read(&mut buffer[..to_read]);
         if bytes_read == 0 {
             break;
         }
@@ -517,6 +525,7 @@ pub struct Reader {
     bytes_per_pixel: u32,
     output_format: PackedOutputFormat,
     supports_streaming_full_decode: bool,
+    single_scan: bool,
     image_data: Vec<u8>,
     image_data_loaded: bool,
     /// Append-only stable output prefix. May be less than height for truncated images.
@@ -603,6 +612,7 @@ impl Reader {
             bytes_per_pixel: 3,
             output_format: PackedOutputFormat::Source,
             supports_streaming_full_decode: false,
+            single_scan: false,
             image_data: Vec::new(),
             image_data_loaded: false,
             valid_rows: 0,
@@ -632,13 +642,19 @@ impl Reader {
     /// Try to read more data from the stream into raw_data, and feed
     /// any new bytes to the segment scanner.
     fn try_read_more(&mut self) {
-        if self.stream_exhausted {
-            return;
+        self.try_read_up_to(usize::MAX);
+    }
+
+    fn try_read_up_to(&mut self, max_bytes: usize) -> usize {
+        if max_bytes == 0 || self.stream_exhausted {
+            return 0;
         }
+        let mut bytes_read = 0;
         if let Some(ref mut stream) = self.stream {
-            match read_available_from_stream(stream, &mut self.raw_data.borrow_mut()) {
-                Ok(bytes_read) => {
-                    if bytes_read == 0 {
+            match read_available_from_stream(stream, &mut self.raw_data.borrow_mut(), max_bytes) {
+                Ok(count) => {
+                    bytes_read = count;
+                    if count == 0 {
                         self.stream_exhausted = true;
                     }
                 }
@@ -650,6 +666,7 @@ impl Reader {
 
         // Feed any new bytes to the segment scanner.
         self.advance_scanner();
+        bytes_read
     }
 
     fn advance_scanner(&mut self) {
@@ -702,8 +719,16 @@ impl Reader {
         if self.metadata_loaded {
             return DecodingResult::Success;
         }
+        if !self.input_complete {
+            // A previous EOF does not prevent new bytes on a growing stream.
+            self.stream_exhausted = false;
+        }
 
-        self.try_read_more();
+        while !self.scanner.is_done() && !self.scanner.had_error() {
+            if self.try_read_up_to(STREAM_READ_CHUNK_SIZE) == 0 {
+                break;
+            }
+        }
 
         let raw_data = self.raw_data.borrow();
         match classify_jpeg_signature(&raw_data) {
@@ -712,20 +737,33 @@ impl Reader {
         }
         drop(raw_data);
 
+        if self.scanner.had_error() {
+            // Zune accepts padding the scanner rejects. Read once rather than
+            // replaying padding without marker checkpoints after every chunk.
+            self.try_read_more();
+        }
+
         let options = zune_core::options::DecoderOptions::default().set_strict_mode(false);
         let mut decoder = zune_jpeg::JpegDecoder::new_with_options(
             GrowingJpegCursor::new(Rc::clone(&self.raw_data)),
             options,
         );
         decoder.set_incremental_mode(!self.input_complete);
-
-        match decoder.decode_headers() {
-            Ok(()) => {}
-            Err(ref e) if e.is_recoverable_eof() => {
-                return DecodingResult::IncompleteInput;
-            }
-            Err(ref e) => {
-                return map_zune_error(e);
+        // One extra chunk normally finishes SOS parameters. If parsing still
+        // needs bytes, drain once rather than trusting scanner completion.
+        let mut retry_read_limits = [STREAM_READ_CHUNK_SIZE, usize::MAX].into_iter();
+        loop {
+            match decoder.decode_headers() {
+                Ok(()) => break,
+                Err(ref e) if e.is_recoverable_eof() => {
+                    let Some(max_bytes) = retry_read_limits.next() else {
+                        return DecodingResult::IncompleteInput;
+                    };
+                    if self.try_read_up_to(max_bytes) == 0 {
+                        return DecodingResult::IncompleteInput;
+                    }
+                }
+                Err(ref e) => return map_zune_error(e),
             }
         }
 
@@ -812,6 +850,15 @@ impl Reader {
             return DecodingResult::MemoryError;
         }
 
+        // A single scan's SOS has 8 + 2 * components bytes including its marker.
+        // Match zune's header cursor as well, so scanner disagreements stay buffered.
+        let header_end = decoder.inner_reader().position().ok();
+        self.single_scan = self.scanner.segments.last().is_some_and(|segment| {
+            segment.marker == jpeg_marker::SOS
+                && raw_component_count != 0
+                && header_end
+                    == Some(u64::from(segment.offset) + 8 + 2 * u64::from(raw_component_count))
+        });
         self.width = width;
         self.height = height;
         self.color = color;
@@ -1005,7 +1052,12 @@ impl Reader {
     }
 
     pub fn image_data_loaded(&self) -> bool {
+        // Streaming output completes the frame without retaining packed pixels.
         self.image_data_loaded
+            || matches!(
+                self.output_sequence,
+                OutputSequence::Scanline { complete: true }
+            )
     }
 
     fn finish_buffered_image(&mut self, buffered_rows: Option<usize>) -> DecodingResult {
@@ -1209,6 +1261,10 @@ impl Reader {
 
     pub fn supports_streaming_full_decode(&self) -> bool {
         self.supports_streaming_full_decode && self.output_scale.is_none()
+    }
+
+    pub fn supports_streaming_incremental_decode(&self) -> bool {
+        self.single_scan && self.supports_streaming_full_decode()
     }
 
     pub fn supports_direct_packed_output(&self) -> bool {
@@ -1542,6 +1598,9 @@ impl Reader {
         };
         let status = {
             let mut scanlines = decoder.scanline_output();
+            if self.input_complete {
+                scanlines.set_input_complete();
+            }
             scanlines.start()
         };
         match status {
@@ -1844,14 +1903,14 @@ pub fn encode_jpeg(
         _ => return EncodingResult::ParameterError,
     };
 
-    let (rgb_data, jpeg_color) = match color_type {
+    let (source_data, jpeg_color) = match color_type {
         JpegEncodeColor::Grayscale => {
             let mut data = Vec::with_capacity(w * h);
             for y in 0..h {
                 let row_start = y * row_bytes;
                 data.extend_from_slice(&pixels[row_start..row_start + w]);
             }
-            (data, jpeg_encoder::ColorType::Luma)
+            (Cow::Owned(data), jpeg_encoder::ColorType::Luma)
         }
         JpegEncodeColor::RGB => {
             let mut data = Vec::with_capacity(w * h * 3);
@@ -1859,7 +1918,17 @@ pub fn encode_jpeg(
                 let row_start = y * row_bytes;
                 data.extend_from_slice(&pixels[row_start..row_start + w * 3]);
             }
-            (data, jpeg_encoder::ColorType::Rgb)
+            (Cow::Owned(data), jpeg_encoder::ColorType::Rgb)
+        }
+        JpegEncodeColor::RGBA | JpegEncodeColor::BGRA
+            if row_bytes == min_row && !matches!(alpha_option, JpegEncodeAlpha::BlendOnBlack) =>
+        {
+            let color = if matches!(color_type, JpegEncodeColor::BGRA) {
+                jpeg_encoder::ColorType::Bgra
+            } else {
+                jpeg_encoder::ColorType::Rgba
+            };
+            (Cow::Borrowed(&pixels[..h * row_bytes]), color)
         }
         JpegEncodeColor::RGBA | JpegEncodeColor::BGRA => {
             let swap_rb = matches!(color_type, JpegEncodeColor::BGRA);
@@ -1886,7 +1955,7 @@ pub fn encode_jpeg(
                     }
                 }
             }
-            (data, jpeg_encoder::ColorType::Rgb)
+            (Cow::Owned(data), jpeg_encoder::ColorType::Rgb)
         }
         _ => return EncodingResult::ParameterError,
     };
@@ -1895,9 +1964,11 @@ pub fn encode_jpeg(
 
     let mut buf: Vec<u8> = Vec::new();
     let mut encoder = jpeg_encoder::Encoder::new(&mut buf, quality);
+    encoder.set_chroma_subsampling_method(jpeg_encoder::ChromaSubsamplingMethod::Average);
+    encoder.set_exact_quantization(true);
     encoder.set_optimized_huffman_tables(true);
 
-    match encoder.encode(&rgb_data, w16, h16, jpeg_color) {
+    match encoder.encode(&source_data, w16, h16, jpeg_color) {
         Ok(()) => {
             *output = buf;
             EncodingResult::Success
@@ -1934,6 +2005,13 @@ mod tests {
             "{result:?}: {bytes:?}"
         );
         reader
+    }
+
+    #[test]
+    fn test_zero_length_read_does_not_exhaust_stream() {
+        let mut reader = new_reader(cxx::UniquePtr::null(), 0, true);
+        assert_eq!(reader.try_read_up_to(0), 0);
+        assert!(!reader.stream_exhausted);
     }
 
     #[test]
@@ -2444,6 +2522,65 @@ mod tests {
     }
 
     #[test]
+    fn test_encode_packed_color_matches_padded_input() {
+        for color in [JpegEncodeColor::RGBA, JpegEncodeColor::BGRA] {
+            for (width, height) in [(1u32, 1u32), (17, 19)] {
+                let row_bytes = width as usize * 4;
+                let stride = row_bytes + 7;
+                let mut packed = vec![0; row_bytes * height as usize];
+                let mut padded = vec![0xCD; stride * height as usize];
+                for y in 0..height as usize {
+                    for x in 0..width as usize {
+                        let pixel = [
+                            (x * 13 + y * 7) as u8,
+                            (x * 3 + y * 11) as u8,
+                            (x * 17 + y * 5) as u8,
+                            (x * 19 + y * 23) as u8,
+                        ];
+                        packed[y * row_bytes + x * 4..y * row_bytes + (x + 1) * 4]
+                            .copy_from_slice(&pixel);
+                        padded[y * stride + x * 4..y * stride + (x + 1) * 4]
+                            .copy_from_slice(&pixel);
+                    }
+                }
+                for alpha in [JpegEncodeAlpha::Ignore, JpegEncodeAlpha::BlendOnBlack] {
+                    for quality in [40, 85, 90] {
+                        let mut actual = Vec::new();
+                        let mut expected = Vec::new();
+                        assert!(matches!(
+                            encode_jpeg(
+                                &packed,
+                                width,
+                                height,
+                                row_bytes as u32,
+                                color,
+                                alpha,
+                                quality,
+                                &mut actual,
+                            ),
+                            EncodingResult::Success
+                        ));
+                        assert!(matches!(
+                            encode_jpeg(
+                                &padded,
+                                width,
+                                height,
+                                stride as u32,
+                                color,
+                                alpha,
+                                quality,
+                                &mut expected,
+                            ),
+                            EncodingResult::Success
+                        ));
+                        assert_eq!(actual, expected);
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
     fn test_encode_jpeg_uses_optimized_huffman_tables() {
         let pixels = [0, 255, 0].repeat(100 * 100);
 
@@ -2468,6 +2605,39 @@ mod tests {
             .unwrap();
 
         assert!(output.len() < default_output.len());
+    }
+
+    #[test]
+    fn test_encode_jpeg_uses_average_subsampling_and_exact_quantization() {
+        let row = [0u8, 0, 0, 246, 255, 255, 255, 255];
+        let mut pixels = Vec::with_capacity(8 * 8);
+        for _ in 0..8 {
+            pixels.extend_from_slice(&row);
+        }
+
+        let mut encoded = Vec::new();
+        assert_eq!(
+            encode_jpeg(
+                &pixels,
+                8,
+                8,
+                8,
+                JpegEncodeColor::Grayscale,
+                JpegEncodeAlpha::Ignore,
+                85,
+                &mut encoded,
+            ),
+            EncodingResult::Success
+        );
+
+        let options = zune_core::options::DecoderOptions::default()
+            .jpeg_set_out_colorspace(ZuneColorSpace::Luma);
+        let mut decoder = zune_jpeg::JpegDecoder::new_with_options(
+            zune_core::bytestream::ZCursor::new(&encoded),
+            options,
+        );
+        let decoded = decoder.decode().unwrap();
+        assert_eq!(&decoded[..8], &[0, 1, 0, 246, 254, 255, 255, 255]);
     }
 
     #[test]
