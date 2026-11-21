@@ -9,6 +9,7 @@
 #define GrSamplerState_DEFINED
 
 #include "include/core/SkSamplingOptions.h"
+#include "include/core/SkSpan.h"
 #include "include/gpu/GpuTypes.h"
 #include "include/private/SkTPin.h"
 #include "include/private/SkTo.h"
@@ -47,7 +48,7 @@ public:
                              MipmapMode mm = MipmapMode::kNone)
             : fWrapModes{wrapX, wrapY}, fFilter(filter), fMipmapMode(mm) {}
 
-    constexpr GrSamplerState(const WrapMode wrapModes[2],
+    constexpr GrSamplerState(SkSpan<const WrapMode, 2> wrapModes,
                              Filter filter,
                              MipmapMode mm = MipmapMode::kNone)
             : fWrapModes{wrapModes[0], wrapModes[1]}, fFilter(filter), fMipmapMode(mm) {}
@@ -104,7 +105,8 @@ public:
 
     constexpr bool operator==(GrSamplerState that) const {
         return fWrapModes[0] == that.fWrapModes[0] && fWrapModes[1] == that.fWrapModes[1] &&
-               fFilter == that.fFilter && fMipmapMode == that.fMipmapMode;
+               fFilter == that.fFilter && fMipmapMode == that.fMipmapMode &&
+               fMaxAniso == that.fMaxAniso;
     }
 
     constexpr bool operator!=(const GrSamplerState& that) const { return !(*this == that); }
@@ -116,7 +118,7 @@ public:
      */
     uint32_t asKey(bool anisoIsOrthogonal) const {
         constexpr int kNumWrapBits       = SkNextLog2(kWrapModeCount);
-        constexpr int kNumMaxAnisoBits   = SkNextLog2(kMaxMaxAniso);
+        constexpr int kNumMaxAnisoBits   = SkNextLog2(kMaxMaxAniso + 1);
         constexpr int kNumFilterBits     = SkNextLog2(kFilterCount);
         constexpr int kNumMipmapModeBits = SkNextLog2(kMipmapModeCount);
 

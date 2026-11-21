@@ -7,11 +7,13 @@
 #ifndef skgpu_graphite_DrawListBase_DEFINED
 #define skgpu_graphite_DrawListBase_DEFINED
 
+#include "include/core/SkRect.h"
 #include "include/gpu/graphite/GraphiteTypes.h"
 
 #include "include/private/SkAttributes.h"
 #include "include/private/SkDebug.h"
 #include "include/private/SkEnumBitMask.h"
+#include "include/private/SkOnlyStackAllocatable.h"
 #include "src/core/SkBlockAllocator.h"
 #include "src/core/SkTBlockList.h"
 #include "src/gpu/graphite/ContextUtils.h"
@@ -73,7 +75,8 @@ public:
                                                    DrawContext* drawContext,
                                                    sk_sp<TextureProxy> target,
                                                    const SkImageInfo& targetInfo,
-                                                   const DstReadStrategy dstReadStrategy) = 0;
+                                                   const DstReadStrategy dstReadStrategy,
+                                                   const SkIRect& dstCopyBounds) = 0;
 
     bool avoidDepth() const { return fAvoidDepth; }
 
@@ -271,6 +274,8 @@ protected:
     // TextureDataBlocks to that representation as needed.
     class TextureTracker {
     public:
+        SK_ONLY_STACK_ALLOCATABLE;
+
         TextureTracker(TextureDataCache* textureCache) : fTextureCache(textureCache) {}
 
         bool setCurrentTextureBindings(TextureDataCache::Index bindingIndex) {

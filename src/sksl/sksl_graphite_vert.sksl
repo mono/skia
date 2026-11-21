@@ -1093,7 +1093,7 @@ float4 circular_arc_vertex_fn(float3 position,
 float4 text_vertex_fn(float2 baseCoords,
                       // Uniforms
                       float4x4 maskToDevice,
-                      float4x4 localToDevice,
+                      float3x3 localToDevice,
                       float2 atlasSizeInv,
                       // Instance Attributes
                       float2 size,
@@ -1115,9 +1115,11 @@ float4 text_vertex_fn(float2 baseCoords,
     float4 position = maskToDevice * subRunCoords.xy01;
 
     // Calculate the local coords used for shading.
-    // TODO(b/246963258): This is incorrect if the transform has perspective, which would
-    // require a division + a valid z coordinate (which is currently set to 0).
-    stepLocalCoords = (inverse(localToDevice) * position).xy;
+    // Since glyphs are always rendered into a purely 2D atlas, `maskToDevice` is the only source
+    // of perspective distortion. Thus `position.w` already provides the perspective interpolation
+    // needed for `localToDevice`, and dividing in the vertex shader is sufficient.
+    float3 localCoords = inverse(localToDevice) * position.xyw;
+    stepLocalCoords = localCoords.xy / localCoords.z;
 
     unormTexCoords = baseCoords + uvPos;
     textureCoords = unormTexCoords * atlasSizeInv;
@@ -1139,7 +1141,7 @@ float4 coverage_mask_vertex_fn(float2 quadCoords,
                                out float2 textureCoords,
                                out half invert,
                                // Render Step
-                               out float2 stepLocalCoords) {
+                               out float3 stepLocalCoords) {
     // An atlas shape is an axis-aligned rectangle tessellated as a triangle strip.
     //
     // The bounds coordinates are in an intermediate space, pixel-aligned with the mask texture
@@ -1150,10 +1152,7 @@ float4 coverage_mask_vertex_fn(float2 quadCoords,
 
     // Local coordinates used for shading are derived from the final device coords and the inverse
     // of the original local-to-device matrix.
-    float3 localCoords = inverse(localToDevice) * drawCoords;
-    // TODO: Support float3 local coordinates if the matrix has perspective so that W is
-    // interpolated correctly to the fragment shader.
-    stepLocalCoords = localCoords.xy / localCoords.z;
+    stepLocalCoords = inverse(localToDevice) * drawCoords;
 
     // For an inverse fill, `textureCoords` will get clamped to `maskBounds` and the edge pixels
     // will always land on a 0-coverage border pixel assuming the atlas was prepared with 1px

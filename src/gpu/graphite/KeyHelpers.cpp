@@ -24,6 +24,7 @@
 #include "src/core/SkColorSpacePriv.h"
 #include "src/core/SkDebugUtils.h"
 #include "src/core/SkHalf.h"
+#include "src/core/SkMatrixPriv.h"
 #include "src/core/SkMeshPriv.h"
 #include "src/core/SkRuntimeBlender.h"
 #include "src/core/SkRuntimeEffectPriv.h"
@@ -1359,59 +1360,6 @@ void ColorSpaceTransformBlock::AddBlock(const KeyContext& keyContext,
 
 //--------------------------------------------------------------------------------------------------
 
-#if defined(SK_GRAPHITE_USE_LEGACY_RRECT_CLIP_SHADER)
-
-namespace {
-
-void add_analytic_clip_data(const KeyContext& keyContext,
-                            const NonMSAAClipBlock::NonMSAAClipData& data) {
-    BEGIN_WRITE_UNIFORMS(keyContext, BuiltInCodeSnippetID::kAnalyticClip)
-    keyContext.pipelineDataGatherer()->write(data.fRect);
-    keyContext.pipelineDataGatherer()->write(data.fRadiusPlusHalf);
-    keyContext.pipelineDataGatherer()->writeHalf(data.fEdgeSelect);
-}
-
-void add_analytic_and_atlas_clip_data(const KeyContext& keyContext,
-                                      const NonMSAAClipBlock::NonMSAAClipData& data) {
-    BEGIN_WRITE_UNIFORMS(keyContext, BuiltInCodeSnippetID::kAnalyticAndAtlasClip)
-    keyContext.pipelineDataGatherer()->write(data.fRect);
-    keyContext.pipelineDataGatherer()->write(data.fRadiusPlusHalf);
-    keyContext.pipelineDataGatherer()->writeHalf(data.fEdgeSelect);
-    keyContext.pipelineDataGatherer()->write(data.fTexCoordOffset);
-    keyContext.pipelineDataGatherer()->write(data.fMaskBounds);
-    if (data.fAtlasTexture) {
-        keyContext.pipelineDataGatherer()->write(
-                SkSize::Make(1.f/data.fAtlasTexture->dimensions().width(),
-                             1.f/data.fAtlasTexture->dimensions().height()));
-    } else {
-        keyContext.pipelineDataGatherer()->write(SkSize::Make(0, 0));
-    }
-}
-
-}  // anonymous namespace
-
-void NonMSAAClipBlock::AddBlock(const KeyContext& keyContext, const NonMSAAClipData& data) {
-    if (data.fAtlasTexture) {
-        add_analytic_and_atlas_clip_data(keyContext, data);
-        keyContext.paintParamsKeyBuilder()->beginBlock(BuiltInCodeSnippetID::kAnalyticAndAtlasClip);
-
-        const Caps* caps = keyContext.caps();
-        ImmutableSamplerInfo info =
-                caps->getImmutableSamplerInfo(data.fAtlasTexture->textureInfo());
-        SamplerDesc samplerDesc {SkSamplingOptions(SkFilterMode::kNearest, SkMipmapMode::kNone),
-                                 {SkTileMode::kClamp, SkTileMode::kClamp},
-                                 info};
-        keyContext.pipelineDataGatherer()->add(data.fAtlasTexture, samplerDesc);
-
-        keyContext.paintParamsKeyBuilder()->endBlock();
-    } else {
-        add_analytic_clip_data(keyContext, data);
-        keyContext.paintParamsKeyBuilder()->addBlock(BuiltInCodeSnippetID::kAnalyticClip);
-    }
-}
-
-#else
-
 namespace {
 
 void add_analytic_clip_data(const KeyContext& keyContext, const AnalyticClip& clip) {
@@ -1472,8 +1420,6 @@ void AddAnalyticClip(const KeyContext& keyContext, const NonMSAAClip& clip) {
         keyContext.paintParamsKeyBuilder()->addBlock(BuiltInCodeSnippetID::kAnalyticClip);
     }
 }
-
-#endif // SK_GRAPHITE_USE_LEGACY_RRECT_CLIP_SHADER
 
 //--------------------------------------------------------------------------------------------------
 
@@ -2215,16 +2161,15 @@ static void add_image_to_key(const KeyContext& keyContext,
     // nearest filtering when possible can also be a minor perf/power optimization depending on the
     // hardware.
     bool samplingHasNoEffect = false;
-    // Cubic sampling is will not filter the same as nearest even when pixel aligned.
+    // Cubic sampling will not filter the same as nearest even when pixel aligned.
     if (!(keyContext.flags() & KeyGenFlags::kDisableSamplingOptimization || newSampling.useCubic)) {
         SkMatrix totalM = keyContext.local2Dev().asM33();
         if (keyContext.localMatrix()) {
             totalM.preConcat(*keyContext.localMatrix());
         }
         totalM.normalizePerspective();
-        // The matrix should be translation with only pixel aligned 2d translation.
-        if (totalM.isTranslate() && SkScalarIsInt(totalM.getTranslateX()) &&
-            SkScalarIsInt(totalM.getTranslateY())) {
+
+        if (SkMatrixPriv::IsPrecisePixelAlignedTranslation(totalM)) {
             samplingHasNoEffect = true;
             newSampling = SkFilterMode::kNearest;
         }

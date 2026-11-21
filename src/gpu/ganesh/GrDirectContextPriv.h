@@ -81,6 +81,14 @@ public:
     sktext::gpu::StrikeCache* getStrikeCache() { return this->context()->fStrikeCache.get(); }
 
     /**
+     * Notifies the client that a flush has failed and that none of its work will be sent to the
+     * GPU. The GrFlushInfo's submitted proc is called with 'false' and then its finished proc is
+     * called. As in GrGpu::executeFlushInfo, fFinishedWithStatsProc is preferred over
+     * fFinishedProc; it receives an empty GpuStats.
+     */
+    static void CallFlushInfoFailureProcs(const GrFlushInfo&);
+
+    /**
      * Finalizes all pending reads and writes to the surfaces and also performs an MSAA resolves
      * if necessary. The GrSurfaceProxy array is treated as a hint. If it is supplied the context
      * will guarantee that the draws required for those proxies are flushed but it could do more.
@@ -111,6 +119,8 @@ public:
      * did we find a pair of round-trip preserving conversion effects?
      */
     bool validPMUPMConversionExists();
+
+    bool hasCheckedPMUPMConversion() const { return this->context()->fDidTestPMConversions; }
 
     /**
      * These functions create premul <-> unpremul effects, using specialized round-trip effects.
@@ -193,6 +203,8 @@ public:
     sk_sp<SkImage> testingOnly_getFontAtlasImage(skgpu::MaskFormat format, unsigned int index = 0);
 
     void testingOnly_flushAndRemoveOnFlushCallbackObject(GrOnFlushCallbackObject*);
+    // No-op if the context has been abandoned (e.g., by a failed flush).
+    void testingOnly_removeOnFlushCallbackObject(GrOnFlushCallbackObject*);
 #endif
 
 private:

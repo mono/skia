@@ -161,9 +161,16 @@ std::unique_ptr<GrGeometryProcessor::ProgramImpl> HullShader::makeProgramImpl(
             }
 
             v->codeAppend(
+            // Instead of relying on sign() operations, the netdir of the hull is summed from
+            // the raw cross product results, and the vertex whose cross product is most opposite
+            // to netdir (most "concave") is collapsed into its next neighbor. This recovers as
+            // much missing area as possible of the convex hull.
+
             // Find the "turn direction" of each corner and net turn direction.
             "float vertexdir = 0;"
             "float netdir = 0;"
+            "float maxdir = 0;"
+            "float mindir = 0;"
             "float2 prev, next;"
             "float dir;"
             "float2 localcoord;"
@@ -176,18 +183,20 @@ std::unique_ptr<GrGeometryProcessor::ProgramImpl> HullShader::makeProgramImpl(
                 v->codeAppendf(
                 "next = p%i - p%i;", (i + 1) % 4, i);
                 v->codeAppendf(
-                "dir = sign(cross_length_2d(prev, next));"
+                "dir = cross_length_2d(prev, next);"
                 "if (vertexidx == %i) {"
                     "vertexdir = dir;"
                     "localcoord = p%i;"
                     "nextcoord = p%i;"
                 "}"
-                "netdir += dir;", i, i, (i + 1) % 4);
+                "netdir += dir;"
+                "maxdir = max(maxdir, dir);"
+                "mindir = min(mindir, dir);", i, i, (i + 1) % 4);
             }
 
             v->codeAppend(
             // Remove the non-convex vertex, if any.
-            "if (vertexdir != sign(netdir)) {"
+            "if (vertexdir == (netdir > 0 ? mindir : maxdir) && vertexdir != 0) {"
                 "localcoord = nextcoord;"
             "}"
 
@@ -264,7 +273,12 @@ void PathInnerTriangulateOp::prePreparePrograms(const GrTessellationShader::Prog
 
     bool isLinear;
     fFanTriangulator = args.fArena->make<GrInnerFanTriangulator>(fPath, args.fArena);
-    fFanPolys = fFanTriangulator->pathToPolys(&fFanBreadcrumbs, &isLinear);
+    bool success = false;
+    std::tie(fFanPolys, success) = fFanTriangulator->pathToPolys(&fFanBreadcrumbs, &isLinear);
+    if (!success) {
+        // TODO: surface this error
+        return;
+    }
 
     // Create a pipeline for stencil passes if needed.
     const GrPipeline* pipelineForStencils = nullptr;
@@ -432,7 +446,7 @@ void PathInnerTriangulateOp::onPrePrepare(GrRecordingContext* context,
 
 SKGPU_DECLARE_STATIC_UNIQUE_KEY(gHullVertexBufferKey);
 
-void PathInnerTriangulateOp::onPrepare(GrOpFlushState* flushState) {
+bool PathInnerTriangulateOp::onPrepare(GrOpFlushState* flushState) {
     const GrCaps& caps = flushState->caps();
 
     if (!fFanTriangulator) {
@@ -441,22 +455,28 @@ void PathInnerTriangulateOp::onPrepare(GrOpFlushState* flushState) {
                                  flushState->renderPassBarriers(), flushState->colorLoadOp(),
                                  &caps}, flushState->detachAppliedClip());
         if (!fFanTriangulator) {
-            return;
+            // This is just a signal that the path is empty.
+            return true;
         }
     }
 
     if (fFanPolys) {
         GrEagerDynamicVertexAllocator alloc(flushState, &fFanBuffer, &fBaseFanVertex);
-        fFanVertexCount = fFanTriangulator->polysToTriangles(fFanPolys, &alloc, &fFanBreadcrumbs);
+        if (!fFanTriangulator->polysToTriangles(fFanPolys, &alloc, &fFanBreadcrumbs,
+                                                &fFanVertexCount)) {
+            return false;
+        }
     }
 
     if (fTessellator) {
         auto tessShader = &fStencilCurvesProgram->geomProc().cast<GrPathTessellationShader>();
-        fTessellator->prepareWithTriangles(flushState,
-                                           tessShader->viewMatrix(),
-                                           &fFanBreadcrumbs,
-                                           {SkMatrix::I(), fPath, SK_PMColor4fTRANSPARENT},
-                                           fPath.countVerbs());
+        if (!fTessellator->prepareWithTriangles(flushState,
+                                                tessShader->viewMatrix(),
+                                                &fFanBreadcrumbs,
+                                                {SkMatrix::I(), fPath, SK_PMColor4fTRANSPARENT},
+                                                fPath.countVerbs())) {
+            return false;
+        }
     }
 
     if (!caps.shaderCaps()->fVertexIDSupport) {
@@ -468,28 +488,32 @@ void PathInnerTriangulateOp::onPrepare(GrOpFlushState* flushState) {
                 GrGpuBufferType::kVertex, sizeof(kStripOrderIDs), kStripOrderIDs,
                 gHullVertexBufferKey);
     }
+    return true;
 }
 
-void PathInnerTriangulateOp::onExecute(GrOpFlushState* flushState, const SkRect& chainBounds) {
+bool PathInnerTriangulateOp::onExecute(GrOpFlushState* flushState, const SkRect& chainBounds) {
     if (fCoverHullsProgram &&
         fCoverHullsProgram->geomProc().hasVertexAttributes() &&
         !fHullVertexBufferIfNoIDSupport) {
-        return;
+        return false;
     }
 
     if (fStencilCurvesProgram) {
         SkASSERT(fTessellator);
         flushState->bindPipelineAndScissorClip(*fStencilCurvesProgram, this->bounds());
-        fTessellator->draw(flushState);
+        if (!fTessellator->draw(flushState)) {
+            return false;
+        }
     }
 
-    // Allocation of the fan vertex buffer may have failed but we already pushed back fan programs.
     if (fFanBuffer) {
         for (const GrProgramInfo* fanProgram : fFanPrograms) {
             flushState->bindPipelineAndScissorClip(*fanProgram, this->bounds());
             flushState->bindTextures(fanProgram->geomProc(), nullptr, fanProgram->pipeline());
             flushState->bindBuffers(nullptr, nullptr, fFanBuffer);
-            flushState->draw(fFanVertexCount, fBaseFanVertex);
+            if (!flushState->draw(fFanVertexCount, fBaseFanVertex)) {
+                return false;
+            }
         }
     }
 
@@ -497,8 +521,11 @@ void PathInnerTriangulateOp::onExecute(GrOpFlushState* flushState, const SkRect&
         SkASSERT(fTessellator);
         flushState->bindPipelineAndScissorClip(*fCoverHullsProgram, this->bounds());
         flushState->bindTextures(fCoverHullsProgram->geomProc(), nullptr, *fPipelineForFills);
-        fTessellator->drawHullInstances(flushState, fHullVertexBufferIfNoIDSupport);
+        if (!fTessellator->drawHullInstances(flushState, fHullVertexBufferIfNoIDSupport)) {
+            return false;
+        }
     }
+    return true;
 }
 
 }  // namespace skgpu::ganesh

@@ -127,6 +127,7 @@ typedef enum {
     R16G16B16A16_UNORM_SK_COLORTYPE,
     SRGBA_8888_SK_COLORTYPE,
     R8_UNORM_SK_COLORTYPE,
+    BGR_888X_SK_COLORTYPE,
 } sk_colortype_t;
 
 typedef enum {

@@ -16,6 +16,8 @@
 #include "src/gpu/ganesh/GrOpFlushState.h"
 #include "src/gpu/ganesh/GrOpsRenderPass.h"
 #include "src/gpu/ganesh/gl/GrGLGpu.h"
+#include "src/partition_alloc/raw_ptr.h"
+#include "src/partition_alloc/raw_ptr_exclusion.h"
 
 #include <array>
 #include <cstddef>
@@ -59,13 +61,14 @@ private:
     void bindInstanceBuffer(const GrBuffer*, int baseInstance);
     void bindVertexBuffer(const GrBuffer*, int baseVertex);
 
-    const void* offsetForBaseIndex(int baseIndex) const {
-        if (!fIndexPointer) {
-            // nullptr != 0. Adding an offset to a nullptr is undefined.
-            return (void*)(baseIndex * sizeof(uint16_t));
-        }
-        return fIndexPointer + baseIndex;
-    }
+    // For non-indexed (glDrawArrays*) draws: if the vertex buffer binding was deferred in
+    // onBindBuffers, binds it now offset by baseVertex. Returns the baseVertex value that should
+    // be passed to the draw call (0 if the buffer was rebased, otherwise the original baseVertex).
+    int rebaseVertexBufferForDrawArrays(int baseVertex);
+
+    // Returns the CPU address of the indices if the active index buffer is a CPU buffer, or the
+    // byte offset into the bound GPU index buffer otherwise.
+    const void* offsetForBaseIndex(int baseIndex) const;
 
     // Ideally we load and store DMSAA only within the content bounds of our render pass, but if
     // the caps don't allow for partial framebuffer blits, we resolve the full target.
@@ -99,7 +102,7 @@ private:
     void onClear(const GrScissorState& scissor, std::array<float, 4> color) override;
     void onClearStencilClip(const GrScissorState& scissor, bool insideStencilMask) override;
 
-    GrGLGpu* const fGpu;
+    const raw_ptr<GrGLGpu> fGpu;
 
     bool fUseMultisampleFBO;
     SkIRect fContentBounds;
@@ -108,11 +111,10 @@ private:
 
     // Per-pipeline state.
     GrPrimitiveType fPrimitiveType;
-    GrGLAttribArrayState* fAttribArrayState = nullptr;
+    // RAW_PTR_EXCLUSION: Performance: ~0.4% on GPU SKP playback (estimated).
+    RAW_PTR_EXCLUSION GrGLAttribArrayState* fAttribArrayState = nullptr;
 
-    // If using an index buffer, this gets set during onBindBuffers. It is either the CPU address of
-    // the indices, or nullptr if they reside physically in GPU memory.
-    const uint16_t* fIndexPointer;
+    SkIRect fCurrentPipelineBounds;
 
     // This tracks whether or not we bound the respective buffers during the bindBuffers call.
     SkDEBUGCODE(bool fDidBindVertexBuffer = false;)

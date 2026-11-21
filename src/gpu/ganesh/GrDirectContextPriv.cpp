@@ -17,6 +17,7 @@
 #include "include/core/SkString.h"
 #include "include/core/SkTypes.h"
 #include "include/effects/SkRuntimeEffect.h"
+#include "include/gpu/GpuTypes.h"
 #include "include/gpu/ganesh/GrDirectContext.h"
 #include "include/gpu/ganesh/GrTypes.h"
 #include "include/private/SingleOwner.h"
@@ -64,6 +65,17 @@ using MaskFormat = skgpu::MaskFormat;
     SkASSERT(!(P) || !((P)->peekTexture()) || (P)->peekTexture()->getContext() == this->context())
 #define ASSERT_SINGLE_OWNER SKGPU_ASSERT_SINGLE_OWNER(this->context()->singleOwner())
 
+void GrDirectContextPriv::CallFlushInfoFailureProcs(const GrFlushInfo& info) {
+    if (info.fSubmittedProc) {
+        info.fSubmittedProc(info.fSubmittedContext, false);
+    }
+    if (info.fFinishedWithStatsProc) {
+        info.fFinishedWithStatsProc(info.fFinishedContext, skgpu::GpuStats{});
+    } else if (info.fFinishedProc) {
+        info.fFinishedProc(info.fFinishedContext);
+    }
+}
+
 GrDirectContext::FlushResult GrDirectContextPriv::flushSurfaces(
         SkSpan<GrSurfaceProxy*> proxies,
         SkSurfaces::BackendSurfaceAccess access,
@@ -73,12 +85,7 @@ GrDirectContext::FlushResult GrDirectContextPriv::flushSurfaces(
     GR_CREATE_TRACE_MARKER_CONTEXT("GrDirectContextPriv", "flushSurfaces", this->context());
 
     if (this->context()->abandoned()) {
-        if (info.fSubmittedProc) {
-            info.fSubmittedProc(info.fSubmittedContext, false);
-        }
-        if (info.fFinishedProc) {
-            info.fFinishedProc(info.fFinishedContext);
-        }
+        CallFlushInfoFailureProcs(info);
         return {false, GrSemaphoresSubmitted::kNo};
     }
 
@@ -93,6 +100,9 @@ GrDirectContext::FlushResult GrDirectContextPriv::flushSurfaces(
 
 void GrDirectContextPriv::createDDLTask(sk_sp<const GrDeferredDisplayList> ddl,
                                         sk_sp<GrRenderTargetProxy> newDest) {
+    if (this->context()->abandoned()) {
+        return;
+    }
     this->context()->drawingManager()->createDDLTask(std::move(ddl), std::move(newDest));
 }
 
@@ -211,6 +221,15 @@ sk_sp<SkImage> GrDirectContextPriv::testingOnly_getFontAtlasImage(MaskFormat for
 void GrDirectContextPriv::testingOnly_flushAndRemoveOnFlushCallbackObject(
         GrOnFlushCallbackObject* cb) {
     this->context()->flushAndSubmit();
+    this->testingOnly_removeOnFlushCallbackObject(cb);
+}
+
+void GrDirectContextPriv::testingOnly_removeOnFlushCallbackObject(GrOnFlushCallbackObject* cb) {
+    if (this->context()->abandoned()) {
+        // A failed flush abandons the context, which destroys the drawing manager (and with it
+        // the list of onFlush callback objects).
+        return;
+    }
     this->context()->drawingManager()->testingOnly_removeOnFlushCallbackObject(cb);
 }
 #endif
