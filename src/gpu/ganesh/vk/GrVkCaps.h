@@ -284,6 +284,8 @@ public:
 
     bool supportsMemorylessAttachments() const { return fSupportsMemorylessAttachments; }
 
+    bool mustLeakDescriptorPoolOnError() const { return fMustLeakDescriptorPoolOnError; }
+
 #if defined(GPU_TEST_UTILS)
     std::vector<GrTest::TestFormatColorTypeCombination> getTestingCombinations() const override;
 #endif
@@ -387,6 +389,7 @@ private:
     GrDstSampleFlags onGetDstSampleFlagsForProxy(const GrRenderTargetProxy*) const override;
 
     bool onSupportsDynamicMSAA(const GrRenderTargetProxy*) const override;
+    size_t maxStencilBytesPerBlock() const override;
 
     // ColorTypeInfo for a specific format
     struct ColorTypeInfo {
@@ -495,6 +498,7 @@ private:
     bool fMustLoadFullImageWithDiscardableMSAA = false;
     bool fSupportsDiscardableMSAAForDMSAA = true;
     bool fSupportsMemorylessAttachments = false;
+    bool fMustLeakDescriptorPoolOnError = false;
 
     uint32_t fMaxDrawIndirectDrawCount = 0;
 
