@@ -188,11 +188,13 @@ void draw_texture(skgpu::ganesh::SurfaceDrawContext* sdc,
     // rect would access pixels outside the proxy's content area without the constraint.
     if (constraint != SkCanvas::kStrict_SrcRectConstraint && !proxy->isFunctionallyExact()) {
         // Conservative estimate of how much a coord could be outset from src rect:
-        // 1/2 pixel for AA and 1/2 pixel for linear filtering
-        float buffer = 0.5f * (aaFlags != GrQuadAAFlags::kNone) +
-                       GrTextureEffect::kLinearInset * (filter == GrSamplerState::Filter::kLinear);
+        // 1/2 pixel for linear filtering, or 1/2 + epsilon for nearest filtering under high
+        // magnification due to limited sub-texel precision (e.g. Vulkan:
+        // subTexelPrecisionBits >= 4). AA-induced coordinate extrapolation for non-exact proxies
+        // is handled downstream via the proxy-bounds subset in TextureOp::Make/TextureOpImpl and
+        // the caps-aware GrTextureEffect::Make overload in SurfaceDrawContext::drawTexture().
         SkRect safeBounds = proxy->getBoundsRect();
-        safeBounds.inset(buffer, buffer);
+        safeBounds.inset(GrTextureEffect::kLinearInset, GrTextureEffect::kLinearInset);
         if (!safeBounds.contains(srcRect)) {
             constraint = SkCanvas::kStrict_SrcRectConstraint;
         }
@@ -235,17 +237,7 @@ void draw_texture(skgpu::ganesh::SurfaceDrawContext* sdc,
     }
 }
 
-SkFilterMode downgrade_to_filter(const SkSamplingOptions& sampling) {
-    SkFilterMode filter = sampling.filter;
-    if (sampling.isAniso() || sampling.useCubic || sampling.mipmap != SkMipmapMode::kNone) {
-        // if we were "fancier" than just bilerp, only do bilerp
-        filter = SkFilterMode::kLinear;
-    }
-    return filter;
-}
-
 } // anonymous namespace
-
 
 //////////////////////////////////////////////////////////////////////////////
 
@@ -312,10 +304,17 @@ void Device::drawEdgeAAImage(const SkImage* image,
 
     bool restrictToSubset = SkCanvas::kStrict_SrcRectConstraint == constraint;
 
-    // If we have to outset for AA then we will generate texture coords outside the src rect. The
-    // same happens for any mask filter that extends the bounds rendered in the dst.
-    // This is conservative as a mask filter does not have to expand the bounds rendered.
-    bool coordsAllInsideSrcRect = aaFlags == GrQuadAAFlags::kNone && !mf;
+    // If we have to outset for AA (either from edge flags or an AA clip cropping the quad) or
+    // evaluate fragment varyings at MSAA pixel centers outside the quad, we can generate texture
+    // coords outside the src rect. The same happens for any mask filter that extends the bounds
+    // rendered in the dst. This is conservative as a mask filter does not have to expand the bounds
+    // rendered. Note: !sdc->alwaysAntialias() must be checked before isClipAntiAliased(), which
+    // asserts !fSurfaceDrawContext->alwaysAntialias() when encountering non-AA clip elements.
+    bool coordsAllInsideSrcRect = aaFlags == GrQuadAAFlags::kNone &&
+                                  !mf &&
+                                  !sdc->alwaysAntialias() &&
+                                  sdc->chooseAAType(GrAA::kNo) == GrAAType::kNone &&
+                                  !this->isClipAntiAliased();
 
     // Check for optimization to drop the src rect constraint when using linear filtering.
     // TODO: Just rely on image to handle this.
@@ -416,7 +415,8 @@ void Device::drawSpecial(SkSpecialImage* special,
     SkRect dst = SkRect::MakeWH(special->width(), special->height());
     SkMatrix srcToDst = SkMatrix::RectToRectOrIdentity(src, dst);
 
-    SkSamplingOptions sampling = SkSamplingOptions(downgrade_to_filter(origSampling));
+    const SkSamplingOptions safeSampling = special->ganeshSafeSampling(origSampling);
+
     GrAA aa = fSurfaceDrawContext->chooseAA(paint);
     SkCanvas::QuadAAFlags aaFlags = (aa == GrAA::kYes) ? SkCanvas::kAll_QuadAAFlags
                                                        : SkCanvas::kNone_QuadAAFlags;
@@ -449,7 +449,7 @@ void Device::drawSpecial(SkSpecialImage* special,
                           /* dstClip= */nullptr,
                           aaFlags,
                           localToDevice,
-                          sampling,
+                          safeSampling,
                           paint,
                           constraint,
                           srcToDst,

@@ -194,26 +194,78 @@ int proxy_run_count(const GrTextureSetEntry set[], int count) {
 
 bool safe_to_ignore_subset_rect(GrAAType aaType, GrSamplerState::Filter filter,
                                 const DrawQuad& quad, const SkRect& subsetRect) {
-    // If both the device and local quad are both axis-aligned, and filtering is off, the local quad
-    // can push all the way up to the edges of the the subset rect and the sampler shouldn't
-    // overshoot. Unfortunately, antialiasing adds enough jitter that we can only rely on this in
-    // the non-antialiased case.
     SkRect localBounds = quad.fLocal.bounds();
+
+    // If both the device and local quad are axis-aligned, filtering is off, the local quad
+    // is contained within the subset, and the mapping between device and local coordinates
+    // is a 1:1 integer translation (including 90/180/270 degree rotations and flips),
+    // fragment sample centers are guaranteed to land on exact half-integers in texel space
+    // (at least 0.5 texels away from any subset edge), so nearest-neighbor sampling cannot
+    // overshoot.
     if (aaType == GrAAType::kNone &&
         filter == GrSamplerState::Filter::kNearest &&
         quad.fDevice.quadType() == GrQuad::Type::kAxisAligned &&
         quad.fLocal.quadType() == GrQuad::Type::kAxisAligned &&
         subsetRect.contains(localBounds)) {
+        float locDx = quad.fLocal.x(2) - quad.fLocal.x(0);
+        float locDy = quad.fLocal.y(1) - quad.fLocal.y(0);
+        if (locDx != 0.f && locDy != 0.f) {
+            auto is1to1 = [](float dev0, float devD, float loc0, float locD) {
+                return (locD ==  devD && SkScalarIsInt(dev0 - loc0)) ||
+                       (locD == -devD && SkScalarIsInt(dev0 + loc0));
+            };
 
-        return true;
+            // Check non-rotated or 180-degree rotated (with or without flip)
+            float devDx = quad.fDevice.x(2) - quad.fDevice.x(0);
+            float devDy = quad.fDevice.y(1) - quad.fDevice.y(0);
+            if (devDx != 0.f && devDy != 0.f) {
+                if (is1to1(quad.fDevice.x(0), devDx, quad.fLocal.x(0), locDx) &&
+                    is1to1(quad.fDevice.y(0), devDy, quad.fLocal.y(0), locDy)) {
+                    return true;
+                }
+            } else {
+                // Check 90 or 270 degree rotation (axes swapped)
+                devDx = quad.fDevice.x(1) - quad.fDevice.x(0);
+                devDy = quad.fDevice.y(2) - quad.fDevice.y(0);
+                if (devDx != 0.f && devDy != 0.f) {
+                    if (is1to1(quad.fDevice.y(0), devDy, quad.fLocal.x(0), locDx) &&
+                        is1to1(quad.fDevice.x(0), devDx, quad.fLocal.y(0), locDy)) {
+                        return true;
+                    }
+                }
+            }
+        }
     }
 
-    // If the local quad is inset by at least 0.5 pixels into the subset rect's bounds, the
-    // sampler shouldn't overshoot, even when antialiasing and filtering is taken into account.
-    if (subsetRect.makeInset(GrTextureEffect::kLinearInset,
-                             GrTextureEffect::kLinearInset)
-                  .contains(localBounds)) {
-        return true;
+    // If the local quad is inset into the subset rect's bounds by at least the filter radius
+    // (kLinearInset) plus any AA-induced coordinate extrapolation, the sampler shouldn't overshoot.
+    // When anti-aliasing is enabled on an axis-aligned quad, coverage AA outsets vertices by 0.5
+    // device pixels (or 1.0 device pixel for hairlines) and MSAA evaluates fragment varyings at
+    // pixel centers up to 0.5 device pixels outside an axis-aligned edge.
+    if (aaType == GrAAType::kNone) {
+        return subsetRect.makeInset(GrTextureEffect::kLinearInset,
+                                    GrTextureEffect::kLinearInset)
+                         .contains(localBounds);
+    }
+
+    if (quad.fDevice.quadType() == GrQuad::Type::kAxisAligned &&
+        quad.fLocal.quadType() == GrQuad::Type::kAxisAligned) {
+        SkSize devSize = axis_aligned_quad_size(quad.fDevice);
+        SkSize locSize = axis_aligned_quad_size(quad.fLocal);
+        if (devSize.fWidth > 0.f && devSize.fHeight > 0.f) {
+            float devAAOutset = GrQuadUtils::WillUseHairline(quad.fDevice, aaType, quad.fEdgeFlags)
+                                        ? 1.f
+                                        : 0.5f;
+            float scaleX = locSize.fWidth / devSize.fWidth;
+            float scaleY = locSize.fHeight / devSize.fHeight;
+            if (quad.fLocal.x(2) == quad.fLocal.x(0)) {
+                using std::swap;
+                swap(scaleX, scaleY);
+            }
+            float insetX = GrTextureEffect::kLinearInset + devAAOutset * scaleX;
+            float insetY = GrTextureEffect::kLinearInset + devAAOutset * scaleY;
+            return subsetRect.makeInset(insetX, insetY).contains(localBounds);
+        }
     }
 
     // The subset rect cannot be ignored safely.
@@ -454,18 +506,11 @@ private:
                                    &aaType, &quad->fEdgeFlags);
         fMetadata.fAAType = static_cast<uint16_t>(aaType);
 
-        // We expect our caller to have already caught this optimization.
+        // We expect our caller to have already caught these optimizations.
         SkASSERT(!subsetRect ||
                  !subsetRect->contains(proxyView.proxy()->backingStoreBoundsRect()));
-
-        // We may have had a strict constraint with nearest filter solely due to possible AA bloat.
-        // Try to identify cases where the subsetting isn't actually necessary, and skip it.
-        if (subsetRect) {
-            if (safe_to_ignore_subset_rect(aaType, filter, *quad, *subsetRect)) {
-                subsetRect = nullptr;
-                fMetadata.fSubset = static_cast<uint16_t>(Subset::kNo);
-            }
-        }
+        SkASSERT(!subsetRect ||
+                 !safe_to_ignore_subset_rect(aaType, filter, *quad, *subsetRect));
 
         // Normalize src coordinates and the subset (if set)
         NormalizationParams params = proxy_normalization_params(proxyView.proxy(),
@@ -598,14 +643,20 @@ private:
 
             // Calculate metadata for the entry
             const SkRect* subsetForQuad = nullptr;
+            SkRect proxyBoundsRect;
             if (constraint == SkCanvas::kStrict_SrcRectConstraint) {
+                subsetForQuad = &set[q].fSrcRect;
+            } else if (!curProxy->isFunctionallyExact()) {
+                proxyBoundsRect = curProxy->getBoundsRect();
+                subsetForQuad = &proxyBoundsRect;
+            }
+            if (subsetForQuad) {
                 // Check (briefly) if the subset rect is actually needed for this set entry.
-                SkRect* subsetRect = &set[q].fSrcRect;
-                if (!subsetRect->contains(curProxy->backingStoreBoundsRect())) {
-                    if (!safe_to_ignore_subset_rect(aaForQuad, filterForQuad, quad, *subsetRect)) {
-                        netSubset = Subset::kYes;
-                        subsetForQuad = subsetRect;
-                    }
+                if (subsetForQuad->contains(curProxy->backingStoreBoundsRect()) ||
+                    safe_to_ignore_subset_rect(aaForQuad, filterForQuad, quad, *subsetForQuad)) {
+                    subsetForQuad = nullptr;
+                } else {
+                    netSubset = Subset::kYes;
                 }
             }
 
@@ -1187,6 +1238,12 @@ GrOp::Owner TextureOp::Make(GrRecordingContext* context,
                             GrAAType aaType,
                             DrawQuad* quad,
                             const SkRect* subset) {
+    SkRect proxyBoundsRect;
+    if (!subset && !proxyView.proxy()->isFunctionallyExact()) {
+        proxyBoundsRect = proxyView.proxy()->getBoundsRect();
+        subset = &proxyBoundsRect;
+    }
+
     // Apply optimizations that are valid whether or not using TextureOp or FillRectOp
     if (subset && subset->contains(proxyView.proxy()->backingStoreBoundsRect())) {
         // No need for a shader-based subset if hardware clamping achieves the same effect
@@ -1203,6 +1260,13 @@ GrOp::Owner TextureOp::Make(GrRecordingContext* context,
         }
     }
 
+    GrQuadUtils::ResolveAAType(aaType, quad->fEdgeFlags, quad->fDevice,
+                               &aaType, &quad->fEdgeFlags);
+
+    if (subset && safe_to_ignore_subset_rect(aaType, filter, *quad, *subset)) {
+        subset = nullptr;
+    }
+
     if (blendMode == SkBlendMode::kSrcOver) {
         return TextureOpImpl::Make(context, std::move(proxyView), std::move(textureXform), filter,
                                    mm, color, saturate, aaType, std::move(quad), subset);
@@ -1217,7 +1281,7 @@ GrOp::Owner TextureOp::Make(GrRecordingContext* context,
         const auto& caps = *context->priv().caps();
         if (subset) {
             SkRect localRect;
-            if (quad->fLocal.asRect(&localRect)) {
+            if (aaType == GrAAType::kNone && quad->fLocal.asRect(&localRect)) {
                 fp = GrTextureEffect::MakeSubset(std::move(proxyView), alphaType, SkMatrix::I(),
                                                  samplerState, *subset, localRect, caps);
             } else {

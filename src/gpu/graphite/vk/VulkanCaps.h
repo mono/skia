@@ -89,6 +89,7 @@ public:
     }
 
     bool mustLoadFullImageForMSAA() const { return fMustLoadFullImageForMSAA; }
+    bool sleepAfterLostDeviceWait() const { return fSleepAfterLostDeviceWait; }
 
     bool supportsFrameBoundary() const { return fSupportsFrameBoundary; }
 
@@ -220,6 +221,7 @@ private:
 
     // Flags to enable workarounds for driver bugs
     bool fMustLoadFullImageForMSAA = false;
+    bool fSleepAfterLostDeviceWait = false;
 
     skia_private::TArray<uint32_t> fQueueFamilyTimestampValidBits;
     float fTimestampPeriod = 1.0f;
