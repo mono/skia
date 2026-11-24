@@ -9,7 +9,7 @@ vars = {
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling different
   # dependencies without interference from each other.
-  'infra_revision': '88b63f6b7b4d1e218a88a3c6a17188794ce7059a',
+  'infra_revision': 'ee3f7777b96bcb268d11f76c21769aedbeeec02e',
 
   # ninja CIPD package version.
   # https://chrome-infra-packages.appspot.com/p/infra/3pp/tools/ninja
@@ -20,7 +20,7 @@ vars = {
   'googlefonts_testdata_version': 'version:20230913',
 
   # Pre-built task drivers from this repo, used for CI.
-  'task_drivers_revision': 'git_revision:90d8a5c0e83a5b3764225fff0272a700d5d9ed94',
+  'task_drivers_revision': 'git_revision:39e4d927e388cf5b1238bcbd7a1beda98b8d4f21',
 
   'checkout_agents_internal': False,
 }
@@ -51,7 +51,7 @@ deps = {
   # "third_party/externals/egl-registry"           : "https://skia.googlesource.com/external/github.com/KhronosGroup/EGL-Registry@b055c9b483e70ecd57b3cf7204db21f5a06f9ffe",
   # "third_party/externals/emsdk"                  : "https://skia.googlesource.com/external/github.com/emscripten-core/emsdk.git@c69d433d8509c5c64564c2f0d054bf102a5cf67e",
   "third_party/externals/expat"                  : "https://chromium.googlesource.com/external/github.com/libexpat/libexpat.git@c7ffbf3879f6aef7a7b020ef84ddb4ee00222b19",
-  "third_party/externals/freetype"               : "https://chromium.googlesource.com/chromium/src/third_party/freetype2.git@0a0221a1347e2f1e07c395263540026e9a0aa7c7",
+  "third_party/externals/freetype"               : "https://chromium.googlesource.com/chromium/src/third_party/freetype2.git@d68990db70d9066096c2a6af805af631a6af9ab2",
   "third_party/externals/harfbuzz"               : "https://chromium.googlesource.com/external/github.com/harfbuzz/harfbuzz.git@35f656a1a2bab548ea7f54a6dd3fba2b09680d14",
   # "third_party/externals/highway"                : "https://chromium.googlesource.com/external/github.com/google/highway.git@424360251cdcfc314cfc528f53c872ecd63af0f0",
   # "third_party/externals/icu"                    : "https://chromium.googlesource.com/chromium/deps/icu.git@d578f2e8b7bd5938e21cfb6bf15c079e0aa5b738",
@@ -76,7 +76,7 @@ deps = {
   # "third_party/externals/spirv-headers"          : "https://skia.googlesource.com/external/github.com/KhronosGroup/SPIRV-Headers.git@daa093dd29aab8cbb6562b808370562f56e399fb",
   # "third_party/externals/spirv-tools"            : "https://skia.googlesource.com/external/github.com/KhronosGroup/SPIRV-Tools.git@f25a3b067eed21f6ce43186942eec3c407cade02",
   # "third_party/externals/vello"                  : "https://skia.googlesource.com/external/github.com/linebender/vello.git@3ee3bea02164c5a816fe6c16ef4e3a810edb7620",
-  "third_party/externals/vulkan-headers"         : "https://chromium.googlesource.com/external/github.com/KhronosGroup/Vulkan-Headers@88487f687f3100ebe1d3559a8a34d971ee85b977",
+  "third_party/externals/vulkan-headers"         : "https://chromium.googlesource.com/external/github.com/KhronosGroup/Vulkan-Headers@d277a0a3cda9c682708c93279f0c72cd6b0ae3f3",
   # "third_party/externals/vulkan-tools"           : "https://chromium.googlesource.com/external/github.com/KhronosGroup/Vulkan-Tools@b7ae55b37cda76d16368c302f37cb0c7ea2f8409",
   # "third_party/externals/vulkan-utility-libraries": "https://chromium.googlesource.com/external/github.com/KhronosGroup/Vulkan-Utility-Libraries@ba450228e2ebb4059f8a7d4bb36610464e2f0741",
   # "third_party/externals/unicodetools"           : "https://chromium.googlesource.com/external/github.com/unicode-org/unicodetools@66a3fa9dbdca3b67053a483d130564eabc5fe095",
@@ -114,10 +114,10 @@ deps = {
     'condition': 'False',
   },
 
-  '_agents/chromium-shared': 'https://chromium.googlesource.com/chromium/agents/@81620e25d42f1393c299897a78a465f4a75b82da',
+  '_agents/chromium-shared': 'https://chromium.googlesource.com/chromium/agents/@f3fecac8a714ae5512abb3a635387c7a01da8666',
 
   '_agents/chromium-internal': {
-    'url': 'https://chrome-internal.googlesource.com/chrome/agents-internal/@f85c3dd9f2827b62dc37a70251148a4211b5aa21',
+    'url': 'https://chrome-internal.googlesource.com/chrome/agents-internal/@5bbf8f7c3b5cbc477770c7a63071a2ca4937b35b',
     'condition': 'checkout_agents_internal',
   },
 }

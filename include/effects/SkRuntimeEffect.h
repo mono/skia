@@ -212,6 +212,10 @@ public:
         static_assert(::sk_is_trivially_relocatable<decltype(fChild)>::value);
     };
 
+    // DEPRECATED: Prefer the SkSpan<const ChildPtr> overload below, which bounds-checks
+    // children. This pointer overload is kept for existing clients and forwards to it.
+    // PRECONDITIONS: children must point to at least childCount readable elements.
+    // TODO(crbug.com/582862856): Remove once clients migrate to the SkSpan overload.
     sk_sp<SkShader> makeShader(sk_sp<const SkData> uniforms,
                                sk_sp<SkShader> children[],
                                size_t childCount,
@@ -221,6 +225,11 @@ public:
                                const SkMatrix* localMatrix = nullptr) const;
 
     sk_sp<SkColorFilter> makeColorFilter(sk_sp<const SkData> uniforms) const;
+    sk_sp<SkColorFilter> makeColorFilter(sk_sp<const SkData> uniforms,
+                                         SkSpan<const sk_sp<SkColorFilter>> children) const;
+    // DEPRECATED: Prefer the SkSpan overloads, which bounds-check children. This pointer
+    // overload is kept for existing clients and forwards to the SkSpan overload above.
+    // PRECONDITIONS: children must point to at least childCount readable elements.
     sk_sp<SkColorFilter> makeColorFilter(sk_sp<const SkData> uniforms,
                                          sk_sp<SkColorFilter> children[],
                                          size_t childCount) const;

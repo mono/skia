@@ -43,7 +43,6 @@
 #include "src/gpu/ganesh/GrCaps.h"
 #include "src/gpu/ganesh/GrDataUtils.h"
 #include "src/gpu/ganesh/GrDirectContextPriv.h"
-#include "src/gpu/ganesh/GrDrawingManager.h"
 #include "src/gpu/ganesh/GrImageInfo.h"
 #include "src/gpu/ganesh/GrOnFlushResourceProvider.h"
 #include "src/gpu/ganesh/GrPixmap.h"
@@ -91,6 +90,7 @@ static constexpr int min_rgb_channel_bits(SkColorType ct) {
         case kSRGBA_8888_SkColorType:         return 8;
         case kRGB_888x_SkColorType:           return 8;
         case kBGRA_8888_SkColorType:          return 8;
+        case kBGR_888x_SkColorType:           return 8;
         case kRGBA_1010102_SkColorType:       return 10;
         case kRGB_101010x_SkColorType:        return 10;
         case kBGRA_1010102_SkColorType:       return 10;
@@ -126,6 +126,7 @@ static constexpr int alpha_channel_bits(SkColorType ct) {
         case kSRGBA_8888_SkColorType:         return 8;
         case kRGB_888x_SkColorType:           return 0;
         case kBGRA_8888_SkColorType:          return 8;
+        case kBGR_888x_SkColorType:           return 0;
         case kRGBA_1010102_SkColorType:       return 2;
         case kRGB_101010x_SkColorType:        return 0;
         case kBGRA_1010102_SkColorType:       return 2;
@@ -1572,7 +1573,7 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(ReadPixelsIntermediateFailedFlush,
     pixels.erase(SkColors::kTransparent);
     bool ok = surf->readPixels(pixels, 0, 0);
 
-    dContext->priv().drawingManager()->testingOnly_removeOnFlushCallbackObject(&failingCallback);
+    dContext->priv().testingOnly_removeOnFlushCallbackObject(&failingCallback);
 
     if (ok) {
         SkColor result = pixels.getColor(0, 0);
@@ -1642,7 +1643,7 @@ DEF_GANESH_TEST_FOR_RENDERING_CONTEXTS(WritePixelsFailedFlushLeaksScratch,
     srcBM.eraseColor(kSrcPixel);
     bool ok = surf->getCanvas()->writePixels(srcBM, 0, 0);
 
-    dContext->priv().drawingManager()->testingOnly_removeOnFlushCallbackObject(&cb);
+    dContext->priv().testingOnly_removeOnFlushCallbackObject(&cb);
 
     if (!ok) {
         // Assuming the various branches are taken inside internalWritePixels to trigger the

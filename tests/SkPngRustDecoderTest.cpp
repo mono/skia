@@ -36,6 +36,7 @@
 #include "include/core/SkStream.h"
 #include "include/private/SkGainmapInfo.h"
 #include "src/codec/SkCodecPriv.h"
+#include "tests/CodecPriv.h"
 #include "tests/FakeStreams.h"
 #include "tests/Test.h"
 #include "tools/Resources.h"
@@ -224,11 +225,18 @@ static std::optional<SkBitmap> DecodeIncrementalOneShot(
     if (!codec) {
         return std::nullopt;
     }
-    SkCodec::Result result = codec->incrementalDecode();
+    int rowsDecoded = -1;
+    SkCodec::Result result = codec->incrementalDecode(&rowsDecoded);
     REPORTER_ASSERT_SUCCESSFUL_CODEC_RESULT(r, result);
     if (result != SkCodec::kSuccess) {
         return std::nullopt;
     }
+    SkCodec::FrameInfo frameInfo;
+    const int expectedRows =
+            (!options.fSubset && codec->getFrameInfo(options.fFrameIndex, &frameInfo))
+                    ? frameInfo.fFrameRect.height()
+                    : bm.height();
+    REPORTER_ASSERT(r, rowsDecoded == expectedRows);
     return bm;
 }
 
@@ -482,7 +490,7 @@ static void AssertAndroidDecodeSampling(
 #endif
 }
 
-#if defined(SK_CODEC_USES_PNG_WITH_RUST_FOR_ANDROID)
+#if defined(SK_CODEC_DECODES_PNG_WITH_RUST_DISABLE_APNG)
 static void AssertAndroidStaticApng(skiatest::Reporter* r,
                                     const char* path,
                                     std::optional<SkColor> expectedTopLeftColor = std::nullopt) {
@@ -518,7 +526,59 @@ static void AssertAndroidStaticApng(skiatest::Reporter* r,
 }
 #endif
 
-#if !defined(SK_CODEC_USES_PNG_WITH_RUST_FOR_ANDROID)
+#if !defined(SK_CODEC_DECODES_PNG_WITH_RUST_DISABLE_APNG)
+static void AssertSubrectColor(skiatest::Reporter* r,
+                               const SkBitmap& actual,
+                               const SkIRect& subrect,
+                               SkColor subrectColor,
+                               SkColor outsideColor = SK_ColorTRANSPARENT) {
+    SkBitmap expected;
+    expected.allocPixels(actual.info());
+    expected.eraseColor(outsideColor);
+    expected.erase(subrectColor, subrect);
+    CompareBitmaps(r, actual, expected);
+}
+
+// Returns a copy of `data` with its first `fcTL` chunk's `dispose_op` byte set
+// to `disposeOp` and its chunk CRC-32 updated.
+static sk_sp<SkData> WithFirstFctlDisposeOp(const SkData* data, uint8_t disposeOp) {
+    constexpr size_t kSignatureSize = 8;
+    constexpr size_t kChunkHeaderSize = 8;
+    constexpr size_t kFctlPayloadSize = 26;
+    constexpr size_t kDisposeOpOffset = 24;
+    constexpr size_t kCrcSize = 4;
+
+    sk_sp<SkData> copy = SkData::MakeWithCopy(data->data(), data->size());
+    uint8_t* bytes = static_cast<uint8_t*>(copy->writable_data());
+    size_t offset = kSignatureSize;
+    while (offset + kChunkHeaderSize <= copy->size()) {
+        const size_t length = (size_t{bytes[offset]} << 24) | (size_t{bytes[offset + 1]} << 16) |
+                              (size_t{bytes[offset + 2]} << 8) | size_t{bytes[offset + 3]};
+        const size_t crcOffset = offset + kChunkHeaderSize + length;
+        if (crcOffset + kCrcSize > copy->size()) {
+            break;
+        }
+        if (length == kFctlPayloadSize && memcmp(bytes + offset + 4, "fcTL", 4) == 0) {
+            bytes[offset + kChunkHeaderSize + kDisposeOpOffset] = disposeOp;
+            uint32_t crc = 0xFFFFFFFFu;
+            for (size_t i = offset + 4; i < crcOffset; ++i) {
+                crc ^= bytes[i];
+                for (int bit = 0; bit < 8; ++bit) {
+                    crc = (crc >> 1) ^ ((crc & 1u) ? 0xEDB88320u : 0u);
+                }
+            }
+            crc = ~crc;
+            bytes[crcOffset] = static_cast<uint8_t>(crc >> 24);
+            bytes[crcOffset + 1] = static_cast<uint8_t>(crc >> 16);
+            bytes[crcOffset + 2] = static_cast<uint8_t>(crc >> 8);
+            bytes[crcOffset + 3] = static_cast<uint8_t>(crc);
+            return copy;
+        }
+        offset = crcOffset + kCrcSize;
+    }
+    return nullptr;
+}
+
 // Decodes into a buffer surrounded by guard bytes to detect out-of-bounds writes
 // even in builds without ASAN, and asserts that the decode is refused with
 // `SkCodec::kUnimplemented`.
@@ -755,7 +815,7 @@ DEF_TEST(RustPngCodec_apng_basic_trivial_static_image, r) {
 // https://philip.html5.org/tests/apng/tests.html#trivial-animated-image-one-frame-using-default-image
 DEF_TEST(RustPngCodec_apng_basic_using_default_image, r) {
     const char* kResource = "images/apng-test-suite--basic--using-default-image.png";
-#if !defined(SK_CODEC_USES_PNG_WITH_RUST_FOR_ANDROID)
+#if !defined(SK_CODEC_DECODES_PNG_WITH_RUST_DISABLE_APNG)
     AssertSingleGreenFrame(r, 128, 64, kResource);
 #else
     AssertAndroidStaticApng(r, kResource, SK_ColorGREEN);
@@ -770,12 +830,12 @@ DEF_TEST(RustPngCodec_apng_basic_using_default_image, r) {
 // the IDAT chunk is *not* part of the animation:
 // * On non-Android (APNG-aware), `SkPngRustCodec` ignores the red `IDAT` default
 //   image and decodes the green `fdAT` animation frame.
-// * On Android (`SK_CODEC_USES_PNG_WITH_RUST_FOR_ANDROID`), `SkPngRustCodec`
+// * On Android (`SK_CODEC_DECODES_PNG_WITH_RUST_DISABLE_APNG`), `SkPngRustCodec`
 //   ignores `acTL`/`fcTL` for `SkPngCodec` (libpng) parity and decodes the red
 //   `IDAT` default image as a static single-frame PNG.
 DEF_TEST(RustPngCodec_apng_basic_ignoring_default_image, r) {
     const char* kResource = "images/apng-test-suite--basic--ignoring-default-image.png";
-#if !defined(SK_CODEC_USES_PNG_WITH_RUST_FOR_ANDROID)
+#if !defined(SK_CODEC_DECODES_PNG_WITH_RUST_DISABLE_APNG)
     AssertSingleGreenFrame(r, 128, 64, kResource);
 #else
     AssertAndroidStaticApng(r, kResource, SK_ColorRED);
@@ -791,7 +851,7 @@ DEF_TEST(RustPngCodec_apng_basic_ignoring_default_image, r) {
 // red `IDAT` default image on Android where APNG chunks are ignored).
 DEF_TEST(RustPngCodec_apng_ignoring_default_image_without_getFrameCount, r) {
     const char* kResource = "images/apng-test-suite--basic--ignoring-default-image.png";
-#if !defined(SK_CODEC_USES_PNG_WITH_RUST_FOR_ANDROID)
+#if !defined(SK_CODEC_DECODES_PNG_WITH_RUST_DISABLE_APNG)
     // 1. Direct `getImage()` / `getPixels()` without `getFrameCount()`.
     {
         std::unique_ptr<SkCodec> codec = SkPngRustDecoderDecode(r, kResource);
@@ -863,7 +923,7 @@ DEF_TEST(RustPngCodec_apng_ignoring_default_image_without_getFrameCount, r) {
 //   the final frame in this test will contain red pixels.
 DEF_TEST(RustPngCodec_apng_dispose_op_none_basic, r) {
     const char* kResource = "images/apng-test-suite--dispose-ops--none-basic.png";
-#if !defined(SK_CODEC_USES_PNG_WITH_RUST_FOR_ANDROID)
+#if !defined(SK_CODEC_DECODES_PNG_WITH_RUST_DISABLE_APNG)
     std::unique_ptr<SkCodec> codec = SkPngRustDecoderDecode(r, kResource);
     if (!codec) {
         return;
@@ -1063,7 +1123,7 @@ DEF_TEST(RustPngCodec_apng_dispose_op_none_basic_incomplete_input2, r) {
     rowsDecoded = -1;
     result = codec->incrementalDecode(&rowsDecoded);
     REPORTER_ASSERT(r, result == SkCodec::kSuccess);
-    REPORTER_ASSERT(r, rowsDecoded == -1);  // Not set when `kSuccess`.
+    REPORTER_ASSERT(r, rowsDecoded == 64, "actual rowsDecoded = %d", rowsDecoded);
     AssertRedPixel(r, pixmap, 0, 0);
     AssertRedPixel(r, pixmap, 40, 29);
     AssertRedPixel(r, pixmap, 80, 35);
@@ -1074,7 +1134,7 @@ DEF_TEST(RustPngCodec_apng_dispose_op_none_basic_incomplete_input2, r) {
 // https://philip.html5.org/tests/apng/tests.html#apng-blend-op-source-on-solid-colour
 DEF_TEST(RustPngCodec_apng_blend_ops_source_on_solid, r) {
     const char* kResource = "images/apng-test-suite--blend-ops--source-on-solid.png";
-#if !defined(SK_CODEC_USES_PNG_WITH_RUST_FOR_ANDROID)
+#if !defined(SK_CODEC_DECODES_PNG_WITH_RUST_DISABLE_APNG)
     std::unique_ptr<SkCodec> codec = SkPngRustDecoderDecode(r, kResource);
     if (!codec) {
         return;
@@ -1101,7 +1161,7 @@ DEF_TEST(RustPngCodec_apng_blend_ops_source_on_solid, r) {
 // https://philip.html5.org/tests/apng/tests.html#apng-blend-op-source-on-nearly-transparent-colour
 DEF_TEST(RustPngCodec_apng_blend_ops_source_on_nearly_transparent, r) {
     const char* kResource = "images/apng-test-suite--blend-ops--source-on-nearly-transparent.png";
-#if !defined(SK_CODEC_USES_PNG_WITH_RUST_FOR_ANDROID)
+#if !defined(SK_CODEC_DECODES_PNG_WITH_RUST_DISABLE_APNG)
     sk_sp<SkImage> image = DecodeLastFrame(r, kResource);
     if (!image) {
         return;
@@ -1124,7 +1184,7 @@ DEF_TEST(RustPngCodec_apng_blend_ops_source_on_nearly_transparent, r) {
 // https://philip.html5.org/tests/apng/tests.html#apng-blend-op-over-on-solid-and-transparent-colours
 DEF_TEST(RustPngCodec_apng_blend_ops_over_on_solid_and_transparent, r) {
     const char* kResource = "images/apng-test-suite--blend-ops--over-on-solid-and-transparent.png";
-#if !defined(SK_CODEC_USES_PNG_WITH_RUST_FOR_ANDROID)
+#if !defined(SK_CODEC_DECODES_PNG_WITH_RUST_DISABLE_APNG)
     sk_sp<SkImage> image = DecodeLastFrame(r, kResource);
     if (!image) {
         return;
@@ -1142,7 +1202,7 @@ DEF_TEST(RustPngCodec_apng_blend_ops_over_on_solid_and_transparent, r) {
 // https://philip.html5.org/tests/apng/tests.html#apng-blend-op-over-repeatedly-with-nearly-transparent-colours
 DEF_TEST(RustPngCodec_apng_blend_ops_over_repeatedly, r) {
     const char* kResource = "images/apng-test-suite--blend-ops--over-repeatedly.png";
-#if !defined(SK_CODEC_USES_PNG_WITH_RUST_FOR_ANDROID)
+#if !defined(SK_CODEC_DECODES_PNG_WITH_RUST_DISABLE_APNG)
     sk_sp<SkImage> image = DecodeLastFrame(r, kResource);
     if (!image) {
         return;
@@ -1160,7 +1220,7 @@ DEF_TEST(RustPngCodec_apng_blend_ops_over_repeatedly, r) {
 // https://philip.html5.org/tests/apng/tests.html#apng-dispose-op-none-in-region
 DEF_TEST(RustPngCodec_apng_regions_dispose_op_none, r) {
     const char* kResource = "images/apng-test-suite--regions--dispose-op-none.png";
-#if !defined(SK_CODEC_USES_PNG_WITH_RUST_FOR_ANDROID)
+#if !defined(SK_CODEC_DECODES_PNG_WITH_RUST_DISABLE_APNG)
     sk_sp<SkImage> image = DecodeLastFrame(r, kResource);
     if (!image) {
         return;
@@ -1183,11 +1243,75 @@ DEF_TEST(RustPngCodec_apng_regions_dispose_op_none, r) {
 #endif
 }
 
+#if !defined(SK_CODEC_DECODES_PNG_WITH_RUST_DISABLE_APNG)
+// Regression test for b/581301904: when an independent full-canvas frame
+// (`fRequiredFrame == kNoFrame`) is decoded into a buffer still holding a prior
+// frame (`fPriorFrame = 0`) with `kYes_ZeroInitialized`, `SkCodec` must clear
+// `fZeroInitialized` so `fillIncompleteImage` zeroes any undecoded rows on
+// truncated input (`463` bytes = 0 rows decoded; `550` bytes = partial rows).
+DEF_TEST(RustPngCodec_apng_incomplete_independent_full_frame, r) {
+    sk_sp<SkData> data =
+            GetResourceAsData("images/apng-test-suite--blend-ops--source-on-solid.png");
+    REPORTER_ASSERT(r, data);
+    if (!data) {
+        return;
+    }
+    for (size_t limit : {size_t{463}, size_t{550}}) {
+        auto codec = SkPngRustDecoder::Decode(
+                SkMemoryStream::Make(SkData::MakeSubset(data.get(), 0, limit)), nullptr);
+        REPORTER_ASSERT(r, codec);
+        if (!codec) {
+            return;
+        }
+        REPORTER_ASSERT(r, codec->getFrameCount() >= 2);
+        SkBitmap bm;
+        bm.allocPixels(codec->getInfo().makeColorType(kN32_SkColorType));
+        bm.eraseColor(kUnreadSentinelColor);
+
+        SkCodec::Options options;
+        options.fFrameIndex = 1;
+        options.fPriorFrame = 0;
+        options.fZeroInitialized = SkCodec::kYes_ZeroInitialized;
+        REPORTER_ASSERT(r, codec->getPixels(bm.pixmap(), &options) == SkCodec::kIncompleteInput);
+        const SkColor expectedTop = (limit == 463) ? SK_ColorTRANSPARENT : SK_ColorGREEN;
+        REPORTER_ASSERT(r, bm.getColor(0, 0) == expectedTop);
+        REPORTER_ASSERT(r, bm.getColor(0, bm.height() - 1) == SK_ColorTRANSPARENT);
+    }
+}
+
+// Regression test for b/581301904: a dependent frame (`fRequiredFrame != kNoFrame`)
+// truncated right at the start (`440`, 0 rows decoded) or mid-stream (`480`)
+// must not have the prior frame's bottom rows wiped out by
+// `SkCodec::fillIncompleteImage`.
+DEF_TEST(RustPngCodec_apng_incomplete_dependent_frame, r) {
+    sk_sp<SkData> data = GetResourceAsData("images/apng-test-suite--regions--dispose-op-none.png");
+    REPORTER_ASSERT(r, data);
+    if (!data) {
+        return;
+    }
+    SkCodec::Options options;
+    options.fFrameIndex = 1;
+    for (size_t limit : {size_t{440}, size_t{480}}) {
+        std::optional<SkBitmap> bm = DecodePixels(
+                r,
+                SkPngRustDecoder::Decode(
+                        SkMemoryStream::Make(SkData::MakeSubset(data.get(), 0, limit)), nullptr),
+                [](const SkImageInfo& info) { return info.makeColorType(kN32_SkColorType); },
+                options,
+                SkCodec::kIncompleteInput);
+        if (bm) {
+            REPORTER_ASSERT(r, bm->getColor(0, 0) == SK_ColorGREEN);
+            REPORTER_ASSERT(r, bm->getColor(127, 63) == SK_ColorGREEN);
+        }
+    }
+}
+#endif
+
 // Test based on
 // https://philip.html5.org/tests/apng/tests.html#num-plays-0
 DEF_TEST(RustPngCodec_apng_num_plays_0, r) {
     const char* kResource = "images/apng-test-suite--num-plays--0.png";
-#if !defined(SK_CODEC_USES_PNG_WITH_RUST_FOR_ANDROID)
+#if !defined(SK_CODEC_DECODES_PNG_WITH_RUST_DISABLE_APNG)
     AssertAnimationRepetitionCount(r, SkCodec::kRepetitionCountInfinite, kResource);
 #else
     AssertAndroidStaticApng(r, kResource);
@@ -1198,7 +1322,7 @@ DEF_TEST(RustPngCodec_apng_num_plays_0, r) {
 // https://philip.html5.org/tests/apng/tests.html#num-plays-1
 DEF_TEST(RustPngCodec_apng_num_plays_1, r) {
     const char* kResource = "images/apng-test-suite--num-plays--1.png";
-#if !defined(SK_CODEC_USES_PNG_WITH_RUST_FOR_ANDROID)
+#if !defined(SK_CODEC_DECODES_PNG_WITH_RUST_DISABLE_APNG)
     AssertAnimationRepetitionCount(r, 0, kResource);
 #else
     AssertAndroidStaticApng(r, kResource);
@@ -1209,7 +1333,7 @@ DEF_TEST(RustPngCodec_apng_num_plays_1, r) {
 // https://philip.html5.org/tests/apng/tests.html#num-plays-2
 DEF_TEST(RustPngCodec_apng_num_plays_2, r) {
     const char* kResource = "images/apng-test-suite--num-plays--2.png";
-#if !defined(SK_CODEC_USES_PNG_WITH_RUST_FOR_ANDROID)
+#if !defined(SK_CODEC_DECODES_PNG_WITH_RUST_DISABLE_APNG)
     AssertAnimationRepetitionCount(r, 1, kResource);
 #else
     AssertAndroidStaticApng(r, kResource);
@@ -1351,7 +1475,7 @@ DEF_TEST(RustPngCodec_f16_trc_tables, r) {
 
 DEF_TEST(RustPngCodec_crbug445556737, r) {
     const char* kResource = "images/crbug445556737.png";
-#if !defined(SK_CODEC_USES_PNG_WITH_RUST_FOR_ANDROID)
+#if !defined(SK_CODEC_DECODES_PNG_WITH_RUST_DISABLE_APNG)
     sk_sp<SkImage> image = DecodeLastFrame(r, kResource);
     if (!image) {
         return;
@@ -1463,7 +1587,7 @@ DEF_TEST(RustPngCodec_subset, r) {
 
 DEF_TEST(RustPngCodec_interlaced_animated_blending, r) {
     const char* kResource = "images/interlaced-multiframe-with-blending.png";
-#if !defined(SK_CODEC_USES_PNG_WITH_RUST_FOR_ANDROID)
+#if !defined(SK_CODEC_DECODES_PNG_WITH_RUST_DISABLE_APNG)
     std::unique_ptr<SkCodec> codec = SkPngRustDecoderDecode(r, kResource);
     REPORTER_ASSERT(r, codec);
 
@@ -1473,13 +1597,22 @@ DEF_TEST(RustPngCodec_interlaced_animated_blending, r) {
     bm.allocPixels(info);
     REPORTER_ASSERT(r, codec->getFrameCount() == 4);
     for (int i = 0; i < codec->getFrameCount(); ++i) {
+        SkCodec::FrameInfo frameInfo;
+        REPORTER_ASSERT(r, codec->getFrameInfo(i, &frameInfo));
         SkCodec::Options options;
         options.fFrameIndex = i;
         options.fPriorFrame = i - 1;
         SkCodec::Result result;
         result = codec->startIncrementalDecode(info, bm.getPixels(), bm.rowBytes(), &options);
         REPORTER_ASSERT_SUCCESSFUL_CODEC_RESULT(r, result);
-        std::ignore = codec->incrementalDecode();
+        int rowsDecoded = -1;
+        result = codec->incrementalDecode(&rowsDecoded);
+        REPORTER_ASSERT(r, i != 2 || result == SkCodec::kSuccess);
+        if (result == SkCodec::kSuccess) {
+            REPORTER_ASSERT(r, rowsDecoded == frameInfo.fFrameRect.height());
+        } else {
+            REPORTER_ASSERT(r, rowsDecoded >= 0 && rowsDecoded <= frameInfo.fFrameRect.height());
+        }
     }
 #else
     AssertAndroidStaticApng(r, kResource);
@@ -1501,7 +1634,7 @@ DEF_TEST(RustPngCodec_sbit565_ihdr16bits, r) {
     REPORTER_ASSERT_SUCCESSFUL_CODEC_RESULT(r, result);
 }
 
-#ifdef SK_CODEC_USES_PNG_WITH_RUST_FOR_ANDROID
+#if defined(SK_CODEC_DECODES_PNG_WITH_RUST_CAPTURED_CHUNKS)
 class MockChunkReader : public SkPngChunkReader {
 public:
     bool readChunk(const char tag[], const void* data, size_t length) override {
@@ -1610,7 +1743,30 @@ DEF_TEST(RustPngCodec_ninepatchPngChunkReader, r) {
                     chunkReader.fChunks[2] ==
                             std::make_pair(std::string("npTc"), std::string("ninePatchData", 14)));
 }
+#else
+DEF_TEST(RustPngCodec_gainmapNoOp, r) {
+    auto stream = GetResourceAsStream("images/gainmap.png", false);
+    REPORTER_ASSERT(r, stream);
 
+    SkCodec::Result result = SkCodec::kSuccess;
+    std::unique_ptr<SkCodec> baseCodec = SkPngRustDecoder::Decode(std::move(stream), &result);
+    REPORTER_ASSERT(r, baseCodec);
+
+    std::unique_ptr<SkAndroidCodec> androidCodec =
+            SkAndroidCodec::MakeFromCodec(std::move(baseCodec));
+    REPORTER_ASSERT(r, androidCodec);
+
+    SkGainmapInfo gainmapInfo;
+    std::unique_ptr<SkAndroidCodec> gainmapCodec;
+    bool hasGainmap = androidCodec->getGainmapAndroidCodec(&gainmapInfo, &gainmapCodec);
+
+    // When the build flag is off, it should return false (no gainmap).
+    REPORTER_ASSERT(r, !hasGainmap);
+    REPORTER_ASSERT(r, !gainmapCodec);
+}
+#endif
+
+#if defined(SK_CODEC_DECODES_PNG_WITH_RUST_LIMIT_READ)
 DEF_TEST(RustPngCodec_exactRead, r) {
     // Replicates the Codec_end test from CodecExactReadTest.cpp.
     // Verifies that with the limit reader enabled, we don't overshoot
@@ -1668,27 +1824,6 @@ DEF_TEST(RustPngCodec_exactRead, r) {
     }
 }
 #else
-DEF_TEST(RustPngCodec_gainmapNoOp, r) {
-    auto stream = GetResourceAsStream("images/gainmap.png", false);
-    REPORTER_ASSERT(r, stream);
-
-    SkCodec::Result result = SkCodec::kSuccess;
-    std::unique_ptr<SkCodec> baseCodec = SkPngRustDecoder::Decode(std::move(stream), &result);
-    REPORTER_ASSERT(r, baseCodec);
-
-    std::unique_ptr<SkAndroidCodec> androidCodec =
-            SkAndroidCodec::MakeFromCodec(std::move(baseCodec));
-    REPORTER_ASSERT(r, androidCodec);
-
-    SkGainmapInfo gainmapInfo;
-    std::unique_ptr<SkAndroidCodec> gainmapCodec;
-    bool hasGainmap = androidCodec->getGainmapAndroidCodec(&gainmapInfo, &gainmapCodec);
-
-    // When the build flag is off, it should return false (no gainmap).
-    REPORTER_ASSERT(r, !hasGainmap);
-    REPORTER_ASSERT(r, !gainmapCodec);
-}
-
 DEF_TEST(RustPngCodec_exactRead_overshoot, r) {
     // Replicates the Codec_end test from CodecExactReadTest.cpp.
     // Verifies that without the limit reader, the decoder overshoots
@@ -1767,7 +1902,9 @@ DEF_TEST(RustPngCodec_subset_halting, r) {
     REPORTER_ASSERT(r, rowsDecoded > 0 && rowsDecoded < subset.height());
     REPORTER_ASSERT(r, CountWrittenRows(r, bmHalting) == rowsDecoded);
     retainedStream->addNewData(data->size() - initialLimit);
-    REPORTER_ASSERT_SUCCESSFUL_CODEC_RESULT(r, codec->incrementalDecode());
+    rowsDecoded = -1;
+    REPORTER_ASSERT_SUCCESSFUL_CODEC_RESULT(r, codec->incrementalDecode(&rowsDecoded));
+    REPORTER_ASSERT(r, rowsDecoded == subset.height());
 
     CompareBitmaps(r, *bmOneShot, bmHalting);
 }
@@ -1806,18 +1943,18 @@ DEF_TEST(RustPngCodec_subsampling_subset_interlaced, r) {
 // In `apng-single-frame-with-offset.png`, `IDAT` is a full-canvas 64x64 default
 // image, followed by a single `fcTL`/`fdAT` animation frame of size 64x32 at
 // y-origin 32:
-// * On non-Android (`!SK_CODEC_USES_PNG_WITH_RUST_FOR_ANDROID`), `onIsAnimated`
+// * On non-Android (`!SK_CODEC_DECODES_PNG_WITH_RUST_DISABLE_APNG`), `onIsAnimated`
 //   reports `kNo` for a 1-frame APNG, while Frame 0 uses the `fcTL` sub-rect
 //   `(0, 32, 64, 64)`. Since that origin is only valid in a full-canvas
 //   destination, the codec must refuse sampled or subset decodes (`kUnimplemented`)
 //   rather than writing outside the caller's buffer.
-// * On Android (`SK_CODEC_USES_PNG_WITH_RUST_FOR_ANDROID`), `acTL`/`fcTL` are
+// * On Android (`SK_CODEC_DECODES_PNG_WITH_RUST_DISABLE_APNG`), `acTL`/`fcTL` are
 //   ignored for `libpng` parity, so the full-canvas 64x64 `IDAT` default image
 //   is decoded and sampled/subset decodes succeed.
 DEF_TEST(RustPngCodec_apng_offset_frame_does_not_overflow_dst, r) {
     // 64x64 canvas.  The single frame covers the bottom half: y-origin of 32.
     const char* path = "images/apng-single-frame-with-offset.png";
-#if !defined(SK_CODEC_USES_PNG_WITH_RUST_FOR_ANDROID)
+#if !defined(SK_CODEC_DECODES_PNG_WITH_RUST_DISABLE_APNG)
     sk_sp<SkData> data = GetResourceAsData(path);
     if (!data) {
         ERRORF(r, "Missing resource: %s", path);
@@ -1887,46 +2024,218 @@ DEF_TEST(RustPngCodec_apng_offset_frame_small_row_bytes, r) {
                     SkCodec::ResultToString(result));
 }
 
-// On non-Android (`!SK_CODEC_USES_PNG_WITH_RUST_FOR_ANDROID`), the refusal above
+// On non-Android (`!SK_CODEC_DECODES_PNG_WITH_RUST_DISABLE_APNG`), the refusal above
 // must not change a full-canvas decode: the `fdAT` frame still goes to its
-// y=32 origin.  On Android (`SK_CODEC_USES_PNG_WITH_RUST_FOR_ANDROID`), the
-// 64x64 `IDAT` default image is decoded instead, matching `libpng`.
+// y=32 origin, and the surrounding canvas rows (0..31) must be initialized to
+// transparent black by the codec even when the caller's buffer is not
+// zero-initialized (b/581301904).  On Android
+// (`SK_CODEC_DECODES_PNG_WITH_RUST_DISABLE_APNG`), the 64x64 `IDAT` default image is
+// decoded instead, matching `libpng`.
 DEF_TEST(RustPngCodec_apng_offset_frame_full_canvas_placement, r) {
     const char* path = "images/apng-single-frame-with-offset.png";
-#if !defined(SK_CODEC_USES_PNG_WITH_RUST_FOR_ANDROID)
+#if !defined(SK_CODEC_DECODES_PNG_WITH_RUST_DISABLE_APNG)
     sk_sp<SkData> data = GetResourceAsData(path);
+    REPORTER_ASSERT(r, data);
     if (!data) {
-        ERRORF(r, "Missing resource: %s", path);
         return;
     }
 
-    auto codec = SkPngRustDecoder::Decode(std::make_unique<SkMemoryStream>(data), nullptr);
-    if (!codec) {
-        ERRORF(r, "Failed to create a codec for %s", path);
-        return;
-    }
-
-    for (SkAlphaType alphaType : {kUnpremul_SkAlphaType, kPremul_SkAlphaType}) {
-        SkBitmap bm;
-        bm.allocPixels(codec->getInfo().makeColorType(kN32_SkColorType).makeAlphaType(alphaType));
-        // The APNG spec says the output buffer starts as transparent black.
-        bm.eraseColor(SK_ColorTRANSPARENT);
-
-        SkCodec::Result result = codec->getPixels(bm.pixmap());
-        REPORTER_ASSERT_SUCCESSFUL_CODEC_RESULT(r, result);
-
-        // Rows above the frame stay transparent.  The frame fills rows 32..63.
-        REPORTER_ASSERT(r, bm.getColor(0, 0) == SK_ColorTRANSPARENT);
-        REPORTER_ASSERT(r, bm.getColor(63, 31) == SK_ColorTRANSPARENT);
-        REPORTER_ASSERT(r, bm.getColor(0, 32) == SK_ColorMAGENTA);
-        REPORTER_ASSERT(r, bm.getColor(63, 63) == SK_ColorMAGENTA);
+    const SkIRect kSubrect = SkIRect::MakeXYWH(0, 32, 64, 32);
+    // Cover both `canReadRow()` (`kRGBA_8888_SkColorType` + `kUnpremul_SkAlphaType` + `nullptr`
+    // colorSpace) and `!canReadRow()` (`kN32_SkColorType` + `kPremul_SkAlphaType`).
+    for (const auto& [colorType, alphaType] : {
+                 std::make_pair(kRGBA_8888_SkColorType, kUnpremul_SkAlphaType),
+                 std::make_pair(kN32_SkColorType, kPremul_SkAlphaType),
+         }) {
+        auto makeDstInfo = [&](const SkImageInfo& info) {
+            return info.makeColorType(colorType).makeAlphaType(alphaType).makeColorSpace(nullptr);
+        };
+        std::optional<SkBitmap> bm = DecodePixels(
+                r,
+                SkPngRustDecoder::Decode(std::make_unique<SkMemoryStream>(data), nullptr),
+                makeDstInfo);
+        std::optional<SkBitmap> incrBm = DecodeIncrementalOneShot(r, data, makeDstInfo);
+        if (bm && incrBm) {
+            AssertSubrectColor(r, *bm, kSubrect, SK_ColorMAGENTA);
+            AssertSubrectColor(r, *incrBm, kSubrect, SK_ColorMAGENTA);
+        }
     }
 #else
     AssertAndroidStaticApng(r, path);
 #endif
 }
 
-#ifdef SK_CODEC_USES_PNG_WITH_RUST_FOR_ANDROID
+#if !defined(SK_CODEC_DECODES_PNG_WITH_RUST_DISABLE_APNG)
+// Regression test for b/581301904: when an independent sub-rectangle APNG frame
+// (`yOffset = 32`, `height = 32` on a 64x64 canvas) fails part-way through with
+// `kIncompleteInput`, the surrounding canvas must still be initialized to
+// transparent black and the already-decoded rows inside the sub-rectangle
+// (`y = 32..41`) must not be overwritten by `SkCodec::fillIncompleteImage`.
+DEF_TEST(RustPngCodec_apng_offset_frame_incomplete, r) {
+    sk_sp<SkData> data = GetResourceAsData("images/apng-single-frame-with-offset.png");
+    REPORTER_ASSERT(r, data);
+    if (!data) {
+        return;
+    }
+
+    // At 4988 bytes (32 bytes into Frame 0's `fdAT` payload), 10 rows of the
+    // 64x32 frame (`y = 32..41`) have been decoded.
+    constexpr size_t kInitialBytes = 4988;
+    constexpr int kDecodedFrameRows = 10;
+    const SkIRect kPartialSubrect = SkIRect::MakeXYWH(0, 32, 64, kDecodedFrameRows);
+    const SkIRect kFullSubrect = SkIRect::MakeXYWH(0, 32, 64, 32);
+
+    for (const auto& [colorType, alphaType] : {
+                 std::make_pair(kRGBA_8888_SkColorType, kUnpremul_SkAlphaType),
+                 std::make_pair(kN32_SkColorType, kPremul_SkAlphaType),
+         }) {
+        auto makeDstInfo = [&](const SkImageInfo& info) {
+            return info.makeColorType(colorType).makeAlphaType(alphaType).makeColorSpace(nullptr);
+        };
+        std::optional<SkBitmap> getPixelsBm = DecodePixels(
+                r,
+                SkPngRustDecoder::Decode(
+                        SkMemoryStream::Make(SkData::MakeSubset(data.get(), 0, kInitialBytes)),
+                        nullptr),
+                makeDstInfo,
+                /*options=*/{},
+                SkCodec::kIncompleteInput);
+        if (getPixelsBm) {
+            AssertSubrectColor(r, *getPixelsBm, kPartialSubrect, SK_ColorMAGENTA);
+        }
+
+        auto haltingStream = std::make_unique<HaltingStream>(data, kInitialBytes);
+        HaltingStream* retainedStream = haltingStream.get();
+        SkBitmap incrBm;
+        std::unique_ptr<SkCodec> incrCodec =
+                StartIncrementalDecode(r, std::move(haltingStream), &incrBm, makeDstInfo);
+        if (!incrCodec) {
+            return;
+        }
+        int rowsDecoded = -1;
+        REPORTER_ASSERT(r, incrCodec->incrementalDecode(&rowsDecoded) == SkCodec::kIncompleteInput);
+        REPORTER_ASSERT(r, rowsDecoded == kDecodedFrameRows);
+        AssertSubrectColor(r, incrBm, kPartialSubrect, SK_ColorMAGENTA);
+
+        retainedStream->addNewData(data->size() - kInitialBytes);
+        REPORTER_ASSERT_SUCCESSFUL_CODEC_RESULT(r, incrCodec->incrementalDecode());
+        AssertSubrectColor(r, incrBm, kFullSubrect, SK_ColorMAGENTA);
+    }
+}
+
+// Regression test for b/581301904: an independent sub-rectangle frame at
+// `fFrameIndex > 0` (after a `kRestoreBGColor` Frame 0) with both horizontal
+// and vertical offsets must initialize all surrounding margins to transparent
+// black, even when `fPriorFrame` and `kYes_ZeroInitialized` are set.
+DEF_TEST(RustPngCodec_apng_independent_subrect_later_frame, r) {
+    sk_sp<SkData> rawData =
+            GetResourceAsData("images/apng-test-suite--regions--dispose-op-none.png");
+    REPORTER_ASSERT(r, rawData);
+    if (!rawData) {
+        return;
+    }
+    sk_sp<SkData> data = WithFirstFctlDisposeOp(rawData.get(), /*disposeOp=*/1);
+    REPORTER_ASSERT(r, data);
+    if (!data) {
+        return;
+    }
+    for (bool withPriorFrameAndZeroInit : {false, true}) {
+        auto codec = SkPngRustDecoder::Decode(SkMemoryStream::Make(data), nullptr);
+        REPORTER_ASSERT(r, codec);
+        if (!codec) {
+            return;
+        }
+        SkBitmap bm;
+        bm.allocPixels(codec->getInfo().makeColorType(kN32_SkColorType));
+        bm.eraseColor(kUnreadSentinelColor);
+
+        SkCodec::Options options;
+        options.fFrameIndex = 1;
+        if (withPriorFrameAndZeroInit) {
+            options.fPriorFrame = 0;
+            options.fZeroInitialized = SkCodec::kYes_ZeroInitialized;
+        }
+        REPORTER_ASSERT_SUCCESSFUL_CODEC_RESULT(r, codec->getPixels(bm.pixmap(), &options));
+        AssertSubrectColor(r, bm, SkIRect::MakeXYWH(32, 16, 64, 32), SK_ColorGREEN);
+    }
+}
+
+// Regression test for b/581301904: an independent full-canvas frame at
+// `fFrameIndex > 0` with `Blend::kSrcOver` must overwrite (`kSrc`) rather than
+// blending over uninitialized or prior-frame pixels in `dst`.
+DEF_TEST(RustPngCodec_apng_independent_full_frame_kSrcOver, r) {
+    sk_sp<SkData> rawData = GetResourceAsData(
+            "images/apng-test-suite--blend-ops--over-on-solid-and-transparent.png");
+    REPORTER_ASSERT(r, rawData);
+    if (!rawData) {
+        return;
+    }
+    sk_sp<SkData> data = WithFirstFctlDisposeOp(rawData.get(), /*disposeOp=*/1);
+    REPORTER_ASSERT(r, data);
+    if (!data) {
+        return;
+    }
+    SkCodec::Options options;
+    options.fFrameIndex = 1;
+    std::optional<SkBitmap> bm = DecodePixels(
+            r,
+            SkPngRustDecoder::Decode(SkMemoryStream::Make(std::move(data)), nullptr),
+            [](const SkImageInfo& imgInfo) { return imgInfo.makeColorType(kN32_SkColorType); },
+            options);
+    if (bm) {
+        REPORTER_ASSERT(r, CountNonSentinelRows(*bm, SK_ColorTRANSPARENT) == 0);
+    }
+}
+
+// Regression test for b/581301904: an interlaced sub-rectangle APNG frame
+// truncated mid-decode must report `rowsDecoded > 0` from
+// `expandDecodedInterlacedRow` and must not have its decoded pixels wiped out
+// by `SkCodec::fillIncompleteImage`.
+DEF_TEST(RustPngCodec_apng_interlaced_subrect_incomplete, r) {
+    sk_sp<SkData> rawData = GetResourceAsData("images/interlaced-multiframe-with-blending.png");
+    REPORTER_ASSERT(r, rawData);
+    if (!rawData) {
+        return;
+    }
+    // Patching Frame 0's `dispose_op` to `kRestoreBGColor` (`1`) makes Frame 2
+    // (a 3x2 interlaced sub-rectangle at (1, 0) on the 5x5 canvas, with `fdAT`
+    // at bytes 530..565) independent (`fRequiredFrame == kNoFrame`) and unbuffered.
+    sk_sp<SkData> data = WithFirstFctlDisposeOp(rawData.get(), /*disposeOp=*/1);
+    REPORTER_ASSERT(r, data);
+    if (!data) {
+        return;
+    }
+    sk_sp<SkData> truncated = SkData::MakeSubset(data.get(), 0, /*length=*/555);
+    auto makeDstInfo = [](const SkImageInfo& info) {
+        return info.makeColorType(kN32_SkColorType).makeAlphaType(kPremul_SkAlphaType);
+    };
+    SkCodec::Options options;
+    options.fFrameIndex = 2;
+
+    SkBitmap incrBm;
+    std::unique_ptr<SkCodec> incrCodec = StartIncrementalDecode(
+            r, SkMemoryStream::Make(truncated), &incrBm, makeDstInfo, options);
+    if (!incrCodec) {
+        return;
+    }
+    int rowsDecoded = -1;
+    REPORTER_ASSERT(r, incrCodec->incrementalDecode(&rowsDecoded) == SkCodec::kIncompleteInput);
+    REPORTER_ASSERT(r, rowsDecoded == 2);
+
+    std::optional<SkBitmap> getPixelsBm =
+            DecodePixels(r,
+                         SkPngRustDecoder::Decode(SkMemoryStream::Make(truncated), nullptr),
+                         makeDstInfo,
+                         options,
+                         SkCodec::kIncompleteInput);
+    if (getPixelsBm) {
+        CompareBitmaps(r, incrBm, *getPixelsBm);
+        REPORTER_ASSERT(r, CountNonSentinelRows(*getPixelsBm, SK_ColorTRANSPARENT) > 0);
+    }
+}
+#endif
+
+#if defined(SK_CODEC_DECODES_PNG_WITH_RUST_LIMIT_READ)
 // Decodes a top subset of `path` and asserts that the decode stopped short of the end of the
 // stream, i.e. that `finish_decoding()` was not called. libpng stops early the same way: its row
 // callbacks longjmp out once the requested rows have been written, and only a whole-image decode
@@ -1934,8 +2243,9 @@ DEF_TEST(RustPngCodec_apng_offset_frame_full_canvas_placement, r) {
 // A non-interlaced decode stops inside `IDAT`. An interlaced one has to read every Adam7 pass, and
 // the `png` crate consumes `IEND`'s 8-byte length+type header while detecting the end of the
 // frame, so it stops with only the 4-byte CRC left.
-// Only `for_android` builds limit reads to chunk boundaries; elsewhere the `BufReader` inside the
-// `png` crate may have buffered the rest of the file, so the position says nothing.
+// Only builds with `SK_CODEC_DECODES_PNG_WITH_RUST_LIMIT_READ` limit reads to chunk boundaries;
+// elsewhere the `BufReader` inside the `png` crate may have buffered the rest of the file, so the
+// position says nothing.
 static void AssertPartialDecodeStopsBeforeIend(
         skiatest::Reporter* r,
         const char* path,
@@ -2387,8 +2697,10 @@ static int AssertInterlacedIncrementalDecodeHalting(
     }
 
     retainedStream->addNewData(data->size() - limit);
-    result = codec->incrementalDecode();
+    int rowsDecodedAfterResume = -1;
+    result = codec->incrementalDecode(&rowsDecodedAfterResume);
     REPORTER_ASSERT_SUCCESSFUL_CODEC_RESULT(r, result);
+    REPORTER_ASSERT(r, rowsDecodedAfterResume == bm.height());
 
     if (std::optional<SkBitmap> refBm = DecodeIncrementalOneShot(r, data, makeDstInfo, options)) {
         CompareBitmaps(r, *refBm, bm);

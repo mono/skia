@@ -41,7 +41,7 @@ enum {
  *      - it can only be backed by raster or gpu (no generators)
  *      - it can be backed by a GrTextureProxy larger than its nominal bounds
  *      - it can't be drawn tiled
- *      - it can't be drawn with MIPMAPs
+ *      - [Ganesh] it can't be drawn with MIPMAPs unless its subset covers its entire backing store
  * It is similar to SkImage in that it abstracts how the pixels are stored/represented.
  *
  * Note: the contents of the backing storage outside of the subset rect are undefined.
@@ -66,6 +66,17 @@ public:
 
     bool isExactFit() const { return fSubset == SkIRect::MakeSize(this->backingStoreDimensions()); }
 
+    /**
+     * Returns 'sampling' adjusted so that it is safe to use when drawing or sampling this special
+     * image. Mipmapped and anisotropic sampling build the mip chain from the entire backing store,
+     * and the texels outside of subset() may never have been written (e.g., an approx-fit texture
+     * reused from the scratch pool). So, unless the subset covers the entire backing store (i.e.,
+     * isExactFit()), those are downgraded to bilinear filtering of the base level. Note that the
+     * fit of the underlying texture can't be used for this since it may be shared with other
+     * special images and may already have been exactified by an earlier use.
+     */
+    SkSamplingOptions ganeshSafeSampling(const SkSamplingOptions& sampling) const;
+
     const SkColorInfo& colorInfo() const { return fColorInfo; }
     SkAlphaType alphaType() const { return fColorInfo.alphaType(); }
     SkColorType colorType() const { return fColorInfo.colorType(); }
@@ -86,7 +97,9 @@ public:
     /**
      * Extract a subset of this special image and return it as a special image.
      * It may or may not point to the same backing memory. The input 'subset' is relative to the
-     * special image's content rect.
+     * special image's content rect. It is *not* intersected with this special image's subset, so
+     * `subset` should only have negative coordinates or extends beyond width()/height() when it's
+     * known that those outer pixels are valid.
      */
     sk_sp<SkSpecialImage> makeSubset(const SkIRect& subset) const {
         SkIRect absolute = subset.makeOffset(this->subset().topLeft());
@@ -94,11 +107,11 @@ public:
     }
 
     /**
-     * Return a special image with a 1px larger subset in the backing store compared to this image.
+     * Return a special image with a N px larger subset in the backing store compared to this image.
      * This should only be used when it's externally known that those outer pixels are valid.
      */
-    sk_sp<SkSpecialImage> makePixelOutset() const {
-        return this->onMakeBackingStoreSubset(this->subset().makeOutset(1, 1));
+    sk_sp<SkSpecialImage> makePixelOutset(int n=1) const {
+        return this->onMakeBackingStoreSubset(this->subset().makeOutset(n, n));
     }
 
     /**

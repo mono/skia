@@ -9,8 +9,10 @@
 
 #include "include/core/SkImageInfo.h"
 #include "include/core/SkM44.h"
+#include "include/core/SkSpan.h"
 #include "include/private/SkAssert.h"
 #include "include/private/SkDebug.h"
+#include "include/private/SkOnlyStackAllocatable.h"
 
 #include <algorithm>
 #include <array>
@@ -747,36 +749,6 @@ constexpr float YCgCo_16bit_limited_yuv_to_rgb[] = {
 #endif
 };
 
-static_assert(kJPEG_Full_SkYUVColorSpace            == 0, "");
-static_assert(kRec601_Limited_SkYUVColorSpace       == 1, "");
-static_assert(kRec709_Full_SkYUVColorSpace          == 2, "");
-static_assert(kRec709_Limited_SkYUVColorSpace       == 3, "");
-static_assert(kBT2020_8bit_Full_SkYUVColorSpace     == 4, "");
-static_assert(kBT2020_8bit_Limited_SkYUVColorSpace  == 5, "");
-static_assert(kBT2020_10bit_Full_SkYUVColorSpace    == 6, "");
-static_assert(kBT2020_10bit_Limited_SkYUVColorSpace == 7, "");
-static_assert(kBT2020_12bit_Full_SkYUVColorSpace    == 8, "");
-static_assert(kBT2020_12bit_Limited_SkYUVColorSpace == 9, "");
-static_assert(kBT2020_16bit_Full_SkYUVColorSpace    == 10, "");
-static_assert(kBT2020_16bit_Limited_SkYUVColorSpace == 11, "");
-static_assert(kFCC_Full_SkYUVColorSpace             == 12, "");
-static_assert(kFCC_Limited_SkYUVColorSpace          == 13, "");
-static_assert(kSMPTE240_Full_SkYUVColorSpace        == 14, "");
-static_assert(kSMPTE240_Limited_SkYUVColorSpace     == 15, "");
-static_assert(kYDZDX_Full_SkYUVColorSpace           == 16, "");
-static_assert(kYDZDX_Limited_SkYUVColorSpace        == 17, "");
-static_assert(kGBR_Full_SkYUVColorSpace             == 18, "");
-static_assert(kGBR_Limited_SkYUVColorSpace          == 19, "");
-static_assert(kYCgCo_8bit_Full_SkYUVColorSpace      == 20, "");
-static_assert(kYCgCo_8bit_Limited_SkYUVColorSpace   == 21, "");
-static_assert(kYCgCo_10bit_Full_SkYUVColorSpace     == 22, "");
-static_assert(kYCgCo_10bit_Limited_SkYUVColorSpace  == 23, "");
-static_assert(kYCgCo_12bit_Full_SkYUVColorSpace     == 24, "");
-static_assert(kYCgCo_12bit_Limited_SkYUVColorSpace  == 25, "");
-static_assert(kYCgCo_16bit_Full_SkYUVColorSpace     == 26, "");
-static_assert(kYCgCo_16bit_Limited_SkYUVColorSpace  == 27, "");
-
-
 // Helpers for converting and generating color matrices
 
 // we just drop the alpha rol/col from the colormatrix
@@ -784,7 +756,7 @@ static_assert(kYCgCo_16bit_Limited_SkYUVColorSpace  == 27, "");
 //           |  3x3   tg |
 //           |        tb |
 //           | 0 0 0  1  |
-static void colormatrix_to_matrix44(const float src[20], SkM44* dst) {
+static void colormatrix_to_matrix44(SkSpan<const float, 20> src, SkM44* dst) {
     *dst = SkM44(src[ 0], src[ 1], src[ 2], src[ 4],
                  src[ 5], src[ 6], src[ 7], src[ 9],
                  src[10], src[11], src[12], src[14],
@@ -793,7 +765,7 @@ static void colormatrix_to_matrix44(const float src[20], SkM44* dst) {
 
 // input: ignore the bottom row
 // output: inject identity row/column for alpha
-static void matrix44_to_colormatrix(const SkM44& src, float dst[20]) {
+static void matrix44_to_colormatrix(const SkM44& src, SkSpan<float, 20> dst) {
     dst[0] = src.rc(0,0);
     dst[1] = src.rc(0,1);
     dst[2] = src.rc(0,2);
@@ -816,9 +788,9 @@ static void matrix44_to_colormatrix(const SkM44& src, float dst[20]) {
     dst[18] = 1;
 }
 
-static void scale3(float m[], float s) {
-    for (int i = 0; i < 3; ++i) {
-        m[i] *= s;
+static void scale3(SkSpan<float, 3> m, float s) {
+    for (float& v : m) {
+        v *= s;
     }
 }
 
@@ -846,10 +818,24 @@ struct ColorSpaceInfo {
 };
 
 static constexpr auto kColorSpaceInfo = std::to_array<ColorSpaceInfo>({
-    {MatrixCoefficients::kRec601,   Range::kFull,     8},  // kJPEG_Full
-    {MatrixCoefficients::kRec601,   Range::kLimited,  8},  // kRec601_Limited
-    {MatrixCoefficients::kRec709,   Range::kFull,     8},  // kRec709_Full
-    {MatrixCoefficients::kRec709,   Range::kLimited,  8},  // kRec709_Limited
+    {MatrixCoefficients::kRec601,   Range::kFull,     8},  // kRec601_8bit_Full
+    {MatrixCoefficients::kRec601,   Range::kLimited,  8},  // kRec601_8bit_Limited
+    {MatrixCoefficients::kRec601,   Range::kFull,    10},  // kRec601_10bit_Full
+    {MatrixCoefficients::kRec601,   Range::kLimited, 10},  // kRec601_10bit_Limited
+    {MatrixCoefficients::kRec601,   Range::kFull,    12},  // kRec601_12bit_Full
+    {MatrixCoefficients::kRec601,   Range::kLimited, 12},  // kRec601_12bit_Limited
+    {MatrixCoefficients::kRec601,   Range::kFull,    16},  // kRec601_16bit_Full
+    {MatrixCoefficients::kRec601,   Range::kLimited, 16},  // kRec601_16bit_Limited
+
+    {MatrixCoefficients::kRec709,   Range::kFull,     8},  // kRec709_8bit_Full
+    {MatrixCoefficients::kRec709,   Range::kLimited,  8},  // kRec709_8bit_Limited
+    {MatrixCoefficients::kRec709,   Range::kFull,    10},  // kRec709_10bit_Full
+    {MatrixCoefficients::kRec709,   Range::kLimited, 10},  // kRec709_10bit_Limited
+    {MatrixCoefficients::kRec709,   Range::kFull,    12},  // kRec709_12bit_Full
+    {MatrixCoefficients::kRec709,   Range::kLimited, 12},  // kRec709_12bit_Limited
+    {MatrixCoefficients::kRec709,   Range::kFull,    16},  // kRec709_16bit_Full
+    {MatrixCoefficients::kRec709,   Range::kLimited, 16},  // kRec709_16bit_Limited
+
     {MatrixCoefficients::kBT2020,   Range::kFull,     8},  // kBT2020_8bit_Full
     {MatrixCoefficients::kBT2020,   Range::kLimited,  8},  // kBT2020_8bit_Limited
     {MatrixCoefficients::kBT2020,   Range::kFull,    10},  // kBT2020_10bit_Full
@@ -858,14 +844,43 @@ static constexpr auto kColorSpaceInfo = std::to_array<ColorSpaceInfo>({
     {MatrixCoefficients::kBT2020,   Range::kLimited, 12},  // kBT2020_12bit_Limited
     {MatrixCoefficients::kBT2020,   Range::kFull,    16},  // kBT2020_16bit_Full
     {MatrixCoefficients::kBT2020,   Range::kLimited, 16},  // kBT2020_16bit_Limited
-    {MatrixCoefficients::kFCC,      Range::kFull,     8},  // kFCC_Full
-    {MatrixCoefficients::kFCC,      Range::kLimited,  8},  // kFCC_Limited
-    {MatrixCoefficients::kSMPTE240, Range::kFull,     8},  // kSMPTE240_Full
-    {MatrixCoefficients::kSMPTE240, Range::kLimited,  8},  // kSMPTE240_Limited
-    {MatrixCoefficients::kYDZDX,    Range::kFull,     8},  // kYDZDX_Full
-    {MatrixCoefficients::kYDZDX,    Range::kLimited,  8},  // kYDZDX_Limited
-    {MatrixCoefficients::kGBR,      Range::kFull,     8},  // kGBR_Full
-    {MatrixCoefficients::kGBR,      Range::kLimited,  8},  // kGBR_Limited
+
+    {MatrixCoefficients::kFCC,      Range::kFull,     8},  // kFCC_8bit_Full
+    {MatrixCoefficients::kFCC,      Range::kLimited,  8},  // kFCC_8bit_Limited
+    {MatrixCoefficients::kFCC,      Range::kFull,    10},  // kFCC_10bit_Full
+    {MatrixCoefficients::kFCC,      Range::kLimited, 10},  // kFCC_10bit_Limited
+    {MatrixCoefficients::kFCC,      Range::kFull,    12},  // kFCC_12bit_Full
+    {MatrixCoefficients::kFCC,      Range::kLimited, 12},  // kFCC_12bit_Limited
+    {MatrixCoefficients::kFCC,      Range::kFull,    16},  // kFCC_16bit_Full
+    {MatrixCoefficients::kFCC,      Range::kLimited, 16},  // kFCC_16bit_Limited
+
+    {MatrixCoefficients::kSMPTE240, Range::kFull,     8},  // kSMPTE240_8bit_Full
+    {MatrixCoefficients::kSMPTE240, Range::kLimited,  8},  // kSMPTE240_8bit_Limited
+    {MatrixCoefficients::kSMPTE240, Range::kFull,    10},  // kSMPTE240_10bit_Full
+    {MatrixCoefficients::kSMPTE240, Range::kLimited, 10},  // kSMPTE240_10bit_Limited
+    {MatrixCoefficients::kSMPTE240, Range::kFull,    12},  // kSMPTE240_12bit_Full
+    {MatrixCoefficients::kSMPTE240, Range::kLimited, 12},  // kSMPTE240_12bit_Limited
+    {MatrixCoefficients::kSMPTE240, Range::kFull,    16},  // kSMPTE240_16bit_Full
+    {MatrixCoefficients::kSMPTE240, Range::kLimited, 16},  // kSMPTE240_16bit_Limited
+
+    {MatrixCoefficients::kYDZDX,    Range::kFull,     8},  // kYDZDX_8bit_Full
+    {MatrixCoefficients::kYDZDX,    Range::kLimited,  8},  // kYDZDX_8bit_Limited
+    {MatrixCoefficients::kYDZDX,    Range::kFull,    10},  // kYDZDX_10bit_Full
+    {MatrixCoefficients::kYDZDX,    Range::kLimited, 10},  // kYDZDX_10bit_Limited
+    {MatrixCoefficients::kYDZDX,    Range::kFull,    12},  // kYDZDX_12bit_Full
+    {MatrixCoefficients::kYDZDX,    Range::kLimited, 12},  // kYDZDX_12bit_Limited
+    {MatrixCoefficients::kYDZDX,    Range::kFull,    16},  // kYDZDX_16bit_Full
+    {MatrixCoefficients::kYDZDX,    Range::kLimited, 16},  // kYDZDX_16bit_Limited
+
+    {MatrixCoefficients::kGBR,      Range::kFull,     8},  // kGBR_8bit_Full
+    {MatrixCoefficients::kGBR,      Range::kLimited,  8},  // kGBR_8bit_Limited
+    {MatrixCoefficients::kGBR,      Range::kFull,    10},  // kGBR_10bit_Full
+    {MatrixCoefficients::kGBR,      Range::kLimited, 10},  // kGBR_10bit_Limited
+    {MatrixCoefficients::kGBR,      Range::kFull,    12},  // kGBR_12bit_Full
+    {MatrixCoefficients::kGBR,      Range::kLimited, 12},  // kGBR_12bit_Limited
+    {MatrixCoefficients::kGBR,      Range::kFull,    16},  // kGBR_16bit_Full
+    {MatrixCoefficients::kGBR,      Range::kLimited, 16},  // kGBR_16bit_Limited
+
     {MatrixCoefficients::kYCgCo,    Range::kFull,     8},  // kYCgCo_8bit_Full
     {MatrixCoefficients::kYCgCo,    Range::kLimited,  8},  // kYCgCo_8bit_Limited
     {MatrixCoefficients::kYCgCo,    Range::kFull,    10},  // kYCgCo_10bit_Full
@@ -878,7 +893,7 @@ static constexpr auto kColorSpaceInfo = std::to_array<ColorSpaceInfo>({
 static_assert(std::size(kColorSpaceInfo) == kIdentity_SkYUVColorSpace);
 }  // namespace
 
-static void make_rgb_to_yuv_matrix_ycbcr(float mx[20],
+static void make_rgb_to_yuv_matrix_ycbcr(SkSpan<float, 20> mx,
                                          MatrixCoefficients mc,
                                          int bits,
                                          Range range) {
@@ -933,13 +948,14 @@ static void make_rgb_to_yuv_matrix_ycbcr(float mx[20],
         1-Kr, -Kg,  -Kb,  0, addUV,
            0,   0,    0,  1,     0,
     };
-    memcpy(mx, m, sizeof(m));
-    scale3(mx +  0,      scaleY );
-    scale3(mx +  5, Cr * scaleUV);
-    scale3(mx + 10, Cb * scaleUV);
+    static_assert(std::size(m) == mx.size());
+    std::copy(std::begin(m), std::end(m), mx.begin());
+    scale3(mx.subspan<0, 3>(), scaleY);
+    scale3(mx.subspan<5, 3>(), Cr * scaleUV);
+    scale3(mx.subspan<10, 3>(), Cb * scaleUV);
 }
 
-static void make_rgb_to_yuv_matrix_ydzdx(float mx[20], int bits, Range range) {
+static void make_rgb_to_yuv_matrix_ydzdx(SkSpan<float, 20> mx, int bits, Range range) {
     SkASSERT(bits >= 8);
     const int shift = bits - 8;
     const float denom = static_cast<float>((1 << bits) - 1);
@@ -961,13 +977,14 @@ static void make_rgb_to_yuv_matrix_ydzdx(float mx[20], int bits, Range range) {
           0.5f, -0.991902f / 2.0f,             0.0f, 0.0f, addUV,  // DZ or DX
           0.0f,              0.0f,             0.0f, 1.0f,  0.0f,
     };
-    memcpy(mx, m, sizeof(m));
-    scale3(mx +  0, scaleY );
-    scale3(mx +  5, scaleUV);
-    scale3(mx + 10, scaleUV);
+    static_assert(std::size(m) == mx.size());
+    std::copy(std::begin(m), std::end(m), mx.begin());
+    scale3(mx.subspan<0, 3>(), scaleY);
+    scale3(mx.subspan<5, 3>(), scaleUV);
+    scale3(mx.subspan<10, 3>(), scaleUV);
 }
 
-static void make_rgb_to_yuv_matrix_gbr(float mx[20], int bits, Range range) {
+static void make_rgb_to_yuv_matrix_gbr(SkSpan<float, 20> mx, int bits, Range range) {
     SkASSERT(bits >= 8);
     const int shift = bits - 8;
     const float denom = static_cast<float>((1 << bits) - 1);
@@ -986,13 +1003,14 @@ static void make_rgb_to_yuv_matrix_gbr(float mx[20], int bits, Range range) {
           1.0f, 0.0f, 0.0f, 0.0f,  addY, // R
           0.0f, 0.0f, 0.0f, 1.0f,  0.0f,
     };
-    memcpy(mx, m, sizeof(m));
-    scale3(mx +  0, scaleY);
-    scale3(mx +  5, scaleY);
-    scale3(mx + 10, scaleY);
+    static_assert(std::size(m) == mx.size());
+    std::copy(std::begin(m), std::end(m), mx.begin());
+    scale3(mx.subspan<0, 3>(), scaleY);
+    scale3(mx.subspan<5, 3>(), scaleY);
+    scale3(mx.subspan<10, 3>(), scaleY);
 }
 
-static void make_rgb_to_yuv_matrix_ycgco(float mx[20], int bits, Range range) {
+static void make_rgb_to_yuv_matrix_ycgco(SkSpan<float, 20> mx, int bits, Range range) {
     SkASSERT(bits >= 8);
     const int shift = bits - 8;
     const float denom = static_cast<float>((1 << bits) - 1);
@@ -1011,13 +1029,17 @@ static void make_rgb_to_yuv_matrix_ycgco(float mx[20], int bits, Range range) {
            0.5f,  0.0f,  -0.5f,   0.0f,  chroma05,
            0.0f,  0.0f,   0.0f,   1.0f,  0.0f,
     };
-    memcpy(mx, m, sizeof(m));
-    scale3(mx +  0, scaleY);
-    scale3(mx +  5, scaleY);
-    scale3(mx + 10, scaleY);
+    static_assert(std::size(m) == mx.size());
+    std::copy(std::begin(m), std::end(m), mx.begin());
+    scale3(mx.subspan<0, 3>(), scaleY);
+    scale3(mx.subspan<5, 3>(), scaleY);
+    scale3(mx.subspan<10, 3>(), scaleY);
 }
 
-static void make_rgb_to_yuv_matrix(float mx[20], MatrixCoefficients mc, int bits, Range range) {
+static void make_rgb_to_yuv_matrix(SkSpan<float, 20> mx,
+                                   MatrixCoefficients mc,
+                                   int bits,
+                                   Range range) {
     switch (mc) {
         case MatrixCoefficients::kRec601:
         case MatrixCoefficients::kRec709:
@@ -1042,11 +1064,13 @@ static const ColorSpaceInfo* get_color_space_info(SkYUVColorSpace cs) {
     return &kColorSpaceInfo[cs];
 }
 
-static void make_rgb_to_yuv_matrix(float mx[20], const ColorSpaceInfo& info) {
+static void make_rgb_to_yuv_matrix(SkSpan<float, 20> mx, const ColorSpaceInfo& info) {
     make_rgb_to_yuv_matrix(mx, info.matrix_coefficients, info.bit_depth, info.range);
 }
 
 struct PrecomputedMatrices {
+    SK_ONLY_STACK_ALLOCATABLE;
+
     const float* rgb_to_yuv = nullptr;
     const float* yuv_to_rgb = nullptr;
 };
@@ -1115,35 +1139,35 @@ static PrecomputedMatrices get_precomputed_matrices(SkYUVColorSpace cs) {
     }
 }
 
-static void set_identity(float m[20]) {
-    std::fill_n(m, 20, 0.0f);
+static void set_identity(SkSpan<float, 20> m) {
+    std::fill(m.begin(), m.end(), 0.0f);
     m[0] = m[6] = m[12] = m[18] = 1;
 }
 
-void SkColorMatrix_RGB2YUV(SkYUVColorSpace cs, float m[20]) {
+void SkColorMatrix_RGB2YUV(SkYUVColorSpace cs, SkSpan<float, 20> m) {
     const ColorSpaceInfo* info = get_color_space_info(cs);
     if (!info) {
         set_identity(m);
         return;
     }
     if (const float* table = get_precomputed_matrices(cs).rgb_to_yuv) {
-        std::copy_n(table, 20, m);
+        std::copy_n(table, m.size(), m.begin());
         return;
     }
     make_rgb_to_yuv_matrix(m, *info);
 }
 
-void SkColorMatrix_YUV2RGB(SkYUVColorSpace cs, float m[20]) {
+void SkColorMatrix_YUV2RGB(SkYUVColorSpace cs, SkSpan<float, 20> m) {
     const ColorSpaceInfo* info = get_color_space_info(cs);
     if (!info) {
         set_identity(m);
         return;
     }
     if (const float* table = get_precomputed_matrices(cs).yuv_to_rgb) {
-        std::copy_n(table, 20, m);
+        std::copy_n(table, m.size(), m.begin());
         return;
     }
-    float rgb2yuv[20];
+    std::array<float, 20> rgb2yuv;
     make_rgb_to_yuv_matrix(rgb2yuv, *info);
     SkM44 m44, im44;
     colormatrix_to_matrix44(rgb2yuv, &m44);
@@ -1156,8 +1180,11 @@ bool SkYUVColorSpaceIsLimitedRange(SkYUVColorSpace cs) {
     return info && info->range == Range::kLimited;
 }
 
-static void dump(
-        const float m[20], const char* name, int bits, const char* range_name, bool rgb2yuv) {
+static void dump(SkSpan<const float, 20> m,
+                 const char* name,
+                 int bits,
+                 const char* range_name,
+                 bool rgb2yuv) {
     const char* dirname = rgb2yuv ? "rgb_to_yuv" : "yuv_to_rgb";
     SkDebugf("constexpr float %s_%dbit_%s_%s[] = {\n", name, bits, range_name, dirname);
     SkDebugf("#if defined(SK_YUV_COLOR_SPACE_HIGH_PRECISION)\n");

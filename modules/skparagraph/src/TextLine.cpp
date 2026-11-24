@@ -179,18 +179,7 @@ TextLine::TextLine(ParagraphImpl* owner,
     auto& end = owner->cluster(fGhostClusterRange.end - 1);
     size_t numRuns = end.runIndex() - start.runIndex() + 1;
 
-    for (BlockIndex index = fBlockRange.start; index < fBlockRange.end; ++index) {
-        auto b = fOwner->styles().begin() + index;
-        if (b->fStyle.hasBackground()) {
-            fHasBackground = true;
-        }
-        if (b->fStyle.getDecorationType() != TextDecoration::kNoDecoration) {
-            fHasDecorations = true;
-        }
-        if (b->fStyle.getShadowNumber() > 0) {
-            fHasShadows = true;
-        }
-    }
+    this->updateStyleFlags();
 
     // Get the logical order
 
@@ -217,9 +206,37 @@ TextLine::TextLine(ParagraphImpl* owner,
 
     // TODO: This is the fix for flutter. Must be removed...
     for (auto cluster = &start; cluster <= &end; ++cluster) {
-        if (!cluster->run().isPlaceholder() && !cluster->run().isCursiveScript()) {
+        // An invisible leading cluster carries no letter spacing of its own
+        if (!cluster->run(fOwner).isPlaceholder() && !cluster->run(fOwner).isCursiveScript() &&
+            !cluster->isZeroWidthDefaultIgnorable()) {
             fShift += cluster->getHalfLetterSpacing();
             break;
+        }
+    }
+    // Glyphs of every run, right to left ones too, keep their whole letter spacing on their
+    // right side, so the shift keeps the ink inside the line width only up to the half spacing
+    // of the visually rightmost text cluster (same as with uniform spacing). Trailing
+    // placeholders keep the shift (InlinePlaceholder tests pin it)
+    if (fShift > 0) {
+        for (auto visual = fRunsInVisualOrder.size(); visual > 0; --visual) {
+            const Run& run = owner->run(fRunsInVisualOrder[visual - 1]);
+            ClusterRange inLine = intersected(run.clusterRange(), fClusterRange);
+            if (run.isPlaceholder()) {
+                continue;
+            }
+            // Invisible clusters get no letter spacing, so they cannot set the shift either
+            const Cluster* right = nullptr;
+            for (size_t i = 0; i < inLine.width() && right == nullptr; ++i) {
+                const Cluster& cluster = owner->cluster(
+                        run.leftToRight() ? inLine.end - 1 - i : inLine.start + i);
+                if (!cluster.isZeroWidthDefaultIgnorable()) {
+                    right = &cluster;
+                }
+            }
+            if (right != nullptr) {
+                fShift = std::min(fShift, std::max(right->getHalfLetterSpacing(), 0.0f));
+                break;
+            }
         }
     }
 }
@@ -555,8 +572,12 @@ void TextLine::justify(SkScalar maxWidth) {
     this->iterateThroughClustersInGlyphsOrder(false, true, [&](const Cluster* cluster, ClusterIndex index, bool ghost) {
 
         if (ghost) {
-            if (cluster->run().leftToRight()) {
+            if (cluster->run(fOwner).leftToRight()) {
                 this->shiftCluster(cluster, ghostShift, ghostShift);
+            } else {
+                // The trailing space of an RTL run is drawn before its other clusters, and the
+                // boxes of the run start from it, so it moves with them
+                this->shiftCluster(cluster, shift, prevShift);
             }
             return true;
         }
@@ -611,7 +632,7 @@ void TextLine::justify(SkScalar maxWidth) {
 
 void TextLine::shiftCluster(const Cluster* cluster, SkScalar shift, SkScalar prevShift) {
 
-    auto& run = cluster->run();
+    auto& run = cluster->run(fOwner);
     auto start = cluster->startPos();
     auto end = cluster->endPos();
 
@@ -631,6 +652,24 @@ void TextLine::shiftCluster(const Cluster* cluster, SkScalar shift, SkScalar pre
     }
 }
 
+void TextLine::updateStyleFlags() {
+    fHasBackground = false;
+    fHasDecorations = false;
+    fHasShadows = false;
+    for (BlockIndex index = fBlockRange.start; index < fBlockRange.end; ++index) {
+        auto b = fOwner->styles().begin() + index;
+        if (b->fStyle.hasBackground()) {
+            fHasBackground = true;
+        }
+        if (b->fStyle.getDecorationType() != TextDecoration::kNoDecoration) {
+            fHasDecorations = true;
+        }
+        if (b->fStyle.getShadowNumber() > 0) {
+            fHasShadows = true;
+        }
+    }
+}
+
 void TextLine::createEllipsis(SkScalar maxWidth, const SkString& ellipsis, bool) {
     // Replace some clusters with the ellipsis
     // Go through the clusters in the reverse logical order
@@ -638,11 +677,37 @@ void TextLine::createEllipsis(SkScalar maxWidth, const SkString& ellipsis, bool)
     SkScalar width = fAdvance.fX;
     RunIndex lastRun = EMPTY_RUN;
     std::unique_ptr<Run> ellipsisRun;
-    for (auto clusterIndex = fGhostClusterRange.end; clusterIndex > fGhostClusterRange.start; --clusterIndex) {
+    ClusterIndex lastIndex = fGhostClusterRange.end;
+#ifndef SK_IGNORE_ELLIPSIZE_TRUNCATED_LINES
+    // Like Android, Compose and Chrome, a hard-broken line keeps the spaces before its line
+    // break in front of the ellipsis and drops them one by one, before any glyph, when they do
+    // not fit. fAdvance does not count these spaces, and the line break never stays
+    bool hardBroken = fGhostClusterRange.width() > 0 &&
+                      fOwner->cluster(fGhostClusterRange.end - 1).isHardBreak();
+    if (hardBroken) {
+        lastIndex = fGhostClusterRange.end - 1;
+        // The CR of a CRLF line break is a cluster of its own, but it is part of the line break
+        if (lastIndex > fClusterRange.end &&
+            fOwner->text()[fOwner->cluster(lastIndex - 1).textRange().start] == '\r') {
+            --lastIndex;
+        }
+        for (auto clusterIndex = fClusterRange.end; clusterIndex < lastIndex; ++clusterIndex) {
+            width += fOwner->cluster(clusterIndex).width();
+        }
+        // The blocks came from the text without the trailing spaces: they miss the spaces kept
+        // here and, on an empty line, the line break whose style the ellipsis takes
+        auto& last =
+                fOwner->cluster(lastIndex > fGhostClusterRange.start ? lastIndex - 1 : lastIndex);
+        fBlockRange =
+                fOwner->findAllBlocks(TextRange(fTextExcludingSpaces.start, last.textRange().end));
+        this->updateStyleFlags();
+    }
+#endif
+    for (auto clusterIndex = lastIndex; clusterIndex > fGhostClusterRange.start; --clusterIndex) {
         auto& cluster = fOwner->cluster(clusterIndex - 1);
         // Shape the ellipsis if the run has changed
         if (lastRun != cluster.runIndex()) {
-            ellipsisRun = this->shapeEllipsis(ellipsis, &cluster);
+            ellipsisRun = this->shapeEllipsisOnce(ellipsis, &cluster);
             if (ellipsisRun->advance().fX > maxWidth) {
                 // Ellipsis is bigger than the entire line; no way we can add it at all
                 // BUT! We can keep scanning in case the next run will give us better results
@@ -673,6 +738,32 @@ void TextLine::createEllipsis(SkScalar maxWidth, const SkString& ellipsis, bool)
         fTextExcludingSpaces.end = cluster.textRange().end;
         break;
     }
+
+#ifndef SK_IGNORE_ELLIPSIZE_TRUNCATED_LINES
+    if (hardBroken && !fEllipsis) {
+        // Not even one cluster fits with the ellipsis, or the line is empty: the ellipsis is
+        // alone, in the style of the first character of the line (the line break of an empty
+        // line), so the line still shows that text is hidden
+        auto& first = fOwner->cluster(fGhostClusterRange.start);
+        ellipsisRun = this->shapeEllipsisOnce(ellipsis, &first);
+        if (ellipsisRun->advance().fX <= maxWidth) {
+            fAdvance.fX = 0;
+            fEllipsis = std::move(ellipsisRun);
+            fEllipsis->setOwner(fOwner);
+            fEllipsis->fClusterStart = first.textRange().start;
+            fClusterRange.end = fClusterRange.start;
+            fGhostClusterRange.end = fClusterRange.start;
+            fText.end = fText.start;
+            fTextIncludingNewlines.end = fTextIncludingNewlines.start;
+            fTextExcludingSpaces.end = fTextExcludingSpaces.start;
+        }
+    }
+    if (hardBroken && fEllipsis) {
+        // The kept spaces are now part of the line, so none of them count as its trailing
+        // spaces (spacesWidth, kMax rects)
+        fWidthWithSpaces = this->width();
+    }
+#endif
 
     if (!fEllipsis) {
         // Weird situation: ellipsis does not fit; no ellipsis then
@@ -724,6 +815,34 @@ std::unique_ptr<Run> TextLine::shapeEllipsis(const SkString& ellipsis, const Clu
     return ShapeString(fOwner, fBlockRange, ellipsis, cluster);
 }
 
+std::unique_ptr<Run> TextLine::shapeEllipsisOnce(const SkString& ellipsis, const Cluster* cluster) {
+    // The shaped ellipsis depends only on the run and the style block of the cluster. Blocks
+    // whose font sizes are nearly equal can share a run, so the key has the block too.
+    const RunIndex runIndex = cluster->runIndex();
+    const BlockIndex blockIndex = AffixBlock(fOwner, fBlockRange, cluster);
+    for (const auto& shaped : fOwner->fShapedEllipses) {
+        if (shaped.fRun == runIndex && shaped.fBlock == blockIndex) {
+            return std::make_unique<Run>(shaped.fShaped);
+        }
+    }
+    auto run = this->shapeEllipsis(ellipsis, cluster);
+    fOwner->fShapedEllipses.push_back({runIndex, blockIndex, *run});
+    return run;
+}
+
+BlockIndex TextLine::AffixBlock(ParagraphImpl* owner,
+                                BlockRange blockRange,
+                                const Cluster* cluster) {
+    const bool ltr = cluster->run(owner).leftToRight();
+    for (auto i = blockRange.start; i < blockRange.end; ++i) {
+        auto end = owner->block(i).fRange.end;
+        if (ltr ? cluster->textRange().end <= end : cluster->textRange().start <= end) {
+            return i;
+        }
+    }
+    return EMPTY_INDEX;
+}
+
 std::unique_ptr<Run> TextLine::ShapeString(ParagraphImpl* owner,
                                            BlockRange blockRange,
                                            const SkString& ellipsis,
@@ -773,18 +892,10 @@ std::unique_ptr<Run> TextLine::ShapeString(ParagraphImpl* owner,
         SkString fEllipsis;
     };
 
-    const Run& run = cluster->run();
-    TextStyle textStyle = owner->paragraphStyle().getTextStyle();
-    for (auto i = blockRange.start; i < blockRange.end; ++i) {
-        auto& block = owner->block(i);
-        if (run.leftToRight() && cluster->textRange().end <= block.fRange.end) {
-            textStyle = block.fStyle;
-            break;
-        } else if (!run.leftToRight() && cluster->textRange().start <= block.fRange.end) {
-            textStyle = block.fStyle;
-            break;
-        }
-    }
+    const Run& run = cluster->run(owner);
+    const BlockIndex blockIndex = AffixBlock(owner, blockRange, cluster);
+    const TextStyle& textStyle = blockIndex == EMPTY_INDEX ? owner->paragraphStyle().getTextStyle()
+                                                           : owner->block(blockIndex).fStyle;
 
     // Shape the affix in the surrounding run's direction, so neutral and weak
     // characters in it (like a "!" after Arabic letters, or the default "-" and
@@ -955,9 +1066,17 @@ TextLine::ClipContext TextLine::measureTextInsideOneRun(TextRange textRange,
     if (!run->leftToRight()) {
         std::swap(start, end);
     }
+    // A hard break is the logical last cluster, so its glyphs sit at the visual right end of an
+    // LTR run and at the visual left end of an RTL run; they have no width on the line
     result.pos = start->startPos();
-    result.size = (end->isHardBreak() ? end->startPos() : end->endPos()) - start->startPos();
-    auto textStartInRun = run->positionX(start->startPos());
+    size_t glyphEnd = end->endPos();
+    if (run->leftToRight() && end->isHardBreak()) {
+        glyphEnd = end->startPos();
+    } else if (!run->leftToRight() && start->isHardBreak()) {
+        result.pos = start->endPos();
+    }
+    result.size = glyphEnd - result.pos;
+    auto textStartInRun = run->positionX(result.pos);
     auto textStartInLine = runOffsetInLine + textOffsetInRunInLine;
     if (!run->leftToRight()) {
         std::swap(start, end);
@@ -1002,7 +1121,7 @@ TextLine::ClipContext TextLine::measureTextInsideOneRun(TextRange textRange,
                         isolateClusterGlyphs(fOwner, run, start, originalTextRange, true);
                 isolated = true;
             } else {
-                leftCorrection = start->sizeToChar(originalTextRange.start);
+                leftCorrection = start->sizeToChar(fOwner, originalTextRange.start);
             }
         }
         if (endSplit) {
@@ -1014,7 +1133,7 @@ TextLine::ClipContext TextLine::measureTextInsideOneRun(TextRange textRange,
                         isolateClusterGlyphs(fOwner, run, end, originalTextRange, false);
                 isolated = true;
             } else {
-                rightCorrection = end->sizeFromChar(originalTextRange.end - 1);
+                rightCorrection = end->sizeFromChar(fOwner, originalTextRange.end - 1);
             }
         }
 
@@ -1393,7 +1512,8 @@ void TextLine::getRectsForRange(TextRange textRange0,
                 return true;
             }
 
-            auto paragraphStyle = fOwner->paragraphStyle();
+            // A copy would allocate per run: ParagraphStyle owns strings and font family vectors
+            const auto& paragraphStyle = fOwner->paragraphStyle();
 
             // Found a run that intersects with the text
             auto context = this->measureTextInsideOneRun(
@@ -1569,7 +1689,10 @@ void TextLine::getRectsForRange(TextRange textRange0,
         return true;
     });
     if (fOwner->getApplyRoundingHack()) {
-        for (auto& r : boxes) {
+        // Boxes before startBox belong to earlier lines of the same query and are already
+        // rounded; rounding them again on every line makes the whole query O(lines^2)
+        for (size_t i = startBox; i < boxes.size(); ++i) {
+            auto& r = boxes[i];
             r.rect.fLeft = littleRound(r.rect.fLeft);
             r.rect.fRight = littleRound(r.rect.fRight);
             r.rect.fTop = littleRound(r.rect.fTop);
@@ -1580,7 +1703,9 @@ void TextLine::getRectsForRange(TextRange textRange0,
 
 PositionWithAffinity TextLine::getGlyphPositionAtCoordinate(SkScalar dx) {
 
-    if (SkScalarNearlyZero(this->width()) && SkScalarNearlyZero(this->spacesWidth())) {
+    // A line with only the ellipsis has no text runs to hit, whatever the text direction
+    if ((SkScalarNearlyZero(this->width()) && SkScalarNearlyZero(this->spacesWidth())) ||
+        (fEllipsis && fClusterRange.width() == 0)) {
         // TODO: this is one of the flutter changes that have to go away eventually
         //  Empty line is a special case in txtlib (but only when there are no spaces, too)
         auto utf16Index = fOwner->getUTF16Index(this->fTextExcludingSpaces.end);
@@ -1638,8 +1763,15 @@ PositionWithAffinity TextLine::getGlyphPositionAtCoordinate(SkScalar dx) {
                         keepLooking = false;
                     } else {
                         result = { SkToS32(utf16Index + 1), kUpstream};
-                        // If we haven't reached the end of the run we need to keep looking
-                        keepLooking = context.pos != 0;
+                        // Keep looking while visible glyphs remain left of this block: a block
+                        // with no glyphs (a lone hard break) cannot take the hit, and glyphs of a
+                        // line-final hard break at the visual left end of the run have no width
+                        keepLooking =
+                                context.size == 0 ||
+                                (context.pos != 0 &&
+                                 !fOwner->cluster(fOwner->clusterIndex(
+                                                          run->globalClusterIndex(context.pos - 1)))
+                                          .isHardBreak());
                     }
                     // For RTL we go another way
                     return !run->leftToRight();
@@ -1678,7 +1810,9 @@ PositionWithAffinity TextLine::getGlyphPositionAtCoordinate(SkScalar dx) {
                 }
 
                 SkScalar glyphemePosLeft = context.run->positionX(found) + context.fTextShift + offsetX;
-                SkScalar glyphemesWidth = context.run->positionX(found + 1) - context.run->positionX(found);
+                // The right edge comes from this glyph's own justification shift, as in the boxes;
+                // positionX(found + 1) would read the shift of the next cluster
+                SkScalar glyphemesWidth = context.run->calculateWidth(found, found + 1, false);
 
                 // Find the grapheme range that contains the point
                 auto clusterIndex8 = context.run->globalClusterIndex(found);

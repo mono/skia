@@ -19,6 +19,7 @@
 #include "src/core/SkTInternalLList.h"
 #include "src/gpu/ganesh/GrCaps.h"
 #include "src/gpu/ganesh/GrSurfaceProxyView.h"
+#include "src/partition_alloc/raw_ptr.h"
 
 #include <cstdint>
 
@@ -49,7 +50,7 @@ public:
     void prePrepare(GrRecordingContext* context) { this->onPrePrepare(context); }
 
     // These two methods are only invoked at flush time
-    void prepare(GrOpFlushState* flushState);
+    [[nodiscard]] bool prepare(GrOpFlushState* flushState);
 
     // ExecutionResult is used to return and aggregate the results of GrRenderTask
     // execution. In general, if execution gets into a leaf onExecute call, 'fAnyTaskExecuted'
@@ -70,7 +71,9 @@ public:
         }
     };
 
-    ExecutionResult execute(GrOpFlushState* flushState) { return this->onExecute(flushState); }
+    [[nodiscard]] ExecutionResult execute(GrOpFlushState* flushState) {
+        return this->onExecute(flushState);
+    }
 
     virtual bool requiresExplicitCleanup() const { return false; }
 
@@ -297,9 +300,10 @@ private:
 
     virtual void onMakeSkippable() {}
     virtual void onPrePrepare(GrRecordingContext*) {} // Only OpsTask currently overrides this
-    virtual void onPrepare(GrOpFlushState*) {} // OpsTask and GrDDLTask override this
+    // Only OpsTask and GrDDLTask override this
+    [[nodiscard]] virtual bool onPrepare(GrOpFlushState*) { return true; }
 
-    virtual ExecutionResult onExecute(GrOpFlushState* flushState) = 0;
+    [[nodiscard]] virtual ExecutionResult onExecute(GrOpFlushState* flushState) = 0;
 
     const uint32_t         fUniqueID;
     uint32_t               fFlags;
@@ -312,7 +316,7 @@ private:
     // For performance reasons, we should perform texture resolves back-to-back as much as possible.
     // (skbug.com/40040728). To accomplish this, we make and reuse one single resolve task for
     // each render task, then add it as a dependency during makeClosed().
-    GrTextureResolveRenderTask* fTextureResolveTask = nullptr;
+    raw_ptr<GrTextureResolveRenderTask> fTextureResolveTask;
 
     SkDEBUGCODE(GrDrawingManager *fDrawingMgr = nullptr;)
 };

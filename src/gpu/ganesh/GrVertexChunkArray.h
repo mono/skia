@@ -55,6 +55,8 @@ public:
             , fChunks(chunks)
             , fStride(stride)
             , fMinVerticesPerChunk(minVerticesPerChunk) {
+        SkASSERT(fChunks && fChunks->empty());
+        SkASSERT(fStride > 0);
         SkASSERT(fMinVerticesPerChunk > 0);
     }
 
@@ -89,7 +91,7 @@ public:
     }
 
 private:
-    bool allocChunk(int minCount);
+    [[nodiscard]] bool allocChunk(int minCount);
 
     GrMeshDrawTarget* const fTarget;
     GrVertexChunkArray* const fChunks;

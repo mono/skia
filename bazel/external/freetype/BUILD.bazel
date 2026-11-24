@@ -25,15 +25,6 @@ FREETYPE_PUBLIC_DEFINES = [
             "FT_CONFIG_MODULES_H=<no-type1-ftmodule.h>",
             "FT_CONFIG_OPTIONS_H=<no-type1-ftoption.h>",
         ],
-        "@platforms//os:windows": [
-            # On Windows, the shell doesn't like the angle brackets, so we need
-            # to escape them, and we need to escape them twice (meaning that we
-            # also escape the escape character, '^') so that they make it
-            # through from Bazel to the trampoline script and from the
-            # trampoline script to Clang.
-            "FT_CONFIG_MODULES_H=^^^<android-ftmodule.h^^^>",
-            "FT_CONFIG_OPTIONS_H=^^^<android-ftoption.h^^^>",
-        ],
         "//conditions:default": [
             "FT_CONFIG_MODULES_H=<android-ftmodule.h>",
             "FT_CONFIG_OPTIONS_H=<android-ftoption.h>",
@@ -85,6 +76,7 @@ cc_library(
         "include/freetype/internal/services/svttcmap.h",
         "include/freetype/internal/services/svtteng.h",
         "include/freetype/internal/services/svttglyf.h",
+        "include/freetype/internal/services/svvarc.h",
         "include/freetype/internal/services/svwinfnt.h",
         "include/freetype/internal/sfnt.h",
         "include/freetype/internal/svginterface.h",
@@ -233,6 +225,7 @@ cc_library(
         "src/truetype/ttinterp.h",
         "src/truetype/ttobjs.h",
         "src/truetype/ttpload.h",
+        "src/truetype/ttvarc.h",
         "src/type1/t1afm.h",
         "src/type1/t1driver.h",
         "src/type1/t1errors.h",
@@ -418,6 +411,7 @@ cc_library(
         "src/truetype/ttinterp.c",
         "src/truetype/ttobjs.c",
         "src/truetype/ttpload.c",
+        "src/truetype/ttvarc.c",
         "src/type1/t1afm.c",
         "src/type1/t1driver.c",
         "src/type1/t1gload.c",

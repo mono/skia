@@ -5,6 +5,7 @@
 #include "include/core/SkPoint.h"
 #include "include/core/SkRect.h"
 #include "include/core/SkScalar.h"
+#include "include/private/SkAttributes.h"
 #include "include/private/SkTArray.h"
 #include "modules/skparagraph/include/DartTypes.h"
 #include "modules/skparagraph/include/Metrics.h"
@@ -113,7 +114,8 @@ public:
     void visit(SkScalar x, SkScalar y);
     void ensureTextBlobCachePopulated();
 
-    void createEllipsis(SkScalar maxWidth, const SkString& ellipsis, bool ltr);
+    // Keep cold ellipsis shaping out of line so LTO does not bloat ParagraphImpl::layout
+    SK_NEVER_INLINE void createEllipsis(SkScalar maxWidth, const SkString& ellipsis, bool ltr);
     void createSoftHyphen();
 
     // For testing internal structures
@@ -158,6 +160,16 @@ public:
 
 private:
     std::unique_ptr<Run> shapeEllipsis(const SkString& ellipsis, const Cluster* cluster);
+    // Sets fHasBackground, fHasDecorations and fHasShadows from the styles in fBlockRange
+    void updateStyleFlags();
+    // Shapes the ellipsis for the run and the style block of the cluster only once for each
+    // shaping of the paragraph, and returns a copy.
+    std::unique_ptr<Run> shapeEllipsisOnce(const SkString& ellipsis, const Cluster* cluster);
+    // The style block that gives the style of an affix at the cluster, or EMPTY_INDEX for the
+    // paragraph style.
+    static BlockIndex AffixBlock(ParagraphImpl* owner,
+                                 BlockRange blockRange,
+                                 const Cluster* cluster);
     void justify(SkScalar maxWidth);
 
     void buildTextBlob(TextRange textRange, const TextStyle& style, const ClipContext& context);

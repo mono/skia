@@ -50,6 +50,7 @@ RUN cd /tmp \
     "skia/third_party/externals/perfetto": None,\n\
     "skia/third_party/externals/swiftshader": None,\n\
     "skia/third_party/externals/unicodetools": None,\n\
+    "skia/third_party/externals/vello": None,\n\
   },\n\
   "custom_vars": {},\n\
 }]\n\
@@ -97,12 +98,14 @@ RUN ./bin/gn gen out/Static
 RUN git rev-parse HEAD > VERSION
 RUN ninja -C out/Static fiddle
 
-# Cleanup .git directories because they are not needed and take up space.
-# (can't do this sooner because we need to create VERSION)
-RUN find . -name .git -print0 | xargs -0 rm -rf
+# Cleanup .git directories (can't do this sooner because we need to create
+# VERSION) and any Cargo.lock files from synced third-party repos, which are
+# not needed for fiddler.
+RUN find . -name .git -print0 | xargs -0 rm -rf \
+  && find . -name Cargo.lock -delete
 
 # Copy the resulting Skia repo and build outputs into the fiddler-base image.
 # We wait as late as possible to avoid expensive rebuilds while experimenting
 # with changes to fiddler-base.
-FROM gcr.io/skia-public/fiddler-base@sha256:b2742e29e5d7ae3b994fa366c0eb56ac6d78112d8127105c95a48bb734e474e2
+FROM gcr.io/skia-public/fiddler-base@sha256:6861a63080c9071355fdc25a6b8812b61901664d9ad38fbb922bb4766df15977
 COPY --from=skia-build --chown=skia:skia /tmp/skia /tmp/skia

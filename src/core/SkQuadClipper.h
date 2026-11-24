@@ -13,7 +13,9 @@
 #include "include/core/SkPoint.h"
 #include "include/core/SkRect.h"
 #include "include/core/SkScalar.h"
+#include "include/core/SkSpan.h"
 #include "include/private/SkDebug.h"
+#include "include/private/SkOnlyStackAllocatable.h"
 
 /** This class is initialized with a clip rectangle, and then can be fed quads,
     which must already be monotonic in Y.
@@ -27,7 +29,7 @@ public:
 
     void setClip(const SkIRect& clip);
 
-    bool clipQuad(const SkPoint src[3], SkPoint dst[3]);
+    bool clipQuad(SkSpan<const SkPoint, 3> src, SkSpan<SkPoint, 3> dst);
 
 private:
     SkRect      fClip;
@@ -39,6 +41,8 @@ private:
  */
 class SkQuadClipper2 {
 public:
+    SK_ONLY_STACK_ALLOCATABLE;
+
     bool clipQuad(const SkPoint pts[3], const SkRect& clip);
     bool clipCubic(const SkPoint pts[4], const SkRect& clip);
 

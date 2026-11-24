@@ -122,7 +122,7 @@ public:
     }
 
     // Reallocates given a new count. Reallocation occurs even if new count equals old count.
-    SK_REINITIALIZES
+    SK_CLANG_REINITIALIZES
     void reset(size_t count = 0) {
         *this = AutoTArray(count);
     }
@@ -210,7 +210,7 @@ public:
     }
 
     /** Destroys previous objects in the array and default constructs count number of objects */
-    SK_REINITIALIZES
+    SK_CLANG_REINITIALIZES
     void reset(int count) {
         T* start = begin();
         T* iter = end();
@@ -331,7 +331,7 @@ public:
     }
 
     /** Resize the memory area pointed to by the current ptr without preserving contents. */
-    SK_REINITIALIZES
+    SK_CLANG_REINITIALIZES
     T* reset(size_t count = 0) {
         fPtr.reset(count ? (T*)sk_malloc_throw(count, sizeof(T)) : nullptr);
         return this->get();
@@ -402,7 +402,7 @@ public:
     }
 
     // doesn't preserve contents
-    SK_REINITIALIZES
+    SK_CLANG_REINITIALIZES
     T* reset(size_t count) {
         if (fPtr != fTStorage) {
             sk_free(fPtr);

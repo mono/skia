@@ -681,6 +681,10 @@ std::pair<PixelData, bool> transfer_data(const TextureFormatXferFn& xferFn,
                                                         {'b', 8, sRGB},
                                                         {'a', 8, UNorm}}},
     {kR8_unorm_SkColorType,           Swizzle("r001"), {{'r', 8, UNorm}}},
+    {kBGR_888x_SkColorType,           Swizzle("rgb1"), {{'b', 8, UNorm},
+                                                        {'g', 8, UNorm},
+                                                        {'r', 8, UNorm},
+                                                        {'x', 8, Pad}}},
 };
 // Must include one per SkColorType except for kUnknown
 static_assert(std::size(kColorTypeChannels) == kSkColorTypeCnt - 1,
@@ -745,12 +749,14 @@ static const FormatExpectation kExpectations[] {
     {.fFormat=TextureFormat::kRGB8,
      .fChannels={{'r', 8, UNorm}, {'g', 8, UNorm}, {'b', 8, UNorm}},
      .fXferSwizzle=Swizzle("rgb1"),
-     .fCompatibleColorTypes={{kRGB_888x_SkColorType, Swizzle::RGBA(), Swizzle::RGBA()}}},
+     .fCompatibleColorTypes={{kRGB_888x_SkColorType, Swizzle::RGBA(), Swizzle::RGBA()},
+                             {kBGR_888x_SkColorType, Swizzle::RGBA(), Swizzle::RGBA()}}},
 
     {.fFormat=TextureFormat::kBGR8,
      .fChannels={{'b', 8, UNorm}, {'g', 8, UNorm}, {'r', 8, UNorm}},
      .fXferSwizzle=Swizzle("rgb1"),
-     .fCompatibleColorTypes={{kRGB_888x_SkColorType, Swizzle::RGBA(), Swizzle::RGBA()}}},
+     .fCompatibleColorTypes={{kBGR_888x_SkColorType, Swizzle::RGBA(), Swizzle::RGBA()},
+                             {kRGB_888x_SkColorType, Swizzle::RGBA(), Swizzle::RGBA()}}},
 
     {.fFormat=TextureFormat::kB5_G6_R5,
      .fChannels={{'b', 5, UNorm}, {'g', 6, UNorm}, {'r', 5, UNorm}},
@@ -791,8 +797,9 @@ static const FormatExpectation kExpectations[] {
      .fChannels={{'r', 8, UNorm}, {'g', 8, UNorm}, {'b', 8, UNorm}, {'a', 8, UNorm}},
      .fXferSwizzle=Swizzle("rgba"),
      .fCompatibleColorTypes={{kRGBA_8888_SkColorType, Swizzle::RGBA(), Swizzle::RGBA()},
+                             {kRGB_888x_SkColorType,  Swizzle::RGB1(), std::nullopt},
                              {kBGRA_8888_SkColorType, Swizzle::RGBA(), Swizzle::RGBA()},
-                             {kRGB_888x_SkColorType,  Swizzle::RGB1(), std::nullopt}}},
+                             {kBGR_888x_SkColorType,  Swizzle::RGB1(), std::nullopt}}},
 
     {.fFormat=TextureFormat::kRGBA16,
      .fChannels={{'r', 16, UNorm}, {'g', 16, UNorm}, {'b', 16, UNorm}, {'a', 16, UNorm}},
@@ -834,6 +841,7 @@ static const FormatExpectation kExpectations[] {
      .fChannels={{'b', 8, UNorm}, {'g', 8, UNorm}, {'r', 8, UNorm}, {'a', 8, UNorm}},
      .fXferSwizzle=Swizzle("rgba"),
      .fCompatibleColorTypes={{kBGRA_8888_SkColorType, Swizzle::RGBA(), Swizzle::RGBA()},
+                             {kBGR_888x_SkColorType,  Swizzle::RGB1(), std::nullopt},
                              {kRGBA_8888_SkColorType, Swizzle::RGBA(), Swizzle::RGBA()},
                              {kRGB_888x_SkColorType,  Swizzle::RGB1(), std::nullopt}}},
 
@@ -1298,6 +1306,23 @@ void run_texture_format_test(skiatest::Reporter* r, const Caps* caps, TextureFor
             // Should be the first listed compatible color type
             REPORTER_ASSERT(r, !e.fCompatibleColorTypes.empty());
             REPORTER_ASSERT(r, e.fCompatibleColorTypes[0].fColorType == baseColorType);
+        }
+
+        // Verify identity transfers (including compressed formats)
+        std::optional<TextureFormatXferFn> identityXfer = TextureFormatXferFn::MakeIdentity(format);
+        const bool expectIdentityXfer =
+                e.fXferSwizzle.has_value() || e.fCompressionType != SkTextureCompressionType::kNone;
+        REPORTER_ASSERT(r, identityXfer.has_value() == expectIdentityXfer);
+        if (identityXfer.has_value()) {
+            REPORTER_ASSERT(r, identityXfer->isIdentity());
+            const size_t blockBytes = e.bytesPerBlock();
+            const size_t blockBits = blockBytes * 8;
+            PixelData srcBlock{};
+            for (size_t b = 0; b < blockBytes; ++b) {
+                srcBlock[b] = static_cast<uint8_t>(b + 1);
+            }
+            auto [dstBlock, success] = transfer_data(*identityXfer, srcBlock, blockBits, blockBits);
+            REPORTER_ASSERT(r, success && memcmp(&srcBlock, &dstBlock, blockBytes) == 0);
         }
 
         for (int c = 0; c <= kLastEnum_SkColorType; ++c) {

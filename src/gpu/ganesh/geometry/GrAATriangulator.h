@@ -15,6 +15,7 @@
 #include "include/core/SkScalar.h"
 #include "src/core/SkArenaAlloc.h"
 #include "src/gpu/ganesh/geometry/GrTriangulator.h"
+#include "src/partition_alloc/raw_ptr.h"
 
 #include <cstdint>
 #include <tuple>
@@ -26,8 +27,12 @@ struct SkRect;
 // Triangulates the given path in device space with a mesh of alpha ramps for antialiasing.
 class GrAATriangulator : private GrTriangulator {
 public:
-    static int PathToAATriangles(const SkPath& path, SkScalar tolerance, const SkRect& clipBounds,
-                                 GrEagerVertexAllocator* vertexAllocator) {
+    [[nodiscard]] static bool PathToAATriangles(const SkPath& path,
+                                                SkScalar tolerance,
+                                                const SkRect& clipBounds,
+                                                GrEagerVertexAllocator* vertexAllocator,
+                                                int* vertexCount) {
+        *vertexCount = 0;
         SkArenaAlloc alloc(kArenaDefaultChunkSize);
         GrAATriangulator aaTriangulator(path, &alloc);
         aaTriangulator.fRoundVerticesToQuarterPixel = true;
@@ -35,9 +40,9 @@ public:
         bool isLinear;
         auto [ polys, success ] = aaTriangulator.pathToPolys(tolerance, clipBounds, &isLinear);
         if (!success) {
-            return 0;
+            return false;
         }
-        return aaTriangulator.polysToAATriangles(polys, vertexAllocator);
+        return aaTriangulator.polysToAATriangles(polys, vertexAllocator, vertexCount);
     }
 
     // Structs used by GrAATriangulator internals.
@@ -46,7 +51,7 @@ public:
     struct Event {
         Event(SSEdge* edge, const SkPoint& point, uint8_t alpha)
                 : fEdge(edge), fPoint(point), fAlpha(alpha) {}
-        SSEdge* fEdge;
+        raw_ptr<SSEdge> fEdge;
         SkPoint fPoint;
         uint8_t fAlpha;
         void apply(VertexList* mesh, const Comparator&, EventList* events, GrAATriangulator*);
@@ -82,7 +87,7 @@ private:
 
     // Run steps 3-6 above on the new mesh, and produce antialiased triangles.
     std::tuple<Poly*, bool> tessellate(const VertexList& mesh, const Comparator&) override;
-    int polysToAATriangles(Poly*, GrEagerVertexAllocator*) const;
+    [[nodiscard]] bool polysToAATriangles(Poly*, GrEagerVertexAllocator*, int* vertexCount) const;
 
     // Additional helpers and driver functions.
     void makeEvent(SSEdge*, EventList* events) const;

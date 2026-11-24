@@ -103,12 +103,7 @@ GrDirectContext::FlushResult GrDrawingManager::flush(SkSpan<GrSurfaceProxy*> pro
     GR_CREATE_TRACE_MARKER_CONTEXT("GrDrawingManager", "flush", fContext);
 
     if (fFlushing || this->wasAbandoned()) {
-        if (info.fSubmittedProc) {
-            info.fSubmittedProc(info.fSubmittedContext, false);
-        }
-        if (info.fFinishedProc) {
-            info.fFinishedProc(info.fFinishedContext);
-        }
+        GrDirectContextPriv::CallFlushInfoFailureProcs(info);
         return {false, GrSemaphoresSubmitted::kNo};
     }
 
@@ -116,6 +111,7 @@ GrDirectContext::FlushResult GrDrawingManager::flush(SkSpan<GrSurfaceProxy*> pro
 
     // As of now we only short-circuit if we got an explicit list of surfaces to flush.
     if (!proxies.empty() && !info.fNumSemaphores && !info.fFinishedProc &&
+        !info.fFinishedWithStatsProc &&
         access == SkSurfaces::BackendSurfaceAccess::kNoAccess && !newState) {
         bool allUnused = std::all_of(proxies.begin(), proxies.end(), [&](GrSurfaceProxy* proxy) {
             bool used = std::any_of(fDAG.begin(), fDAG.end(), [&](auto& task) {
@@ -179,6 +175,8 @@ GrDirectContext::FlushResult GrDrawingManager::flush(SkSpan<GrSurfaceProxy*> pro
 
     GrRenderTask::ExecutionResult executionResult { /* fAnyTaskExecuted= */false,
                                                     /* fAllTasksSuccessful= */false };
+    // Set if the flush failed only because one or more promise images could not be fulfilled.
+    [[maybe_unused]] bool onlyPromiseInstantiationFailed = false;
 
     if (preFlushSuccessful) {
         bool usingReorderedDAG = false;
@@ -211,6 +209,8 @@ GrDirectContext::FlushResult GrDrawingManager::flush(SkSpan<GrSurfaceProxy*> pro
 
         if (!resourceAllocator.failedInstantiation()) {
             executionResult = this->executeRenderTasks(&flushState);
+        } else {
+            onlyPromiseInstantiationFailed = resourceAllocator.failedOnlyPromiseInstantiation();
         }
     }
     this->removeRenderTasks();
@@ -230,6 +230,45 @@ GrDirectContext::FlushResult GrDrawingManager::flush(SkSpan<GrSurfaceProxy*> pro
         }
     }
 
+#if !defined(SK_LEGACY_FLUSH_FAILURE)
+    // A promise image whose fulfill proc fails is an expected condition for clients (e.g., Chrome's
+    // compositor can race with the deletion of the promise image's backing texture). In that case
+    // instantiation failed before any render task was executed, so no surface has been partially
+    // rendered. We drop the flush's work but, rather than abandoning the context, we fall through
+    // to the normal (non-fatal) path below so that the flush info's requests are still honored.
+    SkASSERT(!onlyPromiseInstantiationFailed || !executionResult.fAnyTaskExecuted);
+    if (!executionResult.fAllTasksSuccessful && !onlyPromiseInstantiationFailed) {
+        for (GrOnFlushCallbackObject* onFlushCBObject : fOnFlushCBObjects) {
+            onFlushCBObject->postFlush(fTokenTracker.nextFlushToken());
+        }
+        fFlushing = false;
+
+        if (timerQuery) {
+            gpu->endTimerQuery(*timerQuery);
+        }
+
+        // An error during the flush is treated as fatal: rendering has already stopped at the
+        // first failure (see executeRenderTasks) and we now abandon the context rather than
+        // continue with a partially rendered (and potentially inconsistent) set of surfaces.
+        // None of the flush info's requests (semaphores, surface state changes, timer query) are
+        // honored, so the gpu's executeFlushInfo is skipped entirely.
+        //
+        // NOTE: abandoning the context destroys this GrDrawingManager. 'this' (including any
+        // member variable) must not be accessed after this call.
+        flushState.abandon();
+        if (gpu->isDeviceLost()) {
+            dContext->abandonContext();
+        } else {
+            dContext->releaseResourcesAndAbandonContext();
+        }
+
+        // Notify the client last, after the context has been abandoned, so that the callbacks
+        // observe the abandoned state. 'info' is owned by the caller and is still valid here.
+        GrDirectContextPriv::CallFlushInfoFailureProcs(info);
+        return {false, GrSemaphoresSubmitted::kNo};
+    }
+#endif  // !defined(SK_LEGACY_FLUSH_FAILURE)
+
     GrDirectContext::FlushResult flushResult = gpu->executeFlushInfo(proxies, access, info,
                                                                      std::move(timerQuery),
                                                                      newState);
@@ -248,6 +287,10 @@ GrDirectContext::FlushResult GrDrawingManager::flush(SkSpan<GrSurfaceProxy*> pro
         resourceCache->purgeAsNeeded();
     }
     fFlushing = false;
+#if !defined(SK_LEGACY_FLUSH_FAILURE)
+    // Any rendering failure other than an unfulfilled promise image has already returned above.
+    SkASSERT(executionResult.fAllTasksSuccessful || onlyPromiseInstantiationFailed);
+#endif
     return {executionResult.fAllTasksSuccessful && flushResult.fSuccess, flushResult.fSubmitted};
 }
 
@@ -283,7 +326,10 @@ GrRenderTask::ExecutionResult GrDrawingManager::executeRenderTasks(GrOpFlushStat
 
         SkASSERT(renderTask->deferredProxiesAreInstantiated());
 
-        renderTask->prepare(flushState);
+        if (!renderTask->prepare(flushState)) {
+            flushState->reset();
+            return { /* fAnyTaskExecuted= */false, /* fAllTasksSuccessful= */false };
+        }
     }
 
     // Upload all data to the GPU
@@ -311,7 +357,17 @@ GrRenderTask::ExecutionResult GrDrawingManager::executeRenderTasks(GrOpFlushStat
             continue;
         }
 
-        result.accum(renderTask->execute(flushState));
+        GrRenderTask::ExecutionResult taskResult = renderTask->execute(flushState);
+        result.accum(taskResult);
+#if !defined(SK_LEGACY_FLUSH_FAILURE)
+        if (!taskResult.fAllTasksSuccessful) {
+            // Stop rendering at the first failure. The remaining tasks may depend on this task's
+            // output so executing them would only produce incorrect results. The caller (flush)
+            // will abandon the context.
+            flushState->abort();
+            break;
+        }
+#endif
 
         if (++numRenderTasksExecuted >= kMaxRenderTasksBeforeFlush ||
             flushState->gpu()->getCurrentSubmitRenderPassCount() >= kMaxRenderPassesBeforeFlush) {
@@ -548,12 +604,7 @@ GrDirectContext::FlushResult GrDrawingManager::flushSurfaces(
         const GrFlushInfo& info,
         const skgpu::MutableTextureState* newState) {
     if (this->wasAbandoned()) {
-        if (info.fSubmittedProc) {
-            info.fSubmittedProc(info.fSubmittedContext, false);
-        }
-        if (info.fFinishedProc) {
-            info.fFinishedProc(info.fFinishedContext);
-        }
+        GrDirectContextPriv::CallFlushInfoFailureProcs(info);
         return {false, GrSemaphoresSubmitted::kNo};
     }
     SkDEBUGCODE(this->validate());
@@ -568,6 +619,11 @@ GrDirectContext::FlushResult GrDrawingManager::flushSurfaces(
     // portion of the DAG required by 'proxies' in order to restore some of the
     // semantics of this method.
     GrDirectContext::FlushResult result = this->flush(proxies, access, info, newState);
+    if (direct->abandoned()) {
+        // A failed flush abandons the context, which destroys this GrDrawingManager. 'this' must
+        // not be accessed in that case.
+        return result;
+    }
     if (result.fSuccess) {
         // Only resolve/regen mips if the flush actually executed the render tasks.
         for (GrSurfaceProxy* proxy : proxies) {

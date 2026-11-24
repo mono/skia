@@ -50,6 +50,14 @@ GrResourceAllocator::~GrResourceAllocator() {
     SkASSERT(fFailedInstantiation || fIntvlList.empty());
     SkASSERT(fActiveIntvls.empty());
     SkASSERT(!fIntvlHash.count());
+    this->reset();
+}
+
+void GrResourceAllocator::recordFailedInstantiation(const GrSurfaceProxy* proxy) {
+    fFailedInstantiation = true;
+    if (!proxy->isPromiseProxy()) {
+        fFailedNonPromiseInstantiation = true;
+    }
 }
 
 void GrResourceAllocator::addInterval(GrSurfaceProxy* proxy, unsigned int start, unsigned int end,
@@ -68,7 +76,7 @@ void GrResourceAllocator::addInterval(GrSurfaceProxy* proxy, unsigned int start,
     if (proxy->readOnly()) {
         auto resourceProvider = fDContext->priv().resourceProvider();
         if (proxy->isLazy() && !proxy->priv().doLazyInstantiation(resourceProvider)) {
-            fFailedInstantiation = true;
+            this->recordFailedInstantiation(proxy);
         } else {
             // Since we aren't going to add an interval we won't revisit this proxy in assign(). So
             // must already be instantiated or it must be a lazy proxy that we instantiated above.
@@ -365,8 +373,8 @@ bool GrResourceAllocator::planAssignment() {
         // Instantiate fully-lazy proxies immediately. Ignore other lazy proxies at this stage.
         if (cur->proxy()->isLazy()) {
             if (cur->proxy()->isFullyLazy()) {
-                fFailedInstantiation = !cur->proxy()->priv().doLazyInstantiation(resourceProvider);
-                if (fFailedInstantiation) {
+                if (!cur->proxy()->priv().doLazyInstantiation(resourceProvider)) {
+                    this->recordFailedInstantiation(cur->proxy());
                     break;
                 }
             }
@@ -443,12 +451,16 @@ bool GrResourceAllocator::assign() {
             continue;
         }
         if (cur->proxy()->isLazy()) {
-            fFailedInstantiation = !cur->proxy()->priv().doLazyInstantiation(resourceProvider);
+            if (!cur->proxy()->priv().doLazyInstantiation(resourceProvider)) {
+                this->recordFailedInstantiation(cur->proxy());
+            }
             continue;
         }
         Register* r = cur->getRegister();
         SkASSERT(r);
-        fFailedInstantiation = !r->instantiateSurface(cur->proxy(), resourceProvider);
+        if (!r->instantiateSurface(cur->proxy(), resourceProvider)) {
+            this->recordFailedInstantiation(cur->proxy());
+        }
     }
     return !fFailedInstantiation;
 }

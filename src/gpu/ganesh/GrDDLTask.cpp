@@ -89,16 +89,25 @@ GrRenderTask::ExpectedOutcome GrDDLTask::onMakeClosed(GrRecordingContext*,
     return ExpectedOutcome::kTargetUnchanged;
 }
 
-void GrDDLTask::onPrepare(GrOpFlushState* flushState) {
+bool GrDDLTask::onPrepare(GrOpFlushState* flushState) {
+    bool allSucceeded = true;
     for (auto& task : fDDL->priv().renderTasks()) {
-        task->prepare(flushState);
+        allSucceeded &= task->prepare(flushState);
     }
+    return allSucceeded;
 }
 
 GrRenderTask::ExecutionResult GrDDLTask::onExecute(GrOpFlushState* flushState) {
     ExecutionResult result;
     for (auto& task : fDDL->priv().renderTasks()) {
-        result.accum(task->execute(flushState));
+        ExecutionResult taskResult = task->execute(flushState);
+        result.accum(taskResult);
+#if !defined(SK_LEGACY_FLUSH_FAILURE)
+        if (!taskResult.fAllTasksSuccessful) {
+            // Stop at the first failure (matching GrDrawingManager::executeRenderTasks).
+            break;
+        }
+#endif
     }
 
     return result;

@@ -83,16 +83,6 @@ static bool consume_suffix(std::string* str, const char suffix[]) {
 
 class ShaderCapsTestFactory : public SkSL::ShaderCapsFactory {
 public:
-    static const SkSL::ShaderCaps* AddAndTrueToLoopCondition() {
-        static const SkSL::ShaderCaps* sCaps = []{
-            std::unique_ptr<SkSL::ShaderCaps> caps = MakeShaderCaps();
-            caps->fVersionDeclString = "#version 400";
-            caps->fAddAndTrueToLoopCondition = true;
-            return caps.release();
-        }();
-        return sCaps;
-    }
-
     static const SkSL::ShaderCaps* CannotUseFractForNegativeValues() {
         static const SkSL::ShaderCaps* sCaps = [] {
             std::unique_ptr<SkSL::ShaderCaps> caps = MakeShaderCaps();
@@ -146,16 +136,6 @@ public:
         static const SkSL::ShaderCaps* sCaps = [] {
             std::unique_ptr<SkSL::ShaderCaps> caps = MakeShaderCaps();
             caps->fSubgroupSupport = true;
-            return caps.release();
-        }();
-        return sCaps;
-    }
-
-    static const SkSL::ShaderCaps* EmulateAbsIntFunction() {
-        static const SkSL::ShaderCaps* sCaps = [] {
-            std::unique_ptr<SkSL::ShaderCaps> caps = MakeShaderCaps();
-            caps->fVersionDeclString = "#version 400";
-            caps->fEmulateAbsIntFunction = true;
             return caps.release();
         }();
         return sCaps;
@@ -249,16 +229,6 @@ public:
         return sCaps;
     }
 
-    static const SkSL::ShaderCaps* RewriteDoWhileLoops() {
-        static const SkSL::ShaderCaps* sCaps = [] {
-            std::unique_ptr<SkSL::ShaderCaps> caps = MakeShaderCaps();
-            caps->fVersionDeclString = "#version 400";
-            caps->fRewriteDoWhileLoops = true;
-            return caps.release();
-        }();
-        return sCaps;
-    }
-
     static const SkSL::ShaderCaps* RewriteMatrixComparisons() {
         static const SkSL::ShaderCaps* sCaps = [] {
             std::unique_ptr<SkSL::ShaderCaps> caps = MakeShaderCaps();
@@ -322,16 +292,6 @@ public:
         return sCaps;
     }
 
-    static const SkSL::ShaderCaps* UnfoldShortCircuitAsTernary() {
-        static const SkSL::ShaderCaps* sCaps = [] {
-            std::unique_ptr<SkSL::ShaderCaps> caps = MakeShaderCaps();
-            caps->fVersionDeclString = "#version 400";
-            caps->fUnfoldShortCircuitAsTernary = true;
-            return caps.release();
-        }();
-        return sCaps;
-    }
-
     static const SkSL::ShaderCaps* UsesPrecisionModifiers() {
         static const SkSL::ShaderCaps* sCaps = [] {
             std::unique_ptr<SkSL::ShaderCaps> caps = MakeShaderCaps();
@@ -388,9 +348,6 @@ static bool detect_shader_settings(const std::string& text,
             for (;;) {
                 const size_t startingLength = settingsText.length();
 
-                if (consume_suffix(&settingsText, " AddAndTrueToLoopCondition")) {
-                    *caps = Factory::AddAndTrueToLoopCondition();
-                }
                 if (consume_suffix(&settingsText, " CannotUseFractForNegativeValues")) {
                     *caps = Factory::CannotUseFractForNegativeValues();
                 }
@@ -408,9 +365,6 @@ static bool detect_shader_settings(const std::string& text,
                 }
                 if (consume_suffix(&settingsText, " Default")) {
                     *caps = Factory::Default();
-                }
-                if (consume_suffix(&settingsText, " EmulateAbsIntFunction")) {
-                    *caps = Factory::EmulateAbsIntFunction();
                 }
                 if (consume_suffix(&settingsText, " FramebufferFetchSupport")) {
                     *caps = Factory::FramebufferFetchSupport();
@@ -439,9 +393,6 @@ static bool detect_shader_settings(const std::string& text,
                 if (consume_suffix(&settingsText, " RemovePowWithConstantExponent")) {
                     *caps = Factory::RemovePowWithConstantExponent();
                 }
-                if (consume_suffix(&settingsText, " RewriteDoWhileLoops")) {
-                    *caps = Factory::RewriteDoWhileLoops();
-                }
                 if (consume_suffix(&settingsText, " RewriteSwitchStatements")) {
                     *caps = Factory::RewriteSwitchStatements();
                 }
@@ -459,9 +410,6 @@ static bool detect_shader_settings(const std::string& text,
                 }
                 if (consume_suffix(&settingsText, " SubgroupSupport")) {
                     *caps = Factory::SubgroupSupport();
-                }
-                if (consume_suffix(&settingsText, " UnfoldShortCircuitAsTernary")) {
-                    *caps = Factory::UnfoldShortCircuitAsTernary();
                 }
                 if (consume_suffix(&settingsText, " UsesPrecisionModifiers")) {
                     *caps = Factory::UsesPrecisionModifiers();
