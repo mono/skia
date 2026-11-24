@@ -661,6 +661,9 @@ bool GrVkOpsRenderPass::onBindPipeline(const GrProgramInfo& programInfo, const S
     } else {
         fCurrentPipelineBounds.setEmpty();
     }
+    if (!fCurrentPipelineBounds.intersect(programInfo.pipeline().dstReadBounds())) {
+        fCurrentPipelineBounds.setEmpty();
+    }
 
     GrVkCommandBuffer* currentCB = this->currentCommandBuffer();
     SkASSERT(fCurrentRenderPass);
@@ -685,7 +688,7 @@ bool GrVkOpsRenderPass::onBindPipeline(const GrProgramInfo& programInfo, const S
     }
 
     if (!programInfo.pipeline().isScissorTestEnabled()) {
-        // "Disable" scissor by setting it to the full pipeline bounds.
+        // "Disable" scissor by setting it to the pipeline bounds.
         GrVkPipeline::SetDynamicScissorRectState(
                 fGpu, currentCB, colorAttachment->dimensions(), fOrigin,
                                                  fCurrentPipelineBounds);
@@ -869,10 +872,10 @@ void GrVkOpsRenderPass::onDrawIndexedIndirect(const GrBuffer* drawIndirectBuffer
 
 ////////////////////////////////////////////////////////////////////////////////
 
-void GrVkOpsRenderPass::onExecuteDrawable(std::unique_ptr<SkDrawable::GpuDrawHandler> drawable) {
+bool GrVkOpsRenderPass::onExecuteDrawable(std::unique_ptr<SkDrawable::GpuDrawHandler> drawable) {
     if (!fCurrentRenderPass) {
         SkASSERT(fGpu->isDeviceLost());
-        return;
+        return false;
     }
 
     VkRect2D bounds;
@@ -885,7 +888,7 @@ void GrVkOpsRenderPass::onExecuteDrawable(std::unique_ptr<SkDrawable::GpuDrawHan
         // We may have failed to start a new render pass
         if (!fCurrentRenderPass) {
             SkASSERT(fGpu->isDeviceLost());
-            return;
+            return false;
         }
     }
     SkASSERT(fCurrentSecondaryCommandBuffer);
@@ -910,4 +913,5 @@ void GrVkOpsRenderPass::onExecuteDrawable(std::unique_ptr<SkDrawable::GpuDrawHan
 
     drawable->draw(info);
     fGpu->addDrawable(std::move(drawable));
+    return true;
 }
