@@ -266,7 +266,7 @@ void SoftwarePathRenderer::DrawToTargetWithShapeMask(
     // due to intermediate rounding in floating point (after invert*dstRect is computed on the CPU,
     // for instance). In that case, it may no longer map to within the mask subset that was
     // initialized (0,0 to deviceSpaceRectToDraw.size()). To combat this, manually pass in the
-    // subset and domain to enable subset clamping.
+    // subset to enable subset clamping.
     SkRect maskSubset = SkRect::Make(deviceSpaceRectToDraw.size());
     // Omit a CPU-computed domain: GrTextureEffect insets kNearest bounds by 0.5 + 1/512 so an
     // exact [0.5, size - 0.5] domain (> 1px) never skips clamping, whereas float rounding under
