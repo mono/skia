@@ -13,6 +13,7 @@
 #include "include/core/SkColor.h"
 #include "include/core/SkColorFilter.h"
 #include "include/core/SkData.h"
+#include "include/core/SkSpan.h"
 #include "include/private/SkAlign.h"
 #include "include/private/SkDebug.h"
 #include "include/private/SkEnumBitMask.h"
@@ -852,9 +853,12 @@ sk_sp<SkShader> SkRuntimeEffect::makeShader(sk_sp<const SkData> uniforms,
                                             sk_sp<SkShader> childShaders[],
                                             size_t childCount,
                                             const SkMatrix* localMatrix) const {
-    STArray<4, ChildPtr> children(childCount);
-    for (size_t i = 0; i < childCount; ++i) {
-        children.emplace_back(childShaders[i]);
+    // TODO(crbug.com/582862856): Remove once callers migrate to the SkSpan overload.
+    SkSpan<const sk_sp<SkShader>> shaders =
+            SK_UNSAFE_TODO(SkSpan<const sk_sp<SkShader>>(childShaders, childCount));
+    STArray<4, ChildPtr> children(shaders.size());
+    for (const sk_sp<SkShader>& shader : shaders) {
+        children.emplace_back(shader);
     }
     return this->makeShader(std::move(uniforms), SkSpan(children), localMatrix);
 }
@@ -881,14 +885,23 @@ sk_sp<SkShader> SkRuntimeEffect::makeShader(sk_sp<const SkData> uniforms,
                                                              children);
 }
 
+sk_sp<SkColorFilter> SkRuntimeEffect::makeColorFilter(
+        sk_sp<const SkData> uniforms,
+        SkSpan<const sk_sp<SkColorFilter>> childColorFilters) const {
+    STArray<4, ChildPtr> children(childColorFilters.size());
+    for (const sk_sp<SkColorFilter>& cf : childColorFilters) {
+        children.emplace_back(cf);
+    }
+    return this->makeColorFilter(std::move(uniforms), SkSpan(children));
+}
+
 sk_sp<SkColorFilter> SkRuntimeEffect::makeColorFilter(sk_sp<const SkData> uniforms,
                                                       sk_sp<SkColorFilter> childColorFilters[],
                                                       size_t childCount) const {
-    STArray<4, ChildPtr> children(childCount);
-    for (size_t i = 0; i < childCount; ++i) {
-        children.emplace_back(childColorFilters[i]);
-    }
-    return this->makeColorFilter(std::move(uniforms), SkSpan(children));
+    // TODO(crbug.com/582862856): Remove once callers migrate to the SkSpan overload.
+    return this->makeColorFilter(
+            std::move(uniforms),
+            SK_UNSAFE_TODO(SkSpan<const sk_sp<SkColorFilter>>(childColorFilters, childCount)));
 }
 
 sk_sp<SkColorFilter> SkRuntimeEffect::makeColorFilter(sk_sp<const SkData> uniforms,
@@ -909,7 +922,7 @@ sk_sp<SkColorFilter> SkRuntimeEffect::makeColorFilter(sk_sp<const SkData> unifor
 }
 
 sk_sp<SkColorFilter> SkRuntimeEffect::makeColorFilter(sk_sp<const SkData> uniforms) const {
-    return this->makeColorFilter(std::move(uniforms), /*children=*/{});
+    return this->makeColorFilter(std::move(uniforms), /*children=*/SkSpan<const ChildPtr>{});
 }
 
 sk_sp<SkBlender> SkRuntimeEffect::makeBlender(sk_sp<const SkData> uniforms,

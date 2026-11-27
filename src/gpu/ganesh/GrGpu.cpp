@@ -49,7 +49,13 @@ void GrGpu::initCaps(sk_sp<const GrCaps> caps) {
     fCaps = std::move(caps);
 }
 
-void GrGpu::disconnect(DisconnectType type) {}
+void GrGpu::disconnect(DisconnectType type) {
+    // The context is going away (abandoned or cleanly torn down) and nothing
+    // will ever be submitted again.  Deliver the pending submitted-procs now,
+    // while the clients that registered them can still be alive, instead of
+    // deferring them to ~GrGpu() at an arbitrary later time.
+    this->callSubmittedProcs(false);
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -168,8 +174,10 @@ sk_sp<GrTexture> GrGpu::createTexture(SkISize dimensions,
         mipLevelCount =
                 32 - SkCLZ(static_cast<uint32_t>(std::max(dimensions.fWidth, dimensions.fHeight)));
     }
-    uint32_t levelClearMask =
-            this->caps()->shouldInitializeTextures() ? (1 << mipLevelCount) - 1 : 0;
+    // Only the base level needs initializing: levels above it are regenerated from the base level
+    // before they are sampled, so they're left dirty instead of cleared. FBO-clearing non-base
+    // levels is also a known GL driver hazard (e.g. PowerVR Rogue GX6250, flutter/flutter#194283).
+    uint32_t levelClearMask = this->caps()->shouldInitializeTextures() ? 1 : 0;
     auto tex = this->createTextureCommon(dimensions,
                                          format,
                                          textureType,
@@ -180,9 +188,6 @@ sk_sp<GrTexture> GrGpu::createTexture(SkISize dimensions,
                                          mipLevelCount,
                                          levelClearMask,
                                          label);
-    if (tex && mipmapped == skgpu::Mipmapped::kYes && levelClearMask) {
-        tex->markMipmapsClean();
-    }
 
     return tex;
 }

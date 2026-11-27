@@ -13,6 +13,7 @@
 #include "include/gpu/graphite/ContextOptions.h"
 #include "include/gpu/graphite/dawn/DawnBackendContext.h"
 #include "include/private/SkAttributes.h"
+#include "include/private/SkOnlyStackAllocatable.h"
 #include "include/private/SkTArray.h"
 #include "src/core/SkContextPriv.h"
 #include "src/gpu/graphite/ContextPriv.h"
@@ -484,6 +485,7 @@ static bool check_shader_module([[maybe_unused]] const DawnSharedContext* shared
     }
 #endif
     struct Handler {
+        SK_ONLY_STACK_ALLOCATABLE;
         static void Fn(WGPUCompilationInfoRequestStatus status,
                        const WGPUCompilationInfo* info,
                        void* userdata) {

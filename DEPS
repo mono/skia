@@ -9,7 +9,7 @@ vars = {
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling different
   # dependencies without interference from each other.
-  'infra_revision': '88b63f6b7b4d1e218a88a3c6a17188794ce7059a',
+  'infra_revision': '8d0aad8305d8117ce92047849243198235011118',
 
   # ninja CIPD package version.
   # https://chrome-infra-packages.appspot.com/p/infra/3pp/tools/ninja
@@ -20,7 +20,7 @@ vars = {
   'googlefonts_testdata_version': 'version:20230913',
 
   # Pre-built task drivers from this repo, used for CI.
-  'task_drivers_revision': 'git_revision:90d8a5c0e83a5b3764225fff0272a700d5d9ed94',
+  'task_drivers_revision': 'git_revision:39e4d927e388cf5b1238bcbd7a1beda98b8d4f21',
 
   'checkout_agents_internal': False,
 }
@@ -114,10 +114,10 @@ deps = {
     'condition': 'False',
   },
 
-  '_agents/chromium-shared': 'https://chromium.googlesource.com/chromium/agents/@81620e25d42f1393c299897a78a465f4a75b82da',
+  '_agents/chromium-shared': 'https://chromium.googlesource.com/chromium/agents/@f3fecac8a714ae5512abb3a635387c7a01da8666',
 
   '_agents/chromium-internal': {
-    'url': 'https://chrome-internal.googlesource.com/chrome/agents-internal/@f85c3dd9f2827b62dc37a70251148a4211b5aa21',
+    'url': 'https://chrome-internal.googlesource.com/chrome/agents-internal/@5bbf8f7c3b5cbc477770c7a63071a2ca4937b35b',
     'condition': 'checkout_agents_internal',
   },
 }
