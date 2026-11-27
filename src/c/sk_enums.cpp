@@ -165,6 +165,7 @@ static_assert ((int)SkColorType::kR16G16_float_SkColorType         == (int)R16G1
 static_assert ((int)SkColorType::kR16G16B16A16_unorm_SkColorType   == (int)R16G16B16A16_UNORM_SK_COLORTYPE,   ASSERT_MSG(SkColorType, sk_colortype_t));
 static_assert ((int)SkColorType::kSRGBA_8888_SkColorType           == (int)SRGBA_8888_SK_COLORTYPE,           ASSERT_MSG(SkColorType, sk_colortype_t));
 static_assert ((int)SkColorType::kR8_unorm_SkColorType             == (int)R8_UNORM_SK_COLORTYPE,             ASSERT_MSG(SkColorType, sk_colortype_t));
+static_assert ((int)SkColorType::kBGR_888x_SkColorType             == (int)BGR_888X_SK_COLORTYPE,             ASSERT_MSG(SkColorType, sk_colortype_t));
 
 // sk_alphatype_t
 static_assert ((int)SkAlphaType::kUnknown_SkAlphaType    == (int)UNKNOWN_SK_ALPHATYPE,    ASSERT_MSG(SkAlphaType, sk_alphatype_t));
