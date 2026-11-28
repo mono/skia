@@ -28,6 +28,8 @@ typedef struct {
     sk_graphite_vk_get_proc     fGetProc;
     void*                       fGetProcUserData;
     bool                        fProtectedContext;
+    void*                       fDeviceLostUserData;
+    gr_vk_device_lost_proc      fDeviceLostProc;
 } sk_graphite_vk_backend_context_init_t;
 
 // Build a Graphite Context for the Vulkan backend.

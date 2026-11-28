@@ -87,6 +87,8 @@ static_assert (sizeof (gr_gl_textureinfo_t) == sizeof (GrGLTextureInfo), ASSERT_
 static_assert (sizeof (gr_vk_alloc_t) == sizeof (skgpu::VulkanAlloc), ASSERT_MSG(skgpu::VulkanAlloc, gr_vk_alloc_t));
 static_assert (sizeof (gr_vk_imageinfo_t) == sizeof (GrVkImageInfo), ASSERT_MSG(GrVkImageInfo, gr_vk_imageinfo_t));
 static_assert (sizeof (gr_vk_ycbcrconversioninfo_t) == sizeof (skgpu::VulkanYcbcrConversionInfo), ASSERT_MSG(skgpu::VulkanYcbcrConversionInfo, gr_vk_ycbcrconversioninfo_t));
+static_assert (sizeof (gr_vk_device_fault_address_info_t) == sizeof (VkDeviceFaultAddressInfoEXT), ASSERT_MSG(VkDeviceFaultAddressInfoEXT, gr_vk_device_fault_address_info_t));
+static_assert (sizeof (gr_vk_device_fault_vendor_info_t) == sizeof (VkDeviceFaultVendorInfoEXT), ASSERT_MSG(VkDeviceFaultVendorInfoEXT, gr_vk_device_fault_vendor_info_t));
 #endif
 #endif
 

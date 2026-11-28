@@ -8,6 +8,7 @@
  */
 
 #include "include/core/SkImage.h"
+#include "include/core/SkString.h"
 #include "include/core/SkSurface.h"
 #include "include/gpu/ganesh/gl/GrGLBackendSurface.h"
 #include "include/gpu/ganesh/gl/GrGLDirectContext.h"
@@ -85,10 +86,15 @@ gr_direct_context_t* gr_direct_context_make_vulkan(const gr_vk_backendcontext_t 
         if (!ctx.fMemoryAllocator) {
             ctx.fMemoryAllocator = skgpu::VulkanMemoryAllocators::Make(ctx, skgpu::ThreadSafe::kNo);
             if (!ctx.fMemoryAllocator) {
+                delete static_cast<gr_vk_device_lost_context_t*>(ctx.fDeviceLostContext);
                 return nullptr;
             }
+        }
+        GrDirectContext* direct = GrDirectContexts::MakeVulkan(ctx).release();
+        if (!direct) {
+            delete static_cast<gr_vk_device_lost_context_t*>(ctx.fDeviceLostContext);
         })
-    return SK_ONLY_VULKAN(ToGrDirectContext(GrDirectContexts::MakeVulkan(ctx).release()), nullptr);
+    return SK_ONLY_VULKAN(ToGrDirectContext(direct), nullptr);
 }
 
 gr_direct_context_t* gr_direct_context_make_vulkan_with_options(const gr_vk_backendcontext_t vkBackendContext, const gr_context_options_t* options) {
@@ -102,10 +108,15 @@ gr_direct_context_t* gr_direct_context_make_vulkan_with_options(const gr_vk_back
         if (!ctx.fMemoryAllocator) {
             ctx.fMemoryAllocator = skgpu::VulkanMemoryAllocators::Make(ctx, skgpu::ThreadSafe::kNo);
             if (!ctx.fMemoryAllocator) {
+                delete static_cast<gr_vk_device_lost_context_t*>(ctx.fDeviceLostContext);
                 return nullptr;
             }
+        }
+        GrDirectContext* direct = GrDirectContexts::MakeVulkan(ctx, opts).release();
+        if (!direct) {
+            delete static_cast<gr_vk_device_lost_context_t*>(ctx.fDeviceLostContext);
         })
-    return SK_ONLY_VULKAN(ToGrDirectContext(GrDirectContexts::MakeVulkan(ctx, opts).release()), nullptr);
+    return SK_ONLY_VULKAN(ToGrDirectContext(direct), nullptr);
 }
 
 gr_direct_context_t* gr_direct_context_make_metal(void* device, void* queue) {
@@ -274,6 +285,57 @@ void gr_vk_extensions_init(gr_vk_extensions_t* extensions, gr_vk_get_proc getPro
 
 bool gr_vk_extensions_has_extension(gr_vk_extensions_t* extensions, const char* ext, uint32_t minVersion) {
     return SK_ONLY_VULKAN(AsGrVkExtensions(extensions)->hasExtension(ext, minVersion), false);
+}
+
+// GrVkDeviceLostInfo
+
+sk_string_t* gr_vk_device_lost_info_get_description(const gr_vk_device_lost_info_t* info) {
+    return SK_ONLY_VULKAN(
+        info && info->fDescription
+            ? ToString(new SkString(info->fDescription->c_str(), info->fDescription->size()))
+            : nullptr,
+        nullptr);
+}
+
+int32_t gr_vk_device_lost_info_get_address_info_count(const gr_vk_device_lost_info_t* info) {
+    return SK_ONLY_VULKAN(info && info->fAddressInfos ? static_cast<int32_t>(info->fAddressInfos->size()) : 0, 0);
+}
+
+void gr_vk_device_lost_info_get_address_info(const gr_vk_device_lost_info_t* info, int32_t index, gr_vk_device_fault_address_info_t* addressInfo) {
+    SK_ONLY_VULKAN(
+        if (info && info->fAddressInfos && addressInfo && index >= 0 && static_cast<size_t>(index) < info->fAddressInfos->size()) {
+            *addressInfo = ToGrVkDeviceFaultAddressInfo((*info->fAddressInfos)[index]);
+        })
+}
+
+int32_t gr_vk_device_lost_info_get_vendor_info_count(const gr_vk_device_lost_info_t* info) {
+    return SK_ONLY_VULKAN(info && info->fVendorInfos ? static_cast<int32_t>(info->fVendorInfos->size()) : 0, 0);
+}
+
+void gr_vk_device_lost_info_get_vendor_info(const gr_vk_device_lost_info_t* info, int32_t index, gr_vk_device_fault_vendor_info_t* vendorInfo) {
+    SK_ONLY_VULKAN(
+        if (info && info->fVendorInfos && vendorInfo && index >= 0 && static_cast<size_t>(index) < info->fVendorInfos->size()) {
+            *vendorInfo = ToGrVkDeviceFaultVendorInfo((*info->fVendorInfos)[index]);
+        })
+}
+
+const void* gr_vk_device_lost_info_get_vendor_binary_data(const gr_vk_device_lost_info_t* info, size_t* size) {
+    SK_ONLY_VULKAN(
+        if (!info || !info->fVendorBinaryData || info->fVendorBinaryData->empty()) {
+            if (size) {
+                *size = 0;
+            }
+            return nullptr;
+        }
+        if (size) {
+            *size = info->fVendorBinaryData->size();
+        }
+        return info->fVendorBinaryData->data();
+    )
+    if (size) {
+        *size = 0;
+    }
+    return nullptr;
 }
 
 // GrBackendTexture

@@ -55,17 +55,48 @@ extern "C" SK_C_API sk_graphite_context_t* sk_graphite_context_make_vulkan(
         };
     }
 
+    if (init.fDeviceLostProc) {
+        vkbc.fDeviceLostContext = new gr_vk_device_lost_context_t { init.fDeviceLostProc, init.fDeviceLostUserData };
+        vkbc.fDeviceLostProc = [](skgpu::VulkanDeviceLostContext faultContext,
+                                  const std::string& description,
+                                  const std::vector<VkDeviceFaultAddressInfoEXT>& addressInfos,
+                                  const std::vector<VkDeviceFaultVendorInfoEXT>& vendorInfos,
+                                  const std::vector<std::byte>& vendorBinaryData) {
+            auto* ctx = static_cast<gr_vk_device_lost_context_t*>(faultContext);
+            if (!ctx || !ctx->fProc) {
+                return;
+            }
+            gr_vk_device_lost_info_t info = {
+                &description,
+                &addressInfos,
+                &vendorInfos,
+                &vendorBinaryData,
+            };
+            ctx->fProc(ctx->fUserData, &info);
+        };
+    }
+
     // The C init struct has no allocator field, so supply the default VMA allocator.
     if (!vkbc.fMemoryAllocator) {
         vkbc.fMemoryAllocator = skgpu::VulkanMemoryAllocators::Make(vkbc, skgpu::ThreadSafe::kNo);
         if (!vkbc.fMemoryAllocator) {
+            delete static_cast<gr_vk_device_lost_context_t*>(vkbc.fDeviceLostContext);
             return nullptr;
         }
     }
 
     gr::ContextOptions gopts;
-    if (!sk_graphite_make_context_options(opts, &gopts)) return nullptr;
+    if (!sk_graphite_make_context_options(opts, &gopts)) {
+        delete static_cast<gr_vk_device_lost_context_t*>(vkbc.fDeviceLostContext);
+        return nullptr;
+    }
+
     auto context = gr::ContextFactory::MakeVulkan(vkbc, gopts);
+    if (!context) {
+        delete static_cast<gr_vk_device_lost_context_t*>(vkbc.fDeviceLostContext);
+        return nullptr;
+    }
+
     return ToGraphiteContext(context.release());
 }
 
