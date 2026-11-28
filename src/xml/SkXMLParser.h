@@ -10,13 +10,13 @@
 #ifndef SkXMLParser_DEFINED
 #define SkXMLParser_DEFINED
 
+#include "include/core/SkSpan.h"
 #include "include/core/SkString.h"
-#include "src/partition_alloc/raw_ptr.h"
+#include "include/private/SkOnlyStackAllocatable.h"
+
+#include <string_view>
 
 class SkStream;
-
-class SkDOM;
-struct SkDOMNode;
 
 class SkXMLParserError {
 public:
@@ -53,7 +53,14 @@ private:
 };
 
 class SkXMLParser {
+    SK_ONLY_STACK_ALLOCATABLE;
+
 public:
+    struct Attribute {
+        std::string_view fName;
+        std::string_view fValue;
+    };
+
     explicit SkXMLParser(SkXMLParserError* parserError = nullptr);
     virtual ~SkXMLParser();
 
@@ -61,30 +68,21 @@ public:
     */
     bool parse(const char doc[], size_t len);
     bool parse(SkStream& docStream);
-    bool parse(const SkDOM&, const SkDOMNode*);
 
     static void GetNativeErrorString(int nativeErrorCode, SkString* str);
 
 protected:
-    // override in subclasses; return true to stop parsing
-    virtual bool onStartElement(const char elem[]);
-    virtual bool onAddAttribute(const char name[], const char value[]);
-    virtual bool onEndElement(const char elem[]);
-    virtual bool onText(const char text[], int len);
+    // Override in subclasses. The std::string_view and SkSpan<const Attribute>
+    // arguments are only valid for the duration of the callback and are not
+    // guaranteed to be null-terminated.
+    virtual void onStartElement(std::string_view elem, SkSpan<const Attribute> attributes);
+    virtual void onEndElement(std::string_view elem);
+    virtual void onText(std::string_view text);
 
-public:
-    // public for ported implementation, not meant for clients to call
-    bool startElement(const char elem[]);
-    bool addAttribute(const char name[], const char value[]);
-    bool endElement(const char elem[]);
-    bool text(const char text[], int len);
-    raw_ptr<void> fParser;
-
-protected:
-    raw_ptr<SkXMLParserError> fError;
+    SkXMLParserError* fError;
 
 private:
-    void reportError(void* parser);
+    struct ParsingContext;
 };
 
 #endif

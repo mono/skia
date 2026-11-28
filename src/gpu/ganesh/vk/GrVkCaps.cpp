@@ -401,7 +401,13 @@ void GrVkCaps::init(const GrContextOptions& contextOptions,
     // we do expect this to be a big win on tilers.
     //
     // On ARM devices we are seeing an average perf win of around 50%-60% across the board.
-    if (skgpu::kARM_VkVendor == properties.vendorID) {
+    //
+    // On Imagination this is opt-in via fAllowDiscardableMSAAOnImagination (requires
+    // fAllowMSAAOnImagination).
+    if (skgpu::kARM_VkVendor == properties.vendorID ||
+        (skgpu::kImagination_VkVendor == properties.vendorID &&
+         contextOptions.fAllowMSAAOnImagination &&
+         contextOptions.fAllowDiscardableMSAAOnImagination)) {
         VkMemoryPropertyFlags requiredLazyFlags = VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT;
         if (fSupportsProtectedContent) {
             // If we have a protected context we can only use memoryless images if they also support
@@ -540,13 +546,22 @@ void GrVkCaps::applyDriverCorrectnessWorkarounds(const GrContextOptions& context
 
     // We've seen numerous driver bugs on qualcomm devices running on android P (api 28) or earlier
     // when trying to using discardable msaa attachments and loading from resolve. So we disable the
-    // feature for those devices. On Imagination (PowerVR) GPUs, using discardable MSAA attachments
-    // and loading from resolve in DMSAA subpasses causes 3D MMU page faults and GPU lockups.
-    if ((properties.vendorID == skgpu::kQualcomm_VkVendor && androidAPIVersion <= 28) ||
-        (properties.vendorID == skgpu::kImagination_VkVendor &&
-         contextOptions.fAllowMSAAOnImagination)) {
+    // feature for those devices.
+    if (properties.vendorID == skgpu::kQualcomm_VkVendor && androidAPIVersion <= 28) {
         fPreferDiscardableMSAAAttachment = false;
         fSupportsDiscardableMSAAForDMSAA = false;
+    }
+
+    // On Imagination (PowerVR) GPUs, loading from resolve in DMSAA subpasses causes 3D MMU page
+    // faults and GPU lockups, so DMSAA stays disabled. Discardable MSAA attachments for
+    // multisampled render targets are opt-in via fAllowDiscardableMSAAOnImagination; note that a
+    // multisampled render target with GrLoadOp::kLoad still takes the load-from-resolve subpass.
+    if (properties.vendorID == skgpu::kImagination_VkVendor &&
+        contextOptions.fAllowMSAAOnImagination) {
+        fSupportsDiscardableMSAAForDMSAA = false;
+        if (!contextOptions.fAllowDiscardableMSAAOnImagination) {
+            fPreferDiscardableMSAAAttachment = false;
+        }
     }
 
     // On the Mali G76 and T880, the Perlin noise code needs to aggressively snap to multiples
@@ -978,7 +993,7 @@ void GrVkCaps::initFormatTable(const GrContextOptions& contextOptions,
         auto& info = this->getFormatInfo(format);
         info.init(contextOptions, interface, physDev, properties, format);
         if (SkToBool(info.fOptimalFlags & FormatInfo::kTexturable_Flag)) {
-            info.fColorTypeInfoCount = 2;
+            info.fColorTypeInfoCount = 3;
             info.fColorTypeInfos = std::make_unique<ColorTypeInfo[]>(info.fColorTypeInfoCount);
             int ctIdx = 0;
             // Format: VK_FORMAT_B8G8R8A8_UNORM, Surface: kBGRA_8888
@@ -989,13 +1004,23 @@ void GrVkCaps::initFormatTable(const GrContextOptions& contextOptions,
                 ctInfo.fTransferColorType = ct;
                 ctInfo.fFlags = ColorTypeInfo::kUploadData_Flag | ColorTypeInfo::kRenderable_Flag;
             }
+            // Format: VK_FORMAT_B8G8R8A8_UNORM, Surface: kBGR_888x
+            {
+                constexpr GrColorType ct = GrColorType::kBGR_888x;
+                auto& ctInfo = info.fColorTypeInfos[ctIdx++];
+                ctInfo.fColorType = ct;
+                ctInfo.fTransferColorType = ct;
+                ctInfo.fFlags = ColorTypeInfo::kUploadData_Flag;
+                ctInfo.fReadSwizzle = skgpu::Swizzle::RGB1();
+            }
             // Format: VK_FORMAT_B8G8R8A8_UNORM, Surface: kRGB_888x
-            // TODO: add and use kBGR_888X instead
+            // This predates kBGR_888x and is kept for clients that wrap BGRA images as kRGB_888x.
+            // Data is converted to/from BGR_888x when transferring.
             {
                 constexpr GrColorType ct = GrColorType::kRGB_888x;
                 auto& ctInfo = info.fColorTypeInfos[ctIdx++];
                 ctInfo.fColorType = ct;
-                ctInfo.fTransferColorType = GrColorType::kBGRA_8888;
+                ctInfo.fTransferColorType = GrColorType::kBGR_888x;
                 ctInfo.fFlags = ColorTypeInfo::kUploadData_Flag;
                 ctInfo.fReadSwizzle = skgpu::Swizzle::RGB1();
             }
@@ -1481,6 +1506,7 @@ void GrVkCaps::initFormatTable(const GrContextOptions& contextOptions,
     this->setColorType(GrColorType::kR_8,              { VK_FORMAT_R8_UNORM });
     this->setColorType(GrColorType::kRG_88,            { VK_FORMAT_R8G8_UNORM });
     this->setColorType(GrColorType::kBGRA_8888,        { VK_FORMAT_B8G8R8A8_UNORM });
+    this->setColorType(GrColorType::kBGR_888x,         { VK_FORMAT_B8G8R8A8_UNORM });
     this->setColorType(GrColorType::kRGBA_1010102,     { VK_FORMAT_A2B10G10R10_UNORM_PACK32 });
     this->setColorType(GrColorType::kBGRA_1010102,     { VK_FORMAT_A2R10G10B10_UNORM_PACK32 });
     this->setColorType(GrColorType::kRGB_101010x,      { VK_FORMAT_A2B10G10R10_UNORM_PACK32 });
@@ -2195,6 +2221,7 @@ std::vector<GrTest::TestFormatColorTypeCombination> GrVkCaps::getTestingCombinat
         { GrColorType::kR_8,              GrBackendFormats::MakeVk(VK_FORMAT_R8_UNORM)            },
         { GrColorType::kRG_88,            GrBackendFormats::MakeVk(VK_FORMAT_R8G8_UNORM)          },
         { GrColorType::kBGRA_8888,        GrBackendFormats::MakeVk(VK_FORMAT_B8G8R8A8_UNORM)      },
+        { GrColorType::kBGR_888x,         GrBackendFormats::MakeVk(VK_FORMAT_B8G8R8A8_UNORM)      },
         { GrColorType::kRGBA_1010102,     GrBackendFormats::MakeVk(VK_FORMAT_A2B10G10R10_UNORM_PACK32)},
         { GrColorType::kBGRA_1010102,     GrBackendFormats::MakeVk(VK_FORMAT_A2R10G10B10_UNORM_PACK32)},
         { GrColorType::kRGB_101010x,      GrBackendFormats::MakeVk(VK_FORMAT_A2B10G10R10_UNORM_PACK32)},

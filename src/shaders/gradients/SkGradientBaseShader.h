@@ -20,6 +20,7 @@
 #include "include/private/SkTArray.h"
 #include "include/private/SkTemplates.h"
 #include "src/core/SkColorData.h"
+#include "src/partition_alloc/raw_ptr.h"
 #include "src/shaders/SkShaderBase.h"
 
 #include <cstddef>
@@ -112,9 +113,9 @@ public:
         return fColors[i].toSkColor();
     }
 
-    SkSpan<const SkColor4f> colors() const { return {fColors, fColorCount}; }
+    SkSpan<const SkColor4f> colors() const { return {fColors.get(), fColorCount}; }
     SkSpan<const float> positions() const {
-        return {fPositions, fPositions ? fColorCount : 0};
+        return {fPositions.get(), fPositions ? fColorCount : 0};
     }
 
     bool firstStopIsImplicit() const { return fFirstStopIsImplicit; }
@@ -131,11 +132,18 @@ public:
     void setCachedBitmap(SkBitmap b) const { fColorsAndOffsetsBitmap = b; }
 
 private:
-    SkColor4f* fColors;               // points into fStorage
-    SkScalar* fPositions;             // points into fStorage, or nullptr
-    sk_sp<SkColorSpace> fColorSpace;  // color space of gradient stops
+    // Reserve inline space for up to 4 stops. Declared before fColors and fPositions so that
+    // fStorage outlives them on destruction.
+    inline static constexpr size_t kInlineStopCount = 4;
+    inline static constexpr size_t kInlineStorageSize =
+            (sizeof(SkColor4f) + sizeof(SkScalar)) * kInlineStopCount;
+    skia_private::AutoSTMalloc<kInlineStorageSize, uint8_t> fStorage;
+
+    raw_ptr<SkColor4f, AllowPtrArithmetic> fColors;    // points into fStorage
+    raw_ptr<SkScalar, AllowPtrArithmetic> fPositions;  // points into fStorage, or nullptr
+    sk_sp<SkColorSpace> fColorSpace;                   // color space of gradient stops
     Interpolation fInterpolation;
-    size_t fColorCount;               // length of fColors (and fPositions, if not nullptr)
+    size_t fColorCount;                                // length of fColors (and fPositions, if not nullptr)
     bool fFirstStopIsImplicit;
     bool fLastStopIsImplicit;
 
@@ -144,12 +152,6 @@ private:
     // id and easily regenerated if purged.
     // TODO(b/293160919) remove this field when we can store bitmaps in the cache by id.
     mutable SkBitmap fColorsAndOffsetsBitmap;
-
-    // Reserve inline space for up to 4 stops.
-    inline static constexpr size_t kInlineStopCount = 4;
-    inline static constexpr size_t kInlineStorageSize =
-            (sizeof(SkColor4f) + sizeof(SkScalar)) * kInlineStopCount;
-    skia_private::AutoSTMalloc<kInlineStorageSize, uint8_t> fStorage;
 
     bool fColorsAreOpaque;
 };

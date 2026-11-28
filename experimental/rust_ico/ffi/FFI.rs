@@ -74,6 +74,8 @@ mod ffi {
     /// Information about a single image entry in the ICO directory.
     #[derive(Debug, Clone, Copy)]
     struct IcoEntry {
+        /// Position in the original directory, before sorting by payload offset.
+        pub directory_index: u32,
         /// Offset from start of file to the embedded image data.
         pub offset: u32,
         /// Size of the embedded image data in bytes.
@@ -105,8 +107,8 @@ mod ffi {
         /// Reads up to 4 bytes from the stream.
         fn is_ico(input: Pin<&mut SkStreamAdapter>) -> bool;
 
-        /// Parse the ICO directory from a stream.
-        fn parse_directory(input: Pin<&mut SkStreamAdapter>) -> Box<DirectoryResult>;
+        /// Parse the ICO directory without retaining the borrowed input.
+        fn parse_directory_from_data(data: &[u8]) -> Box<DirectoryResult>;
 
         type DirectoryResult;
         /// Returns the parse result status.
@@ -117,6 +119,8 @@ mod ffi {
         fn image_count(self: &DirectoryResult) -> u32;
         /// Returns the entry at the given index. Panics if index >= image_count().
         fn get_entry(self: &DirectoryResult, index: u32) -> IcoEntry;
+        /// Returns the default representation in directory order, before sorting by offset.
+        fn default_entry(self: &DirectoryResult) -> IcoEntry;
 
         /// Create a new ICO image reader for a specific entry.
         /// `input` is the stream positioned at the embedded image data.
@@ -588,15 +592,17 @@ pub fn apply_and_mask(
         // AND mask is stored bottom-up, so mask row 0 = bottom row of image.
         let mask_row_offset = ((height - 1 - y) * mask_bytes_per_row) as usize;
 
-        for x in 0..width {
+        for x in (0..width).step_by(8) {
             let byte_index = mask_row_offset + (x / 8) as usize;
-            let bit_index = 7 - (x % 8);
-
-            if byte_index < and_mask.len() {
-                let mask_bit = (and_mask[byte_index] >> bit_index) & 1;
-                if mask_bit == 1 {
-                    // Transparent pixel — zero all bytes (works for premul and unpremul)
-                    let pixel_offset = y as usize * row_bytes + x as usize * bpp;
+            let Some(&mask_byte) = and_mask.get(byte_index) else {
+                break;
+            };
+            if mask_byte == 0 {
+                continue;
+            }
+            for bit in 0..(width - x).min(8) {
+                if mask_byte & (0x80 >> bit) != 0 {
+                    let pixel_offset = y as usize * row_bytes + (x + bit) as usize * bpp;
                     let end = pixel_offset + bpp;
                     if end <= pixels.len() {
                         pixels[pixel_offset..end].fill(0);
@@ -669,6 +675,7 @@ pub struct DirectoryResult {
     status: DirectoryParseResult,
     file_type: IcoFileType,
     entries: Vec<IcoEntry>,
+    default_entry: Option<IcoEntry>,
 }
 
 impl DirectoryResult {
@@ -677,6 +684,7 @@ impl DirectoryResult {
             status,
             file_type: IcoFileType::Icon,
             entries: Vec::new(),
+            default_entry: None,
         })
     }
 
@@ -685,6 +693,7 @@ impl DirectoryResult {
             status,
             file_type,
             entries: Vec::new(),
+            default_entry: None,
         })
     }
 
@@ -703,27 +712,17 @@ impl DirectoryResult {
     pub fn get_entry(&self, index: u32) -> IcoEntry {
         self.entries[index as usize]
     }
-}
 
-/// Parse the ICO directory from a stream.
-///
-/// This parses the ICO header and directory entries, determining the offset,
-/// size, and format (PNG or BMP) of each embedded image.
-pub fn parse_directory(mut input: Pin<&mut ffi::SkStreamAdapter>) -> Box<DirectoryResult> {
-    // Read all data from the stream into memory
-    let mut data = Vec::new();
-    if input.read_to_end(&mut data).is_err() {
-        return DirectoryResult::error(DirectoryParseResult::InsufficientData);
+    pub fn default_entry(&self) -> IcoEntry {
+        self.default_entry.expect("successful ICO directory contains an entry")
     }
-
-    parse_directory_from_data(&data)
 }
 
 /// Parse the ICO directory from the given data.
 ///
 /// This parses the ICO header and directory entries, determining the offset,
 /// size, and format (PNG or BMP) of each embedded image.
-fn parse_directory_from_data(data: &[u8]) -> Box<DirectoryResult> {
+pub fn parse_directory_from_data(data: &[u8]) -> Box<DirectoryResult> {
     // Check minimum size for header
     if data.len() < ICO_DIRECTORY_BYTES {
         return DirectoryResult::error(DirectoryParseResult::InsufficientData);
@@ -810,6 +809,7 @@ fn parse_directory_from_data(data: &[u8]) -> Box<DirectoryResult> {
         };
 
         entries.push(IcoEntry {
+            directory_index: i as u32,
             offset,
             size,
             format,
@@ -821,6 +821,16 @@ fn parse_directory_from_data(data: &[u8]) -> Box<DirectoryResult> {
         });
     }
 
+    let default_entry = entries
+        .iter()
+        .enumerate()
+        .max_by_key(|(index, entry)| {
+            let width = if entry.width == 0 { 256 } else { u32::from(entry.width) };
+            let height = if entry.height == 0 { 256 } else { u32::from(entry.height) };
+            (width * height, entry.bit_count, std::cmp::Reverse(*index))
+        })
+        .map(|(_, entry)| *entry);
+
     // Sort entries by offset for proper sequential reading.
     // Note: C++ ICOImageDecoder sorts by size (largest first) for quality selection,
     // but SkIcoCodec sorts by offset. We follow SkIcoCodec's approach here.
@@ -830,6 +840,7 @@ fn parse_directory_from_data(data: &[u8]) -> Box<DirectoryResult> {
         status: DirectoryParseResult::Success,
         file_type,
         entries,
+        default_entry,
     })
 }
 
@@ -970,5 +981,73 @@ mod tests {
 
         let entry = result.get_entry(0);
         assert_eq!(entry.format, EmbeddedFormat::Png);
+    }
+
+    #[test]
+    fn test_parse_directory_owns_entries() {
+        let result = {
+            let mut data = vec![
+                0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x10, 0x10, 0x00, 0x00, 0x01, 0x00, 0x20, 0x00,
+                0x08, 0x00, 0x00, 0x00, 0x16, 0x00, 0x00, 0x00,
+            ];
+            data.extend_from_slice(&PNG_SIGNATURE);
+            let result = parse_directory_from_data(&data);
+            data.fill(0);
+            result
+        };
+        assert!(matches!(result.status(), DirectoryParseResult::Success));
+        assert_eq!(result.image_count(), 1);
+        assert_eq!(result.get_entry(0).offset, 22);
+        assert_eq!(result.get_entry(0).format, EmbeddedFormat::Png);
+        assert_eq!(result.default_entry().width, 16);
+    }
+
+    #[test]
+    fn test_apply_and_mask_byte_boundaries() {
+        for width in [1u32, 7, 8, 9, 17] {
+            let height = 2u32;
+            let mask_stride = ((width + 31) / 32) as usize * 4;
+            let mask_offset = 40 + ((width * 24 + 31) / 32 * 4 * height) as usize;
+            for bpp in [1usize, 2, 4, 8] {
+                let row_bytes = width as usize * bpp + 3;
+                for mask_length in [0, 1, 3, 4, 5, 7, 8] {
+                    for mask_byte in [0u8, 1, 0x55, 0xaa, 0x80, 0xff] {
+                        let mut entry = vec![0; mask_offset + mask_length];
+                        entry[..4].copy_from_slice(&40u32.to_le_bytes());
+                        entry[14..16].copy_from_slice(&24u16.to_le_bytes());
+                        entry[mask_offset..].fill(mask_byte);
+                        let mut pixels = vec![0xa5; row_bytes * height as usize + 7];
+                        let mut expected = pixels.clone();
+                        for y in 0..height as usize {
+                            for x in 0..width as usize {
+                                let mask_index = (height as usize - 1 - y) * mask_stride + x / 8;
+                                if mask_index < mask_length && mask_byte & (0x80 >> (x % 8)) != 0 {
+                                    let offset = y * row_bytes + x * bpp;
+                                    expected[offset..offset + bpp].fill(0);
+                                }
+                            }
+                        }
+                        apply_and_mask(&mut pixels, &entry, width, height, bpp as u32, row_bytes);
+                        assert_eq!(pixels, expected);
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_apply_and_mask_bottom_up_rows() {
+        let mut entry = vec![0; 40 + 28 * 2 + 8];
+        entry[..4].copy_from_slice(&40u32.to_le_bytes());
+        entry[14..16].copy_from_slice(&24u16.to_le_bytes());
+        entry[96..].copy_from_slice(&[0x80, 0x80, 0, 0, 0x40, 0, 0, 0]);
+        let mut pixels = vec![0xa5; 2 * 40];
+        let mut expected = pixels.clone();
+        for (x, y) in [(1, 0), (0, 1), (8, 1)] {
+            let offset = y * 40 + x * 4;
+            expected[offset..offset + 4].fill(0);
+        }
+        apply_and_mask(&mut pixels, &entry, 9, 2, 4, 40);
+        assert_eq!(pixels, expected);
     }
 }

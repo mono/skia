@@ -23,6 +23,8 @@ using namespace skia_private;
 #if defined(SK_GANESH)
 #if defined(SK_BUILD_FOR_ANDROID) || defined(SK_BUILD_FOR_IOS)
 #define DEFAULT_GPU_CONFIG "gles"
+#elif defined(SK_BUILD_FOR_WASM)
+#define DEFAULT_GPU_CONFIG "webgl"
 #else
 #define DEFAULT_GPU_CONFIG "gl"
 #endif
@@ -83,6 +85,7 @@ static const struct {
     { "glddl",                 "gpu", "api=gl,useDDLSink=true" },
     { "glreducedshaders",      "gpu", "api=gl,reducedShaders=true" },
     { "glesreducedshaders",    "gpu", "api=gles,reducedShaders=true" },
+    { "webgl",                 "gpu", "api=webgl" },
     { "angle_d3d11_es2",       "gpu", "api=angle_d3d11_es2" },
     { "angle_d3d11_es3",       "gpu", "api=angle_d3d11_es3" },
     { "angle_d3d9_es2",        "gpu", "api=angle_d3d9_es2" },
@@ -203,6 +206,7 @@ static const char configExtendedHelp[] =
         "\t\tgl    \t\t\tUse OpenGL.\n"
         "\t\tgles  \t\t\tUse OpenGL ES.\n"
         "\t\tglesfakev2  \t\t\tUse OpenGL ES with version faked as 2.0.\n"
+        "\t\twebgl \t\t\tUse WebGL.\n"
         "\t\tnullgl \t\t\tUse null OpenGL.\n"
         "\t\tangle_d3d9_es2\t\tUse OpenGL ES2 on the ANGLE Direct3D9 backend.\n"
         "\t\tangle_d3d11_es2\t\tUse OpenGL ES2 on the ANGLE Direct3D11 backend.\n"
@@ -221,6 +225,7 @@ static const char configExtendedHelp[] =
         "\t    Options:\n"
         "\t\t8888\t\t\tLinear 8888.\n"
         "\t\t888x\t\t\tLinear 888x.\n"
+        "\t\tbgr888x\t\t\tLinear BGR 888x.\n"
         "\t\t4444\t\t\tLinear 4444.\n"
         "\t\t565\t\t\tLinear 565.\n"
         "\t\t1010102\t\t\tLinear 1010102.\n"
@@ -362,6 +367,10 @@ static bool parse_option_gpu_api(const SkString&                      value,
         *outFakeGLESVersion2 = true;
         return true;
     }
+    if (value.equals("webgl")) {
+        *outContextType = skgpu::ContextType::kWebGL;
+        return true;
+    }
     if (value.equals("angle_d3d9_es2")) {
         *outContextType = skgpu::ContextType::kANGLE_D3D9_ES2;
         return true;
@@ -445,6 +454,8 @@ static bool parse_option_gpu_color(const SkString& value,
         *outColorType  = kRGB_888x_SkColorType;
     } else if (value.equals("bgra8")) {
         *outColorType  = kBGRA_8888_SkColorType;
+    } else if (value.equals("bgr888x")) {
+        *outColorType  = kBGR_888x_SkColorType;
     } else if (value.equals("4444")) {
         *outColorType  = kARGB_4444_SkColorType;
     } else if (value.equals("565")) {

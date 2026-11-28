@@ -44,6 +44,7 @@ filegroup(
         "FontScanner.h",
         "GainmapTestCommon.h",
         "GaneshTestUtils.h",
+        "NearestDecalSubsetTestCases.h",
         "PathOpsCubicIntersectionTestData.h",
         "PathOpsDebug.h",
         "PathOpsExtendedTest.h",
@@ -482,6 +483,7 @@ filegroup(
         "GrSurfaceResolveTest.cpp",
         "GrSurfaceTest.cpp",
         "GrTextBlobTest.cpp",
+        "GrTextureEffectTest.cpp",
         "GrTextureMipMapInvalidationTest.cpp",
         "GrThreadSafeCacheTest.cpp",
         "GrUniqueProxyTest.cpp",
@@ -580,6 +582,8 @@ filegroup(
         "graphite/crbug_513836996.cpp",
         "graphite/DeviceTest.cpp",
         "graphite/DrawAtlasTest.cpp",
+        "graphite/DstReadCopyBoundsTest.cpp",
+        "graphite/GlyphAtlasTokenTest.cpp",
         "graphite/GraphiteContextRecorderTest.cpp",
         "graphite/GraphitePromiseImageTest.cpp",
         "graphite/GraphiteResourceCacheTest.cpp",
@@ -697,6 +701,7 @@ filegroup(
     srcs = [
         "graphite/VulkanBackendTextureTest.cpp",
         "graphite/VulkanDstReadRenderpassReuseTest.cpp",
+        "graphite/VulkanOOMTest.cpp",
     ],
     visibility = ["//dm:__pkg__"],
 )

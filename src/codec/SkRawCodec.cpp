@@ -18,6 +18,7 @@
 #include "include/private/SkDebug.h"
 #include "include/private/SkEncodedInfo.h"
 #include "include/private/SkMutex.h"
+#include "include/private/SkOnlyStackAllocatable.h"
 #include "include/private/SkTArray.h"
 #include "include/private/SkTemplates.h"
 #include "modules/skcms/skcms.h"
@@ -25,6 +26,7 @@
 #include "src/codec/SkJpegCodec.h"
 #include "src/core/SkStreamPriv.h"
 #include "src/core/SkTaskGroup.h"
+#include "src/partition_alloc/raw_ptr.h"
 
 #include <algorithm>
 #include <cmath>
@@ -439,6 +441,8 @@ private:
 
 class SkPiexStream : public ::piex::StreamInterface {
 public:
+    SK_ONLY_STACK_ALLOCATABLE;
+
     // Will NOT take the ownership of the stream.
     explicit SkPiexStream(SkRawStream* stream) : fStream(stream) {}
 
@@ -478,7 +482,7 @@ public:
     }
 
 private:
-    SkRawStream* fStream;
+    raw_ptr<SkRawStream> fStream;
 };
 
 class SkDngImage {
