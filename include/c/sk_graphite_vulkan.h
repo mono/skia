@@ -28,6 +28,12 @@ typedef struct {
     sk_graphite_vk_get_proc     fGetProc;
     void*                       fGetProcUserData;
     bool                        fProtectedContext;
+    // Optional memory allocator (see gr_vk_allocator.h). When null the C shim
+    // creates Skia's default VMA-backed allocator internally for backwards
+    // compatibility — historical callers do not have to opt in. When non-null
+    // the Context takes its own ref on the allocator, so the caller can (and
+    // should) drop its ref immediately after context creation.
+    gr_vk_memory_allocator_t*   fMemoryAllocator;
 } sk_graphite_vk_backend_context_init_t;
 
 // Build a Graphite Context for the Vulkan backend.
