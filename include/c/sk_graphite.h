@@ -14,12 +14,13 @@ SK_C_PLUS_PLUS_BEGIN_GUARD
 
 // Opaque handles
 
-typedef struct sk_graphite_context_t            sk_graphite_context_t;
-typedef struct sk_graphite_recorder_t           sk_graphite_recorder_t;
-typedef struct sk_graphite_recording_t          sk_graphite_recording_t;
-typedef struct sk_graphite_backend_texture_t    sk_graphite_backend_texture_t;
-typedef struct sk_graphite_texture_info_t       sk_graphite_texture_info_t;
-typedef struct sk_graphite_image_provider_t     sk_graphite_image_provider_t;
+typedef struct sk_graphite_context_t                sk_graphite_context_t;
+typedef struct sk_graphite_recorder_t               sk_graphite_recorder_t;
+typedef struct sk_graphite_recording_t              sk_graphite_recording_t;
+typedef struct sk_graphite_backend_texture_t        sk_graphite_backend_texture_t;
+typedef struct sk_graphite_texture_info_t           sk_graphite_texture_info_t;
+typedef struct sk_graphite_image_provider_t         sk_graphite_image_provider_t;
+typedef struct sk_graphite_shader_error_handler_t   sk_graphite_shader_error_handler_t;
 
 // Backend identification
 
@@ -39,6 +40,39 @@ typedef enum {
 // libSkiaSharp. Safe to call before any context is created and on any backend.
 SK_C_API bool sk_graphite_backend_is_available(sk_graphite_backend_t backend);
 
+// Shader compile error callback.
+//
+// Fires when Graphite hands driver-source shader text (MSL for Metal, SPIR-V/GLSL
+// for Vulkan, WGSL for Dawn) to the driver's compiler and the driver rejects it.
+// `shader` is the source text; `errors` is the driver's compile error message.
+// `shaderWasCached` is Skia's hint about whether this pipeline was already
+// present in its internal pipeline cache — typically false on first-time
+// failures. Both string pointers are valid only for the duration of the call.
+//
+// When null, Skia uses its default handler (SkDebugf + assert) — which is
+// often invisible on iOS/tvOS. Set this to capture the failing shader text
+// for diagnostics (see #4555 for the Graphite-Metal-simulator gradient case
+// this callback was added for).
+typedef void (*sk_graphite_shader_error_handler_proc)(
+    void*       userData,
+    const char* shader,
+    const char* errors,
+    bool        shaderWasCached);
+
+// Build a bridge object that routes Graphite's shader-compile errors to the
+// caller's proc + userData. Ownership: the returned handle is caller-owned;
+// pass it to sk_graphite_context_options_t.fShaderErrorHandler and, after the
+// associated Context has been destroyed, free it with
+// sk_graphite_shader_error_handler_delete. Skia's ContextOptions holds a raw
+// non-owning pointer to the bridge, so it must outlive the Context — do NOT
+// delete the handle before the Context is deleted.
+SK_C_API sk_graphite_shader_error_handler_t* sk_graphite_shader_error_handler_new(
+    sk_graphite_shader_error_handler_proc proc,
+    void* userData);
+
+SK_C_API void sk_graphite_shader_error_handler_delete(
+    sk_graphite_shader_error_handler_t* handler);
+
 // ContextOptions (POD, value type)
 
 typedef struct {
@@ -47,6 +81,13 @@ typedef struct {
     int64_t   fGpuBudgetInBytes;               // -1 to use Skia's default
     bool      fRequireOrderedRecordings;
     bool      fSetBackendLabels;
+
+    // Optional shader-compile error handler (see _new / _delete above).
+    // Nullable. When non-null, the caller retains ownership: the Context does
+    // not free the handle on destruction, mirroring Skia's raw non-owning
+    // storage. Free the handle with sk_graphite_shader_error_handler_delete
+    // AFTER the Context has been deleted.
+    sk_graphite_shader_error_handler_t*    fShaderErrorHandler;
 } sk_graphite_context_options_t;
 
 SK_C_API void sk_graphite_context_options_init_defaults(sk_graphite_context_options_t* out);

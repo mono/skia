@@ -67,6 +67,7 @@ private:
     using MSLFunction = std::pair<id<MTLLibrary>, std::string>;
     static sk_sp<MtlGraphicsPipeline> Make(const MtlSharedContext*,
                                            const std::string& label,
+                                           const std::string& msl,
                                            const PipelineInfo&,
                                            MSLFunction vertexMain,
                                            MTLVertexStepFunction appendStepFunc,
