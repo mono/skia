@@ -112,7 +112,7 @@ DrawContext::DrawContext(const Caps* caps,
     // that the DC manages.
 }
 
-DrawContext::~DrawContext() = default;
+DrawContext::~DrawContext() { SkASSERT(fPendingScratchReads.empty()); }
 
 void DrawContext::clear(const SkColor4f& clearColor) {
     this->resetForClearOrDiscard();
@@ -207,6 +207,27 @@ void DrawContext::recordDependency(sk_sp<Task> task) {
     fCurrentDrawTask->addTask(std::move(task));
 }
 
+void DrawContext::stageScratchReadDependency(sk_sp<TextureProxy> proxy, sk_sp<Task> task) {
+    SkASSERT(proxy);
+    SkASSERT(task);
+    fPendingScratchReads.push_back({std::move(proxy), std::move(task)});
+}
+
+void DrawContext::commitScratchReadDependencies(Recorder* recorder) {
+    if (fPendingScratchReads.empty()) {
+        return;
+    }
+    SkASSERT(recorder);
+    // Callers commit only after recording a draw, guaranteeing the next flush() snaps a
+    // DrawPass that balances each addPendingRead()
+    SkASSERT(this->modifiesTarget());
+    for (ScratchReadDependency& dep : fPendingScratchReads) {
+        recorder->priv().addPendingRead(dep.proxy.get());
+        this->recordDependency(std::move(dep.task));
+    }
+    fPendingScratchReads.clear();
+}
+
 PathAtlas* DrawContext::getComputePathAtlas(Recorder* recorder) {
     if (!fComputePathAtlas) {
         fComputePathAtlas =
@@ -250,7 +271,6 @@ void DrawContext::flush(Recorder* recorder) {
 
     // Extract certain properties from DrawList relevant for DrawTask construction before
     // relinquishing the pending draw list to the DrawPass constructor.
-    SkIRect dstReadPixelBounds = fPendingDraws->dstReadBounds().makeRoundOut().asSkIRect();
     const bool drawsRequireMSAA = fPendingDraws->drawsRequireMSAA();
     SkEnumBitMask<DepthStencilFlags> dsFlags = fPendingDraws->depthStencilFlags();
     SkASSERT(!SkToBool(dsFlags & DepthStencilFlags::kDepth) || !fPendingDraws->avoidDepth());
@@ -265,6 +285,12 @@ void DrawContext::flush(Recorder* recorder) {
     const DstReadStrategy drawPassDstReadStrategy = fPendingDraws->drawsReadDst()
                                                             ? this->dstReadStrategy()
                                                             : DstReadStrategy::kNoneRequired;
+    // The solid target subrect blitted into the ApproxFit DstCopy texture when kTextureCopy is
+    // active (texels outside this rect in DstCopy remain uninitialized).
+    const SkIRect dstCopyBounds =
+            drawPassDstReadStrategy == DstReadStrategy::kTextureCopy
+                    ? fPendingDraws->dstReadBounds().makeRoundOut().asSkIRect()
+                    : SkIRect::MakeEmpty();
 
     // Convert the pending draws and load/store ops into a DrawPass that will be executed after
     // the collected uploads and compute dispatches.
@@ -276,29 +302,29 @@ void DrawContext::flush(Recorder* recorder) {
                                                                  this,
                                                                  fTarget.refProxy(),
                                                                  this->imageInfo(),
-                                                                 drawPassDstReadStrategy);
+                                                                 drawPassDstReadStrategy,
+                                                                 dstCopyBounds);
     SkASSERT(!fPendingDraws->modifiesTarget()); // Should be drained into `pass`.
 
     if (pass) {
         SkASSERT(fTarget.proxy() == pass->target());
 
-        // If any paint used within the DrawPass reads from the dst texture (indicated by nonempty
-        // dstReadPixelBounds) and the dstReadStrategy is kTextureCopy, then add a CopyTask.
+        // If any paint used within the DrawPass reads from the dst texture and the dstReadStrategy
+        // is kTextureCopy (indicated by nonempty dstCopyBounds), then add a CopyTask.
         sk_sp<TextureProxy> dstCopy;
-        if (!dstReadPixelBounds.isEmpty() &&
-            drawPassDstReadStrategy == DstReadStrategy::kTextureCopy) {
+        if (!dstCopyBounds.isEmpty()) {
+            SkASSERT(drawPassDstReadStrategy == DstReadStrategy::kTextureCopy);
             TRACE_EVENT_INSTANT0("skia.gpu", "DrawPass requires dst copy",
                                  TRACE_EVENT_SCOPE_THREAD);
-            sk_sp<Image> imageCopy = Image::Copy(
-                    recorder,
-                    this,
-                    fTarget,
-                    fImageInfo.colorInfo(),
-                    dstReadPixelBounds,
-                    Budgeted::kYes,
-                    Mipmapped::kNo,
-                    SkBackingFit::kApprox,
-                    "DstCopy");
+            sk_sp<Image> imageCopy = Image::Copy(recorder,
+                                                 this,
+                                                 fTarget,
+                                                 fImageInfo.colorInfo(),
+                                                 dstCopyBounds,
+                                                 Budgeted::kYes,
+                                                 Mipmapped::kNo,
+                                                 SkBackingFit::kApprox,
+                                                 "DstCopy");
             if (!imageCopy) {
                 SKIA_LOG_W("DrawContext::flush Image::Copy failed, draw pass dropped!");
                 return;
@@ -326,8 +352,8 @@ void DrawContext::flush(Recorder* recorder) {
 
         RenderPassTask::DrawPassList passes;
         passes.emplace_back(std::move(pass));
-        fCurrentDrawTask->addTask(RenderPassTask::Make(std::move(passes), desc, fTarget.refProxy(),
-                                                       std::move(dstCopy), dstReadPixelBounds));
+        fCurrentDrawTask->addTask(RenderPassTask::Make(
+                std::move(passes), desc, fTarget.refProxy(), std::move(dstCopy), dstCopyBounds));
         if (fTarget.mipmapped() == Mipmapped::kYes) {
             if (!GenerateMipmaps(recorder, this, fTarget.refProxy())) {
                 SKIA_LOG_W("DrawContext::flush GenerateMipmaps failed, draw pass dropped!");

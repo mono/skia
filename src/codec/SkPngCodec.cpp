@@ -21,6 +21,7 @@
 #include "include/private/SkEncodedInfo.h"
 #include "include/private/SkMalloc.h"
 #include "include/private/SkNoncopyable.h"
+#include "include/private/SkOnlyStackAllocatable.h"
 #include "include/private/SkTemplates.h"
 #include "modules/skcms/skcms.h"
 #include "src/codec/SkCodecPriv.h"
@@ -85,6 +86,8 @@ static int sk_read_user_chunk(png_structp png_ptr, png_unknown_chunkp chunk) {
 
 class AutoCleanPng : public SkNoncopyable {
 public:
+    SK_ONLY_STACK_ALLOCATABLE;
+
     /*
      *  This class does not take ownership of stream or reader, but if codecPtr
      *  is non-NULL, and decodeBounds succeeds, it will have created a new
@@ -420,9 +423,9 @@ public:
     }
 
 private:
-    int                         fRowsWrittenToOutput;
-    void*                       fDst;
-    size_t                      fRowBytes;
+    int                              fRowsWrittenToOutput;
+    raw_ptr<void, DanglingUntriaged> fDst;
+    size_t                           fRowBytes;
 
     // Variables for partial decode
     int                         fFirstRow;  // FIXME: Move to baseclass?
@@ -457,9 +460,9 @@ private:
 
     void allRowsCallback(png_bytep row, int rowNum) {
         SkASSERT(rowNum == fRowsWrittenToOutput);
+        this->applyXformRow(SkTAddOffset<void>(fDst.get(), fRowsWrittenToOutput * fRowBytes),
+                            row);
         fRowsWrittenToOutput++;
-        this->applyXformRow(fDst, row);
-        fDst = SkTAddOffset<void>(fDst, fRowBytes);
     }
 
     Result setRange(int firstRow, int lastRow, void* dst, size_t rowBytes) override {
@@ -502,8 +505,8 @@ private:
 
         // If there is no swizzler, all rows are needed.
         if (!this->swizzler() || this->swizzler()->rowNeeded(rowNum - fFirstRow)) {
-            this->applyXformRow(fDst, row);
-            fDst = SkTAddOffset<void>(fDst, fRowBytes);
+            this->applyXformRow(SkTAddOffset<void>(fDst.get(), fRowsWrittenToOutput * fRowBytes),
+                                row);
             fRowsWrittenToOutput++;
         }
 
@@ -544,14 +547,14 @@ public:
     }
 
 private:
-    const int               fNumberPasses;
-    int                     fFirstRow;
-    int                     fLastRow;
-    void*                   fDst;
-    size_t                  fRowBytes;
-    int                     fLinesDecoded;
-    bool                    fInterlacedComplete;
-    size_t                  fPng_rowbytes;
+    const int                        fNumberPasses;
+    int                              fFirstRow;
+    int                              fLastRow;
+    raw_ptr<void, DanglingUntriaged> fDst;
+    size_t                           fRowBytes;
+    int                              fLinesDecoded;
+    bool                             fInterlacedComplete;
+    size_t                           fPng_rowbytes;
     std::unique_ptr<png_byte, SkOverloadedFunctionObject<void(void*), sk_free>> fInterlaceBuffer;
 
     // FIXME: Currently sharing interlaced callback for all rows and subset. It's not
@@ -951,9 +954,11 @@ void SkPngCodec::destroyReadStruct() {
     if (fPng_ptr) {
         // We will never have a nullptr fInfo_ptr with a non-nullptr fPng_ptr
         SkASSERT(fInfo_ptr);
-        png_destroy_read_struct((png_struct**)&fPng_ptr, (png_info**)&fInfo_ptr, nullptr);
+        png_structp png_ptr = fPng_ptr;
+        png_infop info_ptr = fInfo_ptr;
         fPng_ptr = nullptr;
         fInfo_ptr = nullptr;
+        png_destroy_read_struct(&png_ptr, &info_ptr, nullptr);
     }
 }
 

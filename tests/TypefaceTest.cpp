@@ -15,6 +15,7 @@
 #include "include/core/SkRect.h"
 #include "include/core/SkRefCnt.h"
 #include "include/core/SkScalar.h"
+#include "include/core/SkSpan.h"
 #include "include/core/SkStream.h"
 #include "include/core/SkString.h"
 #include "include/core/SkTypeface.h"
@@ -38,11 +39,13 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cinttypes>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <memory>
+#include <optional>
 #include <utility>
 
 namespace {
@@ -644,12 +647,14 @@ DEF_TEST(TypefaceAxesParameters, reporter) {
     // Since this is a limitation of the underlying implementation, for now allow the test to pass
     // with the axis tag count (as opposed to the axis count). Eventually all implementations should
     // pass this test without 'alsoAcceptedAxisTagCount'.
-    auto test = [&](SkTypeface* typeface, const Axis* expected, int expectedCount,
-                    int alsoAcceptedAxisTagCount)
-    {
+    auto test = [&](SkTypeface* typeface,
+                    SkSpan<const Axis> expected,
+                    int alsoAcceptedAxisTagCount) {
         if (!typeface) {
             return;  // Not all SkFontMgr can makeFromStream().
         }
+
+        const int expectedCount = SkToInt(expected.size());
 
         int actualCount = typeface->getVariationDesignParameters({});
         if (actualCount == -1) {
@@ -738,7 +743,7 @@ DEF_TEST(TypefaceAxesParameters, reporter) {
             Axis(SkSetFourByteTag('w','d','t','h'),  50.0f, 100.0f, 200.0f, false),
         };
         sk_sp<SkTypeface> typeface = fm->makeFromStream(std::move(variable), 0);
-        test(typeface.get(), &expected[0], std::size(expected), -1);
+        test(typeface.get(), expected, -1);
     }
 
     // Multiple axes with the same tag (and min, max, default) works.
@@ -756,7 +761,7 @@ DEF_TEST(TypefaceAxesParameters, reporter) {
             Axis(SkSetFourByteTag('w','g','h','t'), 100.0f, 400.0f, 900.0f, false),
         };
         sk_sp<SkTypeface> typeface = fm->makeFromStream(std::move(dupTags), 0);
-        test(typeface.get(), &expected[0], std::size(expected), 1);
+        test(typeface.get(), expected, 1);
     }
 
     // Simple single axis GX variable font.
@@ -770,7 +775,7 @@ DEF_TEST(TypefaceAxesParameters, reporter) {
             Axis(SkSetFourByteTag('w','g','h','t'), 0.5f, 1.0f, 2.0f, true),
         };
         sk_sp<SkTypeface> typeface = fm->makeFromStream(std::move(distortable), 0);
-        test(typeface.get(), &expected[0], std::size(expected), -1);
+        test(typeface.get(), expected, -1);
     }
 }
 
@@ -805,6 +810,24 @@ DEF_TEST(TypefaceCache, reporter) {
         REPORTER_ASSERT(reporter, count(reporter, cache) == 1);
     }
     REPORTER_ASSERT(reporter, t1->unique());
+}
+
+// Typeface IDs key process-wide caches (strikes, blobs), so the generator must never hand out 0
+// or an ID it already issued, even once 2^32 typefaces have been created
+DEF_TEST(TypefaceIDNeverZeroOrReused, reporter) {
+    std::atomic<uint64_t> counter{1};
+    const std::optional<SkTypefaceID> firstID = SkTypefaceCache::NextTypefaceID(&counter);
+    REPORTER_ASSERT(reporter, firstID == 1u, "firstID=0x%x", firstID.value_or(0));
+    // Skip ahead to the last representable ID instead of creating 2^32 typefaces
+    counter.store(UINT32_MAX);
+    const std::optional<SkTypefaceID> lastID = SkTypefaceCache::NextTypefaceID(&counter);
+    REPORTER_ASSERT(reporter, lastID == UINT32_MAX, "lastID=0x%x", lastID.value_or(0));
+
+    // Exhaustion must be reported rather than wrapping to 0 and then to IDs already in use
+    for (int i = 0; i < 2; ++i) {
+        const std::optional<SkTypefaceID> id = SkTypefaceCache::NextTypefaceID(&counter);
+        REPORTER_ASSERT(reporter, !id.has_value(), "after the last ID got 0x%x", id.value_or(0));
+    }
 }
 
 static void check_serialize_behaviors(sk_sp<SkTypeface> tf, skiatest::Reporter* reporter) {

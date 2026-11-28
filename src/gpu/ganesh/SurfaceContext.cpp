@@ -56,6 +56,7 @@
 #include "src/gpu/ganesh/effects/GrBicubicEffect.h"
 #include "src/gpu/ganesh/effects/GrTextureEffect.h"
 #include "src/gpu/ganesh/geometry/GrRect.h"
+#include "src/partition_alloc/raw_ptr.h"
 
 #include <algorithm>
 #include <cstdint>
@@ -307,7 +308,9 @@ bool SurfaceContext::readPixels(GrDirectContext* dContext, GrPixmap dst, SkIPoin
     if (!result.fSuccess) {
         return false;
     }
-    dContext->submit();
+    if (!dContext->submit()) {
+        return false;
+    }
     if (!dContext->priv().getGpu()->readPixels(srcSurface,
                                                SkIRect::MakePtSize(pt, dst.dimensions()),
                                                this->colorInfo().colorType(),
@@ -721,7 +724,7 @@ struct SurfaceContext::AsyncReadPixelContext {
     ReadPixelsCallback* fClientCallback;
     ReadPixelsContext fClientContext;
     SkISize fSize;
-    GrClientMappedBufferManager* fMappedBufferManager;
+    raw_ptr<GrClientMappedBufferManager> fMappedBufferManager;
 
     PixelTransferResult fPrimaryTransfer; // RGBA or Y
     PixelTransferResult fUTransfer = {};
@@ -814,7 +817,7 @@ struct SurfaceContext::AsyncReadPixelContext {
             if (result && !result->addTransferResult(*transfer,
                                                      size,
                                                      transfer->fRowBytes,
-                                                     fMappedBufferManager)) {
+                                                     fMappedBufferManager.get())) {
                 result.reset();
             }
             if (!result && transfer->fTransferBuffer->isMapped()) {

@@ -11,6 +11,7 @@
 #include "include/core/SkContext.h"
 #include "include/core/SkRefCnt.h"
 #include "include/private/SkGPUContext.h"
+#include "include/private/SkOnlyStackAllocatable.h"
 #include "src/core/SkSharedState.h"
 
 #include <memory>
@@ -22,6 +23,8 @@ class SkContext;
     data members or virtual methods.*/
 class SkContextPrivConst {
 public:
+    SK_ONLY_STACK_ALLOCATABLE;
+
     const SkSharedState* sharedState() const { return fConstContext->fSharedState.get(); }
 
 protected:
@@ -74,7 +77,9 @@ namespace SkContexts {
 // Returns the global SkContext. If the global SkContext does not exist yet, it will be created.
 // This is an intermediary step in the SkContext project, whereby we use this
 // global SkContext object to remove or take away functionality from SkGraphics.
-SkContext* GetGlobalSkContext();
+// NOTE: set enableRuntimeOpts to false by default so that if we create the global skcontext from
+// the skgraphics::set__ functions, then it won't init the runtime opts
+SkContext* GetGlobalSkContext(bool enableRuntimeOpts = false);
 }
 
 #endif  // SkContextPriv_DEFINED

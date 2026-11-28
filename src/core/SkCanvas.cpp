@@ -999,7 +999,7 @@ void SkCanvas::internalSaveLayer(const SaveLayerRec& rec,
             // Add a buffer of padding so that image filtering can avoid accessing unitialized data
             // and switch from shader-decal'ing to clamping.
             auto paddedLayerBounds = layerBounds;
-            paddedLayerBounds.outset(skif::LayerSpace<SkISize>({1, 1}));
+            paddedLayerBounds.outset(skif::LayerSpace<SkISize>::Padding());
             if (paddedLayerBounds.left() < layerBounds.left() &&
                 paddedLayerBounds.top() < layerBounds.top() &&
                 paddedLayerBounds.right() > layerBounds.right() &&
@@ -1055,7 +1055,8 @@ void SkCanvas::internalSaveLayer(const SaveLayerRec& rec,
     // Clip while the device coordinate space is the identity so it's easy to define the rect that
     // excludes the added padding pixels. This ensures they remain cleared to transparent black.
     if (paddedLayer) {
-        newDevice->clipRect(SkRect::Make(newDevice->devClipBounds().makeInset(1, 1)),
+        newDevice->clipRect(SkRect::Make(newDevice->devClipBounds().makeInset(skif::kLayerPadding,
+                                                                              skif::kLayerPadding)),
                             SkClipOp::kIntersect, /*aa=*/false);
     }
 
@@ -2415,6 +2416,9 @@ void SkCanvas::drawImageRect(const SkImage* image, const SkRect& src, const SkRe
     if (!fillable(dst) || !fillable(src)) {
         return;
     }
+    // TODO(b/587426694): Clip 'src' (adjusting 'dst' to match) to the image's integer bounds. Image
+    // dimensions > 2^24 that round up in float32 let 'src' extend past the image, which repeats
+    // edge pixels.
     this->onDrawImageRect2(image, src, dst, sampling, paint, constraint);
 }
 

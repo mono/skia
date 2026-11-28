@@ -368,8 +368,9 @@ static std::unique_ptr<SkPDFDict> gradientStitchCode(const SkShaderBase::Gradien
 
     // normalize color stops
     int colorCount = info.fColorCount;
-    std::vector<SkColor4f> colors(info.fColors, info.fColors + colorCount);
-    std::vector<SkScalar> colorOffsets(info.fColorOffsets, info.fColorOffsets + colorCount);
+    std::vector<SkColor4f> colors(info.fColors.get(), info.fColors.get() + colorCount);
+    std::vector<SkScalar> colorOffsets(info.fColorOffsets.get(),
+                                       info.fColorOffsets.get() + colorCount);
 
     int i = 1;
     while (i < colorCount - 1) {
@@ -970,9 +971,9 @@ static bool has_alpha(const SkShader* shader, const SkPDFGradientShader::Key& ke
 static SkPDFGradientShader::Key clone_key(const SkPDFGradientShader::Key& k) {
     SkPDFGradientShader::Key clone = {
         k.fType,
-        k.fInfo,  // change pointers later.
         std::unique_ptr<SkColor4f[]>(new SkColor4f[k.fInfo.fColorCount]),
         std::unique_ptr<SkScalar[]>(new SkScalar[k.fInfo.fColorCount]),
+        k.fInfo,  // change pointers later.
         k.fCanvasTransform,
         k.fShaderTransform,
         k.fBBox, 0};
@@ -1050,9 +1051,9 @@ static SkPDFGradientShader::Key make_key(const SkShader* shader,
                                          const SkIRect& bbox) {
     SkPDFGradientShader::Key key = {
          SkShaderBase::GradientType::kNone,
+         nullptr,
+         nullptr,
          {0, nullptr, nullptr, {{0, 0}, {0, 0}}, {0, 0}, SkTileMode::kClamp, 0},
-         nullptr,
-         nullptr,
          canvasTransform,
          SkPDFUtils::GetShaderLocalMatrix(shader),
          bbox, 0};
@@ -1066,7 +1067,7 @@ static SkPDFGradientShader::Key make_key(const SkShader* shader,
     as_SB(shader)->asGradient(&key.fInfo);
     if (key.fInfo.fPremulInterp) {
         bool changedByPremul = false;
-        for (auto&& c : SkSpan(key.fInfo.fColors, key.fInfo.fColorCount)) {
+        for (auto&& c : SkSpan(key.fInfo.fColors.get(), key.fInfo.fColorCount)) {
             if (c.fA != 1.0f) {
                 changedByPremul = true;
             }

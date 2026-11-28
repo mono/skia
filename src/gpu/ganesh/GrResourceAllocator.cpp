@@ -50,6 +50,7 @@ GrResourceAllocator::~GrResourceAllocator() {
     SkASSERT(fFailedInstantiation || fIntvlList.empty());
     SkASSERT(fActiveIntvls.empty());
     SkASSERT(!fIntvlHash.count());
+    this->reset();
 }
 
 void GrResourceAllocator::recordFailedInstantiation(const GrSurfaceProxy* proxy) {
