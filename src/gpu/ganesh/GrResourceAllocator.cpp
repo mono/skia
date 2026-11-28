@@ -60,13 +60,6 @@ void GrResourceAllocator::recordFailedInstantiation(const GrSurfaceProxy* proxy)
     }
 }
 
-void GrResourceAllocator::recordFailedInstantiation(const GrSurfaceProxy* proxy) {
-    fFailedInstantiation = true;
-    if (!proxy->isPromiseProxy()) {
-        fFailedNonPromiseInstantiation = true;
-    }
-}
-
 void GrResourceAllocator::addInterval(GrSurfaceProxy* proxy, unsigned int start, unsigned int end,
                                       ActualUse actualUse, AllowRecycling allowRecycling
                                       SkDEBUGCODE(, bool isDirectDstRead)) {
